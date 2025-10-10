@@ -1,0 +1,82 @@
+version: '2.2'
+
+networks:
+  registry-service:
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "${DB_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+    command: [ "postgres", "-c", "log_statement=all" ] # log all queries into the container log file
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./local/postgres/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - registry-service
+
+  registry-service:
+    image: registry-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+      - "${SERVER_PORT}:${SERVER_PORT}"
+    environment:
+      SERVER_PORT: ${SERVER_PORT}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      DB_NAME: ${DB_NAME}
+      METRICS_SERVER_PORT: ${METRICS_SERVER_PORT}
+      DEBUG_MODE: ${DEBUG_MODE}
+    healthcheck:
+      test: ["CMD", "/grpc-health-probe", "-addr=localhost:${SERVER_PORT}"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+    networks:
+      - registry-service
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./local/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-lifecycle'
+    networks:
+      - registry-service
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    ports:
+      - "3004:3000"
+    restart: unless-stopped
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./local/grafana/provisioning:/etc/grafana/provisioning
+      - ./local/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - registry-service
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  pg_data:
+

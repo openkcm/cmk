@@ -15,6 +15,7 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 cover.html
+/cover
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -28,6 +29,9 @@ go.work
 vendor
 junit.xml
 *.pem
+!/env/blueprints/sis-plugins/uli/key.pem
+!/env/blueprints/sis-plugins/uli/cert.pem
+
 *.csr
 *.srl
 *.crt
@@ -37,4 +41,13 @@ junit.xml
 .DS_Store
 /test/manual/cld/binding.json
 
+# Local env files
+env/secret
+
+# Local binaries dirs
+/bin
+/bins
+
 *testpluginbinary
+
+build_version.json

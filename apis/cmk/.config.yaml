@@ -1,0 +1,9 @@
+package: cmkapi
+output: ./internal/api/cmkapi/cmkapi.go
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true
+  embedded-spec: true
+compatibility:
+  always-prefix-enum-values: true

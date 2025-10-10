@@ -1,0 +1,49 @@
+{{- if .Values.taskWorker.deploy }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cmk.name" . }}-task-worker-config
+  labels:
+    {{- include "cmk.task-worker.labels" . | nindent 4 }}
+immutable: {{ .Values.config.isImmutable | default false }}
+data:
+  config.yaml: |-
+    application:
+      name: task-worker
+    {{- with .Values.config }}
+      environment: {{ .environment }}
+      {{- with .labels }}
+      labels:
+        {{- toYaml . | nindent 8 }}
+      {{- end}}
+
+    status:
+      {{- toYaml .status | nindent 6 }}
+
+    logger:
+      {{- toYaml .logger | nindent 6 }}
+
+    telemetry:
+      {{- toYaml .telemetry | nindent 6 }}
+
+    # Database configuration
+    database:
+      {{- toYaml .database | nindent 6 }}
+
+    # Scheduler configuration
+    scheduler:
+      {{- toYaml .scheduler | nindent 6 }}
+
+    certificates:
+      {{- toYaml .certificates | nindent 6 }}
+
+    # Plugins configuration
+    plugins:
+      {{- include "cmk.plugins" . | nindent 6 }}
+
+    # Keystore pool configuration
+    keystorePool:
+      {{- toYaml .keystorePool | nindent 6 }}
+    {{- end }}
+{{- end }}

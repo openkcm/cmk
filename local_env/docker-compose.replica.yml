@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  postgres_primary:
+    image: postgres:16
+    container_name: postgres_primary
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: replica_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - primary_data:/var/lib/postgresql/data
+      - ./primary/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./primary/pg_hba.conf:/etc/postgresql/pg_hba.conf
+      - ./primary/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: >
+      postgres -c config_file=/etc/postgresql/postgresql.conf
+    networks:
+      - postgres_network
+
+  postgres_replica:
+    image: postgres:16
+    container_name: postgres_replica
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+    ports:
+      - "5433:5432"
+    depends_on:
+      - postgres_primary
+    command: >
+      bash -c "export PGPASSWORD=replica_password&&
+              rm -rf /var/lib/postgresql/data/* &&
+              pg_basebackup -h postgres_primary -D /var/lib/postgresql/data -U replicator -P -R &&
+              chmod 700 /var/lib/postgresql/data &&
+              chown -R postgres:postgres /var/lib/postgresql/data &&
+              exec gosu postgres postgres"
+
+    volumes:
+      - replica_data:/var/lib/postgresql/data
+    networks:
+      - postgres_network
+
+volumes:
+  primary_data:
+  replica_data:
+
+networks:
+  postgres_network:

@@ -1,0 +1,14 @@
+{
+    "connectcfg": {
+        "host": "",
+        "clientid": "",
+        "clientsecret": "",
+        "tlsconfig": {
+            "cert": "",
+            "key": ""
+        },
+    },
+    "requestparams": {
+        "groupattribute": "urn:sap:cloud:scim:schemas:extension:custom:2.0:Group:name"
+    }
+}

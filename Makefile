@@ -1,6 +1,6 @@
 .PHONY: default test coverage clean install-gotestsum squash codegen docker-compose clean-docker-compose swagger-ui \
 swagger-ui-stop go-imports install-gci install-golines install-goimports lint cmk-env docker-dev-build tidy \
-prepare_integration_test clean_integration_test build_test_plugins clean_plugins prepare_test clean_test benchmark
+prepare_integration_test clean_integration_test clean_plugins prepare_test clean_test benchmark
 
 CMK_API_V1_SPEC_PATH := apis/cmk
 CMK_API_V1_OUT_PATH := internal/api/cmkapi
@@ -27,8 +27,7 @@ default: test
 run:
 	AWS_ACCESS_KEY_ID="exampleAccessKeyID" AWS_SECRET_ACCESS_KEY="exampleSecretAccessKey" go run ./cmd/api-server
 
-test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
-	-$(MAKE) extract-version
+test: install-gotestsum spin-postgres-db spin-rabbitmq
 	rm -rf cover cover.* junit.xml
 	mkdir -p cover
 	go clean -testcache
@@ -46,7 +45,7 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 benchmark: clean-postgres-db spin-postgres-db
 	go test ./benchmark -bench=.
 
-prepare_test: clean-postgres-db spin-postgres-db build_test_plugins
+prepare_test: clean-postgres-db spin-postgres-db
 
 clean_test:
 	$(MAKE) clean-postgres-db
@@ -164,24 +163,21 @@ submodules:
 	git submodule update --init --recursive
 	git submodule update --remote
 
-extract-version:
-	echo \{\"version\": \"$(shell tail -c +2 VERSION)\"\} > build_version.json
-
 TEST_PLUGINS_DIR := ./internal/testutils/testplugins
 TEST_PLUGINS := $(shell find $(TEST_PLUGINS_DIR) -mindepth 1 -maxdepth 1 -type d)
 PLUGIN_NAME := testpluginbinary
 
-build_test_plugins:
-	@echo "Building plugins..."
-	@for plugin_dir in $(TEST_PLUGINS); do \
-		echo "Building $${plugin_dir}"; \
-		(cd $${plugin_dir} && go build -o $(PLUGIN_NAME) .); \
-		if [ $$? -ne 0 ]; then \
-			echo "Failed to build $${plugin_dir}"; \
-			exit 1; \
-		fi; \
-	done
-	@echo "All plugins built successfully"
+#build_test_plugins:
+#	@echo "Building plugins..."
+#	@for plugin_dir in $(TEST_PLUGINS); do \
+#		echo "Building $${plugin_dir}"; \
+#		(cd $${plugin_dir} && go build -o $(PLUGIN_NAME) .); \
+#		if [ $$? -ne 0 ]; then \
+#			echo "Failed to build $${plugin_dir}"; \
+#			exit 1; \
+#		fi; \
+#	done
+#	@echo "All plugins built successfully"
 
 clean_test_plugins:
 	@find $(TEST_PLUGINS_DIR) -name "$(PLUGIN_NAME)" -exec rm -f {} +
@@ -550,7 +546,7 @@ delete-cluster:
 
 start-cmk: generate-signing-keys start-k3d create-empty-secrets create-plugin-secret create-event-processor-secret psql-add-to-cluster redis-add-to-cluster helm-install-rabbitmq k3d-add-cmk
 
-k3d-add-cmk: extract-version
+k3d-add-cmk:
 	@echo "Building the cmk image within k3d."
 	@$(MAKE) k3d-build-image
 	@$(MAKE) k3d-rebuild-cmk

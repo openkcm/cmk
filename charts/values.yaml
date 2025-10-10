@@ -1,0 +1,771 @@
+# Default values for cmk.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Component-specific values
+
+# api-server configuration
+apiServer:
+  # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+  image:
+    # Setting the command
+    # +docs:property
+    command: ""
+
+    # Setting the arguments for the container
+    # +docs:property
+    args: []
+    #  - --graceful-shutdown=2
+    #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
+
+  # Enable the API-server deployment.
+  deploy: true
+
+# tenant-manager configuration
+tenantManager:
+  # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+  image:
+    # Setting the command
+    # +docs:property
+    command: ""
+
+    # Setting the arguments for the container
+    # +docs:property
+    args: []
+    #  - --graceful-shutdown=2
+    #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
+
+  # Enable the tenant-manager deployment.
+  deploy: true
+
+  # tenant-manager service configuration
+  service:
+    # Enable the tenant-manager service
+    enabled: false
+
+    # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+    type: ClusterIP
+    # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
+    ports:
+      - port: 5672 # must match .Values.cmk.port
+        protocol: TCP
+        targetPort: http
+        name: http
+
+# tenant-manager-cli configuration
+tenantManagerCLI:
+  # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+  image:
+    # Setting the command
+    # +docs:property
+    command: ""
+
+    # Setting the arguments for the container
+    # +docs:property
+    args: []
+    #  - --graceful-shutdown=2
+    #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
+
+  # Enable the tenant-manager-cli deployment.
+  deploy: false
+
+  # tenant-manager-cli service configuration
+  service:
+    # Enable the tenant-manager-cli service
+    enabled: false
+
+  # Additional containers on the output Deployment definition.
+  extraContainers: []
+
+  # Additional init containers on the output Deployment definition.
+  extraInitContainers: []
+
+# task scheduler configuration
+taskScheduler:
+  # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+  image:
+    # Setting the command
+    # +docs:property
+    command: ""
+
+    # Setting the arguments for the container
+    # +docs:property
+    args: []
+    #  - --graceful-shutdown=2
+    #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
+
+  # Enable the task scheduler deployment.
+  deploy: false
+
+# task worker configuration
+taskWorker:
+  # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+  image:
+    # Setting the command
+    # +docs:property
+    command: ""
+
+    # Setting the arguments for the container
+    # +docs:property
+    args: []
+    #  - --graceful-shutdown=2
+    #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
+
+  # Enable the task worker deployment.
+  deploy: false
+
+# Override the "name" value, which is used to annotate some of
+# the resources that are created by this Chart (using "app.kubernetes.io/name").
+# +docs:property
+nameOverride: ""
+
+# Override the "fullname" value. This value is used as part of
+# most of the names of the resources created by this Helm chart.
+# +docs:property
+fullnameOverride: ""
+
+# This namespace allows you to define where the services are installed into.
+# If not set then they use the namespace of the release.
+# This is helpful when installing a chart dependency (sub chart).
+namespace: ""
+
+# This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+replicaCount: 1
+
+# This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+image:
+  # The container registry to pull the image from.
+  # For example:
+  #   registry: kms.common.repositories.cloud.sap
+  #   repository: cmk
+  # +docs:property
+  registry: ""
+
+  # The container image
+  # +docs:property
+  repository: cmk-api-server-dev
+
+  # Override the image tag to deploy by setting this variable.
+  # If no value is set, the chart's appVersion is used.
+  # +docs:property
+  tag: "latest"
+
+  # Setting a digest will override any tag.
+  # +docs:property
+  # digest: sha256:0e072dddd1f7f8fc8909a2ca6f65e76c5f0d2fcfb8be47935ae3457e8bbceb20
+
+  # Kubernetes imagePullPolicy.
+  pullPolicy: IfNotPresent
+
+  # Setting the arguments for the container
+  # +docs:property
+  #args:
+  #  - --graceful-shutdown=2
+  #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
+
+  # Setting the command
+  # +docs:property
+  #command: "./extension-server"
+
+# This is for the secretes for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+imagePullSecrets:
+#  - name: ""
+
+# This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# This is for setting Kubernetes Annotations to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+# This is for setting Kubernetes Labels to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}
+
+podSecurityContext: {}
+# fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+podDisruptionBudget:
+  # Enable or disable the PodDisruptionBudget resource.
+  #
+  # This prevents downtime during voluntary disruptions such as during a Node upgrade.
+  # For example, the PodDisruptionBudget will block `kubectl drain`
+  # Pod is currently running.
+  enabled: false
+
+  # This configures the minimum available pods for disruptions. It can either be set to
+  # an integer (e.g. 1) or a percentage value (e.g. 25%).
+  # It cannot be used if `maxUnavailable` is set.
+  # +docs:property
+  # +docs:type=unknown
+  # minAvailable: 1
+
+  # This configures the maximum unavailable pods for disruptions. It can either be set to
+  # an integer (e.g. 1) or a percentage value (e.g. 25%).
+  # it cannot be used if `minAvailable` is set.
+  # +docs:property
+  # +docs:type=unknown
+  # maxUnavailable: 1
+
+# This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
+service:
+  # Labels to add to the service
+  labels: {}
+  # Annotations to add to the service
+  annotations: {}
+  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+  type: ClusterIP
+  # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
+  ports:
+    - port: 8081 # must match .Values.cmk.port
+      protocol: TCP
+      targetPort: http
+      name: http
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+# This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+livenessProbe:
+  httpGet:
+    path: /probe/liveness
+    port: http-status
+    scheme: HTTP
+  failureThreshold: 1
+  periodSeconds: 10
+readinessProbe:
+  httpGet:
+    path: /probe/readiness
+    port: http-status
+    scheme: HTTP
+  failureThreshold: 1
+  periodSeconds: 10
+
+# This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Additional init containers on the output Deployment definition.
+extraInitContainers: []
+
+# Additional containers on the output Deployment definition.
+extraContainers: []
+
+# Additional volumes on the output Deployment definition.
+extraVolumes: []
+
+# Additional volumeMounts on the output Deployment definition.
+extraVolumeMounts: []
+
+# Additional ens on the output Deployment definition.
+extraEnvs: []
+
+# Additional envsFrom on the output Deployment definition.
+extraEnvsFrom: []
+
+nodeSelector: {}
+
+tolerations: []
+
+ports:
+  - name: http-status
+    containerPort: 8888
+    protocol: TCP
+  - name: http
+    containerPort: 8081
+    protocol: TCP
+
+affinity: {}
+
+config:
+  isImmutable: false
+
+  # Environment where the application is running
+  environment: local
+  # Labels associated to metrics, traces and logs
+  labels: {}
+
+    # Feature gates
+  featureGates:
+    enrich-header-with-client-type: true
+    enrich-header-with-client-region: true
+    disable-client-certificate-computation: false
+    disable-jwt-token-computation: false
+
+  http:
+    port: 8081
+
+  # Expose the status port
+  status:
+    enabled: true
+    address: ":8888"
+    profiling: false
+
+  # Certificates configuration
+  certificates:
+    # rootCertURL
+    rootCertURL: https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt
+    # Validity of the certificates in days; Must be between 7 and 30 days
+    validityDays: 30
+    # Threshold in days to rotate the certificates; Must be between 1 and 30 days
+    rotationThresholdDays: 7
+
+  ## Crypto layer configuration
+  cryptoLayer:
+    certX509Trusts:
+      source: embedded
+      value: |
+        {
+          "crypto-1": {
+            "Subject": "FakeCert",
+            "RootCA": "https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
+          }
+        }
+  # This does set the logger configuration
+  # +docs:property
+  logger:
+    level: debug # one of: debug, info, warn, error
+    # Format of the logs
+    format: json # one of: json, text
+    formatter:
+      time:
+        type: pattern # one of: pattern, unix
+        # Used only when the property type: pattern
+        # Should follow golang time pattern
+        # Default value time.RFC3339.
+        pattern: "Mon Jan 02 15:04:05 -0700 2006"
+        # Used only when the property type: unix
+        # Time units are "1ns", "1us" (or "1µs"), "1ms", "1s"
+        # Default value 1s.
+        precision: 1s
+      fields:
+        # Field names (this way the field name can be changed) to be used on log records; These are their defaults.
+        error: "error"
+        message: "msg"
+        level: "level"
+        time: "time"
+        # Fields names used by OTEL to track the Trace and Span ID
+        otel:
+          traceID: "trace.id" # Default is TraceID
+          spanID: "span.id" # Default is SpanID
+        masking:
+          # All fields under PII, the formatters will mask the value and keeping first 4 original characters
+          pii:
+            - email
+            - ip-address
+          # All fields under other, the formatters will mask the value, using given mask.
+          other:
+            jwt-token: "*****"
+  telemetry:
+    logs:
+      enabled: false
+      protocol: http # one of: http, grpc; Default is http
+      # Host configuration example set as a value:
+      # host:
+      #   source: embedded
+      #   value: localhost:4317
+      # Host configuration example load value from an environment variable:
+      # host:
+      #   source: env
+      #   env: OTEL_LOGS_HOST
+      # Host configuration example load value from a JSON file:
+      # host:
+      #   source: file
+      #   file:
+      #     path: /etc/credentials/config.json
+      #     format: json # one of: json
+      #     jsonPath: "$.credentials.ingest-otlp-endpoint" # Syntax JSONPath Query Expression
+      host:
+        source: embedded
+        value: localhost:4317
+      url: /api/v2/otlp/v1/logs
+      # OpenTelemetry secret connections; Applicable in the same way for logs, traces and metrics
+      # Insecure configuration example:
+      #   secretRef:
+      #     type: insecure # one of: insecure, mtls, api-token
+      # APIToken configuration example loading value from environment variable:
+      #   secretRef:
+      #     type: api-token # one of: insecure, mtls, api-token
+      #     apiToken:
+      #       source: env
+      #       env: OTEL_LOS_API_TOKEN
+      # APIToken configuration example loading value from binary file as is:
+      #   secretRef:
+      #     type: api-token # one of: insecure, mtls, api-token
+      #     apiToken:
+      #       source: file
+      #       path: /etc/credentials/api-token
+      #       format: binary # one of: json, binary
+      # APIToken configuration example loading value from JSON file, extracting a specific field:
+      #   secretRef:
+      #     type: api-token # one of: insecure, mtls, api-token
+      #     apiToken:
+      #       source: file
+      #       path: /etc/credentials/api-token.json
+      #       format: json # one of: json, binary
+      #       jsonPath: "$.credentials.api-token" # Syntax JSONPath Query Expression
+      # mTLS configuration example loading value from environment variables:
+      #   secretRef:
+      #     type: mtls # one of: insecure, mtls, api-token
+      #     mtls:
+      #       cert:
+      #         source: env
+      #         env: OTEL_LOGS_X509_CERT
+      #       certKey:
+      #         source: env
+      #         env: OTEL_LOGS_X509_CERT_KEY
+      #       serverCA:
+      #         source: env
+      #         env: OTEL_LOGS_X509_SERVER_CA
+      # mTLS configuration example loading value from binary file as is:
+      #   secretRef:
+      #     type: mtls # one of: insecure, mtls, api-token
+      #     mtls:
+      #       cert:
+      #         source: file
+      #         file:
+      #           path: /etc/credentials/cert.pem
+      #           format: binary # one of: json, binary
+      #       certKey:
+      #         source: file
+      #         file:
+      #           path: /etc/credentials/cert-key.pem
+      #           format: binary # one of: json, binary
+      #       serverCA:
+      #         source: file
+      #         file:
+      #           path: /etc/credentials/server-ca.pem
+      #           format: binary # one of: json, binary
+      # mTLS configuration example loading value from JSON file, extracting a specific field:
+      #   secretRef:
+      #     type: mtls # one of: insecure, mtls, api-token
+      #     mtls:
+      #       cert:
+      #         source: file
+      #         file:
+      #           path: /etc/credentials/config.json
+      #           format: json # one of: json, binary
+      #           jsonPath: "$.credentials.ingest-otlp-cert" # Syntax JSONPath Query Expression
+      #       certKey:
+      #         source: file
+      #         file:
+      #           path: /etc/credentials/config.json
+      #           format: json # one of: json, binary
+      #           jsonPath: "$.credentials.ingest-otlp-key" # Syntax JSONPath Query Expression
+      #       serverCA:
+      #         source: file
+      #         file:
+      #           path: /etc/credentials/config.json
+      #           format: json # one of: json, binary
+      #           jsonPath: "$.credentials.server-ca" # Syntax JSONPath Query Expression
+      secretRef:
+        type: api-token # one of: insecure, mtls, api-token
+        apiToken:
+          source: embedded
+          value: "unknown"
+    traces:
+      enabled: false
+      protocol: http # one of: http, grpc; Default is http
+      # Host configuration example set as a value:
+      # host:
+      #   source: embedded
+      #   value: localhost:4317
+      # Host configuration example load value from an environment variable:
+      # host:
+      #   source: env
+      #   env: OTEL_LOGS_HOST
+      # Host configuration example load value from a JSON file:
+      # host:
+      #   source: file
+      #   file:
+      #     path: /etc/credentials/config.json
+      #     format: json # one of: json
+      #     jsonPath: "$.credentials.ingest-otlp-endpoint" # Syntax JSONPath Query Expression
+      host:
+        source: embedded
+        value: localhost:4317
+      url: /api/v2/otlp/v1/traces
+      # OpenTelemetry traces secret; See examples from logs.
+      secretRef:
+        type: api-token # insecure, mtls, api-token
+        apiToken:
+          source: embedded
+          value: "unknown"
+    metrics:
+      enabled: false
+      protocol: http # one of: http, grpc; Default is http
+      # Host configuration example set as a value:
+      # host:
+      #   value: localhost:4317
+      # Host configuration example load value from an environment variable:
+      # host:
+      #   source: env
+      #   env: OTEL_LOGS_HOST
+      # Host configuration example load value from a JSON file:
+      # host:
+      #   source: file
+      #   file:
+      #     path: /etc/credentials/config.json
+      #     format: json # one of: json
+      #     jsonPath: "$.credentials.ingest-otlp-endpoint" # Syntax JSONPath Query Expression
+      host:
+        source: embedded
+        value: localhost:4317
+      url: /api/v2/otlp/v1/metrics
+      # OpenTelemetry traces secret; See examples from logs.
+      secretRef:
+        type: api-token # insecure, mtls, api-token
+        apiToken:
+          source: embedded
+          value: "unknown"
+      # Metrics exposed through /metrics endpoint for prometheus
+      prometheus:
+        enabled: false
+
+  # Database configuration
+  database:
+    host:
+      source: embedded
+      value: host.ns.svc.cluster.local
+    user:
+      source: embedded
+      value: user
+    secret:
+      source: embedded
+      value: secret
+    name: name
+    port: 1234
+
+  # Scheduler configuration
+  scheduler:
+    # Scheduler taskQueue configuration
+    taskQueue:
+      host:
+        source: embedded
+        value: host.ns.svc.cluster.local
+      port: 1234
+      acl:
+        username:
+          source: embedded
+          value: default
+        password:
+          source: embedded
+          value: secret
+        enabled: true
+      secretRef:
+        type: insecure
+        # ServerCA is an optional field, if not provided, the default CA will be used.
+        # See secretRef -> see registry for spcific examples
+    # Scheduler tasks configuration
+    # Contains a list of configured tasks
+    # Each task consists of type name, retries count and cron expression
+    # Empty by default - uncomment and update example value(s)
+    tasks: []
+#      - cronspec: "@every 1h"
+#        taskType: taskType1
+#        retries: 1
+#      - cronspec: "@every 2h"
+#        taskType: taskType2
+#        retries: 2
+#      - cronspec: "@every 3h"
+#        taskType: taskType3
+#        retries: 3
+
+  # Services that CMK depends on configuration
+  services:
+    # Registry configuration
+    registry:
+      enabled: false
+      address: host.ns.svc.cluster.local:1234
+      secretRef:
+        type: insecure
+        #secretRef:
+        #  type: mtls
+        #  mTLS:
+        #    serverCA:
+        #      source: file
+        #      file:
+        #        path: /etc/registry/ca
+        #        format: binary
+        #    cert:
+        #     source: file
+        #     file:
+        #       path: /etc/registry/cert
+        #       format: binary
+        #    certKey:
+        #     source: file
+        #     file:
+        #       path: /etc/registry/key
+        #       format: binary
+  # AWS KMS configuration
+  aws:
+    kms:
+      port: 1234
+      host: host.ns.svc.cluster.local
+    accessKeyId:
+      name: name
+      key: KEY
+    secretAccessKey:
+      name: name
+      key: KEY
+
+  # Plugins configuration
+  # Contains a list of configured plugins
+  # Note: CMK API-server will not start without any plugin provided
+  # Empty by default - uncomment and update example value(s)
+  plugins: []
+  #    - name: plugin1
+  #      path: ./path/to/plugin1
+  #      type: Type1
+  #      logLevel: debug
+  #      tags: ['tag1', 'tag2']
+  #      yamlConfiguration: |
+  #        key1: value1
+  #        key2: value2
+  #    - name: plugin2
+  #      path: ./path/to/plugin2
+  #      type: Type2
+  #      logLevel: debug
+  #      tags: ['tag1', 'tag2']
+  #      yamlConfiguration: |
+  #        key1: value1
+  #        key2: value2
+
+  # Active plugins are controlled through Makefile.
+  # See k3d-apply-helm-chart target definition and ACTIVE_PLUGINS variable in the Makefile.
+  activePlugins:
+  # - plugin1
+  # - plugin2
+  # - plugin3
+
+  # Contains a list of System properties
+  # Properties set with optional are added to the system_properties table
+  # Properties set with internal are added to the systems table
+  # Can be set a displayName and default value for each property
+  system:
+    identifier:
+      displayName: "GTID"
+      internal: true
+    region:
+      displayName: "Region"
+      internal: true
+    type:
+      displayName: "Type"
+      internal: true
+    name:
+      displayName: "Name"
+      default: "n/a"
+      optional: true
+    systemrole:
+      displayName: "Role"
+      optional: true
+    systemroleid:
+      displayName: "RoleID"
+      optional: true
+
+  # Event configuration
+  eventProcessor:
+    #secretRef:
+    #  type: mtls
+    #  mTLS:
+    #    serverCA:
+    #      source: file
+    #      file:
+    #        path: /etc/event-processor/secrets.json
+    #        format: json
+    #        jsonPath: "$.serverCA" # Syntax JSONPath Query Expression
+    #    cert:
+    #     source: file
+    #     file:
+    #       path: /etc/event-processor/secrets.json
+    #       format: json
+    #       jsonPath: "$.cert" # Syntax JSONPath Query Expression
+    #    certKey:
+    #     source: file
+    #     file:
+    #       path: /etc/event-processor/secrets.json
+    #       format: json
+    #       jsonPath: "$.certKey" # Syntax JSONPath Query Expression
+    # targets:
+    # Example of event targets:
+    #- region: eu10
+    #  amqp:
+    #    url: "amqps://messaging.example.com:5671"
+    #    target: "ks/eu10"
+    #    source: "cmk/emea/keys"
+    #maxReconcileCount: 18
+    # If want to limit the reconcile period for one task to one day,
+    # need maxReconcileCount = 18, as there is an exponential backoff for retries,
+    # starting with 10s and limiting at 10240s.
+
+  audit:
+    #endpoint: http://localhost:4043/logs
+    #mtls:
+    #  cert:
+    #    source: file
+    #    file:
+    #      path: /etc/audit-logger/secrets.json
+    #      format: json
+    #      jsonPath: "$.ingest-otlp-cert"
+    #  certKey:
+    #    source: file
+    #    file:
+    #      path: /etc/audit-logger/secrets.json
+    #      format: json
+    #      jsonPath: "$.ingest-otlp-key"
+    #  serverCa:
+    #    source: file
+    #    file:
+    #      path: /etc/audit-logger/secrets.json
+    #      format: json
+    #      jsonPath: "$.server-ca"
+    #additionalProperties: |
+    #  specVersion: "v1"
+    #  appID: "cmk"
+    #  folderPath: "/var/log/cmk"
+    #  accountID: "123456789012"
+    #  resourceGroupPath: "/cmk"
+    #  region: "eu10"
+    #  appImage: "cmk:latest"
+    #  appVersion: "1.0.0"
+
+  # Signed client data
+  clientData:
+    # This path is used to verify the signature of the client data
+    #signingKeysPath: /etc/signing-keys
+
+  # Keystore pool configuration
+  # keystorePool:
+      # Target number of keystores to keep in the pool
+      # size: 5
+      # Interval to report the size of the keystore pool
+      # interval: 10m

@@ -1,0 +1,4 @@
+{
+    "apiurl": "apiUrl",
+    "subjectpattern": "C=X, O=X, OU=,X OU=,X OU=X, L=X, CN=X"
+}
