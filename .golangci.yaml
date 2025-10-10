@@ -1,0 +1,83 @@
+version: "2"
+
+run:
+  concurrency: 4
+  timeout: 10m
+
+
+linters:
+  default: all
+  disable:
+    - wsl
+    - depguard
+    - exhaustruct
+    - ginkgolinter
+    - gochecknoglobals
+    - gochecknoinits
+    - godot
+    - musttag
+    - nlreturn
+    - tagalign
+    - varnamelen
+    - wrapcheck
+    - ireturn
+    - noctx
+  settings:
+    paralleltest:
+      ignore-missing: true
+      ignore-missing-subtests: true
+    tagliatelle:
+      case:
+        rules:
+          json: goCamel
+        use-field-name: true
+    testifylint:
+      disable:
+        - require-error
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - dupl
+          - funlen
+          - maintidx
+        source: ^func [Tt]est|Benchmark
+      - linters:
+          - unqueryvet
+        path: benchmark/.*
+      - linters:
+          - funcorder
+        path: (.+)_test\.go
+      - linters:
+          - contextcheck
+        path: (.+)_controller_test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/openkcm/cmk)
+        - blank
+        - dot
+        - alias
+        - localmodule
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
