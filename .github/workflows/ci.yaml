@@ -24,14 +24,7 @@ jobs:
       skip_tests: true
     secrets: inherit
 
-  test:
-    name: Run Tests using docker
-    needs: check
-    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Run Tests using docker
         run: |
           make test
