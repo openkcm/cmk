@@ -1,4 +1,4 @@
-package certificate_issuer
+package certificateissuer
 
 import (
 	"context"
@@ -7,7 +7,8 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/openkcm/plugin-sdk/pkg/hclog2slog"
-	certificate_issuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
+
+	certificateissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 	slogctx "github.com/veqryn/slog-context"
 )
@@ -22,18 +23,18 @@ func V1BuiltIn() catalog.BuiltIn {
 
 func builtin(p *V1Plugin) catalog.BuiltIn {
 	return catalog.MakeBuiltIn(pluginName,
-		certificate_issuerv1.CertificateIssuerServicePluginServer(p),
+		certificateissuerv1.CertificateIssuerServicePluginServer(p),
 		configv1.ConfigServiceServer(p))
 }
 
 type V1Plugin struct {
 	configv1.UnsafeConfigServer
-	certificate_issuerv1.UnimplementedCertificateIssuerServiceServer
+	certificateissuerv1.UnimplementedCertificateIssuerServiceServer
 }
 
 var (
-	_ certificate_issuerv1.CertificateIssuerServiceServer = (*V1Plugin)(nil)
-	_ configv1.ConfigServer                               = (*V1Plugin)(nil)
+	_ certificateissuerv1.CertificateIssuerServiceServer = (*V1Plugin)(nil)
+	_ configv1.ConfigServer                              = (*V1Plugin)(nil)
 )
 
 // SetLogger method is called whenever the plugin start and giving the logger of host application
@@ -42,18 +43,23 @@ func (p *V1Plugin) SetLogger(logger hclog.Logger) {
 }
 
 // Configure configures the plugin with the given configuration
-func (p *V1Plugin) Configure(ctx context.Context, _ *configv1.ConfigureRequest) (*configv1.ConfigureResponse, error) {
+func (p *V1Plugin) Configure(
+	ctx context.Context,
+	_ *configv1.ConfigureRequest,
+) (*configv1.ConfigureResponse, error) {
 	slogctx.Debug(ctx, "Builtin Certificate Issuer Service (cis) plugin")
 
 	return &configv1.ConfigureResponse{}, nil
 }
 
 // GetCertificate V1Plugin method/operation
-func (p *V1Plugin) GetCertificate(ctx context.Context, _ *certificate_issuerv1.GetCertificateRequest) (*certificate_issuerv1.GetCertificateResponse, error) {
+func (p *V1Plugin) GetCertificate(
+	ctx context.Context,
+	_ *certificateissuerv1.GetCertificateRequest,
+) (*certificateissuerv1.GetCertificateResponse, error) {
+	slogctx.Debug(ctx, "Builtin Certificate Issuer Service (cis) - GetCertificate called")
 
-	slogctx.Debug(ctx, "Builtin ertificate Issuer Service (cis) - GetCertificate called")
-
-	return &certificate_issuerv1.GetCertificateResponse{
+	return &certificateissuerv1.GetCertificateResponse{
 		CertificateChain: "",
 	}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/openkcm/plugin-sdk/pkg/hclog2slog"
+
 	managementv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/management/v1"
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 	slogctx "github.com/veqryn/slog-context"
@@ -42,19 +43,28 @@ func (p *V1Plugin) SetLogger(logger hclog.Logger) {
 }
 
 // Configure configures the plugin with the given configuration
-func (p *V1Plugin) Configure(ctx context.Context, _ *configv1.ConfigureRequest) (*configv1.ConfigureResponse, error) {
+func (p *V1Plugin) Configure(
+	ctx context.Context,
+	_ *configv1.ConfigureRequest,
+) (*configv1.ConfigureResponse, error) {
 	slogctx.Debug(ctx, "Builtin System Information Service (SIS) plugin")
 
 	return &configv1.ConfigureResponse{}, nil
 }
 
-func (p *V1Plugin) CreateKeystore(context.Context, *managementv1.CreateKeystoreRequest) (*managementv1.CreateKeystoreResponse, error) {
-	slogctx.Debug(context.Background(), "Builtin Key Store Management Service (KSM) - CreateKeystore called")
+func (p *V1Plugin) CreateKeystore(
+	ctx context.Context,
+	_ *managementv1.CreateKeystoreRequest,
+) (*managementv1.CreateKeystoreResponse, error) {
+	slogctx.Debug(ctx, "Builtin Key Store Management Service (KSM) - CreateKeystore called")
 
 	return &managementv1.CreateKeystoreResponse{}, nil
 }
-func (p *V1Plugin) DeleteKeystore(context.Context, *managementv1.DeleteKeystoreRequest) (*managementv1.DeleteKeystoreResponse, error) {
-	slogctx.Debug(context.Background(), "Builtin Key Store Management Service (KSM) - DeleteKeystore called")
+func (p *V1Plugin) DeleteKeystore(
+	ctx context.Context,
+	_ *managementv1.DeleteKeystoreRequest,
+) (*managementv1.DeleteKeystoreResponse, error) {
+	slogctx.Debug(ctx, "Builtin Key Store Management Service (KSM) - DeleteKeystore called")
 
 	return &managementv1.DeleteKeystoreResponse{}, nil
 }

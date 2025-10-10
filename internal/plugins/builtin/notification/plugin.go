@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/openkcm/plugin-sdk/pkg/hclog2slog"
+
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 	slogctx "github.com/veqryn/slog-context"
@@ -42,14 +43,20 @@ func (p *V1Plugin) SetLogger(logger hclog.Logger) {
 }
 
 // Configure configures the plugin with the given configuration
-func (p *V1Plugin) Configure(ctx context.Context, _ *configv1.ConfigureRequest) (*configv1.ConfigureResponse, error) {
+func (p *V1Plugin) Configure(
+	ctx context.Context,
+	_ *configv1.ConfigureRequest,
+) (*configv1.ConfigureResponse, error) {
 	slogctx.Debug(ctx, "Builtin System Information Service (SIS) plugin")
 
 	return &configv1.ConfigureResponse{}, nil
 }
 
-func (p *V1Plugin) SendNotification(context.Context, *notificationv1.SendNotificationRequest) (*notificationv1.SendNotificationResponse, error) {
-	slogctx.Debug(context.Background(), "Builtin Notification Service (NS) - SendNotification called")
+func (p *V1Plugin) SendNotification(
+	ctx context.Context,
+	_ *notificationv1.SendNotificationRequest,
+) (*notificationv1.SendNotificationResponse, error) {
+	slogctx.Debug(ctx, "Builtin Notification Service (NS) - SendNotification called")
 
 	return &notificationv1.SendNotificationResponse{}, nil
 }

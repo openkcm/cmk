@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/openkcm/plugin-sdk/pkg/hclog2slog"
+
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 	slogctx "github.com/veqryn/slog-context"
@@ -46,15 +47,20 @@ func (p *V1Plugin) SetLogger(logger hclog.Logger) {
 }
 
 // Configure configures the plugin with the given configuration
-func (p *V1Plugin) Configure(ctx context.Context, _ *configv1.ConfigureRequest) (*configv1.ConfigureResponse, error) {
+func (p *V1Plugin) Configure(
+	ctx context.Context,
+	_ *configv1.ConfigureRequest,
+) (*configv1.ConfigureResponse, error) {
 	slogctx.Debug(ctx, "Builtin System Information Service (SIS) plugin")
 
 	return &configv1.ConfigureResponse{}, nil
 }
 
 // Get V1Plugin method/operation
-func (p *V1Plugin) Get(ctx context.Context, req *systeminformationv1.GetRequest) (*systeminformationv1.GetResponse, error) {
-
+func (p *V1Plugin) Get(
+	ctx context.Context,
+	req *systeminformationv1.GetRequest,
+) (*systeminformationv1.GetResponse, error) {
 	slogctx.Debug(ctx, "Builtin System Information Service (SIS) - Get called", "req", req.GetId())
 
 	return &systeminformationv1.GetResponse{}, nil
