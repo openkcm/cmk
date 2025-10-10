@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/oops"
 
-	root "github.com/openkcm/cmk"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/daemon"
@@ -30,6 +29,7 @@ import (
 )
 
 var (
+	BuildInfo               = "{}"
 	gracefulShutdownSec     = flag.Int64("graceful-shutdown", 1, "graceful shutdown seconds")
 	gracefulShutdownMessage = flag.String("graceful-shutdown-message", "Graceful shutdown in %d seconds",
 		"graceful shutdown message")
@@ -84,7 +84,7 @@ func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) in
 // - Starts the CMK API Server
 func run(ctx context.Context, cfg *config.Config) error {
 	// Update Version
-	err := commoncfg.UpdateConfigVersion(&cfg.BaseConfig, root.BuildVersion)
+	err := commoncfg.UpdateConfigVersion(&cfg.BaseConfig, BuildInfo)
 	if err != nil {
 		return oops.In("main").
 			Wrapf(err, "Failed to update the version configuration")
