@@ -1,6 +1,6 @@
 .PHONY: default test coverage clean install-gotestsum squash codegen docker-compose clean-docker-compose swagger-ui \
 swagger-ui-stop go-imports install-gci install-golines install-goimports lint cmk-env docker-dev-build tidy \
-prepare_integration_test clean_integration_test clean_plugins prepare_test clean_test benchmark
+prepare_integration_test clean_integration_test build_test_plugins clean_plugins prepare_test clean_test benchmark
 
 CMK_API_V1_SPEC_PATH := apis/cmk
 CMK_API_V1_OUT_PATH := internal/api/cmkapi
@@ -27,7 +27,8 @@ default: test
 run:
 	AWS_ACCESS_KEY_ID="exampleAccessKeyID" AWS_SECRET_ACCESS_KEY="exampleSecretAccessKey" go run ./cmd/api-server
 
-test: install-gotestsum spin-postgres-db spin-rabbitmq
+test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
+	-$(MAKE) extract-version
 	rm -rf cover cover.* junit.xml
 	mkdir -p cover
 	go clean -testcache
@@ -45,7 +46,7 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq
 benchmark: clean-postgres-db spin-postgres-db
 	go test ./benchmark -bench=.
 
-prepare_test: clean-postgres-db spin-postgres-db
+prepare_test: clean-postgres-db spin-postgres-db build_test_plugins
 
 clean_test:
 	$(MAKE) clean-postgres-db
@@ -167,17 +168,17 @@ TEST_PLUGINS_DIR := ./internal/testutils/testplugins
 TEST_PLUGINS := $(shell find $(TEST_PLUGINS_DIR) -mindepth 1 -maxdepth 1 -type d)
 PLUGIN_NAME := testpluginbinary
 
-#build_test_plugins:
-#	@echo "Building plugins..."
-#	@for plugin_dir in $(TEST_PLUGINS); do \
-#		echo "Building $${plugin_dir}"; \
-#		(cd $${plugin_dir} && go build -o $(PLUGIN_NAME) .); \
-#		if [ $$? -ne 0 ]; then \
-#			echo "Failed to build $${plugin_dir}"; \
-#			exit 1; \
-#		fi; \
-#	done
-#	@echo "All plugins built successfully"
+build_test_plugins:
+	@echo "Building plugins..."
+	@for plugin_dir in $(TEST_PLUGINS); do \
+		echo "Building $${plugin_dir}"; \
+		(cd $${plugin_dir} && go build -o $(PLUGIN_NAME) .); \
+		if [ $$? -ne 0 ]; then \
+			echo "Failed to build $${plugin_dir}"; \
+			exit 1; \
+		fi; \
+	done
+	@echo "All plugins built successfully"
 
 clean_test_plugins:
 	@find $(TEST_PLUGINS_DIR) -name "$(PLUGIN_NAME)" -exec rm -f {} +
@@ -261,7 +262,7 @@ go-imports: install-goimports install-golines install-gci
       'gofmt -w "$$1" && \
       goimports -w "$$1" && \
       golines -w "$$1" && \
-      gci write --skip-generated -s standard -s default -s "prefix(github.com/openkcm/cmk)" \
+      gci write --skip-generated -s standard -s default -s "prefix(github.tools.sap/kms/cmk)" \
       -s blank -s dot -s alias -s localmodule "$$1"' sh {} \;
 
 go-imports-changed:
@@ -271,7 +272,7 @@ go-imports-changed:
 	  gofmt -w "$$file" && \
 	  goimports -w "$$file" && \
 	  golines -w "$$file" && \
-	  gci write --skip-generated -s standard -s default -s "prefix(github.com/openkcm/cmk)" \
+	  gci write --skip-generated -s standard -s default -s "prefix(github.tools.sap/kms/cmk)" \
 	  -s blank -s dot -s alias -s localmodule "$$file"; \
 	done < $$tempfile; \
 	rm -f $$tempfile
@@ -546,7 +547,7 @@ delete-cluster:
 
 start-cmk: generate-signing-keys start-k3d create-empty-secrets create-plugin-secret create-event-processor-secret psql-add-to-cluster redis-add-to-cluster helm-install-rabbitmq k3d-add-cmk
 
-k3d-add-cmk:
+k3d-add-cmk: extract-version
 	@echo "Building the cmk image within k3d."
 	@$(MAKE) k3d-build-image
 	@$(MAKE) k3d-rebuild-cmk
