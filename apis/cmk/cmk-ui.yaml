@@ -1,0 +1,2676 @@
+openapi: "3.0.3"
+info:
+  version: 1.0.0
+  title: KMS
+  description: Key Management Service (KMS) API for managing Customer Managed Keys (CMKs). This API is designed for internal use only and is intended to be utilized by the UI.
+servers:
+  - url: "{scheme}://{host}/cmk/v1/{tenant}"
+    description: KMS API server
+    variables:
+      scheme:
+        default: http
+        enum:
+          - http
+          - https
+      host:
+        default: "localhost:8080"
+      tenant:
+        default: "default"
+        description: The tenant ID for the API request. This is a required parameter.
+tags:
+  - name: Keys
+    description: Key management
+  - name: Key Configurations
+    description: Key Configuration management
+  - name: Workflows
+    description: Workflow management
+  - name: Systems
+    description: System management
+  - name: Tenants
+    description: Tenant management
+  - name: Groups
+    description: Group Management
+paths:
+  /keys:
+    get:
+      tags:
+        - Keys
+      summary: Get metadata of Keys
+      description: |
+        Returns metadata of all cryptographic Keys the User has permissions to view.
+      parameters:
+        - name: keyConfigurationID
+          in: query
+          description: Filter by Key Configuration ID
+          schema:
+            type: string
+            format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/countPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyList"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      tags:
+        - Keys
+      summary: Create a new Key
+      description: |
+        Generate and store a new Key or register a key from customer held keystore.
+        - For `SYSTEM_MANAGED` Key, key algorithm and specifications have to be specified.
+        - For `Hold Your Own Key (HYOK)`, a native key identifier needs to be provided. In this case no new key
+        material is generated but the key is enrolled within KMS CMK.
+      requestBody:
+        description: Key request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Key"
+            examples:
+              SystemManagedKeyRequest:
+                $ref: "#/components/examples/SystemManagedKeyRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Key"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /keys/{keyID}:
+    get:
+      tags:
+        - Keys
+      summary: Get Key metadata by ID
+      description: Retrieves metadata of a specific Key by its ID.
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Key"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      tags:
+        - Keys
+      summary: Update Key metadata by ID
+      description: Updates metadata of a specific Key by its ID.
+      operationId: update_key
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+      requestBody:
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/KeyPatch"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Key"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      tags:
+        - Keys
+      summary: Delete an Key by its ID
+      description:
+        Delete a specific Key by its ID. This operation will delete all Key Versions of this
+        Key and their corresponding key materials.
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /keys/{keyID}/importParams:
+    get:
+      tags:
+        - Keys
+      summary: Get import parameters for a Bring Your Own Key (BYOK) key
+      description: |
+        Retrieves the import parameters for a specific Bring Your Own Key (BYOK) key by its ID.
+        Key must be in `PENDING_IMPORT` state.
+      operationId: GetKeyImportParams
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportParams"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /keys/{keyID}/importKeyMaterial:
+    post:
+      tags:
+        - Keys
+      summary: Import a key material
+      description: |
+        Import a wrapped key material into CMK (Bring Your Own Key - BYOK).
+        Key must be in `PENDING_IMPORT` state.
+      operationId: ImportKeyMaterial
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+      requestBody:
+        description: Key import request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KeyImport"
+      responses:
+        "201":
+          description: Key imported successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Key"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /keys/{keyID}/versions:
+    get:
+      tags:
+        - Keys
+      summary: Get metadata of all Key Versions by Key ID
+      description: Retrieves metadata of all Versions of a specific Key by its ID.
+      operationId: GetKeyVersions
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/countPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyVersionList"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      tags:
+        - Keys
+      summary: Create a new Key Version
+      description: Generate a new key Version
+      operationId: CreateKeyVersion
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KeyRotationBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyVersion"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /keys/{keyID}/versions/{version}:
+    get:
+      tags:
+        - Keys
+      summary: Get metadata of a key Version by key ID and Version number
+      description: Retrieves metadata of a specific Key Version by Key ID and Version number.
+      operationId: GetKeyVersionByNumber
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+        - $ref: "#/components/parameters/keyVersionNumberPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyVersion"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /key/{keyID}/labels:
+    get:
+      tags:
+        - Keys
+      summary: Get the Labels associated with the Key
+      description: Fetch the Labels associated with specified encryption Key.
+      operationId: GetKeyLabels
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/countPath"
+      responses:
+        "200":
+          description: Fetch the count and list of Labels associated with the Key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelList"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      tags:
+        - Keys
+      summary: Create and update Labels
+      description: |
+        Labels are used to attach custom metadata to
+        Keys in the form of keys and values or just keys depending on what is required.
+        It updates the Label value if the Label already exists else it will attach a specified Label to the Key.
+      operationId: CreateOrUpdateLabels
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              $ref: "#/components/schemas/LabelsPostOrPatch"
+      responses:
+        "204":
+          description: New Labels are attached or the values of the Labels are updated if they already exist.
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /key/{keyID}/label/{labelName}:
+    delete:
+      tags:
+        - Keys
+      summary: Delete a specified Label from a Key
+      description: ""
+      operationId: DeleteLabel
+      parameters:
+        - $ref: "#/components/parameters/keyIDPath"
+        - name: labelName
+          in: path
+          description: |
+            The name of the Label (or `Key` field) to be deleted.
+            The labelName **must be** URL encoded before calling delete Label endpoint.
+          required: true
+          schema:
+            type: string
+          example: region%2Faz
+      responses:
+        "204":
+          description: A specified Label is deleted.
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /keyConfigurations:
+    get:
+      tags:
+        - Key Configurations
+      summary: Get all Key Configurations
+      description: |
+        Returns details of all Key Configurations the User has permissions to view.
+      parameters:
+        - name: expandGroup
+          in: query
+          required: false
+          schema:
+            type: boolean
+          default: false
+          example: true
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/countPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyConfigurationList"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      tags:
+        - Key Configurations
+      summary: Create a new Key Configuration
+      description: >-
+        Create a new Key Configuration. Key Configurations contain information such as name, ID, creator, creation
+        datetime, responsible Users Group, and Tags. Additionally, they include information about Keys, including
+        a list of Keys and the primary Key.
+      requestBody:
+        description: Key Configuration request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KeyConfiguration"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyConfiguration"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /keyConfigurations/{keyConfigurationID}:
+    get:
+      tags:
+        - Key Configurations
+      summary: Get Key Configuration metadata by ID
+      description: Retrieves metadata of a specific Key Configuration by its ID.
+      operationId: GetKeyConfigurationByID
+      parameters:
+        - $ref: "#/components/parameters/keyConfigurationIDPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyConfiguration"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      tags:
+        - Key Configurations
+      summary: Update Key Configuration metadata by ID
+      description: Updates metadata of a specific Key Configuration by its ID.
+      operationId: UpdateKeyConfigurationByID
+      parameters:
+        - $ref: "#/components/parameters/keyConfigurationIDPath"
+      requestBody:
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/KeyConfigurationPatch"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyConfiguration"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      tags:
+        - Key Configurations
+      summary: Delete an Key Configuration by its ID
+      description: Delete a specific Key Configuration by its ID.
+      operationId: DeleteKeyConfigurationByID
+      parameters:
+        - $ref: "#/components/parameters/keyConfigurationIDPath"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /keyConfigurations/{keyConfigurationID}/tags:
+    get:
+      tags:
+        - Key Configurations
+      summary: Get list of Tags for a Key Configuration
+      description: Retrieves the list of Tags for a specific Key Configuration.
+      operationId: GetTagsForKeyConfiguration
+      parameters:
+        - $ref: "#/components/parameters/keyConfigurationIDPath"
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/countPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagList"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      tags:
+        - Key Configurations
+      summary: Either set new Tags or replace Tags for a Key Configuration
+      description: Adds Tags for the particular Key Configuration.
+      operationId: AddTagsToKeyConfiguration
+      parameters:
+        - $ref: "#/components/parameters/keyConfigurationIDPath"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Tags"
+      responses:
+        "204":
+          description: Added
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /keyConfigurations/{keyConfigurationID}/certificates:
+    get:
+      tags:
+        - Key Configurations
+      summary: Get the client certificate details
+      description: |
+        Retrieves the details of the client certificate for the tenant.
+      operationId: GetKeyConfigurationsCertificates
+      parameters:
+        - $ref: "#/components/parameters/keyConfigurationIDPath"
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/countPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientCertificates"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /systems:
+    get:
+      tags:
+        - Systems
+      summary: Retrieve all Systems
+      description: Retrieve details about all Systems.
+      operationId: getAllSystems
+      parameters:
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/countPath"
+        - name: keyConfigurationID
+          in: query
+          description: Filter by Key Configuration ID
+          schema:
+            type: string
+            format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
+        - name: Region
+          in: query
+          description: Filter by System region
+          schema:
+            type: string
+          example: us
+        - name: Type
+          in: query
+          description: Filter by System Type
+          schema:
+            type: string
+          example: SUBACCOUNT
+      responses:
+        "200":
+          description: Systems retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemList"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /systems/{systemID}:
+    get:
+      tags:
+        - Systems
+      summary: Retrieve a System
+      description: |
+        Retrieve details about a specific System. If the System has been linked to a Key Configuration,
+        the ID of the Key Configuration will also be returned.
+      operationId: getSystemByID
+      parameters:
+        - $ref: "#/components/parameters/systemIDPath"
+      responses:
+        "200":
+          description: System retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/System"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /systems/{systemID}/link:
+    get:
+      tags:
+        - Systems
+      summary: Retrieve a System link
+      description: |
+        Retrieve the Key Configuration linked to a specific System.
+      operationId: getSystemLinkByID
+      parameters:
+        - $ref: "#/components/parameters/systemIDPath"
+      responses:
+        "200":
+          description: Link retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemLink"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      tags:
+        - Systems
+      summary: Update a System link
+      description: |
+        Update a link to a Key Configuration for a specific System.
+        Currently it supports:
+        - adding the link to the specified Key Configuration
+        - updating the link to the specified Key Configuration
+      operationId: patchSystemLinkByID
+      requestBody:
+        description: System update request body
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/SystemPatch"
+            examples:
+              SystemPatchUpdatingLink:
+                $ref: "#/components/examples/SystemPatchUpdatingLink"
+      parameters:
+        - $ref: "#/components/parameters/systemIDPath"
+      responses:
+        "200":
+          description: System updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/System"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      tags:
+        - Systems
+      summary: Delete a System link
+      description: |
+        Delete the link to the Key Configuration from a specific System.
+      operationId: deleteSystemLinkByID
+      parameters:
+        - $ref: "#/components/parameters/systemIDPath"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /workflows:
+    post:
+      tags:
+        - Workflows
+      summary: Create a new Workflow
+      description: |
+        Create a new Workflow for a specific action on an artifact.
+
+        Example Workflows include:
+          - Key: Update state; Delete
+          - Key Configuration: Update primary Key; Delete
+          - System: Update Key Configuration (link/unlink/switch)
+      operationId: CreateWorkflow
+      requestBody:
+        description: Workflow request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Workflow"
+      parameters:
+        - name: User-ID
+          in: header
+          required: true
+          description: The ID of the User initiating the Workflow (only temporary until authentication is implemented)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      tags:
+        - Workflows
+      summary: Get all Workflows
+      description: Returns details of all created Workflows
+      operationId: GetWorkflows
+      parameters:
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/countPath"
+        - name: UserID
+          in: query
+          required: false
+          description: The ID of the User initiating the Workflow (only temporary until authentication is implemented)
+          schema:
+            type: string
+            format: uuid
+        - name: ArtifactID
+          in: query
+          required: false
+          description: The ID of the artifact that the Workflow is associated with
+          schema:
+            type: string
+            format: uuid
+            example: 12345678-90ab-cdef-1234-567890abcdef
+        - name: State
+          in: query
+          required: false
+          description: The current state of the Workflow
+          schema:
+            $ref: "#/components/schemas/WorkflowStateEnum"
+        - name: ArtifactType
+          in: query
+          required: false
+          description: The type of artifact that the Workflow is associated with
+          schema:
+            $ref: "#/components/schemas/WorkflowArtifactTypeEnum"
+        - name: ActionType
+          in: query
+          description: The type of Action that the Workflow is associated with
+          schema:
+            $ref: "#/components/schemas/WorkflowActionTypeEnum"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowList"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /workflows/{workflowID}:
+    get:
+      tags:
+        - Workflows
+      summary: Get a Workflow
+      description: Retrieves a specific Workflow by its ID.
+      operationId: GetWorkflowByID
+      parameters:
+        - $ref: "#/components/parameters/workflowIDPath"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /workflows/{workflowID}/approvers:
+    get:
+      tags:
+        - Workflows
+      summary: Get the list of Workflow approvers.
+      description: Retrieves the Users who are assigned as approvers for the Workflow with specified ID.
+      operationId: ListWorkflowApproversByWorkflowID
+      parameters:
+        - $ref: "#/components/parameters/workflowIDPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/countPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowApproverList"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      tags:
+        - Workflows
+      summary: Add Workflow approvers.
+      description: Adds Users as approvers for the Workflow with specified ID.
+      operationId: AddWorkflowApproversByWorkflowID
+      parameters:
+        - $ref: "#/components/parameters/workflowIDPath"
+        - name: User-ID
+          in: header
+          required: true
+          description: The ID of the User who initiated the Workflow (only temporary until authentication is implemented)
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowApproverAdd"
+      responses:
+        "204":
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /workflows/{workflowID}/state:
+    post:
+      tags:
+        - Workflows
+      summary: Trigger transition for a Workflow
+      description: Changes the state of the Workflow by executing the transition.
+      operationId: TransitionWorkflow
+      parameters:
+        - $ref: "#/components/parameters/workflowIDPath"
+        - name: User-ID
+          in: header
+          required: true
+          description: The ID of the User executing the transition (only temporary until authentication is implemented)
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowTransition"
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /tenants:
+    get:
+      tags:
+        - Tenants
+      summary: Get the tenants
+      description: |
+        Retrieves details of the tenants. This endpoint can only be accessed using the path
+        `/cmk/v1/sys/tenants`.
+      parameters:
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/countPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantList"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /tenants/keystores:
+    get:
+      tags:
+        - Tenants
+      summary: Get tenant keystores
+      description: |
+        Retrieves keystores of a tenant
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantKeystore"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /groups:
+    get:
+      tags:
+        - Groups
+      summary: Get Groups
+      operationId: getGroups
+      description: |
+        Returns metadata of all groups a user belongs to
+      parameters:
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/countPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupList"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      tags:
+        - Groups
+      summary: Create a new Group
+      operationId: CreateGroup
+      description: |
+        Creates a new group for the user.
+        The group role must be of type KEY_ADMINISTRATOR else throw bad request (400)
+      requestBody:
+        description: Group Request Body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Group"
+            examples:
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /groups/{groupID}:
+    get:
+      tags:
+        - Groups
+      summary: Get Group by ID
+      operationId: GetGroupByID
+      description: |
+        Returns metadata of a specific group by its ID
+      parameters:
+        - $ref: "#/components/parameters/groupIDPath"
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      tags:
+        - Groups
+      summary: Update group
+      description: Updates group metadata to change its name
+      operationId: UpdateGroup
+      parameters:
+        - $ref: "#/components/parameters/groupIDPath"
+      requestBody:
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/GroupPatch"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      tags:
+        - Groups
+      summary: Delete a Group by its ID
+      description: Delete a specific Group by its ID
+      operationId: DeleteGroupByID
+      parameters:
+        - $ref: "#/components/parameters/groupIDPath"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    systemIDPath:
+      name: systemID
+      in: path
+      required: true
+      description: The ID of a System
+      schema:
+        type: string
+        example: 12345678-90ab-cdef-1234-567890abcdef
+        format: uuid
+    keyIDPath:
+      name: keyID
+      in: path
+      required: true
+      description: The ID of an Key
+      schema:
+        type: string
+        example: 12345678-90ab-cdef-1234-567890abcdef
+        format: uuid
+    groupIDPath:
+      name: groupID
+      in: path
+      required: true
+      description: The ID of a group
+      schema:
+        type: string
+        example: 12345678-90ab-cdef-1234-567890abcdef
+        format: uuid
+    keyVersionNumberPath:
+      name: version
+      in: path
+      required: true
+      description: The Version of a Key. This can be the Version number, or if "latest" is specified, the action will be performed on the primary Key Version
+      schema:
+        type: string
+      examples:
+        version:
+          value: 1
+        latest:
+          value: latest
+    keyVersionUpdatePath:
+      name: version
+      in: path
+      required: true
+      description: The exact Version number of an Key.
+      schema:
+        type: integer
+        format: int64
+      example: 1
+    keyConfigurationIDPath:
+      name: keyConfigurationID
+      in: path
+      required: true
+      description: The ID of an Key Configuration
+      schema:
+        type: string
+        example: 12345678-90ab-cdef-1234-567890abcdef
+        format: uuid
+    workflowIDPath:
+      name: workflowID
+      in: path
+      required: true
+      description: The ID of a Workflow
+      schema:
+        type: string
+        format: uuid
+        example: 12345678-90ab-cdef-1234-567890abcdef
+    skipPath:
+      name: $skip
+      in: query
+      required: false
+      description: The number of results to skip (default is 0)
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    topPath:
+      name: $top
+      in: query
+      required: false
+      description: The number of results to return (default is 20)
+      schema:
+        type: integer
+        minimum: 1
+        default: 20
+    countPath:
+      name: $count
+      in: query
+      required: false
+      description: |
+        Flag indicating whether to return the total number of results in the queried collection. Using pagination query 
+        parameters $skip and $top will not affect this, i.e. the number of returned elements might be smaller than the 
+        count value.
+      schema:
+        type: boolean
+        default: false
+  schemas:
+    SystemID:
+      type: string
+      readOnly: true
+      format: uuid
+      description: The ID of System entity
+      example: 12345678-90ab-cdef-1234-567890abcdef
+      x-go-name: ID
+    SystemIdentifier:
+      type: string
+      readOnly: true
+      description: The identifier of the System entity
+      example: 12345678-90ab-cdef-1234-567890abcdef
+      x-go-name: Identifier
+    SystemLink:
+      type: object
+      properties:
+        keyConfigurationID:
+          $ref: "#/components/schemas/KeyConfigurationID"
+    SystemList:
+      type: object
+      required:
+        - value
+        - systemsDataRefreshed
+      properties:
+        count:
+          description: The total number of Systems
+          type: integer
+          example: 2
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/System"
+        systemsDataRefreshed:
+          description: Indicates whether systems data was synchronized with external system
+          type: boolean
+    System:
+      description: A System object
+      type: object
+      required:
+        - id
+        - identifier
+        - region
+        - type
+        - status
+      properties:
+        id:
+          $ref: "#/components/schemas/SystemID"
+        identifier:
+          $ref: "#/components/schemas/SystemIdentifier"
+        region:
+          type: string
+          description: The region of the System
+          example: eu-central-1
+        type:
+          type: string
+          description: The type of the System
+          example: SYSTEM
+        properties:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          description: The status of the System
+          enum:
+            - CONNECTED
+            - DISCONNECTED
+            - PROCESSING
+            - FAILED
+        keyConfigurationName:
+          description: The name of the key configuration
+          type: string
+          example: new-key-configuration-name
+        keyConfigurationID:
+          $ref: "#/components/schemas/KeyConfigurationID"
+    SystemPatch:
+      description: Request to update a System object.
+      type: object
+      required:
+        - keyConfigurationID
+      properties:
+        keyConfigurationID:
+          $ref: "#/components/schemas/KeyConfigurationID"
+    ClientCertificates:
+      type: object
+      properties:
+        tenantDefault:
+          $ref: "#/components/schemas/TenantDefaultCertificateList"
+        crypto:
+          $ref: "#/components/schemas/CryptoCertificateList"
+    TenantDefaultCertificateList:
+      type: object
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of Client Certificates
+          type: integer
+          example: 2
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantDefaultCertificate"
+    TenantDefaultCertificate:
+      description: A Tenant Default Certificate
+      type: object
+      required:
+        - name
+        - rootCA
+        - subject
+      properties:
+        name:
+          $ref: "#/components/schemas/ClientCertName"
+        rootCA:
+          $ref: "#/components/schemas/ClientCertRootCA"
+        subject:
+          $ref: "#/components/schemas/ClientCertSubject"
+    CryptoCertificateList:
+      type: object
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of Crypto Certificates
+          type: integer
+          example: 2
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/CryptoCertificate"
+    CryptoCertificate:
+      description: A Crypto Certificate
+      type: object
+      required:
+        - name
+        - rootCA
+        - subject
+      properties:
+        name:
+          $ref: "#/components/schemas/ClientCertName"
+        rootCA:
+          $ref: "#/components/schemas/ClientCertRootCA"
+        subject:
+          $ref: "#/components/schemas/ClientCertSubject"
+    KeyList:
+      type: object
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of Keys
+          type: integer
+          example: 2
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/Key"
+    Tenant:
+      type: object
+      required:
+        - id
+        - name
+        - region
+      properties:
+        id:
+          description: The ID of tenant
+          type: string
+          readOnly: true
+          format: string
+          example: cmk-12345678-90ab-cdef-1234-567890abcdef
+        name:
+          description: Name of the tenant
+          type: string
+          example: tenant1
+        region:
+          type: string
+          description: Regiono of the tenant
+          example: eu10
+    TenantKeystore:
+      type: object
+      required:
+        - hyok
+        # - default TODO: AS PER KMS20-2740 this is not required. To be made required on KMS20-2742
+      properties:
+        default:
+          $ref: "#/components/schemas/DefaultKeystore"
+        hyok:
+          $ref: "#/components/schemas/HYOKKeystore"
+    DefaultKeystore:
+      type: object
+      properties:
+        allowManaged:
+          description: Keystore supports managed keys
+          type: boolean
+          example: true
+        allowBYOK:
+          description: Keystore supports BYOK keys
+          type: boolean
+          example: true
+        supportedRegions:
+          description: Supported region ids
+          type: array
+          items:
+            type: string
+    HYOKKeystore:
+      type: object
+      properties:
+        allow:
+          type: boolean
+          description: HYOK is allowed
+          example: true
+        providers:
+          type: array
+          items:
+            type: string
+          description: The list of supported keystores
+          example:
+            - AWS
+    Group:
+      type: object
+      required:
+        - id
+        - name
+        - role
+        - iamIdentifier
+      properties:
+        id:
+          description: The ID of the group
+          type: string
+          readOnly: true
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
+        name:
+          description: Name of the group
+          type: string
+          example: Tenant1 Administrator
+        iamIdentifier:
+          description: IAM Identifier. Acts as a reference to Groups in customer IAM
+          type: string
+          example: KMS_Tenant1Administrator_tenant1-id
+          readOnly: true
+        role:
+          type: string
+          description: Role of the group
+          example: TENANT_ADMINISTRATOR
+          enum:
+            - TENANT_ADMINISTRATOR
+            - KEY_ADMINISTRATOR
+            - TENANT_AUDITOR
+        description:
+          description: Description of the Group
+          type: string
+          example: This group represents a Tenant Administrator
+    TenantList:
+      type: object
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of Tenants
+          type: integer
+          example: 2
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tenant"
+    GroupList:
+      type: object
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of Groups
+          type: integer
+          example: 2
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/Group"
+    Key:
+      allOf:
+        - $ref: "#/components/schemas/KeyCommon"
+        - type: object
+          description: Key
+          properties:
+            algorithm:
+              $ref: "#/components/schemas/KeyAlgorithm"
+            provider:
+              $ref: "#/components/schemas/KeyProvider"
+            region:
+              $ref: "#/components/schemas/KeyRegion"
+            accessDetails:
+              $ref: "#/components/schemas/KeyAccessDetails"
+    KeyCommon:
+      description: A Key
+      type: object
+      required:
+        - name
+        - type
+        - keyConfigurationID
+      properties:
+        id:
+          $ref: "#/components/schemas/KeyID"
+        name:
+          $ref: "#/components/schemas/KeyName"
+        type:
+          $ref: "#/components/schemas/KeyType"
+        keyConfigurationID:
+          $ref: "#/components/schemas/KeyConfigurationID"
+        description:
+          description: The description of the Key
+          type: string
+          example: This Key is used for DB key store encryption.
+        isPrimary:
+          description: Flag indicating whether this Key is the primary (default) key for its associated key configuration.
+          type: boolean
+        enabled:
+          description: Flag indicating whether the Key is enabled
+          type: boolean
+        nativeID:
+          description: |
+            The native identifier of the key in the key provider. For customer held key, this is the identifier
+            provided when registering the key. In other cases, this is auto generated; in particular, if the keystore
+            provider is AWS then this identifier is the key alias, if the keystore provider is AZURE then this is the
+            key identifier in full URL format.
+          type: string
+          example: arn:aws:kms:us-west-2:111122223333:alias/<alias-name>
+        metadata:
+          $ref: "#/components/schemas/KeyMetadata"
+        state:
+          $ref: "#/components/schemas/KeyState"
+    KeyID:
+      description: The ID of the Key
+      type: string
+      readOnly: true
+      format: uuid
+      example: 12345678-90ab-cdef-1234-567890abcdef
+    KeyName:
+      description: The name of the Key
+      type: string
+      minLength: 1
+      example: example_key_name
+    GroupPatch:
+      description: A patch for updating a group
+      type: object
+      properties:
+        name:
+          description: The name of the Group
+          type: string
+          example: new-group-name
+        description:
+          description: Description of the Group
+          type: string
+          example: This group represents a Tenant Administrator
+      additionalProperties: false
+    KeyPatch:
+      description: A patch for updating a Key
+      type: object
+      properties:
+        name:
+          description: The name of the Key
+          type: string
+          example: new-key-name
+        description:
+          description: The description of the Key
+          type: string
+          example: This Key is used for DB key store encryption.
+        enabled:
+          description: Flag indicating whether the Key is enabled
+          type: boolean
+        isPrimary:
+          description: Flag indicating whether this Key is the primary (default) key for its associated key configuration.
+          type: boolean
+      additionalProperties: false
+    KeyMetadata:
+      description: Key metadata
+      type: object
+      readOnly: true
+      properties:
+        createdAt:
+          $ref: "#/components/schemas/CreatedAt"
+        updatedAt:
+          $ref: "#/components/schemas/UpdatedAt"
+        totalVersions:
+          $ref: "#/components/schemas/KeyTotalVersions"
+        primaryVersion:
+          $ref: "#/components/schemas/KeyPrimaryVersion"
+    CreatedAt:
+      description: The datetime of when the object was created (RFC3339 format)
+      type: string
+      example: "2024-09-30T21:02:00"
+    UpdatedAt:
+      description: The datetime of when the object was last updated, enabled, or disabled (RFC3339 format)
+      type: string
+      example: "2020-09-30T21:02:00"
+    CreatorID:
+      description: The ID of the User who created the object
+      type: string
+      format: uuid
+      example: 12345678-90ab-cdef-1234-567890abcdef
+    CreatorName:
+      description: The username of the User who created the object
+      type: string
+      example: bob@example.com
+    ClientCertName:
+      description: The name of the crypto client using this Client Certificate
+      type: string
+      example: "crypto-01"
+    ClientCertRootCA:
+      description: The root CA for the certificate
+      type: string
+      example: "http://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
+    ClientCertSubject:
+      description: The subject of the certificate
+      type: string
+      example: "C=DE,O=EXAMPLE,OU=EXAMPLE,OU=Canary,OU=xxyyzz,L=abcd,CN=01234"
+    KeyPrimaryVersion:
+      description: The number of the primary Key Version
+      type: integer
+      example: 1
+    KeyTotalVersions:
+      description: The number of Versions of the Key
+      type: integer
+      example: 1
+    KeyState:
+      description:
+        Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states,
+        the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions
+        are in UNKNOWN state if the authentication to the customer key fails due to any reason. FORBIDDEN state is for
+        when a HYOK customer key permission is not granted to the system.
+      type: string
+      readOnly: true
+      enum:
+        - ENABLED
+        - DISABLED
+        - PENDING_DELETION
+        - PENDING_IMPORT
+        - DELETED
+        - UNKNOWN
+        - FORBIDDEN
+    KeyAlgorithm:
+      description: The algorithm of the Key
+      type: string
+      enum:
+        - AES256
+        - RSA3072
+        - RSA4096
+      example: AES256
+    KeyProvider:
+      description: |
+        The key provider indicates the service or hyperscaler that manages the keys.
+        Examples include cloud service providers like AWS, Azure, or Google Cloud, which offer key management services.
+      type: string
+      example: AWS
+    KeyRegion:
+      description: The region where the key is stored
+      type: string
+      example: eu-central-1
+    KeyType:
+      description: |
+        The type of the Key.
+        - SYSTEM_MANAGED: The Key is managed by the System.
+        - BYOK: Bring Your Own Key (BYOK) is a feature that allows you to securely import cryptographic keys from your
+        own managed keystore or key vault into KMS.
+        - HYOK: Hold Your Own Key (HYOK) is a feature that allows you to register cryptographic keys from your own
+        keystore. KMS connects to your HYOK keystore and enables you to use permitted keys to encrypt data for
+        your applications.
+
+      type: string
+      enum:
+        - SYSTEM_MANAGED
+        - HYOK
+        - BYOK
+      example: SYSTEM_MANAGED
+    KeyVersion:
+      description: A Key Version
+      type: object
+      properties:
+        version:
+          description: The Version number of the Key
+          type: integer
+          readOnly: true
+          example: 1
+        metadata:
+          $ref: "#/components/schemas/KeyVersionMetadata"
+        isPrimary:
+          description: Indicates if this Version is the primary Version of the Key
+          type: boolean
+          example: true
+        nativeID:
+          description: |
+            The native identifier of the key to register. For AWS, this is either the key ID or
+            the full key ARN.
+          type: string
+          example: arn:aws:kms:us-west-2:111122223333:alias/<alias-name>
+    KeyVersionMetadata:
+      description: Key Version metadata
+      type: object
+      readOnly: true
+      properties:
+        createdAt:
+          $ref: "#/components/schemas/CreatedAt"
+        updatedAt:
+          $ref: "#/components/schemas/UpdatedAt"
+    KeyVersionList:
+      type: object
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of Key Versions
+          type: integer
+          example: 1
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyVersion"
+    KeyVersionPatch:
+      description: A patch for updating a Key with Version
+      type: object
+      properties:
+        enabled:
+          description: Flag indicating whether the Key is enabled
+          type: boolean
+      additionalProperties: false
+    KeyRotationBody:
+      type: object
+      description:
+        Additional request body that is required for rotation of customer held keys.
+        Must not be provided for non-customer held keys.
+      properties:
+        nativeID:
+          description: The native identifier of the key to register.
+            For AWS, this is either the key ID or the full key ARN.
+          type: string
+          example: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+      nullable: true
+      additionalProperties: false
+    KeyAccessDetails:
+      description: The access details for the Key
+      type: object
+      properties:
+        management:
+          description: Access details for management operations.
+          type: object
+          additionalProperties: true
+        crypto:
+          description: Access details for cryptographic operations.
+          type: object
+          additionalProperties: true
+    ImportParams:
+      type: object
+      description: Import parameters for Bring Your Own Key (BYOK) scenario.
+      properties:
+        publicKey:
+          description: |
+            The public key to use to encrypt the key material before importing it to the key provider.
+          type: string
+          example: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQ...
+            -----END PUBLIC KEY-----
+        wrappingAlgorithm:
+          $ref: "#/components/schemas/WrappingAlgorithm"
+    KeyImport:
+      description: A request to import a key material
+      type: object
+      required:
+        - wrappedKeyMaterial
+      properties:
+        wrappedKeyMaterial:
+          description: The wrapped key material to import
+          type: string
+          format: base64
+          example: "U29tZVdlYlRleHQ="
+    WrappingAlgorithm:
+      type: object
+      required:
+        - name
+        - hashFunction
+      properties:
+        name:
+          type: string
+          description: |
+            Algorithm based on PKCS#11 specification, more information can be found 
+            [here](https://docs.oasis-open.org/pkcs11/pkcs11-curr/v2.40/cos01/pkcs11-curr-v2.40-cos01.html).
+
+            - `CKM_RSA_PKCS_OAEP`: A multi-purpose mechanism based on the RSA public-key cryptosystem and the 
+            OAEP ((Optimal Asymmetric Encryption Padding) block format defined in PKCS #1.
+            - `CKM_RSA_AES_KEY_WRAP`: A mechanism based on the RSA public-key cryptosystem and the AES key wrap
+            mechanism.
+          enum:
+            - CKM_RSA_PKCS_OAEP
+            - CKM_RSA_AES_KEY_WRAP
+          example: CKM_RSA_AES_KEY_WRAP
+        hashFunction:
+          type: string
+          description: Hash function used with the algorithm.
+          enum:
+            - SHA1
+            - SHA256
+          example: SHA256
+    KeyConfigurationList:
+      type: object
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of Key Configurations
+          type: integer
+          example: 2
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyConfiguration"
+    KeyConfiguration:
+      type: object
+      description: Key Configuration
+      required:
+        - name
+        - adminGroupID
+      properties:
+        id:
+          $ref: "#/components/schemas/KeyConfigurationIDReadOnly"
+        name:
+          description: The name of the Key Configuration
+          type: string
+          example: new-key-configuration-name
+        description:
+          description: The description of the Key Configuration
+          type: string
+          example: This Key Configuration is used for connecting with Systems in Europe.
+        adminGroupID:
+          description: The ID of the Group of Users responsible for managing the Key Configuration
+          type: string
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
+        adminGroup:
+          $ref: "#/components/schemas/Group"
+        primaryKeyID:
+          description: The ID of the primary key of the configuration
+          type: string
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
+          readOnly: true
+        canConnectSystems:
+          description: Identifies if key configuration can connect to a system
+          type: boolean
+          example: true
+          readOnly: true
+        metadata:
+          $ref: "#/components/schemas/KeyConfigurationMetadata"
+      additionalProperties: false
+    KeyConfigurationID:
+      description: The ID of the Key Configuration
+      type: string
+      format: uuid
+      example: 12345678-90ab-cdef-1234-567890abcdef
+    KeyConfigurationIDReadOnly:
+      description: The ID of the Key Configuration
+      type: string
+      readOnly: true
+      format: uuid
+      example: 12345678-90ab-cdef-1234-567890abcdef
+    KeyConfigurationPatch:
+      description: A patch for updating a Key Configuration
+      type: object
+      properties:
+        name:
+          description: The name of the Key Configuration
+          type: string
+          example: updated-key-configuration-name
+        description:
+          description: The description of the Key Configuration
+          type: string
+          example: This Key Configuration is used for connecting with Systems in Europe.
+      additionalProperties: false
+    KeyConfigurationKeyAdd:
+      type: object
+      required:
+        - keys
+      properties:
+        keys:
+          description: List of Keys to be added
+          type: array
+          items:
+            type: object
+            required:
+              - id
+            properties:
+              id:
+                description: The ID of the Key to be added
+                type: string
+                format: uuid
+                example: 12345678-90ab-cdef-1234-567890abcdef
+    KeyConfigurationKeyRemove:
+      type: object
+      required:
+        - keys
+      properties:
+        keys:
+          description: List of Keys to be removed
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - deleted
+            properties:
+              id:
+                description: The ID of the Key to be removed
+                type: string
+                format: uuid
+                example: 12345678-90ab-cdef-1234-567890abcdef
+              deleted:
+                description: Flag indicating whether the Key is deleted
+                type: boolean
+                example: true
+                enum:
+                  - true
+    TagList:
+      type: object
+      description: A list of tags
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of tags
+          type: integer
+          example: 2
+        value:
+          type: array
+          items:
+            type: string
+            example: Europe
+    Tags:
+      type: object
+      required:
+        - tags
+      properties:
+        tags:
+          description: List of tags to be added
+          type: array
+          items:
+            type: string
+            example: "tag1"
+    KeyConfigurationMetadata:
+      description: Key Configuration metadata
+      type: object
+      readOnly: true
+      properties:
+        createdAt:
+          $ref: "#/components/schemas/CreatedAt"
+        updatedAt:
+          $ref: "#/components/schemas/UpdatedAt"
+        creatorID:
+          $ref: "#/components/schemas/CreatorID"
+        creatorName:
+          $ref: "#/components/schemas/CreatorName"
+        totalKeys:
+          description: The number of Keys of the Key Configuration
+          type: integer
+          example: 1
+        totalSystems:
+          description: The number of Systems connected to the Key Configuration
+          type: integer
+          example: 1
+    WorkflowList:
+      type: object
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of Workflows
+          type: integer
+          example: 2
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/Workflow"
+    WorkflowStateEnum:
+      type: string
+      enum:
+        - INITIAL
+        - REVOKED
+        - REJECTED
+        - EXPIRED
+        - WAIT_APPROVAL
+        - WAIT_CONFIRMATION
+        - EXECUTING
+        - SUCCESSFUL
+        - FAILED
+      example: WAIT_APPROVAL
+    WorkflowArtifactTypeEnum:
+      type: string
+      enum:
+        - KEY
+        - KEY_CONFIGURATION
+        - SYSTEM
+      example: KEY
+    WorkflowActionTypeEnum:
+      type: string
+      enum:
+        - UPDATE_STATE
+        - UPDATE_PRIMARY_KEY
+        - LINK
+        - UNLINK
+        - SWITCH
+        - DELETE
+      example: DELETE
+    WorkflowState:
+      $ref: "#/components/schemas/WorkflowStateEnum"
+      readOnly: true
+      description: The current state of the Workflow
+    WorkflowArtifactType:
+      description: The type of artifact that the Workflow is associated with
+      $ref: "#/components/schemas/WorkflowArtifactTypeEnum"
+    WorkflowActionType:
+      description: The type of Action that the Workflow is associated with
+      $ref: "#/components/schemas/WorkflowActionTypeEnum"
+    Workflow:
+      type: object
+      required:
+        - actionType
+        - artifactType
+        - artifactID
+      properties:
+        id:
+          readOnly: true
+          description: The ID of the Workflow
+          type: string
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
+        state:
+          $ref: "#/components/schemas/WorkflowState"
+        actionType:
+          $ref: "#/components/schemas/WorkflowActionType"
+        artifactType:
+          $ref: "#/components/schemas/WorkflowArtifactType"
+        artifactID:
+          description: The ID of the artifact that the Workflow is associated with
+          type: string
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
+        initiatorID:
+          description: The ID of the User who initiated the Workflow
+          type: string
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
+          readOnly: true
+        initiatorName:
+          description: The name of the User who initiated the Workflow
+          type: string
+          example: alice@example.com
+          readOnly: true
+        parameters:
+          description: Parameters required to execute the Workflow
+          type: string
+          example: |
+            KEY + DELETE - needs no parameters
+            KEY + UPDATE_STATE: target state
+            KEY_CONFIGURATION + DELETE: needs no parameters
+            KEY_CONFIGURATION + UPDATE_PRIMARY_KEY: new primary Key ID
+            SYSTEM + LINK: key configuration ID
+            SYSTEM + SWITCH: new key configuration ID
+            SYSTEM + UNLINK: needs no parameters
+        failureReason:
+          description: The reason for the failure of the Workflow
+          type: string
+          example: The Key is in use by a System
+        metadata:
+          $ref: "#/components/schemas/WorkflowMetadata"
+    WorkflowMetadata:
+      readOnly: true
+      type: object
+      properties:
+        createdAt:
+          $ref: "#/components/schemas/CreatedAt"
+        updatedAt:
+          $ref: "#/components/schemas/UpdatedAt"
+    WorkflowTransition:
+      type: object
+      required:
+        - transition
+      properties:
+        transition:
+          description: Transition to be executed
+          type: string
+          enum:
+            - APPROVE
+            - REJECT
+            - CONFIRM
+            - REVOKE
+          example: APPROVE
+    WorkflowApproverList:
+      description: Approvers of a certain Workflow
+      type: object
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of approvers
+          type: integer
+          example: 2
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowApprover"
+    WorkflowApprover:
+      type: object
+      required:
+        - id
+        - decision
+      properties:
+        id:
+          description: The UUID of the Workflow approver.
+          type: string
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
+        name:
+          description: The name of the approver
+          type: string
+          example: bob@example.com
+        decision:
+          description: The decision of the approver
+          type: string
+          enum:
+            - APPROVED
+            - REJECTED
+            - PENDING
+          example: PENDING
+    WorkflowApproverAdd:
+      type: object
+      required:
+        - approvers
+      properties:
+        approvers:
+          description: List of approvers to be added
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowApprover"
+    #
+    # Labels
+    #
+    Label:
+      type: object
+      required:
+        - key
+      description: A Label as a key-value pair
+      example:
+        key: owner_id
+        value: X01234
+      properties:
+        key:
+          type: string
+          description: A name of a Label
+        value:
+          type: string
+          description: A value associated with the Label
+    LabelList:
+      type: object
+      required:
+        - count
+        - value
+      description: A complete list of the Labels associated with a Key along with the count of Labels.
+      example:
+        count: 5
+        value:
+          - key: cloud
+            value: AWS
+          - key: region
+            value: us-east-1
+          - key: availability-zone
+            value: atl-2a
+          - key: com.example/component
+            value: foo
+          - key: owner_id
+            value: X01234
+      properties:
+        count:
+          type: integer
+          example: 3
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/Label"
+    LabelsPostOrPatch:
+      type: array
+      items:
+        $ref: "#/components/schemas/Label"
+    #
+    # Error
+    #
+    DetailedError:
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          required:
+            - status
+          properties:
+            status:
+              description: HTTP status code
+              type: integer
+            requestID:
+              type: string
+              description: The unique identifier of the request
+              example: 12345678-90ab-cdef-1234-567890abcdef
+            target:
+              description: The object that the api_errors relates to
+              type: string
+              example: >-
+                "https://api.example.com/kms/v2/keys/12345678-90ab-cdef-1234-567890abcdef"
+            details:
+              type: array
+              items:
+                $ref: "#/components/schemas/Error"
+            moreInfo:
+              type: array
+              items:
+                type: string
+                description: Links that contain more information about the api_errors
+                example: https://help.example.com
+    Error:
+      description: A structured api_errors response
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          description:
+            Technical code of the api_errors, used to identify the api_errors condition. This value is stable and
+            can be used to handle specific api_errors cases.
+          type: string
+          example: UNKNOWN_ERROR
+        message:
+          description:
+            Human readable message describing the reason and context of the api_errors, as well as possible
+            instructions to resolve it. This value is subject to changes over time and must not be used to handle code
+            logic decisions.
+          type: string
+          example: The request cannot be processed
+        context:
+          description: Additional context of the api_errors
+          type: object
+    ErrorMessage:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          $ref: "#/components/schemas/DetailedError"
+  responses:
+    "400":
+      description: >-
+        The 400 (Bad Request) status code indicates that the server cannot
+        or will not process the request due to something that is perceived
+        to be a client error (e.g., malformed request syntax, invalid request
+        message framing, or deceptive request routing).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          examples:
+            response:
+              value:
+                error:
+                  code: BAD_REQUEST
+                  status: 400
+                  message: Request body does not conform to specifications
+                  id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
+    "401":
+      description: >-
+        The 401 (Unauthorized) status code indicates that the request has not
+        been applied because it lacks valid authentication credentials for the
+        target resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          examples:
+            response:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  status: 401
+                  message: Invalid token
+                  id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
+    "403":
+      description: >-
+        The 403 (Forbidden) status code indicates that the server understood the
+        request but refuses to authorize it.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          examples:
+            response:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  status: 403
+                  message: To access API you have to login
+                  id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
+    "404":
+      description: >-
+        The 404 (Not Found) status code indicates that the origin server did not
+        find a current representation for the target resource or is not willing
+        to disclose that one exists.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          examples:
+            response:
+              value:
+                error:
+                  status: 404
+                  code: NOT_FOUND
+                  message: Requested resource not found
+                  id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
+    "405":
+      description: >-
+        The 405 (Not Allowed) status code indicates that the method received in
+        the request-line is known by the origin server but not supported by the
+        target resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          examples:
+            response:
+              value:
+                error:
+                  status: 405
+                  code: METHOD_NOT_ALLOWED
+                  message: HTTP Method not allowed on this resource
+                  id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
+    "406":
+      description: |
+
+        406 (Not Acceptable) HTTP status code.
+
+        "Not Acceptable" indicates that the requested representation (content
+        type as requested in the Accept header) is not available for the
+        resource.
+
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+    "408":
+      description: >-
+        408 (Request Timeout) status code indicates that the server did not
+        receive a complete request message within the time that it was prepared
+        to wait.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          examples:
+            response:
+              value:
+                error:
+                  status: 405
+                  code: REQUEST_TIMEOUT
+                  message: Request timeout
+                  id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
+    "409":
+      description: >-
+        The 409 (Conflict) status code indicates that the request could not be
+        completed due to a conflict with the current state of the target
+        resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          examples:
+            response:
+              value:
+                error:
+                  status: 409
+                  code: CONFLICT
+                  message: The requested resource is in an invalid state
+                  id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
+    "412":
+      description: >-
+        The 412 (Precondition Failed) status code indicates that one or more
+        conditions given in the request header fields evaluated to false when
+        tested on the server.
+    "413":
+      description: >-
+        The 413 (Content Too Large) status code indicates that the requested
+        resource has exceeded the limits defined by the server.
+    "429":
+      description: >-
+        The 429 (Too Many Requests) status code indicates that the user has sent
+        too many requests in a given amount of time ("rate limiting").
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Indicates how long (in seconds) the client should wait before retrying the request.
+
+    #
+    # Server Errors
+    #
+
+    "500":
+      description: >-
+        The 500 (Internal Server Error) status code indicates that the server
+        encountered an unexpected condition that prevented it from fulfilling
+        the request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          examples:
+            response:
+              value:
+                error:
+                  status: 500
+                  code: INTERNAL_SERVER_ERROR
+                  message: >-
+                    Internal server error occured, retry after sometime. In case
+                    the issue persists contact your system administrator
+                  id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
+
+    "501":
+      description: >-
+        The 501 (Not Implemented) status code indicates that the server does not
+        support the functionality required to fulfill the request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          examples:
+            response:
+              value:
+                error:
+                  status: 501
+                  code: FEATURE_NOT_IMPLEMENTED
+                  message: Requested feature is not implemented.
+                  id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
+  examples:
+    SystemManagedKeyRequest:
+      value:
+        name: example_key_name
+        type: SYSTEM_MANAGED
+        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
+        description: This key is used for DB key store encryption.
+        enabled: true
+        algorithm: AES256
+        provider: AWS
+        region: eu-central-1
+    AWSBYOKRequest:
+      value:
+        name: byok_key_name
+        type: BYOK
+        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
+        description: This key is used for DB key store encryption.
+        algorithm: AES256
+        provider: AWS
+        region: eu-central-1
+    SystemPatchUpdatingLink:
+      value:
+        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef

@@ -1,0 +1,292 @@
+application:
+  name: cmk
+  environment: dev
+
+status:
+  enabled: true
+  address: :8889
+  profiling: true
+
+# Log level configuration
+logger:
+  level: debug
+  format: json
+  formatter:
+    time:
+      type: unix
+      pattern: "Mon Jan 02 15:04:05 -0700 2006"
+      precision: 1us
+    fields:
+      error: "error"
+      message: "msg"
+      level: "level"
+      time: "time"
+      otel:
+        traceId: "traceId"
+        spanId: "spanId"
+      masking:
+        # All fields under PII, the formatters will mask the value and keeping first 4 original characters
+        pii:
+          - email
+          - ip-address
+        # All fields under other, the formatters will mask the value, using given mask.
+        other:
+          jwt-token: "*****"
+
+telemetry:
+  logs:
+    enabled: false
+    protocol: grpc
+    host:
+      source: file
+      file:
+        path: /etc/credentials/sap-cloud-logging.json
+        format: json
+        jsonPath: "$.ingest-otlp-endpoint"
+    secretRef:
+      type: mtls # insecure, mtls, api-token
+      mtls:
+        cert:
+          source: file
+          file:
+            path: /etc/credentials/sap-cloud-logging.json
+            format: json
+            jsonPath: "$.ingest-otlp-cert"
+        certKey:
+          source: file
+          file:
+            path: /etc/credentials/sap-cloud-logging.json
+            format: json
+            jsonPath: "$.ingest-otlp-key"
+        serverCa:
+          source: file
+          file:
+            path: /etc/credentials/sap-cloud-logging.json
+            format: json
+            jsonPath: "$.server-ca"
+  traces:
+    enabled: false
+    protocol: grpc
+    host:
+      source: file
+      file:
+        path: /etc/credentials/sap-cloud-logging.json
+        format: json
+        jsonPath: "$.ingest-otlp-endpoint"
+    secretRef:
+      type: mtls
+      mtls:
+        cert:
+          source: file
+          file:
+            path: /etc/credentials/sap-cloud-logging.json
+            format: json
+            jsonPath: "$.ingest-otlp-cert"
+        certKey:
+          source: file
+          file:
+            path: /etc/credentials/sap-cloud-logging.json
+            format: json
+            jsonPath: "$.ingest-otlp-key"
+        serverCa:
+          source: file
+          file:
+            path: /etc/credentials/sap-cloud-logging.json
+            format: json
+            jsonPath: "$.server-ca"
+  metrics:
+    enabled: false
+    prometheus:
+      enabled: false
+    protocol: grpc
+    host:
+      source: file
+      file:
+        path: /etc/credentials/sap-cloud-logging.json
+        format: json
+        jsonPath: "$.ingest-otlp-endpoint"
+    secretRef:
+      type: mtls
+      mtls:
+        cert:
+          source: file
+          file:
+            path: /etc/credentials/sap-cloud-logging.json
+            format: json
+            jsonPath: "$.ingest-otlp-cert"
+        certKey:
+          source: file
+          file:
+            path: /etc/credentials/sap-cloud-logging.json
+            format: json
+            jsonPath: "$.ingest-otlp-key"
+        serverCa:
+          source: file
+          file:
+            path: /etc/credentials/sap-cloud-logging.json
+            format: json
+            jsonPath: "$.server-ca"
+
+scheduler:
+  taskQueue:
+    host:
+      source: embedded
+      value: localhost
+    acl:
+      username:
+        source: embedded
+        value: default
+      password:
+        source: embedded
+        value: secret
+      enabled: true
+    port: 6379
+    SecretRef:
+      type: insecure # one of: insecure, mtls
+  tasks:
+    - cronspec: "@every 1h"
+      taskType: sys:refresh
+      retries: 3
+    - cronspec: "@daily"
+      taskType: cert:rotate
+      retries: 3
+
+# Database configuration
+database:
+  host:
+    source: embedded
+    value: localhost
+  user:
+    source: embedded
+    value: postgres
+  secret:
+    source: embedded
+    value: secret
+  name: cmk
+  port: "5432"
+
+http:
+  address: :8081
+
+# Services configuration
+services:
+  registry:
+    enabled: false
+    address: localhost:9092
+    secretRef:
+      type: insecure
+
+# Plugin configuration
+plugins:
+  - name: AWS
+    path: ./keystore-plugins/bin/keystoreop/aws
+    logLevel: debug
+    type: KeystoreInstanceKeyOperation
+    tags: ["hyok", "default_keystore"]
+  - name: FORTANIX
+    path: ./keystore-plugins/bin/keystoreop/fortanix
+    type: KeystoreInstanceKeyOperation
+    logLevel: debug
+    tags: ["hyok"]
+  - name: CLD
+    path: ./bin/cld
+    type: SystemInformationService
+    logLevel: debug
+    tags: ["cld"]
+  - name: ULI
+    path: ./bin/uli
+    type: SystemInformationService
+    logLevel: debug
+    tags: ["uli"]
+  - name: CERT_ISSUER
+    path: ./cert-issuer-plugins/bin/cert-issuer
+    type: CertificateIssuerService
+    logLevel: debug
+    yamlConfiguration: |
+      certificateservice:
+        source: file
+        file:
+          path: env/secret/cert-issuer-plugins/service.json
+          format: binary
+      uaa:
+        source: file
+        file:
+          path: env/secret/cert-issuer-plugins/uaa.json
+          format: binary
+  - name: NOTIFICATION
+    path: ./bin/notification
+    type: NotificationService
+    logLevel: debug
+    yamlConfiguration: |
+      credentialfile: /etc/notification/notification.json
+
+system:
+  identifier:
+    displayName: "GTID"
+    internal: true
+  region:
+    displayName: "Region"
+    internal: true
+  type:
+    displayName: "Type"
+    internal: true
+  name:
+    displayName: "Name"
+    default: "n/a"
+    optional: true
+  systemrole:
+    displayName: "Role"
+    optional: true
+  systemroleiD:
+    displayName: "RoleID"
+    optional: true
+
+workflows:
+  enabled: false
+  minimumApprovals: 2
+
+certificates:
+  rootCertURL: https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt
+  validityDays: 30
+  rotationThresholdDays: 7
+
+tenantManager:
+  amqp:
+    url: "amqp://guest:guest@localhost:5672"
+    target: "cmk.global.tenants"
+    source: "cmk.emea.tenants"
+
+provisioning:
+  initKeystoreConfig:
+    enabled: true
+    provider: AWS
+    value:
+      localityId: 12345678-90ab-cdef-1234-567890abcdef
+      commonName: example.kms.aws
+      managementAccessData: |
+        roleArn: arn:aws:iam::123456789012:role/KMSServiceRoleAnywhereRole
+        trustAnchorArn: arn:aws:rolesanywhere:eu-west-2:123456789012:trust-anchor/12345678-90ab-cdef-1234-567890abcdef
+        profileArn: arn:aws:rolesanywhere:eu-west-2:123456789012:profile/12345678-90ab-cdef-1234-567890abcdef
+      supportedRegions:
+        - name: Europe (Frankfurt)
+          technicalName: eu-central-1
+        - name: Europe (Ireland)
+          technicalName: eu-west-1
+        - name: Europe (London)
+          technicalName: eu-west-2
+        - name: United States (N. Virginia)
+          technicalName: us-east-1
+        - name: United States (Ohio)
+          technicalName: us-east-2
+
+audit:
+  endpoint: http://localhost:4318/v1/logs
+  additionalProperties: |
+    specVersion: "v1"
+    appID: "cmk"
+    folderPath: "/var/log/cmk"
+    accountID: "123456789012"
+    resourceGroupPath: "/cmk"
+    region: "eu10"
+    appImage: "cmk:latest"
+    appVersion: "1.0.0"

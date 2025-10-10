@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/openkcm/cmk/internal/event-processor/proto;proto";
+
+enum TaskType {
+  KEY_ENABLE = 0;
+  KEY_DISABLE = 1;
+  KEY_DELETE = 2;
+  KEY_ROTATE = 3;
+  SYSTEM_LINK = 4;
+  SYSTEM_UNLINK = 5;
+  SYSTEM_SWITCH = 6;
+}
+
+// Wrapped proto for Orbital TaskRequest.data.
+message Data {
+  TaskType task_type = 5;
+  oneof data {
+    KeyAction key_action = 10;
+    SystemAction system_action = 20;
+  }
+}
+
+// TaskType KEY_ENABLE, KEY_DISABLE, KEY_DELETE, KEY_ROTATE
+message KeyAction {
+  string key_id = 10;
+  string tenant_id = 20;
+  string cmk_region = 30;
+}
+
+// TaskType SYSTEM_LINK, SYSTEM_UNLINK, SYSTEM_SWITCH
+message SystemAction {
+  string system_id = 10;
+  string system_region = 12;
+  string system_type = 15;
+  string key_id_from = 20;
+  string key_id_to = 30;
+  string key_provider = 35;
+  bytes key_access_meta_data = 40;
+  string tenant_id = 50;
+  string cmk_region = 60;
+}

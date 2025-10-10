@@ -1,0 +1,42 @@
+{{- if .Values.taskScheduler.deploy }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cmk.name" . }}-task-scheduler-config
+  labels:
+    {{- include "cmk.task-scheduler.labels" . | nindent 4 }}
+immutable: {{ .Values.config.isImmutable | default false }}
+data:
+  config.yaml: |-
+    application:
+      name: task-scheduler
+    {{- with .Values.config }}
+      environment: {{ .environment }}
+      {{- with .labels }}
+      labels:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+    status:
+      {{- toYaml .status | nindent 6 }}
+
+    logger:
+      {{- toYaml .logger | nindent 6 }}
+
+    telemetry:
+      {{- toYaml .telemetry | nindent 6 }}
+
+    # Database configuration
+    database:
+      {{- toYaml .database | nindent 6 }}
+
+    # Scheduler configuration
+    scheduler:
+      {{- toYaml .scheduler | nindent 6 }}
+
+    certificates:
+      {{- toYaml .certificates | nindent 6 }}
+
+    {{- end }}
+{{- end }}

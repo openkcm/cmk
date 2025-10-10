@@ -1,0 +1,7 @@
+{
+    "clientid": "clientId",
+    "certificate": "certificate",
+    "key": "key",
+    "credential-type": "x509",
+    "certurl": "https://url.com"
+}

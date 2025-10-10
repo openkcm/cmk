@@ -1,0 +1,24 @@
+networks:
+  cmk:
+
+services:
+  postgres:
+    image: postgres:14-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+    command: [ "postgres", "-c", "log_statement=all" ] # log all queries into the container log file
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+  redis:
+    image: redis:8.0-rc1-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  pg_data:
