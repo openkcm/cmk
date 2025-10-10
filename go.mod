@@ -5,11 +5,11 @@ go 1.25.1
 require (
 	github.com/Azure/go-amqp v1.5.0
 	github.com/avast/retry-go v3.0.0+incompatible
-	github.com/aws/aws-sdk-go-v2 v1.36.5
+	github.com/aws/aws-sdk-go-v2 v1.39.2
 	github.com/aws/aws-sdk-go-v2/config v1.29.17
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.70
 	github.com/aws/aws-sdk-go-v2/service/kms v1.41.1
-	github.com/aws/smithy-go v1.22.4
+	github.com/aws/smithy-go v1.23.0
 	github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8 v8.9.0
 	github.com/bartventer/gorm-multitenancy/postgres/v8 v8.9.0
 	github.com/bartventer/gorm-multitenancy/v8 v8.9.0
