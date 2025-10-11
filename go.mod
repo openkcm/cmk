@@ -25,6 +25,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/looplab/fsm v1.0.3
 	github.com/magodo/slog2hclog v0.0.0-20240614031327-090ebd72a033
+	github.com/mitchellh/go-homedir v1.1.0
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/runtime v1.1.1
 	github.com/openkcm/api-sdk v0.7.0
@@ -34,6 +35,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/samber/oops v1.19.3
 	github.com/spf13/cobra v1.10.1
+	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.39.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.38.0
@@ -152,7 +154,6 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
