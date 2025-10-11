@@ -33,11 +33,12 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 	go clean -testcache
 
 	@set -eu; \
-	trap '$(MAKE) clean_test' EXIT; \
+	status=0; \
+	trap '$(MAKE) clean_test; exit $$status' EXIT; \
 	env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
 		--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
 		-- -count=1 -covermode=atomic -coverpkg=./... \
-		-args -test.gocoverdir=$$(pwd)/cover; \
+		-args -test.gocoverdir=$$(pwd)/cover || status=$$?; \
 	go tool covdata textfmt -i=./cover -o cover.out
 
 benchmark: clean-postgres-db spin-postgres-db
