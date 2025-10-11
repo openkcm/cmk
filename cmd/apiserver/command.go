@@ -207,7 +207,7 @@ func Cmd(buildInfo string) *cobra.Command {
 		Use:   "api-server",
 		Short: "CMK API Server",
 		Long:  "CMK API Server is a component of the Cloud Key Management system that provides ",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadConfig(buildInfo)
 			if err != nil {
 				return oops.In("main").Wrapf(err, "failed to load config")

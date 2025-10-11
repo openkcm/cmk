@@ -1,8 +1,6 @@
 package taskworker
 
 import (
-	"context"
-
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/samber/oops"
@@ -19,8 +17,8 @@ func Cmd(buildInfo string) *cobra.Command {
 		Use:   "task-worker",
 		Short: "CMK Task Worker",
 		Long:  "CMK Task Worker - A background service that processes tasks asynchronously.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
 
 			defaultValues := map[string]any{}
 			cfg := &config.Config{}

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openkcm/cmk/cmd/tenantmanager"
 	"github.com/stretchr/testify/require"
 
+	"github.com/openkcm/cmk/cmd/tenantmanager"
 	"github.com/openkcm/cmk/internal/config"
 )
 

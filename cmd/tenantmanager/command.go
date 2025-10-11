@@ -6,7 +6,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/health"
 	"github.com/openkcm/common-sdk/pkg/logger"
@@ -16,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/tenant-manager/business"
@@ -94,7 +94,7 @@ func Cmd(buildInfo string) *cobra.Command {
 		Use:   "tenant-manager",
 		Short: "CMK the Tenant Manager",
 		Long:  `CMK Tenant Manager - a service to manage tenants.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
 			// Load Configuration

@@ -104,7 +104,7 @@ func Cmd(buildInfo string) *cobra.Command {
 		Use:   "tenant-manager-cli",
 		Short: "CMK Tenant Manager",
 		Long:  "CMK Tenant Manager CLI - Command Line Interface to manage tenants.",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
 			// Load Configuration

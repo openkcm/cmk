@@ -1,14 +1,13 @@
 package tenantmanagercli_test
 
 import (
-	"os"
 	"testing"
 
-	tmCLI "github.com/openkcm/cmk/cmd/tenantmanagercli"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	tmCLI "github.com/openkcm/cmk/cmd/tenantmanagercli"
 	"github.com/openkcm/cmk/internal/config"
 )
 
@@ -75,24 +74,4 @@ func TestRun(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Failed to initialise db connection")
 	})
-}
-
-// Helper function to create a temporary test environment with config file
-func setupTestEnvironment(t *testing.T, configContent string) {
-	t.Helper()
-
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-
-	if configContent != "" {
-		writeConfigFile(t, configContent)
-	}
-}
-
-// Helper function to write config file
-func writeConfigFile(t *testing.T, content string) {
-	t.Helper()
-
-	err := os.WriteFile("config.yaml", []byte(content), 0600)
-	require.NoError(t, err)
 }

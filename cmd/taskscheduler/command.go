@@ -17,7 +17,7 @@ func Cmd(buildInfo string) *cobra.Command {
 		Use:   "task-scheduler",
 		Short: "CMK Task Scheduler",
 		Long:  "CMK Task Scheduler - Customizable and efficient task scheduling solution.",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
 			defaultValues := map[string]any{}
