@@ -47,18 +47,28 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 	@set -euo pipefail; \
 	status=0; \
 	PARALLEL=${PARALLEL}; \
-	echo "Running tests in parallel with $$PARALLEL cores..."; \
+	echo "🧪 Running tests in parallel with $$PARALLEL cores..."; \
+	status=0; \
 	{ \
-		env GOMAXPROCS=$$PARALLEL TEST_ENV=make gotestsum --rerun-fails=10 --rerun-fails-abort-on-data-race --rerun-fails-max-failures=1550 --format testname --junitfile junit.xml \
+		env GOMAXPROCS=$$PARALLEL TEST_ENV=make gotestsum \
+			--rerun-fails=10 \
+			--rerun-fails-abort-on-data-race \
+			--rerun-fails-max-failures=1550 \
+			--format testname \
+			--junitfile junit.xml \
 			--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
 			-- -count=1 -covermode=atomic -coverpkg=./... -parallel=$$PARALLEL \
 			-args -test.gocoverdir=$$(pwd)/cover; \
 	} || status=$$?; \
+	if [ -f junit.xml ] && grep -q '<failure' junit.xml; then \
+		echo "❌ Tests failed (detected in JUnit report)"; \
+		status=1; \
+	fi; \
 	go tool covdata textfmt -i=./cover -o cover.out || true; \
-	echo "Cleaning test environment..."; \
+	echo "🧹 Cleaning test environment..."; \
 	$(MAKE) clean_test >/dev/null 2>&1 || true; \
-	echo "Cleanup completed."; \
-	echo "Finished the test with $$status status"; \
+	echo "✅ Cleanup completed."; \
+	echo "🏁 Finished tests with status $$status"; \
 	exit $$status
 
 
