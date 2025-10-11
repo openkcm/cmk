@@ -32,7 +32,7 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 	mkdir -p cover
 	go clean -testcache
 
-	@set -euo pipefail; \
+	@set -eu; \
 	trap '$(MAKE) clean_test' EXIT; \
 	env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
 		--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
