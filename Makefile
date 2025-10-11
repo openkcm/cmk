@@ -16,7 +16,9 @@ GIT_USERNAME=$(shell echo "" | git credential-$(GIT_CREDENTIAL_HELPER) get | awk
 GIT_PASSWORD=$(shell echo "" | git credential-$(GIT_CREDENTIAL_HELPER) get | awk -F= '$$1=="password"{print $$2}')
 SIS_PLUGIN ?= "uli"
 ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer}"
-PARALLEL := $(shell nproc 10 >/dev/null || sysctl -n hw.ncpu)
+
+PARALLEL := $(shell nproc 20 >/dev/null || sysctl -n hw.ncpu || echo 40)
+
 
 # get git values
 #squash:
