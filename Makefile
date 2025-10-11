@@ -1,3 +1,5 @@
+SHELL := $(shell command -v bash || echo /bin/sh)
+
 .PHONY: default test coverage clean install-gotestsum squash codegen docker-compose clean-docker-compose swagger-ui \
 swagger-ui-stop go-imports install-gci install-golines install-goimports lint cmk-env docker-dev-build tidy \
 prepare_integration_test clean_integration_test build_test_plugins clean_plugins prepare_test clean_test benchmark
@@ -16,9 +18,14 @@ SIS_PLUGIN ?= "uli"
 ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer}"
 
 # get git values
+#squash:
+#	@HEAD_COMMIT=$$(git rev-parse HEAD)
+#	@CURRENT_BRANCH=$$(git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD || echo HEAD)
+#	@MERGE_BASE=$$(git merge-base origin/main $$CURRENT_BRANCH 2>/dev/null || echo unknown)
+
 squash: HEAD := $(shell git rev-parse HEAD)
 squash: CURRENT_BRANCH := $(shell git branch --show-current)
-squash: MERGE_BASE := $(shell git merge-base origin/main $(CURRENT_BRANCH))
+squash: MERGE_BASE := $(shell git merge-base -a origin/main $(CURRENT_BRANCH))
 
 
 default: test
@@ -32,12 +39,15 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 	mkdir -p cover
 	go clean -testcache
 
-	@set -eu; \
-	trap '$(MAKE) clean_test' EXIT; \
-	env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
-		--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
-		-- -count=1 -covermode=atomic -coverpkg=./... \
-		-args -test.gocoverdir=$$(pwd)/cover; \
+	@set -euo pipefail; \
+	status=0; \
+	trap '$(MAKE) clean_test || true; exit $$status' EXIT; \
+	{ \
+		env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
+			--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
+			-- -count=1 -covermode=atomic -coverpkg=./... \
+			-args -test.gocoverdir=$$(pwd)/cover; \
+	} || status=$$?; \
 	go tool covdata textfmt -i=./cover -o cover.out
 
 benchmark: clean-postgres-db spin-postgres-db
@@ -46,9 +56,11 @@ benchmark: clean-postgres-db spin-postgres-db
 prepare_test: clean-postgres-db spin-postgres-db build_test_plugins
 
 clean_test:
-	$(MAKE) clean-postgres-db
-	$(MAKE) clean-rabbitmq
-	$(MAKE) clean_test_plugins
+	@echo "Cleaning test environment..."
+	-$(MAKE) clean-postgres-db >/dev/null 2>&1 || true
+	-$(MAKE) clean-rabbitmq >/dev/null 2>&1 || true
+	-$(MAKE) clean_test_plugins >/dev/null 2>&1 || true
+	@echo "Cleanup completed."
 
 
 integration_test:  prepare_integration_test
