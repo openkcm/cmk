@@ -49,7 +49,7 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 	PARALLEL=${PARALLEL}; \
 	echo "Running tests in parallel with $$PARALLEL cores..."; \
 	{ \
-		env GOMAXPROCS=$$PARALLEL TEST_ENV=make gotestsum --rerun-fails --rerun-fails-max-failures=1550 --format testname --junitfile junit.xml \
+		env GOMAXPROCS=$$PARALLEL TEST_ENV=make gotestsum --rerun-fails=5 --rerun-fails-abort-on-data-race --rerun-fails-max-failures=1550 --format testname --junitfile junit.xml \
 			--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
 			-- -count=1 -covermode=atomic -coverpkg=./... -parallel=$$PARALLEL \
 			-args -test.gocoverdir=$$(pwd)/cover; \
