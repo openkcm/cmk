@@ -53,9 +53,9 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 	@set -euo pipefail; \
 	status=0; \
 	{ \
-		env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
+		env GOMAXPROCS=${PARALLEL} TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
 			--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
-			-- -count=1 -covermode=atomic -coverpkg=./... -parallel=$(PARALLEL) \
+			-- -count=1 -covermode=atomic -coverpkg=./... -parallel=${PARALLEL} \
 			-args -test.gocoverdir=$$(pwd)/cover; \
 	} || status=$$?; \
 	go tool covdata textfmt -i=./cover -o cover.out || true; \
