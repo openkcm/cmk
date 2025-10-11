@@ -19,9 +19,9 @@ ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_i
 
 PARALLEL := $(shell \
 	if command -v nproc >/dev/null 20 >&1; then \
-		nproc; \
+		echo $$(($(shell nproc) * 4)); \
 	elif command -v sysctl >/dev/null 20 >&1; then \
-		sysctl -n hw.ncpu; \
+		echo $$(($(shell sysctl -n hw.ncpu) * 4)); \
 	else \
 		echo 20; \
 	fi \
@@ -58,6 +58,7 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 	echo "Cleaning test environment..."; \
 	$(MAKE) clean_test >/dev/null 2>&1 || true; \
 	echo "Cleanup completed."; \
+	echo "Finished the test with $$status status"; \
 	exit $$status
 
 
