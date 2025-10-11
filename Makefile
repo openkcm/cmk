@@ -18,14 +18,9 @@ SIS_PLUGIN ?= "uli"
 ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer}"
 
 # get git values
-#squash:
-#	@HEAD_COMMIT=$$(git rev-parse HEAD)
-#	@CURRENT_BRANCH=$$(git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD || echo HEAD)
-#	@MERGE_BASE=$$(git merge-base origin/main $$CURRENT_BRANCH 2>/dev/null || echo unknown)
-
 squash: HEAD := $(shell git rev-parse HEAD)
-squash: CURRENT_BRANCH := $(shell git branch --show-current)
-squash: MERGE_BASE := $(shell git merge-base origin/main $(CURRENT_BRANCH))
+squash: CURRENT_BRANCH := $(shell git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD || echo HEAD)
+squash: MERGE_BASE := $(shell git merge-base origin/main $(CURRENT_BRANCH) 2>/dev/null || echo unknown)
 
 
 default: test
