@@ -18,9 +18,14 @@ SIS_PLUGIN ?= "uli"
 ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer}"
 
 # get git values
+#squash:
+#	@HEAD_COMMIT=$$(git rev-parse HEAD)
+#	@CURRENT_BRANCH=$$(git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD || echo HEAD)
+#	@MERGE_BASE=$$(git merge-base origin/main $$CURRENT_BRANCH 2>/dev/null || echo unknown)
+
 squash: HEAD := $(shell git rev-parse HEAD)
-squash: CURRENT_BRANCH := $(shell git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD || echo HEAD)
-squash: MERGE_BASE := $(shell git merge-base origin/main $(CURRENT_BRANCH) 2>/dev/null || echo unknown)
+squash: CURRENT_BRANCH := $(shell git branch --show-current)
+squash: MERGE_BASE := $(shell git merge-base origin/main $(CURRENT_BRANCH))
 
 
 default: test
@@ -52,9 +57,9 @@ prepare_test: clean-postgres-db spin-postgres-db build_test_plugins
 
 clean_test:
 	@echo "Cleaning test environment..."
-	-$(MAKE) clean-postgres-db
-	-$(MAKE) clean-rabbitmq
-	-$(MAKE) clean_test_plugins
+	-$(MAKE) clean-postgres-db >/dev/null 2>&1 || true
+	-$(MAKE) clean-rabbitmq >/dev/null 2>&1 || true
+	-$(MAKE) clean_test_plugins >/dev/null 2>&1 || true
 	@echo "Cleanup completed."
 
 
