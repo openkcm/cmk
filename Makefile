@@ -25,7 +25,7 @@ ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_i
 
 squash: HEAD := $(shell git rev-parse HEAD)
 squash: CURRENT_BRANCH := $(shell git branch --show-current)
-squash: MERGE_BASE := $(shell git merge-base origin/main $(CURRENT_BRANCH))
+squash: MERGE_BASE := $(shell git merge-base -a origin/main $(CURRENT_BRANCH))
 
 
 default: test
