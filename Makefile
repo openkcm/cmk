@@ -63,11 +63,12 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 	if [ -f junit.xml ] && grep -q '<failure' junit.xml; then \
 		echo "❌ Tests failed (detected in JUnit report)"; \
 		status=1; \
+	else \
+	  	echo "✅ All tests passed"; \
 	fi; \
 	go tool covdata textfmt -i=./cover -o cover.out || true; \
-	echo "🧹 Cleaning test environment..."; \
 	$(MAKE) clean_test >/dev/null 2>&1 || true; \
-	echo "✅ Cleanup completed."; \
+	echo "🧹 Cleanup of test environment completed."; \
 	echo "🏁 Finished tests with status $$status"; \
 	exit $$status
 
