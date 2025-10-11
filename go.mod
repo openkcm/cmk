@@ -35,9 +35,9 @@ require (
 	github.com/samber/oops v1.19.3
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
-	github.com/testcontainers/testcontainers-go v0.38.0
+	github.com/testcontainers/testcontainers-go v0.39.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.38.0
-	github.com/testcontainers/testcontainers-go/modules/rabbitmq v0.38.0
+	github.com/testcontainers/testcontainers-go/modules/rabbitmq v0.39.0
 	github.com/veqryn/slog-context v0.8.0
 	go.opentelemetry.io/collector/pdata v1.43.0
 	golang.org/x/oauth2 v0.31.0
