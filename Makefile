@@ -28,20 +28,17 @@ run:
 	AWS_ACCESS_KEY_ID="exampleAccessKeyID" AWS_SECRET_ACCESS_KEY="exampleSecretAccessKey" go run ./cmd/api-server
 
 test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
-	-$(MAKE) extract-version
 	rm -rf cover cover.* junit.xml
 	mkdir -p cover
 	go clean -testcache
 
-	# Run tests with coverage
+	@set -eu; \
+	trap '$(MAKE) clean_test' EXIT; \
 	env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
 		--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
 		-- -count=1 -covermode=atomic -coverpkg=./... \
-		-args -test.gocoverdir=$(pwd)/cover
-
+		-args -test.gocoverdir=$$(pwd)/cover; \
 	go tool covdata textfmt -i=./cover -o cover.out
-
-	$(MAKE) clean_test
 
 benchmark: clean-postgres-db spin-postgres-db
 	go test ./benchmark -bench=.
@@ -547,7 +544,7 @@ delete-cluster:
 
 start-cmk: generate-signing-keys start-k3d create-empty-secrets create-plugin-secret create-event-processor-secret psql-add-to-cluster redis-add-to-cluster helm-install-rabbitmq k3d-add-cmk
 
-k3d-add-cmk: extract-version
+k3d-add-cmk:
 	@echo "Building the cmk image within k3d."
 	@$(MAKE) k3d-build-image
 	@$(MAKE) k3d-rebuild-cmk
