@@ -1,3 +1,5 @@
+SHELL := $(shell command -v bash || echo /bin/sh)
+
 .PHONY: default test coverage clean install-gotestsum squash codegen docker-compose clean-docker-compose swagger-ui \
 swagger-ui-stop go-imports install-gci install-golines install-goimports lint cmk-env docker-dev-build tidy \
 prepare_integration_test clean_integration_test build_test_plugins clean_plugins prepare_test clean_test benchmark
@@ -28,8 +30,6 @@ run:
 	AWS_ACCESS_KEY_ID="exampleAccessKeyID" AWS_SECRET_ACCESS_KEY="exampleSecretAccessKey" go run ./cmd/api-server
 
 test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
-	SHELL := /bin/bash
-
 	rm -rf cover cover.* junit.xml
 	mkdir -p cover
 	go clean -testcache
