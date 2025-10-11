@@ -41,14 +41,18 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 
 	@set -euo pipefail; \
 	status=0; \
-	trap '$(MAKE) clean_test || true; exit $$status' EXIT; \
 	{ \
 		env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
 			--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
 			-- -count=1 -covermode=atomic -coverpkg=./... \
 			-args -test.gocoverdir=$$(pwd)/cover; \
 	} || status=$$?; \
-	go tool covdata textfmt -i=./cover -o cover.out
+	go tool covdata textfmt -i=./cover -o cover.out || true; \
+	echo "Cleaning test environment..."; \
+	- $(MAKE) clean_test >/dev/null 2>&1 || true; \
+	echo "Cleanup completed."; \
+	exit $$status
+
 
 benchmark: clean-postgres-db spin-postgres-db
 	go test ./benchmark -bench=.
@@ -56,11 +60,9 @@ benchmark: clean-postgres-db spin-postgres-db
 prepare_test: clean-postgres-db spin-postgres-db build_test_plugins
 
 clean_test:
-	@echo "Cleaning test environment..."
-	-$(MAKE) clean-postgres-db >/dev/null 2>&1 || true
-	-$(MAKE) clean-rabbitmq >/dev/null 2>&1 || true
-	-$(MAKE) clean_test_plugins >/dev/null 2>&1 || true
-	@echo "Cleanup completed."
+	$(MAKE) clean-postgres-db
+	$(MAKE) clean-rabbitmq
+	$(MAKE) clean_test_plugins
 
 
 integration_test:  prepare_integration_test
