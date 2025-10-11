@@ -17,15 +17,20 @@ GIT_PASSWORD=$(shell echo "" | git credential-$(GIT_CREDENTIAL_HELPER) get | awk
 SIS_PLUGIN ?= "uli"
 ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer}"
 
-# get git values
-#squash:
-#	@HEAD_COMMIT=$$(git rev-parse HEAD)
-#	@CURRENT_BRANCH=$$(git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD || echo HEAD)
-#	@MERGE_BASE=$$(git merge-base origin/main $$CURRENT_BRANCH 2>/dev/null || echo unknown)
+PARALLEL := $(shell \
+	if command -v nproc >/dev/null 2>&1; then \
+		nproc | awk '{print $$1 * 4}'; \
+	elif command -v sysctl >/dev/null 2>&1; then \
+		sysctl -n hw.ncpu | awk '{print $$1 * 4}'; \
+	else \
+		echo 16; \
+	fi \
+)
 
-squash: HEAD := $(shell git rev-parse HEAD)
-squash: CURRENT_BRANCH := $(shell git branch --show-current)
-squash: MERGE_BASE := $(shell git merge-base -a origin/main $(CURRENT_BRANCH))
+# get git values
+HEAD := $(shell git rev-parse HEAD)
+CURRENT_BRANCH := $(shell git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD || echo HEAD)
+MERGE_BASE := $(shell git merge-base origin/main $$CURRENT_BRANCH 2>/dev/null || echo unknown)
 
 
 default: test
@@ -41,16 +46,19 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 
 	@set -euo pipefail; \
 	status=0; \
+	PARALLEL=${PARALLEL}; \
+	echo "Running tests in parallel with $$PARALLEL cores..."; \
 	{ \
-		env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
+		env GOMAXPROCS=$$PARALLEL TEST_ENV=make gotestsum --rerun-fails --rerun-fails-max-failures=1550 --format testname --junitfile junit.xml \
 			--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
-			-- -count=1 -covermode=atomic -coverpkg=./... \
+			-- -count=1 -covermode=atomic -coverpkg=./... -parallel=$$PARALLEL \
 			-args -test.gocoverdir=$$(pwd)/cover; \
 	} || status=$$?; \
 	go tool covdata textfmt -i=./cover -o cover.out || true; \
 	echo "Cleaning test environment..."; \
-	- $(MAKE) clean_test >/dev/null 2>&1 || true; \
+	$(MAKE) clean_test >/dev/null 2>&1 || true; \
 	echo "Cleanup completed."; \
+	echo "Finished the test with $$status status"; \
 	exit $$status
 
 
