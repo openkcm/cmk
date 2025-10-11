@@ -18,12 +18,12 @@ SIS_PLUGIN ?= "uli"
 ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer}"
 
 PARALLEL := $(shell \
-	if command -v nproc >/dev/null 20 >&1; then \
-		echo $$(($(shell nproc) * 4)); \
-	elif command -v sysctl >/dev/null 20 >&1; then \
-		echo $$(($(shell sysctl -n hw.ncpu) * 4)); \
+	if command -v nproc >/dev/null 2>&1; then \
+		nproc | awk '{print $$1 * 4}'; \
+	elif command -v sysctl >/dev/null 2>&1; then \
+		sysctl -n hw.ncpu | awk '{print $$1 * 4}'; \
 	else \
-		echo 20; \
+		echo 16; \
 	fi \
 )
 
