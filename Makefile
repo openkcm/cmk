@@ -17,7 +17,15 @@ GIT_PASSWORD=$(shell echo "" | git credential-$(GIT_CREDENTIAL_HELPER) get | awk
 SIS_PLUGIN ?= "uli"
 ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer}"
 
-PARALLEL := $(shell nproc 20 >/dev/null || sysctl -n hw.ncpu || echo 40)
+PARALLEL := $(shell \
+	if command -v nproc >/dev/null 20 >&1; then \
+		nproc; \
+	elif command -v sysctl >/dev/null 20 >&1; then \
+		sysctl -n hw.ncpu; \
+	else \
+		echo 20; \
+	fi \
+)
 
 
 # get git values
