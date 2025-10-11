@@ -51,9 +51,9 @@ benchmark: clean-postgres-db spin-postgres-db
 prepare_test: clean-postgres-db spin-postgres-db build_test_plugins
 
 clean_test:
-	$(MAKE) clean-postgres-db
-	$(MAKE) clean-rabbitmq
-	$(MAKE) clean_test_plugins
+	-$(MAKE) clean-postgres-db
+	-$(MAKE) clean-rabbitmq
+	-$(MAKE) clean_test_plugins
 
 
 integration_test:  prepare_integration_test
