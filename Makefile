@@ -18,16 +18,15 @@ SIS_PLUGIN ?= "uli"
 ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer}"
 
 # get git values
-squash:
-	@HEAD_COMMIT=$$(git rev-parse HEAD); \
-	CURRENT_BRANCH=$$(git branch --show-current || true); \
-	if [ -z "$$CURRENT_BRANCH" ]; then \
-		CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD || echo "HEAD"); \
-	fi; \
-	MERGE_BASE=$$(git merge-base origin/main $$CURRENT_BRANCH 2>/dev/null || echo "unknown"); \
-	echo "HEAD: $$HEAD_COMMIT"; \
-	echo "BRANCH: $$CURRENT_BRANCH"; \
-	echo "MERGE_BASE: $$MERGE_BASE";
+#squash:
+#	@HEAD_COMMIT=$$(git rev-parse HEAD)
+#	@CURRENT_BRANCH=$$(git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD || echo HEAD)
+#	@MERGE_BASE=$$(git merge-base origin/main $$CURRENT_BRANCH 2>/dev/null || echo unknown)
+
+squash: HEAD := $(shell git rev-parse HEAD)
+squash: CURRENT_BRANCH := $(shell git branch --show-current)
+squash: MERGE_BASE := $(shell git merge-base origin/main $(CURRENT_BRANCH))
+
 
 default: test
 
@@ -57,9 +56,11 @@ benchmark: clean-postgres-db spin-postgres-db
 prepare_test: clean-postgres-db spin-postgres-db build_test_plugins
 
 clean_test:
+	@echo "Cleaning test environment..."
 	-$(MAKE) clean-postgres-db
 	-$(MAKE) clean-rabbitmq
 	-$(MAKE) clean_test_plugins
+	@echo "Cleanup completed."
 
 
 integration_test:  prepare_integration_test
