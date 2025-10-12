@@ -19,7 +19,7 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
-// startAPIKeyConfigTags starts the API server and returns a DB connection and a mux for testing
+// startAPIKeyConfigTags starts the API server and returns a db connection and a mux for testing
 func startAPIKeyConfigTags(t *testing.T) (*multitenancy.DB, *http.ServeMux, string) {
 	t.Helper()
 

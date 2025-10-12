@@ -418,7 +418,7 @@ func (m *SystemManager) createSystemIfNotExists(ctx context.Context, newSystem *
 	}
 
 	ctx = log.InjectSystem(ctx, newSystem)
-	log.Info(ctx, "Found new system from registry, adding to CMK DB")
+	log.Info(ctx, "Found new system from registry, adding to CMK db")
 
 	err := m.repo.Create(ctx, newSystem)
 	if err != nil {

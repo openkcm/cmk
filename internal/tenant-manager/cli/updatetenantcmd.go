@@ -1,15 +1,14 @@
-package cmd
+package cli
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
-func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command {
+func (f *CommandFactory) NewUpdateTenantCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update existing tenant. Usage: tm update -i [tenant id] (-r [tenant region]) (-s [tenant status])",
@@ -17,8 +16,9 @@ func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command 
 			"(--region [tenant region]) (--status [tenant status])",
 		Args: cobra.ExactArgs(0),
 
-		//nolint:contextcheck
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+
 			id, _ := cmd.Flags().GetString("id")
 			region, _ := cmd.Flags().GetString("region")
 			status, _ := cmd.Flags().GetString("status")
@@ -28,9 +28,15 @@ func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command 
 				return ErrTenantIDRequired
 			}
 
-			ctx := cmd.Context()
+			dbCon, err := f.db(ctx)
+			if err != nil {
+				cmd.Printf("Failed to connect to database: %v\n", err)
+				return nil
+			}
 
-			tenant := FindTenant(ctx, cmd, id, f.r)
+			r := sql.NewRepository(dbCon)
+
+			tenant := FindTenant(ctx, cmd, id, r)
 
 			query := repo.NewQuery()
 
@@ -42,7 +48,7 @@ func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command 
 				tenant.Region = region
 			}
 
-			_, err := f.r.Patch(ctx, tenant, *query)
+			_, err = r.Patch(ctx, tenant, *query)
 			if err != nil {
 				cmd.PrintErrf("Failed to update tenant: %v\n", err)
 				return err
@@ -54,7 +60,9 @@ func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command 
 		},
 	}
 
-	cmd.SetContext(ctx)
+	cmd.Flags().StringVarP(&id, "id", "i", "", "Tenant id")
+	cmd.Flags().StringVarP(&region, "region", "r", "", "Tenant region")
+	cmd.Flags().StringVarP(&status, "status", "s", "", "Tenant status")
 
 	return cmd
 }

@@ -18,7 +18,6 @@ import (
 	"github.com/openkcm/cmk/cmd/taskscheduler"
 	"github.com/openkcm/cmk/cmd/taskworker"
 	"github.com/openkcm/cmk/cmd/tenantmanager"
-	"github.com/openkcm/cmk/cmd/tenantmanagercli"
 )
 
 var (
@@ -70,7 +69,6 @@ func rootCmd() *cobra.Command {
 		taskscheduler.Cmd(BuildInfo),
 		taskworker.Cmd(BuildInfo),
 		tenantmanager.Cmd(BuildInfo),
-		tenantmanagercli.Cmd(BuildInfo),
 	)
 
 	return cmd

@@ -12,7 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/tenant-manager/internal/operator"
+	"github.com/openkcm/cmk/internal/tenant-manager/operator"
 )
 
 const logDomain = "business"

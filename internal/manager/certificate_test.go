@@ -313,7 +313,7 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 		assert.Nil(t, cert)
 	})
 
-	t.Run("Failed to get default keystore certificate with DB error", func(t *testing.T) {
+	t.Run("Failed to get default keystore certificate with db error", func(t *testing.T) {
 		forced := testutils.NewDBErrorForced(db, ErrForced)
 
 		forced.Register()
@@ -333,7 +333,7 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 		assert.NotNil(t, cert)
 	})
 
-	t.Run("Failed to get default HYOK certificate with DB error", func(t *testing.T) {
+	t.Run("Failed to get default HYOK certificate with db error", func(t *testing.T) {
 		forced := testutils.NewDBErrorForced(db, ErrForced)
 
 		forced.Register()

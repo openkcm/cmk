@@ -1,4 +1,4 @@
-package integration_test
+package cli_test
 
 import (
 	"bytes"
@@ -16,9 +16,9 @@ import (
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/tenant-manager/cli"
+	tmdb "github.com/openkcm/cmk/internal/tenant-manager/db"
 	"github.com/openkcm/cmk/internal/testutils"
-	tmdb "github.com/openkcm/cmk/tenant-manager/internal/db"
-	"github.com/openkcm/cmk/tenant-manager/tenant-cli/cmd"
 	integrationutils "github.com/openkcm/cmk/test/integration_utils"
 	"github.com/openkcm/cmk/utils/base62"
 )
@@ -29,10 +29,6 @@ type CLISuite struct {
 	cancel context.CancelFunc
 
 	db              *multitenancy.DB
-	sleep           bool
-	id              string
-	status          string
-	region          string
 	rootCmd         *cobra.Command
 	createGroupsCmd *cobra.Command
 	createCmd       *cobra.Command
@@ -48,36 +44,21 @@ func (s *CLISuite) SetupSuite() {
 		Models:                       []driver.TenantTabler{&model.Tenant{}, &model.Group{}},
 	})
 
-	factory := cmd.NewCommandFactory(s.db)
-	s.rootCmd = factory.NewRootCmd(s.T().Context())
-	s.rootCmd.PersistentFlags().BoolVar(&s.sleep, "sleep", false, "Enable sleep mode")
-
-	s.createGroupsCmd = factory.NewCreateGroupsCmd(s.T().Context())
-	s.createGroupsCmd.Flags().StringVarP(&s.id, "id", "i", "", "Tenant id")
-	s.rootCmd.AddCommand(s.createGroupsCmd)
-
-	s.createCmd = factory.NewCreateTenantCmd(s.T().Context())
-	s.createCmd.Flags().StringVarP(&s.id, "id", "i", "", "Tenant id")
-	s.createCmd.Flags().StringVarP(&s.region, "region", "r", "", "Tenant region")
-	s.createCmd.Flags().StringVarP(&s.status, "status", "s", "", "Tenant status")
-	s.rootCmd.AddCommand(s.createCmd)
-
-	s.deleteTenantCmd = factory.NewDeleteTenantCmd(s.T().Context())
-	s.deleteTenantCmd.Flags().StringVarP(&s.id, "id", "i", "", "Tenant id")
-	s.rootCmd.AddCommand(s.deleteTenantCmd)
-
-	s.getTenantCmd = factory.NewGetTenantCmd(s.T().Context())
-	s.getTenantCmd.Flags().StringVarP(&s.id, "id", "i", "", "Tenant id")
-	s.rootCmd.AddCommand(s.getTenantCmd)
-
-	s.listTenantsCmd = factory.NewListTenantsCmd(s.T().Context())
-	s.rootCmd.AddCommand(s.listTenantsCmd)
-
-	s.updateTenantCmd = factory.NewUpdateTenantCmd(s.T().Context())
-	s.updateTenantCmd.Flags().StringVarP(&s.id, "id", "i", "", "Tenant id")
-	s.updateTenantCmd.Flags().StringVarP(&s.region, "region", "r", "", "Tenant region")
-	s.updateTenantCmd.Flags().StringVarP(&s.status, "status", "s", "", "Tenant status")
-	s.rootCmd.AddCommand(s.updateTenantCmd)
+	factory := cli.NewCommandFactoryWithDB(s.db)
+	s.createGroupsCmd = factory.NewCreateGroupsCmd()
+	s.createCmd = factory.NewCreateTenantCmd()
+	s.deleteTenantCmd = factory.NewDeleteTenantCmd()
+	s.getTenantCmd = factory.NewGetTenantCmd()
+	s.listTenantsCmd = factory.NewListTenantsCmd()
+	s.updateTenantCmd = factory.NewUpdateTenantCmd()
+	s.rootCmd = cli.InitWithCommandFactory(
+		s.createGroupsCmd,
+		s.createCmd,
+		s.deleteTenantCmd,
+		s.getTenantCmd,
+		s.listTenantsCmd,
+		s.updateTenantCmd,
+	)
 }
 
 func (s *CLISuite) TearDownSuite() {

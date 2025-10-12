@@ -228,7 +228,7 @@ type TestDBConfig struct {
 	// By default it creates only one tenant
 	TenantCount int
 
-	// If true create DB instance for test instead of tenant
+	// If true create db instance for test instead of tenant
 	RequiresMultitenancyOrShared bool
 
 	// Tables that the test should contain
@@ -255,7 +255,7 @@ func processNameForDB(n string) string {
 // If cfg.RequiresMultitenancy create a separate database to test multitenancy
 //
 // This is intended for internal use. In most cases please use NewTestDB
-// to setup a DB for unit tests
+// to setup a db for unit tests
 func newTestDBCon(tb testing.TB, cfg TestDBConfig) *multitenancy.DB {
 	tb.Helper()
 

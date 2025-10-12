@@ -8,7 +8,7 @@ import (
 )
 
 // NewFrom returns a postgres dialector.
-// Hint: `dsn` package contains utility to convert `config.DB` to DSN string that can be passed here.
+// Hint: `dsn` package contains utility to convert `config.db` to DSN string that can be passed here.
 func NewFrom(dsn string) gorm.Dialector {
 	return pg.New(pg.Config{
 		Config: postgres.Config{

@@ -12,8 +12,8 @@ import (
 
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/tenant-manager/db"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/tenant-manager/internal/db"
 	integrationutils "github.com/openkcm/cmk/test/integration_utils"
 	"github.com/openkcm/cmk/utils/base62"
 )

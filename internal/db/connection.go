@@ -21,7 +21,7 @@ var (
 	ErrLoadingReplicaDialectors = errors.New("error loading replica dialectors")
 )
 
-// StartDBConnection opens DB connection using data from `config.DB`.
+// StartDBConnection opens db connection using data from `config.db`.
 func StartDBConnection(
 	conf config.Database,
 	replicas []config.Database,
@@ -29,7 +29,7 @@ func StartDBConnection(
 	return StartDBConnectionPlugins(conf, replicas, map[string]gorm.Plugin{})
 }
 
-// StartDBConnectionPlugins opens DB connection using data from `config.DB`
+// StartDBConnectionPlugins opens db connection using data from `config.db`
 // and plugins that are passed in a form of map because GORM config stores
 // them this way.
 // It is an extension of `StartDBConnection` functionality.

@@ -1,21 +1,23 @@
-package cmd
+package cli
 
 import (
-	"context"
 	"encoding/json"
 
 	"github.com/spf13/cobra"
+
+	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
-func (f *CommandFactory) NewGetTenantCmd(ctx context.Context) *cobra.Command {
+func (f *CommandFactory) NewGetTenantCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get",
 		Short: "Get tenant by id. Usage: tm get -i [tenant id]",
 		Long:  "Get tenant by id. Usage: tm get --id [tenant id]",
 		Args:  cobra.ExactArgs(0),
 
-		//nolint:contextcheck
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+
 			id, _ := cmd.Flags().GetString("id")
 
 			if id == "" {
@@ -23,7 +25,15 @@ func (f *CommandFactory) NewGetTenantCmd(ctx context.Context) *cobra.Command {
 				return ErrTenantIDRequired
 			}
 
-			tenant := FindTenant(cmd.Context(), cmd, id, f.r)
+			dbCon, err := f.db(ctx)
+			if err != nil {
+				cmd.Printf("Failed to connect to database: %v\n", err)
+				return nil
+			}
+
+			r := sql.NewRepository(dbCon)
+
+			tenant := FindTenant(ctx, cmd, id, r)
 			if tenant == nil {
 				cmd.Printf("Tenant with id %s not found\n", id)
 				return ErrTenantNotFound
@@ -39,8 +49,7 @@ func (f *CommandFactory) NewGetTenantCmd(ctx context.Context) *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.SetContext(ctx)
+	cmd.Flags().StringVarP(&id, "id", "i", "", "Tenant id")
 
 	return cmd
 }

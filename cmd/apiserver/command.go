@@ -95,7 +95,7 @@ func monitorKeystorePoolSize(
 
 	dbCon, err := db.StartDBConnection(cfg.Database, cfg.DatabaseReplicas)
 	if err != nil {
-		log.Error(ctx, "failed to initialize DB Connection", err)
+		log.Error(ctx, "failed to initialize db Connection", err)
 	}
 
 	pool := manager.NewPool(sql.NewRepository(dbCon))

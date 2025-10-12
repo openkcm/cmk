@@ -13,9 +13,9 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/tenant-manager/db"
+	"github.com/openkcm/cmk/internal/tenant-manager/operator"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/tenant-manager/internal/db"
-	"github.com/openkcm/cmk/tenant-manager/internal/operator"
 )
 
 const (

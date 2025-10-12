@@ -292,7 +292,7 @@ func TestUpdateGroup(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("Should error on rename with DB error", func(t *testing.T) {
+	t.Run("Should error on rename with db error", func(t *testing.T) {
 		forced := testutils.NewDBErrorForced(db, ErrForced)
 
 		forced.WithUpdate().Register()

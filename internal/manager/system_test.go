@@ -633,7 +633,7 @@ func TestRefreshSystems(t *testing.T) {
 	}
 	testutils.CreateTestEntities(ctx, t, r, existingSystem)
 
-	t.Run("No systems in registry - systems in DB remain unchanged", func(t *testing.T) {
+	t.Run("No systems in registry - systems in db remain unchanged", func(t *testing.T) {
 		// Act
 		m.RefreshSystemsData(ctx)
 		// Verify
@@ -649,7 +649,7 @@ func TestRefreshSystems(t *testing.T) {
 		assert.Equal(t, existingSystem.ID, systems[0].ID)
 	})
 
-	t.Run("No systems for current tenant in registry - systems in DB remain unchanged", func(t *testing.T) {
+	t.Run("No systems for current tenant in registry - systems in db remain unchanged", func(t *testing.T) {
 		// Prepare
 		existingSystems := []*model.System{}
 		existingSystemsCount, _ := r.List(ctx, &model.System{}, &existingSystems, *repo.NewQuery())
@@ -736,7 +736,7 @@ func TestRefreshSystems(t *testing.T) {
 		assert.Equal(t, region, foundSystem.Region)
 	})
 
-	t.Run("Same System in a different region returned by the registry - two different systems in DB", func(t *testing.T) {
+	t.Run("Same System in a different region returned by the registry - two different systems in db", func(t *testing.T) {
 		// Prepare
 		existingSystems := []*model.System{}
 		existingSystemsCount, _ := r.List(ctx, &model.System{}, &existingSystems, *repo.NewQuery())

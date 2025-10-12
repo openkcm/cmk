@@ -14,11 +14,12 @@ import (
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 
+	"github.com/openkcm/cmk/cmd/tenantmanager/cli"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/tenant-manager/business"
+	"github.com/openkcm/cmk/internal/tenant-manager/business"
 )
 
 const (
@@ -138,6 +139,10 @@ func Cmd(buildInfo string) *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.AddCommand(
+		cli.Cmd(),
+	)
 
 	return cmd
 }

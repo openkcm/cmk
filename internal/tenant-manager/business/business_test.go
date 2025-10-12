@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/tenant-manager/business"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/tenant-manager/business"
 )
 
 func TestBusinessMain(t *testing.T) {

@@ -767,7 +767,7 @@ func (km *KeyManager) fetchImportParams(ctx context.Context, key *model.Key) (*m
 	if err != nil {
 		return nil, err
 	}
-	// Set ImportParams in DB
+	// Set ImportParams in db
 	err = km.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
 		err = r.Set(ctx, importParams)
 		if err != nil {

@@ -23,7 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
-	tmdb "github.com/openkcm/cmk/tenant-manager/internal/db"
+	tmdb "github.com/openkcm/cmk/internal/tenant-manager/db"
 	"github.com/openkcm/cmk/utils/base62"
 )
 

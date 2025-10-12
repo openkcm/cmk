@@ -1,4 +1,4 @@
-package integration_test
+package cli_test
 
 import (
 	"context"
@@ -18,8 +18,8 @@ import (
 
 	"github.com/openkcm/cmk/internal/model"
 	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
+	tmdb "github.com/openkcm/cmk/internal/tenant-manager/db"
 	"github.com/openkcm/cmk/internal/testutils"
-	tmdb "github.com/openkcm/cmk/tenant-manager/internal/db"
 	integrationutils "github.com/openkcm/cmk/test/integration_utils"
 	"github.com/openkcm/cmk/utils/base62"
 )
