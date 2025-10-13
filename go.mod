@@ -27,7 +27,7 @@ require (
 	github.com/magodo/slog2hclog v0.0.0-20240614031327-090ebd72a033
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/runtime v1.1.1
-	github.com/openkcm/api-sdk v0.7.0
+	github.com/openkcm/api-sdk v0.8.1
 	github.com/openkcm/common-sdk v1.4.7
 	github.com/openkcm/orbital v0.2.0
 	github.com/openkcm/plugin-sdk v0.7.1
