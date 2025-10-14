@@ -11,6 +11,7 @@ import (
 
 	"github.com/openkcm/common-sdk/pkg/utils"
 	"github.com/spf13/cobra"
+
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/tenant-manager/cli"

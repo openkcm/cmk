@@ -9,10 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/db/dsn"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/tenant-manager/business"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/health"
 	"github.com/openkcm/common-sdk/pkg/logger"
@@ -21,7 +17,13 @@ import (
 	"github.com/openkcm/common-sdk/pkg/utils"
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
+
 	slogctx "github.com/veqryn/slog-context"
+
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db/dsn"
+	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/tenant-manager/business"
 )
 
 const (
