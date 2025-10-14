@@ -7,6 +7,6 @@ includes:
     excludes: [] # put task names in here which are overwritten in this file
     vars:
       CODE_DIRS: '{{.ROOT_DIR}}/cmd/... {{.ROOT_DIR}}/internal/... {{.ROOT_DIR}}/apis/... {{.ROOT_DIR}}/providers/... {{.ROOT_DIR}}/test/... {{.ROOT_DIR}}/utils/...'
-      COMPONENTS: 'cmk tenant-manager tenant-manager-cli'
+      COMPONENTS: 'core tenant-manager tenant-manager-cli'
       REPO_URL: 'https://github.com/openkcm/cmk'
 
