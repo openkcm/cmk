@@ -8,7 +8,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk/cmd/apiserver"
+	"github.com/openkcm/cmk/cmd/core/apiserver"
 	"github.com/openkcm/cmk/internal/config"
 )
 
