@@ -1,28 +1,33 @@
-package tenantmanager
+package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db/dsn"
+	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/tenant-manager/business"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/health"
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/openkcm/common-sdk/pkg/otlp"
 	"github.com/openkcm/common-sdk/pkg/status"
+	"github.com/openkcm/common-sdk/pkg/utils"
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
-
-	"github.com/openkcm/cmk/cmd/tenantmanager/cli"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/db/dsn"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/tenant-manager/business"
+	slogctx "github.com/veqryn/slog-context"
 )
 
 const (
+	DefaultConfigPath1 = "/etc/tenant-manager"
+	DefaultConfigPath2 = "$HOME/.tenant-manager"
+
 	defaultTimeout            = 5
 	errMsgLoadConfig          = "Failed to load the configuration"
 	errMsgLoggerInit          = "Failed to initialise the logger"
@@ -82,15 +87,41 @@ func loadConfig() (*config.Config, error) {
 	err := commoncfg.LoadConfig(
 		cfg,
 		map[string]any{},
-		constants.DefaultConfigPath1,
-		constants.DefaultConfigPath2,
+		DefaultConfigPath1,
+		DefaultConfigPath2,
 		".",
 	)
 
 	return cfg, err
 }
 
-func Cmd(buildInfo string) *cobra.Command {
+var (
+	// BuildInfo will be set by the build system
+	BuildInfo = "{}"
+
+	isVersionCmd            bool
+	gracefulShutdownSec     int64
+	gracefulShutdownMessage string
+)
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Tenant Manager Version",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		isVersionCmd = true
+
+		value, err := utils.ExtractFromComplexValue(BuildInfo)
+		if err != nil {
+			return err
+		}
+
+		slog.InfoContext(cmd.Context(), value)
+
+		return nil
+	},
+}
+
+func rootCmd() *cobra.Command {
 	var cmd = &cobra.Command{
 		Use:   "tenant-manager",
 		Short: "CMK the Tenant Manager",
@@ -106,7 +137,7 @@ func Cmd(buildInfo string) *cobra.Command {
 			}
 
 			// Update Version
-			err = commoncfg.UpdateConfigVersion(&cfg.BaseConfig, buildInfo)
+			err = commoncfg.UpdateConfigVersion(&cfg.BaseConfig, BuildInfo)
 			if err != nil {
 				return oops.In("main").
 					Wrapf(err, "Failed to update the version configuration")
@@ -140,9 +171,38 @@ func Cmd(buildInfo string) *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(
-		cli.Cmd(),
-	)
+	cmd.AddCommand(versionCmd)
 
 	return cmd
+}
+
+func execute() error {
+	ctx, cancelOnSignal := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt, syscall.SIGTERM,
+	)
+	defer cancelOnSignal()
+
+	err := rootCmd().ExecuteContext(ctx)
+	if err != nil {
+		slogctx.Error(ctx, "Failed to start the application", "error", err)
+		_, _ = fmt.Fprintln(os.Stderr, err)
+
+		return err
+	}
+
+	// graceful shutdown so running goroutines may finish
+	if !isVersionCmd {
+		_, _ = fmt.Fprintln(os.Stderr, fmt.Sprintf(gracefulShutdownMessage, gracefulShutdownSec))
+		time.Sleep(time.Duration(gracefulShutdownSec) * time.Second)
+	}
+
+	return nil
+}
+
+func main() {
+	err := execute()
+	if err != nil {
+		os.Exit(1)
+	}
 }

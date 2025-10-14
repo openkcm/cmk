@@ -18,6 +18,11 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 )
 
+const (
+	DefaultConfigPath1 = "/etc/tenant-manager-cli"
+	DefaultConfigPath2 = "$HOME/.tenant-manager-cli"
+)
+
 var (
 	id, region, status string
 	sleep              bool
@@ -43,8 +48,8 @@ func loadConfig() (*config.Config, error) {
 	loader := commoncfg.NewLoader(
 		cfg,
 		commoncfg.WithPaths(
-			constants.DefaultConfigPath1,
-			constants.DefaultConfigPath2,
+			DefaultConfigPath1,
+			DefaultConfigPath2,
 			".",
 		),
 		commoncfg.WithEnvOverride(constants.APIName),
@@ -85,7 +90,7 @@ func (f *CommandFactory) db(ctx context.Context) (*multitenancy.DB, error) {
 
 func InitWithCommandFactory(cmds ...*cobra.Command) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "cli",
+		Use:   "tenant-manager-cli",
 		Short: "Tenant Manager CLI Application",
 		Long: "Tenant Manager is a simple CLI tool to manage tenants, supporting: creating tenant, " +
 			"creating tenant with groups, " +

@@ -11,12 +11,9 @@ import (
 
 	"github.com/openkcm/common-sdk/pkg/utils"
 	"github.com/spf13/cobra"
-
 	slogctx "github.com/veqryn/slog-context"
 
-	"github.com/openkcm/cmk/cmd/cmk/apiserver"
-	"github.com/openkcm/cmk/cmd/cmk/taskscheduler"
-	"github.com/openkcm/cmk/cmd/cmk/taskworker"
+	"github.com/openkcm/cmk/internal/tenant-manager/cli"
 )
 
 var (
@@ -27,10 +24,9 @@ var (
 	gracefulShutdownSec     int64
 	gracefulShutdownMessage string
 )
-
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "CMK Version",
+	Short: "Tenant Manager CLI Version",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		isVersionCmd = true
 
@@ -46,30 +42,17 @@ var versionCmd = &cobra.Command{
 }
 
 func rootCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "cmk",
-		Short: "OpenKCM CMK - Customer Manager Keys",
-		Long: "OpenKCM Customer Manager Keys(CMK) is a key management service to manage " +
-			"encryption keys for applications and services.",
-	}
+	factory := cli.NewCommandFactory()
 
-	cmd.PersistentFlags().Int64Var(&gracefulShutdownSec, "graceful-shutdown",
-		1,
-		"graceful shutdown seconds",
-	)
-	cmd.PersistentFlags().StringVar(&gracefulShutdownMessage, "graceful-shutdown-message",
-		"Graceful shutdown in %d seconds",
-		"graceful shutdown message",
-	)
-
-	cmd.AddCommand(
+	return cli.InitWithCommandFactory(
+		factory.NewCreateGroupsCmd(),
+		factory.NewCreateTenantCmd(),
+		factory.NewDeleteTenantCmd(),
+		factory.NewGetTenantCmd(),
+		factory.NewListTenantsCmd(),
+		factory.NewUpdateTenantCmd(),
 		versionCmd,
-		apiserver.Cmd(BuildInfo),
-		taskscheduler.Cmd(BuildInfo),
-		taskworker.Cmd(BuildInfo),
 	)
-
-	return cmd
 }
 
 func execute() error {
