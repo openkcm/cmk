@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk-core/internal/log"
 )
 
 type Reason string

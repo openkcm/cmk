@@ -6,10 +6,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	registryClient "github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	registryClient "github.com/openkcm/cmk-core/internal/clients/registry/systems"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/repo"
 )
 
 var (

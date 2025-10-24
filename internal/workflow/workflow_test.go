@@ -13,17 +13,17 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/config"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/workflow"
+	"github.com/openkcm/cmk-core/internal/clients"
+	"github.com/openkcm/cmk-core/internal/clients/registry/systems"
+	"github.com/openkcm/cmk-core/internal/config"
+	eventprocessor "github.com/openkcm/cmk-core/internal/event-processor"
+	"github.com/openkcm/cmk-core/internal/grpc/catalog"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
+	sqlRepo "github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk-core/internal/workflow"
 )
 
 var (

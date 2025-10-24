@@ -5,13 +5,13 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/config"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk-core/internal/clients"
+	"github.com/openkcm/cmk-core/internal/config"
+	eventprocessor "github.com/openkcm/cmk-core/internal/event-processor"
+	"github.com/openkcm/cmk-core/internal/grpc/catalog"
+	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/repo"
 )
 
 // APIController handles API requests related to CMK (Customer Managed Keys).

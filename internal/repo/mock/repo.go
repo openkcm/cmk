@@ -6,9 +6,9 @@ import (
 
 	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
 
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/repo"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/repo"
+	cmkcontext "github.com/openkcm/cmk-core/utils/context"
 )
 
 // InMemoryRepository represents the repository for managing mock Resource data.

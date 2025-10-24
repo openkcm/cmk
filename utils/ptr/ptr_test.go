@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 func TestPanicIfDifferent(t *testing.T) {

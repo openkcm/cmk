@@ -20,10 +20,10 @@ import (
 
 	slogctx "github.com/veqryn/slog-context"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/db/dsn"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/tenant-manager/business"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/db/dsn"
+	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk-core/internal/tenant-manager/business"
 )
 
 const (

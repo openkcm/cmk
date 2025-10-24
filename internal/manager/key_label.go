@@ -6,9 +6,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
 )
 
 type Label interface {

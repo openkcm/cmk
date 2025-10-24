@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/openkcm/cmk/utils/protobuf"
+	"github.com/openkcm/cmk-core/utils/protobuf"
 )
 
 func TestStructToProtobuf(t *testing.T) {

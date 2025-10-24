@@ -10,8 +10,8 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/model"
 )
 
 // callbackError - the error callback name.

@@ -70,7 +70,7 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/openkcm/cmk)
+        - prefix(github.com/openkcm/cmk-core)
         - blank
         - dot
         - alias

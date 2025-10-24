@@ -7,7 +7,7 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk-core/internal/repo"
 )
 
 func (o *TenantOperator) HandleCreateTenant(ctx context.Context, req orbital.HandlerRequest) (

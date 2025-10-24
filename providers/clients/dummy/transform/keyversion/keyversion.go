@@ -3,9 +3,9 @@ package keyversion
 import (
 	"time"
 
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/providers"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/providers"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 // FromProvider converts a providers.KeyVersion and model.Key to a model.KeyVersion.

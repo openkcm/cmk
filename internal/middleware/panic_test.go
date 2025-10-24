@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/middleware"
+	"github.com/openkcm/cmk-core/internal/middleware"
 )
 
 func TestPanicRecoveryMiddleware(t *testing.T) {

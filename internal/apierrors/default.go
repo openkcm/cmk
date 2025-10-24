@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/repo"
 )
 
 const (

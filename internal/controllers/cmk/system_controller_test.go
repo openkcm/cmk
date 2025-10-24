@@ -15,16 +15,16 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/apierrors"
+	"github.com/openkcm/cmk-core/internal/clients/registry/systems"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
+	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk-core/internal/testutils"
+	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 var ErrForced = errors.New("forced")

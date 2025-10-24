@@ -8,13 +8,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/api/transform/label"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/api/transform"
+	"github.com/openkcm/cmk-core/internal/api/transform/label"
+	"github.com/openkcm/cmk-core/internal/apierrors"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 type labelsTransformerTestCase struct {

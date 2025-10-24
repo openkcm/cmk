@@ -4,13 +4,13 @@ import (
 	"context"
 	"sync"
 
-	"github.com/openkcm/cmk/internal/authz"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk-core/internal/authz"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
+	cmkcontext "github.com/openkcm/cmk-core/utils/context"
 )
 
 type AuthzManager struct {

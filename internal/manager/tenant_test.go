@@ -6,9 +6,9 @@ import (
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk-core/internal/testutils"
 )
 
 func TestTenantManager(t *testing.T) {

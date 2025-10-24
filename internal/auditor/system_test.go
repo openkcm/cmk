@@ -10,7 +10,7 @@ import (
 
 	otlpaudit "github.com/openkcm/common-sdk/pkg/otlp/audit"
 
-	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk-core/internal/auditor"
 )
 
 func testCmkSystemAuditMethod(

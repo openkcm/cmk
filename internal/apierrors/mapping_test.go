@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/apierrors"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/repo"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 var (

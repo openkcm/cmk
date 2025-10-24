@@ -1,9 +1,9 @@
 package key
 
 import (
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/providers"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/providers"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 // ToProvider converts a model.Key and array of providers.KeyVersion to a providers.Key.

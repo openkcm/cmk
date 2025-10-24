@@ -13,9 +13,9 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/db"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/db"
 )
 
 const (

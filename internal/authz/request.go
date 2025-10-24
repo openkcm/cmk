@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openkcm/cmk/internal/errs"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk-core/internal/errs"
+	cmkcontext "github.com/openkcm/cmk-core/utils/context"
 )
 
 type User struct {

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk-core/internal/model"
 )
 
 func TestImportParamsTable(t *testing.T) {

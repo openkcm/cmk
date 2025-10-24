@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk/internal/async"
-	conf "github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk-core/internal/async"
+	conf "github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/testutils"
 )
 
 func defaultRedisConfig(tlsFiles testutils.TLSFiles) conf.Redis {

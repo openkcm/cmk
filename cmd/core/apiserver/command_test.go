@@ -8,8 +8,8 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk/cmd/core/apiserver"
-	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk-core/cmd/core/apiserver"
+	"github.com/openkcm/cmk-core/internal/config"
 )
 
 func TestRun(t *testing.T) {

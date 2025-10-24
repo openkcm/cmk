@@ -22,12 +22,12 @@ import (
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	slogctx "github.com/veqryn/slog-context"
 
-	"github.com/openkcm/cmk/internal/clients/registry/tenants"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/tenant-manager/operator"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration_utils"
-	tmdb "github.com/openkcm/cmk/utils/base62"
+	"github.com/openkcm/cmk-core/internal/clients/registry/tenants"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/tenant-manager/operator"
+	"github.com/openkcm/cmk-core/internal/testutils"
+	integrationutils "github.com/openkcm/cmk-core/test/integration_utils"
+	tmdb "github.com/openkcm/cmk-core/utils/base62"
 )
 
 const (

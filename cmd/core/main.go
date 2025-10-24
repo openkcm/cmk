@@ -14,9 +14,9 @@ import (
 
 	slogctx "github.com/veqryn/slog-context"
 
-	"github.com/openkcm/cmk/cmd/core/apiserver"
-	"github.com/openkcm/cmk/cmd/core/taskscheduler"
-	"github.com/openkcm/cmk/cmd/core/taskworker"
+	"github.com/openkcm/cmk-core/cmd/core/apiserver"
+	"github.com/openkcm/cmk-core/cmd/core/taskscheduler"
+	"github.com/openkcm/cmk-core/cmd/core/taskworker"
 )
 
 var (

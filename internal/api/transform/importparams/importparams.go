@@ -1,8 +1,8 @@
 package importparams
 
 import (
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/model"
 )
 
 func ToAPI(p model.ImportParams) *cmkapi.ImportParams {

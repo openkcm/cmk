@@ -22,9 +22,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/flags"
-	"github.com/openkcm/cmk/internal/middleware"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/flags"
+	"github.com/openkcm/cmk-core/internal/middleware"
 )
 
 // testData holds test setup data

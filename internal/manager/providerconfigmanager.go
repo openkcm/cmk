@@ -17,14 +17,14 @@ import (
 	keystoremanagerv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/management/v1"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
-	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
+	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	pluginHelpers "github.com/openkcm/cmk-core/utils/plugins"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 const (

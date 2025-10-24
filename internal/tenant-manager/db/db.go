@@ -11,13 +11,13 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	slogctx "github.com/veqryn/slog-context"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
+	sqlRepo "github.com/openkcm/cmk-core/internal/repo/sql"
+	cmkcontext "github.com/openkcm/cmk-core/utils/context"
 )
 
 var _ slogctx.Handler

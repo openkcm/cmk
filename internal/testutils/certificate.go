@@ -13,8 +13,8 @@ import (
 	"github.com/fullsailor/pkcs7"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/utils/crypto"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/utils/crypto"
 )
 
 func CreateCertificateChain(

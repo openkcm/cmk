@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk/internal/repo/violations"
+	"github.com/openkcm/cmk-core/internal/repo/violations"
 )
 
 var errNotPostgres = errors.New("not postgres")

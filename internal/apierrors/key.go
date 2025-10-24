@@ -6,12 +6,12 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/api/transform/key/hyokkey"
-	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/api/transform"
+	"github.com/openkcm/cmk-core/internal/api/transform/key/hyokkey"
+	"github.com/openkcm/cmk-core/internal/api/transform/key/keyshared"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/repo"
 )
 
 var (

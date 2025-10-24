@@ -15,14 +15,14 @@ import (
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/daemon"
-	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/db/dsn"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/daemon"
+	"github.com/openkcm/cmk-core/internal/db"
+	"github.com/openkcm/cmk-core/internal/db/dsn"
+	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/repo/sql"
 )
 
 const (

@@ -11,14 +11,14 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration_utils"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/grpc/catalog"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
+	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk-core/internal/testutils"
+	integrationutils "github.com/openkcm/cmk-core/test/integration_utils"
 )
 
 const (

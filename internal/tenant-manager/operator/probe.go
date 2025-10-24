@@ -9,12 +9,12 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
+	cmkcontext "github.com/openkcm/cmk-core/utils/context"
 )
 
 const (

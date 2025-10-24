@@ -9,7 +9,7 @@ import (
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 
-	tp "github.com/openkcm/cmk/internal/testutils/testplugins/notification"
+	tp "github.com/openkcm/cmk-core/internal/testutils/testplugins/notification"
 )
 
 func TestConfigureReturnsEmptyResponse(t *testing.T) {

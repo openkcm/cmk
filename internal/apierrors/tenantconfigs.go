@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
 )
 
 var ErrGetDefaultKeystore = errors.New("failed to get default keystore")

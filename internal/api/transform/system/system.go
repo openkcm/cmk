@@ -3,9 +3,9 @@ package system
 import (
 	"errors"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/model"
 )
 
 var ErrFromAPI = errors.New("failed to transform system from API")

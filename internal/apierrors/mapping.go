@@ -9,9 +9,9 @@ import (
 
 	slogctx "github.com/veqryn/slog-context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 type APIErrorMapper struct {

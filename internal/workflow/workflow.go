@@ -7,11 +7,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/looplab/fsm"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
 )
 
 var SystemUserID = uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")

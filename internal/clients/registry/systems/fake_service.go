@@ -9,7 +9,7 @@ import (
 
 	systemv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk-core/internal/errs"
 )
 
 type FakeService struct {

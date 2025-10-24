@@ -9,15 +9,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk-core/internal/auditor"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/grpc/catalog"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
+	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk-core/internal/testutils"
 )
 
 var (

@@ -5,11 +5,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/tenantconfigs"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/api/transform/tenantconfigs"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 func TestToAPI(t *testing.T) {

@@ -3,13 +3,13 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	wfTransform "github.com/openkcm/cmk/internal/api/transform/workflow"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	wfTransform "github.com/openkcm/cmk-core/internal/api/transform/workflow"
+	"github.com/openkcm/cmk-core/internal/apierrors"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/errs"
+	wfMechanism "github.com/openkcm/cmk-core/internal/workflow"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 // GetWorkflows returns a list of workflows

@@ -19,16 +19,16 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/crypto"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
+	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk-core/internal/testutils"
+	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	"github.com/openkcm/cmk-core/utils/crypto"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 // startAPIKeyConfig starts the API server for key configurations and returns a pointer to the database

@@ -8,11 +8,11 @@ import (
 	"github.com/openkcm/orbital/codec"
 	"github.com/samber/oops"
 
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/tenant-manager/operator"
+	"github.com/openkcm/cmk-core/internal/clients"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/db"
+	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk-core/internal/tenant-manager/operator"
 )
 
 const logDomain = "business"

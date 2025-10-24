@@ -3,8 +3,8 @@ package clients
 import (
 	"errors"
 
-	"github.com/openkcm/cmk/internal/clients/registry"
-	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk-core/internal/clients/registry"
+	"github.com/openkcm/cmk-core/internal/config"
 )
 
 type Factory struct {

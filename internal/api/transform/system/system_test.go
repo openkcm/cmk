@@ -6,11 +6,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/system"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/api/transform/system"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 func TestToAPI(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 
-	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk-core/internal/log"
 )
 
 const (

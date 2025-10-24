@@ -385,7 +385,7 @@ const file_internal_event_processor_proto_task_proto_rawDesc = "" +
 	"KEY_ROTATE\x10\x03\x12\x0f\n" +
 	"\vSYSTEM_LINK\x10\x04\x12\x11\n" +
 	"\rSYSTEM_UNLINK\x10\x05\x12\x11\n" +
-	"\rSYSTEM_SWITCH\x10\x06B=Z;github.com/openkcm/cmk/internal/event-processor/proto;protob\x06proto3"
+	"\rSYSTEM_SWITCH\x10\x06B=Z;github.com/openkcm/cmk-core/internal/event-processor/proto;protob\x06proto3"
 
 var (
 	file_internal_event_processor_proto_task_proto_rawDescOnce sync.Once

@@ -9,10 +9,10 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	integrationutils "github.com/openkcm/cmk/test/integration_utils"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/grpc/catalog"
+	"github.com/openkcm/cmk-core/internal/manager"
+	integrationutils "github.com/openkcm/cmk-core/test/integration_utils"
 )
 
 var ansPath string

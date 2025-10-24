@@ -10,12 +10,12 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/tenant-manager/db"
-	"github.com/openkcm/cmk/internal/tenant-manager/operator"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk-core/internal/tenant-manager/db"
+	"github.com/openkcm/cmk-core/internal/tenant-manager/operator"
+	"github.com/openkcm/cmk-core/internal/testutils"
 )
 
 const (
