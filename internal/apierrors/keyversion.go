@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/manager"
 )
 
 var (

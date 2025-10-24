@@ -3,14 +3,14 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/api/transform"
-	"github.com/openkcm/cmk-core/internal/api/transform/tenant"
-	"github.com/openkcm/cmk-core/internal/apierrors"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/errs"
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
-	"github.com/openkcm/cmk-core/utils/ptr"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/api/transform"
+	"github.com/openkcm/cmk/internal/api/transform/tenant"
+	"github.com/openkcm/cmk/internal/apierrors"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/errs"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (

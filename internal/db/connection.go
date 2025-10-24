@@ -8,10 +8,10 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/db/dialect"
-	"github.com/openkcm/cmk-core/internal/db/dsn"
-	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db/dialect"
+	"github.com/openkcm/cmk/internal/db/dsn"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 var (

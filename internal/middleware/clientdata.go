@@ -12,8 +12,8 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 
-	"github.com/openkcm/cmk-core/internal/flags"
-	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk/internal/flags"
+	"github.com/openkcm/cmk/internal/log"
 )
 
 type clientDataContextKey string

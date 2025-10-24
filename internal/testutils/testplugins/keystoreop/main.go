@@ -16,7 +16,7 @@ import (
 	keyopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 const importParamsValidityHours = 24

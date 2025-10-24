@@ -12,12 +12,12 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/repo/sql"
-	"github.com/openkcm/cmk-core/internal/testutils"
-	"github.com/openkcm/cmk-core/utils/ptr"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func startAPIGroups(t *testing.T) (*multitenancy.DB, *http.ServeMux, string) {

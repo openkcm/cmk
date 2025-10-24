@@ -9,8 +9,8 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/grpc/catalog"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/grpc/catalog"
 )
 
 func TestNew(t *testing.T) {

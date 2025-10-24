@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk-core/internal/repo/sql"
-	tmdb "github.com/openkcm/cmk-core/tenant-manager/internal/db"
+	"github.com/openkcm/cmk/internal/repo/sql"
+	tmdb "github.com/openkcm/cmk/tenant-manager/internal/db"
 )
 
 func (f *CommandFactory) NewCreateGroupsCmd(ctx context.Context) *cobra.Command {

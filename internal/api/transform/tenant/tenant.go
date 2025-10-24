@@ -1,8 +1,8 @@
 package tenant
 
 import (
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/model"
 )
 
 // ToAPI transforms a system model to an API system.

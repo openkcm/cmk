@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	tmCLI "github.com/openkcm/cmk-core/cmd/tenant-manager-cli"
-	"github.com/openkcm/cmk-core/internal/config"
+	tmCLI "github.com/openkcm/cmk/cmd/tenant-manager-cli"
+	"github.com/openkcm/cmk/internal/config"
 )
 
 var errTest = errors.New("test error")

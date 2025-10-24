@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk-core/utils/base62"
+	"github.com/openkcm/cmk/utils/base62"
 )
 
 func TestSchemaName(t *testing.T) {

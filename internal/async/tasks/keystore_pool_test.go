@@ -7,10 +7,10 @@ import (
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk-core/internal/async/tasks"
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/repo/sql"
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/async/tasks"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 type KeystorePoolFillerMock struct{}

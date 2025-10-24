@@ -8,12 +8,12 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk-core/internal/authz"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/manager"
-	"github.com/openkcm/cmk-core/internal/model"
-	repomock "github.com/openkcm/cmk-core/internal/repo/mock"
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
+	repomock "github.com/openkcm/cmk/internal/repo/mock"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {

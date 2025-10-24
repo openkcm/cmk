@@ -9,9 +9,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/openkcm/cmk-core/internal/async/tasks"
-	"github.com/openkcm/cmk-core/internal/repo/sql"
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/async/tasks"
+	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 type SystemUpdaterMock struct{}

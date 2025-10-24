@@ -3,12 +3,12 @@ package builtin
 import (
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk-core/internal/plugins/builtin/certificateissuer"
-	"github.com/openkcm/cmk-core/internal/plugins/builtin/identitymanagement"
-	keystoreman "github.com/openkcm/cmk-core/internal/plugins/builtin/keystore/management"
-	keystoreop "github.com/openkcm/cmk-core/internal/plugins/builtin/keystore/operations"
-	"github.com/openkcm/cmk-core/internal/plugins/builtin/notification"
-	"github.com/openkcm/cmk-core/internal/plugins/builtin/systeminformation"
+	"github.com/openkcm/cmk/internal/plugins/builtin/certificateissuer"
+	"github.com/openkcm/cmk/internal/plugins/builtin/identitymanagement"
+	keystoreman "github.com/openkcm/cmk/internal/plugins/builtin/keystore/management"
+	keystoreop "github.com/openkcm/cmk/internal/plugins/builtin/keystore/operations"
+	"github.com/openkcm/cmk/internal/plugins/builtin/notification"
+	"github.com/openkcm/cmk/internal/plugins/builtin/systeminformation"
 )
 
 func BuiltIns() []catalog.BuiltIn {

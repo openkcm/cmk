@@ -12,15 +12,15 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk-core/internal/async/tasks"
-	conf "github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/db"
-	"github.com/openkcm/cmk-core/internal/errs"
-	eventprocessor "github.com/openkcm/cmk-core/internal/event-processor"
-	"github.com/openkcm/cmk-core/internal/grpc/catalog"
-	"github.com/openkcm/cmk-core/internal/log"
-	"github.com/openkcm/cmk-core/internal/manager"
-	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/async/tasks"
+	conf "github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db"
+	"github.com/openkcm/cmk/internal/errs"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/grpc/catalog"
+	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
 const (

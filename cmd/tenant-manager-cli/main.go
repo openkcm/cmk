@@ -14,11 +14,11 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/db"
-	"github.com/openkcm/cmk-core/internal/log"
-	"github.com/openkcm/cmk-core/tenant-manager/tenant-cli/cmd"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/db"
+	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/tenant-manager/tenant-cli/cmd"
 )
 
 func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {

@@ -9,7 +9,7 @@ import (
 	certificate_issuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 
-	tp "github.com/openkcm/cmk-core/internal/testutils/testplugins/certificateissuer"
+	tp "github.com/openkcm/cmk/internal/testutils/testplugins/certificateissuer"
 )
 
 func TestConfigureReturnsEmptyResponse(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 var (

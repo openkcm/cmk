@@ -6,8 +6,8 @@ import (
 
 	"github.com/openkcm/orbital"
 
-	"github.com/openkcm/cmk-core/internal/event-processor/proto"
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	"github.com/openkcm/cmk/internal/event-processor/proto"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 // KeyActionJobData contains the data needed for a key action orbital job.

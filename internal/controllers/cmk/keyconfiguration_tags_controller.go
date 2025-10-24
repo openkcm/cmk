@@ -3,12 +3,12 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	tags "github.com/openkcm/cmk-core/internal/api/transform/tags"
-	"github.com/openkcm/cmk-core/internal/apierrors"
-	"github.com/openkcm/cmk-core/internal/errs"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/utils/ptr"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	tags "github.com/openkcm/cmk/internal/api/transform/tags"
+	"github.com/openkcm/cmk/internal/apierrors"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // GetTagsForKeyConfiguration returns the tags for a key configuration

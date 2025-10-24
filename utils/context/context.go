@@ -7,7 +7,7 @@ import (
 	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 var (

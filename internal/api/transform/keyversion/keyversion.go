@@ -1,10 +1,10 @@
 package keyversion
 
 import (
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/api/transform"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/utils/ptr"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/api/transform"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // ToAPI converts KeyVersion db model to a KeyVersion api model

@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk-core/internal/authz"
-	"github.com/openkcm/cmk-core/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/testutils"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 func TestNewRequest_ValidCases(t *testing.T) {

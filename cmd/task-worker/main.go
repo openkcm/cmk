@@ -11,10 +11,10 @@ import (
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/samber/oops"
 
-	"github.com/openkcm/cmk-core/internal/async"
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/constants"
-	cmklog "github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	cmklog "github.com/openkcm/cmk/internal/log"
 )
 
 const AppName = "worker"

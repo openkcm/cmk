@@ -18,13 +18,13 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	md "github.com/oapi-codegen/nethttp-middleware"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/clients"
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/controllers/cmk"
-	"github.com/openkcm/cmk-core/internal/handlers"
-	"github.com/openkcm/cmk-core/internal/middleware"
-	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/clients"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/controllers/cmk"
+	"github.com/openkcm/cmk/internal/handlers"
+	"github.com/openkcm/cmk/internal/middleware"
+	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
 const TestCertURL = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.crt"

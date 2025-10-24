@@ -4,7 +4,7 @@ import (
 	"encoding/pem"
 	"io"
 
-	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 // PEMEncoder is a mock implementation of the PEMEncoder interface.
