@@ -1,0 +1,23 @@
+{{- if .Values.pod.disruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "tenant-manager-cli.fullname" . }}
+  namespace: {{ include "tenant-manager-cli.namespace" . }}
+  labels:
+    {{- include "tenant-manager-cli.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+       {{- include "tenant-manager-cli.selectorLabels" . | nindent 6 }}
+  {{- if not (or (hasKey .Values.pod.disruptionBudget "minAvailable") (hasKey .Values.pod.disruptionBudget "maxUnavailable")) }}
+  minAvailable: 1 # Default value because minAvailable and maxUnavailable are not set
+  {{- end }}
+  {{- if hasKey .Values.pod.disruptionBudget "minAvailable" }}
+  minAvailable: {{ .Values.pod.disruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if hasKey .Values.pod.disruptionBudget "maxUnavailable" }}
+  maxUnavailable: {{ .Values.pod.disruptionBudget.maxUnavailable }}
+  {{- end }}
+{{- end }}

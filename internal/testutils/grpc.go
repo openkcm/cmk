@@ -60,7 +60,7 @@ func NewGRPCSuite(
 }
 
 // NewGRPCServer is mostly used for internal reasons.
-// In most cases please use NewGRPCSuite to set up a DB for unit tests
+// In most cases please use NewGRPCSuite to set up a db for unit tests
 func NewGRPCServer(
 	tb testing.TB,
 	address string,

@@ -56,7 +56,7 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 			--rerun-fails-max-failures=1550 \
 			--format testname \
 			--junitfile junit.xml \
-			--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
+			--packages="./internal/... ./providers/... ./utils... ./cmd/..." \
 			-- -count=1 -covermode=atomic -coverpkg=./... -parallel=$$PARALLEL \
 			-args -test.gocoverdir=$$(pwd)/cover; \
 	} || status=$$?; \

@@ -301,7 +301,7 @@ func (w *WorkflowManager) TransitionWorkflow(
 
 // addApprovers adds the specified approvers to the workflow
 // and transitions the workflow to the next state.
-// This is wrapped in a transaction to ensure that DB state is consistent
+// This is wrapped in a transaction to ensure that db state is consistent
 func (w *WorkflowManager) addApprovers(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -373,7 +373,7 @@ func (w *WorkflowManager) checkOngoingWorkflowForArtifact(
 
 // updateApproverDecisionAndApplyTransition updates the approver
 // decision and applies the transition to the wf.
-// This is wrapped in a transaction to ensure that DB state is
+// This is wrapped in a transaction to ensure that db state is
 // consistent in case of errors.
 func (w *WorkflowManager) applyTransition(
 	ctx context.Context,

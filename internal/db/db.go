@@ -32,30 +32,30 @@ var (
 
 const DBLogDomain = "db"
 
-// StartDB starts DB connection and runs migrations
+// StartDB starts db connection and runs migrations
 func StartDB(
 	ctx context.Context,
 	dbConf config.Database,
 	provisioning config.Provisioning,
 	replicas []config.Database,
 ) (*multitenancy.DB, error) {
-	log.Info(ctx, "Starting DB connection ")
+	log.Info(ctx, "Starting db connection ")
 
 	dbCon, err := StartDBConnection(dbConf, replicas)
 	if err != nil {
-		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to initialize DB Connection")
+		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to initialize db Connection")
 	}
 
 	dbCon = dbCon.WithContext(ctx)
 
-	log.Info(ctx, "Starting DB migration")
+	log.Info(ctx, "Starting db migration")
 
 	err = migrate(ctx, dbCon)
 	if err != nil {
 		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to run table creation migration")
 	}
 
-	log.Info(ctx, "DB migration finished")
+	log.Info(ctx, "db migration finished")
 
 	err = addKeystoreFromConfig(ctx, dbCon, provisioning.InitKeystoreConfig)
 	if err != nil {
@@ -65,7 +65,7 @@ func StartDB(
 	return dbCon, nil
 }
 
-// migrate runs DB migrations
+// migrate runs db migrations
 func migrate(ctx context.Context, db *multitenancy.DB) error {
 	err := db.RegisterModels(
 		ctx,
