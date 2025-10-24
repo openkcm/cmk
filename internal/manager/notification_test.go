@@ -9,10 +9,10 @@ import (
 
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/grpc/catalog"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/testutils"
 )
 
 type NotificationServiceMock struct {

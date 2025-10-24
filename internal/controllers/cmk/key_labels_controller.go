@@ -3,13 +3,13 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	keylabel "github.com/openkcm/cmk/internal/api/transform/label"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	keylabel "github.com/openkcm/cmk-core/internal/api/transform/label"
+	"github.com/openkcm/cmk-core/internal/apierrors"
+	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/utils/ptr"
 )
 
 // GetKeyLabels handles fetching a list of all the labels attached to the key.

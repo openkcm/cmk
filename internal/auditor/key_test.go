@@ -10,8 +10,8 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk-core/internal/auditor"
+	"github.com/openkcm/cmk-core/internal/config"
 )
 
 func createTestAuditor(endpoint string) *auditor.Auditor {

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package proto;
 
-option go_package = "github.com/openkcm/cmk/internal/event-processor/proto;proto";
+option go_package = "github.com/openkcm/cmk-core/internal/event-processor/proto;proto";
 
 enum TaskType {
   KEY_ENABLE = 0;

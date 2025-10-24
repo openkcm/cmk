@@ -9,9 +9,9 @@ import (
 
 	otlpaudit "github.com/openkcm/common-sdk/pkg/otlp/audit"
 
-	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/config"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk-core/internal/auditor"
+	"github.com/openkcm/cmk-core/internal/config"
+	cmkcontext "github.com/openkcm/cmk-core/utils/context"
 )
 
 func createTestContext() context.Context {

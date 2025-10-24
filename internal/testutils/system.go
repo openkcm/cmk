@@ -3,7 +3,7 @@ package testutils
 import (
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk-core/internal/model"
 )
 
 // SystemMutator provides a base System for testing

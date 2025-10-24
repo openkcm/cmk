@@ -8,7 +8,7 @@ import (
 
 	md "github.com/oapi-codegen/nethttp-middleware"
 
-	"github.com/openkcm/cmk/internal/handlers"
+	"github.com/openkcm/cmk-core/internal/handlers"
 )
 
 // OAPIMiddleware validates a Request against the OpenAPI Spec

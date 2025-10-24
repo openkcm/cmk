@@ -10,9 +10,9 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/require"
 
-	apiServer "github.com/openkcm/cmk/cmd/api-server"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/testutils"
+	apiServer "github.com/openkcm/cmk-core/cmd/api-server"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/testutils"
 )
 
 func TestServerRunningAndShutdown(t *testing.T) {

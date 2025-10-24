@@ -9,8 +9,8 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/testutils"
 )
 
 // startAPIServerTenantConfig starts the API server for keys and returns a pointer to the database

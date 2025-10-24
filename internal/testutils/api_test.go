@@ -8,7 +8,7 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk-core/internal/testutils"
 )
 
 // TestStartAPIServerReturnsServeMux tests if StartAPIServer returns a ServeMux

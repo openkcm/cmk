@@ -8,8 +8,8 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
 )
 
 func (f *CommandFactory) NewDeleteTenantCmd(ctx context.Context) *cobra.Command {

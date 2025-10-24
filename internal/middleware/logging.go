@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk-core/internal/log"
 )
 
 // LoggingMiddleware logs the start and end of each request, along with the duration and status code.

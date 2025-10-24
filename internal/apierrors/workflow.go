@@ -4,10 +4,10 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo"
-	workflowpkg "github.com/openkcm/cmk/internal/workflow"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/manager"
+	"github.com/openkcm/cmk-core/internal/repo"
+	workflowpkg "github.com/openkcm/cmk-core/internal/workflow"
 )
 
 var (

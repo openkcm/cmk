@@ -1,4 +1,4 @@
-module github.com/openkcm/cmk
+module github.com/openkcm/cmk-core
 
 go 1.25.1
 

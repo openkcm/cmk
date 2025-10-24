@@ -5,11 +5,11 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/config"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk-core/internal/auditor"
+	"github.com/openkcm/cmk-core/internal/clients"
+	"github.com/openkcm/cmk-core/internal/config"
+	eventprocessor "github.com/openkcm/cmk-core/internal/event-processor"
+	"github.com/openkcm/cmk-core/internal/repo"
 )
 
 type Manager struct {

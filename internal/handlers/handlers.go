@@ -9,11 +9,11 @@ import (
 	md "github.com/oapi-codegen/nethttp-middleware"
 	slogctx "github.com/veqryn/slog-context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/write"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/log"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk-core/internal/api/cmkapi"
+	"github.com/openkcm/cmk-core/internal/api/write"
+	"github.com/openkcm/cmk-core/internal/apierrors"
+	"github.com/openkcm/cmk-core/internal/log"
+	cmkcontext "github.com/openkcm/cmk-core/utils/context"
 )
 
 // OAPIValidatorHandler is called when OAPI Required fields are missing from Request

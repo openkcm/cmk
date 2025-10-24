@@ -8,13 +8,13 @@ import (
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration_utils"
+	"github.com/openkcm/cmk-core/internal/async"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk-core/internal/repo"
+	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk-core/internal/testutils"
+	integrationutils "github.com/openkcm/cmk-core/test/integration_utils"
 )
 
 func TestCertRotation(t *testing.T) {

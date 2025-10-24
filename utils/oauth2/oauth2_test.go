@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk/utils/cert"
-	"github.com/openkcm/cmk/utils/oauth2"
-	"github.com/openkcm/cmk/utils/tlsconfig"
+	"github.com/openkcm/cmk-core/utils/cert"
+	"github.com/openkcm/cmk-core/utils/oauth2"
+	"github.com/openkcm/cmk-core/utils/tlsconfig"
 )
 
 func TestNewClient(t *testing.T) {

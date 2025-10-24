@@ -8,8 +8,8 @@ import (
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk-core/internal/clients/registry/systems"
+	"github.com/openkcm/cmk-core/internal/model"
 )
 
 var GetPluginAlgorithm = getPluginAlgorithm

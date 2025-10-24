@@ -11,8 +11,8 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	idmangv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk-core/internal/grpc/catalog"
 )
 
 var (
