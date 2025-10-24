@@ -3,9 +3,9 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/repo"
-	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
 func (f *CommandFactory) NewListTenantsCmd() *cobra.Command {

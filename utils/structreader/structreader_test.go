@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/openkcm/cmk-core/utils/structreader"
+	"github.com/openkcm/cmk/utils/structreader"
 )
 
 func TestNewConfigReader(t *testing.T) {

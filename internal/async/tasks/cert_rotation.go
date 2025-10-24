@@ -7,13 +7,13 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/errs"
-	"github.com/openkcm/cmk-core/internal/log"
-	"github.com/openkcm/cmk-core/internal/manager"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/repo"
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type CertUpdater interface {

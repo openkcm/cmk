@@ -9,8 +9,8 @@ import (
 
 	slogctx "github.com/veqryn/slog-context"
 
-	"github.com/openkcm/cmk-core/internal/model"
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	"github.com/openkcm/cmk/internal/model"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 func InjectRequest(ctx context.Context, r *http.Request) context.Context {

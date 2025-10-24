@@ -5,7 +5,7 @@ import (
 
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
-	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk/internal/model"
 )
 
 func MapRegistrySystemsToCmkSystems(grpcSystems []*systemgrpc.System) ([]*model.System, error) {

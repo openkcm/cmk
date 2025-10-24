@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openkcm/cmk-core/internal/authz"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 // TestIsAllowed tests the IsAllowed function of the AuthorizationHandler

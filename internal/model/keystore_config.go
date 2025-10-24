@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk/internal/config"
 )
 
 // KeystoreConfiguration is an internal entity of pool item that should be persisted.

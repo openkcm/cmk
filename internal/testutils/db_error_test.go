@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 var ErrForced = errors.New("forced error")

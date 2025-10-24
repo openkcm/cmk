@@ -16,15 +16,15 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/errs"
-	"github.com/openkcm/cmk-core/internal/log"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/repo"
-	"github.com/openkcm/cmk-core/internal/repo/sql"
-	tmdb "github.com/openkcm/cmk-core/internal/tenant-manager/db"
-	"github.com/openkcm/cmk-core/utils/base62"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/internal/repo/sql"
+	tmdb "github.com/openkcm/cmk/internal/tenant-manager/db"
+	"github.com/openkcm/cmk/utils/base62"
 )
 
 const (

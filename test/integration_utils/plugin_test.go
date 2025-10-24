@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	integrationutils "github.com/openkcm/cmk-core/test/integration_utils"
+	integrationutils "github.com/openkcm/cmk/test/integration_utils"
 )
 
 func TestPlugins(t *testing.T) {

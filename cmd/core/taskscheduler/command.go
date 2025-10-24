@@ -6,10 +6,10 @@ import (
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk-core/internal/async"
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/constants"
-	cmklog "github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	cmklog "github.com/openkcm/cmk/internal/log"
 )
 
 func Cmd(buildInfo string) *cobra.Command {

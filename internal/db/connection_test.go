@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/db"
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 var errForced = errors.New("forced error")

@@ -3,7 +3,7 @@ package constants_test
 import (
 	"testing"
 
-	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk/internal/constants"
 )
 
 func TestLogLevel_String(t *testing.T) {

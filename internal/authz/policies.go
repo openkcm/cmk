@@ -1,6 +1,6 @@
 package authz
 
-import "github.com/openkcm/cmk-core/internal/constants"
+import "github.com/openkcm/cmk/internal/constants"
 
 type (
 	ResourceTypeName string

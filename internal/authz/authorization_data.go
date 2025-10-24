@@ -3,7 +3,7 @@ package authz
 import (
 	"errors"
 
-	"github.com/openkcm/cmk-core/internal/errs"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 type AuthorizationKey struct {

@@ -16,13 +16,13 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	certissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/errs"
-	"github.com/openkcm/cmk-core/internal/log"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/repo"
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
-	"github.com/openkcm/cmk-core/utils/crypto"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/crypto"
 )
 
 var (

@@ -11,13 +11,13 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/grpc/catalog"
-	"github.com/openkcm/cmk-core/internal/manager"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/repo/sql"
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/grpc/catalog"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 var ErrForced = errors.New("forced")

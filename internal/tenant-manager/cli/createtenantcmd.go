@@ -7,9 +7,9 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk-core/internal/model"
-	tmdb "github.com/openkcm/cmk-core/internal/tenant-manager/db"
-	"github.com/openkcm/cmk-core/utils/base62"
+	"github.com/openkcm/cmk/internal/model"
+	tmdb "github.com/openkcm/cmk/internal/tenant-manager/db"
+	"github.com/openkcm/cmk/utils/base62"
 )
 
 //nolint:funlen

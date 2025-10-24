@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk-core/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
 func (f *CommandFactory) NewGetTenantCmd() *cobra.Command {

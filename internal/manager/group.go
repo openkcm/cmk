@@ -6,13 +6,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/errs"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/repo"
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
-	"github.com/openkcm/cmk-core/utils/ptr"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrGroupRole = errors.New("unsupported role for group creation")

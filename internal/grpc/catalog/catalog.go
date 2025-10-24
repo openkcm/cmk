@@ -9,8 +9,8 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/plugins/builtin"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/plugins/builtin"
 )
 
 // New creates a new instance of Catalog with the provided configuration.

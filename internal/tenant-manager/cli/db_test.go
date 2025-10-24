@@ -16,12 +16,12 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk-core/internal/model"
-	sqlRepo "github.com/openkcm/cmk-core/internal/repo/sql"
-	tmdb "github.com/openkcm/cmk-core/internal/tenant-manager/db"
-	"github.com/openkcm/cmk-core/internal/testutils"
-	integrationutils "github.com/openkcm/cmk-core/test/integration_utils"
-	"github.com/openkcm/cmk-core/utils/base62"
+	"github.com/openkcm/cmk/internal/model"
+	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
+	tmdb "github.com/openkcm/cmk/internal/tenant-manager/db"
+	"github.com/openkcm/cmk/internal/testutils"
+	integrationutils "github.com/openkcm/cmk/test/integration_utils"
+	"github.com/openkcm/cmk/utils/base62"
 )
 
 type DBSuite struct {

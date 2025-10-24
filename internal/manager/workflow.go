@@ -9,14 +9,14 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/errs"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/repo"
-	wf "github.com/openkcm/cmk-core/internal/workflow"
-	"github.com/openkcm/cmk-core/utils/ptr"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	wf "github.com/openkcm/cmk/internal/workflow"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrWorkflowApproverDecision = errors.New("workflow approver decision")

@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk-core/internal/constants"
+	"github.com/openkcm/cmk/internal/constants"
 )
 
 type Group struct {

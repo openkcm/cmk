@@ -10,12 +10,12 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
-	"github.com/openkcm/cmk-core/internal/clients/registry/systems"
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/errs"
-	"github.com/openkcm/cmk-core/internal/log"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/repo"
+	"github.com/openkcm/cmk/internal/clients/registry/systems"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
 )
 
 var (

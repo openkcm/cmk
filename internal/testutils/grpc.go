@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
-	"github.com/openkcm/cmk-core/internal/clients"
+	"github.com/openkcm/cmk/internal/clients"
 )
 
 const (

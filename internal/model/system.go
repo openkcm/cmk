@@ -4,8 +4,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/config"
 )
 
 //nolint:recvcheck

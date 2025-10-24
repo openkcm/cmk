@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/tenant-manager/db"
-	"github.com/openkcm/cmk-core/internal/testutils"
-	integrationutils "github.com/openkcm/cmk-core/test/integration_utils"
-	"github.com/openkcm/cmk-core/utils/base62"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/tenant-manager/db"
+	"github.com/openkcm/cmk/internal/testutils"
+	integrationutils "github.com/openkcm/cmk/test/integration_utils"
+	"github.com/openkcm/cmk/utils/base62"
 )
 
 var (

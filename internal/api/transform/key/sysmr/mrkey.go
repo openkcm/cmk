@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/api/transform"
-	"github.com/openkcm/cmk-core/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk-core/internal/api/transform/key/transformer"
-	"github.com/openkcm/cmk-core/internal/errs"
-	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/api/transform"
+	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
+	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/model"
 )
 
 // FromCmkAPIKey propose to retrieve Managed key Request from CMK Api Key

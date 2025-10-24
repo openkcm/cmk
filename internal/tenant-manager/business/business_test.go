@@ -7,9 +7,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/tenant-manager/business"
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/tenant-manager/business"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 func TestBusinessMain(t *testing.T) {

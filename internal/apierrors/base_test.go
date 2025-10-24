@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/apierrors"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/apierrors"
 )
 
 func TestInternalServerErrorMessage(t *testing.T) {

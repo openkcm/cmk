@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/errs"
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/errs"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type UserGroup string

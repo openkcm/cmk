@@ -9,9 +9,9 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 func startAPITenant(t *testing.T) (*multitenancy.DB, *http.ServeMux) {

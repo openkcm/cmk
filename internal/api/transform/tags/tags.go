@@ -3,9 +3,9 @@ package tags
 import (
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/utils/ptr"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type TagSetter interface {

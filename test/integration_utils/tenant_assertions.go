@@ -10,11 +10,11 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/repo"
-	"github.com/openkcm/cmk-core/internal/repo/sql"
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/internal/repo/sql"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type TableInfo struct {

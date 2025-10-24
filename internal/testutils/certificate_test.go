@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk-core/internal/manager"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 func TestCreateTestCertificate(t *testing.T) {

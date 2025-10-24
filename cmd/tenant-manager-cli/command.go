@@ -14,7 +14,7 @@ import (
 
 	slogctx "github.com/veqryn/slog-context"
 
-	"github.com/openkcm/cmk-core/internal/tenant-manager/cli"
+	"github.com/openkcm/cmk/internal/tenant-manager/cli"
 )
 
 var (

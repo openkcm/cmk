@@ -8,5 +8,5 @@ includes:
     vars:
       CODE_DIRS: '{{.ROOT_DIR}}/cmd/... {{.ROOT_DIR}}/internal/... {{.ROOT_DIR}}/apis/... {{.ROOT_DIR}}/providers/... {{.ROOT_DIR}}/test/... {{.ROOT_DIR}}/utils/...'
       COMPONENTS: 'core tenant-manager tenant-manager-cli'
-      REPO_URL: 'https://github.com/openkcm/cmk-core'
+      REPO_URL: 'https://github.com/openkcm/cmk'
 

@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/openkcm/cmk-core/internal/api/write"
-	"github.com/openkcm/cmk-core/internal/apierrors"
-	"github.com/openkcm/cmk-core/internal/log"
+	"github.com/openkcm/cmk/internal/api/write"
+	"github.com/openkcm/cmk/internal/apierrors"
+	"github.com/openkcm/cmk/internal/log"
 )
 
 // PanicRecoveryMiddleware is a middleware that recovers from panics and logs them.

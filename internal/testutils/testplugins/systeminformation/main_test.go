@@ -9,7 +9,7 @@ import (
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 
-	tp "github.com/openkcm/cmk-core/internal/testutils/testplugins/systeminformation"
+	tp "github.com/openkcm/cmk/internal/testutils/testplugins/systeminformation"
 )
 
 func TestConfigureReturnsEmptyResponse(t *testing.T) {

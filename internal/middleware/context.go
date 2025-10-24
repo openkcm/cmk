@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 // InjectRequestID injects a RequestID into the context to be used by other middlewares

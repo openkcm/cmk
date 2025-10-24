@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/log"
-	cmkcontext "github.com/openkcm/cmk-core/utils/context"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/log"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 // ErrorResponse writes an error response to the client and logs the error

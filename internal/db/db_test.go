@@ -8,10 +8,10 @@ import (
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/db"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/internal/testutils"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 func TestStartDB(t *testing.T) {

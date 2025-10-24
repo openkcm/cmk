@@ -3,10 +3,10 @@ package group
 import (
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/model"
-	"github.com/openkcm/cmk-core/utils/ptr"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func ToAPI(group model.Group) *cmkapi.Group {

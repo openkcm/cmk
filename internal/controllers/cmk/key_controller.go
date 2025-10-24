@@ -3,15 +3,15 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk-core/internal/api/cmkapi"
-	"github.com/openkcm/cmk-core/internal/api/transform/importparams"
-	keyTransform "github.com/openkcm/cmk-core/internal/api/transform/key"
-	"github.com/openkcm/cmk-core/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk-core/internal/api/transform/key/transformer"
-	"github.com/openkcm/cmk-core/internal/apierrors"
-	"github.com/openkcm/cmk-core/internal/constants"
-	"github.com/openkcm/cmk-core/internal/errs"
-	"github.com/openkcm/cmk-core/utils/ptr"
+	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/api/transform/importparams"
+	keyTransform "github.com/openkcm/cmk/internal/api/transform/key"
+	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
+	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
+	"github.com/openkcm/cmk/internal/apierrors"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // PostKeys handles the creation of a new key

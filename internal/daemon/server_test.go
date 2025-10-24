@@ -6,8 +6,8 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk-core/internal/config"
-	"github.com/openkcm/cmk-core/internal/daemon"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/daemon"
 )
 
 var conf = &config.Config{

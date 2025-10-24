@@ -7,7 +7,7 @@ import (
 
 	pb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
-	"github.com/openkcm/cmk-core/internal/model"
+	"github.com/openkcm/cmk/internal/model"
 )
 
 func TestTenantStatusValidation(t *testing.T) {

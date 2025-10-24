@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk-core/internal/async"
-	"github.com/openkcm/cmk-core/internal/config"
+	"github.com/openkcm/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/config"
 )
 
 func TestGetConfigs(t *testing.T) {
