@@ -40,7 +40,7 @@ default: test
 run:
 	AWS_ACCESS_KEY_ID="exampleAccessKeyID" AWS_SECRET_ACCESS_KEY="exampleSecretAccessKey" go run ./cmd/api-server
 
-test: generate-task-proto install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
+test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 	rm -rf cover cover.* junit.xml
 	mkdir -p cover
 	go clean -testcache
@@ -668,6 +668,7 @@ generate-task-proto:
 		--go-grpc_out=. \
 		--go-grpc_opt=paths=source_relative \
 		internal/event-processor/proto/*.proto
+	goimports -w ./internal/event-processor/proto/task.pb.go
 
 tenant-cli:
 	kubectl exec -it -n cmk deploy/cmk-tenant-manager-cli -- ./bin/tenant-manager-cli $(ARGS)
