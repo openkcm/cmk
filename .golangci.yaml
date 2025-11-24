@@ -34,6 +34,10 @@ linters:
     testifylint:
       disable:
         - require-error
+    exhaustive:
+      # This creates a lint error if there isn't an explicit case for all values of
+      # enum without a default
+      default-signifies-exhaustive: true
   exclusions:
     generated: lax
     presets:
@@ -43,7 +47,6 @@ linters:
       - std-error-handling
     rules:
       - linters:
-          - dupl
           - funlen
           - maintidx
         source: ^func [Tt]est|Benchmark
@@ -52,10 +55,14 @@ linters:
         path: benchmark/.*
       - linters:
           - funcorder
+          - dupl
         path: (.+)_test\.go
       - linters:
           - contextcheck
         path: (.+)_controller_test\.go
+      - linters:
+          - contextcheck
+        path: (.+)crypto_test\.go
     paths:
       - third_party$
       - builtin$
