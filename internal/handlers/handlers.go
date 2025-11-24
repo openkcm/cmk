@@ -48,6 +48,7 @@ func ParamsErrorHandler() func(w http.ResponseWriter, r *http.Request, err error
 			invalidFormatErr     *cmkapi.InvalidParamFormatError
 			requiredHeaderErr    *cmkapi.RequiredHeaderError
 			tooManyParametersErr *cmkapi.TooManyValuesForParamError
+			requiredParamErr     *cmkapi.RequiredParamError
 		)
 
 		switch {
@@ -57,6 +58,8 @@ func ParamsErrorHandler() func(w http.ResponseWriter, r *http.Request, err error
 			errorResponse = apierrors.RequiredHeaderError(requiredHeaderErr.Error())
 		case errors.As(err, &tooManyParametersErr):
 			errorResponse = apierrors.TooManyParameters(tooManyParametersErr.Error())
+		case errors.As(err, &requiredParamErr):
+			errorResponse = apierrors.RequiredParamError(requiredParamErr.Error())
 		default:
 			errorResponse = apierrors.InternalServerErrorMessage()
 		}

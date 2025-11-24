@@ -22,7 +22,7 @@ type CertCreator struct {
 func (c *CertCreator) CreateCertificate(
 	io.Reader,
 	*x509.Certificate, *x509.Certificate,
-	interface{}, interface{}) ([]byte, error) {
+	any, any) ([]byte, error) {
 	if c.ShouldReturnErrorForCert {
 		return nil, ErrForcedError
 	}

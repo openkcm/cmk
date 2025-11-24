@@ -20,14 +20,16 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func startAPIGroups(t *testing.T) (*multitenancy.DB, *http.ServeMux, string) {
+func startAPIGroups(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&model.Group{}, &model.KeyConfiguration{}},
 	})
 
-	r := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
+	r := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Plugins: []testutils.MockPlugin{testutils.IdentityPlugin},
+	})
 
 	return db, r, tenants[0]
 }
@@ -100,6 +102,22 @@ func TestPostGroups(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
+	t.Run("Should code 400 on group with invalid name", func(t *testing.T) {
+		group := cmkapi.Group{
+			Name: "$",
+			Role: cmkapi.GroupRoleKEYADMINISTRATOR,
+		}
+
+		w := testutils.MakeHTTPRequest(t, r, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: "/groups",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, group),
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
 	t.Run("Should code 400 on create group with invalid body", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, r, testutils.RequestOptions{
 			Method:   http.MethodPost,
@@ -115,11 +133,7 @@ func TestDeleteGroup(t *testing.T) {
 	db, r, tenant := startAPIGroups(t)
 
 	t.Run("Should code 204 on successful group delete", func(t *testing.T) {
-		group := &model.Group{
-			ID:   uuid.New(),
-			Name: "test",
-			Role: "test",
-		}
+		group := testutils.NewGroup(func(_ *model.Group) {})
 
 		repo := sql.NewRepository(db)
 		err := repo.Create(testutils.CreateCtxWithTenant(tenant), group)
@@ -174,11 +188,7 @@ func TestGetGroupID(t *testing.T) {
 	db, r, tenant := startAPIGroups(t)
 
 	t.Run("Should code 200 successful get", func(t *testing.T) {
-		group := &model.Group{
-			ID:   uuid.New(),
-			Name: "test",
-			Role: "test",
-		}
+		group := testutils.NewGroup(func(_ *model.Group) {})
 
 		repo := sql.NewRepository(db)
 		err := repo.Create(testutils.CreateCtxWithTenant(tenant), group)
@@ -232,11 +242,7 @@ func TestGetGroupID(t *testing.T) {
 func TestUpdateGroup(t *testing.T) {
 	db, r, tenant := startAPIGroups(t)
 
-	group := &model.Group{
-		ID:   uuid.New(),
-		Name: "test",
-		Role: "test",
-	}
+	group := testutils.NewGroup(func(_ *model.Group) {})
 
 	rep := sql.NewRepository(db)
 	err := rep.Create(testutils.CreateCtxWithTenant(tenant), group)
@@ -319,5 +325,42 @@ func TestUpdateGroup(t *testing.T) {
 		})
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+func TestCheckGroupsIAM(t *testing.T) {
+	_, r, tenant := startAPIGroups(t)
+
+	t.Run("returns correct response on success", func(t *testing.T) {
+		body := cmkapi.CheckGroupsIAMJSONRequestBody{
+			IamIdentifiers: []string{"KMS_001", "KMS_002", "KMS_999"},
+		}
+		w := testutils.MakeHTTPRequest(t, r, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: "/groups/iamCheck",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, body),
+		})
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.CheckGroupsIAM200JSONResponse](t, w)
+
+		expected := cmkapi.CheckGroupsIAM200JSONResponse{
+			Value: []cmkapi.GroupIAMExistence{
+				{
+					IamIdentifier: ptr.PointTo("KMS_001"),
+					Exists:        true,
+				},
+				{
+					IamIdentifier: ptr.PointTo("KMS_002"),
+					Exists:        true,
+				},
+				{
+					IamIdentifier: ptr.PointTo("KMS_999"),
+					Exists:        false,
+				},
+			},
+		}
+		assert.Equal(t, expected, response)
 	})
 }

@@ -12,13 +12,13 @@ import (
 func TestStructToProtobuf(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    interface{}
+		input    any
 		expected *structpb.Struct
 		errMsg   string
 	}{
 		{
 			name: "Valid Input",
-			input: map[string]interface{}{
+			input: map[string]any{
 				"key1": "value1",
 				"key2": 123,
 				"key3": true,

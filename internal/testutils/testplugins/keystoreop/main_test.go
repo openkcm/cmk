@@ -244,7 +244,7 @@ func TestTransformCryptoAccessData(t *testing.T) {
 	p := setupTest()
 
 	input := func() []byte {
-		data := map[string]map[string]interface{}{
+		data := map[string]map[string]any{
 			"instance-1": {
 				"field1": "value1",
 				"field2": "value2",
@@ -296,7 +296,7 @@ func TestNew(t *testing.T) {
 	}
 
 	expectedType := "*main.TestPlugin"
-	actualType := reflect.TypeOf(p).String()
+	actualType := reflect.TypeFor[*tp.TestPlugin]().String()
 
 	if actualType != expectedType {
 		t.Errorf("Expected type %s, got %s", expectedType, actualType)

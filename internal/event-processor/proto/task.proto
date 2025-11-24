@@ -40,5 +40,7 @@ message SystemAction {
   string key_provider = 35;
   bytes key_access_meta_data = 40;
   string tenant_id = 50;
+  string tenant_owner_id = 51;
+  string tenant_owner_type = 52;
   string cmk_region = 60;
 }

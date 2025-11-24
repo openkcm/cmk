@@ -7,23 +7,14 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/flags"
 	"github.com/openkcm/cmk/internal/log"
-)
-
-type clientDataContextKey string
-
-const (
-	ClientDataEmail   clientDataContextKey = "Email"
-	ClientDataGroups  clientDataContextKey = "Groups"
-	ClientDataRegion  clientDataContextKey = "Region"
-	ClientDataSubject clientDataContextKey = "Subject"
-	ClientDataType    clientDataContextKey = "Type"
 )
 
 var (
@@ -41,6 +32,7 @@ var (
 func ClientDataMiddleware(
 	featureGates *commoncfg.FeatureGates,
 	signingKeyStorage keyvalue.ReadOnlyStringToBytesStorage,
+	authContextFields []string,
 ) func(http.Handler) http.Handler {
 	clientDataComputationDisabled := featureGates.IsFeatureEnabled(flags.DisableClientDataComputation)
 	if clientDataComputationDisabled {
@@ -52,12 +44,13 @@ func ClientDataMiddleware(
 			return next
 		}
 
-		return clientDataHandler(signingKeyStorage, next)
+		return clientDataHandler(signingKeyStorage, authContextFields, next)
 	}
 }
 
 func clientDataHandler(
 	signingKeyStorage keyvalue.ReadOnlyStringToBytesStorage,
+	authContextFields []string,
 	next http.Handler,
 ) http.Handler {
 	return http.HandlerFunc(
@@ -103,7 +96,7 @@ func clientDataHandler(
 				return
 			}
 
-			ctx := populateContextWithClientData(r.Context(), clientData)
+			ctx := populateContextWithClientData(r.Context(), clientData, authContextFields)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		},
 	)
@@ -140,12 +133,21 @@ func verifyClientDataSignature(r *http.Request, clientData *auth.ClientData, pub
 }
 
 // populateContextWithClientData adds client data to request context
-func populateContextWithClientData(ctx context.Context, clientData *auth.ClientData) context.Context {
-	ctx = context.WithValue(ctx, ClientDataSubject, clientData.Subject)
-	ctx = context.WithValue(ctx, ClientDataEmail, clientData.Email)
-	ctx = context.WithValue(ctx, ClientDataGroups, clientData.Groups)
-	ctx = context.WithValue(ctx, ClientDataRegion, clientData.Region)
-	ctx = context.WithValue(ctx, ClientDataType, clientData.Type)
+func populateContextWithClientData(
+	ctx context.Context,
+	clientData *auth.ClientData,
+	authContextFields []string,
+) context.Context {
+	filteredAuthCtx := make(map[string]string)
+
+	for _, field := range authContextFields {
+		if value, exists := clientData.AuthContext[field]; exists {
+			filteredAuthCtx[field] = value
+		}
+	}
+
+	clientData.AuthContext = filteredAuthCtx
+	ctx = context.WithValue(ctx, constants.ClientData, clientData)
 
 	return ctx
 }

@@ -2,6 +2,7 @@ package testutils
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/controllers/cmk"
+	"github.com/openkcm/cmk/internal/daemon"
 	"github.com/openkcm/cmk/internal/handlers"
 	"github.com/openkcm/cmk/internal/middleware"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -42,7 +44,7 @@ func NewAPIServer(
 	tb testing.TB,
 	db *multitenancy.DB,
 	testCfg TestAPIServerConfig,
-) *http.ServeMux {
+) cmkapi.ServeMux {
 	tb.Helper()
 
 	cfg := testCfg.Config
@@ -85,7 +87,7 @@ func NewAPIServer(
 
 func startAPIServer(
 	controller *cmk.APIController,
-) *http.ServeMux {
+) cmkapi.ServeMux {
 	strictController := cmkapi.NewStrictHandlerWithOptions(
 		controller,
 		[]cmkapi.StrictMiddlewareFunc{},
@@ -102,10 +104,7 @@ func startAPIServer(
 		openapi3filter.JSONBodyDecoder,
 	)
 
-	swagger, _ := cmkapi.GetSwagger()
-	for _, srv := range swagger.Servers {
-		srv.URL = strings.Replace(srv.URL, "{host}", "", 1)
-	}
+	swagger, _ := daemon.SetupSwagger()
 
 	cmkapi.HandlerWithOptions(strictController,
 		cmkapi.StdHTTPServerOptions{
@@ -148,11 +147,12 @@ func GetTestURL(tb testing.TB, tenant, path string) string {
 }
 
 type RequestOptions struct {
-	Method   string // HTTP Method
-	Endpoint string
-	Tenant   string    // TenantID
-	Body     io.Reader // Only need to be set for POST/PATCH Methods. Used with the WithString and WithJSON methods
-	Headers  map[string]string
+	Method            string // HTTP Method
+	Endpoint          string
+	Tenant            string    // TenantID
+	Body              io.Reader // Only need to be set for POST/PATCH. Used with the WithString and WithJSON
+	Headers           map[string]string
+	AdditionalContext map[any]any
 }
 
 // WithString is a helper function that converts a string to an io.Reader.
@@ -196,8 +196,15 @@ func GetJSONBody[t any](tb testing.TB, w *httptest.ResponseRecorder) t {
 func NewHTTPRequest(tb testing.TB, opt RequestOptions) *http.Request {
 	tb.Helper()
 
+	ctx := tb.Context()
+
+	//nolint: fatcontext
+	for k, v := range opt.AdditionalContext {
+		ctx = context.WithValue(ctx, k, v)
+	}
+
 	r, err := http.NewRequestWithContext(
-		tb.Context(),
+		ctx,
 		opt.Method,
 		GetTestURL(tb, opt.Tenant, opt.Endpoint),
 		opt.Body,
@@ -206,6 +213,9 @@ func NewHTTPRequest(tb testing.TB, opt RequestOptions) *http.Request {
 
 	switch opt.Method {
 	case http.MethodGet, http.MethodDelete:
+	case http.MethodHead, http.MethodConnect, http.MethodOptions, http.MethodTrace:
+		// We do not actually support these but never-the-less we might want
+		// to test against them
 	case http.MethodPost, http.MethodPut:
 		r.Header.Set("Content-Type", "application/json")
 	case http.MethodPatch:
@@ -223,7 +233,7 @@ func NewHTTPRequest(tb testing.TB, opt RequestOptions) *http.Request {
 
 // MakeHTTPRequest creates an HTTP method and gets its response for it
 // On POST/PATCH methods, RequestOptions body should use WithString/WithJSON methods
-func MakeHTTPRequest(tb testing.TB, server *http.ServeMux, opt RequestOptions) *httptest.ResponseRecorder {
+func MakeHTTPRequest(tb testing.TB, server cmkapi.ServeMux, opt RequestOptions) *httptest.ResponseRecorder {
 	tb.Helper()
 
 	req := NewHTTPRequest(tb, opt)

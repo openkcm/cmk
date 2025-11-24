@@ -171,6 +171,27 @@ func TestMapErrorToResponseNoMapping(t *testing.T) {
 	}
 }
 
+func TestMapErrorToResponseWithContextGetter(t *testing.T) {
+	expectedContext := map[string]any{"foo": "bar"}
+
+	apiErrorMapper := apierrors.APIErrorMapper{
+		APIErrors: []apierrors.APIErrors{
+			{
+				Errors:       []error{ErrTest},
+				ExposedError: cmkapi.DetailedError{Code: "CODE", Message: "Some error", Status: 400},
+				ContextGetter: func(_ error) map[string]any {
+					return expectedContext
+				},
+			},
+		},
+	}
+
+	result := apiErrorMapper.Transform(t.Context(), ErrTest)
+	assert.NotNil(t, result)
+	assert.Equal(t, "CODE", result.Error.Code)
+	assert.Equal(t, expectedContext, *result.Error.Context)
+}
+
 func TestMatchedErrorLogicWithEqualPriority(t *testing.T) {
 	apiErrorMapper := apierrors.APIErrorMapper{
 		APIErrors: []apierrors.APIErrors{

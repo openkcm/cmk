@@ -74,6 +74,7 @@ type CryptoReconciler struct {
 	repo          repo.Repo
 	manager       *orbital.Manager
 	targets       map[string]struct{}
+	initiators    []orbital.Initiator
 	pluginCatalog *plugincatalog.Catalog
 }
 
@@ -103,21 +104,26 @@ func NewCryptoReconciler(
 	}
 
 	targetMap := make(map[string]struct{})
+	initiators := make([]orbital.Initiator, 0)
+
 	for region := range targets {
 		targetMap[region] = struct{}{}
+		initiators = append(initiators, targets[region].Client)
 	}
 
 	reconciler := &CryptoReconciler{
 		repo:          repository,
 		targets:       targetMap,
+		initiators:    initiators,
 		pluginCatalog: pluginCatalog,
 	}
 
 	managerOpts := []orbital.ManagerOptsFunc{
-		orbital.WithTargetClients(targets),
+		orbital.WithTargets(targets),
 		orbital.WithJobConfirmFunc(reconciler.confirmJob),
 		orbital.WithJobDoneEventFunc(reconciler.jobTerminationFunc),
 		orbital.WithJobFailedEventFunc(reconciler.jobTerminationFunc),
+		orbital.WithJobCanceledEventFunc(reconciler.jobTerminationFunc),
 	}
 
 	manager, err := orbital.NewManager(orbRepo, reconciler.resolveTasks(), managerOpts...)
@@ -140,17 +146,24 @@ func (c *CryptoReconciler) Start(ctx context.Context) error {
 	return c.manager.Start(ctx)
 }
 
-func (c *CryptoReconciler) createJob(ctx context.Context, data []byte, eventType string) (orbital.Job, error) {
-	job := orbital.NewJob(eventType, data)
+func (c *CryptoReconciler) CloseAmqpClients(ctx context.Context) {
+	for _, initiator := range c.initiators {
+		if amqpClient, ok := initiator.(*amqp.Client); ok {
+			_ = amqpClient.Close(ctx)
+		}
+	}
+}
 
+func (c *CryptoReconciler) CreateJob(ctx context.Context, event *model.Event) (orbital.Job, error) {
+	job := orbital.NewJob(event.Type, event.Data).WithExternalID(event.Identifier)
 	return c.manager.PrepareJob(ctx, job)
 }
 
-// createTargets initializes the AMQP clients for each responder defined in the orbital configuration.
-func createTargets(ctx context.Context, cfg *config.EventProcessor) (map[string]orbital.Initiator, error) {
-	targets := make(map[string]orbital.Initiator)
+// createTargets initializes the AMQP clients for each manager target defined in the orbital configuration.
+func createTargets(ctx context.Context, cfg *config.EventProcessor) (map[string]orbital.ManagerTarget, error) {
+	targets := make(map[string]orbital.ManagerTarget)
 
-	options, err := getAmqpOptions(cfg)
+	options, err := getAMQPOptions(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -162,18 +175,20 @@ func createTargets(ctx context.Context, cfg *config.EventProcessor) (map[string]
 			Source: r.AMQP.Source,
 		}
 
-		initiator, err := amqp.NewClient(ctx, &codec.Proto{}, connInfo, options...)
+		client, err := amqp.NewClient(ctx, &codec.Proto{}, connInfo, options...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create AMQP client for responder %s: %w", r.Region, err)
 		}
 
-		targets[r.Region] = initiator
+		targets[r.Region] = orbital.ManagerTarget{
+			Client: client,
+		}
 	}
 
 	return targets, nil
 }
 
-func getAmqpOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
+func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
 	options := make([]amqp.ClientOption, 0)
 
 	if cfg.SecretRef.Type != commoncfg.MTLSSecretType {
@@ -289,7 +304,6 @@ func (c *CryptoReconciler) getKeyTaskInfo(
 	return result, nil
 }
 
-//nolint:funlen,cyclop
 func (c *CryptoReconciler) getSystemTaskInfo(
 	ctx context.Context,
 	jobData []byte,
@@ -302,40 +316,9 @@ func (c *CryptoReconciler) getSystemTaskInfo(
 		return nil, fmt.Errorf("failed to unmarshal job data: %w", err)
 	}
 
-	tenant, err := c.getTenantByID(ctx, data.TenantID)
+	systemActionData, err := c.getSystemActionData(ctx, taskType, data)
 	if err != nil {
 		return nil, err
-	}
-
-	system, err := c.getSystemByID(ctx, data.SystemID, data.TenantID)
-	if err != nil {
-		return nil, err
-	}
-
-	_, ok := c.targets[system.Region]
-	if !ok {
-		return nil, errs.Wrapf(ErrTargetNotConfigured, system.Region)
-	}
-
-	key, err := c.getKeyByKeyID(ctx, data.KeyID, data.TenantID)
-	if err != nil {
-		return nil, err
-	}
-
-	keyAccessMetadata, err := c.getKeyAccessMetadata(ctx, *key, system.Region)
-	if err != nil {
-		return nil, err
-	}
-
-	var keyIDFrom, keyIDTo string
-
-	//nolint:exhaustive
-	switch taskType {
-	case proto.TaskType_SYSTEM_LINK:
-		keyIDTo = data.KeyID
-	case proto.TaskType_SYSTEM_UNLINK:
-		keyIDFrom = data.KeyID
-	default:
 	}
 
 	result := make([]orbital.TaskInfo, 0, 1)
@@ -343,15 +326,17 @@ func (c *CryptoReconciler) getSystemTaskInfo(
 		TaskType: taskType,
 		Data: &proto.Data_SystemAction{
 			SystemAction: &proto.SystemAction{
-				SystemId:          system.Identifier,
-				SystemRegion:      system.Region,
-				SystemType:        strings.ToLower(system.Type),
-				KeyIdFrom:         keyIDFrom,
-				KeyIdTo:           keyIDTo,
-				KeyProvider:       strings.ToLower(key.Provider),
-				TenantId:          tenant.ID,
-				CmkRegion:         tenant.Region,
-				KeyAccessMetaData: keyAccessMetadata,
+				SystemId:          systemActionData.system.Identifier,
+				SystemRegion:      systemActionData.system.Region,
+				SystemType:        strings.ToLower(systemActionData.system.Type),
+				KeyIdFrom:         systemActionData.keyIDFrom,
+				KeyIdTo:           systemActionData.keyIDTo,
+				KeyProvider:       strings.ToLower(systemActionData.key.Provider),
+				TenantId:          systemActionData.tenant.ID,
+				TenantOwnerId:     systemActionData.tenant.OwnerID,
+				TenantOwnerType:   systemActionData.tenant.OwnerType,
+				CmkRegion:         systemActionData.tenant.Region,
+				KeyAccessMetaData: systemActionData.keyAccessMetadata,
 			},
 		},
 	}
@@ -362,12 +347,66 @@ func (c *CryptoReconciler) getSystemTaskInfo(
 	}
 
 	result = append(result, orbital.TaskInfo{
-		Target: system.Region,
+		Target: systemActionData.system.Region,
 		Data:   taskDataBytes,
 		Type:   taskType.String(),
 	})
 
 	return result, nil
+}
+
+type systemActionData struct {
+	system            *model.System
+	keyIDFrom         string
+	keyIDTo           string
+	key               *model.Key
+	tenant            *model.Tenant
+	keyAccessMetadata []byte
+}
+
+func (c *CryptoReconciler) getSystemActionData(ctx context.Context,
+	taskType proto.TaskType, data SystemActionJobData,
+) (*systemActionData, error) {
+	tenant, err := c.getTenantByID(ctx, data.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+
+	system, err := c.getSystemByID(ctx, data.SystemID)
+	if err != nil {
+		return nil, err
+	}
+
+	_, ok := c.targets[system.Region]
+	if !ok {
+		return nil, errs.Wrapf(ErrTargetNotConfigured, system.Region)
+	}
+
+	keyID := data.KeyIDTo
+	if taskType == proto.TaskType_SYSTEM_UNLINK {
+		keyID = data.KeyIDFrom
+	}
+
+	key, err := c.getKeyByKeyID(ctx, keyID)
+	if err != nil {
+		return nil, err
+	}
+
+	keyAccessMetadata, err := c.getKeyAccessMetadata(ctx, *key, system.Region)
+	if err != nil {
+		return nil, err
+	}
+
+	return &systemActionData{
+		system:            system,
+		keyIDFrom:         data.KeyIDFrom,
+		keyIDTo:           data.KeyIDTo,
+		key:               key,
+		tenant:            tenant,
+		keyAccessMetadata: keyAccessMetadata,
+	}, nil
 }
 
 func (c *CryptoReconciler) getKeyAccessMetadata(
@@ -421,7 +460,9 @@ func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orb
 		return orbital.JobConfirmResult{}, err
 	}
 
-	system, err := c.getSystemByID(ctx, systemJobData.SystemID, systemJobData.TenantID)
+	ctx = cmkcontext.CreateTenantContext(ctx, systemJobData.TenantID)
+
+	system, err := c.getSystemByID(ctx, systemJobData.SystemID)
 	if err != nil {
 		return orbital.JobConfirmResult{
 			Done:                 false,
@@ -430,7 +471,10 @@ func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orb
 	}
 
 	if system.Status != cmkapi.SystemStatusPROCESSING {
-		return orbital.JobConfirmResult{}, nil
+		return orbital.JobConfirmResult{
+			IsCanceled:           true,
+			CanceledErrorMessage: fmt.Sprintf("system status is in %v instead of processing", system.Status),
+		}, nil
 	}
 
 	return orbital.JobConfirmResult{
@@ -445,9 +489,8 @@ func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.J
 
 	var jobData SystemActionJobData
 
-	//nolint:exhaustive
 	switch taskType {
-	case proto.TaskType_SYSTEM_LINK:
+	case proto.TaskType_SYSTEM_LINK, proto.TaskType_SYSTEM_SWITCH:
 		if job.Status == orbital.JobStatusDone {
 			status = cmkapi.SystemStatusCONNECTED
 		}
@@ -464,7 +507,22 @@ func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.J
 		return fmt.Errorf("failed to unmarshal system action job data: %w", err)
 	}
 
-	return c.updateSystemsStatus(ctx, status, jobData.SystemID, jobData.TenantID)
+	ctx = cmkcontext.CreateTenantContext(ctx, jobData.TenantID)
+
+	// Store the failed event to be able to retry it later
+	if job.Status != orbital.JobStatusDone {
+		err = c.repo.Set(ctx, &model.Event{
+			Identifier: job.ExternalID,
+			Type:       job.Type,
+			Data:       job.Data,
+			Status:     job.Status,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to store event: %w", err)
+		}
+	}
+
+	return c.updateSystemsStatus(ctx, status, jobData.SystemID)
 }
 
 // updateSystemsStatus updates the status of systems in a transaction
@@ -472,9 +530,8 @@ func (c *CryptoReconciler) updateSystemsStatus(
 	ctx context.Context,
 	status cmkapi.SystemStatus,
 	systemID string,
-	tenantID string,
 ) error {
-	system, err := c.getSystemByID(ctx, systemID, tenantID)
+	system, err := c.getSystemByID(ctx, systemID)
 	if err != nil {
 		return err
 	}
@@ -486,9 +543,7 @@ func (c *CryptoReconciler) updateSystemsStatus(
 		repo.NewCompositeKeyGroup(ck),
 	).Update(repo.StatusField)
 
-	cmkContext := cmkcontext.CreateTenantContext(ctx, tenantID)
-
-	_, err = c.repo.Patch(cmkContext, system, *query)
+	_, err = c.repo.Patch(ctx, system, *query)
 	if err != nil {
 		return fmt.Errorf("failed to update system %s status to %s: %w", system.ID, status, err)
 	}
@@ -496,9 +551,7 @@ func (c *CryptoReconciler) updateSystemsStatus(
 	return nil
 }
 
-func (c *CryptoReconciler) getSystemByID(ctx context.Context, systemID string, tenantID string) (*model.System, error) {
-	cmkContext := cmkcontext.CreateTenantContext(ctx, tenantID)
-
+func (c *CryptoReconciler) getSystemByID(ctx context.Context, systemID string) (*model.System, error) {
 	var system model.System
 
 	ck := repo.NewCompositeKey().Where(repo.IDField, systemID)
@@ -506,7 +559,7 @@ func (c *CryptoReconciler) getSystemByID(ctx context.Context, systemID string, t
 		repo.NewCompositeKeyGroup(ck),
 	)
 
-	_, err := c.repo.First(cmkContext, &system, *query)
+	_, err := c.repo.First(ctx, &system, *query)
 	if err != nil {
 		return nil, err
 	}
@@ -514,9 +567,7 @@ func (c *CryptoReconciler) getSystemByID(ctx context.Context, systemID string, t
 	return &system, nil
 }
 
-func (c *CryptoReconciler) getKeyByKeyID(ctx context.Context, keyID string, tenantID string) (*model.Key, error) {
-	cmkContext := cmkcontext.CreateTenantContext(ctx, tenantID)
-
+func (c *CryptoReconciler) getKeyByKeyID(ctx context.Context, keyID string) (*model.Key, error) {
 	var key model.Key
 
 	ck := repo.NewCompositeKey().Where(repo.IDField, keyID)
@@ -524,7 +575,7 @@ func (c *CryptoReconciler) getKeyByKeyID(ctx context.Context, keyID string, tena
 		repo.NewCompositeKeyGroup(ck),
 	)
 
-	_, err := c.repo.First(cmkContext, &key, *query)
+	_, err := c.repo.First(ctx, &key, *query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get key by ID %s: %w", keyID, err)
 	}

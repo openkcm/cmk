@@ -52,19 +52,34 @@ const (
 	ArtifactTypeKeyConfiguration ArtifactType = "KEY_CONFIGURATION"
 	ArtifactTypeSystem           ArtifactType = "SYSTEM"
 
-	ActionTypeUpdateState      ActionType = "UPDATE_STATE"
-	ActionTypeUpdatePrimaryKey ActionType = "UPDATE_PRIMARY_KEY"
-	ActionTypeLink             ActionType = "LINK"
-	ActionTypeUnlink           ActionType = "UNLINK"
-	ActionTypeSwitch           ActionType = "SWITCH"
-	ActionTypeDelete           ActionType = "DELETE"
+	ActionTypeUpdateState   ActionType = "UPDATE_STATE"
+	ActionTypeUpdatePrimary ActionType = "UPDATE_PRIMARY"
+	ActionTypeLink          ActionType = "LINK"
+	ActionTypeUnlink        ActionType = "UNLINK"
+	ActionTypeSwitch        ActionType = "SWITCH"
+	ActionTypeDelete        ActionType = "DELETE"
 )
 
-var (
-	NonTerminalStates = []string{
-		StateInitial.String(),
-		StateWaitApproval.String(),
-		StateWaitConfirmation.String(),
-		StateExecuting.String(),
-	}
-)
+var States = []State{
+	StateInitial, StateRevoked, StateRejected, StateExpired, StateWaitApproval,
+	StateWaitConfirmation, StateExecuting, StateSuccessful, StateFailed,
+}
+
+var Transitions = []Transition{
+	TransitionCreate, TransitionRevoke, TransitionReject,
+	TransitionExpire, TransitionApprove, TransitionConfirm, TransitionExecute, TransitionFail,
+}
+
+var ArtifactTypes = []ArtifactType{ArtifactTypeKey, ArtifactTypeKeyConfiguration, ArtifactTypeSystem}
+
+var ActionTypes = []ActionType{
+	ActionTypeUpdateState, ActionTypeUpdatePrimary,
+	ActionTypeLink, ActionTypeUnlink, ActionTypeSwitch, ActionTypeDelete,
+}
+
+var NonTerminalStates = []string{
+	StateInitial.String(),
+	StateWaitApproval.String(),
+	StateWaitConfirmation.String(),
+	StateExecuting.String(),
+}

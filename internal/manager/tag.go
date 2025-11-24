@@ -8,6 +8,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 var (
@@ -46,20 +47,27 @@ func createTags[Tparent Parent, Ttag any](
 	return nil
 }
 
-func getTags[T Parent](ctx context.Context, mrepo repo.Repo,
-	id uuid.UUID, tags T,
+func getTags[Tparent Parent](ctx context.Context, mrepo repo.Repo,
+	id uuid.UUID, p Tparent,
 ) error {
 	ck := repo.NewCompositeKey().
 		Where(repo.IDField, id)
 
 	_, err := mrepo.First(ctx,
-		tags,
+		p,
 		*repo.NewQuery().
 			Preload(repo.Preload{"Tags"}).
 			Where(repo.NewCompositeKeyGroup(ck)),
 	)
 	if err != nil {
 		return errs.Wrap(ErrGetKeyConfig, err)
+	}
+
+	// We don't assign to the return since updated in situ
+	// See limitation in sanitise.go around maps.
+	_, err = sanitise.Stringlikes(p)
+	if err != nil {
+		return errs.Wrap(ErrCreateTag, err)
 	}
 
 	return nil

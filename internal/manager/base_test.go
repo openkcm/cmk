@@ -18,7 +18,7 @@ import (
 const providerTest = "TEST"
 
 func TestNewManager(t *testing.T) {
-	db, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{testutils.TestModel{}},
 	})
 	dbRepo := sql.NewRepository(db)
@@ -29,7 +29,7 @@ func TestNewManager(t *testing.T) {
 	factory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
 
-	m := manager.New(t.Context(), dbRepo, cfg, factory, catalog, nil)
+	m := manager.New(t.Context(), dbRepo, cfg, factory, catalog, nil, nil)
 
 	assert.NotNil(t, m)
 	assert.NotNil(t, m.Keys)

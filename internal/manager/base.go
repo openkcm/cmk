@@ -5,6 +5,7 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
@@ -23,7 +24,7 @@ type Manager struct {
 	Labels               Label
 	Workflow             Workflow
 	Certificates         *CertificateManager
-	Group                Group
+	Group                *GroupManager
 	Authz                *AuthzManager
 
 	Tenant Tenant
@@ -40,6 +41,7 @@ func New(
 	clientsFactory *clients.Factory,
 	catalog *plugincatalog.Catalog,
 	reconciler *eventprocessor.CryptoReconciler,
+	asyncClient async.Client,
 ) *Manager {
 	cmkAuditor := auditor.New(ctx, config)
 	tenantConfigManager := NewTenantConfigManager(repo, catalog)
@@ -48,6 +50,7 @@ func New(
 	keyManager := NewKeyManager(repo, catalog, tenantConfigManager, keyConfigManager, certManager, reconciler, cmkAuditor)
 	systemManager := NewSystemManager(ctx, repo, clientsFactory, reconciler, catalog, cmkAuditor, config)
 	authzManager := NewAuthzManager(ctx, repo)
+	groupManager := NewGroupManager(repo, catalog)
 
 	return &Manager{
 		Keys:          keyManager,
@@ -57,10 +60,11 @@ func New(
 		KeyConfig:     keyConfigManager,
 		KeyConfigTags: NewKeyConfigurationTagManager(repo),
 		Labels:        NewLabelManager(repo),
-		Workflow:      NewWorkflowManager(repo, keyManager, keyConfigManager, systemManager, &config.Workflows),
-		Certificates:  certManager,
-		Group:         NewGroupManager(repo),
-		Authz:         authzManager,
+		Workflow: NewWorkflowManager(repo, keyManager, keyConfigManager, systemManager, groupManager,
+			asyncClient, tenantConfigManager),
+		Certificates: certManager,
+		Group:        groupManager,
+		Authz:        authzManager,
 
 		Tenant: NewTenantManager(repo),
 

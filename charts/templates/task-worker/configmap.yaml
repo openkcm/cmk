@@ -35,12 +35,18 @@ data:
     scheduler:
       {{- toYaml .scheduler | nindent 6 }}
 
+    configurableContext:
+      {{- toYaml .configurableContext | nindent 6 }}
+
     certificates:
       {{- toYaml .certificates | nindent 6 }}
 
     # Plugins configuration
     plugins:
       {{- include "cmk.plugins" . | nindent 6 }}
+
+    audit:
+      {{- toYaml .audit | nindent 6 }}
 
     # Keystore pool configuration
     keystorePool:

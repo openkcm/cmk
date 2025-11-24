@@ -18,7 +18,7 @@ var (
 func TestNotReturnError(t *testing.T) {
 	tests := []struct {
 		name      string
-		value     interface{}
+		value     any
 		err       error
 		wantPanic bool
 	}{

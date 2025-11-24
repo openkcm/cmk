@@ -12,6 +12,8 @@ import (
 
 	tmCLI "github.com/openkcm/cmk/cmd/tenant-manager-cli"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/grpc/catalog"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 var errTest = errors.New("test error")
@@ -30,7 +32,12 @@ func TestSetupCommands(t *testing.T) {
 	t.Run("Should create root command with all subcommands", func(t *testing.T) {
 		ctx := t.Context()
 
-		rootCmd := tmCLI.SetupCommands(ctx, nil)
+		ctlg, err := catalog.New(t.Context(), config.Config{
+			Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
+		})
+		assert.NoError(t, err, "Failed to create catalog")
+
+		rootCmd := tmCLI.SetupCommands(ctx, nil, ctlg)
 
 		assert.NotNil(t, rootCmd)
 		assert.NotEmpty(t, rootCmd.Use)
@@ -150,6 +157,6 @@ func setupTestEnvironment(t *testing.T, configContent string) {
 func writeConfigFile(t *testing.T, content string) {
 	t.Helper()
 
-	err := os.WriteFile("config.yaml", []byte(content), 0600)
+	err := os.WriteFile("config.yaml", []byte(content), 0o600)
 	require.NoError(t, err)
 }

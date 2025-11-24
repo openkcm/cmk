@@ -1,8 +1,15 @@
 {
-    "url": "",
-    "username": "",
-    "password": "",
-    "responsibleUser": "",
-    "group": "",
-    "serviceAccount": ""
+  "url": "",
+  "username": "",
+  "password": "",
+  "responsibleUser": "",
+  "group": "",
+  "serviceAccount": "",
+  "additionalAdmins": [
+    ""
+  ],
+  "securityAttributes": {
+    "securityOfficer": "",
+    "environment": ""
+  }
 }

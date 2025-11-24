@@ -204,7 +204,7 @@ func TestCreate(t *testing.T) {
 	}
 }
 
-//nolint:dupl,gocognit,cyclop,gocyclo
+//nolint:gocognit,cyclop,gocyclo
 func TestGetAll(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -806,7 +806,6 @@ func TestUpdate(t *testing.T) {
 			},
 			ExpectedErr: true,
 		},
-		//nolint:dupl
 		{
 			name: "Update Key Label Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
@@ -878,7 +877,6 @@ func TestUpdate(t *testing.T) {
 			},
 			ExpectedErr: true,
 		},
-		//nolint:dupl
 		{
 			name: "Update Tag Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {

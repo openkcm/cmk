@@ -7,6 +7,7 @@ import (
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"github.com/openkcm/orbital"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -22,6 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -38,15 +40,14 @@ func SetupSystemManager(t *testing.T, clientsFactory *clients.Factory) (
 ) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.System{},
 			&model.KeyConfiguration{},
 			&model.SystemProperty{},
+			&model.Event{},
 		},
 	})
-
-	db = db.Debug()
 
 	cfg := config.Config{
 		Plugins: testutils.SetupMockPlugins(testutils.SystemInfo),
@@ -55,7 +56,7 @@ func SetupSystemManager(t *testing.T, clientsFactory *clients.Factory) (
 				Endpoint: "http://localhost:4318/v1/logs",
 			},
 		},
-		Database: testutils.TestDB,
+		Database: dbCfg,
 	}
 
 	ctlg, err := catalog.New(t.Context(), cfg)
@@ -63,7 +64,7 @@ func SetupSystemManager(t *testing.T, clientsFactory *clients.Factory) (
 
 	dbRepository := sql.NewRepository(db)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(
+	eventProcessor, err := eventprocessor.NewCryptoReconciler(
 		t.Context(), &cfg, dbRepository,
 		ctlg,
 	)
@@ -83,7 +84,7 @@ func SetupSystemManager(t *testing.T, clientsFactory *clients.Factory) (
 	systemManager := manager.NewSystemManager(
 		t.Context(), dbRepository,
 		clientsFactory,
-		reconciler, ctlg, cmkAuditor,
+		eventProcessor, ctlg, cmkAuditor,
 		&cfg,
 	)
 
@@ -363,6 +364,160 @@ func TestGetSystemLinkByID(t *testing.T) {
 	})
 }
 
+func TestEventRetry(t *testing.T) {
+	m, db, tenant := SetupSystemManager(t, nil)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	primaryKeyID := uuid.New()
+	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.PrimaryKeyID = &primaryKeyID
+	})
+	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+	t.Run("Should error on retry with system status not failed", func(t *testing.T) {
+		system := testutils.NewSystem(func(_ *model.System) {})
+		testutils.CreateTestEntities(ctx, t, r, system)
+
+		_, err := m.PatchSystemLinkByID(ctx, system.ID, cmkapi.SystemPatch{
+			KeyConfigurationID: keyConfig.ID,
+		})
+		assert.NoError(t, err)
+
+		_, err = m.PatchSystemLinkByID(ctx, system.ID, cmkapi.SystemPatch{
+			Retry: ptr.PointTo(true),
+		})
+		assert.ErrorIs(t, err, manager.ErrRetryNonFailedSystem)
+	})
+
+	t.Run("Should error on retry without previous event", func(t *testing.T) {
+		system := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusFAILED
+		})
+		testutils.CreateTestEntities(ctx, t, r, system)
+
+		_, err := m.PatchSystemLinkByID(ctx, system.ID, cmkapi.SystemPatch{
+			KeyConfigurationID: keyConfig.ID,
+			Retry:              ptr.PointTo(true),
+		})
+		assert.ErrorIs(t, err, eventprocessor.ErrNoPreviousEvent)
+	})
+
+	sucessRetry := func(t *testing.T, ctx context.Context, system *model.System) {
+		t.Helper()
+
+		_, err := r.First(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		// System set to processing on retry
+		assert.Equal(t, cmkapi.SystemStatusPROCESSING, system.Status)
+	}
+
+	tests := []struct {
+		name      string
+		eventType proto.TaskType
+		f         func(t *testing.T, ctx context.Context, system *model.System)
+	}{
+		{
+			name:      "should retry link event",
+			eventType: proto.TaskType_SYSTEM_LINK,
+			f:         sucessRetry,
+		},
+		{
+			name:      "should retry switch event",
+			eventType: proto.TaskType_SYSTEM_SWITCH,
+			f:         sucessRetry,
+		},
+		{
+			name:      "should retry unlink event",
+			eventType: proto.TaskType_SYSTEM_UNLINK,
+			f:         sucessRetry,
+		},
+		{
+			name:      "should fail on second retry",
+			eventType: proto.TaskType_SYSTEM_UNLINK,
+			f: func(t *testing.T, ctx context.Context, system *model.System) {
+				t.Helper()
+
+				_, err := m.PatchSystemLinkByID(ctx, system.ID, cmkapi.SystemPatch{
+					KeyConfigurationID: keyConfig.ID,
+					Retry:              ptr.PointTo(true),
+				})
+				assert.ErrorIs(t, err, manager.ErrRetryNonFailedSystem)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			system := testutils.NewSystem(func(s *model.System) {
+				s.Status = cmkapi.SystemStatusFAILED
+			})
+			testutils.CreateTestEntities(ctx, t, r, system)
+
+			// Represent task failure
+			err := r.Create(ctx, &model.Event{
+				Identifier: system.ID.String(),
+				Type:       tt.eventType.String(),
+				Data:       []byte("{}"),
+			})
+			assert.NoError(t, err)
+			err = db.WithTenant(ctx, "orbital", func(tx *multitenancy.DB) error {
+				job := orbital.Job{
+					ID:         uuid.New(),
+					ExternalID: system.ID.String(),
+					Data:       []byte("{}"),
+					Type:       tt.eventType.String(),
+					Status:     orbital.JobStatusFailed,
+				}
+
+				return tx.Table("jobs").Create(&job).Error
+			})
+			assert.NoError(t, err)
+
+			_, err = m.PatchSystemLinkByID(ctx, system.ID, cmkapi.SystemPatch{
+				KeyConfigurationID: keyConfig.ID,
+				Retry:              ptr.PointTo(true),
+			})
+			assert.NoError(t, err)
+
+			tt.f(t, ctx, system)
+		})
+	}
+}
+
+func TestEventSelector(t *testing.T) {
+	m, db, tenant := SetupSystemManager(t, nil)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	t.Run("Should link on new keyconfig without pkey", func(t *testing.T) {
+		system := testutils.NewSystem(func(_ *model.System) {})
+		updatedSystem := testutils.NewSystem(func(_ *model.System) {})
+
+		event, err := m.EventSelector(ctx, r, updatedSystem, system.KeyConfigurationID, nil)
+		assert.Equal(t, proto.TaskType_SYSTEM_LINK.String(), event.Name)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Should switch on new keyconfig with pkey", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = ptr.PointTo(uuid.New())
+		})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+		system := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfig.ID
+		})
+		updatedSystem := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = ptr.PointTo(uuid.New())
+		})
+
+		event, err := m.EventSelector(ctx, r, updatedSystem, system.KeyConfigurationID, keyConfig)
+		assert.Equal(t, proto.TaskType_SYSTEM_SWITCH.String(), event.Name)
+		assert.NoError(t, err)
+	})
+}
+
 func TestPatchSystemLinkByID(t *testing.T) {
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -374,24 +529,19 @@ func TestPatchSystemLinkByID(t *testing.T) {
 	})
 
 	systems := []*model.System{
-		{
-			ID:                 uuid.New(),
-			Identifier:         uuid.New().String(),
-			KeyConfigurationID: &keyConfig.ID,
-		},
-		{
-			ID:                 uuid.New(),
-			Identifier:         uuid.New().String(),
-			KeyConfigurationID: &keyConfig.ID,
-			Status:             cmkapi.SystemStatusFAILED,
-		},
-		{
-			ID:                 uuid.New(),
-			Identifier:         uuid.New().String(),
-			KeyConfigurationID: &keyConfig.ID,
-			Status:             cmkapi.SystemStatusPROCESSING,
-		},
+		testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfig.ID
+		}),
+		testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfig.ID
+			s.Status = cmkapi.SystemStatusFAILED
+		}),
+		testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfig.ID
+			s.Status = cmkapi.SystemStatusPROCESSING
+		}),
 	}
+
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	for i := range systems {
@@ -405,9 +555,10 @@ func TestPatchSystemLinkByID(t *testing.T) {
 	t.Run("Should update system link", func(t *testing.T) {
 		expected := system
 		expected.Status = cmkapi.SystemStatusPROCESSING
+		expected.KeyConfigurationName = &keyConfig.Name
 
-		actualSystem, err := m.PatchSystemLinkByID(ctx, system.ID, model.System{
-			KeyConfigurationID: &keyConfig.ID,
+		actualSystem, err := m.PatchSystemLinkByID(ctx, system.ID, cmkapi.SystemPatch{
+			KeyConfigurationID: keyConfig.ID,
 		})
 
 		assert.NoError(t, err)
@@ -415,16 +566,16 @@ func TestPatchSystemLinkByID(t *testing.T) {
 	})
 
 	t.Run("Should not be able to update system in failed state", func(t *testing.T) {
-		_, err := m.PatchSystemLinkByID(ctx, systemFailed.ID, model.System{
-			KeyConfigurationID: &keyConfig.ID,
+		_, err := m.PatchSystemLinkByID(ctx, systemFailed.ID, cmkapi.SystemPatch{
+			KeyConfigurationID: keyConfig.ID,
 		})
 
 		assert.ErrorIs(t, err, manager.ErrLinkSystemProcessingOrFailed)
 	})
 
 	t.Run("Should not be able to update system in processing state", func(t *testing.T) {
-		_, err := m.PatchSystemLinkByID(ctx, systemProcessing.ID, model.System{
-			KeyConfigurationID: &keyConfig.ID,
+		_, err := m.PatchSystemLinkByID(ctx, systemProcessing.ID, cmkapi.SystemPatch{
+			KeyConfigurationID: keyConfig.ID,
 		})
 
 		assert.ErrorIs(t, err, manager.ErrLinkSystemProcessingOrFailed)
@@ -432,7 +583,7 @@ func TestPatchSystemLinkByID(t *testing.T) {
 
 	t.Run("Should fail on updating non-existing system", func(t *testing.T) {
 		id := uuid.New()
-		actualSystem, err := m.PatchSystemLinkByID(ctx, id, model.System{KeyConfigurationID: &keyConfig.ID})
+		actualSystem, err := m.PatchSystemLinkByID(ctx, id, cmkapi.SystemPatch{KeyConfigurationID: keyConfig.ID})
 
 		assert.Nil(t, actualSystem)
 		assert.ErrorIs(t, err, manager.ErrGettingSystemByID)
@@ -445,8 +596,8 @@ func TestPatchSystemLinkByID(t *testing.T) {
 			forced.Unregister()
 		})
 
-		actualSystem, err := m.PatchSystemLinkByID(ctx, system.ID, model.System{
-			KeyConfigurationID: &keyConfig.ID,
+		actualSystem, err := m.PatchSystemLinkByID(ctx, system.ID, cmkapi.SystemPatch{
+			KeyConfigurationID: keyConfig.ID,
 		})
 
 		assert.Nil(t, actualSystem)
@@ -469,8 +620,8 @@ func TestPatchSystemLinkByID_KeyConfigWithoutPrimary(t *testing.T) {
 	}
 
 	testutils.CreateTestEntities(ctx, t, r, system, keyConfig)
-	_, err := m.PatchSystemLinkByID(ctx, system.ID, model.System{
-		KeyConfigurationID: &keyConfig.ID,
+	_, err := m.PatchSystemLinkByID(ctx, system.ID, cmkapi.SystemPatch{
+		KeyConfigurationID: keyConfig.ID,
 	})
 
 	assert.ErrorIs(t, err, manager.ErrAddSystemNoPrimaryKey)
@@ -479,14 +630,11 @@ func TestPatchSystemLinkByID_KeyConfigWithoutPrimary(t *testing.T) {
 func TestDeleteSystemLinkByID(t *testing.T) {
 	logger := testutils.SetupLoggerWithBuffer()
 	systemService := systems.NewFakeService(logger)
-	grpcServer, grpcClient := testutils.NewGRPCSuite(t,
+	_, grpcClient := testutils.NewGRPCSuite(t,
 		func(s *grpc.Server) {
 			systemgrpc.RegisterServiceServer(s, systemService)
 		},
 	)
-
-	defer grpcServer.GracefulStop()
-	defer grpcClient.Close()
 
 	clientsFactory, err := clients.NewFactory(config.Services{
 		Registry: &commoncfg.GRPCClient{
@@ -498,7 +646,9 @@ func TestDeleteSystemLinkByID(t *testing.T) {
 		},
 	})
 	assert.NoError(t, err)
-	testutils.CloseClientsFactory(t, clientsFactory)
+	t.Cleanup(func() {
+		assert.NoError(t, clientsFactory.Close())
+	})
 
 	m, db, tenant := SetupSystemManager(t, clientsFactory)
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -600,14 +750,11 @@ func TestDeleteSystemLinkByID(t *testing.T) {
 func TestRefreshSystems(t *testing.T) {
 	logger := testutils.SetupLoggerWithBuffer()
 	systemService := systems.NewFakeService(logger)
-	grpcServer, grpcClient := testutils.NewGRPCSuite(t,
+	_, grpcClient := testutils.NewGRPCSuite(t,
 		func(s *grpc.Server) {
 			systemgrpc.RegisterServiceServer(s, systemService)
 		},
 	)
-
-	defer grpcServer.GracefulStop()
-	defer grpcClient.Close()
 
 	clientsFactory, err := clients.NewFactory(config.Services{
 		Registry: &commoncfg.GRPCClient{
@@ -619,7 +766,7 @@ func TestRefreshSystems(t *testing.T) {
 		},
 	})
 	assert.NoError(t, err)
-	testutils.CloseClientsFactory(t, clientsFactory)
+	assert.NoError(t, clientsFactory.Close())
 
 	m, db, tenant := SetupSystemManager(t, clientsFactory)
 	ctx := testutils.CreateCtxWithTenant(tenant)

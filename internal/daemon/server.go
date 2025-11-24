@@ -65,6 +65,7 @@ func NewCMKServer(
 	}
 
 	repo := sql.NewRepository(dbCon)
+
 	controller := cmk.NewAPIController(ctx, repo, *cfg, clientsFactory)
 
 	memoryStorage := keyvalue.NewMemoryStorage[string, []byte]()
@@ -144,8 +145,8 @@ func (s *CmkServer) Start(ctx context.Context) error {
 	return nil
 }
 
-// setupSwagger loads the swagger file
-func setupSwagger() (*openapi3.T, error) {
+// SetupSwagger loads the swagger file
+func SetupSwagger() (*openapi3.T, error) {
 	swagger, err := cmkapi.GetSwagger()
 	if err != nil {
 		return nil, errs.Wrapf(err, "failed to load swagger file")
@@ -166,7 +167,7 @@ func createHTTPServer(
 	ctr *cmk.APIController,
 	signingKeyStorage keyvalue.ReadOnlyStringToBytesStorage,
 ) (*http.Server, error) {
-	swagger, err := setupSwagger()
+	swagger, err := SetupSwagger()
 	if err != nil {
 		return nil, oops.In(ServerLogDomain).Wrapf(err, "setup swagger")
 	}
@@ -187,10 +188,10 @@ func createHTTPServer(
 			BaseRouter:       http.NewServeMux(),
 			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
 			Middlewares: []cmkapi.MiddlewareFunc{
-				middleware.ClientDataMiddleware(&cfg.FeatureGates, signingKeyStorage),
 				middleware.OAPIMiddleware(swagger),
 				middleware.LoggingMiddleware(),
 				middleware.PanicRecoveryMiddleware(),
+				middleware.ClientDataMiddleware(&cfg.FeatureGates, signingKeyStorage, cfg.ClientData.AuthContextFields),
 				middleware.InjectMultiTenancy(),
 				middleware.InjectRequestID(),
 			},

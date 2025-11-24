@@ -5,10 +5,27 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
 var groups = []APIErrors{
+	{
+		Errors: []error{manager.ErrCreateGroups, model.ErrInvalidName},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "INVALID_GROUP_NAME",
+			Message: "Invalid name for selected group",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		Errors: []error{manager.ErrCreateGroups, model.ErrInvalidIAMIdentifier},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "INVALID_GROUP_IAM_IDENTIFIER",
+			Message: "Invalid IamIdentifier for selected group",
+			Status:  http.StatusBadRequest,
+		},
+	},
 	{
 		Errors: []error{manager.ErrGroupRole},
 		ExposedError: cmkapi.DetailedError{

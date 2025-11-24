@@ -58,14 +58,18 @@ data:
 
     eventProcessor:
       {{- toYaml .eventProcessor | nindent 6 }}
-    system:
-      {{- toYaml .system | nindent 6 }}
+
+    configurableContext:
+      {{- toYaml .configurableContext | nindent 6 }}
 
     provisioning:
       {{- toYaml .provisioning | nindent 6 }}
 
     audit:
       {{- toYaml .audit | nindent 6 }}
+
+    clientData:
+      {{- toYaml .clientData | nindent 6 }}
 
     {{- end }}
 {{- end }}

@@ -95,6 +95,7 @@ func (am *AuthzManager) loadAllowListInternal(ctx context.Context, tenantID stri
 	}
 
 	roleToEntity := make(map[constants.Role]*authz.Entity)
+
 	for _, group := range groups {
 		role := group.Role
 		if entity, exists := roleToEntity[role]; exists {

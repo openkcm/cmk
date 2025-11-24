@@ -7,23 +7,55 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/system"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/utils/odata"
 	"github.com/openkcm/cmk/utils/ptr"
 )
+
+var getSystemsSchema odata.FilterSchema = odata.FilterSchema{
+	Entries: []odata.FilterSchemaEntry{
+		{
+			FilterName: "keyConfigurationID",
+			FilterType: odata.UUID,
+			DBName:     repo.KeyConfigIDField,
+		},
+		{
+			FilterName:    "region",
+			FilterType:    odata.String,
+			DBName:        repo.RegionField,
+			ValueModifier: odata.ToUpper,
+		},
+		{
+			FilterName:    "type",
+			FilterType:    odata.String,
+			DBName:        repo.TypeField,
+			ValueModifier: odata.ToUpper,
+		},
+	},
+}
 
 func (c *APIController) GetAllSystems(ctx context.Context,
 	request cmkapi.GetAllSystemsRequestObject,
 ) (cmkapi.GetAllSystemsResponseObject, error) {
 	refreshed := c.Manager.System.RefreshSystemsData(ctx)
-	filter := c.Manager.System.NewSystemFilter(request)
 
-	systems, total, err := c.Manager.System.GetAllSystems(ctx, filter)
+	queryMapper := odata.NewQueryOdataMapper(getSystemsSchema)
+
+	err := queryMapper.ParseFilter(request.Params.Filter)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
+	}
+
+	queryMapper.SetPaging(request.Params.Skip, request.Params.Top)
+
+	systems, total, err := c.Manager.System.GetAllSystems(ctx, queryMapper)
 	if err != nil {
 		return nil, err
 	}
 
 	values := make([]cmkapi.System, len(systems))
 	for i, sys := range systems {
-		apiSys, err := system.ToAPI(*sys, &c.config.System)
+		apiSys, err := system.ToAPI(*sys, &c.config.ContextModels.System)
 		if err != nil {
 			return nil, errs.Wrap(apierrors.ErrTransformSystemList, err)
 		}
@@ -51,7 +83,7 @@ func (c *APIController) GetSystemByID(ctx context.Context,
 		return nil, err
 	}
 
-	systemResponse, err := system.ToAPI(*sys, &c.config.System)
+	systemResponse, err := system.ToAPI(*sys, &c.config.ContextModels.System)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformSystemToAPI, err)
 	}
@@ -75,16 +107,16 @@ func (c *APIController) PatchSystemLinkByID(
 	ctx context.Context,
 	request cmkapi.PatchSystemLinkByIDRequestObject,
 ) (cmkapi.PatchSystemLinkByIDResponseObject, error) {
-	if c.isWorkflowEnabled() {
+	if c.Manager.Workflow.IsWorkflowEnabled(ctx) {
 		return nil, apierrors.ErrActionRequireWorkflow
 	}
 
-	dbSystem, err := c.Manager.System.PatchSystemLinkByID(ctx, request.SystemID, system.FromAPIPatch(*request.Body))
+	dbSystem, err := c.Manager.System.PatchSystemLinkByID(ctx, request.SystemID, *request.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	systemResponse, err := system.ToAPI(*dbSystem, &c.config.System)
+	systemResponse, err := system.ToAPI(*dbSystem, &c.config.ContextModels.System)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformSystemToAPI, err)
 	}
@@ -97,7 +129,7 @@ func (c *APIController) DeleteSystemLinkByID(
 	ctx context.Context,
 	request cmkapi.DeleteSystemLinkByIDRequestObject,
 ) (cmkapi.DeleteSystemLinkByIDResponseObject, error) {
-	if c.isWorkflowEnabled() {
+	if c.Manager.Workflow.IsWorkflowEnabled(ctx) {
 		return nil, apierrors.ErrActionRequireWorkflow
 	}
 

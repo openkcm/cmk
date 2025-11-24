@@ -20,10 +20,10 @@ import (
 )
 
 // startAPIKeyConfigTags starts the API server and returns a DB connection and a mux for testing
-func startAPIKeyConfigTags(t *testing.T) (*multitenancy.DB, *http.ServeMux, string) {
+func startAPIKeyConfigTags(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.KeyConfiguration{},
 			&model.KeyConfigurationTag{},

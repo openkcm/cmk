@@ -27,7 +27,7 @@ func SetupTenantConfigManager(t *testing.T, plugins []testutils.MockPlugin) (*ma
 ) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 	})
 

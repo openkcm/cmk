@@ -139,3 +139,19 @@ func TestAuditor_SendCmkRotateAuditLog(t *testing.T) {
 		return a.SendCmkRotateAuditLog(ctx, cmkID)
 	})
 }
+
+func TestAuditor_SendCmkAvailableAuditLog(t *testing.T) {
+	testCmkAuditMethod(t,
+		"cmk available",
+		func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
+			return a.SendCmkAvailableAuditLog(ctx, cmkID)
+		})
+}
+
+func TestAuditor_SendCmkUnavailableAuditLog(t *testing.T) {
+	testCmkAuditMethod(t,
+		"cmk unavailable",
+		func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
+			return a.SendCmkUnavailableAuditLog(ctx, cmkID)
+		})
+}

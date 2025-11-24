@@ -10,17 +10,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
-	"github.com/openkcm/cmk/internal/async/tasks"
 	conf "github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/errs"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
 const (
@@ -43,19 +35,22 @@ type TaskHandler interface {
 	TaskType() string
 }
 
+type Client interface {
+	Close() error
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+	EnqueueContext(ctx context.Context, task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+	Ping() error
+}
+
 // App manages task processing, scheduling, and worker functionality
+
 type App struct {
-	asynqClient        *asynq.Client
-	asynqServer        *asynq.Server
-	asynqServerCfg     asynq.Config
-	taskQueueCfg       asynq.RedisClientOpt
-	tasks              map[string]TaskHandler
-	systemClient       tasks.SystemUpdater
-	certificateClient  tasks.CertUpdater
-	hyokClient         tasks.HYOKUpdater
-	keystorePoolClient tasks.KeystorePoolUpdater
-	cfg                *conf.Config
-	dbCon              *multitenancy.DB
+	asynqClient    *asynq.Client
+	asynqServer    *asynq.Server
+	asynqServerCfg asynq.Config
+	taskQueueCfg   asynq.RedisClientOpt
+	tasks          map[string]TaskHandler
+	cfg            *conf.Config
 }
 
 // New creates a new instance of App
@@ -92,18 +87,31 @@ func New(cfg *conf.Config) (*App, error) {
 		return nil, ErrSecretTypeQueue
 	}
 
-	dbCon, err := db.StartDBConnection(cfg.Database, cfg.DatabaseReplicas)
-	if err != nil {
-		return nil, errs.Wrap(db.ErrStartingDBCon, err)
-	}
-
 	return &App{
 		taskQueueCfg: redisOpts,
 		asynqClient:  asynq.NewClient(redisOpts),
 		tasks:        make(map[string]TaskHandler),
-		dbCon:        dbCon,
 		cfg:          cfg,
 	}, nil
+}
+
+// Enqueue is used to run tasks
+func (a *App) Enqueue(
+	ctx context.Context,
+	task *asynq.Task,
+	opts ...asynq.Option,
+) (*asynq.TaskInfo, error) {
+	ctx = log.InjectTask(ctx, task)
+	log.Debug(ctx, "Enqueuing task to be processed")
+
+	info, err := a.asynqClient.Enqueue(task, opts...)
+	if err != nil {
+		return nil, errs.Wrap(ErrEnqueueingTask, err)
+	}
+
+	log.Debug(ctx, "Enqueued task")
+
+	return info, nil
 }
 
 // RegisterTasks registers multiple task handlers
@@ -116,51 +124,8 @@ func (a *App) RegisterTasks(ctx context.Context, handlers []TaskHandler) {
 }
 
 // RunWorker starts the worker process to process the tasks
-//
-//nolint:funlen
-func (a *App) RunWorker(ctx context.Context, cfg *conf.Config) error {
+func (a *App) RunWorker(ctx context.Context) error {
 	log.Info(ctx, "Starting async worker")
-
-	ctlg, err := catalog.New(ctx, *cfg)
-	if err != nil {
-		return errs.Wrapf(err, "failed to start loading catalog")
-	}
-
-	tenancyRepo := sql.NewRepository(a.dbCon)
-
-	sis, err := manager.NewSystemInformationManager(tenancyRepo, ctlg, &a.cfg.System)
-	if err != nil {
-		return errs.Wrapf(err, "failed to start system information manager")
-	}
-
-	cfg.EventProcessor.Targets = nil // Disable consumer creation in the event processor
-
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, tenancyRepo, ctlg)
-	if err != nil {
-		return errs.Wrapf(err, "failed to create event reconciler")
-	}
-
-	certManager := manager.NewCertificateManager(ctx, tenancyRepo, ctlg, &cfg.Certificates)
-	tenantConfigManager := manager.NewTenantConfigManager(tenancyRepo, ctlg)
-	keyConfigManager := manager.NewKeyConfigManager(tenancyRepo, certManager, cfg)
-	keyManager := manager.NewKeyManager(
-		tenancyRepo, ctlg, tenantConfigManager, keyConfigManager, certManager, reconciler, nil)
-
-	a.hyokClient = keyManager
-	a.keystorePoolClient = keyManager
-	a.systemClient = sis
-	a.certificateClient = certManager
-
-	r := sql.NewRepository(a.dbCon)
-
-	log.Info(ctx, "Registering Tasks")
-	a.RegisterTasks(ctx,
-		[]TaskHandler{
-			tasks.NewSystemsRefresher(a.systemClient, r),
-			tasks.NewCertRotator(a.certificateClient, r),
-			tasks.NewHYOKSync(a.hyokClient, r),
-			tasks.NewKeystorePoolFiller(a.keystorePoolClient, r, cfg.KeystorePool),
-		})
 
 	a.asynqServer = asynq.NewServer(a.taskQueueCfg, a.asynqServerCfg)
 
@@ -177,7 +142,7 @@ func (a *App) RunWorker(ctx context.Context, cfg *conf.Config) error {
 
 	log.Info(ctx, "Starting worker server")
 
-	err = a.asynqServer.Run(mux)
+	err := a.asynqServer.Run(mux)
 	if err != nil {
 		return errs.Wrap(ErrStartingWorker, err)
 	}
@@ -208,25 +173,6 @@ func (a *App) RunScheduler() error {
 	return nil
 }
 
-// EnqueueTask is used to run tasks
-func (a *App) EnqueueTask(
-	ctx context.Context,
-	task *asynq.Task,
-	opts ...asynq.Option,
-) (*asynq.TaskInfo, error) {
-	ctx = log.InjectTask(ctx, task)
-	log.Debug(ctx, "Enqueuing task to be processed")
-
-	info, err := a.asynqClient.Enqueue(task, opts...)
-	if err != nil {
-		return nil, errs.Wrap(ErrEnqueueingTask, err)
-	}
-
-	log.Debug(ctx, "Enqueued task")
-
-	return info, nil
-}
-
 // Shutdown gracefully shuts down the worker and scheduler
 func (a *App) Shutdown(ctx context.Context) error {
 	log.Info(ctx, "Starting async app shutdown")
@@ -245,6 +191,10 @@ func (a *App) Shutdown(ctx context.Context) error {
 	log.Info(ctx, "Async app shutdown completed")
 
 	return nil
+}
+
+func (a *App) Client() *asynq.Client {
+	return a.asynqClient
 }
 
 func buildMTLSRedisClientOpt(

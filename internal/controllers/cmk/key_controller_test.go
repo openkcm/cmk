@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"testing"
 	"time"
@@ -34,10 +35,10 @@ var (
 	})
 )
 
-func startAPIKeys(t *testing.T, plugins ...testutils.MockPlugin) (*multitenancy.DB, *http.ServeMux, string) {
+func startAPIKeys(t *testing.T, plugins ...testutils.MockPlugin) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.Key{},
 			&model.KeyVersion{},
@@ -87,11 +88,10 @@ func TestKeyControllerGetKeys(t *testing.T) {
 		expectedNames  []string
 	}{
 		{
-			name:           "T100KeyGETAllKeySuccess",
+			name:           "Should fail on get keys without keyConfigurationID filter",
 			query:          "/keys?$count=true",
-			expectedStatus: http.StatusOK,
-			expectedLength: 3,
-			expectedNames:  []string{key1.Name, key2.Name, key3.Name},
+			expectedStatus: http.StatusBadRequest,
+			expectedLength: 0,
 		},
 		{
 			name:           "Should get keys filtered by id",
@@ -132,8 +132,8 @@ func TestKeyControllerGetKeys(t *testing.T) {
 			assert.Equal(t, &tt.expectedLength, response.Count)
 			assert.Len(t, response.Value, tt.expectedLength)
 
-			for i, key := range response.Value {
-				assert.Equal(t, tt.expectedNames[i], key.Name)
+			for _, key := range response.Value {
+				assert.Contains(t, tt.expectedNames, key.Name)
 			}
 		})
 	}
@@ -164,7 +164,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 	}{
 		{
 			name:               "GETKeysPaginationDefaultValues",
-			query:              "/keys",
+			query:              "/keys?keyConfigurationID=" + keyConfig.ID.String(),
 			count:              false,
 			expectedStatus:     http.StatusOK,
 			expectedCount:      20,
@@ -172,7 +172,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 		},
 		{
 			name:               "GETKeysPaginationDefaultValuesWithCount",
-			query:              "/keys?$count=true",
+			query:              "/keys?$count=true&keyConfigurationID=" + keyConfig.ID.String(),
 			count:              true,
 			expectedStatus:     http.StatusOK,
 			expectedCount:      20,
@@ -180,19 +180,19 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 		},
 		{
 			name:           "GETKeysPaginationTopZero",
-			query:          "/keys?$top=0",
+			query:          "/keys?$top=0&keyConfigurationID=" + keyConfig.ID.String(),
 			count:          false,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:           "GETKeysPaginationTopZeroWithCount",
-			query:          "/keys?$top=0&$count=true",
+			query:          "/keys?$top=0&$count=true&keyConfigurationID=" + keyConfig.ID.String(),
 			count:          true,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:               "GETKeysPaginationOnlyTopParam",
-			query:              "/keys?$top=3",
+			query:              "/keys?$top=3&keyConfigurationID=" + keyConfig.ID.String(),
 			count:              false,
 			expectedStatus:     http.StatusOK,
 			expectedCount:      3,
@@ -200,7 +200,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 		},
 		{
 			name:               "GETKeysPaginationOnlyTopParamWithCount",
-			query:              "/keys?$top=3&$count=true",
+			query:              "/keys?$top=3&$count=true&keyConfigurationID=" + keyConfig.ID.String(),
 			count:              true,
 			expectedStatus:     http.StatusOK,
 			expectedCount:      3,
@@ -208,7 +208,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 		},
 		{
 			name:               "GETKeysPaginationTopAndSkipParams",
-			query:              "/keys?$skip=0&$top=10&",
+			query:              "/keys?$skip=0&$top=10&keyConfigurationID=" + keyConfig.ID.String(),
 			count:              false,
 			expectedStatus:     http.StatusOK,
 			expectedCount:      10,
@@ -216,23 +216,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 		},
 		{
 			name:               "GETKeysPaginationTopAndSkipParamsWithCount",
-			query:              "/keys?$skip=0&$top=10&$count=true",
-			count:              true,
-			expectedStatus:     http.StatusOK,
-			expectedCount:      10,
-			expectedTotalCount: totalRecordCount,
-		},
-		{
-			name:               "GETKeysPaginationTopSkipAndOtherParams",
-			query:              fmt.Sprintf("/keys?keyConfigurationID=%s&$skip=0&$top=10", keyConfig.ID),
-			count:              false,
-			expectedStatus:     http.StatusOK,
-			expectedCount:      10,
-			expectedTotalCount: totalRecordCount,
-		},
-		{
-			name:               "GETKeysPaginationTopSkipAndOtherParamsWithCount",
-			query:              fmt.Sprintf("/keys?keyConfigurationID=%s&$skip=0&$top=10&$count=true", keyConfig.ID),
+			query:              "/keys?$skip=0&$top=10&$count=true&keyConfigurationID=" + keyConfig.ID.String(),
 			count:              true,
 			expectedStatus:     http.StatusOK,
 			expectedCount:      10,
@@ -333,9 +317,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	requestMut := testutils.NewMutator(func() map[string]any {
 		// Create a copy of the base map
 		baseMap := make(map[string]any)
-		for k, v := range SystemManagedRequest {
-			baseMap[k] = v
-		}
+		maps.Copy(baseMap, SystemManagedRequest)
 
 		return baseMap
 	})
@@ -349,9 +331,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 			if nestedMap, ok := v.(map[string]any); ok {
 				// Deep copy for nested maps
 				copiedNestedMap := make(map[string]any)
-				for nk, nv := range nestedMap {
-					copiedNestedMap[nk] = nv
-				}
+				maps.Copy(copiedNestedMap, nestedMap)
 
 				baseMap[k] = copiedNestedMap
 			} else {
@@ -689,11 +669,47 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	key := testutils.NewKey(func(k *model.Key) {
-		k.IsPrimary = true
+	regionEditable := "region1"
+	regionNonEditable := "region2"
+
+	cryptoData, err := json.Marshal(model.KeyAccessData{
+		regionEditable:    map[string]any{},
+		regionNonEditable: map[string]any{},
+	})
+	assert.NoError(t, err)
+
+	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+
+	sysFailed := testutils.NewSystem(func(sys *model.System) {
+		sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+		sys.Region = regionEditable
+		sys.Status = cmkapi.SystemStatusFAILED
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, key, ksConfig, keystoreDefaultCert)
+	sys := testutils.NewSystem(func(sys *model.System) {
+		sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+		sys.Region = regionNonEditable
+		sys.Status = cmkapi.SystemStatusCONNECTED
+	})
+
+	key := testutils.NewKey(func(k *model.Key) {
+		k.IsPrimary = true
+		k.CryptoAccessData = cryptoData
+		k.ManagementAccessData = json.RawMessage("{\"test\":\"test\"}")
+		k.KeyConfigurationID = kc.ID
+		k.Provider = providerTest
+	})
+
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		r,
+		key,
+		ksConfig,
+		keystoreDefaultCert,
+		sysFailed,
+		sys,
+	)
 
 	tests := []struct {
 		name           string
@@ -772,6 +788,70 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			expectedStatus: http.StatusForbidden,
 			expectedName:   "",
 			expectedDesc:   "",
+		},
+		{
+			name:  "Should code 403 on management role update",
+			keyID: key.ID.String(),
+			input: cmkapi.KeyPatch{
+				IsPrimary: ptr.PointTo(false),
+				AccessDetails: &cmkapi.KeyAccessDetails{
+					Management: &map[string]any{
+						"a": "b",
+					},
+				},
+			},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:  "Should code 403 on non editable crypto region",
+			keyID: key.ID.String(),
+			input: cmkapi.KeyPatch{
+				AccessDetails: &cmkapi.KeyAccessDetails{
+					Crypto: &map[string]any{
+						regionNonEditable: "b",
+					},
+				},
+			},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:  "Should 400 on invalid crypto access data update",
+			keyID: key.ID.String(),
+			input: cmkapi.KeyPatch{
+				Description: ptr.PointTo("updated description"),
+				Name:        ptr.PointTo("updated-key"),
+				Enabled:     ptr.PointTo(true),
+				AccessDetails: &cmkapi.KeyAccessDetails{
+					Crypto: &map[string]any{
+						regionEditable: "b",
+					},
+				},
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedName:   "updated-key",
+			expectedDesc:   "updated description",
+		},
+		{
+			name:  "Should 200 on valid crypto access data update",
+			keyID: key.ID.String(),
+			input: cmkapi.KeyPatch{
+				Description: ptr.PointTo("updated description"),
+				Name:        ptr.PointTo("updated-key"),
+				Enabled:     ptr.PointTo(true),
+				AccessDetails: &cmkapi.KeyAccessDetails{
+					Crypto: &map[string]any{
+						regionEditable: map[string]any{
+							"key": "value",
+						},
+						"new-region": map[string]any{
+							"key": "value",
+						},
+					},
+				},
+			},
+			expectedStatus: http.StatusOK,
+			expectedName:   "updated-key",
+			expectedDesc:   "updated description",
 		},
 	}
 

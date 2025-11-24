@@ -5,32 +5,39 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
+	"log/slog"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/samber/oops"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	idmv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
+
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/notifier"
+	wn "github.com/openkcm/cmk/internal/notifier/workflow"
 	"github.com/openkcm/cmk/internal/repo"
 	wf "github.com/openkcm/cmk/internal/workflow"
-	"github.com/openkcm/cmk/utils/ptr"
+	asyncUtils "github.com/openkcm/cmk/utils/async"
+	cmkContext "github.com/openkcm/cmk/utils/context"
 )
+
+type WorkflowStatus struct {
+	Enabled bool
+	Exists  bool
+}
 
 var ErrWorkflowApproverDecision = errors.New("workflow approver decision")
 
 type Workflow interface {
-	GetWorkflows(ctx context.Context, filter WorkflowFilter) ([]*model.Workflow, int, error)
+	CheckWorkflow(ctx context.Context, workflow *model.Workflow) (WorkflowStatus, error)
+	GetWorkflows(ctx context.Context, params repo.QueryMapper) ([]*model.Workflow, int, error)
 	CreateWorkflow(ctx context.Context, workflow *model.Workflow) (*model.Workflow, error)
 	GetWorkflowsByID(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, error)
-	AddWorkflowApprovers(
-		ctx context.Context,
-		workflowID uuid.UUID,
-		userID uuid.UUID,
-		approvers []cmkapi.WorkflowApprover,
-	) (*model.Workflow, error)
 	ListWorkflowApprovers(
 		ctx context.Context,
 		id uuid.UUID,
@@ -43,15 +50,38 @@ type Workflow interface {
 		workflowID uuid.UUID,
 		transition wf.Transition,
 	) (*model.Workflow, error)
-	NewWorkflowFilter(request cmkapi.GetWorkflowsRequestObject) WorkflowFilter
+	WorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error)
+	IsWorkflowEnabled(ctx context.Context) bool
 }
 
 type WorkflowManager struct {
 	repo                    repo.Repo
-	keyManager              wf.KeyActions
-	keyConfigurationManager wf.KeyConfigurationActions
-	systemManager           wf.SystemActions
-	workflowsConfig         *config.Workflows
+	keyManager              *KeyManager
+	keyConfigurationManager *KeyConfigManager
+	systemManager           *SystemManager
+	groupManager            *GroupManager
+	asyncClient             async.Client
+	tenantConfigManager     *TenantConfigManager
+}
+
+func NewWorkflowManager(
+	repository repo.Repo,
+	keyManager *KeyManager,
+	keyConfigurationManager *KeyConfigManager,
+	systemManager *SystemManager,
+	groupManager *GroupManager,
+	asyncClient async.Client,
+	tenantConfigManager *TenantConfigManager,
+) *WorkflowManager {
+	return &WorkflowManager{
+		repo:                    repository,
+		keyManager:              keyManager,
+		keyConfigurationManager: keyConfigurationManager,
+		systemManager:           systemManager,
+		groupManager:            groupManager,
+		asyncClient:             asyncClient,
+		tenantConfigManager:     tenantConfigManager,
+	}
 }
 
 type WorkflowFilter struct {
@@ -64,23 +94,10 @@ type WorkflowFilter struct {
 	Top          int
 }
 
-func NewWorkflowManager(
-	repository repo.Repo,
-	keyManager *KeyManager,
-	keyConfigurationManager *KeyConfigManager,
-	systemManager *SystemManager,
-	workflowsConfig *config.Workflows,
-) *WorkflowManager {
-	return &WorkflowManager{
-		repo:                    repository,
-		keyManager:              keyManager,
-		keyConfigurationManager: keyConfigurationManager,
-		systemManager:           systemManager,
-		workflowsConfig:         workflowsConfig,
-	}
-}
+var _ repo.QueryMapper = (*WorkflowFilter)(nil) // Assert interface impl
 
-func (w WorkflowFilter) ApplyToQuery(query *repo.Query) *repo.Query {
+func (w WorkflowFilter) GetQuery() *repo.Query {
+	query := repo.NewQuery()
 	ck := repo.NewCompositeKey()
 
 	if w.State != "" {
@@ -103,70 +120,124 @@ func (w WorkflowFilter) ApplyToQuery(query *repo.Query) *repo.Query {
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
 	}
 
-	if w.UserID != uuid.Nil {
+	return query
+}
+
+func (w WorkflowFilter) GetUUID(field repo.QueryField) (uuid.UUID, error) {
+	var id uuid.UUID
+
+	switch field {
+	case repo.InitiatorIDField:
+		id = w.UserID
+	case repo.ArtifactIDField:
+		id = w.ArtifactID
+	default:
+		return uuid.Nil, ErrIncompatibleQueryField
+	}
+
+	return id, nil
+}
+
+func (w *WorkflowManager) GetWorkflows(
+	ctx context.Context,
+	params repo.QueryMapper,
+) ([]*model.Workflow, int, error) {
+	workflows := []*model.Workflow{}
+
+	query := *params.GetQuery()
+
+	userID, err := params.GetUUID(repo.InitiatorIDField)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
+	}
+
+	if userID != uuid.Nil {
 		joinCond := repo.JoinCondition{
 			Table:     &model.Workflow{},
 			Field:     repo.IDField,
 			JoinField: fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField),
 			JoinTable: &model.WorkflowApprover{},
 		}
-		query = query.Join(
+		query = *query.Join(
 			repo.LeftJoin,
 			joinCond,
 		)
-		orCK := repo.NewCompositeKey()
+		orCK := repo.NewCompositeKey().
+			Where(repo.InitiatorIDField, userID).
+			Where(fmt.Sprintf("%s_%s", repo.UserField, repo.IDField), userID)
 		orCK.IsStrict = false
-		orCK.Where(repo.InitiatorIDField, w.UserID)
-		orCK.Where(fmt.Sprintf("%s_%s", repo.UserField, repo.IDField), w.UserID)
 
-		query = query.Where(repo.NewCompositeKeyGroup(orCK))
+		query = *query.Where(repo.NewCompositeKeyGroup(orCK))
 	}
 
-	return query
-}
-
-func (w *WorkflowManager) NewWorkflowFilter(request cmkapi.GetWorkflowsRequestObject) WorkflowFilter {
-	var state string
-	if request.Params.State != nil {
-		state = strings.ToUpper(string(*request.Params.State))
-	}
-
-	var artifactType string
-	if request.Params.ArtifactType != nil {
-		artifactType = strings.ToUpper(string(*request.Params.ArtifactType))
-	}
-
-	var actionType string
-	if request.Params.ActionType != nil {
-		actionType = strings.ToUpper(string(*request.Params.ActionType))
-	}
-
-	return WorkflowFilter{
-		State:        state,
-		ArtifactType: artifactType,
-		ArtifactID:   ptr.GetSafeDeref(request.Params.ArtifactID),
-		ActionType:   actionType,
-		UserID:       ptr.GetSafeDeref(request.Params.UserID),
-		Skip:         ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip),
-		Top:          ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop),
-	}
-}
-
-func (w *WorkflowManager) GetWorkflows(
-	ctx context.Context,
-	filter WorkflowFilter,
-) ([]*model.Workflow, int, error) {
-	workflows := []*model.Workflow{}
-
-	query := repo.NewQuery().SetLimit(filter.Top).SetOffset(filter.Skip)
-	query = filter.ApplyToQuery(query)
-
-	count, err := w.repo.List(ctx, model.Workflow{}, &workflows, *query)
+	count, err := w.repo.List(ctx, model.Workflow{}, &workflows, query)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 	}
 
 	return workflows, count, nil
+}
+
+func (w *WorkflowManager) WorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
+	workflowConfig, err := w.tenantConfigManager.GetWorkflowConfig(ctx)
+	if err != nil {
+		return nil, oops.Join(ErrGetWorkflowConfig, err)
+	}
+
+	return workflowConfig, nil
+}
+
+func (w *WorkflowManager) CheckWorkflow(ctx context.Context,
+	workflow *model.Workflow,
+) (WorkflowStatus, error) {
+	workflowConfig, err := w.WorkflowConfig(ctx)
+	if err != nil {
+		return WorkflowStatus{}, err
+	}
+
+	enable := workflowConfig.Enabled
+
+	if !enable {
+		return WorkflowStatus{
+			Enabled: false,
+			Exists:  false,
+		}, nil
+	}
+
+	isActive := repo.NewCompositeKey().
+		Where(repo.StateField, wf.StateInitial.String()).
+		Where(repo.StateField, wf.StateWaitApproval.String()).
+		Where(repo.StateField, wf.StateWaitConfirmation.String()).
+		Where(repo.StateField, wf.StateExecuting.String())
+	isActive.IsStrict = false
+
+	baseCondition := repo.NewCompositeKey().Where(
+		repo.ArtifactIDField, workflow.ArtifactID)
+
+	switch workflow.ActionType {
+	case wf.ActionTypeUpdatePrimary.String(), wf.ActionTypeLink.String(),
+		wf.ActionTypeSwitch.String():
+		baseCondition = baseCondition.Where(repo.ParametersField, workflow.Parameters)
+	default:
+		// empty
+	}
+
+	exist, err := w.repo.First(
+		ctx,
+		&model.Workflow{},
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(baseCondition)).Where(repo.NewCompositeKeyGroup(isActive)),
+	)
+	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+		return WorkflowStatus{
+			Enabled: enable,
+			Exists:  false,
+		}, oops.Join(ErrCheckWorkflow, err)
+	}
+
+	return WorkflowStatus{
+		Enabled: enable,
+		Exists:  exist,
+	}, nil
 }
 
 func (w *WorkflowManager) CreateWorkflow(
@@ -182,9 +253,21 @@ func (w *WorkflowManager) CreateWorkflow(
 		return nil, ErrOngoingWorkflowExist
 	}
 
-	err = w.repo.Create(ctx, workflow)
+	err = w.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+		err = r.Create(ctx, workflow)
+		if err != nil {
+			return errs.Wrap(ErrCreateWorkflowDB, err)
+		}
+
+		err = w.createAutoAssignApproversAsyncTask(ctx, *workflow)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
 	if err != nil {
-		return nil, errs.Wrap(ErrCreateWorkflowDB, err)
+		return nil, errs.Wrap(ErrInDBTransaction, err)
 	}
 
 	return workflow, nil
@@ -243,11 +326,9 @@ func (w *WorkflowManager) ListWorkflowApprovers(
 	return approvers, count, nil
 }
 
-func (w *WorkflowManager) AddWorkflowApprovers(
+func (w *WorkflowManager) AutoAssignApprovers(
 	ctx context.Context,
 	workflowID uuid.UUID,
-	userID uuid.UUID,
-	approvers []cmkapi.WorkflowApprover,
 ) (*model.Workflow, error) {
 	workflow := &model.Workflow{ID: workflowID}
 
@@ -256,18 +337,33 @@ func (w *WorkflowManager) AddWorkflowApprovers(
 		return nil, errs.Wrap(ErrGetWorkflowDB, err)
 	}
 
-	if workflow.State != wf.StateInitial.String() {
-		return nil, ErrWorkflowNotInitial
+	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
+	if err != nil {
+		return nil, err
 	}
 
-	if workflow.InitiatorID != userID {
-		return nil, errs.Wrap(ErrValidateActor,
-			wf.NewInvalidEventActorError(userID, "initiator"))
+	approvers, err := w.getApproversFromKeyConfigs(ctx, keyConfigs)
+	if err != nil {
+		return nil, err
 	}
 
-	err = w.addApprovers(ctx, userID, workflow, approvers)
+	err = w.addApprovers(ctx, workflow.InitiatorID, workflow, approvers)
 	if err != nil {
 		return nil, errs.Wrap(ErrAddApproversDB, err)
+	}
+
+	approverValues := make([]model.WorkflowApprover, len(approvers))
+	for i, approver := range approvers {
+		if approver != nil {
+			approverValues[i] = *approver
+		}
+	}
+
+	approverUserNames := wf.GetApproverUserNames(approverValues)
+
+	err = w.createWorkflowTransitionNotificationTask(ctx, *workflow, wf.TransitionCreate, approverUserNames)
+	if err != nil {
+		log.Error(ctx, "create workflow creation notification task", err)
 	}
 
 	return workflow, nil
@@ -281,7 +377,7 @@ func (w *WorkflowManager) TransitionWorkflow(
 ) (*model.Workflow, error) {
 	workflow := &model.Workflow{ID: workflowID}
 
-	_, err := w.repo.First(ctx, workflow, *repo.NewQuery())
+	_, err := w.repo.First(ctx, workflow, *repo.NewQuery().Preload(repo.Preload{"Approvers"}))
 	if err != nil {
 		return nil, errs.Wrap(ErrGetWorkflowDB, err)
 	}
@@ -296,7 +392,24 @@ func (w *WorkflowManager) TransitionWorkflow(
 		return nil, err
 	}
 
+	recipients := wf.GetNotificationRecipients(*workflow, transition)
+
+	err = w.createWorkflowTransitionNotificationTask(ctx, *workflow, transition, recipients)
+	if err != nil {
+		log.Error(ctx, "create workflow transition notification task", err)
+	}
+
 	return workflow, nil
+}
+
+func (w *WorkflowManager) IsWorkflowEnabled(ctx context.Context) bool {
+	workflowConfig, err := w.WorkflowConfig(ctx)
+	if err != nil {
+		log.Error(ctx, "Failed to get workflow config", err)
+		return false
+	}
+
+	return workflowConfig.Enabled
 }
 
 // addApprovers adds the specified approvers to the workflow
@@ -306,9 +419,14 @@ func (w *WorkflowManager) addApprovers(
 	ctx context.Context,
 	userID uuid.UUID,
 	workflow *model.Workflow,
-	approvers []cmkapi.WorkflowApprover,
+	approvers []*model.WorkflowApprover,
 ) error {
 	err := w.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+		workflowConfig, err := w.WorkflowConfig(ctx)
+		if err != nil {
+			return oops.Join(ErrGetWorkflowConfig, err)
+		}
+
 		workflowLifecycle := wf.NewLifecycle(
 			workflow,
 			w.keyManager,
@@ -316,29 +434,31 @@ func (w *WorkflowManager) addApprovers(
 			w.systemManager,
 			r,
 			userID,
-			w.workflowsConfig.MinimumApprovals,
+			workflowConfig.MinimumApprovals,
 		)
 
 		// Add each approver to the workflow
 		for _, approver := range approvers {
-			approver := model.WorkflowApprover{
-				WorkflowID: workflow.ID,
-				UserID:     approver.Id,
+			if approver.UserID == workflow.InitiatorID {
+				// Skip adding the initiator as an approver
+				continue
 			}
+
+			approver.WorkflowID = workflow.ID
 
 			_, err := r.First(ctx, workflow, *repo.NewQuery())
 			if err != nil {
 				return errs.Wrap(ErrGetWorkflowDB, err)
 			}
 
-			err = r.Create(ctx, &approver)
+			err = r.Set(ctx, approver)
 			if err != nil {
 				return errs.Wrap(ErrAddApproversDB, err)
 			}
 		}
 
 		// Then, apply the transition to next state
-		err := workflowLifecycle.ApplyTransition(ctx, wf.TransitionCreate)
+		err = workflowLifecycle.ApplyTransition(ctx, wf.TransitionCreate)
 		if err != nil {
 			return errs.Wrap(ErrApplyTransition, err)
 		}
@@ -382,9 +502,14 @@ func (w *WorkflowManager) applyTransition(
 	transition wf.Transition,
 ) error {
 	err := w.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+		workflowConfig, err := w.WorkflowConfig(ctx)
+		if err != nil {
+			return oops.Join(ErrGetWorkflowConfig, err)
+		}
+
 		workflowLifecycle := wf.NewLifecycle(
 			workflow, w.keyManager, w.keyConfigurationManager, w.systemManager, r, userID,
-			w.workflowsConfig.MinimumApprovals,
+			workflowConfig.MinimumApprovals,
 		)
 
 		validateErr := workflowLifecycle.ValidateActor(ctx, transition)
@@ -455,6 +580,240 @@ func (w *WorkflowManager) updateApproverDecision(
 	})
 	if err != nil {
 		return errs.Wrap(ErrWorkflowApproverDecision, err)
+	}
+
+	return nil
+}
+
+func (w *WorkflowManager) getKeyConfigurationsFromArtifact(
+	ctx context.Context,
+	workflow *model.Workflow,
+) ([]*model.KeyConfiguration, error) {
+	var keyConfigs []*model.KeyConfiguration
+
+	switch workflow.ArtifactType {
+	case wf.ArtifactTypeKeyConfiguration.String():
+		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, workflow.ArtifactID)
+		if err != nil {
+			return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
+		}
+
+		keyConfigs = append(keyConfigs, keyConfig)
+
+	case wf.ArtifactTypeSystem.String():
+		keyConfigsFromSystems, err := w.getKeyConfigFromSystem(ctx, workflow)
+		if err != nil {
+			return nil, err
+		}
+
+		keyConfigs = append(keyConfigs, keyConfigsFromSystems...)
+
+	case wf.ArtifactTypeKey.String():
+		keyConfig, err := w.getKeyConfigFromKey(ctx, workflow)
+		if err != nil {
+			return nil, err
+		}
+
+		keyConfigs = append(keyConfigs, keyConfig)
+
+	default:
+		return nil, errs.Wrapf(ErrGetKeyConfigFromArtifact,
+			"unsupported artifact type: "+workflow.ArtifactType)
+	}
+
+	return keyConfigs, nil
+}
+
+func (w *WorkflowManager) getKeyConfigFromSystem(
+	ctx context.Context,
+	workflow *model.Workflow,
+) ([]*model.KeyConfiguration, error) {
+	var keyConfigs []*model.KeyConfiguration
+	// If action type is UNLINK or SWITCH, we need to get the current key configuration from artifact ID
+	switch workflow.ActionType {
+	case wf.ActionTypeUnlink.String(), wf.ActionTypeSwitch.String():
+		system, err := w.systemManager.GetSystemByID(ctx, workflow.ArtifactID)
+		if err != nil {
+			return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
+		}
+
+		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, *system.KeyConfigurationID)
+		if err != nil {
+			return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
+		}
+
+		keyConfigs = append(keyConfigs, keyConfig)
+	}
+
+	// If action type is LINK or SWITCH, we need to get the target key configuration from parameters
+	switch workflow.ActionType {
+	case wf.ActionTypeLink.String(), wf.ActionTypeSwitch.String():
+		keyConfigID, err := uuid.Parse(workflow.Parameters)
+		if err != nil {
+			return nil, errs.Wrapf(ErrGetKeyConfigFromArtifact,
+				fmt.Sprintf("invalid key configuration ID in workflow parameters: %v", err))
+		}
+
+		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, keyConfigID)
+		if err != nil {
+			return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
+		}
+
+		keyConfigs = append(keyConfigs, keyConfig)
+	}
+
+	return keyConfigs, nil
+}
+
+func (w *WorkflowManager) getKeyConfigFromKey(
+	ctx context.Context,
+	workflow *model.Workflow,
+) (*model.KeyConfiguration, error) {
+	key, err := w.keyManager.Get(ctx, workflow.ArtifactID)
+	if err != nil {
+		return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
+	}
+
+	keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, key.KeyConfigurationID)
+	if err != nil {
+		return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
+	}
+
+	return keyConfig, nil
+}
+
+func (w *WorkflowManager) getApproversFromKeyConfigs(
+	ctx context.Context,
+	keyConfigs []*model.KeyConfiguration,
+) ([]*model.WorkflowApprover, error) {
+	idmClient, err := w.groupManager.GetIdentityManagementPlugin()
+	if err != nil {
+		return nil, err
+	}
+
+	// Use a map to avoid duplicate approvers
+	approverMap := make(map[uuid.UUID]model.WorkflowApprover)
+
+	for _, keyConfig := range keyConfigs {
+		group, err := w.groupManager.GetGroupByID(ctx, keyConfig.AdminGroupID)
+		if err != nil {
+			return nil, errs.Wrap(ErrAutoAssignApprover, err)
+		}
+
+		authCtx, err := cmkContext.ExtractClientDataAuthContext(ctx)
+		if err != nil {
+			return nil, errs.Wrap(ErrAutoAssignApprover, err)
+		}
+
+		idmGroup, err := idmClient.GetGroup(ctx, &idmv1.GetGroupRequest{
+			GroupName:   group.IAMIdentifier,
+			AuthContext: &idmv1.AuthContext{Data: authCtx},
+		})
+		if err != nil {
+			return nil, errs.Wrap(ErrAutoAssignApprover, err)
+		}
+
+		groupUsers, err := idmClient.GetUsersForGroup(ctx, &idmv1.GetUsersForGroupRequest{
+			GroupId:     idmGroup.GetGroup().GetId(),
+			AuthContext: &idmv1.AuthContext{Data: authCtx},
+		})
+		if err != nil {
+			return nil, errs.Wrap(ErrAutoAssignApprover, err)
+		}
+
+		for _, user := range groupUsers.GetUsers() {
+			approverID, err := uuid.Parse(user.GetId())
+			if err != nil {
+				return nil, errs.Wrapf(ErrAutoAssignApprover, fmt.Sprintf("invalid user ID: %v", approverID))
+			}
+
+			approverMap[approverID] = model.WorkflowApprover{
+				UserID:   approverID,
+				UserName: user.GetEmail(),
+			}
+		}
+	}
+
+	approvers := make([]*model.WorkflowApprover, 0, len(approverMap))
+	for _, approver := range approverMap {
+		approvers = append(approvers, &approver)
+	}
+
+	return approvers, nil
+}
+
+func (w *WorkflowManager) createAutoAssignApproversAsyncTask(
+	ctx context.Context,
+	workflow model.Workflow,
+) error {
+	if w.asyncClient != nil {
+		payload := asyncUtils.NewTaskPayload(ctx, []byte(workflow.ID.String()))
+
+		payloadBytes, err := payload.ToBytes()
+		if err != nil {
+			return errs.Wrap(ErrCreateApproverAssignTask, err)
+		}
+
+		task := asynq.NewTask(config.TypeWorkflowAutoAssign, payloadBytes)
+
+		info, err := w.asyncClient.Enqueue(task)
+		if err != nil {
+			return errs.Wrap(ErrCreateApproverAssignTask, err)
+		}
+
+		log.Info(ctx, "Enqueued workflow auto-assign approvers task",
+			slog.String("task_id", info.ID),
+			slog.String("workflow_id", workflow.ID.String()))
+	} else {
+		log.Warn(ctx, "async client is not initialized, skipping workflow creation task enqueue")
+	}
+
+	return nil
+}
+
+func (w *WorkflowManager) createWorkflowTransitionNotificationTask(
+	ctx context.Context,
+	workflow model.Workflow,
+	transition wf.Transition,
+	recipients []string,
+) error {
+	if w.asyncClient == nil {
+		log.Warn(ctx, "async client is not initialized, skipping workflow transition task enqueue")
+		return nil
+	}
+
+	tenant, err := repo.GetTenant(ctx, w.repo)
+	if err != nil {
+		return err
+	}
+
+	n, err := notifier.New()
+	if err != nil {
+		log.Error(ctx, "Create notifier failed", err)
+		return nil
+	}
+
+	data := wn.NotificationData{
+		Tenant:     *tenant,
+		Workflow:   workflow,
+		Transition: transition,
+	}
+
+	if len(recipients) == 0 {
+		log.Warn(ctx, "transition recipients is empty, skipping sending notification")
+		return nil
+	}
+
+	task, err := n.Workflow().CreateTask(data, recipients)
+	if err != nil {
+		log.Error(ctx, "Create workflow transition task failed", err)
+		return err
+	}
+
+	_, err = w.asyncClient.Enqueue(task)
+	if err != nil {
+		log.Error(ctx, "Enqueue workflow transition task failed", err)
+		return err
 	}
 
 	return nil

@@ -178,6 +178,14 @@ func (r *InMemoryRepository) Transaction(
 	return nil
 }
 
+func (r *InMemoryRepository) Migrate(
+	_ context.Context,
+	schemaName string,
+) error {
+	_, err := r.db.CreateDB(schemaName)
+	return err
+}
+
 func assignList(result any, list []repo.Resource) error {
 	resultVal := reflect.ValueOf(result)
 	if resultVal.Kind() != reflect.Ptr {

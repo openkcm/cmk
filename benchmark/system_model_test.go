@@ -113,9 +113,8 @@ func createTestObjects(ctx context.Context, b *testing.B, r repo.Repo, n int) {
 }
 
 func BenchmarkCreate(b *testing.B) {
-	db, tenants := testutils.NewTestDB(b, testutils.TestDBConfig{
-		RequiresMultitenancyOrShared: false,
-		Models:                       []driver.TenantTabler{&System{}, &SystemProperty{}, &SystemWithProperties{}},
+	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{
+		Models: []driver.TenantTabler{&System{}, &SystemProperty{}, &SystemWithProperties{}},
 	})
 	ctx := cmkcontext.CreateTenantContext(b.Context(), tenants[0])
 	r := sql.NewRepository(db)
@@ -150,9 +149,8 @@ func BenchmarkCreate(b *testing.B) {
 }
 
 func BenchmarkList(b *testing.B) {
-	db, tenants := testutils.NewTestDB(b, testutils.TestDBConfig{
-		RequiresMultitenancyOrShared: false,
-		Models:                       []driver.TenantTabler{&System{}, &SystemProperty{}, &SystemWithProperties{}},
+	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{
+		Models: []driver.TenantTabler{&System{}, &SystemProperty{}, &SystemWithProperties{}},
 	})
 	ctx := cmkcontext.CreateTenantContext(b.Context(), tenants[0])
 	r := sql.NewRepository(db)
@@ -223,9 +221,8 @@ func BenchmarkList(b *testing.B) {
 }
 
 func BenchmarkFiltered(b *testing.B) {
-	db, tenants := testutils.NewTestDB(b, testutils.TestDBConfig{
-		RequiresMultitenancyOrShared: false,
-		Models:                       []driver.TenantTabler{&System{}, &SystemProperty{}, &SystemWithProperties{}},
+	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{
+		Models: []driver.TenantTabler{&System{}, &SystemProperty{}, &SystemWithProperties{}},
 	})
 	ctx := cmkcontext.CreateTenantContext(b.Context(), tenants[0])
 	r := sql.NewRepository(db)

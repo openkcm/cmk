@@ -3,6 +3,9 @@ package repo
 import (
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/google/uuid"
 )
 
 var ErrMultipleOperationsProvided = errors.New("multiple operations provided")
@@ -13,9 +16,9 @@ type (
 )
 
 const (
-	Equal       ComparisonOp = "eq"
-	GreaterThan ComparisonOp = "gt"
-	LessThan    ComparisonOp = "lt"
+	Equal       ComparisonOp = "="
+	GreaterThan ComparisonOp = ">"
+	LessThan    ComparisonOp = "<"
 
 	Desc OrderDirection = "desc"
 	Asc  OrderDirection = "asc"
@@ -35,6 +38,7 @@ const (
 	StatusField         QueryField = "status"
 	ArtifactField       QueryField = "artifact"
 	UserField           QueryField = "user"
+	ParametersField     QueryField = "parameters"
 	WorkflowField       QueryField = "workflow"
 	ApprovedField       QueryField = "approved"
 	ArtifactTypeField   QueryField = "artifact_type"
@@ -48,6 +52,8 @@ const (
 	ExpirationDateField QueryField = "expiration_date"
 	CreationDateField   QueryField = "creation_date"
 	CreatedField        QueryField = "created_at"
+	IssuerURLField      QueryField = "issuer_url"
+	IAMIdField          QueryField = "iam_identifier"
 	Name                QueryField = "name"
 
 	// KeyconfigTotalSystems and KeyconfigTotalKeys are used as aliases in JOIN operations,
@@ -76,6 +82,13 @@ const (
 	AvgFunc   AggregateFunction = "AVG"
 )
 
+// QueryMapper can just be a struct of filter values (for eg) for simple case (eg internal system user)
+// In API controllers might want to have mapping from odata (for eg)
+type QueryMapper interface {
+	GetQuery() *Query
+	GetUUID(field QueryField) (uuid.UUID, error)
+}
+
 type Key struct {
 	Value     any
 	Operation ComparisonOp
@@ -92,14 +105,23 @@ type CompositeKeyEntry struct {
 // IsStrict: False Conds: Key = 1, Key2 = 1  where Key = 1 OR Key2 = 1
 type CompositeKey struct {
 	IsStrict bool // IsStrict indicates if the composite key will use AND logic / OR logic for conditions.
-	Conds    map[QueryField]CompositeKeyEntry
+	Conds    []Condition
+}
+
+type Condition struct {
+	Field QueryField
+	Value CompositeKeyEntry
+}
+
+func (c *Condition) String() string {
+	return fmt.Sprintf("%s %s '%v'", c.Field, c.Value.Key.Operation, c.Value.Key.Value)
 }
 
 // NewCompositeKey creates and returns a new CompositeKey.
 func NewCompositeKey() CompositeKey {
 	return CompositeKey{
 		IsStrict: true,
-		Conds:    make(map[QueryField]CompositeKeyEntry),
+		Conds:    []Condition{},
 	}
 }
 
@@ -109,11 +131,14 @@ func (c CompositeKey) Where(q QueryField, v any,
 ) CompositeKey {
 	switch {
 	case len(options) == 0:
-		c.Conds[q] = CompositeKeyEntry{Key: Key{Value: v, Operation: Equal}}
+		c.Conds = append(c.Conds,
+			Condition{Field: q, Value: CompositeKeyEntry{Key: Key{Value: v, Operation: Equal}}})
 	case len(options) > 1:
-		c.Conds[q] = CompositeKeyEntry{Err: ErrMultipleOperationsProvided}
+		c.Conds = append(c.Conds,
+			Condition{Field: q, Value: CompositeKeyEntry{Err: ErrMultipleOperationsProvided}})
 	default:
-		c.Conds[q] = CompositeKeyEntry{Key: options[0](v)}
+		c.Conds = append(c.Conds,
+			Condition{Field: q, Value: CompositeKeyEntry{Key: options[0](v)}})
 	}
 
 	return c
@@ -125,24 +150,6 @@ func Gt(v any) Key {
 
 func Lt(v any) Key {
 	return Key{Value: v, Operation: LessThan}
-}
-
-func (c CompositeKey) Validate() error {
-	if len(c.Conds) == 0 {
-		return ErrInvalidFieldName
-	}
-
-	reservedKeys := map[QueryField]struct{}{
-		IdentifierField: {},
-		IDField:         {},
-	}
-	for column := range c.Conds {
-		if _, ok := reservedKeys[column]; ok {
-			return ErrInvalidFieldName
-		}
-	}
-
-	return nil
 }
 
 type Query struct {
@@ -225,6 +232,25 @@ func NewSelectField(field QueryField, f QueryFunction) *SelectField {
 	return &SelectField{
 		Field: field,
 		Func:  f,
+	}
+}
+
+func NewConditionalSelectField(alias string, ck ...CompositeKeyGroup) *SelectField {
+	var fieldBuilder strings.Builder
+
+	for i, k := range ck {
+		if i != 0 {
+			fieldBuilder.WriteString(fmt.Sprintf(" %v ", isStrictToString(k.IsStrict)))
+		}
+
+		fieldBuilder.WriteString(fmt.Sprintf("(%s)", k.String()))
+	}
+
+	field := fmt.Sprintf("(%s)", fieldBuilder.String())
+
+	return &SelectField{
+		Field: field,
+		Alias: alias,
 	}
 }
 
@@ -319,7 +345,7 @@ func NewQueryWithFieldLoading(table table, fields ...LoadingFields) *Query {
 			JoinField: f.JoinField,
 		}
 
-		query = query.Join(FullJoin, joinCond)
+		query = query.Join(LeftJoin, joinCond)
 	}
 
 	// There are fields outside of the selected table
@@ -340,11 +366,35 @@ type CompositeKeyGroup struct {
 	IsStrict     bool
 }
 
+func isStrictToString(b bool) string {
+	if b {
+		return "AND"
+	}
+
+	return "OR"
+}
+
 func NewCompositeKeyGroup(key CompositeKey) CompositeKeyGroup {
 	return CompositeKeyGroup{
 		CompositeKey: key,
 		IsStrict:     true,
 	}
+}
+
+func (ckg *CompositeKeyGroup) String() string {
+	var strBuilder strings.Builder
+
+	for i, ck := range ckg.CompositeKey.Conds {
+		if i != 0 {
+			strBuilder.WriteString(fmt.Sprintf(" %s ", isStrictToString(ckg.CompositeKey.IsStrict)))
+		}
+
+		strBuilder.WriteString(ck.String())
+	}
+
+	str := strBuilder.String()
+
+	return str
 }
 
 func (q *Query) Where(conds ...CompositeKeyGroup) *Query {

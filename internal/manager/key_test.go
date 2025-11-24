@@ -36,7 +36,6 @@ type KeyManagerSuite struct {
 	db          *multitenancy.DB
 	repo        repo.Repo
 	ctx         context.Context
-	cleanupFunc func()
 	keyConfigID uuid.UUID
 	tenant      string
 }
@@ -45,8 +44,8 @@ func TestKeyManagerSuite(t *testing.T) {
 	suite.Run(t, new(KeyManagerSuite))
 }
 
-func (s *KeyManagerSuite) SetupSuite() {
-	db, tenants := testutils.NewTestDB(s.T(), testutils.TestDBConfig{
+func (s *KeyManagerSuite) setup() {
+	db, tenants, dbConf := testutils.NewTestDB(s.T(), testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.Key{},
 			&model.System{},
@@ -57,6 +56,7 @@ func (s *KeyManagerSuite) SetupSuite() {
 			&model.ImportParams{},
 			&model.KeystoreConfiguration{},
 		},
+		CreateDatabase: true,
 	})
 	s.db = db
 	s.tenant = tenants[0]
@@ -71,7 +71,7 @@ func (s *KeyManagerSuite) SetupSuite() {
 			testutils.KeystoreProviderPlugin,
 			testutils.CertIssuer,
 		),
-		Database: testutils.TestDB,
+		Database: dbConf,
 	}
 	ctlg, err := catalog.New(s.ctx, cfg)
 	s.Require().NoError(err)
@@ -107,29 +107,7 @@ func (s *KeyManagerSuite) SetupSuite() {
 }
 
 func (s *KeyManagerSuite) SetupTest() {
-	// Clean up the database before each test
-	testutils.RunTestQuery(
-		s.db,
-		s.tenant,
-		"DELETE FROM key_versions",
-		"DELETE FROM import_params",
-		"DELETE FROM keys",
-	)
-}
-
-func (s *KeyManagerSuite) TearDownSuite() {
-	// Final cleanup
-	testutils.RunTestQuery(
-		s.db,
-		s.tenant,
-		"DELETE FROM key_versions",
-		"DELETE FROM import_params",
-		"DELETE FROM keys",
-	)
-
-	if s.cleanupFunc != nil {
-		s.cleanupFunc()
-	}
+	s.setup()
 }
 
 func (s *KeyManagerSuite) createTestSystemManagedKey(name string) *model.Key {
@@ -377,6 +355,48 @@ func (s *KeyManagerSuite) TestCreate() {
 			}
 		})
 	}
+
+	s.Run("Should have unique name on a keyconfig", func() {
+		name := uuid.NewString()
+		key1 := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = s.keyConfigID
+			k.Name = name
+		})
+
+		key2 := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = s.keyConfigID
+			k.Name = name
+		})
+
+		_, err := s.km.Create(s.ctx, key1)
+		s.NoError(err)
+
+		_, err = s.km.Create(s.ctx, key2)
+		s.ErrorIs(err, repo.ErrUniqueConstraint)
+	})
+
+	s.Run("Should allow same name on different keyconfig", func() {
+		name := uuid.NewString()
+		keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		key1 := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig1.ID
+			k.Name = name
+		})
+
+		keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		key2 := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig2.ID
+			k.Name = name
+		})
+
+		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, keyConfig1, keyConfig2)
+
+		_, err := s.km.Create(s.ctx, key1)
+		s.NoError(err)
+
+		_, err = s.km.Create(s.ctx, key2)
+		s.NoError(err)
+	})
 }
 
 func (s *KeyManagerSuite) TestSetFirstKeyPrimary() {
@@ -393,6 +413,83 @@ func (s *KeyManagerSuite) TestSetFirstKeyPrimary() {
 		_, err := s.repo.First(s.ctx, resKeyConfig, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, createdKey1.ID, *resKeyConfig.PrimaryKeyID)
+	})
+}
+
+//nolint:funlen
+func (s *KeyManagerSuite) TestEditableCryptoData() {
+	regionEditable := "region1"
+	regionNonEditable := "region2"
+
+	cryptoData, err := json.Marshal(model.KeyAccessData{
+		regionEditable:    map[string]any{},
+		regionNonEditable: map[string]any{},
+	})
+	s.Require().NoError(err)
+
+	s.Run("Should all be editable on non primary Key", func() {
+		kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+
+		sysFailed := testutils.NewSystem(func(sys *model.System) {
+			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+			sys.Region = regionEditable
+			sys.Status = cmkapi.SystemStatusFAILED
+		})
+
+		sysConnected := testutils.NewSystem(func(sys *model.System) {
+			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+			sys.Region = regionNonEditable
+			sys.Status = cmkapi.SystemStatusCONNECTED
+		})
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.IsPrimary = false
+			k.CryptoAccessData = cryptoData
+			k.KeyConfigurationID = kc.ID
+		})
+
+		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, kc, sysFailed, sysConnected, key)
+
+		key, err = s.km.Get(s.ctx, key.ID)
+		s.NoError(err)
+
+		cryptoAccessData := key.GetCryptoAccessData()
+		s.Equal(true, cryptoAccessData[regionEditable][manager.IsEditableCryptoAccess])
+		s.Equal(true, cryptoAccessData[regionNonEditable][manager.IsEditableCryptoAccess])
+	})
+
+	s.Run("Should be editable on pkey only on failed regions", func() {
+		kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+
+		sysFailed := testutils.NewSystem(func(sys *model.System) {
+			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+			sys.Region = regionEditable
+			sys.Status = cmkapi.SystemStatusFAILED
+		})
+
+		sysConnected := testutils.NewSystem(func(sys *model.System) {
+			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+			sys.Region = regionNonEditable
+			sys.Status = cmkapi.SystemStatusCONNECTED
+		})
+
+		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, kc, sysFailed, sysConnected)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.IsPrimary = true
+			k.CryptoAccessData = cryptoData
+			k.KeyConfigurationID = kc.ID
+		})
+
+		key, err = s.km.Create(s.ctx, key)
+		s.Require().NoError(err)
+
+		key, err = s.km.Get(s.ctx, key.ID)
+		s.NoError(err)
+
+		cryptoAccessData := key.GetCryptoAccessData()
+		s.Equal(true, cryptoAccessData[regionEditable][manager.IsEditableCryptoAccess])
+		s.Equal(false, cryptoAccessData[regionNonEditable][manager.IsEditableCryptoAccess])
 	})
 }
 
@@ -444,83 +541,222 @@ func (s *KeyManagerSuite) TestGet() {
 	}
 }
 
+//nolint:funlen
 func (s *KeyManagerSuite) TestHYOKSync() {
-	t := s.T()
 	hyokKey := s.createTestHYOKKey("get-test-hyok-key")
 
-	t.Run("HYOK key state is enabled after creation", func(t *testing.T) {
+	s.Run("HYOK key state is enabled after creation", func() {
 		gotKey, err := s.km.Get(s.ctx, hyokKey.ID)
-		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), gotKey.State)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateENABLED), gotKey.State)
 	})
 
-	t.Run("HYOK key state syncs after provider disable", func(t *testing.T) {
+	s.Run("HYOK key state syncs after provider disable", func() {
 		key, err := s.km.Get(s.ctx, hyokKey.ID)
-		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), key.State)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateENABLED), key.State)
 
-		_ = s.disableKey(t, hyokKey)
+		_ = s.disableKey(hyokKey)
 
 		key, err = s.km.Get(s.ctx, hyokKey.ID)
-		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateDISABLED), key.State)
-		err = s.enableKey(t, hyokKey)
-		assert.NoError(t, err)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateDISABLED), key.State)
+		err = s.enableKey(hyokKey)
+		s.NoError(err)
 	})
 
-	t.Run("SyncHYOKkeys state syncs after provider disable", func(t *testing.T) {
+	s.Run("hyok state syncs after provider disable", func() {
+		// Reset whole env for this test
+		s.setup()
+		hyokKey := s.createTestHYOKKey("get-test-hyok-key")
+
 		key, err := s.km.Get(s.ctx, hyokKey.ID)
-		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), key.State)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateENABLED), key.State)
 
 		provider, err := s.km.GetOrInitProvider(s.ctx, hyokKey)
-		assert.NoError(t, err)
+		s.NoError(err)
 		_, err = provider.Client.DisableKey(s.ctx, &keystoreopv1.DisableKeyRequest{
 			Parameters: &keystoreopv1.RequestParameters{
 				KeyId:  *hyokKey.NativeID,
 				Config: provider.Config,
 			},
 		})
-		assert.NoError(t, err)
+		s.NoError(err)
 		err = s.km.SyncHYOKKeys(s.ctx)
-		assert.NoError(t, err)
+		s.NoError(err)
 		// Verify that the key state is updated after sync
 		key, err = s.km.Get(s.ctx, hyokKey.ID)
-		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateDISABLED), key.State)
-		err = s.enableKey(t, hyokKey)
-		assert.NoError(t, err)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateDISABLED), key.State)
+		err = s.enableKey(hyokKey)
+		s.NoError(err)
+	})
+
+	s.Run("hyok sync delete", func() {
+		// Reset whole env for this test
+		s.setup()
+		hyokKey := s.createTestHYOKKey("get-test-hyok-key")
+
+		key, err := s.km.Get(s.ctx, hyokKey.ID)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateENABLED), key.State)
+
+		err = s.deleteKey(hyokKey)
+		s.NoError(err)
+		err = s.km.SyncHYOKKeys(s.ctx)
+		s.NoError(err)
+		// Verify that the key state is updated after sync
+		key, err = s.km.Get(s.ctx, hyokKey.ID)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStatePENDINGDELETION), key.State)
+	})
+
+	s.Run("hyok sync delete/enable", func() {
+		// Reset whole env for this test
+		s.setup()
+		hyokKey := s.createTestHYOKKey("get-test-hyok-key")
+
+		key, err := s.km.Get(s.ctx, hyokKey.ID)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateENABLED), key.State)
+
+		err = s.deleteKey(hyokKey)
+		s.NoError(err)
+		s.SyncAndVerifyState(hyokKey, string(cmkapi.KeyStatePENDINGDELETION))
+
+		// Enable again
+		err = s.enableKey(hyokKey)
+		s.NoError(err)
+		s.SyncAndVerifyState(hyokKey, string(cmkapi.KeyStateENABLED))
+	})
+
+	s.Run("hyok sync delete/disable", func() {
+		// Reset whole env for this test
+		s.setup()
+		hyokKey := s.createTestHYOKKey("new-get-test-hyok-key")
+
+		key, err := s.km.Get(s.ctx, hyokKey.ID)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateENABLED), key.State)
+
+		err = s.deleteKey(hyokKey)
+		s.NoError(err)
+		s.SyncAndVerifyState(hyokKey, string(cmkapi.KeyStatePENDINGDELETION))
+
+		// Disable the key after deletion
+		err = s.disableKey(hyokKey)
+		s.NoError(err)
+		s.SyncAndVerifyState(hyokKey, string(cmkapi.KeyStateDISABLED))
+	})
+
+	s.Run("hyok state syncs on key deleted", func() {
+		// Reset whole env for this test
+		s.setup()
+		hyokKey := s.createTestHYOKKey("get-test-hyok-key")
+
+		key, err := s.km.Get(s.ctx, hyokKey.ID)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateENABLED), key.State)
+
+		// Pretend the key was deleted in the provider
+		// by setting an invalid native ID. In reality,
+		// native ID would not be modifiable, but for test purposes we do it this way.
+		key.NativeID = ptr.PointTo("invalid-key-id")
+		_, err = s.repo.Patch(s.ctx, key, *repo.NewQuery())
+		s.NoError(err)
+		s.SyncAndVerifyState(hyokKey, string(cmkapi.KeyStateDELETED))
+	})
+
+	s.Run("hyok state syncs on auth change", func() {
+		// Reset whole env for this test
+		s.setup()
+		hyokKey := s.createTestHYOKKey("get-test-hyok-key")
+
+		key, err := s.km.Get(s.ctx, hyokKey.ID)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateENABLED), key.State)
+
+		key.ManagementAccessData = []byte("{\"invalid\": \"data\"}")
+		_, err = s.repo.Patch(s.ctx, key, *repo.NewQuery())
+		s.NoError(err)
+		s.SyncAndVerifyState(hyokKey, string(cmkapi.KeyStateFORBIDDEN))
+	})
+
+	s.Run("hyok state disable twice then enable twice", func() {
+		// Reset whole env for this test
+		s.setup()
+		hyokKey := s.createTestHYOKKey("get-test-hyok-key")
+
+		key, err := s.km.Get(s.ctx, hyokKey.ID)
+		s.NoError(err)
+		s.Equal(string(cmkapi.KeyStateENABLED), key.State)
+
+		err = s.disableKey(hyokKey)
+		s.NoError(err)
+		s.SyncAndVerifyState(hyokKey, string(cmkapi.KeyStateDISABLED))
+
+		err = s.disableKey(hyokKey)
+		s.NoError(err)
+		s.SyncAndVerifyState(hyokKey, string(cmkapi.KeyStateDISABLED))
+
+		err = s.enableKey(hyokKey)
+		s.NoError(err)
+		s.SyncAndVerifyState(hyokKey, string(cmkapi.KeyStateENABLED))
+
+		err = s.enableKey(hyokKey)
+		s.NoError(err)
+		s.SyncAndVerifyState(hyokKey, string(cmkapi.KeyStateENABLED))
 	})
 }
 
-func (s *KeyManagerSuite) disableKey(t *testing.T, hyokKey *model.Key) error {
-	t.Helper()
+func (s *KeyManagerSuite) SyncAndVerifyState(hyokKey *model.Key, expectedState string) {
+	err := s.km.SyncHYOKKeys(s.ctx)
+	s.NoError(err)
+	// Verify that the key state is updated after sync
+	key, err := s.km.Get(s.ctx, hyokKey.ID)
+	s.NoError(err)
+	s.Equal(expectedState, key.State)
+}
 
+func (s *KeyManagerSuite) disableKey(hyokKey *model.Key) error {
 	provider, err := s.km.GetOrInitProvider(s.ctx, hyokKey)
-	assert.NoError(t, err)
+	s.NoError(err)
 	_, err = provider.Client.DisableKey(s.ctx, &keystoreopv1.DisableKeyRequest{
 		Parameters: &keystoreopv1.RequestParameters{
 			KeyId:  *hyokKey.NativeID,
 			Config: provider.Config,
 		},
 	})
-	assert.NoError(t, err)
+	s.NoError(err)
 
 	return err
 }
 
-func (s *KeyManagerSuite) enableKey(t *testing.T, hyokKey *model.Key) error {
-	t.Helper()
-
+func (s *KeyManagerSuite) deleteKey(hyokKey *model.Key) error {
 	provider, err := s.km.GetOrInitProvider(s.ctx, hyokKey)
-	assert.NoError(t, err)
+	s.NoError(err)
+	_, err = provider.Client.DeleteKey(s.ctx, &keystoreopv1.DeleteKeyRequest{
+		Parameters: &keystoreopv1.RequestParameters{
+			KeyId:  *hyokKey.NativeID,
+			Config: provider.Config,
+		},
+	})
+	s.NoError(err)
+
+	return err
+}
+
+func (s *KeyManagerSuite) enableKey(hyokKey *model.Key) error {
+	provider, err := s.km.GetOrInitProvider(s.ctx, hyokKey)
+	s.NoError(err)
 	_, err = provider.Client.EnableKey(s.ctx, &keystoreopv1.EnableKeyRequest{
 		Parameters: &keystoreopv1.RequestParameters{
 			KeyId:  *hyokKey.NativeID,
 			Config: provider.Config,
 		},
 	})
-	assert.NoError(t, err)
+	s.NoError(err)
 
 	return err
 }
@@ -529,6 +765,13 @@ func (s *KeyManagerSuite) TestList() {
 	// Create test keys
 	s.createTestSystemManagedKey("list-test-key-1")
 	s.createTestSystemManagedKey("list-test-key-2")
+
+	sys := testutils.NewSystem(func(sys *model.System) {
+		sys.Status = cmkapi.SystemStatusFAILED
+		sys.KeyConfigurationID = ptr.PointTo(s.keyConfigID)
+	})
+
+	testutils.CreateTestEntities(s.ctx, s.T(), s.repo, sys)
 
 	tests := []struct {
 		name          string
@@ -1009,6 +1252,7 @@ func (s *KeyManagerSuite) TestImportKeyMaterial() {
 			s.tenant,
 			"DELETE FROM import_params",
 		)
+
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
 			ip.ProviderParameters = paramsJSON

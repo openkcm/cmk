@@ -23,7 +23,7 @@ func SetupKeyConfigurationTagManager(t *testing.T) (*manager.KeyConfigurationTag
 ) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&model.KeyConfiguration{}, &model.KeyConfigurationTag{}},
 	})
 

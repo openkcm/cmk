@@ -9,15 +9,16 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
 // startAPIServerTenantConfig starts the API server for keys and returns a pointer to the database
-func startAPIServerTenantConfig(t *testing.T) (*multitenancy.DB, *http.ServeMux, string) {
+func startAPIServerTenantConfig(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 	})
 
@@ -30,7 +31,7 @@ func TestAPIController_GetTenantKeystores(t *testing.T) {
 	t.Run("Should 200 on get keystores", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
-			Endpoint: "/tenants/keystores",
+			Endpoint: "/tenantConfigurations/keystores",
 			Tenant:   tenant,
 		})
 

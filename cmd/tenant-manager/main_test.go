@@ -7,11 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	tenantmanager "github.com/openkcm/cmk/cmd/tenant-manager"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 var ErrTest = errors.New("test error")
@@ -19,25 +21,41 @@ var ErrTest = errors.New("test error")
 func TestLoadConfig(t *testing.T) {
 	t.Run("Should return error if config file not found", func(t *testing.T) {
 		_, err := tenantmanager.LoadConfig()
-		t.Log("Error:", err)
 		require.Error(t, err)
 	})
 
 	t.Run("Should return error if config file has wrong struct", func(t *testing.T) {
 		content := []byte("application:\n  nameE: test-app\n")
-		err := os.WriteFile("config.yaml", content, 0600)
+		err := os.WriteFile("config.yaml", content, 0o600)
 		require.NoError(t, err)
 
 		defer os.Remove("config.yaml")
 
 		_, err = tenantmanager.LoadConfig()
-		t.Log("Error:", err)
 		require.Error(t, err)
 	})
 
 	t.Run("Should load config if config file exists", func(t *testing.T) {
-		content := []byte("application:\n  name: test-app\nlogger:\n  level: info\n")
-		err := os.WriteFile("config.yaml", content, 0600)
+		content := []byte(`
+application:
+  name: test-app
+logger:
+  level: info
+tenantManager:
+  secretRef:
+    type: insecure
+  amqp:
+    url: amqp://guest:guest@localhost:5672/
+    target: cmk.global.tenants
+    source: cmk.emea.tenants
+services:
+  registry:
+    enabled: true
+  sessionManager:
+    enabled: true
+`)
+
+		err := os.WriteFile("config.yaml", content, 0o600)
 		require.NoError(t, err)
 
 		defer os.Remove("config.yaml")
@@ -51,15 +69,22 @@ func TestLoadConfig(t *testing.T) {
 
 func TestRunFuncWithSignalHandling(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		exitCode := tenantmanager.RunFunctionWithSigHandling(func(_ context.Context) error {
+		exitCode := tenantmanager.RunFunctionWithSigHandling(func(_ context.Context, _ *config.Config) error {
+			filename := "config.yaml"
+			f, err := os.Create(filename)
+			require.NoError(t, err)
+
+			defer f.Close()
+			defer os.Remove(filename)
+
 			return nil
 		})
 
-		assert.Equal(t, 0, exitCode)
+		assert.Equal(t, 1, exitCode)
 	})
 
 	t.Run("error", func(t *testing.T) {
-		exitCode := tenantmanager.RunFunctionWithSigHandling(func(_ context.Context) error {
+		exitCode := tenantmanager.RunFunctionWithSigHandling(func(_ context.Context, _ *config.Config) error {
 			return ErrTest
 		})
 
@@ -77,9 +102,141 @@ func TestStartStatusServer(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 }
 
-func TestRun(t *testing.T) {
-	t.Run("should fail if no config", func(t *testing.T) {
-		err := tenantmanager.Run(t.Context())
-		require.Error(t, err, "Run should return an error")
-	})
+func TestBusinessMain(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *config.Config
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "no amqp connection",
+			config: &config.Config{
+				TenantManager: config.TenantManager{
+					SecretRef: commoncfg.SecretRef{
+						Type: commoncfg.InsecureSecretType,
+					},
+				}, // No AMQP connection info provided
+				Database: testutils.TestDB,
+				Services: config.Services{
+					Registry:       testutils.TestRegistryConfig,
+					SessionManager: testutils.TestSessionManagerConfig,
+				},
+				BaseConfig: testutils.TestBaseConfig,
+			},
+			expectError: true,
+			errorMsg:    "Expected error due to missing AMQP connection info",
+		},
+		{
+			name: "no db connection",
+			config: &config.Config{
+				TenantManager: config.TenantManager{
+					SecretRef: commoncfg.SecretRef{
+						Type: commoncfg.InsecureSecretType,
+					},
+					AMQP: testutils.TestAMQPConfig,
+				},
+				Database: config.Database{}, // No database connection info provided
+				Services: config.Services{
+					Registry:       testutils.TestRegistryConfig,
+					SessionManager: testutils.TestSessionManagerConfig,
+				},
+				BaseConfig: testutils.TestBaseConfig,
+			},
+			expectError: true,
+			errorMsg:    "Expected error due to missing database configuration",
+		},
+		{
+			name: "no grpc configuration",
+			config: &config.Config{
+				TenantManager: config.TenantManager{
+					SecretRef: commoncfg.SecretRef{
+						Type: commoncfg.InsecureSecretType,
+					},
+					AMQP: testutils.TestAMQPConfig,
+				},
+				Database:   testutils.TestDB,
+				Services:   config.Services{}, // No gRPC configuration provided
+				BaseConfig: testutils.TestBaseConfig,
+			},
+			expectError: true,
+			errorMsg:    "Expected error due to missing gRPC configuration",
+		},
+		{
+			name: "missing registry service configuration",
+			config: &config.Config{
+				TenantManager: config.TenantManager{
+					SecretRef: commoncfg.SecretRef{
+						Type: commoncfg.InsecureSecretType,
+					},
+					AMQP: testutils.TestAMQPConfig,
+				},
+				Database: testutils.TestDB,
+				Services: config.Services{
+					// Missing Registry configuration
+					SessionManager: testutils.TestSessionManagerConfig,
+				},
+				BaseConfig: testutils.TestBaseConfig,
+			},
+			expectError: true,
+			errorMsg:    "registry service configuration is required",
+		},
+		{
+			name: "missing session-manager service configuration",
+			config: &config.Config{
+				TenantManager: config.TenantManager{
+					SecretRef: commoncfg.SecretRef{
+						Type: commoncfg.InsecureSecretType,
+					},
+					AMQP: testutils.TestAMQPConfig,
+				},
+				Database: testutils.TestDB,
+				Services: config.Services{
+					Registry: testutils.TestRegistryConfig,
+					// Missing SessionManager configuration
+				},
+				BaseConfig: testutils.TestBaseConfig,
+			},
+			expectError: true,
+			errorMsg:    "session-manager service configuration is required",
+		},
+		{
+			name: "valid configuration",
+			config: &config.Config{
+				TenantManager: config.TenantManager{
+					SecretRef: commoncfg.SecretRef{
+						Type: commoncfg.InsecureSecretType,
+					},
+					AMQP: testutils.TestAMQPConfig,
+				},
+				Database: testutils.TestDB,
+				Services: config.Services{
+					Registry:       testutils.TestRegistryConfig,
+					SessionManager: testutils.TestSessionManagerConfig,
+				},
+				BaseConfig: commoncfg.BaseConfig{
+					Logger: commoncfg.Logger{
+						Format: "json",
+						Level:  "info",
+					},
+				},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+
+			err := tenantmanager.Run(ctx, tt.config)
+
+			if tt.expectError {
+				assert.Error(t, err, tt.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

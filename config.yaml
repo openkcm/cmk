@@ -171,8 +171,14 @@ http:
 # Services configuration
 services:
   registry:
-    enabled: false
+    enabled: true
     address: localhost:9092
+    secretRef:
+      type: insecure
+
+  sessionManager:
+    enabled: true
+    address: localhost:9091
     secretRef:
       type: insecure
 
@@ -220,27 +226,6 @@ plugins:
     yamlConfiguration: |
       credentialfile: /etc/notification/notification.json
 
-system:
-  identifier:
-    displayName: "GTID"
-    internal: true
-  region:
-    displayName: "Region"
-    internal: true
-  type:
-    displayName: "Type"
-    internal: true
-  name:
-    displayName: "Name"
-    default: "n/a"
-    optional: true
-  systemrole:
-    displayName: "Role"
-    optional: true
-  systemroleiD:
-    displayName: "RoleID"
-    optional: true
-
 workflows:
   enabled: false
   minimumApprovals: 2
@@ -251,6 +236,8 @@ certificates:
   rotationThresholdDays: 7
 
 tenantManager:
+  secretRef:
+    type: insecure
   amqp:
     url: "amqp://guest:guest@localhost:5672"
     target: "cmk.global.tenants"
@@ -258,7 +245,7 @@ tenantManager:
 
 provisioning:
   initKeystoreConfig:
-    enabled: true
+    enabled: false
     provider: AWS
     value:
       localityId: 12345678-90ab-cdef-1234-567890abcdef

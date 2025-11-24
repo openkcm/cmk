@@ -52,3 +52,22 @@ func FromAPI(apiWorkflow cmkapi.Workflow, userID uuid.UUID) (*model.Workflow, er
 
 	return wf, nil
 }
+
+// ApproverToAPI converts a workflow approver model to an API workflow approver presentation.
+func ApproverToAPI(approver model.WorkflowApprover) cmkapi.WorkflowApprover {
+	return cmkapi.WorkflowApprover{
+		Id:   approver.UserID,
+		Name: ptr.PointTo(approver.UserName),
+		Decision: func() cmkapi.WorkflowApproverDecision {
+			if approver.Approved.Valid {
+				if approver.Approved.Bool {
+					return cmkapi.WorkflowApproverDecisionAPPROVED
+				}
+
+				return cmkapi.WorkflowApproverDecisionREJECTED
+			}
+
+			return cmkapi.WorkflowApproverDecisionPENDING
+		}(),
+	}
+}

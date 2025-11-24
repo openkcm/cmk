@@ -27,27 +27,38 @@ func (f MockHYOKProviderTransformer) ValidateAPI(_ context.Context, _ cmkapi.Key
 	panic("not implemented")
 }
 
+func (f MockHYOKProviderTransformer) ValidateKeyAccessData(
+	_ context.Context, accessDetails *cmkapi.KeyAccessDetails,
+) error {
+	if accessDetails == nil {
+		return ErrAccessDetailsRequired
+	}
+
+	if accessDetails.Management == nil || accessDetails.Crypto == nil {
+		return ErrManagementCryptoRequired
+	}
+
+	if len(*accessDetails.Management) == 0 || len(*accessDetails.Crypto) == 0 {
+		return ErrManagementCryptoEmpty
+	}
+
+	return nil
+}
+
 func (f MockHYOKProviderTransformer) SerializeKeyAccessData(
-	_ context.Context, key cmkapi.Key,
+	ctx context.Context, accessDetails *cmkapi.KeyAccessDetails,
 ) (*transformer.SerializedKeyAccessData, error) {
-	if key.AccessDetails == nil {
-		return nil, ErrAccessDetailsRequired
-	}
-
-	if key.AccessDetails.Management == nil || key.AccessDetails.Crypto == nil {
-		return nil, ErrManagementCryptoRequired
-	}
-
-	if len(*key.AccessDetails.Management) == 0 || len(*key.AccessDetails.Crypto) == 0 {
-		return nil, ErrManagementCryptoEmpty
-	}
-
-	managementData, err := json.Marshal(*key.AccessDetails.Management)
+	err := f.ValidateKeyAccessData(ctx, accessDetails)
 	if err != nil {
 		return nil, err
 	}
 
-	cryptoData, err := json.Marshal(*key.AccessDetails.Crypto)
+	managementData, err := json.Marshal(accessDetails.Management)
+	if err != nil {
+		return nil, err
+	}
+
+	cryptoData, err := json.Marshal(accessDetails.Crypto)
 	if err != nil {
 		return nil, err
 	}

@@ -281,9 +281,9 @@ func (l *Lifecycle) transitionPrecheck(ctx context.Context, transition Transitio
 		default:
 			return false, nil
 		}
-	case TransitionApprove:
-		// Check if all approvers have made decisions before transitioning from WAIT_APPROVAL to WAIT_CONFIRMATION
-		canTransition, err := l.canTransitionApprove(ctx)
+	case TransitionApprove, TransitionReject:
+		// Check voting mechanism before transitioning from WAIT_APPROVAL to WAIT_CONFIRMATION or REJECTED
+		canTransition, err := l.checkVotingScore(ctx, transition)
 		if err != nil {
 			return true, err
 		} else if !canTransition {
@@ -293,7 +293,7 @@ func (l *Lifecycle) transitionPrecheck(ctx context.Context, transition Transitio
 		// Forbid automated transitions from being triggered by user input
 		err := NewTransitionError(transition)
 		return true, errs.Wrapf(err, "automated transition cannot be triggered by user input")
-	case TransitionConfirm, TransitionRevoke, TransitionReject:
+	case TransitionConfirm, TransitionRevoke:
 		// No pre-checks required for other transitions
 		fallthrough
 	default:
@@ -328,34 +328,106 @@ func (l *Lifecycle) transitionExecute(ctx context.Context) error {
 	return nil
 }
 
-// canTransitionApprove checks if all approvers have approved the workflow
-func (l *Lifecycle) canTransitionApprove(ctx context.Context) (bool, error) {
-	if l.StateMachine.Cannot(TransitionApprove.String()) {
-		fsmErr := fsm.InvalidEventError{Event: TransitionApprove.String(), State: l.Workflow.State}
-		return false, errs.Wrap(NewTransitionError(TransitionApprove), fsmErr)
+func (l *Lifecycle) checkVotingScore(ctx context.Context, transition Transition) (bool, error) {
+	if l.StateMachine.Cannot(transition.String()) {
+		fsmErr := fsm.InvalidEventError{Event: transition.String(), State: l.Workflow.State}
+		return false, errs.Wrap(NewTransitionError(transition), fsmErr)
 	}
 
-	_, err := l.Repository.First(ctx, &model.Workflow{ID: l.Workflow.ID}, *repo.NewQuery())
+	allApprovers, err := l.getAllApprovers(ctx)
 	if err != nil {
-		return false, errs.Wrap(ErrCheckApproverDecision, err)
+		return false, err
 	}
 
-	approvers := []*model.WorkflowApprover{}
-	ck := repo.NewCompositeKey().Where(
-		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID).Where(
-		repo.ApprovedField, repo.FalseNull)
+	counts, err := l.calculateVoteCounts(allApprovers, transition)
+	if err != nil {
+		return false, err
+	}
 
-	count, err := l.Repository.List(
+	return l.shouldTransition(counts, transition)
+}
+
+func (l *Lifecycle) getAllApprovers(ctx context.Context) ([]*model.WorkflowApprover, error) {
+	var allApprovers []*model.WorkflowApprover
+
+	ck := repo.NewCompositeKey().Where(
+		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID)
+
+	_, err := l.Repository.List(
 		ctx,
 		model.WorkflowApprover{},
-		&approvers,
+		&allApprovers,
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
 	)
 	if err != nil {
-		return false, errs.Wrap(ErrCheckApproverDecision, err)
+		return nil, errs.Wrap(ErrCheckApproverDecision, err)
 	}
 
-	return count == 0, nil
+	return allApprovers, nil
+}
+
+type voteCounts struct {
+	approvals  int
+	rejections int
+	pending    int
+}
+
+func (l *Lifecycle) calculateVoteCounts(
+	allApprovers []*model.WorkflowApprover,
+	transition Transition,
+) (voteCounts, error) {
+	var counts voteCounts
+
+	for _, approver := range allApprovers {
+		if approver.UserID == l.ActorID {
+			err := l.applyCurrentVote(&counts, transition)
+			if err != nil {
+				return counts, err
+			}
+		} else {
+			l.countExistingVote(&counts, approver)
+		}
+	}
+
+	return counts, nil
+}
+
+func (l *Lifecycle) applyCurrentVote(counts *voteCounts, transition Transition) error {
+	switch transition {
+	case TransitionApprove:
+		counts.approvals++
+	case TransitionReject:
+		counts.rejections++
+	default:
+		return ErrInvalidVotingTransition
+	}
+
+	return nil
+}
+
+func (l *Lifecycle) countExistingVote(counts *voteCounts, approver *model.WorkflowApprover) {
+	switch {
+	case !approver.Approved.Valid:
+		counts.pending++
+	case approver.Approved.Bool:
+		counts.approvals++
+	default:
+		counts.rejections++
+	}
+}
+
+func (l *Lifecycle) shouldTransition(counts voteCounts, transition Transition) (bool, error) {
+	score := counts.approvals - counts.rejections
+	maxPossibleScore := score + counts.pending
+
+	switch transition {
+	case TransitionApprove:
+		return score >= l.MinimumApproverCount, nil
+	case TransitionReject:
+		return maxPossibleScore < l.MinimumApproverCount, nil
+	default:
+		return false, ErrInvalidVotingTransition
+	}
 }
 
 // getNumberOfApprovers gets the number of approvers for the workflow
@@ -391,9 +463,9 @@ type workflowHandlerFunc func(context.Context) error
 func (l *Lifecycle) executeWorkflowAction(ctx context.Context) error {
 	handlers := map[string]map[string]workflowHandlerFunc{
 		ArtifactTypeKey.String(): {
-			ActionTypeUpdateState.String():      l.updateKeyState,
-			ActionTypeDelete.String():           l.deleteKey,
-			ActionTypeUpdatePrimaryKey.String(): l.updatePrimaryKey,
+			ActionTypeUpdateState.String():   l.updateKeyState,
+			ActionTypeDelete.String():        l.deleteKey,
+			ActionTypeUpdatePrimary.String(): l.updatePrimaryKey,
 		},
 		ArtifactTypeKeyConfiguration.String(): {
 			ActionTypeDelete.String(): l.deleteKeyConfiguration,

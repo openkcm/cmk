@@ -32,10 +32,10 @@ import (
 )
 
 // startAPIKeyConfig starts the API server for key configurations and returns a pointer to the database
-func startAPIKeyConfig(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, *http.ServeMux, string) {
+func startAPIKeyConfig(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.Key{},
 			&model.KeyVersion{},
@@ -82,11 +82,9 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	groupID := uuid.New()
-	group := &model.Group{
-		ID:   groupID,
-		Name: "test",
-		Role: "test",
-	}
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.ID = groupID
+	})
 
 	repo := sql.NewRepository(db)
 	err := repo.Create(testutils.CreateCtxWithTenant(tenant), group)

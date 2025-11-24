@@ -9,10 +9,10 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 )
 
-func (c *APIController) GetTenantsKeystores(
+func (c *APIController) GetTenantKeystores(
 	_ context.Context,
-	_ cmkapi.GetTenantsKeystoresRequestObject,
-) (cmkapi.GetTenantsKeystoresResponseObject, error) {
+	_ cmkapi.GetTenantKeystoresRequestObject,
+) (cmkapi.GetTenantKeystoresResponseObject, error) {
 	dbKeystore, err := c.Manager.TenantConfigs.GetTenantsKeystores()
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetDefaultKeystore, err)
@@ -20,5 +20,5 @@ func (c *APIController) GetTenantsKeystores(
 
 	apiDefaultKeystore := tenantconfigs.ToAPI(dbKeystore)
 
-	return cmkapi.GetTenantsKeystores200JSONResponse(*apiDefaultKeystore), nil
+	return cmkapi.GetTenantKeystores200JSONResponse(*apiDefaultKeystore), nil
 }

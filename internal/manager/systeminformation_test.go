@@ -2,6 +2,7 @@ package manager_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
@@ -35,7 +36,7 @@ func SetupSystemInfoManager(t *testing.T) (
 ) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&model.System{}, &model.SystemProperty{}, &model.KeyConfiguration{}},
 	})
 	dbRepository := sql.NewRepository(db)
@@ -104,10 +105,8 @@ func (e PredictedResponseMock) Get(_ context.Context,
 	req *systeminformationv1.GetRequest, _ ...grpc.CallOption,
 ) (*systeminformationv1.GetResponse, error) {
 	ID := req.GetId()
-	for _, id := range e.noResponseIDs {
-		if ID == id {
-			return nil, nil //nolint:nilnil
-		}
+	if slices.Contains(e.noResponseIDs, ID) {
+		return nil, nil //nolint:nilnil
 	}
 
 	return &systeminformationv1.GetResponse{
@@ -158,18 +157,20 @@ func TestNewSystemInformationManager(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.Config{
 				Plugins: testutils.SetupMockPlugins(tt.plugins...),
-				System: config.System{
-					OptionalProperties: map[string]config.SystemProperty{
-						SystemRole:   {},
-						SystemRoleID: {},
-						SystemName:   {},
+				ContextModels: config.ContextModels{
+					System: config.System{
+						OptionalProperties: map[string]config.SystemProperty{
+							SystemRole:   {},
+							SystemRoleID: {},
+							SystemName:   {},
+						},
 					},
 				},
 			}
 			ctlg, err := catalog.New(t.Context(), cfg)
 			assert.NoError(t, err)
 
-			_, err = manager.NewSystemInformationManager(nil, ctlg, &cfg.System)
+			_, err = manager.NewSystemInformationManager(nil, ctlg, &cfg.ContextModels.System)
 			if tt.expectedError != nil {
 				assert.ErrorIs(t, err, tt.expectedError)
 			} else {

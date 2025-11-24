@@ -68,7 +68,7 @@ func (c *APIController) GetKeys(ctx context.Context,
 	skip := ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip)
 	top := ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop)
 
-	keys, total, err := c.Manager.Keys.GetKeys(ctx, keyConfigID, skip, top)
+	keys, total, err := c.Manager.Keys.GetKeys(ctx, ptr.PointTo(keyConfigID), skip, top)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrQueryKeyList, err)
 	}
@@ -101,7 +101,7 @@ func (c *APIController) GetKeys(ctx context.Context,
 func (c *APIController) DeleteKeysKeyID(ctx context.Context,
 	request cmkapi.DeleteKeysKeyIDRequestObject,
 ) (cmkapi.DeleteKeysKeyIDResponseObject, error) {
-	if c.isWorkflowEnabled() {
+	if c.Manager.Workflow.IsWorkflowEnabled(ctx) {
 		return nil, apierrors.ErrActionRequireWorkflow
 	}
 
@@ -134,7 +134,7 @@ func (c *APIController) GetKeysKeyID(ctx context.Context,
 func (c *APIController) UpdateKey(ctx context.Context,
 	request cmkapi.UpdateKeyRequestObject,
 ) (cmkapi.UpdateKeyResponseObject, error) {
-	if request.Body.Enabled != nil && c.isWorkflowEnabled() {
+	if request.Body.Enabled != nil && c.Manager.Workflow.IsWorkflowEnabled(ctx) {
 		return nil, apierrors.ErrActionRequireWorkflow
 	}
 

@@ -15,7 +15,8 @@ GIT_CREDENTIAL_HELPER=$(shell git config credential.helper)
 GIT_USERNAME=$(shell echo "" | git credential-$(GIT_CREDENTIAL_HELPER) get | awk -F= '$$1=="username"{print $$2}')
 GIT_PASSWORD=$(shell echo "" | git credential-$(GIT_CREDENTIAL_HELPER) get | awk -F= '$$1=="password"{print $$2}')
 SIS_PLUGIN ?= "uli"
-ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer}"
+ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer,identity_management,notification}"
+
 
 PARALLEL := $(shell \
 	if command -v nproc >/dev/null 2>&1; then \
@@ -39,7 +40,7 @@ default: test
 run:
 	AWS_ACCESS_KEY_ID="exampleAccessKeyID" AWS_SECRET_ACCESS_KEY="exampleSecretAccessKey" go run ./cmd/api-server
 
-test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
+test: generate-task-proto install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 	rm -rf cover cover.* junit.xml
 	mkdir -p cover
 	go clean -testcache
@@ -56,7 +57,7 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 			--rerun-fails-max-failures=1550 \
 			--format testname \
 			--junitfile junit.xml \
-			--packages="./internal/... ./providers/... ./utils... ./cmd/... ./tenant-manager/..." \
+			--packages="./internal/... ./providers/... ./utils... ./cmd/... ./test/security/..." \
 			-- -count=1 -covermode=atomic -coverpkg=./... -parallel=$$PARALLEL \
 			-args -test.gocoverdir=$$(pwd)/cover; \
 	} || status=$$?; \
@@ -85,17 +86,14 @@ clean_test:
 
 
 integration_test:  prepare_integration_test
-	gotestsum --format testname ./test/...
+	gotestsum --format testname ./test/integration/...
 	$(MAKE) clean_integration_test
 
-prepare_integration_test: clean_integration_test install-gotestsum submodules spin-local-aws-kms spin_sysinfo_mock spin-psql-replica spin-async \
+prepare_integration_test: clean_integration_test install-gotestsum submodules spin-local-aws-kms spin_sysinfo_mock \
 	build_sysinfo_plugin build_certissuer_plugin build_notification_plugin wait_for_sysinfo_mock
 
 clean_integration_test:
 	$(MAKE) clean-local-aws-kms
-	$(MAKE) stop-psql-replica
-	$(MAKE) clean-psql-replica
-	$(MAKE) stop-async
 	$(MAKE) clean_sysinfo_plugin
 	$(MAKE) clean_certissuer_plugin
 	$(MAKE) clean_identitymanagement_plugin
@@ -217,9 +215,9 @@ clean_test_plugins:
 	@killall testpluginbinary || true
 
 
-docker_compose_file := local_env/docker-compose.yml
 stack_name := cmk-stack-local
 test-db-container := postgres-test
+docker_compose_file := local_env/docker-compose.yml
 
 # Start docker-compose stack
 docker-compose:
@@ -228,6 +226,7 @@ docker-compose:
 
 # Start postgres service
 spin-postgres-db: clean-postgres-db
+
 	docker run -d \
 	--name $(test-db-container) \
 	-e POSTGRES_USER=postgres \
@@ -236,6 +235,11 @@ spin-postgres-db: clean-postgres-db
 	-p 5433:5432 \
 	postgres:14-alpine \
 	-c max_connections=1000
+
+# Stop and remove docker-compose stack
+clean-docker-compose:
+	docker-compose -f $(docker_compose_file) -p $(stack_name) down -v
+	docker-compose -f $(docker_compose_file) -p $(stack_name) rm -f -v
 
 # Stop and remove postgres service
 # Trick to ignore not found errors. grep the container by name and if no results do nothing, otherwise run the commands
@@ -260,11 +264,6 @@ clean-rabbitmq:
 	@if docker ps -a | grep -q rabbitmq-test; then \
 		docker stop rabbitmq-test && docker rm -fv rabbitmq-test; \
 	fi
-
-# Stop and remove docker-compose stack
-clean-docker-compose:
-	docker-compose -f $(docker_compose_file) -p $(stack_name) down -v
-	docker-compose -f $(docker_compose_file) -p $(stack_name) rm -f -v
 
 # Start Swagger UI
 .SILENT: swagger-ui
@@ -292,7 +291,7 @@ go-imports: install-goimports install-golines install-gci
       'gofmt -w "$$1" && \
       goimports -w "$$1" && \
       golines -w "$$1" && \
-      gci write --skip-generated -s standard -s default -s "prefix(github.tools.sap/kms/cmk)" \
+      gci write --skip-generated -s standard -s default -s "prefix(github.com/openkcm/cmk)" \
       -s blank -s dot -s alias -s localmodule "$$1"' sh {} \;
 
 go-imports-changed:
@@ -302,7 +301,7 @@ go-imports-changed:
 	  gofmt -w "$$file" && \
 	  goimports -w "$$file" && \
 	  golines -w "$$file" && \
-	  gci write --skip-generated -s standard -s default -s "prefix(github.tools.sap/kms/cmk)" \
+	  gci write --skip-generated -s standard -s default -s "prefix(github.com/openkcm/cmk)" \
 	  -s blank -s dot -s alias -s localmodule "$$file"; \
 	done < $$tempfile; \
 	rm -f $$tempfile
@@ -317,7 +316,7 @@ install-goimports:
 	command -v goimports >/dev/null 2>&1 || go install golang.org/x/tools/cmd/goimports@latest
 
 lint:
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	golangci-lint run -v --fix
 
 cmk-env:
@@ -365,26 +364,11 @@ wait_for_sysinfo_mock:
 clean_sysinfo_mock:
 	$(MAKE) -C sis-plugins/mocks/cld cleanCLDServer
 
-spin-psql-replica:
-	docker-compose -f ./local_env/docker-compose.replica.yml up -d
+test-psql-replica:
+	env TEST_ENV=make gotestsum --format testname ./test/integration/psqlreplicatests
 
-stop-psql-replica:
-	docker-compose -f ./local_env/docker-compose.replica.yml down
-
-clean-psql-replica:
-	docker-compose -f ./local_env/docker-compose.replica.yml down --volumes --remove-orphans
-
-test-psql-replica: spin-psql-replica
-	env TEST_ENV=make gotestsum --format testname ./test/psqlreplicatests
-
-spin-async:
-	docker-compose -f ./local_env/docker-compose-async.yml up -d
-
-stop-async:
-	docker-compose -f ./local_env/docker-compose-async.yml down
-
-test-async: spin-async
-	env TEST_ENV=make gotestsum --format testname ./test/async_test/
+test-async:
+	env TEST_ENV=make gotestsum --format testname ./test/integration/async_test/
 
 # Stop and remove local-aws-kms (not to be used on CI)
 clean-local-aws-kms:
@@ -473,6 +457,9 @@ create-plugin-secret: create-keystore-provider-secrets
 	kubectl create secret generic notification-uaa \
 	  --namespace $(NAMESPACE) \
 	  --from-file="env/secret/notification-plugins/uaa.json"
+	kubectl create secret generic scim \
+	  --namespace $(NAMESPACE) \
+	  --from-file="env/secret/identity-management/scim.json"
 
 create-event-processor-secret:
 	kubectl create secret generic event-processor-credentials \
@@ -575,9 +562,9 @@ delete-cluster:
 	   echo "k3d cluster '$(CLUSTER_NAME)' does not exist."; \
 	fi
 
-start-cmk: generate-signing-keys start-k3d create-empty-secrets create-plugin-secret create-event-processor-secret psql-add-to-cluster redis-add-to-cluster helm-install-rabbitmq k3d-add-cmk
+start-cmk: generate-signing-keys start-k3d create-empty-secrets create-plugin-secret create-event-processor-secret psql-add-to-cluster redis-add-to-cluster helm-install-rabbitmq helm-install-otel-collector k3d-add-cmk
 
-k3d-add-cmk:
+k3d-add-cmk: extract-version
 	@echo "Building the cmk image within k3d."
 	@$(MAKE) k3d-build-image
 	@$(MAKE) k3d-rebuild-cmk
@@ -657,7 +644,7 @@ helm-uninstall-rabbitmq:
 helm-install-registry: create-registry-db
 	helm upgrade --install registry oci://ghcr.io/openkcm/charts/registry \
 		--namespace $(NAMESPACE) \
-		--set image.tag=v1.1.0 \
+		--set image.tag=v1.2.0 \
 		--set config.database.host=cmk-postgresql \
 		--set config.database.user.value=$(CMK_USERNAME) \
 		--set config.database.password.value=$(CMK_PASS) \
@@ -667,7 +654,7 @@ helm-install-registry: create-registry-db
 		--set config.orbital.targets[0].connection.amqp.source="cmk.global.tenants" \
 		--set config.orbital.targets[0].connection.amqp.target="cmk.emea.tenants" \
 		--set config.orbital.targets[0].connection.auth.type=none
-	sleep 2
+	sleep 5
 	kubectl port-forward svc/registry 9092:9092 -n $(NAMESPACE) &
 
 helm-uninstall-registry:
@@ -686,8 +673,8 @@ tenant-cli:
 	kubectl exec -it -n cmk deploy/cmk-tenant-manager-cli -- ./bin/tenant-manager-cli $(ARGS)
 
 provision-tenants-k3d:
-	$(MAKE) tenant-cli ARGS="create -i tenant1 -r emea -s STATUS_ACTIVE"
-	$(MAKE) tenant-cli ARGS="create -i tenant2 -r emea -s STATUS_ACTIVE"
+	$(MAKE) tenant-cli ARGS="create -i tenant1 -r emea -s STATUS_ACTIVE -R ROLE_LIVE"
+	$(MAKE) tenant-cli ARGS="create -i tenant2 -r emea -s STATUS_ACTIVE -R ROLE_TEST"
 
 default: test
 
@@ -696,5 +683,19 @@ build-tenant-cli:
 	go build -o tm ./cmd/tenant-manager-cli
 
 provision-tenants-locally: build-tenant-cli
-	./tm create -i tenant1-id -r eu10 -s STATUS_ACTIVE
-	./tm create -i tenant2-id -r eu10 -s STATUS_ACTIVE
+	./tm create -i tenant1-id -r eu10 -s STATUS_ACTIVE -R ROLE_LIVE
+	./tm create -i tenant2-id -r eu10 -s STATUS_ACTIVE -R ROLE_TEST
+
+helm-install-otel-collector:
+	helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+	helm repo update
+	helm install otel-collector open-telemetry/opentelemetry-collector \
+		--namespace $(NAMESPACE) \
+		--create-namespace \
+		-f ./local_env/otel-values.yaml
+
+helm-uninstall-otel-collector:
+	helm uninstall otel-collector --namespace $(NAMESPACE)
+
+
+

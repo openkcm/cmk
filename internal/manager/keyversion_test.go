@@ -45,15 +45,14 @@ func TestKeyVersionManagerSuit(t *testing.T) {
 }
 
 func (s *KeyVersionManagerSuit) SetupSuite() {
-	db, tenants := testutils.NewTestDB(s.T(), testutils.TestDBConfig{
-		TenantCount:                  0,
-		RequiresMultitenancyOrShared: false,
+	db, tenants, _ := testutils.NewTestDB(s.T(), testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.Key{},
 			&model.KeyVersion{},
 			&model.TenantConfig{},
 			&model.KeyConfiguration{},
 			&model.Certificate{},
+			&model.KeystoreConfiguration{},
 		},
 	})
 	s.tenant = tenants[0]

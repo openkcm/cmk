@@ -12,6 +12,7 @@ import (
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -25,6 +26,7 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var (
@@ -51,9 +53,7 @@ func SetupCertificateManager(
 ) (*manager.CertificateManager, *multitenancy.DB, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
-		TenantCount:                  0,
-		RequiresMultitenancyOrShared: false,
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.KeyConfiguration{},
 			&model.Key{},
@@ -61,6 +61,7 @@ func SetupCertificateManager(
 			&model.Certificate{},
 			&model.Tenant{},
 		},
+		CreateDatabase: true,
 	})
 
 	dbRepository := sql.NewRepository(db)
@@ -240,7 +241,7 @@ func TestCertificateManager_RequestNewCertificate(t *testing.T) {
 			cert, privateKey, err := m.RequestNewCertificate(
 				testutils.CreateCtxWithTenant(tenant),
 				privateKey,
-				manager.RequestNewCertArgs{
+				model.RequestCertArgs{
 					CertPurpose: tt.purpose,
 					Supersedes:  nil,
 					CommonName:  "MyCert",
@@ -251,7 +252,7 @@ func TestCertificateManager_RequestNewCertificate(t *testing.T) {
 				cert, privateKey, err = m.RequestNewCertificate(
 					testutils.CreateCtxWithTenant(tenant),
 					privateKey,
-					manager.RequestNewCertArgs{
+					model.RequestCertArgs{
 						CertPurpose: tt.purpose,
 						Supersedes:  nil,
 						CommonName:  "MyCert",
@@ -270,6 +271,100 @@ func TestCertificateManager_RequestNewCertificate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCertificateManager_RotateCertificate(t *testing.T) {
+	privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
+	assert.NoError(t, err)
+	m, _, tenant := SetupCertificateManager(t)
+
+	m.SetPrivateKeyGenerator(func() (*rsa.PrivateKey, error) {
+		return privateKey, nil
+	})
+
+	m.SetClient(CertificateIssuerMock{NewCertificateChain: func() string {
+		return testutils.CreateCertificateChain(t, pkix.Name{
+			Country:            []string{"test"},
+			Organization:       []string{"test"},
+			OrganizationalUnit: []string{"test"},
+			Locality:           []string{"test"},
+			CommonName:         "test",
+		}, privateKey)
+	}})
+
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	origCert, _, err := m.RequestNewCertificate(ctx, privateKey,
+		model.RequestCertArgs{
+			CertPurpose: model.CertificatePurposeTenantDefault,
+			Supersedes:  nil,
+			CommonName:  "MyCert",
+			Locality:    []string{"locality"},
+		})
+	// Sometimes this fails due to tenant not found, but I cant find why it happens
+	// Change it to require so the test fails before panicing trying to access the pointer
+	// so it is retried
+	require.NoError(t, err)
+
+	gotOrigCert, err := m.GetCertificate(ctx, ptr.PointTo(origCert.ID))
+	assert.NoError(t, err)
+	assert.True(t, gotOrigCert.AutoRotate)
+
+	m.SetRotationThreshold(9999) // Want to catch all for testing auto rotate
+	rotCerts, length, err := m.GetCertificatesForRotation(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, length)
+	assert.Equal(t, gotOrigCert.ID, rotCerts[0].ID)
+
+	// Do first rotation
+	rot1Cert, _, err := m.RotateCertificate(ctx,
+		model.RequestCertArgs{
+			CertPurpose: model.CertificatePurposeTenantDefault,
+			Supersedes:  ptr.PointTo(origCert.ID),
+			CommonName:  "MyCert",
+			Locality:    []string{"locality"},
+		})
+	assert.NoError(t, err)
+
+	gotOrigCert2, err := m.GetCertificate(ctx, ptr.PointTo(origCert.ID))
+	assert.NoError(t, err)
+	assert.False(t, gotOrigCert2.AutoRotate)
+
+	gotRot1Cert, err := m.GetCertificate(ctx, ptr.PointTo(rot1Cert.ID))
+	assert.NoError(t, err)
+	assert.True(t, gotRot1Cert.AutoRotate)
+
+	rotCerts, length, err = m.GetCertificatesForRotation(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, length)
+	assert.Equal(t, gotRot1Cert.ID, rotCerts[0].ID)
+
+	// Do second rotation
+	rot2Cert, _, err := m.RotateCertificate(ctx,
+		model.RequestCertArgs{
+			CertPurpose: model.CertificatePurposeTenantDefault,
+			Supersedes:  ptr.PointTo(rot1Cert.ID),
+			CommonName:  "MyCert",
+			Locality:    []string{"locality"},
+		})
+	assert.NoError(t, err)
+
+	gotOrigCert3, err := m.GetCertificate(ctx, ptr.PointTo(origCert.ID))
+	assert.NoError(t, err)
+	assert.False(t, gotOrigCert3.AutoRotate)
+
+	gotRot1Cert2, err := m.GetCertificate(ctx, ptr.PointTo(rot1Cert.ID))
+	assert.NoError(t, err)
+	assert.False(t, gotRot1Cert2.AutoRotate)
+
+	gotRot2Cert, err := m.GetCertificate(ctx, ptr.PointTo(rot2Cert.ID))
+	assert.NoError(t, err)
+	assert.True(t, gotRot2Cert.AutoRotate)
+
+	rotCerts, length, err = m.GetCertificatesForRotation(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, length)
+	assert.Equal(t, gotRot2Cert.ID, rotCerts[0].ID)
 }
 
 func TestCertificateManager_GetDefaultClientCert(t *testing.T) {

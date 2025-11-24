@@ -44,14 +44,14 @@ func (p ProviderTransformerTest) GetRegion(_ context.Context, _ cmkapi.Key) (str
 
 func (p ProviderTransformerTest) SerializeKeyAccessData(
 	_ context.Context,
-	key cmkapi.Key,
+	accessDetails *cmkapi.KeyAccessDetails,
 ) (*transformer.SerializedKeyAccessData, error) {
-	management, err := json.Marshal(key.AccessDetails.Management)
+	management, err := json.Marshal(accessDetails.Management)
 	if err != nil {
 		return nil, err
 	}
 
-	crypto, err := json.Marshal(key.AccessDetails.Crypto)
+	crypto, err := json.Marshal(accessDetails.Crypto)
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +60,10 @@ func (p ProviderTransformerTest) SerializeKeyAccessData(
 		Management: management,
 		Crypto:     crypto,
 	}, nil
+}
+
+func (p ProviderTransformerTest) ValidateKeyAccessData(_ context.Context, _ *cmkapi.KeyAccessDetails) error {
+	return nil
 }
 
 func TestTransformKeyFromAPI(t *testing.T) {

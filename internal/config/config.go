@@ -25,7 +25,7 @@ var (
 
 // Config holds all application configuration parameters
 type Config struct {
-	commoncfg.BaseConfig `mapstructure:",squash"`
+	commoncfg.BaseConfig `mapstructure:",squash" yaml:",inline"`
 
 	Database         Database                     `yaml:"database"`
 	DatabaseReplicas []Database                   `yaml:"databaseReplicas"`
@@ -33,18 +33,23 @@ type Config struct {
 	HTTP             HTTPServer                   `yaml:"http"`
 	Plugins          []plugincatalog.PluginConfig `yaml:"plugins"`
 	Services         Services                     `yaml:"services"`
-	Workflows        Workflows                    `yaml:"workflows"`
 	Certificates     Certificates                 `yaml:"certificates"`
 	Provisioning     Provisioning                 `yaml:"provisioning"`
-	System           System
-	ClientData       ClientData `yaml:"clientData"`
 
+	ConfigurableContext commoncfg.SourceRef `yaml:"configurableContext"`
+	ContextModels       ContextModels       // Loaded with ConfigurableContext
+
+	ClientData  ClientData  `yaml:"clientData"`
 	CryptoLayer CryptoLayer `yaml:"cryptoLayer"`
 
 	TenantManager  TenantManager  `yaml:"tenantManager"`
 	EventProcessor EventProcessor `yaml:"eventProcessor"`
 
 	KeystorePool KeystorePool `yaml:"keystorePool"`
+}
+
+type ContextModels struct {
+	System System `yaml:"system"`
 }
 
 func (c *Config) Validate() error {
@@ -157,22 +162,14 @@ type SystemProperty struct {
 
 // Services holds services config
 type Services struct {
-	Registry *commoncfg.GRPCClient `yaml:"registry" mapstructure:"registry"`
+	Registry       *commoncfg.GRPCClient `yaml:"registry" mapstructure:"registry"`
+	SessionManager *commoncfg.GRPCClient `yaml:"sessionManager" mapstructure:"sessionManager"`
 }
 
 // HTTPServer holds http server config
 type HTTPServer struct {
 	Address         string        `yaml:"address" default:":8080"`
 	ShutdownTimeout time.Duration `yaml:"shutdownTimeout" default:"5s"`
-}
-
-// Workflows holds workflows config
-type Workflows struct {
-	// Enabled determines if workflows are enabled in controllers
-	Enabled bool
-
-	// MinimumApprovals is the minimum number of approvals required for a workflow
-	MinimumApprovals int
 }
 
 type TenantManager struct {
@@ -262,12 +259,8 @@ type Provisioning struct {
 // and other client data fields
 type ClientData struct {
 	// SigningKeysPath is the path where signing keys are mounted
-	SigningKeysPath string   `yaml:"signingKeysPath"`
-	Subject         string   `yaml:"subject"`
-	Groups          []string `yaml:"groups"`
-	Email           string   `yaml:"email"`
-	Region          string   `yaml:"region"`
-	Type            string   `yaml:"type"`
+	SigningKeysPath   string   `yaml:"signingKeysPath"`
+	AuthContextFields []string `yaml:"authContextFields"`
 }
 
 type InitKeystoreConfig struct {

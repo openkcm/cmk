@@ -74,12 +74,6 @@ tenantManagerCLI:
     # Enable the tenant-manager-cli service
     enabled: false
 
-  # Additional containers on the output Deployment definition.
-  extraContainers: []
-
-  # Additional init containers on the output Deployment definition.
-  extraInitContainers: []
-
 # task scheduler configuration
 taskScheduler:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
@@ -353,7 +347,7 @@ config:
   # This does set the logger configuration
   # +docs:property
   logger:
-    level: debug # one of: debug, info, warn, error
+    level: warn # one of: debug, info, warn, error
     # Format of the logs
     format: json # one of: json, text
     formatter:
@@ -590,15 +584,15 @@ config:
     # Each task consists of type name, retries count and cron expression
     # Empty by default - uncomment and update example value(s)
     tasks: []
-#      - cronspec: "@every 1h"
-#        taskType: taskType1
-#        retries: 1
-#      - cronspec: "@every 2h"
-#        taskType: taskType2
-#        retries: 2
-#      - cronspec: "@every 3h"
-#        taskType: taskType3
-#        retries: 3
+  #      - cronspec: "@every 1h"
+  #        taskType: taskType1
+  #        retries: 1
+  #      - cronspec: "@every 2h"
+  #        taskType: taskType2
+  #        retries: 2
+  #      - cronspec: "@every 3h"
+  #        taskType: taskType3
+  #        retries: 3
 
   # Services that CMK depends on configuration
   services:
@@ -626,6 +620,14 @@ config:
         #     file:
         #       path: /etc/registry/key
         #       format: binary
+
+    # Session Manager configuration
+    sessionManager:
+      enabled: false
+      address: host.ns.svc.cluster.local:1234
+      secretRef:
+        type: insecure
+
   # AWS KMS configuration
   aws:
     kms:
@@ -666,31 +668,6 @@ config:
   # - plugin1
   # - plugin2
   # - plugin3
-
-  # Contains a list of System properties
-  # Properties set with optional are added to the system_properties table
-  # Properties set with internal are added to the systems table
-  # Can be set a displayName and default value for each property
-  system:
-    identifier:
-      displayName: "GTID"
-      internal: true
-    region:
-      displayName: "Region"
-      internal: true
-    type:
-      displayName: "Type"
-      internal: true
-    name:
-      displayName: "Name"
-      default: "n/a"
-      optional: true
-    systemrole:
-      displayName: "Role"
-      optional: true
-    systemroleid:
-      displayName: "RoleID"
-      optional: true
 
   # Event configuration
   eventProcessor:
@@ -761,11 +738,42 @@ config:
   # Signed client data
   clientData:
     # This path is used to verify the signature of the client data
-    #signingKeysPath: /etc/signing-keys
+    # signingKeysPath: /etc/signing-keys
+    # Defines extra fields to be parsed from the client data
+    # authContext: []
 
   # Keystore pool configuration
   # keystorePool:
-      # Target number of keystores to keep in the pool
-      # size: 5
-      # Interval to report the size of the keystore pool
-      # interval: 10m
+  # Target number of keystores to keep in the pool
+  # size: 5
+  # Interval to report the size of the keystore pool
+  # interval: 10m
+
+  # Contains the configurable context properties
+  # Currently used to set the configurable system where optional are added to system_properties table
+  # Properties set with internal are added to the main tables and it's possible to set a displayName and default values
+  #
+  # Should be overriden by infra to use a file on deployed environments
+  configurableContext:
+    source: embedded
+    value: |
+      system:
+        identifier:
+          displayName: "GTID"
+          internal: true
+        region:
+          displayName: "Region"
+          internal: true
+        type:
+          displayName: "Type"
+          internal: true
+        externalName:
+          displayName: "Name"
+          default: "n/a"
+          optional: true
+        roleName:
+          displayName: "Role"
+          optional: true
+        roleID:
+          displayName: "RoleID"
+          optional: true

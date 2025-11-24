@@ -20,7 +20,7 @@ func (s *KeystorePoolFillerMock) FillKeystorePool(_ context.Context, _ int) erro
 }
 
 func TestKeystorePoolFillingAction(t *testing.T) {
-	db, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	repo := sql.NewRepository(db)

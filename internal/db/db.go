@@ -16,6 +16,8 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
 var (
@@ -83,12 +85,31 @@ func migrate(ctx context.Context, db *multitenancy.DB) error {
 		&model.Group{},
 		&model.ImportParams{},
 		&model.KeystoreConfiguration{},
+		&model.Event{},
 	)
 	if err != nil {
 		return errs.Wrap(ErrMigrationFailed, err)
 	}
 
 	err = db.MigrateSharedModels(ctx)
+	if err != nil {
+		return errs.Wrap(ErrMigrationFailed, err)
+	}
+
+	r := sql.NewRepository(db)
+
+	err = repo.ProcessInBatch(ctx, r, repo.NewQuery(), repo.DefaultLimit, func(tenants []*model.Tenant) error {
+		for _, tenant := range tenants {
+			ctx := log.InjectTenant(ctx, tenant)
+
+			err := db.MigrateTenantModels(ctx, tenant.SchemaName)
+			if err != nil {
+				log.Error(ctx, "Failed to migrate tenant", err)
+			}
+		}
+
+		return nil
+	})
 	if err != nil {
 		return errs.Wrap(ErrMigrationFailed, err)
 	}

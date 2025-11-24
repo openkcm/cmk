@@ -41,9 +41,6 @@ const (
 	labelKeystore        = "keystore"
 )
 
-//nolint:mnd
-var defaultConfig = map[string]any{"Certificates": map[string]int{"ValidityDays": 30}}
-
 // runFuncWithSignalHandling runs the given function with signal handling. When
 // a CTRL-C is received, the context will be cancelled on which the function can
 // act upon.
@@ -55,7 +52,9 @@ func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) in
 	)
 	defer cancelOnSignal()
 
-	cfg, err := loadConfig()
+	cfg, err := config.LoadConfig(
+		commoncfg.WithEnvOverride(constants.APIName),
+	)
 	if err != nil {
 		log.Error(ctx, "Failed to load the configuration", err)
 		_, _ = fmt.Fprintln(os.Stderr, err)
@@ -219,33 +218,6 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
 		}
 	}()
-}
-
-func loadConfig() (*config.Config, error) {
-	cfg := &config.Config{}
-
-	loader := commoncfg.NewLoader(
-		cfg,
-		commoncfg.WithDefaults(defaultConfig),
-		commoncfg.WithPaths(
-			constants.DefaultConfigPath1,
-			constants.DefaultConfigPath2,
-			".",
-		),
-		commoncfg.WithEnvOverride(constants.APIName),
-	)
-
-	err := loader.LoadConfig()
-	if err != nil {
-		return nil, oops.In("main").Wrapf(err, "failed to load config")
-	}
-
-	err = cfg.Validate()
-	if err != nil {
-		return nil, oops.In("main").Wrapf(err, "failed to validate config")
-	}
-
-	return cfg, nil
 }
 
 // main is the entry point for the application. It is intentionally kept small

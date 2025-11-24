@@ -1,9 +1,8 @@
 package constants
 
 const (
-	IndentSpaces = "    " // 4 spaces
-	APIName      = "CMK"
-	KMS          = "KMS"
+	APIName = "CMK"
+	KMS     = "KMS"
 )
 
 const (
