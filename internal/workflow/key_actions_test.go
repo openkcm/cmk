@@ -26,7 +26,7 @@ func TestKeyActionPrimary(t *testing.T) {
 			},
 			ArtifactType: workflow.ArtifactTypeKey.String(),
 			ArtifactID:   keyConfigID01,
-			ActionType:   workflow.ActionTypeUpdatePrimaryKey.String(),
+			ActionType:   workflow.ActionTypeUpdatePrimary.String(),
 			Parameters:   keyID02.String(),
 		}
 	})
@@ -43,7 +43,7 @@ func TestKeyActionPrimary(t *testing.T) {
 			name: "workflow keyconfiguration update primary key",
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = workflow.StateWaitConfirmation.String()
-				wf.ActionType = workflow.ActionTypeUpdatePrimaryKey.String()
+				wf.ActionType = workflow.ActionTypeUpdatePrimary.String()
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
@@ -63,7 +63,7 @@ func TestKeyActionPrimary(t *testing.T) {
 			err := r.Create(ctx, &tt.workflow)
 			assert.NoError(t, err)
 
-			keyConf := &model.KeyConfiguration{ID: keyConfigID01, AdminGroup: model.Group{ID: uuid.New()}}
+			keyConf := &model.KeyConfiguration{ID: keyConfigID01, AdminGroup: *testutils.NewGroup(func(_ *model.Group) {})}
 			err = r.Create(ctx, keyConf)
 			assert.NoError(t, err)
 

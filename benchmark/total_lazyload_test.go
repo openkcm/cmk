@@ -63,7 +63,7 @@ func WithTotalSystems(ctx context.Context, r repo.Repo) func(*model.KeyConfigura
 }
 
 func BenchmarkTotalKeyLoad(b *testing.B) {
-	db, tenants := testutils.NewTestDB(b, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&model.KeyConfiguration{}, &model.Key{}, &model.System{}},
 	})
 	r := sql.NewRepository(db)

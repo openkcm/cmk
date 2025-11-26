@@ -40,6 +40,19 @@ func InjectTenant(ctx context.Context, tenant *model.Tenant) context.Context {
 	)
 }
 
+func InjectGroups(ctx context.Context, groups []*model.Group) context.Context {
+	groupIAMIdentifiers := make([]string, len(groups))
+	for i, group := range groups {
+		groupIAMIdentifiers[i] = group.IAMIdentifier
+	}
+
+	return slogctx.With(ctx,
+		slog.Group("Groups",
+			slog.Any("IAMIdentifiers", groupIAMIdentifiers),
+		),
+	)
+}
+
 func InjectKey(ctx context.Context, key *model.Key) context.Context {
 	return slogctx.With(ctx,
 		slog.Group("Key",
@@ -70,14 +83,10 @@ func InjectTask(ctx context.Context, task *asynq.Task) context.Context {
 func InjectSystemEvent(
 	ctx context.Context,
 	event string,
-	system *model.System,
-	keyConfig *model.KeyConfiguration,
 ) context.Context {
 	return slogctx.With(ctx,
 		slog.Group("Event",
 			slog.String("Name", event),
-			slog.String("SystemID", system.ID.String()),
-			slog.String("KeyID", keyConfig.PrimaryKeyID.String()),
 		),
 	)
 }

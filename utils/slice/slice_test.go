@@ -11,8 +11,8 @@ import (
 func TestContains(t *testing.T) {
 	tests := []struct {
 		name     string
-		slice    interface{}
-		item     interface{}
+		slice    any
+		item     any
 		expected bool
 	}{
 		{

@@ -13,7 +13,7 @@ var ErrForced = errors.New("forced error")
 
 // TestErrorForced - tests the ErrorForced helper.
 func TestErrorForced(t *testing.T) {
-	db, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	t.Run("All callbacks", func(t *testing.T) {
 		errForced := testutils.NewDBErrorForced(db, ErrForced)

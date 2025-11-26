@@ -38,8 +38,13 @@ func (f MockSysMrProviderTransformer) ValidateAPI(_ context.Context, key cmkapi.
 	return nil
 }
 
-func (f MockSysMrProviderTransformer) SerializeKeyAccessData(_ context.Context, _ cmkapi.Key) (
-	*transformer.SerializedKeyAccessData, error) {
+func (f MockSysMrProviderTransformer) SerializeKeyAccessData(_ context.Context, _ *cmkapi.KeyAccessDetails) (
+	*transformer.SerializedKeyAccessData, error,
+) {
+	panic("not implemented")
+}
+
+func (f MockSysMrProviderTransformer) ValidateKeyAccessData(_ context.Context, _ *cmkapi.KeyAccessDetails) error {
 	panic("not implemented")
 }
 

@@ -22,6 +22,8 @@ tags:
     description: Key management
   - name: Key Configurations
     description: Key Configuration management
+  - name: Tenant Configurations
+    description: Tenant Configuration management
   - name: Workflows
     description: Workflow management
   - name: Systems
@@ -38,6 +40,8 @@ paths:
       summary: Get metadata of Keys
       description: |
         Returns metadata of all cryptographic Keys the User has permissions to view.
+        Keys must be listed in the context of a Key Configuration by providing the
+        `keyConfigurationID` query parameter.
       parameters:
         - name: keyConfigurationID
           in: query
@@ -45,6 +49,7 @@ paths:
           schema:
             type: string
             format: uuid
+          required: true
           example: 12345678-90ab-cdef-1234-567890abcdef
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/topPath"
@@ -689,6 +694,31 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
+  /tenantConfigurations/keystores:
+    get:
+      tags:
+        - Tenant Configurations
+      summary: Get tenant keystores
+      operationId: getTenantKeystores
+      description: |
+        Retrieves keystores of a tenant
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantKeystore"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
   /systems:
     get:
       tags:
@@ -700,25 +730,7 @@ paths:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/topPath"
         - $ref: "#/components/parameters/countPath"
-        - name: keyConfigurationID
-          in: query
-          description: Filter by Key Configuration ID
-          schema:
-            type: string
-            format: uuid
-          example: 12345678-90ab-cdef-1234-567890abcdef
-        - name: Region
-          in: query
-          description: Filter by System region
-          schema:
-            type: string
-          example: us
-        - name: Type
-          in: query
-          description: Filter by System Type
-          schema:
-            type: string
-          example: SUBACCOUNT
+        - $ref: "#/components/parameters/filterSystems"
       responses:
         "200":
           description: Systems retrieved
@@ -804,6 +816,7 @@ paths:
         Currently it supports:
         - adding the link to the specified Key Configuration
         - updating the link to the specified Key Configuration
+        - retrying last link action
       operationId: patchSystemLinkByID
       requestBody:
         description: System update request body
@@ -856,6 +869,50 @@ paths:
           $ref: "#/components/responses/403"
         "404":
           $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /workflows/check:
+    post:
+      tags:
+        - Workflows
+      summary: Check if workflow is required
+      description: |
+        Check if a workflow is required, and if a similiar workflow was already created
+      operationId: CheckWorkflow
+      requestBody:
+        description: Workflow request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Workflow"
+      parameters:
+        - name: User-ID
+          in: header
+          required: true
+          description: The ID of the User initiating the Workflow (only temporary until authentication is implemented)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowCheck"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
         "429":
           $ref: "#/components/responses/429"
         "500":
@@ -919,38 +976,7 @@ paths:
         - $ref: "#/components/parameters/topPath"
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/countPath"
-        - name: UserID
-          in: query
-          required: false
-          description: The ID of the User initiating the Workflow (only temporary until authentication is implemented)
-          schema:
-            type: string
-            format: uuid
-        - name: ArtifactID
-          in: query
-          required: false
-          description: The ID of the artifact that the Workflow is associated with
-          schema:
-            type: string
-            format: uuid
-            example: 12345678-90ab-cdef-1234-567890abcdef
-        - name: State
-          in: query
-          required: false
-          description: The current state of the Workflow
-          schema:
-            $ref: "#/components/schemas/WorkflowStateEnum"
-        - name: ArtifactType
-          in: query
-          required: false
-          description: The type of artifact that the Workflow is associated with
-          schema:
-            $ref: "#/components/schemas/WorkflowArtifactTypeEnum"
-        - name: ActionType
-          in: query
-          description: The type of Action that the Workflow is associated with
-          schema:
-            $ref: "#/components/schemas/WorkflowActionTypeEnum"
+        - $ref: "#/components/parameters/filterWorkflows"
       responses:
         "200":
           description: Retrieved
@@ -1027,45 +1053,6 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
-    post:
-      tags:
-        - Workflows
-      summary: Add Workflow approvers.
-      description: Adds Users as approvers for the Workflow with specified ID.
-      operationId: AddWorkflowApproversByWorkflowID
-      parameters:
-        - $ref: "#/components/parameters/workflowIDPath"
-        - name: User-ID
-          in: header
-          required: true
-          description: The ID of the User who initiated the Workflow (only temporary until authentication is implemented)
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/WorkflowApproverAdd"
-      responses:
-        "204":
-          description: Added
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Workflow"
-        "400":
-          $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
-        "403":
-          $ref: "#/components/responses/403"
-        "404":
-          $ref: "#/components/responses/404"
-        "429":
-          $ref: "#/components/responses/429"
-        "500":
-          $ref: "#/components/responses/500"
   /workflows/{workflowID}/state:
     post:
       tags:
@@ -1112,10 +1099,8 @@ paths:
     get:
       tags:
         - Tenants
-      summary: Get the tenants
-      description: |
-        Retrieves details of the tenants. This endpoint can only be accessed using the path
-        `/cmk/v1/sys/tenants`.
+      summary: Get tenants with same issuer
+      description: Retrieves details of the tenants with the same issuer as the specified tenant.
       parameters:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/topPath"
@@ -1137,26 +1122,27 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
-  /tenants/keystores:
+  /tenantInfo:
     get:
       tags:
         - Tenants
-      summary: Get tenant keystores
-      description: |
-        Retrieves keystores of a tenant
+      summary: Get tenant information
+      description: Retrieves details of the specific tenant.
       responses:
         "200":
           description: Retrieved
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TenantKeystore"
+                $ref: "#/components/schemas/Tenant"
         "400":
           $ref: "#/components/responses/400"
         "401":
           $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
         "429":
           $ref: "#/components/responses/429"
         "500":
@@ -1205,7 +1191,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/Group"
-            examples:
       responses:
         "201":
           description: Created
@@ -1213,6 +1198,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /groups/iamCheck:
+    post:
+      tags:
+        - Groups
+      summary: Check groups existence in IAM provider
+      operationId: CheckGroupsIAM
+      description: |
+        For each provided identifier, check if such group exists in the customer's
+        Identity & Access Management (IAM) provider.
+      requestBody:
+        description: Group Identifiers
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupIAMCheckRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupIAMCheckResponse"
         "400":
           $ref: "#/components/responses/400"
         "401":
@@ -1406,6 +1426,45 @@ components:
       schema:
         type: boolean
         default: false
+    #
+    # Queries
+    #
+    filterSystems:
+      name: "$filter"
+      in: query
+      description: |
+        Filter(s) to apply to the results.
+
+        The following operators are supported:
+
+        - Equal (eq), on the following attributes: keyConfigurationId, region, role and type.
+        - Logical AND (and).
+
+        Example: region eq eu
+      schema:
+        type: string
+
+    filterWorkflows:
+      name: "$filter"
+      in: query
+      description: |
+
+        Filter(s) to apply to the results.
+
+        The following operators are supported:
+
+        - Equal (eq), on the following attributes: userId, artifactId, artifactType, actionType and state.
+        - Logical AND (and).
+
+        - Valid arguments for `state` are INITIAL, REVOKED, REJECTED, EXPIRED, WAIT_APPROVAL, WAIT_CONFIRMATION, EXECUTING, SUCCESSFUL, FAILED
+        - Valid arguments for `artifactType` are KEY, KEY_CONFIGURATION, SYSTEM
+        - Valid arguments for `actionType` are UPDATE_STATE, UPDATE_PRIMARY_KEY, UPDATE_KEY_CONFIGURATION, DELETE
+
+        Examples:
+          - regionst eq eu
+      schema:
+        type: string
+
   schemas:
     SystemID:
       type: string
@@ -1489,6 +1548,9 @@ components:
       properties:
         keyConfigurationID:
           $ref: "#/components/schemas/KeyConfigurationID"
+        retry:
+          type: boolean
+          description: Retry last system link action
     ClientCertificates:
       type: object
       properties:
@@ -1643,10 +1705,7 @@ components:
           type: string
           example: Tenant1 Administrator
         iamIdentifier:
-          description: IAM Identifier. Acts as a reference to Groups in customer IAM
-          type: string
-          example: KMS_Tenant1Administrator_tenant1-id
-          readOnly: true
+          $ref: "#/components/schemas/GroupIAMIdentifier"
         role:
           type: string
           description: Role of the group
@@ -1659,6 +1718,45 @@ components:
           description: Description of the Group
           type: string
           example: This group represents a Tenant Administrator
+    GroupIAMIdentifier:
+      description: Reference of the Group in the customer's Identity & Access Management (IAM) provider
+      type: string
+      example: KMS_Tenant1Administrator_tenant1-id
+      readOnly: true
+    GroupIAMCheckRequest:
+      type: object
+      required:
+        - iamIdentifiers
+      properties:
+        iamIdentifiers:
+          description: List of IAM Identifiers to check existence in IAM provider
+          type: array
+          items:
+            type: string
+            description: The IAM Identifier to check
+          example:
+            - KMS_Tenant1Administrator_tenant1-id
+            - KMS_Tenant1KeyAdministrator_tenant1-id
+    GroupIAMExistence:
+      type: object
+      required:
+        - iamIdentifier
+        - exists
+      properties:
+        iamIdentifier:
+          $ref: "#/components/schemas/GroupIAMIdentifier"
+        exists:
+          description: Flag indicating whether the group exists in the IAM provider
+          type: boolean
+    GroupIAMCheckResponse:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupIAMExistence"
     TenantList:
       type: object
       required:
@@ -1779,6 +1877,8 @@ components:
         isPrimary:
           description: Flag indicating whether this Key is the primary (default) key for its associated key configuration.
           type: boolean
+        accessDetails:
+          $ref: "#/components/schemas/KeyAccessDetails"
       additionalProperties: false
     KeyMetadata:
       description: Key metadata
@@ -1953,7 +2053,13 @@ components:
           type: object
           additionalProperties: true
         crypto:
-          description: Access details for cryptographic operations.
+          description: |
+            Access details for cryptographic operations. Follows the following format:
+            "region-1": {
+                "key1": "value1",
+                "key2": "value3",
+                "isEditable": bool // true if system on this region failed to connect
+            },
           type: object
           additionalProperties: true
     ImportParams:
@@ -2226,6 +2332,22 @@ components:
     WorkflowActionType:
       description: The type of Action that the Workflow is associated with
       $ref: "#/components/schemas/WorkflowActionTypeEnum"
+    WorkflowCheck:
+      type: object
+      required:
+        - required
+        - exists
+      properties:
+        required:
+          readOnly: true
+          description: If an action requires a workflow
+          type: boolean
+          example: true
+        exists:
+          readOnly: true
+          description: If a workflow on the same artifact exists
+          type: boolean
+          example: true
     Workflow:
       type: object
       required:
@@ -2267,8 +2389,8 @@ components:
           example: |
             KEY + DELETE - needs no parameters
             KEY + UPDATE_STATE: target state
+            KEY + UPDATE_PRIMARY: new primary Key ID
             KEY_CONFIGURATION + DELETE: needs no parameters
-            KEY_CONFIGURATION + UPDATE_PRIMARY_KEY: new primary Key ID
             SYSTEM + LINK: key configuration ID
             SYSTEM + SWITCH: new key configuration ID
             SYSTEM + UNLINK: needs no parameters
@@ -2337,16 +2459,6 @@ components:
             - REJECTED
             - PENDING
           example: PENDING
-    WorkflowApproverAdd:
-      type: object
-      required:
-        - approvers
-      properties:
-        approvers:
-          description: List of approvers to be added
-          type: array
-          items:
-            $ref: "#/components/schemas/WorkflowApprover"
     #
     # Labels
     #
@@ -2411,9 +2523,9 @@ components:
               description: HTTP status code
               type: integer
             requestID:
-              type: string
               description: The unique identifier of the request
               example: 12345678-90ab-cdef-1234-567890abcdef
+              type: string
             target:
               description: The object that the api_errors relates to
               type: string
@@ -2674,3 +2786,4 @@ components:
     SystemPatchUpdatingLink:
       value:
         keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
+        retry: false

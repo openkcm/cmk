@@ -5,6 +5,7 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
@@ -45,13 +46,18 @@ func NewAPIController(
 		}
 	}
 
+	var asyncClient async.Client
+
+	asyncApp, err := async.New(&config)
+	if err != nil {
+		log.Error(ctx, "Failed to create async app", err)
+	} else {
+		asyncClient = asyncApp.Client()
+	}
+
 	return &APIController{
-		Manager:       manager.New(ctx, r, &config, clientsFactory, ctlg, reconciler),
+		Manager:       manager.New(ctx, r, &config, clientsFactory, ctlg, reconciler, asyncClient),
 		config:        &config,
 		pluginCatalog: ctlg,
 	}
-}
-
-func (c *APIController) isWorkflowEnabled() bool {
-	return c.config.Workflows.Enabled
 }

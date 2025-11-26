@@ -6,6 +6,7 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 func transformTenantDefault(cc manager.ClientCertificate) (*cmkapi.TenantDefaultCertificate, error) {
@@ -25,6 +26,13 @@ func transformCrypto(cc manager.ClientCertificate) (*cmkapi.CryptoCertificate, e
 }
 
 func ToAPI(cc map[model.CertificatePurpose][]*manager.ClientCertificate) (*cmkapi.ClientCertificates, error) {
+	for _, v := range cc {
+		err := sanitise.Stringlikes(&v)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	tenantDefaultCertList, err := transform.ToList(
 		cc[model.CertificatePurposeTenantDefault],
 		transformTenantDefault,

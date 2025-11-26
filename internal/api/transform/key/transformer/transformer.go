@@ -8,6 +8,7 @@ import (
 
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 
+	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -16,10 +17,18 @@ import (
 	"github.com/openkcm/cmk/utils/protobuf"
 )
 
+const (
+	GRPCErrorCodeInvalidAccessData errs.GRPCErrorCode = "INVALID_ACCESS_DATA"
+)
+
 var (
 	ErrValidateKey            = errors.New("failed to validate key")
 	ErrSerializeKeyAccessData = errors.New("failed to serialize key access data")
 	ErrExtractKeyRegion       = errors.New("failed to extract key region from provider")
+	ErrGRPCInvalidAccessData  = errs.GRPCError{
+		Code:        GRPCErrorCodeInvalidAccessData,
+		BaseMessage: "failed to validate access data for the keystore provider",
+	}
 )
 
 type SerializedKeyAccessData struct {
@@ -31,8 +40,10 @@ type ProviderTransformer interface {
 	// ValidateAPI validates the key received from API requests against the provider's requirements.
 	ValidateAPI(ctx context.Context, k cmkapi.Key) error
 
+	ValidateKeyAccessData(ctx context.Context, k *cmkapi.KeyAccessDetails) error
+
 	// SerializeKeyAccessData serializes the key access details into a format suitable for the provider.
-	SerializeKeyAccessData(ctx context.Context, k cmkapi.Key) (*SerializedKeyAccessData, error)
+	SerializeKeyAccessData(ctx context.Context, k *cmkapi.KeyAccessDetails) (*SerializedKeyAccessData, error)
 
 	// GetRegion retrieves the region information for the given provider.
 	GetRegion(ctx context.Context, k cmkapi.Key) (string, error)
@@ -79,18 +90,18 @@ func (v PluginProviderTransformer) ValidateAPI(ctx context.Context, k cmkapi.Key
 	return nil
 }
 
-func (v PluginProviderTransformer) SerializeKeyAccessData(
+func (v PluginProviderTransformer) ValidateKeyAccessData(
 	ctx context.Context,
-	key cmkapi.Key,
-) (*SerializedKeyAccessData, error) {
-	management, err := protobuf.StructToProtobuf(key.AccessDetails.Management)
+	accessDetails *cmkapi.KeyAccessDetails,
+) error {
+	management, err := protobuf.StructToProtobuf(accessDetails.Management)
 	if err != nil {
-		return nil, errs.Wrap(ErrSerializeKeyAccessData, err)
+		return errs.Wrap(ErrSerializeKeyAccessData, err)
 	}
 
-	crypto, err := protobuf.StructToProtobuf(key.AccessDetails.Crypto)
+	crypto, err := protobuf.StructToProtobuf(accessDetails.Crypto)
 	if err != nil {
-		return nil, errs.Wrap(ErrSerializeKeyAccessData, err)
+		return errs.Wrap(ErrSerializeKeyAccessData, err)
 	}
 
 	response, err := v.pluginClient.ValidateKeyAccessData(ctx, &keystoreopv1.ValidateKeyAccessDataRequest{
@@ -98,19 +109,36 @@ func (v PluginProviderTransformer) SerializeKeyAccessData(
 		Crypto:     crypto,
 	})
 	if err != nil {
-		return nil, errs.Wrap(ErrSerializeKeyAccessData, err)
+		if keystoreErrs.IsStatus(err, keystoreErrs.StatusInvalidKeyAccessData) {
+			detailedErr := ErrGRPCInvalidAccessData.FromStatusError(err)
+			return errors.Join(ErrSerializeKeyAccessData, detailedErr)
+		}
+
+		return errs.Wrap(ErrSerializeKeyAccessData, err)
 	}
 
 	if !response.GetIsValid() {
-		return nil, errs.Wrapf(ErrSerializeKeyAccessData, response.GetMessage())
+		return errs.Wrapf(ErrSerializeKeyAccessData, response.GetMessage())
 	}
 
-	managementAccessData, err := json.Marshal(key.AccessDetails.Management)
+	return nil
+}
+
+func (v PluginProviderTransformer) SerializeKeyAccessData(
+	ctx context.Context,
+	keyAccessDetails *cmkapi.KeyAccessDetails,
+) (*SerializedKeyAccessData, error) {
+	err := v.ValidateKeyAccessData(ctx, keyAccessDetails)
+	if err != nil {
+		return nil, err
+	}
+
+	managementAccessData, err := json.Marshal(keyAccessDetails.Management)
 	if err != nil {
 		return nil, errs.Wrap(ErrSerializeKeyAccessData, err)
 	}
 
-	cryptoAccessData, err := json.Marshal(key.AccessDetails.Crypto)
+	cryptoAccessData, err := json.Marshal(keyAccessDetails.Crypto)
 	if err != nil {
 		return nil, errs.Wrap(ErrSerializeKeyAccessData, err)
 	}

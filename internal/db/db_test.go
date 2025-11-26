@@ -33,7 +33,7 @@ func TestStartDB(t *testing.T) {
 func TestAddKeystoreFromConfig(t *testing.T) {
 	t.Run("Successfully add keystore from config", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 
@@ -119,7 +119,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Skip adding keystore when disabled", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 
@@ -142,7 +142,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle missing locality ID", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 		initKeystoreConfig := config.InitKeystoreConfig{
@@ -168,7 +168,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle missing common name", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 		initKeystoreConfig := config.InitKeystoreConfig{
@@ -194,7 +194,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle nil managementDataAccess", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 		initKeystoreConfig := config.InitKeystoreConfig{
@@ -216,7 +216,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle invalid YAML in management access data", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 
@@ -239,7 +239,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle duplicate keystore config", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 
@@ -275,7 +275,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle empty management access data", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 
@@ -298,7 +298,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle empty supported regions", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 
@@ -326,7 +326,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle region with empty name", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 
@@ -356,7 +356,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle region with empty technical name", func(t *testing.T) {
 		// Arrange
-		testDB, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
 		})
 

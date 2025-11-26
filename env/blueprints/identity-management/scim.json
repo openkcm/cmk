@@ -1,0 +1,14 @@
+{
+    "host": "",
+    "auth": {
+        "cert": "",
+        "certKey": ""
+    },
+    "params": {
+        "groupAttribute": "",
+        "userAttribute": "",
+        "groupMembersAttribute": "members",
+        "listMethod": "POST",
+        "allowSearchUsersByGroup": "False"
+    }
+}

@@ -19,6 +19,7 @@ const (
 var (
 	ErrActionRequireWorkflow = errors.New("action requires a workflow")
 	ErrUnknownProperty       = errors.New("unknown property")
+	ErrBadOdataFilter        = errors.New("bad odata filter")
 )
 
 var defaultMapper = []APIErrors{
@@ -51,6 +52,14 @@ var defaultMapper = []APIErrors{
 		ExposedError: cmkapi.DetailedError{
 			Code:    BadRequest,
 			Message: "Invalid uuid provided",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		Errors: []error{ErrBadOdataFilter},
+		ExposedError: cmkapi.DetailedError{
+			Code:    BadRequest,
+			Message: "Bad Odata filter provided",
 			Status:  http.StatusBadRequest,
 		},
 	},

@@ -89,7 +89,7 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 
 	ctx = log.InjectSystem(ctx, system)
 
-	log.Info(ctx, "Requesting SIS for properties")
+	log.Debug(ctx, "Requesting SIS for properties")
 
 	switch system.Type {
 	case string(systems.SystemTypeSUBACCOUNT):
@@ -105,15 +105,17 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 		Type: typ,
 	})
 	if err != nil {
-		log.Warn(ctx, "Could not get informatino from SIS", log.ErrorAttr(err))
+		log.Warn(ctx, "Could not get information from SIS", log.ErrorAttr(err))
 		return nil
 	}
 
 	metadata := resp.GetMetadata()
 	if metadata == nil {
-		log.Warn(ctx, "No system information for")
+		log.Warn(ctx, "No system information from SIS")
 		return nil
 	}
+
+	log.Debug(ctx, "SIS Response", slog.Any("SIS Response", metadata))
 
 	system, err = repo.GetSystemByIDWithProperties(ctx, si.repo, system.ID, repo.NewQuery())
 	if err != nil {
@@ -122,12 +124,12 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 
 	updated := system.UpdateSystemProperties(metadata, si.systemCfg)
 	if updated {
+		log.Debug(ctx, "Update System with SIS Information", slog.Any("SIS System", *system))
+
 		_, err := si.repo.Patch(ctx, system, *repo.NewQuery())
 		if err != nil {
 			return errs.Wrap(ErrUpdatingSystem, err)
 		}
-
-		log.Info(ctx, "Update System with SIS Information", slog.Any("SIS System", *system))
 	}
 
 	return nil

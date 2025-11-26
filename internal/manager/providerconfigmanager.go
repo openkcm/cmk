@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
@@ -104,7 +105,7 @@ func (k ProviderCachedKey) String() string {
 	return k.KeyStore + ":" + k.Provider + ":" + k.Tenant
 }
 
-//nolint:funlen
+//nolint:funlen,cyclop
 func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *model.Key) (*ProviderConfig, error) {
 	tenant, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
@@ -144,7 +145,7 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 	defer pmc.mu.Unlock()
 
 	// Double-check after acquiring write lock
-	if cfg, exists := pmc.providers[compositeKey]; exists {
+	if cfg, exists := pmc.providers[compositeKey]; exists && !cfg.IsExpired() {
 		return cfg, nil
 	}
 
@@ -294,7 +295,7 @@ func (pmc *ProviderConfigManager) getKeystoreConfig(
 }
 
 func (pmc *ProviderConfigManager) createKeystoreInstanceConfig(
-	configMap map[string]interface{},
+	configMap map[string]any,
 ) (*kscommonv1.KeystoreInstanceConfig, error) {
 	config, err := structpb.NewStruct(configMap)
 	if err != nil {
@@ -334,9 +335,7 @@ func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 		"privateKey": cert.PrivateKeyPEM,
 	}
 
-	for key, value := range ksConfig.ManagementAccessData {
-		configMap[key] = value
-	}
+	maps.Copy(configMap, ksConfig.ManagementAccessData)
 
 	config, err := pmc.createKeystoreInstanceConfig(configMap)
 	if err != nil {
@@ -354,7 +353,7 @@ func (pmc *ProviderConfigManager) getHYOKKeystoreConfig(
 		return nil, nil, err
 	}
 
-	configMap := map[string]interface{}{
+	configMap := map[string]any{
 		"authType":   constants.AuthTypeCertificate,
 		"clientCert": cert.CertPEM,
 		"privateKey": cert.PrivateKeyPEM,

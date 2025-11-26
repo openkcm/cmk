@@ -27,9 +27,9 @@ func TestTenantsTable(t *testing.T) {
 	})
 
 	t.Run("Should have unique combination id and region", func(t *testing.T) {
-		db, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models:                       []driver.TenantTabler{&model.Tenant{}, &testutils.TestModel{}},
-			RequiresMultitenancyOrShared: true,
+		db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+			Models:         []driver.TenantTabler{&model.Tenant{}, &testutils.TestModel{}},
+			CreateDatabase: true,
 		})
 
 		r := sql.NewRepository(db)

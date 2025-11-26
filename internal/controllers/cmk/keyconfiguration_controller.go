@@ -80,7 +80,7 @@ func (c *APIController) DeleteKeyConfigurationByID(
 	ctx context.Context,
 	request cmkapi.DeleteKeyConfigurationByIDRequestObject,
 ) (cmkapi.DeleteKeyConfigurationByIDResponseObject, error) {
-	if c.isWorkflowEnabled() {
+	if c.Manager.Workflow.IsWorkflowEnabled(ctx) {
 		return nil, apierrors.ErrActionRequireWorkflow
 	}
 

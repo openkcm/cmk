@@ -63,7 +63,7 @@ type CertificateCreator interface {
 	CreateCertificate(
 		rand io.Reader,
 		template, parent *x509.Certificate,
-		pub, priv interface{},
+		pub, priv any,
 	) ([]byte, error)
 	MarshalECPrivateKey(key *ecdsa.PrivateKey) ([]byte, error)
 }
@@ -77,7 +77,7 @@ type DefaultCertCreator struct{}
 func (d *DefaultCertCreator) CreateCertificate(
 	rand io.Reader,
 	template, parent *x509.Certificate,
-	pub, priv interface{},
+	pub, priv any,
 ) ([]byte, error) {
 	return x509.CreateCertificate(rand, template, parent, pub, priv) //nolint:wrapcheck
 }

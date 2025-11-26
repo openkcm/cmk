@@ -18,11 +18,12 @@ func TestToAPI(t *testing.T) {
 			Role:        "test",
 			Description: ptr.PointTo("test"),
 		}
-		res := group.ToAPI(model.Group{
+		res, err := group.ToAPI(model.Group{
 			Name:        "test",
 			Role:        "test",
 			Description: "test",
 		})
+		assert.NoError(t, err)
 		assert.Equal(t, expected.Name, res.Name)
 		assert.Equal(t, expected.Role, res.Role)
 		assert.Equal(t, expected.Description, res.Description)

@@ -6,12 +6,18 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 var ErrFromAPI = errors.New("failed to transform system from API")
 
 // ToAPI transforms a system model to an API system.
 func ToAPI(system model.System, systemCfg *config.System) (*cmkapi.System, error) {
+	err := sanitise.Stringlikes(&system)
+	if err != nil {
+		return nil, err
+	}
+
 	var properties map[string]any
 	if len(system.Properties) > 0 {
 		properties = make(map[string]any, len(system.Properties))

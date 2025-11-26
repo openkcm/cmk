@@ -1,11 +1,12 @@
 package main
 
 var (
-	EnabledKeyStatus       = "ENABLED"
-	DisabledKeyStatus      = "DISABLED"
-	CreatedKeyStatus       = "CREATED"
-	PendingImportKeyStatus = "PENDING_IMPORT"
-	UnknownKeyStatus       = "UNKNOWN"
+	EnabledKeyStatus         = "ENABLED"
+	DisabledKeyStatus        = "DISABLED"
+	CreatedKeyStatus         = "CREATED"
+	PendingImportKeyStatus   = "PENDING_IMPORT"
+	PendingDeletionKeyStatus = "PENDING_DELETION"
+	UnknownKeyStatus         = "UNKNOWN"
 )
 
 type KeyRecord struct {

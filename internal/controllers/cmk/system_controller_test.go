@@ -29,10 +29,10 @@ import (
 
 var ErrForced = errors.New("forced")
 
-func startAPISystems(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, *http.ServeMux, string) {
+func startAPISystems(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.System{},
 			&model.SystemProperty{},
@@ -78,7 +78,7 @@ func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodGet,
-				Endpoint: "/systems?keyConfigurationID=" + tt.keyConfigurationID,
+				Endpoint: "/systems?$filter=keyConfigurationID eq '" + tt.keyConfigurationID + "'",
 				Tenant:   tenant,
 			})
 
@@ -90,9 +90,11 @@ func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
 func TestGetSystems_AdditionalProperties(t *testing.T) {
 	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
 		Config: config.Config{
-			System: config.System{
-				OptionalProperties: map[string]config.SystemProperty{
-					"test": {DisplayName: "test"},
+			ContextModels: config.ContextModels{
+				System: config.System{
+					OptionalProperties: map[string]config.SystemProperty{
+						"test": {DisplayName: "test"},
+					},
 				},
 			},
 		},
@@ -129,7 +131,7 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 	})
 
 	t.Run("Should show properties field on system with properties", func(t *testing.T) {
-		expected := &map[string]interface{}{"test": "test"}
+		expected := &map[string]any{"test": "test"}
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: fmt.Sprintf("/systems/%s", systemWithProps.ID),
@@ -208,7 +210,7 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/systems?$count=true"
 			if tt.keyConfigurationID != nil {
-				url = url + "&keyConfigurationID=" + tt.keyConfigurationID.String()
+				url = url + "&$filter=keyConfigurationID eq '" + tt.keyConfigurationID.String() + "'"
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -218,6 +220,10 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedStatus != w.Code {
+				return
+			}
 
 			if tt.expectedStatus == http.StatusOK {
 				response := testutils.GetJSONBody[cmkapi.SystemList](t, w)
@@ -239,7 +245,6 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 				assert.ElementsMatch(t, tt.expectedSystems, identifiers)
 			} else {
 				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-
 				assert.Equal(t, tt.expectedErrorCode, response.Error.Code)
 			}
 		})
@@ -332,7 +337,12 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	for range totalRecordCount {
-		system := testutils.NewSystem(func(_ *model.System) {})
+		system := testutils.NewSystem(func(s *model.System) {
+			s.Properties = map[string]string{
+				"key-1": "val-1",
+				"key-2": "val-2",
+			}
+		})
 		testutils.CreateTestEntities(ctx, t, r, system)
 	}
 
@@ -649,7 +659,6 @@ func TestAPIController_PatchSystemLinkByID(t *testing.T) {
 			systemgrpc.RegisterServiceServer(s, systemService)
 		},
 	)
-	defer grpcCon.Close()
 
 	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
 		Plugins: []testutils.MockPlugin{testutils.SystemInfo},

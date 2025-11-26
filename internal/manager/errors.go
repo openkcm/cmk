@@ -2,9 +2,13 @@ package manager
 
 import (
 	"errors"
+
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 var (
+	ErrIncompatibleQueryField = errors.New("incompatible query field")
+
 	ErrLoadCryptoCerts         = errors.New("failed to load crypto certs")
 	ErrUnmarshalCryptoCerts    = errors.New("failed to unmarshal crypto certs")
 	ErrSetCryptoCerts          = errors.New("failed to set crypto certs")
@@ -18,6 +22,7 @@ var (
 	ErrNameCannotBeEmpty       = errors.New("name field cannot be empty")
 	ErrEventSendingFailed      = errors.New("failed to send event")
 	ErrHYOKProviderKeyNotFound = errors.New("HYOK provider key not found")
+	ErrConvertAccessData       = errors.New("failed to convert access data")
 
 	ErrCreateKeyConfiguration       = errors.New("failed to create key configuration")
 	ErrConnectedSystemToKeyConfig   = errors.New("system is connected to keyconfig")
@@ -40,6 +45,12 @@ var (
 	ErrGetKeyDB                         = errors.New("failed to get key from database")
 	ErrGettingKeyByID                   = errors.New("failed to get key by ID")
 	ErrListKeysDB                       = errors.New("failed to list keys from database")
+	ErrManagementDetailsUpdate          = errors.New("management credentials cannot be updated")
+	ErrCryptoDetailsUpdate              = errors.New("crypto credentials cannot be updated")
+	ErrCryptoRegionNotExists            = errors.New("crypto region does not exist")
+	ErrNonEditableCryptoRegionUpdate    = errors.New("crypto region cant be updated as it's not editable")
+	ErrBadCryptoRegionData              = errors.New("crypto region data invalid")
+	ErrEditableCryptoRegionField        = errors.New("editable crypto region field has to be boolean")
 	ErrUpdateKeyDB                      = errors.New("failed to update key in database")
 	ErrCreateKeyDB                      = errors.New("failed to create key in database")
 	ErrDeleteKeyDB                      = errors.New("failed to delete key from database")
@@ -60,6 +71,7 @@ var (
 	ErrUpdateSystemNoRegClient          = errors.New("system cannot be updated since no registry client")
 	ErrLinkSystemProcessingOrFailed     = errors.New("System cannot be linked in PROCESSING/FAILED state")
 	ErrUnlinkSystemProcessingOrFailed   = errors.New("System cannot be unlinked in PROCESSING/FAILED state")
+	ErrRetryNonFailedSystem             = errors.New("System can action only be retried on failed state")
 
 	ErrRotateBYOKKey                       = errors.New("byok key must not be rotated")
 	ErrUnsupportedBYOKProvider             = errors.New("unsupported BYOK provider")
@@ -92,6 +104,9 @@ var (
 	ErrInvalidGroupRename = errors.New("group cannot be renamed")
 	ErrInvalidGroupDelete = errors.New("group cannot be deleted")
 
+	ErrCheckIAMExistenceOfGroups = errors.New("failed to check IAM existence of groups")
+	ErrCheckTenantHasIAMGroups   = errors.New("failed to check tenant has IAM groups")
+
 	ErrNoBodyForCustomerHeldDB = errors.New(
 		"body must be provided for customer held key rotation",
 	)
@@ -107,19 +122,21 @@ var (
 	ErrGetKeyIDDB        = errors.New("KeyID is required")
 	ErrEmptyInputLabelDB = errors.New("invalid input empty label name")
 
-	ErrQuerySystemList       = errors.New("failed to query system list")
-	ErrGettingSystem         = errors.New("failed to get system")
-	ErrCreatingSystem        = errors.New("failed to create system")
-	ErrGettingSystemByID     = errors.New("failed to get system by ID")
-	ErrGettingSystemLinkByID = errors.New("failed to get system link by ID")
-	ErrAddSystemNoPrimaryKey = errors.New("system cannot be added without an enabled primary key")
-	ErrUpdateSystem          = errors.New("failed to update system")
-	ErrSettingKeyClaim       = errors.New("error setting key claim for system")
-	ErrSystemNotLinked       = errors.New("system is not linked to a key configuration")
+	ErrQuerySystemList         = errors.New("failed to query system list")
+	ErrGettingSystem           = errors.New("failed to get system")
+	ErrCreatingSystem          = errors.New("failed to create system")
+	ErrGettingSystemByID       = errors.New("failed to get system by ID")
+	ErrGettingSystemLinkByID   = errors.New("failed to get system link by ID")
+	ErrAddSystemNoPrimaryKey   = errors.New("system cannot be added without an enabled primary key")
+	ErrUpdateSystem            = errors.New("failed to update system")
+	ErrSettingKeyClaim         = errors.New("error setting key claim for system")
+	ErrSystemNotLinked         = errors.New("system is not linked to a key configuration")
+	ErrFailedToReencryptSystem = errors.New("system reencrypt failed on new key")
 
 	ErrGetWorkflowDB        = errors.New("failed to get workflow")
 	ErrOngoingWorkflowExist = errors.New("ongoing workflow for artifact already exists")
 	ErrCreateWorkflowDB     = errors.New("failed to create workflow")
+	ErrCheckWorkflow        = errors.New("failed to check workflow")
 	ErrCheckOngoingWorkflow = errors.New("failed to check ongoing workflow for artifact")
 	ErrWorkflowNotInitial   = errors.New("workflow is not in initial state")
 	ErrValidateActor        = errors.New("failed to validate actor for workflow transition")
@@ -130,6 +147,11 @@ var (
 	)
 	ErrWorkflowCannotTransitionDB = errors.New("workflow cannot transition to specified state")
 	ErrUpdateApproverDecision     = errors.New("failed to update approver decision")
+	ErrGetKeyConfigFromArtifact   = errors.New("failed to get key configuration from artifact")
+	ErrAutoAssignApprover         = errors.New("failed to auto assign approver")
+	ErrCreateApproverAssignTask   = errors.New("failed to create auto approver assignment task")
+
+	ErrLoadIdentityManagementPlugin = errors.New("failed to load identity management plugin")
 
 	ErrLoadAuthzAllowList = errors.New("failed to load authz allow list for tenantID")
 	ErrTenantNotExist     = errors.New("tenantID does not exist")
@@ -138,36 +160,27 @@ var (
 	ErrPoolIsDrained               = errors.New("pool is drained")
 	ErrCouldNotSaveConfiguration   = errors.New("could not save configuration")
 	ErrCouldNotRemoveConfiguration = errors.New("could not remove configuration")
+	ErrOnboardingInProgress        = errors.New("another onboarding is already in progress")
+	ErrCreatingGroups              = errors.New("creating user groups for existing tenant")
+	ErrInvalidGroupType            = errors.New("invalid group type")
+
+	ErrSchemaNameLength = errors.New("schema name length must be between 3 and 63 characters")
+	ErrCreatingTenant   = errors.New("creating tenant failed")
+	ErrValidatingTenant = errors.New("tenant validation failed")
+	ErrInvalidSchema    = errors.New("invalid schema name pattern")
+
+	ErrGroupRole = errors.New("unsupported role for group creation")
 )
 
-// HYOKAuthFailedError indicates a failure to authenticate with the keystore provider
-// and holds a reason for the failure which can be extracted.
-type HYOKAuthFailedError struct {
-	Reason string
-}
+const (
+	GRPCErrorCodeHYOKAuthFailed errs.GRPCErrorCode = "HYOK_AUTH_FAILED"
+)
 
-func (e HYOKAuthFailedError) Error() string {
-	return "failed to authenticate with the keystore provider: " + e.Reason
-}
+// Predefined GRPC errors
 
-func (e HYOKAuthFailedError) Is(target error) bool {
-	if target == nil {
-		return false
+var (
+	ErrGRPCHYOKAuthFailed = errs.GRPCError{
+		Code:        GRPCErrorCodeHYOKAuthFailed,
+		BaseMessage: "failed to authenticate with the keystore provider",
 	}
-
-	return errors.As(target, &HYOKAuthFailedError{})
-}
-
-func (e HYOKAuthFailedError) As(target any) bool {
-	if target == nil {
-		return false
-	}
-
-	_, ok := target.(*HYOKAuthFailedError)
-
-	return ok
-}
-
-func NewHYOKAuthFailedError(reason string) error {
-	return HYOKAuthFailedError{Reason: reason}
-}
+)

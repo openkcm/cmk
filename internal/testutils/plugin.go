@@ -6,6 +6,7 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	certificate_issuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
+	identityv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 	keystoremanv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/management/v1"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
@@ -45,6 +46,12 @@ var SystemInfo = MockPlugin{
 	dir:  "systeminformation",
 }
 
+var IdentityPlugin = MockPlugin{
+	typ:  identityv1.Type,
+	name: "IDENTITY_MANAGEMENT",
+	dir:  "identitymanagement",
+}
+
 var CertIssuer = MockPlugin{
 	typ:  certificate_issuerv1.Type,
 	name: "CERT_ISSUER",
@@ -60,6 +67,27 @@ var Notification = MockPlugin{
 var ValidKeystoreAccountInfo = map[string]string{
 	"AccountID": "111122223333",
 	"UserID":    "123456789012",
+}
+
+type IdentityManagementUserRef struct {
+	ID    string
+	Email string
+}
+
+var IdentityManagementGroups = map[string]string{
+	"KMS_001": "SCIM-Group-ID-001",
+	"KMS_002": "SCIM-Group-ID-002",
+}
+
+var IdentityManagementGroupMembership = map[string][]IdentityManagementUserRef{
+	"SCIM-Group-ID-001": {
+		{"00000000-0000-0000-0000-100000000001", "user1@example.com"},
+		{"00000000-0000-0000-0000-100000000002", "user2@example.com"},
+	},
+	"SCIM-Group-ID-002": {
+		{"00000000-0000-0000-0000-100000000003", "user3@example.com"},
+		{"00000000-0000-0000-0000-100000000004", "user4@example.com"},
+	},
 }
 
 func GetPluginDir(dir string) string {

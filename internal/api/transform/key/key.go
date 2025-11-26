@@ -19,6 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 var (
@@ -69,6 +70,11 @@ func FromAPI(ctx context.Context, apiKey cmkapi.Key, tf transformer.ProviderTran
 
 // ToAPI converts a model.Key to a cmkapi.Key
 func ToAPI(k model.Key) (*cmkapi.Key, error) {
+	err := sanitise.Stringlikes(&k)
+	if err != nil {
+		return nil, err
+	}
+
 	var apiKey cmkapi.Key
 
 	apiKey.Id = &k.ID

@@ -2,9 +2,7 @@ package testutils
 
 import (
 	"net"
-	"os"
-	"os/signal"
-	"syscall"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,8 +10,6 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
-
-	"github.com/openkcm/cmk/internal/clients"
 )
 
 const (
@@ -29,6 +25,22 @@ var TestRegistryConfig = &commoncfg.GRPCClient{
 	Address: "localhost:9092",
 	SecretRef: &commoncfg.SecretRef{
 		Type: commoncfg.InsecureSecretType,
+	},
+}
+
+// TestSessionManagerConfig is a default session manager config for testing purposes
+var TestSessionManagerConfig = &commoncfg.GRPCClient{
+	Enabled: true,
+	Address: "localhost:9091",
+	SecretRef: &commoncfg.SecretRef{
+		Type: commoncfg.InsecureSecretType,
+	},
+}
+
+var TestBaseConfig = commoncfg.BaseConfig{
+	Logger: commoncfg.Logger{
+		Format: "json",
+		Level:  "info",
 	},
 }
 
@@ -51,53 +63,35 @@ func NewGRPCSuite(
 		Address: "localhost:" + port,
 	}
 
-	grpcServer := NewGRPCServer(tb, cfg.Address, registrars...)
-
-	grpcClient, err := commongrpc.NewDynamicClientConn(&cfg, DefaultThrottleInterval)
-	assert.NoError(tb, err)
-
-	return grpcServer, grpcClient
-}
-
-// NewGRPCServer is mostly used for internal reasons.
-// In most cases please use NewGRPCSuite to set up a DB for unit tests
-func NewGRPCServer(
-	tb testing.TB,
-	address string,
-	registrars ...ServiceRegistrar,
-) *grpc.Server {
-	tb.Helper()
-
 	grpcServer := grpc.NewServer()
 	for _, register := range registrars {
 		register(grpcServer)
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(1)
+
 	lc := net.ListenConfig{}
-	lis, err := lc.Listen(tb.Context(), "tcp", address)
+	lis, err := lc.Listen(tb.Context(), "tcp", cfg.Address)
+	assert.NoError(tb, err)
 
-	// Handle server shutdown gracefully when the process is terminated.
-	// This also guarantees coverage reporting during integration tests.
-	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		<-sigChan
-		grpcServer.GracefulStop()
-	}()
+	go func(lis net.Listener) {
+		defer wg.Done()
 
-	go func() {
 		err = grpcServer.Serve(lis)
-		if err != nil {
-			tb.Fail()
-		}
-	}()
+		assert.NoError(tb, err)
+	}(lis)
 
-	return grpcServer
-}
+	grpcClient, err := commongrpc.NewDynamicClientConn(&cfg, DefaultThrottleInterval)
+	assert.NoError(tb, err)
 
-func CloseClientsFactory(t *testing.T, clientsFactory *clients.Factory) {
-	t.Helper()
+	tb.Cleanup(func() {
+		grpcServer.GracefulStop()
+		wg.Wait()
 
-	err := clientsFactory.Close()
-	assert.NoError(t, err)
+		err := grpcClient.Close()
+		assert.NoError(tb, err)
+	})
+
+	return grpcServer, grpcClient
 }

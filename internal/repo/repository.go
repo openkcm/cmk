@@ -12,6 +12,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 // TransactionFunc is func signature for ExecTransaction.
@@ -26,6 +27,7 @@ type Repo interface {
 	Patch(ctx context.Context, resource Resource, query Query) (bool, error)
 	Set(ctx context.Context, resource Resource) error
 	Transaction(ctx context.Context, txFunc TransactionFunc) error
+	Migrate(ctx context.Context, schemaName string) error
 }
 
 // Resource defines the interface for Resource operations.
@@ -51,6 +53,7 @@ var (
 	ErrNotFound         = errors.New("resource not found")
 	ErrUniqueConstraint = errors.New("unique constraint violation")
 	ErrCreateResource   = errors.New("failed to create resource")
+	ErrSetResource      = errors.New("failed to set resource")
 	ErrUpdateResource   = errors.New("failed to update resource")
 	ErrDeleteResource   = errors.New("failed to delete resource")
 	ErrGetResource      = errors.New("failed to get resource")
@@ -128,9 +131,23 @@ func GetSystemByIDWithProperties(ctx context.Context, r Repo, systemID uuid.UUID
 	return systems[0], nil
 }
 
+//nolint:funlen
 func ListSystemWithProperties(ctx context.Context, r Repo, query *Query) ([]*model.System, int, error) {
-	loadQuery := *query
-	loadQuery = *loadQuery.
+	var systems []*model.System
+
+	count, err := r.List(ctx, model.System{}, &systems, *query)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	ck := NewCompositeKey()
+
+	ck.IsStrict = false
+	for _, s := range systems {
+		ck = ck.Where(fmt.Sprintf("%s.%s", model.System{}.TableName(), IDField), s.ID)
+	}
+
+	loadQuery := query.
 		Join(LeftJoin, JoinCondition{
 			JoinTable: &model.SystemProperty{},
 			JoinField: IDField,
@@ -155,42 +172,38 @@ func ListSystemWithProperties(ctx context.Context, r Repo, query *Query) ([]*mod
 			fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), NameField),
 			QueryFunction{},
 		).SetAlias(SystemKeyconfigName),
-	)
-
-	var rows []*model.JoinSystem
-	// Count is ignored because it returns N systems + M system_props
-	_, err := r.List(ctx, &model.System{}, &rows, loadQuery)
-	if err != nil {
-		return nil, 0, err
-	}
+	).Where(
+		NewCompositeKeyGroup(ck),
+	).SetOffset(0).SetLimit(DefaultLimit) // Reset offset and limit as this is for the join table
 
 	systemsMap := map[uuid.UUID]*model.System{}
 
-	for _, row := range rows {
-		sys, exists := systemsMap[row.ID]
-		if !exists {
-			sys = &row.System
-			sys.Properties = map[string]string{}
-			sys.KeyConfigurationName = row.KeyConfigurationName
-			systemsMap[row.ID] = sys
+	err = ProcessInBatch(ctx, r, loadQuery, DefaultLimit, func(rows []*model.JoinSystem) error {
+		for _, row := range rows {
+			sys, exists := systemsMap[row.ID]
+			if !exists {
+				sys = &row.System
+				sys.Properties = map[string]string{}
+				sys.KeyConfigurationName = row.KeyConfigurationName
+				systemsMap[row.ID] = sys
+			}
+
+			if row.Key == "" {
+				continue
+			}
+
+			sys.Properties[row.Key] = row.Value
 		}
 
-		if row.Key == "" {
-			continue
-		}
-
-		sys.Properties[row.Key] = row.Value
-	}
-
-	systems := slices.Collect(maps.Values(systemsMap))
-
-	// Get correct system count
-	count, err := r.List(ctx, &model.System{}, &[]*model.System{}, *query.SetLimit(1))
+		return nil
+	})
 	if err != nil {
 		return nil, 0, err
 	}
 
-	return systems, count, nil
+	sys := slices.Collect(maps.Values(systemsMap))
+
+	return sys, count, nil
 }
 
 // ProcessInBatch retrieves and processes records in batches from the database based on the provided query parameters.
@@ -229,4 +242,30 @@ func ProcessInBatch[T Resource](
 	}
 
 	return nil
+}
+
+func GetTenant(ctx context.Context, r Repo) (*model.Tenant, error) {
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return GetTenantByID(ctx, r, tenantID)
+}
+
+func GetTenantByID(ctx context.Context, r Repo, tenantID string) (*model.Tenant, error) {
+	tenant := &model.Tenant{}
+	ck := NewCompositeKey().Where(IDField, tenantID)
+	query := NewQuery().Where(NewCompositeKeyGroup(ck))
+
+	_, err := r.First(ctx, tenant, *query)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, ErrTenantNotFound
+		}
+
+		return nil, errs.Wrap(ErrGetResource, err)
+	}
+
+	return tenant, nil
 }

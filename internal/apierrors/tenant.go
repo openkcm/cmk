@@ -9,8 +9,10 @@ import (
 
 var (
 	ErrListTenants      = errors.New("failed to get tenants")
+	ErrGetTenantInfo    = errors.New("failed to get tenant info")
 	ErrTransformTenants = errors.New("failed to transform tenants to API")
 	ErrTenantIDInPath   = errors.New("tenant ID in path is not allowed")
+	ErrTenantNotAllowed = errors.New("user has no permission to access tenant")
 )
 
 var tenants = []APIErrors{
@@ -31,11 +33,11 @@ var tenants = []APIErrors{
 		},
 	},
 	{
-		Errors: []error{ErrListTenants, ErrTenantIDInPath},
+		Errors: []error{ErrTenantNotAllowed},
 		ExposedError: cmkapi.DetailedError{
-			Code:    "TENANT_ID_IN_PATH",
-			Message: "Tenant ID in path is not allowed",
-			Status:  http.StatusBadRequest,
+			Code:    "NO_TENANT_ACCESS",
+			Message: "User has no permission to access tenant",
+			Status:  http.StatusForbidden,
 		},
 	},
 }

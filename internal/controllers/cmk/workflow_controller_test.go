@@ -25,14 +25,16 @@ import (
 
 var errMockInternalError = errors.New("internal error")
 
-func startAPIWorkflows(t *testing.T) (*multitenancy.DB, *http.ServeMux, string) {
+func startAPIWorkflows(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.Workflow{},
 			&model.WorkflowApprover{},
 			&model.Key{},
+			&model.Tenant{},
+			&model.TenantConfig{},
 		},
 	})
 
@@ -60,6 +62,32 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo) []*mod
 	testutils.CreateTestEntities(ctx, tb, r, workflow, workflow2)
 
 	return []*model.Workflow{workflow, workflow2}
+}
+
+func TestWorkflowControllerCheckWorkflow(t *testing.T) {
+	_, sv, tenant := startAPIWorkflows(t)
+
+	wf := cmkapi.Workflow{
+		ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeLink),
+		ArtifactID:   uuid.New(),
+		ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeKey),
+	}
+
+	t.Run("should 200 with exists and required false", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: "/workflows/check",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, wf),
+			Headers:  map[string]string{"User-ID": uuid.NewString()},
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		res := testutils.GetJSONBody[cmkapi.CheckWorkflow200JSONResponse](t, w)
+		assert.False(t, *res.Exists)
+		assert.False(t, *res.Required)
+	})
 }
 
 func TestWorkflowControllerCreateWorkflow(t *testing.T) {
@@ -612,154 +640,6 @@ func TestWorkflowControllerListWorkflowApproversByWorkflowID(t *testing.T) {
 	}
 }
 
-func TestWorkflowControllerAddWorkflowApproversByWorkflowID(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	r := cmksql.NewRepository(db)
-	workflows := createTestWorkflows(ctx, t, r)
-
-	tests := []struct {
-		name           string
-		workflowID     string
-		request        string
-		headers        map[string]string
-		sideEffect     func() func()
-		expectedStatus int
-		expectedState  string
-	}{
-		{
-			name:       "TestWorkflowControllerAddWorkflowApproversByWorkflowID_NotEnoughApprovers",
-			workflowID: workflows[0].ID.String(),
-			request: `{
-				"approvers": []
-			}`,
-			headers:        map[string]string{"User-ID": workflows[0].InitiatorID.String()},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:       "TestWorkflowControllerAddWorkflowApproversByWorkflowID_Conflict",
-			workflowID: workflows[0].ID.String(),
-			request: `{
-				"approvers": [{"id": "178464b7-4433-4322-ad53-6be3fff4277d", "decision":"APPROVED"}, 
-								{"id": "178464b7-4433-4322-ad53-6be3fff4277d", "decision":"APPROVED"}]
-			}`,
-			headers:        map[string]string{"User-ID": workflows[0].InitiatorID.String()},
-			expectedStatus: http.StatusConflict,
-			expectedState:  wfMechanism.StateInitial.String(),
-		},
-		{
-			name:       "TestWorkflowControllerAddWorkflowApproversByWorkflowID_InvalidWorkflowUUID",
-			workflowID: "invalid-uuid",
-			request: `{
-				"approvers": [{"id": "4c36785f-3696-4c47-98e9-21f77ceb961f", "decision":"APPROVED"}]
-			}`,
-			headers:        map[string]string{"User-ID": workflows[0].InitiatorID.String()},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:       "TestWorkflowControllerAddWorkflowApproversByWorkflowID_NotFound",
-			workflowID: uuid.NewString(),
-			request: `{
-				"approvers": [{"id": "178464b7-4433-4322-ad53-6be3fff4277d", "decision":"APPROVED"}]
-			}`,
-			headers:        map[string]string{"User-ID": workflows[0].InitiatorID.String()},
-			expectedStatus: http.StatusNotFound,
-		},
-		{
-			name:       "TestWorkflowControllerAddWorkflowApproversByWorkflowID_InvalidApproverUUID",
-			workflowID: "invalid-uuid",
-			request: `{
-				"approvers": [{"id": "new-approver-id", "decision":"APPROVED"}]
-			}`,
-			headers:        map[string]string{"User-ID": workflows[0].InitiatorID.String()},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:       "TestWorkflowControllerAddWorkflowApproversByWorkflowID_WrongActor",
-			workflowID: workflows[0].ID.String(),
-			request: `{
-				"approvers": [{"id": "178464b7-4433-4322-ad53-6be3fff4277d", "decision":"APPROVED"}]
-			}`,
-			headers:        map[string]string{"User-ID": workflows[1].InitiatorID.String()},
-			expectedStatus: http.StatusForbidden,
-		},
-		{
-			name:       "TestWorkflowControllerAddWorkflowApproversByWorkflowID_InternalErrorOnAdd",
-			workflowID: workflows[0].ID.String(),
-			request: `{
-				"approvers": [{"id": "178464b7-4433-4322-ad53-6be3fff4277d", "decision":"APPROVED"}]
-			}`,
-			headers: map[string]string{"User-ID": workflows[0].InitiatorID.String()},
-			sideEffect: func() func() {
-				errForced := testutils.NewDBErrorForced(db, errMockInternalError)
-				errForced.WithCreate().Register()
-
-				return errForced.Unregister
-			},
-			expectedStatus: http.StatusInternalServerError,
-		},
-		{
-			name:       "TestWorkflowControllerAddWorkflowApproversByWorkflowID_InvalidState",
-			workflowID: workflows[1].ID.String(),
-			request: `{
-				"approvers": [{"id": "178464b7-4433-4322-ad53-6be3fff4277d", "decision":"APPROVED"}]
-			}`,
-			headers:        map[string]string{"User-ID": workflows[1].InitiatorID.String()},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:       "TestWorkflowControllerAddWorkflowApproversByWorkflowID_InternalErrorOnTransition",
-			workflowID: workflows[0].ID.String(),
-			request: `{
-				"approvers": [{"id": "4c36785f-3696-4c47-98e9-21f77ceb961f", "decision":"APPROVED"}]
-			}`,
-			sideEffect: func() func() {
-				errForced := testutils.NewDBErrorForced(db, errMockInternalError)
-				errForced.Register()
-
-				return errForced.Unregister
-			},
-			headers:        map[string]string{"User-ID": workflows[0].InitiatorID.String()},
-			expectedStatus: http.StatusInternalServerError,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.sideEffect != nil {
-				teardown := tt.sideEffect()
-				defer teardown()
-			}
-
-			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodPost,
-				Endpoint: fmt.Sprintf("/workflows/%s/approvers", tt.workflowID),
-				Tenant:   tenant,
-				Body:     testutils.WithString(t, tt.request),
-				Headers:  tt.headers,
-			})
-
-			assert.Equal(t, tt.expectedStatus, w.Code)
-
-			if tt.expectedStatus == http.StatusOK {
-				testutils.GetJSONBody[cmkapi.WorkflowApproverList](t, w)
-			}
-
-			if tt.expectedState != "" {
-				id, err := uuid.Parse(tt.workflowID)
-				assert.NoError(t, err)
-
-				workflow := &model.Workflow{ID: id}
-
-				_, err = r.First(ctx, workflow, *repo.NewQuery())
-				assert.NoError(t, err)
-
-				assert.Equal(t, tt.expectedState, workflow.State)
-			}
-		})
-	}
-}
-
 func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -1009,61 +889,61 @@ func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
 	}{
 		{
 			name:           "FilterByState_ValidState",
-			query:          "/workflows?State=REVOKED",
+			query:          "/workflows?$filter=state eq 'REVOKED'",
 			expectedStatus: http.StatusOK,
 			expectedCount:  1,
 		},
 		{
 			name:           "FilterByState_InvalidState",
-			query:          "/workflows?State=INVALID_STATE",
+			query:          "/workflows?$filter=state eq 'INVALID_STATE'",
 			expectedStatus: http.StatusBadRequest,
 			expectedCount:  0,
 		},
 		{
 			name:           "FilterByArtifactType_ValidType",
-			query:          "/workflows?ArtifactType=KEY",
+			query:          "/workflows?$filter=artifactType eq 'KEY'",
 			expectedStatus: http.StatusOK,
 			expectedCount:  2,
 		},
 		{
 			name:           "FilterByArtifactType_InvalidType",
-			query:          "/workflows?ArtifactType=INVALID_TYPE",
+			query:          "/workflows?$filter=artifactType eq 'INVALID_TYPE'",
 			expectedStatus: http.StatusBadRequest,
 			expectedCount:  0,
 		},
 		{
 			name:           "FilterByActionType_ValidType",
-			query:          "/workflows?ActionType=UPDATE_STATE",
+			query:          "/workflows?$filter=actionType eq 'UPDATE_STATE'",
 			expectedStatus: http.StatusOK,
 			expectedCount:  1,
 		},
 		{
 			name:           "FilterByActionType_InvalidType",
-			query:          "/workflows?ActionType=INVALID_ACTION",
+			query:          "/workflows?$filter=actionType eq 'INVALID_ACTION'",
 			expectedStatus: http.StatusBadRequest,
 			expectedCount:  0,
 		},
 		{
 			name:           "FilterByMultipleParameters",
-			query:          "/workflows?State=REVOKED&ArtifactType=KEY&ActionType=UPDATE_STATE",
+			query:          "/workflows?$filter=state eq 'REVOKED' and artifactType eq 'KEY' and actionType eq 'UPDATE_STATE'",
 			expectedStatus: http.StatusOK,
 			expectedCount:  1,
 		},
 		{
 			name:           "FilterByUserID",
-			query:          "/workflows?UserID=d30fa7b3-1da4-483f-9f7c-64cd1b4678e5",
+			query:          "/workflows?$filter=userID eq 'd30fa7b3-1da4-483f-9f7c-64cd1b4678e5'",
 			expectedStatus: http.StatusOK,
 			expectedCount:  0,
 		},
 		{
-			name:           "FilterByInvlaidUserID",
-			query:          "/workflows?UserID=invalid-uuid",
+			name:           "FilterByInvalidUserID",
+			query:          "/workflows?$filter=userID eq 'invalid-uuid'",
 			expectedStatus: http.StatusBadRequest,
 			expectedCount:  0,
 		},
 		{
 			name:           "FilterByUserIDwithworkflows",
-			query:          "/workflows?UserID=76e06743-80c6-4372-a195-269e4473036d",
+			query:          "/workflows?$filter=userID eq '76e06743-80c6-4372-a195-269e4473036d'",
 			expectedStatus: http.StatusOK,
 			expectedCount:  1,
 		},

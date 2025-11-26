@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/orbital"
@@ -18,9 +17,9 @@ import (
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -29,13 +28,12 @@ import (
 )
 
 type System interface {
-	GetAllSystems(ctx context.Context, filter SystemFilter) ([]*model.System, int, error)
+	GetAllSystems(ctx context.Context, params repo.QueryMapper) ([]*model.System, int, error)
 	GetSystemByID(ctx context.Context, keyConfigID uuid.UUID) (*model.System, error)
 	GetSystemLinkByID(ctx context.Context, keyConfigID uuid.UUID) (*uuid.UUID, error)
-	PatchSystemLinkByID(ctx context.Context, systemID uuid.UUID, patchSystem model.System) (*model.System, error)
+	PatchSystemLinkByID(ctx context.Context, systemID uuid.UUID, patchSystem cmkapi.SystemPatch) (*model.System, error)
 	DeleteSystemLinkByID(ctx context.Context, systemID uuid.UUID) error
 	RefreshSystemsData(ctx context.Context) bool
-	NewSystemFilter(request cmkapi.GetAllSystemsRequestObject) SystemFilter
 }
 
 type SystemManager struct {
@@ -54,37 +52,22 @@ type SystemFilter struct {
 	Top         int
 }
 
-func NewSystemManager(
-	ctx context.Context,
-	repository repo.Repo,
-	clientsFactory *clients.Factory,
-	reconciler *eventprocessor.CryptoReconciler,
-	ctlg *plugincatalog.Catalog,
-	cmkAuditor *auditor.Auditor,
-	cfg *config.Config,
-) *SystemManager {
-	manager := &SystemManager{
-		repo:       repository,
-		reconciler: reconciler,
-		cmkAuditor: cmkAuditor,
-		registry:   clientsFactory.RegistryService(),
-	}
-
-	sisClient, err := NewSystemInformationManager(repository, ctlg, &cfg.System)
-	if err != nil {
-		log.Warn(ctx, "Failed to create sis client", slog.String(slogctx.ErrKey, err.Error()))
-	}
-
-	manager.sisClient = sisClient
-
-	return manager
+type SystemEvent struct {
+	Name  string
+	Event func(ctx context.Context) (orbital.Job, error)
 }
 
-func (s SystemFilter) IsKeyConfigQuery() bool {
-	return s.KeyConfigID != uuid.Nil
+var SystemEvents = []string{
+	proto.TaskType_SYSTEM_LINK.String(),
+	proto.TaskType_SYSTEM_UNLINK.String(),
+	proto.TaskType_SYSTEM_SWITCH.String(),
 }
 
-func (s SystemFilter) ApplyToQuery(query *repo.Query) *repo.Query {
+var _ repo.QueryMapper = (*SystemFilter)(nil) // Assert interface impl
+
+func (s SystemFilter) GetQuery() *repo.Query {
+	query := repo.NewQuery()
+
 	ck := repo.NewCompositeKey()
 
 	if s.KeyConfigID != uuid.Nil {
@@ -106,34 +89,62 @@ func (s SystemFilter) ApplyToQuery(query *repo.Query) *repo.Query {
 	return query
 }
 
-func (*SystemManager) NewSystemFilter(request cmkapi.GetAllSystemsRequestObject) SystemFilter {
-	var region string
-	if request.Params.Region != nil {
-		region = strings.ToUpper(*request.Params.Region)
+func (s SystemFilter) GetUUID(field repo.QueryField) (uuid.UUID, error) {
+	if field != repo.KeyConfigIDField {
+		return uuid.Nil, ErrIncompatibleQueryField
 	}
 
-	var sysType string
-	if request.Params.Type != nil {
-		sysType = strings.ToUpper(*request.Params.Type)
+	if s.KeyConfigID == uuid.Nil {
+		return uuid.Nil, nil
 	}
 
-	return SystemFilter{
-		KeyConfigID: ptr.GetSafeDeref(request.Params.KeyConfigurationID),
-		Region:      region,
-		Type:        sysType,
-		Skip:        ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip),
-		Top:         ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop),
+	return s.KeyConfigID, nil
+}
+
+func NewSystemManager(
+	ctx context.Context,
+	repository repo.Repo,
+	clientsFactory *clients.Factory,
+	reconciler *eventprocessor.CryptoReconciler,
+	ctlg *plugincatalog.Catalog,
+	cmkAuditor *auditor.Auditor,
+	cfg *config.Config,
+) *SystemManager {
+	manager := &SystemManager{
+		repo:       repository,
+		reconciler: reconciler,
+		cmkAuditor: cmkAuditor,
 	}
+
+	if clientsFactory != nil {
+		manager.registry = clientsFactory.RegistryService()
+	} else {
+		log.Warn(ctx, "Creating SystemManager without registry client")
+	}
+
+	sisClient, err := NewSystemInformationManager(repository, ctlg, &cfg.ContextModels.System)
+	if err != nil {
+		log.Warn(ctx, "Failed to create sis client", slog.String(slogctx.ErrKey, err.Error()))
+	}
+
+	manager.sisClient = sisClient
+
+	return manager
 }
 
 func (m *SystemManager) GetAllSystems(
 	ctx context.Context,
-	filter SystemFilter,
+	params repo.QueryMapper,
 ) ([]*model.System, int, error) {
-	if filter.IsKeyConfigQuery() {
+	keyConfigID, err := params.GetUUID(repo.KeyConfigIDField)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrQuerySystemList, err)
+	}
+
+	if keyConfigID != uuid.Nil {
 		_, err := m.repo.First(
 			ctx,
-			&model.KeyConfiguration{ID: filter.KeyConfigID},
+			&model.KeyConfiguration{ID: keyConfigID},
 			*repo.NewQuery(),
 		)
 		if err != nil {
@@ -141,10 +152,7 @@ func (m *SystemManager) GetAllSystems(
 		}
 	}
 
-	query := repo.NewQuery().SetLimit(filter.Top).SetOffset(filter.Skip)
-	query = filter.ApplyToQuery(query)
-
-	systems, count, err := repo.ListSystemWithProperties(ctx, m.repo, query)
+	systems, count, err := repo.ListSystemWithProperties(ctx, m.repo, params.GetQuery())
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrQuerySystemList, err)
 	}
@@ -208,15 +216,27 @@ func (m *SystemManager) GetSystemLinkByID(ctx context.Context, systemID uuid.UUI
 	return keyConfigurationID, nil
 }
 
+//nolint:cyclop,funlen
 func (m *SystemManager) PatchSystemLinkByID(
 	ctx context.Context,
 	systemID uuid.UUID,
-	patchSystem model.System,
+	patchSystem cmkapi.SystemPatch,
 ) (*model.System, error) {
-	var dbSystem *model.System
+	if patchSystem.Retry != nil && *patchSystem.Retry {
+		system, err := m.GetSystemByID(ctx, systemID)
+		if err != nil {
+			return nil, err
+		}
+
+		err = m.handleEventRetry(ctx, systemID)
+
+		return system, err
+	}
+
+	var updatedSystem *model.System
 
 	err := m.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
-		keyConfig := &model.KeyConfiguration{ID: *patchSystem.KeyConfigurationID}
+		keyConfig := &model.KeyConfiguration{ID: patchSystem.KeyConfigurationID}
 
 		_, err := r.First(ctx, keyConfig, *repo.NewQuery())
 		if err != nil {
@@ -227,37 +247,36 @@ func (m *SystemManager) PatchSystemLinkByID(
 			return ErrAddSystemNoPrimaryKey
 		}
 
-		system := &model.System{ID: systemID}
-
-		_, err = r.First(ctx, system, *repo.NewQuery())
+		system, err := m.GetSystemByID(ctx, systemID)
 		if err != nil {
-			return errs.Wrap(ErrGettingSystemByID, err)
+			return err
 		}
 
 		if system.Status == cmkapi.SystemStatusPROCESSING || system.Status == cmkapi.SystemStatusFAILED {
 			return ErrLinkSystemProcessingOrFailed
 		}
 
-		system.Status = cmkapi.SystemStatusPROCESSING
-
-		dbSystem, err = m.updateSystems(ctx, system, &patchSystem)
+		updatedSystem, err = m.updateSystems(ctx, *system, patchSystem)
 		if err != nil {
 			return err
 		}
 
-		dbSystem = system
-
-		err = m.setClientL1KeyClaim(ctx, dbSystem, true)
+		err = m.setClientL1KeyClaim(ctx, updatedSystem, true)
 		if err != nil {
 			return err
 		}
 
-		err = m.sendSystemEvent(ctx, system, keyConfig, true)
+		event, err := m.eventSelector(ctx, r, updatedSystem, system.KeyConfigurationID, keyConfig)
 		if err != nil {
 			return err
 		}
 
-		m.handlePatchSystemLinkAuditLogs(ctx, system, &patchSystem, keyConfig)
+		err = m.sendSystemEvent(ctx, event)
+		if err != nil {
+			return err
+		}
+
+		m.handlePatchSystemLinkAuditLogs(ctx, system, updatedSystem, keyConfig)
 
 		return nil
 	})
@@ -265,7 +284,7 @@ func (m *SystemManager) PatchSystemLinkByID(
 		return nil, errs.Wrap(ErrUpdateSystem, err)
 	}
 
-	return dbSystem, nil
+	return updatedSystem, nil
 }
 
 func (m *SystemManager) DeleteSystemLinkByID(ctx context.Context, systemID uuid.UUID) error {
@@ -290,9 +309,10 @@ func (m *SystemManager) DeleteSystemLinkByID(ctx context.Context, systemID uuid.
 			return errs.Wrap(ErrGettingKeyConfigByID, err)
 		}
 
-		err = m.updateSystemForUnlink(ctx, r, system)
-		if err != nil {
-			return err
+		system.KeyConfigurationID = nil
+
+		if system.Status == cmkapi.SystemStatusPROCESSING || system.Status == cmkapi.SystemStatusFAILED {
+			return ErrUnlinkSystemProcessingOrFailed
 		}
 
 		dbSystem = system
@@ -302,7 +322,12 @@ func (m *SystemManager) DeleteSystemLinkByID(ctx context.Context, systemID uuid.
 			return err
 		}
 
-		err = m.sendSystemEvent(ctx, system, keyConfig, false)
+		err = m.sendSystemEvent(ctx, SystemEvent{
+			Name: proto.TaskType_SYSTEM_UNLINK.String(),
+			Event: func(ctx context.Context) (orbital.Job, error) {
+				return m.reconciler.SystemUnlink(ctx, dbSystem, keyConfig.PrimaryKeyID.String())
+			},
+		})
 		if err != nil {
 			return err
 		}
@@ -318,19 +343,114 @@ func (m *SystemManager) DeleteSystemLinkByID(ctx context.Context, systemID uuid.
 	return nil
 }
 
+func (m *SystemManager) handleEventRetry(
+	ctx context.Context,
+	systemID uuid.UUID,
+) error {
+	system, err := m.GetSystemByID(ctx, systemID)
+	if err != nil {
+		return err
+	}
+
+	if system.Status != cmkapi.SystemStatusFAILED {
+		return ErrRetryNonFailedSystem
+	}
+
+	lastJob, err := m.reconciler.GetLastEvent(ctx, SystemEvents, systemID.String())
+	if err != nil {
+		return err
+	}
+
+	event := SystemEvent{
+		Name: lastJob.Type,
+		Event: func(ctx context.Context) (orbital.Job, error) {
+			var job orbital.Job
+
+			err := m.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+				system.Status = cmkapi.SystemStatusPROCESSING
+
+				_, err := r.Patch(ctx, system, *repo.NewQuery())
+				if err != nil {
+					return err
+				}
+
+				job, err = m.reconciler.CreateJob(ctx, lastJob)
+
+				return err
+			})
+
+			return job, err
+		},
+	}
+
+	err = m.sendSystemEvent(ctx, event)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *SystemManager) eventSelector(
+	ctx context.Context,
+	r repo.Repo,
+	updatedSystem *model.System,
+	oldKeyConfigID *uuid.UUID,
+	keyConfig *model.KeyConfiguration,
+) (SystemEvent, error) {
+	if !ptr.IsNotNilUUID(oldKeyConfigID) {
+		return SystemEvent{
+			Name: proto.TaskType_SYSTEM_LINK.String(),
+			Event: func(ctx context.Context) (orbital.Job, error) {
+				return m.reconciler.SystemLink(ctx, updatedSystem, keyConfig.PrimaryKeyID.String())
+			},
+		}, nil
+	}
+
+	if updatedSystem.KeyConfigurationID != oldKeyConfigID {
+		oldKeyConfig := &model.KeyConfiguration{ID: *oldKeyConfigID}
+
+		_, err := r.First(ctx, oldKeyConfig, *repo.NewQuery())
+		if err != nil {
+			return SystemEvent{}, errs.Wrap(ErrGettingKeyConfigByID, err)
+		}
+
+		if ptr.IsNotNilUUID(oldKeyConfig.PrimaryKeyID) {
+			return SystemEvent{
+				Name: proto.TaskType_SYSTEM_SWITCH.String(),
+				Event: func(ctx context.Context) (orbital.Job, error) {
+					return m.reconciler.SystemSwitch(
+						ctx,
+						updatedSystem,
+						keyConfig.PrimaryKeyID.String(),
+						oldKeyConfig.PrimaryKeyID.String(),
+					)
+				},
+			}, nil
+		}
+	}
+
+	return SystemEvent{
+		Name: proto.TaskType_SYSTEM_LINK.String(),
+		Event: func(ctx context.Context) (orbital.Job, error) {
+			return m.reconciler.SystemLink(ctx, updatedSystem, keyConfig.PrimaryKeyID.String())
+		},
+	}, nil
+}
+
 func (m *SystemManager) updateSystems(
 	ctx context.Context,
-	system *model.System,
-	patchSystem *model.System,
+	system model.System,
+	patchSystem cmkapi.SystemPatch,
 ) (*model.System, error) {
-	system.KeyConfigurationID = patchSystem.KeyConfigurationID
+	system.KeyConfigurationID = &patchSystem.KeyConfigurationID
 
-	_, err := m.repo.Patch(ctx, system, *repo.NewQuery())
+	_, err := m.repo.Patch(ctx, &system, *repo.NewQuery())
 	if err != nil {
 		return nil, errs.Wrap(ErrUpdateSystem, err)
 	}
 
-	return system, nil
+	return &system, nil
 }
 
 func (m *SystemManager) setClientL1KeyClaim(
@@ -366,29 +486,15 @@ func (m *SystemManager) setClientL1KeyClaim(
 
 func (m *SystemManager) sendSystemEvent(
 	ctx context.Context,
-	system *model.System,
-	keyConfig *model.KeyConfiguration,
-	linking bool,
+	event SystemEvent,
 ) error {
 	if m.reconciler == nil {
 		return errs.Wrapf(ErrEventSendingFailed, "reconciler is not initialized")
 	}
 
-	var (
-		eventName    string
-		reconcilerFn func(context.Context, string, string) (orbital.Job, error)
-	)
-	if linking {
-		reconcilerFn = m.reconciler.SystemLink
-		eventName = "System link"
-	} else {
-		reconcilerFn = m.reconciler.SystemUnlink
-		eventName = "System unlink"
-	}
+	ctx = log.InjectSystemEvent(ctx, event.Name)
 
-	ctx = log.InjectSystemEvent(ctx, eventName, system, keyConfig)
-
-	job, err := reconcilerFn(ctx, system.ID.String(), keyConfig.PrimaryKeyID.String())
+	job, err := event.Event(ctx)
 	if err != nil {
 		log.Info(ctx, "Failed to send event")
 		return errs.Wrap(ErrEventSendingFailed, err)
@@ -428,31 +534,6 @@ func (m *SystemManager) createSystemIfNotExists(ctx context.Context, newSystem *
 	err = m.sisClient.updateSystem(ctx, newSystem)
 	if err != nil {
 		log.Warn(ctx, "SIS Update Failed", log.ErrorAttr(err))
-	}
-
-	return nil
-}
-
-func (m *SystemManager) updateSystemForUnlink(
-	ctx context.Context,
-	r repo.Repo,
-	system *model.System,
-) error {
-	system.KeyConfigurationID = nil
-
-	if system.Status == cmkapi.SystemStatusPROCESSING || system.Status == cmkapi.SystemStatusFAILED {
-		return ErrUnlinkSystemProcessingOrFailed
-	}
-
-	system.Status = cmkapi.SystemStatusPROCESSING
-
-	_, err := r.Patch(
-		ctx,
-		system,
-		*repo.NewQuery().UpdateAll(true),
-	)
-	if err != nil {
-		return errs.Wrap(ErrUpdateSystem, err)
 	}
 
 	return nil

@@ -37,6 +37,8 @@ func (PublicTestModel) TableName() string {
 	return "public.test_models"
 }
 
+var TestModelName = "test_models"
+
 // TestModel represents a model for testing Migration and CRUD operations
 type TestModel struct {
 	ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
@@ -48,7 +50,7 @@ type TestModel struct {
 }
 
 func (TestModel) TableName() string {
-	return "test_models"
+	return TestModelName
 }
 
 func (TestModel) IsSharedModel() bool {
@@ -135,63 +137,88 @@ var TestDB = config.Database{
 type TestDBConfigOpt func(*TestDBConfig)
 
 // NewTestDB sets up a test database connection and creates tenants as needed.
-// It returns a pointer to the multitenancy.DB instance and a slice of tenant IDs.
+// It returns a pointer to the multitenancy.DB instance, a slice of tenant IDs and it's config.
 // By default, it uses TestDB configuration. Use opts to customize the setup.
 // This function is intended for use in unit tests.
-func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multitenancy.DB, []string) {
+//
+//nolint:funlen
+func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multitenancy.DB, []string, config.Database) {
 	tb.Helper()
 
 	cfg.dbCon = TestDB
+
+	cfg.generateTenants = 1
 	for _, o := range opts {
 		o(&cfg)
 	}
 
-	db := newTestDBCon(tb, cfg)
+	db := newTestDBCon(tb, &cfg)
 
 	tb.Cleanup(func() {
 		sqlDB, _ := db.DB.DB()
 		sqlDB.Close()
 	})
 
-	tenantIDs := make([]string, 0, cfg.TenantCount)
-	if cfg.RequiresMultitenancyOrShared {
-		if cfg.TenantCount <= 1 {
-			cfg.TenantCount = 1
+	tenantIDs := make([]string, 0, max(cfg.generateTenants, len(cfg.initTenants)))
+
+	// Return instance with only init tenants
+	if len(cfg.initTenants) > 0 {
+		for _, tenant := range cfg.initTenants {
+			createTenant(tb, db, &tenant, cfg.Models)
+			tenantIDs = append(tenantIDs, tenant.ID)
 		}
 
-		for i := range cfg.TenantCount {
+		return db, tenantIDs, cfg.dbCon
+	}
+
+	if cfg.CreateDatabase {
+		for i := range cfg.generateTenants {
 			schema := processNameForDB(fmt.Sprintf("tenant%d", i))
-			tenantID := newSchema(tb, db, schema, cfg.Models)
-			tenantIDs = append(tenantIDs, tenantID)
+			tenant := NewTenant(func(t *model.Tenant) {
+				t.SchemaName = schema
+				t.DomainURL = schema + ".example.com"
+				t.ID = schema
+				t.OwnerID = schema + "-owner-id"
+			})
+			createTenant(tb, db, tenant, cfg.Models)
+			tenantIDs = append(tenantIDs, tenant.ID)
 		}
 	} else {
 		schema := processNameForDB(tb.Name())
-		tenantID := newSchema(tb, db, schema, cfg.Models)
-		tenantIDs = append(tenantIDs, tenantID)
+		tenant := NewTenant(func(t *model.Tenant) {
+			t.SchemaName = schema
+			t.DomainURL = schema + ".example.com"
+			t.ID = schema
+			t.OwnerID = schema + "-owner-id"
+		})
+		createTenant(tb, db, tenant, cfg.Models)
+		tenantIDs = append(tenantIDs, tenant.ID)
 	}
 
-	return db, tenantIDs
+	if cfg.WithOrbital {
+		schema := "orbital"
+		tenant := NewTenant(func(t *model.Tenant) {
+			t.SchemaName = schema
+			t.DomainURL = schema + ".example.com"
+			t.ID = schema
+			t.OwnerID = schema + "-owner-id"
+		})
+		createTenant(tb, db, tenant, cfg.Models)
+	}
+
+	return db, tenantIDs, cfg.dbCon
 }
 
-func newSchema(tb testing.TB, db *multitenancy.DB, schema string, m []driver.TenantTabler) string {
+func createTenant(tb testing.TB, db *multitenancy.DB, tenant *model.Tenant, m []driver.TenantTabler) {
 	tb.Helper()
 
-	_ = db.Exec(
-		fmt.Sprintf("DELETE FROM %s WHERE schema_name = '%s';", model.Tenant{}.TableName(), schema),
-	)
-	_ = db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE;", schema))
-
-	tenant := model.Tenant{
-		TenantModel: multitenancy.TenantModel{
-			DomainURL:  schema + ".example.com",
-			SchemaName: schema,
-		},
-		ID:        uuid.NewString(),
-		Region:    uuid.NewString(),
-		Status:    "STATUS_ACTIVE",
-		OwnerType: "test",
-		OwnerID:   "test",
-	}
+	tb.Cleanup(func() {
+		_ = db.Exec(
+			fmt.Sprintf("DELETE FROM %s WHERE schema_name = '%s';", model.Tenant{}.TableName(), tenant.SchemaName),
+		)
+		err := db.OffboardTenant(tb.Context(), tenant.SchemaName)
+		assert.NoError(tb, err)
+	})
 
 	m = append(m, tenant)
 
@@ -199,7 +226,7 @@ func newSchema(tb testing.TB, db *multitenancy.DB, schema string, m []driver.Ten
 		require.NoError(tb, db.RegisterModels(tb.Context(), m...))
 		require.NoError(tb, db.MigrateSharedModels(tb.Context()))
 		require.NoError(tb, db.Create(tenant).Error)
-		require.NoError(tb, db.MigrateTenantModels(tb.Context(), schema))
+		require.NoError(tb, db.MigrateTenantModels(tb.Context(), tenant.SchemaName))
 
 		// Clean keystore_configurations table if it's included in models
 		for _, table := range m {
@@ -211,8 +238,6 @@ func newSchema(tb testing.TB, db *multitenancy.DB, schema string, m []driver.Ten
 			}
 		}
 	}
-
-	return tenant.ID
 }
 
 func WithDatabase(db config.Database) TestDBConfigOpt {
@@ -221,15 +246,42 @@ func WithDatabase(db config.Database) TestDBConfigOpt {
 	}
 }
 
+// WithInitTenants creates the provided tenants on the DB
+// No default tenants are generated on provided tenants
+func WithInitTenants(tenants ...model.Tenant) TestDBConfigOpt {
+	return func(c *TestDBConfig) {
+		c.initTenants = tenants
+		c.CreateDatabase = true
+	}
+}
+
+// WithGenerateTenants creates count tenants on a separate database
+func WithGenerateTenants(count int) TestDBConfigOpt {
+	return func(c *TestDBConfig) {
+		c.generateTenants = count
+		c.CreateDatabase = true
+	}
+}
+
 type TestDBConfig struct {
 	dbCon config.Database
 
-	// Only needs to be set for RequiresMultitenancyOrShared with multiple tenants
-	// By default it creates only one tenant
-	TenantCount int
+	// Generate N tenants
+	generateTenants int
+
+	// This option should be used to create determinated tenants
+	// If Generate Tenants is set to 0 and no InitTenants are provided, one is created
+	initTenants []model.Tenant
+
+	// WithOrbital creates an entry for an orbital tenant
+	// This should only be used in tests where we want to access orbital table entries with the repo interface
+	WithOrbital bool
 
 	// If true create DB instance for test instead of tenant
-	RequiresMultitenancyOrShared bool
+	// This should be used whenever each test is testing either:
+	// - Shared Tables
+	// - Multiple Tenants
+	CreateDatabase bool
 
 	// Tables that the test should contain
 	Models []driver.TenantTabler
@@ -256,8 +308,20 @@ func processNameForDB(n string) string {
 //
 // This is intended for internal use. In most cases please use NewTestDB
 // to setup a DB for unit tests
-func newTestDBCon(tb testing.TB, cfg TestDBConfig) *multitenancy.DB {
+func newTestDBCon(tb testing.TB, cfg *TestDBConfig) *multitenancy.DB {
 	tb.Helper()
+
+	if !cfg.CreateDatabase {
+		con, err := db.StartDBConnection(
+			cfg.dbCon,
+			[]config.Database{},
+		)
+		assert.NoError(tb, err)
+
+		return con
+	}
+
+	cfg.dbCon = NewIsolatedDB(tb, cfg.dbCon)
 
 	con, err := db.StartDBConnection(
 		cfg.dbCon,
@@ -265,9 +329,20 @@ func newTestDBCon(tb testing.TB, cfg TestDBConfig) *multitenancy.DB {
 	)
 	assert.NoError(tb, err)
 
-	if !cfg.RequiresMultitenancyOrShared {
-		return con
-	}
+	return con
+}
+
+// NewIsolatedDB creates a new database on a postgres instance and returns it
+//
+// This is intended only for tests that call functions establishing DB connection
+func NewIsolatedDB(tb testing.TB, cfg config.Database) config.Database {
+	tb.Helper()
+
+	con, err := db.StartDBConnection(
+		cfg,
+		[]config.Database{},
+	)
+	assert.NoError(tb, err)
 
 	name := processNameForDB(tb.Name())
 	assert.NoError(tb, err)
@@ -278,13 +353,7 @@ func newTestDBCon(tb testing.TB, cfg TestDBConfig) *multitenancy.DB {
 	err = con.Exec(fmt.Sprintf("CREATE DATABASE %s;", name)).Error
 	assert.NoError(tb, err)
 
-	cfg.dbCon.Name = name
+	cfg.Name = name
 
-	con, err = db.StartDBConnection(
-		cfg.dbCon,
-		[]config.Database{},
-	)
-	assert.NoError(tb, err)
-
-	return con
+	return cfg
 }

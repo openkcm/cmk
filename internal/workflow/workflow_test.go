@@ -30,6 +30,7 @@ var (
 	userID01     = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	userID02     = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 	userID03     = uuid.MustParse("00000000-0000-0000-0000-000000000003")
+	userID04     = uuid.MustParse("00000000-0000-0000-0000-000000000004")
 	artifactID01 = uuid.MustParse("00000000-0000-0000-1111-000000000001")
 
 	sqlNullBoolNull  = sql.NullBool{Bool: true, Valid: false}
@@ -37,10 +38,11 @@ var (
 	sqlNullBoolFalse = sql.NullBool{Bool: false, Valid: true}
 )
 
+//nolint:funlen
 func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.Workflow{}, &model.WorkflowApprover{},
 			&model.Key{},
@@ -48,14 +50,16 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 			&model.TenantConfig{},
 			&model.KeyConfiguration{},
 			&model.System{},
+			&model.SystemProperty{},
 			&model.ImportParams{},
 			&model.KeystoreConfiguration{},
 			&model.Certificate{},
 		},
+		CreateDatabase: true,
 	})
 	cfg := config.Config{
 		Plugins:  testutils.SetupMockPlugins(testutils.KeyStorePlugin, testutils.CertIssuer),
-		Database: testutils.TestDB,
+		Database: dbConf,
 	}
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -95,9 +99,9 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	})
 
 	assert.NoError(t, err)
-	defer testutils.CloseClientsFactory(t, clientsFactory)
+	assert.NoError(t, clientsFactory.Close())
 
-	return manager.New(ctx, r, &cfg, clientsFactory, ctlg, reconciler), db, tenants[0]
+	return manager.New(ctx, r, &cfg, clientsFactory, ctlg, reconciler, nil), db, tenants[0]
 }
 
 func TestWorkflowLifecycleTransitions(t *testing.T) {
@@ -499,9 +503,9 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			name: "approve from wait approval final",
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = workflow.StateWaitApproval.String()
-				// Set all approvers to approved
+				// Set all approvers
 				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolTrue},
+					{UserID: userID02, Approved: sqlNullBoolNull},
 					{UserID: userID03, Approved: sqlNullBoolTrue},
 				}
 			}),
@@ -509,6 +513,57 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			transition:    workflow.TransitionApprove,
 			expectErr:     false,
 			expectedState: workflow.StateWaitConfirmation,
+		},
+		{
+			name: "approve from wait approval reach threshold",
+			workflow: wfMutator(func(wf *model.Workflow) {
+				wf.State = workflow.StateWaitApproval.String()
+				// Set all approvers
+				wf.Approvers = []model.WorkflowApprover{
+					{UserID: userID01, Approved: sqlNullBoolNull},
+					{UserID: userID02, Approved: sqlNullBoolNull},
+					{UserID: userID03, Approved: sqlNullBoolTrue},
+				}
+			}),
+			actorID:       userID02,
+			transition:    workflow.TransitionApprove,
+			expectErr:     false,
+			expectedState: workflow.StateWaitConfirmation,
+		},
+		{
+			name: "reject from wait approval first rejected",
+			workflow: wfMutator(func(wf *model.Workflow) {
+				wf.State = workflow.StateWaitApproval.String()
+				// Set all approvers
+				wf.Approvers = []model.WorkflowApprover{
+					{UserID: userID01, Approved: sqlNullBoolNull},
+					{UserID: userID02, Approved: sqlNullBoolNull},
+					{UserID: userID03, Approved: sqlNullBoolNull},
+					{UserID: userID04, Approved: sqlNullBoolNull},
+				}
+			}),
+			actorID:    userID02,
+			transition: workflow.TransitionReject,
+			expectErr:  false,
+			// Still in wait approval as other 3 approvers can still approve to meet threshold (2)
+			expectedState: workflow.StateWaitApproval,
+		},
+		{
+			name: "reject from wait approval early rejected, impossible to approve",
+			workflow: wfMutator(func(wf *model.Workflow) {
+				wf.State = workflow.StateWaitApproval.String()
+				// Set all approvers
+				wf.Approvers = []model.WorkflowApprover{
+					{UserID: userID01, Approved: sqlNullBoolNull},
+					{UserID: userID02, Approved: sqlNullBoolNull},
+					{UserID: userID03, Approved: sqlNullBoolNull},
+				}
+			}),
+			actorID:    userID02,
+			transition: workflow.TransitionReject,
+			expectErr:  false,
+			// Now rejected as even if all others approve, threshold (2) cannot be met
+			expectedState: workflow.StateRejected,
 		},
 		{
 			name: "approve from wait approval not approver",
@@ -539,7 +594,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			name: "reject from wait approval",
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = workflow.StateWaitApproval.String()
-				// Set all approvers to approved
+				// Set all approvers
 				wf.Approvers = []model.WorkflowApprover{
 					{UserID: userID02, Approved: sqlNullBoolFalse},
 					{UserID: userID03, Approved: sqlNullBoolTrue},
@@ -554,7 +609,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			name: "reject from wait approval not approver",
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = workflow.StateWaitApproval.String()
-				// Set all approvers to approved
+				// Set all approvers
 				wf.Approvers = []model.WorkflowApprover{
 					{UserID: userID02, Approved: sqlNullBoolFalse},
 				}
@@ -968,7 +1023,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 	r := sqlRepo.NewRepository(db)
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	keyConf := &model.KeyConfiguration{ID: uuid.New(), AdminGroup: model.Group{ID: uuid.New(), Name: "admin"}}
+	keyConf := &model.KeyConfiguration{ID: uuid.New(), AdminGroup: *testutils.NewGroup(func(_ *model.Group) {})}
 	err := r.Create(ctx, keyConf)
 	assert.NoError(t, err)
 

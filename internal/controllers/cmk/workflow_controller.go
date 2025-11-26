@@ -2,24 +2,101 @@ package cmk
 
 import (
 	"context"
+	"slices"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	wfTransform "github.com/openkcm/cmk/internal/api/transform/workflow"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
+	"github.com/openkcm/cmk/utils/odata"
 	"github.com/openkcm/cmk/utils/ptr"
 )
+
+func (c *APIController) CheckWorkflow(
+	ctx context.Context,
+	request cmkapi.CheckWorkflowRequestObject,
+) (cmkapi.CheckWorkflowResponseObject, error) {
+	workflow, err := wfTransform.FromAPI(*request.Body, request.Params.UserID)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
+	}
+
+	status, err := c.Manager.Workflow.CheckWorkflow(ctx, workflow)
+	if err != nil {
+		return nil, err
+	}
+
+	response := cmkapi.CheckWorkflow200JSONResponse{
+		Exists:   &status.Exists,
+		Required: &status.Enabled,
+	}
+
+	return response, nil
+}
+
+var getWorkflowsSchema odata.FilterSchema = odata.FilterSchema{
+	Entries: []odata.FilterSchemaEntry{
+		{
+			FilterName: "userID",
+			FilterType: odata.UUID,
+			DBName:     repo.InitiatorIDField,
+			DBQuery:    odata.NoQuery, // Manager handles this case
+		},
+		{
+			FilterName: "artifactId",
+			FilterType: odata.UUID,
+			DBName:     repo.ArtifactIDField,
+		},
+		{
+			FilterName: "artifactType",
+			FilterType: odata.String,
+			DBName:     repo.ArtifactTypeField,
+			ValueValidator: func(s string) bool {
+				return slices.Contains(wfMechanism.ArtifactTypes,
+					wfMechanism.ArtifactType(s))
+			},
+			ValueModifier: odata.ToUpper,
+		},
+		{
+			FilterName: "actionType",
+			FilterType: odata.String,
+			DBName:     repo.ActionTypeField,
+			ValueValidator: func(s string) bool {
+				return slices.Contains(wfMechanism.ActionTypes,
+					wfMechanism.ActionType(s))
+			},
+			ValueModifier: odata.ToUpper,
+		},
+		{
+			FilterName: "state",
+			FilterType: odata.String,
+			DBName:     repo.StateField,
+			ValueValidator: func(s string) bool {
+				return slices.Contains(wfMechanism.States,
+					wfMechanism.State(s))
+			},
+			ValueModifier: odata.ToUpper,
+		},
+	}}
 
 // GetWorkflows returns a list of workflows
 func (c *APIController) GetWorkflows(
 	ctx context.Context,
 	request cmkapi.GetWorkflowsRequestObject,
 ) (cmkapi.GetWorkflowsResponseObject, error) {
-	filter := c.Manager.Workflow.NewWorkflowFilter(request)
+	queryMapper := odata.NewQueryOdataMapper(getWorkflowsSchema)
 
-	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, filter)
+	err := queryMapper.ParseFilter(request.Params.Filter)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
+	}
+
+	queryMapper.SetPaging(request.Params.Skip, request.Params.Top)
+
+	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, queryMapper)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetWorkflow, err)
 	}
@@ -100,9 +177,12 @@ func (c *APIController) ListWorkflowApproversByWorkflowID(
 	values := make([]cmkapi.WorkflowApprover, len(approvers))
 
 	for i, approver := range approvers {
-		values[i] = cmkapi.WorkflowApprover{
-			Id: approver.WorkflowID,
+		value, err := wfTransform.ApproverToAPI(*approver)
+		if err != nil {
+			return nil, err
 		}
+
+		values[i] = value
 	}
 
 	response := cmkapi.ListWorkflowApproversByWorkflowID200JSONResponse{
@@ -114,30 +194,6 @@ func (c *APIController) ListWorkflowApproversByWorkflowID(
 	}
 
 	return response, nil
-}
-
-// AddWorkflowApproversByWorkflowID adds approvers to a workflow by ID
-
-func (c *APIController) AddWorkflowApproversByWorkflowID(
-	ctx context.Context,
-	request cmkapi.AddWorkflowApproversByWorkflowIDRequestObject,
-) (cmkapi.AddWorkflowApproversByWorkflowIDResponseObject, error) {
-	workflow, err := c.Manager.Workflow.AddWorkflowApprovers(
-		ctx,
-		request.WorkflowID,
-		request.Params.UserID,
-		request.Body.Approvers,
-	)
-	if err != nil {
-		return nil, errs.Wrap(err, apierrors.ErrAddApprovers)
-	}
-
-	apiWorkflow, err := wfTransform.ToAPI(*workflow)
-	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrTransformWorkflowToAPI, err)
-	}
-
-	return cmkapi.AddWorkflowApproversByWorkflowID204JSONResponse(*apiWorkflow), nil
 }
 
 // TransitionWorkflow executes a transition on a workflow by ID

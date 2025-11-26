@@ -22,10 +22,10 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func startAPIKeyVersion(t *testing.T, plugins ...testutils.MockPlugin) (*multitenancy.DB, *http.ServeMux, string) {
+func startAPIKeyVersion(t *testing.T, plugins ...testutils.MockPlugin) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.Key{},
 			&model.KeyVersion{},

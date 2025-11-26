@@ -16,3 +16,11 @@ func (TenantConfig) TableName() string {
 func (TenantConfig) IsSharedModel() bool {
 	return false
 }
+
+type WorkflowConfig struct {
+	// Enabled determines if workflows are enabled in controllers
+	Enabled bool
+
+	// MinimumApprovals is the minimum number of approvals required for a workflow
+	MinimumApprovals int
+}

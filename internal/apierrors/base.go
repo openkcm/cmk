@@ -13,6 +13,7 @@ const (
 	UnauthorizedErr   = "UNAUTHORIZED"
 	ParamsErr         = "PARAMS_ERROR"
 	RequiredHeaderErr = "REQUIRED_HEADER_ERROR"
+	RequiredParamErr  = "REQUIRED_PARAM_ERROR"
 )
 
 func InternalServerErrorMessage() cmkapi.ErrorMessage {
@@ -66,6 +67,10 @@ func RequiredHeaderError(message string) cmkapi.ErrorMessage {
 	}}
 }
 
-type JoinedError interface {
-	Unwrap() []error
+func RequiredParamError(message string) cmkapi.ErrorMessage {
+	return cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+		Code:    RequiredParamErr,
+		Message: message,
+		Status:  http.StatusBadRequest,
+	}}
 }

@@ -10,6 +10,8 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform"
 	"github.com/openkcm/cmk/internal/api/transform/key/hyokkey"
 	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
+	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
+	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -29,6 +31,38 @@ var (
 )
 
 var key = []APIErrors{
+	{
+		Errors: []error{manager.ErrNonEditableCryptoRegionUpdate},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "FORBIDDEN_KEY_ACCESS_UPDATE",
+			Message: "Crypto region is not editable",
+			Status:  http.StatusForbidden,
+		},
+	},
+	{
+		Errors: []error{manager.ErrBadCryptoRegionData},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "BAD_CRYPTO_DETAILS",
+			Message: "Crypto details invalid",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		Errors: []error{manager.ErrCryptoRegionNotExists},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "FORBIDDEN_KEY_UPDATE",
+			Message: "Crypto region does not exist",
+			Status:  http.StatusForbidden,
+		},
+	},
+	{
+		Errors: []error{manager.ErrManagementDetailsUpdate},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "FORBIDDEN_KEY_ACCESS_UPDATE",
+			Message: "Management details cannot be updated",
+			Status:  http.StatusForbidden,
+		},
+	},
 	{
 		Errors: []error{manager.ErrDeleteKey, manager.ErrConnectedSystemToKeyConfig},
 		ExposedError: cmkapi.DetailedError{
@@ -86,29 +120,13 @@ var key = []APIErrors{
 		},
 	},
 	{
-		Errors: []error{ErrCreateKey, manager.ErrKeyRegistration, manager.HYOKAuthFailedError{}},
+		Errors: []error{ErrCreateKey, manager.ErrKeyRegistration, manager.ErrGRPCHYOKAuthFailed},
 		ExposedError: cmkapi.DetailedError{
 			Code:    "REGISTER_KEY_AUTHENTICATION_FAILED",
 			Message: "Failed to authenticate with the keystore provider",
 			Status:  http.StatusBadRequest,
 		},
-		ContextGetter: func(err error) map[string]any {
-			joinedErr, ok := err.(JoinedError)
-			if !ok || len(joinedErr.Unwrap()) < 2 {
-				return nil
-			}
-
-			var e manager.HYOKAuthFailedError
-
-			ok = errors.As(joinedErr.Unwrap()[1], &e)
-			if !ok {
-				return nil
-			}
-
-			return map[string]any{
-				"reason": e.Reason,
-			}
-		},
+		ContextGetter: errs.GetGRPCErrorContext,
 	},
 	{
 		Errors: []error{ErrCreateKey, manager.ErrKeyRegistration, manager.ErrHYOKProviderKeyNotFound},
@@ -221,6 +239,15 @@ var key = []APIErrors{
 			Message: "Failed to transform key from API",
 			Status:  http.StatusBadRequest,
 		},
+	},
+	{
+		Errors: []error{ErrTransformKeyFromAPI, transformer.ErrGRPCInvalidAccessData},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "INVALID_ACCESS_DATA",
+			Message: "Invalid access data provided",
+			Status:  http.StatusBadRequest,
+		},
+		ContextGetter: errs.GetGRPCErrorContext,
 	},
 	{
 		Errors: []error{manager.ErrKeyIsNotEnabled},

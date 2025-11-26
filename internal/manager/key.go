@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
+	"maps"
+	"slices"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/orbital"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
@@ -18,6 +20,7 @@ import (
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
@@ -35,7 +38,19 @@ type BYOKAction string
 const (
 	BYOKActionImportKeyMaterial BYOKAction = "IMPORT_KEY_MATERIAL"
 	BYOKActionGetImportParams   BYOKAction = "GET_IMPORT_PARAMETERS"
+	IsEditableCryptoAccess      string     = "isEditable"
 )
+
+var UnavailableKeyStates = []string{
+	string(cmkapi.KeyStatePENDINGDELETION),
+	string(cmkapi.KeyStateDELETED),
+	string(cmkapi.KeyStateFORBIDDEN),
+	string(cmkapi.KeyStateUNKNOWN),
+}
+
+func IsUnavailableKeyState(state string) bool {
+	return slices.Contains(UnavailableKeyStates, state)
+}
 
 type KeyManager struct {
 	ProviderConfigManager
@@ -142,6 +157,11 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 		return nil, ErrInvalidKeystore
 	}
 
+	err = km.setEditableStatus(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
 	return key, nil
 }
 
@@ -162,7 +182,7 @@ func (km *KeyManager) GetKeys(
 			return nil, 0, errs.Wrap(ErrKeyConfigurationNotFound, err)
 		}
 
-		ck := repo.NewCompositeKey().Where(repo.KeyConfigIDField, keyConfigID)
+		ck := repo.NewCompositeKey().Where(fmt.Sprintf("%s.%s", model.Key{}.TableName(), repo.KeyConfigIDField), keyConfigID)
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
 	}
 
@@ -178,12 +198,21 @@ func (km *KeyManager) GetKeys(
 
 //nolint:cyclop
 func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch cmkapi.KeyPatch) (*model.Key, error) {
+	if isManagementDetailsUpdate(keyPatch) {
+		return nil, ErrManagementDetailsUpdate
+	}
+
 	key, err := km.Get(ctx, keyID)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetKeyDB, err)
 	}
 
 	ctx = log.InjectKey(ctx, key)
+
+	err = km.handleCryptoDetailsUpdate(ctx, keyPatch, key)
+	if err != nil {
+		return nil, errs.Wrap(ErrCryptoDetailsUpdate, err)
+	}
 
 	if key.KeyType == constants.KeyTypeHYOK && keyPatch.Enabled != nil {
 		return nil, errs.Wrapf(ErrHYOKKeyActionNotAllowed, "update key state")
@@ -382,6 +411,136 @@ func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 	})
 }
 
+func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) error {
+	cryptoData := key.GetCryptoAccessData()
+	if cryptoData == nil {
+		return nil
+	}
+
+	if !key.IsPrimary {
+		for k := range cryptoData {
+			err := setCryptoEditable(cryptoData, k, true)
+			if err != nil {
+				return err
+			}
+		}
+
+		return key.SetCryptoAccessData(cryptoData)
+	}
+
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(repo.KeyConfigIDField, key.KeyConfigurationID),
+		),
+	)
+
+	err := repo.ProcessInBatch(ctx, km.repo, query, repo.DefaultLimit, func(systems []*model.System) error {
+		for _, s := range systems {
+			var err error
+			if s.Status == cmkapi.SystemStatusFAILED {
+				err = setCryptoEditable(cryptoData, s.Region, true)
+			} else {
+				err = setCryptoEditable(cryptoData, s.Region, false)
+			}
+
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	return key.SetCryptoAccessData(cryptoData)
+}
+
+func verifyCryptoEditable(cryptoData model.KeyAccessData, region string) (bool, error) {
+	// Region doesn't exist on key
+	regionData, ok := cryptoData[region]
+	if !ok {
+		return true, nil
+	}
+
+	data, exist := regionData[IsEditableCryptoAccess]
+	if !exist {
+		return true, nil
+	}
+
+	editable, ok := data.(bool)
+	if !ok {
+		return false, ErrEditableCryptoRegionField
+	}
+
+	return editable, nil
+}
+
+func setCryptoEditable(cryptoData model.KeyAccessData, region string, editable bool) error {
+	regionData, ok := cryptoData[region]
+	if !ok {
+		return ErrCryptoRegionNotExists
+	}
+
+	regionData[IsEditableCryptoAccess] = editable
+
+	return nil
+}
+
+func isManagementDetailsUpdate(keyPatch cmkapi.KeyPatch) bool {
+	patchAccessDetails := keyPatch.AccessDetails
+	return patchAccessDetails != nil && patchAccessDetails.Management != nil
+}
+
+func (km *KeyManager) handleCryptoDetailsUpdate(
+	ctx context.Context,
+	keyPatch cmkapi.KeyPatch,
+	key *model.Key,
+) error {
+	patchAccessDetails := keyPatch.AccessDetails
+
+	if patchAccessDetails == nil || patchAccessDetails.Crypto == nil {
+		return nil
+	}
+
+	providerTransformer, err := transformer.NewPluginProviderTransformer(km.catalog, key.Provider)
+	if err != nil {
+		return err
+	}
+
+	keyPatch.AccessDetails.Management = ptr.PointTo(key.GetManagementAccessData())
+
+	err = providerTransformer.ValidateKeyAccessData(ctx, keyPatch.AccessDetails)
+	if err != nil {
+		return errs.Wrap(ErrBadCryptoRegionData, err)
+	}
+
+	keyCryptoData := key.GetCryptoAccessData()
+	for region, val := range *patchAccessDetails.Crypto {
+		editable, err := verifyCryptoEditable(keyCryptoData, region)
+		if !editable || err != nil {
+			return ErrNonEditableCryptoRegionUpdate
+		}
+		// Safe as the patch crypto values have been validated
+		regionValues, ok := val.(map[string]any)
+		if !ok {
+			return ErrBadCryptoRegionData
+		}
+
+		keyCryptoData[region] = regionValues
+	}
+
+	bytes, err := json.Marshal(keyCryptoData)
+	if err != nil {
+		return err
+	}
+
+	key.CryptoAccessData = bytes
+
+	return nil
+}
+
 func (km *KeyManager) createKey(ctx context.Context, key *model.Key) error {
 	err := km.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
 		// Create Key
@@ -453,34 +612,19 @@ func (km *KeyManager) registerHYOKKey(
 	key *model.Key,
 	provider *ProviderConfig,
 ) error {
-	configValues := provider.Config.GetValues().GetFields()
-	configValuesCopy := make(map[string]*structpb.Value, len(configValues))
-
-	for k, v := range configValues {
-		configValuesCopy[k] = v
-	}
-
-	// At this point, we assume the access data is already validated
-	// in the API layer, so we can directly convert it to a struct.
-	for k, v := range key.GetManagementAccessData() {
-		structValue, err := structpb.NewValue(v)
-		if err != nil {
-			return errs.Wrapf(ErrKeyRegistration, "failed to convert access data")
-		}
-
-		configValuesCopy[k] = structValue
+	configValues, err := mergeProviderConfigValuesWithKeyAccessData(provider, key)
+	if err != nil {
+		return errs.Wrap(ErrKeyRegistration, err)
 	}
 
 	keyResp, err := provider.Client.GetKey(ctx, &keystoreopv1.GetKeyRequest{
 		Parameters: &keystoreopv1.RequestParameters{
-			KeyId: *key.NativeID,
-			Config: &commonv1.KeystoreInstanceConfig{
-				Values: &structpb.Struct{Fields: configValuesCopy},
-			},
+			KeyId:  *key.NativeID,
+			Config: configValues,
 		},
 	})
 	if err != nil {
-		return km.convertError(err)
+		return km.convertError(ErrKeyRegistration, err)
 	}
 
 	if keyResp.GetAlgorithm() != keystoreopv1.KeyAlgorithm_KEY_ALGORITHM_AES256 {
@@ -553,15 +697,15 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 	return nil
 }
 
-func (km *KeyManager) convertError(err error) error {
+func (km *KeyManager) convertError(base error, err error) error {
 	switch {
 	case keystoreErrs.IsStatus(err, keystoreErrs.StatusProviderAuthenticationError):
-		errWithReason := NewHYOKAuthFailedError(keystoreErrs.GetReason(err))
-		return errors.Join(ErrKeyRegistration, errWithReason)
+		detailedErr := ErrGRPCHYOKAuthFailed.FromStatusError(err)
+		return errors.Join(base, detailedErr)
 	case keystoreErrs.IsStatus(err, keystoreErrs.StatusKeyNotFound):
-		return errs.Wrap(ErrKeyRegistration, ErrHYOKProviderKeyNotFound)
+		return errs.Wrap(base, ErrHYOKProviderKeyNotFound)
 	default:
-		return errs.Wrap(ErrKeyRegistration, err)
+		return errs.Wrap(base, err)
 	}
 }
 
@@ -704,6 +848,31 @@ func copyFieldsToModelKey(apiKey cmkapi.KeyPatch, dbKey *model.Key) bool {
 	return enablementUpdated
 }
 
+func mergeProviderConfigValuesWithKeyAccessData(
+	provider *ProviderConfig,
+	key *model.Key,
+) (*commonv1.KeystoreInstanceConfig, error) {
+	configValues := provider.Config.GetValues().GetFields()
+	configValuesCopy := make(map[string]*structpb.Value, len(configValues))
+
+	maps.Copy(configValuesCopy, configValues)
+
+	// At this point, we assume the access data is already validated
+	// in the API layer, so we can directly convert it to a struct.
+	for k, v := range key.GetManagementAccessData() {
+		structValue, err := structpb.NewValue(v)
+		if err != nil {
+			return nil, ErrConvertAccessData
+		}
+
+		configValuesCopy[k] = structValue
+	}
+
+	return &commonv1.KeystoreInstanceConfig{
+		Values: &structpb.Struct{Fields: configValuesCopy},
+	}, nil
+}
+
 func (km *KeyManager) validateBYOKKey(ctx context.Context, keyID uuid.UUID, action BYOKAction) (*model.Key, error) {
 	key := &model.Key{ID: keyID}
 
@@ -832,6 +1001,40 @@ func (km *KeyManager) importProviderKeyMaterial(
 	return key, nil
 }
 
+// Whenever Keyconfig PrimaryKey switches, systems need to send switch events
+func (km *KeyManager) sendSystemSwitchEvents(ctx context.Context, key *model.Key) error {
+	keyConfig := &model.KeyConfiguration{ID: key.KeyConfigurationID}
+
+	_, err := km.repo.First(ctx, keyConfig, *repo.NewQuery())
+	if err != nil {
+		return errs.Wrap(ErrGettingKeyConfigByID, err)
+	}
+
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(
+				repo.KeyConfigIDField, keyConfig.ID),
+		),
+	)
+
+	return repo.ProcessInBatch(
+		ctx,
+		km.repo,
+		query,
+		repo.DefaultLimit,
+		func(systems []*model.System) error {
+			for _, s := range systems {
+				_, err := km.reconciler.SystemSwitch(ctx, s, key.ID.String(), keyConfig.PrimaryKeyID.String())
+				if err != nil {
+					return err
+				}
+			}
+
+			return nil
+		},
+	)
+}
+
 // Ensures only the updated key is primary and updates the keyconfig primaryKeyID
 func (km *KeyManager) setPrimaryKey(ctx context.Context, key *model.Key) error {
 	if key.State != string(cmkapi.KeyStateENABLED) {
@@ -841,6 +1044,11 @@ func (km *KeyManager) setPrimaryKey(ctx context.Context, key *model.Key) error {
 	err := km.removePrimaryKeyState(ctx, &key.KeyConfigurationID)
 	if err != nil {
 		return errs.Wrap(ErrUpdateKeyDB, err)
+	}
+
+	err = km.sendSystemSwitchEvents(ctx, key)
+	if err != nil {
+		return errs.Wrap(ErrFailedToReencryptSystem, err)
 	}
 
 	_, err = km.repo.Patch(
@@ -863,6 +1071,7 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 	keyResp, err := km.getHYOKKeySync(ctx, key)
 	if err != nil {
 		key.State = km.getKeyStateOnSyncError(ctx, key, err)
+		km.sendUnavailableAuditLog(ctx, key)
 	} else if keyResp != nil {
 		// Successful case update the status in the database for the HYOK key Enabled/Disabled
 		key.State = keyResp.GetStatus()
@@ -879,21 +1088,54 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 			return txErr
 		}
 
-		if key.State == string(cmkapi.KeyStateENABLED) {
-			km.sendEnableAuditLog(ctx, key)
-
-			return km.sendEnableEvent(ctx, key)
-		}
-
-		km.sendDisableAuditLog(ctx, key)
-
-		return km.sendDisableEvent(ctx, key)
+		return km.handleKeyStateTransition(ctx, key, oldKeyState)
 	})
 	if err != nil {
 		return errs.Wrap(ErrUpdateKeyDB, err)
 	}
 
 	return nil
+}
+
+func (km *KeyManager) handleKeyStateTransition(ctx context.Context, key *model.Key, oldKeyState string) error {
+	switch key.State {
+	case string(cmkapi.KeyStateENABLED):
+		if IsUnavailableKeyState(oldKeyState) {
+			km.sendAvailableAuditLog(ctx, key)
+		} else {
+			km.sendEnableAuditLog(ctx, key)
+		}
+
+		return km.sendEnableEvent(ctx, key)
+	case string(cmkapi.KeyStatePENDINGDELETION):
+		km.sendUnavailableAuditLog(ctx, key)
+		return nil
+	case string(cmkapi.KeyStateDISABLED):
+		// When transitioning from unavailable states (DELETED, PENDING_DELETION, UNKNOWN, FORBIDDEN)
+		// to DISABLED, we send AvailableAuditLog because DISABLED is considered an available state.
+		// The key is still accessible despite being disabled.
+		//
+		// Key availability states:
+		// - Available: ENABLED, DISABLED
+		// - Unavailable: DELETED, PENDING_DELETION, UNKNOWN, FORBIDDEN
+		//
+		// Common scenarios:
+		// 1. Customer deletes key on provider → key becomes PENDING_DELETION (unavailable)
+		//    Customer cancels deletion → key transitions to DISABLED (available again)
+		// 2. Customer removes access permissions → key becomes FORBIDDEN (unavailable)
+		//    Customer restores permissions → key transitions to DISABLED (available again)
+		// 3. Provider connection issues → key becomes UNKNOWN (unavailable)
+		//    Connection restored → key transitions to DISABLED (available again)
+		if IsUnavailableKeyState(oldKeyState) {
+			km.sendAvailableAuditLog(ctx, key)
+		} else {
+			km.sendDisableAuditLog(ctx, key)
+		}
+
+		return km.sendDisableEvent(ctx, key)
+	default:
+		return nil
+	}
 }
 
 func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keystoreopv1.GetKeyResponse, error) {
@@ -906,26 +1148,19 @@ func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keys
 		return nil, errs.Wrap(ErrFailedToInitProvider, err)
 	}
 
-	configValues := provider.Config.GetValues().GetFields()
-	// At this point, we assume the access data is already validated
-	// in the API layer, so we can directly convert it to a struct.
-	for k, v := range key.GetManagementAccessData() {
-		structValue, err := structpb.NewValue(v)
-		if err != nil {
-			return nil, errs.Wrapf(ErrKeyRegistration, "failed to convert access data")
-		}
-
-		configValues[k] = structValue
+	configValues, err := mergeProviderConfigValuesWithKeyAccessData(provider, key)
+	if err != nil {
+		return nil, err
 	}
 
 	keyResp, err := provider.Client.GetKey(ctx, &keystoreopv1.GetKeyRequest{
 		Parameters: &keystoreopv1.RequestParameters{
 			KeyId:  *key.NativeID,
-			Config: provider.Config,
+			Config: configValues,
 		},
 	})
 	if err != nil {
-		return nil, errs.Wrap(ErrGetProviderKey, err)
+		return nil, km.convertError(ErrGetProviderKey, err)
 	}
 
 	return keyResp, nil
@@ -938,7 +1173,13 @@ func (km *KeyManager) sendEnableEvent(ctx context.Context, key *model.Key) error
 
 	job, err := km.reconciler.KeyEnable(ctx, key.ID.String())
 	if err != nil {
+		if errors.Is(err, orbital.ErrJobAlreadyExists) {
+			log.Info(ctx, "Key enable event already exists", slog.String("JobID", job.ID.String()))
+			return nil
+		}
+
 		log.Error(ctx, "Failed to send key enable event", err)
+
 		return errs.Wrap(ErrEventSendingFailed, err)
 	}
 
@@ -954,7 +1195,13 @@ func (km *KeyManager) sendDisableEvent(ctx context.Context, key *model.Key) erro
 
 	job, err := km.reconciler.KeyDisable(ctx, key.ID.String())
 	if err != nil {
+		if errors.Is(err, orbital.ErrJobAlreadyExists) {
+			log.Info(ctx, "Key enable event already exists", slog.String("JobID", job.ID.String()))
+			return nil
+		}
+
 		log.Error(ctx, "Failed to send key disable event", err)
+
 		return errs.Wrap(ErrEventSendingFailed, err)
 	}
 
@@ -967,18 +1214,14 @@ func (km *KeyManager) getKeyStateOnSyncError(ctx context.Context, key *model.Key
 	var newState string
 
 	switch {
-	// Connection issue - Unknown state
+	case errors.Is(err, ErrGRPCHYOKAuthFailed):
+		newState = string(cmkapi.KeyStateFORBIDDEN)
+	case errors.Is(err, ErrHYOKProviderKeyNotFound):
+		newState = string(cmkapi.KeyStateDELETED)
 	case errs.IsAnyError(err, ErrFailedToInitProvider, ErrGetProviderKey):
 		newState = string(cmkapi.KeyStateUNKNOWN)
-	case errors.Is(err, ErrGetProviderKey):
-		// Not successful - if access denied its Forbidden could be invalid arn or deleted key
-		if strings.Contains(err.Error(), "access denied") {
-			newState = string(cmkapi.KeyStateFORBIDDEN)
-		} else {
-			newState = string(cmkapi.KeyStateUNKNOWN)
-		}
 	default:
-		log.Debug(ctx, "Failed to sync HYoK key", log.ErrorAttr(err))
+		log.Debug(ctx, "Failed to sync HYOK key", log.ErrorAttr(err))
 
 		newState = key.State // Keep old state for now, as we cannot decide yet
 	}
@@ -990,6 +1233,7 @@ func (km *KeyManager) sendCreateAuditLog(ctx context.Context, key *model.Key) {
 	err := km.cmkAuditor.SendCmkCreateAuditLog(ctx, key.ID.String())
 	if err != nil {
 		log.Error(ctx, "Failed to send audit log for CMK Create", err)
+		return
 	}
 
 	log.Info(ctx, "Audit log for CMK Create sent successfully")
@@ -999,6 +1243,7 @@ func (km *KeyManager) sendDeleteAuditLog(ctx context.Context, key *model.Key) {
 	err := km.cmkAuditor.SendCmkDeleteAuditLog(ctx, key.ID.String())
 	if err != nil {
 		log.Error(ctx, "Failed to send audit log for CMK Delete", err)
+		return
 	}
 
 	log.Info(ctx, "Audit log for CMK Delete sent successfully")
@@ -1008,6 +1253,7 @@ func (km *KeyManager) sendDisableAuditLog(ctx context.Context, key *model.Key) {
 	err := km.cmkAuditor.SendCmkDisableAuditLog(ctx, key.ID.String())
 	if err != nil {
 		log.Error(ctx, "Failed to send audit log for CMK Disable", err)
+		return
 	}
 
 	log.Info(ctx, "Audit log for CMK Disable sent successfully")
@@ -1017,9 +1263,30 @@ func (km *KeyManager) sendEnableAuditLog(ctx context.Context, key *model.Key) {
 	err := km.cmkAuditor.SendCmkEnableAuditLog(ctx, key.ID.String())
 	if err != nil {
 		log.Error(ctx, "Failed to send audit log for CMK Enable", err)
+		return
 	}
 
 	log.Info(ctx, "Audit log for CMK Enable sent successfully")
+}
+
+func (km *KeyManager) sendAvailableAuditLog(ctx context.Context, key *model.Key) {
+	err := km.cmkAuditor.SendCmkAvailableAuditLog(ctx, key.ID.String())
+	if err != nil {
+		log.Error(ctx, "Failed to send audit log for CMK Available", err)
+		return
+	}
+
+	log.Info(ctx, "Audit log for CMK Available sent successfully")
+}
+
+func (km *KeyManager) sendUnavailableAuditLog(ctx context.Context, key *model.Key) {
+	err := km.cmkAuditor.SendCmkUnavailableAuditLog(ctx, key.ID.String())
+	if err != nil {
+		log.Error(ctx, "Failed to send audit log for CMK Unavailable", err)
+		return
+	}
+
+	log.Info(ctx, "Audit log for CMK Unavailable sent successfully")
 }
 
 func (km *KeyManager) enableKey(ctx context.Context, key *model.Key) error {

@@ -19,9 +19,10 @@ var (
 	ErrAutomatedTransition       = errors.New(
 		"automated transition cannot be triggered by user input",
 	)
-	ErrInvalidWorkflowState  = errors.New("invalid workflow state")
-	ErrCheckApproverDecision = errors.New("failed to check approver decision")
-	ErrListApprovers         = errors.New("failed to listen approvers")
+	ErrInvalidWorkflowState    = errors.New("invalid workflow state")
+	ErrCheckApproverDecision   = errors.New("failed to check approver decision")
+	ErrListApprovers           = errors.New("failed to list approvers")
+	ErrInvalidVotingTransition = errors.New("invalid voting transition")
 )
 
 // NewInvalidEventActorError creates an error when the user is not the expected actor of the event.

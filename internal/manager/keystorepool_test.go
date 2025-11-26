@@ -19,9 +19,9 @@ var itemID = uuid.New()
 
 func TestPool_Add(t *testing.T) {
 	t.Run("should save Configuration in repo", func(t *testing.T) {
-		db, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models:                       []driver.TenantTabler{&model.KeystoreConfiguration{}, &model.Certificate{}},
-			RequiresMultitenancyOrShared: true,
+		db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+			Models:         []driver.TenantTabler{&model.KeystoreConfiguration{}, &model.Certificate{}},
+			CreateDatabase: true,
 		})
 
 		testRepo := sql.NewRepository(db)
@@ -39,7 +39,7 @@ func TestPool_Add(t *testing.T) {
 
 func TestPool_Pop(t *testing.T) {
 	t.Run("should get first available Configuration from repo", func(t *testing.T) {
-		db, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 			Models: []driver.TenantTabler{&model.KeystoreConfiguration{}, &model.Certificate{}},
 		})
 

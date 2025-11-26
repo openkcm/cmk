@@ -72,3 +72,19 @@ func TestQuery_AggregateFunctions(t *testing.T) {
 		assert.Equal(t, expected, q.SelectFields[0].SelectStatement())
 	})
 }
+
+func TestConditionalSelect(t *testing.T) {
+	t.Run("Should write conditional select field", func(t *testing.T) {
+		field := repo.NewConditionalSelectField(
+			"test",
+			repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().
+					Where(repo.IsPrimaryField, true).
+					Where(repo.KeyTypeField, "test"),
+			),
+		)
+
+		expected := "((is_primary = 'true' AND key_type = 'test')) as test"
+		assert.Equal(t, expected, field.SelectStatement())
+	})
+}

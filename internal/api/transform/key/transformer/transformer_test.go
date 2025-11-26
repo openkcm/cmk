@@ -64,11 +64,25 @@ func TestSerializesKeyAccessData(t *testing.T) {
 		},
 	}
 
-	data, err := tf.SerializeKeyAccessData(t.Context(), key)
+	data, err := tf.SerializeKeyAccessData(t.Context(), key.AccessDetails)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, data.Management)
 	assert.NotNil(t, data.Crypto)
+}
+
+func TestSerializesKeyAccessData_Invalid(t *testing.T) {
+	tf := getPluginProviderTransformer(t)
+
+	key := cmkapi.Key{
+		AccessDetails: &cmkapi.KeyAccessDetails{
+			Management: ptr.PointTo(map[string]any{}),
+			Crypto:     ptr.PointTo(map[string]any{}),
+		},
+	}
+
+	_, err := tf.SerializeKeyAccessData(t.Context(), key.AccessDetails)
+	assert.ErrorIs(t, err, transformer.ErrSerializeKeyAccessData)
 }
 
 func TestExtractRegion(t *testing.T) {

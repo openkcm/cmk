@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -23,13 +22,13 @@ func (s *CertUpdaterMock) GetCertificatesForRotation(_ context.Context,
 }
 
 func (s *CertUpdaterMock) RotateCertificate(_ context.Context,
-	_ manager.RequestNewCertArgs,
+	_ model.RequestCertArgs,
 ) (*model.Certificate, *rsa.PrivateKey, error) {
 	return nil, nil, nil
 }
 
 func TestCertificateRotatorProcessAction(t *testing.T) {
-	db, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	repo := sql.NewRepository(db)

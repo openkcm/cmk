@@ -12,6 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/utils/sanitise"
 	"github.com/openkcm/cmk/utils/validator"
 )
 
@@ -47,6 +48,11 @@ func FromAPI(apiConfig cmkapi.KeyConfiguration) (*model.KeyConfiguration, error)
 
 // ToAPI converts KeyConfiguration db model to a KeyConfiguration api model
 func ToAPI(k model.KeyConfiguration) (*cmkapi.KeyConfiguration, error) {
+	err := sanitise.Stringlikes(&k)
+	if err != nil {
+		return nil, err
+	}
+
 	apiConfig := &cmkapi.KeyConfiguration{
 		Id:           &k.ID,
 		Name:         k.Name,
@@ -55,7 +61,12 @@ func ToAPI(k model.KeyConfiguration) (*cmkapi.KeyConfiguration, error) {
 	}
 
 	if !reflect.ValueOf(k.AdminGroup).IsZero() {
-		apiConfig.AdminGroup = group.ToAPI(k.AdminGroup)
+		adminGroup, err := group.ToAPI(k.AdminGroup)
+		if err != nil {
+			return nil, err
+		}
+
+		apiConfig.AdminGroup = adminGroup
 	}
 
 	if k.Description != "" {

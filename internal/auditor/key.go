@@ -42,3 +42,17 @@ func (a *Auditor) SendCmkRotateAuditLog(ctx context.Context, cmkID string) error
 		return otlpaudit.NewCmkRotateEvent(metadata, cmkID)
 	})
 }
+
+// SendCmkAvailableAuditLog sends an audit log for CmkAvailable
+func (a *Auditor) SendCmkAvailableAuditLog(ctx context.Context, cmkID string) error {
+	return a.sendEvent(ctx, func(metadata otlpaudit.EventMetadata) (plog.Logs, error) {
+		return otlpaudit.NewCmkAvailableEvent(metadata, cmkID)
+	})
+}
+
+// SendCmkUnavailableAuditLog sends an audit log for CmkUnavailable
+func (a *Auditor) SendCmkUnavailableAuditLog(ctx context.Context, cmkID string) error {
+	return a.sendEvent(ctx, func(metadata otlpaudit.EventMetadata) (plog.Logs, error) {
+		return otlpaudit.NewCmkUnavailableEvent(metadata, cmkID)
+	})
+}

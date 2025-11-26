@@ -16,11 +16,10 @@ import (
 func TestConcurrency(t *testing.T) {
 	tenantCount := 10
 	itemPerTenant := 10
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
-		TenantCount:                  tenantCount,
-		RequiresMultitenancyOrShared: true,
-		Models:                       []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		Models:         []driver.TenantTabler{&testutils.TestModel{}},
+	}, testutils.WithGenerateTenants(tenantCount))
 	r := sql.NewRepository(db)
 
 	wg := sync.WaitGroup{}
@@ -75,9 +74,9 @@ func TestConcurrency(t *testing.T) {
 }
 
 func TestProcessInBatch(t *testing.T) {
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
-		RequiresMultitenancyOrShared: true,
-		Models:                       []driver.TenantTabler{&testutils.TestModel{}},
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		Models:         []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -162,5 +161,53 @@ func TestProcessInBatch(t *testing.T) {
 		// Verify
 		assert.NoError(t, err)
 		assert.Equal(t, 1, processCallCount, "check proccessFunc is called on no data")
+	})
+}
+
+func TestGetTenant(t *testing.T) {
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		Models:         []driver.TenantTabler{&testutils.TestModel{}},
+	})
+	r := sql.NewRepository(db)
+
+	t.Run("should return tenant when found", func(t *testing.T) {
+		// Arrange
+		tenantID := tenants[0]
+		ctx := testutils.CreateCtxWithTenant(tenantID)
+
+		// Act
+		tenant, err := repo.GetTenant(ctx, r)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.NotNil(t, tenant)
+		assert.Equal(t, tenantID, tenant.ID)
+	})
+
+	t.Run("should return ErrTenantNotFound when tenant does not exist", func(t *testing.T) {
+		// Arrange
+		nonExistentTenantID := uuid.NewString()
+		ctx := testutils.CreateCtxWithTenant(nonExistentTenantID)
+
+		// Act
+		tenant, err := repo.GetTenant(ctx, r)
+
+		// Assert
+		assert.Error(t, err)
+		assert.Nil(t, tenant)
+		assert.ErrorIs(t, err, repo.ErrTenantNotFound)
+	})
+
+	t.Run("should return error when no tenant in context", func(t *testing.T) {
+		// Arrange
+		ctx := testutils.CreateCtxWithTenant("")
+
+		// Act
+		tenant, err := repo.GetTenant(ctx, r)
+
+		// Assert
+		assert.Error(t, err)
+		assert.Nil(t, tenant)
 	})
 }

@@ -2,8 +2,10 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
+	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
@@ -37,6 +39,8 @@ var (
 	ErrGetDefaultKeystore  = errors.New("failed to get default keystore")
 	ErrSetDefaultKeystore  = errors.New("failed to set default keystore")
 	ErrGetKeystoreFromPool = errors.New("failed to get keystore config from pool")
+	ErrGetWorkflowConfig   = errors.New("failed to get workflow config")
+	ErrSetWorkflowConfig   = errors.New("failed to set workflow config")
 )
 
 type HYOKKeystore struct {
@@ -47,6 +51,75 @@ type HYOKKeystore struct {
 type TenantKeystores struct {
 	Default model.DefaultKeystore
 	HYOK    HYOKKeystore
+}
+
+func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
+	var config model.TenantConfig
+
+	ck := repo.NewCompositeKey().Where(repo.KeyField, constants.WorkflowConfigKey)
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(ck),
+	)
+
+	found, err := m.repo.First(ctx, &config, *query)
+	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+		return nil, errs.Wrap(ErrGetWorkflowConfig, err)
+	}
+
+	if !found {
+		return m.SetWorkflowConfig(ctx, nil)
+	}
+
+	// Convert TenantConfig to WorkflowConfig
+	workflowConfig, err := m.convertToWorkflowConfig(&config)
+	if err != nil {
+		return nil, errs.Wrap(ErrUnmarshalConfig, err)
+	}
+
+	return workflowConfig, nil
+}
+
+// SetWorkflowConfig stores the workflow config or creates default if nil
+func (m *TenantConfigManager) SetWorkflowConfig(
+	ctx context.Context,
+	workflowConfig *model.WorkflowConfig,
+) (*model.WorkflowConfig, error) {
+	// If no config provided, create default based on tenant role
+	if workflowConfig == nil {
+		t, err := repo.GetTenant(ctx, m.repo)
+		if err != nil {
+			return nil, err
+		}
+
+		defaultEnabled := false
+		if string(t.Role) == tenantpb.Role_ROLE_LIVE.String() {
+			defaultEnabled = true
+		}
+
+		defaultMinimumApprovalCount := 2
+
+		workflowConfig = &model.WorkflowConfig{
+			Enabled:          defaultEnabled,
+			MinimumApprovals: defaultMinimumApprovalCount,
+		}
+	}
+
+	configValue, err := json.Marshal(workflowConfig)
+	if err != nil {
+		return nil, errs.Wrap(ErrMarshalConfig, err)
+	}
+
+	conf := &model.TenantConfig{
+		Key:   constants.WorkflowConfigKey,
+		Value: configValue,
+	}
+
+	err = m.repo.Set(ctx, conf)
+	if err != nil {
+		return nil, errs.Wrap(ErrSetWorkflowConfig, err)
+	}
+
+	return workflowConfig, nil
 }
 
 func (m *TenantConfigManager) GetTenantsKeystores() (TenantKeystores, error) {
@@ -69,7 +142,11 @@ func (m *TenantConfigManager) GetDefaultKeystore(ctx context.Context) (*model.Ke
 	)
 
 	found, err := m.repo.First(ctx, &config, *query)
-	if err != nil && !found {
+	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+		return nil, errs.Wrap(ErrGetDefaultKeystore, err)
+	}
+
+	if !found {
 		var configFromPool *model.KeystoreConfiguration
 
 		err = m.repo.Transaction(ctx, func(ctx context.Context, _ repo.Repo) error {
@@ -92,10 +169,6 @@ func (m *TenantConfigManager) GetDefaultKeystore(ctx context.Context) (*model.Ke
 		}
 
 		return configFromPool, nil
-	}
-
-	if err != nil {
-		return nil, errs.Wrap(ErrGetDefaultKeystore, err)
 	}
 
 	// Convert TenantConfig to KeystoreConfiguration
@@ -149,4 +222,16 @@ func (m *TenantConfigManager) getKeystoreConfigFromPool(ctx context.Context) (*m
 	}
 
 	return cfg, nil
+}
+
+// convertToWorkflowConfig converts TenantConfig to WorkflowConfig
+func (m *TenantConfigManager) convertToWorkflowConfig(config *model.TenantConfig) (*model.WorkflowConfig, error) {
+	var workflowConfig model.WorkflowConfig
+
+	err := json.Unmarshal(config.Value, &workflowConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return &workflowConfig, nil
 }

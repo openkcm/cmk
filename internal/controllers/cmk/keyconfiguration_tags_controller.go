@@ -9,6 +9,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 // GetTagsForKeyConfiguration returns the tags for a key configuration
@@ -19,6 +20,11 @@ func (c *APIController) GetTagsForKeyConfiguration(
 	t, err := c.Manager.KeyConfigTags.GetTagByKeyConfiguration(ctx, request.KeyConfigurationID)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGettingTagsByKeyConfigurationID, err)
+	}
+
+	err = sanitise.Stringlikes(&t)
+	if err != nil {
+		return nil, err
 	}
 
 	count := len(t)

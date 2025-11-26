@@ -21,6 +21,14 @@ var (
 
 var workflow = []APIErrors{
 	{
+		Errors: []error{manager.ErrCheckWorkflow},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "CHECK_WORKFLOW",
+			Message: "failed to check artifacts of workflow",
+			Status:  http.StatusInternalServerError,
+		},
+	},
+	{
 		Errors: []error{manager.ErrGetWorkflowDB},
 		ExposedError: cmkapi.DetailedError{
 			Code:    "GET_WORKFLOW",

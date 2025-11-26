@@ -23,7 +23,7 @@ func (s *SystemUpdaterMock) UpdateSystems(_ context.Context) error {
 }
 
 func TestSystemRefresherProcessAction(t *testing.T) {
-	db, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	repo := sql.NewRepository(db)

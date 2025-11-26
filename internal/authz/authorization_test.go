@@ -287,10 +287,7 @@ func createEntitiesForTenant(tenantIdx int, allGroups []authz.UserGroup, roleAss
 		groupCount := (globalIdx % maxGroupCount) + 1
 
 		// Ensure groupCount does not exceed the length of allGroups
-		safeGroupCount := groupCount
-		if safeGroupCount > len(allGroups) {
-			safeGroupCount = len(allGroups)
-		}
+		safeGroupCount := min(groupCount, len(allGroups))
 
 		entities[entityIdx] = authz.Entity{
 			TenantID:   tenantID,

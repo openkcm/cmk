@@ -44,3 +44,10 @@ func (Certificate) TableName() string {
 func (Certificate) IsSharedModel() bool {
 	return false
 }
+
+type RequestCertArgs struct {
+	CertPurpose CertificatePurpose
+	Supersedes  *uuid.UUID
+	CommonName  string
+	Locality    []string
+}

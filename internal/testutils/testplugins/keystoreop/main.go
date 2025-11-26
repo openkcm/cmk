@@ -76,7 +76,7 @@ func (p *TestPlugin) DeleteKey(
 		keyID := request.GetParameters().GetKeyId()
 		if keyID != "" {
 			if p.keyStore != nil {
-				delete(p.keyStore, keyID)
+				p.handleKeyRecord(keyID, PendingDeletionKeyStatus)
 			}
 		}
 	}
@@ -142,9 +142,9 @@ func (p *TestPlugin) GetKey(
 	if config["authType"] == "AUTH_TYPE_CERTIFICATE" &&
 		(config["AccountID"] != testutils.ValidKeystoreAccountInfo["AccountID"] ||
 			config["UserID"] != testutils.ValidKeystoreAccountInfo["UserID"]) {
-		return nil, commonErrs.NewGrpcErrorWithReason(
+		return nil, commonErrs.NewGrpcErrorWithDetails(
 			commonErrs.StatusProviderAuthenticationError,
-			"Invalid account information",
+			"Invalid account information", nil,
 		)
 	}
 
@@ -179,7 +179,7 @@ func (p *TestPlugin) GetImportParameters(
 	validTime := time.Now().Add(importParamsValidityHours * time.Hour)
 	validTimeStr := validTime.Format(time.RFC3339)
 
-	importParametersStruct, _ := structpb.NewStruct(map[string]interface{}{
+	importParametersStruct, _ := structpb.NewStruct(map[string]any{
 		"publicKey":         "mock-public-key-from-provider",
 		"wrappingAlgorithm": "CKM_RSA_AES_KEY_WRAP",
 		"hashFunction":      "SHA256",
@@ -217,9 +217,14 @@ func (p *TestPlugin) ValidateKey(
 
 func (p *TestPlugin) ValidateKeyAccessData(
 	_ context.Context,
-	_ *keyopv1.ValidateKeyAccessDataRequest,
+	req *keyopv1.ValidateKeyAccessDataRequest,
 ) (*keyopv1.ValidateKeyAccessDataResponse, error) {
 	p.logger.Info("ValidateKeyAccessData method has been called;")
+
+	if len(req.GetManagement().GetFields()) == 0 || len(req.GetCrypto().GetFields()) == 0 {
+		return nil, commonErrs.StatusInvalidKeyAccessData.Err()
+	}
+
 	return &keyopv1.ValidateKeyAccessDataResponse{IsValid: true}, nil
 }
 

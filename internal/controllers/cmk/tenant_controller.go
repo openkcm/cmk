@@ -13,27 +13,19 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-const (
-	SysPath = "sys" // Since tenants list endpoint is not specific to any tenant, we use "sys" as a placeholder.
-)
-
 func (c *APIController) GetTenants(
 	ctx context.Context,
 	request cmkapi.GetTenantsRequestObject,
 ) (cmkapi.GetTenantsResponseObject, error) {
-	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	skip := ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip)
+	top := ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop)
+
+	currentTenant, err := c.Manager.Tenant.GetTenant(ctx)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrListTenants, err)
 	}
 
-	if tenantID != SysPath {
-		return nil, errs.Wrap(apierrors.ErrListTenants, apierrors.ErrTenantIDInPath)
-	}
-
-	skip := ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip)
-	top := ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop)
-
-	tenants, total, err := c.Manager.Tenant.ListTenantInfo(ctx, skip, top)
+	tenants, total, err := c.Manager.Tenant.ListTenantInfo(ctx, ptr.PointTo(currentTenant.IssuerURL), skip, top)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrListTenants, err)
 	}
@@ -55,4 +47,35 @@ func (c *APIController) GetTenants(
 	}
 
 	return cmkapi.GetTenants200JSONResponse(response), nil
+}
+
+func (c *APIController) GetTenantInfo(
+	ctx context.Context,
+	_ cmkapi.GetTenantInfoRequestObject,
+) (cmkapi.GetTenantInfoResponseObject, error) {
+	currentTenant, err := c.Manager.Tenant.GetTenant(ctx)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGetTenantInfo, err)
+	}
+
+	iamIdentifiers, err := cmkcontext.ExtractClientDataGroups(ctx)
+	if err != nil {
+		return nil, apierrors.ErrTenantNotAllowed
+	}
+
+	accessible, err := c.Manager.Group.CheckTenantHasAnyIAMGroups(ctx, iamIdentifiers)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGetTenantInfo, err)
+	}
+
+	if !accessible {
+		return nil, apierrors.ErrTenantNotAllowed
+	}
+
+	tenantAPI, err := tenant.ToAPI(*currentTenant)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrTransformTenants, err)
+	}
+
+	return cmkapi.GetTenantInfo200JSONResponse(*tenantAPI), nil
 }

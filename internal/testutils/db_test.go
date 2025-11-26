@@ -12,7 +12,7 @@ import (
 
 // TestRelatedModel represents a model for testing preload functionality
 func TestSetupTestDB(t *testing.T) {
-	db, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&model.Tenant{}, &model.Key{}},
 	})
 	assert.NotNil(t, db)

@@ -173,8 +173,11 @@ func (r *ResourceRepository) List(
 			return nil
 		},
 	)
+	if err != nil {
+		return 0, err
+	}
 
-	return int(count), err
+	return int(count), nil
 }
 
 // Delete removes the Resource.
@@ -210,8 +213,11 @@ func (r *ResourceRepository) Delete(
 			return nil
 		},
 	)
+	if err != nil {
+		return false, err
+	}
 
-	return result.RowsAffected > 0, err
+	return result.RowsAffected > 0, nil
 }
 
 // First fill given Resource with data, if found. Given Resource is used as query data.
@@ -302,17 +308,17 @@ func (r *ResourceRepository) Patch(
 					return errs.Wrap(repo.ErrUniqueConstraint, err)
 				}
 
-				return errs.Wrap(repo.ErrUpdateResource, err)
+				return err
 			}
 
 			return nil
 		},
 	)
 	if err != nil {
-		return false, err
+		return false, errs.Wrap(repo.ErrUpdateResource, err)
 	}
 
-	return res.RowsAffected > 0, err
+	return res.RowsAffected > 0, nil
 }
 
 // Set will create an item or update it if it already exists
@@ -327,7 +333,7 @@ func (r *ResourceRepository) Set(ctx context.Context, resource repo.Resource) er
 			).Create(resource).Error
 			if err != nil {
 				log.Error(ctx, "error setting the resource", err)
-				return err
+				return errs.Wrap(repo.ErrSetResource, err)
 			}
 
 			return nil
@@ -362,6 +368,15 @@ func (r *ResourceRepository) Transaction(ctx context.Context, txFunc repo.Transa
 	)
 	if err != nil {
 		return errs.Wrap(repo.ErrTransaction, err)
+	}
+
+	return nil
+}
+
+func (r *ResourceRepository) Migrate(ctx context.Context, schemaName string) error {
+	err := r.db.MigrateTenantModels(ctx, schemaName)
+	if err != nil {
+		return errs.Wrap(repo.ErrMigratingTenantModels, err)
 	}
 
 	return nil
@@ -465,12 +480,13 @@ func applyPagination(db *gorm.DB, query repo.Query) *gorm.DB {
 func handleCompositeKey(db *gorm.DB, compositeKey repo.CompositeKey) (*gorm.DB, error) {
 	tx := db.Session(&gorm.Session{NewDB: true})
 
-	for field, entry := range compositeKey.Conds {
+	for _, cond := range compositeKey.Conds {
+		entry := cond.Value
 		if entry.Err != nil {
 			return nil, entry.Err
 		}
 
-		tx = applyFieldCondition(tx, field, entry.Key, compositeKey.IsStrict)
+		tx = applyFieldCondition(tx, cond.Field, entry.Key, compositeKey.IsStrict)
 	}
 
 	return tx, nil
@@ -478,10 +494,8 @@ func handleCompositeKey(db *gorm.DB, compositeKey repo.CompositeKey) (*gorm.DB, 
 
 func applyFieldCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool) *gorm.DB {
 	switch key.Operation {
-	case repo.GreaterThan:
-		return applyCondition(tx, field, ">", key.Value, isStrict)
-	case repo.LessThan:
-		return applyCondition(tx, field, "<", key.Value, isStrict)
+	case repo.GreaterThan, repo.LessThan:
+		return applyCondition(tx, field, string(key.Operation), key.Value, isStrict)
 	case repo.Equal:
 		return applyFieldEqualCondition(tx, field, key, isStrict)
 	}
@@ -499,7 +513,7 @@ func applyFieldEqualCondition(tx *gorm.DB, field string, key repo.Key, isStrict 
 		return tx.Where(field+" IS NULL OR "+field+" = ?", false)
 	default:
 		v := reflect.ValueOf(key.Value)
-		isSlice := (v.Kind() == reflect.Slice || v.Kind() == reflect.Array) && v.Type() != reflect.TypeOf(uuid.UUID{})
+		isSlice := (v.Kind() == reflect.Slice || v.Kind() == reflect.Array) && v.Type() != reflect.TypeFor[uuid.UUID]()
 
 		if isSlice {
 			return applyCondition(tx, field, "IN", key.Value, isStrict)

@@ -27,16 +27,7 @@ func start() error {
 
 	defer cancelOnSignal()
 
-	defaultValues := map[string]any{}
-	cfg := &config.Config{}
-
-	err := commoncfg.LoadConfig(
-		cfg,
-		defaultValues,
-		constants.DefaultConfigPath1,
-		constants.DefaultConfigPath2,
-		".",
-	)
+	cfg, err := config.LoadConfig(commoncfg.WithEnvOverride(constants.APIName + "_task_scheduler"))
 	if err != nil {
 		return oops.In("main").Wrapf(err, "failed to load the config")
 	}

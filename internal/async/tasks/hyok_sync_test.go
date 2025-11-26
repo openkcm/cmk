@@ -29,7 +29,7 @@ func (s *HyokHYOKClientMockFailed) SyncHYOKKeys(_ context.Context) error {
 }
 
 func TestHYOKSyncProcessAction(t *testing.T) {
-	db, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	repo := sql.NewRepository(db)

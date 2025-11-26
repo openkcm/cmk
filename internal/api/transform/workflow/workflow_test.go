@@ -1,6 +1,7 @@
 package workflow_test
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/google/uuid"
@@ -138,6 +139,52 @@ func TestWorkflow_FromAPI(t *testing.T) {
 			assert.Equal(t, tt.apiWorkflow.ArtifactID, w.ArtifactID)
 			assert.Equal(t, tt.userID, w.InitiatorID)
 			assert.Equal(t, *tt.apiWorkflow.Parameters, w.Parameters)
+		})
+	}
+}
+
+func TestWorkflow_ApproverToAPI(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    model.WorkflowApprover
+		expected cmkapi.WorkflowApproverDecision
+	}{
+		{
+			name: "Approved",
+			input: model.WorkflowApprover{
+				UserID:   uuid.New(),
+				UserName: "User1",
+				Approved: sql.NullBool{Bool: true, Valid: true},
+			},
+			expected: cmkapi.WorkflowApproverDecisionAPPROVED,
+		},
+		{
+			name: "Rejected",
+			input: model.WorkflowApprover{
+				UserID:   uuid.New(),
+				UserName: "User2",
+				Approved: sql.NullBool{Bool: false, Valid: true},
+			},
+			expected: cmkapi.WorkflowApproverDecisionREJECTED,
+		},
+		{
+			name: "Pending",
+			input: model.WorkflowApprover{
+				UserID:   uuid.New(),
+				UserName: "User3",
+				Approved: sql.NullBool{Bool: false, Valid: false},
+			},
+			expected: cmkapi.WorkflowApproverDecisionPENDING,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			apiApprover, err := workflow.ApproverToAPI(tt.input)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.input.UserID, apiApprover.Id)
+			assert.Equal(t, tt.input.UserName, *apiApprover.Name)
+			assert.Equal(t, tt.expected, apiApprover.Decision)
 		})
 	}
 }

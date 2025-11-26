@@ -36,7 +36,7 @@ func TestToAPI(t *testing.T) {
 			Identifier: ptr.PointTo("givenSystem-001"),
 			Region:     "us-east-1",
 			Status:     "DISCONNECTED",
-			Properties: &map[string]interface{}{"test": "test"},
+			Properties: &map[string]any{"test": "test"},
 		}
 
 		assert.Equal(t, expectedSystem, *apiSys)
@@ -53,7 +53,7 @@ func TestToAPI(t *testing.T) {
 			Identifier: ptr.PointTo("givenSystem-001"),
 			Region:     "us-east-1",
 			Status:     "DISCONNECTED",
-			Properties: &map[string]interface{}{},
+			Properties: &map[string]any{},
 		}
 
 		assert.Equal(t, expectedSystem, *apiSys)

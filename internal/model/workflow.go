@@ -8,6 +8,13 @@ import (
 
 const WorkflowID = "workflow_id"
 
+// Workflow is an action on a data model (artifact) and can be read as <Artifact><ActionType>
+// Artifact type is the type of item, identified by ArtifactID and ActionType the executed action
+// Parameters will have different values depending on the ActionType.
+// Check API Yaml for possible Parameters
+//
+// e.g. of a workflow
+// System Link
 type Workflow struct {
 	AutoTimeModel
 

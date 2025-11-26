@@ -20,6 +20,7 @@ import (
 	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -61,7 +62,7 @@ func setupCfg(tb testing.TB) config.Config {
 func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenancy.DB, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.KeyConfiguration{},
 			&model.Key{},
@@ -135,44 +136,80 @@ func TestGetKeyConfigurations(t *testing.T) {
 }
 
 func TestTotalSystemAndKey(t *testing.T) {
-	m, db, tenant := SetupKeyConfigManager(t)
-	assert.NotNil(t, m)
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	r := sql.NewRepository(db)
+	t.Run("Should get keyconfig with two keys and one system", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManager(t)
+		assert.NotNil(t, m)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
 
-	group := testutils.NewGroup(func(_ *model.Group) {})
+		group := testutils.NewGroup(func(_ *model.Group) {})
 
-	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
-		c.Name = uuid.NewString()
-		c.AdminGroupID = group.ID
+		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.Name = uuid.NewString()
+			c.AdminGroupID = group.ID
+		})
+
+		sys := &model.System{
+			ID:                 uuid.New(),
+			Identifier:         uuid.NewString(),
+			KeyConfigurationID: &keyConfig.ID,
+		}
+
+		key1 := &model.Key{
+			ID:                 uuid.New(),
+			Name:               uuid.NewString(),
+			KeyConfigurationID: keyConfig.ID,
+			IsPrimary:          false,
+		}
+
+		key2 := &model.Key{
+			ID:                 uuid.New(),
+			Name:               uuid.NewString(),
+			KeyConfigurationID: keyConfig.ID,
+			IsPrimary:          false,
+		}
+
+		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, sys, key1, key2)
+		k, err := m.GetKeyConfigurationByID(testutils.CreateCtxWithTenant(tenant), keyConfig.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, k.TotalKeys)
+		assert.Equal(t, 1, k.TotalSystems)
 	})
 
-	sys := &model.System{
-		ID:                 uuid.New(),
-		Identifier:         uuid.NewString(),
-		KeyConfigurationID: &keyConfig.ID,
-	}
+	t.Run("Should get no entries on deleted keyconfig with items referencing it", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManager(t)
+		assert.NotNil(t, m)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
 
-	key1 := &model.Key{
-		ID:                 uuid.New(),
-		Name:               uuid.NewString(),
-		KeyConfigurationID: keyConfig.ID,
-		IsPrimary:          false,
-	}
+		group := testutils.NewGroup(func(_ *model.Group) {})
 
-	key2 := &model.Key{
-		ID:                 uuid.New(),
-		Name:               uuid.NewString(),
-		KeyConfigurationID: keyConfig.ID,
-		IsPrimary:          false,
-	}
+		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.Name = uuid.NewString()
+			c.AdminGroupID = group.ID
+		})
 
-	testutils.CreateTestEntities(ctx, t, r, group, keyConfig, sys, key1, key2)
+		sys := &model.System{
+			ID:                 uuid.New(),
+			Identifier:         uuid.NewString(),
+			KeyConfigurationID: &keyConfig.ID,
+		}
+		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, sys)
 
-	k, err := m.GetKeyConfigurationByID(testutils.CreateCtxWithTenant(tenant), keyConfig.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, 2, k.TotalKeys)
-	assert.Equal(t, 1, k.TotalSystems)
+		k, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, k.TotalKeys)
+		assert.Equal(t, 1, k.TotalSystems)
+
+		// Force delete item as items have to disconnected first
+		// before keyconfig deletion
+		_, err = r.Delete(ctx, keyConfig, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		_, count, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{})
+		assert.NoError(t, err)
+		assert.Equal(t, 0, count)
+	})
 }
 
 func TestKeyConfigurationsWithGroupID(t *testing.T) {
@@ -408,7 +445,7 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 		}})
 
 		_, privateKey, err = certManager.RequestNewCertificate(ctx, privateKey,
-			manager.RequestNewCertArgs{
+			model.RequestCertArgs{
 				CertPurpose: model.CertificatePurposeTenantDefault,
 				Supersedes:  nil,
 				CommonName:  "MyCert",
@@ -416,7 +453,7 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 			})
 		assert.NoError(t, err)
 
-		tenantSubject := "CN=MyCert,OU=landscape+OU=subAccount+OU=SAP Cloud Platform Clients,O=SAP SE,L=LOCAL/CMK,C=DE"
+		tenantSubject := "CN=MyCert,OU=landscape/subAccount/SAP Cloud Platform Clients,O=SAP SE,L=LOCAL/CMK,C=DE"
 
 		certs, err := m.GetClientCertificates(ctx)
 

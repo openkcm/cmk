@@ -176,7 +176,7 @@ func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 			ArtifactType: wfMechanism.ArtifactTypeKey.String(),
 			ArtifactID:   uuid.New(),
 			ActionType:   wfMechanism.ActionTypeDelete.String(),
-			Approvers:    []model.WorkflowApprover{},
+			Approvers:    []model.WorkflowApprover{{UserID: uuid.New()}},
 		}
 	})
 
@@ -219,8 +219,29 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 				SchemaName: tenantID,
 				DomainURL:  tenantID,
 			},
-			ID:     tenantID,
-			Region: "test-region",
+			ID:        tenantID,
+			Region:    "test-region",
+			Status:    "STATUS_ACTIVE",
+			Role:      "ROLE_TEST",
+			OwnerID:   tenantID + "-owner-id",
+			OwnerType: "owner-type",
+		}
+	})
+
+	return ptr.PointTo(mut(m))
+}
+
+func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
+	wc := model.WorkflowConfig{
+		Enabled:          true,
+		MinimumApprovals: 1,
+	}
+	//nolint:errchkjson
+	configValue, _ := json.Marshal(wc)
+	mut := NewMutator(func() model.TenantConfig {
+		return model.TenantConfig{
+			Key:   constants.WorkflowConfigKey,
+			Value: configValue,
 		}
 	})
 

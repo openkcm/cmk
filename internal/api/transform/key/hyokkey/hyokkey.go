@@ -46,7 +46,7 @@ func FromCmkAPIKey(
 		return nil, ErrAccessDetailsIsRequired
 	}
 
-	accessData, err := transformer.SerializeKeyAccessData(ctx, apiKey)
+	accessData, err := transformer.SerializeKeyAccessData(ctx, apiKey.AccessDetails)
 	if err != nil {
 		return nil, errs.Wrap(ErrTransformAccessData, err)
 	}

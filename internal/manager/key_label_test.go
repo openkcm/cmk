@@ -187,7 +187,7 @@ func TestDeleteKeyLabel(t *testing.T) {
 func setupTest(t *testing.T) (*multitenancy.DB, *manager.LabelManager, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&model.Key{}, &model.KeyLabel{}},
 	})
 

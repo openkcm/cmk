@@ -23,14 +23,11 @@ const (
 func TestRegistryService_SystemsClient(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: false}))
 	systemService := systems.NewFakeService(logger)
-	grpcServer, grpcClient := testutils.NewGRPCSuite(t,
+	_, grpcClient := testutils.NewGRPCSuite(t,
 		func(s *grpc.Server) {
 			systemgrpc.RegisterServiceServer(s, systemService)
 		},
 	)
-
-	defer grpcServer.GracefulStop()
-	defer grpcClient.Close()
 
 	systemsClient, err := systems.NewSystemsClient(grpcClient)
 	require.NoError(t, err)

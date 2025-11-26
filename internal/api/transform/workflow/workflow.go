@@ -9,10 +9,16 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 // ToAPI converts a workflow model to an API workflow presentation.
 func ToAPI(w model.Workflow) (*cmkapi.Workflow, error) {
+	err := sanitise.Stringlikes(&w)
+	if err != nil {
+		return nil, err
+	}
+
 	return &cmkapi.Workflow{
 		Id:            ptr.PointTo(w.ID),
 		InitiatorID:   ptr.PointTo(w.InitiatorID),
@@ -51,4 +57,28 @@ func FromAPI(apiWorkflow cmkapi.Workflow, userID uuid.UUID) (*model.Workflow, er
 	}
 
 	return wf, nil
+}
+
+// ApproverToAPI converts a workflow approver model to an API workflow approver presentation.
+func ApproverToAPI(approver model.WorkflowApprover) (cmkapi.WorkflowApprover, error) {
+	err := sanitise.Stringlikes(&approver)
+	if err != nil {
+		return cmkapi.WorkflowApprover{}, err
+	}
+
+	return cmkapi.WorkflowApprover{
+		Id:   approver.UserID,
+		Name: ptr.PointTo(approver.UserName),
+		Decision: func() cmkapi.WorkflowApproverDecision {
+			if approver.Approved.Valid {
+				if approver.Approved.Bool {
+					return cmkapi.WorkflowApproverDecisionAPPROVED
+				}
+
+				return cmkapi.WorkflowApproverDecisionREJECTED
+			}
+
+			return cmkapi.WorkflowApproverDecisionPENDING
+		}(),
+	}, nil
 }

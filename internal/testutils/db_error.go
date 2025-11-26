@@ -157,7 +157,7 @@ func (e *ErrorForced) registerCallback(callback string) error {
 			Query().
 			Before(gormQuery).
 			Register(callbackError, func(db *gorm.DB) {
-				if db.Statement.Schema.ModelType == reflect.TypeOf(model.Tenant{}) {
+				if db.Statement.Schema.ModelType == reflect.TypeFor[model.Tenant]() {
 					// Skip tenant model queries
 					return
 				}

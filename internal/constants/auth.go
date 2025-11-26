@@ -14,3 +14,4 @@ const (
 )
 
 type Role string
+type UserGroup string

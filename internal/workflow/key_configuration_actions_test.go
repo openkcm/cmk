@@ -64,9 +64,8 @@ func TestWorkflowKeyConfigurationActionsDelete(t *testing.T) {
 			err := r.Create(ctx, &tt.workflow)
 			assert.NoError(t, err)
 
-			keyConf := &model.KeyConfiguration{ID: keyConfigID01, AdminGroup: model.Group{ID: uuid.New()}}
+			keyConf := &model.KeyConfiguration{ID: keyConfigID01, AdminGroup: *testutils.NewGroup(func(_ *model.Group) {})}
 			err = r.Create(ctx, keyConf)
-
 			assert.NoError(t, err)
 
 			// Act

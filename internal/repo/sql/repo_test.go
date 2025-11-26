@@ -2,6 +2,7 @@ package sql_test
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 )
 
 func TestRepo_WithTenant(t *testing.T) {
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	r := sql.NewRepository(db)
@@ -48,15 +49,15 @@ func TestRepo_WithTenant(t *testing.T) {
 }
 
 func TestRepo_List(t *testing.T) {
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
-	n := 2
-	for range n {
-		err := r.Create(ctx, &testutils.TestModel{ID: uuid.New(), Name: uuid.New().String()})
+	n := 3
+	for i := range n {
+		err := r.Create(ctx, &testutils.TestModel{ID: uuid.New(), Name: fmt.Sprintf("test-%d", i)})
 		assert.NoError(t, err)
 	}
 
@@ -76,10 +77,19 @@ func TestRepo_List(t *testing.T) {
 		assert.Equal(t, count, n)
 		assert.Len(t, res, limit)
 	})
+
+	t.Run("Should list IN", func(t *testing.T) {
+		res := []*testutils.TestModel{}
+		compositeKey := repo.NewCompositeKey().Where("name", []string{"test-0", "test-1"})
+		query := *repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey))
+		count, err := r.List(ctx, testutils.TestModel{}, &res, query)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, count)
+	})
 }
 
 func TestRepo_List_Order(t *testing.T) {
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	r := sql.NewRepository(db)
@@ -143,7 +153,7 @@ func TestRepo_List_Order(t *testing.T) {
 }
 
 func TestRepo_Create(t *testing.T) {
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	r := sql.NewRepository(db)
@@ -173,7 +183,7 @@ func TestRepo_Create(t *testing.T) {
 }
 
 func TestRepo_First(t *testing.T) {
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	r := sql.NewRepository(db)
@@ -233,7 +243,7 @@ func TestRepo_First(t *testing.T) {
 }
 
 func TestRepo_Delete(t *testing.T) {
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	r := sql.NewRepository(db)
@@ -259,7 +269,7 @@ func TestRepo_Delete(t *testing.T) {
 }
 
 func TestRepo_Patch(t *testing.T) {
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	r := sql.NewRepository(db)
@@ -294,7 +304,7 @@ func TestRepo_Patch(t *testing.T) {
 }
 
 func TestRepo_Set(t *testing.T) {
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	r := sql.NewRepository(db)
@@ -330,7 +340,7 @@ func TestRepo_Set(t *testing.T) {
 }
 
 func TestRepo_Transaction(t *testing.T) {
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{&testutils.TestModel{}},
 	})
 	r := sql.NewRepository(db)

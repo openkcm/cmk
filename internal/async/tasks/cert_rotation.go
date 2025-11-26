@@ -10,7 +10,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -19,7 +18,7 @@ import (
 type CertUpdater interface {
 	GetCertificatesForRotation(ctx context.Context,
 	) ([]*model.Certificate, int, error)
-	RotateCertificate(ctx context.Context, args manager.RequestNewCertArgs) (*model.Certificate,
+	RotateCertificate(ctx context.Context, args model.RequestCertArgs) (*model.Certificate,
 		*rsa.PrivateKey, error)
 }
 
@@ -79,7 +78,7 @@ func (s *CertRotator) TaskType() string {
 func (s *CertRotator) handleCertificate(ctx context.Context, cert *model.Certificate,
 	schemaName string,
 ) error {
-	_, _, err := s.certClient.RotateCertificate(ctx, manager.RequestNewCertArgs{
+	_, _, err := s.certClient.RotateCertificate(ctx, model.RequestCertArgs{
 		CertPurpose: cert.Purpose,
 		Supersedes:  &cert.ID,
 		CommonName:  cert.CommonName,

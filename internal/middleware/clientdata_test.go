@@ -25,6 +25,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/flags"
 	"github.com/openkcm/cmk/internal/middleware"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 // testData holds test setup data
@@ -117,13 +118,20 @@ func (td *testData) createValidClientData(t *testing.T, keyID int) (string, stri
 	}
 
 	clientData := auth.ClientData{
-		Subject:            "test-subject",
+		Identifier:         "test-identifier",
 		Type:               "test-type",
 		Email:              "test@example.com",
 		Region:             "test-region",
 		Groups:             []string{"group1", "group2"},
 		KeyID:              strconv.Itoa(keyID),
 		SignatureAlgorithm: auth.SignatureAlgorithmRS256, // Explicitly RS256
+		AuthContext: map[string]string{
+			"client_id":        "test-client-id",
+			"issuer":           "https://example-issuer.com",
+			"multitenancy_ref": "some-ref",
+			"other_field":      "other-value",
+			"irrelevant":       "should-be-ignored",
+		},
 	}
 
 	jsonBytes, err := json.Marshal(clientData)
@@ -299,10 +307,11 @@ func getTestScenarios() []testScenario {
 				t.Helper()
 
 				clientData := auth.ClientData{
-					Subject:            "test-subject",
+					Identifier:         "test-identifier",
 					Type:               "test-type",
 					Email:              "test@example.com",
 					Region:             "test-region",
+					AuthContext:        map[string]string{"issuer": "test-issuer"},
 					Groups:             []string{"group1", "group2"},
 					KeyID:              "0",
 					SignatureAlgorithm: "UNSUPPORTED",
@@ -319,10 +328,11 @@ func getTestScenarios() []testScenario {
 				t.Helper()
 
 				clientData := auth.ClientData{
-					Subject:            "test-subject",
+					Identifier:         "test-identifier",
 					Type:               "test-type",
 					Email:              "test@example.com",
 					Region:             "test-region",
+					AuthContext:        map[string]string{"issuer": "test-issuer"},
 					Groups:             []string{"group1", "group2"},
 					SignatureAlgorithm: auth.SignatureAlgorithmRS256, // KeyID is missing
 				}
@@ -338,6 +348,7 @@ func getTestScenarios() []testScenario {
 func TestClientDataMiddleware(t *testing.T) {
 	td := setupTestEnvironment(t)
 	scenarios := getTestScenarios()
+	authContextFields := []string{"client_id", "issuer", "multitenancy_ref"}
 
 	for _, scenario := range scenarios {
 		t.Run(
@@ -347,23 +358,21 @@ func TestClientDataMiddleware(t *testing.T) {
 
 				// Create middleware
 				middlewareFunc := middleware.ClientDataMiddleware(
-					&td.config.FeatureGates, td.signingKeysStorage,
+					&td.config.FeatureGates, td.signingKeysStorage, authContextFields,
 				)
 
 				// Create test handler
-				var contextValues map[string]any
+				var clientDataFromContext *auth.ClientData
 
 				testHandler := http.HandlerFunc(
 					func(w http.ResponseWriter, r *http.Request) {
 						if !scenario.expectError {
-							// Capture context values for validation
-							ctx := r.Context()
-							contextValues = map[string]any{
-								"subject": ctx.Value(middleware.ClientDataSubject),
-								"email":   ctx.Value(middleware.ClientDataEmail),
-								"groups":  ctx.Value(middleware.ClientDataGroups),
-								"region":  ctx.Value(middleware.ClientDataRegion),
-								"type":    ctx.Value(middleware.ClientDataType),
+							// Extract client data from context using the new approach
+							var err error
+
+							clientDataFromContext, err = cmkcontext.ExtractClientData(r.Context())
+							if err != nil {
+								clientDataFromContext = nil
 							}
 						}
 
@@ -392,18 +401,29 @@ func TestClientDataMiddleware(t *testing.T) {
 				assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 
 				if scenario.expectError {
-					// For error cases, context should not be populated with client data values
+					// For error cases, context should not be populated with client data
 					// the client data middleware should pass through without setting context
+					assert.Nil(t, clientDataFromContext)
+
+					// Also verify that extracting from a fresh context returns an error
 					req := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
 					ctx := req.Context()
-					assert.Nil(t, ctx.Value(middleware.ClientDataSubject))
-					assert.Nil(t, ctx.Value(middleware.ClientDataEmail))
+					_, err := cmkcontext.ExtractClientData(ctx)
+					assert.Error(t, err)
 				} else {
-					// For successful cases, verify context is properly populated
-					assert.Equal(t, "test@example.com", contextValues["email"])
-					assert.Equal(t, []string{"group1", "group2"}, contextValues["groups"])
-					assert.Equal(t, "test-region", contextValues["region"])
-					assert.Equal(t, "test-type", contextValues["type"])
+					// For successful cases, verify context is properly populated with client data
+					require.NotNil(t, clientDataFromContext)
+					assert.Equal(t, "test@example.com", clientDataFromContext.Email)
+					assert.Equal(t, []string{"group1", "group2"}, clientDataFromContext.Groups)
+					assert.Equal(t, "test-region", clientDataFromContext.Region)
+					assert.Equal(t, "test-type", clientDataFromContext.Type)
+					assert.Equal(t, "test-identifier", clientDataFromContext.Identifier)
+					assert.Equal(t, auth.SignatureAlgorithmRS256, clientDataFromContext.SignatureAlgorithm)
+					assert.Equal(t, map[string]string{
+						"client_id":        "test-client-id",
+						"issuer":           "https://example-issuer.com",
+						"multitenancy_ref": "some-ref",
+					}, clientDataFromContext.AuthContext)
 				}
 			},
 		)
@@ -418,7 +438,7 @@ func TestClientDataMiddleware_FeatureGateDisabled(t *testing.T) {
 		flags.DisableClientDataComputation: true,
 	}
 
-	middlewareFunc := middleware.ClientDataMiddleware(&td.config.FeatureGates, td.signingKeysStorage)
+	middlewareFunc := middleware.ClientDataMiddleware(&td.config.FeatureGates, td.signingKeysStorage, []string{})
 
 	testHandler := http.HandlerFunc(
 		func(w http.ResponseWriter, _ *http.Request) {

@@ -46,14 +46,14 @@ func createTags[Tparent Parent, Ttag any](
 	return nil
 }
 
-func getTags[T Parent](ctx context.Context, mrepo repo.Repo,
-	id uuid.UUID, tags T,
+func getTags[Tparent Parent](ctx context.Context, mrepo repo.Repo,
+	id uuid.UUID, p Tparent,
 ) error {
 	ck := repo.NewCompositeKey().
 		Where(repo.IDField, id)
 
 	_, err := mrepo.First(ctx,
-		tags,
+		p,
 		*repo.NewQuery().
 			Preload(repo.Preload{"Tags"}).
 			Where(repo.NewCompositeKeyGroup(ck)),

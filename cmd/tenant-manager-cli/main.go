@@ -13,12 +13,13 @@ import (
 	"github.com/spf13/cobra"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
+	"github.com/openkcm/cmk/cmd/tenant-manager-cli/commands"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
+	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/tenant-manager/tenant-cli/cmd"
 )
 
 func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {
@@ -36,7 +37,12 @@ func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) in
 		cancel()
 	}()
 
-	cfg, err := loadConfig()
+	cfg, err := config.LoadConfig(
+		commoncfg.WithPaths(
+			".",
+			"/etc/tenant-manager-cli",
+		),
+	)
 	if err != nil {
 		log.Error(ctx, "Failed to load config:", err)
 
@@ -65,7 +71,12 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return oops.In("main").Wrapf(err, "Failed to initialise db connection")
 	}
 
-	rootCmd := setupCommands(ctx, dbCon)
+	ctlg, err := catalog.New(ctx, *cfg)
+	if err != nil {
+		return oops.In("main").Wrapf(err, "Failed to initialise plugin catalog")
+	}
+
+	rootCmd := setupCommands(ctx, dbCon, ctlg)
 
 	err = rootCmd.ExecuteContext(ctx)
 	if err != nil {
@@ -76,64 +87,29 @@ func run(ctx context.Context, cfg *config.Config) error {
 }
 
 // setupCommands creates and configures all CLI commands and flags
-func setupCommands(ctx context.Context, dbCon *multitenancy.DB) *cobra.Command {
-	var (
-		id, region, status string
-		sleep              bool
-	)
-
-	factory := cmd.NewCommandFactory(dbCon)
+func setupCommands(ctx context.Context, dbCon *multitenancy.DB, catalog *plugincatalog.Catalog) *cobra.Command {
+	factory := commands.NewCommandFactory(dbCon, catalog)
 	rootCmd := factory.NewRootCmd(ctx)
-	rootCmd.PersistentFlags().BoolVar(&sleep, "sleep", false, "Enable sleep mode")
 
 	createGroupsCmd := factory.NewCreateGroupsCmd(ctx)
-	createGroupsCmd.Flags().StringVarP(&id, "id", "i", "", "Tenant id")
 	rootCmd.AddCommand(createGroupsCmd)
 
 	createCmd := factory.NewCreateTenantCmd(ctx)
-	createCmd.Flags().StringVarP(&id, "id", "i", "", "Tenant id")
-	createCmd.Flags().StringVarP(&region, "region", "r", "", "Tenant region")
-	createCmd.Flags().StringVarP(&status, "status", "s", "", "Tenant status")
 	rootCmd.AddCommand(createCmd)
 
 	deleteTenantCmd := factory.NewDeleteTenantCmd(ctx)
-	deleteTenantCmd.Flags().StringVarP(&id, "id", "i", "", "Tenant id")
 	rootCmd.AddCommand(deleteTenantCmd)
 
 	getTenantCmd := factory.NewGetTenantCmd(ctx)
-	getTenantCmd.Flags().StringVarP(&id, "id", "i", "", "Tenant id")
 	rootCmd.AddCommand(getTenantCmd)
 
 	listTenantsCmd := factory.NewListTenantsCmd(ctx)
 	rootCmd.AddCommand(listTenantsCmd)
 
 	updateTenantCmd := factory.NewUpdateTenantCmd(ctx)
-	updateTenantCmd.Flags().StringVarP(&id, "id", "i", "", "Tenant id")
-	updateTenantCmd.Flags().StringVarP(&region, "region", "r", "", "Tenant region")
-	updateTenantCmd.Flags().StringVarP(&status, "status", "s", "", "Tenant status")
 	rootCmd.AddCommand(updateTenantCmd)
 
 	return rootCmd
-}
-
-func loadConfig() (*config.Config, error) {
-	cfg := &config.Config{}
-
-	loader := commoncfg.NewLoader(
-		cfg,
-		commoncfg.WithPaths(
-			".",
-			"/etc/tenant-manager-cli",
-		),
-		commoncfg.WithEnvOverride(constants.APIName),
-	)
-
-	err := loader.LoadConfig()
-	if err != nil {
-		return nil, oops.In("main").Wrapf(err, "failed to load config")
-	}
-
-	return cfg, nil
 }
 
 func main() {

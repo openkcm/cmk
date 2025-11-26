@@ -189,17 +189,10 @@ func (m *CertificateManager) GeneratePrivateKey() (*rsa.PrivateKey, error) {
 	return privateKey, nil
 }
 
-type RequestNewCertArgs struct {
-	CertPurpose model.CertificatePurpose
-	Supersedes  *uuid.UUID
-	CommonName  string
-	Locality    []string
-}
-
 func (m *CertificateManager) RequestNewCertificate(
 	ctx context.Context,
 	privateKey *rsa.PrivateKey,
-	args RequestNewCertArgs,
+	args model.RequestCertArgs,
 ) (*model.Certificate, *rsa.PrivateKey, error) {
 	if args.CertPurpose == model.CertificatePurposeTenantDefault {
 		exist, err := m.IsTenantDefaultCertExist(ctx)
@@ -216,14 +209,14 @@ func (m *CertificateManager) RequestNewCertificate(
 }
 
 func (m *CertificateManager) RotateCertificate(ctx context.Context,
-	args RequestNewCertArgs,
+	args model.RequestCertArgs,
 ) (*model.Certificate, *rsa.PrivateKey, error) {
 	cert, pk, err := m.getNewCertificate(ctx, nil, args)
 	if err != nil {
 		return nil, nil, errs.Wrap(ErrCertificateManager, err)
 	}
 
-	_, err = m.UpdateCertificate(ctx, &cert.ID, false)
+	_, err = m.UpdateCertificate(ctx, args.Supersedes, false)
 	if err != nil {
 		return nil, nil, errs.Wrap(ErrCertificateManager, err)
 	}
@@ -388,7 +381,7 @@ func (m *CertificateManager) getCertificateByPurpose(
 func (m *CertificateManager) getNewCertificate(
 	ctx context.Context,
 	privateKey *rsa.PrivateKey,
-	args RequestNewCertArgs,
+	args model.RequestCertArgs,
 ) (*model.Certificate, *rsa.PrivateKey, error) {
 	if privateKey == nil {
 		var pkErr error
@@ -464,7 +457,7 @@ func (m *CertificateManager) getDefaultHYOKClientCert(
 		}
 
 		cert, _, err = m.RequestNewCertificate(ctx, nil,
-			RequestNewCertArgs{
+			model.RequestCertArgs{
 				CertPurpose: model.CertificatePurposeTenantDefault,
 				Supersedes:  nil,
 				CommonName:  DefaultHYOKCertCommonName,
@@ -496,7 +489,7 @@ func (m *CertificateManager) getDefaultKeystoreClientCert(
 
 	if !exists {
 		cert, _, err = m.RequestNewCertificate(ctx, nil,
-			RequestNewCertArgs{
+			model.RequestCertArgs{
 				CertPurpose: model.CertificatePurposeKeystoreDefault,
 				Supersedes:  nil,
 				CommonName:  commonName,

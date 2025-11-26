@@ -51,10 +51,10 @@ var errorLabel = []cmkapi.Label{
 }
 
 // startAPIKeyLabels starts the API server for key labels and returns a pointer to the database
-func startAPIKeyLabels(t *testing.T) (*multitenancy.DB, *http.ServeMux, string) {
+func startAPIKeyLabels(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&model.Key{},
 			&model.KeyLabel{},

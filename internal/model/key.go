@@ -7,12 +7,15 @@ import (
 	"github.com/google/uuid"
 )
 
-// Key represents a key in the database.
+type KeyAccessData map[string]map[string]any // Map of regions and their properties
+
+//nolint:recvcheck
 type Key struct {
 	AutoTimeModel
 
 	ID                   uuid.UUID     `gorm:"type:uuid;primaryKey"`
-	Name                 string        `gorm:"type:varchar(255);not null;unique"`
+	KeyConfigurationID   uuid.UUID     `gorm:"type:uuid;not null;uniqueindex:keyname,priority:1"`
+	Name                 string        `gorm:"type:varchar(255);not null;uniqueindex:keyname,priority:2"`
 	KeyType              string        `gorm:"type:varchar(50);not null"`
 	Description          string        `gorm:"type:text"`
 	Algorithm            string        `gorm:"type:varchar(50);not null"`
@@ -22,7 +25,6 @@ type Key struct {
 	KeyVersions          []KeyVersion  `gorm:"foreignKey:KeyID"`
 	ImportParams         *ImportParams `gorm:"foreignKey:KeyID;references:ID;constraint:OnDelete:CASCADE"`
 	NativeID             *string       `gorm:"type:varchar(255)"`
-	KeyConfigurationID   uuid.UUID     `gorm:"type:uuid;not null; index"`
 	KeyLabels            []KeyLabel    `gorm:"foreignKey:ResourceID"`
 	LastUsed             *time.Time
 	ManagementAccessData json.RawMessage `gorm:"type:jsonb"`
@@ -65,7 +67,7 @@ func (k Key) Version() *KeyVersion {
 	return &keyVersion
 }
 
-func (k Key) GetManagementAccessData() map[string]any {
+func (k *Key) GetManagementAccessData() map[string]any {
 	if k.ManagementAccessData == nil {
 		return nil
 	}
@@ -80,12 +82,12 @@ func (k Key) GetManagementAccessData() map[string]any {
 	return data
 }
 
-func (k Key) GetCryptoAccessData() map[string]any {
+func (k *Key) GetCryptoAccessData() KeyAccessData {
 	if k.CryptoAccessData == nil {
 		return nil
 	}
 
-	var data map[string]any
+	var data KeyAccessData
 
 	err := json.Unmarshal(k.CryptoAccessData, &data)
 	if err != nil {
@@ -93,4 +95,15 @@ func (k Key) GetCryptoAccessData() map[string]any {
 	}
 
 	return data
+}
+
+func (k *Key) SetCryptoAccessData(data KeyAccessData) error {
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	k.CryptoAccessData = bytes
+
+	return nil
 }
