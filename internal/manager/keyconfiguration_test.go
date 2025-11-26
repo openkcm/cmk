@@ -453,7 +453,7 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 			})
 		assert.NoError(t, err)
 
-		tenantSubject := "CN=MyCert,OU=landscape+OU=subAccount+OU=SAP Cloud Platform Clients,O=SAP SE,L=LOCAL/CMK,C=DE"
+		tenantSubject := "CN=MyCert,OU=landscape/subAccount/SAP Cloud Platform Clients,O=SAP SE,L=LOCAL/CMK,C=DE"
 
 		certs, err := m.GetClientCertificates(ctx)
 

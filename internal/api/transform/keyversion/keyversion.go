@@ -5,10 +5,16 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 // ToAPI converts KeyVersion db model to a KeyVersion api model
 func ToAPI(kv model.KeyVersion) (*cmkapi.KeyVersion, error) {
+	err := sanitise.Stringlikes(&kv)
+	if err != nil {
+		return nil, err
+	}
+
 	var nativeID *string
 
 	if kv.NativeID != nil {

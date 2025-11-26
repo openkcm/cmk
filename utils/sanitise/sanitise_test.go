@@ -24,9 +24,9 @@ func TestSanitisation(t *testing.T) {
 	t.Run("Should sanitise strings", func(t *testing.T) {
 		input := strXSS1
 		output := strSAN1
-		ret, err := sanitise.Stringlikes(&input)
+		err := sanitise.Stringlikes(&input)
 		assert.NoError(t, err)
-		assert.Equal(t, output, *ret)
+		assert.Equal(t, output, input)
 	})
 
 	t.Run("Should sanitise string lists", func(t *testing.T) {
@@ -35,9 +35,9 @@ func TestSanitisation(t *testing.T) {
 
 		input := []string{testStrXSS1, testStrXSS2}
 		output := []string{strSAN1, strSAN2}
-		ret, err := sanitise.Stringlikes(&input)
+		err := sanitise.Stringlikes(&input)
 		assert.NoError(t, err)
-		assert.Equal(t, output, *ret)
+		assert.Equal(t, output, input)
 	})
 
 	t.Run("Should sanitise string pointer lists", func(t *testing.T) {
@@ -49,9 +49,9 @@ func TestSanitisation(t *testing.T) {
 
 		input := []*string{&testStrXSS1, &testStrXSS2}
 		output := []*string{&testStrSAN1, &testStrSAN2}
-		ret, err := sanitise.Stringlikes(&input)
+		err := sanitise.Stringlikes(&input)
 		assert.NoError(t, err)
-		assert.Equal(t, output, *ret)
+		assert.Equal(t, output, input)
 	})
 
 	t.Run("Should sanitise maps", func(t *testing.T) {
@@ -65,9 +65,9 @@ func TestSanitisation(t *testing.T) {
 		map2 := map[string]string{"Key": "Value"}
 		output := ss{M: map2}
 
-		ret, err := sanitise.Stringlikes(&input)
+		err := sanitise.Stringlikes(&input)
 		assert.NoError(t, err)
-		assert.Equal(t, &output, ret)
+		assert.Equal(t, output, input)
 	})
 
 	t.Run("Should sanitise structs", func(t *testing.T) {
@@ -112,9 +112,9 @@ func TestSanitisation(t *testing.T) {
 		output := s2{S1: s1inst1Ex, S1s: s1SliceEx, Ps1s: &s1SliceEx,
 			S1ps: []*s1{&s1inst1Ex, &s1inst2Ex}, Ps1: &s1inst1Ex, Pps1: &ps1inst1Ex}
 
-		ret, err := sanitise.Stringlikes(&input)
+		err := sanitise.Stringlikes(&input)
 		assert.NoError(t, err)
-		assert.Equal(t, output, *ret)
+		assert.Equal(t, output, input)
 
 		// Just something more explicit for sanity:
 		assert.Equal(t, "Bye  Hello", **(*output.Pps1).Pps)
@@ -127,9 +127,9 @@ func TestSanitisation(t *testing.T) {
 
 		var output json.RawMessage = []byte(`Hello &lt;SCRIPT&gt;&lt;/SCRIPT&gt; Bye`)
 
-		ret, err := sanitise.Stringlikes(&input)
+		err := sanitise.Stringlikes(&input)
 		assert.NoError(t, err)
-		assert.Equal(t, output, *ret)
+		assert.Equal(t, output, input)
 	})
 }
 
@@ -142,20 +142,20 @@ func TestSanitiseTurnedOff(t *testing.T) {
 	testStrXSS := strXSS2
 	sinst := s{I: 10, S: testStrXSS}
 	sinstEx := s{I: 10, S: testStrXSS}
-	ret, err := sanitise.Stringlikes(&sinst)
+	err := sanitise.Stringlikes(&sinst)
 	assert.NoError(t, err)
-	assert.Equal(t, sinstEx, *ret)
+	assert.Equal(t, sinstEx, sinst)
 }
 
 func TestImportantValuesNotSanitised(t *testing.T) {
-	input1 := "10d90855-cf4a-4396-8db7-caf41171766f"
-	output1 := "10d90855-cf4a-4396-8db7-caf41171766f"
-	ret1, err := sanitise.Stringlikes(&input1)
+	input := "10d90855-cf4a-4396-8db7-caf41171766f"
+	output := "10d90855-cf4a-4396-8db7-caf41171766f"
+	err := sanitise.Stringlikes(&input)
 	assert.NoError(t, err)
-	assert.Equal(t, output1, *ret1)
+	assert.Equal(t, output, input)
 }
 
 func TestNonSupportedTypes(t *testing.T) {
-	_, err := sanitise.Stringlikes(map[int]int{1: 2})
+	err := sanitise.Stringlikes(map[int]int{1: 2})
 	assert.ErrorIs(t, err, sanitise.ErrUnsupportedSanitisationType)
 }

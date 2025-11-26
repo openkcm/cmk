@@ -3,9 +3,12 @@ package manager
 import (
 	"context"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"regexp"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
@@ -244,11 +247,33 @@ func (m *KeyConfigManager) transformTenantDefaultCertificate(_ context.Context,
 		return nil, errs.Wrap(errParent, err)
 	}
 
+	subject := formatSubjectWithSlashSeparatedOUs(cert.Subject)
+
 	return &ClientCertificate{
 		Name:    DefaultCertName,
 		RootCA:  rootCertURL,
-		Subject: cert.Subject.String(),
+		Subject: subject,
 	}, nil
+}
+
+// formatSubjectWithSlashSeparatedOUs transforms the standard X.509 subject string
+// to combine multiple OUs with / separator instead of +
+func formatSubjectWithSlashSeparatedOUs(subject pkix.Name) string {
+	if len(subject.OrganizationalUnit) <= 1 {
+		return subject.String() // Use standard format if 0 or 1 OU
+	}
+
+	// Get standard format
+	standardSubject := subject.String()
+
+	// Replace OU=X+OU=Y+OU=Z with OU=X/Y/Z
+	combinedOU := "OU=" + strings.Join(subject.OrganizationalUnit, "/")
+
+	// Build regex to match multiple OU entries
+	ouPattern := `OU=[^,+]+((\+OU=[^,+]+)+)`
+	re := regexp.MustCompile(ouPattern)
+
+	return re.ReplaceAllString(standardSubject, combinedOU)
 }
 
 // getCryptoCertificates retrieves crypto certificates from config

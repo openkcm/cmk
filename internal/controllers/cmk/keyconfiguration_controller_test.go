@@ -544,11 +544,11 @@ func TestAPIController_GetCertificates(t *testing.T) {
 		expectedType        string
 	}{
 		{
-			name:                "Success - Default Certificate",
+			name:                "Success - Multiple OUs Certificate",
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject:     "CN=myCert,OU=EXAMPLE_OU,O=EXAMPLE_O,L=LOCAL/CMK,C=DE",
+			expectedSubject:     "CN=myCert,OU=EXAMPLE OU1/EXAMPLE OU2/EXAMPLE-OU3,O=EXAMPLE_O,L=LOCAL/CMK,C=DE",
 			expectedType:        "TENANT_DEFAULT",
 			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
 				t.Helper()
@@ -563,7 +563,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 					Subject: pkix.Name{
 						Country:            []string{"DE"},
 						Organization:       []string{"EXAMPLE_O"},
-						OrganizationalUnit: []string{"EXAMPLE_OU"},
+						OrganizationalUnit: []string{"EXAMPLE OU1", "EXAMPLE OU2", "EXAMPLE-OU3"},
 						Locality:           []string{"LOCAL/CMK"},
 						CommonName:         "myCert",
 					},
@@ -571,6 +571,77 @@ func TestAPIController_GetCertificates(t *testing.T) {
 
 				cert := testutils.NewCertificate(func(c *model.Certificate) {
 					c.CommonName = "myCert"
+					c.CertPEM = string(certPEM)
+					c.Purpose = model.CertificatePurposeTenantDefault
+				})
+
+				err = r.Create(ctx, cert)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:                "Success - Single OU Certificate",
+			expectedStatus:      http.StatusOK,
+			expectedRecordCount: 1,
+			expectedRootCA:      testutils.TestCertURL,
+			expectedSubject:     "CN=myCert,OU=EXAMPLE OU1,O=EXAMPLE_O,L=LOCAL/CMK,C=DE",
+			expectedType:        "TENANT_DEFAULT",
+			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
+				t.Helper()
+
+				r := sql.NewRepository(db)
+				privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
+				assert.NoError(t, err)
+
+				ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+				certPEM := testutils.CreateCertificatePEM(t, &x509.CertificateRequest{
+					Subject: pkix.Name{
+						Country:            []string{"DE"},
+						Organization:       []string{"EXAMPLE_O"},
+						OrganizationalUnit: []string{"EXAMPLE OU1"},
+						Locality:           []string{"LOCAL/CMK"},
+						CommonName:         "myCert",
+					},
+				}, privateKey)
+
+				cert := testutils.NewCertificate(func(c *model.Certificate) {
+					c.CommonName = "singleOuCert"
+					c.CertPEM = string(certPEM)
+					c.Purpose = model.CertificatePurposeTenantDefault
+				})
+
+				err = r.Create(ctx, cert)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:                "Success - No OU Certificate",
+			expectedStatus:      http.StatusOK,
+			expectedRecordCount: 1,
+			expectedRootCA:      testutils.TestCertURL,
+			expectedSubject:     "CN=myCert,O=EXAMPLE_O,L=LOCAL/CMK,C=DE",
+			expectedType:        "TENANT_DEFAULT",
+			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
+				t.Helper()
+
+				r := sql.NewRepository(db)
+				privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
+				assert.NoError(t, err)
+
+				ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+				certPEM := testutils.CreateCertificatePEM(t, &x509.CertificateRequest{
+					Subject: pkix.Name{
+						Country:      []string{"DE"},
+						Organization: []string{"EXAMPLE_O"},
+						Locality:     []string{"LOCAL/CMK"},
+						CommonName:   "myCert",
+					},
+				}, privateKey)
+
+				cert := testutils.NewCertificate(func(c *model.Certificate) {
+					c.CommonName = "noOuCert"
 					c.CertPEM = string(certPEM)
 					c.Purpose = model.CertificatePurposeTenantDefault
 				})

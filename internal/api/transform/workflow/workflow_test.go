@@ -180,7 +180,8 @@ func TestWorkflow_ApproverToAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			apiApprover := workflow.ApproverToAPI(tt.input)
+			apiApprover, err := workflow.ApproverToAPI(tt.input)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.input.UserID, apiApprover.Id)
 			assert.Equal(t, tt.input.UserName, *apiApprover.Name)
 			assert.Equal(t, tt.expected, apiApprover.Decision)

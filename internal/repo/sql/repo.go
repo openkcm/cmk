@@ -19,7 +19,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/violations"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 const (
@@ -178,11 +177,6 @@ func (r *ResourceRepository) List(
 		return 0, err
 	}
 
-	result, err = sanitise.Stringlikes(result)
-	if err != nil {
-		return 0, errs.Wrap(repo.ErrUpdateResource, err)
-	}
-
 	return int(count), nil
 }
 
@@ -263,11 +257,6 @@ func (r *ResourceRepository) First(
 	)
 	if err != nil {
 		return false, err
-	}
-
-	resource, err = sanitise.Stringlikes(resource)
-	if err != nil {
-		return false, errs.Wrap(repo.ErrUpdateResource, err)
 	}
 
 	return res.RowsAffected > 0, nil

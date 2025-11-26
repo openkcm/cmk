@@ -160,7 +160,10 @@ func (c *APIController) GetKeyImportParams(ctx context.Context,
 		return nil, err
 	}
 
-	importParamsAPI := importparams.ToAPI(*importParams)
+	importParamsAPI, err := importparams.ToAPI(*importParams)
+	if err != nil {
+		return nil, err
+	}
 
 	return cmkapi.GetKeyImportParams200JSONResponse(*importParamsAPI), nil
 }

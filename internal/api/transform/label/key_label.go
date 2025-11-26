@@ -12,6 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 const (
@@ -67,6 +68,11 @@ func FromAPI(keyUUID cmkapi.KeyIDPath, apiKeyLabel cmkapi.Label) (*model.KeyLabe
 }
 
 func ToAPI(modelKeyLabel *model.KeyLabel) (cmkapi.Label, error) {
+	err := sanitise.Stringlikes(modelKeyLabel)
+	if err != nil {
+		return cmkapi.Label{}, err
+	}
+
 	if modelKeyLabel == nil {
 		return cmkapi.Label{}, ErrInvalidLabelDBModel
 	}

@@ -29,18 +29,23 @@ var (
 // not as the root object (otherwise they are non-addressable).
 // This code could be improved by using copies throughout.
 
-func Stringlikes[T any](obj T) (T, error) {
+func Stringlikes[T any](obj T) error {
 	fieldValue := getDerefFieldValueFromObj(obj)
+	if !fieldValue.IsValid() {
+		// nil pointer
+		return nil
+	}
+
 	if fieldValue.Kind() == reflect.Map {
-		return obj, errs.Wrap(ErrSanitisation, ErrUnsupportedSanitisationType)
+		return errs.Wrap(ErrSanitisation, ErrUnsupportedSanitisationType)
 	}
 
 	err := sanitiseSwitch(fieldValue)
 	if err != nil {
-		return obj, errs.Wrap(ErrSanitisation, err)
+		return errs.Wrap(ErrSanitisation, err)
 	}
 
-	return obj, nil
+	return nil
 }
 
 func sanitiseSwitch(fieldValue reflect.Value) error {

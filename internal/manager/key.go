@@ -1046,6 +1046,11 @@ func (km *KeyManager) setPrimaryKey(ctx context.Context, key *model.Key) error {
 		return errs.Wrap(ErrUpdateKeyDB, err)
 	}
 
+	err = km.sendSystemSwitchEvents(ctx, key)
+	if err != nil {
+		return errs.Wrap(ErrFailedToReencryptSystem, err)
+	}
+
 	_, err = km.repo.Patch(
 		ctx,
 		&model.KeyConfiguration{ID: key.KeyConfigurationID, PrimaryKeyID: &key.ID},
@@ -1053,11 +1058,6 @@ func (km *KeyManager) setPrimaryKey(ctx context.Context, key *model.Key) error {
 	)
 	if err != nil {
 		return errs.Wrap(ErrUpdateKeyDB, err)
-	}
-
-	err = km.sendSystemSwitchEvents(ctx, key)
-	if err != nil {
-		return errs.Wrap(ErrFailedToReencryptSystem, err)
 	}
 
 	return nil

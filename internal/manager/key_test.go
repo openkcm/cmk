@@ -57,6 +57,7 @@ func (s *KeyManagerSuite) setup() {
 			&model.KeystoreConfiguration{},
 		},
 		CreateDatabase: true,
+		WithOrbital:    true,
 	})
 	s.db = db
 	s.tenant = tenants[0]
@@ -1034,13 +1035,17 @@ func (s *KeyManagerSuite) TestUpdateKeyPrimary() {
 		})
 		keyConfig.PrimaryKeyID = &oldPrimaryKey.ID
 
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		})
+
 		key := testutils.NewKey(func(k *model.Key) {
 			k.Name = uuid.NewString()
 			k.IsPrimary = false
 			k.KeyConfigurationID = keyConfig.ID
 		})
 
-		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, keyConfig, oldPrimaryKey, key)
+		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, keyConfig, oldPrimaryKey, key, sys)
 
 		k, err := s.km.UpdateKey(s.ctx, key.ID, cmkapi.KeyPatch{
 			IsPrimary: ptr.PointTo(true),
@@ -1057,6 +1062,52 @@ func (s *KeyManagerSuite) TestUpdateKeyPrimary() {
 		oldK1, err := s.km.Get(s.ctx, oldPrimaryKey.ID)
 		assert.NoError(t, err)
 		assert.False(t, oldK1.IsPrimary)
+	})
+
+	t.Run("Should use old pkey on switch event when updating ", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
+			k.Name = uuid.NewString()
+			k.IsPrimary = true
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		keyConfig.PrimaryKeyID = &oldPrimaryKey.ID
+
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		})
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.Name = uuid.NewString()
+			k.IsPrimary = false
+			k.KeyConfigurationID = keyConfig.ID
+		})
+
+		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, keyConfig, oldPrimaryKey, key, sys)
+
+		k, err := s.km.UpdateKey(s.ctx, key.ID, cmkapi.KeyPatch{
+			IsPrimary: ptr.PointTo(true),
+		})
+		assert.NoError(t, err)
+		assert.True(t, k.IsPrimary)
+
+		orbitalCtx := testutils.CreateCtxWithTenant("orbital")
+		jobFromDB := &testutils.OrbitalJob{}
+		_, err = s.repo.First(
+			orbitalCtx,
+			jobFromDB,
+			*repo.NewQuery().Where(
+				repo.NewCompositeKeyGroup(
+					repo.NewCompositeKey().Where("external_id", sys.ID.String()),
+				),
+			),
+		)
+		assert.NoError(t, err)
+
+		data := &eventprocessor.SystemActionJobData{}
+		err = json.Unmarshal(jobFromDB.Data, data)
+		assert.NoError(t, err)
+		assert.Equal(t, oldPrimaryKey.ID.String(), data.KeyIDFrom)
 	})
 
 	t.Run("Should error on set primary on disabled key", func(t *testing.T) {

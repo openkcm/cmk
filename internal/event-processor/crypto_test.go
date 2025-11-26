@@ -175,25 +175,6 @@ func TestJobCreation(t *testing.T) {
 	})
 }
 
-type orbitalJob struct {
-	ID           uuid.UUID
-	ExternalID   string
-	Data         []byte
-	Type         string
-	Status       string
-	ErrorMessage string
-	UpdatedAt    int64
-	CreatedAt    int64
-}
-
-func (orbitalJob) TableName() string {
-	return "jobs"
-}
-
-func (orbitalJob) IsSharedModel() bool {
-	return false
-}
-
 func TestJobConfirmation(t *testing.T) {
 	eventProcessor, r, tenant := setup(t)
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -233,7 +214,7 @@ func TestJobConfirmation(t *testing.T) {
 			assert.NoError(t, err)
 
 			orbitalCtx := cmkcontext.CreateTenantContext(ctx, "orbital")
-			jobFromDB := &orbitalJob{ID: job.ID}
+			jobFromDB := &testutils.OrbitalJob{ID: job.ID}
 			_, err = r.First(orbitalCtx, jobFromDB, *repo.NewQuery())
 			assert.NoError(t, err)
 

@@ -177,7 +177,12 @@ func (c *APIController) ListWorkflowApproversByWorkflowID(
 	values := make([]cmkapi.WorkflowApprover, len(approvers))
 
 	for i, approver := range approvers {
-		values[i] = wfTransform.ApproverToAPI(*approver)
+		value, err := wfTransform.ApproverToAPI(*approver)
+		if err != nil {
+			return nil, err
+		}
+
+		values[i] = value
 	}
 
 	response := cmkapi.ListWorkflowApproversByWorkflowID200JSONResponse{

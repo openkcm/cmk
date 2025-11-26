@@ -18,7 +18,10 @@ func (c *APIController) GetTenantKeystores(
 		return nil, errs.Wrap(apierrors.ErrGetDefaultKeystore, err)
 	}
 
-	apiDefaultKeystore := tenantconfigs.ToAPI(dbKeystore)
+	apiDefaultKeystore, err := tenantconfigs.ToAPI(dbKeystore)
+	if err != nil {
+		return nil, err
+	}
 
 	return cmkapi.GetTenantKeystores200JSONResponse(*apiDefaultKeystore), nil
 }

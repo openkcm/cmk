@@ -7,16 +7,22 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/utils/sanitise"
 )
 
-func ToAPI(group model.Group) *cmkapi.Group {
+func ToAPI(group model.Group) (*cmkapi.Group, error) {
+	err := sanitise.Stringlikes(&group)
+	if err != nil {
+		return nil, err
+	}
+
 	return &cmkapi.Group{
 		Name:          group.Name,
 		Role:          cmkapi.GroupRole(group.Role),
 		Description:   &group.Description,
 		Id:            &group.ID,
 		IamIdentifier: &group.IAMIdentifier,
-	}
+	}, nil
 }
 
 func FromAPI(apiGroup cmkapi.Group, tenantID string) *model.Group {

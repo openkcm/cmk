@@ -30,7 +30,8 @@ func TestToAPI(t *testing.T) {
 		},
 	}
 
-	res := tenantconfigs.ToAPI(keyStore)
+	res, err := tenantconfigs.ToAPI(keyStore)
 
+	assert.NoError(t, err)
 	assert.Equal(t, expected, *res)
 }

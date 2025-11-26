@@ -17,7 +17,8 @@ func TestToAPI(t *testing.T) {
 		HashFunction: "SHA-256",
 	}
 
-	api := importparams.ToAPI(p)
+	api, err := importparams.ToAPI(p)
+	assert.NoError(t, err)
 
 	assert.NotNil(t, api)
 	assert.Equal(t, "test-public-key", *api.PublicKey)
@@ -28,7 +29,8 @@ func TestToAPI(t *testing.T) {
 
 func TestToAPI_EmptyFields(t *testing.T) {
 	p := model.ImportParams{}
-	api := importparams.ToAPI(p)
+	api, err := importparams.ToAPI(p)
+	assert.NoError(t, err)
 
 	assert.NotNil(t, api)
 	assert.NotNil(t, api.PublicKey)

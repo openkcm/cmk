@@ -26,7 +26,12 @@ func (c *APIController) GetGroups(
 	}
 
 	values, err := transform.ToList(groups, func(group model.Group) (*cmkapi.Group, error) {
-		return tfGroup.ToAPI(group), nil
+		apiGroup, err := tfGroup.ToAPI(group)
+		if err != nil {
+			return nil, err
+		}
+
+		return apiGroup, nil
 	})
 
 	response := cmkapi.GroupList{
@@ -61,7 +66,10 @@ func (c *APIController) CreateGroup(
 		return nil, err
 	}
 
-	apiGroup := tfGroup.ToAPI(*group)
+	apiGroup, err := tfGroup.ToAPI(*group)
+	if err != nil {
+		return nil, err
+	}
 
 	return cmkapi.CreateGroup201JSONResponse(*apiGroup), nil
 }
@@ -87,7 +95,10 @@ func (c *APIController) GetGroupByID(
 		return nil, err
 	}
 
-	apiGroup := tfGroup.ToAPI(*group)
+	apiGroup, err := tfGroup.ToAPI(*group)
+	if err != nil {
+		return nil, err
+	}
 
 	return cmkapi.GetGroupByID200JSONResponse(*apiGroup), nil
 }
@@ -101,7 +112,10 @@ func (c *APIController) UpdateGroup(
 		return nil, err
 	}
 
-	apiGroup := tfGroup.ToAPI(*group)
+	apiGroup, err := tfGroup.ToAPI(*group)
+	if err != nil {
+		return nil, err
+	}
 
 	return cmkapi.UpdateGroup200JSONResponse(*apiGroup), nil
 }
