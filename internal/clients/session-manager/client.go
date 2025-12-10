@@ -1,6 +1,7 @@
 package sessionmanager
 
 import (
+	"io"
 	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
@@ -13,28 +14,34 @@ const (
 	DefaultThrottleInterval = 5 * time.Second
 )
 
-type Client struct {
+type Service interface {
+	io.Closer
+
+	OIDCMapping() oidcmappinggrpc.ServiceClient
+}
+
+type service struct {
 	oidc oidcmappinggrpc.ServiceClient
 
 	conn *commongrpc.DynamicClientConn
 }
 
-func NewClient(cfg *commoncfg.GRPCClient) (*Client, error) {
+func NewService(cfg *commoncfg.GRPCClient) (Service, error) {
 	conn, err := commongrpc.NewDynamicClientConn(cfg, DefaultThrottleInterval)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Client{
+	return &service{
 		oidc: oidcmappinggrpc.NewServiceClient(conn),
 		conn: conn,
 	}, nil
 }
 
-func (c *Client) OIDCMapping() oidcmappinggrpc.ServiceClient {
+func (c *service) OIDCMapping() oidcmappinggrpc.ServiceClient {
 	return c.oidc
 }
 
-func (c *Client) Close() error {
+func (c *service) Close() error {
 	return c.conn.Close()
 }

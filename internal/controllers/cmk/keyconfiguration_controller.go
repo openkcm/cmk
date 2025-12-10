@@ -3,14 +3,15 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/clientcertificates"
-	"github.com/openkcm/cmk/internal/api/transform/keyconfiguration"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform/clientcertificates"
+	"github.tools.sap/kms/cmk/internal/api/transform/keyconfiguration"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/manager"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 // GetKeyConfigurations returns the key configurations
@@ -62,6 +63,14 @@ func (c *APIController) PostKeyConfigurations(
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationFromAPI, err)
 	}
 
+	clientData, err := cmkcontext.ExtractClientData(ctx)
+	if err != nil {
+		return nil, errs.Wrap(err, apierrors.ErrClientDataInvalid)
+	}
+
+	keyConfig.CreatorID = clientData.Identifier
+	keyConfig.CreatorName = clientData.Email
+
 	keyConfig, err = c.Manager.KeyConfig.PostKeyConfigurations(ctx, keyConfig)
 	if err != nil {
 		return nil, err
@@ -80,10 +89,6 @@ func (c *APIController) DeleteKeyConfigurationByID(
 	ctx context.Context,
 	request cmkapi.DeleteKeyConfigurationByIDRequestObject,
 ) (cmkapi.DeleteKeyConfigurationByIDResponseObject, error) {
-	if c.Manager.Workflow.IsWorkflowEnabled(ctx) {
-		return nil, apierrors.ErrActionRequireWorkflow
-	}
-
 	err := c.Manager.KeyConfig.DeleteKeyConfigurationByID(ctx, request.KeyConfigurationID)
 	if err != nil {
 		return nil, err
@@ -117,7 +122,7 @@ func (c *APIController) UpdateKeyConfigurationByID(
 ) (cmkapi.UpdateKeyConfigurationByIDResponseObject, error) {
 	keyConfig, err := c.Manager.KeyConfig.UpdateKeyConfigurationByID(ctx, request.KeyConfigurationID, *request.Body)
 	if err != nil {
-		return nil, errs.Wrap(manager.ErrUpdateKeyConfiguration, err)
+		return nil, err
 	}
 
 	response, err := keyconfiguration.ToAPI(*keyConfig)

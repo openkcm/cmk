@@ -10,10 +10,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/write"
-	"github.com/openkcm/cmk/internal/handlers"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/write"
+	"github.tools.sap/kms/cmk/internal/handlers"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 var (

@@ -9,10 +9,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 var itemID = uuid.New()

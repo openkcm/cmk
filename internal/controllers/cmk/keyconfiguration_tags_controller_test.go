@@ -11,12 +11,12 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 // startAPIKeyConfigTags starts the API server and returns a DB connection and a mux for testing

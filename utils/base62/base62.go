@@ -6,7 +6,7 @@ import (
 
 	"github.com/jxskiss/base62"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 const (

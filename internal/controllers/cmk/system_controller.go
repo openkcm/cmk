@@ -3,14 +3,16 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/system"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/utils/odata"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform/system"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/utils/odata"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
+
+const maxStrLength = 50
 
 var getSystemsSchema odata.FilterSchema = odata.FilterSchema{
 	Entries: []odata.FilterSchemaEntry{
@@ -20,16 +22,25 @@ var getSystemsSchema odata.FilterSchema = odata.FilterSchema{
 			DBName:     repo.KeyConfigIDField,
 		},
 		{
-			FilterName:    "region",
-			FilterType:    odata.String,
-			DBName:        repo.RegionField,
-			ValueModifier: odata.ToUpper,
+			FilterName:     "region",
+			FilterType:     odata.String,
+			DBName:         repo.RegionField,
+			ValueModifier:  odata.ToUpper,
+			ValueValidator: odata.MaxLengthValidator(maxStrLength),
 		},
 		{
-			FilterName:    "type",
-			FilterType:    odata.String,
-			DBName:        repo.TypeField,
-			ValueModifier: odata.ToUpper,
+			FilterName:     "type",
+			FilterType:     odata.String,
+			DBName:         repo.TypeField,
+			ValueModifier:  odata.ToUpper,
+			ValueValidator: odata.MaxLengthValidator(maxStrLength),
+		},
+		{
+			FilterName:     "status",
+			FilterType:     odata.String,
+			DBName:         repo.StatusField,
+			ValueModifier:  odata.ToUpper,
+			ValueValidator: odata.MaxLengthValidator(maxStrLength),
 		},
 	},
 }
@@ -122,6 +133,18 @@ func (c *APIController) PatchSystemLinkByID(
 	}
 
 	return cmkapi.PatchSystemLinkByID200JSONResponse(*systemResponse), nil
+}
+
+func (c *APIController) CancelSystemAction(
+	ctx context.Context,
+	request cmkapi.CancelSystemActionRequestObject,
+) (cmkapi.CancelSystemActionResponseObject, error) {
+	err := c.Manager.System.CancelSystemAction(ctx, request.SystemID)
+	if err != nil {
+		return nil, err
+	}
+
+	return cmkapi.CancelSystemAction200JSONResponse{}, nil
 }
 
 // DeleteSystemLinkByID deletes a system link by its ID.

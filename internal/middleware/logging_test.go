@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/middleware"
+	"github.tools.sap/kms/cmk/internal/middleware"
 )
 
 // TestLoggingMiddleware tests the logging middleware

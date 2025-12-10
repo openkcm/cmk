@@ -83,3 +83,11 @@ var NonTerminalStates = []string{
 	StateWaitConfirmation.String(),
 	StateExecuting.String(),
 }
+
+var TerminalStates = []string{
+	StateRevoked.String(),
+	StateRejected.String(),
+	StateExpired.String(),
+	StateSuccessful.String(),
+	StateFailed.String(),
+}

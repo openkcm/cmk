@@ -7,7 +7,7 @@ import (
 	"github.com/samber/oops"
 	"gopkg.in/yaml.v3"
 
-	"github.com/openkcm/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/constants"
 )
 
 //nolint:mnd

@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk/internal/manager"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/manager"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 // NewCreateGroupsCmd creates a Cobra command that creates tenant groups

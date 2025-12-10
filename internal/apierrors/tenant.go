@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
 )
 
 var (

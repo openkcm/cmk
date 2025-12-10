@@ -6,11 +6,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/workflow"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	sqlRepo "github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/workflow"
 )
 
 var (
@@ -40,7 +40,7 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 	tests := []struct {
 		name          string
 		workflow      model.Workflow
-		actorID       uuid.UUID
+		actorID       string
 		transition    workflow.Transition
 		expectErr     bool
 		errMessage    string
@@ -86,8 +86,8 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mgr, db, tenant := SetupWorkflowManager(t)
 			r := sqlRepo.NewRepository(db)
-
 			ctx := testutils.CreateCtxWithTenant(tenant)
+
 			// Prepare
 			err := r.Create(ctx, &tt.workflow)
 			assert.NoError(t, err)
@@ -97,27 +97,31 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 				k.KeyConfigurationID = keyConfigID04
 			})
 
-			testutils.CreateTestEntities(ctx, t, r, key3)
-
 			key4 := testutils.NewKey(func(k *model.Key) {
 				k.ID = keyID04
 				k.KeyConfigurationID = keyConfigID04
 			})
-			testutils.CreateTestEntities(ctx, t, r, key4)
 
 			keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 				c.ID = keyConfigID04
 				c.PrimaryKeyID = &key4.ID
 			})
 
-			testutils.CreateTestEntities(ctx, t, r, keyConfig)
-
 			keyConfig3 := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 				c.ID = keyConfigID03
 				c.PrimaryKeyID = &key3.ID
 			})
 
-			testutils.CreateTestEntities(ctx, t, r, keyConfig3)
+			ctx = testutils.InjectClientDataIntoContext(
+				ctx,
+				uuid.NewString(),
+				[]string{
+					keyConfig3.AdminGroup.IAMIdentifier,
+					keyConfig.AdminGroup.IAMIdentifier,
+				},
+			)
+
+			testutils.CreateTestEntities(ctx, t, r, key3, key4, keyConfig, keyConfig3)
 
 			system := &model.System{ID: systemID01, KeyConfigurationID: &keyConfigID04}
 			err = r.Create(ctx, system)

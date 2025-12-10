@@ -8,11 +8,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/key/hyokkey"
-	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/hyokkey"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/transformer"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 var (

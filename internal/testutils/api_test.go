@@ -1,14 +1,14 @@
 package testutils_test
 
 import (
-	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/daemon"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 // TestStartAPIServerReturnsServeMux tests if StartAPIServer returns a ServeMux
@@ -18,7 +18,7 @@ func TestStartAPIServerReturnsServeMux(t *testing.T) {
 		Plugins: []testutils.MockPlugin{},
 	})
 	assert.NotNil(t, server)
-	assert.IsType(t, &http.ServeMux{}, server)
+	assert.IsType(t, &daemon.ServeMux{}, server)
 }
 
 func TestGetTestURL(t *testing.T) {

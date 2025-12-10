@@ -3,14 +3,14 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/api/transform/tenant"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform"
+	"github.tools.sap/kms/cmk/internal/api/transform/tenant"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 func (c *APIController) GetTenants(

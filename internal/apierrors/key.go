@@ -6,14 +6,14 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/api/transform/key/hyokkey"
-	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/hyokkey"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/keyshared"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/transformer"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/repo"
 )
 
 var (
@@ -28,6 +28,7 @@ var (
 	ErrTransformKeyFromAPI                  = errors.New("failed to transform key from API")
 	ErrSetPrimaryKey                        = errors.New("failed to set primary key")
 	ErrDefaultKeystoreNotFound              = errors.New("default keystore not found")
+	ErrClientDataInvalid                    = errors.New("client data invalid")
 )
 
 var key = []APIErrors{
@@ -367,6 +368,14 @@ var key = []APIErrors{
 			Code:    "KEYSTORE_POOL_DRAINED",
 			Message: "All keystores in the pool are unavailable",
 			Status:  http.StatusServiceUnavailable,
+		},
+	},
+	{
+		Errors: []error{ErrClientDataInvalid},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "INVALID_CLIENT_DATA",
+			Message: "The client data is invalid",
+			Status:  http.StatusBadRequest,
 		},
 	},
 }

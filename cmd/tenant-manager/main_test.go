@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	tenantmanager "github.com/openkcm/cmk/cmd/tenant-manager"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/testutils"
+	tenantmanager "github.tools.sap/kms/cmk/cmd/tenant-manager"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 var ErrTest = errors.New("test error")

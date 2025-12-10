@@ -10,16 +10,15 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/operator"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/operator"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 const (
@@ -29,7 +28,8 @@ const (
 )
 
 func SetupProbeTest(t *testing.T) (*manager.GroupManager, *manager.TenantManager,
-	*multitenancy.DB, repo.Repo) {
+	*multitenancy.DB, repo.Repo,
+) {
 	t.Helper()
 
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
@@ -39,13 +39,11 @@ func SetupProbeTest(t *testing.T) (*manager.GroupManager, *manager.TenantManager
 
 	dbRepository := sql.NewRepository(db)
 
-	ctlg, err := catalog.New(t.Context(), config.Config{
+	cfg := &config.Config{
 		Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
-	})
-	assert.NoError(t, err, "Failed to create catalog")
+	}
 
-	gm := manager.NewGroupManager(dbRepository, ctlg)
-	tm := manager.NewTenantManager(dbRepository)
+	tm, gm := createManagers(t, db, cfg)
 
 	return gm, tm, db, dbRepository
 }

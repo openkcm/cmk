@@ -3,7 +3,7 @@ package integrationutils
 import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 
-	"github.com/openkcm/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/config"
 )
 
 var DB = config.Database{

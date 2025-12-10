@@ -8,8 +8,8 @@ import (
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	v1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/clients/registry/systems"
+	"github.tools.sap/kms/cmk/internal/model"
 )
 
 func Test_MapRegistrySystemsToCmkSystems(t *testing.T) {

@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	apiServer "github.com/openkcm/cmk/cmd/api-server"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/testutils"
+	apiServer "github.tools.sap/kms/cmk/cmd/api-server"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 func buildCfg(t *testing.T) *config.Config {
@@ -229,7 +229,7 @@ func TestMonitorKeystorePoolSize(t *testing.T) {
 
 	// Run in goroutine, should exit after context timeout
 	go func() {
-		apiServer.MonitorKeystorePoolSize(ctx, cfg)
+		apiServer.MonitorKeystorePoolSize(ctx, &cfg)
 	}()
 
 	<-ctx.Done()

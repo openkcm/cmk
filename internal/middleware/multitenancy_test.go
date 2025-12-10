@@ -10,7 +10,7 @@ import (
 
 	multitenancyMiddleware "github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
 
-	"github.com/openkcm/cmk/internal/middleware"
+	"github.tools.sap/kms/cmk/internal/middleware"
 )
 
 func TestMultiTenancyMiddleware(t *testing.T) {

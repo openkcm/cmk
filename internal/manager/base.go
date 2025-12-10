@@ -5,12 +5,12 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/config"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/async"
+	"github.tools.sap/kms/cmk/internal/auditor"
+	"github.tools.sap/kms/cmk/internal/clients"
+	"github.tools.sap/kms/cmk/internal/config"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	"github.tools.sap/kms/cmk/internal/repo"
 )
 
 type Manager struct {
@@ -25,7 +25,6 @@ type Manager struct {
 	Workflow             Workflow
 	Certificates         *CertificateManager
 	Group                *GroupManager
-	Authz                *AuthzManager
 
 	Tenant Tenant
 
@@ -38,7 +37,7 @@ func New(
 	ctx context.Context,
 	repo repo.Repo,
 	config *config.Config,
-	clientsFactory *clients.Factory,
+	clientsFactory clients.Factory,
 	catalog *plugincatalog.Catalog,
 	reconciler *eventprocessor.CryptoReconciler,
 	asyncClient async.Client,
@@ -46,10 +45,9 @@ func New(
 	cmkAuditor := auditor.New(ctx, config)
 	tenantConfigManager := NewTenantConfigManager(repo, catalog)
 	certManager := NewCertificateManager(ctx, repo, catalog, &config.Certificates)
-	keyConfigManager := NewKeyConfigManager(repo, certManager, config)
+	keyConfigManager := NewKeyConfigManager(repo, certManager, cmkAuditor, config)
 	keyManager := NewKeyManager(repo, catalog, tenantConfigManager, keyConfigManager, certManager, reconciler, cmkAuditor)
-	systemManager := NewSystemManager(ctx, repo, clientsFactory, reconciler, catalog, cmkAuditor, config)
-	authzManager := NewAuthzManager(ctx, repo)
+	systemManager := NewSystemManager(ctx, repo, clientsFactory, reconciler, catalog, config, keyConfigManager)
 	groupManager := NewGroupManager(repo, catalog)
 
 	return &Manager{
@@ -64,9 +62,8 @@ func New(
 			asyncClient, tenantConfigManager),
 		Certificates: certManager,
 		Group:        groupManager,
-		Authz:        authzManager,
 
-		Tenant: NewTenantManager(repo),
+		Tenant: NewTenantManager(repo, systemManager, keyManager, cmkAuditor),
 
 		Catalog:    catalog,
 		Reconciler: reconciler,

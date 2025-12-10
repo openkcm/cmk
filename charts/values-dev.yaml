@@ -10,6 +10,8 @@ apiServer:
   # Enable the API-server deployment.
   deploy: true
 
+  topologySpreadConstraints: []
+
 tenantManager:
   image:
     command: "/bin/tenant-manager"
@@ -30,6 +32,8 @@ tenantManager:
         targetPort: http
         name: http
 
+  topologySpreadConstraints: []
+
 tenantManagerCLI:
   image:
     # We don't use /bin/tenant-manager-cli
@@ -45,6 +49,8 @@ tenantManagerCLI:
   service:
     enabled: true
 
+  topologySpreadConstraints: []
+
 taskScheduler:
   image:
     command: "/bin/task-scheduler"
@@ -53,6 +59,8 @@ taskScheduler:
   # Enable the task-scheduler deployment
   deploy: true
 
+  topologySpreadConstraints: []
+
 taskWorker:
   image:
     command: "/bin/task-worker"
@@ -60,6 +68,8 @@ taskWorker:
 
   # Enable the task-worker deployment
   deploy: true
+
+  topologySpreadConstraints: []
 
 # Override the "name" value, which is used to annotate some of
 # the resources that are created by this Chart (using "app.kubernetes.io/name").
@@ -83,7 +93,7 @@ replicaCount: 1
 image:
   # The container registry to pull the image from.
   # For example:
-  #   registry: kms.common.repositories.cloud.sap
+  #   registry: kms.common.repositories.cloud.example.com
   #   repository: cmk
   # +docs:property
   registry: ""
@@ -214,7 +224,7 @@ readinessProbe:
     path: /probe/readiness
     port: http-status
     scheme: HTTP
-  failureThreshold: 1
+  failureThreshold: 60
   periodSeconds: 10
 
 # This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
@@ -243,66 +253,20 @@ extraContainers: []
 
 # Additional volumes on the output Deployment definition.
 extraVolumes:
-  - name: cert-issuer-plugins
-    projected:
-      sources:
-        - secret:
-            name: cert-issuer-uaa
-        - secret:
-            name: cert-issuer-service
-  - name: keystore-provider
-    projected:
-      sources:
-        - secret:
-            name: keystore-provider-hyperscaler
-        - secret:
-            name: keystore-provider-cert-service
-        - secret:
-            name: keystore-provider-iam
-        - secret:
-            name: keystore-provider-regions
-  - name: cld-plugins
-    secret:
-      secretName: cld-uaa
-  - name: uli-plugins
-    secret:
-      secretName: uli-keypair
   - name: event-processor
     secret:
       secretName: event-processor-credentials
   - name: identity-management
     secret:
       secretName: scim
-  - name: notification-plugins
-    projected:
-      sources:
-        - secret:
-            name: notification-endpoints
-        - secret:
-            name: notification-uaa
   - name: signing-keys
     secret:
       secretName: signing-keys
 
 # Additional volumeMounts on the output Deployment definition.
 extraVolumeMounts:
-  - name: keystore-provider
-    mountPath: "/etc/credentials/keystore-plugins/management"
-    readOnly: true
-  - name: cert-issuer-plugins
-    mountPath: "/etc/credentials/cert-issuer-plugins"
-    readOnly: true
-  - name: cld-plugins
-    mountPath: "/etc/credentials/sis-plugins/cld"
-    readOnly: true
-  - name: uli-plugins
-    mountPath: "/etc/credentials/sis-plugins/uli"
-    readOnly: true
   - name: event-processor
     mountPath: "/etc/event-processor"
-    readOnly: true
-  - name: notification-plugins
-    mountPath: "/etc/credentials/notification-plugins"
     readOnly: true
   - name: signing-keys
     mountPath: "/etc/signing-keys"
@@ -588,6 +552,7 @@ config:
       value: secret
     name: cmk
     port: 5432
+    migratorPoolSize: 8
 
   tenantManager:
     amqp:
@@ -620,6 +585,9 @@ config:
       - cronspec: "@every 24h"
         taskType: cert:rotate
         retries: 3
+      - cronspec: "@every 24h"
+        taskType: workflow:cleanup
+        retries: 3
       - cronspec: "@every 1h"
         taskType: key:sync
         retries: 3
@@ -641,89 +609,6 @@ config:
         type: insecure
 
   plugins:
-    - name: AWS
-      path: ./bin/awskeyop
-      type: KeystoreInstanceKeyOperation
-      logLevel: debug
-      tags: ["hyok", "default_keystore"]
-    - name: FORTANIX
-      path: ./bin/fortanixkeyop
-      type: KeystoreInstanceKeyOperation
-      logLevel: debug
-      tags: ["hyok"]
-    - name: AWS
-      path: ./bin/awskeymang
-      logLevel: debug
-      type: KeystoreProvider
-      tags: ["keystore_provider"]
-      yamlConfiguration: |
-        hyperscaler:
-          source: file
-          file:
-            path: /etc/credentials/keystore-plugins/management/hyperscaler.json
-            format: binary
-        certificateservice:
-          source: file
-          file:
-            path: /etc/credentials/keystore-plugins/management/certificate-service.json
-            format: binary
-        iamserviceuser:
-          source: file
-          file:
-            path: /etc/credentials/keystore-plugins/management/iam-service-user.json
-            format: binary
-        supportedregions:
-          source: file
-          file:
-            path: /etc/credentials/keystore-plugins/management/supported-regions.json
-            format: binary
-    - name: SYSINFO
-      path: ./bin/cld
-      type: SystemInformationService
-      logLevel: debug
-      tags: ["cld"]
-      yamlConfiguration: |
-        cldisEndpoint:
-          source: embedded
-          value: https://vlab.cld.landscape.int.sap
-        uaa:
-          source: file
-          file:
-            path: /etc/credentials/sis-plugins/cld/uaa.json
-            format: binary
-    - name: SYSINFO
-      path: ./bin/uli
-      type: SystemInformationService
-      logLevel: debug
-      tags: ["uli"]
-      yamlConfiguration: |
-        uliEndpoint: https://ums.ums-stage.shoot.canary.k8s-hana.ondemand.com/graphql
-        certificate:
-          source: file
-          file:
-            path: /etc/credentials/sis-plugins/uli/cert.pem
-            format: binary
-        key:
-          source: file
-          file:
-            path: /etc/credentials/sis-plugins/uli/key.pem
-            format: binary
-    - name: CERT_ISSUER
-      path: ./bin/cert-issuer
-      type: CertificateIssuerService
-      logLevel: debug
-      tags: ["cert_issuer"]
-      yamlConfiguration: |
-        certificateservice:
-          source: file
-          file:
-            path: /etc/credentials/cert-issuer-plugins/service.json
-            format: binary
-        uaa:
-          source: file
-          file:
-            path: /etc/credentials/cert-issuer-plugins/uaa.json
-            format: binary
     - name: IDENTITY_MANAGEMENT
       path: ./bin/scim
       type: IdentityManagementService
@@ -790,31 +675,8 @@ config:
             headerFields:
               x-app_tid: app_tid
               x-client_id: client_id
-    - name: NOTIFICATION
-      path: ./bin/notification
-      type: NotificationService
-      logLevel: debug
-      tags: ["notification"]
-      yamlConfiguration: |
-        endpoints:
-          source: file
-          file:
-            path: /etc/credentials/notification-plugins/endpoints.json
-            format: binary
-        uaa:
-          source: file
-          file:
-            path: /etc/credentials/notification-plugins/uaa.json
-            format: binary
   activePlugins:
-    - hyok
-    - default_keystore
-    - uli
-    - cert_issuer
-    - keystore_provider
     - identity_management
-    - notification
-
   provisioning:
     initKeystoreConfig:
       enabled: true

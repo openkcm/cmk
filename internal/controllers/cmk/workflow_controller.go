@@ -4,22 +4,29 @@ import (
 	"context"
 	"slices"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	wfTransform "github.com/openkcm/cmk/internal/api/transform/workflow"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/repo"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
-	"github.com/openkcm/cmk/utils/odata"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	wfTransform "github.tools.sap/kms/cmk/internal/api/transform/workflow"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/repo"
+	wfMechanism "github.tools.sap/kms/cmk/internal/workflow"
+	"github.tools.sap/kms/cmk/utils/odata"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 func (c *APIController) CheckWorkflow(
 	ctx context.Context,
 	request cmkapi.CheckWorkflowRequestObject,
 ) (cmkapi.CheckWorkflowResponseObject, error) {
-	workflow, err := wfTransform.FromAPI(*request.Body, request.Params.UserID)
+	workflowConfig, err := c.Manager.Workflow.WorkflowConfig(ctx)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
+	}
+
+	workflow, err := wfTransform.FromAPI(ctx, *request.Body,
+		workflowConfig.DefaultExpiryPeriodDays, workflowConfig.MaxExpiryPeriodDays)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
 	}
@@ -37,12 +44,12 @@ func (c *APIController) CheckWorkflow(
 	return response, nil
 }
 
-var getWorkflowsSchema odata.FilterSchema = odata.FilterSchema{
+var getWorkflowsSchema = odata.FilterSchema{
 	Entries: []odata.FilterSchemaEntry{
 		{
 			FilterName: "userID",
-			FilterType: odata.UUID,
-			DBName:     repo.InitiatorIDField,
+			FilterType: odata.String,
+			DBName:     repo.UserIDField,
 			DBQuery:    odata.NoQuery, // Manager handles this case
 		},
 		{
@@ -80,23 +87,29 @@ var getWorkflowsSchema odata.FilterSchema = odata.FilterSchema{
 			},
 			ValueModifier: odata.ToUpper,
 		},
-	}}
+	},
+}
 
 // GetWorkflows returns a list of workflows
 func (c *APIController) GetWorkflows(
 	ctx context.Context,
 	request cmkapi.GetWorkflowsRequestObject,
 ) (cmkapi.GetWorkflowsResponseObject, error) {
-	queryMapper := odata.NewQueryOdataMapper(getWorkflowsSchema)
+	odataQueryMapper := odata.NewQueryOdataMapper(getWorkflowsSchema)
 
-	err := queryMapper.ParseFilter(request.Params.Filter)
+	err := odataQueryMapper.ParseFilter(request.Params.Filter)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
 	}
 
-	queryMapper.SetPaging(request.Params.Skip, request.Params.Top)
+	odataQueryMapper.SetPaging(request.Params.Skip, request.Params.Top)
 
-	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, queryMapper)
+	workflowQueryMapper, err := manager.NewWorkflowFilterFromOData(*odataQueryMapper)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
+	}
+
+	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, workflowQueryMapper)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetWorkflow, err)
 	}
@@ -126,7 +139,13 @@ func (c *APIController) GetWorkflows(
 func (c *APIController) CreateWorkflow(ctx context.Context,
 	request cmkapi.CreateWorkflowRequestObject,
 ) (cmkapi.CreateWorkflowResponseObject, error) {
-	workflow, err := wfTransform.FromAPI(*request.Body, request.Params.UserID)
+	workflowConfig, err := c.Manager.Workflow.WorkflowConfig(ctx)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
+	}
+
+	workflow, err := wfTransform.FromAPI(ctx, *request.Body,
+		workflowConfig.DefaultExpiryPeriodDays, workflowConfig.MaxExpiryPeriodDays)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
 	}
@@ -206,7 +225,7 @@ func (c *APIController) TransitionWorkflow(
 
 	transition := wfMechanism.Transition(transitionBody.Transition)
 
-	workflow, err := c.Manager.Workflow.TransitionWorkflow(ctx, request.Params.UserID, request.WorkflowID, transition)
+	workflow, err := c.Manager.Workflow.TransitionWorkflow(ctx, request.WorkflowID, transition)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrWorkflowCannotTransition, err)
 	}

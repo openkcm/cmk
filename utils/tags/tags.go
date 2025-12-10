@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 var ErrBadRepoTag = errors.New("unrecognised repo tag")

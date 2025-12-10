@@ -8,9 +8,9 @@ import (
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 func TestExtractTenantID(t *testing.T) {

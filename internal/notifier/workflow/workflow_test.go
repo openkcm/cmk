@@ -8,11 +8,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/notifier/client"
-	"github.com/openkcm/cmk/internal/notifier/workflow"
-	wf "github.com/openkcm/cmk/internal/workflow"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/notifier/client"
+	"github.tools.sap/kms/cmk/internal/notifier/workflow"
+	wf "github.tools.sap/kms/cmk/internal/workflow"
 )
 
 const (

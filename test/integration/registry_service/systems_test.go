@@ -13,8 +13,8 @@ import (
 
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/clients/registry/systems"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 const (

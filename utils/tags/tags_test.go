@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/utils/tags"
+	"github.tools.sap/kms/cmk/utils/tags"
 )
 
 func TestGet(t *testing.T) {

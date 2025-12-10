@@ -17,7 +17,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	cryptoUtils "github.com/openkcm/cmk/utils/crypto"
+	cryptoUtils "github.tools.sap/kms/cmk/utils/crypto"
 )
 
 var (

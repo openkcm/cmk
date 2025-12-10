@@ -19,16 +19,18 @@ import (
 	commonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
-	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/transformer"
+	"github.tools.sap/kms/cmk/internal/auditor"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	"github.tools.sap/kms/cmk/internal/event-processor/proto"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 // BYOKAction constants represent the actions that can be performed on a BYOK key
@@ -405,6 +407,29 @@ func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 			if err != nil {
 				continue
 			}
+		}
+
+		return nil
+	})
+}
+
+func (km *KeyManager) Detatch(ctx context.Context, key *model.Key) error {
+	return km.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+		key.State = string(cmkapi.KeyStateDETATCHED)
+
+		_, err := r.Patch(ctx, key, *repo.NewQuery())
+		if err != nil {
+			return err
+		}
+
+		err = km.sendDetatchEvent(ctx, key)
+		if err != nil {
+			return err
+		}
+
+		err = km.cmkAuditor.SendCmkDetachAuditLog(ctx, key.ID.String())
+		if err != nil {
+			log.Error(ctx, "Failed to send detatch log for CMK key", err)
 		}
 
 		return nil
@@ -1023,8 +1048,12 @@ func (km *KeyManager) sendSystemSwitchEvents(ctx context.Context, key *model.Key
 		query,
 		repo.DefaultLimit,
 		func(systems []*model.System) error {
+			// Create ctx with system user for the switch events
+			// created as a side effect of changing the key
+			eventCtx := cmkcontext.InjectSystemUser(ctx)
+
 			for _, s := range systems {
-				_, err := km.reconciler.SystemSwitch(ctx, s, key.ID.String(), keyConfig.PrimaryKeyID.String())
+				_, err := km.reconciler.SystemSwitch(eventCtx, s, key.ID.String(), keyConfig.PrimaryKeyID.String())
 				if err != nil {
 					return err
 				}
@@ -1167,47 +1196,48 @@ func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keys
 }
 
 func (km *KeyManager) sendEnableEvent(ctx context.Context, key *model.Key) error {
-	if km.reconciler == nil {
-		return errs.Wrapf(ErrEventSendingFailed, "reconciler is not initialized")
-	}
+	return km.reconciler.SendEvent(ctx, eventprocessor.Event{
+		Name: proto.TaskType_KEY_ENABLE.String(),
+		Event: func(ctx context.Context) (orbital.Job, error) {
+			job, err := km.reconciler.KeyEnable(ctx, key.ID.String())
+			if errors.Is(err, orbital.ErrJobAlreadyExists) {
+				log.Info(ctx, "Key enable event already exists", slog.String("JobID", job.ID.String()))
+				return job, nil
+			}
 
-	job, err := km.reconciler.KeyEnable(ctx, key.ID.String())
-	if err != nil {
-		if errors.Is(err, orbital.ErrJobAlreadyExists) {
-			log.Info(ctx, "Key enable event already exists", slog.String("JobID", job.ID.String()))
-			return nil
-		}
-
-		log.Error(ctx, "Failed to send key enable event", err)
-
-		return errs.Wrap(ErrEventSendingFailed, err)
-	}
-
-	log.Info(ctx, "Key enable event sent", slog.String("JobID", job.ID.String()))
-
-	return nil
+			return job, err
+		},
+	})
 }
 
 func (km *KeyManager) sendDisableEvent(ctx context.Context, key *model.Key) error {
-	if km.reconciler == nil {
-		return errs.Wrapf(ErrEventSendingFailed, "reconciler is not initialized")
-	}
+	return km.reconciler.SendEvent(ctx, eventprocessor.Event{
+		Name: proto.TaskType_KEY_DISABLE.String(),
+		Event: func(ctx context.Context) (orbital.Job, error) {
+			job, err := km.reconciler.KeyDisable(ctx, key.ID.String())
+			if errors.Is(err, orbital.ErrJobAlreadyExists) {
+				log.Info(ctx, "Key disable event already exists", slog.String("JobID", job.ID.String()))
+				return job, nil
+			}
 
-	job, err := km.reconciler.KeyDisable(ctx, key.ID.String())
-	if err != nil {
-		if errors.Is(err, orbital.ErrJobAlreadyExists) {
-			log.Info(ctx, "Key enable event already exists", slog.String("JobID", job.ID.String()))
-			return nil
-		}
+			return job, err
+		},
+	})
+}
 
-		log.Error(ctx, "Failed to send key disable event", err)
+func (km *KeyManager) sendDetatchEvent(ctx context.Context, key *model.Key) error {
+	return km.reconciler.SendEvent(ctx, eventprocessor.Event{
+		Name: proto.TaskType_KEY_DETACH.String(),
+		Event: func(ctx context.Context) (orbital.Job, error) {
+			job, err := km.reconciler.KeyDetach(ctx, key.ID.String())
+			if errors.Is(err, orbital.ErrJobAlreadyExists) {
+				log.Info(ctx, "Key detatch event already exists", slog.String("JobID", job.ID.String()))
+				return job, nil
+			}
 
-		return errs.Wrap(ErrEventSendingFailed, err)
-	}
-
-	log.Info(ctx, "Key disable event sent", slog.String("JobID", job.ID.String()))
-
-	return nil
+			return job, err
+		},
+	})
 }
 
 func (km *KeyManager) getKeyStateOnSyncError(ctx context.Context, key *model.Key, err error) string {

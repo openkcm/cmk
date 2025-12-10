@@ -40,7 +40,7 @@ telemetry:
     host:
       source: file
       file:
-        path: /etc/credentials/cloud-logging.json
+        path: /etc/credentials/sap-cloud-logging.json
         format: json
         jsonPath: "$.ingest-otlp-endpoint"
     secretRef:
@@ -49,19 +49,19 @@ telemetry:
         cert:
           source: file
           file:
-            path: /etc/credentials/cloud-logging.json
+            path: /etc/credentials/sap-cloud-logging.json
             format: json
             jsonPath: "$.ingest-otlp-cert"
         certKey:
           source: file
           file:
-            path: /etc/credentials/cloud-logging.json
+            path: /etc/credentials/sap-cloud-logging.json
             format: json
             jsonPath: "$.ingest-otlp-key"
         serverCa:
           source: file
           file:
-            path: /etc/credentials/cloud-logging.json
+            path: /etc/credentials/sap-cloud-logging.json
             format: json
             jsonPath: "$.server-ca"
   traces:
@@ -70,7 +70,7 @@ telemetry:
     host:
       source: file
       file:
-        path: /etc/credentials/cloud-logging.json
+        path: /etc/credentials/sap-cloud-logging.json
         format: json
         jsonPath: "$.ingest-otlp-endpoint"
     secretRef:
@@ -79,19 +79,19 @@ telemetry:
         cert:
           source: file
           file:
-            path: /etc/credentials/cloud-logging.json
+            path: /etc/credentials/sap-cloud-logging.json
             format: json
             jsonPath: "$.ingest-otlp-cert"
         certKey:
           source: file
           file:
-            path: /etc/credentials/cloud-logging.json
+            path: /etc/credentials/sap-cloud-logging.json
             format: json
             jsonPath: "$.ingest-otlp-key"
         serverCa:
           source: file
           file:
-            path: /etc/credentials/cloud-logging.json
+            path: /etc/credentials/sap-cloud-logging.json
             format: json
             jsonPath: "$.server-ca"
   metrics:
@@ -102,7 +102,7 @@ telemetry:
     host:
       source: file
       file:
-        path: /etc/credentials/cloud-logging.json
+        path: /etc/credentials/sap-cloud-logging.json
         format: json
         jsonPath: "$.ingest-otlp-endpoint"
     secretRef:
@@ -111,19 +111,19 @@ telemetry:
         cert:
           source: file
           file:
-            path: /etc/credentials/cloud-logging.json
+            path: /etc/credentials/sap-cloud-logging.json
             format: json
             jsonPath: "$.ingest-otlp-cert"
         certKey:
           source: file
           file:
-            path: /etc/credentials/cloud-logging.json
+            path: /etc/credentials/sap-cloud-logging.json
             format: json
             jsonPath: "$.ingest-otlp-key"
         serverCa:
           source: file
           file:
-            path: /etc/credentials/cloud-logging.json
+            path: /etc/credentials/sap-cloud-logging.json
             format: json
             jsonPath: "$.server-ca"
 

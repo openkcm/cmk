@@ -3,13 +3,25 @@ package apierrors
 import (
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+)
+
+const (
+	MultipleRolesInGroupsCode = "MULTIPLE_ROLES_NOT_ALLOWED"
 )
 
 var groups = []APIErrors{
+	{
+		Errors: []error{manager.ErrMultipleRolesInGroups},
+		ExposedError: cmkapi.DetailedError{
+			Code:    MultipleRolesInGroupsCode,
+			Message: "users with multiple roles are not allowed",
+			Status:  http.StatusForbidden,
+		},
+	},
 	{
 		Errors: []error{manager.ErrCreateGroups, model.ErrInvalidName},
 		ExposedError: cmkapi.DetailedError{

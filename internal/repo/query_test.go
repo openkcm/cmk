@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
 )
 
 func TestQuery_Join(t *testing.T) {
@@ -22,7 +22,7 @@ func TestQuery_Join(t *testing.T) {
 	q.Join(repo.LeftJoin, joinCond)
 	assert.Len(t, q.Joins, 1)
 	statement := q.Joins[0].JoinStatement()
-	assert.Equal(t, "LEFT JOIN workflow_approvers ON workflows.workflow_id = workflow_approvers.id", statement)
+	assert.Equal(t, `LEFT JOIN "workflow_approvers" ON "workflows".workflow_id = "workflow_approvers".id`, statement)
 }
 
 func TestQuery_AggregateFunctions(t *testing.T) {

@@ -14,18 +14,18 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/auditor"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 //nolint:containedctx
@@ -66,7 +66,7 @@ func (s *KeyManagerSuite) setup() {
 	dbRepo := sql.NewRepository(s.db)
 	s.repo = dbRepo
 
-	cfg := config.Config{
+	cfg := &config.Config{
 		Plugins: testutils.SetupMockPlugins(
 			testutils.KeyStorePlugin,
 			testutils.KeystoreProviderPlugin,
@@ -77,15 +77,16 @@ func (s *KeyManagerSuite) setup() {
 	ctlg, err := catalog.New(s.ctx, cfg)
 	s.Require().NoError(err)
 
+	cmkAuditor := auditor.New(s.ctx, cfg)
+
 	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, ctlg)
 	certManager := manager.NewCertificateManager(s.ctx, dbRepo, ctlg,
 		&config.Certificates{ValidityDays: config.MinCertificateValidityDays})
-	keyConfigManager := manager.NewKeyConfigManager(dbRepo, certManager, &cfg)
+	keyConfigManager := manager.NewKeyConfigManager(dbRepo, certManager, cmkAuditor, cfg)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(s.ctx, &cfg, dbRepo, ctlg)
+	reconciler, err := eventprocessor.NewCryptoReconciler(s.ctx, cfg, dbRepo, ctlg, nil)
 	s.Require().NoError(err)
 
-	cmkAuditor := auditor.New(s.ctx, &cfg)
 	s.km = manager.NewKeyManager(
 		dbRepo, ctlg, tenantConfigManager, keyConfigManager, certManager, reconciler, cmkAuditor)
 
@@ -218,7 +219,6 @@ func (s *KeyManagerSuite) TestGetOrInitProvider() {
 	})
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestCreate() {
 	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 	s.Require().NoError(err)
@@ -417,7 +417,6 @@ func (s *KeyManagerSuite) TestSetFirstKeyPrimary() {
 	})
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestEditableCryptoData() {
 	regionEditable := "region1"
 	regionNonEditable := "region2"
@@ -542,7 +541,6 @@ func (s *KeyManagerSuite) TestGet() {
 	}
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestHYOKSync() {
 	hyokKey := s.createTestHYOKKey("get-test-hyok-key")
 
@@ -912,7 +910,6 @@ func (s *KeyManagerSuite) verifyUpdatedKey(err error, tt struct {
 	}
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestDelete() {
 	createdKey := s.createTestSystemManagedKey("delete-test-key")
 	createdPrimaryKey, err := s.km.Create(s.ctx, &model.Key{
@@ -1022,7 +1019,6 @@ func (s *KeyManagerSuite) TestUpdateVersion() {
 	}
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestUpdateKeyPrimary() {
 	t := s.T()
 
@@ -1168,7 +1164,6 @@ func (s *KeyManagerSuite) createEnabledBYOKKey() *model.Key {
 	return byokEnabledKey
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestGetImportParams() {
 	cachedPublicKeyFromDB := "mock-public-key-from-database"
 	fetchedPublicKeyFromProvider := "mock-public-key-from-provider"
@@ -1243,7 +1238,6 @@ func (s *KeyManagerSuite) TestGetImportParams() {
 	})
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestImportKeyMaterial() {
 	t := s.T()
 

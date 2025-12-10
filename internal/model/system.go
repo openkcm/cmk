@@ -4,8 +4,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/config"
 )
 
 //nolint:recvcheck
@@ -75,6 +75,14 @@ func (s *System) AfterSave(tx *gorm.DB) error {
 	}
 
 	return nil
+}
+
+// BeforeDelete is ran before deleting the system
+// but before finishing the transaction
+// If this step fails the transaction should be aborted
+func (s *System) BeforeDelete(tx *gorm.DB) error {
+	// Delete all associated system properties
+	return tx.Where("id = ?", s.ID).Delete(&SystemProperty{}).Error
 }
 
 type SystemProperty struct {

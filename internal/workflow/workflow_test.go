@@ -13,24 +13,24 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/config"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/workflow"
+	"github.tools.sap/kms/cmk/internal/clients"
+	"github.tools.sap/kms/cmk/internal/clients/registry/systems"
+	"github.tools.sap/kms/cmk/internal/config"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	sqlRepo "github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/workflow"
 )
 
 var (
-	userID01     = uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	userID02     = uuid.MustParse("00000000-0000-0000-0000-000000000002")
-	userID03     = uuid.MustParse("00000000-0000-0000-0000-000000000003")
-	userID04     = uuid.MustParse("00000000-0000-0000-0000-000000000004")
+	userID01     = "00000000-0000-0000-0000-000000000001"
+	userID02     = "00000000-0000-0000-0000-000000000002"
+	userID03     = "00000000-0000-0000-0000-000000000003"
+	userID04     = "00000000-0000-0000-0000-000000000004"
 	artifactID01 = uuid.MustParse("00000000-0000-0000-1111-000000000001")
 
 	sqlNullBoolNull  = sql.NullBool{Bool: true, Valid: false}
@@ -38,7 +38,6 @@ var (
 	sqlNullBoolFalse = sql.NullBool{Bool: false, Valid: true}
 )
 
-//nolint:funlen
 func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, string) {
 	t.Helper()
 
@@ -64,7 +63,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	ctlg, err := catalog.New(ctx, cfg)
+	ctlg, err := catalog.New(ctx, &cfg)
 	assert.NoError(t, err)
 
 	logger := testutils.SetupLoggerWithBuffer()
@@ -76,18 +75,6 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 		},
 	)
 
-	r := sqlRepo.NewRepository(db)
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, &cfg, r, ctlg)
-	assert.NoError(t, err)
-
-	ksConfig := testutils.NewKeystoreConfig(func(_ *model.KeystoreConfiguration) {})
-	keystoreDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeystoreDefault
-		c.CommonName = testutils.TestDefaultKeystoreCommonName
-	})
-	testutils.CreateTestEntities(ctx, t, r, ksConfig, keystoreDefaultCert)
-
-	assert.NoError(t, err)
 	clientsFactory, err := clients.NewFactory(config.Services{
 		Registry: &commoncfg.GRPCClient{
 			Enabled: true,
@@ -100,6 +87,19 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 
 	assert.NoError(t, err)
 	assert.NoError(t, clientsFactory.Close())
+
+	r := sqlRepo.NewRepository(db)
+	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, &cfg, r, ctlg, clientsFactory)
+	assert.NoError(t, err)
+
+	ksConfig := testutils.NewKeystoreConfig(func(_ *model.KeystoreConfiguration) {})
+	keystoreDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeKeystoreDefault
+		c.CommonName = testutils.TestDefaultKeystoreCommonName
+	})
+	testutils.CreateTestEntities(ctx, t, r, ksConfig, keystoreDefaultCert)
+
+	assert.NoError(t, err)
 
 	return manager.New(ctx, r, &cfg, clientsFactory, ctlg, reconciler, nil), db, tenants[0]
 }
@@ -124,7 +124,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 	tests := []struct {
 		name          string
 		workflow      model.Workflow
-		actorID       uuid.UUID
+		actorID       string
 		transition    workflow.Transition
 		expectErr     bool
 		errMessage    string         // If expectErr is true, this is the expected error message
@@ -1023,7 +1023,8 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 	r := sqlRepo.NewRepository(db)
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	keyConf := &model.KeyConfiguration{ID: uuid.New(), AdminGroup: *testutils.NewGroup(func(_ *model.Group) {})}
+	keyConf := &model.KeyConfiguration{ID: uuid.New(), AdminGroup: *testutils.NewGroup(func(_ *model.Group) {}),
+		CreatorID: uuid.NewString()}
 	err := r.Create(ctx, keyConf)
 	assert.NoError(t, err)
 

@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -16,16 +17,19 @@ import (
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/auth"
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commonfs/loader"
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/flags"
-	"github.com/openkcm/cmk/internal/middleware"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/middleware"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 // testData holds test setup data
@@ -33,17 +37,42 @@ type testData struct {
 	privateKeys        map[int]*rsa.PrivateKey
 	signingKeysPath    string
 	config             *config.Config
-	featureGates       commoncfg.FeatureGates
 	signingKeysStorage keyvalue.ReadOnlyStringToBytesStorage
 	signingKeysLoader  *loader.Loader
 }
 
 // testScenario defines a test case scenario
 type testScenario struct {
-	name        string
-	setupFunc   func(t *testing.T, td *testData) (clientData, signature string)
-	expectError bool
-	expectLog   string // Expected log level/message pattern
+	name           string
+	setupFunc      func(t *testing.T, td *testData) (clientData, signature string)
+	expectError    bool
+	expectHttpCode int
+}
+
+// mockGroupManager is a minimal mock implementation of manager.GroupManager for testing
+// It can be configured to return specific roles for role validation testing
+type mockGroupManager struct {
+	roles []constants.Role
+	err   error
+}
+
+func (m *mockGroupManager) GetRoleFromGroupIAMIdentifiers(
+	_ context.Context,
+	groups []constants.UserGroup,
+) (constants.Role, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+
+	if len(m.roles) > 1 {
+		return "", manager.ErrMultipleRolesInGroups
+	}
+
+	if len(m.roles) == 0 {
+		return "", nil
+	}
+
+	return m.roles[0], nil
 }
 
 // setupTestEnvironment creates keys, files, and returns test data
@@ -51,8 +80,7 @@ func setupTestEnvironment(t *testing.T) *testData {
 	t.Helper()
 
 	td := &testData{
-		privateKeys:  make(map[int]*rsa.PrivateKey),
-		featureGates: commoncfg.FeatureGates{},
+		privateKeys: make(map[int]*rsa.PrivateKey),
 	}
 
 	tmpdir := t.TempDir()
@@ -60,7 +88,7 @@ func setupTestEnvironment(t *testing.T) *testData {
 
 	// Generate 3 key pairs for testing also in case of key rotation
 	// Explicitly using RS256 (RSA keys, SHA-256 for signing)
-	for keyID := range []int{0, 1, 2} {
+	for keyID := range 3 {
 		privateKey, err := rsa.GenerateKey(rand.Reader, 2048) // RS256: RSA key
 		require.NoError(t, err, "failed to generate private key")
 
@@ -157,11 +185,11 @@ func (td *testData) createValidClientData(t *testing.T, keyID int) (string, stri
 }
 
 // createCustomClientData creates client data with custom fields and signs it
-func (td *testData) createCustomClientData(t *testing.T, keyID int, clientData auth.ClientData) (string, string) {
+func (td *testData) createCustomClientData(t *testing.T, clientData auth.ClientData) (string, string) {
 	t.Helper()
 
-	privateKey := td.privateKeys[keyID]
-	require.NotNil(t, privateKey, "private key not found for keyID %d", keyID)
+	privateKey := td.privateKeys[0]
+	require.NotNil(t, privateKey, "private key not found for keyID %d", 0)
 
 	jsonBytes, err := json.Marshal(clientData)
 	require.NoError(t, err)
@@ -179,7 +207,6 @@ func (td *testData) createCustomClientData(t *testing.T, keyID int, clientData a
 	return b64data, b64sig
 }
 
-//nolint:funlen
 func getTestScenarios() []testScenario {
 	return []testScenario{
 		{
@@ -191,7 +218,8 @@ func getTestScenarios() []testScenario {
 
 				return data, sig
 			},
-			expectError: false,
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
 		},
 		{
 			name: "valid_key_1",
@@ -202,7 +230,8 @@ func getTestScenarios() []testScenario {
 
 				return data, sig
 			},
-			expectError: false,
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
 		},
 		{
 			name: "valid_key_2",
@@ -213,15 +242,16 @@ func getTestScenarios() []testScenario {
 
 				return data, sig
 			},
-			expectError: false,
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
 		},
 		{
 			name: "no_client_data_header",
 			setupFunc: func(_ *testing.T, _ *testData) (string, string) {
 				return "", "" // No headers set
 			},
-			expectError: true,
-			expectLog:   "INFO",
+			expectError:    true,
+			expectHttpCode: http.StatusUnauthorized,
 		},
 		{
 			name: "missing_signature_header",
@@ -232,24 +262,24 @@ func getTestScenarios() []testScenario {
 
 				return data, "" // No signature
 			},
-			expectError: true,
-			expectLog:   "WARN",
+			expectError:    true,
+			expectHttpCode: http.StatusUnauthorized,
 		},
 		{
 			name: "malformed_base64",
 			setupFunc: func(_ *testing.T, _ *testData) (string, string) {
 				return "not_base64!!", ""
 			},
-			expectError: true,
-			expectLog:   "ERROR",
+			expectError:    true,
+			expectHttpCode: http.StatusUnauthorized,
 		},
 		{
 			name: "malformed_json",
 			setupFunc: func(_ *testing.T, _ *testData) (string, string) {
 				return base64.RawURLEncoding.EncodeToString([]byte("not_json")), ""
 			},
-			expectError: true,
-			expectLog:   "ERROR",
+			expectError:    true,
+			expectHttpCode: http.StatusUnauthorized,
 		},
 		{
 			name: "signature_mismatch",
@@ -266,8 +296,8 @@ func getTestScenarios() []testScenario {
 				// Modify the data slightly to make signature invalid
 				return wrongData[:len(wrongData)-5] + "XXXXX", correctSig
 			},
-			expectError: true,
-			expectLog:   "ERROR",
+			expectError:    true,
+			expectHttpCode: http.StatusUnauthorized,
 		},
 		{
 			name: "public_key_missing",
@@ -281,25 +311,8 @@ func getTestScenarios() []testScenario {
 
 				return data, sig
 			},
-			expectError: true,
-			expectLog:   "ERROR",
-		},
-		{
-			name: "public_key_invalid_pem",
-			setupFunc: func(t *testing.T, td *testData) (string, string) {
-				t.Helper()
-				// Corrupt the public key file
-				keyPath := filepath.Join(td.signingKeysPath, "0.pem")
-				err := os.WriteFile(keyPath, []byte("not_a_pem"), 0o600)
-				require.NoError(t, err)
-
-				data, sig, err := td.createValidClientData(t, 0)
-				require.NoError(t, err)
-
-				return data, sig
-			},
-			expectError: true,
-			expectLog:   "ERROR",
+			expectError:    true,
+			expectHttpCode: http.StatusUnauthorized,
 		},
 		{
 			name: "unsupported_algorithm",
@@ -317,10 +330,31 @@ func getTestScenarios() []testScenario {
 					SignatureAlgorithm: "UNSUPPORTED",
 				}
 
-				return td.createCustomClientData(t, 0, clientData)
+				return td.createCustomClientData(t, clientData)
 			},
-			expectError: true,
-			expectLog:   "ERROR",
+			expectError:    true,
+			expectHttpCode: http.StatusUnauthorized,
+		},
+		{
+			name: "try_to_be_system",
+			setupFunc: func(t *testing.T, td *testData) (string, string) {
+				t.Helper()
+
+				clientData := auth.ClientData{
+					Identifier:         constants.SystemUser.String(),
+					Type:               "test-type",
+					Email:              "test@example.com",
+					Region:             "test-region",
+					AuthContext:        map[string]string{"issuer": "test-issuer"},
+					Groups:             []string{"group1", "group2"},
+					KeyID:              "0",
+					SignatureAlgorithm: auth.SignatureAlgorithmRS256,
+				}
+
+				return td.createCustomClientData(t, clientData)
+			},
+			expectError:    true,
+			expectHttpCode: http.StatusUnauthorized,
 		},
 		{
 			name: "missing_keyid",
@@ -337,10 +371,10 @@ func getTestScenarios() []testScenario {
 					SignatureAlgorithm: auth.SignatureAlgorithmRS256, // KeyID is missing
 				}
 
-				return td.createCustomClientData(t, 0, clientData)
+				return td.createCustomClientData(t, clientData)
 			},
-			expectError: true,
-			expectLog:   "ERROR",
+			expectError:    true,
+			expectHttpCode: http.StatusUnauthorized,
 		},
 	}
 }
@@ -349,6 +383,7 @@ func TestClientDataMiddleware(t *testing.T) {
 	td := setupTestEnvironment(t)
 	scenarios := getTestScenarios()
 	authContextFields := []string{"client_id", "issuer", "multitenancy_ref"}
+	mockGroupMgr := &mockGroupManager{} // Empty roles for basic tests
 
 	for _, scenario := range scenarios {
 		t.Run(
@@ -358,7 +393,7 @@ func TestClientDataMiddleware(t *testing.T) {
 
 				// Create middleware
 				middlewareFunc := middleware.ClientDataMiddleware(
-					&td.config.FeatureGates, td.signingKeysStorage, authContextFields,
+					td.signingKeysStorage, authContextFields, mockGroupMgr,
 				)
 
 				// Create test handler
@@ -398,11 +433,10 @@ func TestClientDataMiddleware(t *testing.T) {
 				handler.ServeHTTP(w, req)
 
 				// Assertions
-				assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+				assert.Equal(t, scenario.expectHttpCode, w.Result().StatusCode)
 
 				if scenario.expectError {
 					// For error cases, context should not be populated with client data
-					// the client data middleware should pass through without setting context
 					assert.Nil(t, clientDataFromContext)
 
 					// Also verify that extracting from a fresh context returns an error
@@ -419,38 +453,165 @@ func TestClientDataMiddleware(t *testing.T) {
 					assert.Equal(t, "test-type", clientDataFromContext.Type)
 					assert.Equal(t, "test-identifier", clientDataFromContext.Identifier)
 					assert.Equal(t, auth.SignatureAlgorithmRS256, clientDataFromContext.SignatureAlgorithm)
-					assert.Equal(t, map[string]string{
-						"client_id":        "test-client-id",
-						"issuer":           "https://example-issuer.com",
-						"multitenancy_ref": "some-ref",
-					}, clientDataFromContext.AuthContext)
+					assert.Equal(
+						t, map[string]string{
+							"client_id":        "test-client-id",
+							"issuer":           "https://example-issuer.com",
+							"multitenancy_ref": "some-ref",
+						}, clientDataFromContext.AuthContext,
+					)
 				}
 			},
 		)
 	}
 }
 
-func TestClientDataMiddleware_FeatureGateDisabled(t *testing.T) {
+func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 	td := setupTestEnvironment(t)
+	authContextFields := []string{"client_id", "issuer", "multitenancy_ref"}
 
-	// Enable the disable feature gate (confusing but correct)
-	td.config.FeatureGates = commoncfg.FeatureGates{
-		flags.DisableClientDataComputation: true,
+	testCases := []struct {
+		name            string
+		roles           []constants.Role
+		clientGroups    []string
+		expectError     bool
+		expectHttpCode  int
+		expectErrorCode string
+	}{
+		{
+			name:           "single_role_key_admin",
+			roles:          []constants.Role{constants.KeyAdminRole},
+			clientGroups:   []string{"group1", "group2"},
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name:           "single_role_tenant_admin",
+			roles:          []constants.Role{constants.TenantAdminRole},
+			clientGroups:   []string{"group1", "group2"},
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name:           "single_role_tenant_auditor",
+			roles:          []constants.Role{constants.TenantAuditorRole},
+			clientGroups:   []string{"group1", "group2"},
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name:            "mixed_roles_key_admin_and_tenant_admin",
+			roles:           []constants.Role{constants.KeyAdminRole, constants.TenantAdminRole},
+			clientGroups:    []string{"group1", "group2"},
+			expectError:     true,
+			expectHttpCode:  http.StatusForbidden,
+			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
+		},
+		{
+			name:            "mixed_roles_key_admin_and_tenant_auditor",
+			roles:           []constants.Role{constants.KeyAdminRole, constants.TenantAuditorRole},
+			clientGroups:    []string{"group1", "group2"},
+			expectError:     true,
+			expectHttpCode:  http.StatusForbidden,
+			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
+		},
+		{
+			name:            "mixed_roles_tenant_admin_and_tenant_auditor",
+			roles:           []constants.Role{constants.TenantAdminRole, constants.TenantAuditorRole},
+			clientGroups:    []string{"group1", "group2"},
+			expectError:     true,
+			expectHttpCode:  http.StatusForbidden,
+			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
+		},
+		{
+			name:           "single_group_no_validation_needed",
+			roles:          []constants.Role{},
+			clientGroups:   []string{"group1"},
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name:           "no_groups_no_validation_needed",
+			roles:          []constants.Role{},
+			clientGroups:   []string{},
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
 	}
 
-	middlewareFunc := middleware.ClientDataMiddleware(&td.config.FeatureGates, td.signingKeysStorage, []string{})
+	for _, tc := range testCases {
+		t.Run(
+			tc.name, func(t *testing.T) {
+				// Create mock group manager with predefined roles
+				mockGroupMgr := &mockGroupManager{roles: tc.roles}
 
-	testHandler := http.HandlerFunc(
-		func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		},
-	)
+				// Create client data with the specified groups
+				clientData := auth.ClientData{
+					Identifier:         "test-identifier",
+					Type:               "test-type",
+					Email:              "test@example.com",
+					Region:             "test-region",
+					Groups:             tc.clientGroups,
+					KeyID:              "0",
+					SignatureAlgorithm: auth.SignatureAlgorithmRS256,
+					AuthContext: map[string]string{
+						"client_id":        "test-client-id",
+						"issuer":           "https://example-issuer.com",
+						"multitenancy_ref": "some-ref",
+					},
+				}
 
-	handler := middlewareFunc(testHandler)
-	req := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
-	w := httptest.NewRecorder()
+				clientDataStr, signature := td.createCustomClientData(t, clientData)
 
-	handler.ServeHTTP(w, req)
+				// Create middleware
+				middlewareFunc := middleware.ClientDataMiddleware(
+					td.signingKeysStorage, authContextFields, mockGroupMgr,
+				)
 
-	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+				// Create test handler
+				var clientDataFromContext *auth.ClientData
+				testHandler := http.HandlerFunc(
+					func(w http.ResponseWriter, r *http.Request) {
+						if !tc.expectError {
+							var err error
+							clientDataFromContext, err = cmkcontext.ExtractClientData(r.Context())
+							if err != nil {
+								clientDataFromContext = nil
+							}
+						}
+						w.WriteHeader(http.StatusOK)
+					},
+				)
+
+				// Apply middleware
+				handler := middlewareFunc(testHandler)
+
+				// Create request
+				req := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+				req.Header.Set(auth.HeaderClientData, clientDataStr)
+				req.Header.Set(auth.HeaderClientDataSignature, signature)
+
+				// Execute request
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, req)
+
+				// Assertions
+				assert.Equal(t, tc.expectHttpCode, w.Result().StatusCode)
+				if tc.expectErrorCode != "" {
+					response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+					assert.Equal(t, apierrors.MultipleRolesInGroupsCode, response.Error.Code)
+				}
+
+				if tc.expectError {
+					// For error cases, context should not be populated with client data
+					require.Nil(t, clientDataFromContext)
+				} else
+				// For successful cases, verify context is properly populated with client data
+				if len(tc.clientGroups) > 0 {
+					require.NotNil(t, clientDataFromContext)
+					assert.Equal(t, tc.clientGroups, clientDataFromContext.Groups)
+				}
+			},
+		)
+	}
 }

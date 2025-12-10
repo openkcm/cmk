@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/utils/ptr"
-	"github.com/openkcm/cmk/utils/slice"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/utils/slice"
 )
 
 // Errs defines the errors that can be returned by the provider

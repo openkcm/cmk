@@ -18,15 +18,15 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	certificate_issuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/crypto"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
+	"github.tools.sap/kms/cmk/utils/crypto"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 var (
@@ -65,7 +65,7 @@ func SetupCertificateManager(
 	})
 
 	dbRepository := sql.NewRepository(db)
-	cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.CertIssuer)}
+	cfg := &config.Config{Plugins: testutils.SetupMockPlugins(testutils.CertIssuer)}
 
 	catalog, err := catalog.New(t.Context(), cfg)
 	assert.NoError(t, err)

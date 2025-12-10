@@ -8,7 +8,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 var (

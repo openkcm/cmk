@@ -19,14 +19,15 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	md "github.com/oapi-codegen/nethttp-middleware"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/controllers/cmk"
-	"github.com/openkcm/cmk/internal/daemon"
-	"github.com/openkcm/cmk/internal/handlers"
-	"github.com/openkcm/cmk/internal/middleware"
-	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/clients"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/controllers/cmk"
+	"github.tools.sap/kms/cmk/internal/daemon"
+	"github.tools.sap/kms/cmk/internal/handlers"
+	"github.tools.sap/kms/cmk/internal/middleware"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
 )
 
 const TestCertURL = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.crt"
@@ -56,7 +57,7 @@ func NewAPIServer(
 	r := sql.NewRepository(db)
 
 	var (
-		factory *clients.Factory
+		factory clients.Factory
 		err     error
 	)
 
@@ -80,14 +81,17 @@ func NewAPIServer(
 		assert.NoError(tb, factory.Close())
 	})
 
-	controller := cmk.NewAPIController(tb.Context(), r, cfg, factory)
+	controller := cmk.NewAPIController(tb.Context(), r, &cfg, factory)
 
-	return startAPIServer(controller)
+	return startAPIServer(tb, controller)
 }
 
 func startAPIServer(
+	tb testing.TB,
 	controller *cmk.APIController,
 ) cmkapi.ServeMux {
+	tb.Helper()
+
 	strictController := cmkapi.NewStrictHandlerWithOptions(
 		controller,
 		[]cmkapi.StrictMiddlewareFunc{},
@@ -97,7 +101,7 @@ func startAPIServer(
 		},
 	)
 
-	r := http.NewServeMux()
+	r := daemon.NewServeMux(constants.BasePath)
 
 	openapi3filter.RegisterBodyDecoder(
 		"application/merge-patch+json",
@@ -109,7 +113,7 @@ func startAPIServer(
 	cmkapi.HandlerWithOptions(strictController,
 		cmkapi.StdHTTPServerOptions{
 			BaseRouter:       r,
-			BaseURL:          "/cmk/v1/{tenant}",
+			BaseURL:          constants.BasePath,
 			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
 			Middlewares: []cmkapi.MiddlewareFunc{
 				md.OapiRequestValidatorWithOptions(swagger, &md.Options{

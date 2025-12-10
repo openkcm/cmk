@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/utils/slice"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/utils/slice"
 )
 
 // convertString converts the odataValue in the http odata parameter to a string.

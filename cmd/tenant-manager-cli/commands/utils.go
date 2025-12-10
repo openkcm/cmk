@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/model"
 )
 
 func FormatTenant(tenant *model.Tenant, cmd *cobra.Command) error {

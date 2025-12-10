@@ -6,12 +6,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/workflow"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	sqlRepo "github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/workflow"
 )
 
 func TestKeyActionPrimary(t *testing.T) {
@@ -33,7 +33,7 @@ func TestKeyActionPrimary(t *testing.T) {
 	tests := []struct {
 		name          string
 		workflow      model.Workflow
-		actorID       uuid.UUID
+		actorID       string
 		transition    workflow.Transition
 		expectErr     bool
 		errMessage    string
@@ -63,7 +63,8 @@ func TestKeyActionPrimary(t *testing.T) {
 			err := r.Create(ctx, &tt.workflow)
 			assert.NoError(t, err)
 
-			keyConf := &model.KeyConfiguration{ID: keyConfigID01, AdminGroup: *testutils.NewGroup(func(_ *model.Group) {})}
+			keyConf := &model.KeyConfiguration{ID: keyConfigID01, AdminGroup: *testutils.NewGroup(func(_ *model.Group) {}),
+				CreatorID: uuid.NewString()}
 			err = r.Create(ctx, keyConf)
 			assert.NoError(t, err)
 

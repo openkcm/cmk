@@ -1,8 +1,9 @@
 package constants
 
 const (
-	APIName = "CMK"
-	KMS     = "KMS"
+	APIName  = "CMK"
+	KMS      = "KMS"
+	BasePath = "/cmk/v1/{tenant}"
 )
 
 const (

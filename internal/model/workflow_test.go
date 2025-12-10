@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/model"
 )
 
 func TestWorkflowTable(t *testing.T) {

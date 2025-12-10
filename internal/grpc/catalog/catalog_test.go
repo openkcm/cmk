@@ -9,24 +9,24 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
 )
 
 func TestNew(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     config.Config
+		cfg     *config.Config
 		wantErr bool
 	}{
 		{
 			name:    "empty config",
-			cfg:     config.Config{},
+			cfg:     &config.Config{},
 			wantErr: false,
 		},
 		{
 			name: "plugin disabled",
-			cfg: config.Config{
+			cfg: &config.Config{
 				Plugins: []plugincatalog.PluginConfig{
 					{
 						Name:     "TestPlugin",
@@ -43,7 +43,7 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name: "invalid plugin path",
-			cfg: config.Config{
+			cfg: &config.Config{
 				Plugins: []plugincatalog.PluginConfig{
 					{
 						Name:     "InvalidPlugin",

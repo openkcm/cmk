@@ -11,10 +11,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/providers"
-	"github.com/openkcm/cmk/utils/must"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/providers"
+	"github.tools.sap/kms/cmk/utils/must"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 // kmsClient defines the methods of the AWS KMS client that we use.

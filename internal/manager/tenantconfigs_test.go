@@ -11,13 +11,13 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 var ErrForced = errors.New("forced")
@@ -33,7 +33,7 @@ func SetupTenantConfigManager(t *testing.T, plugins []testutils.MockPlugin) (*ma
 
 	dbRepository := sql.NewRepository(db)
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
-	ctlg, err := catalog.New(t.Context(), cfg)
+	ctlg, err := catalog.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
 	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg)
@@ -218,7 +218,7 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 				cfg.Plugins = testutils.SetupMockPlugins(testutils.KeyStorePlugin)
 			}
 
-			ctlg, err := catalog.New(t.Context(), cfg)
+			ctlg, err := catalog.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
 			mgr := manager.NewTenantConfigManager(nil, ctlg)

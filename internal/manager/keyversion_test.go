@@ -9,15 +9,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/auditor"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 var (
@@ -61,14 +61,14 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	s.r = sql.NewRepository(db)
 
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.KeyStorePlugin)}
-	ctlg, err := catalog.New(s.ctx, cfg)
+	ctlg, err := catalog.New(s.ctx, &cfg)
 	s.Require().NoError(err)
 
 	tenantConfigManager := manager.NewTenantConfigManager(s.r, ctlg)
 	certManager := manager.NewCertificateManager(
 		s.ctx, s.r, ctlg, &config.Certificates{ValidityDays: config.MinCertificateValidityDays})
-	keyConfigManager := manager.NewKeyConfigManager(s.r, certManager, &cfg)
 	cmkAuditor := auditor.New(s.ctx, &cfg)
+	keyConfigManager := manager.NewKeyConfigManager(s.r, certManager, cmkAuditor, &cfg)
 	s.km = manager.NewKeyManager(s.r, ctlg, tenantConfigManager, keyConfigManager, certManager, nil, cmkAuditor)
 	s.kvm = manager.NewKeyVersionManager(
 		s.r,
@@ -181,7 +181,6 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 	})
 }
 
-//nolint:funlen
 func (s *KeyVersionManagerSuit) TestKeyVersionManager_GetByKeyIDAndByNumber() {
 	tests := []struct {
 		name             string

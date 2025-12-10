@@ -16,14 +16,14 @@ import (
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
-	"github.com/openkcm/cmk/utils/base62"
+	"github.tools.sap/kms/cmk/internal/clients"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
+	"github.tools.sap/kms/cmk/utils/base62"
 )
 
 func TestRegistryTenantManagerIntegration(t *testing.T) {
@@ -79,7 +79,7 @@ func TestApplyAuth(t *testing.T) {
 		Type:       "type1",
 		Properties: map[string]string{
 			"issuer":    "issuer_url3",
-			"jwks_uris": "jwk_uri1, jwk_uri2",
+			"jwks_uri":  "jwk_uri1",
 			"audiences": "audience1, audience2",
 		},
 	}
@@ -102,10 +102,11 @@ func TestOIDCMappingRequest(t *testing.T) {
 	_, sessionManagerClient := setupGRPC(t)
 
 	// given
+	jwksURI := "jwksUri"
 	oidcReq := &oidcmappinggrpc.ApplyOIDCMappingRequest{
 		TenantId:  "tenantID",
 		Issuer:    "https://example-issuer.com",
-		JwksUris:  []string{"jwkUri1", "jwkUri2"},
+		JwksUri:   &jwksURI,
 		Audiences: []string{"audience1", "audience2"},
 	}
 
@@ -133,14 +134,14 @@ func setupGRPC(t *testing.T) (tenantgrpc.ServiceClient, oidcmappinggrpc.ServiceC
 		}
 	})
 
-	return clientsFactory.RegistryService().Tenant(), clientsFactory.SessionManager().OIDCMapping()
+	return clientsFactory.Registry().Tenant(), clientsFactory.SessionManager().OIDCMapping()
 }
 
 func setupDB(t *testing.T) (*sql.ResourceRepository, *multitenancy.DB) {
 	t.Helper()
 
 	dbConf := integrationutils.DB
-	integrationutils.StartPostgresSQL(t, &dbConf)
+	testutils.StartPostgresSQL(t, &dbConf)
 
 	multitenancyDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: false, // false until testcontainers for TM is prepared to allow custom cmk db

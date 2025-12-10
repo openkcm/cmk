@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/utils/sanitise"
+	"github.tools.sap/kms/cmk/utils/sanitise"
 )
 
 // The reflect sets these in-situ, even when not pointers so we need to reset

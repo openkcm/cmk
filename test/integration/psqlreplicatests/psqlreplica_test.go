@@ -6,13 +6,13 @@ import (
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/db"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
 )
 
 type PSQLReplicaSuite struct {
@@ -27,7 +27,7 @@ func (s *PSQLReplicaSuite) SetupSuite() {
 	cfg := &config.Config{
 		Database: integrationutils.DB,
 	}
-	integrationutils.StartPostgresSQL(s.T(), &cfg.Database)
+	testutils.StartPostgresSQL(s.T(), &cfg.Database)
 
 	s.dbConfig = cfg.Database
 	s.replicDB = integrationutils.ReplicaDB
@@ -41,6 +41,7 @@ func (s *PSQLReplicaSuite) TestConnectToPsqlWithoutReplica() {
 	}
 
 	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)
@@ -56,6 +57,7 @@ func (s *PSQLReplicaSuite) TestConnectToPsqlWithReplica() {
 	}
 
 	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)
@@ -96,6 +98,7 @@ func (s *PSQLReplicaSuite) TestDatabaseConnectionError() {
 	}
 
 	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)
@@ -114,6 +117,7 @@ func (s *PSQLReplicaSuite) TestReplicaConnectionError() {
 	}
 
 	dbCon, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)
@@ -145,6 +149,7 @@ func (s *PSQLReplicaSuite) TestMultipleReplicas() {
 	}
 
 	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)
@@ -160,6 +165,7 @@ func (s *PSQLReplicaSuite) TestEmptyReplicaConfig() {
 	}
 
 	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)

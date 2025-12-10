@@ -5,9 +5,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/daemon"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/daemon"
+	"github.tools.sap/kms/cmk/internal/db"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 func TestServer(t *testing.T) {
@@ -20,8 +21,11 @@ func TestServer(t *testing.T) {
 		Database: dbConf,
 	}
 
+	dbCon, err := db.StartDB(t.Context(), cfg)
+	assert.NoError(t, err)
+
 	t.Run("Should create CMK Server", func(t *testing.T) {
-		s, err := daemon.NewCMKServer(t.Context(), cfg)
+		s, err := daemon.NewCMKServer(t.Context(), cfg, dbCon)
 		assert.NoError(t, err)
 		assert.NotNil(t, s)
 
@@ -29,11 +33,5 @@ func TestServer(t *testing.T) {
 		assert.NoError(t, err)
 		err = s.Close(t.Context())
 		assert.NoError(t, err)
-	})
-
-	t.Run("Should fail on create CMK Server without database", func(t *testing.T) {
-		s, err := daemon.NewCMKServer(t.Context(), &config.Config{})
-		assert.Error(t, err)
-		assert.Nil(t, s)
 	})
 }

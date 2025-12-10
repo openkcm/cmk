@@ -7,6 +7,8 @@ const (
 	TypeKeystorePool       = "keystore:fill"
 	TypeSendNotifications  = "notify:send"
 	TypeWorkflowAutoAssign = "workflow:auto-assign"
+	TypeWorkflowCleanup    = "workflow:cleanup"
+	TypeWorkflowExpire     = "workflow:expire"
 )
 
 var DefinedTasks = map[string]struct{}{
@@ -16,4 +18,6 @@ var DefinedTasks = map[string]struct{}{
 	TypeKeystorePool:       {},
 	TypeSendNotifications:  {},
 	TypeWorkflowAutoAssign: {},
+	TypeWorkflowCleanup:    {},
+	TypeWorkflowExpire:     {},
 }

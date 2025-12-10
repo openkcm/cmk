@@ -3,7 +3,7 @@ package odata
 import (
 	"strings"
 
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo"
 )
 
 // Type specifies the odata type.
@@ -38,9 +38,16 @@ type FilterSchemaEntry struct {
 	ValueValidator func(string) bool
 }
 
-// ToUpper is helper ValueValidator. More can be added if generic enough.
+// ToUpper is helper ValueModifier. More can be added if generic enough.
 func ToUpper(s string) (string, bool) {
 	return strings.ToUpper(s), true
+}
+
+// MaxLengthValidator gets a  helper ValueValidator. More can be added if generic enough.
+func MaxLengthValidator(maxLength int) func(string) bool {
+	return func(s string) bool {
+		return len(s) <= maxLength
+	}
 }
 
 // preProcessValue provides any standard preprocessing before any of the user

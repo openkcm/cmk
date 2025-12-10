@@ -2,21 +2,31 @@ package clients
 
 import (
 	"errors"
+	"io"
 
-	"github.com/openkcm/cmk/internal/clients/registry"
-	sessionmanager "github.com/openkcm/cmk/internal/clients/session-manager"
-	"github.com/openkcm/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/clients/registry"
+	sessionmanager "github.tools.sap/kms/cmk/internal/clients/session-manager"
+	"github.tools.sap/kms/cmk/internal/config"
 )
 
-type Factory struct {
-	registryService *registry.Service
-	sessionManager  *sessionmanager.Client
+type Factory interface {
+	io.Closer
+
+	Registry() registry.Service
+	SessionManager() sessionmanager.Service
+}
+
+type factory struct {
+	registry       registry.Service
+	sessionManager sessionmanager.Service
 
 	cfg *config.Services
 }
 
-func NewFactory(svs config.Services) (*Factory, error) {
-	factory := &Factory{
+var _ Factory = (*factory)(nil)
+
+func NewFactory(svs config.Services) (Factory, error) {
+	factory := &factory{
 		cfg: &svs,
 	}
 
@@ -26,11 +36,11 @@ func NewFactory(svs config.Services) (*Factory, error) {
 			return nil, err
 		}
 
-		factory.registryService = registryService
+		factory.registry = registryService
 	}
 
 	if svs.SessionManager != nil && svs.SessionManager.Enabled {
-		sessionManager, err := sessionmanager.NewClient(svs.SessionManager)
+		sessionManager, err := sessionmanager.NewService(svs.SessionManager)
 		if err != nil {
 			return nil, err
 		}
@@ -41,19 +51,19 @@ func NewFactory(svs config.Services) (*Factory, error) {
 	return factory, nil
 }
 
-func (f *Factory) RegistryService() *registry.Service {
-	return f.registryService
+func (f *factory) Registry() registry.Service {
+	return f.registry
 }
 
-func (f *Factory) SessionManager() *sessionmanager.Client {
+func (f *factory) SessionManager() sessionmanager.Service {
 	return f.sessionManager
 }
 
-func (f *Factory) Close() error {
+func (f *factory) Close() error {
 	var errs []error
 
-	if f.registryService != nil {
-		err := f.registryService.Close()
+	if f.registry != nil {
+		err := f.registry.Close()
 		errs = append(errs, err)
 	}
 

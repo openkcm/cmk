@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 type KeyConfigurationActions interface {

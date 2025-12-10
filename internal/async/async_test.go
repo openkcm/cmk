@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk/internal/async"
-	conf "github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/async"
+	conf "github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 func defaultRedisConfig(tlsFiles testutils.TLSFiles) conf.Redis {
@@ -33,7 +33,7 @@ func defaultRedisConfig(tlsFiles testutils.TLSFiles) conf.Redis {
 						Format: commoncfg.BinaryFileFormat,
 					},
 				},
-				ServerCA: commoncfg.SourceRef{
+				ServerCA: &commoncfg.SourceRef{
 					Source: commoncfg.FileSourceValue,
 					File: commoncfg.CredentialFile{
 						Path:   tlsFiles.ServerCertPath,
@@ -91,7 +91,7 @@ func TestAsyncNew(t *testing.T) {
 			name: "Valid MTLS no server CA",
 			taskQueueCfg: func() conf.Redis {
 				cfg := defaultCfg
-				cfg.SecretRef.MTLS.ServerCA = commoncfg.SourceRef{} // Remove ServerCA
+				cfg.SecretRef.MTLS.ServerCA = nil // Remove ServerCA
 
 				return cfg
 			}(),
@@ -202,7 +202,9 @@ func TestAsyncNew(t *testing.T) {
 				assert.Len(t, result.TLSConfig.Certificates, 1)
 				assert.Equal(t, uint16(tls.VersionTLS12), result.TLSConfig.MinVersion)
 
-				if tt.taskQueueCfg.SecretRef.MTLS.ServerCA.Source != "" {
+				ca := tt.taskQueueCfg.SecretRef.MTLS.ServerCA
+
+				if ca != nil && ca.Source != "" {
 					assert.NotNil(t, result.TLSConfig.RootCAs)
 				}
 			}

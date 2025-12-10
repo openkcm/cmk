@@ -2,22 +2,15 @@ package label
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
-	"github.com/openkcm/cmk/utils/sanitise"
-)
-
-const (
-	MaxLengthOfLabelName  = 255
-	MaxLengthOfLabelValue = 255
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/utils/sanitise"
 )
 
 var (
@@ -30,31 +23,11 @@ func FromAPI(keyUUID cmkapi.KeyIDPath, apiKeyLabel cmkapi.Label) (*model.KeyLabe
 		return nil, errs.Wrapf(apierrors.ErrNameFieldMissingProperty, "label name")
 	}
 
-	if len(apiKeyLabel.Key) > MaxLengthOfLabelName {
-		return nil, errs.Wrapf(
-			transform.ErrAPIInvalidProperty,
-			fmt.Sprintf(
-				"label name must be less than or equal to %d characters",
-				MaxLengthOfLabelName,
-			),
-		)
-	}
-
 	var labelValue *string
 	if apiKeyLabel.Value == nil {
 		labelValue = ptr.PointTo("")
 	} else {
 		labelValue = apiKeyLabel.Value
-	}
-
-	if len(*labelValue) > MaxLengthOfLabelValue {
-		return nil, errs.Wrapf(
-			transform.ErrAPIInvalidProperty,
-			fmt.Sprintf(
-				"label value must be less than or equal to %d characters",
-				MaxLengthOfLabelValue,
-			),
-		)
 	}
 
 	return &model.KeyLabel{

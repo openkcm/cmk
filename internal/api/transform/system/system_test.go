@@ -6,11 +6,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/system"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform/system"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 func TestToAPI(t *testing.T) {
@@ -37,6 +37,9 @@ func TestToAPI(t *testing.T) {
 			Region:     "us-east-1",
 			Status:     "DISCONNECTED",
 			Properties: &map[string]any{"test": "test"},
+			Metadata: &cmkapi.SystemMetadata{
+				CanCancel: ptr.PointTo(false),
+			},
 		}
 
 		assert.Equal(t, expectedSystem, *apiSys)
@@ -54,6 +57,9 @@ func TestToAPI(t *testing.T) {
 			Region:     "us-east-1",
 			Status:     "DISCONNECTED",
 			Properties: &map[string]any{},
+			Metadata: &cmkapi.SystemMetadata{
+				CanCancel: ptr.PointTo(false),
+			},
 		}
 
 		assert.Equal(t, expectedSystem, *apiSys)

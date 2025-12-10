@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/providers"
-	"github.com/openkcm/cmk/providers/clients/aws"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/providers"
+	"github.tools.sap/kms/cmk/providers/clients/aws"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 // Local KMS variables

@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/utils/odata"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/utils/odata"
 )
 
 func makeExpectedQuery(fields []string, values []any) *repo.Query {

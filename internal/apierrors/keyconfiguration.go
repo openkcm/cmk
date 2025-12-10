@@ -4,9 +4,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/repo"
 )
 
 var (
@@ -122,6 +122,14 @@ var keyConfiguration = []APIErrors{
 			Code:    "GET_CLIENT_CERTIFICATES",
 			Message: "Failed to get client certificates",
 			Status:  http.StatusInternalServerError,
+		},
+	},
+	{
+		Errors: []error{manager.ErrKeyConfigurationNotAllowed},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "KEY_CONFIGURATION_NOT_FOUND",
+			Message: "Key configuration not found or insufficient access permissions",
+			Status:  http.StatusNotFound,
 		},
 	},
 }

@@ -10,9 +10,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/model"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 // TransactionFunc is func signature for ExecTransaction.
@@ -28,6 +28,8 @@ type Repo interface {
 	Set(ctx context.Context, resource Resource) error
 	Transaction(ctx context.Context, txFunc TransactionFunc) error
 	Migrate(ctx context.Context, schemaName string) error
+	Count(ctx context.Context, resource Resource, query Query) (int, error)
+	OffboardTenant(ctx context.Context, tenantID string) error
 }
 
 // Resource defines the interface for Resource operations.
@@ -206,15 +208,27 @@ func ListSystemWithProperties(ctx context.Context, r Repo, query *Query) ([]*mod
 	return sys, count, nil
 }
 
-// ProcessInBatch retrieves and processes records in batches from the database based on the provided query parameters.
+// BatchProcessOptions configures how ProcessInBatchWithOptions should handle batch processing.
+type BatchProcessOptions struct {
+	// DeleteMode indicates that items are being deleted during processing.
+	// When true, the offset is not incremented to avoid skipping records.
+	DeleteMode bool
+}
+
+// ProcessInBatchWithOptions retrieves and processes records in batches based on the provided query parameters.
 // It iterates through all matching records using pagination to avoid loading large datasets into memory.
 // The processFunc is called on the records, allowing custom processing logic.
 // Processing stops immediately if processFunc returns an error.
-func ProcessInBatch[T Resource](
+//
+// Options:
+//   - DeleteMode: When true, assumes items are being deleted during processing and keeps offset at 0
+//     to avoid skipping records. This ensures all items are processed even as the total count decreases.
+func ProcessInBatchWithOptions[T Resource](
 	ctx context.Context,
 	repo Repo,
 	baseQuery *Query,
 	batchSize int,
+	options BatchProcessOptions,
 	processFunc func([]*T) error,
 ) error {
 	offset := 0
@@ -234,14 +248,41 @@ func ProcessInBatch[T Resource](
 			return err
 		}
 
-		offset += batchSize
+		// No more items to process
+		if len(items) == 0 {
+			break
+		}
 
-		if offset >= count {
+		// In delete mode, keep offset at 0 since items are removed from the beginning
+		// In normal mode, increment offset to paginate through results
+		if !options.DeleteMode {
+			offset += batchSize
+		}
+
+		// Stop if we've processed all items (only relevant in non-delete mode)
+		if !options.DeleteMode && offset >= count {
 			break
 		}
 	}
 
 	return nil
+}
+
+// ProcessInBatch retrieves and processes records in batches from the database based on the provided query parameters.
+// It iterates through all matching records using pagination to avoid loading large datasets into memory.
+// The processFunc is called on the records, allowing custom processing logic.
+// Processing stops immediately if processFunc returns an error.
+//
+// Note: If you are deleting items during processing, use ProcessInBatchWithOptions with DeleteMode enabled
+// to avoid skipping records.
+func ProcessInBatch[T Resource](
+	ctx context.Context,
+	repo Repo,
+	baseQuery *Query,
+	batchSize int,
+	processFunc func([]*T) error,
+) error {
+	return ProcessInBatchWithOptions(ctx, repo, baseQuery, batchSize, BatchProcessOptions{}, processFunc)
 }
 
 func GetTenant(ctx context.Context, r Repo) (*model.Tenant, error) {

@@ -10,13 +10,13 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 func startAPIAndDBForSystem(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
@@ -25,7 +25,7 @@ func startAPIAndDBForSystem(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, st
 	cfg := &config.Config{
 		Database: integrationutils.DB,
 	}
-	integrationutils.StartPostgresSQL(t, &cfg.Database)
+	testutils.StartPostgresSQL(t, &cfg.Database)
 
 	dbConfig := testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
@@ -35,7 +35,8 @@ func startAPIAndDBForSystem(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, st
 			&model.Key{},
 			&model.KeyVersion{},
 			&model.KeyLabel{},
-		}}
+		},
+	}
 	db, tenants, _ := testutils.NewTestDB(t, dbConfig,
 		testutils.WithDatabase(cfg.Database),
 	)

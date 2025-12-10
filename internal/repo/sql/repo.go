@@ -13,12 +13,12 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/violations"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/violations"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 const (
@@ -28,6 +28,7 @@ const (
 
 var (
 	ErrPatchForeign              = errors.New("failed patching foreign key entity")
+	ErrTenantOffboarding         = errors.New("tenant offboarding error")
 	ErrUnsupportedOrderDirective = errors.New("unsupported order directive")
 )
 
@@ -44,8 +45,6 @@ func NewRepository(db *multitenancy.DB) *ResourceRepository {
 }
 
 // WithTenant runs GORM actions for a specific tenant
-//
-//nolint:cyclop
 func (r *ResourceRepository) WithTenant(
 	ctx context.Context,
 	resource repo.Resource,
@@ -56,21 +55,12 @@ func (r *ResourceRepository) WithTenant(
 	if resource.IsSharedModel() {
 		schemaName = PublicSchema
 	} else {
-		tenant, err := cmkcontext.ExtractTenantID(ctx)
+		name, err := r.getSchemaFromCtx(ctx)
 		if err != nil {
-			return errs.Wrap(repo.ErrWithTenant, err)
+			return err
 		}
 
-		var existingTenant model.Tenant
-
-		err = r.db.Where(repo.IDField+" = ?", tenant).First(&existingTenant).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return repo.ErrTenantNotFound
-		} else if err != nil {
-			return errs.Wrap(repo.ErrWithTenant, err)
-		}
-
-		schemaName = existingTenant.SchemaName
+		schemaName = name
 	}
 
 	committer, ok := r.db.Statement.ConnPool.(gorm.TxCommitter)
@@ -128,6 +118,45 @@ func (r *ResourceRepository) Create(ctx context.Context, resource repo.Resource)
 			return nil
 		},
 	)
+}
+
+// Count returns the number of records matching the query conditions.
+func (r *ResourceRepository) Count(
+	ctx context.Context,
+	resource repo.Resource,
+	query repo.Query,
+) (int, error) {
+	var count int64
+
+	err := r.WithTenant(
+		ctx, resource, func(tx *multitenancy.DB) error {
+			db := tx.Model(resource)
+
+			db, err := applyQuery(db, query)
+			if err != nil {
+				return err
+			}
+
+			res := db.Count(&count)
+			if res.Error != nil {
+				log.Error(ctx, "error counting resources", res.Error)
+				return errs.Wrap(repo.ErrGetResource, res.Error)
+			}
+
+			return nil
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return int(count), nil
+}
+
+// OffboardTenant cleans up the database by dropping the tenant-specific schema and associated tables.
+// This method is intended to be used after a tenant has been removed.
+func (r *ResourceRepository) OffboardTenant(ctx context.Context, tenantID string) error {
+	return r.db.OffboardTenant(ctx, tenantID)
 }
 
 // List retrieves records from the database based on the provided query parameters and model.
@@ -382,6 +411,24 @@ func (r *ResourceRepository) Migrate(ctx context.Context, schemaName string) err
 	return nil
 }
 
+func (r *ResourceRepository) getSchemaFromCtx(ctx context.Context) (string, error) {
+	tenant, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return "", errs.Wrap(repo.ErrWithTenant, err)
+	}
+
+	var existingTenant model.Tenant
+
+	err = r.db.Where(repo.IDField+" = ?", tenant).First(&existingTenant).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", repo.ErrTenantNotFound
+	} else if err != nil {
+		return "", errs.Wrap(repo.ErrWithTenant, err)
+	}
+
+	return existingTenant.SchemaName, nil
+}
+
 func applySelectQuery(db *gorm.DB, query repo.Query) *gorm.DB {
 	if len(query.SelectFields) > 0 {
 		fields := make([]string, 0, len(query.SelectFields))
@@ -494,7 +541,7 @@ func handleCompositeKey(db *gorm.DB, compositeKey repo.CompositeKey) (*gorm.DB, 
 
 func applyFieldCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool) *gorm.DB {
 	switch key.Operation {
-	case repo.GreaterThan, repo.LessThan:
+	case repo.GreaterThan, repo.LessThan, repo.NotEqual:
 		return applyCondition(tx, field, string(key.Operation), key.Value, isStrict)
 	case repo.Equal:
 		return applyFieldEqualCondition(tx, field, key, isStrict)
@@ -525,7 +572,7 @@ func applyFieldEqualCondition(tx *gorm.DB, field string, key repo.Key, isStrict 
 
 func applyCondition(tx *gorm.DB, field, operator string, value any, isStrict bool) *gorm.DB {
 	if isStrict {
-		return tx.Where(fmt.Sprintf("%s %s (?)", field, operator), value)
+		return tx.Where(fmt.Sprintf("%s %s ?", field, operator), value)
 	}
 
 	return tx.Or(fmt.Sprintf("%s %s ?", field, operator), value)

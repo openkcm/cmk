@@ -7,8 +7,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/providers/clients/aws"
-	"github.com/openkcm/cmk/providers/clients/aws/mock"
+	"github.tools.sap/kms/cmk/providers/clients/aws"
+	"github.tools.sap/kms/cmk/providers/clients/aws/mock"
 )
 
 func TestOptions(t *testing.T) {

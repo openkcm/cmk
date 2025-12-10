@@ -4,20 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/samber/oops"
+	"golang.org/x/sync/semaphore"
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
 )
 
 var (
@@ -37,29 +39,25 @@ const DBLogDomain = "db"
 // StartDB starts DB connection and runs migrations
 func StartDB(
 	ctx context.Context,
-	dbConf config.Database,
-	provisioning config.Provisioning,
-	replicas []config.Database,
+	cfg *config.Config,
 ) (*multitenancy.DB, error) {
 	log.Info(ctx, "Starting DB connection ")
 
-	dbCon, err := StartDBConnection(dbConf, replicas)
+	dbCon, err := StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
 	if err != nil {
 		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to initialize DB Connection")
 	}
 
-	dbCon = dbCon.WithContext(ctx)
-
 	log.Info(ctx, "Starting DB migration")
 
-	err = migrate(ctx, dbCon)
+	err = syncTenants(ctx, dbCon, cfg)
 	if err != nil {
-		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to run table creation migration")
+		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to run migrations")
 	}
 
 	log.Info(ctx, "DB migration finished")
 
-	err = addKeystoreFromConfig(ctx, dbCon, provisioning.InitKeystoreConfig)
+	err = addKeystoreFromConfig(ctx, dbCon, cfg.Provisioning.InitKeystoreConfig)
 	if err != nil {
 		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to add initial keystore config")
 	}
@@ -67,53 +65,40 @@ func StartDB(
 	return dbCon, nil
 }
 
-// migrate runs DB migrations
-func migrate(ctx context.Context, db *multitenancy.DB) error {
-	err := db.RegisterModels(
-		ctx,
-		&model.KeyConfiguration{},
-		&model.Key{},
-		&model.KeyVersion{},
-		&model.KeyLabel{},
-		&model.System{},
-		&model.SystemProperty{},
-		&model.Workflow{},
-		&model.WorkflowApprover{},
-		&model.Tenant{},
-		&model.TenantConfig{},
-		&model.Certificate{},
-		&model.Group{},
-		&model.ImportParams{},
-		&model.KeystoreConfiguration{},
-		&model.Event{},
-	)
-	if err != nil {
-		return errs.Wrap(ErrMigrationFailed, err)
-	}
-
-	err = db.MigrateSharedModels(ctx)
-	if err != nil {
-		return errs.Wrap(ErrMigrationFailed, err)
-	}
-
+// syncTenants applies auto-migrate to all tenants
+func syncTenants(ctx context.Context, db *multitenancy.DB, cfg *config.Config) error {
 	r := sql.NewRepository(db)
 
-	err = repo.ProcessInBatch(ctx, r, repo.NewQuery(), repo.DefaultLimit, func(tenants []*model.Tenant) error {
-		for _, tenant := range tenants {
-			ctx := log.InjectTenant(ctx, tenant)
+	wg := sync.WaitGroup{}
+	sem := semaphore.NewWeighted(int64(cfg.Database.MigratorPoolSize))
 
-			err := db.MigrateTenantModels(ctx, tenant.SchemaName)
-			if err != nil {
-				log.Error(ctx, "Failed to migrate tenant", err)
-			}
+	err := repo.ProcessInBatch(ctx, r, repo.NewQuery(), repo.DefaultLimit, func(tenants []*model.Tenant) error {
+		for _, tenant := range tenants {
+			wg.Add(1)
+			go func(tenant *model.Tenant) {
+				defer wg.Done()
+				err := sem.Acquire(ctx, 1)
+				if err != nil {
+					log.Error(ctx, "Failed to start tenant migration", err)
+					return
+				}
+				defer sem.Release(1)
+
+				ctx := log.InjectTenant(ctx, tenant)
+
+				err = db.MigrateTenantModels(ctx, tenant.SchemaName)
+				if err != nil {
+					log.Error(ctx, "Failed to migrate tenant", err)
+				}
+			}(tenant)
 		}
 
 		return nil
 	})
+	wg.Wait()
 	if err != nil {
 		return errs.Wrap(ErrMigrationFailed, err)
 	}
-
 	return nil
 }
 

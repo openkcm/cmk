@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/notifier"
-	"github.com/openkcm/cmk/internal/notifier/workflow"
+	"github.tools.sap/kms/cmk/internal/notifier"
+	"github.tools.sap/kms/cmk/internal/notifier/workflow"
 )
 
 func TestNewNotifier(t *testing.T) {

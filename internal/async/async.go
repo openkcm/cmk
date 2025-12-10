@@ -10,9 +10,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 
-	conf "github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
+	conf "github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/log"
 )
 
 const (

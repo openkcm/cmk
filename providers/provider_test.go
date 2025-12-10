@@ -9,10 +9,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/providers"
-	"github.com/openkcm/cmk/providers/mock"
-	"github.com/openkcm/cmk/utils/ptr"
-	"github.com/openkcm/cmk/utils/slice"
+	"github.tools.sap/kms/cmk/providers"
+	"github.tools.sap/kms/cmk/providers/mock"
+	"github.tools.sap/kms/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/utils/slice"
 )
 
 var (

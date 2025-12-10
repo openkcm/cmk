@@ -11,11 +11,11 @@ import (
 
 	_ "embed"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
-	notifClient "github.com/openkcm/cmk/internal/notifier/client"
-	wf "github.com/openkcm/cmk/internal/workflow"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/model"
+	notifClient "github.tools.sap/kms/cmk/internal/notifier/client"
+	wf "github.tools.sap/kms/cmk/internal/workflow"
 )
 
 //go:embed templates/workflow_notification.html

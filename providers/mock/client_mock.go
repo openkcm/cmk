@@ -3,7 +3,7 @@ package mock
 import (
 	"context"
 
-	"github.com/openkcm/cmk/providers"
+	"github.tools.sap/kms/cmk/providers"
 )
 
 // Type definitions for the functions used in Client

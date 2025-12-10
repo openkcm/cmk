@@ -6,14 +6,16 @@ import (
 	"os"
 	"testing"
 
+	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	tmCLI "github.com/openkcm/cmk/cmd/tenant-manager-cli"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/testutils"
+	tmCLI "github.tools.sap/kms/cmk/cmd/tenant-manager-cli"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 var errTest = errors.New("test error")
@@ -32,12 +34,25 @@ func TestSetupCommands(t *testing.T) {
 	t.Run("Should create root command with all subcommands", func(t *testing.T) {
 		ctx := t.Context()
 
-		ctlg, err := catalog.New(t.Context(), config.Config{
-			Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
+		_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+			CreateDatabase: true,
+			Models: []driver.TenantTabler{
+				&model.System{},
+				&model.KeyConfiguration{},
+				&model.Key{},
+			},
 		})
+
+		cfg := &config.Config{
+			Plugins:  testutils.SetupMockPlugins(testutils.IdentityPlugin),
+			Database: dbCfg,
+		}
+
+		ctlg, err := catalog.New(t.Context(), cfg)
 		assert.NoError(t, err, "Failed to create catalog")
 
-		rootCmd := tmCLI.SetupCommands(ctx, nil, ctlg)
+		rootCmd, err := tmCLI.SetupCommands(ctx, cfg, nil, ctlg)
+		assert.NoError(t, err)
 
 		assert.NotNil(t, rootCmd)
 		assert.NotEmpty(t, rootCmd.Use)

@@ -11,7 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 const (

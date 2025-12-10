@@ -4,17 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	pluginHelpers "github.tools.sap/kms/cmk/utils/plugins"
 )
+
+// Since the workflow expiry must be less than the retention minus a day
+const minimumRetentionPeriodDays = 2
 
 type TenantConfigManager struct {
 	repo         repo.Repo
@@ -34,13 +38,15 @@ func NewTenantConfigManager(
 }
 
 var (
-	ErrMarshalConfig       = errors.New("error marshalling tenant config")
-	ErrUnmarshalConfig     = errors.New("error unmarshalling tenant config")
-	ErrGetDefaultKeystore  = errors.New("failed to get default keystore")
-	ErrSetDefaultKeystore  = errors.New("failed to set default keystore")
-	ErrGetKeystoreFromPool = errors.New("failed to get keystore config from pool")
-	ErrGetWorkflowConfig   = errors.New("failed to get workflow config")
-	ErrSetWorkflowConfig   = errors.New("failed to set workflow config")
+	ErrMarshalConfig            = errors.New("error marshalling tenant config")
+	ErrUnmarshalConfig          = errors.New("error unmarshalling tenant config")
+	ErrGetDefaultKeystore       = errors.New("failed to get default keystore")
+	ErrSetDefaultKeystore       = errors.New("failed to set default keystore")
+	ErrGetKeystoreFromPool      = errors.New("failed to get keystore config from pool")
+	ErrGetWorkflowConfig        = errors.New("failed to get workflow config")
+	ErrSetWorkflowConfig        = errors.New("failed to set workflow config")
+	ErrRetentionLessThanMinimum = errors.New("retention is less than the minimum allowed (" +
+		strconv.Itoa(minimumRetentionPeriodDays) + " day)")
 )
 
 type HYOKKeystore struct {
@@ -97,11 +103,21 @@ func (m *TenantConfigManager) SetWorkflowConfig(
 		}
 
 		defaultMinimumApprovalCount := 2
+		defaultRetentionPeriodDays := 30
+		defaultDefaultExpiryPeriodDays := 7
+		defaultMaxExpiryPeriodDays := 30
 
 		workflowConfig = &model.WorkflowConfig{
-			Enabled:          defaultEnabled,
-			MinimumApprovals: defaultMinimumApprovalCount,
+			Enabled:                 defaultEnabled,
+			MinimumApprovals:        defaultMinimumApprovalCount,
+			RetentionPeriodDays:     defaultRetentionPeriodDays,
+			DefaultExpiryPeriodDays: defaultDefaultExpiryPeriodDays,
+			MaxExpiryPeriodDays:     defaultMaxExpiryPeriodDays,
 		}
+	}
+
+	if workflowConfig.RetentionPeriodDays < minimumRetentionPeriodDays {
+		return nil, errs.Wrap(ErrSetWorkflowConfig, ErrRetentionLessThanMinimum)
 	}
 
 	configValue, err := json.Marshal(workflowConfig)

@@ -10,18 +10,18 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
-	"github.com/openkcm/cmk/utils/base62"
-	ctxUtils "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/async"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	wfMechanism "github.tools.sap/kms/cmk/internal/workflow"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
+	"github.tools.sap/kms/cmk/utils/base62"
+	ctxUtils "github.tools.sap/kms/cmk/utils/context"
 )
 
 // The identity service group has been created for this tenant and group name specifically
@@ -113,11 +113,11 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 		w.ActionType = wfMechanism.ActionTypeDelete.String()
 	})
 
-	ctlg, err := catalog.New(ctx, *testConfig)
+	ctlg, err := catalog.New(ctx, testConfig)
 	tenantConfigManager := manager.NewTenantConfigManager(repository, ctlg)
-	keyConfigManager := manager.NewKeyConfigManager(repository, nil, testConfig)
+	keyConfigManager := manager.NewKeyConfigManager(repository, nil, nil, testConfig)
 	keyManager := manager.NewKeyManager(repository, ctlg, nil, keyConfigManager, nil, nil, nil)
-	systemManager := manager.NewSystemManager(ctx, repository, nil, nil, ctlg, nil, testConfig)
+	systemManager := manager.NewSystemManager(ctx, repository, nil, nil, ctlg, testConfig, keyConfigManager)
 	groupManager := manager.NewGroupManager(repository, ctlg)
 	workflowManager := manager.NewWorkflowManager(repository, keyManager, keyConfigManager, systemManager,
 		groupManager, asyncApp.Client(), tenantConfigManager)

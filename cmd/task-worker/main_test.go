@@ -12,9 +12,9 @@ import (
 	"github.com/zeebo/assert"
 	"gopkg.in/yaml.v3"
 
-	taskWorker "github.com/openkcm/cmk/cmd/task-worker"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/testutils"
+	taskWorker "github.tools.sap/kms/cmk/cmd/task-worker"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 func buildCfg(t *testing.T) *config.Config {

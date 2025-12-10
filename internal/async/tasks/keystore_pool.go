@@ -5,9 +5,9 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/repo"
 )
 
 type KeystorePoolUpdater interface {

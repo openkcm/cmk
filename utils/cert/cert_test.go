@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openkcm/cmk/utils/cert"
-	"github.com/openkcm/cmk/utils/cert/mock"
+	"github.tools.sap/kms/cmk/utils/cert"
+	"github.tools.sap/kms/cmk/utils/cert/mock"
 )
 
 var (

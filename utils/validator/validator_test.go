@@ -3,7 +3,7 @@ package validator_test
 import (
 	"testing"
 
-	"github.com/openkcm/cmk/utils/validator"
+	"github.tools.sap/kms/cmk/utils/validator"
 )
 
 func TestValidateUUID(t *testing.T) {

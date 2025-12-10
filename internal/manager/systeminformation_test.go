@@ -14,13 +14,13 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 const (
@@ -40,7 +40,7 @@ func SetupSystemInfoManager(t *testing.T) (
 		Models: []driver.TenantTabler{&model.System{}, &model.SystemProperty{}, &model.KeyConfiguration{}},
 	})
 	dbRepository := sql.NewRepository(db)
-	ctlg, err := catalog.New(t.Context(), config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
+	ctlg, err := catalog.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
 	assert.NoError(t, err)
 	systemManager, err := manager.NewSystemInformationManager(
 		dbRepository,
@@ -167,7 +167,7 @@ func TestNewSystemInformationManager(t *testing.T) {
 					},
 				},
 			}
-			ctlg, err := catalog.New(t.Context(), cfg)
+			ctlg, err := catalog.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
 			_, err = manager.NewSystemInformationManager(nil, ctlg, &cfg.ContextModels.System)

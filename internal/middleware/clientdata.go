@@ -9,12 +9,14 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/openkcm/common-sdk/pkg/auth"
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/flags"
-	"github.com/openkcm/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/api/write"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/manager"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 var (
@@ -23,83 +25,88 @@ var (
 	ErrPublicKeyNotFound      = errors.New("public key not found or invalid")
 	ErrVerifySignatureFailed  = errors.New("failed to verify client data signature")
 	ErrDecodeClientData       = errors.New("failed to decode client data from header")
+	ErrTriedToBeSystem        = errors.New("attempted to be system")
 )
 
+// RoleGetter defines the interface for getting roles from group IAM identifiers for better unit testing
+type RoleGetter interface {
+	GetRoleFromGroupIAMIdentifiers(ctx context.Context, iamIdentifiers []constants.UserGroup) (constants.Role, error)
+}
+
 // ClientDataMiddleware extracts client data from headers, verifies, and adds to context
-// if feature gate is enabled, skip client data computation
-// and pass empty context values
-// this is to allow disabling client data computation
 func ClientDataMiddleware(
-	featureGates *commoncfg.FeatureGates,
 	signingKeyStorage keyvalue.ReadOnlyStringToBytesStorage,
 	authContextFields []string,
+	roleGetter RoleGetter,
 ) func(http.Handler) http.Handler {
-	clientDataComputationDisabled := featureGates.IsFeatureEnabled(flags.DisableClientDataComputation)
-	if clientDataComputationDisabled {
-		slog.Info("Client data computation is disabled by feature gate")
-	}
-
 	return func(next http.Handler) http.Handler {
-		if clientDataComputationDisabled {
-			return next
-		}
+		return http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				ctx, err := prepareClientContext(r, signingKeyStorage, authContextFields, roleGetter)
+				if err != nil {
+					log.Debug(r.Context(), "Client data processing error", log.ErrorAttr(err))
+					if errors.Is(err, manager.ErrMultipleRolesInGroups) {
+						e := apierrors.TransformToAPIError(r.Context(), err)
+						write.ErrorResponse(r.Context(), w, *e)
+					} else {
+						write.ErrorResponse(
+							r.Context(), w,
+							apierrors.OAPIValidatorErrorMessage("Unauthorized", http.StatusUnauthorized),
+						)
+					}
 
-		return clientDataHandler(signingKeyStorage, authContextFields, next)
+					return
+				}
+
+				next.ServeHTTP(w, r.WithContext(ctx)) //nolint:contextcheck
+			},
+		)
 	}
 }
 
-func clientDataHandler(
+// prepareClientContext extracts, validates, and verifies client data from request
+func prepareClientContext(
+	r *http.Request,
 	signingKeyStorage keyvalue.ReadOnlyStringToBytesStorage,
 	authContextFields []string,
-	next http.Handler,
-) http.Handler {
-	return http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			clientData, err := extractClientData(r)
-			if err != nil {
-				logErrorAndContinue(r.Context(), err)
-				next.ServeHTTP(w, r)
+	roleGetter RoleGetter,
+) (context.Context, error) {
+	clientData, err := extractClientData(r)
+	if err != nil || clientData == nil {
+		return r.Context(), err
+	}
 
-				return
-			}
+	// Validate that all groups belong to only one role type
+	// either KeyAdminRole, TenantAdminRole, or TenantAuditorRole
+	err = validateGroupRoles(r.Context(), clientData, roleGetter)
+	if err != nil {
+		return r.Context(), err
+	}
 
-			pemData, exists := signingKeyStorage.Get(clientData.KeyID)
-			if !exists {
-				err := ErrPublicKeyNotFound
-				logErrorAndContinue(r.Context(), err)
-				next.ServeHTTP(w, r)
+	pemData, exists := signingKeyStorage.Get(clientData.KeyID)
+	if !exists {
+		return r.Context(), ErrPublicKeyNotFound
+	}
 
-				return
-			}
+	if clientData.SignatureAlgorithm != auth.SignatureAlgorithmRS256 {
+		return r.Context(), fmt.Errorf(
+			"%w: unsupported signature algorithm '%s'", ErrPublicKeyNotFound, clientData.SignatureAlgorithm,
+		)
+	}
 
-			if clientData.SignatureAlgorithm != auth.SignatureAlgorithmRS256 {
-				err := fmt.Errorf(
-					"%w: unsupported signature algorithm '%s'", ErrPublicKeyNotFound, clientData.SignatureAlgorithm,
-				)
-				logErrorAndContinue(r.Context(), err)
-				next.ServeHTTP(w, r)
+	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(pemData)
+	if err != nil {
+		return r.Context(), ErrPublicKeyNotFound
+	}
 
-				return
-			}
+	err = verifyClientDataSignature(r, clientData, publicKey)
+	if err != nil {
+		return r.Context(), err
+	}
 
-			publicKey, err := jwt.ParseRSAPublicKeyFromPEM(pemData)
-			if err != nil {
-				err = ErrPublicKeyNotFound
-				logErrorAndContinue(r.Context(), err)
-			}
+	ctx := cmkcontext.InjectClientData(r.Context(), clientData, authContextFields)
 
-			err = verifyClientDataSignature(r, clientData, publicKey)
-			if err != nil {
-				logErrorAndContinue(r.Context(), err)
-				next.ServeHTTP(w, r)
-
-				return
-			}
-
-			ctx := populateContextWithClientData(r.Context(), clientData, authContextFields)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		},
-	)
+	return ctx, nil
 }
 
 // extractClientData retrieves and decodes client data from request headers
@@ -112,6 +119,36 @@ func extractClientData(r *http.Request) (*auth.ClientData, error) {
 	clientData, err := auth.DecodeFrom(clientDataHeader)
 	if err != nil {
 		return nil, fmt.Errorf("%w: '%s': %w", ErrDecodeClientData, clientDataHeader, err)
+	}
+
+	if clientData == nil {
+		return nil, fmt.Errorf("%w: '%s'", ErrMissingSignatureHeader, clientDataHeader)
+	}
+	// temporary debug logs for extracted client data
+	log.Debug(r.Context(), "extracted client data:", slog.String("identifier", clientData.Identifier))
+	log.Debug(r.Context(), "extracted client data:", slog.String("EMail", clientData.Email))
+	log.Debug(r.Context(), "extracted client data:", slog.String("GivenName", clientData.GivenName))
+	log.Debug(r.Context(), "extracted client data:", slog.Any("FamilyName", clientData.FamilyName))
+
+	for _, group := range clientData.Groups {
+		log.Debug(r.Context(), "extracted client data group:", slog.String("group", group))
+	}
+
+	log.Debug(r.Context(), "extracted client data:", slog.String("Type", clientData.Type))
+	log.Debug(r.Context(), "extracted client data:", slog.String("Region", clientData.Region))
+
+	for k, v := range clientData.AuthContext {
+		log.Debug(r.Context(), "extracted client data auth context:", slog.String(k, v))
+	}
+
+	log.Debug(r.Context(), "extracted client data:", slog.String("keyID", clientData.KeyID))
+	log.Debug(
+		r.Context(), "extracted client data:",
+		slog.String("SignatureAlgorithm", string(clientData.SignatureAlgorithm)),
+	)
+
+	if clientData.Identifier == constants.SystemUser.String() {
+		return nil, ErrTriedToBeSystem
 	}
 
 	return clientData, nil
@@ -132,36 +169,35 @@ func verifyClientDataSignature(r *http.Request, clientData *auth.ClientData, pub
 	return nil
 }
 
-// populateContextWithClientData adds client data to request context
-func populateContextWithClientData(
+// validateGroupRoles ensures that all groups in client data belong to only one role type
+func validateGroupRoles(
 	ctx context.Context,
 	clientData *auth.ClientData,
-	authContextFields []string,
-) context.Context {
-	filteredAuthCtx := make(map[string]string)
-
-	for _, field := range authContextFields {
-		if value, exists := clientData.AuthContext[field]; exists {
-			filteredAuthCtx[field] = value
-		}
+	roleGetter RoleGetter,
+) error {
+	// If there are no groups or only one group, no need to validate
+	if len(clientData.Groups) <= 1 {
+		return nil
 	}
 
-	clientData.AuthContext = filteredAuthCtx
-	ctx = context.WithValue(ctx, constants.ClientData, clientData)
-
-	return ctx
-}
-
-// logErrorAndContinue logs client data errors with related context
-func logErrorAndContinue(ctx context.Context, err error) {
-	switch {
-	case errors.Is(err, ErrNoClientDataHeader):
-		log.Info(ctx, err.Error())
-	case errors.Is(err, ErrMissingSignatureHeader):
-		log.Warn(ctx, err.Error())
-	case errors.Is(err, ErrPublicKeyNotFound):
-		log.Warn(ctx, err.Error())
-	default:
-		log.Error(ctx, "Client data processing failed", err)
+	// Convert string groups to UserGroup type
+	userGroups := make([]constants.UserGroup, len(clientData.Groups))
+	for i, group := range clientData.Groups {
+		userGroups[i] = constants.UserGroup(group)
 	}
+
+	// Get all roles associated with the groups using existing GroupManager method
+	roles, err := roleGetter.GetRoleFromGroupIAMIdentifiers(ctx, userGroups)
+	if errors.Is(err, manager.ErrMultipleRolesInGroups) {
+		log.Debug(
+			ctx, "Segregation of roles not fulfilled in client data groups",
+			slog.Any("roles", roles),
+		)
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get roles for groups: %w", err)
+	}
+
+	return nil
 }

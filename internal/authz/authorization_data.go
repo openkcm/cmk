@@ -3,12 +3,13 @@ package authz
 import (
 	"errors"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 type AuthorizationKey struct {
 	TenantID         TenantID
-	UserGroup        UserGroup
+	UserGroup        constants.UserGroup
 	ResourceTypeName ResourceTypeName
 	Action           Action
 }

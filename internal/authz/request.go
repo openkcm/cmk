@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openkcm/cmk/internal/errs"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 type User struct {
 	UserName string
-	Groups   []UserGroup
+	Groups   []constants.UserGroup
 }
 type Request struct {
 	ID               string           // required
@@ -112,7 +113,7 @@ func (ar *Request) SetResourceType(resourceTypeName ResourceTypeName) error {
 
 func (ar *Request) SetUser(user User) error {
 	// empty Username is not allowed
-	// empty Groups is allowed
+	// empty Groups is not allowed
 	if user.UserName == "" || len(user.Groups) == 0 {
 		return errs.Wrap(ErrValidation, ErrUserEmpty)
 	}

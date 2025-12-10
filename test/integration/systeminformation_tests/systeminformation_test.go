@@ -12,14 +12,14 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
 )
 
 const (
@@ -38,11 +38,10 @@ func (s *SystemInformationSuite) SetupSuite() {
 	cfg := &config.Config{
 		Database: integrationutils.DB,
 	}
-	integrationutils.StartPostgresSQL(s.T(), &cfg.Database)
+	testutils.StartPostgresSQL(s.T(), &cfg.Database)
 	s.dbConfig = cfg.Database
 }
 
-//nolint:funlen
 func (s *SystemInformationSuite) TestUpdateSystems() {
 	t := s.T()
 	db, tenants, _ := testutils.NewTestDB(
@@ -68,7 +67,7 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 
 	clg, err := catalog.New(
 		t.Context(),
-		config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
+		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
 	assert.NoError(t, err)
 
@@ -104,7 +103,6 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 		sys, err = repo.GetSystemByIDWithProperties(ctx, repository, sys.ID, repo.NewQuery())
 		assert.NoError(t, err)
 		assert.True(t, ok)
-		assert.Equal(t, "Key Management Service Kernel (CSEK)", sys.Properties[SystemRole])
 		assert.Equal(t, sys.Properties[SystemName],
 			fmt.Sprintf("ExternalName%d", i))
 		assert.Equal(t, sys.Properties[SystemRoleID],
@@ -116,7 +114,6 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 	}
 }
 
-//nolint:funlen
 func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 	t := s.T()
 	db, tenants, _ := testutils.NewTestDB(
@@ -152,7 +149,7 @@ func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 
 	clg, err := catalog.New(
 		t.Context(),
-		config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
+		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
 	assert.NoError(t, err)
 
@@ -180,7 +177,6 @@ func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 
 	sys, err = repo.GetSystemByIDWithProperties(ctx, repository, sys.ID, repo.NewQuery())
 	assert.NoError(t, err)
-	assert.Equal(t, "Key Management Service Kernel (CSEK)", sys.Properties[SystemRole])
 	assert.Equal(t, sys.Properties[SystemName],
 		fmt.Sprintf("ExternalName%d", systemNumber))
 	assert.Equal(t, sys.Properties[SystemRoleID],

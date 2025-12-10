@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/apierrors"
 )
 
 func TestInternalServerErrorMessage(t *testing.T) {
@@ -57,7 +57,7 @@ func TestOAPIValidationErrorMessage(t *testing.T) {
 
 	t.Run("Should Internal Server Error", func(t *testing.T) {
 		expected := apierrors.InternalServerErrorMessage()
-		result := apierrors.OAPIValidatorErrorMessage("Unxpected Error", http.StatusForbidden)
+		result := apierrors.OAPIValidatorErrorMessage("Unxpected Error", http.StatusVariantAlsoNegotiates)
 		assert.Equal(t, expected, result)
 	})
 }

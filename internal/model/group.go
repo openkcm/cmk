@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/constants"
 )
 
 var (

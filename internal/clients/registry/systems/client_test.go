@@ -12,8 +12,8 @@ import (
 
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/clients/registry/systems"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 const (
@@ -148,7 +148,7 @@ func TestRegistryService_SystemsClient(t *testing.T) {
 			})
 		})
 	})
-	t.Run("UpdateSystemL1KeyClaim", func(t *testing.T) {
+	t.Run("ExtendedUpdateSystemL1KeyClaim", func(t *testing.T) {
 		// At present time there is no implementation for system registry
 		// in order to not expose unnecessary endpoints on the client create an instace
 		// of the base SystemClient
@@ -159,7 +159,7 @@ func TestRegistryService_SystemsClient(t *testing.T) {
 			_, err := baseSystemClient.RegisterSystem(ctx, sysReq1)
 			assert.NoError(t, err)
 
-			err = systemsClient.UpdateSystemL1KeyClaim(ctx, systems.SystemFilter{
+			err = systemsClient.ExtendedUpdateSystemL1KeyClaim(ctx, systems.SystemFilter{
 				Region:     sysReq1.GetRegion(),
 				ExternalID: sysReq1.GetExternalId(),
 				TenantID:   sysReq1.GetTenantId(),

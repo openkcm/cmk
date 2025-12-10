@@ -1,6 +1,6 @@
 package notifier
 
-import "github.com/openkcm/cmk/internal/notifier/workflow"
+import "github.tools.sap/kms/cmk/internal/notifier/workflow"
 
 // Notifier creates different notification creators
 type Notifier struct {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/utils/slice"
+	"github.tools.sap/kms/cmk/utils/slice"
 )
 
 func TestContains(t *testing.T) {

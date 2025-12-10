@@ -3,9 +3,9 @@ package odata
 import (
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 // QueryOdataMapper maps odata fields and parameters to repo queries. It implements the
@@ -45,8 +45,10 @@ func (mf *QueryOdataMapper) GetQuery() *repo.Query {
 					Operation: repo.Equal,
 				},
 			}
-			cond := repo.Condition{Field: mf.parseFilterFields[i],
-				Value: entry}
+			cond := repo.Condition{
+				Field: mf.parseFilterFields[i],
+				Value: entry,
+			}
 			ck.Conds = append(ck.Conds, cond)
 			ckg := repo.NewCompositeKeyGroup(ck)
 			query.Where(ckg)
@@ -57,6 +59,27 @@ func (mf *QueryOdataMapper) GetQuery() *repo.Query {
 	top := ptr.GetIntOrDefault(mf.top, constants.DefaultTop)
 
 	return query.SetOffset(skip).SetLimit(top)
+}
+
+func (mf *QueryOdataMapper) GetString(field repo.QueryField) (string, error) {
+	val, ok := mf.parseFilterMap[field]
+	if !ok || val == nil {
+		// Use the schema for the type check, since these was never a filter
+		// value provided. Really just a sanity check.
+		err := mf.filterSchema.assertTypeFromDBName(field, String)
+		if err != nil {
+			return "", err
+		}
+
+		return "", nil
+	}
+
+	converted, ok := val.(string)
+	if !ok {
+		return "", ErrFilterTypeIncompatible
+	}
+
+	return converted, nil
 }
 
 // GetUUID is a QueryMapper interface function which returns the uuid value for a
@@ -121,6 +144,10 @@ func (mf *QueryOdataMapper) ParseFilter(param *string) error {
 	}
 
 	return nil
+}
+
+func (mf *QueryOdataMapper) GetPaging() (*int, *int) {
+	return mf.skip, mf.top
 }
 
 // setFieldValue sets each parsed filter field and value into the internal data.

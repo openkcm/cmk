@@ -7,13 +7,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/keyconfiguration"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform/keyconfiguration"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 func TestTransformKeyConfiguration_FromAPI(t *testing.T) {
@@ -96,7 +96,7 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 	description := "Test key configuration"
 	id := uuid.New()
 	adminGroupID := uuid.New()
-	creatorID := uuid.New()
+	creatorID := uuid.New().String()
 	creatorName := "test-creator"
 
 	primaryKeyID := uuid.New()
@@ -121,8 +121,8 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 			Description:  &description,
 			AdminGroupID: adminGroupID,
 			Metadata: &cmkapi.KeyConfigurationMetadata{
-				CreatedAt:    ptr.PointTo(time.Time{}.Format(time.RFC3339)),
-				UpdatedAt:    ptr.PointTo(time.Time{}.Format(time.RFC3339)),
+				CreatedAt:    ptr.PointTo(time.Time{}),
+				UpdatedAt:    ptr.PointTo(time.Time{}),
 				CreatorID:    &creatorID,
 				CreatorName:  &creatorName,
 				TotalKeys:    ptr.PointTo(0),

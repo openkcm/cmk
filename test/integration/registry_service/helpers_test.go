@@ -11,7 +11,7 @@ import (
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	regionpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 var ErrUnknownClient = errors.New("client is unknown")

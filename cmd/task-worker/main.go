@@ -17,25 +17,24 @@ import (
 	"github.com/openkcm/common-sdk/pkg/status"
 	"github.com/samber/oops"
 
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/async/tasks"
-	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/db/dsn"
-	"github.com/openkcm/cmk/internal/errs"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/notifier/client"
-	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/async"
+	"github.tools.sap/kms/cmk/internal/async/tasks"
+	"github.tools.sap/kms/cmk/internal/auditor"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/db"
+	"github.tools.sap/kms/cmk/internal/db/dsn"
+	"github.tools.sap/kms/cmk/internal/errs"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/notifier/client"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
 )
 
-var BuildInfo = "{}"
-
 var (
+	BuildInfo               = "{}"
 	gracefulShutdownSec     = flag.Int64("graceful-shutdown", 1, "graceful shutdown seconds")
 	gracefulShutdownMessage = flag.String("graceful-shutdown-message", "Graceful shutdown in %d seconds",
 		"graceful shutdown message")
@@ -106,12 +105,12 @@ func registerTasks(
 	cfg *config.Config,
 	cron *async.App,
 ) error {
-	dbCon, err := db.StartDBConnection(cfg.Database, cfg.DatabaseReplicas)
+	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
 	if err != nil {
 		return errs.Wrap(db.ErrStartingDBCon, err)
 	}
 
-	ctlg, err := catalog.New(ctx, *cfg)
+	ctlg, err := catalog.New(ctx, cfg)
 	if err != nil {
 		return errs.Wrapf(err, "failed to start loading catalog")
 	}
@@ -125,7 +124,7 @@ func registerTasks(
 
 	cfg.EventProcessor.Targets = nil // Disable consumer creation in the event processor
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, r, ctlg)
+	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, r, ctlg, nil)
 	if err != nil {
 		return errs.Wrapf(err, "failed to create event reconciler")
 	}
@@ -133,10 +132,10 @@ func registerTasks(
 	cmkAuditor := auditor.New(ctx, cfg)
 	certManager := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
 	tenantConfigManager := manager.NewTenantConfigManager(r, ctlg)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, cmkAuditor, cfg)
 	keyManager := manager.NewKeyManager(
 		r, ctlg, tenantConfigManager, keyConfigManager, certManager, reconciler, cmkAuditor)
-	systemManager := manager.NewSystemManager(ctx, r, nil, reconciler, ctlg, cmkAuditor, cfg)
+	systemManager := manager.NewSystemManager(ctx, r, nil, reconciler, ctlg, cfg, keyConfigManager)
 	groupManager := manager.NewGroupManager(r, ctlg)
 	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
 		groupManager, cron.Client(), tenantConfigManager)
@@ -149,6 +148,7 @@ func registerTasks(
 		tasks.NewKeystorePoolFiller(keyManager, r, cfg.KeystorePool),
 		tasks.NewWorkflowProcessor(workflowManager, r),
 		tasks.NewNotificationSender(notificationClient),
+		tasks.NewWorkflowCleaner(workflowManager, r),
 	})
 
 	return nil

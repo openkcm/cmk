@@ -7,9 +7,9 @@ import (
 
 	"github.com/openkcm/common-sdk/pkg/auth"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	ctxUtils "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
+	ctxUtils "github.tools.sap/kms/cmk/utils/context"
 )
 
 var (
@@ -18,9 +18,9 @@ var (
 
 // TaskPayload represents the payload for an async task, including tenant context.
 type TaskPayload struct {
-	TenantID    string
-	AuthContext map[string]string
-	Data        []byte
+	TenantID   string
+	ClientData auth.ClientData
+	Data       []byte
 }
 
 func NewTaskPayload(ctx context.Context, data []byte) TaskPayload {
@@ -29,15 +29,15 @@ func NewTaskPayload(ctx context.Context, data []byte) TaskPayload {
 		tenantID = ""
 	}
 
-	authContext, err := ctxUtils.ExtractClientDataAuthContext(ctx)
+	clientData, err := ctxUtils.ExtractClientData(ctx)
 	if err != nil {
-		authContext = nil
+		clientData = &auth.ClientData{}
 	}
 
 	return TaskPayload{
-		TenantID:    tenantID,
-		AuthContext: authContext,
-		Data:        data,
+		TenantID:   tenantID,
+		ClientData: *clientData,
+		Data:       data,
 	}
 }
 
@@ -57,11 +57,7 @@ func (p *TaskPayload) InjectContext(ctx context.Context) context.Context {
 		ctx = ctxUtils.CreateTenantContext(ctx, p.TenantID)
 	}
 
-	if p.AuthContext != nil {
-		ctx = context.WithValue(ctx, constants.ClientData, &auth.ClientData{AuthContext: p.AuthContext})
-	}
-
-	return ctx
+	return context.WithValue(ctx, constants.ClientData, &p.ClientData)
 }
 
 func (p *TaskPayload) ToBytes() ([]byte, error) {

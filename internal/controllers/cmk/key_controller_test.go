@@ -13,18 +13,20 @@ import (
 
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 var (
@@ -120,6 +122,11 @@ func TestKeyControllerGetKeys(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: tt.query,
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -241,6 +248,11 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: tt.query,
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -468,6 +480,11 @@ func TestKeyControllerPostKeys(t *testing.T) {
 				Endpoint: "keys",
 				Tenant:   tenant,
 				Body:     testutils.WithJSON(t, tt.inputMap),
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -507,6 +524,11 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 			Endpoint: "keys",
 			Tenant:   tenant,
 			Body:     testutils.WithJSON(t, sysManagedKey),
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		})
 		// Assert
 		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
@@ -531,6 +553,11 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 			Endpoint: "keys",
 			Tenant:   tenant,
 			Body:     testutils.WithJSON(t, byokKey),
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		})
 		// Assert
 		assert.Equal(t, http.StatusServiceUnavailable, w.Code)

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/utils/must"
+	"github.tools.sap/kms/cmk/utils/must"
 )
 
 var (

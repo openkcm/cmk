@@ -1,6 +1,6 @@
 package authz
 
-import "github.com/openkcm/cmk/internal/constants"
+import "github.tools.sap/kms/cmk/internal/constants"
 
 type (
 	ResourceTypeName string
@@ -10,55 +10,68 @@ type (
 	}
 )
 
+// all resource types which are used in policies
 const (
 	ResourceTypeKeyConfiguration ResourceTypeName = "KeyConfiguration"
 	ResourceTypeKey              ResourceTypeName = "Key"
 	ResourceTypeSystem           ResourceTypeName = "System"
+	ResourceTypeWorkFlow         ResourceTypeName = "Workflow"
+	ResourceTypeUserGroup        ResourceTypeName = "UserGroup"
+	ResourceTypeTenant           ResourceTypeName = "Tenant"
 )
 
 type Action string
 
+// all actions which are used in policies which can be performed on resource types
 const (
-	ActionKeyConfigurationRead          Action = "KeyConfigurationRead"
-	ActionKeyConfigurationCreate        Action = "KeyConfigurationCreate"
-	ActionKeyConfigurationDelete        Action = "KeyConfigurationDelete"
-	ActionKeyConfigurationSetPrimaryKey Action = "SetPrimaryKey"
-	ActionKeyConfigurationUpdate        Action = "KeyConfigurationUpdate"
-	ActionKeyConfigurationList          Action = "KeyConfigurationList"
-
-	ActionKeyRead   Action = "KeyRead"
-	ActionKeyCreate Action = "KeyCreate"
-	ActionKeyDelete Action = "KeyDelete"
-	ActionKeyUpdate Action = "KeyUpdate"
-	ActionKeyRotate Action = "KeyRotate"
-	ActionKeyList   Action = "KeyList"
-
-	ActionSystemLink   Action = "SystemLink"
-	ActionSystemUnlink Action = "SystemUnlink"
-	ActionSystemList   Action = "SystemList"
+	ActionRead             Action = "read"
+	ActionList             Action = "list"
+	ActionCreate           Action = "create"
+	ActionUpdate           Action = "update"
+	ActionDelete           Action = "delete"
+	ActionKeyRotate        Action = "KeyRotate"
+	ActionSystemModifyLink Action = "ModifySystemLink"
 )
 
 var ResourceTypeActions = map[ResourceTypeName]map[Action]struct{}{
 	ResourceTypeKeyConfiguration: {
-		ActionKeyConfigurationRead:          {},
-		ActionKeyConfigurationCreate:        {},
-		ActionKeyConfigurationDelete:        {},
-		ActionKeyConfigurationSetPrimaryKey: {},
-		ActionKeyConfigurationUpdate:        {},
-		ActionKeyConfigurationList:          {},
+		ActionRead:   {},
+		ActionCreate: {},
+		ActionDelete: {},
+		ActionUpdate: {},
+		ActionList:   {},
 	},
 	ResourceTypeKey: {
-		ActionKeyRead:   {},
-		ActionKeyCreate: {},
-		ActionKeyDelete: {},
-		ActionKeyUpdate: {},
+		ActionRead:      {},
+		ActionCreate:    {},
+		ActionDelete:    {},
+		ActionUpdate:    {},
 		ActionKeyRotate: {},
-		ActionKeyList:   {},
+		ActionList:      {},
 	},
 	ResourceTypeSystem: {
-		ActionSystemLink:   {},
-		ActionSystemUnlink: {},
-		ActionSystemList:   {},
+		ActionRead:             {},
+		ActionList:             {},
+		ActionSystemModifyLink: {},
+	},
+	ResourceTypeWorkFlow: {
+		ActionRead:   {},
+		ActionCreate: {},
+		ActionDelete: {},
+		ActionUpdate: {},
+		ActionList:   {},
+	},
+	ResourceTypeUserGroup: {
+		ActionRead:   {},
+		ActionCreate: {},
+		ActionDelete: {},
+		ActionUpdate: {},
+		ActionList:   {},
+	},
+	ResourceTypeTenant: {
+		ActionRead:   {},
+		ActionUpdate: {},
+		ActionList:   {},
 	},
 }
 
@@ -75,34 +88,13 @@ type Policy struct {
 }
 
 type policies struct {
-	Roles         []constants.Role
-	ResourceTypes []ResourceType
-	Policies      []Policy
+	Roles    []constants.Role
+	Policies []Policy
 }
 
 var PolicyData = policies{
 	Roles: []constants.Role{
 		constants.KeyAdminRole, constants.TenantAdminRole, constants.TenantAuditorRole,
-	},
-	ResourceTypes: []ResourceType{
-		{
-			ID: ResourceTypeKeyConfiguration,
-			Actions: []Action{
-				ActionKeyConfigurationRead, ActionKeyConfigurationCreate, ActionKeyConfigurationDelete,
-			},
-		},
-		{
-			ID: ResourceTypeKey,
-			Actions: []Action{
-				ActionKeyRead, ActionKeyCreate, ActionKeyDelete, ActionKeyUpdate,
-			},
-		},
-		{
-			ID: ResourceTypeSystem,
-			Actions: []Action{
-				ActionSystemLink, ActionSystemUnlink,
-			},
-		},
 	},
 	Policies: []Policy{
 		{
@@ -112,24 +104,96 @@ var PolicyData = policies{
 				{
 					ID: ResourceTypeKeyConfiguration,
 					Actions: []Action{
-						ActionKeyConfigurationRead,
+						ActionRead,
+						ActionList,
+					},
+				},
+				{
+					ID: ResourceTypeKey,
+					Actions: []Action{
+						ActionRead,
+						ActionList,
+					},
+				},
+				{
+					ID: ResourceTypeSystem,
+					Actions: []Action{
+						ActionList,
+						ActionRead,
+					},
+				},
+				{
+					ID: ResourceTypeWorkFlow,
+					Actions: []Action{
+						ActionRead,
+						ActionList,
+					},
+				},
+				{
+					ID: ResourceTypeUserGroup,
+					Actions: []Action{
+						ActionRead,
+						ActionList,
+					},
+				},
+				{
+					ID: ResourceTypeTenant,
+					Actions: []Action{
+						ActionRead,
+						ActionList,
 					},
 				},
 			},
 		},
 		{
-			ID:   "AdminPolicy",
+			ID:   "KeyAdminPolicy",
 			Role: constants.KeyAdminRole,
 			ResourceTypes: []ResourceType{
 				{
 					ID: ResourceTypeKeyConfiguration,
 					Actions: []Action{
-						ActionKeyConfigurationRead,
-						ActionKeyConfigurationCreate,
-						ActionKeyConfigurationDelete,
-						ActionKeyConfigurationSetPrimaryKey,
-						ActionKeyConfigurationUpdate,
-						ActionKeyConfigurationList,
+						ActionRead,
+						ActionCreate,
+						ActionDelete,
+						ActionUpdate,
+						ActionList,
+					},
+				},
+				{
+					ID: ResourceTypeKey,
+					Actions: []Action{
+						ActionRead,
+						ActionCreate,
+						ActionDelete,
+						ActionUpdate,
+						ActionKeyRotate,
+						ActionList,
+					},
+				},
+				{
+					ID: ResourceTypeUserGroup,
+					Actions: []Action{
+						ActionRead,
+						ActionList,
+					},
+				},
+				{
+					ID: ResourceTypeSystem,
+					Actions: []Action{
+						ActionSystemModifyLink,
+						ActionList,
+						ActionRead,
+						ActionUpdate,
+					},
+				},
+				{
+					ID: ResourceTypeWorkFlow,
+					Actions: []Action{
+						ActionRead,
+						ActionCreate,
+						ActionDelete,
+						ActionUpdate,
+						ActionList,
 					},
 				},
 			},
@@ -139,9 +203,21 @@ var PolicyData = policies{
 			Role: constants.TenantAdminRole,
 			ResourceTypes: []ResourceType{
 				{
-					ID: ResourceTypeSystem,
+					ID: ResourceTypeTenant,
 					Actions: []Action{
-						ActionSystemList,
+						ActionRead,
+						ActionUpdate,
+						ActionList,
+					},
+				},
+				{
+					ID: ResourceTypeUserGroup,
+					Actions: []Action{
+						ActionRead,
+						ActionCreate,
+						ActionDelete,
+						ActionUpdate,
+						ActionList,
 					},
 				},
 			},

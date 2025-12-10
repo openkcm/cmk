@@ -10,15 +10,15 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/async/tasks"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
-	asyncUtils "github.com/openkcm/cmk/utils/async"
-	contextUtils "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/async/tasks"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	wfMechanism "github.tools.sap/kms/cmk/internal/workflow"
+	asyncUtils "github.tools.sap/kms/cmk/utils/async"
+	contextUtils "github.tools.sap/kms/cmk/utils/context"
 )
 
 const (
@@ -30,12 +30,6 @@ const (
 var ErrBadWorkflow = errors.New("bad workflow error")
 
 type WorkflowAssignMock struct{}
-
-func (s *WorkflowAssignMock) GetCertificatesForRotation(
-	_ context.Context,
-) ([]*model.Certificate, int, error) {
-	return []*model.Certificate{}, 0, nil
-}
 
 func (s *WorkflowAssignMock) AutoAssignApprovers(
 	_ context.Context,

@@ -21,7 +21,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 // Error definitions for various failure scenarios in certificate and key generation.

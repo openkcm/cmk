@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/db"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 var errForced = errors.New("forced error")
@@ -30,6 +30,7 @@ func (errorPlugin) Initialize(_ *gorm.DB) error {
 func TestStartDBConnectionPlugins(t *testing.T) {
 	t.Run("should error on start db connection with invalid config", func(t *testing.T) {
 		dbConn, err := db.StartDBConnectionPlugins(
+			t.Context(),
 			config.Database{},
 			[]config.Database{},
 			map[string]gorm.Plugin{"error": errorPlugin{}},
@@ -41,6 +42,7 @@ func TestStartDBConnectionPlugins(t *testing.T) {
 
 	t.Run("should start db connection with replicas", func(t *testing.T) {
 		dbConn, err := db.StartDBConnectionPlugins(
+			t.Context(),
 			testutils.TestDB,
 			[]config.Database{testutils.TestDB},
 			map[string]gorm.Plugin{},
@@ -51,6 +53,7 @@ func TestStartDBConnectionPlugins(t *testing.T) {
 
 	t.Run("should error start db connection with replicas", func(t *testing.T) {
 		dbConn, err := db.StartDBConnectionPlugins(
+			t.Context(),
 			testutils.TestDB,
 			[]config.Database{{}},
 			map[string]gorm.Plugin{},
@@ -64,6 +67,7 @@ func TestStartDBConnectionPlugins(t *testing.T) {
 func TestStartDBConnection(t *testing.T) {
 	t.Run("should start db connection when config is valid", func(t *testing.T) {
 		dbConn, err := db.StartDBConnection(
+			t.Context(),
 			testutils.TestDB,
 			[]config.Database{},
 		)

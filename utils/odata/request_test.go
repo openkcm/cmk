@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/utils/odata"
+	"github.tools.sap/kms/cmk/utils/odata"
 )
 
 // TestQuery tests the Query struct

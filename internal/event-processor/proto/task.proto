@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package proto;
 
-option go_package = "github.com/openkcm/cmk/internal/event-processor/proto;proto";
+option go_package = "github.tools.sap/kms/cmk/internal/event-processor/proto;proto";
 
 enum TaskType {
   KEY_ENABLE = 0;
@@ -12,6 +12,7 @@ enum TaskType {
   SYSTEM_LINK = 4;
   SYSTEM_UNLINK = 5;
   SYSTEM_SWITCH = 6;
+  KEY_DETACH = 7;
 }
 
 // Wrapped proto for Orbital TaskRequest.data.

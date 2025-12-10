@@ -17,6 +17,7 @@ type (
 
 const (
 	Equal       ComparisonOp = "="
+	NotEqual    ComparisonOp = "!="
 	GreaterThan ComparisonOp = ">"
 	LessThan    ComparisonOp = "<"
 
@@ -45,6 +46,7 @@ const (
 	ArtifactIDField     QueryField = "artifact_id"
 	ActionTypeField     QueryField = "action_type"
 	InitiatorIDField    QueryField = "initiator_id"
+	UserIDField         QueryField = "user_id"
 	PrimaryKeyIDField   QueryField = "primary_key_id"
 	PurposeField        QueryField = "purpose"
 	NameField           QueryField = "name"
@@ -144,6 +146,10 @@ func (c CompositeKey) Where(q QueryField, v any,
 	return c
 }
 
+func NotEq(v any) Key {
+	return Key{Value: v, Operation: NotEqual}
+}
+
 func Gt(v any) Key {
 	return Key{Value: v, Operation: GreaterThan}
 }
@@ -200,7 +206,7 @@ type JoinClause struct {
 }
 
 func (r *JoinClause) JoinStatement() string {
-	statement := fmt.Sprintf("%s JOIN %s ON %s.%s = %s.%s",
+	statement := fmt.Sprintf(`%s JOIN "%s" ON "%s".%s = "%s".%s`,
 		r.Type,
 		r.OnCondition.JoinTable.TableName(),
 		r.OnCondition.Table.TableName(),

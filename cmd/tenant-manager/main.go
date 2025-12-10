@@ -20,16 +20,20 @@ import (
 	"github.com/openkcm/orbital/codec"
 	"github.com/samber/oops"
 
-	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/db/dsn"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/operator"
+	"github.tools.sap/kms/cmk/internal/auditor"
+	"github.tools.sap/kms/cmk/internal/clients"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/db"
+	"github.tools.sap/kms/cmk/internal/db/dsn"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/operator"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
 )
 
 const (
@@ -46,8 +50,10 @@ const (
 
 var (
 	gracefulShutdownSec     = flag.Int64("graceful-shutdown", 1, "graceful shutdown seconds")
-	gracefulShutdownMessage = flag.String("graceful-shutdown-message", "Graceful shutdown in %d seconds",
-		"graceful shutdown message")
+	gracefulShutdownMessage = flag.String(
+		"graceful-shutdown-message", "Graceful shutdown in %d seconds",
+		"graceful shutdown message",
+	)
 )
 
 // run does the heavy lifting until the service is up and running. It will:
@@ -70,7 +76,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	startStatusServer(ctx, cfg)
 
-	dbConn, err := db.StartDB(ctx, cfg.Database, cfg.Provisioning, nil)
+	dbConn, err := db.StartDB(ctx, cfg)
 	if err != nil {
 		return oops.In(logDomain).Wrapf(err, "Failed to start the database connection")
 	}
@@ -80,23 +86,82 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	tenantClient, sessionManagerClient, err := validateAndGetClients(cfg)
+	clients, err := validateAndGetClients(cfg)
 	if err != nil {
 		return err
 	}
 
-	ctlg, err := catalog.New(ctx, *cfg)
+	ctlg, err := catalog.New(ctx, cfg)
 	if err != nil {
 		return err
 	}
 
-	tenantOperator, err := operator.NewTenantOperator(dbConn, target, tenantClient, sessionManagerClient, ctlg)
+	r := sql.NewRepository(dbConn)
+
+	tenantManager, err := createTenantManager(
+		ctx,
+		r,
+		clients,
+		ctlg,
+		cfg,
+	)
+	if err != nil {
+		return err
+	}
+
+	groupManager := manager.NewGroupManager(r, ctlg)
+
+	operator, err := operator.NewTenantOperator(dbConn, target, clients, tenantManager, groupManager)
 	if err != nil {
 		return oops.In(logDomain).
 			Wrapf(err, errMsgRunningOperator)
 	}
 
-	return tenantOperator.RunOperator(ctx)
+	return operator.RunOperator(ctx)
+}
+
+func createTenantManager(
+	ctx context.Context,
+	r repo.Repo,
+	clients clients.Factory,
+	ctlg *plugincatalog.Catalog,
+	cfg *config.Config,
+) (manager.Tenant, error) {
+	cmkAuditor := auditor.New(ctx, cfg)
+
+	reconciler, err := eventprocessor.NewCryptoReconciler(
+		ctx, cfg, r,
+		ctlg, clients,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+
+	kcm := manager.NewKeyConfigManager(r, cm, cmkAuditor, cfg)
+
+	sys := manager.NewSystemManager(
+		ctx,
+		r,
+		clients,
+		reconciler,
+		ctlg,
+		cfg,
+		kcm,
+	)
+
+	km := manager.NewKeyManager(
+		r,
+		ctlg,
+		manager.NewTenantConfigManager(r, ctlg),
+		kcm,
+		cm,
+		reconciler,
+		cmkAuditor,
+	)
+
+	return manager.NewTenantManager(r, sys, km, cmkAuditor), nil
 }
 
 func initializeLoggerAndTelemetry(ctx context.Context, cfg *config.Config) error {
@@ -130,12 +195,16 @@ func createAMQPClient(ctx context.Context, cfg *config.Config) (orbital.Operator
 	return target, nil
 }
 
-func createOperatorTarget(ctx context.Context, cfg *config.Config, opts amqp.ClientOption) (orbital.OperatorTarget, error) { //nolint:lll
-	amqpClient, err := amqp.NewClient(ctx, codec.Proto{}, amqp.ConnectionInfo{
-		URL:    cfg.TenantManager.AMQP.URL,
-		Target: cfg.TenantManager.AMQP.Target,
-		Source: cfg.TenantManager.AMQP.Source,
-	}, opts)
+func createOperatorTarget(ctx context.Context, cfg *config.Config, opts amqp.ClientOption) (
+	orbital.OperatorTarget, error,
+) {
+	amqpClient, err := amqp.NewClient(
+		ctx, codec.Proto{}, amqp.ConnectionInfo{
+			URL:    cfg.TenantManager.AMQP.URL,
+			Target: cfg.TenantManager.AMQP.Target,
+			Source: cfg.TenantManager.AMQP.Source,
+		}, opts,
+	)
 	if err != nil {
 		return orbital.OperatorTarget{}, oops.In(logDomain).
 			Wrapf(err, "Failed to create AMQP client: %v", err)
@@ -145,30 +214,26 @@ func createOperatorTarget(ctx context.Context, cfg *config.Config, opts amqp.Cli
 }
 
 func validateAndGetClients(cfg *config.Config) (
-	tenantgrpc.ServiceClient,
-	oidcmappinggrpc.ServiceClient,
+	clients.Factory,
 	error,
 ) {
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	if err != nil {
-		return nil, nil, oops.In(logDomain).
+		return nil, oops.In(logDomain).
 			Wrapf(err, "Failed to create clients factory")
 	}
 
-	if clientsFactory.RegistryService() == nil {
-		return nil, nil, oops.In(logDomain).
+	if clientsFactory.Registry() == nil || !cfg.Services.Registry.Enabled {
+		return nil, oops.In(logDomain).
 			Errorf("Registry client is nil, please check gRPC configuration")
 	}
 
-	if clientsFactory.SessionManager() == nil {
-		return nil, nil, oops.In(logDomain).
+	if clientsFactory.SessionManager() == nil || !cfg.Services.SessionManager.Enabled {
+		return nil, oops.In(logDomain).
 			Errorf("session-manager client is nil, please check gRPC configuration")
 	}
 
-	tenantClient := clientsFactory.RegistryService().Tenant()
-	sessionManagerClient := clientsFactory.SessionManager().OIDCMapping()
-
-	return tenantClient, sessionManagerClient, nil
+	return clientsFactory, nil
 }
 
 func startStatusServer(ctx context.Context, cfg *config.Config) {
@@ -179,12 +244,15 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 	)
 
 	healthOptions := make([]health.Option, 0)
-	healthOptions = append(healthOptions,
+	healthOptions = append(
+		healthOptions,
 		health.WithDisabledAutostart(),
 		health.WithTimeout(defaultTimeout*time.Second),
-		health.WithStatusListener(func(ctx context.Context, state health.State) {
-			log.Info(ctx, "readiness status changed", slog.String("status", string(state.Status)))
-		}),
+		health.WithStatusListener(
+			func(ctx context.Context, state health.State) {
+				log.Info(ctx, "readiness status changed", slog.String("status", string(state.Status)))
+			},
+		),
 	)
 
 	dsnFromConfig, err := dsn.FromDBConfig(cfg.Database)
@@ -192,7 +260,8 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 		log.Error(ctx, "Could not load DSN from database config", err)
 	}
 
-	healthOptions = append(healthOptions,
+	healthOptions = append(
+		healthOptions,
 		health.WithDatabaseChecker(
 			postgresDriverName,
 			dsnFromConfig,

@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 func TestConcurrency(t *testing.T) {
@@ -161,6 +161,97 @@ func TestProcessInBatch(t *testing.T) {
 		// Verify
 		assert.NoError(t, err)
 		assert.Equal(t, 1, processCallCount, "check proccessFunc is called on no data")
+	})
+}
+
+func TestProcessInBatchWithOptionsDeleteMode(t *testing.T) {
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		Models:         []driver.TenantTabler{&testutils.TestModel{}},
+	})
+	tenant := tenants[0]
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	t.Run("should delete all items without skipping when DeleteMode is enabled", func(t *testing.T) {
+		total := 7
+		for range total {
+			item := &testutils.TestModel{
+				ID:   uuid.New(),
+				Name: "delete_test_" + uuid.NewString(),
+			}
+			err := r.Create(ctx, item)
+			assert.NoError(t, err)
+		}
+
+		baseQuery := repo.NewQuery()
+		batchSize := 3
+
+		processedItems := []*testutils.TestModel{}
+		batchCount := 0
+		processFunc := func(items []*testutils.TestModel) error {
+			batchCount++
+			processedItems = append(processedItems, items...)
+			for _, item := range items {
+				_, err := r.Delete(ctx, item, *repo.NewQuery())
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		// Act with DeleteMode enabled
+		err := repo.ProcessInBatchWithOptions[testutils.TestModel](
+			ctx,
+			r,
+			baseQuery,
+			batchSize,
+			repo.BatchProcessOptions{DeleteMode: true},
+			processFunc,
+		)
+
+		// Verify
+		assert.NoError(t, err)
+		assert.Len(t, processedItems, total, "Should process all items")
+		assert.Equal(t, 4, batchCount, "Should process in 4 batches (3+3+1+0) - delete mode"+
+			" always processes one extra iteration to detect there are no more items.")
+
+		// Verify all items were actually deleted
+		var remainingItems []*testutils.TestModel
+		count, err := r.List(ctx, testutils.TestModel{}, &remainingItems, *baseQuery)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, count, "All items should be deleted")
+	})
+
+	t.Run("should handle empty result set with DeleteMode enabled", func(t *testing.T) {
+		baseQuery := repo.NewQuery().Where(
+			repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where("name", "nonexistent_value"),
+			),
+		)
+		batchSize := 10
+
+		processCallCount := 0
+		processFunc := func(items []*testutils.TestModel) error {
+			processCallCount++
+			assert.Empty(t, items)
+			return nil
+		}
+
+		// Act
+		err := repo.ProcessInBatchWithOptions[testutils.TestModel](
+			ctx,
+			r,
+			baseQuery,
+			batchSize,
+			repo.BatchProcessOptions{DeleteMode: true},
+			processFunc,
+		)
+
+		// Verify
+		assert.NoError(t, err)
+		assert.Equal(t, 1, processCallCount, "processFunc should be called once even with no data")
 	})
 }
 

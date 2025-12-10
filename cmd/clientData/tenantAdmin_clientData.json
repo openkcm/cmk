@@ -1,0 +1,16 @@
+{
+  "identifier": "test-subject-admin",
+  "type": "admin",
+  "mail": "admin@company.com",
+  "reg": "eu-west-1",
+  "AuthContext": {
+    "issuer": "https://sso.company.com",
+    "client_id": "client-12345"
+  },
+  "groups": [
+    "KMS_TenantAdministrator_tenant1"
+  ],
+  "kid": "key01",
+  "alg": "RS256"
+}
+

@@ -6,8 +6,8 @@ import (
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 var (

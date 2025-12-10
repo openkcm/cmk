@@ -11,10 +11,10 @@ import (
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/samber/oops"
 
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	cmklog "github.com/openkcm/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/async"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	cmklog "github.tools.sap/kms/cmk/internal/log"
 )
 
 const AppName = "scheduler"

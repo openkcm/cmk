@@ -3,7 +3,7 @@ package manager
 import (
 	"errors"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 var (
@@ -96,13 +96,14 @@ var (
 
 	ErrListTenants = errors.New("failed to list tenants from database")
 
-	ErrListGroups         = errors.New("failed to list groups from database")
-	ErrGetGroups          = errors.New("failed to get group from database")
-	ErrCreateGroups       = errors.New("failed to create group from database")
-	ErrUpdateGroups       = errors.New("failed to update group from database")
-	ErrDeleteGroups       = errors.New("failed to delete group from database")
-	ErrInvalidGroupRename = errors.New("group cannot be renamed")
-	ErrInvalidGroupDelete = errors.New("group cannot be deleted")
+	ErrListGroups            = errors.New("failed to list groups from database")
+	ErrGetGroups             = errors.New("failed to get group from database")
+	ErrCreateGroups          = errors.New("failed to create group from database")
+	ErrUpdateGroups          = errors.New("failed to update group from database")
+	ErrDeleteGroups          = errors.New("failed to delete group from database")
+	ErrInvalidGroupRename    = errors.New("group cannot be renamed")
+	ErrInvalidGroupDelete    = errors.New("group cannot be deleted")
+	ErrMultipleRolesInGroups = errors.New("users with multiple roles are not allowed")
 
 	ErrCheckIAMExistenceOfGroups = errors.New("failed to check IAM existence of groups")
 	ErrCheckTenantHasIAMGroups   = errors.New("failed to check tenant has IAM groups")
@@ -129,7 +130,6 @@ var (
 	ErrGettingSystemLinkByID   = errors.New("failed to get system link by ID")
 	ErrAddSystemNoPrimaryKey   = errors.New("system cannot be added without an enabled primary key")
 	ErrUpdateSystem            = errors.New("failed to update system")
-	ErrSettingKeyClaim         = errors.New("error setting key claim for system")
 	ErrSystemNotLinked         = errors.New("system is not linked to a key configuration")
 	ErrFailedToReencryptSystem = errors.New("system reencrypt failed on new key")
 
@@ -153,9 +153,8 @@ var (
 
 	ErrLoadIdentityManagementPlugin = errors.New("failed to load identity management plugin")
 
-	ErrLoadAuthzAllowList = errors.New("failed to load authz allow list for tenantID")
-	ErrTenantNotExist     = errors.New("tenantID does not exist")
-	ErrEmptyTenantID      = errors.New("tenantID cannot be empty")
+	ErrTenantNotExist = errors.New("tenantID does not exist")
+	ErrEmptyTenantID  = errors.New("tenantID cannot be empty")
 
 	ErrPoolIsDrained               = errors.New("pool is drained")
 	ErrCouldNotSaveConfiguration   = errors.New("could not save configuration")
@@ -178,9 +177,7 @@ const (
 
 // Predefined GRPC errors
 
-var (
-	ErrGRPCHYOKAuthFailed = errs.GRPCError{
-		Code:        GRPCErrorCodeHYOKAuthFailed,
-		BaseMessage: "failed to authenticate with the keystore provider",
-	}
-)
+var ErrGRPCHYOKAuthFailed = errs.GRPCError{
+	Code:        GRPCErrorCodeHYOKAuthFailed,
+	BaseMessage: "failed to authenticate with the keystore provider",
+}

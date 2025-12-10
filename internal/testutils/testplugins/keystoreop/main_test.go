@@ -11,8 +11,8 @@ import (
 
 	keyopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
-	tp "github.com/openkcm/cmk/internal/testutils/testplugins/keystoreop"
-	"github.com/openkcm/cmk/utils/ptr"
+	tp "github.tools.sap/kms/cmk/internal/testutils/testplugins/keystoreop"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 func setupTest() *tp.TestPlugin {

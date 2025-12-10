@@ -3,7 +3,7 @@ package async
 import (
 	"github.com/hibiken/asynq"
 
-	"github.com/openkcm/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/config"
 )
 
 // ScheduledTaskConfigProvider implements asynq PeriodicTaskConfigProvider interface.

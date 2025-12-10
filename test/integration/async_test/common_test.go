@@ -16,18 +16,18 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
-	"github.com/openkcm/cmk/utils/crypto"
+	"github.tools.sap/kms/cmk/internal/async"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
+	"github.tools.sap/kms/cmk/utils/crypto"
 )
 
 // There is no PKI mock, so credentials for this must be added below
@@ -68,7 +68,7 @@ func getConfig(t *testing.T, schCfg config.Scheduler) *config.Config {
 func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *config.Config) {
 	t.Helper()
 
-	ctlg, err := catalog.New(t.Context(), *cfg)
+	ctlg, err := catalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	tenancyRepo := sql.NewRepository(db)
@@ -88,11 +88,11 @@ func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *conf
 	certCl = reflect.NewAt(certCl.Type(), unsafe.Pointer(certCl.UnsafeAddr())).Elem()
 	certCl.Set(reflect.ValueOf(cm))
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, tenancyRepo, ctlg)
+	reconciler, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, tenancyRepo, ctlg, nil)
 	assert.NoError(t, err)
 
 	tc := manager.NewTenantConfigManager(tenancyRepo, ctlg)
-	kc := manager.NewKeyConfigManager(tenancyRepo, cm, cfg)
+	kc := manager.NewKeyConfigManager(tenancyRepo, cm, nil, cfg)
 	km := manager.NewKeyManager(tenancyRepo, ctlg, tc, kc, cm, reconciler, nil)
 
 	hyokCl := val.FieldByName("hyokClient")
@@ -111,8 +111,8 @@ func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *conf
 func SetupTestContainers(t *testing.T, cfg *config.Config) {
 	t.Helper()
 
-	integrationutils.StartPostgresSQL(t, &cfg.Database)
-	integrationutils.StartRedis(t, &cfg.Scheduler)
+	testutils.StartPostgresSQL(t, &cfg.Database)
+	testutils.StartRedis(t, &cfg.Scheduler)
 }
 
 func setupDatabase(ctx context.Context, t *testing.T, r repo.Repo, keysEnabled bool) {
@@ -165,7 +165,7 @@ func createTestKeyEntities() (model.Group, model.KeyConfiguration, model.Key) {
 		Name:         "hyok",
 		Description:  "This key configuration is used for HANA key store encryption.",
 		AdminGroupID: group.ID,
-		CreatorID:    uuid.New(),
+		CreatorID:    uuid.NewString(),
 		CreatorName:  "testuser",
 	}
 	nativeID := "arn:aws:kms:eu-west-2:fake:key/fake-key-id"

@@ -9,12 +9,12 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	wfMechanism "github.tools.sap/kms/cmk/internal/workflow"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 const (
@@ -64,6 +64,7 @@ func NewKeyConfig(m func(*model.KeyConfiguration)) *model.KeyConfiguration {
 			ID:         uuid.New(),
 			Name:       uuid.NewString(),
 			AdminGroup: model.Group{ID: uuid.New(), Name: uuid.NewString(), IAMIdentifier: uuid.NewString()},
+			CreatorID:  uuid.NewString(),
 		}
 	})
 
@@ -172,11 +173,11 @@ func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 		return model.Workflow{
 			ID:           uuid.New(),
 			State:        wfMechanism.StateInitial.String(),
-			InitiatorID:  uuid.New(),
+			InitiatorID:  uuid.NewString(),
 			ArtifactType: wfMechanism.ArtifactTypeKey.String(),
 			ArtifactID:   uuid.New(),
 			ActionType:   wfMechanism.ActionTypeDelete.String(),
-			Approvers:    []model.WorkflowApprover{{UserID: uuid.New()}},
+			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
 		}
 	})
 
@@ -187,7 +188,7 @@ func NewWorkflowApprover(m func(approver *model.WorkflowApprover)) *model.Workfl
 	mut := NewMutator(func() model.WorkflowApprover {
 		return model.WorkflowApprover{
 			WorkflowID: uuid.New(),
-			UserID:     uuid.New(),
+			UserID:     uuid.NewString(),
 			UserName:   uuid.New().String(),
 			Workflow:   model.Workflow{},
 			Approved:   sql.NullBool{},
@@ -232,9 +233,11 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 }
 
 func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
+	retentionPeriodDays := 30
 	wc := model.WorkflowConfig{
-		Enabled:          true,
-		MinimumApprovals: 1,
+		Enabled:             true,
+		MinimumApprovals:    1,
+		RetentionPeriodDays: retentionPeriodDays,
 	}
 	//nolint:errchkjson
 	configValue, _ := json.Marshal(wc)

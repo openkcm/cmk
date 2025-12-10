@@ -9,7 +9,7 @@ import (
 	idmangv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 
-	tp "github.com/openkcm/cmk/internal/testutils/testplugins/identitymanagement"
+	tp "github.tools.sap/kms/cmk/internal/testutils/testplugins/identitymanagement"
 )
 
 func TestConfigureReturnsEmptyResponse(t *testing.T) {

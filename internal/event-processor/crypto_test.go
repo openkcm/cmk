@@ -3,27 +3,32 @@ package eventprocessor_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/orbital"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
+
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/clients"
+	"github.tools.sap/kms/cmk/internal/clients/registry/systems"
+	"github.tools.sap/kms/cmk/internal/config"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	eventProto "github.tools.sap/kms/cmk/internal/event-processor/proto"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
-func setup(t *testing.T) (*eventprocessor.CryptoReconciler, repo.Repo, string) {
+func setup(t *testing.T) (*eventprocessor.CryptoReconciler, *systems.FakeService, repo.Repo, string) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
@@ -31,22 +36,43 @@ func setup(t *testing.T) (*eventprocessor.CryptoReconciler, repo.Repo, string) {
 			&model.Event{},
 			&model.System{},
 			&model.Key{},
+			&model.KeyConfiguration{},
+			&model.Group{},
 		},
 		CreateDatabase: true,
 		WithOrbital:    true,
 	})
 	r := sql.NewRepository(db)
 
-	cfg := config.Config{
+	cfg := &config.Config{
 		Database: dbCfg,
 	}
 
 	ctlg, err := catalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
+	logger := testutils.SetupLoggerWithBuffer()
+	systemService := systems.NewFakeService(logger)
+	_, grpcClient := testutils.NewGRPCSuite(t,
+		func(s *grpc.Server) {
+			systemgrpc.RegisterServiceServer(s, systemService)
+		},
+	)
+
+	clientsFactory, err := clients.NewFactory(config.Services{
+		Registry: &commoncfg.GRPCClient{
+			Enabled: true,
+			Address: grpcClient.Target(),
+			SecretRef: &commoncfg.SecretRef{
+				Type: commoncfg.InsecureSecretType,
+			},
+		},
+	})
+	assert.NoError(t, err)
+
 	eventProcessor, err := eventprocessor.NewCryptoReconciler(
-		t.Context(), &cfg, r,
-		ctlg,
+		t.Context(), cfg, r,
+		ctlg, clientsFactory,
 	)
 	assert.NoError(t, err)
 
@@ -54,129 +80,256 @@ func setup(t *testing.T) (*eventprocessor.CryptoReconciler, repo.Repo, string) {
 		eventProcessor.CloseAmqpClients(context.Background())
 	})
 
-	return eventProcessor, r, tenants[0]
+	return eventProcessor, systemService, r, tenants[0]
 }
 
-func TestJobCreation(t *testing.T) {
-	eventProcessor, r, tenant := setup(t)
-	ctx := testutils.CreateCtxWithTenant(tenant)
+func TestKeyEventCreation(t *testing.T) {
+	eventProcessor, _, _, tenant := setup(t)
 
-	t.Run("should create system link job", func(t *testing.T) {
-		system := testutils.NewSystem(func(_ *model.System) {})
-		job, err := eventProcessor.SystemLink(ctx, system, "keyID")
-		assert.NoError(t, err)
+	tests := []struct {
+		name       string
+		keyEventFn func(ctx context.Context, keyID string) (orbital.Job, error)
+		keyID      string
+		tenantID   string
+		expErr     error
+		expType    string
+	}{
+		{
+			name:       "should return error on missing keyID for key detach",
+			keyEventFn: eventProcessor.KeyDetach,
+			expErr:     eventprocessor.ErrMissingKeyID,
+		},
+		{
+			name:       "should return error on missing keyID for key enable",
+			keyEventFn: eventProcessor.KeyEnable,
+			expErr:     eventprocessor.ErrMissingKeyID,
+		},
+		{
+			name:       "should return error on missing keyID for key disable",
+			keyEventFn: eventProcessor.KeyDisable,
+			expErr:     eventprocessor.ErrMissingKeyID,
+		},
+		{
+			name:       "should return error on missing tenant from ctx for key detach",
+			keyEventFn: eventProcessor.KeyDetach,
+			keyID:      "keyID",
+			expErr:     cmkcontext.ErrExtractTenantID,
+		},
+		{
+			name:       "should return error on missing tenant from ctx for key enable",
+			keyEventFn: eventProcessor.KeyEnable,
+			keyID:      "keyID",
+			expErr:     cmkcontext.ErrExtractTenantID,
+		},
+		{
+			name:       "should return error on missing tenant from ctx for key disable",
+			keyEventFn: eventProcessor.KeyDisable,
+			keyID:      "keyID",
+			expErr:     cmkcontext.ErrExtractTenantID,
+		},
+		{
+			name:       "should create key detach event",
+			keyEventFn: eventProcessor.KeyDetach,
+			keyID:      "keyID",
+			tenantID:   tenant,
+			expType:    eventProto.TaskType_KEY_DETACH.String(),
+		},
+		{
+			name:       "should create key enable event",
+			keyEventFn: eventProcessor.KeyEnable,
+			keyID:      "keyID",
+			tenantID:   tenant,
+			expType:    eventProto.TaskType_KEY_ENABLE.String(),
+		},
+		{
+			name:       "should create key disable event",
+			keyEventFn: eventProcessor.KeyDisable,
+			keyID:      "keyID",
+			tenantID:   tenant,
+			expType:    eventProto.TaskType_KEY_DISABLE.String(),
+		},
+	}
 
-		var jobData eventprocessor.SystemActionJobData
-		assert.NoError(t, json.Unmarshal(job.Data, &jobData))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := testutils.CreateCtxWithTenant(tt.tenantID)
+			job, err := tt.keyEventFn(ctx, tt.keyID)
 
-		assert.Equal(t, "SYSTEM_LINK", job.Type)
-		assert.Equal(t, tenant, jobData.TenantID)
-		assert.Equal(t, "keyID", jobData.KeyIDTo)
-		assert.Equal(t, system.ID.String(), jobData.SystemID)
-	})
+			if tt.expErr != nil {
+				assert.ErrorIs(t, err, tt.expErr)
+				assert.Equal(t, orbital.Job{}, job)
 
-	t.Run("should fail to create system link job on missing tenant from ctx", func(t *testing.T) {
-		system := testutils.NewSystem(func(_ *model.System) {})
-		job, err := eventProcessor.SystemLink(t.Context(), system, "keyID")
-		assert.Error(t, err)
-		assert.Equal(t, orbital.Job{}, job)
-	})
+				return
+			}
 
-	t.Run("should create system unlink job", func(t *testing.T) {
-		system := testutils.NewSystem(func(_ *model.System) {})
-		job, err := eventProcessor.SystemUnlink(ctx, system, "keyID")
-		assert.NoError(t, err)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expType, job.Type)
+			assert.Equal(t, tt.keyID, job.ExternalID)
 
-		var jobData eventprocessor.SystemActionJobData
-		assert.NoError(t, json.Unmarshal(job.Data, &jobData))
+			var jobData eventprocessor.KeyActionJobData
+			assert.NoError(t, json.Unmarshal(job.Data, &jobData))
 
-		assert.Equal(t, "SYSTEM_UNLINK", job.Type)
-		assert.Equal(t, tenant, jobData.TenantID)
-		assert.Equal(t, "keyID", jobData.KeyIDFrom)
-		assert.Equal(t, system.ID.String(), jobData.SystemID)
-	})
-
-	t.Run("should create system switch job", func(t *testing.T) {
-		system := testutils.NewSystem(func(_ *model.System) {})
-		job, err := eventProcessor.SystemSwitch(ctx, system, "keyIDTo", "keyIDFrom")
-		assert.NoError(t, err)
-
-		var jobData eventprocessor.SystemActionJobData
-		assert.NoError(t, json.Unmarshal(job.Data, &jobData))
-
-		assert.Equal(t, "SYSTEM_SWITCH", job.Type)
-		assert.Equal(t, tenant, jobData.TenantID)
-		assert.Equal(t, "keyIDTo", jobData.KeyIDTo)
-		assert.Equal(t, "keyIDFrom", jobData.KeyIDFrom)
-		assert.Equal(t, system.ID.String(), jobData.SystemID)
-	})
-
-	t.Run("should create key enable", func(t *testing.T) {
-		job, err := eventProcessor.KeyEnable(ctx, "keyID")
-		assert.NoError(t, err)
-
-		var jobData eventprocessor.KeyActionJobData
-		assert.NoError(t, json.Unmarshal(job.Data, &jobData))
-
-		assert.Equal(t, "KEY_ENABLE", job.Type)
-		assert.Equal(t, tenant, jobData.TenantID)
-		assert.Equal(t, "keyID", jobData.KeyID)
-	})
-
-	t.Run("should fail to create key enable job on missing tenant from ctx", func(t *testing.T) {
-		job, err := eventProcessor.KeyEnable(t.Context(), "keyID")
-		assert.Error(t, err)
-		assert.Equal(t, orbital.Job{}, job)
-	})
-
-	t.Run("should create key disable job", func(t *testing.T) {
-		job, err := eventProcessor.KeyDisable(ctx, "keyID")
-		assert.NoError(t, err)
-
-		var jobData eventprocessor.KeyActionJobData
-		assert.NoError(t, json.Unmarshal(job.Data, &jobData))
-
-		assert.Equal(t, "KEY_DISABLE", job.Type)
-		assert.Equal(t, tenant, jobData.TenantID)
-		assert.Equal(t, "keyID", jobData.KeyID)
-	})
-
-	t.Run("should fail to create key disable job on missing tenant from ctx", func(t *testing.T) {
-		job, err := eventProcessor.KeyDisable(t.Context(), "keyID")
-		assert.Error(t, err)
-		assert.Equal(t, orbital.Job{}, job)
-	})
-
-	t.Run("Should fail to create job if system is in processing - KMS20-3467", func(t *testing.T) {
-		system := testutils.NewSystem(func(s *model.System) {
-			s.Status = cmkapi.SystemStatusPROCESSING
+			assert.Equal(t, tt.tenantID, jobData.TenantID)
+			assert.Equal(t, tt.keyID, jobData.KeyID)
 		})
-		_, err := eventProcessor.SystemSwitch(ctx, system, "keyIDTo", "keyIDFrom")
-		assert.ErrorIs(t, err, eventprocessor.ErrSystemProcessing)
-	})
+	}
+}
 
-	t.Run("should set system to processing on successful job creation - KMS20-3467", func(t *testing.T) {
-		system := testutils.NewSystem(func(_ *model.System) {})
-		testutils.CreateTestEntities(ctx, t, r, system)
-		job, err := eventProcessor.SystemLink(ctx, system, "keyID")
-		assert.NoError(t, err)
+func TestSystemEventCreation(t *testing.T) {
+	eventProcessor, _, r, tenant := setup(t)
 
-		var jobData eventprocessor.SystemActionJobData
-		assert.NoError(t, json.Unmarshal(job.Data, &jobData))
+	tests := []struct {
+		name          string
+		systemEventFn func(ctx context.Context, system *model.System, keyIDTo, keyIDFrom string) (orbital.Job, error)
+		systemStatus  cmkapi.SystemStatus
+		tenantID      string
+		keyIDTo       string
+		keyIDFrom     string
+		expErr        error
+		expType       string
+		expStatus     cmkapi.SystemStatus
+		assertKeyID   func(t *testing.T, keyIDTo, keyIDFrom string, data eventprocessor.SystemActionJobData)
+	}{
+		{
+			name: "should return error on missing tenant from ctx for system link",
+			systemEventFn: func(ctx context.Context, system *model.System, to, _ string) (orbital.Job, error) {
+				return eventProcessor.SystemLink(ctx, system, to)
+			},
+			systemStatus: cmkapi.SystemStatusCONNECTED,
+			expErr:       cmkcontext.ErrExtractTenantID,
+		},
+		{
+			name: "should return error on system in processing state for system link",
+			systemEventFn: func(ctx context.Context, system *model.System, to, _ string) (orbital.Job, error) {
+				return eventProcessor.SystemLink(ctx, system, to)
+			},
+			systemStatus: cmkapi.SystemStatusPROCESSING,
+			tenantID:     tenant,
+			expErr:       eventprocessor.ErrSystemProcessing,
+		},
+		{
+			name: "should create system link event and set system to processing",
+			systemEventFn: func(ctx context.Context, system *model.System, to, _ string) (orbital.Job, error) {
+				return eventProcessor.SystemLink(ctx, system, to)
+			},
+			systemStatus: cmkapi.SystemStatusCONNECTED,
+			tenantID:     tenant,
+			keyIDTo:      "keyIDTo",
+			expType:      eventProto.TaskType_SYSTEM_LINK.String(),
+			expStatus:    cmkapi.SystemStatusPROCESSING,
+			assertKeyID: func(t *testing.T, keyIDTo, _ string, data eventprocessor.SystemActionJobData) {
+				t.Helper()
+				assert.Equal(t, keyIDTo, data.KeyIDTo)
+			},
+		},
+		{
+			name: "should return error on missing tenant from ctx for system unlink",
+			systemEventFn: func(ctx context.Context, system *model.System, _, from string) (orbital.Job, error) {
+				return eventProcessor.SystemUnlink(ctx, system, from)
+			},
+			systemStatus: cmkapi.SystemStatusCONNECTED,
+			expErr:       cmkcontext.ErrExtractTenantID,
+		},
+		{
+			name: "should return error on system in processing state for system unlink",
+			systemEventFn: func(ctx context.Context, system *model.System, _, from string) (orbital.Job, error) {
+				return eventProcessor.SystemUnlink(ctx, system, from)
+			},
+			systemStatus: cmkapi.SystemStatusPROCESSING,
+			tenantID:     tenant,
+			expErr:       eventprocessor.ErrSystemProcessing,
+		},
+		{
+			name: "should create system unlink event and set system to processing",
+			systemEventFn: func(ctx context.Context, system *model.System, _, from string) (orbital.Job, error) {
+				return eventProcessor.SystemUnlink(ctx, system, from)
+			},
+			systemStatus: cmkapi.SystemStatusCONNECTED,
+			tenantID:     tenant,
+			keyIDFrom:    "keyIDFrom",
+			expType:      eventProto.TaskType_SYSTEM_UNLINK.String(),
+			expStatus:    cmkapi.SystemStatusPROCESSING,
+			assertKeyID: func(t *testing.T, _, keyIDFrom string, data eventprocessor.SystemActionJobData) {
+				t.Helper()
+				assert.Equal(t, keyIDFrom, data.KeyIDFrom)
+			},
+		},
+		{
+			name: "should return error on missing tenant from ctx for system switch",
+			systemEventFn: func(ctx context.Context, system *model.System, to, from string) (orbital.Job, error) {
+				return eventProcessor.SystemSwitch(ctx, system, to, from)
+			},
+			systemStatus: cmkapi.SystemStatusCONNECTED,
+			expErr:       cmkcontext.ErrExtractTenantID,
+		},
+		{
+			name: "should return error on system in processing state for system switch",
+			systemEventFn: func(ctx context.Context, system *model.System, to, from string) (orbital.Job, error) {
+				return eventProcessor.SystemSwitch(ctx, system, to, from)
+			},
+			systemStatus: cmkapi.SystemStatusPROCESSING,
+			tenantID:     tenant,
+			expErr:       eventprocessor.ErrSystemProcessing,
+		},
+		{
+			name: "should create system switch event and set system to processing",
+			systemEventFn: func(ctx context.Context, system *model.System, to, from string) (orbital.Job, error) {
+				return eventProcessor.SystemSwitch(ctx, system, to, from)
+			},
+			systemStatus: cmkapi.SystemStatusCONNECTED,
+			tenantID:     tenant,
+			keyIDTo:      "keyIDTo",
+			keyIDFrom:    "keyIDFrom",
+			expType:      eventProto.TaskType_SYSTEM_SWITCH.String(),
+			expStatus:    cmkapi.SystemStatusPROCESSING,
+			assertKeyID: func(t *testing.T, keyIDTo, keyIDFrom string, data eventprocessor.SystemActionJobData) {
+				t.Helper()
+				assert.Equal(t, keyIDTo, data.KeyIDTo)
+				assert.Equal(t, keyIDFrom, data.KeyIDFrom)
+			},
+		},
+	}
 
-		assert.Equal(t, "SYSTEM_LINK", job.Type)
-		assert.Equal(t, tenant, jobData.TenantID)
-		assert.Equal(t, "keyID", jobData.KeyIDTo)
-		assert.Equal(t, system.ID.String(), jobData.SystemID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			system := testutils.NewSystem(func(s *model.System) {
+				s.Status = tt.systemStatus
+			})
 
-		_, err = r.First(ctx, system, *repo.NewQuery())
-		assert.NoError(t, err)
-		assert.Equal(t, cmkapi.SystemStatusPROCESSING, system.Status)
-	})
+			ctx := testutils.CreateCtxWithTenant(tt.tenantID)
+			if tt.tenantID != "" {
+				testutils.CreateTestEntities(ctx, t, r, system)
+			}
+
+			job, err := tt.systemEventFn(ctx, system, tt.keyIDTo, tt.keyIDFrom)
+
+			if tt.expErr != nil {
+				assert.ErrorIs(t, err, tt.expErr)
+				assert.Equal(t, orbital.Job{}, job)
+
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expType, job.Type)
+			assert.Equal(t, system.ID.String(), job.ExternalID)
+
+			var jobData eventprocessor.SystemActionJobData
+			assert.NoError(t, json.Unmarshal(job.Data, &jobData))
+
+			assert.Equal(t, tt.tenantID, jobData.TenantID)
+			assert.Equal(t, system.ID.String(), jobData.SystemID)
+			tt.assertKeyID(t, tt.keyIDTo, tt.keyIDFrom, jobData)
+
+			_, err = r.First(ctx, system, *repo.NewQuery())
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expStatus, system.Status)
+		})
+	}
 }
 
 func TestJobConfirmation(t *testing.T) {
-	eventProcessor, r, tenant := setup(t)
+	eventProcessor, _, r, tenant := setup(t)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	tests := []struct {
@@ -226,64 +379,168 @@ func TestJobConfirmation(t *testing.T) {
 	}
 }
 
-func TestEventWritting(t *testing.T) {
-	eventProcessor, r, tenant := setup(t)
+func TestJobTermination(t *testing.T) {
+	eventProcessor, systemService, r, tenant := setup(t)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	t.Run("Should create item in cmk events db on job termination", func(t *testing.T) {
-		job := terminateNewJob(t, eventProcessor, &model.Event{
-			Identifier: uuid.NewString(),
-			Type:       eventProto.TaskType_SYSTEM_LINK.String(),
-			Data:       fmt.Appendf(nil, "{\"tenantID\": \"%s\"}", tenant),
-			Status:     orbital.JobStatusProcessing,
-		})
-
-		event := &model.Event{
-			Identifier: job.ExternalID,
-		}
-		_, err := r.First(ctx, event, *repo.NewQuery())
-		assert.NoError(t, err)
-
-		assert.Equal(t, job.Status, event.Status)
-		assert.Equal(t, job.Type, event.Type)
+	system := testutils.NewSystem(func(_ *model.System) {})
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
 	})
+	testutils.CreateTestEntities(ctx, t, r, system, keyConfig, key)
 
-	t.Run("Should update existing item in cmk events db on job termination", func(t *testing.T) {
+	jobData := eventprocessor.SystemActionJobData{
+		TenantID: tenant,
+		SystemID: system.ID.String(),
+		KeyIDTo:  key.ID.String(),
+	}
+	dataBytes, err := json.Marshal(jobData)
+	assert.NoError(t, err)
+
+	unlinkJobData := eventprocessor.SystemActionJobData{
+		TenantID:  tenant,
+		SystemID:  system.ID.String(),
+		KeyIDFrom: key.ID.String(),
+	}
+	unlinkDataBytes, err := json.Marshal(unlinkJobData)
+	assert.NoError(t, err)
+
+	t.Run("Should update system key config ID on job termination", func(t *testing.T) {
+		_, err := r.First(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Nil(t, system.KeyConfigurationID)
+
 		item := uuid.NewString()
-		job := terminateNewJob(t, eventProcessor, &model.Event{
+		terminateNewJob(t, eventProcessor, &model.Event{
 			Identifier: item,
 			Type:       eventProto.TaskType_SYSTEM_LINK.String(),
-			Data:       fmt.Appendf(nil, "{\"tenantID\": \"%s\"}", tenant),
-			Status:     orbital.JobStatusProcessing,
-		})
+			Data:       dataBytes,
+		}, true)
 
-		job2 := terminateNewJob(t, eventProcessor, &model.Event{
+		systemAfterLink := &model.System{
+			ID: system.ID,
+		}
+
+		_, err = r.First(ctx, systemAfterLink, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.NotNil(t, systemAfterLink.KeyConfigurationID)
+
+		item = uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
 			Identifier: item,
 			Type:       eventProto.TaskType_SYSTEM_UNLINK.String(),
-			Data:       fmt.Appendf(nil, "{\"tenantID\": \"%s\"}", tenant),
-			Status:     orbital.JobStatusProcessing,
-		})
+			Data:       unlinkDataBytes,
+		}, true)
 
-		event := &model.Event{
-			Identifier: job.ExternalID,
+		systemAfterUnlink := &model.System{
+			ID: system.ID,
 		}
-		_, err := r.First(ctx, event, *repo.NewQuery())
+
+		_, err = r.First(ctx, systemAfterUnlink, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Nil(t, systemAfterUnlink.KeyConfigurationID)
+	})
+
+	t.Run("Should update key claim on job termination", func(t *testing.T) {
+		req := &systemgrpc.RegisterSystemRequest{
+			ExternalId:    system.Identifier,
+			L2KeyId:       "key123",
+			Region:        "test",
+			Type:          "test",
+			HasL1KeyClaim: false,
+		}
+
+		_, err := systemService.RegisterSystem(ctx, req)
 		assert.NoError(t, err)
 
-		assert.Equal(t, job.Status, event.Status)
-		assert.Equal(t, job2.Type, event.Type)
+		item := uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventProto.TaskType_SYSTEM_LINK.String(),
+			Data:       dataBytes,
+		}, true)
+
+		resp, err := systemService.ListSystems(ctx,
+			&systemgrpc.ListSystemsRequest{
+				ExternalId: system.Identifier,
+				Region:     "test",
+			})
+		assert.NoError(t, err)
+		assert.True(t, resp.GetSystems()[0].GetHasL1KeyClaim())
+
+		item = uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventProto.TaskType_SYSTEM_UNLINK.String(),
+			Data:       dataBytes,
+		}, true)
+
+		resp, err = systemService.ListSystems(ctx,
+			&systemgrpc.ListSystemsRequest{
+				ExternalId: system.Identifier,
+				Region:     "test",
+			})
+		assert.NoError(t, err)
+		assert.False(t, resp.GetSystems()[0].GetHasL1KeyClaim())
+	})
+
+	t.Run("Should delete item in cmk events db on successful job termination", func(t *testing.T) {
+		event := &model.Event{
+			Identifier: uuid.NewString(),
+			Type:       eventProto.TaskType_SYSTEM_LINK.String(),
+			Data:       dataBytes,
+			Status:     orbital.JobStatusDone,
+		}
+		err := r.Create(ctx, event)
+		assert.NoError(t, err)
+
+		terminateNewJob(t, eventProcessor, event, true)
+
+		_, err = r.First(ctx, event, *repo.NewQuery())
+		assert.ErrorIs(t, err, repo.ErrNotFound)
+	})
+
+	t.Run("Should not delete item in cmk events db on unsuccessful job termination", func(t *testing.T) {
+		event := &model.Event{
+			Identifier: uuid.NewString(),
+			Type:       eventProto.TaskType_SYSTEM_LINK.String(),
+			Data:       dataBytes,
+			Status:     orbital.JobStatusProcessing,
+		}
+		err := r.Create(ctx, event)
+		assert.NoError(t, err)
+
+		terminateNewJob(t, eventProcessor, event, false)
+
+		_, err = r.First(ctx, event, *repo.NewQuery())
+		assert.NoError(t, err)
 	})
 }
 
-func terminateNewJob(t *testing.T, eventProcessor *eventprocessor.CryptoReconciler, e *model.Event) orbital.Job {
+func terminateNewJob(
+	t *testing.T,
+	eventProcessor *eventprocessor.CryptoReconciler,
+	e *model.Event,
+	jobDone bool,
+) {
 	t.Helper()
 
-	job, err := eventProcessor.CreateJob(t.Context(), e)
-	assert.NotNil(t, job)
-	assert.NoError(t, err)
+	job := orbital.Job{
+		ExternalID: e.Identifier,
+		Data:       e.Data,
+		Type:       e.Type,
+		Status:     e.Status,
+	}
 
 	// Ignored as this test is not testing the system update capabilities
 	_ = eventProcessor.JobTerminationFunc(t.Context(), job)
+	if jobDone {
+		job.Status = orbital.JobStatusDone
+	}
 
-	return job
+	err := eventProcessor.JobTerminationFunc(t.Context(), job)
+	if err != nil {
+		t.Logf("Job termination returned error: %v", err)
+	}
 }

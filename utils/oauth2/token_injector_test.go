@@ -13,7 +13,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 
-	oauth2injector "github.com/openkcm/cmk/utils/oauth2"
+	oauth2injector "github.tools.sap/kms/cmk/utils/oauth2"
 )
 
 var ErrForced = errors.New("forced error")

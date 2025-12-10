@@ -9,9 +9,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/async/tasks"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/notifier/client"
+	"github.tools.sap/kms/cmk/internal/async/tasks"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/notifier/client"
 )
 
 var ErrMockNotification = errors.New("mock notification error")

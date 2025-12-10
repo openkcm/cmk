@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	boolutil "github.com/openkcm/cmk/utils/bool"
+	boolutil "github.tools.sap/kms/cmk/utils/bool"
 )
 
 func TestAnyTrue(t *testing.T) {

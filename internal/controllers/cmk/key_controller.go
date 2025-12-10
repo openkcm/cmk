@@ -3,15 +3,15 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/importparams"
-	keyTransform "github.com/openkcm/cmk/internal/api/transform/key"
-	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform/importparams"
+	keyTransform "github.tools.sap/kms/cmk/internal/api/transform/key"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/keyshared"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/transformer"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 // PostKeys handles the creation of a new key
@@ -101,10 +101,6 @@ func (c *APIController) GetKeys(ctx context.Context,
 func (c *APIController) DeleteKeysKeyID(ctx context.Context,
 	request cmkapi.DeleteKeysKeyIDRequestObject,
 ) (cmkapi.DeleteKeysKeyIDResponseObject, error) {
-	if c.Manager.Workflow.IsWorkflowEnabled(ctx) {
-		return nil, apierrors.ErrActionRequireWorkflow
-	}
-
 	err := c.Manager.Keys.Delete(ctx, request.KeyID)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrDeleteKey, err)
@@ -134,10 +130,6 @@ func (c *APIController) GetKeysKeyID(ctx context.Context,
 func (c *APIController) UpdateKey(ctx context.Context,
 	request cmkapi.UpdateKeyRequestObject,
 ) (cmkapi.UpdateKeyResponseObject, error) {
-	if request.Body.Enabled != nil && c.Manager.Workflow.IsWorkflowEnabled(ctx) {
-		return nil, apierrors.ErrActionRequireWorkflow
-	}
-
 	dbKey, err := c.Manager.Keys.UpdateKey(ctx, request.KeyID, *request.Body)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrUpdateKey, err)

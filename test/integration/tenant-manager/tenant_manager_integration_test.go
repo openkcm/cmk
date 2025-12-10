@@ -28,14 +28,14 @@ import (
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 
-	"github.com/openkcm/cmk/internal/clients/registry/tenants"
-	sessionmanager "github.com/openkcm/cmk/internal/clients/session-manager"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	sqlrepo "github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
+	"github.tools.sap/kms/cmk/internal/clients/registry/tenants"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	sessionmanager "github.tools.sap/kms/cmk/internal/testutils/clients/session-manager"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
 )
 
 const (
@@ -74,7 +74,8 @@ func setupLogger(tb testing.TB) {
 
 // setupInfrastructure sets up all required infrastructure components
 func setupInfrastructure(tb testing.TB) (
-	*tenants.FakeTenantService, string, string, *multitenancy.DB, config.Database, *rabbitmq.RabbitMQContainer, string) {
+	*tenants.FakeTenantService, string, string, *multitenancy.DB, config.Database, *rabbitmq.RabbitMQContainer, string,
+) {
 	tb.Helper()
 
 	// Setup fake Registry server
@@ -114,7 +115,7 @@ func setupInfrastructure(tb testing.TB) (
 		Secret: commoncfg.SourceRef{Source: commoncfg.EmbeddedSourceValue, Value: integrationutils.DB.Secret.Value},
 		Name:   integrationutils.DB.Name,
 	}
-	integrationutils.StartPostgresSQL(tb, &testcontainerDBConfig)
+	testutils.StartPostgresSQL(tb, &testcontainerDBConfig)
 
 	// Setup database using testutils.NewTestDB with testcontainer config
 	tb.Log("Setting up test database...")
@@ -130,7 +131,7 @@ func setupInfrastructure(tb testing.TB) (
 
 	// Setup RabbitMQ
 	tb.Log("Setting up RabbitMQ container...")
-	rabbitMQ := integrationutils.StartRabbitMQ(tb)
+	rabbitMQ := testutils.StartRabbitMQ(tb)
 	rabbitMQURL, err := rabbitMQ.AmqpURL(tb.Context())
 	require.NoError(tb, err)
 
@@ -139,7 +140,8 @@ func setupInfrastructure(tb testing.TB) (
 
 // createConfigurations creates test configurations
 func createConfigurations(dbConfig config.Database, registryAddr,
-	sessionManagerAddr, rabbitMQURL string) *config.Config {
+	sessionManagerAddr, rabbitMQURL string,
+) *config.Config {
 	amqpConfig := config.AMQP{URL: rabbitMQURL, Source: amqpSource, Target: amqpTarget}
 
 	return &config.Config{
@@ -473,7 +475,7 @@ func (env *testEnv) verifyTenantInDatabase(t *testing.T, tenantID string) {
 	t.Helper()
 
 	// Create repository using the existing multitenancy DB connection
-	repository := sqlrepo.NewRepository(env.multitenancyDB)
+	repository := sql.NewRepository(env.multitenancyDB)
 
 	// Create tenant context
 	ctx := context.Background()

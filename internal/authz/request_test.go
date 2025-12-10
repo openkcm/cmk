@@ -5,9 +5,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/authz"
-	"github.com/openkcm/cmk/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/authz"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 func TestNewRequest_ValidCases(t *testing.T) {
@@ -20,20 +21,20 @@ func TestNewRequest_ValidCases(t *testing.T) {
 	}{
 		{
 			"ValidRequest",
-			authz.User{UserName: "test_user", Groups: []authz.UserGroup{"group1"}},
+			authz.User{UserName: "test_user", Groups: []constants.UserGroup{"group1"}},
 			authz.ResourceTypeKey,
-			authz.ActionKeyRead,
+			authz.ActionRead,
 			"tenant1",
 		},
 		{
 			"EmptyResourceType",
-			authz.User{UserName: "test_user", Groups: []authz.UserGroup{"group1"}},
-			authz.ResourceTypeName(""), authz.ActionKeyRead,
+			authz.User{UserName: "test_user", Groups: []constants.UserGroup{"group1"}},
+			authz.ResourceTypeName(""), authz.ActionRead,
 			"tenant1",
 		},
 		{
 			"EmptyAction",
-			authz.User{UserName: "test_user", Groups: []authz.UserGroup{"group1"}},
+			authz.User{UserName: "test_user", Groups: []constants.UserGroup{"group1"}},
 			authz.ResourceTypeKey,
 			authz.Action(""),
 			"tenant1",
@@ -66,27 +67,34 @@ func TestNewRequest_InvalidCases(t *testing.T) {
 	}{
 		{
 			"EmptyUser",
-			authz.User{UserName: "", Groups: []authz.UserGroup{"group1"}},
+			authz.User{UserName: "", Groups: []constants.UserGroup{"group1"}},
 			authz.ResourceTypeKey,
-			authz.ActionKeyRead,
+			authz.ActionRead,
+			"tenant1",
+		},
+		{
+			"EmptyUserGroups",
+			authz.User{UserName: "test_user", Groups: []constants.UserGroup{}},
+			authz.ResourceTypeKey,
+			authz.ActionRead,
 			"tenant1",
 		},
 		{
 			"InvalidResourceType",
-			authz.User{UserName: "test_user", Groups: []authz.UserGroup{"group1"}},
-			authz.ResourceTypeName("invalid"), authz.ActionKeyRead,
+			authz.User{UserName: "test_user", Groups: []constants.UserGroup{"group1"}},
+			authz.ResourceTypeName("invalid"), authz.ActionRead,
 			"tenant1",
 		},
 		{
 			"InvalidResourceTypeForAction",
-			authz.User{UserName: "test_user", Groups: []authz.UserGroup{"group1"}},
+			authz.User{UserName: "test_user", Groups: []constants.UserGroup{"group1"}},
 			authz.ResourceTypeKeyConfiguration,
-			authz.ActionKeyRead,
+			authz.ActionRead,
 			"tenant1",
 		},
 		{
 			"InvalidAction",
-			authz.User{UserName: "test_user", Groups: []authz.UserGroup{"group1"}},
+			authz.User{UserName: "test_user", Groups: []constants.UserGroup{"group1"}},
 			authz.ResourceTypeKey,
 			authz.Action("invalid"),
 			"tenant1",
@@ -117,9 +125,9 @@ func TestSetUser(t *testing.T) {
 		user        authz.User
 		expectError bool
 	}{
-		{"ValidUser", authz.User{UserName: "test_user", Groups: []authz.UserGroup{"group1"}}, false},
-		{"EmptyUser", authz.User{UserName: "", Groups: []authz.UserGroup{"group1"}}, true},
-		{"EmptyUserGroup", authz.User{UserName: "test_user", Groups: []authz.UserGroup{}}, true},
+		{"ValidUser", authz.User{UserName: "test_user", Groups: []constants.UserGroup{"group1"}}, false},
+		{"EmptyUser", authz.User{UserName: "", Groups: []constants.UserGroup{"group1"}}, true},
+		{"EmptyUserGroup", authz.User{UserName: "test_user", Groups: []constants.UserGroup{}}, true},
 	}
 
 	for _, tt := range tests {
@@ -154,7 +162,7 @@ func TestSetResourceType(t *testing.T) {
 		{"ValidResourceType", authz.ResourceTypeKey, authz.Action(""), false},
 		{"EmptyResourceType", authz.ResourceTypeName(""), authz.Action(""), false},
 		{"InvalidResourceType", authz.ResourceTypeName("invalid"), authz.Action(""), true},
-		{"ValidResourceTypeWithInvalidAction", authz.ResourceTypeKeyConfiguration, authz.ActionKeyRead, true},
+		{"ValidResourceTypeWithInvalidAction", authz.ResourceTypeKeyConfiguration, authz.ActionKeyRotate, true},
 	}
 
 	for _, tt := range test {
@@ -191,7 +199,7 @@ func TestSetAction(t *testing.T) {
 		action      authz.Action
 		expectError bool
 	}{
-		{"ValidAction", authz.ActionKeyRead, false},
+		{"ValidAction", authz.ActionRead, false},
 		{"EmptyAction", authz.Action(""), false},
 		{"InvalidAction", authz.Action("invalid"), true},
 	}

@@ -50,4 +50,9 @@ env/secret
 
 *testpluginbinary
 
+# Generated client data files
+cmd/clientData/*.txt
+
 build_version.json
+
+/*plugins/

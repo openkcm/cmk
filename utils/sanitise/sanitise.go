@@ -11,8 +11,8 @@ import (
 
 	"github.com/microcosm-cc/bluemonday"
 
-	"github.com/openkcm/cmk/internal/errs"
-	tagManager "github.com/openkcm/cmk/utils/tags"
+	"github.tools.sap/kms/cmk/internal/errs"
+	tagManager "github.tools.sap/kms/cmk/utils/tags"
 )
 
 var (

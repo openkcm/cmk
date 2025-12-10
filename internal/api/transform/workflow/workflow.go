@@ -1,15 +1,22 @@
 package workflow
 
 import (
+	"context"
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
-	"github.com/openkcm/cmk/utils/sanitise"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/model"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
+	"github.tools.sap/kms/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/utils/sanitise"
+)
+
+var (
+	ErrExpiryGreaterThanMaximum = errors.New("expiry exceeds maximum")
 )
 
 // ToAPI converts a workflow model to an API workflow presentation.
@@ -30,17 +37,36 @@ func ToAPI(w model.Workflow) (*cmkapi.Workflow, error) {
 		Parameters:    ptr.PointTo(w.Parameters),
 		FailureReason: ptr.PointTo(w.FailureReason),
 		Metadata: ptr.PointTo(cmkapi.WorkflowMetadata{
-			CreatedAt: ptr.PointTo(w.CreatedAt.Format(transform.DefTimeFormat)),
-			UpdatedAt: ptr.PointTo(w.UpdatedAt.Format(transform.DefTimeFormat)),
+			CreatedAt: ptr.PointTo(w.CreatedAt),
+			UpdatedAt: ptr.PointTo(w.UpdatedAt),
 		}),
+		ExpiresAt: &w.ExpiryDate,
 	}, nil
 }
 
 // FromAPI converts an API workflow presentation to a workflow model.
-func FromAPI(apiWorkflow cmkapi.Workflow, userID uuid.UUID) (*model.Workflow, error) {
+func FromAPI(ctx context.Context, apiWorkflow cmkapi.Workflow,
+	defaultExpiryPeriod, maxExpiryPeriod int) (*model.Workflow, error) {
+	defaultExpiryDate := time.Now().AddDate(0, 0, defaultExpiryPeriod)
+	maxExpiryDate := time.Now().AddDate(0, 0, maxExpiryPeriod)
+
+	var expiryDate = defaultExpiryDate
+	if apiWorkflow.ExpiresAt != nil {
+		expiryDate = *apiWorkflow.ExpiresAt
+	}
+
+	if expiryDate.After(maxExpiryDate) {
+		return nil, ErrExpiryGreaterThanMaximum
+	}
+
 	if apiWorkflow.Id == nil {
 		newUUID := uuid.New()
 		apiWorkflow.Id = &newUUID
+	}
+
+	clientData, err := cmkcontext.ExtractClientData(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	wf := &model.Workflow{
@@ -48,8 +74,9 @@ func FromAPI(apiWorkflow cmkapi.Workflow, userID uuid.UUID) (*model.Workflow, er
 		ActionType:    strings.ToUpper(string(apiWorkflow.ActionType)),
 		ArtifactType:  strings.ToUpper(string(apiWorkflow.ArtifactType)),
 		ArtifactID:    apiWorkflow.ArtifactID,
-		InitiatorID:   userID,
-		InitiatorName: "", // TBD how to get the name
+		InitiatorID:   clientData.Identifier,
+		InitiatorName: clientData.Email,
+		ExpiryDate:    expiryDate,
 	}
 
 	if apiWorkflow.Parameters != nil {

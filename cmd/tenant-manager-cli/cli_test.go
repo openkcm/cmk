@@ -16,15 +16,18 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
-	"github.com/openkcm/cmk/cmd/tenant-manager-cli/commands"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
-	"github.com/openkcm/cmk/utils/base62"
+	"github.tools.sap/kms/cmk/cmd/tenant-manager-cli/commands"
+	"github.tools.sap/kms/cmk/internal/auditor"
+	"github.tools.sap/kms/cmk/internal/clients"
+	"github.tools.sap/kms/cmk/internal/config"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
+	"github.tools.sap/kms/cmk/utils/base62"
 )
 
 type CLISuite struct {
@@ -46,21 +49,62 @@ type CLISuite struct {
 }
 
 func (s *CLISuite) SetupSuite() {
-	s.db, _, _ = testutils.NewTestDB(s.T(), testutils.TestDBConfig{
-		CreateDatabase: true,
-		Models:         []driver.TenantTabler{&model.Tenant{}, &model.Group{}},
-	})
+	db, _, dbCfg := testutils.NewTestDB(
+		s.T(), testutils.TestDBConfig{
+			CreateDatabase: true,
+			Models:         []driver.TenantTabler{&model.Tenant{}, &model.Group{}},
+		},
+	)
+	s.db = db
 
-	dbRepository := sql.NewRepository(s.db)
-	ctlg, err := catalog.New(s.T().Context(), config.Config{
-		Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
-	})
+	ctx := s.T().Context()
+	cfg := &config.Config{
+		Plugins:  testutils.SetupMockPlugins(testutils.IdentityPlugin),
+		Database: dbCfg,
+	}
+	r := sql.NewRepository(s.db)
+	ctlg, err := catalog.New(ctx, cfg)
 	s.NoError(err)
 
-	s.gm = manager.NewGroupManager(dbRepository, ctlg)
-	s.tm = manager.NewTenantManager(dbRepository)
+	cmkAuditor := auditor.New(ctx, cfg)
 
-	factory := commands.NewCommandFactory(s.db, ctlg)
+	clientsFactory, err := clients.NewFactory(cfg.Services)
+	s.NoError(err)
+
+	reconciler, err := eventprocessor.NewCryptoReconciler(
+		ctx, cfg, r,
+		ctlg, clientsFactory,
+	)
+	s.NoError(err)
+
+	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	kcm := manager.NewKeyConfigManager(r, cm, cmkAuditor, cfg)
+
+	sys := manager.NewSystemManager(
+		ctx,
+		r,
+		clientsFactory,
+		reconciler,
+		ctlg,
+		cfg,
+		kcm,
+	)
+
+	km := manager.NewKeyManager(
+		r,
+		ctlg,
+		manager.NewTenantConfigManager(r, ctlg),
+		kcm,
+		cm,
+		reconciler,
+		cmkAuditor,
+	)
+
+	s.gm = manager.NewGroupManager(r, ctlg)
+	s.tm = manager.NewTenantManager(r, sys, km, cmkAuditor)
+
+	factory, err := commands.NewCommandFactory(ctx, cfg, s.db, ctlg)
+	s.NoError(err)
 	s.rootCmd = factory.NewRootCmd(s.T().Context())
 
 	s.createGroupsCmd = factory.NewCreateGroupsCmd(s.T().Context())
@@ -300,13 +344,15 @@ func (s *CLISuite) createTenant() (*model.Tenant, error) {
 		return nil, err
 	}
 
-	tenant := testutils.NewTenant(func(l *model.Tenant) {
-		l.ID = id
-		l.SchemaName = encodedSchemaName
-		l.DomainURL = encodedSchemaName
-		l.Region = "us-west-2"
-		l.Status = model.TenantStatus(tenantgrpc.Status_STATUS_ACTIVE.String())
-	})
+	tenant := testutils.NewTenant(
+		func(l *model.Tenant) {
+			l.ID = id
+			l.SchemaName = encodedSchemaName
+			l.DomainURL = encodedSchemaName
+			l.Region = "us-west-2"
+			l.Status = model.TenantStatus(tenantgrpc.Status_STATUS_ACTIVE.String())
+		},
+	)
 
 	return tenant, nil
 }

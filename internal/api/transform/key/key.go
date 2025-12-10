@@ -8,18 +8,17 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/api/transform/key/hyokkey"
-	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk/internal/api/transform/key/sysmr"
-	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
-	"github.com/openkcm/cmk/utils/sanitise"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/hyokkey"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/keyshared"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/sysmr"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/transformer"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/utils/sanitise"
 )
 
 var (
@@ -102,12 +101,9 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 	state := cmkapi.KeyState(k.State)
 	apiKey.State = &state
 
-	createdAt := k.CreatedAt.Format(transform.DefTimeFormat)
-	updatedAt := k.UpdatedAt.Format(transform.DefTimeFormat)
-
 	apiKey.Metadata = &cmkapi.KeyMetadata{
-		CreatedAt: &createdAt,
-		UpdatedAt: &updatedAt,
+		CreatedAt: &k.CreatedAt,
+		UpdatedAt: &k.UpdatedAt,
 	}
 
 	if k.KeyVersions != nil && k.KeyType == constants.KeyTypeSystemManaged {

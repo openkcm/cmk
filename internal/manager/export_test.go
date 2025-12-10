@@ -9,15 +9,17 @@ import (
 	certissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	wf "github.com/openkcm/cmk/internal/workflow"
+	"github.tools.sap/kms/cmk/internal/async"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	wf "github.tools.sap/kms/cmk/internal/workflow"
 )
 
-var GetPluginAlgorithm = getPluginAlgorithm
-var ValidateSchema = validateSchema
+var (
+	GetPluginAlgorithm = getPluginAlgorithm
+	ValidateSchema     = validateSchema
+)
 
 func (m *TenantConfigManager) GetTenantConfigsHyokKeystore() HYOKKeystore {
 	return m.getTenantConfigsHyokKeystore()
@@ -31,17 +33,13 @@ func (si *SystemInformation) SetClient(systemInformation systeminformationv1.Sys
 	si.sisClient = systemInformation
 }
 
-func (m *SystemManager) GetClient() *systems.Client {
-	return m.registry.System()
-}
-
 func (m *SystemManager) EventSelector(
 	ctx context.Context,
 	r repo.Repo,
 	updatedSystem *model.System,
 	oldKeyConfigID *uuid.UUID,
 	keyConfig *model.KeyConfiguration,
-) (SystemEvent, error) {
+) (eventprocessor.Event, error) {
 	return m.eventSelector(ctx, r, updatedSystem, oldKeyConfigID, keyConfig)
 }
 

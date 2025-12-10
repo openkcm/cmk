@@ -1,9 +1,9 @@
 package importparams
 
 import (
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/sanitise"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/utils/sanitise"
 )
 
 func ToAPI(p model.ImportParams) (*cmkapi.ImportParams, error) {

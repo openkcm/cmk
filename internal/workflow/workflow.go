@@ -7,19 +7,21 @@ import (
 	"github.com/google/uuid"
 	"github.com/looplab/fsm"
 
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
 )
 
-var SystemUserID = uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")
+var SystemUserUUID = uuid.Max
+
+var SystemUserID = SystemUserUUID.String()
 
 type Lifecycle struct {
 	Workflow                *model.Workflow
 	StateMachine            *fsm.FSM
-	ActorID                 uuid.UUID
+	ActorID                 string
 	Repository              repo.Repo
 	KeyActions              KeyActions
 	KeyConfigurationActions KeyConfigurationActions
@@ -55,7 +57,7 @@ func NewLifecycle(workflow *model.Workflow,
 	keyConfigurationActions KeyConfigurationActions,
 	systemActions SystemActions,
 	repo repo.Repo,
-	actorID uuid.UUID,
+	actorID string,
 	minimumApproverCount int,
 ) *Lifecycle {
 	stateMachine := fsm.NewFSM(

@@ -1,6 +1,6 @@
 package workflow
 
-import "github.com/openkcm/cmk/internal/model"
+import "github.tools.sap/kms/cmk/internal/model"
 
 func GetApproverUserNames(approvers []model.WorkflowApprover) []string {
 	if len(approvers) == 0 {

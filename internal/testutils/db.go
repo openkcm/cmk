@@ -14,13 +14,15 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/db"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
 )
 
 const (
@@ -117,6 +119,8 @@ func RunTestQuery(db *multitenancy.DB, tenant string, queries ...string) {
 	}
 }
 
+const MigratorPoolSize = 8
+
 var TestDB = config.Database{
 	Host: commoncfg.SourceRef{
 		Source: commoncfg.EmbeddedSourceValue,
@@ -130,8 +134,9 @@ var TestDB = config.Database{
 		Source: commoncfg.EmbeddedSourceValue,
 		Value:  "secret",
 	},
-	Name: "cmk",
-	Port: "5433",
+	Name:             "cmk",
+	Port:             "5433",
+	MigratorPoolSize: MigratorPoolSize,
 }
 
 type TestDBConfigOpt func(*TestDBConfig)
@@ -153,6 +158,12 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 	}
 
 	db := newTestDBCon(tb, &cfg)
+
+	if cfg.Logger != nil {
+		db = db.Session(&gorm.Session{
+			Logger: cfg.Logger,
+		})
+	}
 
 	tb.Cleanup(func() {
 		sqlDB, _ := db.DB.DB()
@@ -216,7 +227,7 @@ func createTenant(tb testing.TB, db *multitenancy.DB, tenant *model.Tenant, m []
 		_ = db.Exec(
 			fmt.Sprintf("DELETE FROM %s WHERE schema_name = '%s';", model.Tenant{}.TableName(), tenant.SchemaName),
 		)
-		err := db.OffboardTenant(tb.Context(), tenant.SchemaName)
+		err := db.OffboardTenant(context.Background(), tenant.SchemaName)
 		assert.NoError(tb, err)
 	})
 
@@ -285,6 +296,9 @@ type TestDBConfig struct {
 
 	// Tables that the test should contain
 	Models []driver.TenantTabler
+
+	// GORM Logger
+	Logger logger.Interface
 }
 
 const MaxPSQLSchemaName = 64
@@ -311,8 +325,12 @@ func processNameForDB(n string) string {
 func newTestDBCon(tb testing.TB, cfg *TestDBConfig) *multitenancy.DB {
 	tb.Helper()
 
+	// Create new context so cleanup functions execute
+	ctx := context.Background()
+
 	if !cfg.CreateDatabase {
 		con, err := db.StartDBConnection(
+			ctx,
 			cfg.dbCon,
 			[]config.Database{},
 		)
@@ -324,6 +342,7 @@ func newTestDBCon(tb testing.TB, cfg *TestDBConfig) *multitenancy.DB {
 	cfg.dbCon = NewIsolatedDB(tb, cfg.dbCon)
 
 	con, err := db.StartDBConnection(
+		ctx,
 		cfg.dbCon,
 		[]config.Database{},
 	)
@@ -339,6 +358,7 @@ func NewIsolatedDB(tb testing.TB, cfg config.Database) config.Database {
 	tb.Helper()
 
 	con, err := db.StartDBConnection(
+		tb.Context(),
 		cfg,
 		[]config.Database{},
 	)

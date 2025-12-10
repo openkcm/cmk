@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 
 	"gorm.io/gorm"
@@ -8,10 +9,11 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/db/dialect"
-	"github.com/openkcm/cmk/internal/db/dsn"
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/db/dialect"
+	"github.tools.sap/kms/cmk/internal/db/dsn"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/model"
 )
 
 var (
@@ -23,10 +25,11 @@ var (
 
 // StartDBConnection opens DB connection using data from `config.DB`.
 func StartDBConnection(
+	ctx context.Context,
 	conf config.Database,
 	replicas []config.Database,
 ) (*multitenancy.DB, error) {
-	return StartDBConnectionPlugins(conf, replicas, map[string]gorm.Plugin{})
+	return StartDBConnectionPlugins(ctx, conf, replicas, map[string]gorm.Plugin{})
 }
 
 // StartDBConnectionPlugins opens DB connection using data from `config.DB`
@@ -34,6 +37,7 @@ func StartDBConnection(
 // them this way.
 // It is an extension of `StartDBConnection` functionality.
 func StartDBConnectionPlugins(
+	ctx context.Context,
 	conf config.Database,
 	replicas []config.Database,
 	plugins map[string]gorm.Plugin,
@@ -51,6 +55,13 @@ func StartDBConnectionPlugins(
 	})
 	if err != nil {
 		return nil, errs.Wrap(ErrStartingDBCon, err)
+	}
+
+	db = db.WithContext(ctx)
+
+	err = prepareMultitenancy(ctx, db)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(replicas) == 0 {
@@ -72,6 +83,38 @@ func StartDBConnectionPlugins(
 	}
 
 	return db, nil
+}
+
+// prepareMultitenancy runs necessary operations a multitenancy DB
+func prepareMultitenancy(ctx context.Context, db *multitenancy.DB) error {
+	err := db.RegisterModels(
+		ctx,
+		&model.KeyConfiguration{},
+		&model.Key{},
+		&model.KeyVersion{},
+		&model.KeyLabel{},
+		&model.System{},
+		&model.SystemProperty{},
+		&model.Workflow{},
+		&model.WorkflowApprover{},
+		&model.Tenant{},
+		&model.TenantConfig{},
+		&model.Certificate{},
+		&model.Group{},
+		&model.ImportParams{},
+		&model.KeystoreConfiguration{},
+		&model.Event{},
+	)
+	if err != nil {
+		return errs.Wrap(ErrMigrationFailed, err)
+	}
+
+	err = db.MigrateSharedModels(ctx)
+	if err != nil {
+		return errs.Wrap(ErrMigrationFailed, err)
+	}
+
+	return nil
 }
 
 func replicaDialectors(replicas []config.Database) ([]gorm.Dialector, error) {

@@ -9,10 +9,10 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/notifier/client"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/notifier/client"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
 )
 
 var ansPath string
@@ -26,7 +26,7 @@ func init() {
 
 func NotificationPlugin(t *testing.T) *plugincatalog.Catalog {
 	t.Helper()
-	plugins, err := catalog.New(t.Context(), config.Config{
+	plugins, err := catalog.New(t.Context(), &config.Config{
 		Plugins: []plugincatalog.PluginConfig{
 			integrationutils.NotificationPlugin(t),
 		},

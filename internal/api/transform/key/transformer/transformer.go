@@ -11,10 +11,10 @@ import (
 	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/utils/protobuf"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/api/transform/key/keyshared"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/utils/protobuf"
 )
 
 const (

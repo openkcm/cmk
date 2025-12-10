@@ -22,19 +22,18 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	slogctx "github.com/veqryn/slog-context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	sqlPkg "github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/config"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	eventProto "github.tools.sap/kms/cmk/internal/event-processor/proto"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	sqlPkg "github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 type tester struct {
@@ -45,16 +44,15 @@ type tester struct {
 	config     *config.Config
 }
 
-//nolint:funlen
 func setupTest(t *testing.T) tester {
 	t.Helper()
 
-	rabbitMQ := integrationutils.StartRabbitMQ(t)
+	rabbitMQ := testutils.StartRabbitMQ(t)
 	rabbitMQURL, err := rabbitMQ.AmqpURL(t.Context())
 	require.NoError(t, err)
 
 	dbConf := integrationutils.DB
-	integrationutils.StartPostgresSQL(t, &dbConf)
+	testutils.StartPostgresSQL(t, &dbConf)
 
 	db, tenants, dbConf := testutils.NewTestDB(
 		t,
@@ -99,7 +97,7 @@ func setupTest(t *testing.T) tester {
 		Database: dbConf,
 	}
 
-	ctlg, err := catalog.New(t.Context(), cfg)
+	ctlg, err := catalog.New(t.Context(), &cfg)
 	require.NoError(t, err)
 
 	r := sqlPkg.NewRepository(db)
@@ -111,6 +109,7 @@ func setupTest(t *testing.T) tester {
 		&cfg,
 		r,
 		ctlg,
+		nil,
 		eventprocessor.WithExecInterval(5*time.Millisecond),
 		eventprocessor.WithConfirmJobAfter(10*time.Millisecond),
 	)
@@ -140,19 +139,24 @@ func TestReconciler_TaskResolution_KeyAction(t *testing.T) {
 	_, keyID := addDataToDB(ctx, t, tester.repository)
 
 	testCases := []struct {
-		name     string
-		jobType  string
-		taskType eventProto.TaskType
+		name        string
+		jobType     string
+		expTaskType eventProto.TaskType
 	}{
 		{
-			name:     "KEY_ENABLE creates tasks for all targets",
-			jobType:  "KEY_ENABLE",
-			taskType: eventProto.TaskType_KEY_ENABLE,
+			name:        "KEY_ENABLE creates tasks for all targets",
+			jobType:     eventProto.TaskType_KEY_ENABLE.String(),
+			expTaskType: eventProto.TaskType_KEY_ENABLE,
 		},
 		{
-			name:     "KEY_DISABLE creates tasks for all targets",
-			jobType:  "KEY_DISABLE",
-			taskType: eventProto.TaskType_KEY_DISABLE,
+			name:        "KEY_DISABLE creates tasks for all targets",
+			jobType:     eventProto.TaskType_KEY_DISABLE.String(),
+			expTaskType: eventProto.TaskType_KEY_DISABLE,
+		},
+		{
+			name:        "KEY_DETACH creates tasks for all targets",
+			jobType:     eventProto.TaskType_KEY_DETACH.String(),
+			expTaskType: eventProto.TaskType_KEY_DETACH,
 		},
 	}
 
@@ -163,10 +167,15 @@ func TestReconciler_TaskResolution_KeyAction(t *testing.T) {
 				err error
 			)
 
-			if tc.jobType == "KEY_ENABLE" {
+			switch tc.jobType {
+			case eventProto.TaskType_KEY_ENABLE.String():
 				job, err = tester.reconciler.KeyEnable(ctx, keyID)
-			} else {
+			case eventProto.TaskType_KEY_DISABLE.String():
 				job, err = tester.reconciler.KeyDisable(ctx, keyID)
+			case eventProto.TaskType_KEY_DETACH.String():
+				job, err = tester.reconciler.KeyDetach(ctx, keyID)
+			default:
+				assert.Failf(t, "unsupported job type: %s", tc.jobType)
 			}
 
 			require.NoError(t, err)
@@ -188,7 +197,7 @@ func TestReconciler_TaskResolution_KeyAction(t *testing.T) {
 				err := proto.Unmarshal(task.Data, &taskData)
 				require.NoError(t, err)
 
-				assert.Equal(t, tc.taskType, taskData.GetTaskType())
+				assert.Equal(t, tc.expTaskType, taskData.GetTaskType())
 				assert.NotNil(t, taskData.GetKeyAction())
 				assert.Equal(t, keyID, taskData.GetKeyAction().GetKeyId())
 				assert.Equal(t, tester.tenant, taskData.GetKeyAction().GetTenantId())
@@ -385,12 +394,11 @@ func TestReconciler_JobTermination(t *testing.T) {
 	})
 }
 
-func addDataToDB(ctx context.Context, t *testing.T, repo repo.Repo) (*model.System, string) {
+func addDataToDB(ctx context.Context, t *testing.T, r repo.Repo) (*model.System, string) {
 	t.Helper()
 
-	tenantManager := manager.NewTenantManager(repo)
+	tenant, err := repo.GetTenant(ctx, r)
 
-	tenant, err := tenantManager.GetTenant(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, "tenant0", tenant.SchemaName)
 
@@ -406,7 +414,7 @@ func addDataToDB(ctx context.Context, t *testing.T, repo repo.Repo) (*model.Syst
 	bytes, err := json.Marshal(data)
 	require.NoError(t, err)
 
-	err = repo.Create(ctx, &model.Key{
+	err = r.Create(ctx, &model.Key{
 		ID:               keyUUID,
 		Name:             uuid.NewString(),
 		Provider:         "TEST",
@@ -422,7 +430,7 @@ func addDataToDB(ctx context.Context, t *testing.T, repo repo.Repo) (*model.Syst
 		Status:     cmkapi.SystemStatusDISCONNECTED,
 		Type:       "SYSTEM",
 	}
-	err = repo.Create(ctx, system)
+	err = r.Create(ctx, system)
 	require.NoError(t, err)
 
 	return system, keyUUID.String()

@@ -10,11 +10,11 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	integrationutils "github.tools.sap/kms/cmk/test/integration/integration_utils"
 )
 
 func startDB(t *testing.T) (*multitenancy.DB, string) {
@@ -23,12 +23,13 @@ func startDB(t *testing.T) (*multitenancy.DB, string) {
 	cfg := &config.Config{
 		Database: integrationutils.DB,
 	}
-	integrationutils.StartPostgresSQL(t, &cfg.Database)
+	testutils.StartPostgresSQL(t, &cfg.Database)
 
 	dbConfig := testutils.TestDBConfig{
 		Models: []driver.TenantTabler{
 			&testutils.TestModel{},
-		}}
+		},
+	}
 	db, tenants, _ := testutils.NewTestDB(t, dbConfig,
 		testutils.WithDatabase(cfg.Database),
 	)
@@ -109,8 +110,10 @@ func TestRepo_Create_ForInjection(t *testing.T) {
 	}
 
 	for _, attackString := range attackStrings {
-		item := testutils.TestModel{ID: uuid.New(),
-			Name: uuid.New().String() + attackString}
+		item := testutils.TestModel{
+			ID:   uuid.New(),
+			Name: uuid.New().String() + attackString,
+		}
 		err := r.Create(ctx, &item)
 		assert.NoError(t, err)
 
@@ -241,8 +244,10 @@ func TestRepo_Patch_ForInjection(t *testing.T) {
 	}
 
 	for _, attackString := range attackStrings {
-		item := testutils.TestModel{ID: uuid.New(),
-			Name: uuid.New().String() + attackString}
+		item := testutils.TestModel{
+			ID:   uuid.New(),
+			Name: uuid.New().String() + attackString,
+		}
 		ok, err := r.Patch(ctx, &item, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.False(t, ok)

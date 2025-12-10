@@ -4,15 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 
 	"github.com/openkcm/orbital"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/event-processor/proto"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/event-processor/proto"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 // KeyActionJobData contains the data needed for a key action orbital job.
@@ -29,68 +31,101 @@ type SystemActionJobData struct {
 	KeyIDFrom string `json:"keyIDFrom"`
 }
 
+type Event struct {
+	Name  string
+	Event func(ctx context.Context) (orbital.Job, error)
+}
+
+var ErrEventSendingFailed = errors.New("failed to send event")
+
+func (c *CryptoReconciler) SendEvent(ctx context.Context, event Event) error {
+	if c == nil {
+		return errs.Wrapf(ErrEventSendingFailed, "reconciler is not initialized")
+	}
+
+	ctx = log.InjectSystemEvent(ctx, event.Name)
+
+	job, err := event.Event(ctx)
+	if err != nil {
+		return errs.Wrap(ErrEventSendingFailed, err)
+	}
+
+	log.Info(ctx, "Event Sent", slog.String("JobID", job.ID.String()))
+
+	return nil
+}
+
 var (
 	ErrNoPreviousEvent  = errors.New("no previous events found for selected item")
 	ErrSystemProcessing = errors.New("system is still in processing state")
+
+	ErrMissingKeyID = errors.New("keyID is required to create key event job")
 )
 
 // GetLastEvent returns the last event of an item
 func (c *CryptoReconciler) GetLastEvent(
 	ctx context.Context,
-	eventTypes []string,
 	cmkItemID string,
 ) (*model.Event, error) {
-	var jobs []*model.Event
+	job := &model.Event{}
 
-	identifierCond := repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.IdentifierField, cmkItemID))
-	typesCond := repo.NewCompositeKey()
+	query := *repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(repo.IdentifierField, cmkItemID)))
 
-	typesCond.IsStrict = false
-	for _, typ := range eventTypes {
-		typesCond = typesCond.Where(repo.TypeField, typ)
-	}
-
-	count, err := c.repo.List(
-		ctx,
-		model.Event{},
-		&jobs,
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(typesCond)).Where(identifierCond).
-			Order(repo.OrderField{
-				Field:     repo.CreatedField,
-				Direction: repo.Desc,
-			}),
-	)
-	if err != nil || count < 1 {
+	found, err := c.repo.First(ctx, job, query)
+	if err != nil || !found {
 		return nil, errs.Wrap(ErrNoPreviousEvent, err)
 	}
 
-	return jobs[0], nil
+	return job, nil
 }
 
 func (c *CryptoReconciler) handleSystemStatus(
 	ctx context.Context,
-	s *model.System,
-	f func() (orbital.Job, error),
+	system *model.System,
+	eventFn func() (orbital.Job, error),
 ) (orbital.Job, error) {
 	job := orbital.Job{}
+	previousStatus := system.Status
+
 	err := c.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
-		if s.Status == cmkapi.SystemStatusPROCESSING {
+		if system.Status == cmkapi.SystemStatusPROCESSING {
 			return ErrSystemProcessing
 		}
 
-		s.Status = cmkapi.SystemStatusPROCESSING
+		system.Status = cmkapi.SystemStatusPROCESSING
 
-		_, err := r.Patch(ctx, s, *repo.NewQuery().UpdateAll(true))
+		_, err := r.Patch(ctx, system, *repo.NewQuery().UpdateAll(true))
 		if err != nil {
 			return err
 		}
 
-		job, err = f()
+		job, err = eventFn()
 
 		return err
 	})
+	if err != nil {
+		return job, err
+	}
 
-	return job, err
+	// Dont store event information if non user triggered
+	if cmkcontext.IsSystemUser(ctx) {
+		return job, nil
+	}
+
+	err = c.repo.Set(ctx, &model.Event{
+		Identifier:         job.ExternalID,
+		Type:               job.Type,
+		Data:               job.Data,
+		Status:             job.Status,
+		PreviousItemStatus: string(previousStatus),
+	})
+	if err != nil {
+		log.Error(ctx, "failed to store event", err)
+	}
+
+	return job, nil
 }
 
 // SystemLink creates a job to link a system with a key make sure the ctx provided has the tenant set.
@@ -146,11 +181,21 @@ func (c *CryptoReconciler) KeyDisable(ctx context.Context, keyID string) (orbita
 	return c.createKeyEventJob(ctx, keyID, proto.TaskType_KEY_DISABLE)
 }
 
+// KeyDetach creates a job to detach a key.
+// Context provided must have the tenant set.
+func (c *CryptoReconciler) KeyDetach(ctx context.Context, keyID string) (orbital.Job, error) {
+	return c.createKeyEventJob(ctx, keyID, proto.TaskType_KEY_DETACH)
+}
+
 func (c *CryptoReconciler) createKeyEventJob(
 	ctx context.Context,
 	keyID string,
 	taskType proto.TaskType,
 ) (orbital.Job, error) {
+	if keyID == "" {
+		return orbital.Job{}, ErrMissingKeyID
+	}
+
 	tenantID, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
 		return orbital.Job{}, err
@@ -180,8 +225,6 @@ func (c *CryptoReconciler) createSystemEventJob(
 	taskType proto.TaskType,
 	data SystemActionJobData,
 ) (orbital.Job, error) {
-	systemID := data.SystemID
-
 	tenantID, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
 		return orbital.Job{}, err
@@ -195,7 +238,7 @@ func (c *CryptoReconciler) createSystemEventJob(
 	}
 
 	event := &model.Event{
-		Identifier: systemID,
+		Identifier: data.SystemID,
 		Type:       taskType.String(),
 		Data:       jobData,
 	}

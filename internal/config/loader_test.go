@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/openkcm/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/config"
 )
 
 func buildCfg(t *testing.T) []byte {

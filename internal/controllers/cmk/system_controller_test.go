@@ -9,22 +9,24 @@ import (
 
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/internal/testutils"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/apierrors"
+	"github.tools.sap/kms/cmk/internal/clients/registry/systems"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/repo/sql"
+	"github.tools.sap/kms/cmk/internal/testutils"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
+	"github.tools.sap/kms/cmk/utils/ptr"
 )
 
 var ErrForced = errors.New("forced")
@@ -38,6 +40,7 @@ func startAPISystems(t *testing.T, cfg testutils.TestAPIServerConfig) (*multiten
 			&model.SystemProperty{},
 			&model.KeyConfiguration{},
 			&model.Key{},
+			&model.Event{},
 			&model.KeyVersion{},
 			&model.KeyLabel{},
 		},
@@ -261,6 +264,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.Status = cmkapi.SystemStatusPROCESSING
 	})
 
 	testutils.CreateTestEntities(
@@ -272,15 +276,33 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 		system2,
 	)
 
+	longStr := "001234567890123456789012345678901234567890123456789"
+
 	tests := []struct {
-		name              string
-		expectedStatus    int
-		sideEffect        func() func()
-		expectedErrorCode string
+		name                string
+		expectedStatus      int
+		sideEffect          func() func()
+		filter              string
+		expectedSystemCount int
+		expectedErrorCode   string
 	}{
 		{
-			name:           "GetAllSystemsSuccess",
-			expectedStatus: http.StatusOK,
+			name:                "GetAllSystemsSuccess",
+			expectedStatus:      http.StatusOK,
+			expectedSystemCount: 2,
+		},
+		{
+			name:                "GetAllSystems_FilterByStatus_Success",
+			filter:              "status eq 'DISCONNECTED'",
+			expectedStatus:      http.StatusOK,
+			expectedSystemCount: 1,
+		},
+		{
+			name:                "GetAllSystems_FilterByStatus_InvalidLength",
+			filter:              "status eq '" + longStr + "'",
+			expectedStatus:      http.StatusBadRequest,
+			expectedSystemCount: 0,
+			expectedErrorCode:   "BAD_REQUEST",
 		},
 		{
 			name:           "GetAllSystemsDbError",
@@ -302,9 +324,15 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 				defer teardown()
 			}
 
+			endpoint := "/systems?$count=true"
+
+			if tt.filter != "" {
+				endpoint += "&$filter=" + tt.filter
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodGet,
-				Endpoint: "/systems?$count=true",
+				Endpoint: endpoint,
 				Tenant:   tenant,
 			})
 
@@ -312,17 +340,10 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 
 			if tt.expectedStatus == http.StatusOK {
 				response := testutils.GetJSONBody[cmkapi.SystemList](t, w)
-				assert.Equal(t, 2, *response.Count)
+				assert.Equal(t, tt.expectedSystemCount, *response.Count)
 
-				systems := response.Value
-				assert.Len(t, systems, 2)
-
-				ids := make([]uuid.UUID, 0, len(systems))
-				for _, sys := range systems {
-					ids = append(ids, *sys.ID)
-				}
-
-				assert.ElementsMatch(t, []uuid.UUID{system1.ID, system2.ID}, ids)
+				retrievedSystems := response.Value
+				assert.Len(t, retrievedSystems, tt.expectedSystemCount)
 			} else {
 				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
 				assert.Equal(t, tt.expectedErrorCode, response.Error.Code)
@@ -636,6 +657,11 @@ func TestAPIController_GetSystemLinkByID(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: fmt.Sprintf("/systems/%s/link", tt.id),
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfiguration.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -648,6 +674,48 @@ func TestAPIController_GetSystemLinkByID(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAPIController_CancelSystemAction(t *testing.T) {
+	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	t.Run("Should 400 on cancel without previous state", func(t *testing.T) {
+		sys := testutils.NewSystem(func(_ *model.System) {})
+		testutils.CreateTestEntities(ctx, t, r, sys)
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: fmt.Sprintf("/systems/%s/actions/cancel", sys.ID),
+			Tenant:   tenant,
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("Should 200 on successful cancel", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusFAILED
+		})
+		event := &model.Event{
+			Identifier:         sys.ID.String(),
+			Type:               "",
+			Data:               json.RawMessage("{}"),
+			PreviousItemStatus: string(cmkapi.SystemStatusCONNECTED),
+		}
+		testutils.CreateTestEntities(ctx, t, r, sys, event)
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: fmt.Sprintf("/systems/%s/actions/cancel", sys.ID),
+			Tenant:   tenant,
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		_, err := r.First(ctx, sys, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusCONNECTED, sys.Status)
+	})
 }
 
 // TestUpdateSystemByExternalID tests the UpdateSystemByExternalID function of SystemController
@@ -753,7 +821,7 @@ func TestAPIController_PatchSystemLinkByID(t *testing.T) {
 			inputJSON:         fmt.Sprintf(`{"keyConfigurationID": "%s"}`, keyConfig2.ID.String()),
 			expectedStatus:    http.StatusInternalServerError,
 			errorForced:       testutils.NewDBErrorForced(db, ErrForced).WithQuery(),
-			expectedErrorCode: "GET_KEY_CONFIG_BY_ID",
+			expectedErrorCode: "GET_SYSTEM_BY_ID",
 		},
 		{
 			name:              "SystemUPDATEConfigWithoutPrimaryKey",
@@ -784,6 +852,14 @@ func TestAPIController_PatchSystemLinkByID(t *testing.T) {
 				Endpoint: fmt.Sprintf("/systems/%s/link", tt.ID),
 				Tenant:   tenant,
 				Body:     testutils.WithString(t, tt.inputJSON),
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{
+							keyConfig1.AdminGroup.IAMIdentifier,
+							keyConfig2.AdminGroup.IAMIdentifier,
+						},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -868,6 +944,11 @@ func TestAPIController_DeleteSystemLinkByID(t *testing.T) {
 				Method:   http.MethodDelete,
 				Endpoint: fmt.Sprintf("/systems/%s/link", tt.id),
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)

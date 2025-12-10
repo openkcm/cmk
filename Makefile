@@ -47,7 +47,7 @@ test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
 
 	@set -euo pipefail; \
 	status=0; \
-	PARALLEL=${PARALLEL}; \
+	PARALLEL=1; \
 	echo "🧪 Running tests in parallel with $$PARALLEL cores..."; \
 	status=0; \
 	{ \
@@ -89,7 +89,7 @@ integration_test:  prepare_integration_test
 	gotestsum --format testname ./test/integration/...
 	$(MAKE) clean_integration_test
 
-prepare_integration_test: clean_integration_test install-gotestsum submodules spin-local-aws-kms spin_sysinfo_mock \
+prepare_integration_test: clean_integration_test install-gotestsum spin-local-aws-kms spin_sysinfo_mock \
 	build_sysinfo_plugin build_certissuer_plugin build_notification_plugin wait_for_sysinfo_mock
 
 clean_integration_test:
@@ -186,11 +186,6 @@ codegen-commit:
 	@echo "Committing"
 	git commit -m "Update generated CMK api code"
 
-
-# Set up local environment
-submodules:
-	git submodule update --init --recursive
-	git submodule update --remote
 
 TEST_PLUGINS_DIR := ./internal/testutils/testplugins
 TEST_PLUGINS := $(shell find $(TEST_PLUGINS_DIR) -mindepth 1 -maxdepth 1 -type d)
@@ -324,12 +319,12 @@ cmk-env:
 
 TAG := latest
 CMK_IMAGE_NAME := $(CMK_APP_NAME)-$(CMK_DEV_TARGET):$(TAG)
-DOCKERFILE_DIR := .
+DOCKERFILE_DIR ?= .
 DOCKERFILE_NAME := Dockerfile.dev
 CONTEXT_DIR := .
 
 # Target to build Docker image
-docker-dev-build: submodules
+docker-dev-build:
 	@GIT_LOGIN=$(GIT_USERNAME) GIT_PASS=$(GIT_PASSWORD) docker build --secret type=env,id=git-login,env=GIT_LOGIN --secret type=env,id=git-password,env=GIT_PASS -f $(DOCKERFILE_DIR)/$(DOCKERFILE_NAME) -t $(CMK_IMAGE_NAME) $(CONTEXT_DIR)
 
 # Local KMS
@@ -415,56 +410,28 @@ CMK_USERNAME := postgres
 CMK_PASS := secret
 CMK_DB := cmk
 CMK_DB_ADMIN_PASS_KEY := secretKey
-
+PLUGIN_SECRETS ?= \
+    signing-keys:env/secret/signing-keys \
+    scim:env/secret/identity-management/scim.json \
+	event-processor-credentials:env/secret/event-processor
 
 create-empty-secrets:
 	# This Error code 1 on makefile but it seems to work
+	- mkdir -p env/secret
 	- cp -nr env/blueprints/. env/secret/.
 
-create-keystore-provider-secrets:
-	kubectl create secret generic keystore-provider-hyperscaler \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/keystore-plugins/management/hyperscaler.json"
-	kubectl create secret generic keystore-provider-cert-service \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/keystore-plugins/management/certificate-service.json"
-	kubectl create secret generic keystore-provider-iam \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/keystore-plugins/management/iam-service-user.json"
-	kubectl create secret generic keystore-provider-regions \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/keystore-plugins/management/supported-regions.json"
+create-plugin-secret:
+	@echo "Creating plugin secrets..."
+	@for secret_config in $(PLUGIN_SECRETS); do \
+		secret_name=$$(echo $$secret_config | cut -d':' -f1); \
+		secret_path=$$(echo $$secret_config | cut -d':' -f2); \
+		echo "Creating secret: $$secret_name from $$secret_path"; \
+		kubectl create secret generic $$secret_name \
+			--namespace $(NAMESPACE) \
+			--from-file="$$secret_path" || true; \
+	done
+	@echo "All plugin secrets created successfully"
 
-create-plugin-secret: create-keystore-provider-secrets
-	kubectl create secret generic cert-issuer-uaa \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/cert-issuer-plugins/uaa.json"
-	kubectl create secret generic cert-issuer-service \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/cert-issuer-plugins/service.json"
-	kubectl create secret generic cld-uaa \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/sis-plugins/cld/uaa.json"
-	kubectl create secret generic uli-keypair \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/sis-plugins/uli"
-	kubectl create secret generic signing-keys \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/signing-keys"
-	kubectl create secret generic notification-endpoints \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/notification-plugins/endpoints.json"
-	kubectl create secret generic notification-uaa \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/notification-plugins/uaa.json"
-	kubectl create secret generic scim \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/identity-management/scim.json"
-
-create-event-processor-secret:
-	kubectl create secret generic event-processor-credentials \
-	  --namespace $(NAMESPACE) \
-	  --from-file=env/secret/event-processor
 
 psql-add-to-cluster:
 	helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -529,12 +496,14 @@ k3d-build-image: docker-dev-build
 	@echo "Importing docker image into k3d"
 	k3d image import $(CMK_IMAGE_NAME) -c $(CLUSTER_NAME)
 
+VALUE_DIR ?= charts
+
 k3d-apply-helm-chart:
 	@echo "Applying Helm chart."
 	helm upgrade --install $(CHART_NAME) $(CHART_DIR) --namespace $(APPLY_NAMESPACE) \
 		--set volumePath=$(PATH_TO_INIT_VOLUME) \
 		--set config.activePlugins=$(ACTIVE_PLUGINS) \
-		-f $(CHART_DIR)/values-dev.yaml
+		-f $(VALUE_DIR)/values-dev.yaml
 
 k3d-apply-cmk-helm-chart:
 	@echo "Applying CMK Helm chart."
@@ -562,7 +531,7 @@ delete-cluster:
 	   echo "k3d cluster '$(CLUSTER_NAME)' does not exist."; \
 	fi
 
-start-cmk: generate-signing-keys start-k3d create-empty-secrets create-plugin-secret create-event-processor-secret psql-add-to-cluster redis-add-to-cluster helm-install-rabbitmq helm-install-otel-collector k3d-add-cmk
+start-cmk: generate-signing-keys start-k3d create-empty-secrets create-plugin-secret psql-add-to-cluster redis-add-to-cluster helm-install-rabbitmq helm-install-otel-collector k3d-add-cmk
 
 k3d-add-cmk: extract-version
 	@echo "Building the cmk image within k3d."
@@ -617,7 +586,7 @@ install-psql-macos:
 		echo "psql is already installed."; \
 	fi
 
-tidy: submodules
+tidy:
 	go mod tidy
 
 # Install RabbitMQ using Helm

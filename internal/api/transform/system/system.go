@@ -3,10 +3,11 @@ package system
 import (
 	"errors"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/sanitise"
+	"github.tools.sap/kms/cmk/internal/api/cmkapi"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/utils/ptr"
+	"github.tools.sap/kms/cmk/utils/sanitise"
 )
 
 var ErrFromAPI = errors.New("failed to transform system from API")
@@ -41,6 +42,9 @@ func ToAPI(system model.System, systemCfg *config.System) (*cmkapi.System, error
 		KeyConfigurationID:   system.KeyConfigurationID,
 		KeyConfigurationName: system.KeyConfigurationName,
 		Status:               system.Status,
+		Metadata: &cmkapi.SystemMetadata{
+			CanCancel: ptr.PointTo(system.Status == cmkapi.SystemStatusFAILED),
+		},
 	}
 
 	return apiSystem, nil

@@ -5,14 +5,15 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/config"
-	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/async"
+	"github.tools.sap/kms/cmk/internal/authz"
+	"github.tools.sap/kms/cmk/internal/clients"
+	"github.tools.sap/kms/cmk/internal/config"
+	eventprocessor "github.tools.sap/kms/cmk/internal/event-processor"
+	"github.tools.sap/kms/cmk/internal/grpc/catalog"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/repo"
 )
 
 // APIController handles API requests related to CMK (Customer Managed Keys).
@@ -21,6 +22,7 @@ type APIController struct {
 	Repository    repo.Repo
 	Manager       *manager.Manager
 	config        *config.Config
+	AuthzEngine   *authz.Engine
 }
 
 // NewAPIController creates a new instance of APIController with the provided Repository.
@@ -28,15 +30,15 @@ type APIController struct {
 func NewAPIController(
 	ctx context.Context,
 	r repo.Repo,
-	config config.Config,
-	clientsFactory *clients.Factory,
+	config *config.Config,
+	clientsFactory clients.Factory,
 ) *APIController {
 	ctlg, err := catalog.New(ctx, config)
 	if err != nil {
 		log.Error(ctx, "Failed to load plugin", err)
 	}
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, &config, r, ctlg)
+	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, config, r, ctlg, clientsFactory)
 	if err != nil {
 		log.Error(ctx, "Failed to create event reconciler", err)
 	} else {
@@ -48,7 +50,7 @@ func NewAPIController(
 
 	var asyncClient async.Client
 
-	asyncApp, err := async.New(&config)
+	asyncApp, err := async.New(config)
 	if err != nil {
 		log.Error(ctx, "Failed to create async app", err)
 	} else {
@@ -56,8 +58,9 @@ func NewAPIController(
 	}
 
 	return &APIController{
-		Manager:       manager.New(ctx, r, &config, clientsFactory, ctlg, reconciler, asyncClient),
-		config:        &config,
+		Manager:       manager.New(ctx, r, config, clientsFactory, ctlg, reconciler, asyncClient),
+		config:        config,
 		pluginCatalog: ctlg,
+		AuthzEngine:   authz.NewEngine(ctx, r, config),
 	}
 }

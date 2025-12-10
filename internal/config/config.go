@@ -8,7 +8,7 @@ import (
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 var (
@@ -139,11 +139,12 @@ type RedisACL struct {
 
 // Database holds database config
 type Database struct {
-	Name   string              `yaml:"name"`
-	Port   string              `yaml:"port"`
-	Host   commoncfg.SourceRef `yaml:"host"`
-	User   commoncfg.SourceRef `yaml:"user"`
-	Secret commoncfg.SourceRef `yaml:"secret"`
+	Name             string              `yaml:"name"`
+	Port             string              `yaml:"port"`
+	Host             commoncfg.SourceRef `yaml:"host"`
+	User             commoncfg.SourceRef `yaml:"user"`
+	Secret           commoncfg.SourceRef `yaml:"secret"`
+	MigratorPoolSize int                 `yaml:"migratorPoolSize"`
 }
 
 type System struct {

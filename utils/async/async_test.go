@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
-	asyncUtils "github.com/openkcm/cmk/utils/async"
-	ctxUtils "github.com/openkcm/cmk/utils/context"
+	asyncUtils "github.tools.sap/kms/cmk/utils/async"
+	ctxUtils "github.tools.sap/kms/cmk/utils/context"
 )
 
 func TestNewTaskPayload(t *testing.T) {
@@ -61,4 +62,35 @@ func TestTaskPayload_InjectContext(t *testing.T) {
 	tenantID, err := ctxUtils.ExtractTenantID(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "tenant-ctx", tenantID)
+}
+
+func TestTaskPayload_InjectContextWithClientData(t *testing.T) {
+	payload := asyncUtils.TaskPayload{
+		TenantID: "tenant-ctx",
+		ClientData: auth.ClientData{
+			Identifier: "user-456",
+			Email:      "bob@example.com",
+			GivenName:  "Bob",
+			FamilyName: "Builder",
+			Groups:     []string{"builders", "users"},
+			Type:       "user",
+			Region:     "us-west",
+			AuthContext: map[string]string{
+				"issuer":    "auth-server",
+				"client_id": "client-123",
+			},
+		},
+	}
+	bytes, err := payload.ToBytes()
+	assert.NoError(t, err)
+
+	parsedPayload, err := asyncUtils.ParseTaskPayload(bytes)
+	assert.NoError(t, err)
+
+	ctx := context.Background()
+	ctx = parsedPayload.InjectContext(ctx)
+
+	clientData, err := ctxUtils.ExtractClientData(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, payload.ClientData, *clientData)
 }

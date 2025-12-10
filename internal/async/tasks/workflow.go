@@ -7,13 +7,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
-	asyncUtils "github.com/openkcm/cmk/utils/async"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/log"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	wfMechanism "github.tools.sap/kms/cmk/internal/workflow"
+	asyncUtils "github.tools.sap/kms/cmk/utils/async"
 )
 
 type WorkflowUpdater interface {
@@ -60,7 +60,7 @@ func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) e
 
 			updateErr := s.putWorkflowInFailedState(ctx, workflowID, "internal error when assigning approvers")
 			if updateErr != nil {
-				log.Error(ctx, "Failed to put workflow in failed state after panic", err)
+				log.Error(ctx, "Failed to put workflow in failed state after panic", updateErr)
 			}
 		}
 	}()

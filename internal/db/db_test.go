@@ -7,20 +7,57 @@ import (
 
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm/logger"
 
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/testutils"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/db"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/testutils"
 )
 
 func TestStartDB(t *testing.T) {
 	t.Run("should start db connection and run migration", func(t *testing.T) {
+		models := []driver.TenantTabler{
+			&model.KeyConfiguration{},
+			&model.Key{},
+			&model.KeyVersion{},
+			&model.KeyLabel{},
+			&model.System{},
+			&model.SystemProperty{},
+			&model.Workflow{},
+			&model.WorkflowApprover{},
+			&model.Tenant{},
+			&model.TenantConfig{},
+			&model.Certificate{},
+			&model.Group{},
+			&model.ImportParams{},
+			&model.KeystoreConfiguration{},
+			&model.Event{},
+		}
+		// Disable tenant creation
+		con, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+			Models: models,
+			Logger: logger.Default.LogMode(logger.Error),
+		}, testutils.WithGenerateTenants(0))
+
+		cfg := &config.Config{}
+
+		cfg.Database = dbCfg
+
+		err := con.RegisterModels(t.Context(), models...)
+		require.NoError(t, err)
+		err = con.MigrateSharedModels(t.Context())
+		require.NoError(t, err)
+
+		for range 2 {
+			err := con.Create(testutils.NewTenant(func(_ *model.Tenant) {})).Error
+			require.NoError(t, err)
+		}
+
 		conn, err := db.StartDB(
 			t.Context(),
-			testutils.TestDB,
-			config.Provisioning{},
-			[]config.Database{},
+			cfg,
 		)
 
 		assert.NoError(t, err)

@@ -8,7 +8,7 @@ import (
 
 	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
 
-	"github.com/openkcm/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/errs"
 )
 
 var (
