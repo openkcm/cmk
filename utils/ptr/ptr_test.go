@@ -126,12 +126,3 @@ func TestIsNotNilUUID(t *testing.T) {
 		})
 	}
 }
-
-func TestPointerArrayToValueArray(t *testing.T) {
-	t.Run("Should convert pointer array to value array", func(t *testing.T) {
-		intPtrArray := []*int{ptr.PointTo(1), ptr.PointTo(1)}
-		intValArray := ptr.PointerArrayToValueArray(intPtrArray)
-		assert.Equal(t, intPtrArray[0], &intValArray[0])
-		assert.Equal(t, intPtrArray[1], &intValArray[1])
-	})
-}

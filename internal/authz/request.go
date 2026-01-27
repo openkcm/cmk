@@ -10,7 +10,7 @@ import (
 
 type User struct {
 	UserName string
-	Groups   []UserGroup
+	Groups   []string
 }
 type Request struct {
 	ID               string           // required
@@ -112,7 +112,7 @@ func (ar *Request) SetResourceType(resourceTypeName ResourceTypeName) error {
 
 func (ar *Request) SetUser(user User) error {
 	// empty Username is not allowed
-	// empty Groups is allowed
+	// empty Groups is not allowed
 	if user.UserName == "" || len(user.Groups) == 0 {
 		return errs.Wrap(ErrValidation, ErrUserEmpty)
 	}

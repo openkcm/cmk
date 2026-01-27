@@ -13,12 +13,22 @@ import (
 	"github.com/openkcm/cmk/internal/notifier/client"
 	"github.com/openkcm/cmk/internal/notifier/workflow"
 	wf "github.com/openkcm/cmk/internal/workflow"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
 	testMessage    = "Test message"
 	testActionText = "Test action text"
 	testSubject    = "Test Identifier"
+)
+
+var (
+	testConfig = &config.Config{
+		Landscape: config.Landscape{
+			Name:      "Staging",
+			UIBaseUrl: "https://cmk-staging.example.com/#",
+		},
+	}
 )
 
 func TestNotificationData_GetType(t *testing.T) {
@@ -55,7 +65,7 @@ func TestNotificationData_GetType(t *testing.T) {
 }
 
 func TestNewWorkflowCreator(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator()
+	creator, err := workflow.NewWorkflowCreator(testConfig)
 	assert.NoError(t, err)
 
 	assert.NotNil(t, creator)
@@ -63,7 +73,7 @@ func TestNewWorkflowCreator(t *testing.T) {
 }
 
 func TestCreator_CreateTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator()
+	creator, err := workflow.NewWorkflowCreator(testConfig)
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -158,52 +168,99 @@ func TestCreator_CreateTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowCreatedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator()
+	creator, err := workflow.NewWorkflowCreator(testConfig)
 	assert.NoError(t, err)
 
-	workflowID := uuid.New()
 	artifactID := uuid.New()
+	keyConfigID := uuid.NewString()
 
-	data := workflow.NotificationData{
-		Tenant: model.Tenant{
-			ID:     "test-tenant",
-			Region: "us-east-1",
+	tests := []struct {
+		name              string
+		actionType        string
+		artifactType      string
+		artifactName      *string
+		parameters        string
+		expectedInSubject string
+	}{
+		{
+			name:              "DELETE action with artifact name",
+			actionType:        "DELETE",
+			artifactType:      "KEY",
+			artifactName:      ptr.PointTo("Test Key"),
+			parameters:        "",
+			expectedInSubject: "DELETE KEY: 'Test Key'",
 		},
-		Workflow: model.Workflow{
-			ID:           workflowID,
-			ActionType:   "DELETE",
-			ArtifactType: "KEY",
-			ArtifactID:   artifactID,
+		{
+			name:              "LINK SYSTEM with artifact name to key configuration",
+			actionType:        "LINK",
+			artifactType:      "SYSTEM",
+			artifactName:      ptr.PointTo("Production System"),
+			parameters:        keyConfigID,
+			expectedInSubject: "LINK SYSTEM: 'Production System'",
 		},
-		Transition: wf.TransitionCreate,
+		{
+			name:              "UNLINK SYSTEM",
+			actionType:        "UNLINK",
+			artifactType:      "SYSTEM",
+			artifactName:      nil,
+			parameters:        "",
+			expectedInSubject: "UNLINK SYSTEM",
+		},
+		{
+			name:              "SWITCH SYSTEM with artifact name to key configuration",
+			actionType:        "SWITCH",
+			artifactType:      "SYSTEM",
+			artifactName:      ptr.PointTo("Staging System"),
+			parameters:        keyConfigID,
+			expectedInSubject: "SWITCH SYSTEM: 'Staging System'",
+		},
 	}
 
-	recipients := []string{"approver@example.com"}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workflowID := uuid.New()
 
-	task, err := creator.CreateWorkflowCreatedTask(data, recipients)
+			data := workflow.NotificationData{
+				Tenant: model.Tenant{
+					ID:     "test-tenant",
+					Region: "us-east-1",
+				},
+				Workflow: model.Workflow{
+					ID:            workflowID,
+					InitiatorName: "initiator@example.com",
+					ActionType:    tt.actionType,
+					ArtifactType:  tt.artifactType,
+					ArtifactName:  tt.artifactName,
+					ArtifactID:    artifactID,
+					Parameters:    tt.parameters,
+				},
+				Transition: wf.TransitionCreate,
+			}
 
-	assert.NoError(t, err)
-	assert.NotNil(t, task)
+			recipients := []string{"approver@example.com"}
 
-	var notifData client.Data
+			task, err := creator.CreateWorkflowCreatedTask(data, recipients)
 
-	err = json.Unmarshal(task.Payload(), &notifData)
-	assert.NoError(t, err)
+			assert.NoError(t, err)
+			assert.NotNil(t, task)
 
-	expectedSubject := fmt.Sprintf(
-		"Workflow Approval Required - %s %s",
-		data.Workflow.ActionType,
-		data.Workflow.ArtifactType,
-	)
+			var notifData client.Data
 
-	assert.Equal(t, recipients, notifData.Recipients)
-	assert.Equal(t, expectedSubject, notifData.Subject)
-	assert.Contains(t, notifData.Body, "A new workflow requires your approval")
-	assert.Contains(t, notifData.Body, "Action Required")
+			err = json.Unmarshal(task.Payload(), &notifData)
+			assert.NoError(t, err)
+
+			expectedSubject := "Workflow Approval Required - " + tt.expectedInSubject
+
+			assert.Equal(t, recipients, notifData.Recipients)
+			assert.Equal(t, expectedSubject, notifData.Subject)
+			assert.Contains(t, notifData.Body, "A new workflow requires your approval")
+			assert.Contains(t, notifData.Body, "Action Required")
+		})
+	}
 }
 
 func TestCreator_createWorkflowApprovedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator()
+	creator, err := workflow.NewWorkflowCreator(testConfig)
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -248,7 +305,7 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowRejectedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator()
+	creator, err := workflow.NewWorkflowCreator(testConfig)
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -293,7 +350,7 @@ func TestCreator_createWorkflowRejectedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator()
+	creator, err := workflow.NewWorkflowCreator(testConfig)
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -367,7 +424,7 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowRevokedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator()
+	creator, err := workflow.NewWorkflowCreator(testConfig)
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -412,7 +469,7 @@ func TestCreator_createWorkflowRevokedTask(t *testing.T) {
 }
 
 func TestCreator_createHTMLBody(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator()
+	creator, err := workflow.NewWorkflowCreator(testConfig)
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -424,10 +481,12 @@ func TestCreator_createHTMLBody(t *testing.T) {
 			Region: "us-east-1",
 		},
 		Workflow: model.Workflow{
-			ID:           workflowID,
-			ActionType:   "DELETE",
-			ArtifactType: "KEY",
-			ArtifactID:   artifactID,
+			ID:            workflowID,
+			ActionType:    "DELETE",
+			ArtifactType:  "KEY",
+			ArtifactID:    artifactID,
+			ArtifactName:  ptr.PointTo("Test Key"),
+			InitiatorName: "initiator@example.com",
 		},
 		Transition: wf.TransitionCreate,
 	}
@@ -441,16 +500,15 @@ func TestCreator_createHTMLBody(t *testing.T) {
 	assert.Contains(t, body, "CMK Workflow Notification")
 	assert.Contains(t, body, testMessage)
 	assert.Contains(t, body, testActionText)
-	assert.Contains(t, body, workflowID.String())
 	assert.Contains(t, body, data.Tenant.ID)
 	assert.Contains(t, body, data.Tenant.Region)
-	assert.Contains(t, body, data.Workflow.ActionType)
-	assert.Contains(t, body, artifactID.String())
-	assert.Contains(t, body, data.Workflow.ArtifactType)
+	expectedWorkflowURL := fmt.Sprintf(
+		"%s/%s/tasks/%s", testConfig.Landscape.UIBaseUrl, data.Tenant.ID, data.Workflow.ID)
+	assert.Contains(t, body, expectedWorkflowURL)
 }
 
 func TestCreator_createNotificationTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator()
+	creator, err := workflow.NewWorkflowCreator(testConfig)
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -491,7 +549,7 @@ func TestCreator_createNotificationTask(t *testing.T) {
 }
 
 func TestCreator_createNotificationTask_EmptyRecipients(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator()
+	creator, err := workflow.NewWorkflowCreator(testConfig)
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()

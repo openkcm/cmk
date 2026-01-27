@@ -49,7 +49,7 @@ services:
       - registry-service
 
   prometheus:
-    image: prom/prometheus:v3.7.3
+    image: prom/prometheus:v3.9.1
     ports:
       - "9090:9090"
     volumes:
@@ -64,7 +64,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   grafana:
-    image: grafana/grafana:12.3.0
+    image: grafana/grafana:12.3.1
     ports:
       - "3004:3000"
     restart: unless-stopped

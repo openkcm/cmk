@@ -46,6 +46,7 @@ type Config struct {
 	EventProcessor EventProcessor `yaml:"eventProcessor"`
 
 	KeystorePool KeystorePool `yaml:"keystorePool"`
+	Landscape    Landscape    `yaml:"landscape"`
 }
 
 type ContextModels struct {
@@ -100,7 +101,7 @@ type Scheduler struct {
 func (s *Scheduler) Validate() error {
 	checkedTasks := make(map[string]struct{}, len(s.Tasks))
 	for _, task := range s.Tasks {
-		_, found := DefinedTasks[task.TaskType]
+		_, found := PeriodicTasks[task.TaskType]
 		if !found {
 			return ErrNonDefinedTaskType
 		}
@@ -118,6 +119,7 @@ func (s *Scheduler) Validate() error {
 
 // Task holds a task config
 type Task struct {
+	Enabled  bool
 	Cronspec string
 	TaskType string
 	Retries  int
@@ -139,11 +141,22 @@ type RedisACL struct {
 
 // Database holds database config
 type Database struct {
-	Name   string              `yaml:"name"`
-	Port   string              `yaml:"port"`
-	Host   commoncfg.SourceRef `yaml:"host"`
-	User   commoncfg.SourceRef `yaml:"user"`
-	Secret commoncfg.SourceRef `yaml:"secret"`
+	Name     string              `yaml:"name"`
+	Port     string              `yaml:"port"`
+	Host     commoncfg.SourceRef `yaml:"host"`
+	User     commoncfg.SourceRef `yaml:"user"`
+	Secret   commoncfg.SourceRef `yaml:"secret"`
+	Migrator Migrator            `yaml:"migrator"`
+}
+
+type Migrator struct {
+	Shared MigrationPath `yaml:"shared"`
+	Tenant MigrationPath `yaml:"tenant"`
+}
+
+type MigrationPath struct {
+	Schema string `yaml:"schema"`
+	Data   string `yaml:"data"`
 }
 
 type System struct {
@@ -284,4 +297,9 @@ type Region struct {
 type KeystorePool struct {
 	Size     int           `yaml:"size" default:"5"`
 	Interval time.Duration `yaml:"interval" default:"1h"`
+}
+
+type Landscape struct {
+	Name      string `yaml:"name"`
+	UIBaseUrl string `yaml:"uiBaseUrl"`
 }

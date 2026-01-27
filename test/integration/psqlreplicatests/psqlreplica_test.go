@@ -3,7 +3,6 @@ package psqlreplicatests_test
 import (
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/openkcm/cmk/internal/config"
@@ -27,7 +26,7 @@ func (s *PSQLReplicaSuite) SetupSuite() {
 	cfg := &config.Config{
 		Database: integrationutils.DB,
 	}
-	integrationutils.StartPostgresSQL(s.T(), &cfg.Database)
+	testutils.StartPostgresSQL(s.T(), &cfg.Database)
 
 	s.dbConfig = cfg.Database
 	s.replicDB = integrationutils.ReplicaDB
@@ -41,6 +40,7 @@ func (s *PSQLReplicaSuite) TestConnectToPsqlWithoutReplica() {
 	}
 
 	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)
@@ -56,6 +56,7 @@ func (s *PSQLReplicaSuite) TestConnectToPsqlWithReplica() {
 	}
 
 	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)
@@ -65,9 +66,7 @@ func (s *PSQLReplicaSuite) TestConnectToPsqlWithReplica() {
 }
 
 func (s *PSQLReplicaSuite) TestQueryToPsqlWithReplica() {
-	db, tenants, _ := testutils.NewTestDB(s.T(), testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&model.System{}},
-	}, testutils.WithDatabase(s.dbConfig))
+	db, tenants, _ := testutils.NewTestDB(s.T(), testutils.TestDBConfig{})
 
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 	repository := sql.NewRepository(db)
@@ -96,6 +95,7 @@ func (s *PSQLReplicaSuite) TestDatabaseConnectionError() {
 	}
 
 	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)
@@ -114,6 +114,7 @@ func (s *PSQLReplicaSuite) TestReplicaConnectionError() {
 	}
 
 	dbCon, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)
@@ -145,6 +146,7 @@ func (s *PSQLReplicaSuite) TestMultipleReplicas() {
 	}
 
 	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)
@@ -160,6 +162,7 @@ func (s *PSQLReplicaSuite) TestEmptyReplicaConfig() {
 	}
 
 	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
 	)

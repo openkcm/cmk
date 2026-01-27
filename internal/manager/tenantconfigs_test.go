@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
@@ -27,13 +26,11 @@ func SetupTenantConfigManager(t *testing.T, plugins []testutils.MockPlugin) (*ma
 ) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	dbRepository := sql.NewRepository(db)
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
-	ctlg, err := catalog.New(t.Context(), cfg)
+	ctlg, err := catalog.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
 	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg)
@@ -58,20 +55,14 @@ func TestGetDefaultKeystore(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, ksConfig)
 
 		// Act
-		cfg, err := configManager.GetDefaultKeystore(testutils.CreateCtxWithTenant(tenant))
+		keystore, err := configManager.GetDefaultKeystoreConfig(testutils.CreateCtxWithTenant(tenant))
 
 		// Assert
 		assert.NoError(t, err)
-		assert.NotNil(t, cfg)
-
-		var defaultKeystore model.DefaultKeystore
-
-		err = json.Unmarshal(cfg.Value, &defaultKeystore)
-		assert.NoError(t, err)
-
-		assert.NotEmpty(t, defaultKeystore.LocalityID)
-		assert.NotEmpty(t, defaultKeystore.CommonName)
-		assert.NotEmpty(t, defaultKeystore.ManagementAccessData)
+		assert.NotNil(t, keystore)
+		assert.NotEmpty(t, keystore.LocalityID)
+		assert.NotEmpty(t, keystore.CommonName)
+		assert.NotEmpty(t, keystore.ManagementAccessData)
 	})
 
 	t.Run("Config Exists", func(t *testing.T) {
@@ -79,7 +70,7 @@ func TestGetDefaultKeystore(t *testing.T) {
 		configManager, db, tenant := SetupTenantConfigManager(t, nil)
 
 		tenantConfigRepo := sql.NewRepository(db)
-		ksConfigJSON, err := json.Marshal(&model.DefaultKeystore{
+		ksConfigJSON, err := json.Marshal(&model.KeystoreConfig{
 			LocalityID: testutils.TestLocalityID,
 			CommonName: testutils.TestDefaultKeystoreCommonName,
 			ManagementAccessData: map[string]any{
@@ -99,22 +90,15 @@ func TestGetDefaultKeystore(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Act
-		gotConfig, err := configManager.GetDefaultKeystore(testutils.CreateCtxWithTenant(tenant))
+		keystore, err := configManager.GetDefaultKeystoreConfig(testutils.CreateCtxWithTenant(tenant))
 
 		// Assert
 		assert.NoError(t, err)
-		assert.NotNil(t, gotConfig)
-
-		var defaultKeystore model.DefaultKeystore
-
-		err = json.Unmarshal(gotConfig.Value, &defaultKeystore)
-		assert.NoError(t, err)
-
-		assert.Equal(t, testutils.TestLocalityID, defaultKeystore.LocalityID)
-		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, defaultKeystore.CommonName)
-		assert.Equal(t, testutils.TestRoleArn, defaultKeystore.ManagementAccessData["roleArn"])
-		assert.Equal(t, testutils.TestTrustAnchorArn, defaultKeystore.ManagementAccessData["trustAnchorArn"])
-		assert.Equal(t, testutils.TestProfileArn, defaultKeystore.ManagementAccessData["profileArn"])
+		assert.Equal(t, testutils.TestLocalityID, keystore.LocalityID)
+		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.CommonName)
+		assert.Equal(t, testutils.TestRoleArn, keystore.ManagementAccessData["roleArn"])
+		assert.Equal(t, testutils.TestTrustAnchorArn, keystore.ManagementAccessData["trustAnchorArn"])
+		assert.Equal(t, testutils.TestProfileArn, keystore.ManagementAccessData["profileArn"])
 	})
 }
 
@@ -122,74 +106,63 @@ func TestSetDefaultKeystore(t *testing.T) {
 	t.Run("DefaultKeystore tenant config not exists, set default keystore", func(t *testing.T) {
 		// Arrange
 		configManager, _, tenant := SetupTenantConfigManager(t, nil)
-		ksconfig := testutils.NewKeystoreConfig(func(_ *model.KeystoreConfiguration) {})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
 		// Act
-		err := configManager.SetDefaultKeystore(ctx, ksconfig)
+		err := configManager.SetDefaultKeystore(
+			ctx,
+			testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {}),
+		)
 
 		// Assert
 		assert.NoError(t, err)
-		gotConfig, err := configManager.GetDefaultKeystore(ctx)
+		keystore, err := configManager.GetDefaultKeystoreConfig(ctx)
 		assert.NoError(t, err)
-		assert.NotNil(t, gotConfig)
 
-		var defaultKeystore model.DefaultKeystore
-
-		err = json.Unmarshal(gotConfig.Value, &defaultKeystore)
-		assert.NoError(t, err)
-		assert.Equal(t, testutils.TestLocalityID, defaultKeystore.LocalityID)
-		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, defaultKeystore.CommonName)
-		assert.Equal(t, testutils.TestRoleArn, defaultKeystore.ManagementAccessData["roleArn"])
-		assert.Equal(t, testutils.TestTrustAnchorArn, defaultKeystore.ManagementAccessData["trustAnchorArn"])
-		assert.Equal(t, testutils.TestProfileArn, defaultKeystore.ManagementAccessData["profileArn"])
+		assert.Equal(t, testutils.TestLocalityID, keystore.LocalityID)
+		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.CommonName)
+		assert.Equal(t, testutils.TestRoleArn, keystore.ManagementAccessData["roleArn"])
+		assert.Equal(t, testutils.TestTrustAnchorArn, keystore.ManagementAccessData["trustAnchorArn"])
+		assert.Equal(t, testutils.TestProfileArn, keystore.ManagementAccessData["profileArn"])
 	})
 
 	t.Run("Update existing default keystore config", func(t *testing.T) {
 		// Arrange
 		configManager, _, tenant := SetupTenantConfigManager(t, nil)
-		ksconfig := testutils.NewKeystoreConfig(func(_ *model.KeystoreConfiguration) {})
 		ctx := testutils.CreateCtxWithTenant(tenant)
-		err := configManager.SetDefaultKeystore(ctx, ksconfig)
+		err := configManager.SetDefaultKeystore(
+			ctx,
+			testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {}),
+		)
 		assert.NoError(t, err)
 
 		newLocalityID := uuid.NewString()
 		newRoleArn := "arn:aws:iam::123456789012:role/ExampleRoleUpdated"
 		newTrustAnchorID := "arn:aws:rolesanywhere:eu-west-2:123456789012:trust-anchor/" + uuid.NewString()
 		newProfileArn := "arn:aws:rolesanywhere:eu-west-2:123456789012:profile/" + uuid.NewString()
-		updatedConfigValue := map[string]any{
-			"localityId": newLocalityID,
-			"commonName": testutils.TestDefaultKeystoreCommonName,
-			"managementAccessData": map[string]string{
+
+		// Act
+		err = configManager.SetDefaultKeystore(ctx, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.LocalityID = newLocalityID
+			kc.CommonName = testutils.TestDefaultKeystoreCommonName
+			kc.ManagementAccessData = map[string]any{
 				"roleArn":        newRoleArn,
 				"trustAnchorArn": newTrustAnchorID,
 				"profileArn":     newProfileArn,
-			},
-		}
-
-		valueBytes, _ := json.Marshal(updatedConfigValue)
-		updatedConfig := testutils.NewKeystoreConfig(func(ks *model.KeystoreConfiguration) {
-			ks.Value = valueBytes
-		})
-
-		// Act
-		err = configManager.SetDefaultKeystore(ctx, updatedConfig)
+			}
+		}))
 
 		// Assert
 		assert.NoError(t, err)
-		gotConfig, err := configManager.GetDefaultKeystore(ctx)
+		keystore, err := configManager.GetDefaultKeystoreConfig(ctx)
 		assert.NoError(t, err)
-		assert.NotNil(t, gotConfig)
+		assert.NotNil(t, keystore)
 
-		var defaultKeystore model.DefaultKeystore
-
-		err = json.Unmarshal(gotConfig.Value, &defaultKeystore)
-		assert.NoError(t, err)
-		assert.Equal(t, newLocalityID, defaultKeystore.LocalityID)
-		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, defaultKeystore.CommonName)
-		assert.Equal(t, newRoleArn, defaultKeystore.ManagementAccessData["roleArn"])
-		assert.Equal(t, newTrustAnchorID, defaultKeystore.ManagementAccessData["trustAnchorArn"])
-		assert.Equal(t, newProfileArn, defaultKeystore.ManagementAccessData["profileArn"])
+		assert.Equal(t, newLocalityID, keystore.LocalityID)
+		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.CommonName)
+		assert.Equal(t, newRoleArn, keystore.ManagementAccessData["roleArn"])
+		assert.Equal(t, newTrustAnchorID, keystore.ManagementAccessData["trustAnchorArn"])
+		assert.Equal(t, newProfileArn, keystore.ManagementAccessData["profileArn"])
 	})
 }
 
@@ -218,7 +191,7 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 				cfg.Plugins = testutils.SetupMockPlugins(testutils.KeyStorePlugin)
 			}
 
-			ctlg, err := catalog.New(t.Context(), cfg)
+			ctlg, err := catalog.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
 			mgr := manager.NewTenantConfigManager(nil, ctlg)

@@ -243,7 +243,7 @@ func TestBasicSchema(t *testing.T) {
 			assert.Equal(t, tt.expectedError, err)
 
 			if err == nil {
-				assert.Equal(t, tt.expectedQuery, fieldMap.GetQuery())
+				assert.Equal(t, tt.expectedQuery, fieldMap.GetQuery(t.Context()))
 			}
 		})
 	}
@@ -261,7 +261,7 @@ func TestDBNonDefaultQueries(t *testing.T) {
 	fieldMap := odata.NewQueryOdataMapper(filterSchema)
 	err := fieldMap.ParseFilter(&filterString)
 	assert.NoError(t, err)
-	assert.Equal(t, expectedQuery, fieldMap.GetQuery())
+	assert.Equal(t, expectedQuery, fieldMap.GetQuery(t.Context()))
 }
 
 func TestOperations(t *testing.T) {
@@ -321,7 +321,7 @@ func TestOperations(t *testing.T) {
 			fieldMap := odata.NewQueryOdataMapper(tt.filterSchema)
 			err := fieldMap.ParseFilter(&tt.filterString)
 			assert.Equal(t, tt.expectedError, err)
-			assert.Equal(t, tt.expectedQuery, fieldMap.GetQuery())
+			assert.Equal(t, tt.expectedQuery, fieldMap.GetQuery(t.Context()))
 		})
 	}
 }
@@ -384,7 +384,7 @@ func TestStringQuoteEscape(t *testing.T) {
 			fieldMap := odata.NewQueryOdataMapper(filterSchema)
 			err := fieldMap.ParseFilter(&tt.filterString)
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedQuery, fieldMap.GetQuery())
+			assert.Equal(t, tt.expectedQuery, fieldMap.GetQuery(t.Context()))
 		})
 	}
 }
@@ -566,7 +566,7 @@ func TestValueModifier(t *testing.T) {
 	fieldMap := odata.NewQueryOdataMapper(filterSchema)
 	err = fieldMap.ParseFilter(&filterString)
 	assert.NoError(t, err)
-	assert.Equal(t, expectedQuery, fieldMap.GetQuery())
+	assert.Equal(t, expectedQuery, fieldMap.GetQuery(t.Context()))
 }
 
 func TestValueValidation(t *testing.T) {

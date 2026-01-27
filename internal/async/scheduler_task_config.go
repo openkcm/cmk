@@ -1,6 +1,8 @@
 package async
 
 import (
+	"maps"
+
 	"github.com/hibiken/asynq"
 
 	"github.com/openkcm/cmk/internal/config"
@@ -13,18 +15,22 @@ type ScheduledTaskConfigProvider struct {
 
 // GetConfigs Parses the yaml file and return a list of PeriodicTaskConfigs.
 func (p *ScheduledTaskConfigProvider) GetConfigs() ([]*asynq.PeriodicTaskConfig, error) {
-	tasks := p.Config.Scheduler.Tasks
+	tasks := make(map[string]config.Task)
+	maps.Copy(tasks, config.PeriodicTasks)
 
-	configs := make([]*asynq.PeriodicTaskConfig, len(tasks))
-	for i, cfg := range tasks {
-		configs[i] = &asynq.PeriodicTaskConfig{
-			Cronspec: cfg.Cronspec,
-			Task: asynq.NewTask(
-				cfg.TaskType,
-				nil,
-				asynq.MaxRetry(cfg.Retries),
-			),
+	for _, cfg := range p.Config.Scheduler.Tasks {
+		tasks[cfg.TaskType] = cfg
+	}
+
+	configs := make([]*asynq.PeriodicTaskConfig, 0)
+	for name, cfg := range tasks {
+		if !cfg.Enabled {
+			continue
 		}
+		configs = append(configs, &asynq.PeriodicTaskConfig{
+			Cronspec: cfg.Cronspec,
+			Task:     asynq.NewTask(name, nil, asynq.MaxRetry(cfg.Retries)),
+		})
 	}
 
 	return configs, nil

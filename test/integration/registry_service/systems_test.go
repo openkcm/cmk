@@ -56,8 +56,6 @@ func TestRegistryService_SystemsClient(t *testing.T) {
 			assert.NoError(t, err)
 
 			defer func() {
-				err := unlinkTenant(ctx, systemsClient, sysReq1.GetExternalId())
-				assert.NoError(t, err)
 				err = deleteResource(ctx, systemsClient, sysReq1.GetExternalId())
 				assert.NoError(t, err)
 			}()

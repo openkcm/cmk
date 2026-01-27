@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async"
@@ -33,12 +32,7 @@ func TestSchedulerHYOKSync(t *testing.T) {
 	})
 	SetupTestContainers(t, testConfig)
 
-	testDB, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.System{}, &model.KeyConfiguration{}, &model.Key{},
-			&model.Group{}, &model.Certificate{},
-		},
-	}, testutils.WithDatabase(testConfig.Database))
+	testDB, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 

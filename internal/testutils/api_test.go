@@ -1,13 +1,13 @@
 package testutils_test
 
 import (
-	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
+	"github.com/openkcm/cmk/internal/daemon"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
@@ -18,7 +18,7 @@ func TestStartAPIServerReturnsServeMux(t *testing.T) {
 		Plugins: []testutils.MockPlugin{},
 	})
 	assert.NotNil(t, server)
-	assert.IsType(t, &http.ServeMux{}, server)
+	assert.IsType(t, &daemon.ServeMux{}, server)
 }
 
 func TestGetTestURL(t *testing.T) {

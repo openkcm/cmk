@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
@@ -113,9 +112,7 @@ func createTestObjects(ctx context.Context, b *testing.B, r repo.Repo, n int) {
 }
 
 func BenchmarkCreate(b *testing.B) {
-	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&System{}, &SystemProperty{}, &SystemWithProperties{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{})
 	ctx := cmkcontext.CreateTenantContext(b.Context(), tenants[0])
 	r := sql.NewRepository(db)
 
@@ -149,9 +146,7 @@ func BenchmarkCreate(b *testing.B) {
 }
 
 func BenchmarkList(b *testing.B) {
-	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&System{}, &SystemProperty{}, &SystemWithProperties{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{})
 	ctx := cmkcontext.CreateTenantContext(b.Context(), tenants[0])
 	r := sql.NewRepository(db)
 
@@ -221,9 +216,7 @@ func BenchmarkList(b *testing.B) {
 }
 
 func BenchmarkFiltered(b *testing.B) {
-	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&System{}, &SystemProperty{}, &SystemWithProperties{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{})
 	ctx := cmkcontext.CreateTenantContext(b.Context(), tenants[0])
 	r := sql.NewRepository(db)
 

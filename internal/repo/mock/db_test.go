@@ -86,12 +86,12 @@ func TestCreate(t *testing.T) {
 			name: "Create KeystoreConfiguration Success",
 			CreateModel: func() (any, repo.Resource) {
 				id := uuid.New()
-				data := model.KeystoreConfiguration{ID: id}
+				data := model.Keystore{ID: id}
 
 				return id, data
 			},
 			AssertFunc: func(id any, retrieved any) {
-				result, ok := retrieved.(model.KeystoreConfiguration)
+				result, ok := retrieved.(model.Keystore)
 				assert.True(t, ok)
 				assert.Equal(t, id, result.ID)
 			},
@@ -139,17 +139,18 @@ func TestCreate(t *testing.T) {
 			},
 		},
 		{
-			name: "Create KeyConfigurationTags Success",
+			name: "Create Tag Success",
 			CreateModel: func() (any, repo.Resource) {
 				id := uuid.New()
-				data := model.KeyConfigurationTag{
-					BaseTag: model.BaseTag{ID: id},
+				data := model.Tag{
+					ID:     id,
+					Values: []byte("asd"),
 				}
 
 				return id, data
 			},
 			AssertFunc: func(id any, retrieved any) {
-				result, ok := retrieved.(model.KeyConfigurationTag)
+				result, ok := retrieved.(model.Tag)
 				assert.True(t, ok)
 				assert.Equal(t, id, result.ID)
 			},
@@ -338,7 +339,7 @@ func TestGetAll(t *testing.T) {
 		{
 			name: "Get All Keystore Configuration Success",
 			CreateModel: func() (int, repo.Resource, []repo.Resource) {
-				data := []model.KeystoreConfiguration{
+				data := []model.Keystore{
 					{ID: uuid.New(), Provider: "AWS"},
 					{ID: uuid.New(), Provider: "AWS"},
 					{ID: uuid.New(), Provider: "AWS"},
@@ -349,12 +350,12 @@ func TestGetAll(t *testing.T) {
 					result[i] = data[i]
 				}
 
-				return len(data), model.KeystoreConfiguration{}, result
+				return len(data), model.Keystore{}, result
 			},
 			AssertFunc: func(expected []repo.Resource, retrieved []repo.Resource) {
-				convertExpected, err := mock.ConvertSliceToModel[model.KeystoreConfiguration](expected)
+				convertExpected, err := mock.ConvertSliceToModel[model.Keystore](expected)
 				assert.NoError(t, err)
-				converted, err := mock.ConvertSliceToModel[model.KeystoreConfiguration](retrieved)
+				converted, err := mock.ConvertSliceToModel[model.Keystore](retrieved)
 				assert.NoError(t, err)
 
 				for i := range converted {
@@ -477,21 +478,15 @@ func TestGetAll(t *testing.T) {
 		{
 			name: "Get All KeyConfigurationTag Success",
 			CreateModel: func() (int, repo.Resource, []repo.Resource) {
-				data := []model.KeyConfigurationTag{
+				data := []model.Tag{
 					{
-						BaseTag: model.BaseTag{
-							ID: uuid.New(), Value: "test1",
-						},
+						ID: uuid.New(), Values: []byte("test1"),
 					},
 					{
-						BaseTag: model.BaseTag{
-							ID: uuid.New(), Value: "test2",
-						},
+						ID: uuid.New(), Values: []byte("test2"),
 					},
 					{
-						BaseTag: model.BaseTag{
-							ID: uuid.New(), Value: "test3",
-						},
+						ID: uuid.New(), Values: []byte("test3"),
 					},
 				}
 
@@ -500,12 +495,12 @@ func TestGetAll(t *testing.T) {
 					result[i] = data[i]
 				}
 
-				return len(data), model.KeyConfigurationTag{}, result
+				return len(data), model.Tag{}, result
 			},
 			AssertFunc: func(expected []repo.Resource, retrieved []repo.Resource) {
-				convertExpected, err := mock.ConvertSliceToModel[model.KeyConfigurationTag](expected)
+				convertExpected, err := mock.ConvertSliceToModel[model.Tag](expected)
 				assert.NoError(t, err)
-				converted, err := mock.ConvertSliceToModel[model.KeyConfigurationTag](retrieved)
+				converted, err := mock.ConvertSliceToModel[model.Tag](retrieved)
 				assert.NoError(t, err)
 
 				for i := range converted {
@@ -750,16 +745,16 @@ func TestUpdate(t *testing.T) {
 			name: "Update Keystore Configuration Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				id := uuid.New()
-				data := model.KeystoreConfiguration{ID: id, Provider: "AWS"}
-				newData := model.KeystoreConfiguration{ID: id, Provider: "AWS"}
-				getData := model.KeystoreConfiguration{ID: id}
+				data := model.Keystore{ID: id, Provider: "AWS"}
+				newData := model.Keystore{ID: id, Provider: "AWS"}
+				getData := model.Keystore{ID: id}
 
 				return data, newData, getData
 			},
 			AssertFunc: func(expected any, retrieved any) {
-				resultRetrieved, ok := retrieved.(model.KeystoreConfiguration)
+				resultRetrieved, ok := retrieved.(model.Keystore)
 				assert.True(t, ok)
-				resultExpected, ok := expected.(model.KeystoreConfiguration)
+				resultExpected, ok := expected.(model.Keystore)
 				assert.True(t, ok)
 				assert.Equal(t, resultExpected.ID, resultRetrieved.ID)
 				assert.Equal(t, resultExpected.Provider, resultRetrieved.Provider)
@@ -768,9 +763,9 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "Update Keystore Configuration Failure",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
-				data := model.KeystoreConfiguration{ID: uuid.New(), Provider: "AWS"}
-				newData := model.KeystoreConfiguration{ID: uuid.New(), Provider: "AWS"}
-				getData := model.KeystoreConfiguration{ID: uuid.New()}
+				data := model.Keystore{ID: uuid.New(), Provider: "AWS"}
+				newData := model.Keystore{ID: uuid.New(), Provider: "AWS"}
+				getData := model.Keystore{ID: uuid.New()}
 
 				return data, newData, getData
 			},
@@ -881,39 +876,39 @@ func TestUpdate(t *testing.T) {
 			name: "Update Tag Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				keyID := uuid.New()
-				key := model.KeyConfigurationTag{BaseTag: model.BaseTag{
-					ID: keyID, Value: "test1",
-				}}
-				newKey := model.KeyConfigurationTag{BaseTag: model.BaseTag{
-					ID: keyID, Value: "test2",
-				}}
-				getKey := model.KeyConfigurationTag{BaseTag: model.BaseTag{
+				key := model.Tag{
+					ID: keyID, Values: []byte("test1"),
+				}
+				newKey := model.Tag{
+					ID: keyID, Values: []byte("test2"),
+				}
+				getKey := model.Tag{
 					ID: keyID,
-				}}
+				}
 
 				return key, newKey, getKey
 			},
 			AssertFunc: func(expected any, retrieved any) {
-				resultRetrieved, ok := retrieved.(model.KeyConfigurationTag)
+				resultRetrieved, ok := retrieved.(model.Tag)
 				assert.True(t, ok)
-				resultExpected, ok := expected.(model.KeyConfigurationTag)
+				resultExpected, ok := expected.(model.Tag)
 				assert.True(t, ok)
 				assert.Equal(t, resultExpected.ID, resultRetrieved.ID)
-				assert.Equal(t, resultExpected.Value, resultRetrieved.Value)
+				assert.Equal(t, resultExpected.Values, resultRetrieved.Values)
 			},
 		},
 		{
 			name: "Update Tag Failure",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
-				key := model.KeyConfigurationTag{BaseTag: model.BaseTag{
-					ID: uuid.New(), Value: "test1",
-				}}
-				newKey := model.KeyConfigurationTag{BaseTag: model.BaseTag{
-					ID: uuid.New(), Value: "test2",
-				}}
-				getKey := model.KeyConfigurationTag{BaseTag: model.BaseTag{
+				key := model.Tag{
+					ID: uuid.New(), Values: []byte("test1"),
+				}
+				newKey := model.Tag{
+					ID: uuid.New(), Values: []byte("test2"),
+				}
+				getKey := model.Tag{
 					ID: uuid.New(),
-				}}
+				}
 
 				return key, newKey, getKey
 			},
@@ -1057,9 +1052,9 @@ func TestDelete(t *testing.T) {
 			name: "Delete Keystore Configuration Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				id := uuid.New()
-				data := model.KeystoreConfiguration{ID: id, Provider: "AWS"}
-				dataToDelete := model.KeystoreConfiguration{ID: id}
-				getData := model.KeystoreConfiguration{ID: id}
+				data := model.Keystore{ID: id, Provider: "AWS"}
+				dataToDelete := model.Keystore{ID: id}
+				getData := model.Keystore{ID: id}
 
 				return data, dataToDelete, getData
 			},
@@ -1101,15 +1096,15 @@ func TestDelete(t *testing.T) {
 			name: "Delete Tag Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				id := uuid.New()
-				data := model.KeyConfigurationTag{BaseTag: model.BaseTag{
-					ID: id, Value: "test1",
-				}}
-				dataToDelete := model.KeyConfigurationTag{BaseTag: model.BaseTag{
+				data := model.Tag{
+					ID: id, Values: []byte("test1"),
+				}
+				dataToDelete := model.Tag{
 					ID: id,
-				}}
-				getData := model.KeyConfigurationTag{BaseTag: model.BaseTag{
+				}
+				getData := model.Tag{
 					ID: id,
-				}}
+				}
 
 				return data, dataToDelete, getData
 			},

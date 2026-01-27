@@ -161,14 +161,11 @@ func (m *CertificateManager) UpdateCertificate(ctx context.Context, certificateI
 
 	cert.AutoRotate = autoRotate
 
-	err = m.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
-		_, err := r.Patch(ctx, cert, *repo.NewQuery().UpdateAll(true))
-		if err != nil {
-			return errs.Wrap(ErrCertificateManager, err)
-		}
+	_, err = m.repo.Patch(ctx, cert, *repo.NewQuery().UpdateAll(true))
+	if err != nil {
+		return nil, errs.Wrap(ErrCertificateManager, err)
+	}
 
-		return nil
-	})
 	if err != nil {
 		return nil, errs.Wrap(ErrCertificateManager, err)
 	}
@@ -438,24 +435,17 @@ func (m *CertificateManager) getNewCertificate(
 func (m *CertificateManager) getDefaultHYOKClientCert(
 	ctx context.Context,
 ) (*model.Certificate, error) {
-	var (
-		cert     *model.Certificate
-		err      error
-		tenantID string
-		exists   bool
-	)
-
-	cert, exists, err = m.GetDefaultTenantCertificate(ctx)
+	cert, exists, err := m.GetDefaultTenantCertificate(ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetDefaultTenantCertificate, err)
 	}
 
-	if !exists {
-		tenantID, err = cmkcontext.ExtractTenantID(ctx)
-		if err != nil {
-			return nil, errs.Wrap(ErrGetTenantFromCtx, err)
-		}
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return nil, errs.Wrap(ErrGetTenantFromCtx, err)
+	}
 
+	if !exists {
 		cert, _, err = m.RequestNewCertificate(ctx, nil,
 			model.RequestCertArgs{
 				CertPurpose: model.CertificatePurposeTenantDefault,
@@ -465,6 +455,16 @@ func (m *CertificateManager) getDefaultHYOKClientCert(
 			})
 		if err != nil {
 			return nil, errs.Wrap(ErrGetDefaultTenantCertificate, err)
+		}
+	} else if cert.ExpirationDate.Before(time.Now()) {
+		cert, _, err = m.RotateCertificate(ctx, model.RequestCertArgs{
+			CertPurpose: cert.Purpose,
+			Supersedes:  &cert.ID,
+			CommonName:  cert.CommonName,
+			Locality:    []string{tenantID},
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
 

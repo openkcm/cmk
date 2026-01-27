@@ -1,0 +1,37 @@
+{{- if .Values.taskCLI.deploy }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cmk.name" . }}-task-cli-config
+  labels:
+    {{- include "cmk.task-cli.labels" . | nindent 4 }}
+immutable: {{ .Values.config.isImmutable | default false }}
+data:
+  config.yaml: |-
+    application:
+      name: task-cli
+    {{- with .Values.config }}
+      environment: {{ .environment }}
+      {{- with .labels }}
+      labels:
+        {{- toYaml . | nindent 8 }}
+      {{- end}}
+
+    status:
+      {{- toYaml .status | nindent 6 }}
+
+    logger:
+      {{- toYaml .logger | nindent 6 }}
+
+    telemetry:
+      {{- toYaml .telemetry | nindent 6 }}
+
+    database:
+      {{- toYaml .database | nindent 6 }}
+
+    scheduler:
+      {{- toYaml .scheduler | nindent 6 }}
+
+    {{- end }}
+{{- end }}

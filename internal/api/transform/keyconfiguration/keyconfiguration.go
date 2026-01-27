@@ -73,12 +73,9 @@ func ToAPI(k model.KeyConfiguration) (*cmkapi.KeyConfiguration, error) {
 		apiConfig.Description = &k.Description
 	}
 
-	createdAt := k.CreatedAt.Format(transform.DefTimeFormat)
-	updatedAt := k.UpdatedAt.Format(transform.DefTimeFormat)
-
 	apiConfig.Metadata = &cmkapi.KeyConfigurationMetadata{
-		CreatedAt:    &createdAt,
-		UpdatedAt:    &updatedAt,
+		CreatedAt:    &k.CreatedAt,
+		UpdatedAt:    &k.UpdatedAt,
 		CreatorID:    &k.CreatorID,
 		CreatorName:  &k.CreatorName,
 		TotalKeys:    &k.TotalKeys,

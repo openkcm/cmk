@@ -71,5 +71,8 @@ data:
     clientData:
       {{- toYaml .clientData | nindent 6 }}
 
+    landscape:
+      {{- toYaml .landscape | nindent 6 }}
+
     {{- end }}
 {{- end }}

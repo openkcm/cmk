@@ -2,21 +2,24 @@ package manager
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/orbital"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
@@ -30,18 +33,25 @@ import (
 type System interface {
 	GetAllSystems(ctx context.Context, params repo.QueryMapper) ([]*model.System, int, error)
 	GetSystemByID(ctx context.Context, keyConfigID uuid.UUID) (*model.System, error)
-	GetSystemLinkByID(ctx context.Context, keyConfigID uuid.UUID) (*uuid.UUID, error)
-	PatchSystemLinkByID(ctx context.Context, systemID uuid.UUID, patchSystem cmkapi.SystemPatch) (*model.System, error)
-	DeleteSystemLinkByID(ctx context.Context, systemID uuid.UUID) error
 	RefreshSystemsData(ctx context.Context) bool
+	LinkSystemAction(ctx context.Context, systemID uuid.UUID, patchSystem cmkapi.SystemPatch) (*model.System, error)
+	UnlinkSystemAction(ctx context.Context, systemID uuid.UUID) error
+	GetRecoveryActions(ctx context.Context, sytemID uuid.UUID) (cmkapi.SystemRecoveryAction, error)
+	SendRecoveryActions(
+		ctx context.Context,
+		systemID uuid.UUID,
+		action cmkapi.SystemRecoveryActionBodyAction,
+	) error
 }
 
 type SystemManager struct {
-	repo       repo.Repo
-	registry   *registry.Service
-	reconciler *eventprocessor.CryptoReconciler
-	sisClient  *SystemInformation
-	cmkAuditor *auditor.Auditor
+	repo             repo.Repo
+	registry         registry.Service
+	reconciler       *eventprocessor.CryptoReconciler
+	sisClient        *SystemInformation
+	KeyConfigManager *KeyConfigManager
+	ContextModelsCfg config.System
+	user             User
 }
 
 type SystemFilter struct {
@@ -52,11 +62,6 @@ type SystemFilter struct {
 	Top         int
 }
 
-type SystemEvent struct {
-	Name  string
-	Event func(ctx context.Context) (orbital.Job, error)
-}
-
 var SystemEvents = []string{
 	proto.TaskType_SYSTEM_LINK.String(),
 	proto.TaskType_SYSTEM_UNLINK.String(),
@@ -65,7 +70,7 @@ var SystemEvents = []string{
 
 var _ repo.QueryMapper = (*SystemFilter)(nil) // Assert interface impl
 
-func (s SystemFilter) GetQuery() *repo.Query {
+func (s SystemFilter) GetQuery(_ context.Context) *repo.Query {
 	query := repo.NewQuery()
 
 	ck := repo.NewCompositeKey()
@@ -101,26 +106,45 @@ func (s SystemFilter) GetUUID(field repo.QueryField) (uuid.UUID, error) {
 	return s.KeyConfigID, nil
 }
 
+func (s SystemFilter) GetString(field repo.QueryField) (string, error) {
+	var val string
+
+	switch field {
+	case repo.RegionField:
+		val = s.Region
+	case repo.TypeField:
+		val = s.Type
+	default:
+		return "", ErrIncompatibleQueryField
+	}
+
+	return val, nil
+}
+
 func NewSystemManager(
 	ctx context.Context,
 	repository repo.Repo,
-	clientsFactory *clients.Factory,
+	clientsFactory clients.Factory,
 	reconciler *eventprocessor.CryptoReconciler,
 	ctlg *plugincatalog.Catalog,
-	cmkAuditor *auditor.Auditor,
 	cfg *config.Config,
+	keyConfigManager *KeyConfigManager,
+	user User,
 ) *SystemManager {
 	manager := &SystemManager{
-		repo:       repository,
-		reconciler: reconciler,
-		cmkAuditor: cmkAuditor,
+		repo:             repository,
+		reconciler:       reconciler,
+		KeyConfigManager: keyConfigManager,
+		user:             user,
 	}
 
 	if clientsFactory != nil {
-		manager.registry = clientsFactory.RegistryService()
+		manager.registry = clientsFactory.Registry()
 	} else {
 		log.Warn(ctx, "Creating SystemManager without registry client")
 	}
+
+	manager.ContextModelsCfg = cfg.ContextModels.System
 
 	sisClient, err := NewSystemInformationManager(repository, ctlg, &cfg.ContextModels.System)
 	if err != nil {
@@ -152,7 +176,7 @@ func (m *SystemManager) GetAllSystems(
 		}
 	}
 
-	systems, count, err := repo.ListSystemWithProperties(ctx, m.repo, params.GetQuery())
+	systems, count, err := repo.ListSystemWithProperties(ctx, m.repo, params.GetQuery(ctx))
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrQuerySystemList, err)
 	}
@@ -162,7 +186,10 @@ func (m *SystemManager) GetAllSystems(
 
 func (m *SystemManager) RefreshSystemsData(ctx context.Context) bool {
 	if m.registry == nil {
-		log.Warn(ctx, "Could not perform systems' data fetch from registry service - APIController systems client is nil")
+		log.Warn(
+			ctx, "Could not perform systems' data fetch from registry service - APIController systems client is nil",
+		)
+
 		return false
 	}
 
@@ -174,7 +201,7 @@ func (m *SystemManager) RefreshSystemsData(ctx context.Context) bool {
 	}
 
 	fetchedSystems, err := m.registry.System().GetSystemsWithFilter(ctx, systems.SystemFilter{TenantID: tenant})
-	if err != nil {
+	if err != nil && status.Code(err) != codes.NotFound {
 		log.Error(ctx, "Could not fetch systems data from registry service", err)
 
 		return false
@@ -188,7 +215,64 @@ func (m *SystemManager) RefreshSystemsData(ctx context.Context) bool {
 		}
 	}
 
+	// Remove systems that no longer exist in registry
+	err = m.removeSystemsNotInRegistry(ctx, fetchedSystems)
+	if err != nil {
+		log.Error(ctx, "Could not remove stale systems", err)
+		return false
+	}
+
 	return true
+}
+
+func (m *SystemManager) GetRecoveryActions(
+	ctx context.Context,
+	systemID uuid.UUID,
+) (cmkapi.SystemRecoveryAction, error) {
+	system, err := m.GetSystemByID(ctx, systemID)
+	if err != nil {
+		return cmkapi.SystemRecoveryAction{}, err
+	}
+
+	if system.Status != cmkapi.SystemStatusFAILED {
+		return cmkapi.SystemRecoveryAction{
+			CanRetry:  false,
+			CanCancel: false,
+		}, nil
+	}
+
+	// If there are no entries on last event for this system
+	// cancel and retry are not possible
+	lastEvent, err := m.reconciler.GetLastEvent(ctx, systemID.String())
+	if err != nil {
+		return cmkapi.SystemRecoveryAction{
+			CanRetry:  false,
+			CanCancel: false,
+		}, err
+	}
+
+	// Determine retry and cancel permissions based on event type
+	canRetry, canCancel := m.determineRecoveryPermissions(ctx, lastEvent)
+
+	return cmkapi.SystemRecoveryAction{
+		CanRetry:  canRetry,
+		CanCancel: canCancel,
+	}, nil
+}
+
+func (m *SystemManager) SendRecoveryActions(
+	ctx context.Context,
+	systemID uuid.UUID,
+	action cmkapi.SystemRecoveryActionBodyAction,
+) error {
+	switch action {
+	case cmkapi.SystemRecoveryActionBodyActionCANCEL:
+		return m.cancelSystemAction(ctx, systemID)
+	case cmkapi.SystemRecoveryActionBodyActionRETRY:
+		return m.retrySystemAction(ctx, systemID)
+	default:
+		return ErrUnsupportedSystemAction
+	}
 }
 
 func (m *SystemManager) GetSystemByID(ctx context.Context, systemID uuid.UUID) (*model.System, error) {
@@ -197,48 +281,45 @@ func (m *SystemManager) GetSystemByID(ctx context.Context, systemID uuid.UUID) (
 		return nil, errs.Wrap(ErrGettingSystemByID, err)
 	}
 
+	// Check authorization for the system's key configuration (if exists)
+	// Note: If the system is not linked to any key configuration, it is accessible to all users
+	_, err = m.user.HasSystemAccess(ctx, authz.ActionRead, system)
+	if err != nil {
+		return nil, err
+	}
+
 	return system, nil
 }
 
-func (m *SystemManager) GetSystemLinkByID(ctx context.Context, systemID uuid.UUID) (*uuid.UUID, error) {
-	system := &model.System{ID: systemID}
-
-	_, err := m.repo.First(ctx, system, repo.Query{})
-	if err != nil {
-		return nil, errs.Wrap(ErrGettingSystemLinkByID, err)
-	}
-
-	keyConfigurationID := system.KeyConfigurationID
-	if keyConfigurationID == nil {
-		return nil, ErrKeyConfigurationIDNotFound
-	}
-
-	return keyConfigurationID, nil
-}
-
-//nolint:cyclop,funlen
-func (m *SystemManager) PatchSystemLinkByID(
+//nolint:cyclop
+func (m *SystemManager) LinkSystemAction(
 	ctx context.Context,
 	systemID uuid.UUID,
 	patchSystem cmkapi.SystemPatch,
 ) (*model.System, error) {
-	if patchSystem.Retry != nil && *patchSystem.Retry {
-		system, err := m.GetSystemByID(ctx, systemID)
-		if err != nil {
-			return nil, err
-		}
-
-		err = m.handleEventRetry(ctx, systemID)
-
-		return system, err
-	}
-
 	var updatedSystem *model.System
 
-	err := m.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
+		// First, get the system to check its current state
+		// Note: GetSystemByID checks authorization for the SOURCE key configuration (if exists)
+		system, err := m.GetSystemByID(ctx, systemID)
+		if err != nil {
+			return err
+		}
+
+		updatedSystem = system
 		keyConfig := &model.KeyConfiguration{ID: patchSystem.KeyConfigurationID}
 
-		_, err := r.First(ctx, keyConfig, *repo.NewQuery())
+		// Check authorization for the TARGET key configuration
+		// User must have access to BOTH source (checked above) and target to perform the link
+		if patchSystem.KeyConfigurationID != uuid.Nil {
+			_, err = m.user.HasSystemAccess(ctx, authz.ActionSystemModifyLink, system)
+			if err != nil {
+				return err
+			}
+		}
+
+		_, err = m.repo.First(ctx, keyConfig, *repo.NewQuery())
 		if err != nil {
 			return errs.Wrap(ErrGettingKeyConfigByID, err)
 		}
@@ -247,39 +328,23 @@ func (m *SystemManager) PatchSystemLinkByID(
 			return ErrAddSystemNoPrimaryKey
 		}
 
-		system, err := m.GetSystemByID(ctx, systemID)
-		if err != nil {
-			return err
-		}
-
 		if system.Status == cmkapi.SystemStatusPROCESSING || system.Status == cmkapi.SystemStatusFAILED {
 			return ErrLinkSystemProcessingOrFailed
 		}
 
-		updatedSystem, err = m.updateSystems(ctx, *system, patchSystem)
+		event, err := m.eventSelector(ctx, system, keyConfig)
 		if err != nil {
 			return err
 		}
 
-		err = m.setClientL1KeyClaim(ctx, updatedSystem, true)
+		err = m.reconciler.SendEvent(ctx, event)
 		if err != nil {
 			return err
 		}
-
-		event, err := m.eventSelector(ctx, r, updatedSystem, system.KeyConfigurationID, keyConfig)
-		if err != nil {
-			return err
-		}
-
-		err = m.sendSystemEvent(ctx, event)
-		if err != nil {
-			return err
-		}
-
-		m.handlePatchSystemLinkAuditLogs(ctx, system, updatedSystem, keyConfig)
 
 		return nil
-	})
+	},
+	)
 	if err != nil {
 		return nil, errs.Wrap(ErrUpdateSystem, err)
 	}
@@ -287,13 +352,13 @@ func (m *SystemManager) PatchSystemLinkByID(
 	return updatedSystem, nil
 }
 
-func (m *SystemManager) DeleteSystemLinkByID(ctx context.Context, systemID uuid.UUID) error {
+func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UUID) error {
 	var dbSystem *model.System
 
-	err := m.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
 		system := &model.System{ID: systemID}
 
-		_, err := r.First(ctx, system, repo.Query{})
+		_, err := m.repo.First(ctx, system, repo.Query{})
 		if err != nil {
 			return errs.Wrap(ErrGettingSystemByID, err)
 		}
@@ -304,12 +369,17 @@ func (m *SystemManager) DeleteSystemLinkByID(ctx context.Context, systemID uuid.
 
 		keyConfig := &model.KeyConfiguration{ID: *system.KeyConfigurationID}
 
-		_, err = r.First(ctx, keyConfig, *repo.NewQuery())
+		// Check authorization for the system's key configuration
+		// User must have access to the key configuration to perform the unlink
+		_, err = m.user.HasSystemAccess(ctx, authz.ActionSystemModifyLink, system)
+		if err != nil {
+			return err
+		}
+
+		_, err = m.repo.First(ctx, keyConfig, *repo.NewQuery())
 		if err != nil {
 			return errs.Wrap(ErrGettingKeyConfigByID, err)
 		}
-
-		system.KeyConfigurationID = nil
 
 		if system.Status == cmkapi.SystemStatusPROCESSING || system.Status == cmkapi.SystemStatusFAILED {
 			return ErrUnlinkSystemProcessingOrFailed
@@ -317,25 +387,21 @@ func (m *SystemManager) DeleteSystemLinkByID(ctx context.Context, systemID uuid.
 
 		dbSystem = system
 
-		err = m.setClientL1KeyClaim(ctx, dbSystem, false)
-		if err != nil {
-			return err
-		}
-
-		err = m.sendSystemEvent(ctx, SystemEvent{
-			Name: proto.TaskType_SYSTEM_UNLINK.String(),
-			Event: func(ctx context.Context) (orbital.Job, error) {
-				return m.reconciler.SystemUnlink(ctx, dbSystem, keyConfig.PrimaryKeyID.String())
+		err = m.reconciler.SendEvent(
+			ctx, eventprocessor.Event{
+				Name: proto.TaskType_SYSTEM_UNLINK.String(),
+				Event: func(ctx context.Context) (orbital.Job, error) {
+					return m.reconciler.SystemUnlink(ctx, dbSystem, keyConfig.PrimaryKeyID.String())
+				},
 			},
-		})
+		)
 		if err != nil {
 			return err
 		}
-
-		m.sendCmkOffboardingAuditLog(ctx, keyConfig, systemID)
 
 		return nil
-	})
+	},
+	)
 	if err != nil {
 		return err
 	}
@@ -343,10 +409,23 @@ func (m *SystemManager) DeleteSystemLinkByID(ctx context.Context, systemID uuid.
 	return nil
 }
 
-func (m *SystemManager) handleEventRetry(
-	ctx context.Context,
-	systemID uuid.UUID,
-) error {
+func (m *SystemManager) cancelSystemAction(ctx context.Context, systemID uuid.UUID) error {
+	event, err := m.reconciler.GetLastEvent(ctx, systemID.String())
+	if err != nil {
+		return err
+	}
+
+	_, err = m.repo.Patch(
+		ctx, &model.System{
+			ID:     systemID,
+			Status: cmkapi.SystemStatus(event.PreviousItemStatus),
+		}, *repo.NewQuery(),
+	)
+
+	return err
+}
+
+func (m *SystemManager) retrySystemAction(ctx context.Context, systemID uuid.UUID) error {
 	system, err := m.GetSystemByID(ctx, systemID)
 	if err != nil {
 		return err
@@ -356,20 +435,20 @@ func (m *SystemManager) handleEventRetry(
 		return ErrRetryNonFailedSystem
 	}
 
-	lastJob, err := m.reconciler.GetLastEvent(ctx, SystemEvents, systemID.String())
+	lastJob, err := m.reconciler.GetLastEvent(ctx, systemID.String())
 	if err != nil {
 		return err
 	}
 
-	event := SystemEvent{
+	event := eventprocessor.Event{
 		Name: lastJob.Type,
 		Event: func(ctx context.Context) (orbital.Job, error) {
 			var job orbital.Job
 
-			err := m.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+			err := m.repo.Transaction(ctx, func(ctx context.Context) error {
 				system.Status = cmkapi.SystemStatusPROCESSING
 
-				_, err := r.Patch(ctx, system, *repo.NewQuery())
+				_, err := m.repo.Patch(ctx, system, *repo.NewQuery())
 				if err != nil {
 					return err
 				}
@@ -377,132 +456,64 @@ func (m *SystemManager) handleEventRetry(
 				job, err = m.reconciler.CreateJob(ctx, lastJob)
 
 				return err
-			})
+			},
+			)
 
 			return job, err
 		},
 	}
 
-	err = m.sendSystemEvent(ctx, event)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return m.reconciler.SendEvent(ctx, event)
 }
 
 func (m *SystemManager) eventSelector(
 	ctx context.Context,
-	r repo.Repo,
-	updatedSystem *model.System,
-	oldKeyConfigID *uuid.UUID,
-	keyConfig *model.KeyConfiguration,
-) (SystemEvent, error) {
+	system *model.System,
+	newKeyConfig *model.KeyConfiguration,
+) (eventprocessor.Event, error) {
+	oldKeyConfigID := system.KeyConfigurationID
+
+	// If system doesn't have a link already, we send SYSTEM_LINK
 	if !ptr.IsNotNilUUID(oldKeyConfigID) {
-		return SystemEvent{
+		return eventprocessor.Event{
 			Name: proto.TaskType_SYSTEM_LINK.String(),
 			Event: func(ctx context.Context) (orbital.Job, error) {
-				return m.reconciler.SystemLink(ctx, updatedSystem, keyConfig.PrimaryKeyID.String())
+				return m.reconciler.SystemLink(ctx, system, newKeyConfig.PrimaryKeyID.String())
 			},
 		}, nil
 	}
 
-	if updatedSystem.KeyConfigurationID != oldKeyConfigID {
+	// If new key config ID don't match the old one it is a SYSTEM_SWITCH
+	if newKeyConfig.ID.String() != oldKeyConfigID.String() {
 		oldKeyConfig := &model.KeyConfiguration{ID: *oldKeyConfigID}
 
-		_, err := r.First(ctx, oldKeyConfig, *repo.NewQuery())
+		_, err := m.repo.First(ctx, oldKeyConfig, *repo.NewQuery())
 		if err != nil {
-			return SystemEvent{}, errs.Wrap(ErrGettingKeyConfigByID, err)
+			return eventprocessor.Event{}, errs.Wrap(ErrGettingKeyConfigByID, err)
 		}
 
 		if ptr.IsNotNilUUID(oldKeyConfig.PrimaryKeyID) {
-			return SystemEvent{
+			return eventprocessor.Event{
 				Name: proto.TaskType_SYSTEM_SWITCH.String(),
 				Event: func(ctx context.Context) (orbital.Job, error) {
 					return m.reconciler.SystemSwitch(
 						ctx,
-						updatedSystem,
-						keyConfig.PrimaryKeyID.String(),
+						system,
+						newKeyConfig.PrimaryKeyID.String(),
 						oldKeyConfig.PrimaryKeyID.String(),
+						"", // Empty trigger for regular switch actions
 					)
 				},
 			}, nil
 		}
 	}
 
-	return SystemEvent{
+	return eventprocessor.Event{
 		Name: proto.TaskType_SYSTEM_LINK.String(),
 		Event: func(ctx context.Context) (orbital.Job, error) {
-			return m.reconciler.SystemLink(ctx, updatedSystem, keyConfig.PrimaryKeyID.String())
+			return m.reconciler.SystemLink(ctx, system, newKeyConfig.PrimaryKeyID.String())
 		},
 	}, nil
-}
-
-func (m *SystemManager) updateSystems(
-	ctx context.Context,
-	system model.System,
-	patchSystem cmkapi.SystemPatch,
-) (*model.System, error) {
-	system.KeyConfigurationID = &patchSystem.KeyConfigurationID
-
-	_, err := m.repo.Patch(ctx, &system, *repo.NewQuery())
-	if err != nil {
-		return nil, errs.Wrap(ErrUpdateSystem, err)
-	}
-
-	return &system, nil
-}
-
-func (m *SystemManager) setClientL1KeyClaim(
-	ctx context.Context,
-	system *model.System,
-	keyClaim bool,
-) error {
-	if m.registry == nil {
-		log.Warn(ctx, "Could not set L1 key claim - APIController systems client is nil")
-		return nil
-	}
-
-	tenant, err := cmkcontext.ExtractTenantID(ctx)
-	if err != nil {
-		return errs.Wrap(ErrUpdateSystem, err)
-	}
-
-	err = m.registry.System().UpdateSystemL1KeyClaim(ctx, systems.SystemFilter{
-		ExternalID: system.Identifier,
-		Region:     system.Region,
-		TenantID:   tenant,
-	}, keyClaim)
-	if errors.Is(err, systems.ErrKeyClaimAlreadyActive) && keyClaim ||
-		errors.Is(err, systems.ErrKeyClaimAlreadyInactive) && !keyClaim {
-		// If the key claim is already set to the desired state, we can ignore the error.
-		return nil
-	} else if err != nil {
-		return errs.Wrap(ErrSettingKeyClaim, err)
-	}
-
-	return nil
-}
-
-func (m *SystemManager) sendSystemEvent(
-	ctx context.Context,
-	event SystemEvent,
-) error {
-	if m.reconciler == nil {
-		return errs.Wrapf(ErrEventSendingFailed, "reconciler is not initialized")
-	}
-
-	ctx = log.InjectSystemEvent(ctx, event.Name)
-
-	job, err := event.Event(ctx)
-	if err != nil {
-		log.Info(ctx, "Failed to send event")
-		return errs.Wrap(ErrEventSendingFailed, err)
-	}
-
-	log.Info(ctx, "Event Sent", slog.String("JobID", job.ID.String()))
-
-	return nil
 }
 
 func (m *SystemManager) createSystemIfNotExists(ctx context.Context, newSystem *model.System) error {
@@ -512,18 +523,20 @@ func (m *SystemManager) createSystemIfNotExists(ctx context.Context, newSystem *
 		repo.NewCompositeKeyGroup(
 			repo.NewCompositeKey().
 				Where(
-					repo.IdentifierField, newSystem.Identifier).
+					repo.IdentifierField, newSystem.Identifier,
+				).
 				Where(
-					repo.RegionField, newSystem.Region),
+					repo.RegionField, newSystem.Region,
+				),
 		),
 	)
 
-	found, _ := m.repo.First(ctx, system, query)
-	if found {
+	count, _ := m.repo.Count(ctx, system, query)
+	if count > 0 {
 		return nil
 	}
 
-	ctx = log.InjectSystem(ctx, newSystem)
+	ctx = model.LogInjectSystem(ctx, newSystem)
 	log.Info(ctx, "Found new system from registry, adding to CMK DB")
 
 	err := m.repo.Create(ctx, newSystem)
@@ -539,65 +552,123 @@ func (m *SystemManager) createSystemIfNotExists(ctx context.Context, newSystem *
 	return nil
 }
 
-func (m *SystemManager) handlePatchSystemLinkAuditLogs(
-	ctx context.Context,
-	system *model.System,
-	patchSystem *model.System,
-	keyConfig *model.KeyConfiguration,
-) {
-	previousConfigurationID := system.KeyConfigurationID
-	newConfigurationID := patchSystem.KeyConfigurationID
+func (m *SystemManager) removeSystemsNotInRegistry(ctx context.Context, registrySystems []*model.System) error {
+	// Build a map of (identifier:region) from registry for quick lookup
+	registrySystemsMap := make(map[string]bool)
 
-	if previousConfigurationID == nil {
-		// System is being onboarded for the first time
-		m.sendCmkOnboardingAuditLog(ctx, keyConfig, system.ID)
-	} else if ptr.IsNotNilUUID(newConfigurationID) && *previousConfigurationID != *newConfigurationID {
-		// System is switching from one key configuration to another
-		m.sendCmkSwitchAuditLog(ctx, system.ID, *previousConfigurationID, *newConfigurationID)
-	}
-}
-
-func (m *SystemManager) sendCmkOnboardingAuditLog(
-	ctx context.Context,
-	keyConfig *model.KeyConfiguration,
-	systemID uuid.UUID,
-) {
-	err := m.cmkAuditor.SendCmkOnboardingAuditLog(ctx, keyConfig.PrimaryKeyID.String(), systemID.String())
-	if err != nil {
-		log.Error(ctx, "Failed to send audit log for CMK Onboard", err)
+	for _, sys := range registrySystems {
+		key := sys.Identifier + ":" + sys.Region
+		registrySystemsMap[key] = true
 	}
 
-	log.Info(ctx, "Audit log for CMK Onboard sent successfully")
-}
+	// Process all systems in batches and delete those not in registry
+	// Transaction is inside the batch callback to avoid holding locks for too long
+	err := repo.ProcessInBatch(
+		ctx, m.repo, repo.NewQuery(), repo.DefaultLimit, func(systems []*model.System) error {
+			// Process each batch in a separate transaction
+			return m.repo.Transaction(ctx, func(ctx context.Context) error {
+				for _, dbSystem := range systems {
+					key := dbSystem.Identifier + ":" + dbSystem.Region
+					if !registrySystemsMap[key] {
+						log.Info(ctx, "System no longer exists in registry, removing from CMK DB")
 
-func (m *SystemManager) sendCmkSwitchAuditLog(
-	ctx context.Context,
-	systemID uuid.UUID,
-	oldKeyConfigID uuid.UUID,
-	newKeyConfigID uuid.UUID,
-) {
-	err := m.cmkAuditor.SendCmkSwitchAuditLog(
-		ctx,
-		systemID.String(),
-		oldKeyConfigID.String(),
-		newKeyConfigID.String(),
+						query := *repo.NewQuery().Where(
+							repo.NewCompositeKeyGroup(
+								repo.NewCompositeKey().Where(repo.IDField, dbSystem.ID),
+							),
+						)
+
+						// Delete the system (BeforeDelete hook will automatically delete associated properties)
+						_, err := m.repo.Delete(ctx, &model.System{ID: dbSystem.ID}, query)
+						if err != nil {
+							log.Error(ctx, "Failed to delete system", err)
+							return err
+						}
+
+						log.Info(ctx, "Successfully removed system from CMK DB")
+					}
+				}
+
+				return nil
+			},
+			)
+		},
 	)
 	if err != nil {
-		log.Error(ctx, "Failed to send audit log for CMK Switch", err)
+		return errs.Wrap(ErrUpdateSystem, err)
 	}
 
-	log.Info(ctx, "Audit log for CMK Switch sent successfully")
+	return nil
 }
 
-func (m *SystemManager) sendCmkOffboardingAuditLog(
+// determineRecoveryPermissions determines retry and cancel permissions
+// based on event type and user authorization
+func (m *SystemManager) determineRecoveryPermissions(
 	ctx context.Context,
-	keyConfig *model.KeyConfiguration,
-	systemID uuid.UUID,
-) {
-	err := m.cmkAuditor.SendCmkOffboardingAuditLog(ctx, keyConfig.PrimaryKeyID.String(), systemID.String())
-	if err != nil {
-		log.Error(ctx, "Failed to send audit log for CMK Offboard", err)
+	event *model.Event,
+) (bool, bool) {
+	var canRetry, canCancel bool
+	// Helper to check authorization
+	checkAuth := func(getKeyID func(*eventprocessor.SystemActionJobData) string) bool {
+		var jobData eventprocessor.SystemActionJobData
+		if json.Unmarshal(event.Data, &jobData) == nil {
+			return m.hasKeyAdminAccess(ctx, getKeyID(&jobData))
+		}
+		return false
 	}
 
-	log.Info(ctx, "Audit log for CMK Offboard sent successfully")
+	switch event.Type {
+	case proto.TaskType_SYSTEM_UNLINK.String():
+		// Retry allowed for Key Admins of the source KeyConfig (KeyIDFrom)
+		canRetry = checkAuth(func(d *eventprocessor.SystemActionJobData) string { return d.KeyIDFrom })
+		canCancel = true
+
+	case proto.TaskType_SYSTEM_SWITCH.String():
+		var jobData eventprocessor.SystemActionJobData
+		if json.Unmarshal(event.Data, &jobData) == nil {
+			if jobData.Trigger == constants.KeyActionSetPrimary {
+				// Make Primary Key: Retry allowed for Key Admins of target KeyConfig, cancel not allowed
+				canRetry = m.hasKeyAdminAccess(ctx, jobData.KeyIDTo)
+				canCancel = false
+			} else {
+				// Regular Switch: Retry allowed for Key Admins of source KeyConfig, cancel allowed
+				canRetry = m.hasKeyAdminAccess(ctx, jobData.KeyIDFrom)
+				canCancel = true
+			}
+		} else {
+			// If unmarshalling fails, disable both actions
+			canRetry = false
+			canCancel = false
+		}
+
+	case proto.TaskType_SYSTEM_LINK.String():
+		// Retry allowed for Key Admins of the target KeyConfig (KeyIDTo)
+		canRetry = checkAuth(func(d *eventprocessor.SystemActionJobData) string { return d.KeyIDTo })
+		canCancel = true
+
+	default:
+		canRetry = false
+		canCancel = false
+	}
+
+	return canRetry, canCancel
+}
+
+// hasKeyAdminAccess checks if the current user has Key Admin permissions for the KeyConfig
+// associated with the given keyID string
+func (m *SystemManager) hasKeyAdminAccess(ctx context.Context, keyIDStr string) bool {
+	keyID, err := uuid.Parse(keyIDStr)
+	if err != nil {
+		return false
+	}
+
+	key := &model.Key{ID: keyID}
+	_, err = m.repo.First(ctx, key, *repo.NewQuery())
+	if err != nil {
+		return false
+	}
+
+	// Check if user has Key Admin access (ActionUpdate implies admin access)
+	_, err = m.user.HasKeyAccess(ctx, authz.ActionUpdate, key.KeyConfigurationID)
+	return err == nil
 }

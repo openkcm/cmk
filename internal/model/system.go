@@ -77,6 +77,14 @@ func (s *System) AfterSave(tx *gorm.DB) error {
 	return nil
 }
 
+// BeforeDelete is ran before deleting the system
+// but before finishing the transaction
+// If this step fails the transaction should be aborted
+func (s *System) BeforeDelete(tx *gorm.DB) error {
+	// Delete all associated system properties
+	return tx.Where("id = ?", s.ID).Delete(&SystemProperty{}).Error
+}
+
 type SystemProperty struct {
 	ID    uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Key   string    `gorm:"type:varchar(255);primaryKey"`

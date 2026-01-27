@@ -2,13 +2,20 @@ package cmk
 
 import (
 	"context"
+	"encoding/json"
+	"log/slog"
 	"slices"
+
+	"github.com/google/uuid"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	wfTransform "github.com/openkcm/cmk/internal/api/transform/workflow"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	"github.com/openkcm/cmk/utils/odata"
@@ -19,7 +26,13 @@ func (c *APIController) CheckWorkflow(
 	ctx context.Context,
 	request cmkapi.CheckWorkflowRequestObject,
 ) (cmkapi.CheckWorkflowResponseObject, error) {
-	workflow, err := wfTransform.FromAPI(*request.Body, request.Params.UserID)
+	workflowConfig, err := c.Manager.Workflow.WorkflowConfig(ctx)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
+	}
+
+	workflow, err := wfTransform.FromAPI(ctx, *request.Body,
+		workflowConfig.DefaultExpiryPeriodDays, workflowConfig.MaxExpiryPeriodDays)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
 	}
@@ -37,14 +50,8 @@ func (c *APIController) CheckWorkflow(
 	return response, nil
 }
 
-var getWorkflowsSchema odata.FilterSchema = odata.FilterSchema{
+var getWorkflowsSchema = odata.FilterSchema{
 	Entries: []odata.FilterSchemaEntry{
-		{
-			FilterName: "userID",
-			FilterType: odata.UUID,
-			DBName:     repo.InitiatorIDField,
-			DBQuery:    odata.NoQuery, // Manager handles this case
-		},
 		{
 			FilterName: "artifactId",
 			FilterType: odata.UUID,
@@ -59,6 +66,18 @@ var getWorkflowsSchema odata.FilterSchema = odata.FilterSchema{
 					wfMechanism.ArtifactType(s))
 			},
 			ValueModifier: odata.ToUpper,
+		},
+		{
+			FilterName:     "artifactName",
+			FilterType:     odata.String,
+			DBName:         repo.ArtifactNameField,
+			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthName),
+		},
+		{
+			FilterName:     "parametersResourceName",
+			FilterType:     odata.String,
+			DBName:         repo.ParamResourceNameField,
+			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthName),
 		},
 		{
 			FilterName: "actionType",
@@ -80,23 +99,29 @@ var getWorkflowsSchema odata.FilterSchema = odata.FilterSchema{
 			},
 			ValueModifier: odata.ToUpper,
 		},
-	}}
+	},
+}
 
 // GetWorkflows returns a list of workflows
 func (c *APIController) GetWorkflows(
 	ctx context.Context,
 	request cmkapi.GetWorkflowsRequestObject,
 ) (cmkapi.GetWorkflowsResponseObject, error) {
-	queryMapper := odata.NewQueryOdataMapper(getWorkflowsSchema)
+	odataQueryMapper := odata.NewQueryOdataMapper(getWorkflowsSchema)
 
-	err := queryMapper.ParseFilter(request.Params.Filter)
+	err := odataQueryMapper.ParseFilter(request.Params.Filter)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
 	}
 
-	queryMapper.SetPaging(request.Params.Skip, request.Params.Top)
+	odataQueryMapper.SetPaging(request.Params.Skip, request.Params.Top)
 
-	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, queryMapper)
+	workflowQueryMapper, err := manager.NewWorkflowFilterFromOData(*odataQueryMapper)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
+	}
+
+	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, workflowQueryMapper)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetWorkflow, err)
 	}
@@ -126,7 +151,13 @@ func (c *APIController) GetWorkflows(
 func (c *APIController) CreateWorkflow(ctx context.Context,
 	request cmkapi.CreateWorkflowRequestObject,
 ) (cmkapi.CreateWorkflowResponseObject, error) {
-	workflow, err := wfTransform.FromAPI(*request.Body, request.Params.UserID)
+	workflowConfig, err := c.Manager.Workflow.WorkflowConfig(ctx)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
+	}
+
+	workflow, err := wfTransform.FromAPI(ctx, *request.Body,
+		workflowConfig.DefaultExpiryPeriodDays, workflowConfig.MaxExpiryPeriodDays)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
 	}
@@ -147,53 +178,41 @@ func (c *APIController) CreateWorkflow(ctx context.Context,
 func (c *APIController) GetWorkflowByID(ctx context.Context,
 	request cmkapi.GetWorkflowByIDRequestObject,
 ) (cmkapi.GetWorkflowByIDResponseObject, error) {
-	workflow, err := c.Manager.Workflow.GetWorkflowsByID(ctx, request.WorkflowID)
+	workflow, err := c.Manager.Workflow.GetWorkflowByID(ctx, request.WorkflowID)
 	if err != nil {
 		return nil, err
 	}
 
-	apiWorkflow, err := wfTransform.ToAPI(*workflow)
+	// Expand approvers
+	approvers, _, err := c.Manager.Workflow.ListWorkflowApprovers(ctx, request.WorkflowID, true, 0, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	return cmkapi.GetWorkflowByID201JSONResponse(*apiWorkflow), nil
-}
-
-// ListWorkflowApproversByWorkflowID updates a workflow by ID
-func (c *APIController) ListWorkflowApproversByWorkflowID(
-	ctx context.Context,
-	request cmkapi.ListWorkflowApproversByWorkflowIDRequestObject,
-) (cmkapi.ListWorkflowApproversByWorkflowIDResponseObject, error) {
-	skip := ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip)
-	top := ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop)
-
-	approvers, count, err := c.Manager.Workflow.ListWorkflowApprovers(ctx, request.WorkflowID, skip, top)
+	// Expand approver groups
+	approverGroups, err := c.getApproverGroups(ctx, workflow)
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert each Approver to its response format
-	values := make([]cmkapi.WorkflowApprover, len(approvers))
-
-	for i, approver := range approvers {
-		value, err := wfTransform.ApproverToAPI(*approver)
-		if err != nil {
-			return nil, err
-		}
-
-		values[i] = value
+	// Expand available transitions
+	transitions, err := c.Manager.Workflow.GetWorkflowAvailableTransitions(ctx, workflow)
+	if err != nil {
+		return nil, err
 	}
 
-	response := cmkapi.ListWorkflowApproversByWorkflowID200JSONResponse{
-		Value: values,
+	// Expand approval summary
+	approvalSummary, err := c.Manager.Workflow.GetWorkflowApprovalSummary(ctx, workflow)
+	if err != nil {
+		return nil, err
 	}
 
-	if ptr.GetSafeDeref(request.Params.Count) {
-		response.Count = ptr.PointTo(count)
+	apiWorkflow, err := wfTransform.ToAPIDetailed(*workflow, approvers, approverGroups, transitions, approvalSummary)
+	if err != nil {
+		return nil, err
 	}
 
-	return response, nil
+	return cmkapi.GetWorkflowByID200JSONResponse(*apiWorkflow), nil
 }
 
 // TransitionWorkflow executes a transition on a workflow by ID
@@ -206,7 +225,7 @@ func (c *APIController) TransitionWorkflow(
 
 	transition := wfMechanism.Transition(transitionBody.Transition)
 
-	workflow, err := c.Manager.Workflow.TransitionWorkflow(ctx, request.Params.UserID, request.WorkflowID, transition)
+	workflow, err := c.Manager.Workflow.TransitionWorkflow(ctx, request.WorkflowID, transition)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrWorkflowCannotTransition, err)
 	}
@@ -217,4 +236,42 @@ func (c *APIController) TransitionWorkflow(
 	}
 
 	return cmkapi.TransitionWorkflow200JSONResponse(*apiWorkflow), nil
+}
+
+func (c *APIController) getApproverGroups(
+	ctx context.Context,
+	workflow *model.Workflow,
+) ([]*model.Group, error) {
+	var (
+		IDs []uuid.UUID
+	)
+
+	if workflow.ApproverGroupIDs == nil {
+		return []*model.Group{}, nil
+	}
+
+	err := json.Unmarshal(workflow.ApproverGroupIDs, &IDs)
+	if err != nil {
+		return nil, err
+	}
+
+	groups := make([]*model.Group, 0, len(IDs))
+	for _, id := range IDs {
+		group, err := c.Manager.Group.GetGroupByID(ctx, id)
+		if err != nil {
+			log.Warn(ctx, "failed to expand workflow approver group", slog.Any("error", err))
+
+			// Return a placeholder group if the group cannot be found. We can still make use of the ID.
+			groups = append(groups, &model.Group{
+				ID:   id,
+				Name: "NOT_AVAILABLE",
+				Role: constants.KeyAdminRole,
+			})
+			continue
+		}
+
+		groups = append(groups, group)
+	}
+
+	return groups, nil
 }

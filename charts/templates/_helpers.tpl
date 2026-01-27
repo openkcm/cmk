@@ -66,6 +66,18 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
+
+{{/*
+DB Migrator labels
+*/}}
+{{- define "cmk.db-migrator.labels" -}}
+helm.sh/chart: {{ include "cmk.chart" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
 {{/*
 Task Worker labels
 */}}
@@ -77,6 +89,19 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
+
+{{/*
+Task CLI labels
+*/}}
+{{- define "cmk.task-cli.labels" -}}
+helm.sh/chart: {{ include "cmk.chart" . }}
+{{ include "cmk.task-cli.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
 
 {{/*
 Tenant Manager labels
@@ -127,6 +152,15 @@ task-worker Selector Labels
 app.kubernetes.io/name: {{ include "cmk.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}-task-worker
 app.kubernetes.io/component: {{ .Chart.Name }}-task-worker
+{{- end }}
+
+{{/*
+task-cli Selector Labels
+*/}}
+{{- define "cmk.task-cli.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "cmk.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}-task-cli
+app.kubernetes.io/component: {{ .Chart.Name }}-task-cli
 {{- end }}
 
 {{/*

@@ -80,7 +80,7 @@ func RequestErrorHandlerFunc() func(w http.ResponseWriter, r *http.Request, err 
 // ResponseErrorHandlerFunc is called when HTTP Handlers (Controller Functions) return invalid responses
 func ResponseErrorHandlerFunc() func(w http.ResponseWriter, r *http.Request, err error) {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
-		log.Error(r.Context(), "Processing Request", err)
+		log.Error(r.Context(), "Processing Response", err)
 
 		e := apierrors.TransformToAPIError(r.Context(), err)
 		write.ErrorResponse(r.Context(), w, *e)

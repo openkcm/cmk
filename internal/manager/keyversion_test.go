@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
@@ -21,7 +20,7 @@ import (
 )
 
 var (
-	ksConfig            = testutils.NewKeystoreConfig(func(_ *model.KeystoreConfiguration) {})
+	ksConfig            = testutils.NewKeystore(func(_ *model.Keystore) {})
 	keystoreDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
 		c.Purpose = model.CertificatePurposeKeystoreDefault
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
@@ -45,31 +44,24 @@ func TestKeyVersionManagerSuit(t *testing.T) {
 }
 
 func (s *KeyVersionManagerSuit) SetupSuite() {
-	db, tenants, _ := testutils.NewTestDB(s.T(), testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Key{},
-			&model.KeyVersion{},
-			&model.TenantConfig{},
-			&model.KeyConfiguration{},
-			&model.Certificate{},
-			&model.KeystoreConfiguration{},
-		},
-	})
+	db, tenants, _ := testutils.NewTestDB(s.T(), testutils.TestDBConfig{})
 	s.tenant = tenants[0]
 
 	s.ctx = testutils.CreateCtxWithTenant(s.tenant)
 	s.r = sql.NewRepository(db)
 
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.KeyStorePlugin)}
-	ctlg, err := catalog.New(s.ctx, cfg)
+	ctlg, err := catalog.New(s.ctx, &cfg)
 	s.Require().NoError(err)
 
 	tenantConfigManager := manager.NewTenantConfigManager(s.r, ctlg)
 	certManager := manager.NewCertificateManager(
 		s.ctx, s.r, ctlg, &config.Certificates{ValidityDays: config.MinCertificateValidityDays})
-	keyConfigManager := manager.NewKeyConfigManager(s.r, certManager, &cfg)
 	cmkAuditor := auditor.New(s.ctx, &cfg)
-	s.km = manager.NewKeyManager(s.r, ctlg, tenantConfigManager, keyConfigManager, certManager, nil, cmkAuditor)
+	userManager := manager.NewUserManager(s.r, cmkAuditor)
+	tagManager := manager.NewTagManager(s.r)
+	keyConfigManager := manager.NewKeyConfigManager(s.r, certManager, userManager, tagManager, cmkAuditor, &cfg)
+	s.km = manager.NewKeyManager(s.r, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 	s.kvm = manager.NewKeyVersionManager(
 		s.r,
 		ctlg,
@@ -181,7 +173,6 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 	})
 }
 
-//nolint:funlen
 func (s *KeyVersionManagerSuit) TestKeyVersionManager_GetByKeyIDAndByNumber() {
 	tests := []struct {
 		name             string

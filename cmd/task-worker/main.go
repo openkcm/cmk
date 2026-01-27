@@ -33,9 +33,8 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
-var BuildInfo = "{}"
-
 var (
+	BuildInfo               = "{}"
 	gracefulShutdownSec     = flag.Int64("graceful-shutdown", 1, "graceful shutdown seconds")
 	gracefulShutdownMessage = flag.String("graceful-shutdown-message", "Graceful shutdown in %d seconds",
 		"graceful shutdown message")
@@ -106,12 +105,12 @@ func registerTasks(
 	cfg *config.Config,
 	cron *async.App,
 ) error {
-	dbCon, err := db.StartDBConnection(cfg.Database, cfg.DatabaseReplicas)
+	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
 	if err != nil {
 		return errs.Wrap(db.ErrStartingDBCon, err)
 	}
 
-	ctlg, err := catalog.New(ctx, *cfg)
+	ctlg, err := catalog.New(ctx, cfg)
 	if err != nil {
 		return errs.Wrapf(err, "failed to start loading catalog")
 	}
@@ -125,21 +124,23 @@ func registerTasks(
 
 	cfg.EventProcessor.Targets = nil // Disable consumer creation in the event processor
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, r, ctlg)
+	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, r, ctlg, nil)
 	if err != nil {
 		return errs.Wrapf(err, "failed to create event reconciler")
 	}
 
 	cmkAuditor := auditor.New(ctx, cfg)
+	userManager := manager.NewUserManager(r, cmkAuditor)
 	certManager := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
 	tenantConfigManager := manager.NewTenantConfigManager(r, ctlg)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, cfg)
+	tagManager := manager.NewTagManager(r)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
 	keyManager := manager.NewKeyManager(
-		r, ctlg, tenantConfigManager, keyConfigManager, certManager, reconciler, cmkAuditor)
-	systemManager := manager.NewSystemManager(ctx, r, nil, reconciler, ctlg, cmkAuditor, cfg)
-	groupManager := manager.NewGroupManager(r, ctlg)
+		r, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, reconciler, cmkAuditor)
+	systemManager := manager.NewSystemManager(ctx, r, nil, reconciler, ctlg, cfg, keyConfigManager, userManager)
+	groupManager := manager.NewGroupManager(r, ctlg, userManager)
 	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
-		groupManager, cron.Client(), tenantConfigManager)
+		groupManager, userManager, cron.Client(), tenantConfigManager, cfg)
 	notificationClient := client.New(ctx, ctlg)
 
 	cron.RegisterTasks(ctx, []async.TaskHandler{
@@ -149,6 +150,7 @@ func registerTasks(
 		tasks.NewKeystorePoolFiller(keyManager, r, cfg.KeystorePool),
 		tasks.NewWorkflowProcessor(workflowManager, r),
 		tasks.NewNotificationSender(notificationClient),
+		tasks.NewWorkflowCleaner(workflowManager, r),
 	})
 
 	return nil

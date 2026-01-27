@@ -43,21 +43,9 @@ func TestOAPIValidationErrorMessage(t *testing.T) {
 		assert.Equal(t, expected, result)
 	})
 
-	t.Run("Should Unauthorize", func(t *testing.T) {
-		message := "Unauthorized access"
-		code := http.StatusUnauthorized
-		expected := cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
-			Code:    "UNAUTHORIZED",
-			Message: message,
-			Status:  code,
-		}}
-		result := apierrors.OAPIValidatorErrorMessage(message, code)
-		assert.Equal(t, expected, result)
-	})
-
 	t.Run("Should Internal Server Error", func(t *testing.T) {
 		expected := apierrors.InternalServerErrorMessage()
-		result := apierrors.OAPIValidatorErrorMessage("Unxpected Error", http.StatusForbidden)
+		result := apierrors.OAPIValidatorErrorMessage("Unxpected Error", http.StatusVariantAlsoNegotiates)
 		assert.Equal(t, expected, result)
 	})
 }

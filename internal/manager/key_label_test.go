@@ -3,7 +3,6 @@ package manager_test
 import (
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
@@ -187,9 +186,7 @@ func TestDeleteKeyLabel(t *testing.T) {
 func setupTest(t *testing.T) (*multitenancy.DB, *manager.LabelManager, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&model.Key{}, &model.KeyLabel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	r := sql.NewRepository(db)
 	labelManager := manager.NewLabelManager(r)

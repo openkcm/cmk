@@ -87,7 +87,7 @@ func (si *SystemInformation) UpdateSystemByExternalID(ctx context.Context, exter
 func (si *SystemInformation) updateSystem(ctx context.Context, system *model.System) error {
 	var typ systeminformationv1.RequestType
 
-	ctx = log.InjectSystem(ctx, system)
+	ctx = model.LogInjectSystem(ctx, system)
 
 	log.Debug(ctx, "Requesting SIS for properties")
 
@@ -124,7 +124,7 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 
 	updated := system.UpdateSystemProperties(metadata, si.systemCfg)
 	if updated {
-		log.Debug(ctx, "Update System with SIS Information", slog.Any("SIS System", *system))
+		log.Debug(ctx, "Update System with SIS Information", slog.Any("sisSystem", *system))
 
 		_, err := si.repo.Patch(ctx, system, *repo.NewQuery())
 		if err != nil {

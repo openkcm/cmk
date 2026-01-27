@@ -26,8 +26,13 @@ const (
 	PublicSchema             = "public"
 )
 
+type ctxKey string
+
+const dbCtxKey ctxKey = "transactionRepo"
+
 var (
 	ErrPatchForeign              = errors.New("failed patching foreign key entity")
+	ErrTenantOffboarding         = errors.New("tenant offboarding error")
 	ErrUnsupportedOrderDirective = errors.New("unsupported order directive")
 )
 
@@ -44,8 +49,6 @@ func NewRepository(db *multitenancy.DB) *ResourceRepository {
 }
 
 // WithTenant runs GORM actions for a specific tenant
-//
-//nolint:cyclop
 func (r *ResourceRepository) WithTenant(
 	ctx context.Context,
 	resource repo.Resource,
@@ -56,28 +59,27 @@ func (r *ResourceRepository) WithTenant(
 	if resource.IsSharedModel() {
 		schemaName = PublicSchema
 	} else {
-		tenant, err := cmkcontext.ExtractTenantID(ctx)
+		name, err := r.getSchemaFromCtx(ctx)
 		if err != nil {
-			return errs.Wrap(repo.ErrWithTenant, err)
+			return err
 		}
 
-		var existingTenant model.Tenant
-
-		err = r.db.Where(repo.IDField+" = ?", tenant).First(&existingTenant).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return repo.ErrTenantNotFound
-		} else if err != nil {
-			return errs.Wrap(repo.ErrWithTenant, err)
-		}
-
-		schemaName = existingTenant.SchemaName
+		schemaName = name
 	}
 
-	committer, ok := r.db.Statement.ConnPool.(gorm.TxCommitter)
-	if committer != nil && ok {
-		// If the connection pool is a TxCommitter, we are in a transaction.
-		// We don't need to start a new transaction.
-		reset, err := r.db.UseTenant(ctx, schemaName)
+	var db *multitenancy.DB
+
+	txDB, ok := ctx.Value(dbCtxKey).(*multitenancy.DB)
+	if ok {
+		db = txDB
+	} else {
+		db = r.db
+	}
+
+	// Inside a transaction, dont call WithTenant
+	// so a new transaction is not started
+	if txDB != nil && ok {
+		reset, err := db.UseTenant(ctx, schemaName)
 
 		defer func() {
 			if reset != nil {
@@ -92,12 +94,12 @@ func (r *ResourceRepository) WithTenant(
 			return errs.Wrap(repo.ErrWithTenant, err)
 		}
 
-		return fn(r.db)
+		return fn(db)
 	}
 
 	var err error
 
-	txErr := r.db.WithTenant(
+	txErr := db.WithTenant(
 		ctx, schemaName, func(tx *multitenancy.DB) error {
 			err = fn(tx)
 			return err
@@ -130,6 +132,45 @@ func (r *ResourceRepository) Create(ctx context.Context, resource repo.Resource)
 	)
 }
 
+// Count returns the number of records matching the query conditions.
+func (r *ResourceRepository) Count(
+	ctx context.Context,
+	resource repo.Resource,
+	query repo.Query,
+) (int, error) {
+	var count int64
+
+	err := r.WithTenant(
+		ctx, resource, func(tx *multitenancy.DB) error {
+			db := tx.Model(resource)
+
+			db, err := applyQuery(db, query)
+			if err != nil {
+				return err
+			}
+
+			res := db.Count(&count)
+			if res.Error != nil {
+				log.Error(ctx, "error counting resources", res.Error)
+				return errs.Wrap(repo.ErrGetResource, res.Error)
+			}
+
+			return nil
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return int(count), nil
+}
+
+// OffboardTenant cleans up the database by dropping the tenant-specific schema and associated tables.
+// This method is intended to be used after a tenant has been removed.
+func (r *ResourceRepository) OffboardTenant(ctx context.Context, tenantID string) error {
+	return r.db.OffboardTenant(ctx, tenantID)
+}
+
 // List retrieves records from the database based on the provided query parameters and model.
 // Result is an address
 func (r *ResourceRepository) List(
@@ -142,30 +183,36 @@ func (r *ResourceRepository) List(
 
 	err := r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
-			db := applySelectQuery(tx.Model(result), query)
-
-			db, err := applyQuery(db, query)
+			// For safety, we create 2 separate queries for count and find operations
+			dbFind := applySelectQuery(tx.Model(result), query)
+			dbFind, err := applyQuery(dbFind, query)
 			if err != nil {
 				return err
 			}
 
-			db = db.Count(&count)
-			if db.Error != nil {
-				return db.Error
+			dbCount, err := applyQuery(tx.Model(result), query)
+			if err != nil {
+				return err
+			}
+
+			dbCount = prepareCountQuery(dbCount, query)
+			dbCount = dbCount.Count(&count)
+			if dbCount.Error != nil {
+				return dbCount.Error
 			}
 
 			for _, order := range query.OrderFields {
 				switch order.Direction {
 				case repo.Desc:
-					db = db.Order(order.Field + " desc")
+					dbFind = dbFind.Order(order.Field + " desc")
 				case repo.Asc:
-					db = db.Order(order.Field + " asc")
+					dbFind = dbFind.Order(order.Field + " asc")
 				default:
 					return ErrUnsupportedOrderDirective
 				}
 			}
 
-			res := applyPagination(db, query).Find(result)
+			res := applyPagination(dbFind, query).Find(result)
 			if res.Error != nil {
 				return res.Error
 			}
@@ -276,12 +323,6 @@ func (r *ResourceRepository) Patch(
 	err := r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
 			res = tx.Model(resource)
-			if query.Association.IsValid() {
-				err := r.patchForeign(res, query.Association)
-				if err != nil {
-					return err
-				}
-			}
 
 			res = applyUpdateQuery(
 				res.Clauses(clause.Returning{}),
@@ -347,23 +388,13 @@ func (r *ResourceRepository) Set(ctx context.Context, resource repo.Resource) er
 // else if txFunc return error then transaction is rolled back.
 // Note: please dont use Goroutines inside the txFunc as this might lead to panic.
 func (r *ResourceRepository) Transaction(ctx context.Context, txFunc repo.TransactionFunc) error {
+	if _, ok := ctx.Value(dbCtxKey).(*multitenancy.DB); ok {
+		return txFunc(ctx)
+	}
 	err := r.db.Transaction(
 		func(db *multitenancy.DB) error {
-			errorChan := make(chan error)
-
-			go func() {
-				errorChan <- txFunc(
-					ctx,
-					NewRepository(db),
-				)
-			}()
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case err := <-errorChan:
-				return err
-			}
+			ctx := context.WithValue(ctx, dbCtxKey, db)
+			return txFunc(ctx)
 		},
 	)
 	if err != nil {
@@ -373,13 +404,22 @@ func (r *ResourceRepository) Transaction(ctx context.Context, txFunc repo.Transa
 	return nil
 }
 
-func (r *ResourceRepository) Migrate(ctx context.Context, schemaName string) error {
-	err := r.db.MigrateTenantModels(ctx, schemaName)
+func (r *ResourceRepository) getSchemaFromCtx(ctx context.Context) (string, error) {
+	tenant, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
-		return errs.Wrap(repo.ErrMigratingTenantModels, err)
+		return "", errs.Wrap(repo.ErrWithTenant, err)
 	}
 
-	return nil
+	var existingTenant model.Tenant
+
+	err = r.db.Where(repo.IDField+" = ?", tenant).First(&existingTenant).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", repo.ErrTenantNotFound
+	} else if err != nil {
+		return "", errs.Wrap(repo.ErrWithTenant, err)
+	}
+
+	return existingTenant.SchemaName, nil
 }
 
 func applySelectQuery(db *gorm.DB, query repo.Query) *gorm.DB {
@@ -399,6 +439,8 @@ func applySelectQuery(db *gorm.DB, query repo.Query) *gorm.DB {
 		}
 	}
 
+	db.Statement.Distinct = query.DistinctOption.Enabled
+
 	return db
 }
 
@@ -416,15 +458,6 @@ func applyUpdateQuery(db *gorm.DB, query repo.Query) *gorm.DB {
 	}
 
 	return db
-}
-
-func (r *ResourceRepository) patchForeign(db *gorm.DB, assoc repo.Association) error {
-	err := db.Association(assoc.Field).Replace(assoc.Value)
-	if err != nil {
-		return errs.Wrap(ErrPatchForeign, err)
-	}
-
-	return nil
 }
 
 // applyQuery applies the query to the database.
@@ -476,6 +509,18 @@ func applyPagination(db *gorm.DB, query repo.Query) *gorm.DB {
 	return db.Offset(query.Offset).Limit(query.Limit)
 }
 
+func prepareCountQuery(db *gorm.DB, query repo.Query) *gorm.DB {
+	if len(db.Statement.Selects) == 0 {
+		expr := "COUNT(*)"
+		if query.DistinctOption.Enabled {
+			expr = fmt.Sprintf("COUNT(DISTINCT %s)", query.DistinctOption.CountOn)
+		}
+		db.Statement.Selects = append(db.Statement.Selects, expr)
+	}
+
+	return db
+}
+
 // handleCompositeKey applies the composite key to the query.
 func handleCompositeKey(db *gorm.DB, compositeKey repo.CompositeKey) (*gorm.DB, error) {
 	tx := db.Session(&gorm.Session{NewDB: true})
@@ -494,7 +539,7 @@ func handleCompositeKey(db *gorm.DB, compositeKey repo.CompositeKey) (*gorm.DB, 
 
 func applyFieldCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool) *gorm.DB {
 	switch key.Operation {
-	case repo.GreaterThan, repo.LessThan:
+	case repo.GreaterThan, repo.LessThan, repo.NotEqual:
 		return applyCondition(tx, field, string(key.Operation), key.Value, isStrict)
 	case repo.Equal:
 		return applyFieldEqualCondition(tx, field, key, isStrict)
@@ -505,6 +550,8 @@ func applyFieldCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool)
 
 func applyFieldEqualCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool) *gorm.DB {
 	switch key.Value {
+	case repo.NotNull:
+		return tx.Where(field + " IS NOT NULL")
 	case repo.NotEmpty:
 		return tx.Where(field+" IS NOT NULL").Where(field+" != ?", "")
 	case repo.Empty:
@@ -525,7 +572,7 @@ func applyFieldEqualCondition(tx *gorm.DB, field string, key repo.Key, isStrict 
 
 func applyCondition(tx *gorm.DB, field, operator string, value any, isStrict bool) *gorm.DB {
 	if isStrict {
-		return tx.Where(fmt.Sprintf("%s %s (?)", field, operator), value)
+		return tx.Where(fmt.Sprintf("%s %s ?", field, operator), value)
 	}
 
 	return tx.Or(fmt.Sprintf("%s %s ?", field, operator), value)

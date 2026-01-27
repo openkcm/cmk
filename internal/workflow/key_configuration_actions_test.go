@@ -37,7 +37,7 @@ func TestWorkflowKeyConfigurationActionsDelete(t *testing.T) {
 	tests := []struct {
 		name          string
 		workflow      model.Workflow
-		actorID       uuid.UUID
+		actorID       string
 		transition    workflow.Transition
 		expectErr     bool
 		errMessage    string
@@ -64,9 +64,20 @@ func TestWorkflowKeyConfigurationActionsDelete(t *testing.T) {
 			err := r.Create(ctx, &tt.workflow)
 			assert.NoError(t, err)
 
-			keyConf := &model.KeyConfiguration{ID: keyConfigID01, AdminGroup: *testutils.NewGroup(func(_ *model.Group) {})}
+			keyConf := &model.KeyConfiguration{
+				ID: keyConfigID01, AdminGroup: *testutils.NewGroup(func(_ *model.Group) {}),
+				CreatorID: uuid.NewString(),
+			}
 			err = r.Create(ctx, keyConf)
 			assert.NoError(t, err)
+
+			ctx := testutils.InjectClientDataIntoContext(
+				ctx,
+				uuid.NewString(),
+				[]string{
+					keyConf.AdminGroup.IAMIdentifier,
+				},
+			)
 
 			// Act
 			lifecycle := workflow.NewLifecycle(&tt.workflow, mgr.Keys, mgr.KeyConfig, mgr.System, r, tt.actorID, 2)

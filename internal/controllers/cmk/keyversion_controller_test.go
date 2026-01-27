@@ -8,13 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -25,20 +27,12 @@ import (
 func startAPIKeyVersion(t *testing.T, plugins ...testutils.MockPlugin) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Key{},
-			&model.KeyVersion{},
-			&model.System{},
-			&model.KeyConfiguration{},
-			&model.TenantConfig{},
-			&model.ImportParams{},
-			&model.Certificate{},
-			&model.KeystoreConfiguration{},
-		},
-	})
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
-	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{Plugins: plugins}), tenants[0]
+	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Plugins: plugins,
+		Config:  config.Config{Database: dbCfg},
+	}), tenants[0]
 }
 
 func TestKeyVersionController_GetKeyVersions(t *testing.T) {
@@ -322,7 +316,7 @@ func TestKeyVersionController_CreateKeyVersion(t *testing.T) {
 			kv.KeyID = key3.ID
 			kv.IsPrimary = true
 		}),
-		ksConfig,
+		keystore,
 		keystoreDefaultCert,
 	)
 
@@ -425,7 +419,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 		r,
 		key,
 		keyConfig,
-		ksConfig,
+		keystore,
 		keystoreDefaultCert,
 	)
 
@@ -461,6 +455,11 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 			Endpoint: fmt.Sprintf("/keys/%s", key.ID),
 			Tenant:   tenant,
 			Body:     testutils.WithString(t, `{"enabled": false}`),
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -469,6 +468,11 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: fmt.Sprintf("/keys/%s/versions", key.ID),
 			Tenant:   tenant,
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -483,6 +487,11 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 			Endpoint: fmt.Sprintf("/keys/%s", key.ID),
 			Tenant:   tenant,
 			Body:     testutils.WithString(t, `{"enabled": true}`),
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -491,6 +500,11 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: fmt.Sprintf("/keys/%s/versions", key.ID),
 			Tenant:   tenant,
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 

@@ -9,23 +9,23 @@ import (
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
 type Manager struct {
-	Keys                 *KeyManager
-	KeyVersions          *KeyVersionManager
-	TenantConfigs        *TenantConfigManager
-	System               System
-	KeyConfig            KeyConfigurationAPI
-	KeyConfigTags        KeyConfigurationTag
-	KeyConfigurationTags KeyConfigurationTag
-	Labels               Label
-	Workflow             Workflow
-	Certificates         *CertificateManager
-	Group                *GroupManager
-	Authz                *AuthzManager
+	Keys          *KeyManager
+	KeyVersions   *KeyVersionManager
+	TenantConfigs *TenantConfigManager
+	System        System
+	KeyConfig     KeyConfigurationAPI
+	Tags          Tags
+	Labels        Label
+	Workflow      Workflow
+	Certificates  *CertificateManager
+	Group         *GroupManager
+	User          User
 
 	Tenant Tenant
 
@@ -38,19 +38,39 @@ func New(
 	ctx context.Context,
 	repo repo.Repo,
 	config *config.Config,
-	clientsFactory *clients.Factory,
+	clientsFactory clients.Factory,
 	catalog *plugincatalog.Catalog,
 	reconciler *eventprocessor.CryptoReconciler,
 	asyncClient async.Client,
+	migrator db.Migrator,
 ) *Manager {
 	cmkAuditor := auditor.New(ctx, config)
 	tenantConfigManager := NewTenantConfigManager(repo, catalog)
+	userManager := NewUserManager(repo, cmkAuditor)
 	certManager := NewCertificateManager(ctx, repo, catalog, &config.Certificates)
-	keyConfigManager := NewKeyConfigManager(repo, certManager, config)
-	keyManager := NewKeyManager(repo, catalog, tenantConfigManager, keyConfigManager, certManager, reconciler, cmkAuditor)
-	systemManager := NewSystemManager(ctx, repo, clientsFactory, reconciler, catalog, cmkAuditor, config)
-	authzManager := NewAuthzManager(ctx, repo)
-	groupManager := NewGroupManager(repo, catalog)
+	tagManager := NewTagManager(repo)
+	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, config)
+	keyManager := NewKeyManager(
+		repo,
+		catalog,
+		tenantConfigManager,
+		keyConfigManager,
+		userManager,
+		certManager,
+		reconciler,
+		cmkAuditor,
+	)
+	systemManager := NewSystemManager(
+		ctx,
+		repo,
+		clientsFactory,
+		reconciler,
+		catalog,
+		config,
+		keyConfigManager,
+		userManager,
+	)
+	groupManager := NewGroupManager(repo, catalog, userManager)
 
 	return &Manager{
 		Keys:          keyManager,
@@ -58,15 +78,15 @@ func New(
 		TenantConfigs: tenantConfigManager,
 		System:        systemManager,
 		KeyConfig:     keyConfigManager,
-		KeyConfigTags: NewKeyConfigurationTagManager(repo),
+		Tags:          NewTagManager(repo),
 		Labels:        NewLabelManager(repo),
-		Workflow: NewWorkflowManager(repo, keyManager, keyConfigManager, systemManager, groupManager,
-			asyncClient, tenantConfigManager),
+		Workflow: NewWorkflowManager(repo, keyManager, keyConfigManager, systemManager, groupManager, userManager,
+			asyncClient, tenantConfigManager, config),
 		Certificates: certManager,
 		Group:        groupManager,
-		Authz:        authzManager,
+		User:         userManager,
 
-		Tenant: NewTenantManager(repo),
+		Tenant: NewTenantManager(repo, systemManager, keyManager, userManager, cmkAuditor, migrator),
 
 		Catalog:    catalog,
 		Reconciler: reconciler,

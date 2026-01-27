@@ -23,7 +23,7 @@ func TestToAPI(t *testing.T) {
 	}
 
 	keyStore := manager.TenantKeystores{
-		Default: model.DefaultKeystore{},
+		Default: model.KeystoreConfig{},
 		HYOK: manager.HYOKKeystore{
 			Provider: providers,
 			Allow:    true,

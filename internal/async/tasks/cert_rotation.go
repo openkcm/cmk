@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"errors"
+	"log/slog"
 
 	"github.com/hibiken/asynq"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type CertUpdater interface {
@@ -25,6 +25,7 @@ type CertUpdater interface {
 type CertRotator struct {
 	certClient CertUpdater
 	repo       repo.Repo
+	processor  *BatchProcessor
 }
 
 func NewCertRotator(
@@ -34,38 +35,37 @@ func NewCertRotator(
 	return &CertRotator{
 		certClient: certClient,
 		repo:       repo,
+		processor:  NewBatchProcessor(repo),
 	}
 }
 
-var (
-	ErrDecodingPK      = errors.New("error decoding private key")
-	ErrParsingPK       = errors.New("error parsing private key")
-	ErrRotatingCert    = errors.New("error rotating certificate")
-	ErrUpdatingOldCert = errors.New("error updating old certificate")
-)
+var ErrRotatingCert = errors.New("error rotating certificate")
 
-func (s *CertRotator) ProcessTask(ctx context.Context, _ *asynq.Task) error {
-	var tenants []*model.Tenant
+func (s *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	log.Info(ctx, "Starting Certificate Rotation Task")
 
-	_, err := s.repo.List(ctx, model.Tenant{}, &tenants, *repo.NewQuery())
+	err := s.processor.ProcessTenantsInBatch(ctx, "Certificate Rotation", task,
+		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
+			log.Debug(tenantCtx, "Rotating Certificates for tenant",
+				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
+
+			certs, _, certErr := s.certClient.GetCertificatesForRotation(tenantCtx)
+			if certErr != nil {
+				return s.handleErrorTask(tenantCtx, certErr)
+			}
+
+			for _, cert := range certs {
+				certErr = s.handleCertificate(tenantCtx, cert, tenant.ID)
+				if certErr != nil {
+					return s.handleErrorTask(tenantCtx, certErr)
+				}
+			}
+			log.Debug(tenantCtx, "Certificates for tenant are up-to-date", slog.String("schemaName", tenant.SchemaName))
+			return nil
+		},
+	)
 	if err != nil {
 		return s.handleErrorTenants(ctx, err)
-	}
-
-	for _, tenant := range tenants {
-		ctx := log.InjectTenant(cmkcontext.CreateTenantContext(ctx, tenant.ID), tenant)
-
-		certs, _, err := s.certClient.GetCertificatesForRotation(ctx)
-		if err != nil {
-			return s.handleErrorTask(ctx, err)
-		}
-
-		for _, cert := range certs {
-			err = s.handleCertificate(ctx, cert, tenant.ID)
-			if err != nil {
-				return s.handleErrorTask(ctx, err)
-			}
-		}
 	}
 
 	return nil
@@ -94,7 +94,7 @@ func (s *CertRotator) handleCertificate(ctx context.Context, cert *model.Certifi
 }
 
 func (s *CertRotator) handleErrorTenants(ctx context.Context, err error) error {
-	log.Error(ctx, "Getting Tenants on Cert Refresh", err)
+	log.Error(ctx, "Error during certificate rotation batch processing", err)
 	return errs.Wrap(ErrRunningTask, err)
 }
 

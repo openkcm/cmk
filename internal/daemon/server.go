@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"syscall"
@@ -14,9 +13,12 @@ import (
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 	"github.com/samber/oops"
 
+	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
+
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/controllers/cmk"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/errs"
@@ -27,20 +29,18 @@ import (
 )
 
 const (
-	ReadHeaderTimeout = 5 * time.Second
-	ReadTimeout       = 10 * time.Second
-	WriteTimeout      = 10 * time.Second
-	IdleTimeout       = 120 * time.Second
-	ServerLogDomain   = "server daemon"
-
-	APIVersionedNamespace = "/cmk/v1"
-	TenantPathParamName   = "tenant"
+	ReadHeaderTimeout    = 5 * time.Second
+	ReadTimeout          = 10 * time.Second
+	WriteTimeout         = 10 * time.Second
+	IdleTimeout          = 120 * time.Second
+	ServerLogDomain      = "server daemon"
+	AuthzRefreshInterval = 120 * time.Second
 )
 
 type CmkServer struct {
 	cfg              *config.Config
 	controller       *cmk.APIController
-	clientsFactory   *clients.Factory
+	clientsFactory   clients.Factory
 	server           *http.Server
 	signingKeyLoader *loader.Loader
 }
@@ -53,20 +53,23 @@ type Server interface {
 func NewCMKServer(
 	ctx context.Context,
 	cfg *config.Config,
+	dbCon *multitenancy.DB,
 ) (*CmkServer, error) {
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	if err != nil {
 		log.Error(ctx, "error connecting to registry service gRPC server", err)
 	}
 
-	dbCon, err := db.StartDB(ctx, cfg.Database, cfg.Provisioning, cfg.DatabaseReplicas)
-	if err != nil {
-		return nil, oops.In(ServerLogDomain).Wrapf(err, "starting db")
-	}
-
 	repo := sql.NewRepository(dbCon)
 
-	controller := cmk.NewAPIController(ctx, repo, *cfg, clientsFactory)
+	migrator, err := db.NewMigrator(repo, cfg)
+	if err != nil {
+		return nil, oops.In(ServerLogDomain).Wrapf(err, "creating db migrator")
+	}
+
+	controller := cmk.NewAPIController(ctx, repo, cfg, clientsFactory, migrator)
+
+	controller.AuthzEngine.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
 
 	memoryStorage := keyvalue.NewMemoryStorage[string, []byte]()
 
@@ -184,14 +187,15 @@ func createHTTPServer(
 			},
 		),
 		cmkapi.StdHTTPServerOptions{
-			BaseURL:          fmt.Sprintf("%s/{%s}", APIVersionedNamespace, TenantPathParamName),
-			BaseRouter:       http.NewServeMux(),
+			BaseURL:          constants.BasePath,
+			BaseRouter:       NewServeMux(constants.BasePath),
 			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
-			Middlewares: []cmkapi.MiddlewareFunc{
+			Middlewares: []cmkapi.MiddlewareFunc{ // Middlewares are applied from last to first
+				middleware.AuthzMiddleware(ctr),
+				middleware.ClientDataMiddleware(signingKeyStorage, cfg.ClientData.AuthContextFields, ctr.Manager.User),
 				middleware.OAPIMiddleware(swagger),
 				middleware.LoggingMiddleware(),
 				middleware.PanicRecoveryMiddleware(),
-				middleware.ClientDataMiddleware(&cfg.FeatureGates, signingKeyStorage, cfg.ClientData.AuthContextFields),
 				middleware.InjectMultiTenancy(),
 				middleware.InjectRequestID(),
 			},

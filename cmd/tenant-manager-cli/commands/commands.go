@@ -1,9 +1,16 @@
 package commands
 
 import (
+	"context"
+
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
+	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/clients"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -16,13 +23,65 @@ type CommandFactory struct {
 	tm    *manager.TenantManager
 }
 
-func NewCommandFactory(dbCon *multitenancy.DB, catalog *plugincatalog.Catalog) *CommandFactory {
-	repository := sql.NewRepository(dbCon)
+func NewCommandFactory(
+	ctx context.Context,
+	cfg *config.Config,
+	dbCon *multitenancy.DB,
+	ctlg *plugincatalog.Catalog,
+) (*CommandFactory, error) {
+	r := sql.NewRepository(dbCon)
+
+	cmkAuditor := auditor.New(ctx, cfg)
+
+	clientsFactory, err := clients.NewFactory(cfg.Services)
+	if err != nil {
+		return nil, err
+	}
+
+	reconciler, err := eventprocessor.NewCryptoReconciler(
+		ctx, cfg, r,
+		ctlg, clientsFactory,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	um := manager.NewUserManager(r, cmkAuditor)
+	tagm := manager.NewTagManager(r)
+	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
+
+	sys := manager.NewSystemManager(
+		ctx,
+		r,
+		clientsFactory,
+		reconciler,
+		ctlg,
+		cfg,
+		kcm,
+		um,
+	)
+
+	km := manager.NewKeyManager(
+		r,
+		ctlg,
+		manager.NewTenantConfigManager(r, ctlg),
+		kcm,
+		um,
+		cm,
+		reconciler,
+		cmkAuditor,
+	)
+
+	migrator, err := db.NewMigrator(r, cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	return &CommandFactory{
 		dbCon: dbCon,
-		r:     repository,
-		gm:    manager.NewGroupManager(repository, catalog),
-		tm:    manager.NewTenantManager(repository),
-	}
+		r:     r,
+		gm:    manager.NewGroupManager(r, ctlg, um),
+		tm:    manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator),
+	}, nil
 }

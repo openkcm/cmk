@@ -15,6 +15,10 @@ type Event struct {
 	Type       string            `gorm:"type:varchar(255);not null"`
 	Data       json.RawMessage   `gorm:"type:jsonb;not null"`
 	Status     orbital.JobStatus `gorm:"type:varchar(255);not null"`
+
+	// PreviousItemStatus represents the state an item was before the event was sent
+	// This is used for cancel actions to recover an item to it's previous state
+	PreviousItemStatus string `gorm:"type:varchar(255)"`
 }
 
 // TableName returns the table name for Key

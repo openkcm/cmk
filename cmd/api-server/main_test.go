@@ -3,7 +3,6 @@ package main_test
 import (
 	"context"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -19,7 +18,7 @@ import (
 
 func buildCfg(t *testing.T) *config.Config {
 	t.Helper()
-	dbConf := testutils.NewIsolatedDB(t, testutils.TestDB)
+	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	contextModels := &config.ContextModels{
 		System: config.System{
@@ -47,7 +46,7 @@ func buildCfg(t *testing.T) *config.Config {
 			Address: "localhost:8082",
 		},
 
-		Database: dbConf,
+		Database: dbCfg,
 		BaseConfig: commoncfg.BaseConfig{
 			Logger: commoncfg.Logger{
 				Format: "json",
@@ -135,96 +134,13 @@ func TestRun(t *testing.T) {
 	})
 }
 
-func TestRunFunctionWithSigHandling(t *testing.T) {
-	t.Run("Should exitCode 1 on config not found", func(t *testing.T) {
-		exitCode := apiServer.RunFunctionWithSigHandling(func(_ context.Context, _ *config.Config) error {
-			return nil
-		})
-		require.Equal(t, 1, exitCode)
-	})
-
-	tests := []struct {
-		name     string
-		cfg      *config.Config
-		exitCode int
-	}{
-		{
-			name:     "should exitCode 0 on successful run",
-			cfg:      buildCfg(t),
-			exitCode: 0,
-		},
-		{
-			name: "should exitCode 1 on missing certificate validity",
-			cfg: &config.Config{
-				HTTP: config.HTTPServer{
-					Address: "localhost:8082",
-				},
-
-				Database: config.Database{
-					Host: commoncfg.SourceRef{
-						Source: commoncfg.EmbeddedSourceValue,
-						Value:  "localhost",
-					},
-					User: commoncfg.SourceRef{
-						Source: commoncfg.EmbeddedSourceValue,
-						Value:  "postgres",
-					},
-					Secret: commoncfg.SourceRef{
-						Source: commoncfg.EmbeddedSourceValue,
-						Value:  "secret",
-					},
-					Name: "cmk",
-					Port: "5433",
-				},
-				BaseConfig: commoncfg.BaseConfig{
-					Logger: commoncfg.Logger{
-						Format: "json",
-						Level:  "info",
-					},
-				},
-			},
-			exitCode: 1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			filename := "config.yaml"
-			f, err := os.Create(filename)
-			require.NoError(t, err)
-
-			bytes, err := yaml.Marshal(tt.cfg)
-			require.NoError(t, err)
-
-			_, err = f.Write(bytes)
-			require.NoError(t, err)
-
-			defer f.Close()
-			defer os.Remove(filename)
-
-			exitCode := apiServer.RunFunctionWithSigHandling(func(_ context.Context, _ *config.Config) error {
-				return nil
-			})
-			require.Equal(t, tt.exitCode, exitCode)
-		})
-	}
-}
-
 func TestMonitorKeystorePoolSize(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	cfg := config.Config{
-		KeystorePool: config.KeystorePool{
-			Interval: 100 * time.Millisecond,
-		},
-		Database: config.Database{
-			Host:   commoncfg.SourceRef{Source: "embedded", Value: "localhost"},
-			User:   commoncfg.SourceRef{Source: "embedded", Value: "postgres"},
-			Secret: commoncfg.SourceRef{Source: "embedded", Value: "secret"},
-			Name:   "cmk",
-			Port:   "5433",
-		},
+	cfg := buildCfg(t)
+	cfg.KeystorePool = config.KeystorePool{
+		Interval: 100 * time.Millisecond,
 	}
 
 	// Run in goroutine, should exit after context timeout

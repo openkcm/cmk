@@ -12,26 +12,30 @@ import (
 	idmv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type GroupManager struct {
-	repo    repo.Repo
-	catalog *plugincatalog.Catalog
+	repo        repo.Repo
+	catalog     *plugincatalog.Catalog
+	userManager User
 }
 
 func NewGroupManager(
 	repository repo.Repo,
 	catalog *plugincatalog.Catalog,
+	userManager User,
 ) *GroupManager {
 	return &GroupManager{
-		repo:    repository,
-		catalog: catalog,
+		repo:        repository,
+		catalog:     catalog,
+		userManager: userManager,
 	}
 }
 
@@ -41,11 +45,20 @@ type GroupIAMExistence struct {
 }
 
 func (m *GroupManager) GetGroups(ctx context.Context, skip int, top int) ([]*model.Group, int, error) {
-	var groups []*model.Group
+	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.ActionRead, authz.ResourceTypeUserGroup)
+	if err != nil {
+		return []*model.Group{}, 0, err
+	}
 
-	count, err := m.repo.List(ctx, model.Group{}, &groups, *repo.NewQuery().
-		SetLimit(top).
-		SetOffset(skip),
+	query := repo.NewQuery().SetLimit(top).SetOffset(skip)
+
+	if isGroupFiltered {
+		m.applyIAMGroupFilter(ctx, query)
+	}
+
+	var groups []*model.Group
+	count, err := m.repo.List(
+		ctx, model.Group{}, &groups, *query,
 	)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrListGroups, err)
@@ -82,8 +95,11 @@ func (m *GroupManager) DeleteGroupByID(ctx context.Context, id uuid.UUID) error 
 		ctx,
 		keyConfig,
 		*repo.NewQuery().
-			Where(repo.NewCompositeKeyGroup(
-				repo.NewCompositeKey().Where(repo.AdminGroupIDField, id))),
+			Where(
+				repo.NewCompositeKeyGroup(
+					repo.NewCompositeKey().Where(repo.AdminGroupIDField, id),
+				),
+			),
 	)
 
 	if exist {
@@ -103,9 +119,18 @@ func (m *GroupManager) DeleteGroupByID(ctx context.Context, id uuid.UUID) error 
 }
 
 func (m *GroupManager) GetGroupByID(ctx context.Context, id uuid.UUID) (*model.Group, error) {
-	group := &model.Group{ID: id}
+	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.ActionRead, authz.ResourceTypeUserGroup)
+	if err != nil {
+		return nil, err
+	}
 
-	_, err := m.repo.First(ctx, group, *repo.NewQuery())
+	query := repo.NewQuery()
+	if isGroupFiltered {
+		m.applyIAMGroupFilter(ctx, query)
+	}
+
+	group := &model.Group{ID: id}
+	_, err = m.repo.First(ctx, group, *query)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetGroups, err)
 	}
@@ -123,27 +148,24 @@ func (m *GroupManager) UpdateGroup(
 		return nil, err
 	}
 
-	if !ptr.IsValidStrPtr(patchGroup.Name) {
-		return nil, errs.Wrap(ErrNameCannotBeEmpty, nil)
-	}
-
 	if m.isMandatoryGroup(group) || m.isReservedName(patchGroup) {
-		return nil, ErrInvalidGroupRename
+		return nil, ErrInvalidGroupUpdate
 	}
 
 	if patchGroup.Name != nil {
-		group.Name = *patchGroup.Name
-
-		tenantID, err := cmkcontext.ExtractTenantID(ctx)
-		if err != nil {
-			return nil, err
+		if *patchGroup.Name == "" {
+			return nil, errs.Wrap(ErrNameCannotBeEmpty, nil)
 		}
 
-		group.IAMIdentifier = model.NewIAMIdentifier(group.Name, tenantID)
+		group.Name = *patchGroup.Name
 	}
 
 	if patchGroup.Description != nil {
 		group.Description = *patchGroup.Description
+	}
+
+	if patchGroup.IAMIdentifier != nil {
+		group.IAMIdentifier = *patchGroup.IAMIdentifier
 	}
 
 	_, err = m.repo.Patch(ctx, group, *repo.NewQuery())
@@ -165,37 +187,43 @@ func (m *GroupManager) CreateDefaultGroups(ctx context.Context) error {
 
 	iamAuditor := model.NewIAMIdentifier(constants.TenantAuditorGroup, tenantID)
 
-	err = m.repo.Transaction(ctx, func(ctx context.Context, _ repo.Repo) error {
-		_, err := m.CreateGroup(ctx, &model.Group{
-			ID:            uuid.New(),
-			Name:          constants.TenantAdminGroup,
-			Role:          constants.TenantAdminRole,
-			IAMIdentifier: iamAdmin,
-		})
-		if err != nil {
-			if errors.Is(err, repo.ErrUniqueConstraint) {
-				err = errs.Wrap(ErrOnboardingInProgress, err)
+	err = m.repo.Transaction(
+		ctx, func(ctx context.Context) error {
+			_, err := m.CreateGroup(
+				ctx, &model.Group{
+					ID:            uuid.New(),
+					Name:          constants.TenantAdminGroup,
+					Role:          constants.TenantAdminRole,
+					IAMIdentifier: iamAdmin,
+				},
+			)
+			if err != nil {
+				if errors.Is(err, repo.ErrUniqueConstraint) {
+					err = errs.Wrap(ErrOnboardingInProgress, err)
+				}
+
+				return errs.Wrap(ErrCreatingGroups, err)
 			}
 
-			return errs.Wrap(ErrCreatingGroups, err)
-		}
+			_, err = m.CreateGroup(
+				ctx, &model.Group{
+					ID:            uuid.New(),
+					Name:          constants.TenantAuditorGroup,
+					Role:          constants.TenantAuditorRole,
+					IAMIdentifier: iamAuditor,
+				},
+			)
+			if err != nil {
+				if errors.Is(err, repo.ErrUniqueConstraint) {
+					err = errs.Wrap(ErrOnboardingInProgress, err)
+				}
 
-		_, err = m.CreateGroup(ctx, &model.Group{
-			ID:            uuid.New(),
-			Name:          constants.TenantAuditorGroup,
-			Role:          constants.TenantAuditorRole,
-			IAMIdentifier: iamAuditor,
-		})
-		if err != nil {
-			if errors.Is(err, repo.ErrUniqueConstraint) {
-				err = errs.Wrap(ErrOnboardingInProgress, err)
+				return errs.Wrap(ErrCreatingGroups, err)
 			}
 
-			return errs.Wrap(ErrCreatingGroups, err)
-		}
-
-		return nil
-	})
+			return nil
+		},
+	)
 
 	return err
 }
@@ -237,6 +265,11 @@ func (m *GroupManager) CheckIAMExistenceOfGroups(
 	ctx context.Context,
 	iamIdentifiers []string,
 ) ([]GroupIAMExistence, error) {
+	authCtx, err := cmkcontext.ExtractClientDataAuthContext(ctx)
+	if err != nil {
+		return nil, errs.Wrap(ErrAutoAssignApprover, err)
+	}
+
 	client, err := m.GetIdentityManagementPlugin()
 	if err != nil {
 		return nil, err
@@ -245,17 +278,20 @@ func (m *GroupManager) CheckIAMExistenceOfGroups(
 	result := make([]GroupIAMExistence, 0, len(iamIdentifiers))
 	for _, name := range iamIdentifiers {
 		request := &idmv1.GetGroupRequest{
-			GroupName: name,
+			GroupName:   name,
+			AuthContext: &idmv1.AuthContext{Data: authCtx},
 		}
 
 		_, err := client.GetGroup(ctx, request)
 		if err != nil {
 			st, ok := status.FromError(err)
 			if ok && st.Code() == codes.NotFound {
-				result = append(result, GroupIAMExistence{
-					IAMIdentifier: name,
-					Exists:        false,
-				})
+				result = append(
+					result, GroupIAMExistence{
+						IAMIdentifier: name,
+						Exists:        false,
+					},
+				)
 
 				continue
 			}
@@ -263,32 +299,15 @@ func (m *GroupManager) CheckIAMExistenceOfGroups(
 			return nil, errs.Wrap(ErrCheckIAMExistenceOfGroups, err)
 		}
 
-		result = append(result, GroupIAMExistence{
-			IAMIdentifier: name,
-			Exists:        true,
-		})
+		result = append(
+			result, GroupIAMExistence{
+				IAMIdentifier: name,
+				Exists:        true,
+			},
+		)
 	}
 
 	return result, nil
-}
-
-// CheckTenantHasAnyIAMGroups checks if any of the provided IAM group identifiers exist
-// in the database.
-func (m *GroupManager) CheckTenantHasAnyIAMGroups(
-	ctx context.Context,
-	iamIdentifiers []constants.UserGroup,
-) (bool, error) {
-	ck := repo.NewCompositeKey().Where(repo.IAMIdField, iamIdentifiers)
-
-	var groups []model.Group
-
-	count, err := m.repo.List(ctx, &model.Group{}, &groups,
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).SetLimit(0))
-	if err != nil {
-		return false, errs.Wrap(ErrCheckTenantHasIAMGroups, err)
-	}
-
-	return count > 0, nil
 }
 
 func (m *GroupManager) isMandatoryGroup(group *model.Group) bool {
@@ -310,4 +329,18 @@ func (m *GroupManager) isSupportedRole(group *model.Group) bool {
 	default:
 		return false
 	}
+}
+
+// applyIAMGroupFilter adds IAM filtering to query if user is not TenantAdmin.
+// SystemUser bypass filtering completely.
+// TenantAdmins see all groups, others only see their own groups.
+func (m *GroupManager) applyIAMGroupFilter(ctx context.Context, query *repo.Query) {
+	iamIdentifiers, err := cmkcontext.ExtractClientDataGroupsString(ctx)
+	if err != nil {
+		log.Error(ctx, "failed to extract client data groups: %v", err)
+	}
+
+	// Non-admins only see their own groups
+	ck := repo.NewCompositeKey().Where(repo.IAMIdField, iamIdentifiers)
+	*query = *query.Where(repo.NewCompositeKeyGroup(ck))
 }

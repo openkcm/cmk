@@ -21,6 +21,10 @@ apiServer:
   # Enable the API-server deployment.
   deploy: true
 
+  # This is for setting up pod topology spread constraints, more information can be found here:
+  # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  topologySpreadConstraints: []
+
 # tenant-manager configuration
 tenantManager:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
@@ -52,6 +56,10 @@ tenantManager:
         targetPort: http
         name: http
 
+  # This is for setting up pod topology spread constraints, more information can be found here:
+  # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  topologySpreadConstraints: []
+
 # tenant-manager-cli configuration
 tenantManagerCLI:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
@@ -74,6 +82,10 @@ tenantManagerCLI:
     # Enable the tenant-manager-cli service
     enabled: false
 
+  # This is for setting up pod topology spread constraints, more information can be found here:
+  # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  topologySpreadConstraints: []
+
 # task scheduler configuration
 taskScheduler:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
@@ -91,6 +103,10 @@ taskScheduler:
   # Enable the task scheduler deployment.
   deploy: false
 
+  # This is for setting up pod topology spread constraints, more information can be found here:
+  # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  topologySpreadConstraints: []
+
 # task worker configuration
 taskWorker:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
@@ -107,6 +123,36 @@ taskWorker:
 
   # Enable the task worker deployment.
   deploy: false
+
+  # This is for setting up pod topology spread constraints, more information can be found here:
+  # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  topologySpreadConstraints: []
+
+# task-cli configuration
+taskCLI:
+  # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+  image:
+    # Setting the command
+    # +docs:property
+    command: ""
+
+    # Setting the arguments for the container
+    # +docs:property
+    args: []
+    #  - --graceful-shutdown=2
+    #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
+
+  # Enable the task-cli deployment.
+  deploy: false
+
+  # task-cli service configuration
+  service:
+    # Enable the task-cli service
+    enabled: false
+
+  # This is for setting up pod topology spread constraints, more information can be found here:
+  # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  topologySpreadConstraints: []
 
 # Override the "name" value, which is used to annotate some of
 # the resources that are created by this Chart (using "app.kubernetes.io/name").
@@ -130,7 +176,7 @@ replicaCount: 1
 image:
   # The container registry to pull the image from.
   # For example:
-  #   registry: kms.common.repositories.cloud.sap
+  #   registry:  kms.common.repositories.cloud.example.com
   #   repository: cmk
   # +docs:property
   registry: ""
@@ -231,6 +277,10 @@ service:
       protocol: TCP
       targetPort: http
       name: http
+    - port: 8888
+      protocol: TCP
+      targetPort: http-status
+      name: http-status
 
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
@@ -257,7 +307,7 @@ readinessProbe:
     path: /probe/readiness
     port: http-status
     scheme: HTTP
-  failureThreshold: 1
+  failureThreshold: 60
   periodSeconds: 10
 
 # This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
@@ -558,6 +608,13 @@ config:
       value: secret
     name: name
     port: 1234
+    migrator:
+      shared:
+        schema: /etc/cmk/migrations/shared/schema
+        data: /etc/cmk/migrations/shared/data
+      tenant:
+        schema: /etc/cmk/migrations/tenant/schema
+        data: /etc/cmk/migrations/tenant/data
 
   # Scheduler configuration
   scheduler:
@@ -748,6 +805,11 @@ config:
   # size: 5
   # Interval to report the size of the keystore pool
   # interval: 10m
+
+  landscape:
+    # name: one of Local, Staging, Canary, Production
+    # uiBaseUrl: http://localhost:8086/#
+    # Note: The URL must have # at the end to properly redirect to the UI and not ending with slash /
 
   # Contains the configurable context properties
   # Currently used to set the configurable system where optional are added to system_properties table

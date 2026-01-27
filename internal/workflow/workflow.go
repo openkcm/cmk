@@ -14,12 +14,14 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 )
 
-var SystemUserID = uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")
+var SystemUserUUID = uuid.Max
+
+var SystemUserID = SystemUserUUID.String()
 
 type Lifecycle struct {
 	Workflow                *model.Workflow
 	StateMachine            *fsm.FSM
-	ActorID                 uuid.UUID
+	ActorID                 string
 	Repository              repo.Repo
 	KeyActions              KeyActions
 	KeyConfigurationActions KeyConfigurationActions
@@ -55,7 +57,7 @@ func NewLifecycle(workflow *model.Workflow,
 	keyConfigurationActions KeyConfigurationActions,
 	systemActions SystemActions,
 	repo repo.Repo,
-	actorID uuid.UUID,
+	actorID string,
 	minimumApproverCount int,
 ) *Lifecycle {
 	stateMachine := fsm.NewFSM(
@@ -190,6 +192,68 @@ func (l *Lifecycle) Expire(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// AvailableBusinessUserTransitions returns the list of transitions
+// that can be performed by business users (i.e., non-automated transitions)
+// after the creation of the workflow.
+func (l *Lifecycle) AvailableBusinessUserTransitions(ctx context.Context) []Transition {
+	// Get available transitions from the state machine to validate against
+	stateMachineAvailableTransitions := l.StateMachine.AvailableTransitions()
+
+	if len(stateMachineAvailableTransitions) == 0 {
+		return []Transition{}
+	}
+
+	stateMachineAvailableTransitionsMap := make(map[Transition]struct{})
+	for _, t := range stateMachineAvailableTransitions {
+		stateMachineAvailableTransitionsMap[Transition(t)] = struct{}{}
+	}
+
+	var transitions []Transition
+
+	isInitiator, err := l.validateUserIsInitiator(ctx)
+	switch {
+	case err != nil:
+		log.Error(ctx, "failed to check if user is initiator while getting available transitions", err)
+	case isInitiator:
+		transitions = append(transitions, l.getInitiatorAvailableActions(ctx)...)
+	default:
+		transitions = append(transitions, l.getApproverAvailableActions(ctx)...)
+	}
+
+	for _, t := range transitions {
+		if _, ok := stateMachineAvailableTransitionsMap[t]; !ok {
+			msg := fmt.Sprintf("inconsistent state: transition %s is not valid in state %s", t, l.Workflow.State)
+			log.Error(ctx, msg, nil)
+			break
+		}
+	}
+
+	return transitions
+}
+
+func (l *Lifecycle) GetApprovalSummary(ctx context.Context) (*ApprovalSummary, error) {
+	allApprovers, err := l.getAllApprovers(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var counts voteCounts
+
+	for _, approver := range allApprovers {
+		l.countExistingVote(&counts, approver)
+	}
+
+	summary := &ApprovalSummary{
+		Mechanism:   ApprovalMechanismTargetScore, // Currently, only target score mechanism is supported
+		Approvals:   counts.approvals,
+		Rejections:  counts.rejections,
+		Pending:     counts.pending,
+		TargetScore: l.MinimumApproverCount,
+	}
+
+	return summary, nil
 }
 
 // ValidateActor validates the actor of the event
@@ -372,6 +436,20 @@ type voteCounts struct {
 	pending    int
 }
 
+type ApprovalMechanism string
+
+const (
+	ApprovalMechanismTargetScore ApprovalMechanism = "TARGET_SCORE"
+)
+
+type ApprovalSummary struct {
+	Mechanism   ApprovalMechanism
+	Approvals   int
+	Rejections  int
+	Pending     int
+	TargetScore int
+}
+
 func (l *Lifecycle) calculateVoteCounts(
 	allApprovers []*model.WorkflowApprover,
 	transition Transition,
@@ -494,4 +572,41 @@ func (l *Lifecycle) executeWorkflowAction(ctx context.Context) error {
 	}
 
 	return handler(ctx)
+}
+
+func (l *Lifecycle) getInitiatorAvailableActions(_ context.Context) []Transition {
+	var transitions []Transition
+
+	switch l.Workflow.State {
+	case StateWaitApproval.String():
+		transitions = append(transitions, TransitionRevoke)
+	case StateWaitConfirmation.String():
+		transitions = append(transitions, TransitionRevoke, TransitionConfirm)
+	}
+
+	return transitions
+}
+
+func (l *Lifecycle) getApproverAvailableActions(ctx context.Context) []Transition {
+	var transitions []Transition
+
+	// Approvers can only take actions in the WAIT_APPROVAL state
+	if l.Workflow.State != StateWaitApproval.String() {
+		return transitions
+	}
+
+	approvers, err := l.getAllApprovers(ctx)
+	if err != nil {
+		log.Error(ctx, "failed to get approver available actions while getting available transitions", err)
+		return transitions
+	}
+
+	for _, approver := range approvers {
+		if approver.UserID == l.ActorID && !approver.Approved.Valid {
+			transitions = append(transitions, TransitionApprove, TransitionReject)
+			break
+		}
+	}
+
+	return transitions
 }

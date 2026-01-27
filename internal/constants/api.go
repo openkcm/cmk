@@ -1,8 +1,9 @@
 package constants
 
 const (
-	APIName = "CMK"
-	KMS     = "KMS"
+	APIName  = "CMK"
+	KMS      = "KMS"
+	BasePath = "/cmk/v1/{tenant}"
 )
 
 const (
@@ -17,4 +18,9 @@ const (
 const (
 	DefaultTop  = 20
 	DefaultSkip = 0
+)
+
+const (
+	QueryMaxLengthSystem = 50
+	QueryMaxLengthName   = 255
 )

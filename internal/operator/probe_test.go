@@ -3,7 +3,6 @@ package operator_test
 import (
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/operator"
@@ -29,23 +27,20 @@ const (
 )
 
 func SetupProbeTest(t *testing.T) (*manager.GroupManager, *manager.TenantManager,
-	*multitenancy.DB, repo.Repo) {
+	*multitenancy.DB, repo.Repo,
+) {
 	t.Helper()
 
-	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		CreateDatabase: true,
-		Models:         []driver.TenantTabler{&model.Tenant{}, &model.Group{}},
-	})
+	db, _, cfgDB := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
 
 	dbRepository := sql.NewRepository(db)
 
-	ctlg, err := catalog.New(t.Context(), config.Config{
-		Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
-	})
-	assert.NoError(t, err, "Failed to create catalog")
+	cfg := &config.Config{
+		Plugins:  testutils.SetupMockPlugins(testutils.IdentityPlugin),
+		Database: cfgDB,
+	}
 
-	gm := manager.NewGroupManager(dbRepository, ctlg)
-	tm := manager.NewTenantManager(dbRepository)
+	tm, gm := createManagers(t, db, cfg)
 
 	return gm, tm, db, dbRepository
 }

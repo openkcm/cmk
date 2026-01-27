@@ -22,7 +22,7 @@ func TestQuery_Join(t *testing.T) {
 	q.Join(repo.LeftJoin, joinCond)
 	assert.Len(t, q.Joins, 1)
 	statement := q.Joins[0].JoinStatement()
-	assert.Equal(t, "LEFT JOIN workflow_approvers ON workflows.workflow_id = workflow_approvers.id", statement)
+	assert.Equal(t, `LEFT JOIN "workflow_approvers" ON "workflows".workflow_id = "workflow_approvers".id`, statement)
 }
 
 func TestQuery_AggregateFunctions(t *testing.T) {

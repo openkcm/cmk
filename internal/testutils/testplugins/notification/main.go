@@ -16,8 +16,13 @@ type TestPlugin struct {
 
 var _ notificationv1.NotificationServiceServer = (*TestPlugin)(nil)
 
+//nolint:unparam
 func (p *TestPlugin) Configure(_ context.Context, _ *configv1.ConfigureRequest) (*configv1.ConfigureResponse, error) {
-	return &configv1.ConfigureResponse{}, nil
+	var buildInfo = "{}"
+
+	return &configv1.ConfigureResponse{
+		BuildInfo: &buildInfo,
+	}, nil
 }
 
 func (p *TestPlugin) SendNotification(_ context.Context, _ *notificationv1.SendNotificationRequest) (

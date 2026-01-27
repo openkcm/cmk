@@ -101,10 +101,6 @@ func (c *APIController) GetKeys(ctx context.Context,
 func (c *APIController) DeleteKeysKeyID(ctx context.Context,
 	request cmkapi.DeleteKeysKeyIDRequestObject,
 ) (cmkapi.DeleteKeysKeyIDResponseObject, error) {
-	if c.Manager.Workflow.IsWorkflowEnabled(ctx) {
-		return nil, apierrors.ErrActionRequireWorkflow
-	}
-
 	err := c.Manager.Keys.Delete(ctx, request.KeyID)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrDeleteKey, err)
@@ -134,10 +130,6 @@ func (c *APIController) GetKeysKeyID(ctx context.Context,
 func (c *APIController) UpdateKey(ctx context.Context,
 	request cmkapi.UpdateKeyRequestObject,
 ) (cmkapi.UpdateKeyResponseObject, error) {
-	if request.Body.Enabled != nil && c.Manager.Workflow.IsWorkflowEnabled(ctx) {
-		return nil, apierrors.ErrActionRequireWorkflow
-	}
-
 	dbKey, err := c.Manager.Keys.UpdateKey(ctx, request.KeyID, *request.Body)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrUpdateKey, err)

@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/constants"
@@ -28,9 +27,7 @@ func TestGroupTable(t *testing.T) {
 }
 
 func TestGroupValidation(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&model.Group{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 

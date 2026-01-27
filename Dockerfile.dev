@@ -1,0 +1,72 @@
+# syntax=docker/dockerfile:1
+
+FROM golang:1.25 AS builder
+
+WORKDIR /app
+
+ENV GOCACHE=/root/.cache/go-build
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+  --mount=type=cache,target=/root/.cache/go-build \
+  --mount=type=bind,target=. \
+  CGO_ENABLED=0 \
+  go build -o /bin/api-server ./cmd/api-server
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+  --mount=type=cache,target=/root/.cache/go-build \
+  --mount=type=bind,target=. \
+  CGO_ENABLED=0 \
+  go build -o /bin/task-worker ./cmd/task-worker
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+  --mount=type=cache,target=/root/.cache/go-build \
+  --mount=type=bind,target=. \
+  CGO_ENABLED=0 \
+  go build -o /bin/task-scheduler ./cmd/task-scheduler
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 \
+    go build -o /bin/task-cli ./cmd/task-cli
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 \
+    go build -o /bin/tenant-manager ./cmd/tenant-manager
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+  --mount=type=cache,target=/root/.cache/go-build \
+  --mount=type=bind,target=. \
+  CGO_ENABLED=0 \
+  go build -o /bin/tenant-manager-cli ./cmd/tenant-manager-cli
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+  --mount=type=cache,target=/root/.cache/go-build \
+  --mount=type=bind,target=.,source=./identity-management-plugins \
+  CGO_ENABLED=0 \
+  go build -o /bin/scim ./cmd/scim
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+  --mount=type=cache,target=/root/.cache/go-build \
+  --mount=type=bind,target=. \
+  CGO_ENABLED=0 \
+  go build -o /bin/db-migrator ./cmd/db-migrator
+
+FROM gcr.io/distroless/static-debian12:debug AS runner
+
+COPY migrations /etc/cmk/migrations
+
+COPY --from=builder /bin/api-server /bin/api-server
+COPY --from=builder /bin/task-worker /bin/task-worker
+COPY --from=builder /bin/task-scheduler /bin/task-scheduler
+COPY --from=builder /bin/task-cli /bin/task-cli
+COPY --from=builder /bin/tenant-manager /bin/tenant-manager
+COPY --from=builder /bin/tenant-manager-cli /bin/tenant-manager-cli
+COPY --from=builder /bin/db-migrator /bin/db-migrator
+
+COPY --from=builder /bin/scim /bin/scim
+
+EXPOSE 8080
+ENTRYPOINT ["/bin/api-server"]

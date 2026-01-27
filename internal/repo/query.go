@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,6 +18,7 @@ type (
 
 const (
 	Equal       ComparisonOp = "="
+	NotEqual    ComparisonOp = "!="
 	GreaterThan ComparisonOp = ">"
 	LessThan    ComparisonOp = "<"
 
@@ -45,6 +47,7 @@ const (
 	ArtifactIDField     QueryField = "artifact_id"
 	ActionTypeField     QueryField = "action_type"
 	InitiatorIDField    QueryField = "initiator_id"
+	UserIDField         QueryField = "user_id"
 	PrimaryKeyIDField   QueryField = "primary_key_id"
 	PurposeField        QueryField = "purpose"
 	NameField           QueryField = "name"
@@ -56,12 +59,16 @@ const (
 	IAMIdField          QueryField = "iam_identifier"
 	Name                QueryField = "name"
 
+	ArtifactNameField      QueryField = "artifact_name"
+	ParamResourceNameField QueryField = "parameters_resource_name"
+
 	// KeyconfigTotalSystems and KeyconfigTotalKeys are used as aliases in JOIN operations,
 	// typically in combination with the tableName to reference aggregated fields.
 	KeyconfigTotalSystems QueryField = "total_systems"
 	KeyconfigTotalKeys    QueryField = "total_keys"
 	SystemKeyconfigName   QueryField = "key_configuration_name"
 
+	NotNull   QueryFieldValue = "not_null"
 	NotEmpty  QueryFieldValue = "not_empty"
 	Empty     QueryFieldValue = "empty"
 	FalseNull QueryFieldValue = "false_null"
@@ -85,7 +92,7 @@ const (
 // QueryMapper can just be a struct of filter values (for eg) for simple case (eg internal system user)
 // In API controllers might want to have mapping from odata (for eg)
 type QueryMapper interface {
-	GetQuery() *Query
+	GetQuery(ctx context.Context) *Query
 	GetUUID(field QueryField) (uuid.UUID, error)
 }
 
@@ -144,6 +151,10 @@ func (c CompositeKey) Where(q QueryField, v any,
 	return c
 }
 
+func NotEq(v any) Key {
+	return Key{Value: v, Operation: NotEqual}
+}
+
 func Gt(v any) Key {
 	return Key{Value: v, Operation: GreaterThan}
 }
@@ -173,10 +184,6 @@ type Query struct {
 	// By default, if this is not provided select all fields
 	SelectFields []*SelectField
 
-	// This could be used to save associations and their references
-	// When creating or updating records, updating foreign keys
-	Association Association
-
 	// Joins stores the JOIN clauses for the query.
 	Joins []JoinClause
 
@@ -184,6 +191,8 @@ type Query struct {
 	Group []QueryField
 
 	OrderFields []OrderField
+
+	DistinctOption DistinctOption
 }
 
 type JoinType string
@@ -200,7 +209,7 @@ type JoinClause struct {
 }
 
 func (r *JoinClause) JoinStatement() string {
-	statement := fmt.Sprintf("%s JOIN %s ON %s.%s = %s.%s",
+	statement := fmt.Sprintf(`%s JOIN "%s" ON "%s".%s = "%s".%s`,
 		r.Type,
 		r.OnCondition.JoinTable.TableName(),
 		r.OnCondition.Table.TableName(),
@@ -212,15 +221,6 @@ func (r *JoinClause) JoinStatement() string {
 }
 
 type Preload []string
-
-type Association struct {
-	Field string
-	Value any
-}
-
-func (a *Association) IsValid() bool {
-	return a.Field != "" && a.Value != nil
-}
 
 type SelectField struct {
 	Field QueryField
@@ -397,6 +397,11 @@ func (ckg *CompositeKeyGroup) String() string {
 	return str
 }
 
+type DistinctOption struct {
+	Enabled bool
+	CountOn string // COUNT(DISTINCT ...) requires the field to be specified
+}
+
 func (q *Query) Where(conds ...CompositeKeyGroup) *Query {
 	q.CompositeKeyGroup = append(q.CompositeKeyGroup, conds...)
 	return q
@@ -409,11 +414,6 @@ func (q *Query) Preload(model Preload) *Query {
 
 func (q *Query) GroupBy(field ...QueryField) *Query {
 	q.Group = append(q.Group, field...)
-	return q
-}
-
-func (q *Query) Associate(association Association) *Query {
-	q.Association = association
 	return q
 }
 
@@ -459,5 +459,10 @@ func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {
 
 func (q *Query) Order(orderFields ...OrderField) *Query {
 	q.OrderFields = append(q.OrderFields, orderFields...)
+	return q
+}
+
+func (q *Query) Distinct(distinct DistinctOption) *Query {
+	q.DistinctOption = distinct
 	return q
 }

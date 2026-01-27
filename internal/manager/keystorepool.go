@@ -27,9 +27,9 @@ func (c *Pool) Count(ctx context.Context) (int, error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	config := &model.KeystoreConfiguration{}
+	ks := &model.Keystore{}
 
-	count, err := c.repo.List(ctx, &model.KeystoreConfiguration{}, config, *repo.NewQuery().SetLimit(0))
+	count, err := c.repo.List(ctx, &model.Keystore{}, ks, *repo.NewQuery().SetLimit(0))
 	if err != nil {
 		return 0, err
 	}
@@ -38,7 +38,7 @@ func (c *Pool) Count(ctx context.Context) (int, error) {
 }
 
 // Add `KeystoreConfiguration` to the pool.
-func (c *Pool) Add(ctx context.Context, cfg *model.KeystoreConfiguration) (*model.KeystoreConfiguration, error) {
+func (c *Pool) Add(ctx context.Context, cfg *model.Keystore) (*model.Keystore, error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
@@ -51,13 +51,13 @@ func (c *Pool) Add(ctx context.Context, cfg *model.KeystoreConfiguration) (*mode
 }
 
 // Pop `KeystoreConfiguration` from the pool and return it.
-func (c *Pool) Pop(ctx context.Context) (*model.KeystoreConfiguration, error) {
+func (c *Pool) Pop(ctx context.Context) (*model.Keystore, error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	cfg := &model.KeystoreConfiguration{}
+	ks := &model.Keystore{}
 
-	_, err := c.repo.First(ctx, cfg, *repo.NewQuery().Order(repo.OrderField{
+	_, err := c.repo.First(ctx, ks, *repo.NewQuery().Order(repo.OrderField{
 		Field:     repo.CreatedField,
 		Direction: repo.Desc,
 	}))
@@ -65,10 +65,10 @@ func (c *Pool) Pop(ctx context.Context) (*model.KeystoreConfiguration, error) {
 		return nil, errs.Wrap(ErrPoolIsDrained, err)
 	}
 
-	_, err = c.repo.Delete(ctx, cfg, *repo.NewQuery())
+	_, err = c.repo.Delete(ctx, ks, *repo.NewQuery())
 	if err != nil {
 		return nil, errs.Wrap(ErrCouldNotRemoveConfiguration, err)
 	}
 
-	return cfg, nil
+	return ks, nil
 }

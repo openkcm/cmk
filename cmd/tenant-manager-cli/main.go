@@ -66,17 +66,20 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return oops.In("main").Wrapf(err, "Failed to initialise the logger")
 	}
 
-	dbCon, err := db.StartDB(ctx, cfg.Database, cfg.Provisioning, cfg.DatabaseReplicas)
+	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "Failed to initialise db connection")
 	}
 
-	ctlg, err := catalog.New(ctx, *cfg)
+	ctlg, err := catalog.New(ctx, cfg)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "Failed to initialise plugin catalog")
 	}
 
-	rootCmd := setupCommands(ctx, dbCon, ctlg)
+	rootCmd, err := setupCommands(ctx, cfg, dbCon, ctlg)
+	if err != nil {
+		return oops.In("main").Wrapf(err, "Failed to initialise commands")
+	}
 
 	err = rootCmd.ExecuteContext(ctx)
 	if err != nil {
@@ -87,8 +90,17 @@ func run(ctx context.Context, cfg *config.Config) error {
 }
 
 // setupCommands creates and configures all CLI commands and flags
-func setupCommands(ctx context.Context, dbCon *multitenancy.DB, catalog *plugincatalog.Catalog) *cobra.Command {
-	factory := commands.NewCommandFactory(dbCon, catalog)
+func setupCommands(
+	ctx context.Context,
+	cfg *config.Config,
+	dbCon *multitenancy.DB,
+	catalog *plugincatalog.Catalog,
+) (*cobra.Command, error) {
+	factory, err := commands.NewCommandFactory(ctx, cfg, dbCon, catalog)
+	if err != nil {
+		return nil, err
+	}
+
 	rootCmd := factory.NewRootCmd(ctx)
 
 	createGroupsCmd := factory.NewCreateGroupsCmd(ctx)
@@ -109,7 +121,7 @@ func setupCommands(ctx context.Context, dbCon *multitenancy.DB, catalog *pluginc
 	updateTenantCmd := factory.NewUpdateTenantCmd(ctx)
 	rootCmd.AddCommand(updateTenantCmd)
 
-	return rootCmd
+	return rootCmd, nil
 }
 
 func main() {

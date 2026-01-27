@@ -103,123 +103,137 @@ func TestStartStatusServer(t *testing.T) {
 }
 
 func TestBusinessMain(t *testing.T) {
+	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	_, amqpCfg := testutils.NewAMQPClient(t, testutils.AMQPCfg{})
 	tests := []struct {
 		name        string
-		config      *config.Config
+		config      func() *config.Config
 		expectError bool
 		errorMsg    string
 	}{
 		{
 			name: "no amqp connection",
-			config: &config.Config{
-				TenantManager: config.TenantManager{
-					SecretRef: commoncfg.SecretRef{
-						Type: commoncfg.InsecureSecretType,
+			config: func() *config.Config {
+				return &config.Config{
+					TenantManager: config.TenantManager{
+						SecretRef: commoncfg.SecretRef{
+							Type: commoncfg.InsecureSecretType,
+						},
+					}, // No AMQP connection info provided
+					Database: dbCfg,
+					Services: config.Services{
+						Registry:       testutils.TestRegistryConfig,
+						SessionManager: testutils.TestSessionManagerConfig,
 					},
-				}, // No AMQP connection info provided
-				Database: testutils.TestDB,
-				Services: config.Services{
-					Registry:       testutils.TestRegistryConfig,
-					SessionManager: testutils.TestSessionManagerConfig,
-				},
-				BaseConfig: testutils.TestBaseConfig,
+					BaseConfig: testutils.TestBaseConfig,
+				}
 			},
 			expectError: true,
 			errorMsg:    "Expected error due to missing AMQP connection info",
 		},
 		{
 			name: "no db connection",
-			config: &config.Config{
-				TenantManager: config.TenantManager{
-					SecretRef: commoncfg.SecretRef{
-						Type: commoncfg.InsecureSecretType,
+			config: func() *config.Config {
+				return &config.Config{
+					TenantManager: config.TenantManager{
+						SecretRef: commoncfg.SecretRef{
+							Type: commoncfg.InsecureSecretType,
+						},
+						AMQP: amqpCfg,
 					},
-					AMQP: testutils.TestAMQPConfig,
-				},
-				Database: config.Database{}, // No database connection info provided
-				Services: config.Services{
-					Registry:       testutils.TestRegistryConfig,
-					SessionManager: testutils.TestSessionManagerConfig,
-				},
-				BaseConfig: testutils.TestBaseConfig,
+					Database: config.Database{}, // No database connection info provided
+					Services: config.Services{
+						Registry:       testutils.TestRegistryConfig,
+						SessionManager: testutils.TestSessionManagerConfig,
+					},
+					BaseConfig: testutils.TestBaseConfig,
+				}
 			},
 			expectError: true,
 			errorMsg:    "Expected error due to missing database configuration",
 		},
 		{
 			name: "no grpc configuration",
-			config: &config.Config{
-				TenantManager: config.TenantManager{
-					SecretRef: commoncfg.SecretRef{
-						Type: commoncfg.InsecureSecretType,
+			config: func() *config.Config {
+				return &config.Config{
+					TenantManager: config.TenantManager{
+						SecretRef: commoncfg.SecretRef{
+							Type: commoncfg.InsecureSecretType,
+						},
+						AMQP: amqpCfg,
 					},
-					AMQP: testutils.TestAMQPConfig,
-				},
-				Database:   testutils.TestDB,
-				Services:   config.Services{}, // No gRPC configuration provided
-				BaseConfig: testutils.TestBaseConfig,
+					Database:   dbCfg,
+					Services:   config.Services{}, // No gRPC configuration provided
+					BaseConfig: testutils.TestBaseConfig,
+				}
 			},
 			expectError: true,
 			errorMsg:    "Expected error due to missing gRPC configuration",
 		},
 		{
 			name: "missing registry service configuration",
-			config: &config.Config{
-				TenantManager: config.TenantManager{
-					SecretRef: commoncfg.SecretRef{
-						Type: commoncfg.InsecureSecretType,
+			config: func() *config.Config {
+				return &config.Config{
+					TenantManager: config.TenantManager{
+						SecretRef: commoncfg.SecretRef{
+							Type: commoncfg.InsecureSecretType,
+						},
+						AMQP: amqpCfg,
 					},
-					AMQP: testutils.TestAMQPConfig,
-				},
-				Database: testutils.TestDB,
-				Services: config.Services{
-					// Missing Registry configuration
-					SessionManager: testutils.TestSessionManagerConfig,
-				},
-				BaseConfig: testutils.TestBaseConfig,
+					Database: dbCfg,
+					Services: config.Services{
+						// Missing Registry configuration
+						SessionManager: testutils.TestSessionManagerConfig,
+					},
+					BaseConfig: testutils.TestBaseConfig,
+				}
 			},
 			expectError: true,
 			errorMsg:    "registry service configuration is required",
 		},
 		{
 			name: "missing session-manager service configuration",
-			config: &config.Config{
-				TenantManager: config.TenantManager{
-					SecretRef: commoncfg.SecretRef{
-						Type: commoncfg.InsecureSecretType,
+			config: func() *config.Config {
+				return &config.Config{
+					TenantManager: config.TenantManager{
+						SecretRef: commoncfg.SecretRef{
+							Type: commoncfg.InsecureSecretType,
+						},
+						AMQP: amqpCfg,
 					},
-					AMQP: testutils.TestAMQPConfig,
-				},
-				Database: testutils.TestDB,
-				Services: config.Services{
-					Registry: testutils.TestRegistryConfig,
-					// Missing SessionManager configuration
-				},
-				BaseConfig: testutils.TestBaseConfig,
+					Database: dbCfg,
+					Services: config.Services{
+						Registry: testutils.TestRegistryConfig,
+						// Missing SessionManager configuration
+					},
+					BaseConfig: testutils.TestBaseConfig,
+				}
 			},
 			expectError: true,
 			errorMsg:    "session-manager service configuration is required",
 		},
 		{
 			name: "valid configuration",
-			config: &config.Config{
-				TenantManager: config.TenantManager{
-					SecretRef: commoncfg.SecretRef{
-						Type: commoncfg.InsecureSecretType,
+			config: func() *config.Config {
+				return &config.Config{
+					TenantManager: config.TenantManager{
+						SecretRef: commoncfg.SecretRef{
+							Type: commoncfg.InsecureSecretType,
+						},
+						AMQP: amqpCfg,
 					},
-					AMQP: testutils.TestAMQPConfig,
-				},
-				Database: testutils.TestDB,
-				Services: config.Services{
-					Registry:       testutils.TestRegistryConfig,
-					SessionManager: testutils.TestSessionManagerConfig,
-				},
-				BaseConfig: commoncfg.BaseConfig{
-					Logger: commoncfg.Logger{
-						Format: "json",
-						Level:  "info",
+					Database: dbCfg,
+					Services: config.Services{
+						Registry:       testutils.TestRegistryConfig,
+						SessionManager: testutils.TestSessionManagerConfig,
 					},
-				},
+					BaseConfig: commoncfg.BaseConfig{
+						Logger: commoncfg.Logger{
+							Format: "json",
+							Level:  "info",
+						},
+					},
+				}
 			},
 			expectError: false,
 		},
@@ -230,7 +244,7 @@ func TestBusinessMain(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 
-			err := tenantmanager.Run(ctx, tt.config)
+			err := tenantmanager.Run(ctx, tt.config())
 
 			if tt.expectError {
 				assert.Error(t, err, tt.errorMsg)

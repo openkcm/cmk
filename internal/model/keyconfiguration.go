@@ -15,12 +15,11 @@ type KeyConfiguration struct {
 	Description  string    `gorm:"type:text"`
 	AdminGroupID uuid.UUID `gorm:"type:uuid;not null"`
 	AdminGroup   Group     `gorm:"foreignKey:AdminGroupID"`
-	CreatorID    uuid.UUID `gorm:"type:uuid;not null"`
+	CreatorID    string    `gorm:"type:varchar(255);not null"`
 	CreatorName  string    `gorm:"type:varchar(255);not null"`
 	PrimaryKeyID *uuid.UUID
-	TotalKeys    int                   `gorm:"->;-:migration"`
-	TotalSystems int                   `gorm:"->;-:migration"`
-	Tags         []KeyConfigurationTag `gorm:"many2many:keyconfigurations_tags;constraint:OnDelete:CASCADE"`
+	TotalKeys    int `gorm:"->;-:migration"`
+	TotalSystems int `gorm:"->;-:migration"`
 }
 
 // TableName returns the table name for KeyConfiguration

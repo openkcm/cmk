@@ -11,8 +11,8 @@ import (
 )
 
 type SystemActions interface {
-	PatchSystemLinkByID(ctx context.Context, systemID uuid.UUID, patchSystem cmkapi.SystemPatch) (*model.System, error)
-	DeleteSystemLinkByID(ctx context.Context, systemID uuid.UUID) error
+	LinkSystemAction(ctx context.Context, systemID uuid.UUID, patchSystem cmkapi.SystemPatch) (*model.System, error)
+	UnlinkSystemAction(ctx context.Context, systemID uuid.UUID) error
 }
 
 func (l *Lifecycle) systemLinkOrSwitch(ctx context.Context) error {
@@ -23,7 +23,7 @@ func (l *Lifecycle) systemLinkOrSwitch(ctx context.Context) error {
 		return errs.Wrap(ErrWorkflowExecution, err)
 	}
 
-	_, err = l.SystemActions.PatchSystemLinkByID(ctx, systemID, cmkapi.SystemPatch{KeyConfigurationID: keyConfigurationID})
+	_, err = l.SystemActions.LinkSystemAction(ctx, systemID, cmkapi.SystemPatch{KeyConfigurationID: keyConfigurationID})
 	if err != nil {
 		return errs.Wrap(ErrWorkflowExecution, err)
 	}
@@ -34,7 +34,7 @@ func (l *Lifecycle) systemLinkOrSwitch(ctx context.Context) error {
 func (l *Lifecycle) systemUnlink(ctx context.Context) error {
 	systemID := l.Workflow.ArtifactID
 
-	err := l.SystemActions.DeleteSystemLinkByID(ctx, systemID)
+	err := l.SystemActions.UnlinkSystemAction(ctx, systemID)
 	if err != nil {
 		return errs.Wrap(ErrWorkflowExecution, err)
 	}

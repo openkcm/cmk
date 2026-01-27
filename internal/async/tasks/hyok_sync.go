@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/hibiken/asynq"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type HYOKUpdater interface {
@@ -20,6 +20,7 @@ type HYOKUpdater interface {
 type HYOKSync struct {
 	hyokClient HYOKUpdater
 	repo       repo.Repo
+	processor  *BatchProcessor
 }
 
 func NewHYOKSync(
@@ -29,26 +30,30 @@ func NewHYOKSync(
 	return &HYOKSync{
 		hyokClient: hyokClient,
 		repo:       repo,
+		processor:  NewBatchProcessor(repo),
 	}
 }
 
-func (h *HYOKSync) ProcessTask(ctx context.Context, _ *asynq.Task) error {
-	var tenants []*model.Tenant
+func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	log.Info(ctx, "Starting HYOK Sync Task")
 
-	_, err := h.repo.List(ctx, model.Tenant{}, &tenants, *repo.NewQuery())
+	err := h.processor.ProcessTenantsInBatch(ctx, "HYOK Sync", task,
+		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
+			log.Debug(tenantCtx, "Syncing HYOK keys for tenant",
+				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
+
+			syncErr := h.hyokClient.SyncHYOKKeys(tenantCtx)
+			if syncErr != nil {
+				_ = h.handleErrorTask(tenantCtx, syncErr)
+				return nil
+			}
+			log.Debug(tenantCtx, "HYOK keys for tenant synced successfully", slog.String("schemaName", tenant.SchemaName))
+			return nil
+		},
+	)
+
 	if err != nil {
 		return h.handleErrorTenants(ctx, err)
-	}
-
-	for _, tenant := range tenants {
-		ctx := log.InjectTenant(cmkcontext.CreateTenantContext(ctx, tenant.ID), tenant)
-		log.Debug(ctx, "Syncing HYOK keys")
-
-		err = h.hyokClient.SyncHYOKKeys(ctx)
-		if err != nil {
-			_ = h.handleErrorTask(ctx, err)
-			continue
-		}
 	}
 
 	return nil
@@ -59,7 +64,7 @@ func (h *HYOKSync) TaskType() string {
 }
 
 func (h *HYOKSync) handleErrorTenants(ctx context.Context, err error) error {
-	log.Error(ctx, "Getting tenants for HYOK Sync", err)
+	log.Error(ctx, "Error during HYOK sync batch processing", err)
 	return errs.Wrap(ErrRunningTask, err)
 }
 

@@ -16,14 +16,47 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 )
 
-// TestAMQPConfig provides a default AMQP configuration for testing
-var TestAMQPConfig = config.AMQP{
-	URL:    "amqp://guest:guest@localhost:5672",
-	Target: "target",
-	Source: "source",
+var (
+	onceRabbitMQ sync.Once
+	rabbitMQUrl  string
+)
+
+type AMQPCfg struct {
+	Target string
+	Source string
 }
 
-type TestAMQPOperator struct {
+func NewAMQPClient(
+	tb testing.TB,
+	amqpCfg AMQPCfg,
+) (*amqp.Client, config.AMQP) {
+	tb.Helper()
+
+	if amqpCfg == (AMQPCfg{}) {
+		amqpCfg.Target = "target"
+		amqpCfg.Source = "source"
+	}
+
+	onceRabbitMQ.Do(func() {
+		rabbitMQUrl = StartRabbitMQ(tb)
+	})
+	amqpClient, err := amqp.NewClient(
+		tb.Context(), codec.Proto{}, amqp.ConnectionInfo{
+			URL:    rabbitMQUrl,
+			Target: amqpCfg.Target,
+			Source: amqpCfg.Source,
+		}, amqp.WithNoAuth(),
+	)
+	assert.NoError(tb, err)
+
+	return amqpClient, config.AMQP{
+		URL:    rabbitMQUrl,
+		Target: amqpCfg.Target,
+		Source: amqpCfg.Source,
+	}
+}
+
+type TestMockAMQPOperator struct {
 	t            *testing.T
 	client       *amqp.Client
 	numReconcile int
@@ -33,13 +66,13 @@ type TestAMQPOperator struct {
 	mu           sync.RWMutex // Add mutex for thread safety
 }
 
-func NewTestAMQPOperator(
+func NewMockAMQPOperator(
 	t *testing.T,
 	numReconcile int,
 	success bool,
 	connConfig amqp.ConnectionInfo,
 	opts ...amqp.ClientOption,
-) *TestAMQPOperator {
+) *TestMockAMQPOperator {
 	t.Helper()
 
 	// Use separate context for the operator to allow shutdown
@@ -51,7 +84,7 @@ func NewTestAMQPOperator(
 		require.NoError(t, err)
 	}
 
-	operator := TestAMQPOperator{
+	operator := TestMockAMQPOperator{
 		client:       client,
 		numReconcile: numReconcile,
 		success:      success,
@@ -68,14 +101,14 @@ func NewTestAMQPOperator(
 }
 
 // Reset clears the internal state for test isolation
-func (o *TestAMQPOperator) Reset() {
+func (o *TestMockAMQPOperator) Reset() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
 	o.respCountMap = make(map[string]int)
 }
 
-func (o *TestAMQPOperator) Start(ctx context.Context) {
+func (o *TestMockAMQPOperator) Start(ctx context.Context) {
 	log.Debug(ctx, "starting test AMQP operator")
 
 	for {
@@ -137,14 +170,14 @@ func (o *TestAMQPOperator) Start(ctx context.Context) {
 	}
 }
 
-func (o *TestAMQPOperator) Stop(ctx context.Context) {
+func (o *TestMockAMQPOperator) Stop(ctx context.Context) {
 	close(o.close)
 	err := o.client.Close(ctx)
 	assert.NoError(o.t, err)
 	log.Debug(ctx, "stopped test AMQP operator")
 }
 
-func (o *TestAMQPOperator) sendTaskResponse(ctx context.Context, resp orbital.TaskResponse, count int) error {
+func (o *TestMockAMQPOperator) sendTaskResponse(ctx context.Context, resp orbital.TaskResponse, count int) error {
 	err := o.client.SendTaskResponse(ctx, resp)
 	if err != nil {
 		log.Debug(ctx, "operator error sending task response", log.ErrorAttr(err))

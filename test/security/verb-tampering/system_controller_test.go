@@ -5,17 +5,14 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -25,23 +22,8 @@ var ErrForced = errors.New("forced")
 func startAPIAndDB(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	cfg := &config.Config{
-		Database: integrationutils.DB,
-	}
-	integrationutils.StartPostgresSQL(t, &cfg.Database)
-
-	dbConfig := testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.System{},
-			&model.SystemProperty{},
-			&model.KeyConfiguration{},
-			&model.Key{},
-			&model.KeyVersion{},
-			&model.KeyLabel{},
-		}}
-	db, tenants, _ := testutils.NewTestDB(t, dbConfig,
-		testutils.WithDatabase(cfg.Database),
-	)
+	dbConfig := testutils.TestDBConfig{}
+	db, tenants, _ := testutils.NewTestDB(t, dbConfig)
 
 	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
 
@@ -80,8 +62,10 @@ func TestAPIController_GetAllSystems_ForVerbTampering(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	// We should not get a success on any other verbs with this endpoint
-	verbs := []string{http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch,
-		http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace}
+	verbs := []string{
+		http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch,
+		http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace,
+	}
 
 	for _, verb := range verbs {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{

@@ -4,13 +4,12 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
@@ -18,11 +17,11 @@ import (
 func startAPIServerTenantConfig(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-	})
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
-	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{}), tenants[0]
+	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Config: config.Config{Database: dbCfg},
+	}), tenants[0]
 }
 
 func TestAPIController_GetTenantKeystores(t *testing.T) {

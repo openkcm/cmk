@@ -37,6 +37,7 @@ var apiErrorMapper = APIErrorMapper{
 		tenantconfig,
 		groups,
 		tenants,
+		userinfo,
 		defaultMapper,
 	),
 	PriorityErrors: highPrio,
@@ -45,8 +46,10 @@ var apiErrorMapper = APIErrorMapper{
 func TransformToAPIError(ctx context.Context, err error) *cmkapi.ErrorMessage {
 	e := apiErrorMapper.transform(ctx, err)
 	if e == nil {
-		log.Info(ctx, "No appropriate error mapping. Defaulting to generic 500",
-			slog.String(slogctx.ErrKey, err.Error()))
+		log.Info(
+			ctx, "No appropriate error mapping. Defaulting to generic 500",
+			slog.String(slogctx.ErrKey, err.Error()),
+		)
 
 		e = ptr.PointTo(InternalServerErrorMessage())
 	}
@@ -134,11 +137,14 @@ func countMatchingErrors(err error, candidates []error) int {
 // debugMappingCandidates logs the mapping candidates for debugging purposes
 func debugMappingCandidates(ctx context.Context, err error, mappingCandidates []APIErrors) {
 	if len(mappingCandidates) > 1 {
-		log.Debug(ctx, "Mapping more than one error; selecting candidates",
-			slog.String(slogctx.ErrKey, err.Error()))
+		log.Debug(
+			ctx, "Mapping more than one error; selecting candidates",
+			slog.String(slogctx.ErrKey, err.Error()),
+		)
 
 		for position, me := range mappingCandidates {
-			log.Debug(ctx, "Matched candidate",
+			log.Debug(
+				ctx, "Matched candidate",
 				slog.Int("position", position),
 				slog.String("code", me.ExposedError.Code),
 				slog.String("status", http.StatusText(me.ExposedError.Status)),

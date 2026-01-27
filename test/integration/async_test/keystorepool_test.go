@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async"
@@ -32,11 +31,7 @@ func TestKeystorePoolFilling(t *testing.T) {
 	})
 	SetupTestContainers(t, testConfig)
 
-	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Certificate{}, &model.KeystoreConfiguration{},
-		},
-	}, testutils.WithDatabase(testConfig.Database))
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	ctx := context.Background()
 
@@ -61,10 +56,10 @@ func TestKeystorePoolFilling(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	ks := []*model.KeystoreConfiguration{}
+	ks := []*model.Keystore{}
 	count, err := repository.List(
 		ctx,
-		model.KeystoreConfiguration{},
+		model.Keystore{},
 		&ks,
 		*repo.NewQuery(),
 	)

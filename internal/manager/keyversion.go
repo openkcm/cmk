@@ -234,13 +234,13 @@ func (kvm *KeyVersionManager) createDBKeyVersion(
 		IsPrimary:  true,
 	}
 
-	err := kvm.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+	err := kvm.repo.Transaction(ctx, func(ctx context.Context) error {
 		err := kvm.disablePrimaryVersions(ctx, key)
 		if err != nil {
 			return err
 		}
 
-		err = r.Create(ctx, &newKeyVersion)
+		err = kvm.repo.Create(ctx, &newKeyVersion)
 		if err != nil {
 			return errs.Wrap(ErrCreateKeyVersionDB, err)
 		}

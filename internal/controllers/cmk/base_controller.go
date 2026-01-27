@@ -6,8 +6,10 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/async"
+	authzmodel "github.com/openkcm/cmk/internal/authz-model"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
@@ -21,6 +23,7 @@ type APIController struct {
 	Repository    repo.Repo
 	Manager       *manager.Manager
 	config        *config.Config
+	AuthzEngine   *authzmodel.Engine
 }
 
 // NewAPIController creates a new instance of APIController with the provided Repository.
@@ -28,15 +31,16 @@ type APIController struct {
 func NewAPIController(
 	ctx context.Context,
 	r repo.Repo,
-	config config.Config,
-	clientsFactory *clients.Factory,
+	config *config.Config,
+	clientsFactory clients.Factory,
+	migrator db.Migrator,
 ) *APIController {
 	ctlg, err := catalog.New(ctx, config)
 	if err != nil {
 		log.Error(ctx, "Failed to load plugin", err)
 	}
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, &config, r, ctlg)
+	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, config, r, ctlg, clientsFactory)
 	if err != nil {
 		log.Error(ctx, "Failed to create event reconciler", err)
 	} else {
@@ -48,7 +52,7 @@ func NewAPIController(
 
 	var asyncClient async.Client
 
-	asyncApp, err := async.New(&config)
+	asyncApp, err := async.New(config)
 	if err != nil {
 		log.Error(ctx, "Failed to create async app", err)
 	} else {
@@ -56,8 +60,9 @@ func NewAPIController(
 	}
 
 	return &APIController{
-		Manager:       manager.New(ctx, r, &config, clientsFactory, ctlg, reconciler, asyncClient),
-		config:        &config,
+		Manager:       manager.New(ctx, r, config, clientsFactory, ctlg, reconciler, asyncClient, migrator),
+		config:        config,
 		pluginCatalog: ctlg,
+		AuthzEngine:   authzmodel.NewEngine(ctx, r, config),
 	}
 }

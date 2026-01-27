@@ -5,8 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
-	"os/signal"
 	"syscall"
 	"time"
 
@@ -26,6 +26,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/utils/cmd"
 )
 
 var (
@@ -40,44 +41,6 @@ const (
 	postgresDriverName   = "pgx"
 	labelKeystore        = "keystore"
 )
-
-// runFuncWithSignalHandling runs the given function with signal handling. When
-// a CTRL-C is received, the context will be cancelled on which the function can
-// act upon.
-// It returns the exitCode
-func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {
-	ctx, cancelOnSignal := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt, syscall.SIGTERM,
-	)
-	defer cancelOnSignal()
-
-	cfg, err := config.LoadConfig(
-		commoncfg.WithEnvOverride(constants.APIName),
-	)
-	if err != nil {
-		log.Error(ctx, "Failed to load the configuration", err)
-		_, _ = fmt.Fprintln(os.Stderr, err)
-
-		return 1
-	}
-
-	log.Debug(ctx, "Starting the application", slog.Any("config", *cfg))
-
-	err = f(ctx, cfg)
-	if err != nil {
-		log.Error(ctx, "Failed to start the application", err)
-		_, _ = fmt.Fprintln(os.Stderr, err)
-
-		return 1
-	}
-
-	// graceful shutdown so running goroutines may finish
-	_, _ = fmt.Fprintln(os.Stderr, fmt.Sprintf(*gracefulShutdownMessage, *gracefulShutdownSec))
-	time.Sleep(time.Duration(*gracefulShutdownSec) * time.Second)
-
-	return 0
-}
 
 // - Starts the status server
 // - Starts the CMK API Server
@@ -108,8 +71,14 @@ func run(ctx context.Context, cfg *config.Config) error {
 	// Start status server
 	startStatusServer(ctx, cfg)
 
+	// Database initialisation
+	dbCon, err := db.StartDB(ctx, cfg)
+	if err != nil {
+		return oops.In("main").Wrapf(err, "Failed to start database")
+	}
+
 	// Create and start CMK Server
-	s, err := daemon.NewCMKServer(ctx, cfg)
+	s, err := daemon.NewCMKServer(ctx, cfg, dbCon)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "creating cmk server")
 	}
@@ -118,6 +87,8 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return oops.In("main").Wrapf(err, "starting cmk api server")
 	}
+
+	log.Info(ctx, "API Server has started")
 
 	<-ctx.Done()
 
@@ -131,7 +102,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 func monitorKeystorePoolSize(
 	ctx context.Context,
-	cfg config.Config,
+	cfg *config.Config,
 ) {
 	gauge := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -145,7 +116,7 @@ func monitorKeystorePoolSize(
 
 	log.Debug(ctx, "Registering keystore pool size gauge metric")
 
-	dbCon, err := db.StartDBConnection(cfg.Database, cfg.DatabaseReplicas)
+	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
 	if err != nil {
 		log.Error(ctx, "failed to initialize DB Connection", err)
 	}
@@ -198,6 +169,17 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 			postgresDriverName,
 			dsnFromConfig,
 		),
+		health.WithCheck(health.Check{
+			Name: "HTTP Server",
+			Check: func(ctx context.Context) error {
+				conn, err := net.DialTimeout("tcp", cfg.HTTP.Address, 1*time.Second)
+				if err != nil {
+					return fmt.Errorf("%s health check failed on connect: %w", cfg.HTTP.Address, err)
+				}
+				conn.Close()
+				return nil
+			},
+		}),
 	)
 
 	readiness := status.WithReadiness(
@@ -207,7 +189,7 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 	)
 
 	if cfg.Telemetry.Metrics.Prometheus.Enabled {
-		go monitorKeystorePoolSize(ctx, *cfg)
+		go monitorKeystorePoolSize(ctx, cfg)
 	}
 
 	go func() {
@@ -225,6 +207,10 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 func main() {
 	flag.Parse()
 
-	exitCode := runFuncWithSignalHandling(run)
+	exitCode := cmd.RunFuncWithSignalHandling(run, cmd.RunFlags{
+		GracefulShutdownSec:     *gracefulShutdownSec,
+		GracefulShutdownMessage: *gracefulShutdownMessage,
+		Env:                     constants.APIName,
+	})
 	os.Exit(exitCode)
 }

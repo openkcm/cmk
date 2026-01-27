@@ -11,8 +11,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,6 +21,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -31,21 +32,19 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
+var (
+	testAdminGroupIAM = "KMS_test_admin_group"
+	adminGroup        = testutils.NewGroup(func(g *model.Group) {
+		g.IAMIdentifier = testAdminGroupIAM
+		g.Role = constants.KeyAdminRole
+	})
+)
+
 // startAPIKeyConfig starts the API server for key configurations and returns a pointer to the database
 func startAPIKeyConfig(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Key{},
-			&model.KeyVersion{},
-			&model.KeyConfiguration{},
-			&model.Tenant{},
-			&model.TenantConfig{},
-			&model.System{},
-			&model.Certificate{},
-		},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	return db, testutils.NewAPIServer(t, db, cfg), tenants[0]
 }
@@ -60,11 +59,28 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 	})
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
+	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.PrimaryKeyID = ptr.PointTo(uuid.New())
+		k.AdminGroupID = adminGroup.ID
+		k.AdminGroup = *adminGroup
+	})
+
+	keyConfig3 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.AdminGroupID = adminGroup.ID
+		k.AdminGroup = *adminGroup
+	})
+	testutils.CreateTestEntities(ctx, t, r, keyConfig2, keyConfig3)
+
 	t.Run("Should get keyConfig", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/keyConfigurations/" + keyConfig.ID.String(),
 			Tenant:   tenant,
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -73,6 +89,44 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 		assert.Equal(t, keyConfig.PrimaryKeyID, response.PrimaryKeyID)
 		assert.Equal(t, keyConfig.Name, response.Name)
 		assert.True(t, *response.CanConnectSystems)
+	})
+
+	t.Run("Should get keyConfig with permissions", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/keyConfigurations?$skip=0&$top=10&$count=true",
+			Tenant:   tenant,
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{"some-group", testAdminGroupIAM},
+				},
+			},
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.KeyConfigurationList](t, w)
+
+		assert.Equal(t, 2, *response.Count)
+	})
+
+	t.Run("Should not get keyConfig without permissions", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/keyConfigurations?$skip=0&$top=10&$count=true",
+			Tenant:   tenant,
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{"some-group"},
+				},
+			},
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.KeyConfigurationList](t, w)
+
+		assert.Equal(t, 0, *response.Count)
 	})
 }
 
@@ -84,6 +138,7 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 	groupID := uuid.New()
 	group := testutils.NewGroup(func(g *model.Group) {
 		g.ID = groupID
+		g.IAMIdentifier = testAdminGroupIAM
 	})
 
 	repo := sql.NewRepository(db)
@@ -102,6 +157,11 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/keyConfigurations?expandGroup=true",
 			Tenant:   tenant,
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{"some-group", testAdminGroupIAM},
+				},
+			},
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -126,7 +186,10 @@ func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) 
 	r := sql.NewRepository(db)
 
 	for range totalRecordCount {
-		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.AdminGroupID = adminGroup.ID
+			kc.AdminGroup = *adminGroup
+		})
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
 	}
 
@@ -203,6 +266,11 @@ func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) 
 				Method:   http.MethodGet,
 				Endpoint: tt.query,
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{"some-group", testAdminGroupIAM},
+					},
+				},
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -226,35 +294,86 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 	db, sv, tenant := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
+	expectedIdenfier := uuid.NewString()
+	expectedEmail := "bob@"
 
-	group := testutils.NewGroup(func(_ *model.Group) {})
-
-	testutils.CreateTestEntities(ctx, t, r, group)
+	testutils.CreateTestEntities(ctx, t, r, adminGroup)
 
 	type testCase struct {
-		name           string
-		input          cmkapi.KeyConfiguration
-		expectedStatus int
-		expectedCode   string
-		expectedBody   string
+		name              string
+		input             cmkapi.KeyConfiguration
+		expectedStatus    int
+		expectedCode      string
+		expectedBody      string
+		additionalContext map[any]any
 	}
 
 	tests := []testCase{
 		{
-			name: "KeyConfigPOST_Success",
+			name: "KeyConfigPOST_Failed_WithoutClientDataIdentifier",
 			input: cmkapi.KeyConfiguration{
 				Name:         "test-config",
 				Description:  ptr.PointTo("test-config"),
-				AdminGroupID: group.ID,
+				AdminGroupID: adminGroup.ID,
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   "INVALID_CLIENT_DATA",
+			expectedBody:   "The client data is invalid",
+		},
+		{
+			name: "KeyConfigPOST_Success_WithClientDataUserGroups",
+			input: cmkapi.KeyConfiguration{
+				Name:         "test-config-2",
+				Description:  ptr.PointTo("test-config"),
+				AdminGroupID: adminGroup.ID,
+			},
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups:     []string{"some-group", testAdminGroupIAM},
+					Identifier: expectedIdenfier,
+					Email:      expectedEmail,
+				},
 			},
 			expectedStatus: http.StatusCreated,
-			expectedBody:   "test-config",
+			expectedBody:   "test-config-2",
+		},
+		{
+			name: "KeyConfigPOST_Unauthorised_WithWrongClientDataUserGroups",
+			input: cmkapi.KeyConfiguration{
+				Name:         "test-config-2",
+				Description:  ptr.PointTo("test-config"),
+				AdminGroupID: adminGroup.ID,
+			},
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{"some-group", "another-group"},
+				},
+			},
+			expectedStatus: http.StatusNotFound,
+			expectedCode:   "KEY_CONFIGURATION_NOT_FOUND",
+			expectedBody:   "error",
+		},
+		{
+			name: "KeyConfigPOST_Unauthorised_WithEmptyClientDataUserGroups",
+			input: cmkapi.KeyConfiguration{
+				Name:         "test-config-2",
+				Description:  ptr.PointTo("test-config"),
+				AdminGroupID: adminGroup.ID,
+			},
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{},
+				},
+			},
+			expectedStatus: http.StatusNotFound,
+			expectedCode:   "KEY_CONFIGURATION_NOT_FOUND",
+			expectedBody:   "error",
 		},
 		{
 			name: "KeyConfigPOST_MissingName",
 			input: cmkapi.KeyConfiguration{
 				Description:  ptr.PointTo("test-config"),
-				AdminGroupID: group.ID,
+				AdminGroupID: adminGroup.ID,
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedBody:   "error",
@@ -264,7 +383,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			input: cmkapi.KeyConfiguration{
 				Name:         "",
 				Description:  ptr.PointTo("test-config"),
-				AdminGroupID: group.ID,
+				AdminGroupID: adminGroup.ID,
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedBody:   "error",
@@ -279,7 +398,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			expectedBody:   "error",
 		},
 		{
-			name: "KeyConfigPOST_InvalidAdminGroupID",
+			name: "KeyConfigPOST_NonExistentAdminGroupID",
 			input: cmkapi.KeyConfiguration{
 				Name:         "",
 				Description:  ptr.PointTo("test-config"),
@@ -291,9 +410,15 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 		{
 			name: "KeyConfigPOST_DuplicateName",
 			input: cmkapi.KeyConfiguration{
-				Name:         "test-config",
-				Description:  ptr.PointTo("test-config"),
-				AdminGroupID: group.ID,
+				Name:         "test-config-2",
+				Description:  ptr.PointTo("test-config-2"),
+				AdminGroupID: adminGroup.ID,
+			},
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups:     []string{adminGroup.ID.String(), testAdminGroupIAM},
+					Identifier: uuid.NewString(),
+				},
 			},
 			expectedStatus: http.StatusConflict,
 			expectedCode:   "UNIQUE_ERROR",
@@ -304,13 +429,20 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodPost,
-				Endpoint: "/keyConfigurations",
-				Tenant:   tenant,
-				Body:     testutils.WithJSON(t, tt.input),
+				Method:            http.MethodPost,
+				Endpoint:          "/keyConfigurations",
+				Tenant:            tenant,
+				Body:              testutils.WithJSON(t, tt.input),
+				AdditionalContext: tt.additionalContext,
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
-			assert.Contains(t, w.Body.String(), tt.expectedBody)
+			body := w.Body.String()
+			assert.Contains(t, body, tt.expectedBody)
+
+			if w.Code == http.StatusCreated {
+				assert.Contains(t, body, expectedIdenfier)
+				assert.Contains(t, body, expectedEmail)
+			}
 
 			if tt.expectedCode != "" {
 				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
@@ -326,7 +458,10 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 	r := sql.NewRepository(db)
 	newAdminGroupID := uuid.New()
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.AdminGroupID = adminGroup.ID
+		k.AdminGroup = *adminGroup
+	})
 	existingKeyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.Name = "existing-config"
 	})
@@ -334,18 +469,19 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, existingKeyConfig)
 
 	type testCase struct {
-		name           string
-		configID       string
-		inputJSON      string
-		expectedStatus int
-		expectedBody   string
-		expectedCode   string
-		validate       func(*testing.T, *httptest.ResponseRecorder)
+		name              string
+		configID          string
+		inputJSON         string
+		expectedStatus    int
+		expectedBody      string
+		expectedCode      string
+		additionalContext map[any]any
+		validate          func(*testing.T, *httptest.ResponseRecorder)
 	}
 
 	tests := []testCase{
 		{
-			name:     "KeyConfigPATCH_Success",
+			name:     "KeyConfigPATCH_Success_WithoutClientDataUserGroups (backward compatibility)",
 			configID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-config",
@@ -353,6 +489,11 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
             }`,
 			expectedStatus: http.StatusOK,
 			expectedBody:   "updated-config",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
 				t.Helper()
 
@@ -369,6 +510,55 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
             }`,
 			expectedStatus: http.StatusOK,
 			expectedBody:   "updated-name-only",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
+		},
+		{
+			name:     "KeyConfigPATCH_WithClientDataUserGroups",
+			configID: keyConfig.ID.String(),
+			inputJSON: `{
+                "name": "updated-name-only-client-data"
+            }`,
+			expectedStatus: http.StatusOK,
+			expectedBody:   "updated-name-only-client-data",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{"some-group", testAdminGroupIAM},
+				},
+			},
+		},
+		{
+			name:     "KeyConfigPATCH_Unauthorised_WithWrongClientDataUserGroups",
+			configID: keyConfig.ID.String(),
+			inputJSON: `{
+                "name": "updated-name-only-client-data"
+            }`,
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   "error",
+			expectedCode:   "KEY_CONFIGURATION_NOT_FOUND",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{"some-group", "another-group"},
+				},
+			},
+		},
+		{
+			name:     "KeyConfigPATCH_Unauthorised_WithEmptyClientDataUserGroups",
+			configID: keyConfig.ID.String(),
+			inputJSON: `{
+                "name": "updated-name-only-client-data"
+            }`,
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   "error",
+			expectedCode:   "KEY_CONFIGURATION_NOT_FOUND",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{},
+				},
+			},
 		},
 		{
 			name:     "KeyConfigPATCH_DescriptionOnly",
@@ -378,6 +568,11 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
             }`,
 			expectedStatus: http.StatusOK,
 			expectedBody:   "updated description only",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		},
 		{
 			name:     "KeyConfigPATCH_EmptyName",
@@ -387,6 +582,11 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
             }`,
 			expectedStatus: http.StatusBadRequest,
 			expectedBody:   "error",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		},
 		{
 			name:     "KeyConfigPATCH_AdminGroupIDNotAllowed",
@@ -400,8 +600,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			validate: func(t *testing.T, _ *httptest.ResponseRecorder) {
 				t.Helper()
 
-				config := &model.KeyConfiguration{ID: keyConfig.ID}
-				_, err := r.First(ctx, config, *repo.NewQuery())
+				c := &model.KeyConfiguration{ID: keyConfig.ID}
+				_, err := r.First(ctx, c, *repo.NewQuery())
 				assert.NoError(t, err)
 			},
 		},
@@ -414,6 +614,11 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			expectedStatus: http.StatusConflict,
 			expectedCode:   "UNIQUE_ERROR",
 			expectedBody:   "error",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		},
 		{
 			name:     "KeyConfigPATCH_InvalidID",
@@ -433,6 +638,11 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
             }`,
 			expectedStatus: http.StatusNotFound,
 			expectedBody:   "error",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		},
 		{
 			name:     "KeyConfigPATCH_InvalidJSON",
@@ -449,10 +659,11 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodPatch,
-				Endpoint: "/keyConfigurations/" + tt.configID,
-				Tenant:   tenant,
-				Body:     testutils.WithString(t, tt.inputJSON),
+				Method:            http.MethodPatch,
+				Endpoint:          "/keyConfigurations/" + tt.configID,
+				Tenant:            tenant,
+				Body:              testutils.WithString(t, tt.inputJSON),
+				AdditionalContext: tt.additionalContext,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -475,26 +686,68 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.AdminGroup = *adminGroup
+		k.AdminGroupID = adminGroup.ID
+	})
+
+	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.AdminGroup = *adminGroup
+		k.AdminGroupID = adminGroup.ID
+	})
 
 	keyConfigWithSystems := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	sys := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfigWithSystems.ID)
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyConfigWithSystems, sys)
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyConfigWithSystems, sys, keyConfig2)
 
 	type testCase struct {
-		name           string
-		configID       string
-		expectedStatus int
+		name              string
+		configID          string
+		expectedStatus    int
+		expectedCode      string
+		additionalContext map[any]any
 	}
 
 	tests := []testCase{
 		{
-			name:           "DeleteKeyConfig_Success",
+			name:           "DeleteKeyConfig_Deny_WithoutClientDataUserGroups",
 			configID:       keyConfig.ID.String(),
+			expectedStatus: http.StatusInternalServerError,
+		},
+		{
+			name:           "DeleteKeyConfig_Unauthorised_WithEmptyClientDataUserGroups",
+			configID:       keyConfig2.ID.String(),
+			expectedStatus: http.StatusNotFound,
+			expectedCode:   "KEY_CONFIGURATION_NOT_FOUND",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{},
+				},
+			},
+		},
+		{
+			name:           "DeleteKeyConfig_Unauthorised_WithWrongClientDataUserGroups",
+			configID:       keyConfig2.ID.String(),
+			expectedStatus: http.StatusNotFound,
+			expectedCode:   "KEY_CONFIGURATION_NOT_FOUND",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{"some-group", "another-group"},
+				},
+			},
+		},
+		{
+			name:           "DeleteKeyConfig_Authorised_WithClientDataUserGroups",
+			configID:       keyConfig2.ID.String(),
 			expectedStatus: http.StatusNoContent,
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{testAdminGroupIAM, "other-group"},
+				},
+			},
 		},
 		{
 			name:           "DeleteKeyConfig_InvalidID",
@@ -502,26 +755,130 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "DeleteKeyConfig_NoConfigStillSuccess",
-			configID:       uuid.New().String(),
-			expectedStatus: http.StatusNoContent,
-		},
-		{
 			name:           "Should 400 on deletion with connected systems",
 			configID:       keyConfigWithSystems.ID.String(),
 			expectedStatus: http.StatusBadRequest,
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfigWithSystems.AdminGroup.IAMIdentifier},
+				},
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodDelete,
-				Endpoint: "/keyConfigurations/" + tt.configID,
-				Tenant:   tenant,
+				Method:            http.MethodDelete,
+				Endpoint:          "/keyConfigurations/" + tt.configID,
+				Tenant:            tenant,
+				AdditionalContext: tt.additionalContext,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedCode != "" {
+				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+				assert.Equal(t, tt.expectedCode, response.Error.Code)
+			}
+		})
+	}
+}
+
+func TestKeyConfigurationController_GetByID(t *testing.T) {
+	db, sv, tenant := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.AdminGroupID = adminGroup.ID
+		k.AdminGroup = *adminGroup
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+	type testCase struct {
+		name              string
+		configID          string
+		expectedStatus    int
+		expectedCode      string
+		additionalContext map[any]any
+	}
+
+	tests := []testCase{
+		{
+			name:           "GetKeyConfig_Success",
+			configID:       keyConfig.ID.String(),
+			expectedStatus: http.StatusOK,
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
+		},
+		{
+			name:           "GetKeyConfig_InvalidID",
+			configID:       "invalid-uuid",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "GetKeyConfig_Authorised_WithClientDataUserGroups",
+			configID:       keyConfig.ID.String(),
+			expectedStatus: http.StatusOK,
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{testAdminGroupIAM, "other-group"},
+				},
+			},
+		},
+		{
+			name:           "GetKeyConfig_Unauthorised_WithEmptyClientDataUserGroups",
+			configID:       keyConfig.ID.String(),
+			expectedStatus: http.StatusNotFound,
+			expectedCode:   "KEY_CONFIGURATION_NOT_FOUND",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{},
+				},
+			},
+		},
+		{
+			name:           "GetKeyConfig_Unauthorised_WithWrongClientDataUserGroups",
+			configID:       keyConfig.ID.String(),
+			expectedStatus: http.StatusNotFound,
+			expectedCode:   "KEY_CONFIGURATION_NOT_FOUND",
+			additionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{"some-group", "another-group"},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+				Method:            http.MethodGet,
+				Endpoint:          "/keyConfigurations/" + tt.configID,
+				Tenant:            tenant,
+				AdditionalContext: tt.additionalContext,
+			})
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedCode != "" {
+				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+				assert.Equal(t, tt.expectedCode, response.Error.Code)
+			} else if tt.expectedStatus == http.StatusOK {
+				response := testutils.GetJSONBody[cmkapi.KeyConfiguration](t, w)
+				assert.Equal(t, keyConfig.ID, *response.Id)
+				assert.Equal(t, keyConfig.PrimaryKeyID, response.PrimaryKeyID)
+				assert.Equal(t, keyConfig.Name, response.Name)
+				assert.Equal(t, adminGroup.ID, response.AdminGroupID)
+				assert.Equal(t, adminGroup.ID, *response.AdminGroup.Id)
+				assert.Equal(t, adminGroup.Name, response.AdminGroup.Name)
+				assert.Equal(t, string(adminGroup.Role), string(response.AdminGroup.Role))
+			}
 		})
 	}
 }

@@ -32,6 +32,8 @@ tags:
     description: Tenant management
   - name: Groups
     description: Group Management
+  - name: User Info
+    description: User Information
 paths:
   /keys:
     get:
@@ -63,8 +65,6 @@ paths:
                 $ref: "#/components/schemas/KeyList"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "429":
@@ -99,8 +99,6 @@ paths:
                 $ref: "#/components/schemas/Key"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "409":
@@ -126,8 +124,6 @@ paths:
                 $ref: "#/components/schemas/Key"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -158,8 +154,6 @@ paths:
                 $ref: "#/components/schemas/Key"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -184,8 +178,6 @@ paths:
           description: Deleted
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -214,8 +206,6 @@ paths:
                 $ref: "#/components/schemas/ImportParams"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -251,8 +241,6 @@ paths:
                 $ref: "#/components/schemas/Key"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -282,8 +270,6 @@ paths:
                 $ref: "#/components/schemas/KeyVersionList"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -314,8 +300,6 @@ paths:
                 $ref: "#/components/schemas/KeyVersion"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -343,8 +327,6 @@ paths:
                 $ref: "#/components/schemas/KeyVersion"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -374,8 +356,6 @@ paths:
                 $ref: "#/components/schemas/LabelList"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -406,8 +386,6 @@ paths:
           description: New Labels are attached or the values of the Labels are updated if they already exist.
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -433,14 +411,13 @@ paths:
           required: true
           schema:
             type: string
+            maxLength: 255
           example: region%2Faz
       responses:
         "204":
           description: A specified Label is deleted.
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -476,8 +453,6 @@ paths:
                 $ref: "#/components/schemas/KeyConfigurationList"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "429":
@@ -508,8 +483,6 @@ paths:
                 $ref: "#/components/schemas/KeyConfiguration"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "409":
@@ -536,8 +509,6 @@ paths:
                 $ref: "#/components/schemas/KeyConfiguration"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -568,8 +539,6 @@ paths:
                 $ref: "#/components/schemas/KeyConfiguration"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -593,8 +562,6 @@ paths:
           description: Deleted
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -624,8 +591,6 @@ paths:
                 $ref: "#/components/schemas/TagList"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -652,8 +617,6 @@ paths:
           description: Added
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -686,8 +649,6 @@ paths:
                 $ref: "#/components/schemas/ClientCertificates"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "429":
@@ -711,8 +672,6 @@ paths:
                 $ref: "#/components/schemas/TenantKeystore"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "429":
@@ -740,8 +699,6 @@ paths:
                 $ref: "#/components/schemas/SystemList"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "429":
@@ -768,8 +725,6 @@ paths:
                 $ref: "#/components/schemas/System"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -779,45 +734,17 @@ paths:
         "500":
           $ref: "#/components/responses/500"
   /systems/{systemID}/link:
-    get:
-      tags:
-        - Systems
-      summary: Retrieve a System link
-      description: |
-        Retrieve the Key Configuration linked to a specific System.
-      operationId: getSystemLinkByID
-      parameters:
-        - $ref: "#/components/parameters/systemIDPath"
-      responses:
-        "200":
-          description: Link retrieved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SystemLink"
-        "400":
-          $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
-        "403":
-          $ref: "#/components/responses/403"
-        "404":
-          $ref: "#/components/responses/404"
-        "429":
-          $ref: "#/components/responses/429"
-        "500":
-          $ref: "#/components/responses/500"
     patch:
       tags:
         - Systems
       summary: Update a System link
       description: |
         Update a link to a Key Configuration for a specific System.
-        Currently it supports:
-        - adding the link to the specified Key Configuration
-        - updating the link to the specified Key Configuration
-        - retrying last link action
-      operationId: patchSystemLinkByID
+        - If a System is not connected to any Key Configuration it triggers a Link Event
+        - If a System is connected to a Key Configuration:
+          - If the new Key Configuration is different from the old one, it triggers a Switch Event
+          - If the new Key Configuration is the same as the old one, it resends a Link Event
+      operationId: linkSystemAction
       requestBody:
         description: System update request body
         required: true
@@ -839,8 +766,6 @@ paths:
                 $ref: "#/components/schemas/System"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "409":
@@ -855,7 +780,7 @@ paths:
       summary: Delete a System link
       description: |
         Delete the link to the Key Configuration from a specific System.
-      operationId: deleteSystemLinkByID
+      operationId: unlinkSystemAction
       parameters:
         - $ref: "#/components/parameters/systemIDPath"
       responses:
@@ -863,8 +788,6 @@ paths:
           description: Deleted
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -873,6 +796,65 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
+  /systems/{systemID}/recoveryActions:
+    post:
+      tags:
+        - Systems
+      summary: Recovery action
+      operationId: sendRecoveryActions
+      description: |
+        Trigger a recovery action for a system, currenty supporting:
+        - Retry failed action 
+        - Cancel System Link, Unlink, Switch
+      parameters:
+        - $ref: "#/components/parameters/systemIDPath"
+      requestBody:
+        description: Recovery action
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SystemRecoveryActionBody"
+      responses:
+        "200":
+          description: OK
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      tags:
+        - Systems
+      summary: Possible recovery action
+      operationId: getRecoveryActions
+      description: |
+        Returns possible recovery actions
+      parameters:
+        - $ref: "#/components/parameters/systemIDPath"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemRecoveryAction"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+
   /workflows/check:
     post:
       tags:
@@ -887,15 +869,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Workflow"
-      parameters:
-        - name: User-ID
-          in: header
-          required: true
-          description: The ID of the User initiating the Workflow (only temporary until authentication is implemented)
-          schema:
-            type: string
-            format: uuid
+              $ref: "#/components/schemas/WorkflowBody"
       responses:
         "200":
           description: Ok
@@ -905,8 +879,6 @@ paths:
                 $ref: "#/components/schemas/WorkflowCheck"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -926,8 +898,6 @@ paths:
         Create a new Workflow for a specific action on an artifact.
 
         Example Workflows include:
-          - Key: Update state; Delete
-          - Key Configuration: Update primary Key; Delete
           - System: Update Key Configuration (link/unlink/switch)
       operationId: CreateWorkflow
       requestBody:
@@ -936,15 +906,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Workflow"
-      parameters:
-        - name: User-ID
-          in: header
-          required: true
-          description: The ID of the User initiating the Workflow (only temporary until authentication is implemented)
-          schema:
-            type: string
-            format: uuid
+              $ref: "#/components/schemas/WorkflowBody"
       responses:
         "201":
           description: Created
@@ -954,8 +916,6 @@ paths:
                 $ref: "#/components/schemas/Workflow"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -986,8 +946,6 @@ paths:
                 $ref: "#/components/schemas/WorkflowList"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "429":
@@ -1004,47 +962,14 @@ paths:
       parameters:
         - $ref: "#/components/parameters/workflowIDPath"
       responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Workflow"
-        "400":
-          $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
-        "403":
-          $ref: "#/components/responses/403"
-        "404":
-          $ref: "#/components/responses/404"
-        "429":
-          $ref: "#/components/responses/429"
-        "500":
-          $ref: "#/components/responses/500"
-  /workflows/{workflowID}/approvers:
-    get:
-      tags:
-        - Workflows
-      summary: Get the list of Workflow approvers.
-      description: Retrieves the Users who are assigned as approvers for the Workflow with specified ID.
-      operationId: ListWorkflowApproversByWorkflowID
-      parameters:
-        - $ref: "#/components/parameters/workflowIDPath"
-        - $ref: "#/components/parameters/topPath"
-        - $ref: "#/components/parameters/skipPath"
-        - $ref: "#/components/parameters/countPath"
-      responses:
         "200":
-          description: Retrieved
+          description: Okay
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WorkflowApproverList"
+                $ref: "#/components/schemas/DetailedWorkflow"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -1062,13 +987,6 @@ paths:
       operationId: TransitionWorkflow
       parameters:
         - $ref: "#/components/parameters/workflowIDPath"
-        - name: User-ID
-          in: header
-          required: true
-          description: The ID of the User executing the transition (only temporary until authentication is implemented)
-          schema:
-            type: string
-            format: uuid
       requestBody:
         required: true
         content:
@@ -1082,11 +1000,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workflow"
-
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -1114,8 +1029,6 @@ paths:
                 $ref: "#/components/schemas/TenantList"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "429":
@@ -1137,8 +1050,6 @@ paths:
                 $ref: "#/components/schemas/Tenant"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -1168,8 +1079,6 @@ paths:
                 $ref: "#/components/schemas/GroupList"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "429":
@@ -1200,8 +1109,6 @@ paths:
                 $ref: "#/components/schemas/Group"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "409":
@@ -1235,8 +1142,6 @@ paths:
                 $ref: "#/components/schemas/GroupIAMCheckResponse"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "409":
@@ -1264,8 +1169,6 @@ paths:
                 $ref: "#/components/schemas/Group"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "429":
@@ -1294,8 +1197,6 @@ paths:
                 $ref: "#/components/schemas/Group"
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
         "404":
@@ -1319,10 +1220,28 @@ paths:
           description: Deleted
         "400":
           $ref: "#/components/responses/400"
-        "401":
-          $ref: "#/components/responses/401"
         "403":
           $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /userInfo:
+    get:
+      tags:
+        - User Info
+      summary: Get user information
+      description: Retrieves details of the authenticated user.
+      operationId: GetUserInfo
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserInfo"
         "404":
           $ref: "#/components/responses/404"
         "429":
@@ -1365,6 +1284,7 @@ components:
       description: The Version of a Key. This can be the Version number, or if "latest" is specified, the action will be performed on the primary Key Version
       schema:
         type: string
+        maxLength: 6
       examples:
         version:
           value: 1
@@ -1378,7 +1298,8 @@ components:
       schema:
         type: integer
         format: int64
-      example: 1
+        minimum: 0
+        example: 1
     keyConfigurationIDPath:
       name: keyConfigurationID
       in: path
@@ -1437,13 +1358,13 @@ components:
 
         The following operators are supported:
 
-        - Equal (eq), on the following attributes: keyConfigurationId, region, role and type.
+        - Equal (eq), on the following attributes: keyConfigurationId, region, role, status and type.
         - Logical AND (and).
 
         Example: region eq eu
       schema:
         type: string
-
+        maxLength: 500
     filterWorkflows:
       name: "$filter"
       in: query
@@ -1453,17 +1374,18 @@ components:
 
         The following operators are supported:
 
-        - Equal (eq), on the following attributes: userId, artifactId, artifactType, actionType and state.
+        - Equal (eq), on the following attributes: artifactId, artifactType, artifactName, parametersResourceName, actionType and state.
         - Logical AND (and).
 
         - Valid arguments for `state` are INITIAL, REVOKED, REJECTED, EXPIRED, WAIT_APPROVAL, WAIT_CONFIRMATION, EXECUTING, SUCCESSFUL, FAILED
-        - Valid arguments for `artifactType` are KEY, KEY_CONFIGURATION, SYSTEM
-        - Valid arguments for `actionType` are UPDATE_STATE, UPDATE_PRIMARY_KEY, UPDATE_KEY_CONFIGURATION, DELETE
+        - Valid arguments for `artifactType` are SYSTEM
+        - Valid arguments for `actionType` are LINK, UNLINK, SWITCH
 
         Examples:
-          - regionst eq eu
+          - state eq INITIAL
       schema:
         type: string
+        maxLength: 1000
 
   schemas:
     SystemID:
@@ -1475,6 +1397,7 @@ components:
       x-go-name: ID
     SystemIdentifier:
       type: string
+      maxLength: 255
       readOnly: true
       description: The identifier of the System entity
       example: 12345678-90ab-cdef-1234-567890abcdef
@@ -1493,6 +1416,7 @@ components:
         count:
           description: The total number of Systems
           type: integer
+          minimum: 0
           example: 2
         value:
           type: array
@@ -1517,10 +1441,12 @@ components:
           $ref: "#/components/schemas/SystemIdentifier"
         region:
           type: string
+          maxLength: 50
           description: The region of the System
           example: eu-central-1
         type:
           type: string
+          maxLength: 50
           description: The type of the System
           example: SYSTEM
         properties:
@@ -1537,6 +1463,7 @@ components:
         keyConfigurationName:
           description: The name of the key configuration
           type: string
+          maxLength: 255
           example: new-key-configuration-name
         keyConfigurationID:
           $ref: "#/components/schemas/KeyConfigurationID"
@@ -1548,9 +1475,32 @@ components:
       properties:
         keyConfigurationID:
           $ref: "#/components/schemas/KeyConfigurationID"
-        retry:
+    SystemRecoveryAction:
+      description: System possible actions
+      type: object
+      readOnly: true
+      required:
+        - canCancel
+        - canRetry
+      properties:
+        canCancel:
           type: boolean
-          description: Retry last system link action
+          description: Represents if the system allowed to be reverted to previous state
+        canRetry:
+          type: boolean
+          description: Represents if the previously failed system action can be retried
+    SystemRecoveryActionBody:
+      description: System Action Body
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          description: The system recovery action
+          type: string
+          enum:
+            - RETRY
+            - CANCEL
     ClientCertificates:
       type: object
       properties:
@@ -1566,6 +1516,7 @@ components:
         count:
           description: The total number of Client Certificates
           type: integer
+          minimum: 0
           example: 2
         value:
           type: array
@@ -1593,6 +1544,7 @@ components:
         count:
           description: The total number of Crypto Certificates
           type: integer
+          minimum: 0
           example: 2
         value:
           type: array
@@ -1620,6 +1572,7 @@ components:
         count:
           description: The total number of Keys
           type: integer
+          minimum: 0
           example: 2
         value:
           type: array
@@ -1636,21 +1589,24 @@ components:
           description: The ID of tenant
           type: string
           readOnly: true
-          format: string
+          maxLength: 255
           example: cmk-12345678-90ab-cdef-1234-567890abcdef
         name:
           description: Name of the tenant
+          minLength: 3
+          maxLength: 63
           type: string
           example: tenant1
         region:
           type: string
-          description: Regiono of the tenant
+          maxLength: 50
+          description: Region of the tenant
           example: eu10
     TenantKeystore:
       type: object
       required:
         - hyok
-        # - default TODO: AS PER KMS20-2740 this is not required. To be made required on KMS20-2742
+        # - default
       properties:
         default:
           $ref: "#/components/schemas/DefaultKeystore"
@@ -1672,6 +1628,7 @@ components:
           type: array
           items:
             type: string
+            maxLength: 50
     HYOKKeystore:
       type: object
       properties:
@@ -1683,6 +1640,7 @@ components:
           type: array
           items:
             type: string
+            maxLength: 50
           description: The list of supported keystores
           example:
             - AWS
@@ -1703,6 +1661,7 @@ components:
         name:
           description: Name of the group
           type: string
+          maxLength: 64
           example: Tenant1 Administrator
         iamIdentifier:
           $ref: "#/components/schemas/GroupIAMIdentifier"
@@ -1717,10 +1676,12 @@ components:
         description:
           description: Description of the Group
           type: string
+          maxLength: 4096
           example: This group represents a Tenant Administrator
     GroupIAMIdentifier:
       description: Reference of the Group in the customer's Identity & Access Management (IAM) provider
       type: string
+      maxLength: 128
       example: KMS_Tenant1Administrator_tenant1-id
       readOnly: true
     GroupIAMCheckRequest:
@@ -1733,6 +1694,7 @@ components:
           type: array
           items:
             type: string
+            maxLength: 128
             description: The IAM Identifier to check
           example:
             - KMS_Tenant1Administrator_tenant1-id
@@ -1765,6 +1727,7 @@ components:
         count:
           description: The total number of Tenants
           type: integer
+          minimum: 0
           example: 2
         value:
           type: array
@@ -1778,6 +1741,7 @@ components:
         count:
           description: The total number of Groups
           type: integer
+          minimum: 0
           example: 2
         value:
           type: array
@@ -1816,6 +1780,7 @@ components:
         description:
           description: The description of the Key
           type: string
+          maxLength: 4096
           example: This Key is used for DB key store encryption.
         isPrimary:
           description: Flag indicating whether this Key is the primary (default) key for its associated key configuration.
@@ -1830,6 +1795,7 @@ components:
             provider is AWS then this identifier is the key alias, if the keystore provider is AZURE then this is the
             key identifier in full URL format.
           type: string
+          maxLength: 255
           example: arn:aws:kms:us-west-2:111122223333:alias/<alias-name>
         metadata:
           $ref: "#/components/schemas/KeyMetadata"
@@ -1845,6 +1811,7 @@ components:
       description: The name of the Key
       type: string
       minLength: 1
+      maxLength: 255
       example: example_key_name
     GroupPatch:
       description: A patch for updating a group
@@ -1853,11 +1820,18 @@ components:
         name:
           description: The name of the Group
           type: string
+          maxLength: 64
           example: new-group-name
         description:
           description: Description of the Group
           type: string
+          maxLength: 4096
           example: This group represents a Tenant Administrator
+        IAMIdentifier:
+          description: IAMIdentifier of the group
+          type: string
+          maxLength: 128
+          example: KMS_Admin_Group
       additionalProperties: false
     KeyPatch:
       description: A patch for updating a Key
@@ -1866,9 +1840,11 @@ components:
         name:
           description: The name of the Key
           type: string
+          maxLength: 255
           example: new-key-name
         description:
           description: The description of the Key
+          maxLength: 4096
           type: string
           example: This Key is used for DB key store encryption.
         enabled:
@@ -1896,39 +1872,46 @@ components:
     CreatedAt:
       description: The datetime of when the object was created (RFC3339 format)
       type: string
+      format: date-time
       example: "2024-09-30T21:02:00"
     UpdatedAt:
       description: The datetime of when the object was last updated, enabled, or disabled (RFC3339 format)
       type: string
+      format: date-time
       example: "2020-09-30T21:02:00"
     CreatorID:
       description: The ID of the User who created the object
       type: string
-      format: uuid
       example: 12345678-90ab-cdef-1234-567890abcdef
     CreatorName:
       description: The username of the User who created the object
       type: string
+      maxLength: 255
       example: bob@example.com
     ClientCertName:
       description: The name of the crypto client using this Client Certificate
       type: string
+      maxLength: 4096
       example: "crypto-01"
     ClientCertRootCA:
       description: The root CA for the certificate
       type: string
+      maxLength: 4096
       example: "http://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
     ClientCertSubject:
       description: The subject of the certificate
       type: string
+      maxLength: 4096
       example: "C=DE,O=EXAMPLE,OU=EXAMPLE,OU=Canary,OU=xxyyzz,L=abcd,CN=01234"
     KeyPrimaryVersion:
       description: The number of the primary Key Version
       type: integer
+      minimum: 0
       example: 1
     KeyTotalVersions:
       description: The number of Versions of the Key
       type: integer
+      minimum: 0
       example: 1
     KeyState:
       description:
@@ -1936,6 +1919,7 @@ components:
         the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions
         are in UNKNOWN state if the authentication to the customer key fails due to any reason. FORBIDDEN state is for
         when a HYOK customer key permission is not granted to the system.
+        DETATCHED state is applicable for keys that have been marked with a detatch call on tenant termination
       type: string
       readOnly: true
       enum:
@@ -1946,6 +1930,7 @@ components:
         - DELETED
         - UNKNOWN
         - FORBIDDEN
+        - DETATCHED
     KeyAlgorithm:
       description: The algorithm of the Key
       type: string
@@ -1959,10 +1944,12 @@ components:
         The key provider indicates the service or hyperscaler that manages the keys.
         Examples include cloud service providers like AWS, Azure, or Google Cloud, which offer key management services.
       type: string
+      maxLength: 50
       example: AWS
     KeyRegion:
       description: The region where the key is stored
       type: string
+      maxLength: 50
       example: eu-central-1
     KeyType:
       description: |
@@ -1987,6 +1974,7 @@ components:
         version:
           description: The Version number of the Key
           type: integer
+          minimum: 0
           readOnly: true
           example: 1
         metadata:
@@ -2000,6 +1988,7 @@ components:
             The native identifier of the key to register. For AWS, this is either the key ID or
             the full key ARN.
           type: string
+          maxLength: 255
           example: arn:aws:kms:us-west-2:111122223333:alias/<alias-name>
     KeyVersionMetadata:
       description: Key Version metadata
@@ -2018,6 +2007,7 @@ components:
         count:
           description: The total number of Key Versions
           type: integer
+          minimum: 0
           example: 1
         value:
           type: array
@@ -2041,6 +2031,7 @@ components:
           description: The native identifier of the key to register.
             For AWS, this is either the key ID or the full key ARN.
           type: string
+          maxLength: 255
           example: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
       nullable: true
       additionalProperties: false
@@ -2070,6 +2061,7 @@ components:
           description: |
             The public key to use to encrypt the key material before importing it to the key provider.
           type: string
+          maxLength: 65536
           example: |
             -----BEGIN PUBLIC KEY-----
             MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQ...
@@ -2085,6 +2077,7 @@ components:
         wrappedKeyMaterial:
           description: The wrapped key material to import
           type: string
+          maxLength: 65536
           format: base64
           example: "U29tZVdlYlRleHQ="
     WrappingAlgorithm:
@@ -2122,6 +2115,7 @@ components:
         count:
           description: The total number of Key Configurations
           type: integer
+          minimum: 0
           example: 2
         value:
           type: array
@@ -2139,10 +2133,12 @@ components:
         name:
           description: The name of the Key Configuration
           type: string
+          maxLength: 255
           example: new-key-configuration-name
         description:
           description: The description of the Key Configuration
           type: string
+          maxLength: 4096
           example: This Key Configuration is used for connecting with Systems in Europe.
         adminGroupID:
           description: The ID of the Group of Users responsible for managing the Key Configuration
@@ -2182,11 +2178,13 @@ components:
       properties:
         name:
           description: The name of the Key Configuration
+          maxLength: 255
           type: string
           example: updated-key-configuration-name
         description:
           description: The description of the Key Configuration
           type: string
+          maxLength: 4096
           example: This Key Configuration is used for connecting with Systems in Europe.
       additionalProperties: false
     KeyConfigurationKeyAdd:
@@ -2241,11 +2239,13 @@ components:
         count:
           description: The total number of tags
           type: integer
+          minimum: 0
           example: 2
         value:
           type: array
           items:
             type: string
+            maxLength: 255
             example: Europe
     Tags:
       type: object
@@ -2257,6 +2257,7 @@ components:
           type: array
           items:
             type: string
+            maxLength: 255
             example: "tag1"
     KeyConfigurationMetadata:
       description: Key Configuration metadata
@@ -2274,11 +2275,47 @@ components:
         totalKeys:
           description: The number of Keys of the Key Configuration
           type: integer
+          minimum: 0
           example: 1
         totalSystems:
           description: The number of Systems connected to the Key Configuration
           type: integer
+          minimum: 0
           example: 1
+    UserInfo:
+      type: object
+      required:
+        - identifier
+        - email
+        - givenName
+        - familyName
+        - role
+      properties:
+        identifier:
+          description: The unique identifier of the user
+          type: string
+          maxLength: 255
+          example: 12345678-90ab-cdef-1234-567890abcdef
+        email:
+          description: The email address of the user
+          type: string
+          maxLength: 255
+          example: bob@example.com
+        givenName:
+          description: The given name of the user
+          type: string
+          maxLength: 255
+          example: Bob
+        familyName:
+          description: The family name of the user
+          type: string
+          maxLength: 255
+          example: Smith
+        role:
+          description: The role assigned to the user
+          type: string
+          maxLength: 255
+          example: KEY_ADMINISTRATOR
     WorkflowList:
       type: object
       required:
@@ -2287,6 +2324,7 @@ components:
         count:
           description: The total number of Workflows
           type: integer
+          minimum: 0
           example: 2
         value:
           type: array
@@ -2308,20 +2346,20 @@ components:
     WorkflowArtifactTypeEnum:
       type: string
       enum:
-        - KEY
-        - KEY_CONFIGURATION
         - SYSTEM
-      example: KEY
+      example: SYSTEM
+    WorkflowParametersResourceTypeEnum:
+      type: string
+      enum:
+        - KEY_CONFIGURATION
+      example: KEY_CONFIGURATION
     WorkflowActionTypeEnum:
       type: string
       enum:
-        - UPDATE_STATE
-        - UPDATE_PRIMARY_KEY
         - LINK
         - UNLINK
         - SWITCH
-        - DELETE
-      example: DELETE
+      example: LINK
     WorkflowState:
       $ref: "#/components/schemas/WorkflowStateEnum"
       readOnly: true
@@ -2332,6 +2370,9 @@ components:
     WorkflowActionType:
       description: The type of Action that the Workflow is associated with
       $ref: "#/components/schemas/WorkflowActionTypeEnum"
+    WorkflowParametersResourceType:
+      description: The type of resource derived from the Workflow parameters
+      $ref: "#/components/schemas/WorkflowParametersResourceTypeEnum"
     WorkflowCheck:
       type: object
       required:
@@ -2348,12 +2389,47 @@ components:
           description: If a workflow on the same artifact exists
           type: boolean
           example: true
-    Workflow:
+    WorkflowBody:
       type: object
       required:
         - actionType
         - artifactType
         - artifactID
+      properties:
+        actionType:
+          $ref: "#/components/schemas/WorkflowActionType"
+        artifactType:
+          $ref: "#/components/schemas/WorkflowArtifactType"
+        artifactID:
+          description: The ID of the artifact that the Workflow is associated with
+          type: string
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
+        parameters:
+          description: Parameters required to execute the Workflow
+          type: string
+          maxLength: 4096
+          example: |
+            SYSTEM + LINK: key configuration ID
+            SYSTEM + SWITCH: new key configuration ID
+            SYSTEM + UNLINK: needs no parameters
+        expiresAt:
+          description: The datetime of when the workflow expires (RFC3339 format)
+          type: string
+          format: date-time
+          example: "2024-09-30T21:02:00"
+    Workflow:
+      type: object
+      readOnly: true
+      required:
+        - id
+        - actionType
+        - artifactType
+        - artifactID
+        - initiatorID
+        - initiatorName
+        - state
+        - metadata
       properties:
         id:
           readOnly: true
@@ -2375,31 +2451,68 @@ components:
         initiatorID:
           description: The ID of the User who initiated the Workflow
           type: string
-          format: uuid
           example: 12345678-90ab-cdef-1234-567890abcdef
-          readOnly: true
         initiatorName:
           description: The name of the User who initiated the Workflow
           type: string
+          maxLength: 255
           example: alice@example.com
-          readOnly: true
         parameters:
           description: Parameters required to execute the Workflow
           type: string
-          example: |
-            KEY + DELETE - needs no parameters
-            KEY + UPDATE_STATE: target state
-            KEY + UPDATE_PRIMARY: new primary Key ID
-            KEY_CONFIGURATION + DELETE: needs no parameters
-            SYSTEM + LINK: key configuration ID
-            SYSTEM + SWITCH: new key configuration ID
-            SYSTEM + UNLINK: needs no parameters
+        metadata:
+          $ref: "#/components/schemas/WorkflowMetadata"
         failureReason:
           description: The reason for the failure of the Workflow
           type: string
           example: The Key is in use by a System
-        metadata:
-          $ref: "#/components/schemas/WorkflowMetadata"
+          maxLength: 4096
+        expiresAt:
+          description: The datetime of when the workflow expires (RFC3339 format)
+          type: string
+          format: date-time
+          example: "2024-09-30T21:02:00"
+        artifactName:
+          description: The name of the artifact that the Workflow is associated with
+          type: string
+          maxLength: 255
+          example: example_system_name
+        parametersResourceName:
+          description: The name of the resource derived from the Workflow parameters
+          type: string
+          maxLength: 255
+          example: example_key_configuration_name
+        parametersResourceType:
+          $ref: "#/components/schemas/WorkflowParametersResourceType"
+    DetailedWorkflow:
+      allOf:
+        - $ref: "#/components/schemas/Workflow"
+        - type: object
+          readOnly: true
+          required:
+            - approverGroups
+            - decisions
+            - availableTransitions
+            - approvalSummary
+          description: Detailed Workflow including system metadata
+          properties:
+            approverGroups:
+              description: The list of Groups responsible for approving the Workflow
+              type: array
+              items:
+                $ref: "#/components/schemas/Group"
+            decisions:
+              description: The list of decisions made by the approvers
+              type: array
+              items:
+                $ref: "#/components/schemas/WorkflowApprover"
+            availableTransitions:
+              description: The list of available transitions for the Workflow
+              type: array
+              items:
+                $ref: "#/components/schemas/WorkflowTransitionValue"
+            approvalSummary:
+              $ref: "#/components/schemas/WorkflowApprovalSummary"
     WorkflowMetadata:
       readOnly: true
       type: object
@@ -2414,28 +2527,16 @@ components:
         - transition
       properties:
         transition:
-          description: Transition to be executed
-          type: string
-          enum:
-            - APPROVE
-            - REJECT
-            - CONFIRM
-            - REVOKE
-          example: APPROVE
-    WorkflowApproverList:
-      description: Approvers of a certain Workflow
-      type: object
-      required:
-        - value
-      properties:
-        count:
-          description: The total number of approvers
-          type: integer
-          example: 2
-        value:
-          type: array
-          items:
-            $ref: "#/components/schemas/WorkflowApprover"
+          description: The transition value
+          $ref: "#/components/schemas/WorkflowTransitionValue"
+    WorkflowTransitionValue:
+      type: string
+      enum:
+        - APPROVE
+        - REJECT
+        - CONFIRM
+        - REVOKE
+      example: APPROVE
     WorkflowApprover:
       type: object
       required:
@@ -2445,11 +2546,11 @@ components:
         id:
           description: The UUID of the Workflow approver.
           type: string
-          format: uuid
           example: 12345678-90ab-cdef-1234-567890abcdef
         name:
           description: The name of the approver
           type: string
+          maxLength: 255
           example: bob@example.com
         decision:
           description: The decision of the approver
@@ -2458,7 +2559,28 @@ components:
             - APPROVED
             - REJECTED
             - PENDING
-          example: PENDING
+          example: APPROVED
+    WorkflowApprovalSummary:
+      type: object
+      description: Summary of the approval decisions
+      readOnly: true
+      properties:
+        approved:
+          description: Number of approved decisions
+          type: integer
+          example: 2
+        rejected:
+          description: Number of rejected decisions
+          type: integer
+          example: 1
+        pending:
+          description: Number of pending decisions
+          type: integer
+          example: 1
+        targetScore:
+          description: The target score required for approval.
+          type: integer
+          example: 2
     #
     # Labels
     #
@@ -2474,9 +2596,11 @@ components:
         key:
           type: string
           description: A name of a Label
+          maxLength: 255
         value:
           type: string
           description: A value associated with the Label
+          maxLength: 255
     LabelList:
       type: object
       required:
@@ -2499,6 +2623,7 @@ components:
       properties:
         count:
           type: integer
+          minimum: 0
           example: 3
         value:
           type: array
@@ -2589,23 +2714,6 @@ components:
                   code: BAD_REQUEST
                   status: 400
                   message: Request body does not conform to specifications
-                  id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
-    "401":
-      description: >-
-        The 401 (Unauthorized) status code indicates that the request has not
-        been applied because it lacks valid authentication credentials for the
-        target resource.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorMessage"
-          examples:
-            response:
-              value:
-                error:
-                  code: UNAUTHORIZED
-                  status: 401
-                  message: Invalid token
                   id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
     "403":
       description: >-

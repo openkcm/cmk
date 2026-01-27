@@ -4,10 +4,8 @@ import (
 	"context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	tags "github.com/openkcm/cmk/internal/api/transform/tags"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
@@ -17,27 +15,23 @@ func (c *APIController) GetTagsForKeyConfiguration(
 	ctx context.Context,
 	request cmkapi.GetTagsForKeyConfigurationRequestObject,
 ) (cmkapi.GetTagsForKeyConfigurationResponseObject, error) {
-	t, err := c.Manager.KeyConfigTags.GetTagByKeyConfiguration(ctx, request.KeyConfigurationID)
+	tags, err := c.Manager.Tags.GetTags(ctx, request.KeyConfigurationID)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGettingTagsByKeyConfigurationID, err)
 	}
 
-	err = sanitise.Stringlikes(&t)
+	err = sanitise.Stringlikes(&tags)
 	if err != nil {
 		return nil, err
 	}
 
-	count := len(t)
+	count := len(tags)
 	response := cmkapi.TagList{
-		Value: make([]string, count),
+		Value: tags,
 	}
 
 	if ptr.GetSafeDeref(request.Params.Count) {
 		response.Count = ptr.PointTo(count)
-	}
-
-	for i, tag := range t {
-		response.Value[i] = tag.Value
 	}
 
 	return cmkapi.GetTagsForKeyConfiguration200JSONResponse(response), nil
@@ -48,9 +42,7 @@ func (c *APIController) AddTagsToKeyConfiguration(
 	ctx context.Context,
 	request cmkapi.AddTagsToKeyConfigurationRequestObject,
 ) (cmkapi.AddTagsToKeyConfigurationResponseObject, error) {
-	t := tags.FromAPI[*model.KeyConfigurationTag](ptr.Initializer, *request.Body)
-
-	err := c.Manager.KeyConfigTags.CreateTagsByKeyConfiguration(ctx, request.KeyConfigurationID, t)
+	err := c.Manager.Tags.SetTags(ctx, request.KeyConfigurationID, request.Body.Tags)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrCreatingTags, err)
 	}

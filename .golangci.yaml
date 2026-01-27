@@ -18,10 +18,13 @@ linters:
     - musttag
     - nlreturn
     - tagalign
+    - mnd
     - varnamelen
     - wrapcheck
     - ireturn
     - noctx
+    - noinlineerr
+    - wsl_v5
   settings:
     paralleltest:
       ignore-missing: true

@@ -21,6 +21,13 @@ func (t ArtifactType) String() string {
 	return string(t)
 }
 
+// ParametersResourceType represents the type of the resource that is referenced in the workflow parameters.
+type ParametersResourceType string
+
+func (t ParametersResourceType) String() string {
+	return string(t)
+}
+
 // ActionType represents the type of the action that the workflow is performing.
 type ActionType string
 
@@ -52,6 +59,9 @@ const (
 	ArtifactTypeKeyConfiguration ArtifactType = "KEY_CONFIGURATION"
 	ArtifactTypeSystem           ArtifactType = "SYSTEM"
 
+	ParametersResourceTypeKey              ParametersResourceType = "KEY"
+	ParametersResourceTypeKeyConfiguration ParametersResourceType = "KEY_CONFIGURATION"
+
 	ActionTypeUpdateState   ActionType = "UPDATE_STATE"
 	ActionTypeUpdatePrimary ActionType = "UPDATE_PRIMARY"
 	ActionTypeLink          ActionType = "LINK"
@@ -82,4 +92,12 @@ var NonTerminalStates = []string{
 	StateWaitApproval.String(),
 	StateWaitConfirmation.String(),
 	StateExecuting.String(),
+}
+
+var TerminalStates = []string{
+	StateRevoked.String(),
+	StateRejected.String(),
+	StateExpired.String(),
+	StateSuccessful.String(),
+	StateFailed.String(),
 }

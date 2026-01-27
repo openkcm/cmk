@@ -2,65 +2,76 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/google/uuid"
 
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
 var (
 	ErrGetKeyConfig = errors.New("error getting keyconfig")
-	ErrCreateTag    = errors.New("error creating tags")
+	ErrCreateTag    = errors.New("error setting tags")
 )
 
-type Parent interface {
-	IsSharedModel() bool
-	TableName() string
-	SetID(id uuid.UUID)
+type Tags interface {
+	SetTags(ctx context.Context, itemID uuid.UUID, values []string) error
+	GetTags(ctx context.Context, itemID uuid.UUID) ([]string, error)
+	DeleteTags(ctx context.Context, itemID uuid.UUID) error
 }
 
-// createTagsByKeyConfiguration creates tags. If tags already exist, they are replaced.
-func createTags[Tparent Parent, Ttag any](
-	ctx context.Context,
-	mrepo repo.Repo,
-	p Tparent,
-	id uuid.UUID,
-	tags []*Ttag,
-) error {
-	p.SetID(id)
+type TagManager struct {
+	r repo.Repo
+}
 
-	_, err := mrepo.Patch(
-		ctx,
-		p,
-		*repo.NewQuery().Associate(repo.Association{
-			Field: "Tags",
-			Value: tags,
-		}),
-	)
+func NewTagManager(r repo.Repo) *TagManager {
+	return &TagManager{
+		r: r,
+	}
+}
+
+func (m *TagManager) DeleteTags(ctx context.Context, itemID uuid.UUID) error {
+	_, err := m.r.Delete(ctx, &model.Tag{ID: itemID}, *repo.NewQuery())
 	if err != nil {
-		return errs.Wrap(ErrCreateTag, err)
+		return errs.Wrap(ErrDeletingTags, err)
 	}
 
 	return nil
 }
 
-func getTags[Tparent Parent](ctx context.Context, mrepo repo.Repo,
-	id uuid.UUID, p Tparent,
-) error {
-	ck := repo.NewCompositeKey().
-		Where(repo.IDField, id)
-
-	_, err := mrepo.First(ctx,
-		p,
-		*repo.NewQuery().
-			Preload(repo.Preload{"Tags"}).
-			Where(repo.NewCompositeKeyGroup(ck)),
-	)
-	if err != nil {
-		return errs.Wrap(ErrGetKeyConfig, err)
+func (m *TagManager) SetTags(ctx context.Context, itemID uuid.UUID, values []string) error {
+	if len(values) == 1 && values[0] == "" {
+		return m.DeleteTags(ctx, itemID)
 	}
 
-	return nil
+	bytes, err := json.Marshal(values)
+	if err != nil {
+		return err
+	}
+
+	return m.r.Set(ctx, &model.Tag{ID: itemID, Values: bytes})
+}
+
+func (m *TagManager) GetTags(ctx context.Context, itemID uuid.UUID) ([]string, error) {
+	values := []string{}
+	tag := &model.Tag{ID: itemID}
+	_, err := m.r.First(ctx, tag, *repo.NewQuery())
+
+	if errors.Is(err, repo.ErrNotFound) {
+		return values, nil
+	}
+
+	if !errors.Is(err, err) {
+		return nil, errs.Wrap(ErrGetTags, err)
+	}
+
+	err = json.Unmarshal(tag.Values, &values)
+	if err != nil {
+		return nil, err
+	}
+
+	return values, nil
 }

@@ -194,16 +194,6 @@ plugins:
     type: KeystoreInstanceKeyOperation
     logLevel: debug
     tags: ["hyok"]
-  - name: CLD
-    path: ./bin/cld
-    type: SystemInformationService
-    logLevel: debug
-    tags: ["cld"]
-  - name: ULI
-    path: ./bin/uli
-    type: SystemInformationService
-    logLevel: debug
-    tags: ["uli"]
   - name: CERT_ISSUER
     path: ./cert-issuer-plugins/bin/cert-issuer
     type: CertificateIssuerService

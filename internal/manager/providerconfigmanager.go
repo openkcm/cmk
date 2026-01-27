@@ -192,7 +192,7 @@ func (pmc *ProviderConfigManager) FillKeystorePool(ctx context.Context, size int
 			return err
 		}
 
-		err = pmc.AddKeystoreConfigToPool(ctx, provider, config)
+		err = pmc.AddKeystoreToPool(ctx, provider, config)
 		if err != nil {
 			return err
 		}
@@ -228,20 +228,20 @@ func (pmc *ProviderConfigManager) CreateKeystore(ctx context.Context) (string, m
 	return provider, configValues.AsMap(), nil
 }
 
-func (pmc *ProviderConfigManager) AddKeystoreConfigToPool(
+func (pmc *ProviderConfigManager) AddKeystoreToPool(
 	ctx context.Context,
 	provider string,
 	config map[string]any,
 ) error {
-	configValue, err := json.Marshal(config)
+	ksConfig, err := json.Marshal(config)
 	if err != nil {
 		return errs.Wrap(ErrMarshalConfig, err)
 	}
 
-	_, err = pmc.keystorePool.Add(ctx, &model.KeystoreConfiguration{
+	_, err = pmc.keystorePool.Add(ctx, &model.Keystore{
 		ID:       uuid.New(),
 		Provider: provider,
-		Value:    configValue,
+		Config:   ksConfig,
 	})
 	if err != nil {
 		return errs.Wrap(ErrAddConfigToPool, err)
@@ -308,16 +308,9 @@ func (pmc *ProviderConfigManager) createKeystoreInstanceConfig(
 func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 	ctx context.Context,
 ) (*kscommonv1.KeystoreInstanceConfig, *time.Time, error) {
-	defaultKeystore, err := pmc.tenantConfigs.GetDefaultKeystore(ctx)
+	ksConfig, err := pmc.tenantConfigs.GetDefaultKeystoreConfig(ctx)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	var ksConfig model.DefaultKeystore
-
-	err = json.Unmarshal(defaultKeystore.Value, &ksConfig)
-	if err != nil {
-		return nil, nil, errs.Wrap(ErrUnmarshalConfig, err)
 	}
 
 	cert, err := pmc.certs.getDefaultKeystoreClientCert(

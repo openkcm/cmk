@@ -9,7 +9,6 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -55,21 +54,7 @@ func (c *APIController) GetTenantInfo(
 ) (cmkapi.GetTenantInfoResponseObject, error) {
 	currentTenant, err := c.Manager.Tenant.GetTenant(ctx)
 	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrGetTenantInfo, err)
-	}
-
-	iamIdentifiers, err := cmkcontext.ExtractClientDataGroups(ctx)
-	if err != nil {
-		return nil, apierrors.ErrTenantNotAllowed
-	}
-
-	accessible, err := c.Manager.Group.CheckTenantHasAnyIAMGroups(ctx, iamIdentifiers)
-	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrGetTenantInfo, err)
-	}
-
-	if !accessible {
-		return nil, apierrors.ErrTenantNotAllowed
+		return nil, err
 	}
 
 	tenantAPI, err := tenant.ToAPI(*currentTenant)

@@ -107,29 +107,6 @@ func (fs *FakeService) UpdateSystemL1KeyClaim(
 	return &systemv1.UpdateSystemL1KeyClaimResponse{Success: true}, nil
 }
 
-func (fs *FakeService) UnlinkSystemsFromTenant(
-	_ context.Context,
-	in *systemv1.UnlinkSystemsFromTenantRequest,
-) (*systemv1.UnlinkSystemsFromTenantResponse, error) {
-	for _, system := range fs.systems {
-		for _, systemID := range in.GetSystemIdentifiers() {
-			if system.GetExternalId() == systemID.GetExternalId() {
-				system.TenantId = ""
-			}
-		}
-	}
-
-	return &systemv1.UnlinkSystemsFromTenantResponse{
-		Success: true,
-	}, nil
-}
-
-func (fs *FakeService) LinkSystemsToTenant(
-	_ context.Context, _ *systemv1.LinkSystemsToTenantRequest,
-) (*systemv1.LinkSystemsToTenantResponse, error) {
-	return &systemv1.LinkSystemsToTenantResponse{}, nil
-}
-
 func (fs *FakeService) mustEmbedUnimplementedServiceServer() {}
 
 func (fs *FakeService) validateListRequest(req *systemv1.ListSystemsRequest) error {

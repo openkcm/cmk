@@ -186,8 +186,8 @@ func TestInMemoryRepository_Transaction(t *testing.T) {
 	t.Run("Should rollback on error", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(testutils.CreateCtxWithTenant(mock.TenantID))
 
-		_ = mockRepo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
-			err := r.Create(ctx, &m)
+		_ = mockRepo.Transaction(ctx, func(ctx context.Context) error {
+			err := mockRepo.Create(ctx, &m)
 			assert.NoError(t, err)
 
 			cancel()

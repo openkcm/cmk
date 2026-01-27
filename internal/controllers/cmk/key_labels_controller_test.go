@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
@@ -54,12 +54,7 @@ var errorLabel = []cmkapi.Label{
 func startAPIKeyLabels(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Key{},
-			&model.KeyLabel{},
-		},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{}), tenants[0]
 }
@@ -489,6 +484,91 @@ func TestLabelsController_DeleteLabel(t *testing.T) {
 					assert.Equal(t, *l.Value, ls[i].Value)
 					assert.Equal(t, l.Key, ls[i].Key)
 				}
+			}
+		})
+	}
+}
+
+func TestLabelsController_DeleteInvalidLabel(t *testing.T) {
+	db, sv, tenant := startAPIKeyLabels(t)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	shortStr := strings.Repeat("A", 255)
+	longStr := shortStr + "0"
+
+	key := testutils.NewKey(func(_ *model.Key) {})
+	testutils.CreateTestEntities(ctx, t, r, key)
+
+	type testCase struct {
+		name                 string
+		key                  string
+		value                string
+		expectedAddStatus    int
+		expectedDeleteStatus int
+	}
+
+	tcs := []testCase{
+		{
+			name:                 "good label",
+			key:                  shortStr,
+			value:                shortStr,
+			expectedAddStatus:    http.StatusNoContent,
+			expectedDeleteStatus: http.StatusNoContent,
+		},
+		{
+			name:                 "bad key",
+			key:                  longStr,
+			value:                shortStr,
+			expectedAddStatus:    http.StatusBadRequest,
+			expectedDeleteStatus: http.StatusBadRequest,
+		},
+		{
+			name:                 "bad value",
+			key:                  shortStr,
+			value:                longStr,
+			expectedAddStatus:    http.StatusBadRequest,
+			expectedDeleteStatus: http.StatusNotFound,
+		},
+		{
+			name:                 "bad label",
+			key:                  longStr,
+			value:                longStr,
+			expectedAddStatus:    http.StatusBadRequest,
+			expectedDeleteStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			label := []cmkapi.Label{
+				{
+					Key:   tc.key,
+					Value: ptr.PointTo(tc.value),
+				},
+			}
+
+			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+				Method:   http.MethodPost,
+				Endpoint: fmt.Sprintf(apiCreateOrUpdateLabelsFmt, key.ID.String()),
+				Tenant:   tenant,
+				Body:     testutils.WithJSON(t, label),
+			})
+			assert.Equal(t, tc.expectedAddStatus, w.Code)
+
+			if tc.expectedAddStatus == http.StatusBadRequest {
+				assert.Contains(t, w.Body.String(), "maximum string length is 255")
+			}
+
+			w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+				Method:   http.MethodDelete,
+				Endpoint: fmt.Sprintf("/key/%s/label/%s", key.ID.String(), tc.key),
+				Tenant:   tenant,
+			})
+			assert.Equal(t, tc.expectedDeleteStatus, w.Code)
+
+			if tc.expectedDeleteStatus == http.StatusBadRequest {
+				assert.Contains(t, w.Body.String(), "maximum string length is 255")
 			}
 		})
 	}

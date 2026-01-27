@@ -11,14 +11,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -28,7 +30,7 @@ import (
 )
 
 var (
-	ksConfig            = testutils.NewKeystoreConfig(func(_ *model.KeystoreConfiguration) {})
+	keystore            = testutils.NewKeystore(func(_ *model.Keystore) {})
 	keystoreDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
 		c.Purpose = model.CertificatePurposeKeystoreDefault
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
@@ -38,21 +40,13 @@ var (
 func startAPIKeys(t *testing.T, plugins ...testutils.MockPlugin) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Key{},
-			&model.KeyVersion{},
-			&model.System{},
-			&model.KeyConfiguration{},
-			&model.TenantConfig{},
-			&model.Certificate{},
-			&model.ImportParams{},
-			&model.KeystoreConfiguration{},
-		},
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
 	})
 
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
 		Plugins: plugins,
+		Config:  config.Config{Database: dbCfg},
 	}), tenants[0]
 }
 
@@ -120,6 +114,11 @@ func TestKeyControllerGetKeys(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: tt.query,
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -241,6 +240,11 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: tt.query,
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -276,7 +280,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 		r,
 		tenantDefaultCert,
 		keyConfig,
-		ksConfig,
+		keystore,
 		keystoreDefaultCert,
 	)
 
@@ -468,6 +472,11 @@ func TestKeyControllerPostKeys(t *testing.T) {
 				Endpoint: "keys",
 				Tenant:   tenant,
 				Body:     testutils.WithJSON(t, tt.inputMap),
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -507,6 +516,11 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 			Endpoint: "keys",
 			Tenant:   tenant,
 			Body:     testutils.WithJSON(t, sysManagedKey),
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		})
 		// Assert
 		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
@@ -531,6 +545,11 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 			Endpoint: "keys",
 			Tenant:   tenant,
 			Body:     testutils.WithJSON(t, byokKey),
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+				},
+			},
 		})
 		// Assert
 		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
@@ -544,10 +563,13 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 
 	// Create a key in the database
-	key := testutils.NewKey(func(_ *model.Key) {})
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+	})
 	r := sql.NewRepository(db)
 
-	testutils.CreateTestEntities(ctx, t, r, key)
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
 	tests := []struct {
 		name           string
@@ -581,6 +603,11 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: "/keys/" + tt.keyID,
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -590,6 +617,23 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Should fail to get when no group permission", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/keys/" + key.ID.String(),
+			Tenant:   tenant,
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{"some-other-group"},
+				},
+			},
+		})
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+		assert.Equal(t, "KEY_CONFIGURATION_NOT_FOUND", response.Error.Code)
+	})
 }
 
 func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
@@ -597,8 +641,10 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	key := testutils.NewKey(func(_ *model.Key) {})
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+	})
 
 	keyConfigWSys := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	sys := testutils.NewSystem(func(s *model.System) {
@@ -615,7 +661,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		r,
 		key,
 		keyConfig,
-		ksConfig,
+		keystore,
 		keystoreDefaultCert,
 		keyConfigWSys,
 		pkey,
@@ -650,6 +696,11 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 				Method:   http.MethodDelete,
 				Endpoint: "/keys/" + tt.keyID.String(),
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier, keyConfigWSys.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -662,6 +713,36 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("should not delete when no group permission", func(t *testing.T) {
+		kc2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		key2 := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = kc2.ID
+		})
+
+		testutils.CreateTestEntities(
+			ctx,
+			t,
+			r,
+			kc2,
+			key2,
+		)
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodDelete,
+			Endpoint: "/keys/" + key2.ID.String(),
+			Tenant:   tenant,
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{keyConfig.AdminGroup.IAMIdentifier, keyConfigWSys.AdminGroup.IAMIdentifier},
+				},
+			},
+		})
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+		assert.Equal(t, "KEY_CONFIGURATION_NOT_FOUND", response.Error.Code)
+	})
 }
 
 func TestKeyControllerUpdateKey(t *testing.T) {
@@ -705,7 +786,8 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		t,
 		r,
 		key,
-		ksConfig,
+		kc,
+		keystore,
 		keystoreDefaultCert,
 		sysFailed,
 		sys,
@@ -862,6 +944,11 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 				Endpoint: "/keys/" + tt.keyID,
 				Tenant:   tenant,
 				Body:     testutils.WithJSON(t, tt.input),
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{kc.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -873,6 +960,24 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("should not update when no group permission", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPatch,
+			Endpoint: "/keys/" + key.ID.String(),
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, cmkapi.KeyPatch{Name: ptr.PointTo("new-name")}),
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Groups: []string{"some-other-group"},
+				},
+			},
+		})
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+		assert.Equal(t, "KEY_CONFIGURATION_NOT_FOUND", response.Error.Code)
+	})
 }
 
 func TestKeyControllerGetImportParams(t *testing.T) {
@@ -911,7 +1016,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 		sysManagedKey,
 		hyokKey,
 		importParams,
-		ksConfig,
+		keystore,
 		keystoreDefaultCert,
 	)
 
@@ -1042,7 +1147,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		r,
 		key,
 		&importParams,
-		ksConfig,
+		keystore,
 		keystoreDefaultCert,
 	)
 

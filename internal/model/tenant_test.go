@@ -3,7 +3,6 @@ package model_test
 import (
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -27,10 +26,7 @@ func TestTenantsTable(t *testing.T) {
 	})
 
 	t.Run("Should have unique combination id and region", func(t *testing.T) {
-		db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models:         []driver.TenantTabler{&model.Tenant{}, &testutils.TestModel{}},
-			CreateDatabase: true,
-		})
+		db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
 
 		r := sql.NewRepository(db)
 		err := r.Create(t.Context(), &model.Tenant{

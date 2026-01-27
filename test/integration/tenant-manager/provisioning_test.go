@@ -7,7 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 	"gorm.io/gorm"
@@ -16,11 +15,15 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
+	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 	"github.com/openkcm/cmk/utils/base62"
@@ -38,18 +41,63 @@ type DBSuite struct {
 }
 
 func (s *DBSuite) SetupSuite() {
-	s.db, _, _ = testutils.NewTestDB(s.T(), testutils.TestDBConfig{
-		CreateDatabase: true,
-		Models:         []driver.TenantTabler{&model.Tenant{}, &model.Group{}, &model.KeyConfiguration{}},
-	})
+	s.db, _, _ = testutils.NewTestDB(
+		s.T(), testutils.TestDBConfig{
+			CreateDatabase: true,
+		},
+	)
+	r := sql.NewRepository(s.db)
 
-	ctlg, err := catalog.New(s.T().Context(), config.Config{
+	ctx := s.T().Context()
+	cfg := &config.Config{
 		Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
-	})
+	}
+	ctlg, err := catalog.New(ctx, cfg)
 	s.NoError(err)
 
-	s.tm = manager.NewTenantManager(sqlRepo.NewRepository(s.db))
-	s.gm = manager.NewGroupManager(sqlRepo.NewRepository(s.db), ctlg)
+	f, err := clients.NewFactory(config.Services{})
+	s.NoError(err)
+
+	reconciler, err := eventprocessor.NewCryptoReconciler(
+		ctx, cfg, r,
+		ctlg, f,
+	)
+	s.NoError(err)
+
+	cmkAuditor := auditor.New(ctx, cfg)
+
+	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	um := manager.NewUserManager(r, cmkAuditor)
+	tagm := manager.NewTagManager(r)
+	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
+
+	sys := manager.NewSystemManager(
+		ctx,
+		r,
+		f,
+		reconciler,
+		ctlg,
+		cfg,
+		kcm,
+		um,
+	)
+
+	km := manager.NewKeyManager(
+		r,
+		ctlg,
+		manager.NewTenantConfigManager(r, ctlg),
+		kcm,
+		um,
+		cm,
+		reconciler,
+		cmkAuditor,
+	)
+
+	migrator, err := db.NewMigrator(r, cfg)
+	s.NoError(err)
+
+	s.tm = manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator)
+	s.gm = manager.NewGroupManager(sql.NewRepository(s.db), ctlg, um)
 }
 
 func (s *DBSuite) TearDownSuite() {
@@ -67,7 +115,6 @@ func (s *DBSuite) TestStartDB() {
 	s.Require().NoError(err)
 }
 
-//nolint:funlen
 func (s *DBSuite) TestCreateTenantSchema() {
 	ctx := s.T().Context()
 	tests := []struct {
@@ -169,69 +216,75 @@ func (s *DBSuite) TestCreateTenantSchema() {
 	}
 
 	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			if tt.preCreateTenant {
-				tenantModel := testutils.NewTenant(func(l *model.Tenant) {
-					l.SchemaName = tt.tenantName
-					l.DomainURL = tt.domainURL + ".example.com"
-					l.ID = tt.tenantID
-				})
+		s.Run(
+			tt.name, func() {
+				if tt.preCreateTenant {
+					tenantModel := testutils.NewTenant(
+						func(l *model.Tenant) {
+							l.SchemaName = tt.tenantName
+							l.DomainURL = tt.domainURL + ".example.com"
+							l.ID = tt.tenantID
+						},
+					)
+					err := s.tm.CreateTenant(ctx, tenantModel)
+					s.Require().NoError(err)
+				}
+
+				tenantModel := testutils.NewTenant(
+					func(l *model.Tenant) {
+						l.SchemaName = tt.tenantName
+						l.DomainURL = tt.domainURL + ".example.com"
+						l.ID = tt.tenantID
+					},
+				)
+
 				err := s.tm.CreateTenant(ctx, tenantModel)
-				s.Require().NoError(err)
-			}
 
-			tenantModel := testutils.NewTenant(func(l *model.Tenant) {
-				l.SchemaName = tt.tenantName
-				l.DomainURL = tt.domainURL + ".example.com"
-				l.ID = tt.tenantID
-			})
+				if tt.expectError {
+					s.Require().Error(err)
+					return
+				}
 
-			err := s.tm.CreateTenant(ctx, tenantModel)
-
-			if tt.expectError {
-				s.Require().Error(err)
-				return
-			}
-
-			s.Require().NoError(err)
-
-			exists, err := integrationutils.TenantExistsInPublicSchema(s.db, tenantModel.SchemaName)
-			s.Require().NoError(err)
-			s.True(exists, "tenant %s should exist", tenantModel.SchemaName)
-
-			if !tt.expectError {
-				exists, err := integrationutils.TenantSchemaExists(s.db, tenantModel.SchemaName)
-				s.True(exists, "Schema %s should exist", tenantModel.SchemaName)
 				s.Require().NoError(err)
 
-				exists, err = integrationutils.TenantExistsInPublicSchema(s.db, tenantModel.SchemaName)
-				s.True(exists, "Tenant %s should exist in public schema", tenantModel.SchemaName)
+				exists, err := integrationutils.TenantExistsInPublicSchema(s.db, tenantModel.SchemaName)
 				s.Require().NoError(err)
+				s.True(exists, "tenant %s should exist", tenantModel.SchemaName)
 
-				exists, err = integrationutils.NamespaceExists(s.db, tenantModel.SchemaName)
-				s.True(exists, "Tenant %s namespace schould exists", tenantModel.SchemaName)
-				s.Require().NoError(err)
+				if !tt.expectError {
+					exists, err := integrationutils.TenantSchemaExists(s.db, tenantModel.SchemaName)
+					s.True(exists, "Schema %s should exist", tenantModel.SchemaName)
+					s.Require().NoError(err)
 
-				exists, err = integrationutils.TableInTenantSchemaExist(
-					s.db,
-					tenantModel.SchemaName,
-					model.KeyConfiguration{}.TableName(),
-				)
-				s.True(
-					exists,
-					"Table schould exist in tenant %s schema: %s",
-					tenantModel.SchemaName,
-					model.KeyConfiguration{}.TableName(),
-				)
-				s.Require().NoError(err)
-			}
+					exists, err = integrationutils.TenantExistsInPublicSchema(s.db, tenantModel.SchemaName)
+					s.True(exists, "Tenant %s should exist in public schema", tenantModel.SchemaName)
+					s.Require().NoError(err)
 
-			err = s.db.OffboardTenant(ctx, tenantModel.SchemaName)
-			s.Require().NoError(err, "failed to drop schema %s: %v", tenantModel.SchemaName, err)
+					exists, err = integrationutils.NamespaceExists(s.db, tenantModel.SchemaName)
+					s.True(exists, "Tenant %s namespace schould exists", tenantModel.SchemaName)
+					s.Require().NoError(err)
 
-			err = s.db.Where("schema_name = ?", tenantModel.SchemaName).Delete(&model.Tenant{}).Error
-			s.Require().NoError(err, "failed to delete tenant meta %s: %v", tenantModel.SchemaName, err)
-		})
+					exists, err = integrationutils.TableInTenantSchemaExist(
+						s.db,
+						tenantModel.SchemaName,
+						model.KeyConfiguration{}.TableName(),
+					)
+					s.True(
+						exists,
+						"Table schould exist in tenant %s schema: %s",
+						tenantModel.SchemaName,
+						model.KeyConfiguration{}.TableName(),
+					)
+					s.Require().NoError(err)
+				}
+
+				err = s.db.OffboardTenant(ctx, tenantModel.SchemaName)
+				s.Require().NoError(err, "failed to drop schema %s: %v", tenantModel.SchemaName, err)
+
+				err = s.db.Where("schema_name = ?", tenantModel.SchemaName).Delete(&model.Tenant{}).Error
+				s.Require().NoError(err, "failed to delete tenant meta %s: %v", tenantModel.SchemaName, err)
+			},
+		)
 	}
 }
 
@@ -267,33 +320,37 @@ func (s *DBSuite) TestCreateTenantSchemaValidation() {
 	}
 
 	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			tenantModel := testutils.NewTenant(func(l *model.Tenant) {
-				l.SchemaName = "validation_tenant"
-				if tt.tenantRole != "" {
-					l.Role = model.TenantRole(tt.tenantRole)
+		s.Run(
+			tt.name, func() {
+				tenantModel := testutils.NewTenant(
+					func(l *model.Tenant) {
+						l.SchemaName = "validation_tenant"
+						if tt.tenantRole != "" {
+							l.Role = model.TenantRole(tt.tenantRole)
+						}
+
+						if tt.tenantStatus != "" {
+							l.Status = model.TenantStatus(tt.tenantStatus)
+						}
+					},
+				)
+
+				err := s.tm.CreateTenant(ctx, tenantModel)
+
+				if tt.expectError {
+					s.Require().Error(err)
+					return
 				}
 
-				if tt.tenantStatus != "" {
-					l.Status = model.TenantStatus(tt.tenantStatus)
-				}
-			})
+				s.Require().NoError(err)
 
-			err := s.tm.CreateTenant(ctx, tenantModel)
+				err = s.db.OffboardTenant(ctx, tenantModel.SchemaName)
+				s.Require().NoError(err, "failed to drop schema %s: %v", tenantModel.SchemaName, err)
 
-			if tt.expectError {
-				s.Require().Error(err)
-				return
-			}
-
-			s.Require().NoError(err)
-
-			err = s.db.OffboardTenant(ctx, tenantModel.SchemaName)
-			s.Require().NoError(err, "failed to drop schema %s: %v", tenantModel.SchemaName, err)
-
-			err = s.db.Where("schema_name = ?", tenantModel.SchemaName).Delete(&model.Tenant{}).Error
-			s.Require().NoError(err, "failed to delete tenant meta %s: %v", tenantModel.SchemaName, err)
-		})
+				err = s.db.Where("schema_name = ?", tenantModel.SchemaName).Delete(&model.Tenant{}).Error
+				s.Require().NoError(err, "failed to delete tenant meta %s: %v", tenantModel.SchemaName, err)
+			},
+		)
 	}
 }
 
@@ -317,11 +374,13 @@ func (s *DBSuite) TestConcurrentOnboardTenant() {
 		go func(name string) {
 			defer wg.Done()
 
-			tenant := testutils.NewTenant(func(l *model.Tenant) {
-				l.SchemaName = name
-				l.DomainURL = name + ".example.com"
-				l.ID = name
-			})
+			tenant := testutils.NewTenant(
+				func(l *model.Tenant) {
+					l.SchemaName = name
+					l.DomainURL = name + ".example.com"
+					l.ID = name
+				},
+			)
 
 			err := s.tm.CreateTenant(ctx, tenant)
 			if err != nil {
@@ -365,11 +424,13 @@ func (s *DBSuite) TestConcurrentOnboardSameTenant() {
 		go func() {
 			defer wg.Done()
 
-			tenant := testutils.NewTenant(func(l *model.Tenant) {
-				l.SchemaName = tenantName
-				l.DomainURL = tenantName + ".example.com"
-				l.ID = ID
-			})
+			tenant := testutils.NewTenant(
+				func(l *model.Tenant) {
+					l.SchemaName = tenantName
+					l.DomainURL = tenantName + ".example.com"
+					l.ID = ID
+				},
+			)
 
 			err := s.tm.CreateTenant(ctx, tenant)
 			if err != nil {
@@ -396,7 +457,6 @@ func (s *DBSuite) TestConcurrentOnboardSameTenant() {
 	integrationutils.TenantExists(s.T(), s.db, schemaName, model.KeyConfiguration{}.TableName())
 }
 
-//nolint:funlen
 func (s *DBSuite) TestCreateGroups() {
 	ctx := s.T().Context()
 
@@ -409,11 +469,13 @@ func (s *DBSuite) TestCreateGroups() {
 	}{
 		{
 			name: "creates groups in new schema",
-			tenant: testutils.NewTenant(func(l *model.Tenant) {
-				l.ID = uuid.NewString()
-				l.SchemaName, _ = base62.EncodeSchemaNameBase62(l.ID)
-				l.DomainURL, _ = base62.EncodeSchemaNameBase62(l.ID)
-			}),
+			tenant: testutils.NewTenant(
+				func(l *model.Tenant) {
+					l.ID = uuid.NewString()
+					l.SchemaName, _ = base62.EncodeSchemaNameBase62(l.ID)
+					l.DomainURL, _ = base62.EncodeSchemaNameBase62(l.ID)
+				},
+			),
 			setup: func(ctx context.Context, tenant *model.Tenant) {
 				ctx = cmkcontext.CreateTenantContext(ctx, tenant.ID)
 				err := s.tm.CreateTenant(ctx, tenant)
@@ -424,11 +486,13 @@ func (s *DBSuite) TestCreateGroups() {
 		},
 		{
 			name: "groups already exist",
-			tenant: testutils.NewTenant(func(l *model.Tenant) {
-				l.ID = uuid.NewString()
-				l.SchemaName, _ = base62.EncodeSchemaNameBase62(l.ID)
-				l.DomainURL, _ = base62.EncodeSchemaNameBase62(l.ID)
-			}),
+			tenant: testutils.NewTenant(
+				func(l *model.Tenant) {
+					l.ID = uuid.NewString()
+					l.SchemaName, _ = base62.EncodeSchemaNameBase62(l.ID)
+					l.DomainURL, _ = base62.EncodeSchemaNameBase62(l.ID)
+				},
+			),
 			setup: func(ctx context.Context, tenant *model.Tenant) {
 				err := s.tm.CreateTenant(ctx, tenant)
 				s.Require().NoError(err, "failed to create tenant schema")
@@ -442,11 +506,13 @@ func (s *DBSuite) TestCreateGroups() {
 		},
 		{
 			name: "schema does not exist",
-			tenant: testutils.NewTenant(func(l *model.Tenant) {
-				l.ID = uuid.NewString()
-				l.SchemaName, _ = base62.EncodeSchemaNameBase62(l.ID)
-				l.DomainURL, _ = base62.EncodeSchemaNameBase62(l.ID)
-			}),
+			tenant: testutils.NewTenant(
+				func(l *model.Tenant) {
+					l.ID = uuid.NewString()
+					l.SchemaName, _ = base62.EncodeSchemaNameBase62(l.ID)
+					l.DomainURL, _ = base62.EncodeSchemaNameBase62(l.ID)
+				},
+			),
 			setup: func(_ context.Context, _ *model.Tenant) {
 				// Do not create schema
 			},
@@ -456,21 +522,23 @@ func (s *DBSuite) TestCreateGroups() {
 	}
 
 	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			tt.setup(ctx, tt.tenant)
-			ctx := cmkcontext.CreateTenantContext(ctx, tt.tenant.ID)
+		s.Run(
+			tt.name, func() {
+				tt.setup(ctx, tt.tenant)
+				ctx := cmkcontext.CreateTenantContext(ctx, tt.tenant.ID)
 
-			err := s.gm.CreateDefaultGroups(ctx)
-			if tt.expectError {
-				s.Require().Error(err, "Expected error but got none")
-			} else {
-				s.Require().NoError(err, "Did not expect error but got one")
-			}
+				err := s.gm.CreateDefaultGroups(ctx)
+				if tt.expectError {
+					s.Require().Error(err, "Expected error but got none")
+				} else {
+					s.Require().NoError(err, "Did not expect error but got one")
+				}
 
-			if tt.expectedGroups {
-				integrationutils.GroupsExists(ctx, s.T(), tt.tenant.ID, s.db)
-			}
-		})
+				if tt.expectedGroups {
+					integrationutils.GroupsExists(ctx, s.T(), tt.tenant.ID, s.db)
+				}
+			},
+		)
 	}
 }
 
@@ -483,11 +551,13 @@ func (s *DBSuite) TestConcurrentCreateGroups() {
 		schemaName  = "t_example_schema_name"
 		domainURL   = "t_example_schema_name.example.com"
 		ID          = uuid.NewString()
-		tenant      = testutils.NewTenant(func(l *model.Tenant) {
-			l.SchemaName = schemaName
-			l.DomainURL = domainURL
-			l.ID = ID
-		})
+		tenant      = testutils.NewTenant(
+			func(l *model.Tenant) {
+				l.SchemaName = schemaName
+				l.DomainURL = domainURL
+				l.ID = ID
+			},
+		)
 	)
 
 	err := s.tm.CreateTenant(ctx, tenant)
@@ -501,11 +571,13 @@ func (s *DBSuite) TestConcurrentCreateGroups() {
 		go func() {
 			defer wg.Done()
 
-			tenant := testutils.NewTenant(func(l *model.Tenant) {
-				l.SchemaName = schemaName
-				l.DomainURL = schemaName + ".example.com"
-				l.ID = ID
-			})
+			tenant := testutils.NewTenant(
+				func(l *model.Tenant) {
+					l.SchemaName = schemaName
+					l.DomainURL = schemaName + ".example.com"
+					l.ID = ID
+				},
+			)
 
 			groupCtx := cmkcontext.CreateTenantContext(ctx, tenant.ID)
 

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/avast/retry-go"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	retry "github.com/avast/retry-go/v5"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
 	"github.com/openkcm/cmk/internal/errs"
@@ -51,22 +51,32 @@ type Config struct {
 	Attempts uint
 }
 
+type ServiceClient interface {
+	systemgrpc.ServiceClient
+
+	GetSystemsWithFilter(ctx context.Context, filter SystemFilter) ([]*model.System, error)
+	ExtendedUpdateSystemL1KeyClaim(ctx context.Context, filter SystemFilter, l1KeyClaim bool) error
+}
+
 // Client of registry service systems API.
-type Client struct {
-	system systemgrpc.ServiceClient
+type client struct {
+	systemgrpc.ServiceClient
+
 	config Config
 }
 
-type Option func(*Client)
+var _ ServiceClient = (*client)(nil)
+
+type Option func(*client)
 
 // NewSystemsClient creates new instance of Client.
-func NewSystemsClient(grpcClient *commongrpc.DynamicClientConn, options ...Option) (*Client, error) {
+func NewSystemsClient(grpcClient *commongrpc.DynamicClientConn, options ...Option) (ServiceClient, error) {
 	if grpcClient == nil {
 		return nil, ErrSystemsClientDoesNotExist
 	}
 
-	client := &Client{
-		system: systemgrpc.NewServiceClient(grpcClient),
+	client := &client{
+		ServiceClient: systemgrpc.NewServiceClient(grpcClient),
 		config: Config{
 			Delay:    delay,
 			Attempts: attempts,
@@ -82,18 +92,17 @@ func NewSystemsClient(grpcClient *commongrpc.DynamicClientConn, options ...Optio
 }
 
 // GetSystemsWithFilter using systems client.
-func (c *Client) GetSystemsWithFilter(ctx context.Context,
-	filter SystemFilter) ([]*model.System, error) {
-	if c.system == nil {
-		return nil, ErrSystemsClientDoesNotExist
-	}
-
+func (c *client) GetSystemsWithFilter(ctx context.Context,
+	filter SystemFilter,
+) ([]*model.System, error) {
 	var (
 		grpcSystems []*systemgrpc.System
 		err         error
 	)
 
-	err = retry.Do(
+	retrier := c.getRetrier()
+
+	err = retrier.Do(
 		func() error {
 			var limit int32 = defaultListSystemsLimit
 
@@ -105,7 +114,7 @@ func (c *Client) GetSystemsWithFilter(ctx context.Context,
 			pageToken := ""
 
 			for {
-				resp, err := c.system.ListSystems(ctx, &systemgrpc.ListSystemsRequest{
+				resp, err := c.ListSystems(ctx, &systemgrpc.ListSystemsRequest{
 					Region:     filter.Region,
 					ExternalId: filter.ExternalID,
 					TenantId:   filter.TenantID,
@@ -131,7 +140,6 @@ func (c *Client) GetSystemsWithFilter(ctx context.Context,
 
 			return nil
 		},
-		c.getRetryOptions()...,
 	)
 	if err != nil {
 		return nil, errs.Wrap(ErrGettingSystem, err)
@@ -145,20 +153,22 @@ func (c *Client) GetSystemsWithFilter(ctx context.Context,
 	return systems, nil
 }
 
-// UpdateSystemL1KeyClaim using systems client.
-func (c *Client) UpdateSystemL1KeyClaim(ctx context.Context, filter SystemFilter, l1KeyClaim bool) error {
-	if c.system == nil {
-		return ErrSystemsClientDoesNotExist
-	}
-
+// ExtendedUpdateSystemL1KeyClaim using systems client.
+func (c *client) ExtendedUpdateSystemL1KeyClaim(
+	ctx context.Context,
+	filter SystemFilter,
+	l1KeyClaim bool,
+) error {
 	var (
 		resp *systemgrpc.UpdateSystemL1KeyClaimResponse
 		err  error
 	)
 
-	err = retry.Do(
+	retrier := c.getRetrier()
+
+	err = retrier.Do(
 		func() error {
-			resp, err = c.system.UpdateSystemL1KeyClaim(ctx,
+			resp, err = c.UpdateSystemL1KeyClaim(ctx,
 				&systemgrpc.UpdateSystemL1KeyClaimRequest{
 					Region:     filter.Region,
 					ExternalId: filter.ExternalID,
@@ -173,7 +183,6 @@ func (c *Client) UpdateSystemL1KeyClaim(ctx context.Context, filter SystemFilter
 
 			return nil
 		},
-		c.getRetryOptions()...,
 	)
 	if err != nil {
 		return err
@@ -186,8 +195,8 @@ func (c *Client) UpdateSystemL1KeyClaim(ctx context.Context, filter SystemFilter
 	return nil
 }
 
-func (c *Client) getRetryOptions() []retry.Option {
-	return []retry.Option{
+func (c *client) getRetrier() *retry.Retrier {
+	return retry.New(
 		retry.RetryIf(func(err error) bool {
 			return status.Code(err) == codes.Unavailable
 		}),
@@ -196,5 +205,5 @@ func (c *Client) getRetryOptions() []retry.Option {
 		retry.DelayType(retry.BackOffDelay),
 		retry.Attempts(c.config.Attempts),
 		retry.LastErrorOnly(true),
-	}
+	)
 }

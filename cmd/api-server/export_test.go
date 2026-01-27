@@ -1,7 +1,6 @@
 package main
 
 var (
-	Run                        = run
-	RunFunctionWithSigHandling = runFuncWithSignalHandling
-	MonitorKeystorePoolSize    = monitorKeystorePoolSize
+	Run                     = run
+	MonitorKeystorePoolSize = monitorKeystorePoolSize
 )

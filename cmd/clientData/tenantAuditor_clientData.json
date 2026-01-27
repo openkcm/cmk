@@ -1,0 +1,15 @@
+{
+  "identifier": "test-subject-auditor",
+  "type": "test-type",
+  "mail": "test@example.com",
+  "reg": "test-region",
+  "AuthContext": {
+    "issuer": "https://sso.company.com",
+    "client_id": "client-12345"
+  },
+  "groups": [
+    "KMS_TenantAuditor_tenant1"
+  ],
+  "kid": "key01",
+  "alg": "RS256"
+}

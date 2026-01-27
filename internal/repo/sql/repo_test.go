@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
@@ -21,9 +20,7 @@ import (
 )
 
 func TestRepo_WithTenant(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -35,7 +32,7 @@ func TestRepo_WithTenant(t *testing.T) {
 	})
 
 	t.Run("Should run action without tenant on public table", func(t *testing.T) {
-		err := r.WithTenant(t.Context(), testutils.PublicTestModel{}, func(_ *multitenancy.DB) error {
+		err := r.WithTenant(t.Context(), &model.Tenant{}, func(_ *multitenancy.DB) error {
 			return nil
 		})
 		assert.NoError(t, err)
@@ -49,9 +46,7 @@ func TestRepo_WithTenant(t *testing.T) {
 }
 
 func TestRepo_List(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -89,9 +84,7 @@ func TestRepo_List(t *testing.T) {
 }
 
 func TestRepo_List_Order(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -153,9 +146,7 @@ func TestRepo_List_Order(t *testing.T) {
 }
 
 func TestRepo_Create(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -183,9 +174,7 @@ func TestRepo_Create(t *testing.T) {
 }
 
 func TestRepo_First(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -243,9 +232,7 @@ func TestRepo_First(t *testing.T) {
 }
 
 func TestRepo_Delete(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -269,9 +256,7 @@ func TestRepo_Delete(t *testing.T) {
 }
 
 func TestRepo_Patch(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -304,9 +289,7 @@ func TestRepo_Patch(t *testing.T) {
 }
 
 func TestRepo_Set(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -340,16 +323,14 @@ func TestRepo_Set(t *testing.T) {
 }
 
 func TestRepo_Transaction(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
-	m := testutils.TestModel{ID: uuid.New(), Name: "test-transaction"}
 
 	t.Run("Should rollback on error", func(t *testing.T) {
+		m := testutils.TestModel{ID: uuid.New(), Name: uuid.NewString()}
 		ctx, cancel := context.WithCancel(testutils.CreateCtxWithTenant(tenants[0]))
 
-		_ = r.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+		_ = r.Transaction(ctx, func(ctx context.Context) error {
 			err := r.Create(ctx, &m)
 			assert.NoError(t, err)
 
@@ -362,5 +343,21 @@ func TestRepo_Transaction(t *testing.T) {
 		ok, err := r.First(ctx, res, *repo.NewQuery())
 		assert.Error(t, err)
 		assert.False(t, ok)
+	})
+
+	t.Run("Should commit if no error", func(t *testing.T) {
+		m := testutils.TestModel{ID: uuid.New(), Name: uuid.NewString()}
+		ctx := testutils.CreateCtxWithTenant(tenants[0])
+		_ = r.Transaction(ctx, func(ctx context.Context) error {
+			err := r.Create(ctx, &m)
+			assert.NoError(t, err)
+
+			return nil
+		})
+
+		res := &testutils.TestModel{ID: m.ID}
+		ok, err := r.First(ctx, res, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.True(t, ok)
 	})
 }

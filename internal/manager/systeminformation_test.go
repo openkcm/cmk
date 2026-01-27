@@ -5,7 +5,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -36,11 +35,9 @@ func SetupSystemInfoManager(t *testing.T) (
 ) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&model.System{}, &model.SystemProperty{}, &model.KeyConfiguration{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepository := sql.NewRepository(db)
-	ctlg, err := catalog.New(t.Context(), config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
+	ctlg, err := catalog.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
 	assert.NoError(t, err)
 	systemManager, err := manager.NewSystemInformationManager(
 		dbRepository,
@@ -167,7 +164,7 @@ func TestNewSystemInformationManager(t *testing.T) {
 					},
 				},
 			}
-			ctlg, err := catalog.New(t.Context(), cfg)
+			ctlg, err := catalog.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
 			_, err = manager.NewSystemInformationManager(nil, ctlg, &cfg.ContextModels.System)

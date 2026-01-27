@@ -60,7 +60,7 @@ func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) e
 
 			updateErr := s.putWorkflowInFailedState(ctx, workflowID, "internal error when assigning approvers")
 			if updateErr != nil {
-				log.Error(ctx, "Failed to put workflow in failed state after panic", err)
+				log.Error(ctx, "Failed to put workflow in failed state after panic", updateErr)
 			}
 		}
 	}()

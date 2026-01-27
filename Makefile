@@ -1,8 +1,6 @@
-SHELL := $(shell command -v bash || echo /bin/sh)
-
 .PHONY: default test coverage clean install-gotestsum squash codegen docker-compose clean-docker-compose swagger-ui \
 swagger-ui-stop go-imports install-gci install-golines install-goimports lint cmk-env docker-dev-build tidy \
-prepare_integration_test clean_integration_test build_test_plugins clean_plugins prepare_test clean_test benchmark
+prepare_integration_test clean_integration_test build_test_plugins clean_plugins clean_test benchmark
 
 CMK_API_V1_SPEC_PATH := apis/cmk
 CMK_API_V1_OUT_PATH := internal/api/cmkapi
@@ -17,22 +15,10 @@ GIT_PASSWORD=$(shell echo "" | git credential-$(GIT_CREDENTIAL_HELPER) get | awk
 SIS_PLUGIN ?= "uli"
 ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer,identity_management,notification}"
 
-
-PARALLEL := $(shell \
-	if command -v nproc >/dev/null 2>&1; then \
-		nproc | awk '{print $$1 * 4}'; \
-	elif command -v sysctl >/dev/null 2>&1; then \
-		sysctl -n hw.ncpu | awk '{print $$1 * 4}'; \
-	else \
-		echo 16; \
-	fi \
-)
-
 # get git values
-HEAD := $(shell git rev-parse HEAD)
-CURRENT_BRANCH := $(shell git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD || echo HEAD)
-MERGE_BASE := $(shell git merge-base origin/main $$CURRENT_BRANCH 2>/dev/null || echo unknown)
-
+squash: HEAD := $(shell git rev-parse HEAD)
+squash: CURRENT_BRANCH := $(shell git branch --show-current)
+squash: MERGE_BASE := $(shell git merge-base origin/main $(CURRENT_BRANCH))
 
 default: test
 
@@ -40,44 +26,25 @@ default: test
 run:
 	AWS_ACCESS_KEY_ID="exampleAccessKeyID" AWS_SECRET_ACCESS_KEY="exampleSecretAccessKey" go run ./cmd/api-server
 
-test: install-gotestsum spin-postgres-db spin-rabbitmq build_test_plugins
+test: install-gotestsum build_test_plugins
 	rm -rf cover cover.* junit.xml
 	mkdir -p cover
 	go clean -testcache
 
-	@set -euo pipefail; \
-	status=0; \
-	PARALLEL=${PARALLEL}; \
-	echo "🧪 Running tests in parallel with $$PARALLEL cores..."; \
-	status=0; \
-	{ \
-		env GOMAXPROCS=$$PARALLEL TEST_ENV=make gotestsum \
-			--rerun-fails=10 \
-			--rerun-fails-abort-on-data-race \
-			--rerun-fails-max-failures=1550 \
-			--format testname \
-			--junitfile junit.xml \
-			--packages="./internal/... ./providers/... ./utils... ./cmd/... ./test/security/..." \
-			-- -count=1 -covermode=atomic -coverpkg=./... -parallel=$$PARALLEL \
-			-args -test.gocoverdir=$$(pwd)/cover; \
-	} || status=$$?; \
-	if [ -f junit.xml ] && grep -q '<failure' junit.xml; then \
-		echo "❌ Tests failed (detected in JUnit report)"; \
-		status=1; \
-	else \
-	  	echo "✅ All tests passed"; \
-	fi; \
-	go tool covdata textfmt -i=./cover -o cover.out || true; \
-	$(MAKE) clean_test >/dev/null 2>&1 || true; \
-	echo "🧹 Cleanup of test environment completed."; \
-	echo "🏁 Finished tests with status $$status"; \
-	exit $$status
+	# Run tests with coverage
+	env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
+		--packages="./internal/... ./providers/... ./utils... ./cmd/... ./test/security/... ./test/db-migration/..." \
+		-- -count=1 -covermode=atomic -coverpkg=./... \
+		-args -test.gocoverdir=$(pwd)/cover
+
+	go tool covdata textfmt -i=./cover -o cover.out
+
+	$(MAKE) clean_test_plugins
 
 
-benchmark: clean-postgres-db spin-postgres-db
+benchmark:
 	go test ./benchmark -bench=.
 
-prepare_test: clean-postgres-db spin-postgres-db build_test_plugins
 
 clean_test:
 	$(MAKE) clean-postgres-db
@@ -89,11 +56,10 @@ integration_test:  prepare_integration_test
 	gotestsum --format testname ./test/integration/...
 	$(MAKE) clean_integration_test
 
-prepare_integration_test: clean_integration_test install-gotestsum submodules spin-local-aws-kms spin_sysinfo_mock \
+prepare_integration_test: clean_integration_test install-gotestsum spin_sysinfo_mock \
 	build_sysinfo_plugin build_certissuer_plugin build_notification_plugin wait_for_sysinfo_mock
 
 clean_integration_test:
-	$(MAKE) clean-local-aws-kms
 	$(MAKE) clean_sysinfo_plugin
 	$(MAKE) clean_certissuer_plugin
 	$(MAKE) clean_identitymanagement_plugin
@@ -123,6 +89,7 @@ build_notification_plugin:
 
 clean_notification_plugin:
 	$(MAKE) -C notification-plugins clean
+
 # Run tests with coverage
 coverage: test
 	go tool cover -html=cover.out
@@ -130,7 +97,6 @@ coverage: test
 # installs gotestsum test helper
 install-gotestsum:
 	(cd /tmp && go install gotest.tools/gotestsum@latest)
-
 
 clean:
 	rm -fR bin
@@ -187,10 +153,6 @@ codegen-commit:
 	git commit -m "Update generated CMK api code"
 
 
-# Set up local environment
-submodules:
-	git submodule update --init --recursive
-	git submodule update --remote
 
 TEST_PLUGINS_DIR := ./internal/testutils/testplugins
 TEST_PLUGINS := $(shell find $(TEST_PLUGINS_DIR) -mindepth 1 -maxdepth 1 -type d)
@@ -224,46 +186,11 @@ docker-compose:
 	docker-compose -f $(docker_compose_file) -p $(stack_name) up -d
 	docker-compose -f $(docker_compose_file) logs --tail 10 -f
 
-# Start postgres service
-spin-postgres-db: clean-postgres-db
-
-	docker run -d \
-	--name $(test-db-container) \
-	-e POSTGRES_USER=postgres \
-	-e POSTGRES_PASSWORD=secret \
-	-e POSTGRES_DB=cmk \
-	-p 5433:5432 \
-	postgres:14-alpine \
-	-c max_connections=1000
-
 # Stop and remove docker-compose stack
 clean-docker-compose:
 	docker-compose -f $(docker_compose_file) -p $(stack_name) down -v
 	docker-compose -f $(docker_compose_file) -p $(stack_name) rm -f -v
 
-# Stop and remove postgres service
-# Trick to ignore not found errors. grep the container by name and if no results do nothing, otherwise run the commands
-clean-postgres-db:
-	@if docker ps -a | grep -q $(test-db-container); then \
-		docker stop $(test-db-container) && docker rm -fv $(test-db-container); \
-	fi
-
-# Start RabbitMQ service
-spin-rabbitmq: clean-rabbitmq
-	docker run -d \
-	--hostname rabbitmq-test \
-	--name rabbitmq-test \
-	-e RABBITMQ_DEFAULT_USER=guest \
-	-e RABBITMQ_DEFAULT_PASS=guest \
-	-p 5672:5672 \
-	-p 15672:15672 \
-	rabbitmq:4-alpine
-
-# Stop and remove RabbitMQ service
-clean-rabbitmq:
-	@if docker ps -a | grep -q rabbitmq-test; then \
-		docker stop rabbitmq-test && docker rm -fv rabbitmq-test; \
-	fi
 
 # Start Swagger UI
 .SILENT: swagger-ui
@@ -324,34 +251,13 @@ cmk-env:
 
 TAG := latest
 CMK_IMAGE_NAME := $(CMK_APP_NAME)-$(CMK_DEV_TARGET):$(TAG)
-DOCKERFILE_DIR := .
+DOCKERFILE_DIR ?= .
 DOCKERFILE_NAME := Dockerfile.dev
 CONTEXT_DIR := .
 
 # Target to build Docker image
-docker-dev-build: submodules
+docker-dev-build:
 	@GIT_LOGIN=$(GIT_USERNAME) GIT_PASS=$(GIT_PASSWORD) docker build --secret type=env,id=git-login,env=GIT_LOGIN --secret type=env,id=git-password,env=GIT_PASS -f $(DOCKERFILE_DIR)/$(DOCKERFILE_NAME) -t $(CMK_IMAGE_NAME) $(CONTEXT_DIR)
-
-# Local KMS
-#
-# Start a local KMS server (not to be used on CI)
-spin-local-aws-kms: clean-local-aws-kms
-	@if [ -z "$(CI)" ]; then \
-		echo "Starting local-kms..."; \
-		docker run -p 8081:8080 -e AWS_REGION=us-west-2 \
-			--mount type=bind,source="$(pwd)"/local_env/local-kms/init,target=/init \
-			--name local-kms -d nsmithuk/local-kms; \
-		echo "Waiting for local-kms to become available..."; \
-		for i in $$(seq 1 20); do \
-			if curl -s http://localhost:8081 > /dev/null; then \
-				echo "local-kms is up."; \
-				break; \
-			fi; \
-			echo "Waiting... ($$i)"; \
-			sleep 1; \
-		done; \
-	fi
-
 
 # Mock CLD server
 spin_sysinfo_mock:
@@ -369,13 +275,6 @@ test-psql-replica:
 
 test-async:
 	env TEST_ENV=make gotestsum --format testname ./test/integration/async_test/
-
-# Stop and remove local-aws-kms (not to be used on CI)
-clean-local-aws-kms:
-	@if [ -z "$(CI)" ]; then \
-		docker stop local-kms || true; \
-		docker rm local-kms || true; \
-	fi
 
 # Signing keys
 # Need for testing signing functionality of client data in HTTP requests headers
@@ -416,55 +315,27 @@ CMK_PASS := secret
 CMK_DB := cmk
 CMK_DB_ADMIN_PASS_KEY := secretKey
 
+PLUGIN_SECRETS ?= \
+    signing-keys:env/secret/signing-keys \
+    scim:env/secret/identity-management/scim.json \
+	event-processor-credentials:env/secret/event-processor
 
 create-empty-secrets:
 	# This Error code 1 on makefile but it seems to work
+	- mkdir -p env/secret
 	- cp -nr env/blueprints/. env/secret/.
 
-create-keystore-provider-secrets:
-	kubectl create secret generic keystore-provider-hyperscaler \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/keystore-plugins/management/hyperscaler.json"
-	kubectl create secret generic keystore-provider-cert-service \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/keystore-plugins/management/certificate-service.json"
-	kubectl create secret generic keystore-provider-iam \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/keystore-plugins/management/iam-service-user.json"
-	kubectl create secret generic keystore-provider-regions \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/keystore-plugins/management/supported-regions.json"
-
-create-plugin-secret: create-keystore-provider-secrets
-	kubectl create secret generic cert-issuer-uaa \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/cert-issuer-plugins/uaa.json"
-	kubectl create secret generic cert-issuer-service \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/cert-issuer-plugins/service.json"
-	kubectl create secret generic cld-uaa \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/sis-plugins/cld/uaa.json"
-	kubectl create secret generic uli-keypair \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/sis-plugins/uli"
-	kubectl create secret generic signing-keys \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/signing-keys"
-	kubectl create secret generic notification-endpoints \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/notification-plugins/endpoints.json"
-	kubectl create secret generic notification-uaa \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/notification-plugins/uaa.json"
-	kubectl create secret generic scim \
-	  --namespace $(NAMESPACE) \
-	  --from-file="env/secret/identity-management/scim.json"
-
-create-event-processor-secret:
-	kubectl create secret generic event-processor-credentials \
-	  --namespace $(NAMESPACE) \
-	  --from-file=env/secret/event-processor
+create-plugin-secret:
+	@echo "Creating plugin secrets..."
+	@for secret_config in $(PLUGIN_SECRETS); do \
+		secret_name=$$(echo $$secret_config | cut -d':' -f1); \
+		secret_path=$$(echo $$secret_config | cut -d':' -f2); \
+		echo "Creating secret: $$secret_name from $$secret_path"; \
+		kubectl create secret generic $$secret_name \
+			--namespace $(NAMESPACE) \
+			--from-file="$$secret_path" || true; \
+	done
+	@echo "All plugin secrets created successfully"
 
 psql-add-to-cluster:
 	helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -529,12 +400,14 @@ k3d-build-image: docker-dev-build
 	@echo "Importing docker image into k3d"
 	k3d image import $(CMK_IMAGE_NAME) -c $(CLUSTER_NAME)
 
+VALUE_DIR ?= charts
+
 k3d-apply-helm-chart:
 	@echo "Applying Helm chart."
 	helm upgrade --install $(CHART_NAME) $(CHART_DIR) --namespace $(APPLY_NAMESPACE) \
 		--set volumePath=$(PATH_TO_INIT_VOLUME) \
 		--set config.activePlugins=$(ACTIVE_PLUGINS) \
-		-f $(CHART_DIR)/values-dev.yaml
+		-f $(VALUE_DIR)/values-dev.yaml
 
 k3d-apply-cmk-helm-chart:
 	@echo "Applying CMK Helm chart."
@@ -562,9 +435,9 @@ delete-cluster:
 	   echo "k3d cluster '$(CLUSTER_NAME)' does not exist."; \
 	fi
 
-start-cmk: generate-signing-keys start-k3d create-empty-secrets create-plugin-secret create-event-processor-secret psql-add-to-cluster redis-add-to-cluster helm-install-rabbitmq helm-install-otel-collector k3d-add-cmk
+start-cmk: generate-signing-keys start-k3d create-empty-secrets create-plugin-secret psql-add-to-cluster redis-add-to-cluster helm-install-rabbitmq helm-install-otel-collector k3d-add-cmk
 
-k3d-add-cmk: extract-version
+k3d-add-cmk:
 	@echo "Building the cmk image within k3d."
 	@$(MAKE) k3d-build-image
 	@$(MAKE) k3d-rebuild-cmk
@@ -617,7 +490,7 @@ install-psql-macos:
 		echo "psql is already installed."; \
 	fi
 
-tidy: submodules
+tidy:
 	go mod tidy
 
 # Install RabbitMQ using Helm
@@ -644,7 +517,7 @@ helm-uninstall-rabbitmq:
 helm-install-registry: create-registry-db
 	helm upgrade --install registry oci://ghcr.io/openkcm/charts/registry \
 		--namespace $(NAMESPACE) \
-		--set image.tag=v1.2.0 \
+		--set image.tag=v1.5.0 \
 		--set config.database.host=cmk-postgresql \
 		--set config.database.user.value=$(CMK_USERNAME) \
 		--set config.database.password.value=$(CMK_PASS) \
@@ -668,10 +541,12 @@ generate-task-proto:
 		--go-grpc_out=. \
 		--go-grpc_opt=paths=source_relative \
 		internal/event-processor/proto/*.proto
-	goimports -w ./internal/event-processor/proto/task.pb.go
 
 tenant-cli:
 	kubectl exec -it -n cmk deploy/cmk-tenant-manager-cli -- ./bin/tenant-manager-cli $(ARGS)
+
+task-cli:
+	kubectl exec -it -n cmk deploy/cmk-task-cli -- ./bin/task-cli $(ARGS)
 
 provision-tenants-k3d:
 	$(MAKE) tenant-cli ARGS="create -i tenant1 -r emea -s STATUS_ACTIVE -R ROLE_LIVE"
@@ -697,6 +572,3 @@ helm-install-otel-collector:
 
 helm-uninstall-otel-collector:
 	helm uninstall otel-collector --namespace $(NAMESPACE)
-
-
-

@@ -9,7 +9,27 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 )
 
+const (
+	MultipleRolesInGroupsCode = "MULTIPLE_ROLES_NOT_ALLOWED"
+)
+
 var groups = []APIErrors{
+	{
+		Errors: []error{manager.ErrMultipleRolesInGroups},
+		ExposedError: cmkapi.DetailedError{
+			Code:    MultipleRolesInGroupsCode,
+			Message: "users with multiple roles are not allowed",
+			Status:  http.StatusForbidden,
+		},
+	},
+	{
+		Errors: []error{manager.ErrZeroRolesInGroups},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "ZERO_ROLES_NOT_ALLOWED",
+			Message: "users without any roles are not allowed",
+			Status:  http.StatusForbidden,
+		},
+	},
 	{
 		Errors: []error{manager.ErrCreateGroups, model.ErrInvalidName},
 		ExposedError: cmkapi.DetailedError{
@@ -59,10 +79,10 @@ var groups = []APIErrors{
 		},
 	},
 	{
-		Errors: []error{manager.ErrInvalidGroupRename},
+		Errors: []error{manager.ErrInvalidGroupUpdate},
 		ExposedError: cmkapi.DetailedError{
-			Code:    "RENAME_INVALID_GROUP",
-			Message: "Group cannot be renamed",
+			Code:    "INVALID_GROUP_UPDATE",
+			Message: "Group cannot be updated",
 			Status:  http.StatusBadRequest,
 		},
 	},

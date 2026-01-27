@@ -18,7 +18,7 @@ import (
 func IdentityManagementPlugin(t *testing.T) *plugincatalog.Catalog {
 	t.Helper()
 
-	cat, err := catalog.New(t.Context(), config.Config{
+	cat, err := catalog.New(t.Context(), &config.Config{
 		Plugins: []plugincatalog.PluginConfig{integrationutils.IDMangementPlugin(t)},
 	})
 	assert.NoError(t, err)
