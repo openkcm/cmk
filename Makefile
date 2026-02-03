@@ -541,6 +541,7 @@ generate-task-proto:
 		--go-grpc_out=. \
 		--go-grpc_opt=paths=source_relative \
 		internal/event-processor/proto/*.proto
+	goimports -w -local=github.com/openkcm/cmk internal/event-processor/proto/*.pb.go
 
 tenant-cli:
 	kubectl exec -it -n cmk deploy/cmk-tenant-manager-cli -- ./bin/tenant-manager-cli $(ARGS)
