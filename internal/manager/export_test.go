@@ -4,45 +4,38 @@ import (
 	"context"
 	"crypto/rsa"
 
-	"github.com/google/uuid"
-
 	certissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
 	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
 	wf "github.com/openkcm/cmk/internal/workflow"
 )
 
-var GetPluginAlgorithm = getPluginAlgorithm
-var ValidateSchema = validateSchema
+var (
+	GetPluginAlgorithm = getPluginAlgorithm
+	ValidateSchema     = validateSchema
+)
 
 func (m *TenantConfigManager) GetTenantConfigsHyokKeystore() HYOKKeystore {
 	return m.getTenantConfigsHyokKeystore()
 }
 
-func (m *TenantConfigManager) SetDefaultKeystore(ctx context.Context, ksConfig *model.KeystoreConfiguration) error {
-	return m.setDefaultKeystore(ctx, ksConfig)
+func (m *TenantConfigManager) SetDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error {
+	return m.setDefaultKeystore(ctx, keystore)
 }
 
 func (si *SystemInformation) SetClient(systemInformation systeminformationv1.SystemInformationServiceClient) {
 	si.sisClient = systemInformation
 }
 
-func (m *SystemManager) GetClient() *systems.Client {
-	return m.registry.System()
-}
-
 func (m *SystemManager) EventSelector(
 	ctx context.Context,
-	r repo.Repo,
-	updatedSystem *model.System,
-	oldKeyConfigID *uuid.UUID,
-	keyConfig *model.KeyConfiguration,
-) (SystemEvent, error) {
-	return m.eventSelector(ctx, r, updatedSystem, oldKeyConfigID, keyConfig)
+	system *model.System,
+	newKeyConfig *model.KeyConfiguration,
+) (eventprocessor.Event, error) {
+	return m.eventSelector(ctx, system, newKeyConfig)
 }
 
 func (m *CertificateManager) SetClient(client certissuerv1.CertificateIssuerServiceClient) {

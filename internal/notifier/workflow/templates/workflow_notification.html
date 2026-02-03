@@ -26,22 +26,22 @@
             <h3 style="margin: 0 0 12px 0; color: #32363a; font-size: 14px; font-weight: bold;">Tenant Information</h3>
             <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Tenant ID:</strong> {{.TenantID}}</p>
             <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Region:</strong> {{.TenantRegion}}</p>
+            <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Landscape:</strong> {{.Landscape}}</p>
         </div>
 
-        <!-- Workflow Information -->
+        <!-- Workflow Description -->
         <div style="background: #f9f9f9; border-radius: 4px; padding: 16px; margin-bottom: 24px;">
             <h3 style="margin: 0 0 12px 0; color: #32363a; font-size: 14px; font-weight: bold;">{{.InfoTitle}}</h3>
-            <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Workflow ID:</strong> {{.WorkflowID}}</p>
-            <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Artifact Type:</strong> {{.ArtifactType}}</p>
-            <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Action Type:</strong> {{.ActionType}}</p>
-            <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Artifact ID:</strong> {{.ArtifactID}}</p>
-            {{if .Parameters}}
-            <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Parameters:</strong> {{.Parameters}}</p>
-            {{end}}
+            <p style="margin: 4px 0; color: #32363a; font-size: 14px;">{{.WorkflowDescription}}</p>
         </div>
 
         <!-- Action Text -->
         <p style="margin: 0 0 24px 0; color: #32363a; font-size: 14px; line-height: 1.5;">{{.ActionText}}</p>
+
+        <!-- Workflow Link -->
+        <p style="margin: 0 0 24px 0; color: #32363a; font-size: 14px;">
+            <a href="{{.WorkflowURL}}" style="color: #0066cc; text-decoration: none; font-weight: bold;">Click here to go to your workflow</a>
+        </p>
 
         <!-- Footer -->
         <div style="margin-top: 24px;">

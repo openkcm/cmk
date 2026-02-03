@@ -16,12 +16,9 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
 var (
-	ErrMigrationFailed           = errors.New("migration failed")
 	ErrEmptyManagementAccessData = errors.New("management access data cannot be empty")
 	ErrManagementAccessDataType  = errors.New("management access data must be a literal string")
 	ErrNilManagementAccessData   = errors.New("management access data cannot be nil")
@@ -37,84 +34,21 @@ const DBLogDomain = "db"
 // StartDB starts DB connection and runs migrations
 func StartDB(
 	ctx context.Context,
-	dbConf config.Database,
-	provisioning config.Provisioning,
-	replicas []config.Database,
+	cfg *config.Config,
 ) (*multitenancy.DB, error) {
 	log.Info(ctx, "Starting DB connection ")
 
-	dbCon, err := StartDBConnection(dbConf, replicas)
+	dbCon, err := StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
 	if err != nil {
 		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to initialize DB Connection")
 	}
 
-	dbCon = dbCon.WithContext(ctx)
-
-	log.Info(ctx, "Starting DB migration")
-
-	err = migrate(ctx, dbCon)
-	if err != nil {
-		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to run table creation migration")
-	}
-
-	log.Info(ctx, "DB migration finished")
-
-	err = addKeystoreFromConfig(ctx, dbCon, provisioning.InitKeystoreConfig)
+	err = addKeystoreFromConfig(ctx, dbCon, cfg.Provisioning.InitKeystoreConfig)
 	if err != nil {
 		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to add initial keystore config")
 	}
 
 	return dbCon, nil
-}
-
-// migrate runs DB migrations
-func migrate(ctx context.Context, db *multitenancy.DB) error {
-	err := db.RegisterModels(
-		ctx,
-		&model.KeyConfiguration{},
-		&model.Key{},
-		&model.KeyVersion{},
-		&model.KeyLabel{},
-		&model.System{},
-		&model.SystemProperty{},
-		&model.Workflow{},
-		&model.WorkflowApprover{},
-		&model.Tenant{},
-		&model.TenantConfig{},
-		&model.Certificate{},
-		&model.Group{},
-		&model.ImportParams{},
-		&model.KeystoreConfiguration{},
-		&model.Event{},
-	)
-	if err != nil {
-		return errs.Wrap(ErrMigrationFailed, err)
-	}
-
-	err = db.MigrateSharedModels(ctx)
-	if err != nil {
-		return errs.Wrap(ErrMigrationFailed, err)
-	}
-
-	r := sql.NewRepository(db)
-
-	err = repo.ProcessInBatch(ctx, r, repo.NewQuery(), repo.DefaultLimit, func(tenants []*model.Tenant) error {
-		for _, tenant := range tenants {
-			ctx := log.InjectTenant(ctx, tenant)
-
-			err := db.MigrateTenantModels(ctx, tenant.SchemaName)
-			if err != nil {
-				log.Error(ctx, "Failed to migrate tenant", err)
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		return errs.Wrap(ErrMigrationFailed, err)
-	}
-
-	return nil
 }
 
 func validateKeystoreConfig(initKeystoreConfig config.InitKeystoreConfig) (map[string]string, error) {
@@ -199,13 +133,13 @@ func addKeystoreFromConfig(
 		return errs.Wrapf(err, "failed to marshal combined config to JSON")
 	}
 
-	ksConfig := &model.KeystoreConfiguration{
+	ks := &model.Keystore{
 		ID:       uuid.New(),
 		Provider: initKeystoreConfig.Provider,
-		Value:    json.RawMessage(valueBytes),
+		Config:   json.RawMessage(valueBytes),
 	}
 
-	err = db.WithContext(ctx).Create(ksConfig).Error
+	err = db.WithContext(ctx).Create(ks).Error
 	if err != nil && !errors.Is(err, gorm.ErrDuplicatedKey) {
 		return errs.Wrapf(err, "failed to save keystore configuration")
 	}

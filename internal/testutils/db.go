@@ -3,17 +3,21 @@ package testutils
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
@@ -21,21 +25,13 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
 	TestTenant = "test"
 )
-
-type PublicTestModel struct{}
-
-func (PublicTestModel) IsSharedModel() bool {
-	return true
-}
-
-func (PublicTestModel) TableName() string {
-	return "public.test_models"
-}
 
 var TestModelName = "test_models"
 
@@ -46,7 +42,6 @@ type TestModel struct {
 	Description string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
-	Related     []TestRelatedModel `gorm:"foreignKey:TestModelID"`
 }
 
 func (TestModel) TableName() string {
@@ -54,24 +49,6 @@ func (TestModel) TableName() string {
 }
 
 func (TestModel) IsSharedModel() bool {
-	return false
-}
-
-// TestRelatedModel represents a model for testing preload functionality
-type TestRelatedModel struct {
-	ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
-	TestModelID uuid.UUID `gorm:"type:uuid"`
-	Name        string    `gorm:"type:varchar(255)"`
-	Description string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
-func (TestRelatedModel) TableName() string {
-	return "test_related_models"
-}
-
-func (TestRelatedModel) IsSharedModel() bool {
 	return false
 }
 
@@ -136,6 +113,11 @@ var TestDB = config.Database{
 
 type TestDBConfigOpt func(*TestDBConfig)
 
+var (
+	oncePostgres sync.Once
+	dbCfg        config.Database
+)
+
 // NewTestDB sets up a test database connection and creates tenants as needed.
 // It returns a pointer to the multitenancy.DB instance, a slice of tenant IDs and it's config.
 // By default, it uses TestDB configuration. Use opts to customize the setup.
@@ -147,15 +129,48 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 
 	cfg.dbCon = TestDB
 
+	_, filename, _, _ := runtime.Caller(0) //nolint: dogsled
+	migrationPath := filepath.Join(filepath.Dir(filename), "../../migrations")
+
+	cfg.dbCon.Migrator = config.Migrator{
+		Shared: config.MigrationPath{
+			Schema: filepath.Join(migrationPath, "/shared/schema"),
+		},
+		Tenant: config.MigrationPath{
+			Schema: filepath.Join(migrationPath, "/tenant/schema"),
+		},
+	}
+
 	cfg.generateTenants = 1
 	for _, o := range opts {
 		o(&cfg)
 	}
 
-	db := newTestDBCon(tb, &cfg)
+	if !cfg.WithIsolatedService {
+		oncePostgres.Do(func() {
+			StartPostgresSQL(tb, &cfg.dbCon, testcontainers.WithReuseByName(uuid.NewString()))
+			dbCfg = cfg.dbCon
+		})
+		cfg.dbCon = dbCfg
+	} else {
+		StartPostgresSQL(tb, &cfg.dbCon)
+	}
+
+	dbCon := newTestDBCon(tb, &cfg)
+
+	migrator, err := db.NewMigrator(sql.NewRepository(dbCon), &config.Config{Database: cfg.dbCon})
+	assert.NoError(tb, err)
+
+	runMigration(tb, cfg, migrator, db.SharedTarget)
+
+	if cfg.Logger != nil {
+		dbCon = dbCon.Session(&gorm.Session{
+			Logger: cfg.Logger,
+		})
+	}
 
 	tb.Cleanup(func() {
-		sqlDB, _ := db.DB.DB()
+		sqlDB, _ := dbCon.DB.DB()
 		sqlDB.Close()
 	})
 
@@ -164,11 +179,11 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 	// Return instance with only init tenants
 	if len(cfg.initTenants) > 0 {
 		for _, tenant := range cfg.initTenants {
-			createTenant(tb, db, &tenant, cfg.Models)
+			CreateDBTenant(tb, dbCon, &tenant)
 			tenantIDs = append(tenantIDs, tenant.ID)
 		}
 
-		return db, tenantIDs, cfg.dbCon
+		return dbCon, tenantIDs, cfg.dbCon
 	}
 
 	if cfg.CreateDatabase {
@@ -180,7 +195,7 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 				t.ID = schema
 				t.OwnerID = schema + "-owner-id"
 			})
-			createTenant(tb, db, tenant, cfg.Models)
+			CreateDBTenant(tb, dbCon, tenant)
 			tenantIDs = append(tenantIDs, tenant.ID)
 		}
 	} else {
@@ -191,7 +206,7 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 			t.ID = schema
 			t.OwnerID = schema + "-owner-id"
 		})
-		createTenant(tb, db, tenant, cfg.Models)
+		CreateDBTenant(tb, dbCon, tenant)
 		tenantIDs = append(tenantIDs, tenant.ID)
 	}
 
@@ -203,47 +218,76 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 			t.ID = schema
 			t.OwnerID = schema + "-owner-id"
 		})
-		createTenant(tb, db, tenant, cfg.Models)
+		CreateDBTenant(tb, dbCon, tenant)
 	}
 
-	return db, tenantIDs, cfg.dbCon
+	runMigration(tb, cfg, migrator, db.TenantTarget)
+
+	return dbCon, tenantIDs, cfg.dbCon
 }
 
-func createTenant(tb testing.TB, db *multitenancy.DB, tenant *model.Tenant, m []driver.TenantTabler) {
+func runMigration(
+	tb testing.TB,
+	cfg TestDBConfig,
+	migrator db.Migrator,
+	target db.MigrationTarget,
+) {
+	tb.Helper()
+
+	req := db.Migration{
+		Type: db.SchemaMigration,
+	}
+	switch target {
+	case db.SharedTarget:
+		req.Target = db.SharedTarget
+	case db.TenantTarget:
+		req.Target = db.TenantTarget
+	default:
+	}
+
+	var version *int64
+	switch target {
+	case db.SharedTarget:
+		version = cfg.SharedVersion
+	case db.TenantTarget:
+		version = cfg.TenantVersion
+	default:
+	}
+
+	// Not set, migrate to latest
+	if version == nil {
+		err := migrator.MigrateToLatest(tb.Context(), req)
+		assert.NoError(tb, err)
+		return
+	}
+
+	if *version != 0 {
+		err := migrator.MigrateTo(tb.Context(), req, *version)
+		assert.NoError(tb, err)
+	} else {
+		return
+	}
+}
+
+func CreateDBTenant(
+	tb testing.TB,
+	dbCon *multitenancy.DB,
+	tenant *model.Tenant,
+) {
 	tb.Helper()
 
 	tb.Cleanup(func() {
-		_ = db.Exec(
+		_ = dbCon.Exec(
 			fmt.Sprintf("DELETE FROM %s WHERE schema_name = '%s';", model.Tenant{}.TableName(), tenant.SchemaName),
 		)
-		err := db.OffboardTenant(tb.Context(), tenant.SchemaName)
+		err := dbCon.OffboardTenant(context.Background(), tenant.SchemaName)
 		assert.NoError(tb, err)
 	})
 
-	m = append(m, tenant)
+	assert.NoError(tb, dbCon.Create(&tenant).Error)
 
-	if len(m) > 1 {
-		require.NoError(tb, db.RegisterModels(tb.Context(), m...))
-		require.NoError(tb, db.MigrateSharedModels(tb.Context()))
-		require.NoError(tb, db.Create(tenant).Error)
-		require.NoError(tb, db.MigrateTenantModels(tb.Context(), tenant.SchemaName))
-
-		// Clean keystore_configurations table if it's included in models
-		for _, table := range m {
-			if _, ok := table.(*model.KeystoreConfiguration); ok {
-				err := db.Exec("DELETE FROM keystore_configurations").Error
-				assert.NoError(tb, err)
-
-				break
-			}
-		}
-	}
-}
-
-func WithDatabase(db config.Database) TestDBConfigOpt {
-	return func(c *TestDBConfig) {
-		c.dbCon = db
-	}
+	assert.NoError(tb, dbCon.RegisterModels(tb.Context(), &TestModel{}))
+	assert.NoError(tb, dbCon.MigrateTenantModels(tb.Context(), tenant.ID))
 }
 
 // WithInitTenants creates the provided tenants on the DB
@@ -260,6 +304,9 @@ func WithGenerateTenants(count int) TestDBConfigOpt {
 	return func(c *TestDBConfig) {
 		c.generateTenants = count
 		c.CreateDatabase = true
+		if count == 0 {
+			c.TenantVersion = ptr.PointTo(int64(0))
+		}
 	}
 }
 
@@ -283,8 +330,21 @@ type TestDBConfig struct {
 	// - Multiple Tenants
 	CreateDatabase bool
 
-	// Tables that the test should contain
-	Models []driver.TenantTabler
+	// If true create an isolated PSQL instance
+	// In most cases this should not be set as it will take a longer time
+	// as the container needs to build and startup
+	WithIsolatedService bool
+
+	// Shared schema version to migrate up to
+	// If it's nil migrate to latest version
+	SharedVersion *int64
+
+	// Tenant schema version to migrate up to
+	// If it's nil migrate to latest version
+	TenantVersion *int64
+
+	// GORM Logger
+	Logger logger.Interface
 }
 
 const MaxPSQLSchemaName = 64
@@ -311,8 +371,12 @@ func processNameForDB(n string) string {
 func newTestDBCon(tb testing.TB, cfg *TestDBConfig) *multitenancy.DB {
 	tb.Helper()
 
+	// Create new context so cleanup functions execute
+	ctx := context.Background()
+
 	if !cfg.CreateDatabase {
 		con, err := db.StartDBConnection(
+			ctx,
 			cfg.dbCon,
 			[]config.Database{},
 		)
@@ -324,6 +388,7 @@ func newTestDBCon(tb testing.TB, cfg *TestDBConfig) *multitenancy.DB {
 	cfg.dbCon = NewIsolatedDB(tb, cfg.dbCon)
 
 	con, err := db.StartDBConnection(
+		ctx,
 		cfg.dbCon,
 		[]config.Database{},
 	)
@@ -339,6 +404,7 @@ func NewIsolatedDB(tb testing.TB, cfg config.Database) config.Database {
 	tb.Helper()
 
 	con, err := db.StartDBConnection(
+		tb.Context(),
 		cfg,
 		[]config.Database{},
 	)
@@ -356,4 +422,22 @@ func NewIsolatedDB(tb testing.TB, cfg config.Database) config.Database {
 	cfg.Name = name
 
 	return cfg
+}
+
+type migrator struct{}
+
+func NewMigrator() db.Migrator {
+	return &migrator{}
+}
+
+func (m *migrator) MigrateTenantToLatest(ctx context.Context, tenant *model.Tenant) error {
+	return nil
+}
+
+func (m *migrator) MigrateToLatest(ctx context.Context, migration db.Migration) error {
+	return nil
+}
+
+func (m *migrator) MigrateTo(ctx context.Context, migration db.Migration, version int64) error {
+	return nil
 }

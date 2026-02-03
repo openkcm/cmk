@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,18 +53,11 @@ func SetupCertificateManager(
 	t.Helper()
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.KeyConfiguration{},
-			&model.Key{},
-			&model.KeyLabel{},
-			&model.Certificate{},
-			&model.Tenant{},
-		},
 		CreateDatabase: true,
 	})
 
 	dbRepository := sql.NewRepository(db)
-	cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.CertIssuer)}
+	cfg := &config.Config{Plugins: testutils.SetupMockPlugins(testutils.CertIssuer)}
 
 	catalog, err := catalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
@@ -369,7 +361,7 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 
 func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 	m, db, tenant := SetupCertificateManager(t)
-	assert.NotNil(t, db)
+	r := sql.NewRepository(db)
 
 	privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
 	assert.NoError(t, err)
@@ -389,11 +381,9 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	var cert *model.Certificate
-
 	t.Run("Should get default keystore certificate", func(t *testing.T) {
 		// Act
-		cert, err = m.GetDefaultKeystoreClientCert(ctx, "locality", "commonName")
+		cert, err := m.GetDefaultKeystoreClientCert(ctx, "locality", "commonName")
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, cert)
@@ -401,7 +391,7 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 
 	t.Run("Failed to get default keystore certificate with out tenant ID", func(t *testing.T) {
 		// Act
-		cert, err = m.GetDefaultKeystoreClientCert(t.Context(), "locality", "commonName")
+		cert, err := m.GetDefaultKeystoreClientCert(t.Context(), "locality", "commonName")
 		// Assert
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, manager.ErrGetDefaultKeystoreCertificate)
@@ -414,7 +404,7 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 		forced.Register()
 		defer forced.Unregister()
 		// Act
-		cert, err = m.GetDefaultKeystoreClientCert(ctx, "locality", "commonName")
+		cert, err := m.GetDefaultKeystoreClientCert(ctx, "locality", "commonName")
 		// Assert
 		assert.Error(t, err)
 		assert.Nil(t, cert)
@@ -422,10 +412,28 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 
 	t.Run("Should get default HYOK certificate", func(t *testing.T) {
 		// Act
-		cert, err = m.GetDefaultHYOKClientCert(ctx)
+		cert, err := m.GetDefaultHYOKClientCert(ctx)
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, cert)
+	})
+
+	t.Run("Should rotate default HYOK certificate if invalid", func(t *testing.T) {
+		certTime := time.Now().Add(-1 * time.Hour)
+		oldCert := testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeTenantDefault
+			c.CreationDate = certTime
+			c.ExpirationDate = certTime
+		})
+		testutils.CreateTestEntities(
+			ctx,
+			t,
+			r,
+			oldCert,
+		)
+		cert, err := m.GetDefaultHYOKClientCert(ctx)
+		assert.NoError(t, err)
+		assert.LessOrEqual(t, oldCert.ExpirationDate, cert.ExpirationDate)
 	})
 
 	t.Run("Failed to get default HYOK certificate with DB error", func(t *testing.T) {
@@ -434,7 +442,7 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 		forced.Register()
 		defer forced.Unregister()
 		// Act
-		cert, err = m.GetDefaultHYOKClientCert(ctx)
+		cert, err := m.GetDefaultHYOKClientCert(ctx)
 		// Assert
 		assert.Error(t, err)
 		assert.Nil(t, cert)

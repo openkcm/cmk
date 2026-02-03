@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
@@ -23,49 +23,55 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/workflow"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var ErrEnqueuingTask = errors.New("error enqueuing task")
 
-func SetupWorkflowManager(t *testing.T, cfg *config.Config) (*manager.WorkflowManager,
+var auditorGroupName = "auditors"
+
+func createAuditorGroup(ctx context.Context, tb testing.TB, r repo.Repo) {
+	tb.Helper()
+
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.Name = auditorGroupName
+		g.IAMIdentifier = auditorGroupName
+		g.Role = constants.TenantAuditorRole
+	})
+	testutils.CreateTestEntities(ctx, tb, r, group)
+}
+
+func SetupWorkflowManager(t *testing.T, cfg *config.Config,
+	opts ...testutils.TestDBConfigOpt) (
+	*manager.WorkflowManager,
 	repo.Repo, string,
 ) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Tenant{},
-			&model.Group{},
-			&model.KeyConfiguration{},
-			&model.Key{},
-			&model.KeyVersion{},
-			&model.System{},
-			&model.SystemProperty{},
-			&model.Workflow{},
-			&model.WorkflowApprover{},
-			&model.TenantConfig{},
-		},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	r := sql.NewRepository(db)
 
-	ctlg, err := catalog.New(t.Context(), *cfg)
+	ctlg, err := catalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	tenantConfigManager := manager.NewTenantConfigManager(r, ctlg)
 	certManager := manager.NewCertificateManager(t.Context(), r, ctlg, &cfg.Certificates)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, cfg)
 	cmkAuditor := auditor.New(t.Context(), cfg)
-	groupManager := manager.NewGroupManager(r, ctlg)
+	userManager := manager.NewUserManager(r, cmkAuditor)
+	tagManager := manager.NewTagManager(r)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	groupManager := manager.NewGroupManager(r, ctlg, userManager)
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
-	systemManager := manager.NewSystemManager(t.Context(), r, clientsFactory, nil, ctlg, cmkAuditor, cfg)
+	systemManager := manager.NewSystemManager(t.Context(), r, clientsFactory, nil, ctlg, cfg, keyConfigManager, userManager)
 
-	keym := manager.NewKeyManager(r, ctlg, tenantConfigManager, keyConfigManager, certManager, nil, cmkAuditor)
+	keym := manager.NewKeyManager(r, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 	m := manager.NewWorkflowManager(
 		r, keym, keyConfigManager, systemManager,
-		groupManager, nil, tenantConfigManager)
+		groupManager, userManager, nil, tenantConfigManager, cfg,
+	)
 
 	return m, r, tenants[0]
 }
@@ -83,124 +89,254 @@ func createTestWorkflow(
 	return wf, nil
 }
 
-func TestWorkflowManager_CheckWorkflow(t *testing.T) {
-	t.Run("Should return disabled on workflow disabled", func(t *testing.T) {
-		m, _, tenant := SetupWorkflowManager(t, &config.Config{})
-		testutils.CreateCtxWithTenant(tenant)
-		status, err := m.CheckWorkflow(testutils.CreateCtxWithTenant(tenant), &model.Workflow{})
-		assert.False(t, status.Enabled)
-		assert.False(t, status.Exists)
-		assert.NoError(t, err)
+var keyConfigID = "008cfcb6-0a68-449e-bbf3-ef6ee8537f02"
+
+func createTestObjects(t *testing.T, repo repo.Repo, ctx context.Context) (*model.KeyConfiguration,
+	*model.Key,
+) {
+	t.Helper()
+
+	// Create test key configuration once for all tests
+	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+		c.Name = "test-config"
+		c.ID = uuid.MustParse(keyConfigID)
 	})
 
+	key := createTestKey(t, repo, ctx)
+
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		repo,
+		keyConfig,
+	)
+
+	return keyConfig, key
+}
+
+func createTestKey(t *testing.T, repo repo.Repo, ctx context.Context) *model.Key {
+	t.Helper()
+
+	keyID := uuid.New()
+
+	key := testutils.NewKey(func(k *model.Key) {
+		k.ID = keyID
+		k.KeyConfigurationID = uuid.MustParse(keyConfigID)
+	})
+
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		repo,
+		key,
+	)
+
+	return key
+}
+
+func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	m, repo, tenant := SetupWorkflowManager(t, &config.Config{})
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
 	testutils.CreateTestEntities(ctx, t, repo, workflowConfig)
 
-	t.Run("Should return false on non existing artifacts", func(t *testing.T) {
-		status, err := m.CheckWorkflow(ctx, &model.Workflow{})
-		assert.True(t, status.Enabled)
-		assert.False(t, status.Exists)
-		assert.NoError(t, err)
-	})
+	keyConfig, key := createTestObjects(t, repo, ctx)
+	createAuditorGroup(ctx, t, repo)
 
-	t.Run("Should return true on existing active artifact without parameters", func(t *testing.T) {
-		wf, err := createTestWorkflow(ctx, repo, testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
-		}))
-		assert.NoError(t, err)
+	ctxSys := context.WithValue(
+		ctx,
+		constants.ClientData, &auth.ClientData{
+			Identifier: constants.SystemUser.String(),
+		},
+	)
 
-		status, err := m.CheckWorkflow(ctx, wf)
-		assert.True(t, status.Enabled)
-		assert.True(t, status.Exists)
-		assert.NoError(t, err)
-	})
+	t.Run(
+		"Should return false and error on non existing artifacts", func(t *testing.T) {
+			status, err := m.CheckWorkflow(ctx, &model.Workflow{})
+			assert.False(t, status.Enabled)
+			assert.False(t, status.Exists)
+			assert.Error(t, err)
+		},
+	)
 
-	t.Run("Should return true on active artifact requiring parameters", func(t *testing.T) {
-		wf, err := createTestWorkflow(ctx, repo, testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeUpdatePrimary.String()
-			w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
-		}))
-		assert.NoError(t, err)
+	t.Run(
+		"Should return true on existing active workflow", func(t *testing.T) {
+			wf, err := createTestWorkflow(
+				ctxSys, repo, testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = workflow.StateInitial.String()
+						w.ActionType = workflow.ActionTypeDelete.String()
+						w.ArtifactID = key.ID
+						w.ArtifactType = workflow.ArtifactTypeKey.String()
+					},
+				),
+			)
+			assert.NoError(t, err)
 
-		status, err := m.CheckWorkflow(ctx, wf)
-		assert.True(t, status.Enabled)
-		assert.True(t, status.Exists)
-		assert.NoError(t, err)
-	})
+			status, err := m.CheckWorkflow(ctxSys, wf)
+			assert.True(t, status.Enabled)
+			assert.True(t, status.Exists)
+			assert.NoError(t, err)
+		},
+	)
 
-	t.Run("Should return false on artifact requiring parameters", func(t *testing.T) {
-		wf, err := createTestWorkflow(ctx, repo, testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeUpdatePrimary.String()
-			w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
-		}))
-		assert.NoError(t, err)
+	t.Run(
+		"Should return false on rejected previous workflow", func(t *testing.T) {
+			wf, err := createTestWorkflow(
+				ctxSys, repo, testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = workflow.StateInitial.String()
+						w.State = workflow.StateRejected.String()
+						w.ActionType = workflow.ActionTypeUpdatePrimary.String()
+						w.ArtifactID = keyConfig.ID
+						w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+					},
+				),
+			)
+			assert.NoError(t, err)
 
-		wf.Parameters = uuid.NewString()
+			status, err := m.CheckWorkflow(ctxSys, wf)
+			assert.True(t, status.Enabled)
+			assert.False(t, status.Exists)
+			assert.NoError(t, err)
+		},
+	)
 
-		status, err := m.CheckWorkflow(ctx, wf)
-		assert.True(t, status.Enabled)
-		assert.False(t, status.Exists)
-		assert.NoError(t, err)
-	})
+	t.Run(
+		"Should return authorization error on non active artifact", func(t *testing.T) {
+			wf, err := createTestWorkflow(
+				ctxSys, repo, testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = workflow.StateRejected.String()
+						w.ActionType = workflow.ActionTypeDelete.String()
+						w.ArtifactType = workflow.ArtifactTypeKey.String()
+					},
+				),
+			)
+			assert.NoError(t, err)
 
-	t.Run("Should return false on non active artifact", func(t *testing.T) {
-		wf, err := createTestWorkflow(ctx, repo, testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateRejected.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
-		}))
-		assert.NoError(t, err)
-
-		status, err := m.CheckWorkflow(ctx, wf)
-		assert.True(t, status.Enabled)
-		assert.False(t, status.Exists)
-		assert.NoError(t, err)
-	})
+			status, err := m.CheckWorkflow(ctxSys, wf)
+			assert.False(t, status.Enabled)
+			assert.False(t, status.Exists)
+			assert.ErrorIs(t, err, manager.ErrWorkflowCreationNotAllowed)
+		},
+	)
 }
 
 func TestWorkflowManager_CreateWorkflow(t *testing.T) {
-	m, repo, tenant := SetupWorkflowManager(t, &config.Config{})
-
-	t.Run("Should error on existing workflow", func(t *testing.T) {
-		wf, err := createTestWorkflow(
-			testutils.CreateCtxWithTenant(tenant),
-			repo,
-			testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-			}),
-		)
-		assert.NoError(t, err)
-
-		_, err = m.CreateWorkflow(testutils.CreateCtxWithTenant(tenant), wf)
-		assert.ErrorIs(t, err, manager.ErrOngoingWorkflowExist)
+	m, repo, tenant := SetupWorkflowManager(t, &config.Config{
+		ContextModels: config.ContextModels{
+			System: config.System{
+				OptionalProperties: map[string]config.SystemProperty{
+					"NameOfTheSystem": {
+						DisplayName: "Name",
+						Optional:    true,
+						Default:     "n/a",
+					},
+				},
+			},
+		},
 	})
 
-	t.Run("Should create workflow", func(t *testing.T) {
-		expected := &model.Workflow{
-			ID:           uuid.New(),
-			State:        "INITIAL",
-			InitiatorID:  uuid.New(),
-			ArtifactType: "KEY",
-			ArtifactID:   uuid.New(),
-			ActionType:   "DELETE",
-			Approvers:    []model.WorkflowApprover{{UserID: uuid.New()}},
-		}
-		res, err := m.CreateWorkflow(testutils.CreateCtxWithTenant(tenant), expected)
-		assert.NoError(t, err)
-		assert.Equal(t, expected, res)
-	})
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	createAuditorGroup(ctx, t, repo)
+
+	ctxSys := context.WithValue(
+		ctx,
+		constants.ClientData, &auth.ClientData{
+			Identifier: constants.SystemUser.String(),
+		},
+	)
+	keyConfig, key := createTestObjects(t, repo, ctxSys)
+
+	t.Run(
+		"Should error on existing workflow", func(t *testing.T) {
+			wf, err := createTestWorkflow(
+				testutils.CreateCtxWithTenant(tenant),
+				repo,
+				testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = workflow.StateInitial.String()
+						w.ActionType = workflow.ActionTypeDelete.String()
+						w.ArtifactType = workflow.ArtifactTypeKey.String()
+					},
+				),
+			)
+			assert.NoError(t, err)
+
+			_, err = m.CreateWorkflow(testutils.CreateCtxWithTenant(tenant), wf)
+			assert.ErrorIs(t, err, manager.ErrOngoingWorkflowExist)
+		},
+	)
+
+	t.Run(
+		"Should create workflow", func(t *testing.T) {
+			expected := &model.Workflow{
+				ID:           uuid.New(),
+				State:        "INITIAL",
+				InitiatorID:  uuid.NewString(),
+				ArtifactType: "KEY",
+				ArtifactID:   key.ID,
+				ActionType:   "DELETE",
+				Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+			}
+			res, err := m.CreateWorkflow(ctxSys, expected)
+			assert.NoError(t, err)
+			assert.Equal(t, expected, res)
+		},
+	)
+
+	t.Run(
+		"Should create system workflow with artifact name from property", func(t *testing.T) {
+			system := testutils.NewSystem(func(s *model.System) {
+				s.Properties = map[string]string{
+					"NameOfTheSystem": "MySystem",
+				}
+			})
+			testutils.CreateTestEntities(ctxSys, t, repo, system)
+
+			expected := &model.Workflow{
+				ID:           uuid.New(),
+				State:        "INITIAL",
+				InitiatorID:  uuid.NewString(),
+				ArtifactType: "SYSTEM",
+				ArtifactID:   system.ID,
+				ActionType:   "LINK",
+				Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+				Parameters:   keyConfig.ID.String(),
+			}
+			res, err := m.CreateWorkflow(ctxSys, expected)
+			assert.NoError(t, err)
+			assert.Equal(t, "MySystem", *res.ArtifactName)
+			assert.Equal(t, keyConfig.Name, *res.ParametersResourceName)
+		},
+	)
+
+	t.Run(
+		"Should create system workflow with artifact name from identifier", func(t *testing.T) {
+			system := testutils.NewSystem(func(s *model.System) {})
+			testutils.CreateTestEntities(ctxSys, t, repo, system)
+
+			expected := &model.Workflow{
+				ID:           uuid.New(),
+				State:        "INITIAL",
+				InitiatorID:  uuid.NewString(),
+				ArtifactType: "SYSTEM",
+				ArtifactID:   system.ID,
+				ActionType:   "LINK",
+				Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+				Parameters:   keyConfig.ID.String(),
+			}
+			res, err := m.CreateWorkflow(ctxSys, expected)
+			assert.NoError(t, err)
+			assert.Equal(t, system.Identifier, *res.ArtifactName)
+			assert.Equal(t, keyConfig.Name, *res.ParametersResourceName)
+		},
+	)
 }
 
-func TestWorkflowManager_TransitWorkflow(t *testing.T) {
+func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 	m, repo, tenant := SetupWorkflowManager(t, &config.Config{})
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -208,79 +344,114 @@ func TestWorkflowManager_TransitWorkflow(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, repo, workflowConfig)
 
-	t.Run("Should error on invalid event actor", func(t *testing.T) {
-		wf, err := createTestWorkflow(
-			testutils.CreateCtxWithTenant(tenant),
-			repo,
-			testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-			}),
-		)
-		assert.NoError(t, err)
-		_, err = m.TransitionWorkflow(
-			testutils.CreateCtxWithTenant(tenant),
-			wf.InitiatorID,
-			wf.ID,
-			workflow.TransitionApprove,
-		)
-		assert.ErrorIs(t, err, workflow.ErrInvalidEventActor)
-	})
+	t.Run(
+		"Should error on invalid event actor", func(t *testing.T) {
+			wf, err := createTestWorkflow(
+				testutils.CreateCtxWithTenant(tenant),
+				repo,
+				testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = workflow.StateInitial.String()
+						w.ActionType = workflow.ActionTypeDelete.String()
+						w.ArtifactType = workflow.ArtifactTypeKey.String()
+					},
+				),
+			)
+			assert.NoError(t, err)
 
-	t.Run("Should transit to wait confirmation on approve", func(t *testing.T) {
-		wf, err := createTestWorkflow(
-			testutils.CreateCtxWithTenant(tenant),
-			repo,
-			testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = workflow.StateWaitApproval.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-			}),
-		)
-		assert.NoError(t, err)
-		res, err := m.TransitionWorkflow(
-			testutils.CreateCtxWithTenant(tenant),
-			wf.Approvers[0].UserID,
-			wf.ID,
-			workflow.TransitionApprove,
-		)
-		assert.NoError(t, err)
-		assert.EqualValues(t, workflow.StateWaitConfirmation, res.State)
-	})
+			ctx = cmkcontext.InjectClientData(
+				cmkcontext.CreateTenantContext(t.Context(), tenant),
+				&auth.ClientData{
+					Identifier: wf.InitiatorID,
+				},
+				nil,
+			)
+			_, err = m.TransitionWorkflow(
+				ctx,
+				wf.ID,
+				workflow.TransitionApprove,
+			)
+			assert.ErrorIs(t, err, workflow.ErrInvalidEventActor)
+		},
+	)
 
-	t.Run("Should transit to reject on reject", func(t *testing.T) {
-		wf, err := createTestWorkflow(
-			testutils.CreateCtxWithTenant(tenant),
-			repo,
-			testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = workflow.StateWaitApproval.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-			}),
-		)
-		assert.NoError(t, err)
-		res, err := m.TransitionWorkflow(
-			testutils.CreateCtxWithTenant(tenant),
-			wf.Approvers[0].UserID,
-			wf.ID,
-			workflow.TransitionReject,
-		)
-		assert.NoError(t, err)
-		assert.EqualValues(t, workflow.StateRejected, res.State)
-	})
+	t.Run(
+		"Should transit to wait confirmation on approve", func(t *testing.T) {
+			wf, err := createTestWorkflow(
+				testutils.CreateCtxWithTenant(tenant),
+				repo,
+				testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = workflow.StateWaitApproval.String()
+						w.ActionType = workflow.ActionTypeDelete.String()
+						w.ArtifactType = workflow.ArtifactTypeKey.String()
+					},
+				),
+			)
+			assert.NoError(t, err)
+			ctx = cmkcontext.InjectClientData(
+				cmkcontext.CreateTenantContext(t.Context(), tenant),
+				&auth.ClientData{
+					Identifier: wf.Approvers[0].UserID,
+				},
+				nil,
+			)
+			res, err := m.TransitionWorkflow(
+				ctx,
+				wf.ID,
+				workflow.TransitionApprove,
+			)
+			assert.NoError(t, err)
+			assert.EqualValues(t, workflow.StateWaitConfirmation, res.State)
+		},
+	)
+
+	t.Run(
+		"Should transit to reject on reject", func(t *testing.T) {
+			wf, err := createTestWorkflow(
+				testutils.CreateCtxWithTenant(tenant),
+				repo,
+				testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = workflow.StateWaitApproval.String()
+						w.ActionType = workflow.ActionTypeDelete.String()
+						w.ArtifactType = workflow.ArtifactTypeKey.String()
+					},
+				),
+			)
+			assert.NoError(t, err)
+			ctx = cmkcontext.InjectClientData(
+				cmkcontext.CreateTenantContext(t.Context(), tenant),
+				&auth.ClientData{
+					Identifier: wf.Approvers[0].UserID,
+				},
+				nil,
+			)
+			res, err := m.TransitionWorkflow(
+				ctx,
+				wf.ID,
+				workflow.TransitionReject,
+			)
+			assert.NoError(t, err)
+			assert.EqualValues(t, workflow.StateRejected, res.State)
+		},
+	)
 }
 
-func TestWorlfowManager_GetWorkflowByID(t *testing.T) {
+func TestWorkflowManager_GetWorkflowByID(t *testing.T) {
 	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
+	userID := uuid.NewString()
 	wf, err := createTestWorkflow(
 		testutils.CreateCtxWithTenant(tenant),
 		r,
-		testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
-		}),
+		testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateInitial.String()
+				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactType = workflow.ArtifactTypeKey.String()
+				w.InitiatorID = userID
+			},
+		),
 	)
 	assert.NoError(t, err)
 
@@ -291,36 +462,44 @@ func TestWorlfowManager_GetWorkflowByID(t *testing.T) {
 		errMessage error
 	}{
 		{
-			name:       "TestWorlfowManager_GetByID_ValidUUID",
+			name:       "TestWorkflowManager_GetByID_ValidUUID",
 			workflowID: wf.ID,
 			expectErr:  false,
 		},
 		{
-			name:       "TestWorlfowManager_GetByID_NonExistent",
+			name:       "TestWorkflowManager_GetByID_NonExistent",
 			workflowID: uuid.New(),
 			expectErr:  true,
-			errMessage: repo.ErrNotFound,
+			errMessage: manager.ErrWorkflowNotAllowed,
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			retrievedWf, err := m.GetWorkflowsByID(
-				testutils.CreateCtxWithTenant(tenant),
-				tt.workflowID)
-			if tt.expectErr {
-				assert.Error(t, err)
-				assert.Nil(t, retrievedWf)
-				assert.ErrorIs(t, err, tt.errMessage)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, retrievedWf)
-				assert.Equal(t, wf.ID, retrievedWf.ID)
-				assert.Equal(t, wf.ApproverIDs(), retrievedWf.ApproverIDs())
-				assert.NotZero(t, retrievedWf.CreatedAt)
-				assert.NotZero(t, retrievedWf.UpdatedAt)
-			}
-		})
+		t.Run(
+			tt.name, func(t *testing.T) {
+				ctx := cmkcontext.InjectClientData(
+					cmkcontext.CreateTenantContext(t.Context(), tenant),
+					&auth.ClientData{
+						Identifier: userID,
+					},
+					nil,
+				)
+				retrievedWf, err := m.GetWorkflowByID(
+					ctx, tt.workflowID,
+				)
+				if tt.expectErr {
+					assert.Error(t, err)
+					assert.Nil(t, retrievedWf)
+					assert.ErrorIs(t, err, tt.errMessage)
+				} else {
+					assert.NoError(t, err)
+					assert.NotNil(t, retrievedWf)
+					assert.Equal(t, wf.ID, retrievedWf.ID)
+					assert.NotZero(t, retrievedWf.CreatedAt)
+					assert.NotZero(t, retrievedWf.UpdatedAt)
+				}
+			},
+		)
 	}
 }
 
@@ -329,74 +508,134 @@ func newGetWorkflowsFilter(
 	state string,
 	actionType string,
 	artifactType string,
-	userID uuid.UUID,
 ) manager.WorkflowFilter {
 	return manager.WorkflowFilter{
 		State:        state,
 		ArtifactType: artifactType,
 		ArtifactID:   artifactID,
 		ActionType:   actionType,
-		UserID:       userID,
 		Skip:         constants.DefaultSkip,
 		Top:          constants.DefaultTop,
 	}
 }
 
+func TestWorkflowFilter_GetUUID(t *testing.T) {
+	u := uuid.New()
+	filter := manager.WorkflowFilter{
+		ArtifactID: u,
+	}
+
+	// Should return ArtifactID for repo.ArtifactIDField
+	id, err := filter.GetUUID(repo.ArtifactIDField)
+	assert.NoError(t, err)
+	assert.Equal(t, u, id)
+
+	// Should return error for unsupported field
+	id, err = filter.GetUUID(repo.StateField)
+	assert.Error(t, err)
+	assert.Equal(t, uuid.Nil, id)
+}
+
+func TestWorkflowFilter_GetString(t *testing.T) {
+	filter := manager.WorkflowFilter{
+		State:        "INITIAL",
+		ArtifactType: "KEY",
+		ActionType:   "DELETE",
+	}
+
+	// Should return correct values for supported fields
+	val, err := filter.GetString(repo.StateField)
+	assert.NoError(t, err)
+	assert.Equal(t, "INITIAL", val)
+
+	val, err = filter.GetString(repo.ArtifactTypeField)
+	assert.NoError(t, err)
+	assert.Equal(t, "KEY", val)
+
+	val, err = filter.GetString(repo.ActionTypeField)
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE", val)
+
+	// Should return error for unsupported field
+	val, err = filter.GetString(repo.ArtifactIDField)
+	assert.Error(t, err)
+	assert.Empty(t, val)
+}
+
 func TestWorkfowManager_GetWorkflows(t *testing.T) {
 	m, repo, tenant := SetupWorkflowManager(t, &config.Config{})
-	userID := uuid.New()
-	allWorkflowUserID := uuid.New()
+	userID := uuid.NewString()
+	allWorkflowUserID := uuid.NewString()
 	artifactID := uuid.New()
 
-	_, err := createTestWorkflow(
+	baseTime := time.Now()
+
+	workflow1, err := createTestWorkflow(
 		testutils.CreateCtxWithTenant(tenant),
 		repo,
-		testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
-			w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
-			w.InitiatorID = userID
-		}),
+		testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateInitial.String()
+				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactType = workflow.ArtifactTypeKey.String()
+				w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
+				w.InitiatorID = userID
+				w.CreatedAt = baseTime.Add(-3 * time.Hour)
+				w.UpdatedAt = baseTime.Add(-3 * time.Hour)
+			},
+		),
 	)
 	assert.NoError(t, err)
 
-	_, err = createTestWorkflow(
+	workflow2, err := createTestWorkflow(
 		testutils.CreateCtxWithTenant(tenant),
 		repo,
-		testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
-			w.ArtifactID = artifactID
-			w.Approvers = []model.WorkflowApprover{{UserID: uuid.New()}}
-			w.InitiatorID = allWorkflowUserID
-		}),
+		testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateInitial.String()
+				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactType = workflow.ArtifactTypeKey.String()
+				w.ArtifactID = artifactID
+				w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+				w.InitiatorID = allWorkflowUserID
+				w.CreatedAt = baseTime.Add(-2 * time.Hour)
+				w.UpdatedAt = baseTime.Add(-2 * time.Hour)
+			},
+		),
 	)
+	assert.NoError(t, err)
 
-	assert.NoError(t, err)
-	_, err = createTestWorkflow(
+	workflow3, err := createTestWorkflow(
 		testutils.CreateCtxWithTenant(tenant),
 		repo,
-		testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateRejected.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
-			w.Approvers = []model.WorkflowApprover{{UserID: uuid.New()}}
-			w.InitiatorID = allWorkflowUserID
-		}),
+		testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateRejected.String()
+				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactType = workflow.ArtifactTypeKey.String()
+				w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+				w.InitiatorID = allWorkflowUserID
+				w.CreatedAt = baseTime.Add(-1 * time.Hour)
+				w.UpdatedAt = baseTime.Add(-1 * time.Hour)
+			},
+		),
 	)
 	assert.NoError(t, err)
-	_, err = createTestWorkflow(
+
+	workflow4, err := createTestWorkflow(
 		testutils.CreateCtxWithTenant(tenant),
 		repo,
-		testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeUpdateState.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
-			w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
-			w.InitiatorID = userID
-		}),
+		testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateInitial.String()
+				w.ActionType = workflow.ActionTypeUpdateState.String()
+				w.ArtifactType = workflow.ArtifactTypeKey.String()
+				w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
+				w.InitiatorID = userID
+				w.CreatedAt = baseTime
+				w.UpdatedAt = baseTime
+			},
+		),
 	)
 	assert.NoError(t, err)
 
@@ -407,7 +646,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 		expectedState       string
 		expectedActionType  string
 		expectedArtfactType string
-		expectedInitiatorID uuid.UUID
+		expectedInitiatorID string
 	}{
 		{
 			name:                "Should get all workflows",
@@ -416,7 +655,6 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 			expectedState:       "",
 			expectedActionType:  "",
 			expectedArtfactType: "",
-			expectedInitiatorID: uuid.Nil,
 		},
 		{
 			name:                "Should get rejected workflows",
@@ -425,7 +663,6 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 			expectedState:       workflow.StateRejected.String(),
 			expectedActionType:  "",
 			expectedArtfactType: "",
-			expectedInitiatorID: uuid.Nil,
 		},
 		{
 			name: "Should get initial workflows",
@@ -434,12 +671,10 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 				workflow.StateInitial.String(),
 				"",
 				"",
-				uuid.Nil,
 			),
-			expectedCount:       3,
-			expectedState:       workflow.StateInitial.String(),
-			expectedActionType:  "",
-			expectedInitiatorID: uuid.Nil,
+			expectedCount:      3,
+			expectedState:      workflow.StateInitial.String(),
+			expectedActionType: "",
 		},
 		{
 			name: "Should get action type UPDATE_STATE workflows",
@@ -448,58 +683,11 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 				"",
 				workflow.ActionTypeUpdateState.String(),
 				"",
-				uuid.Nil,
 			),
 			expectedCount:       1,
 			expectedState:       "",
 			expectedActionType:  workflow.ActionTypeUpdateState.String(),
 			expectedArtfactType: "",
-			expectedInitiatorID: uuid.Nil,
-		},
-		{
-			name: "Get workflows for user with 2",
-			filter: newGetWorkflowsFilter(
-				uuid.Nil,
-				"",
-				"",
-				"",
-				userID,
-			),
-			expectedCount:       2,
-			expectedState:       "",
-			expectedActionType:  "",
-			expectedArtfactType: "",
-			expectedInitiatorID: userID,
-		},
-		{
-			name: "Get workflows for user with all",
-			filter: newGetWorkflowsFilter(
-				uuid.Nil,
-				"",
-				"",
-				"",
-				allWorkflowUserID,
-			),
-			expectedCount:       4,
-			expectedState:       "",
-			expectedActionType:  "",
-			expectedArtfactType: "",
-			expectedInitiatorID: uuid.Nil,
-		},
-		{
-			name: "Get workflows for user with all and state initial",
-			filter: newGetWorkflowsFilter(
-				uuid.Nil,
-				workflow.StateInitial.String(),
-				"",
-				"",
-				allWorkflowUserID,
-			),
-			expectedCount:       3,
-			expectedState:       "",
-			expectedActionType:  "",
-			expectedArtfactType: "",
-			expectedInitiatorID: uuid.Nil,
 		},
 		{
 			name: "Get workflows by artifact type",
@@ -508,13 +696,11 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 				"",
 				"",
 				workflow.ArtifactTypeKey.String(),
-				uuid.Nil,
 			),
 			expectedCount:       4,
 			expectedState:       "",
 			expectedActionType:  "",
 			expectedArtfactType: workflow.ArtifactTypeKey.String(),
-			expectedInitiatorID: uuid.Nil,
 		},
 		{
 			name: "Get workflows by artifact id",
@@ -523,55 +709,104 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 				"",
 				"",
 				workflow.ArtifactTypeKey.String(),
-				uuid.Nil,
 			),
 			expectedCount:       1,
 			expectedState:       "",
 			expectedActionType:  "",
 			expectedArtfactType: "",
-			expectedInitiatorID: uuid.Nil,
 		},
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			workflows, count, err := m.GetWorkflows(testutils.CreateCtxWithTenant(tenant), tc.filter)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expectedCount, count)
+		t.Run(
+			tc.name, func(t *testing.T) {
+				ctx := cmkcontext.InjectClientData(
+					cmkcontext.CreateTenantContext(t.Context(), tenant),
+					&auth.ClientData{
+						Identifier: userID,
+					},
+					nil,
+				)
+				workflows, count, err := m.GetWorkflows(ctx, tc.filter)
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedCount, count)
 
-			if tc.expectedState != "" {
-				for _, wf := range workflows {
-					assert.Equal(t, tc.expectedState, wf.State)
+				if tc.expectedState != "" {
+					for _, wf := range workflows {
+						assert.Equal(t, tc.expectedState, wf.State)
+					}
 				}
-			}
 
-			if tc.expectedActionType != "" {
-				for _, wf := range workflows {
-					assert.Equal(t, tc.expectedActionType, wf.ActionType)
+				if tc.expectedActionType != "" {
+					for _, wf := range workflows {
+						assert.Equal(t, tc.expectedActionType, wf.ActionType)
+					}
 				}
-			}
 
-			if tc.expectedInitiatorID != uuid.Nil {
-				for _, wf := range workflows {
-					assert.True(t, tc.expectedInitiatorID == wf.InitiatorID || tc.expectedInitiatorID == wf.Approvers[0].UserID)
+				if tc.expectedInitiatorID != "" {
+					for _, wf := range workflows {
+						approvers, count, err := m.ListWorkflowApprovers(ctx, wf.ID, false, 0, 5)
+						assert.NoError(t, err)
+						assert.Equal(t, 1, count)
+						assert.True(
+							t,
+							tc.expectedInitiatorID == wf.InitiatorID || tc.expectedInitiatorID == approvers[0].UserID,
+						)
+					}
 				}
-			}
-		})
+			},
+		)
 	}
+
+	t.Run("Should return workflows ordered by created time descending", func(t *testing.T) {
+		ctx := cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: userID,
+			},
+			nil,
+		)
+
+		workflows, count, err := m.GetWorkflows(ctx, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Equal(t, 4, count)
+		assert.Len(t, workflows, 4)
+
+		// Verify workflows are ordered by created time descending (newest first)
+		// workflow4 should be first (created last)
+		assert.Equal(t, workflow4.ID, workflows[0].ID, "First workflow should be workflow4 (newest)")
+		assert.Equal(t, workflow3.ID, workflows[1].ID, "Second workflow should be workflow3")
+		assert.Equal(t, workflow2.ID, workflows[2].ID, "Third workflow should be workflow2")
+		assert.Equal(t, workflow1.ID, workflows[3].ID, "Fourth workflow should be workflow1 (oldest)")
+	})
 }
 
-func TestWorlfowManager_ListApprovers(t *testing.T) {
+func TestWorkflowManager_ListApprovers(t *testing.T) {
 	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
 	wf, err := createTestWorkflow(
 		testutils.CreateCtxWithTenant(tenant),
 		r,
-		testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
-		}),
+		testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateInitial.String()
+				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactType = workflow.ArtifactTypeKey.String()
+			},
+		),
 	)
 	assert.NoError(t, err)
+
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	createAuditorGroup(ctx, t, r)
+
+	ctxSys := context.WithValue(
+		ctx,
+		constants.ClientData, &auth.ClientData{
+			Identifier: constants.SystemUser.String(),
+			Groups:     []string{auditorGroupName},
+		},
+	)
 
 	tests := []struct {
 		name       string
@@ -580,43 +815,52 @@ func TestWorlfowManager_ListApprovers(t *testing.T) {
 		errMessage error
 	}{
 		{
-			name:       "TestWorlfowManager_ListApproversByWorkflowID_ValidUUID",
+			name:       "TestWorkflowManager_ListApproversByWorkflowID_ValidUUID",
 			workflowID: wf.ID,
 			expectErr:  false,
 		},
 		{
-			name:       "TestWorlfowManager_ListApproversByWorkflowID_NonExistent",
+			name:       "TestWorkflowManager_ListApproversByWorkflowID_NonExistent",
 			workflowID: uuid.New(),
 			expectErr:  true,
-			errMessage: repo.ErrNotFound,
+			errMessage: manager.ErrWorkflowNotAllowed,
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			approvers, _, err := m.ListWorkflowApprovers(testutils.CreateCtxWithTenant(tenant), tt.workflowID,
-				constants.DefaultSkip, constants.DefaultTop)
-			if tt.expectErr {
-				assert.Error(t, err)
-				assert.Nil(t, approvers)
-				assert.ErrorIs(t, err, tt.errMessage)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, approvers)
+		t.Run(
+			tt.name, func(t *testing.T) {
+				approvers, _, err := m.ListWorkflowApprovers(
+					ctxSys, tt.workflowID, false,
+					constants.DefaultSkip, constants.DefaultTop,
+				)
+				if tt.expectErr {
+					assert.Error(t, err)
+					assert.Nil(t, approvers)
+					assert.ErrorIs(t, err, tt.errMessage)
+				} else {
+					assert.NoError(t, err)
+					assert.NotNil(t, approvers)
 
-				for i := range approvers {
-					assert.Equal(t, wf.Approvers[i], *approvers[i])
+					for i := range approvers {
+						assert.Equal(t, wf.Approvers[i], *approvers[i])
+					}
 				}
-			}
-		})
+			},
+		)
 	}
 }
 
 func TestWorkflowManager_AutoAddApprover(t *testing.T) {
-	m, r, tenant := SetupWorkflowManager(t, &config.Config{
-		Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
-	})
+	m, r, tenant := SetupWorkflowManager(
+		t, &config.Config{
+			Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
+		},
+	)
 	ctx := testutils.CreateCtxWithTenant(tenant)
+	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"KMS_001", "KMS_002"})
+
+	createAuditorGroup(ctx, t, r)
 
 	adminGroups := []*model.Group{
 		{ID: uuid.New(), Name: "group1", IAMIdentifier: "KMS_001", Role: constants.KeyAdminRole},
@@ -628,18 +872,22 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 		err := r.Create(ctx, g)
 		assert.NoError(t, err)
 
-		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-			kc.AdminGroup = *g
-		})
+		keyConfig := testutils.NewKeyConfig(
+			func(kc *model.KeyConfiguration) {
+				kc.AdminGroup = *g
+			},
+		)
 		err = r.Create(ctx, keyConfig)
 		assert.NoError(t, err)
 
 		keyConfigs[i] = keyConfig
 	}
 
-	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyConfigurationID = keyConfigs[0].ID
-	})
+	key := testutils.NewKey(
+		func(k *model.Key) {
+			k.KeyConfigurationID = keyConfigs[0].ID
+		},
+	)
 
 	err := r.Create(ctx, key)
 	assert.NoError(t, err)
@@ -658,6 +906,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 		name           string
 		workflowMut    func(*model.Workflow)
 		approversCount int
+		approverGroups int
 		expectErr      bool
 		errMessage     error
 	}{
@@ -670,6 +919,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.Approvers = nil
 			},
 			approversCount: 2,
+			approverGroups: 1,
 		},
 		{
 			name: "KeyDelete - Invalid key",
@@ -692,6 +942,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.Approvers = nil
 			},
 			approversCount: 2,
+			approverGroups: 1,
 		},
 		{
 			name: "KeyConfigDelete",
@@ -702,6 +953,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.Approvers = nil
 			},
 			approversCount: 2,
+			approverGroups: 1,
 		},
 		{
 			name: "KeyConfigDelete - Invalid key config",
@@ -724,6 +976,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.Approvers = nil
 			},
 			approversCount: 2,
+			approverGroups: 1,
 		},
 		{
 			name: "SystemLink",
@@ -735,6 +988,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.Approvers = nil
 			},
 			approversCount: 2,
+			approverGroups: 1,
 		},
 		{
 			name: "SystemLink - Invalid key config",
@@ -757,6 +1011,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.Approvers = nil
 			},
 			approversCount: 2,
+			approverGroups: 1,
 		},
 		{
 			name: "SystemUnLink - Invalid system",
@@ -779,28 +1034,38 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.Approvers = nil
 			},
 			approversCount: 4,
+			approverGroups: 2,
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			wf := testutils.NewWorkflow(tt.workflowMut)
-			err = r.Create(ctx, wf)
-			assert.NoError(t, err)
-
-			_, err = m.AutoAssignApprovers(context.WithValue(ctx, constants.ClientData, &auth.ClientData{}), wf.ID)
-			if tt.expectErr {
-				assert.Error(t, err)
-				assert.ErrorIs(t, err, tt.errMessage)
-			} else {
+		t.Run(
+			tt.name, func(t *testing.T) {
+				wf := testutils.NewWorkflow(tt.workflowMut)
+				err = r.Create(ctx, wf)
 				assert.NoError(t, err)
 
-				approvers, _, err := m.ListWorkflowApprovers(ctx, wf.ID, 0, 100)
-				assert.NoError(t, err)
+				// We need the auditor group here to allow listing approvers
+				ctxSys := context.WithValue(
+					ctx,
+					constants.ClientData, &auth.ClientData{
+						Identifier: constants.SystemUser.String(),
+						Groups:     []string{auditorGroupName},
+					},
+				)
+				_, err = m.AutoAssignApprovers(ctxSys, wf.ID)
+				if tt.expectErr {
+					assert.Error(t, err)
+					assert.ErrorIs(t, err, tt.errMessage)
+				} else {
+					assert.NoError(t, err)
 
-				assert.Len(t, approvers, tt.approversCount)
-			}
-		})
+					count, _, err := m.ListWorkflowApprovers(ctxSys, wf.ID, false, 0, 0)
+					assert.NoError(t, err)
+					assert.Len(t, count, tt.approversCount)
+				}
+			},
+		)
 	}
 }
 
@@ -808,155 +1073,409 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 	cfg := &config.Config{}
 	wm, _, tenantID := SetupWorkflowManager(t, cfg)
 
-	t.Run("should successfully create and enqueue notification task", func(t *testing.T) {
-		// Arrange
-		ctx := testutils.CreateCtxWithTenant(tenantID)
+	t.Run(
+		"should successfully create and enqueue notification task", func(t *testing.T) {
+			// Arrange
+			ctx := testutils.CreateCtxWithTenant(tenantID)
 
-		mockClient := &async.MockClient{}
-		wm.SetAsyncClient(mockClient)
+			mockClient := &async.MockClient{}
+			wm.SetAsyncClient(mockClient)
 
-		wf := model.Workflow{
-			ID:           uuid.New(),
-			ActionType:   "CREATE",
-			ArtifactType: "KEY",
-			ArtifactID:   uuid.New(),
-		}
+			wf := model.Workflow{
+				ID:           uuid.New(),
+				ActionType:   "CREATE",
+				ArtifactType: "KEY",
+				ArtifactID:   uuid.New(),
+			}
 
-		recipients := []string{"approver1@example.com", "approver2@example.com"}
+			recipients := []string{"approver1@example.com", "approver2@example.com"}
 
-		// Act
-		err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
+			// Act
+			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
 
-		// Assert
-		assert.NoError(t, err)
-		assert.Equal(t, 1, mockClient.CallCount)
-		assert.NotNil(t, mockClient.LastTask)
-	})
-
-	t.Run("should skip notification when async client is nil", func(t *testing.T) {
-		// Arrange
-		ctx := testutils.CreateCtxWithTenant(tenantID)
-
-		wf := model.Workflow{
-			ID:           uuid.New(),
-			ActionType:   "CREATE",
-			ArtifactType: "KEY",
-			ArtifactID:   uuid.New(),
-		}
-
-		recipients := []string{"approver@example.com"}
-
-		// Act
-		err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionCreate, recipients)
-
-		// Assert
-		assert.NoError(t, err)
-	})
-
-	t.Run("should skip notification when recipients list is empty", func(t *testing.T) {
-		// Arrange
-		ctx := testutils.CreateCtxWithTenant(tenantID)
-
-		mockClient := &async.MockClient{}
-		wm.SetAsyncClient(mockClient)
-
-		wf := model.Workflow{
-			ID:           uuid.New(),
-			ActionType:   "CREATE",
-			ArtifactType: "KEY",
-			ArtifactID:   uuid.New(),
-		}
-
-		var recipients []string
-
-		// Act
-		err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
-
-		// Assert
-		assert.NoError(t, err)
-		assert.Equal(t, 0, mockClient.CallCount)
-	})
-
-	t.Run("should return error when GetTenant fails", func(t *testing.T) {
-		// Arrange
-		ctx := t.Context()
-
-		mockClient := &async.MockClient{}
-		wm.SetAsyncClient(mockClient)
-
-		wf := model.Workflow{
-			ID:           uuid.New(),
-			ActionType:   "CREATE",
-			ArtifactType: "KEY",
-			ArtifactID:   uuid.New(),
-		}
-
-		recipients := []string{"approver@example.com"}
-
-		// Act
-		err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionCreate, recipients)
-
-		// Assert
-		assert.Error(t, err)
-	})
-
-	t.Run("should return error when async client enqueue fails", func(t *testing.T) {
-		// Arrange
-		ctx := testutils.CreateCtxWithTenant(tenantID)
-
-		expectedError := ErrEnqueuingTask
-		mockClient := &async.MockClient{Error: expectedError}
-		wm.SetAsyncClient(mockClient)
-
-		wf := model.Workflow{
-			ID:           uuid.New(),
-			ActionType:   "CREATE",
-			ArtifactType: "KEY",
-			ArtifactID:   uuid.New(),
-		}
-
-		recipients := []string{"approver@example.com"}
-
-		// Act
-		err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
-
-		// Assert
-		assert.Error(t, err)
-		assert.Equal(t, expectedError, err)
-		assert.Equal(t, 1, mockClient.CallCount)
-	})
-
-	t.Run("should handle different workflow transitions", func(t *testing.T) {
-		// Arrange
-		ctx := testutils.CreateCtxWithTenant(tenantID)
-
-		mockClient := &async.MockClient{}
-		wm.SetAsyncClient(mockClient)
-
-		wf := model.Workflow{
-			ID:           uuid.New(),
-			ActionType:   "CREATE",
-			ArtifactType: "KEY",
-			ArtifactID:   uuid.New(),
-			State:        string(workflow.StateSuccessful),
-		}
-
-		recipients := []string{"user@example.com"}
-
-		transitions := []workflow.Transition{
-			workflow.TransitionCreate,
-			workflow.TransitionApprove,
-			workflow.TransitionReject,
-			workflow.TransitionConfirm,
-			workflow.TransitionRevoke,
-		}
-
-		// Act & Assert
-		for _, transition := range transitions {
-			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, transition, recipients)
+			// Assert
 			assert.NoError(t, err)
-		}
+			assert.Equal(t, 1, mockClient.CallCount)
+			assert.NotNil(t, mockClient.LastTask)
+		},
+	)
 
-		assert.Equal(t, len(transitions), mockClient.CallCount)
-	})
+	t.Run(
+		"should skip notification when async client is nil", func(t *testing.T) {
+			// Arrange
+			ctx := testutils.CreateCtxWithTenant(tenantID)
+
+			wf := model.Workflow{
+				ID:           uuid.New(),
+				ActionType:   "CREATE",
+				ArtifactType: "KEY",
+				ArtifactID:   uuid.New(),
+			}
+
+			recipients := []string{"approver@example.com"}
+
+			// Act
+			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionCreate, recipients)
+
+			// Assert
+			assert.NoError(t, err)
+		},
+	)
+
+	t.Run(
+		"should skip notification when recipients list is empty", func(t *testing.T) {
+			// Arrange
+			ctx := testutils.CreateCtxWithTenant(tenantID)
+
+			mockClient := &async.MockClient{}
+			wm.SetAsyncClient(mockClient)
+
+			wf := model.Workflow{
+				ID:           uuid.New(),
+				ActionType:   "CREATE",
+				ArtifactType: "KEY",
+				ArtifactID:   uuid.New(),
+			}
+
+			var recipients []string
+
+			// Act
+			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
+
+			// Assert
+			assert.NoError(t, err)
+			assert.Equal(t, 0, mockClient.CallCount)
+		},
+	)
+
+	t.Run(
+		"should return error when GetTenant fails", func(t *testing.T) {
+			// Arrange
+			ctx := t.Context()
+
+			mockClient := &async.MockClient{}
+			wm.SetAsyncClient(mockClient)
+
+			wf := model.Workflow{
+				ID:           uuid.New(),
+				ActionType:   "CREATE",
+				ArtifactType: "KEY",
+				ArtifactID:   uuid.New(),
+			}
+
+			recipients := []string{"approver@example.com"}
+
+			// Act
+			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionCreate, recipients)
+
+			// Assert
+			assert.Error(t, err)
+		},
+	)
+
+	t.Run(
+		"should return error when async client enqueue fails", func(t *testing.T) {
+			// Arrange
+			ctx := testutils.CreateCtxWithTenant(tenantID)
+
+			expectedError := ErrEnqueuingTask
+			mockClient := &async.MockClient{Error: expectedError}
+			wm.SetAsyncClient(mockClient)
+
+			wf := model.Workflow{
+				ID:           uuid.New(),
+				ActionType:   "CREATE",
+				ArtifactType: "KEY",
+				ArtifactID:   uuid.New(),
+			}
+
+			recipients := []string{"approver@example.com"}
+
+			// Act
+			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
+
+			// Assert
+			assert.Error(t, err)
+			assert.Equal(t, expectedError, err)
+			assert.Equal(t, 1, mockClient.CallCount)
+		},
+	)
+
+	t.Run(
+		"should handle different workflow transitions", func(t *testing.T) {
+			// Arrange
+			ctx := testutils.CreateCtxWithTenant(tenantID)
+
+			mockClient := &async.MockClient{}
+			wm.SetAsyncClient(mockClient)
+
+			wf := model.Workflow{
+				ID:           uuid.New(),
+				ActionType:   "CREATE",
+				ArtifactType: "KEY",
+				ArtifactID:   uuid.New(),
+				State:        string(workflow.StateSuccessful),
+			}
+
+			recipients := []string{"user@example.com"}
+
+			transitions := []workflow.Transition{
+				workflow.TransitionCreate,
+				workflow.TransitionApprove,
+				workflow.TransitionReject,
+				workflow.TransitionConfirm,
+				workflow.TransitionRevoke,
+			}
+
+			// Act & Assert
+			for _, transition := range transitions {
+				err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, transition, recipients)
+				assert.NoError(t, err)
+			}
+
+			assert.Equal(t, len(transitions), mockClient.CallCount)
+		},
+	)
+}
+
+func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
+	cfg := &config.Config{}
+	wm, r, tenantID := SetupWorkflowManager(t, cfg)
+
+	userID := uuid.NewString()
+
+	ctx := cmkcontext.InjectClientData(
+		cmkcontext.CreateTenantContext(t.Context(), tenantID),
+		&auth.ClientData{
+			Identifier: userID,
+		},
+		nil,
+	)
+
+	// Create workflow config
+	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
+	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+
+	t.Run(
+		"should delete expired terminal workflow", func(t *testing.T) {
+			// Create old terminal workflow (should be deleted)
+			oldTerminalWf := testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateSuccessful.String()
+					w.CreatedAt = time.Now().AddDate(0, 0, -31) // 31 days ago
+					w.InitiatorID = userID
+				},
+			)
+
+			testutils.CreateTestEntities(ctx, t, r, oldTerminalWf)
+
+			err := wm.CleanupTerminalWorkflows(ctx)
+			assert.NoError(t, err)
+
+			// Verify old terminal workflow was deleted
+			_, err = wm.GetWorkflowByID(ctx, oldTerminalWf.ID)
+			assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed)
+
+			// Verify workflow approvers were also deleted
+			var approversAfter []*model.WorkflowApprover
+			approverQuery := repo.NewQuery().Where(
+				repo.NewCompositeKeyGroup(
+					repo.NewCompositeKey().Where(model.WorkflowID, oldTerminalWf.ID),
+				),
+			)
+			countAfter, err := r.List(ctx, &model.WorkflowApprover{}, &approversAfter, *approverQuery)
+			assert.NoError(t, err)
+			assert.Equal(t, 0, countAfter, "Approvers should be deleted with workflow")
+		},
+	)
+
+	t.Run(
+		"should not delete recent terminal workflow", func(t *testing.T) {
+			// Create recent terminal workflow (should NOT be deleted)
+			recentTerminalWf := testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateRejected.String()
+					w.CreatedAt = time.Now().AddDate(0, 0, -15) // 15 days ago
+					w.InitiatorID = userID
+				},
+			)
+
+			testutils.CreateTestEntities(ctx, t, r, recentTerminalWf)
+
+			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
+			assert.NoError(t, err)
+
+			// Verify recent terminal workflow still exists
+			_, err = wm.GetWorkflowByID(ctx, recentTerminalWf.ID)
+			assert.NoError(t, err)
+
+			// Verify workflow approvers still exist
+			var approvers []*model.WorkflowApprover
+			approverQuery := repo.NewQuery().Where(
+				repo.NewCompositeKeyGroup(
+					repo.NewCompositeKey().Where(model.WorkflowID, recentTerminalWf.ID),
+				),
+			)
+			count, err := r.List(ctx, &model.WorkflowApprover{}, &approvers, *approverQuery)
+			assert.NoError(t, err)
+			assert.Positive(t, count, "Approvers should still exist for recent workflow")
+		},
+	)
+
+	t.Run(
+		"should not delete old non-terminal workflow", func(t *testing.T) {
+			// Create old non-terminal workflow (should NOT be deleted)
+			oldActiveWf := testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateWaitApproval.String()
+					w.CreatedAt = time.Now().AddDate(0, 0, -31) // 31 days ago
+					w.InitiatorID = userID
+				},
+			)
+
+			testutils.CreateTestEntities(ctx, t, r, oldActiveWf)
+
+			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
+			assert.NoError(t, err)
+
+			// Verify old active workflow still exists
+			_, err = wm.GetWorkflowByID(ctx, oldActiveWf.ID)
+			assert.NoError(t, err)
+		},
+	)
+
+	t.Run(
+		"should delete all terminal state types", func(t *testing.T) {
+			// Create workflows in all terminal states (all old enough to be deleted)
+			terminalStates := workflow.TerminalStates
+
+			workflowIDs := make([]uuid.UUID, len(terminalStates))
+			for i, state := range terminalStates {
+				wf := testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = state
+						w.CreatedAt = time.Now().AddDate(0, 0, -31)
+						w.InitiatorID = userID
+					},
+				)
+				testutils.CreateTestEntities(ctx, t, r, wf)
+				workflowIDs[i] = wf.ID
+			}
+
+			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
+			assert.NoError(t, err)
+
+			// Verify all terminal workflows were deleted
+			for i, wfID := range workflowIDs {
+				_, err = wm.GetWorkflowByID(ctx, wfID)
+				assert.ErrorIs(
+					t, err, manager.ErrWorkflowNotAllowed,
+					"Terminal workflow in state %s should be deleted", terminalStates[i],
+				)
+			}
+		},
+	)
+
+	t.Run(
+		"should handle batch processing for large number of workflows", func(t *testing.T) {
+			// Create more workflows than batch size to test batch processing
+			total := 101 // More than repo.DefaultLimit (100)
+			workflowIDs := make([]uuid.UUID, total)
+
+			for i := range total {
+				wf := testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = workflow.StateSuccessful.String()
+						w.CreatedAt = time.Now().AddDate(0, 0, -31)
+						w.InitiatorID = userID
+					},
+				)
+				testutils.CreateTestEntities(ctx, t, r, wf)
+				workflowIDs[i] = wf.ID
+			}
+
+			err := wm.CleanupTerminalWorkflows(ctx)
+			assert.NoError(t, err)
+
+			// Verify all workflows were deleted across multiple batches
+			for _, wfID := range workflowIDs {
+				_, err = wm.GetWorkflowByID(ctx, wfID)
+				assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed,
+					"All workflows should be deleted even with batch processing")
+			}
+		},
+	)
+
+	t.Run(
+		"should handle empty result when no expired workflows exist", func(t *testing.T) {
+			// Create only recent terminal workflows
+			recentWf := testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateSuccessful.String()
+					w.CreatedAt = time.Now().AddDate(0, 0, -5)
+					w.InitiatorID = userID
+				},
+			)
+			testutils.CreateTestEntities(ctx, t, r, recentWf)
+
+			// Should not error when no workflows to delete
+			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
+			assert.NoError(t, err)
+
+			// Recent workflow should still exist
+			_, err = wm.GetWorkflowByID(ctx, recentWf.ID)
+			assert.NoError(t, err)
+		},
+	)
+
+	t.Run(
+		"should handle workflows without approvers", func(t *testing.T) {
+			// Create workflow without approvers
+			oldWf := testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateSuccessful.String()
+					w.CreatedAt = time.Now().AddDate(0, 0, -31)
+					w.Approvers = nil // No approvers
+					w.InitiatorID = userID
+				},
+			)
+			testutils.CreateTestEntities(ctx, t, r, oldWf)
+
+			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
+			assert.NoError(t, err)
+
+			// Workflow should still be deleted even without approvers
+			_, err = wm.GetWorkflowByID(ctx, oldWf.ID)
+			assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed)
+		},
+	)
+
+	t.Run(
+		"should preserve non-terminal workflow states", func(t *testing.T) {
+			// Create workflows in all non-terminal states (all old)
+			nonTerminalStates := workflow.NonTerminalStates
+
+			workflowIDs := make([]uuid.UUID, len(nonTerminalStates))
+			for i, state := range nonTerminalStates {
+				wf := testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = state
+						w.CreatedAt = time.Now().AddDate(0, 0, -60) // Very old
+						w.InitiatorID = userID
+					},
+				)
+				testutils.CreateTestEntities(ctx, t, r, wf)
+				workflowIDs[i] = wf.ID
+			}
+
+			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
+			assert.NoError(t, err)
+
+			// Verify all non-terminal workflows still exist
+			for i, wfID := range workflowIDs {
+				_, err = wm.GetWorkflowByID(ctx, wfID)
+				assert.NoError(t, err, "Non-terminal workflow in state %s should not be deleted", nonTerminalStates[i])
+			}
+		},
+	)
 }

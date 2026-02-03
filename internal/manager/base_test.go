@@ -3,7 +3,6 @@ package manager_test
 import (
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
@@ -18,9 +17,7 @@ import (
 const providerTest = "TEST"
 
 func TestNewManager(t *testing.T) {
-	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{testutils.TestModel{}},
-	})
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepo := sql.NewRepository(db)
 	catalog := &plugincatalog.Catalog{}
 
@@ -29,7 +26,7 @@ func TestNewManager(t *testing.T) {
 	factory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
 
-	m := manager.New(t.Context(), dbRepo, cfg, factory, catalog, nil, nil)
+	m := manager.New(t.Context(), dbRepo, cfg, factory, catalog, nil, nil, nil)
 
 	assert.NotNil(t, m)
 	assert.NotNil(t, m.Keys)

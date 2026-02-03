@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -14,10 +15,14 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkContext "github.com/openkcm/cmk/utils/context"
 )
 
 const (
@@ -25,8 +30,10 @@ const (
 )
 
 var (
-	ErrGetDefaultCerts = errors.New("failed to get default certificates")
-	ErrDecodingCert    = errors.New("failed to decode certificate")
+	ErrGetDefaultCerts                  = errors.New("failed to get default certificates")
+	ErrDecodingCert                     = errors.New("failed to decode certificate")
+	ErrCheckKeyConfigManagedByIAMGroups = errors.New("failed to check key configurations managed by IAM groups")
+	ErrKeyConfigurationNotAllowed       = errors.New("user has no permission to access key configuration")
 )
 
 type KeyConfigurationAPI interface {
@@ -45,6 +52,9 @@ type KeyConfigurationAPI interface {
 type KeyConfigManager struct {
 	repository repo.Repo
 	certs      *CertificateManager
+	user       User
+	tagManager Tags
+	cmkAuditor *auditor.Auditor
 	cfg        *config.Config
 }
 
@@ -57,11 +67,17 @@ type KeyConfigFilter struct {
 func NewKeyConfigManager(
 	repository repo.Repo,
 	certManager *CertificateManager,
+	user User,
+	tagManager Tags,
+	cmkAuditor *auditor.Auditor,
 	cfg *config.Config,
 ) *KeyConfigManager {
 	return &KeyConfigManager{
 		repository: repository,
 		certs:      certManager,
+		user:       user,
+		cmkAuditor: cmkAuditor,
+		tagManager: tagManager,
 		cfg:        cfg,
 	}
 }
@@ -75,6 +91,16 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 	query := getKeyConfigWithTotalsQuery().SetLimit(filter.Top).SetOffset(filter.Skip)
 	if filter.Expand {
 		query.Preload(repo.Preload{"AdminGroup"})
+	}
+
+	hasNoGroups, err := m.applyIAMGroupFilter(ctx, query)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if hasNoGroups {
+		// User has no IAM groups - return empty result
+		return []*model.KeyConfiguration{}, 0, nil
 	}
 
 	count, err := m.repository.List(
@@ -92,25 +118,37 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 
 func (m *KeyConfigManager) PostKeyConfigurations(
 	ctx context.Context,
-	key *model.KeyConfiguration,
+	keyConfiguration *model.KeyConfiguration,
 ) (*model.KeyConfiguration, error) {
+	var group model.Group
+
 	exist, err := m.repository.First(
 		ctx,
-		&model.Group{},
+		&group,
 		*repo.NewQuery().
 			Where(repo.NewCompositeKeyGroup(
-				repo.NewCompositeKey().Where(repo.IDField, key.AdminGroupID))),
+				repo.NewCompositeKey().Where(repo.IDField, keyConfiguration.AdminGroupID))),
 	)
+	keyConfiguration.AdminGroup = group
 	if err != nil || !exist {
 		return nil, ErrInvalidKeyAdminGroup
 	}
 
-	err = m.repository.Create(ctx, key)
+	if group.Role != constants.KeyAdminRole {
+		return nil, ErrInvalidKeyAdminGroup
+	}
+
+	_, err = m.user.HasKeyConfigAccess(ctx, authz.ActionCreate, keyConfiguration)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.repository.Create(ctx, keyConfiguration)
 	if err != nil {
 		return nil, errs.Wrap(ErrCreateKeyConfiguration, err)
 	}
 
-	return key, nil
+	return keyConfiguration, nil
 }
 
 func (m *KeyConfigManager) DeleteKeyConfigurationByID(
@@ -118,6 +156,11 @@ func (m *KeyConfigManager) DeleteKeyConfigurationByID(
 	keyConfigID uuid.UUID,
 ) error {
 	keyConfig := &model.KeyConfiguration{ID: keyConfigID}
+
+	_, err := m.user.HasKeyConfigAccess(ctx, authz.ActionDelete, keyConfig)
+	if err != nil {
+		return err
+	}
 
 	exist, err := repo.HasConnectedSystems(ctx, m.repository, keyConfigID)
 	if err != nil {
@@ -128,28 +171,36 @@ func (m *KeyConfigManager) DeleteKeyConfigurationByID(
 		return errs.Wrap(ErrDeleteKeyConfiguration, ErrConnectedSystemToKeyConfig)
 	}
 
-	_, err = m.repository.Delete(ctx, keyConfig, *repo.NewQuery())
-	if err != nil {
-		return errs.Wrap(ErrDeleteKeyConfiguration, err)
-	}
+	return m.repository.Transaction(ctx, func(ctx context.Context) error {
+		_, err = m.repository.Delete(ctx, keyConfig, *repo.NewQuery())
+		if err != nil {
+			return errs.Wrap(ErrDeleteKeyConfiguration, err)
+		}
 
-	return nil
+		return m.tagManager.DeleteTags(ctx, keyConfig.ID)
+	})
 }
 
 func (m *KeyConfigManager) GetKeyConfigurationByID(
 	ctx context.Context,
 	keyConfigID uuid.UUID,
 ) (*model.KeyConfiguration, error) {
-	item := &model.KeyConfiguration{
+	keyConfig := &model.KeyConfiguration{
 		ID: keyConfigID,
 	}
 
-	_, err := m.repository.First(ctx, item, *getKeyConfigWithTotalsQuery().Preload(repo.Preload{"Tags"}))
+	_, err := m.user.HasKeyConfigAccess(ctx, authz.ActionRead, keyConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	query := getKeyConfigWithTotalsQuery().Preload(repo.Preload{"AdminGroup"})
+	_, err = m.repository.First(ctx, keyConfig, *query)
 	if err != nil {
 		return nil, errs.Wrap(ErrGettingKeyConfigByID, err)
 	}
 
-	return item, nil
+	return keyConfig, nil
 }
 
 func (m *KeyConfigManager) UpdateKeyConfigurationByID(
@@ -161,10 +212,15 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 		ID: keyConfigID,
 	}
 
-	_, err := m.repository.First(
+	_, err := m.user.HasKeyConfigAccess(ctx, authz.ActionUpdate, keyConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = m.repository.First(
 		ctx,
 		keyConfig,
-		*repo.NewQuery().Preload(repo.Preload{"Tags"}),
+		*repo.NewQuery(),
 	)
 	if err != nil {
 		return nil, errs.Wrap(ErrGettingKeyConfigByID, err)
@@ -204,8 +260,7 @@ func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 	defaultCerts := []*model.Certificate{tenantDefaultCert}
 
 	clientCerts := make(map[model.CertificatePurpose][]*ClientCertificate)
-	clientCerts[model.CertificatePurposeTenantDefault] = make([]*ClientCertificate,
-		len(defaultCerts))
+	clientCerts[model.CertificatePurposeTenantDefault] = make([]*ClientCertificate, len(defaultCerts))
 
 	for i, certificate := range defaultCerts {
 		configCert, err := m.transformTenantDefaultCertificate(ctx, certificate.CertPEM,
@@ -334,4 +389,49 @@ func getKeyConfigWithTotalsQuery() *repo.Query {
 			},
 		},
 	)
+}
+
+// applyIAMGroupFilter applies IAM group filtering to the query based on the context.
+// Returns true if filtering was applied (and user has no groups), false otherwise.
+// System users bypass IAM filtering and can access all key configurations.
+func (m *KeyConfigManager) applyIAMGroupFilter(
+	ctx context.Context,
+	query *repo.Query,
+) (bool, error) {
+	iamIdentifiers, err := cmkContext.ExtractClientDataGroupsString(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	isGroupFiltered, err := m.user.HasKeyConfigAccess(ctx, authz.ActionRead, nil)
+	if err != nil {
+		return false, err
+	}
+	if !isGroupFiltered {
+		return false, nil
+	}
+
+	// If IAM identifiers list is empty, user has no access
+	if len(iamIdentifiers) == 0 {
+		return true, nil
+	}
+
+	joinCond := repo.JoinCondition{
+		Table:     &model.KeyConfiguration{},
+		Field:     repo.AdminGroupIDField,
+		JoinField: repo.IDField,
+		JoinTable: &model.Group{},
+	}
+
+	groupTable := (&model.Group{}).TableName()
+
+	// Create query with IAM identifier filter
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf(`"%s".%s`, groupTable, repo.IAMIdField), iamIdentifiers)
+
+	*query = *query.
+		Join(repo.InnerJoin, joinCond).
+		Where(repo.NewCompositeKeyGroup(ck))
+
+	return false, nil
 }

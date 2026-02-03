@@ -64,6 +64,18 @@ func NewKeyConfig(m func(*model.KeyConfiguration)) *model.KeyConfiguration {
 			ID:         uuid.New(),
 			Name:       uuid.NewString(),
 			AdminGroup: model.Group{ID: uuid.New(), Name: uuid.NewString(), IAMIdentifier: uuid.NewString()},
+			CreatorID:  uuid.NewString(),
+		}
+	})
+
+	return ptr.PointTo(mut(m))
+}
+
+func NewTag(m func(*model.Tag)) *model.Tag {
+	mut := NewMutator(func() model.Tag {
+		return model.Tag{
+			ID:     uuid.New(),
+			Values: []byte(""),
 		}
 	})
 
@@ -108,27 +120,34 @@ func NewGroup(m func(*model.Group)) *model.Group {
 	return ptr.PointTo(mut(m))
 }
 
-func NewKeystoreConfig(m func(*model.KeystoreConfiguration)) *model.KeystoreConfiguration {
-	mut := NewMutator(func() model.KeystoreConfiguration {
-		ksConfigValue := map[string]any{
-			"localityId": TestLocalityID,
-			"commonName": TestDefaultKeystoreCommonName,
-			"managementAccessData": map[string]string{
+func NewKeystoreConfig(m func(*model.KeystoreConfig)) *model.KeystoreConfig {
+	mut := NewMutator(func() model.KeystoreConfig {
+		return model.KeystoreConfig{
+			LocalityID: TestLocalityID,
+			CommonName: TestDefaultKeystoreCommonName,
+			ManagementAccessData: map[string]any{
 				"roleArn":        TestRoleArn,
 				"trustAnchorArn": TestTrustAnchorArn,
 				"profileArn":     TestProfileArn,
 				"AccountID":      ValidKeystoreAccountInfo["AccountID"],
 				"UserID":         ValidKeystoreAccountInfo["UserID"],
 			},
-			"supportedRegions": SupportedRegionsMap,
+			SupportedRegions: SupportedRegions,
 		}
+	})
 
-		valueBytes, _ := json.Marshal(ksConfigValue)
+	return ptr.PointTo(mut(m))
+}
 
-		return model.KeystoreConfiguration{
+func NewKeystore(m func(*model.Keystore)) *model.Keystore {
+	mut := NewMutator(func() model.Keystore {
+		keystore := NewKeystoreConfig(func(_ *model.KeystoreConfig) {})
+		ksBytes, _ := json.Marshal(keystore)
+
+		return model.Keystore{
 			ID:       uuid.New(),
 			Provider: "AWS",
-			Value:    valueBytes,
+			Config:   ksBytes,
 		}
 	})
 
@@ -172,11 +191,11 @@ func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 		return model.Workflow{
 			ID:           uuid.New(),
 			State:        wfMechanism.StateInitial.String(),
-			InitiatorID:  uuid.New(),
+			InitiatorID:  uuid.NewString(),
 			ArtifactType: wfMechanism.ArtifactTypeKey.String(),
 			ArtifactID:   uuid.New(),
 			ActionType:   wfMechanism.ActionTypeDelete.String(),
-			Approvers:    []model.WorkflowApprover{{UserID: uuid.New()}},
+			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
 		}
 	})
 
@@ -187,7 +206,7 @@ func NewWorkflowApprover(m func(approver *model.WorkflowApprover)) *model.Workfl
 	mut := NewMutator(func() model.WorkflowApprover {
 		return model.WorkflowApprover{
 			WorkflowID: uuid.New(),
-			UserID:     uuid.New(),
+			UserID:     uuid.NewString(),
 			UserName:   uuid.New().String(),
 			Workflow:   model.Workflow{},
 			Approved:   sql.NullBool{},
@@ -222,7 +241,7 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 			ID:        tenantID,
 			Region:    "test-region",
 			Status:    "STATUS_ACTIVE",
-			Role:      "ROLE_TEST",
+			Role:      "ROLE_LIVE",
 			OwnerID:   tenantID + "-owner-id",
 			OwnerType: "owner-type",
 		}
@@ -232,9 +251,11 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 }
 
 func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
+	retentionPeriodDays := 30
 	wc := model.WorkflowConfig{
-		Enabled:          true,
-		MinimumApprovals: 1,
+		Enabled:             true,
+		MinimumApprovals:    1,
+		RetentionPeriodDays: retentionPeriodDays,
 	}
 	//nolint:errchkjson
 	configValue, _ := json.Marshal(wc)

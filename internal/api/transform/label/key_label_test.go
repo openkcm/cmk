@@ -1,15 +1,12 @@
 package label_test
 
 import (
-	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
 	"github.com/openkcm/cmk/internal/api/transform/label"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
@@ -72,36 +69,6 @@ func TestTransformLabel_FromAPI(t *testing.T) {
 			inputLabelName:     "",
 			inputLabelValuePtr: ptr.PointTo("bar"),
 		},
-		{
-			labelsTransformerTestCase: labelsTransformerTestCase{
-				name: "Label_Name_Longer_Than_Specified_Length",
-				expectedErr: errs.Wrapf(
-					transform.ErrAPIInvalidProperty,
-					fmt.Sprintf(
-						"label name must be less than or equal to %d characters",
-						label.MaxLengthOfLabelName,
-					),
-				),
-			},
-			inputKeyID:         uuid.New(),
-			inputLabelName:     strings.Repeat("a", label.MaxLengthOfLabelName+1),
-			inputLabelValuePtr: ptr.PointTo("bar"),
-		},
-		{
-			labelsTransformerTestCase: labelsTransformerTestCase{
-				name: "Label_Value_Longer_Than_Specified_Length",
-				expectedErr: errs.Wrapf(
-					transform.ErrAPIInvalidProperty,
-					fmt.Sprintf(
-						"label value must be less than or equal to %d characters",
-						label.MaxLengthOfLabelValue,
-					),
-				),
-			},
-			inputKeyID:         uuid.New(),
-			inputLabelName:     "foo",
-			inputLabelValuePtr: ptr.PointTo(strings.Repeat("a", label.MaxLengthOfLabelValue+1)),
-		},
 	}
 
 	for _, tc := range tcs {
@@ -124,8 +91,6 @@ func TestTransformLabel_FromAPI(t *testing.T) {
 				assert.Equal(t, tc.inputKeyID, gotLabel.ResourceID)
 				assert.NotEqual(t, uuid.Nil, gotLabel.ID)
 				assert.NotEqual(t, tc.inputKeyID, gotLabel.ID)
-				assert.LessOrEqual(t, len(gotLabel.Key), label.MaxLengthOfLabelName)
-				assert.LessOrEqual(t, len(gotLabel.Value), label.MaxLengthOfLabelValue)
 				assert.Equal(t, tc.inputLabelName, gotLabel.Key)
 				assert.Equal(t, tc.expectedLabelValue, gotLabel.Value)
 			}

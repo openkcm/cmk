@@ -18,9 +18,9 @@ var (
 
 // TaskPayload represents the payload for an async task, including tenant context.
 type TaskPayload struct {
-	TenantID    string
-	AuthContext map[string]string
-	Data        []byte
+	TenantID   string
+	ClientData auth.ClientData
+	Data       []byte
 }
 
 func NewTaskPayload(ctx context.Context, data []byte) TaskPayload {
@@ -29,15 +29,15 @@ func NewTaskPayload(ctx context.Context, data []byte) TaskPayload {
 		tenantID = ""
 	}
 
-	authContext, err := ctxUtils.ExtractClientDataAuthContext(ctx)
+	clientData, err := ctxUtils.ExtractClientData(ctx)
 	if err != nil {
-		authContext = nil
+		clientData = &auth.ClientData{}
 	}
 
 	return TaskPayload{
-		TenantID:    tenantID,
-		AuthContext: authContext,
-		Data:        data,
+		TenantID:   tenantID,
+		ClientData: *clientData,
+		Data:       data,
 	}
 }
 
@@ -57,14 +57,42 @@ func (p *TaskPayload) InjectContext(ctx context.Context) context.Context {
 		ctx = ctxUtils.CreateTenantContext(ctx, p.TenantID)
 	}
 
-	if p.AuthContext != nil {
-		ctx = context.WithValue(ctx, constants.ClientData, &auth.ClientData{AuthContext: p.AuthContext})
-	}
-
-	return ctx
+	return context.WithValue(ctx, constants.ClientData, &p.ClientData)
 }
 
 func (p *TaskPayload) ToBytes() ([]byte, error) {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return nil, errs.Wrap(ErrParsingPayload, err)
+	}
+
+	return data, nil
+}
+
+// TenantListPayload represents a payload containing a list of tenant IDs.
+// Can be used to trigger multi-tenant tasks to process specific tenants.
+type TenantListPayload struct {
+	TenantIDs []string
+}
+
+func NewTenantListPayload(tenantIDs []string) TenantListPayload {
+	return TenantListPayload{
+		TenantIDs: tenantIDs,
+	}
+}
+
+func ParseTenantListPayload(payload []byte) (TenantListPayload, error) {
+	var p TenantListPayload
+
+	err := json.Unmarshal(payload, &p)
+	if err != nil {
+		return TenantListPayload{}, errs.Wrap(ErrParsingPayload, err)
+	}
+
+	return p, nil
+}
+
+func (p *TenantListPayload) ToBytes() ([]byte, error) {
 	data, err := json.Marshal(p)
 	if err != nil {
 		return nil, errs.Wrap(ErrParsingPayload, err)

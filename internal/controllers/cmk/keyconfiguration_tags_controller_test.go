@@ -1,12 +1,11 @@
 package cmk_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -23,12 +22,7 @@ import (
 func startAPIKeyConfigTags(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.KeyConfiguration{},
-			&model.KeyConfigurationTag{},
-		},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{}), tenants[0]
 }
@@ -39,21 +33,17 @@ func TestGetTagsForKeyConfiguration(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-		kc.Tags = []model.KeyConfigurationTag{
-			{
-				BaseTag: model.BaseTag{
-					ID: uuid.New(), Value: "tag1",
-				},
-			},
-			{
-				BaseTag: model.BaseTag{
-					ID: uuid.New(), Value: "tag2",
-				},
-			},
-		}
+	tags := []string{"tag1", "tag2"}
+	bytes, err := json.Marshal(tags)
+	assert.NoError(t, err)
+
+	keyConfig := testutils.NewKeyConfig(func(*model.KeyConfiguration) {})
+
+	tag := testutils.NewTag(func(t *model.Tag) {
+		t.ID = keyConfig.ID
+		t.Values = bytes
 	})
-	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, tag)
 
 	tests := []struct {
 		name              string
@@ -140,7 +130,6 @@ func TestAddTagsToKeyConfiguration(t *testing.T) {
 			keyConfigID:       keyConfig.ID.String(),
 			requestBody:       cmkapi.Tags{Tags: []string{"tag1", "tag2"}},
 			expectedStatus:    http.StatusNoContent,
-			expectedTagCount:  2,
 			expectedTagValues: []string{"tag1", "tag2"},
 		},
 		{
@@ -148,7 +137,6 @@ func TestAddTagsToKeyConfiguration(t *testing.T) {
 			keyConfigID:       keyConfig.ID.String(),
 			requestBody:       "invalid-body",
 			expectedStatus:    http.StatusBadRequest,
-			expectedTagCount:  0,
 			expectedTagValues: nil,
 		},
 	}
@@ -164,25 +152,16 @@ func TestAddTagsToKeyConfiguration(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusNoContent {
-				dbKeyConfig := model.KeyConfiguration{ID: keyConfig.ID}
+				tag := &model.Tag{ID: keyConfig.ID}
 
-				_, err := r.First(ctx, &dbKeyConfig, *repo.NewQuery().Preload(repo.Preload{"Tags"}))
+				_, err := r.First(ctx, tag, *repo.NewQuery())
 				assert.NoError(t, err)
 
-				assert.Len(t, dbKeyConfig.Tags, tt.expectedTagCount)
-				tagValues := extractTagValues(dbKeyConfig.Tags)
-				assert.ElementsMatch(t, tt.expectedTagValues, tagValues)
+				resTags := []string{}
+				err = json.Unmarshal(tag.Values, &resTags)
+				assert.NoError(t, err)
+				assert.ElementsMatch(t, tt.expectedTagValues, resTags)
 			}
 		})
 	}
-}
-
-// extractTagValues extracts tag values from a slice of model.Tag objects
-func extractTagValues(tags []model.KeyConfigurationTag) []string {
-	values := make([]string, len(tags))
-	for i, tag := range tags {
-		values[i] = tag.Value
-	}
-
-	return values
 }

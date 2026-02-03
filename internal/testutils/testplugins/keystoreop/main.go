@@ -291,12 +291,18 @@ func (p *TestPlugin) SetLogger(logger hclog.Logger) {
 }
 
 // Configure configures the plugin.
+
 func (p *TestPlugin) Configure(
 	_ context.Context,
 	_ *configv1.ConfigureRequest,
 ) (*configv1.ConfigureResponse, error) {
 	p.logger.Info("Configure method has been called;")
-	return &configv1.ConfigureResponse{}, nil
+
+	var buildInfo = "{}"
+
+	return &configv1.ConfigureResponse{
+		BuildInfo: &buildInfo,
+	}, nil
 }
 
 func (p *TestPlugin) handleKeyRecord(keyID, status string) {

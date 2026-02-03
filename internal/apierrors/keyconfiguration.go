@@ -39,8 +39,16 @@ var keyConfiguration = []APIErrors{
 	{
 		Errors: []error{manager.ErrGettingKeyConfigByID},
 		ExposedError: cmkapi.DetailedError{
-			Code:    "GETTING_KEY_CONFIG_BY_ID",
-			Message: "failed to get key config by ID",
+			Code:    "KEY_CONFIGURATION_NOT_FOUND",
+			Message: "Key configuration not found or insufficient access permissions",
+			Status:  http.StatusNotFound,
+		},
+	},
+	{
+		Errors: []error{manager.ErrKeyConfigurationNotAllowed},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "KEY_CONFIGURATION_NOT_FOUND",
+			Message: "Key configuration not found or insufficient access permissions",
 			Status:  http.StatusNotFound,
 		},
 	},

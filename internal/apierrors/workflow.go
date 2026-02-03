@@ -21,6 +21,14 @@ var (
 
 var workflow = []APIErrors{
 	{
+		Errors: []error{manager.ErrWorkflowCreationNotAllowed},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "FORBIDDEN_WORKFLOW_CREATION",
+			Message: "Workflow creation unauthorized (may not be keyadmin or in correct group)",
+			Status:  http.StatusForbidden,
+		},
+	},
+	{
 		Errors: []error{manager.ErrCheckWorkflow},
 		ExposedError: cmkapi.DetailedError{
 			Code:    "CHECK_WORKFLOW",
@@ -37,10 +45,18 @@ var workflow = []APIErrors{
 		},
 	},
 	{
+		Errors: []error{manager.ErrWorkflowNotAllowed},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "WORKFLOW_NOT_FOUND",
+			Message: "Workflow not found or insufficient access permissions",
+			Status:  http.StatusNotFound,
+		},
+	},
+	{
 		Errors: []error{manager.ErrGetWorkflowDB, repo.ErrNotFound},
 		ExposedError: cmkapi.DetailedError{
 			Code:    "GET_WORKFLOW",
-			Message: "failed to get workflow",
+			Message: "Workflow not found or insufficient access permissions",
 			Status:  http.StatusNotFound,
 		},
 	},
@@ -85,7 +101,7 @@ var workflow = []APIErrors{
 		},
 	},
 	{
-		Errors: []error{manager.ErrOngoingWorkflowExist},
+		Errors: []error{ErrCreateWorkflow, manager.ErrOngoingWorkflowExist},
 		ExposedError: cmkapi.DetailedError{
 			Code:    "ONGOING_WORKFLOW",
 			Message: "ongoing workflow for artifact already exists",
@@ -98,14 +114,6 @@ var workflow = []APIErrors{
 			Code:    "CHECK_ONGOING_WORKFLOW",
 			Message: "error checking ongoing workflow for artifact",
 			Status:  http.StatusInternalServerError,
-		},
-	},
-	{
-		Errors: []error{manager.ErrWorkflowNotInitial},
-		ExposedError: cmkapi.DetailedError{
-			Code:    "WORKFLOW_NOT_INITIAL",
-			Message: "workflow is not in initial state",
-			Status:  http.StatusBadRequest,
 		},
 	},
 	{

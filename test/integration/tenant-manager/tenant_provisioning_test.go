@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
 	"github.com/stretchr/testify/assert"
@@ -79,7 +78,7 @@ func TestApplyAuth(t *testing.T) {
 		Type:       "type1",
 		Properties: map[string]string{
 			"issuer":    "issuer_url3",
-			"jwks_uris": "jwk_uri1, jwk_uri2",
+			"jwks_uri":  "jwk_uri1",
 			"audiences": "audience1, audience2",
 		},
 	}
@@ -102,10 +101,11 @@ func TestOIDCMappingRequest(t *testing.T) {
 	_, sessionManagerClient := setupGRPC(t)
 
 	// given
+	jwksURI := "jwksUri"
 	oidcReq := &oidcmappinggrpc.ApplyOIDCMappingRequest{
 		TenantId:  "tenantID",
 		Issuer:    "https://example-issuer.com",
-		JwksUris:  []string{"jwkUri1", "jwkUri2"},
+		JwksUri:   &jwksURI,
 		Audiences: []string{"audience1", "audience2"},
 	}
 
@@ -133,19 +133,16 @@ func setupGRPC(t *testing.T) (tenantgrpc.ServiceClient, oidcmappinggrpc.ServiceC
 		}
 	})
 
-	return clientsFactory.RegistryService().Tenant(), clientsFactory.SessionManager().OIDCMapping()
+	return clientsFactory.Registry().Tenant(), clientsFactory.SessionManager().OIDCMapping()
 }
 
 func setupDB(t *testing.T) (*sql.ResourceRepository, *multitenancy.DB) {
 	t.Helper()
 
-	dbConf := integrationutils.DB
-	integrationutils.StartPostgresSQL(t, &dbConf)
-
 	multitenancyDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		CreateDatabase: false, // false until testcontainers for TM is prepared to allow custom cmk db
-		Models:         []driver.TenantTabler{&model.Tenant{}, &model.Group{}},
-	}, testutils.WithDatabase(dbConf))
+		CreateDatabase:      false, // false until testcontainers for TM is prepared to allow custom cmk db
+		WithIsolatedService: true,
+	})
 
 	return sql.NewRepository(multitenancyDB), multitenancyDB
 }

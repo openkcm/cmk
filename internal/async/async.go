@@ -119,7 +119,7 @@ func (a *App) RegisterTasks(ctx context.Context, handlers []TaskHandler) {
 	for _, handler := range handlers {
 		taskType := handler.TaskType()
 		a.tasks[taskType] = handler
-		log.Info(ctx, "Registered task", slog.String("Name", taskType))
+		log.Info(ctx, "Registered task", slog.String("name", taskType))
 	}
 }
 
@@ -195,6 +195,10 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 func (a *App) Client() *asynq.Client {
 	return a.asynqClient
+}
+
+func (a *App) Inspector() *asynq.Inspector {
+	return asynq.NewInspector(a.taskQueueCfg)
 }
 
 func buildMTLSRedisClientOpt(

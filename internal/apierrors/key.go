@@ -28,6 +28,7 @@ var (
 	ErrTransformKeyFromAPI                  = errors.New("failed to transform key from API")
 	ErrSetPrimaryKey                        = errors.New("failed to set primary key")
 	ErrDefaultKeystoreNotFound              = errors.New("default keystore not found")
+	ErrClientDataInvalid                    = errors.New("client data invalid")
 )
 
 var key = []APIErrors{
@@ -367,6 +368,14 @@ var key = []APIErrors{
 			Code:    "KEYSTORE_POOL_DRAINED",
 			Message: "All keystores in the pool are unavailable",
 			Status:  http.StatusServiceUnavailable,
+		},
+	},
+	{
+		Errors: []error{ErrClientDataInvalid},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "INVALID_CLIENT_DATA",
+			Message: "The client data is invalid",
+			Status:  http.StatusBadRequest,
 		},
 	},
 }

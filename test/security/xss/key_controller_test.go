@@ -6,18 +6,16 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -25,7 +23,7 @@ import (
 const providerTest = "TEST"
 
 var (
-	ksConfig            = testutils.NewKeystoreConfig(func(_ *model.KeystoreConfiguration) {})
+	ksConfig            = testutils.NewKeystore(func(_ *model.Keystore) {})
 	keystoreDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
 		c.Purpose = model.CertificatePurposeKeystoreDefault
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
@@ -39,25 +37,8 @@ var (
 func startAPIAndDBForKey(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	cfg := &config.Config{
-		Database: integrationutils.DB,
-	}
-	integrationutils.StartPostgresSQL(t, &cfg.Database)
-
-	dbConfig := testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Key{},
-			&model.KeyVersion{},
-			&model.System{},
-			&model.KeyConfiguration{},
-			&model.TenantConfig{},
-			&model.Certificate{},
-			&model.ImportParams{},
-			&model.KeystoreConfiguration{},
-		}}
-	db, tenants, _ := testutils.NewTestDB(t, dbConfig,
-		testutils.WithDatabase(cfg.Database),
-	)
+	dbConfig := testutils.TestDBConfig{}
+	db, tenants, _ := testutils.NewTestDB(t, dbConfig)
 
 	sv := testutils.NewAPIServer(t, db,
 		testutils.TestAPIServerConfig{Plugins: []testutils.MockPlugin{testutils.KeyStorePlugin}})
@@ -207,6 +188,11 @@ func TestKeyController_ForXSS(t *testing.T) {
 				Endpoint: "keys",
 				Tenant:   tenant,
 				Body:     testutils.WithJSON(t, tt.inputMap),
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, http.StatusCreated, w.Code)
@@ -217,6 +203,11 @@ func TestKeyController_ForXSS(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: "/keys/" + postResponse.Id.String(),
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, http.StatusOK, w.Code)
@@ -256,6 +247,7 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 		keystoreDefaultCert,
 		tenantDefaultCert,
 		key,
+		kc,
 		ksConfig,
 	)
 
@@ -263,6 +255,11 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 		Method:   http.MethodGet,
 		Endpoint: "/keys/" + key.ID.String(),
 		Tenant:   tenant,
+		AdditionalContext: map[any]any{
+			constants.ClientData: &auth.ClientData{
+				Groups: []string{kc.AdminGroup.IAMIdentifier},
+			},
+		},
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code)

@@ -8,14 +8,12 @@ import (
 
 type AuthorizationKey struct {
 	TenantID         TenantID
-	UserGroup        UserGroup
+	UserGroup        string
 	ResourceTypeName ResourceTypeName
 	Action           Action
 }
 
-var (
-	ErrInvalidRole = errors.New("invalid role")
-)
+var ErrInvalidRole = errors.New("invalid role")
 
 type AllowList struct {
 	AuthzKeys map[AuthorizationKey]struct{}

@@ -3,24 +3,29 @@ package cmk_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	cmksql "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var errMockInternalError = errors.New("internal error")
@@ -28,152 +33,296 @@ var errMockInternalError = errors.New("internal error")
 func startAPIWorkflows(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Workflow{},
-			&model.WorkflowApprover{},
-			&model.Key{},
-			&model.Tenant{},
-			&model.TenantConfig{},
-		},
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
+
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Config: config.Config{Database: dbCfg},
 	})
 
-	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
-
 	return db, sv, tenants[0]
+}
+
+var (
+	auditorGroupName  = "auditors"
+	keyAdminGroupName = "keyAdmins"
+
+	userID      = "008cfcb6-0a68-449e-bbf3-ef6ee8537f02"
+	groupID     = "7a3834b8-1e41-4adc-bda2-73c72ad1d560"
+	keyConfigID = "7a3834b8-1e41-4adc-bda2-73c72ad1d561"
+	key1ID      = "7a3834b8-1e41-4adc-bda2-73c72ad1d562"
+	key2ID      = "7a3834b8-1e41-4adc-bda2-73c72ad1d563"
+	systemID    = "7a3834b8-1e41-4adc-bda2-73c72ad1d564"
+
+	adminGroupIAMIdentifier = "admin-group-iam-identifier"
+)
+
+func createAuditorGroup(ctx context.Context, tb testing.TB, r repo.Repo) {
+	tb.Helper()
+
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.Name = auditorGroupName
+		g.IAMIdentifier = auditorGroupName
+		g.Role = constants.TenantAuditorRole
+	})
+	testutils.CreateTestEntities(ctx, tb, r, group)
 }
 
 func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo) []*model.Workflow {
 	tb.Helper()
 
-	userID, _ := uuid.Parse("008cfcb6-0a68-449e-bbf3-ef6ee8537f02")
-	approverID, _ := uuid.Parse("76e06743-80c6-4372-a195-269e4473036d")
+	approverID := "76e06743-80c6-4372-a195-269e4473036d"
+
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.IAMIdentifier = adminGroupIAMIdentifier
+	})
+	groupIDsBytes, err := json.Marshal([]uuid.UUID{group.ID})
+	assert.NoError(tb, err)
+
+	system := testutils.NewSystem(func(w *model.System) {})
+	keyConfig := testutils.NewKeyConfig(func(w *model.KeyConfiguration) {
+		w.AdminGroupID = group.ID
+	})
+
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+	})
+	key2 := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+	})
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+		w.ApproverGroupIDs = groupIDsBytes
+		w.State = wfMechanism.StateWaitApproval.String()
+		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
+		w.ActionType = wfMechanism.ActionTypeDelete.String()
+		w.ArtifactID = key.ID
+		w.ArtifactName = &key.Name
 	})
 
 	workflow2 := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.State = wfMechanism.StateRevoked.String()
 		w.ActionType = wfMechanism.ActionTypeUpdateState.String()
+		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
+		w.ArtifactID = key2.ID
+		w.ArtifactName = &key2.Name
 		w.Approvers = []model.WorkflowApprover{{UserID: approverID}}
+		w.ApproverGroupIDs = groupIDsBytes
 		w.Parameters = "DISABLED"
 	})
-	testutils.CreateTestEntities(ctx, tb, r, workflow, workflow2)
 
-	return []*model.Workflow{workflow, workflow2}
+	workflow3 := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.Approvers = []model.WorkflowApprover{
+			{
+				UserID:   userID,
+				Approved: sql.NullBool{Bool: true, Valid: true},
+			},
+			{
+				UserID:   uuid.NewString(),
+				Approved: sql.NullBool{Bool: false, Valid: true},
+			},
+			{
+				UserID:   uuid.NewString(),
+				Approved: sql.NullBool{Bool: false, Valid: false},
+			},
+		}
+		w.ApproverGroupIDs = groupIDsBytes
+		w.State = wfMechanism.StateWaitApproval.String()
+		w.ActionType = wfMechanism.ActionTypeLink.String()
+		w.ArtifactType = wfMechanism.ArtifactTypeSystem.String()
+		w.ArtifactID = system.ID
+		w.ArtifactName = &system.Identifier
+		w.Parameters = keyConfig.ID.String()
+		w.ParametersResourceName = &keyConfig.Name
+		w.ParametersResourceType = ptr.PointTo(wfMechanism.ParametersResourceTypeKeyConfiguration.String())
+	})
+
+	testutils.CreateTestEntities(ctx, tb, r, group, key, key2, system, keyConfig, workflow, workflow2, workflow3)
+
+	return []*model.Workflow{workflow, workflow2, workflow3}
+}
+
+func setupTestWorkflowControllerCreateWorkflow(t *testing.T) (*multitenancy.DB,
+	*cmksql.ResourceRepository, cmkapi.ServeMux, string, context.Context,
+) {
+	t.Helper()
+
+	db, sv, tenant := startAPIWorkflows(t)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := cmksql.NewRepository(db)
+	createTestWorkflows(ctx, t, r)
+
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.ID = uuid.MustParse(groupID)
+		g.Name = keyAdminGroupName
+		g.IAMIdentifier = keyAdminGroupName
+		g.Role = constants.KeyAdminRole
+	})
+
+	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+		c.ID = uuid.MustParse(keyConfigID)
+		c.AdminGroup = *group
+		c.AdminGroupID = uuid.MustParse(groupID)
+	})
+
+	key := testutils.NewKey(func(k *model.Key) {
+		k.ID = uuid.MustParse(key1ID)
+		k.KeyConfigurationID = uuid.MustParse(keyConfigID)
+	})
+
+	key2 := testutils.NewKey(func(k *model.Key) {
+		k.ID = uuid.MustParse(key2ID)
+		k.KeyConfigurationID = uuid.MustParse(keyConfigID)
+	})
+
+	system := testutils.NewSystem(func(w *model.System) {
+		w.ID = uuid.MustParse(systemID)
+		w.KeyConfigurationID = ptr.PointTo(uuid.MustParse(keyConfigID))
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, group, keyConfig, key, key2, system)
+
+	// Do a create to ensure that the config is created. We need this for any
+	// tests simulating a DB failure, otherwise the config creation will hit the
+	// simulated error.
+	wf := cmkapi.Workflow{
+		ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
+		ArtifactID:   uuid.MustParse(systemID),
+		ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeSystem),
+	}
+
+	clientData := map[any]any{
+		constants.ClientData: &auth.ClientData{
+			Identifier: uuid.NewString(),
+			Groups:     []string{keyAdminGroupName},
+		},
+	}
+
+	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+		Method:            http.MethodPost,
+		Endpoint:          "/workflows/check",
+		Tenant:            tenant,
+		Body:              testutils.WithJSON(t, wf),
+		AdditionalContext: clientData,
+	})
+
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	return db, r, sv, tenant, ctx
 }
 
 func TestWorkflowControllerCheckWorkflow(t *testing.T) {
-	_, sv, tenant := startAPIWorkflows(t)
-
-	wf := cmkapi.Workflow{
-		ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeLink),
-		ArtifactID:   uuid.New(),
-		ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeKey),
-	}
-
 	t.Run("should 200 with exists and required false", func(t *testing.T) {
+		_, _, sv, tenant, _ := setupTestWorkflowControllerCreateWorkflow(t)
+
+		clientData := map[any]any{
+			constants.ClientData: &auth.ClientData{
+				Identifier: uuid.NewString(),
+				Groups:     []string{keyAdminGroupName},
+			},
+		}
+
+		wf := cmkapi.Workflow{
+			ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
+			ArtifactID:   uuid.MustParse(systemID),
+			ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeSystem),
+		}
+
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodPost,
-			Endpoint: "/workflows/check",
-			Tenant:   tenant,
-			Body:     testutils.WithJSON(t, wf),
-			Headers:  map[string]string{"User-ID": uuid.NewString()},
+			Method:            http.MethodPost,
+			Endpoint:          "/workflows/check",
+			Tenant:            tenant,
+			Body:              testutils.WithJSON(t, wf),
+			AdditionalContext: clientData,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		res := testutils.GetJSONBody[cmkapi.CheckWorkflow200JSONResponse](t, w)
 		assert.False(t, *res.Exists)
-		assert.False(t, *res.Required)
+		assert.True(t, *res.Required)
 	})
 }
 
 func TestWorkflowControllerCreateWorkflow(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	r := cmksql.NewRepository(db)
-	createTestWorkflows(ctx, t, r)
-
-	key := testutils.NewKey(func(k *model.Key) {
-		k.ID = uuid.MustParse("7a3834b8-1e41-4adc-bda2-73c72ad1d564")
-	})
-	testutils.CreateTestEntities(ctx, t, r, key)
-
 	tests := []struct {
 		name           string
+		extraResource  []repo.Resource
 		request        string
-		headers        map[string]string
-		sideEffect     func() func()
+		sideEffect     func(db *multitenancy.DB) func()
 		expectedStatus int
 	}{
 		{
-			name: "TestWorkflowControllerCreateWorkflow_NoHeader",
-			request: `{
-				"actionType":"DELETE",
-				"artifactID":"7a3834b8-1e41-4adc-bda2-73c72ad1d564",
-				"artifactType":"KEY"
-			}`,
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name: "TestWorkflowControllerCreateWorkflow_WrongHeader",
-			request: `{
-				"actionType":"DELETE",
-				"artifactID":"7a3834b8-1e41-4adc-bda2-73c72ad1d564",
-				"artifactType":"KEY"
-			}`,
-			headers:        map[string]string{"X-User-ID": uuid.NewString()},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
 			name: "TestWorkflowControllerCreateWorkflow_Okay_NoParams",
 			request: `{
-				"actionType":"DELETE",
-				"artifactID":"7a3834b8-1e41-4adc-bda2-73c72ad1d564",
-				"artifactType":"KEY"
+				"actionType":"UNLINK",
+				"artifactID":"` + systemID + `",
+				"artifactType":"SYSTEM"
 			}`,
-			headers:        map[string]string{"User-ID": uuid.NewString()},
 			expectedStatus: http.StatusCreated,
 		},
 		{
 			name: "TestWorkflowControllerCreateWorkflow_Okay_WithParams",
 			request: `{
-				"actionType":"UPDATE_STATE",
-				"artifactID":"7a3834b8-1e41-4adc-bda2-73c72ad1d565",
-				"artifactType":"KEY",
-                "parameters": "DISABLED"
+				"actionType":"LINK",
+				"artifactID":"` + systemID + `",
+				"artifactType":"SYSTEM",
+				"parameters": "` + keyConfigID + `"
 			}`,
-			headers:        map[string]string{"User-ID": uuid.NewString()},
 			expectedStatus: http.StatusCreated,
 		},
 		{
-			name: "TestWorkflowControllerCreateWorkflow_OngoingWorkflow",
+			name: "TestWorkflowControllerCreateWorkflow_WithExpires",
 			request: `{
-				"actionType":"UPDATE_STATE",
-				"artifactID":"7a3834b8-1e41-4adc-bda2-73c72ad1d565",
-				"artifactType":"KEY",
-                "parameters": "ENABLED"
+				"actionType":"UNLINK",
+				"artifactID":"` + systemID + `",
+				"artifactType":"SYSTEM",
+				"expiresAt": "2002-10-02T10:00:00-05:00"
 			}`,
-			headers:        map[string]string{"User-ID": uuid.NewString()},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name: "TestWorkflowControllerCreateWorkflow_ValidationError_WithExpires",
+			request: `{
+				"actionType":"UNLINK",
+				"artifactID":"` + systemID + `",
+				"artifactType":"SYSTEM",
+				"expiresAt": "xsxs"
+			}`,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name: "TestWorkflowControllerCreateWorkflow_OngoingWorkflow",
+			extraResource: []repo.Resource{
+				testutils.NewWorkflow(func(w *model.Workflow) {
+					w.ArtifactID = uuid.MustParse(systemID)
+					w.ArtifactType = wfMechanism.ArtifactTypeSystem.String()
+					w.ActionType = wfMechanism.ActionTypeUnlink.String()
+					w.State = wfMechanism.StateExecuting.String()
+					w.Parameters = keyConfigID
+				}),
+			},
+			request: `{
+				"actionType":"LINK",
+				"artifactID":"` + systemID + `",
+				"artifactType":"SYSTEM"
+				"parameters": "` + keyConfigID + `"
+			}`,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name: "TestWorkflowControllerCreateWorkflow_InternalError",
 			request: `{
-				"actionType":"UPDATE_STATE",
-				"artifactID":"7a3834b8-1e41-4adc-bda2-73c72ad1d566",
-				"artifactType":"KEY",
-                "parameters": "DISABLED"
+				"actionType":"UNLINK",
+				"artifactID":"` + systemID + `",
+				"artifactType":"SYSTEM"
 			}`,
-			sideEffect: func() func() {
+			sideEffect: func(db *multitenancy.DB) func() {
 				errForced := testutils.NewDBErrorForced(db, errMockInternalError)
 				errForced.WithCreate().Register()
 
 				return errForced.Unregister
 			},
-			headers:        map[string]string{"User-ID": uuid.NewString()},
 			expectedStatus: http.StatusInternalServerError,
 		},
 		{
@@ -190,24 +339,243 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			db, _, sv, tenant, ctx := setupTestWorkflowControllerCreateWorkflow(t)
+
 			if tt.sideEffect != nil {
-				teardown := tt.sideEffect()
+				teardown := tt.sideEffect(db)
 				defer teardown()
 			}
 
-			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodPost,
-				Endpoint: "/workflows",
-				Tenant:   tenant,
-				Body:     testutils.WithString(t, tt.request),
-				Headers:  tt.headers,
-			})
+			testutils.CreateTestEntities(ctx, t, cmksql.NewRepository(db), tt.extraResource...)
 
-			assert.Equal(t, tt.expectedStatus, w.Code, w.Body.String())
-
-			if tt.expectedStatus == http.StatusOK {
-				testutils.GetJSONBody[cmkapi.Workflow](t, w)
+			clientData := map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Identifier: uuid.NewString(),
+					Groups:     []string{keyAdminGroupName},
+				},
 			}
+			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+				Method:            http.MethodPost,
+				Endpoint:          "/workflows",
+				Tenant:            tenant,
+				Body:              testutils.WithString(t, tt.request),
+				AdditionalContext: clientData,
+			})
+			assert.Equal(t, tt.expectedStatus, w.Code, w.Body.String())
+		})
+	}
+}
+
+func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
+	keyAdminGroup2Name := "keyAdminGroup2"
+	group2ID := uuid.MustParse("7a3834b8-1e41-4adc-bda3-73c72ad1d560")
+
+	KAGroup := testutils.NewGroup(func(g *model.Group) {
+		g.ID = group2ID
+		g.Name = keyAdminGroup2Name
+		g.IAMIdentifier = keyAdminGroup2Name
+		g.Role = constants.KeyAdminRole
+	})
+
+	tenantAdminGroupName := "tenantAdminGroup"
+	group3ID := uuid.MustParse("7a3834b8-1e41-4adc-bda4-73c72ad1d560")
+
+	TAGroup := testutils.NewGroup(func(g *model.Group) {
+		g.ID = group3ID
+		g.Name = tenantAdminGroupName
+		g.IAMIdentifier = tenantAdminGroupName
+		g.Role = constants.TenantAdminRole
+	})
+
+	tenantAuditorGroupName := "tenantAuditorGroup"
+	group4ID := uuid.MustParse("7a3834b8-1e41-4adc-bda5-73c72ad1d560")
+
+	TAuditGroup := testutils.NewGroup(func(g *model.Group) {
+		g.ID = group4ID
+		g.Name = tenantAuditorGroupName
+		g.IAMIdentifier = tenantAuditorGroupName
+		g.Role = constants.TenantAuditorRole
+	})
+
+	tests := []struct {
+		name                 string
+		clientData           auth.ClientData
+		expectedCheckStatus  int
+		expectedCreateStatus int
+	}{
+		{
+			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_InKAGroup",
+			clientData: auth.ClientData{
+				Identifier: uuid.NewString(),
+				Groups:     []string{keyAdminGroupName},
+			},
+			expectedCheckStatus:  http.StatusOK,
+			expectedCreateStatus: http.StatusCreated,
+		},
+		{
+			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_InOtherKAGroup",
+			clientData: auth.ClientData{
+				Identifier: uuid.NewString(),
+				Groups:     []string{keyAdminGroup2Name},
+			},
+			expectedCheckStatus:  http.StatusForbidden,
+			expectedCreateStatus: http.StatusForbidden,
+		},
+		{
+			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_InTAGroup",
+			clientData: auth.ClientData{
+				Identifier: uuid.NewString(),
+				Groups:     []string{tenantAdminGroupName},
+			},
+			expectedCheckStatus:  http.StatusForbidden,
+			expectedCreateStatus: http.StatusForbidden,
+		},
+		{
+			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_InTAuditGroup",
+			clientData: auth.ClientData{
+				Identifier: uuid.NewString(),
+				Groups:     []string{tenantAuditorGroupName},
+			},
+			expectedCheckStatus:  http.StatusForbidden,
+			expectedCreateStatus: http.StatusForbidden,
+		},
+	}
+
+	requests := []string{
+		`{
+			"actionType":"UNLINK",
+			"artifactID":"` + systemID + `",
+			"artifactType":"SYSTEM"
+		}`,
+		`{
+			"actionType":"LINK",
+			"artifactID":"` + systemID + `",
+			"artifactType":"SYSTEM",
+			"parameters": "` + keyConfigID + `"
+		}`,
+		`{
+			"actionType":"SWITCH",
+			"artifactID":"` + systemID + `",
+			"artifactType":"SYSTEM",
+			"parameters": "` + keyConfigID + `"
+		}`,
+	}
+	for _, tt := range tests {
+		for _, request := range requests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, r, sv, tenant, ctx := setupTestWorkflowControllerCreateWorkflow(t)
+
+				testutils.CreateTestEntities(ctx, t, r, KAGroup, TAGroup, TAuditGroup)
+
+				clientData := map[any]any{
+					constants.ClientData: &tt.clientData,
+				}
+
+				w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+					Method:            http.MethodPost,
+					Endpoint:          "/workflows/check",
+					Tenant:            tenant,
+					Body:              testutils.WithString(t, request),
+					AdditionalContext: clientData,
+				})
+				assert.Equal(t, tt.expectedCheckStatus, w.Code, w.Body.String())
+
+				w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+					Method:            http.MethodPost,
+					Endpoint:          "/workflows",
+					Tenant:            tenant,
+					Body:              testutils.WithString(t, request),
+					AdditionalContext: clientData,
+				})
+				assert.Equal(t, tt.expectedCreateStatus, w.Code, w.Body.String())
+			})
+		}
+	}
+
+	keyConfigWithoutUserID := "7a3834b8-1e41-4adc-cda2-73c72ad1d561"
+
+	keyConfigWithoutUser := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+		c.ID = uuid.MustParse(keyConfigWithoutUserID)
+	})
+
+	tests2 := []struct {
+		name                 string
+		request              string
+		expectedCheckStatus  int
+		expectedCreateStatus int
+	}{
+		{
+			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_InLinkSystem",
+			request: `{
+				"actionType":"LINK",
+				"artifactID":"` + systemID + `",
+				"artifactType":"SYSTEM",
+				"parameters": "` + keyConfigID + `"}`,
+			expectedCheckStatus:  http.StatusOK,
+			expectedCreateStatus: http.StatusCreated,
+		},
+		{
+			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_InSwitchSystem",
+			request: `{
+				"actionType":"SWITCH",
+				"artifactID":"` + systemID + `",
+				"artifactType":"SYSTEM",
+				"parameters": "` + keyConfigID + `"}`,
+			expectedCheckStatus:  http.StatusOK,
+			expectedCreateStatus: http.StatusCreated,
+		},
+		{
+			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_NotInLinkSystem",
+			request: `{
+				"actionType":"LINK",
+				"artifactID":"` + systemID + `",
+				"artifactType":"SYSTEM",
+				"parameters": "` + keyConfigWithoutUserID + `"}`,
+			expectedCheckStatus:  http.StatusForbidden,
+			expectedCreateStatus: http.StatusForbidden,
+		},
+		{
+			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_NotInSwitchSystem",
+			request: `{
+				"actionType":"SWITCH",
+				"artifactID":"` + systemID + `",
+				"artifactType":"SYSTEM",
+				"parameters": "` + keyConfigWithoutUserID + `"}`,
+			expectedCheckStatus:  http.StatusForbidden,
+			expectedCreateStatus: http.StatusForbidden,
+		},
+	}
+
+	for _, tt := range tests2 {
+		t.Run(tt.name, func(t *testing.T) {
+			_, r, sv, tenant, ctx := setupTestWorkflowControllerCreateWorkflow(t)
+
+			testutils.CreateTestEntities(ctx, t, r, keyConfigWithoutUser, KAGroup)
+
+			clientData := map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Identifier: uuid.NewString(),
+					Groups:     []string{keyAdminGroupName},
+				},
+			}
+
+			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+				Method:            http.MethodPost,
+				Endpoint:          "/workflows/check",
+				Tenant:            tenant,
+				Body:              testutils.WithString(t, tt.request),
+				AdditionalContext: clientData,
+			})
+			assert.Equal(t, tt.expectedCheckStatus, w.Code, w.Body.String())
+
+			w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+				Method:            http.MethodPost,
+				Endpoint:          "/workflows",
+				Tenant:            tenant,
+				Body:              testutils.WithString(t, tt.request),
+				AdditionalContext: clientData,
+			})
+			assert.Equal(t, tt.expectedCreateStatus, w.Code, w.Body.String())
 		})
 	}
 }
@@ -218,26 +586,59 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 	r := cmksql.NewRepository(db)
 	workflows := createTestWorkflows(ctx, t, r)
 
+	groupIDsBytes, err := json.Marshal([]uuid.UUID{uuid.New()})
+	assert.NoError(t, err)
+
+	workflowWithDeletedGroup := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.ActionType = wfMechanism.ActionTypeUpdateState.String()
+		w.State = wfMechanism.StateWaitApproval.String()
+		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
+		w.ArtifactID = workflows[1].ArtifactID
+		w.ArtifactName = workflows[1].ArtifactName
+		w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+		w.ApproverGroupIDs = groupIDsBytes
+		w.Parameters = "DISABLED"
+	})
+	testutils.CreateTestEntities(ctx, t, r, workflowWithDeletedGroup)
+
 	tests := []struct {
-		name           string
-		workflowID     string
-		sideEffect     func() func()
-		expectedStatus int
+		name              string
+		workflowID        string
+		sideEffect        func() func()
+		userID            string
+		expectedStatus    int
+		approverGroupName string
 	}{
 		{
-			name:           "TestWorkflowControllerGetByID_Okay",
+			name:           "TestWorkflowControllerGetByID_Okay_KeyDelete",
 			workflowID:     workflows[0].ID.String(),
-			expectedStatus: http.StatusCreated,
+			userID:         workflows[0].InitiatorID,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "TestWorkflowControllerGetByID_Okay_SystemLink",
+			workflowID:     workflows[2].ID.String(),
+			userID:         workflows[2].InitiatorID,
+			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "TestWorkflowControllerGetByID_InvalidUUID",
 			workflowID:     "invalid-uuid",
+			userID:         userID,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:           "TestWorkflowControllerGetByID_NotFound",
 			workflowID:     uuid.NewString(),
+			userID:         userID,
 			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:              "TestWorkflowControllerGetByID_DeletedGroup",
+			workflowID:        workflowWithDeletedGroup.ID.String(),
+			userID:            workflowWithDeletedGroup.InitiatorID,
+			expectedStatus:    http.StatusOK,
+			approverGroupName: "NOT_AVAILABLE",
 		},
 		{
 			name: "TestWorkflowControllerGetByID_InternalError",
@@ -248,6 +649,7 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 				return errForced.Unregister
 			},
 			workflowID:     workflows[0].ID.String(),
+			userID:         userID,
 			expectedStatus: http.StatusInternalServerError,
 		},
 	}
@@ -259,17 +661,32 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 				defer teardown()
 			}
 
+			additionalContext := map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Identifier: tt.userID,
+					Groups:     []string{adminGroupIAMIdentifier},
+				},
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: "/workflows/" + tt.workflowID,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          "/workflows/" + tt.workflowID,
+				Tenant:            tenant,
+				AdditionalContext: additionalContext,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusOK {
-				response := testutils.GetJSONBody[cmkapi.Workflow](t, w)
+				response := testutils.GetJSONBody[cmkapi.DetailedWorkflow](t, w)
 				assert.Equal(t, tt.workflowID, response.Id.String())
+				assert.Equal(t, tt.userID, response.InitiatorID)
+				assert.NotNil(t, response.ArtifactName)
+				assert.NotEmpty(t, response.AvailableTransitions)
+				assert.NotNil(t, response.ApprovalSummary)
+				if tt.approverGroupName != "" {
+					assert.Equal(t, tt.approverGroupName, response.ApproverGroups[0].Name)
+				}
 			}
 		})
 	}
@@ -279,29 +696,83 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
-	createTestWorkflows(ctx, t, r)
+	workflows := createTestWorkflows(ctx, t, r)
+	createAuditorGroup(ctx, t, r)
 
 	tests := []struct {
 		name           string
 		sideEffect     func() func()
+		clientData     auth.ClientData
 		expectedStatus int
 		expectedCount  int
 		count          bool
 	}{
 		{
-			name:           "TestWorkflowControllerListWorkflows_Okay",
+			name: "TestWorkflowControllerListWorkflows_Okay_AsAuditor",
+			clientData: auth.ClientData{
+				Identifier: userID,
+				Groups:     []string{auditorGroupName},
+			},
+			expectedStatus: http.StatusOK,
+			expectedCount:  3,
+			count:          false,
+		},
+		{
+			name: "TestWorkflowControllerListWorkflows_Okay_AsInitiator",
+			clientData: auth.ClientData{
+				Identifier: workflows[0].InitiatorID,
+				Groups:     []string{keyAdminGroupName},
+			},
+			expectedStatus: http.StatusOK,
+			expectedCount:  1,
+			count:          false,
+		},
+		{
+			name: "TestWorkflowControllerListWorkflows_Okay_AsApprover",
+			clientData: auth.ClientData{
+				Identifier: userID,
+				Groups:     []string{keyAdminGroupName},
+			},
 			expectedStatus: http.StatusOK,
 			expectedCount:  2,
 			count:          false,
 		},
 		{
-			name:           "TestWorkflowControllerListWorkflowsWithCount_Okay",
+			name: "TestWorkflowControllerListWorkflowsWithCount_Okay_AsAuditor",
+			clientData: auth.ClientData{
+				Identifier: userID,
+				Groups:     []string{auditorGroupName},
+			},
+			expectedStatus: http.StatusOK,
+			expectedCount:  3,
+			count:          true,
+		},
+		{
+			name: "TestWorkflowControllerListWorkflowsWithCount_Okay_AsInitiator",
+			clientData: auth.ClientData{
+				Identifier: workflows[2].InitiatorID,
+				Groups:     []string{keyAdminGroupName},
+			},
+			expectedStatus: http.StatusOK,
+			expectedCount:  1,
+			count:          true,
+		},
+		{
+			name: "TestWorkflowControllerListWorkflowsWithCount_Okay_AsApprover",
+			clientData: auth.ClientData{
+				Identifier: userID,
+				Groups:     []string{keyAdminGroupName},
+			},
 			expectedStatus: http.StatusOK,
 			expectedCount:  2,
 			count:          true,
 		},
 		{
 			name: "TestWorkflowControllerListWorkflows_InternalError",
+			clientData: auth.ClientData{
+				Identifier: userID,
+				Groups:     []string{auditorGroupName},
+			},
 			sideEffect: func() func() {
 				errForced := testutils.NewDBErrorForced(db, errMockInternalError)
 				errForced.WithQuery().Register()
@@ -324,10 +795,15 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 				path += "?$count=true"
 			}
 
+			additionalContext := map[any]any{
+				constants.ClientData: &tt.clientData,
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: path,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          path,
+				Tenant:            tenant,
+				AdditionalContext: additionalContext,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -339,127 +815,99 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 					assert.Equal(t, tt.expectedCount, *response.Count)
 				} else {
 					assert.Nil(t, response.Count)
+					assert.Len(t, response.Value, tt.expectedCount)
 				}
 			}
 		})
 	}
 }
 
-func TestWorkflowApproversPagination(t *testing.T) {
+func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
+	createAuditorGroup(ctx, t, r)
 
-	approvers := make([]model.WorkflowApprover, 0, totalRecordCount)
-
-	for range totalRecordCount {
-		wa := testutils.NewWorkflowApprover(func(_ *model.WorkflowApprover) {})
-		approvers = append(approvers, *wa)
-	}
+	user1ID := "76e06743-80c6-4372-a195-269e4473036d"
+	user2ID := "76e06743-80c6-4372-a195-269e4473036e"
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = approvers
+		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
+		w.InitiatorID = user1ID
 	})
-	testutils.CreateTestEntities(ctx, t, r, workflow)
+
+	workflow2 := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+		w.InitiatorID = user1ID
+	})
+
+	workflow3 := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
+		w.InitiatorID = userID
+	})
+
+	workflow4 := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
+		w.InitiatorID = userID
+	})
+
+	allWorkflows := []*model.Workflow{workflow, workflow2, workflow3, workflow4}
+
+	testutils.CreateTestEntities(ctx, t, r, workflow, workflow2, workflow3, workflow4)
 
 	tests := []struct {
-		name               string
-		query              string
-		sideEffect         func() func()
-		expectedStatus     int
-		expectedErrorCode  string
-		expectedSize       int
-		expectedTotalCount int
-		count              bool
+		name             string
+		groups           []string
+		allowedWorkflows []*model.Workflow
 	}{
 		{
-			name:           "GetWorkflowApproversDefaultPaginationValues",
-			expectedStatus: http.StatusOK,
-			query:          "/workflows/" + workflow.ID.String() + "/approvers",
-			count:          false,
-			expectedSize:   20,
+			name:             "user in auditor group",
+			groups:           []string{auditorGroupName},
+			allowedWorkflows: []*model.Workflow{workflow, workflow2, workflow3, workflow4},
 		},
 		{
-			name:               "GetWorkflowApproversDefaultPaginationValuesWithCount",
-			expectedStatus:     http.StatusOK,
-			query:              "/workflows/" + workflow.ID.String() + "/approvers?$count=true",
-			count:              true,
-			expectedSize:       20,
-			expectedTotalCount: totalRecordCount,
-		},
-		{
-			name:           "GetWorkflowApproversTopZero",
-			query:          "/workflows/" + workflow.ID.String() + "/approvers?$top=0",
-			count:          false,
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "GetWorkflowApproversPaginationOnlyTopParam",
-			query:          "/workflows/" + workflow.ID.String() + "/approvers?$top=3",
-			count:          false,
-			expectedStatus: http.StatusOK,
-			expectedSize:   3,
-		},
-		{
-			name:               "GetWorkflowApproversPaginationOnlyTopParamWithCount",
-			query:              "/workflows/" + workflow.ID.String() + "/approvers?$top=3&$count=true",
-			count:              true,
-			expectedStatus:     http.StatusOK,
-			expectedSize:       3,
-			expectedTotalCount: totalRecordCount,
-		},
-		{
-			name:               "GetWorkflowApproversPaginationTopAndSkipParams",
-			query:              "/workflows/" + workflow.ID.String() + "/approvers?$skip=0&$top=10",
-			count:              false,
-			expectedStatus:     http.StatusOK,
-			expectedSize:       10,
-			expectedTotalCount: totalRecordCount,
-		},
-		{
-			name:               "GetWorkflowApproversPaginationTopAndSkipParamsWithCount",
-			query:              "/workflows/" + workflow.ID.String() + "/approvers?$skip=0&$top=10&$count=true",
-			count:              true,
-			expectedStatus:     http.StatusOK,
-			expectedSize:       10,
-			expectedTotalCount: totalRecordCount,
-		},
-		{
-			name:           "GetWorkflowApproversPaginationTopAndSkipParamsLast",
-			query:          "/workflows/" + workflow.ID.String() + "/approvers?$skip=20&$top=10",
-			count:          false,
-			expectedStatus: http.StatusOK,
-			expectedSize:   1,
-		},
-		{
-			name:               "GetWorkflowApproversPaginationTopAndSkipParamsLastWithCount",
-			query:              "/workflows/" + workflow.ID.String() + "/approvers?$skip=20&$top=10&$count=true",
-			count:              true,
-			expectedStatus:     http.StatusOK,
-			expectedSize:       1,
-			expectedTotalCount: totalRecordCount,
+			name:             "user not in auditor group",
+			groups:           []string{},
+			allowedWorkflows: []*model.Workflow{workflow2, workflow3, workflow4},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			additionalContext := map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Identifier: userID,
+					Groups:     tt.groups,
+				},
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: tt.query,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          "/workflows?$count=true",
+				Tenant:            tenant,
+				AdditionalContext: additionalContext,
 			})
 
-			assert.Equal(t, tt.expectedStatus, w.Code)
+			assert.Equal(t, http.StatusOK, w.Code)
+			response := testutils.GetJSONBody[cmkapi.WorkflowList](t, w)
+			assert.Equal(t, len(tt.allowedWorkflows), *response.Count)
 
-			if tt.expectedStatus == http.StatusOK {
-				response := testutils.GetJSONBody[cmkapi.WorkflowApproverList](t, w)
+			for _, wf := range allWorkflows {
+				w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+					Method:            http.MethodGet,
+					Endpoint:          "/workflows/" + wf.ID.String(),
+					Tenant:            tenant,
+					AdditionalContext: additionalContext,
+				})
 
-				assert.Len(t, response.Value, tt.expectedSize)
+				containsFunc := func(allowedWf *model.Workflow) bool {
+					return allowedWf.ID == wf.ID
+				}
 
-				if tt.count {
-					assert.Equal(t, tt.expectedTotalCount, *response.Count)
+				if slices.ContainsFunc(tt.allowedWorkflows, containsFunc) {
+					assert.Equal(t, http.StatusOK, w.Code)
 				} else {
-					assert.Nil(t, response.Count)
+					assert.Equal(t, http.StatusNotFound, w.Code)
 				}
 			}
 		})
@@ -470,6 +918,7 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
+	createAuditorGroup(ctx, t, r)
 
 	for range totalRecordCount {
 		workflow := testutils.NewWorkflow(func(_ *model.Workflow) {})
@@ -553,10 +1002,18 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 				defer teardown()
 			}
 
+			additionalContext := map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Identifier: userID,
+					Groups:     []string{auditorGroupName},
+				},
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: tt.query,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          tt.query,
+				Tenant:            tenant,
+				AdditionalContext: additionalContext,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -575,71 +1032,6 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 	}
 }
 
-func TestWorkflowControllerListWorkflowApproversByWorkflowID(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	r := cmksql.NewRepository(db)
-	workflows := createTestWorkflows(ctx, t, r)
-
-	tests := []struct {
-		name           string
-		workflowID     string
-		sideEffect     func() func()
-		expectedStatus int
-		expectedCount  int
-	}{
-		{
-			name:           "TestWorkflowControllerListWorkflowApproversByWorkflowID_Okay",
-			workflowID:     workflows[0].ID.String(),
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
-		{
-			name:           "TestWorkflowControllerListWorkflowApproversByWorkflowID_InvalidUUID",
-			workflowID:     "invalid-uuid",
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "TestWorkflowControllerListWorkflowApproversByWorkflowID_NotFound",
-			workflowID:     uuid.NewString(),
-			expectedStatus: http.StatusNotFound,
-		},
-		{
-			name: "TestWorkflowControllerListWorkflowApproversByWorkflowID_InternalError",
-			sideEffect: func() func() {
-				errForced := testutils.NewDBErrorForced(db, errMockInternalError)
-				errForced.WithQuery().Register()
-
-				return errForced.Unregister
-			},
-			workflowID:     workflows[0].ID.String(),
-			expectedStatus: http.StatusInternalServerError,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.sideEffect != nil {
-				teardown := tt.sideEffect()
-				defer teardown()
-			}
-
-			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: fmt.Sprintf("/workflows/%s/approvers", tt.workflowID),
-				Tenant:   tenant,
-			})
-
-			assert.Equal(t, tt.expectedStatus, w.Code)
-
-			if tt.expectedStatus == http.StatusOK {
-				response := testutils.GetJSONBody[cmkapi.WorkflowApproverList](t, w)
-				assert.Len(t, response.Value, tt.expectedCount)
-			}
-		})
-	}
-}
-
 func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -647,9 +1039,9 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 	createTestWorkflows(ctx, t, r)
 
 	workflowID := uuid.New()
-	initiatorID := uuid.New()
-	approverID01 := uuid.New()
-	approverID02 := uuid.New()
+	initiatorID := uuid.NewString()
+	approverID01 := uuid.NewString()
+	approverID02 := uuid.NewString()
 
 	wfMutator := testutils.NewMutator(func() model.Workflow {
 		return model.Workflow{
@@ -670,8 +1062,8 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		name           string
 		workflow       model.Workflow
 		workflowID     string
+		actorID        string
 		request        string
-		headers        map[string]string
 		expectedStatus int
 		expectedState  string
 	}{
@@ -682,7 +1074,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "APPROVE"
 			}`,
-			headers:        map[string]string{"User-ID": approverID01.String()},
+			actorID:        approverID01,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
@@ -694,7 +1086,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "APPROVE"
 			}`,
-			headers:        map[string]string{"User-ID": initiatorID.String()},
+			actorID:        initiatorID,
 			expectedStatus: http.StatusForbidden,
 		},
 		{
@@ -706,7 +1098,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "APPROVE"
 			}`,
-			headers:        map[string]string{"User-ID": approverID01.String()},
+			actorID:        approverID01,
 			expectedStatus: http.StatusOK,
 			expectedState:  wfMechanism.StateWaitApproval.String(),
 		},
@@ -723,7 +1115,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "APPROVE"
 			}`,
-			headers:        map[string]string{"User-ID": approverID02.String()},
+			actorID:        approverID02,
 			expectedStatus: http.StatusOK,
 			expectedState:  wfMechanism.StateWaitConfirmation.String(),
 		},
@@ -734,7 +1126,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "REJECT"
 			}`,
-			headers:        map[string]string{"User-ID": approverID01.String()},
+			actorID:        approverID01,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
@@ -746,7 +1138,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "REJECT"
 			}`,
-			headers:        map[string]string{"User-ID": initiatorID.String()},
+			actorID:        initiatorID,
 			expectedStatus: http.StatusForbidden,
 		},
 		{
@@ -758,7 +1150,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "REVOKE"
 			}`,
-			headers:        map[string]string{"User-ID": initiatorID.String()},
+			actorID:        initiatorID,
 			expectedStatus: http.StatusOK,
 			expectedState:  wfMechanism.StateRevoked.String(),
 		},
@@ -771,7 +1163,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "REVOKE"
 			}`,
-			headers:        map[string]string{"User-ID": initiatorID.String()},
+			actorID:        initiatorID,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
@@ -783,7 +1175,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "CONFIRM"
 			}`,
-			headers:        map[string]string{"User-ID": initiatorID.String()},
+			actorID:        initiatorID,
 			expectedStatus: http.StatusOK,
 			expectedState:  wfMechanism.StateFailed.String(),
 		},
@@ -796,7 +1188,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "CONFIRM"
 			}`,
-			headers:        map[string]string{"User-ID": approverID01.String()},
+			actorID:        approverID01,
 			expectedStatus: http.StatusForbidden,
 		},
 		{
@@ -808,7 +1200,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "CONFIRM"
 			}`,
-			headers:        map[string]string{"User-ID": initiatorID.String()},
+			actorID:        initiatorID,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
@@ -816,7 +1208,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			workflow:       wfMutator(),
 			workflowID:     workflowID.String(),
 			request:        `invalid-json`,
-			headers:        map[string]string{"User-ID": approverID01.String()},
+			actorID:        approverID01,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
@@ -826,7 +1218,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "APPROVE"
 			}`,
-			headers:        map[string]string{"User-ID": approverID01.String()},
+			actorID:        approverID01,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
@@ -836,7 +1228,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			request: `{
 				"transition": "APPROVE"
 			}`,
-			headers:        map[string]string{"User-ID": approverID01.String()},
+			actorID:        approverID01,
 			expectedStatus: http.StatusNotFound,
 		},
 	}
@@ -858,7 +1250,11 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 				Endpoint: fmt.Sprintf("/workflows/%s/state", tt.workflowID),
 				Tenant:   tenant,
 				Body:     testutils.WithString(t, tt.request),
-				Headers:  tt.headers,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Identifier: tt.actorID,
+					},
+				},
 			})
 
 			if tt.expectedState != "" {
@@ -879,7 +1275,8 @@ func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
-	createTestWorkflows(ctx, t, r)
+	createAuditorGroup(ctx, t, r)
+	workflows := createTestWorkflows(ctx, t, r)
 
 	tests := []struct {
 		name           string
@@ -918,6 +1315,19 @@ func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
 			expectedCount:  1,
 		},
 		{
+			name:           "FilterByActionType_ValidArtifactName",
+			query:          fmt.Sprintf("/workflows?$filter=artifactName eq '%s'", *workflows[1].ArtifactName),
+			expectedStatus: http.StatusOK,
+			expectedCount:  1,
+		},
+		{
+			name: "FilterByActionType_ValidParametersResourceName",
+			query: fmt.Sprintf("/workflows?$filter=parametersResourceName eq '%s'",
+				*workflows[2].ParametersResourceName),
+			expectedStatus: http.StatusOK,
+			expectedCount:  1,
+		},
+		{
 			name:           "FilterByActionType_InvalidType",
 			query:          "/workflows?$filter=actionType eq 'INVALID_ACTION'",
 			expectedStatus: http.StatusBadRequest,
@@ -929,32 +1339,22 @@ func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedCount:  1,
 		},
-		{
-			name:           "FilterByUserID",
-			query:          "/workflows?$filter=userID eq 'd30fa7b3-1da4-483f-9f7c-64cd1b4678e5'",
-			expectedStatus: http.StatusOK,
-			expectedCount:  0,
-		},
-		{
-			name:           "FilterByInvalidUserID",
-			query:          "/workflows?$filter=userID eq 'invalid-uuid'",
-			expectedStatus: http.StatusBadRequest,
-			expectedCount:  0,
-		},
-		{
-			name:           "FilterByUserIDwithworkflows",
-			query:          "/workflows?$filter=userID eq '76e06743-80c6-4372-a195-269e4473036d'",
-			expectedStatus: http.StatusOK,
-			expectedCount:  1,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			additionalContext := map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Identifier: userID,
+					Groups:     []string{auditorGroupName},
+				},
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: tt.query,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          tt.query,
+				Tenant:            tenant,
+				AdditionalContext: additionalContext,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)

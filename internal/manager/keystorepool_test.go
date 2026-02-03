@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -20,13 +19,12 @@ var itemID = uuid.New()
 func TestPool_Add(t *testing.T) {
 	t.Run("should save Configuration in repo", func(t *testing.T) {
 		db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models:         []driver.TenantTabler{&model.KeystoreConfiguration{}, &model.Certificate{}},
 			CreateDatabase: true,
 		})
 
 		testRepo := sql.NewRepository(db)
 		testPool := manager.NewPool(testRepo)
-		item := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfiguration) {
+		item := testutils.NewKeystore(func(kc *model.Keystore) {
 			kc.ID = itemID
 		})
 
@@ -39,14 +37,12 @@ func TestPool_Add(t *testing.T) {
 
 func TestPool_Pop(t *testing.T) {
 	t.Run("should get first available Configuration from repo", func(t *testing.T) {
-		db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.KeystoreConfiguration{}, &model.Certificate{}},
-		})
+		db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 		testRepo := sql.NewRepository(db)
 		testPool := manager.NewPool(testRepo)
 
-		item := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfiguration) {
+		item := testutils.NewKeystore(func(kc *model.Keystore) {
 			kc.ID = itemID
 		})
 		addedItem, err := testPool.Add(t.Context(), item)
@@ -56,7 +52,7 @@ func TestPool_Pop(t *testing.T) {
 		wg := sync.WaitGroup{}
 		wg.Add(2)
 
-		var foundConfig *model.KeystoreConfiguration
+		var foundConfig *model.Keystore
 
 		var encounteredError bool
 
@@ -89,9 +85,9 @@ func TestPool_Pop(t *testing.T) {
 
 		var expectedValue, actualValue map[string]any
 
-		err = json.Unmarshal(addedItem.Value, &expectedValue)
+		err = json.Unmarshal(addedItem.Config, &expectedValue)
 		require.NoError(t, err)
-		err = json.Unmarshal(foundConfig.Value, &actualValue)
+		err = json.Unmarshal(foundConfig.Config, &actualValue)
 		require.NoError(t, err)
 		require.Equal(t, expectedValue, actualValue)
 		require.True(t, encounteredError)

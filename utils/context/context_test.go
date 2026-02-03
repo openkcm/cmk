@@ -130,7 +130,7 @@ func TestExtractClientDataGroups(t *testing.T) {
 
 	t.Run(
 		"Should extract client data groups from context", func(t *testing.T) {
-			expected := []constants.UserGroup{"group1", "group2"}
+			expected := []string{"group1", "group2"}
 
 			clientData := &auth.ClientData{
 				Identifier: "identifier",

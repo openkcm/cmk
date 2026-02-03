@@ -161,6 +161,22 @@ func (r *InMemoryRepository) Set(
 	return tenantDB.Create(resource)
 }
 
+// Count returns the number of records that match the given query
+func (r *InMemoryRepository) Count(
+	ctx context.Context,
+	resource repo.Resource,
+	_ repo.Query,
+) (int, error) {
+	tenantDB, err := r.WithTenant(ctx, resource)
+	if err != nil {
+		return 0, err
+	}
+
+	_, count := tenantDB.GetAll(resource)
+
+	return count, nil
+}
+
 // Transaction will give transaction locking on particular rows.
 func (r *InMemoryRepository) Transaction(
 	ctx context.Context,
@@ -168,7 +184,7 @@ func (r *InMemoryRepository) Transaction(
 ) error {
 	txInMemoryRepository := *r
 
-	err := txFunc(ctx, &txInMemoryRepository)
+	err := txFunc(ctx)
 	if err != nil {
 		return ErrTransactionFailed
 	}
@@ -178,12 +194,9 @@ func (r *InMemoryRepository) Transaction(
 	return nil
 }
 
-func (r *InMemoryRepository) Migrate(
-	_ context.Context,
-	schemaName string,
-) error {
-	_, err := r.db.CreateDB(schemaName)
-	return err
+func (r *InMemoryRepository) OffboardTenant(_ context.Context, schemaName string) error {
+	delete(r.db.databases, schemaName)
+	return nil
 }
 
 func assignList(result any, list []repo.Resource) error {

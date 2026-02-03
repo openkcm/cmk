@@ -22,6 +22,13 @@ func (a *Auditor) SendCmkDeleteAuditLog(ctx context.Context, cmkID string) error
 	})
 }
 
+// SendCmkDetachAuditLog sends an audit log for CMK detachment
+func (a *Auditor) SendCmkDetachAuditLog(ctx context.Context, cmkID string) error {
+	return a.sendEvent(ctx, func(metadata otlpaudit.EventMetadata) (plog.Logs, error) {
+		return otlpaudit.NewCmkDetachEvent(metadata, cmkID)
+	})
+}
+
 // SendCmkEnableAuditLog sends an audit log for CMK enabling
 func (a *Auditor) SendCmkEnableAuditLog(ctx context.Context, cmkID string) error {
 	return a.sendEvent(ctx, func(metadata otlpaudit.EventMetadata) (plog.Logs, error) {

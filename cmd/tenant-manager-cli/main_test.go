@@ -32,12 +32,20 @@ func TestSetupCommands(t *testing.T) {
 	t.Run("Should create root command with all subcommands", func(t *testing.T) {
 		ctx := t.Context()
 
-		ctlg, err := catalog.New(t.Context(), config.Config{
-			Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
+		_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+			CreateDatabase: true,
 		})
+
+		cfg := &config.Config{
+			Plugins:  testutils.SetupMockPlugins(testutils.IdentityPlugin),
+			Database: dbCfg,
+		}
+
+		ctlg, err := catalog.New(t.Context(), cfg)
 		assert.NoError(t, err, "Failed to create catalog")
 
-		rootCmd := tmCLI.SetupCommands(ctx, nil, ctlg)
+		rootCmd, err := tmCLI.SetupCommands(ctx, cfg, nil, ctlg)
+		assert.NoError(t, err)
 
 		assert.NotNil(t, rootCmd)
 		assert.NotEmpty(t, rootCmd.Use)

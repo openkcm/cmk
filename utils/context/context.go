@@ -54,6 +54,25 @@ func GetRequestID(ctx context.Context) (string, error) {
 	return requestID, nil
 }
 
+func InjectClientData(
+	ctx context.Context,
+	clientData *auth.ClientData,
+	authContextFields []string,
+) context.Context {
+	filteredAuthCtx := make(map[string]string)
+
+	for _, field := range authContextFields {
+		if value, exists := clientData.AuthContext[field]; exists {
+			filteredAuthCtx[field] = value
+		}
+	}
+
+	clientData.AuthContext = filteredAuthCtx
+	ctx = context.WithValue(ctx, constants.ClientData, clientData)
+
+	return ctx
+}
+
 func ExtractClientData(ctx context.Context) (*auth.ClientData, error) {
 	clientData, ok := ctx.Value(constants.ClientData).(*auth.ClientData)
 	if !ok || clientData == nil {
@@ -72,18 +91,22 @@ func ExtractClientDataIdentifier(ctx context.Context) (string, error) {
 	return clientData.Identifier, nil
 }
 
-func ExtractClientDataGroups(ctx context.Context) ([]constants.UserGroup, error) {
+func ExtractClientDataGroups(ctx context.Context) ([]string, error) {
 	clientData, err := ExtractClientData(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	clientGroups := make([]constants.UserGroup, len(clientData.Groups))
-	for i, g := range clientData.Groups {
-		clientGroups[i] = constants.UserGroup(g)
+	return clientData.Groups, nil
+}
+
+func ExtractClientDataGroupsString(ctx context.Context) ([]string, error) {
+	clientData, err := ExtractClientData(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	return clientGroups, nil
+	return clientData.Groups, nil
 }
 
 func ExtractClientDataAuthContextField(ctx context.Context, field string) (string, error) {
@@ -114,4 +137,25 @@ func ExtractClientDataAuthContext(ctx context.Context) (map[string]string, error
 	authContext := maps.Clone(clientData.AuthContext)
 
 	return authContext, nil
+}
+
+func IsSystemUser(ctx context.Context) bool {
+	clientData, err := ExtractClientData(ctx)
+	if err != nil {
+		return false
+	}
+
+	return clientData.Identifier == constants.SystemUser.String()
+}
+
+func InjectSystemUser(ctx context.Context) context.Context {
+	clientData, err := ExtractClientData(ctx)
+	// Use zero values and system user
+	if err != nil {
+		clientData = &auth.ClientData{}
+	}
+
+	clientData.Identifier = uuid.Max.String()
+
+	return context.WithValue(ctx, constants.ClientData, clientData)
 }

@@ -12,15 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/orbital"
 	"github.com/openkcm/orbital/client/amqp"
-	"github.com/openkcm/orbital/codec"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/modules/rabbitmq"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 
@@ -29,24 +26,17 @@ import (
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 
 	"github.com/openkcm/cmk/internal/clients/registry/tenants"
-	sessionmanager "github.com/openkcm/cmk/internal/clients/session-manager"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	sqlrepo "github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
-)
-
-const (
-	amqpSource = "cmk.tenant.provisioning"
-	amqpTarget = "cmk.tenant.responses"
+	sessionmanager "github.com/openkcm/cmk/internal/testutils/clients/session-manager"
 )
 
 // testEnv holds all test infrastructure
 type testEnv struct {
 	multitenancyDB *multitenancy.DB
-	rabbitMQ       *rabbitmq.RabbitMQContainer
 	tenantManager  *tenantManagerProcess
 	amqpClient     *amqp.Client
 	dbConfig       config.Database
@@ -74,7 +64,8 @@ func setupLogger(tb testing.TB) {
 
 // setupInfrastructure sets up all required infrastructure components
 func setupInfrastructure(tb testing.TB) (
-	*tenants.FakeTenantService, string, string, *multitenancy.DB, config.Database, *rabbitmq.RabbitMQContainer, string) {
+	*tenants.FakeTenantService, string, string, *multitenancy.DB, config.Database,
+) {
 	tb.Helper()
 
 	// Setup fake Registry server
@@ -104,44 +95,22 @@ func setupInfrastructure(tb testing.TB) (
 	// Wait for gRPC servers to be ready
 	time.Sleep(1000 * time.Millisecond) // Give the servers time to start
 
-	// Setup PostgreSQL container
-	tb.Log("Setting up PostgreSQL container...")
-
-	// Create database configuration for the testcontainer
-	testcontainerDBConfig := config.Database{
-		Host:   commoncfg.SourceRef{Source: commoncfg.EmbeddedSourceValue, Value: "localhost"},
-		User:   commoncfg.SourceRef{Source: commoncfg.EmbeddedSourceValue, Value: integrationutils.DB.User.Value},
-		Secret: commoncfg.SourceRef{Source: commoncfg.EmbeddedSourceValue, Value: integrationutils.DB.Secret.Value},
-		Name:   integrationutils.DB.Name,
-	}
-	integrationutils.StartPostgresSQL(tb, &testcontainerDBConfig)
-
-	// Setup database using testutils.NewTestDB with testcontainer config
-	tb.Log("Setting up test database...")
 	multitenancyDB, _, dbConfig := testutils.NewTestDB(tb, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Tenant{},
-			&model.Group{},
-		},
-		CreateDatabase: true,
+		CreateDatabase:      true,
+		WithIsolatedService: true,
 	}, testutils.WithGenerateTenants(0), // Do not create tenants
-		testutils.WithDatabase(testcontainerDBConfig), // Use the testcontainer configuration
 	)
 
-	// Setup RabbitMQ
-	tb.Log("Setting up RabbitMQ container...")
-	rabbitMQ := integrationutils.StartRabbitMQ(tb)
-	rabbitMQURL, err := rabbitMQ.AmqpURL(tb.Context())
-	require.NoError(tb, err)
-
-	return fakeTenantService, registryAddr, sessionManagerAddr, multitenancyDB, dbConfig, rabbitMQ, rabbitMQURL
+	return fakeTenantService, registryAddr, sessionManagerAddr, multitenancyDB, dbConfig
 }
 
 // createConfigurations creates test configurations
-func createConfigurations(dbConfig config.Database, registryAddr,
-	sessionManagerAddr, rabbitMQURL string) *config.Config {
-	amqpConfig := config.AMQP{URL: rabbitMQURL, Source: amqpSource, Target: amqpTarget}
-
+func createConfigurations(
+	dbConfig config.Database,
+	registryAddr,
+	sessionManagerAddr string,
+	amqpCfg config.AMQP,
+) *config.Config {
 	return &config.Config{
 		BaseConfig: commoncfg.BaseConfig{
 			Application: commoncfg.Application{
@@ -175,7 +144,7 @@ func createConfigurations(dbConfig config.Database, registryAddr,
 			SecretRef: commoncfg.SecretRef{
 				Type: commoncfg.InsecureSecretType,
 			},
-			AMQP: amqpConfig,
+			AMQP: amqpCfg,
 		},
 	}
 }
@@ -312,21 +281,6 @@ func handleProcessCompletion(
 	}
 }
 
-// createAMQPClient creates the AMQP client for testing
-func createAMQPClient(tb testing.TB, rabbitMQURL string) *amqp.Client {
-	tb.Helper()
-
-	tb.Log("Creating AMQP client for test...")
-	amqpClient, err := amqp.NewClient(tb.Context(), codec.Proto{}, amqp.ConnectionInfo{
-		URL:    rabbitMQURL,
-		Target: amqpSource,
-		Source: amqpTarget,
-	}, amqp.WithNoAuth())
-	require.NoError(tb, err, "Failed to create AMQP client")
-
-	return amqpClient
-}
-
 // setupCleanup configures automatic cleanup for the test environment
 func setupCleanup(tb testing.TB, env *testEnv) {
 	tb.Helper()
@@ -374,21 +328,20 @@ func SetupTest(tb testing.TB) *testEnv {
 
 	// Setup infrastructure
 	fakeTenantService, registryAddr, sessionManagerAddr,
-		multitenancyDB, dbConfig, rabbitMQ, rabbitMQURL := setupInfrastructure(tb)
+		multitenancyDB, dbConfig := setupInfrastructure(tb)
+	amqpClient, amqpCfg := testutils.NewAMQPClient(tb, testutils.AMQPCfg{})
 
 	// Create configurations
-	testConfig := createConfigurations(dbConfig, registryAddr, sessionManagerAddr, rabbitMQURL)
+	testConfig := createConfigurations(dbConfig, registryAddr, sessionManagerAddr, amqpCfg)
 
 	// Start TenantManager
 	tenantManager, err := startTenantManagerProcess(tb, testConfig)
 	require.NoError(tb, err, "Failed to start TenantManager process")
 
 	// Create AMQP client
-	amqpClient := createAMQPClient(tb, rabbitMQURL)
 
 	env := &testEnv{
 		multitenancyDB: multitenancyDB,
-		rabbitMQ:       rabbitMQ,
 		tenantManager:  tenantManager,
 		amqpClient:     amqpClient,
 		dbConfig:       dbConfig,
@@ -473,7 +426,7 @@ func (env *testEnv) verifyTenantInDatabase(t *testing.T, tenantID string) {
 	t.Helper()
 
 	// Create repository using the existing multitenancy DB connection
-	repository := sqlrepo.NewRepository(env.multitenancyDB)
+	repository := sql.NewRepository(env.multitenancyDB)
 
 	// Create tenant context
 	ctx := context.Background()

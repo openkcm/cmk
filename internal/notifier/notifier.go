@@ -1,6 +1,9 @@
 package notifier
 
-import "github.com/openkcm/cmk/internal/notifier/workflow"
+import (
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/notifier/workflow"
+)
 
 // Notifier creates different notification creators
 type Notifier struct {
@@ -8,8 +11,8 @@ type Notifier struct {
 }
 
 // New creates a new notifier instance
-func New() (*Notifier, error) {
-	workflowCreator, err := workflow.NewWorkflowCreator()
+func New(config *config.Config) (*Notifier, error) {
+	workflowCreator, err := workflow.NewWorkflowCreator(config)
 	if err != nil {
 		return nil, err
 	}

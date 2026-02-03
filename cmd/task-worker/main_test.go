@@ -20,6 +20,8 @@ import (
 func buildCfg(t *testing.T) *config.Config {
 	t.Helper()
 
+	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
+
 	return &config.Config{
 		BaseConfig: commoncfg.BaseConfig{
 			Logger: commoncfg.Logger{
@@ -49,7 +51,7 @@ func buildCfg(t *testing.T) *config.Config {
 		Certificates: config.Certificates{
 			ValidityDays: config.MinCertificateValidityDays,
 		},
-		Database: testutils.NewIsolatedDB(t, testutils.TestDB),
+		Database: dbCfg,
 		Plugins:  testutils.SetupMockPlugins(testutils.SystemInfo),
 	}
 }

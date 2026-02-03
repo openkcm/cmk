@@ -24,6 +24,9 @@ var (
 	ErrHYOKProviderKeyNotFound = errors.New("HYOK provider key not found")
 	ErrConvertAccessData       = errors.New("failed to convert access data")
 
+	ErrGetTags      = errors.New("failed getting tags")
+	ErrDeletingTags = errors.New("failed to delete tags")
+
 	ErrCreateKeyConfiguration       = errors.New("failed to create key configuration")
 	ErrConnectedSystemToKeyConfig   = errors.New("system is connected to keyconfig")
 	ErrInvalidKeyAdminGroup         = errors.New("invalid keyconfig admin group")
@@ -66,6 +69,7 @@ var (
 	ErrDeleteKey                        = errors.New("failed to delete key")
 	ErrUpdatingTotalKeys                = errors.New("failed to update total keys")
 	ErrUpdatingTotalSystems             = errors.New("failed to update total systems")
+	ErrUnsupportedSystemAction          = errors.New("system action not supported")
 	ErrKeyNotAssignedToKeyConfiguration = errors.New("key not assigned to key configuration")
 	ErrUpdateKeyVersionDisabled         = errors.New("cannot update key version when key is disabled")
 	ErrUpdateSystemNoRegClient          = errors.New("system cannot be updated since no registry client")
@@ -94,15 +98,19 @@ var (
 	ErrCreateKeyVersionDB      = errors.New("failed to create key version in database")
 	ErrInvalidKeyVersionNumber = errors.New("invalid key version number")
 
-	ErrListTenants = errors.New("failed to list tenants from database")
+	ErrListTenants      = errors.New("failed to list tenants from database")
+	ErrGetTenantInfo    = errors.New("failed to get tenant info")
+	ErrTenantNotAllowed = errors.New("user has no permission to access tenant")
 
-	ErrListGroups         = errors.New("failed to list groups from database")
-	ErrGetGroups          = errors.New("failed to get group from database")
-	ErrCreateGroups       = errors.New("failed to create group from database")
-	ErrUpdateGroups       = errors.New("failed to update group from database")
-	ErrDeleteGroups       = errors.New("failed to delete group from database")
-	ErrInvalidGroupRename = errors.New("group cannot be renamed")
-	ErrInvalidGroupDelete = errors.New("group cannot be deleted")
+	ErrListGroups            = errors.New("failed to list groups from database")
+	ErrGetGroups             = errors.New("failed to get group from database")
+	ErrCreateGroups          = errors.New("failed to create group from database")
+	ErrUpdateGroups          = errors.New("failed to update group from database")
+	ErrDeleteGroups          = errors.New("failed to delete group from database")
+	ErrInvalidGroupUpdate    = errors.New("group cannot be updated")
+	ErrInvalidGroupDelete    = errors.New("group cannot be deleted")
+	ErrMultipleRolesInGroups = errors.New("users with multiple roles are not allowed")
+	ErrZeroRolesInGroups     = errors.New("users without any roles are not allowed")
 
 	ErrCheckIAMExistenceOfGroups = errors.New("failed to check IAM existence of groups")
 	ErrCheckTenantHasIAMGroups   = errors.New("failed to check tenant has IAM groups")
@@ -129,7 +137,6 @@ var (
 	ErrGettingSystemLinkByID   = errors.New("failed to get system link by ID")
 	ErrAddSystemNoPrimaryKey   = errors.New("system cannot be added without an enabled primary key")
 	ErrUpdateSystem            = errors.New("failed to update system")
-	ErrSettingKeyClaim         = errors.New("error setting key claim for system")
 	ErrSystemNotLinked         = errors.New("system is not linked to a key configuration")
 	ErrFailedToReencryptSystem = errors.New("system reencrypt failed on new key")
 
@@ -138,9 +145,9 @@ var (
 	ErrCreateWorkflowDB     = errors.New("failed to create workflow")
 	ErrCheckWorkflow        = errors.New("failed to check workflow")
 	ErrCheckOngoingWorkflow = errors.New("failed to check ongoing workflow for artifact")
-	ErrWorkflowNotInitial   = errors.New("workflow is not in initial state")
 	ErrValidateActor        = errors.New("failed to validate actor for workflow transition")
 	ErrAddApproversDB       = errors.New("failed to add approvers to workflow")
+	ErrAddApproverGroupsDB  = errors.New("failed to add approver groups to workflow")
 	ErrApplyTransition      = errors.New("failed to apply transition to workflow")
 	ErrInDBTransaction      = errors.New(
 		"error when executing sequence of operations in a transaction",
@@ -153,9 +160,8 @@ var (
 
 	ErrLoadIdentityManagementPlugin = errors.New("failed to load identity management plugin")
 
-	ErrLoadAuthzAllowList = errors.New("failed to load authz allow list for tenantID")
-	ErrTenantNotExist     = errors.New("tenantID does not exist")
-	ErrEmptyTenantID      = errors.New("tenantID cannot be empty")
+	ErrTenantNotExist = errors.New("tenantID does not exist")
+	ErrEmptyTenantID  = errors.New("tenantID cannot be empty")
 
 	ErrPoolIsDrained               = errors.New("pool is drained")
 	ErrCouldNotSaveConfiguration   = errors.New("could not save configuration")
@@ -178,9 +184,7 @@ const (
 
 // Predefined GRPC errors
 
-var (
-	ErrGRPCHYOKAuthFailed = errs.GRPCError{
-		Code:        GRPCErrorCodeHYOKAuthFailed,
-		BaseMessage: "failed to authenticate with the keystore provider",
-	}
-)
+var ErrGRPCHYOKAuthFailed = errs.GRPCError{
+	Code:        GRPCErrorCodeHYOKAuthFailed,
+	BaseMessage: "failed to authenticate with the keystore provider",
+}

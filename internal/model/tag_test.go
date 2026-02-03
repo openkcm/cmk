@@ -10,14 +10,14 @@ import (
 
 func TestTagsTable(t *testing.T) {
 	t.Run("Should have table name tags", func(t *testing.T) {
-		expectedTableName := "key_configuration_tags"
+		expectedTableName := "tags"
 
-		tableName := model.KeyConfigurationTag{}.TableName()
+		tableName := model.Tag{}.TableName()
 
 		assert.Equal(t, expectedTableName, tableName)
 	})
 
 	t.Run("Should be a tenant table", func(t *testing.T) {
-		assert.False(t, model.KeyConfigurationTag{}.IsSharedModel())
+		assert.False(t, model.Tag{}.IsSharedModel())
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/system"
 	"github.com/openkcm/cmk/internal/apierrors"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/odata"
@@ -20,16 +21,25 @@ var getSystemsSchema odata.FilterSchema = odata.FilterSchema{
 			DBName:     repo.KeyConfigIDField,
 		},
 		{
-			FilterName:    "region",
-			FilterType:    odata.String,
-			DBName:        repo.RegionField,
-			ValueModifier: odata.ToUpper,
+			FilterName:     "region",
+			FilterType:     odata.String,
+			DBName:         repo.RegionField,
+			ValueModifier:  odata.ToUpper,
+			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
 		},
 		{
-			FilterName:    "type",
-			FilterType:    odata.String,
-			DBName:        repo.TypeField,
-			ValueModifier: odata.ToUpper,
+			FilterName:     "type",
+			FilterType:     odata.String,
+			DBName:         repo.TypeField,
+			ValueModifier:  odata.ToUpper,
+			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+		},
+		{
+			FilterName:     "status",
+			FilterType:     odata.String,
+			DBName:         repo.StatusField,
+			ValueModifier:  odata.ToUpper,
+			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
 		},
 	},
 }
@@ -91,27 +101,20 @@ func (c *APIController) GetSystemByID(ctx context.Context,
 	return cmkapi.GetSystemByID200JSONResponse(*systemResponse), nil
 }
 
-func (c *APIController) GetSystemLinkByID(ctx context.Context,
-	request cmkapi.GetSystemLinkByIDRequestObject,
-) (cmkapi.GetSystemLinkByIDResponseObject, error) {
-	keyConfigID, err := c.Manager.System.GetSystemLinkByID(ctx, request.SystemID)
+func (c *APIController) LinkSystemAction(
+	ctx context.Context,
+	request cmkapi.LinkSystemActionRequestObject,
+) (cmkapi.LinkSystemActionResponseObject, error) {
+	required, err := c.Manager.Workflow.IsWorkflowRequired(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return cmkapi.GetSystemLinkByID200JSONResponse{KeyConfigurationID: keyConfigID}, nil
-}
-
-// PatchSystemLinkByID updates a system link by its ID.
-func (c *APIController) PatchSystemLinkByID(
-	ctx context.Context,
-	request cmkapi.PatchSystemLinkByIDRequestObject,
-) (cmkapi.PatchSystemLinkByIDResponseObject, error) {
-	if c.Manager.Workflow.IsWorkflowEnabled(ctx) {
+	if required {
 		return nil, apierrors.ErrActionRequireWorkflow
 	}
 
-	dbSystem, err := c.Manager.System.PatchSystemLinkByID(ctx, request.SystemID, *request.Body)
+	dbSystem, err := c.Manager.System.LinkSystemAction(ctx, request.SystemID, *request.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -121,22 +124,50 @@ func (c *APIController) PatchSystemLinkByID(
 		return nil, errs.Wrap(apierrors.ErrTransformSystemToAPI, err)
 	}
 
-	return cmkapi.PatchSystemLinkByID200JSONResponse(*systemResponse), nil
+	return cmkapi.LinkSystemAction200JSONResponse(*systemResponse), nil
 }
 
-// DeleteSystemLinkByID deletes a system link by its ID.
-func (c *APIController) DeleteSystemLinkByID(
+func (c *APIController) GetRecoveryActions(
 	ctx context.Context,
-	request cmkapi.DeleteSystemLinkByIDRequestObject,
-) (cmkapi.DeleteSystemLinkByIDResponseObject, error) {
-	if c.Manager.Workflow.IsWorkflowEnabled(ctx) {
-		return nil, apierrors.ErrActionRequireWorkflow
-	}
-
-	err := c.Manager.System.DeleteSystemLinkByID(ctx, request.SystemID)
+	request cmkapi.GetRecoveryActionsRequestObject,
+) (cmkapi.GetRecoveryActionsResponseObject, error) {
+	actions, err := c.Manager.System.GetRecoveryActions(ctx, request.SystemID)
 	if err != nil {
 		return nil, err
 	}
 
-	return cmkapi.DeleteSystemLinkByID204Response(struct{}{}), nil
+	return cmkapi.GetRecoveryActions200JSONResponse(actions), nil
+}
+
+func (c *APIController) SendRecoveryActions(
+	ctx context.Context,
+	request cmkapi.SendRecoveryActionsRequestObject,
+) (cmkapi.SendRecoveryActionsResponseObject, error) {
+	err := c.Manager.System.SendRecoveryActions(ctx, request.SystemID, request.Body.Action)
+	if err != nil {
+		return nil, err
+	}
+
+	return cmkapi.SendRecoveryActions200Response{}, nil
+}
+
+func (c *APIController) UnlinkSystemAction(
+	ctx context.Context,
+	request cmkapi.UnlinkSystemActionRequestObject,
+) (cmkapi.UnlinkSystemActionResponseObject, error) {
+	required, err := c.Manager.Workflow.IsWorkflowRequired(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if required {
+		return nil, apierrors.ErrActionRequireWorkflow
+	}
+
+	err = c.Manager.System.UnlinkSystemAction(ctx, request.SystemID)
+	if err != nil {
+		return nil, err
+	}
+
+	return cmkapi.UnlinkSystemAction204Response(struct{}{}), nil
 }

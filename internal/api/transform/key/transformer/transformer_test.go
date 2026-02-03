@@ -17,7 +17,7 @@ func getPluginProviderTransformer(t *testing.T) *transformer.PluginProviderTrans
 	t.Helper()
 
 	plugins := testutils.SetupMockPlugins(testutils.KeyStorePlugin)
-	cfg := config.Config{Plugins: plugins}
+	cfg := &config.Config{Plugins: plugins}
 	ctlg, err := catalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 

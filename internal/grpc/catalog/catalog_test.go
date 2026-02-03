@@ -16,17 +16,17 @@ import (
 func TestNew(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     config.Config
+		cfg     *config.Config
 		wantErr bool
 	}{
 		{
 			name:    "empty config",
-			cfg:     config.Config{},
+			cfg:     &config.Config{},
 			wantErr: false,
 		},
 		{
 			name: "plugin disabled",
-			cfg: config.Config{
+			cfg: &config.Config{
 				Plugins: []plugincatalog.PluginConfig{
 					{
 						Name:     "TestPlugin",
@@ -43,7 +43,7 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name: "invalid plugin path",
-			cfg: config.Config{
+			cfg: &config.Config{
 				Plugins: []plugincatalog.PluginConfig{
 					{
 						Name:     "InvalidPlugin",

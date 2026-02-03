@@ -16,8 +16,8 @@ type ModelInfo struct {
 	Groups                map[uuid.UUID]model.Group
 	Keys                  map[uuid.UUID]model.Key
 	KeyConfiguration      map[uuid.UUID]model.KeyConfiguration
-	KeyConfigurationTags  map[uuid.UUID]model.KeyConfigurationTag
-	KeystoreConfiguration map[uuid.UUID]model.KeystoreConfiguration
+	Tags                  map[uuid.UUID]model.Tag
+	KeystoreConfiguration map[uuid.UUID]model.Keystore
 	KeyVersions           map[string]model.KeyVersion
 	Labels                map[uuid.UUID]model.KeyLabel
 	Systems               map[uuid.UUID]model.System
@@ -40,8 +40,8 @@ func NewInMemoryDB() *InMemoryDB {
 			Groups:                map[uuid.UUID]model.Group{},
 			Keys:                  map[uuid.UUID]model.Key{},
 			KeyConfiguration:      map[uuid.UUID]model.KeyConfiguration{},
-			KeyConfigurationTags:  map[uuid.UUID]model.KeyConfigurationTag{},
-			KeystoreConfiguration: map[uuid.UUID]model.KeystoreConfiguration{},
+			Tags:                  map[uuid.UUID]model.Tag{},
+			KeystoreConfiguration: map[uuid.UUID]model.Keystore{},
 			KeyVersions:           map[string]model.KeyVersion{},
 			Labels:                map[uuid.UUID]model.KeyLabel{},
 			Systems:               map[uuid.UUID]model.System{},
@@ -93,15 +93,15 @@ func (db *InMemoryDB) Create(resource repo.Resource) error {
 		}
 
 		db.Data.KeyConfiguration[keyConfiguration.ID] = *keyConfiguration
-	case KeyConfigurationTag:
-		tag, err := GetModelFromInterface[model.KeyConfigurationTag](resource)
+	case Tag:
+		tag, err := GetModelFromInterface[model.Tag](resource)
 		if err != nil {
 			return errs.Wrap(ErrTagNotFound, err)
 		}
 
-		db.Data.KeyConfigurationTags[tag.ID] = *tag
-	case KeystoreConfiguration:
-		keyStoreConfig, err := GetModelFromInterface[model.KeystoreConfiguration](resource)
+		db.Data.Tags[tag.ID] = *tag
+	case KeystorePool:
+		keyStoreConfig, err := GetModelFromInterface[model.Keystore](resource)
 		if err != nil {
 			return errs.Wrap(ErrKeystoreConfigurationNotFound, err)
 		}
@@ -193,14 +193,14 @@ func (db *InMemoryDB) Get(resource repo.Resource) (repo.Resource, error) {
 		}
 
 		return result, nil
-	case KeyConfigurationTag:
+	case Tag:
 		result, err := db.getKeyConfigurationTag(resource)
 		if err != nil {
 			return nil, err
 		}
 
 		return result, nil
-	case KeystoreConfiguration:
+	case KeystorePool:
 		result, err := db.getKeystoreConfiguration(resource)
 		if err != nil {
 			return nil, err
@@ -289,20 +289,20 @@ func (db *InMemoryDB) GetAll(resource any) ([]repo.Resource, int) {
 		}
 
 		return ConvertSliceToInterface[model.KeyConfiguration](keys), len(keys)
-	case KeyConfigurationTag:
-		tags := make([]model.KeyConfigurationTag, 0, len(db.Data.KeyConfigurationTags))
-		for _, tag := range db.Data.KeyConfigurationTags {
+	case Tag:
+		tags := make([]model.Tag, 0, len(db.Data.Tags))
+		for _, tag := range db.Data.Tags {
 			tags = append(tags, tag)
 		}
 
-		return ConvertSliceToInterface[model.KeyConfigurationTag](tags), len(tags)
-	case KeystoreConfiguration:
-		keys := make([]model.KeystoreConfiguration, 0, len(db.Data.KeystoreConfiguration))
+		return ConvertSliceToInterface[model.Tag](tags), len(tags)
+	case KeystorePool:
+		keys := make([]model.Keystore, 0, len(db.Data.KeystoreConfiguration))
 		for _, key := range db.Data.KeystoreConfiguration {
 			keys = append(keys, key)
 		}
 
-		return ConvertSliceToInterface[model.KeystoreConfiguration](keys), len(keys)
+		return ConvertSliceToInterface[model.Keystore](keys), len(keys)
 	case KeyVersion:
 		keys := make([]model.KeyVersion, 0, len(db.Data.KeyVersions))
 		for _, key := range db.Data.KeyVersions {
@@ -377,12 +377,12 @@ func (db *InMemoryDB) Delete(resource repo.Resource) error {
 		if done {
 			return err2
 		}
-	case KeyConfigurationTag:
+	case Tag:
 		done, err2 := db.deleteKeyConfigurationTag(resource)
 		if done {
 			return err2
 		}
-	case KeystoreConfiguration:
+	case KeystorePool:
 		done, err2 := db.deleteKeystoreConfiguration(resource)
 		if done {
 			return err2
@@ -454,14 +454,14 @@ func (db *InMemoryDB) Update(resource repo.Resource) error {
 		}
 
 		return nil
-	case KeyConfigurationTag:
+	case Tag:
 		err := db.updateKeyConfigurationTag(resource)
 		if err != nil {
 			return err
 		}
 
 		return nil
-	case KeystoreConfiguration:
+	case KeystorePool:
 		err := db.updateKeystoreConfiguration(resource)
 		if err != nil {
 			return err
@@ -554,12 +554,12 @@ func (db *InMemoryDB) getTenant(resource repo.Resource) (repo.Resource, error) {
 }
 
 func (db *InMemoryDB) getKeyConfigurationTag(resource repo.Resource) (repo.Resource, error) {
-	resourceTag, err := GetModelFromInterface[model.KeyConfigurationTag](resource)
+	resourceTag, err := GetModelFromInterface[model.Tag](resource)
 	if err != nil {
 		return nil, errs.Wrap(ErrTagNotFound, err)
 	}
 
-	for _, tag := range db.Data.KeyConfigurationTags {
+	for _, tag := range db.Data.Tags {
 		if tag.ID == resourceTag.ID {
 			return tag, nil
 		}
@@ -614,7 +614,7 @@ func (db *InMemoryDB) getKeyVersion(resource repo.Resource) (repo.Resource, erro
 }
 
 func (db *InMemoryDB) getKeystoreConfiguration(resource repo.Resource) (repo.Resource, error) {
-	resourceKey, err := GetModelFromInterface[model.KeystoreConfiguration](resource)
+	resourceKey, err := GetModelFromInterface[model.Keystore](resource)
 	if err != nil {
 		return nil, errs.Wrap(ErrKeystoreConfigurationNotFound, err)
 	}
@@ -721,14 +721,14 @@ func (db *InMemoryDB) deleteTenantConfig(resource repo.Resource) (bool, error) {
 }
 
 func (db *InMemoryDB) deleteKeyConfigurationTag(resource repo.Resource) (bool, error) {
-	resourceTag, err := GetModelFromInterface[model.KeyConfigurationTag](resource)
+	resourceTag, err := GetModelFromInterface[model.Tag](resource)
 	if err != nil {
 		return true, errs.Wrap(ErrTagNotFound, err)
 	}
 
-	for _, tag := range db.Data.KeyConfigurationTags {
+	for _, tag := range db.Data.Tags {
 		if tag.ID == resourceTag.ID {
-			delete(db.Data.KeyConfigurationTags, tag.ID)
+			delete(db.Data.Tags, tag.ID)
 			return true, nil
 		}
 	}
@@ -785,7 +785,7 @@ func (db *InMemoryDB) deleteKeyVersion(resource repo.Resource) (bool, error) {
 }
 
 func (db *InMemoryDB) deleteKeystoreConfiguration(resource repo.Resource) (bool, error) {
-	resourceKey, err := GetModelFromInterface[model.KeystoreConfiguration](resource)
+	resourceKey, err := GetModelFromInterface[model.Keystore](resource)
 	if err != nil {
 		return true, errs.Wrap(ErrKeyConfigurationNotFound, err)
 	}
@@ -897,14 +897,14 @@ func (db *InMemoryDB) updateTenantConfig(resource repo.Resource) error {
 }
 
 func (db *InMemoryDB) updateKeyConfigurationTag(resource repo.Resource) error {
-	resourceTag, err := GetModelFromInterface[model.KeyConfigurationTag](resource)
+	resourceTag, err := GetModelFromInterface[model.Tag](resource)
 	if err != nil {
 		return errs.Wrap(ErrTagNotFound, err)
 	}
 
-	for _, tag := range db.Data.KeyConfigurationTags {
+	for _, tag := range db.Data.Tags {
 		if tag.ID == resourceTag.ID {
-			db.Data.KeyConfigurationTags[tag.ID] = *resourceTag
+			db.Data.Tags[tag.ID] = *resourceTag
 			return nil
 		}
 	}
@@ -961,7 +961,7 @@ func (db *InMemoryDB) updateKeyVersion(resource repo.Resource) error {
 }
 
 func (db *InMemoryDB) updateKeystoreConfiguration(resource repo.Resource) error {
-	resourceKeyConfiguration, err := GetModelFromInterface[model.KeystoreConfiguration](resource)
+	resourceKeyConfiguration, err := GetModelFromInterface[model.Keystore](resource)
 	if err != nil {
 		return errs.Wrap(ErrKeyConfigurationNotFound, err)
 	}

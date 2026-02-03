@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
@@ -15,6 +16,9 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
+
+// Since the workflow expiry must be less than the retention minus a day
+const minimumRetentionPeriodDays = 2
 
 type TenantConfigManager struct {
 	repo         repo.Repo
@@ -34,13 +38,15 @@ func NewTenantConfigManager(
 }
 
 var (
-	ErrMarshalConfig       = errors.New("error marshalling tenant config")
-	ErrUnmarshalConfig     = errors.New("error unmarshalling tenant config")
-	ErrGetDefaultKeystore  = errors.New("failed to get default keystore")
-	ErrSetDefaultKeystore  = errors.New("failed to set default keystore")
-	ErrGetKeystoreFromPool = errors.New("failed to get keystore config from pool")
-	ErrGetWorkflowConfig   = errors.New("failed to get workflow config")
-	ErrSetWorkflowConfig   = errors.New("failed to set workflow config")
+	ErrMarshalConfig            = errors.New("error marshalling tenant config")
+	ErrUnmarshalConfig          = errors.New("error unmarshalling tenant config")
+	ErrGetDefaultKeystore       = errors.New("failed to get default keystore")
+	ErrSetDefaultKeystore       = errors.New("failed to set default keystore")
+	ErrGetKeystoreFromPool      = errors.New("failed to get keystore config from pool")
+	ErrGetWorkflowConfig        = errors.New("failed to get workflow config")
+	ErrSetWorkflowConfig        = errors.New("failed to set workflow config")
+	ErrRetentionLessThanMinimum = errors.New("retention is less than the minimum allowed (" +
+		strconv.Itoa(minimumRetentionPeriodDays) + " day)")
 )
 
 type HYOKKeystore struct {
@@ -49,7 +55,7 @@ type HYOKKeystore struct {
 }
 
 type TenantKeystores struct {
-	Default model.DefaultKeystore
+	Default model.KeystoreConfig
 	HYOK    HYOKKeystore
 }
 
@@ -96,12 +102,17 @@ func (m *TenantConfigManager) SetWorkflowConfig(
 			defaultEnabled = true
 		}
 
-		defaultMinimumApprovalCount := 2
-
 		workflowConfig = &model.WorkflowConfig{
-			Enabled:          defaultEnabled,
-			MinimumApprovals: defaultMinimumApprovalCount,
+			Enabled:                 defaultEnabled,
+			MinimumApprovals:        constants.DefaultMinimumApprovalCount,
+			RetentionPeriodDays:     constants.DefaultRetentionPeriodDays,
+			DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
+			MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
 		}
+	}
+
+	if workflowConfig.RetentionPeriodDays < minimumRetentionPeriodDays {
+		return nil, errs.Wrap(ErrSetWorkflowConfig, ErrRetentionLessThanMinimum)
 	}
 
 	configValue, err := json.Marshal(workflowConfig)
@@ -123,7 +134,7 @@ func (m *TenantConfigManager) SetWorkflowConfig(
 }
 
 func (m *TenantConfigManager) GetTenantsKeystores() (TenantKeystores, error) {
-	defaultKeystore := model.DefaultKeystore{}
+	defaultKeystore := model.KeystoreConfig{}
 
 	return TenantKeystores{
 		Default: defaultKeystore,
@@ -131,9 +142,9 @@ func (m *TenantConfigManager) GetTenantsKeystores() (TenantKeystores, error) {
 	}, nil
 }
 
-// GetDefaultKeystore retrieves the default keystore config
+// GetDefaultKeystoreConfig retrieves the default keystore config
 // If the config doesn't exist, it gets the config from the pool and sets it
-func (m *TenantConfigManager) GetDefaultKeystore(ctx context.Context) (*model.KeystoreConfiguration, error) {
+func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, error) {
 	var config model.TenantConfig
 
 	ck := repo.NewCompositeKey().Where(repo.KeyField, constants.DefaultKeyStore)
@@ -147,19 +158,17 @@ func (m *TenantConfigManager) GetDefaultKeystore(ctx context.Context) (*model.Ke
 	}
 
 	if !found {
-		var configFromPool *model.KeystoreConfiguration
+		var keystore *model.KeystoreConfig
 
-		err = m.repo.Transaction(ctx, func(ctx context.Context, _ repo.Repo) error {
-			var innerErr error
-
-			configFromPool, innerErr = m.getKeystoreConfigFromPool(ctx)
-			if innerErr != nil {
-				return innerErr
+		err = m.repo.Transaction(ctx, func(ctx context.Context) error {
+			keystore, err = m.getKeystoreConfigFromPool(ctx)
+			if err != nil {
+				return err
 			}
 
-			innerErr = m.setDefaultKeystore(ctx, configFromPool)
-			if innerErr != nil {
-				return innerErr
+			err = m.setDefaultKeystore(ctx, keystore)
+			if err != nil {
+				return err
 			}
 
 			return nil
@@ -168,25 +177,32 @@ func (m *TenantConfigManager) GetDefaultKeystore(ctx context.Context) (*model.Ke
 			return nil, err
 		}
 
-		return configFromPool, nil
+		return keystore, nil
 	}
 
-	// Convert TenantConfig to KeystoreConfiguration
-	keystoreConfig := &model.KeystoreConfiguration{
-		Value: config.Value,
+	keystore := &model.KeystoreConfig{}
+
+	err = json.Unmarshal(config.Value, keystore)
+	if err != nil {
+		return nil, errs.Wrap(ErrUnmarshalConfig, err)
 	}
 
-	return keystoreConfig, nil
+	return keystore, nil
 }
 
 // SetDefaultKeystore stores the default keystore config
-func (m *TenantConfigManager) setDefaultKeystore(ctx context.Context, ksConfig *model.KeystoreConfiguration) error {
-	conf := &model.TenantConfig{
-		Key:   constants.DefaultKeyStore,
-		Value: ksConfig.Value,
+func (m *TenantConfigManager) setDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error {
+	ksBytes, err := json.Marshal(keystore)
+	if err != nil {
+		return errs.Wrap(ErrMarshalConfig, err)
 	}
 
-	err := m.repo.Set(ctx, conf)
+	conf := &model.TenantConfig{
+		Key:   constants.DefaultKeyStore,
+		Value: ksBytes,
+	}
+
+	err = m.repo.Set(ctx, conf)
 	if err != nil {
 		return errs.Wrap(ErrSetDefaultKeystore, err)
 	}
@@ -215,13 +231,20 @@ func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
 	return HYOKKeystore{Provider: providers, Allow: len(providers) > 0}
 }
 
-func (m *TenantConfigManager) getKeystoreConfigFromPool(ctx context.Context) (*model.KeystoreConfiguration, error) {
+func (m *TenantConfigManager) getKeystoreConfigFromPool(ctx context.Context) (*model.KeystoreConfig, error) {
 	cfg, err := m.keystorePool.Pop(ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetKeystoreFromPool, err)
 	}
 
-	return cfg, nil
+	ksConfig := &model.KeystoreConfig{}
+
+	err = json.Unmarshal(cfg.Config, ksConfig)
+	if err != nil {
+		return nil, errs.Wrap(ErrUnmarshalConfig, err)
+	}
+
+	return ksConfig, nil
 }
 
 // convertToWorkflowConfig converts TenantConfig to WorkflowConfig

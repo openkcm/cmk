@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -23,9 +22,7 @@ func (s *SystemUpdaterMock) UpdateSystems(_ context.Context) error {
 }
 
 func TestSystemRefresherProcessAction(t *testing.T) {
-	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	repo := sql.NewRepository(db)
 
 	refresher := tasks.NewSystemsRefresher(&SystemUpdaterMock{}, repo)

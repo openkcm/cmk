@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
@@ -43,17 +43,8 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 	SetupTestContainers(t, testConfig)
 	db, _, _ := testutils.NewTestDB(t,
 		testutils.TestDBConfig{
-			Models: []driver.TenantTabler{
-				&model.Workflow{},
-				&model.WorkflowApprover{},
-				&model.Group{},
-				&model.Key{},
-				&model.System{},
-				&model.KeyConfiguration{},
-			},
 			CreateDatabase: true,
 		},
-		testutils.WithDatabase(testConfig.Database),
 		testutils.WithInitTenants(model.Tenant{
 			ID: tenantID,
 			TenantModel: multitenancy.TenantModel{
@@ -113,14 +104,17 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 		w.ActionType = wfMechanism.ActionTypeDelete.String()
 	})
 
-	ctlg, err := catalog.New(ctx, *testConfig)
+	ctlg, err := catalog.New(ctx, testConfig)
 	tenantConfigManager := manager.NewTenantConfigManager(repository, ctlg)
-	keyConfigManager := manager.NewKeyConfigManager(repository, nil, testConfig)
-	keyManager := manager.NewKeyManager(repository, ctlg, nil, keyConfigManager, nil, nil, nil)
-	systemManager := manager.NewSystemManager(ctx, repository, nil, nil, ctlg, nil, testConfig)
-	groupManager := manager.NewGroupManager(repository, ctlg)
+	cmkAuditor := auditor.New(ctx, testConfig)
+	userManager := manager.NewUserManager(repository, cmkAuditor)
+	tagManager := manager.NewTagManager(repository)
+	keyConfigManager := manager.NewKeyConfigManager(repository, nil, userManager, tagManager, nil, testConfig)
+	keyManager := manager.NewKeyManager(repository, ctlg, nil, keyConfigManager, userManager, nil, nil, nil)
+	systemManager := manager.NewSystemManager(ctx, repository, nil, nil, ctlg, testConfig, keyConfigManager, userManager)
+	groupManager := manager.NewGroupManager(repository, ctlg, userManager)
 	workflowManager := manager.NewWorkflowManager(repository, keyManager, keyConfigManager, systemManager,
-		groupManager, asyncApp.Client(), tenantConfigManager)
+		groupManager, userManager, asyncApp.Client(), tenantConfigManager, testConfig)
 
 	assert.NoError(t, err)
 

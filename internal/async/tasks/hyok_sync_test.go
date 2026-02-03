@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
@@ -29,9 +28,7 @@ func (s *HyokHYOKClientMockFailed) SyncHYOKKeys(_ context.Context) error {
 }
 
 func TestHYOKSyncProcessAction(t *testing.T) {
-	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	repo := sql.NewRepository(db)
 	sync := tasks.NewHYOKSync(&HyokHYOKClientMock{}, repo)
 

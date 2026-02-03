@@ -2,14 +2,14 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "cmk.fullname" . }}
+  name: {{ include "cmk.fullname" . }}-tenant-manager
   labels:
     {{- include "cmk.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "cmk.fullname" . }}
+    name: {{ include "cmk.fullname" . }}-tenant-manager
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:

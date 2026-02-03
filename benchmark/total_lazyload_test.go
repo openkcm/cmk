@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
@@ -63,9 +62,7 @@ func WithTotalSystems(ctx context.Context, r repo.Repo) func(*model.KeyConfigura
 }
 
 func BenchmarkTotalKeyLoad(b *testing.B) {
-	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&model.KeyConfiguration{}, &model.Key{}, &model.System{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(b, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 

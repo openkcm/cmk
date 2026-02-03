@@ -91,12 +91,12 @@ func (m *LabelManager) CreateOrUpdateLabel(
 		return errs.Wrap(ErrGettingKeyByID, err)
 	}
 
-	err = m.repository.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+	err = m.repository.Transaction(ctx, func(ctx context.Context) error {
 		for _, label := range labels {
 			l := &model.KeyLabel{}
 			ck = repo.NewCompositeKey().Where(repo.KeyField, label.Key).Where(repo.ResourceIDField, keyID)
 
-			_, err := r.First(
+			_, err := m.repository.First(
 				ctx,
 				l,
 				*repo.NewQuery().
@@ -107,14 +107,14 @@ func (m *LabelManager) CreateOrUpdateLabel(
 					return errs.Wrap(ErrFetchLabel, err)
 				}
 
-				err := r.Create(ctx, label)
+				err := m.repository.Create(ctx, label)
 				if err != nil {
 					return errs.Wrap(ErrInsertLabel, err)
 				}
 			} else {
 				l.Value = label.Value
 
-				_, err := r.Patch(
+				_, err := m.repository.Patch(
 					ctx,
 					l,
 					*repo.NewQuery().UpdateAll(true),

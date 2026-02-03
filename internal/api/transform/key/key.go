@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
 	"github.com/openkcm/cmk/internal/api/transform/key/hyokkey"
 	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
 	"github.com/openkcm/cmk/internal/api/transform/key/sysmr"
@@ -102,12 +101,9 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 	state := cmkapi.KeyState(k.State)
 	apiKey.State = &state
 
-	createdAt := k.CreatedAt.Format(transform.DefTimeFormat)
-	updatedAt := k.UpdatedAt.Format(transform.DefTimeFormat)
-
 	apiKey.Metadata = &cmkapi.KeyMetadata{
-		CreatedAt: &createdAt,
-		UpdatedAt: &updatedAt,
+		CreatedAt: &k.CreatedAt,
+		UpdatedAt: &k.UpdatedAt,
 	}
 
 	if k.KeyVersions != nil && k.KeyType == constants.KeyTypeSystemManaged {

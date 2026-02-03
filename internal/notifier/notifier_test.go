@@ -5,12 +5,22 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/notifier"
 	"github.com/openkcm/cmk/internal/notifier/workflow"
 )
 
+var (
+	testConfig = &config.Config{
+		Landscape: config.Landscape{
+			Name:      "Staging",
+			UIBaseUrl: "https://cmk-staging.example.com",
+		},
+	}
+)
+
 func TestNewNotifier(t *testing.T) {
-	n, err := notifier.New()
+	n, err := notifier.New(testConfig)
 	assert.NoError(t, err)
 
 	assert.NotNil(t, n, "Notifier should not be nil")
@@ -18,7 +28,7 @@ func TestNewNotifier(t *testing.T) {
 }
 
 func TestNotifier_Workflow(t *testing.T) {
-	n, err := notifier.New()
+	n, err := notifier.New(testConfig)
 	assert.NoError(t, err)
 
 	workflowCreator := n.Workflow()

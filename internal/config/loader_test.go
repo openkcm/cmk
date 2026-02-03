@@ -19,7 +19,7 @@ func buildCfg(t *testing.T) []byte {
 	contextModels := &config.ContextModels{
 		System: config.System{
 			Identifier: config.SystemProperty{
-				DisplayName: "GTID",
+				DisplayName: "UniversalId",
 				Internal:    true,
 			},
 			Region: config.SystemProperty{

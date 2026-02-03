@@ -26,7 +26,7 @@ func init() {
 
 func NotificationPlugin(t *testing.T) *plugincatalog.Catalog {
 	t.Helper()
-	plugins, err := catalog.New(t.Context(), config.Config{
+	plugins, err := catalog.New(t.Context(), &config.Config{
 		Plugins: []plugincatalog.PluginConfig{
 			integrationutils.NotificationPlugin(t),
 		},

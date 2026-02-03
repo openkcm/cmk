@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/uuid"
-
 	"github.com/openkcm/cmk/internal/errs"
 )
 
@@ -20,13 +18,14 @@ var (
 		"automated transition cannot be triggered by user input",
 	)
 	ErrInvalidWorkflowState    = errors.New("invalid workflow state")
+	ErrInvalidWorkflowType     = errors.New("invalid workflow type")
 	ErrCheckApproverDecision   = errors.New("failed to check approver decision")
 	ErrListApprovers           = errors.New("failed to list approvers")
 	ErrInvalidVotingTransition = errors.New("invalid voting transition")
 )
 
 // NewInvalidEventActorError creates an error when the user is not the expected actor of the event.
-func NewInvalidEventActorError(userID uuid.UUID, expectedRole string) error {
+func NewInvalidEventActorError(userID string, expectedRole string) error {
 	msg := fmt.Sprintf("user %s is not the %s of the workflow", userID, expectedRole)
 	return errs.Wrapf(ErrInvalidEventActor, msg)
 }

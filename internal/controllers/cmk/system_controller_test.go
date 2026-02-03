@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
@@ -19,6 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -32,16 +33,9 @@ var ErrForced = errors.New("forced")
 func startAPISystems(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.System{},
-			&model.SystemProperty{},
-			&model.KeyConfiguration{},
-			&model.Key{},
-			&model.KeyVersion{},
-			&model.KeyLabel{},
-		},
-	})
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
+
+	cfg.Config.Database = dbCfg
 
 	sv := testutils.NewAPIServer(t, db, cfg)
 
@@ -261,6 +255,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.Status = cmkapi.SystemStatusPROCESSING
 	})
 
 	testutils.CreateTestEntities(
@@ -272,15 +267,33 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 		system2,
 	)
 
+	longStr := "001234567890123456789012345678901234567890123456789"
+
 	tests := []struct {
-		name              string
-		expectedStatus    int
-		sideEffect        func() func()
-		expectedErrorCode string
+		name                string
+		expectedStatus      int
+		sideEffect          func() func()
+		filter              string
+		expectedSystemCount int
+		expectedErrorCode   string
 	}{
 		{
-			name:           "GetAllSystemsSuccess",
-			expectedStatus: http.StatusOK,
+			name:                "GetAllSystemsSuccess",
+			expectedStatus:      http.StatusOK,
+			expectedSystemCount: 2,
+		},
+		{
+			name:                "GetAllSystems_FilterByStatus_Success",
+			filter:              "status eq 'DISCONNECTED'",
+			expectedStatus:      http.StatusOK,
+			expectedSystemCount: 1,
+		},
+		{
+			name:                "GetAllSystems_FilterByStatus_InvalidLength",
+			filter:              "status eq '" + longStr + "'",
+			expectedStatus:      http.StatusBadRequest,
+			expectedSystemCount: 0,
+			expectedErrorCode:   "BAD_REQUEST",
 		},
 		{
 			name:           "GetAllSystemsDbError",
@@ -302,9 +315,15 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 				defer teardown()
 			}
 
+			endpoint := "/systems?$count=true"
+
+			if tt.filter != "" {
+				endpoint += "&$filter=" + tt.filter
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodGet,
-				Endpoint: "/systems?$count=true",
+				Endpoint: endpoint,
 				Tenant:   tenant,
 			})
 
@@ -312,17 +331,10 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 
 			if tt.expectedStatus == http.StatusOK {
 				response := testutils.GetJSONBody[cmkapi.SystemList](t, w)
-				assert.Equal(t, 2, *response.Count)
+				assert.Equal(t, tt.expectedSystemCount, *response.Count)
 
-				systems := response.Value
-				assert.Len(t, systems, 2)
-
-				ids := make([]uuid.UUID, 0, len(systems))
-				for _, sys := range systems {
-					ids = append(ids, *sys.ID)
-				}
-
-				assert.ElementsMatch(t, []uuid.UUID{system1.ID, system2.ID}, ids)
+				retrievedSystems := response.Value
+				assert.Len(t, retrievedSystems, tt.expectedSystemCount)
 			} else {
 				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
 				assert.Equal(t, tt.expectedErrorCode, response.Error.Code)
@@ -563,95 +575,62 @@ func TestAPIController_GetSystemByIDWithError(t *testing.T) {
 	}
 }
 
-// TestGetSystemLinkByID tests the GetSystemLinkByID function of SystemController
-func TestAPIController_GetSystemLinkByID(t *testing.T) {
+func TestSendRecoveryActions(t *testing.T) {
 	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
-	system := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfiguration.ID)
-	})
-	systemWithoutKey := testutils.NewSystem(func(_ *model.System) {})
-
-	testutils.CreateTestEntities(
-		ctx,
-		t,
-		r,
-		keyConfiguration,
-		system,
-		systemWithoutKey,
-	)
-
-	tests := []struct {
-		name               string
-		id                 string
-		keyConfigurationID string
-		expectedStatus     int
-		expectedCode       string
-	}{
-		{
-			name:               "SystemLinkGETByIdSuccess",
-			expectedStatus:     http.StatusOK,
-			id:                 system.ID.String(),
-			keyConfigurationID: keyConfiguration.ID.String(),
-		},
-		{
-			name:           "SystemLinkGETByIdNotFound",
-			expectedStatus: http.StatusNotFound,
-			expectedCode:   "GETTING_SYSTEM_LINK_BY_ID",
-			id:             uuid.NewString(),
-		},
-		{
-			name:           "SystemLinkGETByIdNoKeyConfig",
-			expectedStatus: http.StatusNotFound,
-			expectedCode:   "KEY_CONFIGURATION_ID_NOT_FOUND",
-			id:             systemWithoutKey.ID.String(),
-		},
-		{
-			name:           "SystemLinkGETByIdInvalidId",
-			expectedCode:   apierrors.ParamsErr,
-			expectedStatus: http.StatusBadRequest,
-			id:             "invalid uuid",
-		},
-		{
-			name:           "SystemLinkGETByIdDbError",
-			expectedCode:   "GETTING_SYSTEM_LINK_BY_ID",
-			expectedStatus: http.StatusInternalServerError,
-			id:             system.ID.String(),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.expectedStatus == http.StatusInternalServerError {
-				forced := testutils.NewDBErrorForced(db, ErrForced)
-
-				forced.WithQuery().Register()
-				defer forced.Register()
-			}
-
-			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: fmt.Sprintf("/systems/%s/link", tt.id),
-				Tenant:   tenant,
-			})
-			assert.Equal(t, tt.expectedStatus, w.Code)
-
-			if tt.expectedStatus == http.StatusOK {
-				response := testutils.GetJSONBody[cmkapi.SystemLink](t, w)
-				assert.Equal(t, tt.keyConfigurationID, response.KeyConfigurationID.String())
-			} else {
-				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-				assert.Equal(t, tt.expectedCode, response.Error.Code)
-			}
+	t.Run("Should 400 on cancel without previous state", func(t *testing.T) {
+		sys := testutils.NewSystem(func(_ *model.System) {})
+		testutils.CreateTestEntities(ctx, t, r, sys)
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: fmt.Sprintf("/systems/%s/recoveryActions", sys.ID),
+			Body: testutils.WithJSON(
+				t,
+				cmkapi.SystemRecoveryActionBody{
+					Action: cmkapi.SystemRecoveryActionBodyActionCANCEL,
+				},
+			),
+			Tenant: tenant,
 		})
-	}
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("Should 200 on successful cancel", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusFAILED
+		})
+		event := &model.Event{
+			Identifier:         sys.ID.String(),
+			Type:               "",
+			Data:               json.RawMessage("{}"),
+			PreviousItemStatus: string(cmkapi.SystemStatusCONNECTED),
+		}
+		testutils.CreateTestEntities(ctx, t, r, sys, event)
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: fmt.Sprintf("/systems/%s/recoveryActions", sys.ID),
+			Body: testutils.WithJSON(
+				t,
+				cmkapi.SystemRecoveryActionBody{
+					Action: cmkapi.SystemRecoveryActionBodyActionCANCEL,
+				},
+			),
+			Tenant: tenant,
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		_, err := r.First(ctx, sys, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusCONNECTED, sys.Status)
+	})
 }
 
 // TestUpdateSystemByExternalID tests the UpdateSystemByExternalID function of SystemController
-func TestAPIController_PatchSystemLinkByID(t *testing.T) {
+func TestLinkSystemAction(t *testing.T) {
 	systemService := systems.NewFakeService(testutils.SetupLoggerWithBuffer())
 
 	_, grpcCon := testutils.NewGRPCSuite(t,
@@ -666,6 +645,9 @@ func TestAPIController_PatchSystemLinkByID(t *testing.T) {
 	})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
+
+	// Disable workflow to allow direct linking via system controller
+	disableWorkflow(t, ctx, r)
 
 	keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
@@ -705,7 +687,7 @@ func TestAPIController_PatchSystemLinkByID(t *testing.T) {
 			name:               "SystemUPDATESuccess",
 			ID:                 systemNoConfig.ID.String(),
 			Identifier:         systemNoConfig.Identifier,
-			KeyConfigurationID: keyConfig2.ID.String(),
+			KeyConfigurationID: "", // No key config update before event is processed
 			inputJSON:          fmt.Sprintf(`{"keyConfigurationID": "%s"}`, keyConfig2.ID.String()),
 			expectedStatus:     http.StatusOK,
 		},
@@ -713,7 +695,7 @@ func TestAPIController_PatchSystemLinkByID(t *testing.T) {
 			name:               "SystemUPDATESuccessAlreadyHasKeyConfig",
 			ID:                 systemWithKey.ID.String(),
 			Identifier:         systemWithKey.Identifier,
-			KeyConfigurationID: keyConfig2.ID.String(),
+			KeyConfigurationID: keyConfig2.ID.String(), // Nothing changed
 			inputJSON:          fmt.Sprintf(`{"keyConfigurationID": "%s"}`, keyConfig2.ID.String()),
 			expectedStatus:     http.StatusOK,
 		},
@@ -753,7 +735,7 @@ func TestAPIController_PatchSystemLinkByID(t *testing.T) {
 			inputJSON:         fmt.Sprintf(`{"keyConfigurationID": "%s"}`, keyConfig2.ID.String()),
 			expectedStatus:    http.StatusInternalServerError,
 			errorForced:       testutils.NewDBErrorForced(db, ErrForced).WithQuery(),
-			expectedErrorCode: "GET_KEY_CONFIG_BY_ID",
+			expectedErrorCode: "GET_RESOURCE",
 		},
 		{
 			name:              "SystemUPDATEConfigWithoutPrimaryKey",
@@ -784,6 +766,14 @@ func TestAPIController_PatchSystemLinkByID(t *testing.T) {
 				Endpoint: fmt.Sprintf("/systems/%s/link", tt.ID),
 				Tenant:   tenant,
 				Body:     testutils.WithString(t, tt.inputJSON),
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{
+							keyConfig1.AdminGroup.IAMIdentifier,
+							keyConfig2.AdminGroup.IAMIdentifier,
+						},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -809,13 +799,15 @@ func TestAPIController_PatchSystemLinkByID(t *testing.T) {
 	}
 }
 
-// DeleteSystemLinkByID tests the DeleteSystemLinkByID function of SystemController
-func TestAPIController_DeleteSystemLinkByID(t *testing.T) {
+func TestUnlinkSystemAction(t *testing.T) {
 	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
 		Plugins: []testutils.MockPlugin{testutils.SystemInfo},
 	})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
+
+	// Disable workflow to allow direct unlinking via system controller
+	disableWorkflow(t, ctx, r)
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) { k.PrimaryKeyID = ptr.PointTo(uuid.New()) })
 	system := testutils.NewSystem(func(s *model.System) {
@@ -868,6 +860,11 @@ func TestAPIController_DeleteSystemLinkByID(t *testing.T) {
 				Method:   http.MethodDelete,
 				Endpoint: fmt.Sprintf("/systems/%s/link", tt.id),
 				Tenant:   tenant,
+				AdditionalContext: map[any]any{
+					constants.ClientData: &auth.ClientData{
+						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
+					},
+				},
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -878,7 +875,7 @@ func TestAPIController_DeleteSystemLinkByID(t *testing.T) {
 				_, err := r.First(ctx, system, *repo.NewQuery())
 				assert.NoError(t, err)
 
-				assert.Nil(t, system.KeyConfigurationID)
+				assert.NotNil(t, system.KeyConfigurationID) // KeyConfigurationID should remain until event is processed
 			}
 		})
 	}

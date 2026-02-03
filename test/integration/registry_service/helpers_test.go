@@ -57,19 +57,3 @@ func deleteResource(ctx context.Context, client any, id string) error {
 		return ErrUnknownClient
 	}
 }
-
-func unlinkTenant(ctx context.Context, subj any, id string) error {
-	s, ok := subj.(systemgrpc.ServiceClient)
-	if !ok {
-		return ErrUnknownClient
-	}
-
-	_, err := s.UnlinkSystemsFromTenant(ctx, &systemgrpc.UnlinkSystemsFromTenantRequest{
-		SystemIdentifiers: []*systemgrpc.SystemIdentifier{{ExternalId: id}},
-	})
-	if err != nil {
-		return errs.Wrapf(err, "error unlinking tenant with service client")
-	}
-
-	return nil
-}

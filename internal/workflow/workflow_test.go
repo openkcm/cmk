@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
@@ -16,6 +15,7 @@ import (
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
@@ -27,10 +27,10 @@ import (
 )
 
 var (
-	userID01     = uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	userID02     = uuid.MustParse("00000000-0000-0000-0000-000000000002")
-	userID03     = uuid.MustParse("00000000-0000-0000-0000-000000000003")
-	userID04     = uuid.MustParse("00000000-0000-0000-0000-000000000004")
+	userID01     = "00000000-0000-0000-0000-000000000001"
+	userID02     = "00000000-0000-0000-0000-000000000002"
+	userID03     = "00000000-0000-0000-0000-000000000003"
+	userID04     = "00000000-0000-0000-0000-000000000004"
 	artifactID01 = uuid.MustParse("00000000-0000-0000-1111-000000000001")
 
 	sqlNullBoolNull  = sql.NullBool{Bool: true, Valid: false}
@@ -38,25 +38,10 @@ var (
 	sqlNullBoolFalse = sql.NullBool{Bool: false, Valid: true}
 )
 
-//nolint:funlen
 func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, string) {
 	t.Helper()
 
-	db, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Workflow{}, &model.WorkflowApprover{},
-			&model.Key{},
-			&model.KeyVersion{},
-			&model.TenantConfig{},
-			&model.KeyConfiguration{},
-			&model.System{},
-			&model.SystemProperty{},
-			&model.ImportParams{},
-			&model.KeystoreConfiguration{},
-			&model.Certificate{},
-		},
-		CreateDatabase: true,
-	})
+	dbCon, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
 	cfg := config.Config{
 		Plugins:  testutils.SetupMockPlugins(testutils.KeyStorePlugin, testutils.CertIssuer),
 		Database: dbConf,
@@ -64,7 +49,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	ctlg, err := catalog.New(ctx, cfg)
+	ctlg, err := catalog.New(ctx, &cfg)
 	assert.NoError(t, err)
 
 	logger := testutils.SetupLoggerWithBuffer()
@@ -76,18 +61,6 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 		},
 	)
 
-	r := sqlRepo.NewRepository(db)
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, &cfg, r, ctlg)
-	assert.NoError(t, err)
-
-	ksConfig := testutils.NewKeystoreConfig(func(_ *model.KeystoreConfiguration) {})
-	keystoreDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeystoreDefault
-		c.CommonName = testutils.TestDefaultKeystoreCommonName
-	})
-	testutils.CreateTestEntities(ctx, t, r, ksConfig, keystoreDefaultCert)
-
-	assert.NoError(t, err)
 	clientsFactory, err := clients.NewFactory(config.Services{
 		Registry: &commoncfg.GRPCClient{
 			Enabled: true,
@@ -101,7 +74,21 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	assert.NoError(t, err)
 	assert.NoError(t, clientsFactory.Close())
 
-	return manager.New(ctx, r, &cfg, clientsFactory, ctlg, reconciler, nil), db, tenants[0]
+	r := sqlRepo.NewRepository(dbCon)
+	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, &cfg, r, ctlg, clientsFactory)
+	assert.NoError(t, err)
+
+	ksConfig := testutils.NewKeystore(func(_ *model.Keystore) {})
+	keystoreDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeKeystoreDefault
+		c.CommonName = testutils.TestDefaultKeystoreCommonName
+	})
+	testutils.CreateTestEntities(ctx, t, r, ksConfig, keystoreDefaultCert)
+
+	migrator, err := db.NewMigrator(r, &cfg)
+	assert.NoError(t, err)
+
+	return manager.New(ctx, r, &cfg, clientsFactory, ctlg, reconciler, nil, migrator), dbCon, tenants[0]
 }
 
 func TestWorkflowLifecycleTransitions(t *testing.T) {
@@ -124,7 +111,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 	tests := []struct {
 		name          string
 		workflow      model.Workflow
-		actorID       uuid.UUID
+		actorID       string
 		transition    workflow.Transition
 		expectErr     bool
 		errMessage    string         // If expectErr is true, this is the expected error message
@@ -1023,20 +1010,25 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 	r := sqlRepo.NewRepository(db)
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	keyConf := &model.KeyConfiguration{ID: uuid.New(), AdminGroup: *testutils.NewGroup(func(_ *model.Group) {})}
+	keyConf := &model.KeyConfiguration{
+		ID: uuid.New(), AdminGroup: *testutils.NewGroup(func(_ *model.Group) {}),
+		CreatorID: uuid.NewString(),
+	}
 	err := r.Create(ctx, keyConf)
 	assert.NoError(t, err)
+	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConf.AdminGroup.IAMIdentifier})
 
-	err = r.Create(
+	testutils.CreateTestEntities(
 		ctx,
+		t,
+		r,
 		&model.Key{
 			ID:                 artifactID01,
-			Provider:           "AWS",
+			Provider:           "TEST",
 			KeyType:            "SYSTEM_MANAGED",
 			KeyConfigurationID: keyConf.ID,
 		},
 	)
-	assert.NoError(t, err)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1188,6 +1180,221 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 				assert.True(t, ok)
 				assert.Equal(t, workflow.StateExpired.String(), wf.State)
 			}
+		})
+	}
+}
+
+func TestAvailableBusinessUserTransitions(t *testing.T) {
+	wfMutator := testutils.NewMutator(func() model.Workflow {
+		return model.Workflow{
+			ID:          uuid.New(),
+			State:       workflow.StateWaitApproval.String(),
+			InitiatorID: userID01,
+			Approvers: []model.WorkflowApprover{
+				{UserID: userID02, Approved: sqlNullBoolNull},
+				{UserID: userID03, Approved: sqlNullBoolNull},
+			},
+			ArtifactType: workflow.ArtifactTypeKey.String(),
+			ArtifactID:   artifactID01,
+			ActionType:   workflow.ActionTypeUpdateState.String(),
+			Parameters:   "DISABLED",
+		}
+	})
+
+	tests := []struct {
+		name     string
+		workflow model.Workflow
+		actorID  string
+		expected []workflow.Transition
+	}{
+		{
+			name:     "initiator in wait approval gets revoke",
+			workflow: wfMutator(func(wf *model.Workflow) {}),
+			actorID:  userID01,
+			expected: []workflow.Transition{workflow.TransitionRevoke},
+		},
+		{
+			name: "initiator in wait confirmation gets revoke and confirm",
+			workflow: wfMutator(func(wf *model.Workflow) {
+				wf.State = workflow.StateWaitConfirmation.String()
+			}),
+			actorID:  userID01,
+			expected: []workflow.Transition{workflow.TransitionRevoke, workflow.TransitionConfirm},
+		},
+		{
+			name: "approver in wait approval gets approve and reject",
+			workflow: wfMutator(func(wf *model.Workflow) {
+				// ensure actor is an approver and has not voted yet
+				wf.Approvers = []model.WorkflowApprover{
+					{UserID: userID02, Approved: sqlNullBoolNull},
+				}
+			}),
+			actorID:  userID02,
+			expected: []workflow.Transition{workflow.TransitionApprove, workflow.TransitionReject},
+		},
+		{
+			name:     "non-approver gets empty",
+			workflow: wfMutator(func(wf *model.Workflow) {}),
+			actorID:  userID04,
+			expected: []workflow.Transition{},
+		},
+		{
+			name: "revoked state returns empty",
+			workflow: wfMutator(func(wf *model.Workflow) {
+				wf.State = workflow.StateRevoked.String()
+			}),
+			actorID:  userID01,
+			expected: []workflow.Transition{},
+		},
+	}
+
+	mgr, db, tenant := SetupWorkflowManager(t)
+	r := sqlRepo.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	// create required key/config entities once
+	keyConf := &model.KeyConfiguration{
+		ID:         uuid.New(),
+		AdminGroup: *testutils.NewGroup(func(_ *model.Group) {}),
+		CreatorID:  uuid.NewString(),
+	}
+	assert.NoError(t, r.Create(ctx, keyConf))
+	assert.NoError(t, r.Create(ctx, &model.Key{
+		ID:                 artifactID01,
+		Provider:           "TEST",
+		KeyType:            "SYSTEM_MANAGED",
+		KeyConfigurationID: keyConf.ID,
+	}))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// prepare
+			assert.NoError(t, r.Create(ctx, &tt.workflow))
+
+			// act
+			l := workflow.NewLifecycle(&tt.workflow, mgr.Keys, mgr.KeyConfig, mgr.System, r, tt.actorID, 2)
+			got := l.AvailableBusinessUserTransitions(ctx)
+
+			// verify
+			assert.ElementsMatch(t, tt.expected, got)
+		})
+	}
+}
+
+func TestGetApprovalSummary(t *testing.T) {
+	wfMutator := testutils.NewMutator(func() model.Workflow {
+		return model.Workflow{
+			ID:          uuid.New(),
+			State:       workflow.StateWaitApproval.String(),
+			InitiatorID: userID01,
+			Approvers: []model.WorkflowApprover{
+				{UserID: userID02, Approved: sqlNullBoolNull},
+				{UserID: userID03, Approved: sqlNullBoolNull},
+			},
+			ArtifactType: workflow.ArtifactTypeKey.String(),
+			ArtifactID:   artifactID01,
+			ActionType:   workflow.ActionTypeUpdateState.String(),
+			Parameters:   "DISABLED",
+		}
+	})
+
+	tests := []struct {
+		name                 string
+		workflow             model.Workflow
+		minimumApproverCount int
+		expectedApprovals    int
+		expectedRejections   int
+		expectedPending      int
+		expectedTargetScore  int
+	}{
+		{
+			name:                 "all pending",
+			workflow:             wfMutator(func(wf *model.Workflow) {}),
+			minimumApproverCount: 2,
+			expectedApprovals:    0,
+			expectedRejections:   0,
+			expectedPending:      2,
+			expectedTargetScore:  2,
+		},
+		{
+			name: "one approved one pending",
+			workflow: wfMutator(func(wf *model.Workflow) {
+				wf.Approvers = []model.WorkflowApprover{
+					{UserID: userID02, Approved: sqlNullBoolTrue},
+					{UserID: userID03, Approved: sqlNullBoolNull},
+				}
+			}),
+			minimumApproverCount: 2,
+			expectedApprovals:    1,
+			expectedRejections:   0,
+			expectedPending:      1,
+			expectedTargetScore:  2,
+		},
+		{
+			name: "one approved one rejected",
+			workflow: wfMutator(func(wf *model.Workflow) {
+				wf.Approvers = []model.WorkflowApprover{
+					{UserID: userID02, Approved: sqlNullBoolTrue},
+					{UserID: userID03, Approved: sqlNullBoolFalse},
+				}
+			}),
+			minimumApproverCount: 2,
+			expectedApprovals:    1,
+			expectedRejections:   1,
+			expectedPending:      0,
+			expectedTargetScore:  2,
+		},
+		{
+			name: "no approvers and custom target",
+			workflow: func() model.Workflow {
+				wf := wfMutator(func(w *model.Workflow) {
+					w.Approvers = []model.WorkflowApprover{}
+				})
+				return wf
+			}(),
+			minimumApproverCount: 3,
+			expectedApprovals:    0,
+			expectedRejections:   0,
+			expectedPending:      0,
+			expectedTargetScore:  3,
+		},
+	}
+
+	mgr, db, tenant := SetupWorkflowManager(t)
+	r := sqlRepo.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	// create required key/config entities once
+	keyConf := &model.KeyConfiguration{
+		ID:         uuid.New(),
+		AdminGroup: *testutils.NewGroup(func(_ *model.Group) {}),
+		CreatorID:  uuid.NewString(),
+	}
+	assert.NoError(t, r.Create(ctx, keyConf))
+	assert.NoError(t, r.Create(ctx, &model.Key{
+		ID:                 artifactID01,
+		Provider:           "TEST",
+		KeyType:            "SYSTEM_MANAGED",
+		KeyConfigurationID: keyConf.ID,
+	}))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// prepare
+			assert.NoError(t, r.Create(ctx, &tt.workflow))
+
+			// act
+			l := workflow.NewLifecycle(
+				&tt.workflow, mgr.Keys, mgr.KeyConfig, mgr.System, r, userID01, tt.minimumApproverCount)
+			got, err := l.GetApprovalSummary(ctx)
+			assert.NoError(t, err)
+
+			// verify
+			assert.Equal(t, workflow.ApprovalMechanismTargetScore, got.Mechanism)
+			assert.Equal(t, tt.expectedApprovals, got.Approvals)
+			assert.Equal(t, tt.expectedRejections, got.Rejections)
+			assert.Equal(t, tt.expectedPending, got.Pending)
+			assert.Equal(t, tt.expectedTargetScore, got.TargetScore)
 		})
 	}
 }

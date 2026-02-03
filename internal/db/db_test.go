@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/gorm/logger"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
@@ -15,18 +15,21 @@ import (
 )
 
 func TestStartDB(t *testing.T) {
-	t.Run("should start db connection and run migration", func(t *testing.T) {
+	t.Run("should start db connection", func(t *testing.T) {
+		// Disable tenant creation
+		_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+			Logger: logger.Default.LogMode(logger.Error),
+		}, testutils.WithGenerateTenants(0))
+
+		cfg := &config.Config{Database: dbCfg}
+
 		conn, err := db.StartDB(
 			t.Context(),
-			testutils.TestDB,
-			config.Provisioning{},
-			[]config.Database{},
+			cfg,
 		)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, conn)
-		err = conn.Exec("DELETE FROM tenants").Error
-		assert.NoError(t, err)
 	})
 }
 
@@ -34,7 +37,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 	t.Run("Successfully add keystore from config", func(t *testing.T) {
 		// Arrange
 		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
+			CreateDatabase: true,
 		})
 
 		initKeystoreConfig := config.InitKeystoreConfig{
@@ -60,14 +63,14 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Verify the keystore config was stored
-		var storedConfig model.KeystoreConfiguration
+		var storedKeystore model.Keystore
 
-		err = testDB.WithContext(t.Context()).Where("provider = ?", "AWS").First(&storedConfig).Error
+		err = testDB.WithContext(t.Context()).Where("provider = ?", "AWS").First(&storedKeystore).Error
 		assert.NoError(t, err)
 
 		var parsedValue map[string]any
 
-		err = json.Unmarshal(storedConfig.Value, &parsedValue)
+		err = json.Unmarshal(storedKeystore.Config, &parsedValue)
 		assert.NoError(t, err)
 		assert.Equal(t, testutils.TestLocalityID, parsedValue["localityId"])
 		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, parsedValue["commonName"])
@@ -120,7 +123,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 	t.Run("Skip adding keystore when disabled", func(t *testing.T) {
 		// Arrange
 		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
+			CreateDatabase: true,
 		})
 
 		initKeystoreConfig := config.InitKeystoreConfig{
@@ -135,16 +138,14 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 		// Verify no keystore config was stored
 		var count int64
 
-		err = testDB.WithContext(t.Context()).Model(&model.KeystoreConfiguration{}).Count(&count).Error
+		err = testDB.WithContext(t.Context()).Model(&model.Keystore{}).Count(&count).Error
 		assert.NoError(t, err)
 		assert.Equal(t, int64(0), count)
 	})
 
 	t.Run("Handle missing locality ID", func(t *testing.T) {
 		// Arrange
-		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-		})
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 		initKeystoreConfig := config.InitKeystoreConfig{
 			Enabled:  true,
 			Provider: "AWS",
@@ -168,9 +169,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle missing common name", func(t *testing.T) {
 		// Arrange
-		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-		})
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 		initKeystoreConfig := config.InitKeystoreConfig{
 			Enabled:  true,
 			Provider: "AWS",
@@ -194,9 +193,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle nil managementDataAccess", func(t *testing.T) {
 		// Arrange
-		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-		})
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 		initKeystoreConfig := config.InitKeystoreConfig{
 			Enabled:  true,
 			Provider: "AWS",
@@ -216,9 +213,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle invalid YAML in management access data", func(t *testing.T) {
 		// Arrange
-		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-		})
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 		initKeystoreConfig := config.InitKeystoreConfig{
 			Enabled:  true,
@@ -239,9 +234,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle duplicate keystore config", func(t *testing.T) {
 		// Arrange
-		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-		})
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 		initKeystoreConfig := config.InitKeystoreConfig{
 			Enabled:  true,
@@ -268,16 +261,14 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 		// Verify only one keystore config was stored
 		var count int64
 
-		err = testDB.WithContext(t.Context()).Model(&model.KeystoreConfiguration{}).Count(&count).Error
+		err = testDB.WithContext(t.Context()).Model(&model.Keystore{}).Count(&count).Error
 		assert.NoError(t, err)
 		assert.Equal(t, int64(1), count)
 	})
 
 	t.Run("Handle empty management access data", func(t *testing.T) {
 		// Arrange
-		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-		})
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 		initKeystoreConfig := config.InitKeystoreConfig{
 			Enabled:  true,
@@ -298,9 +289,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle empty supported regions", func(t *testing.T) {
 		// Arrange
-		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-		})
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 		initKeystoreConfig := config.InitKeystoreConfig{
 			Enabled:  true,
@@ -326,9 +315,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle region with empty name", func(t *testing.T) {
 		// Arrange
-		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-		})
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 		initKeystoreConfig := config.InitKeystoreConfig{
 			Enabled:  true,
@@ -356,9 +343,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 
 	t.Run("Handle region with empty technical name", func(t *testing.T) {
 		// Arrange
-		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-			Models: []driver.TenantTabler{&model.TenantConfig{}, &model.KeystoreConfiguration{}},
-		})
+		testDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 		initKeystoreConfig := config.InitKeystoreConfig{
 			Enabled:  true,

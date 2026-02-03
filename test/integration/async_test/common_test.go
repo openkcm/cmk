@@ -17,6 +17,7 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
@@ -68,7 +69,7 @@ func getConfig(t *testing.T, schCfg config.Scheduler) *config.Config {
 func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *config.Config) {
 	t.Helper()
 
-	ctlg, err := catalog.New(t.Context(), *cfg)
+	ctlg, err := catalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	tenancyRepo := sql.NewRepository(db)
@@ -88,12 +89,15 @@ func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *conf
 	certCl = reflect.NewAt(certCl.Type(), unsafe.Pointer(certCl.UnsafeAddr())).Elem()
 	certCl.Set(reflect.ValueOf(cm))
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, tenancyRepo, ctlg)
+	reconciler, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, tenancyRepo, ctlg, nil)
 	assert.NoError(t, err)
 
+	cmkAuditor := auditor.New(t.Context(), cfg)
 	tc := manager.NewTenantConfigManager(tenancyRepo, ctlg)
-	kc := manager.NewKeyConfigManager(tenancyRepo, cm, cfg)
-	km := manager.NewKeyManager(tenancyRepo, ctlg, tc, kc, cm, reconciler, nil)
+	um := manager.NewUserManager(tenancyRepo, cmkAuditor)
+	tam := manager.NewTagManager(tenancyRepo)
+	kc := manager.NewKeyConfigManager(tenancyRepo, cm, um, tam, nil, cfg)
+	km := manager.NewKeyManager(tenancyRepo, ctlg, tc, kc, um, cm, reconciler, nil)
 
 	hyokCl := val.FieldByName("hyokClient")
 	hyokCl = reflect.NewAt(hyokCl.Type(), unsafe.Pointer(hyokCl.UnsafeAddr())).Elem()
@@ -111,8 +115,7 @@ func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *conf
 func SetupTestContainers(t *testing.T, cfg *config.Config) {
 	t.Helper()
 
-	integrationutils.StartPostgresSQL(t, &cfg.Database)
-	integrationutils.StartRedis(t, &cfg.Scheduler)
+	testutils.StartRedis(t, &cfg.Scheduler)
 }
 
 func setupDatabase(ctx context.Context, t *testing.T, r repo.Repo, keysEnabled bool) {
@@ -165,7 +168,7 @@ func createTestKeyEntities() (model.Group, model.KeyConfiguration, model.Key) {
 		Name:         "hyok",
 		Description:  "This key configuration is used for HANA key store encryption.",
 		AdminGroupID: group.ID,
-		CreatorID:    uuid.New(),
+		CreatorID:    uuid.NewString(),
 		CreatorName:  "testuser",
 	}
 	nativeID := "arn:aws:kms:eu-west-2:fake:key/fake-key-id"

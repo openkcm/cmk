@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
@@ -31,12 +30,6 @@ var ErrBadWorkflow = errors.New("bad workflow error")
 
 type WorkflowAssignMock struct{}
 
-func (s *WorkflowAssignMock) GetCertificatesForRotation(
-	_ context.Context,
-) ([]*model.Certificate, int, error) {
-	return []*model.Certificate{}, 0, nil
-}
-
 func (s *WorkflowAssignMock) AutoAssignApprovers(
 	_ context.Context,
 	workflowID uuid.UUID,
@@ -52,12 +45,7 @@ func (s *WorkflowAssignMock) AutoAssignApprovers(
 }
 
 func TestWorkflowAssignAction(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			model.Workflow{},
-			model.WorkflowApprover{},
-		},
-	}, testutils.WithGenerateTenants(1))
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithGenerateTenants(1))
 	r := sql.NewRepository(db)
 
 	tenantID := tenants[0]

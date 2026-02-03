@@ -313,8 +313,8 @@ func TestTransformKeyToAPI(t *testing.T) {
 			State:              AnyPtr(cmkapi.KeyStateENABLED),
 			IsPrimary:          ptr.PointTo(false),
 			Metadata: &cmkapi.KeyMetadata{
-				CreatedAt:      AnyPtr(time.Time{}.Format(time.RFC3339)),
-				UpdatedAt:      AnyPtr(time.Time{}.Format(time.RFC3339)),
+				CreatedAt:      AnyPtr(time.Time{}),
+				UpdatedAt:      AnyPtr(time.Time{}),
 				PrimaryVersion: AnyPtr(1),
 				TotalVersions:  AnyPtr(1),
 			},
@@ -383,8 +383,8 @@ func TestTransformKeyToAPI(t *testing.T) {
 				}),
 			},
 			Metadata: &cmkapi.KeyMetadata{
-				CreatedAt: AnyPtr(time.Time{}.Format(time.RFC3339)),
-				UpdatedAt: AnyPtr(time.Time{}.Format(time.RFC3339)),
+				CreatedAt: AnyPtr(time.Time{}),
+				UpdatedAt: AnyPtr(time.Time{}),
 			},
 		}
 	})

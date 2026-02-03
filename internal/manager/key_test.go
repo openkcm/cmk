@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -37,6 +36,7 @@ type KeyManagerSuite struct {
 	repo        repo.Repo
 	ctx         context.Context
 	keyConfigID uuid.UUID
+	keyConfig   *model.KeyConfiguration
 	tenant      string
 }
 
@@ -46,16 +46,6 @@ func TestKeyManagerSuite(t *testing.T) {
 
 func (s *KeyManagerSuite) setup() {
 	db, tenants, dbConf := testutils.NewTestDB(s.T(), testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.Key{},
-			&model.System{},
-			&model.KeyVersion{},
-			&model.TenantConfig{},
-			&model.Certificate{},
-			&model.KeyConfigurationTag{},
-			&model.ImportParams{},
-			&model.KeystoreConfiguration{},
-		},
 		CreateDatabase: true,
 		WithOrbital:    true,
 	})
@@ -66,7 +56,7 @@ func (s *KeyManagerSuite) setup() {
 	dbRepo := sql.NewRepository(s.db)
 	s.repo = dbRepo
 
-	cfg := config.Config{
+	cfg := &config.Config{
 		Plugins: testutils.SetupMockPlugins(
 			testutils.KeyStorePlugin,
 			testutils.KeystoreProviderPlugin,
@@ -77,23 +67,28 @@ func (s *KeyManagerSuite) setup() {
 	ctlg, err := catalog.New(s.ctx, cfg)
 	s.Require().NoError(err)
 
+	cmkAuditor := auditor.New(s.ctx, cfg)
+
 	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, ctlg)
 	certManager := manager.NewCertificateManager(s.ctx, dbRepo, ctlg,
 		&config.Certificates{ValidityDays: config.MinCertificateValidityDays})
-	keyConfigManager := manager.NewKeyConfigManager(dbRepo, certManager, &cfg)
+	userManager := manager.NewUserManager(dbRepo, cmkAuditor)
+	tagManager := manager.NewTagManager(s.repo)
+	keyConfigManager := manager.NewKeyConfigManager(dbRepo, certManager, userManager, tagManager, cmkAuditor, cfg)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(s.ctx, &cfg, dbRepo, ctlg)
+	reconciler, err := eventprocessor.NewCryptoReconciler(s.ctx, cfg, dbRepo, ctlg, nil)
 	s.Require().NoError(err)
 
-	cmkAuditor := auditor.New(s.ctx, &cfg)
 	s.km = manager.NewKeyManager(
-		dbRepo, ctlg, tenantConfigManager, keyConfigManager, certManager, reconciler, cmkAuditor)
+		dbRepo, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, reconciler, cmkAuditor)
 
 	// Create test key configuration once for all tests
 	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 		c.Name = "test-config"
 	})
 	s.keyConfigID = keyConfig.ID
+	s.keyConfig = keyConfig
+	s.ctx = testutils.InjectClientDataIntoContext(s.ctx, uuid.NewString(), []string{s.keyConfig.AdminGroup.IAMIdentifier})
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 
 	testutils.CreateTestEntities(
@@ -218,7 +213,6 @@ func (s *KeyManagerSuite) TestGetOrInitProvider() {
 	})
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestCreate() {
 	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 	s.Require().NoError(err)
@@ -391,6 +385,11 @@ func (s *KeyManagerSuite) TestCreate() {
 		})
 
 		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, keyConfig1, keyConfig2)
+		s.ctx = testutils.InjectClientDataIntoContext(
+			s.ctx,
+			uuid.NewString(),
+			[]string{keyConfig1.AdminGroup.IAMIdentifier, keyConfig2.AdminGroup.IAMIdentifier},
+		)
 
 		_, err := s.km.Create(s.ctx, key1)
 		s.NoError(err)
@@ -417,7 +416,6 @@ func (s *KeyManagerSuite) TestSetFirstKeyPrimary() {
 	})
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestEditableCryptoData() {
 	regionEditable := "region1"
 	regionNonEditable := "region2"
@@ -450,6 +448,7 @@ func (s *KeyManagerSuite) TestEditableCryptoData() {
 		})
 
 		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, kc, sysFailed, sysConnected, key)
+		s.ctx = testutils.InjectClientDataIntoContext(s.ctx, uuid.NewString(), []string{kc.AdminGroup.IAMIdentifier})
 
 		key, err = s.km.Get(s.ctx, key.ID)
 		s.NoError(err)
@@ -481,6 +480,7 @@ func (s *KeyManagerSuite) TestEditableCryptoData() {
 			k.CryptoAccessData = cryptoData
 			k.KeyConfigurationID = kc.ID
 		})
+		s.ctx = testutils.InjectClientDataIntoContext(s.ctx, uuid.NewString(), []string{kc.AdminGroup.IAMIdentifier})
 
 		key, err = s.km.Create(s.ctx, key)
 		s.Require().NoError(err)
@@ -542,7 +542,6 @@ func (s *KeyManagerSuite) TestGet() {
 	}
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestHYOKSync() {
 	hyokKey := s.createTestHYOKKey("get-test-hyok-key")
 
@@ -912,7 +911,6 @@ func (s *KeyManagerSuite) verifyUpdatedKey(err error, tt struct {
 	}
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestDelete() {
 	createdKey := s.createTestSystemManagedKey("delete-test-key")
 	createdPrimaryKey, err := s.km.Create(s.ctx, &model.Key{
@@ -1022,7 +1020,6 @@ func (s *KeyManagerSuite) TestUpdateVersion() {
 	}
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestUpdateKeyPrimary() {
 	t := s.T()
 
@@ -1046,20 +1043,21 @@ func (s *KeyManagerSuite) TestUpdateKeyPrimary() {
 		})
 
 		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, keyConfig, oldPrimaryKey, key, sys)
+		ctx := testutils.InjectClientDataIntoContext(s.ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
-		k, err := s.km.UpdateKey(s.ctx, key.ID, cmkapi.KeyPatch{
+		k, err := s.km.UpdateKey(ctx, key.ID, cmkapi.KeyPatch{
 			IsPrimary: ptr.PointTo(true),
 		})
 		assert.NoError(t, err)
 		assert.True(t, k.IsPrimary)
 
 		resKeyConfig := &model.KeyConfiguration{ID: keyConfig.ID}
-		_, err = s.repo.First(s.ctx, resKeyConfig, *repo.NewQuery())
+		_, err = s.repo.First(ctx, resKeyConfig, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		assert.Equal(t, key.ID, *resKeyConfig.PrimaryKeyID)
 
-		oldK1, err := s.km.Get(s.ctx, oldPrimaryKey.ID)
+		oldK1, err := s.km.Get(ctx, oldPrimaryKey.ID)
 		assert.NoError(t, err)
 		assert.False(t, oldK1.IsPrimary)
 	})
@@ -1084,8 +1082,9 @@ func (s *KeyManagerSuite) TestUpdateKeyPrimary() {
 		})
 
 		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, keyConfig, oldPrimaryKey, key, sys)
+		ctx := testutils.InjectClientDataIntoContext(s.ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
-		k, err := s.km.UpdateKey(s.ctx, key.ID, cmkapi.KeyPatch{
+		k, err := s.km.UpdateKey(ctx, key.ID, cmkapi.KeyPatch{
 			IsPrimary: ptr.PointTo(true),
 		})
 		assert.NoError(t, err)
@@ -1115,7 +1114,7 @@ func (s *KeyManagerSuite) TestUpdateKeyPrimary() {
 			k.Name = uuid.NewString()
 			k.IsPrimary = false
 			k.State = string(cmkapi.KeyStateDISABLED)
-			k.KeyConfigurationID = uuid.New()
+			k.KeyConfigurationID = s.keyConfigID
 		})
 		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, key1)
 		_, err := s.km.UpdateKey(s.ctx, key1.ID, cmkapi.KeyPatch{
@@ -1128,7 +1127,7 @@ func (s *KeyManagerSuite) TestUpdateKeyPrimary() {
 		key1 := testutils.NewKey(func(k *model.Key) {
 			k.Name = uuid.NewString()
 			k.IsPrimary = true
-			k.KeyConfigurationID = uuid.New()
+			k.KeyConfigurationID = s.keyConfigID
 		})
 		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, key1)
 		_, err := s.km.UpdateKey(s.ctx, key1.ID, cmkapi.KeyPatch{
@@ -1168,7 +1167,6 @@ func (s *KeyManagerSuite) createEnabledBYOKKey() *model.Key {
 	return byokEnabledKey
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestGetImportParams() {
 	cachedPublicKeyFromDB := "mock-public-key-from-database"
 	fetchedPublicKeyFromProvider := "mock-public-key-from-provider"
@@ -1243,7 +1241,6 @@ func (s *KeyManagerSuite) TestGetImportParams() {
 	})
 }
 
-//nolint:funlen
 func (s *KeyManagerSuite) TestImportKeyMaterial() {
 	t := s.T()
 
@@ -1393,8 +1390,8 @@ func (s *KeyManagerSuite) TestFillKeystorePool() {
 	s.NoError(err)
 
 	// Verify that keystore pool has been filled
-	keystoreConfigs := &[]model.KeystoreConfiguration{}
-	count, err := s.repo.List(s.ctx, model.KeystoreConfiguration{}, keystoreConfigs, *repo.NewQuery())
+	keystorePool := &[]model.Keystore{}
+	count, err := s.repo.List(s.ctx, model.Keystore{}, keystorePool, *repo.NewQuery())
 	s.NoError(err)
 
 	s.Equal(2, count)

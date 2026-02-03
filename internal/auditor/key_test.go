@@ -2,147 +2,157 @@ package auditor_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/collector/pdata/plog"
+
+	otlpaudit "github.com/openkcm/common-sdk/pkg/otlp/audit"
 
 	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
-func createTestAuditor(endpoint string) *auditor.Auditor {
-	cfg := config.Config{
-		BaseConfig: commoncfg.BaseConfig{Audit: commoncfg.Audit{Endpoint: endpoint}},
-	}
-
-	return auditor.New(context.Background(), &cfg)
-}
-
-func generateTestCmkID() string {
-	return uuid.New().String()
-}
-
-func getCmkLifeCycleAuditTestCases(methodName string) []struct {
-	name                    string
-	setupCtx                func() context.Context
-	cmkID                   string
-	expectErr               bool
-	errType                 error
-	mockCollectorStatusCode int
+func getCmkLifeCycleAuditTestCases(eventType string) []struct {
+	name       string
+	cmkID      string
+	tenantID   string
+	expErr     error
+	statusCode int
 } {
 	return []struct {
-		name      string
-		setupCtx  func() context.Context
-		cmkID     string
-		expectErr bool
-		errType   error
-
-		mockCollectorStatusCode int
+		name       string
+		cmkID      string
+		tenantID   string
+		expErr     error
+		statusCode int
 	}{
 		{
-			name:                    "valid " + methodName + " audit log",
-			setupCtx:                createTestContext,
-			cmkID:                   generateTestCmkID(),
-			expectErr:               false,
-			mockCollectorStatusCode: http.StatusOK,
+			name:       "valid " + eventType + " audit log",
+			cmkID:      generateTestCmkID(),
+			tenantID:   uuid.NewString(),
+			statusCode: http.StatusOK,
 		},
 		{
-			name:                    "invalid context",
-			setupCtx:                context.Background,
-			cmkID:                   generateTestCmkID(),
-			expectErr:               true,
-			errType:                 auditor.ErrCreateEventMetadata,
-			mockCollectorStatusCode: http.StatusOK,
+			name:       "missing tenant ID in context",
+			cmkID:      generateTestCmkID(),
+			tenantID:   "",
+			statusCode: http.StatusOK,
+			expErr:     auditor.ErrCreateEventMetadata,
 		},
 		{
-			name:                    "empty cmkID",
-			setupCtx:                createTestContext,
-			cmkID:                   "",
-			expectErr:               true,
-			errType:                 auditor.ErrCreateEvent,
-			mockCollectorStatusCode: http.StatusOK,
+			name:       "empty cmkID",
+			cmkID:      "",
+			tenantID:   uuid.NewString(),
+			statusCode: http.StatusOK,
+			expErr:     auditor.ErrCreateEvent,
 		},
 		{
-			name:                    "collector server error",
-			setupCtx:                createTestContext,
-			cmkID:                   generateTestCmkID(),
-			expectErr:               true,
-			errType:                 auditor.ErrSendEvent,
-			mockCollectorStatusCode: http.StatusInternalServerError,
+			name:       "collector server error",
+			cmkID:      generateTestCmkID(),
+			tenantID:   uuid.NewString(),
+			statusCode: http.StatusInternalServerError,
+			expErr:     auditor.ErrSendEvent,
 		},
 	}
 }
 
 // Generic test function for all CMK keys audit methods
 func testCmkAuditMethod(
-	t *testing.T, methodName string,
+	t *testing.T, eventType string,
 	auditMethod func(*auditor.Auditor, context.Context, string) error,
 ) {
 	t.Helper()
 
-	tests := getCmkLifeCycleAuditTestCases(methodName)
+	tests := getCmkLifeCycleAuditTestCases(eventType)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockCollectorServer := httptest.NewServer(
-				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-					w.WriteHeader(tt.mockCollectorStatusCode)
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					body, err := io.ReadAll(r.Body)
+					assert.NoError(t, err)
+
+					unmarshaler := plog.JSONUnmarshaler{}
+					logs, err := unmarshaler.UnmarshalLogs(body)
+					assert.NoError(t, err)
+
+					eventName, err := getEventName(&logs)
+					assert.NoError(t, err)
+					assert.Equal(t, tt.cmkID, eventName)
+
+					attrs, err := getAttributes(&logs)
+					assert.NoError(t, err)
+					assert.Equal(t, eventType, attrs[otlpaudit.EventTypeKey])
+					assert.Equal(t, tt.tenantID, attrs[otlpaudit.TenantIDKey])
+					assert.Equal(t, tt.cmkID, attrs[otlpaudit.ObjectIDKey])
+					assert.Equal(t, constants.SystemUser.String(), attrs[otlpaudit.UserInitiatorIDKey])
+
+					w.WriteHeader(tt.statusCode)
 				}))
-			defer mockCollectorServer.Close()
+			defer server.Close()
 
-			testAuditor := createTestAuditor(mockCollectorServer.URL)
-			err := auditMethod(testAuditor, tt.setupCtx(), tt.cmkID)
+			testAuditor := createTestAuditor(server.URL)
 
-			if tt.expectErr {
+			ctx := cmkcontext.CreateTenantContext(t.Context(), tt.tenantID)
+			err := auditMethod(testAuditor, ctx, tt.cmkID)
+
+			if tt.expErr != nil {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, tt.expErr)
 
-				if tt.errType != nil {
-					assert.ErrorIs(t, err, tt.errType)
-				}
-			} else {
-				assert.NoError(t, err)
+				return
 			}
+
+			assert.NoError(t, err)
 		})
 	}
 }
 
 func TestAuditor_SendCmkCreateAuditLog(t *testing.T) {
-	testCmkAuditMethod(t, "cmk create", func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
+	testCmkAuditMethod(t, otlpaudit.CmkCreateEvent, func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
 		return a.SendCmkCreateAuditLog(ctx, cmkID)
 	})
 }
 
 func TestAuditor_SendCmkDeleteAuditLog(t *testing.T) {
-	testCmkAuditMethod(t, "cmk delete", func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
+	testCmkAuditMethod(t, otlpaudit.CmkDeleteEvent, func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
 		return a.SendCmkDeleteAuditLog(ctx, cmkID)
 	})
 }
 
+func TestAuditor_SendCmkDetachAuditLog(t *testing.T) {
+	testCmkAuditMethod(t, otlpaudit.CmkDetachEvent, func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
+		return a.SendCmkDetachAuditLog(ctx, cmkID)
+	})
+}
+
 func TestAuditor_SendCmkEnableAuditLog(t *testing.T) {
-	testCmkAuditMethod(t, "cmk enable", func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
+	testCmkAuditMethod(t, otlpaudit.CmkEnableEvent, func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
 		return a.SendCmkEnableAuditLog(ctx, cmkID)
 	})
 }
 
 func TestAuditor_SendCmkDisableAuditLog(t *testing.T) {
-	testCmkAuditMethod(t, "cmk disable", func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
+	testCmkAuditMethod(t, otlpaudit.CmkDisableEvent, func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
 		return a.SendCmkDisableAuditLog(ctx, cmkID)
 	})
 }
 
 func TestAuditor_SendCmkRotateAuditLog(t *testing.T) {
-	testCmkAuditMethod(t, "cmk rotate", func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
+	testCmkAuditMethod(t, otlpaudit.CmkRotateEvent, func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
 		return a.SendCmkRotateAuditLog(ctx, cmkID)
 	})
 }
 
 func TestAuditor_SendCmkAvailableAuditLog(t *testing.T) {
 	testCmkAuditMethod(t,
-		"cmk available",
+		otlpaudit.CmkAvailableEvent,
 		func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
 			return a.SendCmkAvailableAuditLog(ctx, cmkID)
 		})
@@ -150,7 +160,7 @@ func TestAuditor_SendCmkAvailableAuditLog(t *testing.T) {
 
 func TestAuditor_SendCmkUnavailableAuditLog(t *testing.T) {
 	testCmkAuditMethod(t,
-		"cmk unavailable",
+		otlpaudit.CmkUnavailableEvent,
 		func(a *auditor.Auditor, ctx context.Context, cmkID string) error {
 			return a.SendCmkUnavailableAuditLog(ctx, cmkID)
 		})

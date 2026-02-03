@@ -96,7 +96,7 @@ func TestOdata_ForSqlInjection(t *testing.T) {
 			assert.Equal(t, tt.expectedError, err)
 
 			if err == nil {
-				assert.Equal(t, tt.expectedQuery, fieldMap.GetQuery())
+				assert.Equal(t, tt.expectedQuery, fieldMap.GetQuery(t.Context()))
 			}
 		})
 	}

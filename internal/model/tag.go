@@ -1,28 +1,20 @@
 package model
 
-import "github.com/google/uuid"
+import (
+	"encoding/json"
 
-type BaseTag struct {
-	ID    uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Value string    `gorm:"type:varchar(255);not null;unique"`
+	"github.com/google/uuid"
+)
+
+type Tag struct {
+	ID     uuid.UUID       `gorm:"type:uuid;primaryKey"` // ID of the Item
+	Values json.RawMessage `gorm:"type:jsonb"`
 }
 
-//nolint:recvcheck
-type KeyConfigurationTag struct {
-	BaseTag
-
-	KeyConfigurations []KeyConfiguration `gorm:"many2many:keyconfigurations_tags;"`
+func (Tag) TableName() string {
+	return "tags"
 }
 
-// TableName returns the table name for Key
-func (KeyConfigurationTag) TableName() string {
-	return "key_configuration_tags"
-}
-
-func (KeyConfigurationTag) IsSharedModel() bool {
+func (Tag) IsSharedModel() bool {
 	return false
-}
-
-func (kct *KeyConfigurationTag) SetTag(tag BaseTag) {
-	kct.BaseTag = tag
 }

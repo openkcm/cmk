@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
@@ -30,28 +29,11 @@ const (
 
 type SystemInformationSuite struct {
 	suite.Suite
-
-	dbConfig config.Database
 }
 
-func (s *SystemInformationSuite) SetupSuite() {
-	cfg := &config.Config{
-		Database: integrationutils.DB,
-	}
-	integrationutils.StartPostgresSQL(s.T(), &cfg.Database)
-	s.dbConfig = cfg.Database
-}
-
-//nolint:funlen
 func (s *SystemInformationSuite) TestUpdateSystems() {
 	t := s.T()
-	db, tenants, _ := testutils.NewTestDB(
-		t,
-		testutils.TestDBConfig{Models: []driver.TenantTabler{
-			&model.System{}, &model.SystemProperty{}, model.KeyConfiguration{},
-		}},
-		testutils.WithDatabase(s.dbConfig),
-	)
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
 	repository := sql.NewRepository(db)
@@ -68,7 +50,7 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 
 	clg, err := catalog.New(
 		t.Context(),
-		config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
+		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
 	assert.NoError(t, err)
 
@@ -104,7 +86,6 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 		sys, err = repo.GetSystemByIDWithProperties(ctx, repository, sys.ID, repo.NewQuery())
 		assert.NoError(t, err)
 		assert.True(t, ok)
-		assert.Equal(t, "Key Management Service Kernel (CSEK)", sys.Properties[SystemRole])
 		assert.Equal(t, sys.Properties[SystemName],
 			fmt.Sprintf("ExternalName%d", i))
 		assert.Equal(t, sys.Properties[SystemRoleID],
@@ -116,16 +97,9 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 	}
 }
 
-//nolint:funlen
 func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 	t := s.T()
-	db, tenants, _ := testutils.NewTestDB(
-		t,
-		testutils.TestDBConfig{Models: []driver.TenantTabler{
-			&model.System{}, model.SystemProperty{}, model.KeyConfiguration{},
-		}},
-		testutils.WithDatabase(s.dbConfig),
-	)
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
 	repository := sql.NewRepository(db)
@@ -152,7 +126,7 @@ func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 
 	clg, err := catalog.New(
 		t.Context(),
-		config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
+		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
 	assert.NoError(t, err)
 
@@ -180,7 +154,6 @@ func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 
 	sys, err = repo.GetSystemByIDWithProperties(ctx, repository, sys.ID, repo.NewQuery())
 	assert.NoError(t, err)
-	assert.Equal(t, "Key Management Service Kernel (CSEK)", sys.Properties[SystemRole])
 	assert.Equal(t, sys.Properties[SystemName],
 		fmt.Sprintf("ExternalName%d", systemNumber))
 	assert.Equal(t, sys.Properties[SystemRoleID],

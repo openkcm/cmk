@@ -11,7 +11,8 @@ import (
 )
 
 func (o *TenantOperator) HandleCreateTenant(ctx context.Context, req orbital.HandlerRequest) (
-	orbital.HandlerResponse, error) {
+	orbital.HandlerResponse, error,
+) {
 	return o.handleCreateTenant(ctx, req)
 }
 

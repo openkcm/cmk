@@ -22,8 +22,10 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/controllers/cmk"
 	"github.com/openkcm/cmk/internal/daemon"
+	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/handlers"
 	"github.com/openkcm/cmk/internal/middleware"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -42,7 +44,7 @@ type TestAPIServerConfig struct {
 // NewAPIServer creates a new API server with the given database connection
 func NewAPIServer(
 	tb testing.TB,
-	db *multitenancy.DB,
+	dbCon *multitenancy.DB,
 	testCfg TestAPIServerConfig,
 ) cmkapi.ServeMux {
 	tb.Helper()
@@ -51,12 +53,14 @@ func NewAPIServer(
 
 	cfg.Plugins = SetupMockPlugins(testCfg.Plugins...)
 	cfg.Certificates.RootCertURL = TestCertURL
-	cfg.Database = TestDB
+	if cfg.Database == (config.Database{}) {
+		cfg.Database = TestDB
+	}
 
-	r := sql.NewRepository(db)
+	r := sql.NewRepository(dbCon)
 
 	var (
-		factory *clients.Factory
+		factory clients.Factory
 		err     error
 	)
 
@@ -80,14 +84,20 @@ func NewAPIServer(
 		assert.NoError(tb, factory.Close())
 	})
 
-	controller := cmk.NewAPIController(tb.Context(), r, cfg, factory)
+	migrator, err := db.NewMigrator(r, &cfg)
+	assert.NoError(tb, err)
 
-	return startAPIServer(controller)
+	controller := cmk.NewAPIController(tb.Context(), r, &cfg, factory, migrator)
+
+	return startAPIServer(tb, controller)
 }
 
 func startAPIServer(
+	tb testing.TB,
 	controller *cmk.APIController,
 ) cmkapi.ServeMux {
+	tb.Helper()
+
 	strictController := cmkapi.NewStrictHandlerWithOptions(
 		controller,
 		[]cmkapi.StrictMiddlewareFunc{},
@@ -97,7 +107,7 @@ func startAPIServer(
 		},
 	)
 
-	r := http.NewServeMux()
+	r := daemon.NewServeMux(constants.BasePath)
 
 	openapi3filter.RegisterBodyDecoder(
 		"application/merge-patch+json",
@@ -109,7 +119,7 @@ func startAPIServer(
 	cmkapi.HandlerWithOptions(strictController,
 		cmkapi.StdHTTPServerOptions{
 			BaseRouter:       r,
-			BaseURL:          "/cmk/v1/{tenant}",
+			BaseURL:          constants.BasePath,
 			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
 			Middlewares: []cmkapi.MiddlewareFunc{
 				md.OapiRequestValidatorWithOptions(swagger, &md.Options{

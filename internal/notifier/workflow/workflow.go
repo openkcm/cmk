@@ -22,6 +22,7 @@ import (
 var workflowNotificationTemplate string
 
 type Creator struct {
+	cfg      *config.Config
 	template *template.Template
 }
 
@@ -45,20 +46,19 @@ func (w NotificationData) GetType() string {
 
 // NotificationTemplateData contains all data needed for the HTML template
 type NotificationTemplateData struct {
-	HeaderTitle  string
-	Message      string
-	InfoTitle    string
-	WorkflowID   string
-	TenantID     string
-	TenantRegion string
-	ActionType   string
-	ArtifactID   string
-	ArtifactType string
-	ActionText   string
-	Parameters   string
+	HeaderTitle         string
+	Message             string
+	InfoTitle           string
+	WorkflowURL         string
+	TenantID            string
+	TenantRegion        string
+	Landscape           string
+	ActionText          string
+	InitiatorName       string
+	WorkflowDescription string
 }
 
-func NewWorkflowCreator() (*Creator, error) {
+func NewWorkflowCreator(config *config.Config) (*Creator, error) {
 	tmpl, err := template.New("workflow_notification").Parse(workflowNotificationTemplate)
 	if err != nil {
 		return nil, errs.Wrap(ErrParsingTemplate, err)
@@ -66,6 +66,7 @@ func NewWorkflowCreator() (*Creator, error) {
 
 	return &Creator{
 		template: tmpl,
+		cfg:      config,
 	}, nil
 }
 
@@ -93,6 +94,8 @@ func (w *Creator) createWorkflowCreatedTask(data NotificationData, recipients []
 		data.Workflow.ArtifactType,
 	)
 
+	subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
+
 	message := "A new workflow requires your approval."
 	actionText := "Action Required: Please review and approve or deny this workflow in the CMK portal."
 
@@ -106,6 +109,8 @@ func (w *Creator) createWorkflowApprovedTask(data NotificationData, recipients [
 		data.Workflow.ArtifactType,
 	)
 
+	subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
+
 	message := "Your workflow has been approved and is now being processed."
 	actionText := "You can track the progress in the CMK portal."
 
@@ -118,6 +123,8 @@ func (w *Creator) createWorkflowRejectedTask(data NotificationData, recipients [
 		data.Workflow.ActionType,
 		data.Workflow.ArtifactType,
 	)
+
+	subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
 
 	message := "Your workflow has been rejected. Please review and resubmit if necessary."
 	actionText := "Review the rejection reason and make necessary changes in the CMK portal."
@@ -135,6 +142,7 @@ func (w *Creator) createWorkflowConfirmedTask(data NotificationData, recipients 
 			data.Workflow.ActionType,
 			data.Workflow.ArtifactType,
 		)
+		subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
 		message = "Your workflow has been confirmed and completed successfully."
 		actionText = "No further action required. You can view the details in the CMK portal."
 
@@ -144,6 +152,7 @@ func (w *Creator) createWorkflowConfirmedTask(data NotificationData, recipients 
 			data.Workflow.ActionType,
 			data.Workflow.ArtifactType,
 		)
+		subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
 		message = "Your workflow has been confirmed but failed during execution." +
 			" Please check the details and take necessary actions."
 		actionText = "Review the failure reason and contact support if needed." +
@@ -154,6 +163,7 @@ func (w *Creator) createWorkflowConfirmedTask(data NotificationData, recipients 
 			data.Workflow.ActionType,
 			data.Workflow.ArtifactType,
 		)
+		subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
 		message = "Your workflow has been confirmed."
 		actionText = "Please check the CMK portal for more details."
 	}
@@ -168,6 +178,8 @@ func (w *Creator) createWorkflowRevokedTask(data NotificationData, recipients []
 		data.Workflow.ArtifactType,
 	)
 
+	subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
+
 	message := "Your workflow has been revoked and is no longer active."
 	actionText := "Please contact your administrator if you have questions about this revocation."
 
@@ -177,7 +189,8 @@ func (w *Creator) createWorkflowRevokedTask(data NotificationData, recipients []
 func (w *Creator) createNotificationTask(
 	data NotificationData,
 	recipients []string,
-	subject, message, actionText string) (*asynq.Task, error) {
+	subject, message, actionText string,
+) (*asynq.Task, error) {
 	body, err := w.createHTMLBody(data, message, actionText)
 	if err != nil {
 		return nil, err
@@ -198,18 +211,25 @@ func (w *Creator) createNotificationTask(
 }
 
 func (w *Creator) createHTMLBody(data NotificationData, message, actionText string) (string, error) {
+	workflowURL := ""
+	baseURL := w.cfg.Landscape.UIBaseUrl
+	if baseURL != "" {
+		workflowURL = fmt.Sprintf("%s/%s/tasks/%s", baseURL, data.Tenant.ID, data.Workflow.ID)
+	}
+
+	workflowDescription := data.Workflow.Description()
+
 	templateData := NotificationTemplateData{
-		HeaderTitle:  "CMK Workflow Notification",
-		Message:      message,
-		InfoTitle:    "Workflow Information",
-		WorkflowID:   data.Workflow.ID.String(),
-		TenantID:     data.Tenant.ID,
-		TenantRegion: data.Tenant.Region,
-		ActionType:   data.Workflow.ActionType,
-		ArtifactID:   data.Workflow.ArtifactID.String(),
-		ArtifactType: data.Workflow.ArtifactType,
-		ActionText:   actionText,
-		Parameters:   data.Workflow.Parameters,
+		HeaderTitle:         "CMK Workflow Notification",
+		Message:             message,
+		InfoTitle:           "Workflow Description",
+		WorkflowURL:         workflowURL,
+		TenantID:            data.Tenant.ID,
+		TenantRegion:        data.Tenant.Region,
+		Landscape:           w.cfg.Landscape.Name,
+		ActionText:          actionText,
+		InitiatorName:       data.Workflow.InitiatorName,
+		WorkflowDescription: workflowDescription,
 	}
 
 	var buf bytes.Buffer
@@ -220,4 +240,13 @@ func (w *Creator) createHTMLBody(data NotificationData, message, actionText stri
 	}
 
 	return buf.String(), nil
+}
+
+// buildSubjectWithArtifactName appends the artifact name to the subject if it's not empty
+func (w *Creator) buildSubjectWithArtifactName(subject string, workflow model.Workflow) string {
+	artifactName := workflow.GetArtifactName()
+	if artifactName != "" {
+		subject += fmt.Sprintf(": '%s'", artifactName)
+	}
+	return subject
 }

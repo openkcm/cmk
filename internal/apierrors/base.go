@@ -14,6 +14,7 @@ const (
 	ParamsErr         = "PARAMS_ERROR"
 	RequiredHeaderErr = "REQUIRED_HEADER_ERROR"
 	RequiredParamErr  = "REQUIRED_PARAM_ERROR"
+	ForbiddenErr      = "FORBIDDEN"
 )
 
 func InternalServerErrorMessage() cmkapi.ErrorMessage {
@@ -40,9 +41,9 @@ func OAPIValidatorErrorMessage(message string, code int) cmkapi.ErrorMessage {
 			Message: message,
 			Status:  code,
 		}}
-	case http.StatusUnauthorized:
+	case http.StatusForbidden:
 		return cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
-			Code:    UnauthorizedErr,
+			Code:    ForbiddenErr,
 			Message: message,
 			Status:  code,
 		}}

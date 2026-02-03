@@ -18,7 +18,11 @@ type TestPlugin struct {
 var _ systeminformationv1.SystemInformationServiceServer = (*TestPlugin)(nil)
 
 func (p *TestPlugin) Configure(_ context.Context, _ *configv1.ConfigureRequest) (*configv1.ConfigureResponse, error) {
-	return &configv1.ConfigureResponse{}, nil
+	var buildInfo = "{}"
+
+	return &configv1.ConfigureResponse{
+		BuildInfo: &buildInfo,
+	}, nil
 }
 
 func (p *TestPlugin) Get(_ context.Context, _ *systeminformationv1.GetRequest) (

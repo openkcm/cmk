@@ -22,9 +22,11 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -57,6 +59,7 @@ type KeyManager struct {
 
 	repo             repo.Repo
 	keyConfigManager *KeyConfigManager
+	user             User
 	reconciler       *eventprocessor.CryptoReconciler
 	cmkAuditor       *auditor.Auditor
 }
@@ -66,6 +69,7 @@ func NewKeyManager(
 	catalog *plugincatalog.Catalog,
 	tenantConfigs *TenantConfigManager,
 	keyConfigManager *KeyConfigManager,
+	user User,
 	certManager *CertificateManager,
 	reconciler *eventprocessor.CryptoReconciler,
 	cmkAuditor *auditor.Auditor,
@@ -80,6 +84,7 @@ func NewKeyManager(
 		},
 		repo:             repo,
 		keyConfigManager: keyConfigManager,
+		user:             user,
 		reconciler:       reconciler,
 		cmkAuditor:       cmkAuditor,
 	}
@@ -89,10 +94,15 @@ func (km *KeyManager) Create(
 	ctx context.Context,
 	key *model.Key,
 ) (*model.Key, error) {
-	ctx = log.InjectKey(ctx, key)
+	ctx = model.LogInjectKey(ctx, key)
+	_, err := km.user.HasKeyAccess(ctx, authz.ActionCreate, key.KeyConfigurationID)
+	if err != nil {
+		return nil, err
+	}
+
 	keyConfig := &model.KeyConfiguration{ID: key.KeyConfigurationID}
 
-	_, err := km.repo.First(
+	_, err = km.repo.First(
 		ctx,
 		keyConfig,
 		*repo.NewQuery(),
@@ -146,6 +156,11 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 		return nil, errs.Wrap(ErrGetKeyDB, err)
 	}
 
+	_, err = km.user.HasKeyAccess(ctx, authz.ActionRead, key.KeyConfigurationID)
+	if err != nil {
+		return nil, err
+	}
+
 	switch key.KeyType {
 	case constants.KeyTypeSystemManaged, constants.KeyTypeBYOK:
 	case constants.KeyTypeHYOK:
@@ -177,7 +192,12 @@ func (km *KeyManager) GetKeys(
 		Preload(repo.Preload{"KeyVersions"})
 
 	if keyConfigID != nil {
-		_, err := km.keyConfigManager.GetKeyConfigurationByID(ctx, *keyConfigID)
+		_, err := km.user.HasKeyAccess(ctx, authz.ActionRead, *keyConfigID)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		_, err = km.keyConfigManager.GetKeyConfigurationByID(ctx, *keyConfigID)
 		if err != nil {
 			return nil, 0, errs.Wrap(ErrKeyConfigurationNotFound, err)
 		}
@@ -207,7 +227,7 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 		return nil, errs.Wrap(ErrGetKeyDB, err)
 	}
 
-	ctx = log.InjectKey(ctx, key)
+	ctx = model.LogInjectKey(ctx, key)
 
 	err = km.handleCryptoDetailsUpdate(ctx, keyPatch, key)
 	if err != nil {
@@ -220,7 +240,7 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 
 	enablementUpdated := copyFieldsToModelKey(keyPatch, key)
 
-	err = km.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
 		if keyPatch.IsPrimary != nil {
 			if key.IsPrimary && !*keyPatch.IsPrimary {
 				return ErrPrimaryKeyUnmark
@@ -234,7 +254,7 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 			key.IsPrimary = *keyPatch.IsPrimary
 		}
 
-		_, err := r.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
+		_, err := km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
 		if err != nil {
 			return errs.Wrap(ErrUpdateKeyDB, err)
 		}
@@ -278,11 +298,11 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 		return err
 	}
 
-	err = km.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
 		ck := repo.NewCompositeKey().
 			Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), keyID)
 
-		_, err := r.Delete(
+		_, err := km.repo.Delete(
 			ctx,
 			&model.KeyVersion{KeyID: keyID},
 			*repo.NewQuery().
@@ -294,7 +314,7 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 
 		key := &model.Key{ID: keyID}
 
-		_, err = r.Delete(ctx, key, *repo.NewQuery())
+		_, err = km.repo.Delete(ctx, key, *repo.NewQuery())
 		if err != nil {
 			return errs.Wrap(ErrDeleteKeyDB, err)
 		}
@@ -372,13 +392,13 @@ func (km *KeyManager) ImportKeyMaterial(
 		return nil, err
 	}
 
-	err = km.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
-		_, innerErr := r.Patch(ctx, key, *repo.NewQuery())
+	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
+		_, innerErr := km.repo.Patch(ctx, key, *repo.NewQuery())
 		if innerErr != nil {
 			return errs.Wrap(ErrUpdateKeyDB, innerErr)
 		}
 
-		_, innerErr = r.Delete(ctx, &model.ImportParams{KeyID: keyID}, *repo.NewQuery())
+		_, innerErr = km.repo.Delete(ctx, &model.ImportParams{KeyID: keyID}, *repo.NewQuery())
 		if innerErr != nil {
 			return errs.Wrap(ErrDeleteImportParamsDB, innerErr)
 		}
@@ -405,6 +425,29 @@ func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 			if err != nil {
 				continue
 			}
+		}
+
+		return nil
+	})
+}
+
+func (km *KeyManager) Detatch(ctx context.Context, key *model.Key) error {
+	return km.repo.Transaction(ctx, func(ctx context.Context) error {
+		key.State = string(cmkapi.KeyStateDETATCHED)
+
+		_, err := km.repo.Patch(ctx, key, *repo.NewQuery())
+		if err != nil {
+			return err
+		}
+
+		err = km.sendDetatchEvent(ctx, key)
+		if err != nil {
+			return err
+		}
+
+		err = km.cmkAuditor.SendCmkDetachAuditLog(ctx, key.ID.String())
+		if err != nil {
+			log.Error(ctx, "Failed to send detatch log for CMK key", err)
 		}
 
 		return nil
@@ -542,16 +585,16 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 }
 
 func (km *KeyManager) createKey(ctx context.Context, key *model.Key) error {
-	err := km.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
+	err := km.repo.Transaction(ctx, func(ctx context.Context) error {
 		// Create Key
-		err := r.Create(ctx, key)
+		err := km.repo.Create(ctx, key)
 		if err != nil {
 			return errs.Wrap(ErrCreateKeyDB, err)
 		}
 
 		// Create KeyVersion
 		if key.KeyType == constants.KeyTypeSystemManaged {
-			err = r.Create(ctx, &model.KeyVersion{
+			err = km.repo.Create(ctx, &model.KeyVersion{
 				ExternalID: *key.NativeID,
 				NativeID:   key.NativeID,
 				KeyID:      key.ID,
@@ -937,8 +980,8 @@ func (km *KeyManager) fetchImportParams(ctx context.Context, key *model.Key) (*m
 		return nil, err
 	}
 	// Set ImportParams in DB
-	err = km.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
-		err = r.Set(ctx, importParams)
+	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
+		err = km.repo.Set(ctx, importParams)
 		if err != nil {
 			return errs.Wrap(ErrSetImportParamsDB, err)
 		}
@@ -1024,7 +1067,8 @@ func (km *KeyManager) sendSystemSwitchEvents(ctx context.Context, key *model.Key
 		repo.DefaultLimit,
 		func(systems []*model.System) error {
 			for _, s := range systems {
-				_, err := km.reconciler.SystemSwitch(ctx, s, key.ID.String(), keyConfig.PrimaryKeyID.String())
+				_, err := km.reconciler.SystemSwitch(
+					ctx, s, key.ID.String(), keyConfig.PrimaryKeyID.String(), constants.KeyActionSetPrimary)
 				if err != nil {
 					return err
 				}
@@ -1066,7 +1110,7 @@ func (km *KeyManager) setPrimaryKey(ctx context.Context, key *model.Key) error {
 func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) error {
 	oldKeyState := key.State
 
-	ctx = log.InjectKey(ctx, key)
+	ctx = model.LogInjectKey(ctx, key)
 
 	keyResp, err := km.getHYOKKeySync(ctx, key)
 	if err != nil {
@@ -1082,8 +1126,8 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 	}
 
 	// Save the updated key back to the database
-	err = km.repo.Transaction(ctx, func(ctx context.Context, r repo.Repo) error {
-		_, txErr := r.Patch(ctx, key, *repo.NewQuery())
+	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
+		_, txErr := km.repo.Patch(ctx, key, *repo.NewQuery())
 		if txErr != nil {
 			return txErr
 		}
@@ -1167,47 +1211,48 @@ func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keys
 }
 
 func (km *KeyManager) sendEnableEvent(ctx context.Context, key *model.Key) error {
-	if km.reconciler == nil {
-		return errs.Wrapf(ErrEventSendingFailed, "reconciler is not initialized")
-	}
+	return km.reconciler.SendEvent(ctx, eventprocessor.Event{
+		Name: proto.TaskType_KEY_ENABLE.String(),
+		Event: func(ctx context.Context) (orbital.Job, error) {
+			job, err := km.reconciler.KeyEnable(ctx, key.ID.String())
+			if errors.Is(err, orbital.ErrJobAlreadyExists) {
+				log.Info(ctx, "Key enable event already exists", slog.String("jobId", job.ID.String()))
+				return job, nil
+			}
 
-	job, err := km.reconciler.KeyEnable(ctx, key.ID.String())
-	if err != nil {
-		if errors.Is(err, orbital.ErrJobAlreadyExists) {
-			log.Info(ctx, "Key enable event already exists", slog.String("JobID", job.ID.String()))
-			return nil
-		}
-
-		log.Error(ctx, "Failed to send key enable event", err)
-
-		return errs.Wrap(ErrEventSendingFailed, err)
-	}
-
-	log.Info(ctx, "Key enable event sent", slog.String("JobID", job.ID.String()))
-
-	return nil
+			return job, err
+		},
+	})
 }
 
 func (km *KeyManager) sendDisableEvent(ctx context.Context, key *model.Key) error {
-	if km.reconciler == nil {
-		return errs.Wrapf(ErrEventSendingFailed, "reconciler is not initialized")
-	}
+	return km.reconciler.SendEvent(ctx, eventprocessor.Event{
+		Name: proto.TaskType_KEY_DISABLE.String(),
+		Event: func(ctx context.Context) (orbital.Job, error) {
+			job, err := km.reconciler.KeyDisable(ctx, key.ID.String())
+			if errors.Is(err, orbital.ErrJobAlreadyExists) {
+				log.Info(ctx, "Key disable event already exists", slog.String("jobId", job.ID.String()))
+				return job, nil
+			}
 
-	job, err := km.reconciler.KeyDisable(ctx, key.ID.String())
-	if err != nil {
-		if errors.Is(err, orbital.ErrJobAlreadyExists) {
-			log.Info(ctx, "Key enable event already exists", slog.String("JobID", job.ID.String()))
-			return nil
-		}
+			return job, err
+		},
+	})
+}
 
-		log.Error(ctx, "Failed to send key disable event", err)
+func (km *KeyManager) sendDetatchEvent(ctx context.Context, key *model.Key) error {
+	return km.reconciler.SendEvent(ctx, eventprocessor.Event{
+		Name: proto.TaskType_KEY_DETACH.String(),
+		Event: func(ctx context.Context) (orbital.Job, error) {
+			job, err := km.reconciler.KeyDetach(ctx, key.ID.String())
+			if errors.Is(err, orbital.ErrJobAlreadyExists) {
+				log.Info(ctx, "Key detatch event already exists", slog.String("jobId", job.ID.String()))
+				return job, nil
+			}
 
-		return errs.Wrap(ErrEventSendingFailed, err)
-	}
-
-	log.Info(ctx, "Key disable event sent", slog.String("JobID", job.ID.String()))
-
-	return nil
+			return job, err
+		},
+	})
 }
 
 func (km *KeyManager) getKeyStateOnSyncError(ctx context.Context, key *model.Key, err error) string {

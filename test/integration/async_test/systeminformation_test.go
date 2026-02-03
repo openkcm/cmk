@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async"
@@ -39,10 +38,7 @@ func TestSchedulerSystemRefresh(t *testing.T) {
 
 	SetupTestContainers(t, testConfig)
 
-	testDB, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&model.System{}, &model.SystemProperty{},
-			&model.KeyConfiguration{}},
-	}, testutils.WithDatabase(testConfig.Database))
+	testDB, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
 	repository := sql.NewRepository(testDB)
@@ -87,11 +83,6 @@ func TestSchedulerSystemRefresh(t *testing.T) {
 
 	sys, err = repo.GetSystemByIDWithProperties(ctx, repository, sys.ID, repo.NewQuery())
 	assert.NoError(t, err)
-	assert.Equal(
-		t,
-		"Key Management Service Kernel (CSEK)",
-		sys.Properties[SystemRole],
-	)
 	assert.Equal(
 		t,
 		fmt.Sprintf("ExternalName%d", id),

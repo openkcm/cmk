@@ -28,9 +28,11 @@ func (errorPlugin) Initialize(_ *gorm.DB) error {
 
 // TestStartDBConnectionPlugins tests the StartDBConnectionPlugins function
 func TestStartDBConnectionPlugins(t *testing.T) {
+	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	t.Run("should error on start db connection with invalid config", func(t *testing.T) {
 		dbConn, err := db.StartDBConnectionPlugins(
-			config.Database{},
+			t.Context(),
+			dbCfg,
 			[]config.Database{},
 			map[string]gorm.Plugin{"error": errorPlugin{}},
 		)
@@ -41,8 +43,9 @@ func TestStartDBConnectionPlugins(t *testing.T) {
 
 	t.Run("should start db connection with replicas", func(t *testing.T) {
 		dbConn, err := db.StartDBConnectionPlugins(
-			testutils.TestDB,
-			[]config.Database{testutils.TestDB},
+			t.Context(),
+			dbCfg,
+			[]config.Database{dbCfg},
 			map[string]gorm.Plugin{},
 		)
 		require.NoError(t, err)
@@ -51,7 +54,8 @@ func TestStartDBConnectionPlugins(t *testing.T) {
 
 	t.Run("should error start db connection with replicas", func(t *testing.T) {
 		dbConn, err := db.StartDBConnectionPlugins(
-			testutils.TestDB,
+			t.Context(),
+			dbCfg,
 			[]config.Database{{}},
 			map[string]gorm.Plugin{},
 		)
@@ -62,9 +66,11 @@ func TestStartDBConnectionPlugins(t *testing.T) {
 
 // TestStartDBConnection_postgres - tests the StartDBConnection function.
 func TestStartDBConnection(t *testing.T) {
+	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	t.Run("should start db connection when config is valid", func(t *testing.T) {
 		dbConn, err := db.StartDBConnection(
-			testutils.TestDB,
+			t.Context(),
+			dbCfg,
 			[]config.Database{},
 		)
 

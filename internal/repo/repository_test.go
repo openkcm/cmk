@@ -4,7 +4,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
@@ -16,10 +15,11 @@ import (
 func TestConcurrency(t *testing.T) {
 	tenantCount := 10
 	itemPerTenant := 10
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		CreateDatabase: true,
-		Models:         []driver.TenantTabler{&testutils.TestModel{}},
-	}, testutils.WithGenerateTenants(tenantCount))
+	db, tenants, _ := testutils.NewTestDB(
+		t,
+		testutils.TestDBConfig{CreateDatabase: true},
+		testutils.WithGenerateTenants(tenantCount),
+	)
 	r := sql.NewRepository(db)
 
 	wg := sync.WaitGroup{}
@@ -74,10 +74,7 @@ func TestConcurrency(t *testing.T) {
 }
 
 func TestProcessInBatch(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		CreateDatabase: true,
-		Models:         []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	r := sql.NewRepository(db)
@@ -164,11 +161,96 @@ func TestProcessInBatch(t *testing.T) {
 	})
 }
 
-func TestGetTenant(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		CreateDatabase: true,
-		Models:         []driver.TenantTabler{&testutils.TestModel{}},
+func TestProcessInBatchWithOptionsDeleteMode(t *testing.T) {
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
+	tenant := tenants[0]
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	t.Run("should delete all items without skipping when DeleteMode is enabled", func(t *testing.T) {
+		total := 7
+		for range total {
+			item := &testutils.TestModel{
+				ID:   uuid.New(),
+				Name: "delete_test_" + uuid.NewString(),
+			}
+			err := r.Create(ctx, item)
+			assert.NoError(t, err)
+		}
+
+		baseQuery := repo.NewQuery()
+		batchSize := 3
+
+		processedItems := []*testutils.TestModel{}
+		batchCount := 0
+		processFunc := func(items []*testutils.TestModel) error {
+			batchCount++
+			processedItems = append(processedItems, items...)
+			for _, item := range items {
+				_, err := r.Delete(ctx, item, *repo.NewQuery())
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		// Act with DeleteMode enabled
+		err := repo.ProcessInBatchWithOptions[testutils.TestModel](
+			ctx,
+			r,
+			baseQuery,
+			batchSize,
+			repo.BatchProcessOptions{DeleteMode: true},
+			processFunc,
+		)
+
+		// Verify
+		assert.NoError(t, err)
+		assert.Len(t, processedItems, total, "Should process all items")
+		assert.Equal(t, 4, batchCount, "Should process in 4 batches (3+3+1+0) - delete mode"+
+			" always processes one extra iteration to detect there are no more items.")
+
+		// Verify all items were actually deleted
+		var remainingItems []*testutils.TestModel
+		count, err := r.List(ctx, testutils.TestModel{}, &remainingItems, *baseQuery)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, count, "All items should be deleted")
 	})
+
+	t.Run("should handle empty result set with DeleteMode enabled", func(t *testing.T) {
+		baseQuery := repo.NewQuery().Where(
+			repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where("name", "nonexistent_value"),
+			),
+		)
+		batchSize := 10
+
+		processCallCount := 0
+		processFunc := func(items []*testutils.TestModel) error {
+			processCallCount++
+			assert.Empty(t, items)
+			return nil
+		}
+
+		// Act
+		err := repo.ProcessInBatchWithOptions[testutils.TestModel](
+			ctx,
+			r,
+			baseQuery,
+			batchSize,
+			repo.BatchProcessOptions{DeleteMode: true},
+			processFunc,
+		)
+
+		// Verify
+		assert.NoError(t, err)
+		assert.Equal(t, 1, processCallCount, "processFunc should be called once even with no data")
+	})
+}
+
+func TestGetTenant(t *testing.T) {
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
 	r := sql.NewRepository(db)
 
 	t.Run("should return tenant when found", func(t *testing.T) {

@@ -5,36 +5,22 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 func startAPIAndDBForKeyConfigTags(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
-	cfg := &config.Config{
-		Database: integrationutils.DB,
-	}
-	integrationutils.StartPostgresSQL(t, &cfg.Database)
-
-	dbConfig := testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&model.KeyConfiguration{},
-			&model.KeyConfigurationTag{},
-		}}
-	db, tenants, _ := testutils.NewTestDB(t, dbConfig,
-		testutils.WithDatabase(cfg.Database),
-	)
+	dbConfig := testutils.TestDBConfig{}
+	db, tenants, _ := testutils.NewTestDB(t, dbConfig)
 
 	sv := testutils.NewAPIServer(t, db,
 		testutils.TestAPIServerConfig{})

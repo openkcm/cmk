@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	registryClient "github.com/openkcm/cmk/internal/clients/registry/systems"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -27,6 +27,14 @@ var system = []APIErrors{
 			Code:    "GETTING_SYSTEM_KEYCONFIG_NAME",
 			Message: "failed to get system key config name",
 			Status:  http.StatusInternalServerError,
+		},
+	},
+	{
+		Errors: []error{eventprocessor.ErrNoPreviousEvent},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "NO_PREVIOUS_SYSTEM_STATE",
+			Message: "failed to cancel action",
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{
@@ -150,62 +158,6 @@ var system = []APIErrors{
 		},
 	},
 	{
-		Errors: []error{manager.ErrSettingKeyClaim, manager.ErrUpdateSystemNoRegClient},
-		ExposedError: cmkapi.DetailedError{
-			Code:    "UPDATING_KEY_CLAIM_NO_CLIENT",
-			Message: "error updating key claim for system: registry client not registered",
-			Status:  http.StatusInternalServerError,
-		},
-	},
-	{
-		Errors: []error{manager.ErrSettingKeyClaim, registryClient.ErrSystemsClientDoesNotExist},
-		ExposedError: cmkapi.DetailedError{
-			Code:    "UPDATING_KEY_CLAIM_NO_CLIENT",
-			Message: "error updating key claim for system: registry client not registered",
-			Status:  http.StatusInternalServerError,
-		},
-	},
-	{
-		Errors: []error{manager.ErrSettingKeyClaim, registryClient.ErrClientInternalError},
-		ExposedError: cmkapi.DetailedError{
-			Code:    "UPDATING_KEY_CLAIM_REGISTRY_ERROR",
-			Message: "error updating key claim for system: registry service internal error",
-			Status:  http.StatusInternalServerError,
-		},
-	},
-	{
-		Errors: []error{manager.ErrSettingKeyClaim, registryClient.ErrKeyClaimAlreadyActive},
-		ExposedError: cmkapi.DetailedError{
-			Code:    "UPDATING_KEY_CLAIM",
-			Message: "error updating key claim for system: key claim already set",
-			Status:  http.StatusBadRequest,
-		},
-	},
-	{
-		Errors: []error{manager.ErrSettingKeyClaim, registryClient.ErrKeyClaimAlreadyInactive},
-		ExposedError: cmkapi.DetailedError{
-			Code:    "UPDATING_KEY_CLAIM",
-			Message: "error updating key claim for system: key claim already unset",
-			Status:  http.StatusBadRequest,
-		},
-	},
-	{
-		Errors: []error{manager.ErrSettingKeyClaim, registryClient.ErrSystemNotFound},
-		ExposedError: cmkapi.DetailedError{
-			Code:    "UPDATING_KEY_CLAIM",
-			Message: "error updating key claim for system: system not found in registry",
-			Status:  http.StatusBadRequest,
-		},
-	},
-	{
-		Errors: []error{manager.ErrSettingKeyClaim, registryClient.ErrSystemIsNotLinkedToTenant},
-		ExposedError: cmkapi.DetailedError{
-			Code:    "UPDATING_KEY_CLAIM",
-			Message: "error updating key claim for system: system is not linked to tenant",
-			Status:  http.StatusBadRequest,
-		},
-	},
-	{
 		Errors: []error{manager.ErrKeyConfigurationIDNotFound},
 		ExposedError: cmkapi.DetailedError{
 			Code:    "KEY_CONFIGURATION_ID_NOT_FOUND",
@@ -235,6 +187,14 @@ var system = []APIErrors{
 			Code:    "GETTING_SYSTEM_LINK_BY_ID",
 			Message: "failed to get system link by ID",
 			Status:  http.StatusInternalServerError,
+		},
+	},
+	{
+		Errors: []error{manager.ErrKeyConfigurationNotAllowed},
+		ExposedError: cmkapi.DetailedError{
+			Code:    "KEY_CONFIGURATION_NOT_FOUND",
+			Message: "Key configuration not found or insufficient access permissions",
+			Status:  http.StatusNotFound,
 		},
 	},
 }

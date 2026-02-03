@@ -51,19 +51,3 @@ func GetSafeDeref[T any](ptr *T) T {
 
 	return res
 }
-
-func PointerArrayToValueArray[T any](pointerArray []*T) []T {
-	valueArray := make([]T, len(pointerArray))
-	for i := range pointerArray {
-		valueArray[i] = *pointerArray[i]
-	}
-
-	return valueArray
-}
-
-// InitializerFunc and Initializer to allow initialisation of a generic
-type InitializerFunc[T any] func() T
-
-func Initializer[T any]() *T {
-	return new(T)
-}

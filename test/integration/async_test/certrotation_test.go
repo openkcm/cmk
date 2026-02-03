@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async"
@@ -31,9 +30,7 @@ func TestCertRotation(t *testing.T) {
 		}},
 	})
 	SetupTestContainers(t, testConfig)
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&model.System{}, &model.Certificate{}},
-	}, testutils.WithDatabase(testConfig.Database))
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 

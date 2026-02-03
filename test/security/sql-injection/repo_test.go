@@ -4,34 +4,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
 
 func startDB(t *testing.T) (*multitenancy.DB, string) {
 	t.Helper()
 
-	cfg := &config.Config{
-		Database: integrationutils.DB,
-	}
-	integrationutils.StartPostgresSQL(t, &cfg.Database)
-
-	dbConfig := testutils.TestDBConfig{
-		Models: []driver.TenantTabler{
-			&testutils.TestModel{},
-		}}
-	db, tenants, _ := testutils.NewTestDB(t, dbConfig,
-		testutils.WithDatabase(cfg.Database),
-	)
+	dbConfig := testutils.TestDBConfig{}
+	db, tenants, _ := testutils.NewTestDB(t, dbConfig)
 
 	return db, tenants[0]
 }
@@ -87,9 +74,7 @@ func TestRepo_List_ForInjection(t *testing.T) {
 }
 
 func TestRepo_Create_ForInjection(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -109,8 +94,10 @@ func TestRepo_Create_ForInjection(t *testing.T) {
 	}
 
 	for _, attackString := range attackStrings {
-		item := testutils.TestModel{ID: uuid.New(),
-			Name: uuid.New().String() + attackString}
+		item := testutils.TestModel{
+			ID:   uuid.New(),
+			Name: uuid.New().String() + attackString,
+		}
 		err := r.Create(ctx, &item)
 		assert.NoError(t, err)
 
@@ -124,9 +111,7 @@ func TestRepo_Create_ForInjection(t *testing.T) {
 }
 
 func TestRepo_First_ForInjection(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -184,9 +169,7 @@ func TestRepo_First_ForInjection(t *testing.T) {
 }
 
 func TestRepo_Delete_ForInjection(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -219,9 +202,7 @@ func TestRepo_Delete_ForInjection(t *testing.T) {
 }
 
 func TestRepo_Patch_ForInjection(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
@@ -241,8 +222,10 @@ func TestRepo_Patch_ForInjection(t *testing.T) {
 	}
 
 	for _, attackString := range attackStrings {
-		item := testutils.TestModel{ID: uuid.New(),
-			Name: uuid.New().String() + attackString}
+		item := testutils.TestModel{
+			ID:   uuid.New(),
+			Name: uuid.New().String() + attackString,
+		}
 		ok, err := r.Patch(ctx, &item, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.False(t, ok)
@@ -255,9 +238,7 @@ func TestRepo_Patch_ForInjection(t *testing.T) {
 }
 
 func TestRepo_Set_ForInjection(t *testing.T) {
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/driver"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
@@ -20,9 +19,7 @@ func (s *KeystorePoolFillerMock) FillKeystorePool(_ context.Context, _ int) erro
 }
 
 func TestKeystorePoolFillingAction(t *testing.T) {
-	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		Models: []driver.TenantTabler{&testutils.TestModel{}},
-	})
+	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	repo := sql.NewRepository(db)
 
 	filler := tasks.NewKeystorePoolFiller(
