@@ -678,6 +678,60 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
+  /tenantConfigurations/workflow:
+    get:
+      tags:
+        - Tenant Configurations
+      summary: Get tenant workflow configuration
+      operationId: GetTenantWorkflowConfiguration
+      description: |
+        Retrieves workflow configuration of a tenant
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantWorkflowConfiguration"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      tags:
+        - Tenant Configurations
+      summary: Update tenant workflow configuration
+      description: |
+        Updates workflow configuration of a tenant
+      operationId: UpdateTenantWorkflowConfiguration
+      requestBody:
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/TenantWorkflowConfiguration"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantWorkflowConfiguration"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
   /systems:
     get:
       tags:
@@ -1612,6 +1666,34 @@ components:
           $ref: "#/components/schemas/DefaultKeystore"
         hyok:
           $ref: "#/components/schemas/HYOKKeystore"
+    TenantWorkflowConfiguration:
+      type: object
+      properties:
+        enabled:
+          description: The flag indicating whether workflow is enabled for the tenant
+          type: boolean
+          example: true
+        minimumApprovals:
+          description: The minimum number of approvals required for a workflow
+          type: integer
+          minimum: 1
+          example: 2
+        retentionPeriodDays:
+          description: |
+            The number of days to retain completed, failed, revoked, or expired workflow
+          type: integer
+          minimum: 2
+          example: 30
+        defaultExpiryPeriodDays:
+          description: The default number of days before a workflow expires
+          type: integer
+          minimum: 1
+          example: 7
+        maxExpiryPeriodDays:
+          description: The maximum number of days that can be set for workflow expiry
+          type: integer
+          minimum: 1
+          example: 30
     DefaultKeystore:
       type: object
       properties:
