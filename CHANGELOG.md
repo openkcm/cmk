@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/openkcm/cmk/compare/v0.1.2...v0.2.0) (2026-02-04)
+
+
+### Features
+
+* terminate tenant mapping ([#48](https://github.com/openkcm/cmk/issues/48)) ([5c5fb6a](https://github.com/openkcm/cmk/commit/5c5fb6a9d833beefb1b90d25462c5789c34ab84a))
+
 ## [0.1.2](https://github.com/openkcm/cmk/compare/v0.1.1...v0.1.2) (2026-02-04)
 
 
