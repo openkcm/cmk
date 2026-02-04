@@ -7,6 +7,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
 
+	mappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
@@ -21,11 +22,13 @@ type Service interface {
 
 	System() systems.ServiceClient
 	Tenant() tenantgrpc.ServiceClient
+	Mapping() mappinggrpc.ServiceClient
 }
 
 type service struct {
-	system systems.ServiceClient
-	tenant tenantgrpc.ServiceClient
+	system  systems.ServiceClient
+	tenant  tenantgrpc.ServiceClient
+	mapping mappinggrpc.ServiceClient
 
 	grpcConn *commongrpc.DynamicClientConn
 }
@@ -43,9 +46,12 @@ func NewService(rg *commoncfg.GRPCClient) (Service, error) {
 
 	tenantClient := tenantgrpc.NewServiceClient(conn)
 
+	mappingClient := mappinggrpc.NewServiceClient(conn)
+
 	return &service{
 		system:   sysClient,
 		tenant:   tenantClient,
+		mapping:  mappingClient,
 		grpcConn: conn,
 	}, nil
 }
@@ -56,6 +62,10 @@ func (rs *service) System() systems.ServiceClient {
 
 func (rs *service) Tenant() tenantgrpc.ServiceClient {
 	return rs.tenant
+}
+
+func (rs *service) Mapping() mappinggrpc.ServiceClient {
+	return rs.mapping
 }
 
 func (rs *service) Close() error {
