@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
+	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -25,6 +26,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/clients/registry/mapping"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
@@ -60,9 +62,11 @@ func setup(t *testing.T, targetRegions []string) (*eventprocessor.CryptoReconcil
 
 	logger := testutils.SetupLoggerWithBuffer()
 	systemService := systems.NewFakeService(logger)
+	mappingService := mapping.NewFakeService()
 	_, grpcClient := testutils.NewGRPCSuite(t,
 		func(s *grpc.Server) {
 			systemgrpc.RegisterServiceServer(s, systemService)
+			mappingv1.RegisterServiceServer(s, mappingService)
 		},
 	)
 
@@ -206,7 +210,7 @@ func TestSystemEventCreation(t *testing.T) {
 			expErr:       cmkcontext.ErrExtractTenantID,
 		},
 		{
-			name: "should return error on system in processing state for system link",
+			name: "should return error on system in processing state for system link - KMS20-3467",
 			systemEventFn: func(ctx context.Context, system *model.System, to, _ string) (orbital.Job, error) {
 				return eventProcessor.SystemLink(ctx, system, to)
 			},
@@ -215,7 +219,7 @@ func TestSystemEventCreation(t *testing.T) {
 			expErr:       eventprocessor.ErrSystemProcessing,
 		},
 		{
-			name: "should create system link event and set system to processing",
+			name: "should create system link event and set system to processing - KMS20-3467",
 			systemEventFn: func(ctx context.Context, system *model.System, to, _ string) (orbital.Job, error) {
 				return eventProcessor.SystemLink(ctx, system, to)
 			},
@@ -238,7 +242,7 @@ func TestSystemEventCreation(t *testing.T) {
 			expErr:       cmkcontext.ErrExtractTenantID,
 		},
 		{
-			name: "should return error on system in processing state for system unlink",
+			name: "should return error on system in processing state for system unlink - KMS20-3467",
 			systemEventFn: func(ctx context.Context, system *model.System, _, from string) (orbital.Job, error) {
 				return eventProcessor.SystemUnlink(ctx, system, from)
 			},
@@ -247,7 +251,7 @@ func TestSystemEventCreation(t *testing.T) {
 			expErr:       eventprocessor.ErrSystemProcessing,
 		},
 		{
-			name: "should create system unlink event and set system to processing",
+			name: "should create system unlink event and set system to processing - KMS20-3467",
 			systemEventFn: func(ctx context.Context, system *model.System, _, from string) (orbital.Job, error) {
 				return eventProcessor.SystemUnlink(ctx, system, from)
 			},
@@ -270,7 +274,7 @@ func TestSystemEventCreation(t *testing.T) {
 			expErr:       cmkcontext.ErrExtractTenantID,
 		},
 		{
-			name: "should return error on system in processing state for system switch",
+			name: "should return error on system in processing state for system switch - KMS20-3467",
 			systemEventFn: func(ctx context.Context, system *model.System, to, from string) (orbital.Job, error) {
 				return eventProcessor.SystemSwitch(ctx, system, to, from, "")
 			},
@@ -279,7 +283,7 @@ func TestSystemEventCreation(t *testing.T) {
 			expErr:       eventprocessor.ErrSystemProcessing,
 		},
 		{
-			name: "should create system switch event and set system to processing",
+			name: "should create system switch event and set system to processing - KMS20-3467",
 			systemEventFn: func(ctx context.Context, system *model.System, to, from string) (orbital.Job, error) {
 				return eventProcessor.SystemSwitch(ctx, system, to, from, "")
 			},

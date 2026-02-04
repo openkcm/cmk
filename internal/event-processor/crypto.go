@@ -17,6 +17,7 @@ import (
 	_ "github.com/lib/pq" // Import PostgreSQL driver to initialize the database connection
 
 	goAmqp "github.com/Azure/go-amqp"
+	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	orbsql "github.com/openkcm/orbital/store/sql"
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
@@ -571,14 +572,12 @@ func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orb
 
 // jobTerminationFunc is called when a job is terminated.
 //
-//nolint:cyclop
+//nolint:cyclop, funlen
 func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.Job) error {
 	taskType := proto.TaskType(proto.TaskType_value[job.Type])
 	status := cmkapi.SystemStatusFAILED
 
-	var (
-		jobData SystemActionJobData
-	)
+	var jobData SystemActionJobData
 
 	switch taskType {
 	case proto.TaskType_SYSTEM_LINK, proto.TaskType_SYSTEM_SWITCH:
@@ -630,6 +629,14 @@ func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.J
 		err = c.setClientL1KeyClaimOnJobTerminate(ctx, jobData.TenantID, system, taskType)
 		if err != nil {
 			return fmt.Errorf("failed to set L1 key claim on job terminate: %w", err)
+		}
+		_, err = c.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
+			ExternalId: system.Identifier,
+			Type:       system.Type,
+			TenantId:   jobData.TenantID,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to unmap system from tenant: %w", err)
 		}
 	}
 

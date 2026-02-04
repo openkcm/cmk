@@ -20,6 +20,7 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
+	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 	slogctx "github.com/veqryn/slog-context"
@@ -149,7 +150,7 @@ func TestNewTenantOperator(t *testing.T) {
 	}
 
 	clientFactory := mockClient.NewMockFactory(
-		registry.NewMockService(nil, tenantgrpc.NewServiceClient(grpcClient)),
+		registry.NewMockService(nil, tenantgrpc.NewServiceClient(grpcClient), mappingv1.NewServiceClient(grpcClient)),
 		sessionmanager.NewMockService(sessionmanager.NewFakeSessionManagerClient()),
 	)
 
@@ -435,7 +436,7 @@ func TestHandleApplyAuth_InvalidData(t *testing.T) {
 				unusedSMClient := sessionmanager.NewFakeSessionManagerClient()
 
 				clientFactory := mockClient.NewMockFactory(
-					registry.NewMockService(nil, unusedRegistryClient),
+					registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 					sessionmanager.NewMockService(unusedSMClient),
 				)
 
@@ -484,7 +485,7 @@ func TestHandleApplyAuth_IssuerUpdate(t *testing.T) {
 			}
 
 			clientFactory := mockClient.NewMockFactory(
-				registry.NewMockService(nil, unusedRegistryClient),
+				registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 				sessionmanager.NewMockService(unusedSMClient),
 			)
 
@@ -580,7 +581,7 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				}
 
 				clientFactory := mockClient.NewMockFactory(
-					registry.NewMockService(nil, unusedRegistryClient),
+					registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 					sessionmanager.NewMockService(sessionManagerClient),
 				)
 				op, err := operator.NewTenantOperator(db, operatorTarget, clientFactory, nil, nil)
@@ -668,7 +669,7 @@ func TestHandleBlockTenant(t *testing.T) {
 			Client: responder,
 		}
 		clientFactory := mockClient.NewMockFactory(
-			registry.NewMockService(nil, unusedRegistryClient),
+			registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 			sessionmanager.NewMockService(sessionManagerClient),
 		)
 
@@ -748,7 +749,7 @@ func TestHandleBlockTenant(t *testing.T) {
 				Client: responder,
 			}
 			clientFactory := mockClient.NewMockFactory(
-				registry.NewMockService(nil, unusedRegistryClient),
+				registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
@@ -817,7 +818,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 			Client: responder,
 		}
 		clientFactory := mockClient.NewMockFactory(
-			registry.NewMockService(nil, unusedRegistryClient),
+			registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 			sessionmanager.NewMockService(sessionManagerClient),
 		)
 
@@ -897,7 +898,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 				Client: responder,
 			}
 			clientFactory := mockClient.NewMockFactory(
-				registry.NewMockService(nil, unusedRegistryClient),
+				registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
@@ -965,7 +966,7 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 			Client: responder,
 		}
 		clientFactory := mockClient.NewMockFactory(
-			registry.NewMockService(nil, unusedRegistryClient),
+			registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 			sessionmanager.NewMockService(sessionManagerClient),
 		)
 
@@ -1039,7 +1040,7 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 				Client: responder,
 			}
 			clientFactory := mockClient.NewMockFactory(
-				registry.NewMockService(nil, unusedRegistryClient),
+				registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
@@ -1110,7 +1111,7 @@ func TestHandleTerminateTenant(t *testing.T) {
 		}, nil
 	}
 	clientFactory := mockClient.NewMockFactory(
-		registry.NewMockService(nil, unusedRegistryClient),
+		registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
@@ -1443,7 +1444,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 	sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
 
 	clientFactory := mockClient.NewMockFactory(
-		registry.NewMockService(nil, tenantClient),
+		registry.NewMockService(nil, tenantClient, mappingv1.NewServiceClient(grpcClient)),
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
