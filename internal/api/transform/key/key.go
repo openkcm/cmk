@@ -16,6 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
@@ -69,7 +70,7 @@ func FromAPI(ctx context.Context, apiKey cmkapi.Key, tf transformer.ProviderTran
 
 // ToAPI converts a model.Key to a cmkapi.Key
 func ToAPI(k model.Key) (*cmkapi.Key, error) {
-	err := sanitise.Stringlikes(&k)
+	err := sanitise.Sanitize(&k)
 	if err != nil {
 		return nil, err
 	}
@@ -157,8 +158,9 @@ func getKeyModel(ctx context.Context, tf transformer.ProviderTransformer, apiKey
 
 func getAccessDetailsFromModel(k model.Key) (*cmkapi.KeyAccessDetails, error) {
 	var (
-		management, crypto map[string]any
-		err                error
+		management map[string]any
+		crypto     map[string]map[string]any
+		err        error
 	)
 
 	err = json.Unmarshal(k.ManagementAccessData, &management)
@@ -169,6 +171,11 @@ func getAccessDetailsFromModel(k model.Key) (*cmkapi.KeyAccessDetails, error) {
 	err = json.Unmarshal(k.CryptoAccessData, &crypto)
 	if err != nil {
 		return nil, errs.Wrap(ErrDeserializeKeyAccessData, err)
+	}
+
+	for region, editable := range k.EditableRegions {
+		regionValues := crypto[region]
+		regionValues[manager.IsEditableCryptoAccess] = editable
 	}
 
 	return &cmkapi.KeyAccessDetails{

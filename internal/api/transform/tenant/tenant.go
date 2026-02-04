@@ -8,7 +8,7 @@ import (
 
 // ToAPI transforms a system model to an API system.
 func ToAPI(tenant model.Tenant) (*cmkapi.Tenant, error) {
-	err := sanitise.Stringlikes(&tenant)
+	err := sanitise.Sanitize(&tenant)
 	if err != nil {
 		return nil, err
 	}

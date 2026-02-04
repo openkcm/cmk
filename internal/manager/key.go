@@ -461,14 +461,10 @@ func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) err
 	}
 
 	if !key.IsPrimary {
-		for k := range cryptoData {
-			err := setCryptoEditable(cryptoData, k, true)
-			if err != nil {
-				return err
-			}
+		for region := range cryptoData {
+			key.EditableRegions[region] = true
 		}
-
-		return key.SetCryptoAccessData(cryptoData)
+		return nil
 	}
 
 	query := repo.NewQuery().Where(
@@ -477,58 +473,13 @@ func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) err
 		),
 	)
 
-	err := repo.ProcessInBatch(ctx, km.repo, query, repo.DefaultLimit, func(systems []*model.System) error {
+	return repo.ProcessInBatch(ctx, km.repo, query, repo.DefaultLimit, func(systems []*model.System) error {
 		for _, s := range systems {
-			var err error
-			if s.Status == cmkapi.SystemStatusFAILED {
-				err = setCryptoEditable(cryptoData, s.Region, true)
-			} else {
-				err = setCryptoEditable(cryptoData, s.Region, false)
-			}
-
-			if err != nil {
-				return err
-			}
+			key.EditableRegions[s.Region] = s.Status == cmkapi.SystemStatusFAILED
 		}
 
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-
-	return key.SetCryptoAccessData(cryptoData)
-}
-
-func verifyCryptoEditable(cryptoData model.KeyAccessData, region string) (bool, error) {
-	// Region doesn't exist on key
-	regionData, ok := cryptoData[region]
-	if !ok {
-		return true, nil
-	}
-
-	data, exist := regionData[IsEditableCryptoAccess]
-	if !exist {
-		return true, nil
-	}
-
-	editable, ok := data.(bool)
-	if !ok {
-		return false, ErrEditableCryptoRegionField
-	}
-
-	return editable, nil
-}
-
-func setCryptoEditable(cryptoData model.KeyAccessData, region string, editable bool) error {
-	regionData, ok := cryptoData[region]
-	if !ok {
-		return ErrCryptoRegionNotExists
-	}
-
-	regionData[IsEditableCryptoAccess] = editable
-
-	return nil
 }
 
 func isManagementDetailsUpdate(keyPatch cmkapi.KeyPatch) bool {
@@ -560,17 +511,11 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 	}
 
 	keyCryptoData := key.GetCryptoAccessData()
-	for region, val := range *patchAccessDetails.Crypto {
-		editable, err := verifyCryptoEditable(keyCryptoData, region)
-		if !editable || err != nil {
+	for region, regionValues := range *patchAccessDetails.Crypto {
+		editable, exist := key.EditableRegions[region]
+		if !editable && exist {
 			return ErrNonEditableCryptoRegionUpdate
 		}
-		// Safe as the patch crypto values have been validated
-		regionValues, ok := val.(map[string]any)
-		if !ok {
-			return ErrBadCryptoRegionData
-		}
-
 		keyCryptoData[region] = regionValues
 	}
 
