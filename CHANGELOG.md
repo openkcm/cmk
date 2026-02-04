@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/openkcm/cmk/compare/v0.1.0...v0.1.1) (2026-02-04)
+
+
+### Bug Fixes
+
+* have chart into a separate folder; chnages on the Taskfile.yaml ([#45](https://github.com/openkcm/cmk/issues/45)) ([f3468fd](https://github.com/openkcm/cmk/commit/f3468fdb921cd7e28146373213bc709943a900bc))
+
 ## [0.1.0](https://github.com/openkcm/cmk/compare/v0.0.1...v0.1.0) (2026-02-04)
 
 
