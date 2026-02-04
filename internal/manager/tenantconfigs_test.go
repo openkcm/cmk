@@ -1,6 +1,7 @@
 package manager_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -9,7 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
+	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/grpc/catalog"
@@ -17,6 +20,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrForced = errors.New("forced")
@@ -33,7 +37,25 @@ func SetupTenantConfigManager(t *testing.T, plugins []testutils.MockPlugin) (*ma
 	ctlg, err := catalog.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
-	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg)
+	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg, nil)
+
+	return tenantManager, db, tenants[0]
+}
+
+// SetupTenantConfigManagerWithRole creates a test tenant with a specific role
+func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []testutils.MockPlugin) (*manager.TenantConfigManager,
+	*multitenancy.DB, string,
+) {
+	t.Helper()
+
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithTenantRole(model.TenantRole(role)))
+
+	dbRepository := sql.NewRepository(db)
+	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
+	ctlg, err := catalog.New(t.Context(), &cfg)
+	assert.NoError(t, err)
+
+	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg, nil)
 
 	return tenantManager, db, tenants[0]
 }
@@ -194,7 +216,7 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 			ctlg, err := catalog.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
-			mgr := manager.NewTenantConfigManager(nil, ctlg)
+			mgr := manager.NewTenantConfigManager(nil, ctlg, nil)
 
 			result := mgr.GetTenantConfigsHyokKeystore()
 			assert.ElementsMatch(t, tt.expectedOutput, result.Provider)
@@ -215,5 +237,186 @@ func TestGetTenantsKeystore(t *testing.T) {
 		res, err := m.GetTenantsKeystores()
 		assert.NoError(t, err)
 		assert.Empty(t, res.HYOK)
+	})
+}
+
+func TestUpdateWorkflowConfig(t *testing.T) {
+	// Helper to setup config for a tenant
+	setupConfig := func(t *testing.T,
+		mgr *manager.TenantConfigManager, ctx context.Context, cfg *model.WorkflowConfig) {
+		t.Helper()
+		_, err := mgr.SetWorkflowConfig(ctx, cfg)
+		assert.NoError(t, err)
+	}
+
+	t.Run("Should update workflow config with partial update", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			MinimumApprovals: ptr.PointTo(3),
+		})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.True(t, result.Enabled)
+		assert.Equal(t, 3, result.MinimumApprovals)
+		assert.Equal(t, 30, result.RetentionPeriodDays)
+	})
+
+	t.Run("Should update multiple fields at once", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			MinimumApprovals:    ptr.PointTo(3),
+			RetentionPeriodDays: ptr.PointTo(60),
+		})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.True(t, result.Enabled)
+		assert.Equal(t, 3, result.MinimumApprovals)
+		assert.Equal(t, 60, result.RetentionPeriodDays)
+		assert.Equal(t, 7, result.DefaultExpiryPeriodDays)
+	})
+
+	t.Run("Should fail when retention period is less than minimum", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			RetentionPeriodDays: ptr.PointTo(1),
+		})
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrRetentionLessThanMinimum)
+	})
+
+	t.Run("Should create default config when updating non-existent config", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			Enabled: ptr.PointTo(true),
+		})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.True(t, result.Enabled)
+	})
+
+	t.Run("Should handle nil update gracefully", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, nil)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.True(t, result.Enabled)
+		assert.Equal(t, 2, result.MinimumApprovals)
+		assert.Equal(t, 30, result.RetentionPeriodDays)
+	})
+
+	t.Run("Role-based enable/disable validation", func(t *testing.T) {
+		tests := []struct {
+			name          string
+			role          string
+			initialState  bool
+			targetState   bool
+			shouldSucceed bool
+		}{
+			{"ROLE_LIVE cannot disable", "ROLE_LIVE", true, false, false},
+			{"ROLE_TEST can enable", "ROLE_TEST", false, true, true},
+			{"ROLE_TEST can disable", "ROLE_TEST", true, false, true},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var configManager *manager.TenantConfigManager
+				var tenant string
+
+				if tt.role == tenantpb.Role_ROLE_TEST.String() {
+					configManager, _, tenant = SetupTenantConfigManagerWithRole(t, tt.role, nil)
+				} else {
+					configManager, _, tenant = SetupTenantConfigManager(t, nil)
+				}
+
+				ctx := testutils.CreateCtxWithTenant(tenant)
+				setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(tt.initialState))
+
+				result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+					Enabled: ptr.PointTo(tt.targetState),
+				})
+
+				if tt.shouldSucceed {
+					assert.NoError(t, err)
+					assert.NotNil(t, result)
+					assert.Equal(t, tt.targetState, result.Enabled)
+				} else {
+					assert.Error(t, err)
+					assert.Nil(t, result)
+					assert.ErrorIs(t, err, manager.ErrWorkflowEnableDisableNotAllowed)
+				}
+			})
+		}
+
+		t.Run("ROLE_LIVE can update other fields without changing Enabled", func(t *testing.T) {
+			configManager, _, tenant := SetupTenantConfigManager(t, nil)
+			ctx := testutils.CreateCtxWithTenant(tenant)
+			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+				MinimumApprovals:    ptr.PointTo(5),
+				RetentionPeriodDays: ptr.PointTo(90),
+			})
+
+			assert.NoError(t, err)
+			assert.NotNil(t, result)
+			assert.True(t, result.Enabled)
+			assert.Equal(t, 5, result.MinimumApprovals)
+			assert.Equal(t, 90, result.RetentionPeriodDays)
+		})
+
+		t.Run("ROLE_TEST can update Enabled with other fields simultaneously", func(t *testing.T) {
+			configManager, _, tenant := SetupTenantConfigManagerWithRole(t,
+				tenantpb.Role_ROLE_TEST.String(), nil)
+			ctx := testutils.CreateCtxWithTenant(tenant)
+			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(false))
+
+			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+				Enabled:             ptr.PointTo(true),
+				MinimumApprovals:    ptr.PointTo(4),
+				RetentionPeriodDays: ptr.PointTo(60),
+			})
+
+			assert.NoError(t, err)
+			assert.NotNil(t, result)
+			assert.True(t, result.Enabled)
+			assert.Equal(t, 4, result.MinimumApprovals)
+			assert.Equal(t, 60, result.RetentionPeriodDays)
+		})
+
+		t.Run("Setting same Enabled value does not trigger role validation", func(t *testing.T) {
+			configManager, _, tenant := SetupTenantConfigManager(t, nil)
+			ctx := testutils.CreateCtxWithTenant(tenant)
+			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+				Enabled:          ptr.PointTo(true),
+				MinimumApprovals: ptr.PointTo(3),
+			})
+
+			assert.NoError(t, err)
+			assert.NotNil(t, result)
+			assert.True(t, result.Enabled)
+			assert.Equal(t, 3, result.MinimumApprovals)
+		})
 	})
 }

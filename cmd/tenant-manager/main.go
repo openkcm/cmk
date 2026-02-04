@@ -157,7 +157,7 @@ func createTenantManager(
 	km := manager.NewKeyManager(
 		r,
 		ctlg,
-		manager.NewTenantConfigManager(r, ctlg),
+		manager.NewTenantConfigManager(r, ctlg, cfg),
 		kcm,
 		um,
 		cm,

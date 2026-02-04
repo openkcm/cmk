@@ -69,7 +69,7 @@ func (s *KeyManagerSuite) setup() {
 
 	cmkAuditor := auditor.New(s.ctx, cfg)
 
-	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, ctlg)
+	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, ctlg, nil)
 	certManager := manager.NewCertificateManager(s.ctx, dbRepo, ctlg,
 		&config.Certificates{ValidityDays: config.MinCertificateValidityDays})
 	userManager := manager.NewUserManager(dbRepo, cmkAuditor)

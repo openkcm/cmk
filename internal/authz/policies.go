@@ -18,6 +18,7 @@ const (
 	ResourceTypeWorkFlow         ResourceTypeName = "Workflow"
 	ResourceTypeUserGroup        ResourceTypeName = "UserGroup"
 	ResourceTypeTenant           ResourceTypeName = "Tenant"
+	ResourceTypeTenantSettings   ResourceTypeName = "TenantSettings"
 )
 
 type Action string
@@ -54,6 +55,10 @@ var ResourceTypeActions = map[ResourceTypeName]map[Action]struct{}{
 		ActionRead:   {},
 		ActionCreate: {},
 		ActionDelete: {},
+		ActionUpdate: {},
+	},
+	ResourceTypeTenantSettings: {
+		ActionRead:   {},
 		ActionUpdate: {},
 	},
 	ResourceTypeUserGroup: {
@@ -119,6 +124,12 @@ var PolicyData = policies{
 					},
 				},
 				{
+					ID: ResourceTypeTenantSettings,
+					Actions: []Action{
+						ActionRead,
+					},
+				},
+				{
 					ID: ResourceTypeUserGroup,
 					Actions: []Action{
 						ActionRead,
@@ -178,6 +189,12 @@ var PolicyData = policies{
 						ActionUpdate,
 					},
 				},
+				{
+					ID: ResourceTypeTenantSettings,
+					Actions: []Action{
+						ActionRead,
+					},
+				},
 			},
 		},
 		{
@@ -197,6 +214,13 @@ var PolicyData = policies{
 						ActionRead,
 						ActionCreate,
 						ActionDelete,
+						ActionUpdate,
+					},
+				},
+				{
+					ID: ResourceTypeTenantSettings,
+					Actions: []Action{
+						ActionRead,
 						ActionUpdate,
 					},
 				},

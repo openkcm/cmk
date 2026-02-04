@@ -93,7 +93,7 @@ func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *conf
 	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(t.Context(), cfg)
-	tc := manager.NewTenantConfigManager(tenancyRepo, ctlg)
+	tc := manager.NewTenantConfigManager(tenancyRepo, ctlg, nil)
 	um := manager.NewUserManager(tenancyRepo, cmkAuditor)
 	tam := manager.NewTagManager(tenancyRepo)
 	kc := manager.NewKeyConfigManager(tenancyRepo, cm, um, tam, nil, cfg)
