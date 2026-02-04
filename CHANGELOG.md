@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/openkcm/cmk/compare/v0.1.1...v0.1.2) (2026-02-04)
+
+
+### Bug Fixes
+
+* skip validations tests ([#49](https://github.com/openkcm/cmk/issues/49)) ([8e2bbdc](https://github.com/openkcm/cmk/commit/8e2bbdc4b5fc3720dc4dc3d151f96aaefcd0a259))
+
 ## [0.1.1](https://github.com/openkcm/cmk/compare/v0.1.0...v0.1.1) (2026-02-04)
 
 
