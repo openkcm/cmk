@@ -48,7 +48,7 @@ func FromAPI(apiConfig cmkapi.KeyConfiguration) (*model.KeyConfiguration, error)
 
 // ToAPI converts KeyConfiguration db model to a KeyConfiguration api model
 func ToAPI(k model.KeyConfiguration) (*cmkapi.KeyConfiguration, error) {
-	err := sanitise.Stringlikes(&k)
+	err := sanitise.Sanitize(&k)
 	if err != nil {
 		return nil, err
 	}

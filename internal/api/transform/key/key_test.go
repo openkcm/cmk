@@ -16,6 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -297,6 +298,10 @@ func TestTransformKeyToAPI(t *testing.T) {
 			State:              string(cmkapi.KeyStateENABLED),
 			Algorithm:          "AES256",
 			KeyVersions:        []model.KeyVersion{keyVersion},
+			EditableRegions: map[string]bool{
+				"serviceA": true,
+				"serviceB": false,
+			},
 		}
 	})
 
@@ -353,6 +358,10 @@ func TestTransformKeyToAPI(t *testing.T) {
 			IsPrimary:            false,
 			ManagementAccessData: managementAccessJSON,
 			CryptoAccessData:     cryptoAccessJSON,
+			EditableRegions: map[string]bool{
+				"serviceA": true,
+				"serviceB": false,
+			},
 		}
 	})
 
@@ -371,14 +380,16 @@ func TestTransformKeyToAPI(t *testing.T) {
 					accessAccountIDField: "123456789012",
 					accessUserIDField:    "123456789012:user/test-user",
 				}),
-				Crypto: ptr.PointTo(map[string]any{
-					"serviceA": map[string]any{
-						accessAccountIDField: "12344",
-						accessUserIDField:    "123456789012:user/serviceA",
+				Crypto: ptr.PointTo(map[string]map[string]any{
+					"serviceA": {
+						accessAccountIDField:           "12344",
+						accessUserIDField:              "123456789012:user/serviceA",
+						manager.IsEditableCryptoAccess: true,
 					},
-					"serviceB": map[string]any{
-						accessAccountIDField: "12345",
-						accessUserIDField:    "123456789012:user/serviceB",
+					"serviceB": {
+						accessAccountIDField:           "12345",
+						accessUserIDField:              "123456789012:user/serviceB",
+						manager.IsEditableCryptoAccess: false,
 					},
 				}),
 			},

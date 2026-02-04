@@ -453,9 +453,8 @@ func (s *KeyManagerSuite) TestEditableCryptoData() {
 		key, err = s.km.Get(s.ctx, key.ID)
 		s.NoError(err)
 
-		cryptoAccessData := key.GetCryptoAccessData()
-		s.Equal(true, cryptoAccessData[regionEditable][manager.IsEditableCryptoAccess])
-		s.Equal(true, cryptoAccessData[regionNonEditable][manager.IsEditableCryptoAccess])
+		s.True(key.EditableRegions[regionEditable])
+		s.True(key.EditableRegions[regionNonEditable])
 	})
 
 	s.Run("Should be editable on pkey only on failed regions", func() {
@@ -488,9 +487,8 @@ func (s *KeyManagerSuite) TestEditableCryptoData() {
 		key, err = s.km.Get(s.ctx, key.ID)
 		s.NoError(err)
 
-		cryptoAccessData := key.GetCryptoAccessData()
-		s.Equal(true, cryptoAccessData[regionEditable][manager.IsEditableCryptoAccess])
-		s.Equal(false, cryptoAccessData[regionNonEditable][manager.IsEditableCryptoAccess])
+		s.True(key.EditableRegions[regionEditable])
+		s.False(key.EditableRegions[regionNonEditable])
 	})
 }
 

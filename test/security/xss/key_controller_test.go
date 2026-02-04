@@ -234,7 +234,7 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 		k.IsPrimary = true
 		k.KeyType = constants.KeyTypeHYOK
 		k.ManagementAccessData = json.RawMessage("{\"<>\":\"><\"}")
-		k.CryptoAccessData = json.RawMessage("{\"<>\":\"test\"}")
+		k.CryptoAccessData = json.RawMessage("{\"<>\":{\"test\":\"test\"}}")
 		k.KeyConfigurationID = kc.ID
 		k.Provider = providerTest
 		k.NativeID = ptr.PointTo("sdsad")

@@ -7,7 +7,7 @@ import (
 )
 
 func ToAPI(p model.ImportParams) (*cmkapi.ImportParams, error) {
-	err := sanitise.Stringlikes(&p)
+	err := sanitise.Sanitize(&p)
 	if err != nil {
 		return nil, err
 	}

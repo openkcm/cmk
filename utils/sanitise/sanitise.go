@@ -3,232 +3,136 @@ package sanitise
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"log/slog"
 	"reflect"
-	"slices"
 	"strings"
 
 	"github.com/microcosm-cc/bluemonday"
 
-	"github.com/openkcm/cmk/internal/errs"
 	tagManager "github.com/openkcm/cmk/utils/tags"
 )
 
-var (
-	ErrSanitisation                = errors.New("failed sanitisation")
-	ErrUnsupportedSanitisationType = errors.New("sanitisation type not supported")
-	ErrUnstableSanitisation        = errors.New("sanitisation unstable")
-	ErrNonSettableString           = errors.New("non settable string")
-	ErrTypeConversion              = errors.New("err converting type")
-)
+var ErrNilPtr = errors.New("input must be a non-nil pointer")
 
-// Currently the sanitisation (mostly) sanitises the strings for the passed object in situ.
-// The map type is the exception, since it is non-addressable, so a copy is made for this
-// case. Also, maps are only supported when they have both keys and values as strings and
-// not as the root object (otherwise they are non-addressable).
-// This code could be improved by using copies throughout.
+var policy = bluemonday.StrictPolicy()
 
-func Stringlikes[T any](obj T) error {
-	fieldValue := getDerefFieldValueFromObj(obj)
-	if !fieldValue.IsValid() {
-		// nil pointer
-		return nil
+// Sanitize modifies a pointer value to prevent XSS attacks
+// It changes the value instead of returning a new one to prevent memory duplication
+func Sanitize(value any) error {
+	v := reflect.ValueOf(value)
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return ErrNilPtr
 	}
-
-	if fieldValue.Kind() == reflect.Map {
-		return errs.Wrap(ErrSanitisation, ErrUnsupportedSanitisationType)
-	}
-
-	err := sanitiseSwitch(fieldValue)
-	if err != nil {
-		return errs.Wrap(ErrSanitisation, err)
-	}
-
-	return nil
+	return sanitize(v)
 }
 
-func sanitiseSwitch(fieldValue reflect.Value) error {
-	if fieldValue.Type() == reflect.TypeFor[json.RawMessage]() {
-		rawJSON, ok := fieldValue.Interface().(json.RawMessage)
-		if !ok {
-			return ErrTypeConversion
+//nolint:cyclop
+func sanitize(v reflect.Value) error {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return nil
 		}
+		v = v.Elem()
+	}
 
-		sanitisedJSON, err := sanitiseJSON(string(rawJSON))
+	if v.Type() == reflect.TypeFor[json.RawMessage]() {
+		sanitised, err := sanitiseJSON(string(v.Bytes()))
 		if err != nil {
 			return err
 		}
-
-		fieldValue.Set(reflect.ValueOf(sanitisedJSON))
-
-		return nil
+		v.SetBytes([]byte(sanitised))
 	}
 
-	switch fieldValue.Kind() {
-	case reflect.Slice, reflect.Array:
-		return sanitiseFieldSlice(fieldValue)
+	switch v.Kind() {
+	case reflect.String:
+		v.SetString(policy.Sanitize(v.String()))
 	case reflect.Struct:
-		return sanitiseFieldStruct(fieldValue)
+		err := sanitiseStruct(v)
+		if err != nil {
+			return err
+		}
+	case reflect.Slice, reflect.Array:
+		l := v.Len()
+		for i := range l {
+			err := sanitize(v.Index(i))
+			if err != nil {
+				return err
+			}
+		}
 	case reflect.Map:
-		return sanitiseFieldMap(fieldValue)
+		err := sanitiseMap(v)
+		if err != nil {
+			return err
+		}
 	default:
-		return sanitiseFieldString(fieldValue)
-	}
-}
-
-func sanitiseFieldStruct(fieldValue reflect.Value) error {
-	fieldType := fieldValue.Type()
-	for i := range fieldValue.NumField() {
-		field := fieldType.Field(i)
-		if !field.IsExported() {
-			continue
-		}
-
-		sanitise, err := checkSanitiseTag(field)
-		if err != nil {
-			return err
-		}
-
-		if !sanitise {
-			continue
-		}
-
-		fieldValue := getDerefFieldValue(fieldValue.Field(i))
-		if !fieldValue.IsValid() {
-			// nil pointer
-			continue
-		}
-
-		err = sanitiseSwitch(fieldValue)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func sanitiseFieldSlice(fieldValue reflect.Value) error {
-	for i := range fieldValue.Len() {
-		var err error
-
-		fieldValue := getDerefFieldValue(fieldValue.Index(i))
-		if !fieldValue.IsValid() {
-			// nil pointer
-			continue
-		}
-
-		err = sanitiseSwitch(fieldValue)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func sanitiseFieldMap(fieldValue reflect.Value) error {
-	newMap := reflect.MakeMap(fieldValue.Type())
-	for _, fieldMapKey := range fieldValue.MapKeys() {
-		var err error
-
-		var sanitisedKeyString, sanitisedValueString string
-
-		if fieldMapKey.Kind() == reflect.String {
-			sanitisedKeyString, err = sanitiseString(fieldMapKey.String())
-			if err != nil {
-				return err
-			}
-		} else {
-			return ErrUnsupportedSanitisationType
-		}
-
-		fieldMapValue := fieldValue.MapIndex(fieldMapKey)
-		if fieldMapValue.Kind() == reflect.String {
-			sanitisedValueString, err = sanitiseString(fieldMapValue.String())
-			if err != nil {
-				return err
-			}
-		} else {
-			return ErrUnsupportedSanitisationType
-		}
-
-		sanitisedKeyField := reflect.ValueOf(sanitisedKeyString)
-		sanitisedKeyValue := reflect.ValueOf(sanitisedValueString)
-
-		newMap.SetMapIndex(sanitisedKeyField, sanitisedKeyValue)
-	}
-
-	fieldValue.Set(newMap)
-
-	return nil
-}
-
-func sanitiseFieldString(fieldValue reflect.Value) error {
-	fieldValue = getDerefFieldValue(fieldValue)
-	if !fieldValue.IsValid() {
-		// nil pointer
 		return nil
 	}
-
-	var value string
-	if fieldValue.Kind() == reflect.String { //nolint: gocritic
-		value = fieldValue.String()
-	} else if isIgnoredType(fieldValue.Kind()) {
-		return nil
-	} else {
-		slog.Error(fmt.Sprintf("Ignored sanitisation type: %v. Add handling or explicit ignore.",
-			fieldValue.Kind()))
-
-		return ErrUnsupportedSanitisationType
-	}
-
-	sanitisedString, err := sanitiseString(value)
-	if err != nil {
-		return err
-	}
-
-	if !fieldValue.CanSet() {
-		return ErrNonSettableString
-	}
-
-	fieldValue.SetString(sanitisedString)
-
 	return nil
 }
 
-func sanitiseString(value string) (string, error) {
-	p := bluemonday.StrictPolicy()
-	maxCntForStabilisation := 10
-	cnt := 0
-
-	var sanitisedValue string
-
-	// We loop here for sanity, incase attacker tries to embed his XSS.
-	// Likely bluemonday already accounts for this.
-	for {
-		sanitisedValue = p.Sanitize(value)
-		if sanitisedValue == value {
-			break
+// Only sanitise exported fields as others wont be mapped
+// Allow to enable/disable sanitise with tag on the field
+func sanitiseStruct(v reflect.Value) error {
+	l := v.NumField()
+	for i := range l {
+		f := v.Type().Field(i)
+		if !f.IsExported() {
+			return nil
 		}
-
-		value = sanitisedValue
-
-		cnt++
-		if cnt == maxCntForStabilisation {
-			return "", ErrUnstableSanitisation
+		ok, err := checkSanitiseTag(f)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
+		err = sanitize(v.Field(i))
+		if err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
-	return sanitisedValue, nil
+// Maps values cant be directly changed
+// Need to create a new map and populate with its values sanitized
+func sanitiseMap(v reflect.Value) error {
+	if v.IsNil() {
+		return nil
+	}
+	newMap := reflect.MakeMap(v.Type())
+	for _, key := range v.MapKeys() {
+		val := v.MapIndex(key)
+
+		// Call sanitize on temporary pointers
+		// as maps values cannot be directly changed
+		tmpKey := reflect.New(key.Type())
+		tmpKey.Elem().Set(key)
+		err := sanitize(tmpKey)
+		if err != nil {
+			return err
+		}
+
+		tmpVal := reflect.New(val.Type())
+		tmpVal.Elem().Set(val)
+		err = sanitize(tmpVal)
+		if err != nil {
+			return err
+		}
+
+		newMap.SetMapIndex(tmpKey.Elem(), tmpVal.Elem())
+	}
+	v.Set(newMap)
+	return nil
 }
 
 func sanitiseJSON(value string) (json.RawMessage, error) {
-	value = strings.ReplaceAll(value, "<", "&lt;")
-	value = strings.ReplaceAll(value, ">", "&gt;")
-
-	value = strings.ReplaceAll(value, "'", "&apos;")
+	replacer := strings.NewReplacer(
+		`&`, "&amp;",
+		`'`, "&#39;", // "&#39;" is shorter than "&apos;" and apos was not in HTML until HTML5.
+		`<`, "&lt;",
+		`>`, "&gt;",
+	)
+	value = replacer.Replace(value)
 
 	_, err := json.Marshal(&value)
 	if err != nil {
@@ -236,17 +140,6 @@ func sanitiseJSON(value string) (json.RawMessage, error) {
 	}
 
 	return json.RawMessage(value), nil
-}
-
-func isIgnoredType(kind reflect.Kind) bool {
-	// We have an allow list for the ignored supported primitive types, which we deem don't
-	// require sanitisation. We only currently support slices and structs as non-primitives.
-	ignored := []reflect.Kind{reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16,
-		reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16,
-		reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32, reflect.Float64,
-		reflect.Complex64, reflect.Complex128}
-
-	return slices.Contains(ignored, kind)
 }
 
 func checkSanitiseTag(field reflect.StructField) (bool, error) {
@@ -261,16 +154,4 @@ func checkSanitiseTag(field reflect.StructField) (bool, error) {
 	}
 
 	return sanitise, nil
-}
-
-func getDerefFieldValue(fieldValue reflect.Value) reflect.Value {
-	for fieldValue.Kind() == reflect.Pointer {
-		fieldValue = fieldValue.Elem()
-	}
-
-	return fieldValue
-}
-
-func getDerefFieldValueFromObj(obj any) reflect.Value {
-	return getDerefFieldValue(reflect.ValueOf(obj))
 }
