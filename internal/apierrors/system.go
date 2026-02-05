@@ -102,7 +102,7 @@ var system = []APIErrors{
 		},
 	},
 	{
-		Errors: []error{manager.ErrAddSystemNoPrimaryKey},
+		Errors: []error{manager.ErrConnectSystemNoPrimaryKey},
 		ExposedError: cmkapi.DetailedError{
 			Code:    "INVALID_TARGET_STATE",
 			Message: "system cannot be added to a key configuration without an enabled primary key",

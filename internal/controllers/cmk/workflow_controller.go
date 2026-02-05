@@ -43,8 +43,14 @@ func (c *APIController) CheckWorkflow(
 	}
 
 	response := cmkapi.CheckWorkflow200JSONResponse{
-		Exists:   &status.Exists,
-		Required: &status.Enabled,
+		Exists:    &status.Exists,
+		Required:  &status.Enabled,
+		CanCreate: &status.CanCreate,
+		Valid:     &status.Valid,
+	}
+
+	if status.ErrDetails != nil {
+		response.Details = ptr.PointTo(status.ErrDetails.Error())
 	}
 
 	return response, nil
@@ -242,9 +248,7 @@ func (c *APIController) getApproverGroups(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) ([]*model.Group, error) {
-	var (
-		IDs []uuid.UUID
-	)
+	var IDs []uuid.UUID
 
 	if workflow.ApproverGroupIDs == nil {
 		return []*model.Group{}, nil

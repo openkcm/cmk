@@ -10,6 +10,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
@@ -24,6 +25,7 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrEnqueuingTask = errors.New("error enqueuing task")
@@ -89,39 +91,18 @@ func createTestWorkflow(
 	return wf, nil
 }
 
-var keyConfigID = "008cfcb6-0a68-449e-bbf3-ef6ee8537f02"
-
 func createTestObjects(t *testing.T, repo repo.Repo, ctx context.Context) (*model.KeyConfiguration,
 	*model.Key,
 ) {
 	t.Helper()
 
-	// Create test key configuration once for all tests
-	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
-		c.Name = "test-config"
-		c.ID = uuid.MustParse(keyConfigID)
+	key := testutils.NewKey(func(k *model.Key) {
+		k.ID = uuid.New()
 	})
 
-	key := createTestKey(t, repo, ctx)
-
-	testutils.CreateTestEntities(
-		ctx,
-		t,
-		repo,
-		keyConfig,
-	)
-
-	return keyConfig, key
-}
-
-func createTestKey(t *testing.T, repo repo.Repo, ctx context.Context) *model.Key {
-	t.Helper()
-
-	keyID := uuid.New()
-
-	key := testutils.NewKey(func(k *model.Key) {
-		k.ID = keyID
-		k.KeyConfigurationID = uuid.MustParse(keyConfigID)
+	// Create test key configuration once for all tests
+	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+		c.PrimaryKeyID = &key.ID
 	})
 
 	testutils.CreateTestEntities(
@@ -129,9 +110,10 @@ func createTestKey(t *testing.T, repo repo.Repo, ctx context.Context) *model.Key
 		t,
 		repo,
 		key,
+		keyConfig,
 	)
 
-	return key
+	return keyConfig, key
 }
 
 func TestWorkflowManager_CheckWorkflow(t *testing.T) {
@@ -151,56 +133,142 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		},
 	)
 
-	t.Run(
-		"Should return false and error on non existing artifacts", func(t *testing.T) {
-			status, err := m.CheckWorkflow(ctx, &model.Workflow{})
-			assert.False(t, status.Enabled)
-			assert.False(t, status.Exists)
-			assert.Error(t, err)
-		},
+	t.Run("Should return false on canCreate and error on non existing artifacts", func(t *testing.T) {
+		status, err := m.CheckWorkflow(ctx, &model.Workflow{})
+		assert.False(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.False(t, status.Valid)
+		assert.False(t, status.CanCreate)
+		assert.Error(t, err)
+	},
 	)
 
-	t.Run(
-		"Should return true on existing active workflow", func(t *testing.T) {
-			wf, err := createTestWorkflow(
-				ctxSys, repo, testutils.NewWorkflow(
-					func(w *model.Workflow) {
-						w.State = workflow.StateInitial.String()
-						w.ActionType = workflow.ActionTypeDelete.String()
-						w.ArtifactID = key.ID
-						w.ArtifactType = workflow.ArtifactTypeKey.String()
-					},
-				),
-			)
-			assert.NoError(t, err)
+	t.Run("Should return be valid and cant create on existing active workflow", func(t *testing.T) {
+		wf, err := createTestWorkflow(
+			ctxSys, repo, testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateInitial.String()
+					w.ActionType = workflow.ActionTypeDelete.String()
+					w.ArtifactID = key.ID
+					w.ArtifactType = workflow.ArtifactTypeKey.String()
+				},
+			),
+		)
+		assert.NoError(t, err)
 
-			status, err := m.CheckWorkflow(ctxSys, wf)
-			assert.True(t, status.Enabled)
-			assert.True(t, status.Exists)
-			assert.NoError(t, err)
-		},
-	)
+		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.True(t, status.Enabled)
+		assert.True(t, status.Exists)
+		assert.True(t, status.Valid)
+		assert.False(t, status.CanCreate)
+		assert.NoError(t, err)
+	})
 
-	t.Run(
-		"Should return false on rejected previous workflow", func(t *testing.T) {
-			wf, err := createTestWorkflow(
-				ctxSys, repo, testutils.NewWorkflow(
-					func(w *model.Workflow) {
-						w.State = workflow.StateInitial.String()
-						w.State = workflow.StateRejected.String()
-						w.ActionType = workflow.ActionTypeUpdatePrimary.String()
-						w.ArtifactID = keyConfig.ID
-						w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
-					},
-				),
-			)
-			assert.NoError(t, err)
+	t.Run("Should be invalid and cant create on system connect with invalid key state", func(t *testing.T) {
+		groupIAM := uuid.NewString()
+		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{groupIAM})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.State = string(cmkapi.KeyStateFORBIDDEN)
+		})
 
-			status, err := m.CheckWorkflow(ctxSys, wf)
-			assert.True(t, status.Enabled)
-			assert.False(t, status.Exists)
-			assert.NoError(t, err)
-		},
+		testGroup := testutils.NewGroup(
+			func(g *model.Group) {
+				g.IAMIdentifier = groupIAM
+			},
+		)
+
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.PrimaryKeyID = ptr.PointTo(key.ID)
+			kc.AdminGroup = *testGroup
+			kc.AdminGroupID = testGroup.ID
+		})
+		system := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		})
+		testutils.CreateTestEntities(ctx, t, repo, key, testGroup, keyConfig, system)
+
+		wf, err := createTestWorkflow(
+			ctx, repo, testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateInitial.String()
+					w.ActionType = workflow.ActionTypeLink.String()
+					w.ArtifactID = system.ID
+					w.ArtifactType = workflow.ArtifactTypeSystem.String()
+					w.Parameters = keyConfig.ID.String()
+				},
+			),
+		)
+		assert.NoError(t, err)
+
+		status, err := m.CheckWorkflow(ctx, wf)
+		assert.True(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.False(t, status.Valid)
+		assert.False(t, status.CanCreate)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Should be invalid and cant create on system connect without pkey", func(t *testing.T) {
+		groupIAM := uuid.NewString()
+		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{groupIAM})
+		testGroup := testutils.NewGroup(
+			func(g *model.Group) {
+				g.IAMIdentifier = groupIAM
+			},
+		)
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.AdminGroup = *testGroup
+			kc.AdminGroupID = testGroup.ID
+		})
+		system := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		})
+		testutils.CreateTestEntities(ctx, t, repo, testGroup, keyConfig, system)
+
+		wf, err := createTestWorkflow(
+			ctx, repo, testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateInitial.String()
+					w.ActionType = workflow.ActionTypeLink.String()
+					w.ArtifactID = system.ID
+					w.ArtifactType = workflow.ArtifactTypeSystem.String()
+					w.Parameters = keyConfig.ID.String()
+				},
+			),
+		)
+		assert.NoError(t, err)
+
+		status, err := m.CheckWorkflow(ctx, wf)
+		assert.True(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.True(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.False(t, status.Valid)
+		assert.False(t, status.CanCreate)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Should be creatable on rejected previous workflow", func(t *testing.T) {
+		wf, err := createTestWorkflow(
+			ctxSys, repo, testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateInitial.String()
+					w.State = workflow.StateRejected.String()
+					w.ActionType = workflow.ActionTypeUpdatePrimary.String()
+					w.ArtifactID = keyConfig.ID
+					w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+				},
+			),
+		)
+		assert.NoError(t, err)
+
+		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.True(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.True(t, status.Valid)
+		assert.True(t, status.CanCreate)
+		assert.NoError(t, err)
+	},
 	)
 
 	t.Run(
@@ -250,89 +318,79 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 	)
 	keyConfig, key := createTestObjects(t, repo, ctxSys)
 
-	t.Run(
-		"Should error on existing workflow", func(t *testing.T) {
-			wf, err := createTestWorkflow(
-				testutils.CreateCtxWithTenant(tenant),
-				repo,
-				testutils.NewWorkflow(
-					func(w *model.Workflow) {
-						w.State = workflow.StateInitial.String()
-						w.ActionType = workflow.ActionTypeDelete.String()
-						w.ArtifactType = workflow.ArtifactTypeKey.String()
-					},
-				),
-			)
-			assert.NoError(t, err)
+	t.Run("Should error on existing workflow", func(t *testing.T) {
+		wf := testutils.NewWorkflow(func(w *model.Workflow) {
+			w.State = workflow.StateInitial.String()
+			w.ActionType = workflow.ActionTypeDelete.String()
+			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.ArtifactID = key.ID
+		})
+		err := repo.Create(ctx, wf)
+		assert.NoError(t, err)
 
-			_, err = m.CreateWorkflow(testutils.CreateCtxWithTenant(tenant), wf)
-			assert.ErrorIs(t, err, manager.ErrOngoingWorkflowExist)
-		},
+		_, err = m.CreateWorkflow(ctxSys, wf)
+		assert.ErrorIs(t, err, manager.ErrOngoingWorkflowExist)
+	},
 	)
 
-	t.Run(
-		"Should create workflow", func(t *testing.T) {
-			expected := &model.Workflow{
-				ID:           uuid.New(),
-				State:        "INITIAL",
-				InitiatorID:  uuid.NewString(),
-				ArtifactType: "KEY",
-				ArtifactID:   key.ID,
-				ActionType:   "DELETE",
-				Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
-			}
-			res, err := m.CreateWorkflow(ctxSys, expected)
-			assert.NoError(t, err)
-			assert.Equal(t, expected, res)
-		},
+	t.Run("Should create workflow", func(t *testing.T) {
+		_, key := createTestObjects(t, repo, ctxSys)
+		wf := testutils.NewWorkflow(func(w *model.Workflow) {
+			w.State = workflow.StateInitial.String()
+			w.ActionType = workflow.ActionTypeDelete.String()
+			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.ArtifactID = key.ID
+		})
+		res, err := m.CreateWorkflow(ctxSys, wf)
+		assert.NoError(t, err)
+		assert.Equal(t, wf, res)
+	},
 	)
 
-	t.Run(
-		"Should create system workflow with artifact name from property", func(t *testing.T) {
-			system := testutils.NewSystem(func(s *model.System) {
-				s.Properties = map[string]string{
-					"NameOfTheSystem": "MySystem",
-				}
-			})
-			testutils.CreateTestEntities(ctxSys, t, repo, system)
-
-			expected := &model.Workflow{
-				ID:           uuid.New(),
-				State:        "INITIAL",
-				InitiatorID:  uuid.NewString(),
-				ArtifactType: "SYSTEM",
-				ArtifactID:   system.ID,
-				ActionType:   "LINK",
-				Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
-				Parameters:   keyConfig.ID.String(),
+	t.Run("Should create system workflow with artifact name from property", func(t *testing.T) {
+		system := testutils.NewSystem(func(s *model.System) {
+			s.Properties = map[string]string{
+				"NameOfTheSystem": "MySystem",
 			}
-			res, err := m.CreateWorkflow(ctxSys, expected)
-			assert.NoError(t, err)
-			assert.Equal(t, "MySystem", *res.ArtifactName)
-			assert.Equal(t, keyConfig.Name, *res.ParametersResourceName)
-		},
+		})
+		testutils.CreateTestEntities(ctxSys, t, repo, system)
+
+		expected := &model.Workflow{
+			ID:           uuid.New(),
+			State:        "INITIAL",
+			InitiatorID:  uuid.NewString(),
+			ArtifactType: "SYSTEM",
+			ArtifactID:   system.ID,
+			ActionType:   "LINK",
+			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+			Parameters:   keyConfig.ID.String(),
+		}
+		res, err := m.CreateWorkflow(ctxSys, expected)
+		assert.NoError(t, err)
+		assert.Equal(t, "MySystem", *res.ArtifactName)
+		assert.Equal(t, keyConfig.Name, *res.ParametersResourceName)
+	},
 	)
 
-	t.Run(
-		"Should create system workflow with artifact name from identifier", func(t *testing.T) {
-			system := testutils.NewSystem(func(s *model.System) {})
-			testutils.CreateTestEntities(ctxSys, t, repo, system)
+	t.Run("Should create system workflow with artifact name from identifier", func(t *testing.T) {
+		system := testutils.NewSystem(func(s *model.System) {})
+		testutils.CreateTestEntities(ctxSys, t, repo, system)
 
-			expected := &model.Workflow{
-				ID:           uuid.New(),
-				State:        "INITIAL",
-				InitiatorID:  uuid.NewString(),
-				ArtifactType: "SYSTEM",
-				ArtifactID:   system.ID,
-				ActionType:   "LINK",
-				Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
-				Parameters:   keyConfig.ID.String(),
-			}
-			res, err := m.CreateWorkflow(ctxSys, expected)
-			assert.NoError(t, err)
-			assert.Equal(t, system.Identifier, *res.ArtifactName)
-			assert.Equal(t, keyConfig.Name, *res.ParametersResourceName)
-		},
+		expected := &model.Workflow{
+			ID:           uuid.New(),
+			State:        "INITIAL",
+			InitiatorID:  uuid.NewString(),
+			ArtifactType: "SYSTEM",
+			ArtifactID:   system.ID,
+			ActionType:   "LINK",
+			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+			Parameters:   keyConfig.ID.String(),
+		}
+		res, err := m.CreateWorkflow(ctxSys, expected)
+		assert.NoError(t, err)
+		assert.Equal(t, system.Identifier, *res.ArtifactName)
+		assert.Equal(t, keyConfig.Name, *res.ParametersResourceName)
+	},
 	)
 }
 
@@ -1073,33 +1131,30 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 	cfg := &config.Config{}
 	wm, _, tenantID := SetupWorkflowManager(t, cfg)
 
-	t.Run(
-		"should successfully create and enqueue notification task", func(t *testing.T) {
-			// Arrange
-			ctx := testutils.CreateCtxWithTenant(tenantID)
+	t.Run("should successfully create and enqueue notification task", func(t *testing.T) {
+		// Arrange
+		ctx := testutils.CreateCtxWithTenant(tenantID)
 
-			mockClient := &async.MockClient{}
-			wm.SetAsyncClient(mockClient)
+		mockClient := &async.MockClient{}
+		wm.SetAsyncClient(mockClient)
 
-			wf := model.Workflow{
-				ID:           uuid.New(),
-				ActionType:   "CREATE",
-				ArtifactType: "KEY",
-				ArtifactID:   uuid.New(),
-				State:        string(workflow.StateWaitConfirmation),
-			}
+		wf := model.Workflow{
+			ID:           uuid.New(),
+			ActionType:   "CREATE",
+			ArtifactType: "KEY",
+			ArtifactID:   uuid.New(),
+		}
 
-			recipients := []string{"approver1@example.com", "approver2@example.com"}
+		recipients := []string{"approver1@example.com", "approver2@example.com"}
 
-			// Act
-			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
+		// Act
+		err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
 
-			// Assert
-			assert.NoError(t, err)
-			assert.Equal(t, 1, mockClient.CallCount)
-			assert.NotNil(t, mockClient.LastTask)
-		},
-	)
+		// Assert
+		assert.NoError(t, err)
+		assert.Equal(t, 1, mockClient.CallCount)
+		assert.NotNil(t, mockClient.LastTask)
+	})
 
 	t.Run(
 		"should skip notification when async client is nil", func(t *testing.T) {
@@ -1193,7 +1248,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 			recipients := []string{"approver@example.com"}
 
 			// Act
-			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionConfirm, recipients)
+			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
 
 			// Assert
 			assert.Error(t, err)
@@ -1215,7 +1270,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 				ActionType:   "CREATE",
 				ArtifactType: "KEY",
 				ArtifactID:   uuid.New(),
-				State:        string(workflow.StateWaitConfirmation),
+				State:        string(workflow.StateSuccessful),
 			}
 
 			recipients := []string{"user@example.com"}
