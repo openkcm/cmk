@@ -419,11 +419,7 @@ func (s *DBSuite) TestConcurrentOnboardSameTenant() {
 	errs := make(chan error, numRoutines)
 
 	for range numRoutines {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			tenant := testutils.NewTenant(
 				func(l *model.Tenant) {
 					l.SchemaName = tenantName
@@ -438,7 +434,7 @@ func (s *DBSuite) TestConcurrentOnboardSameTenant() {
 			} else {
 				errs <- nil
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -566,11 +562,7 @@ func (s *DBSuite) TestConcurrentCreateGroups() {
 	errs := make(chan error, numRoutines)
 
 	for range numRoutines {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			tenant := testutils.NewTenant(
 				func(l *model.Tenant) {
 					l.SchemaName = schemaName
@@ -587,7 +579,7 @@ func (s *DBSuite) TestConcurrentCreateGroups() {
 			} else {
 				errs <- nil
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
