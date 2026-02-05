@@ -132,7 +132,7 @@ func registerTasks(
 	cmkAuditor := auditor.New(ctx, cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	certManager := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
-	tenantConfigManager := manager.NewTenantConfigManager(r, ctlg)
+	tenantConfigManager := manager.NewTenantConfigManager(r, ctlg, cfg)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
 	keyManager := manager.NewKeyManager(

@@ -123,7 +123,7 @@ var (
 // By default, it uses TestDB configuration. Use opts to customize the setup.
 // This function is intended for use in unit tests.
 //
-//nolint:funlen
+//nolint:funlen,cyclop
 func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multitenancy.DB, []string, config.Database) {
 	tb.Helper()
 
@@ -194,6 +194,9 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 				t.DomainURL = schema + ".example.com"
 				t.ID = schema
 				t.OwnerID = schema + "-owner-id"
+				if cfg.TenantRole != "" {
+					t.Role = cfg.TenantRole
+				}
 			})
 			CreateDBTenant(tb, dbCon, tenant)
 			tenantIDs = append(tenantIDs, tenant.ID)
@@ -205,6 +208,9 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 			t.DomainURL = schema + ".example.com"
 			t.ID = schema
 			t.OwnerID = schema + "-owner-id"
+			if cfg.TenantRole != "" {
+				t.Role = cfg.TenantRole
+			}
 		})
 		CreateDBTenant(tb, dbCon, tenant)
 		tenantIDs = append(tenantIDs, tenant.ID)
@@ -310,6 +316,14 @@ func WithGenerateTenants(count int) TestDBConfigOpt {
 	}
 }
 
+// WithTenantRole specifies the role for generated tenants
+// If not set, defaults to ROLE_LIVE
+func WithTenantRole(role model.TenantRole) TestDBConfigOpt {
+	return func(c *TestDBConfig) {
+		c.TenantRole = role
+	}
+}
+
 type TestDBConfig struct {
 	dbCon config.Database
 
@@ -342,6 +356,10 @@ type TestDBConfig struct {
 	// Tenant schema version to migrate up to
 	// If it's nil migrate to latest version
 	TenantVersion *int64
+
+	// TenantRole specifies the role for generated tenants
+	// If empty, defaults to ROLE_LIVE
+	TenantRole model.TenantRole
 
 	// GORM Logger
 	Logger logger.Interface

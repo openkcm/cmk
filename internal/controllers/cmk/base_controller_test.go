@@ -18,7 +18,7 @@ const (
 func disableWorkflow(t *testing.T, ctx context.Context, r repo.Repo) {
 	t.Helper()
 
-	tenantConfigManager := manager.NewTenantConfigManager(r, nil)
+	tenantConfigManager := manager.NewTenantConfigManager(r, nil, nil)
 
 	workflowConfig, err := tenantConfigManager.GetWorkflowConfig(ctx)
 	require.NoError(t, err)
