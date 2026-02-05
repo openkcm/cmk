@@ -17,7 +17,22 @@
       "hidden": false
     },
     {
+      "type": "feature",
+      "section": "🚀 Features",
+      "hidden": false
+    },
+    {
+      "type": "enhancement",
+      "section": "🚀 Features",
+      "hidden": false
+    },
+    {
       "type": "fix",
+      "section": "🐛 Bug Fixes",
+      "hidden": false
+    },
+    {
+      "type": "bug",
       "section": "🐛 Bug Fixes",
       "hidden": false
     },
@@ -38,7 +53,32 @@
     },
     {
       "type": "build",
-      "section": "🧱 Build / Dependencies",
+      "section": "🧱 Build",
+      "hidden": false
+    },
+    {
+      "type": "deps",
+      "section": "Dependencies",
+      "hidden": false
+    },
+    {
+      "type": "refactor",
+      "section": "♻️ Code Refactoring",
+      "hidden": false
+    },
+    {
+      "type": "perf",
+      "section": "⚡ Performance Improvements",
+      "hidden": false
+    },
+    {
+      "type": "test",
+      "section": "✅ Tests",
+      "hidden": false
+    },
+    {
+      "type": "revert",
+      "section": "⏪ Reverts",
       "hidden": false
     }
   ],
@@ -46,7 +86,11 @@
   "release-search-depth": 400,
   "packages": {
     ".": {
-      "release-type": "go"
+      "release-type": "go",
+      "pull-request-header": "I have created a release for you",
+      "versioning": "always-bump-patch",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
     }
   },
   "changelog": {
