@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/openkcm/cmk/compare/v0.2.0...v0.2.1) (2026-02-05)
+
+
+### Bug Fixes
+
+* remove blocking on terminate tenant ([#59](https://github.com/openkcm/cmk/issues/59)) ([11c4fcd](https://github.com/openkcm/cmk/commit/11c4fcdac39c3890d964eacccbd17899d51876e5))
+
 ## [0.2.0](https://github.com/openkcm/cmk/compare/v0.1.2...v0.2.0) (2026-02-04)
 
 
