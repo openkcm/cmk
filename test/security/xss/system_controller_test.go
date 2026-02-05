@@ -44,6 +44,8 @@ func TestGetSystems_ForXSS(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	keyConfig := testutils.NewAuthzKeyConfig(func(_ *model.KeyConfiguration) {})
+
 	systemWithProps := testutils.NewSystem(func(s *model.System) {
 		s.Properties = map[string]string{
 			"test": "a<SCRIPT></SCRIPT>b",
@@ -54,15 +56,17 @@ func TestGetSystems_ForXSS(t *testing.T) {
 		ctx,
 		t,
 		r,
+		keyConfig,
 		systemWithProps,
 	)
 
 	t.Run("Should show properties field on system with properties", func(t *testing.T) {
 		expected := &map[string]any{"test": "ab"}
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: fmt.Sprintf("/systems/%s", systemWithProps.ID),
-			Tenant:   tenant,
+			Method:            http.MethodGet,
+			Endpoint:          fmt.Sprintf("/systems/%s", systemWithProps.ID),
+			Tenant:            tenant,
+			AdditionalContext: testutils.GetKeyAdminClientMap(),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)

@@ -18,16 +18,17 @@ func LoadConfig(opts ...commoncfg.Option) (*Config, error) {
 
 	// If loadconfig is called with one of the default ones but different values
 	// these are overridden as only the last one takes efect
-	options := []commoncfg.Option{
-		commoncfg.WithDefaults(defaultConfig),
-		commoncfg.WithPaths(
-			constants.DefaultConfigPath1,
-			constants.DefaultConfigPath2,
-			".",
-		),
-	}
+	options := make([]commoncfg.Option, 2+len(opts))
+	options[0] = commoncfg.WithDefaults(defaultConfig)
+	options[1] = commoncfg.WithPaths(
+		constants.DefaultConfigPath1,
+		constants.DefaultConfigPath2,
+		".",
+	)
 
-	options = append(options, opts...)
+	for i, opt := range opts {
+		options[2+i] = opt
+	}
 
 	loader := commoncfg.NewLoader(
 		cfg,

@@ -11,14 +11,12 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	cmksql "github.com/openkcm/cmk/internal/repo/sql"
@@ -43,38 +41,18 @@ func startAPIWorkflows(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string)
 }
 
 var (
-	auditorGroupName  = "auditors"
-	keyAdminGroupName = "keyAdmins"
-
 	userID      = "008cfcb6-0a68-449e-bbf3-ef6ee8537f02"
-	groupID     = "7a3834b8-1e41-4adc-bda2-73c72ad1d560"
 	keyConfigID = "7a3834b8-1e41-4adc-bda2-73c72ad1d561"
 	key1ID      = "7a3834b8-1e41-4adc-bda2-73c72ad1d562"
 	key2ID      = "7a3834b8-1e41-4adc-bda2-73c72ad1d563"
 	systemID    = "7a3834b8-1e41-4adc-bda2-73c72ad1d564"
-
-	adminGroupIAMIdentifier = "admin-group-iam-identifier"
 )
 
-func createAuditorGroup(ctx context.Context, tb testing.TB, r repo.Repo) {
-	tb.Helper()
-
-	group := testutils.NewGroup(func(g *model.Group) {
-		g.Name = auditorGroupName
-		g.IAMIdentifier = auditorGroupName
-		g.Role = constants.TenantAuditorRole
-	})
-	testutils.CreateTestEntities(ctx, tb, r, group)
-}
-
-func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo) []*model.Workflow {
+func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo, group model.Group) []*model.Workflow {
 	tb.Helper()
 
 	approverID := "76e06743-80c6-4372-a195-269e4473036d"
 
-	group := testutils.NewGroup(func(g *model.Group) {
-		g.IAMIdentifier = adminGroupIAMIdentifier
-	})
 	groupIDsBytes, err := json.Marshal([]uuid.UUID{group.ID})
 	assert.NoError(tb, err)
 
@@ -137,7 +115,7 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo) []*mod
 		w.ParametersResourceType = ptr.PointTo(wfMechanism.ParametersResourceTypeKeyConfiguration.String())
 	})
 
-	testutils.CreateTestEntities(ctx, tb, r, group, key, key2, system, keyConfig, workflow, workflow2, workflow3)
+	testutils.CreateTestEntities(ctx, tb, r, key, key2, system, keyConfig, workflow, workflow2, workflow3)
 
 	return []*model.Workflow{workflow, workflow2, workflow3}
 }
@@ -150,19 +128,15 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T) (*multitenancy.DB,
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
-	createTestWorkflows(ctx, t, r)
 
-	group := testutils.NewGroup(func(g *model.Group) {
-		g.ID = uuid.MustParse(groupID)
-		g.Name = keyAdminGroupName
-		g.IAMIdentifier = keyAdminGroupName
-		g.Role = constants.KeyAdminRole
-	})
+	_, _, keyAdminGroup := testutils.CreateRoleGroups(ctx, t, r)
+
+	createTestWorkflows(ctx, t, r, *keyAdminGroup)
 
 	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 		c.ID = uuid.MustParse(keyConfigID)
-		c.AdminGroup = *group
-		c.AdminGroupID = uuid.MustParse(groupID)
+		c.AdminGroup = *keyAdminGroup
+		c.AdminGroupID = uuid.MustParse(testutils.KeyAdminGroupID)
 	})
 
 	key := testutils.NewKey(func(k *model.Key) {
@@ -180,22 +154,21 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T) (*multitenancy.DB,
 		w.KeyConfigurationID = ptr.PointTo(uuid.MustParse(keyConfigID))
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, group, keyConfig, key, key2, system)
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, key, key2, system)
 
-	// Do a create to ensure that the config is created. We need this for any
+	return db, r, sv, tenant, ctx
+}
+
+func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux) {
+	// Do a dummy check to ensure that the config is created. We need this for any
 	// tests simulating a DB failure, otherwise the config creation will hit the
 	// simulated error.
+	t.Helper()
+
 	wf := cmkapi.Workflow{
 		ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
 		ArtifactID:   uuid.MustParse(systemID),
 		ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeSystem),
-	}
-
-	clientData := map[any]any{
-		constants.ClientData: &auth.ClientData{
-			Identifier: uuid.NewString(),
-			Groups:     []string{keyAdminGroupName},
-		},
 	}
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -203,24 +176,15 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T) (*multitenancy.DB,
 		Endpoint:          "/workflows/check",
 		Tenant:            tenant,
 		Body:              testutils.WithJSON(t, wf),
-		AdditionalContext: clientData,
+		AdditionalContext: testutils.GetKeyAdminClientMap(),
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
-
-	return db, r, sv, tenant, ctx
 }
 
 func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 	t.Run("should 200 with exists and required false", func(t *testing.T) {
 		_, _, sv, tenant, _ := setupTestWorkflowControllerCreateWorkflow(t)
-
-		clientData := map[any]any{
-			constants.ClientData: &auth.ClientData{
-				Identifier: uuid.NewString(),
-				Groups:     []string{keyAdminGroupName},
-			},
-		}
 
 		wf := cmkapi.Workflow{
 			ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
@@ -233,7 +197,7 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 			Endpoint:          "/workflows/check",
 			Tenant:            tenant,
 			Body:              testutils.WithJSON(t, wf),
-			AdditionalContext: clientData,
+			AdditionalContext: testutils.GetKeyAdminClientMap(),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -342,24 +306,18 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 			db, _, sv, tenant, ctx := setupTestWorkflowControllerCreateWorkflow(t)
 
 			if tt.sideEffect != nil {
+				forceConfig(t, tenant, sv)
 				teardown := tt.sideEffect(db)
 				defer teardown()
 			}
 
 			testutils.CreateTestEntities(ctx, t, cmksql.NewRepository(db), tt.extraResource...)
-
-			clientData := map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Identifier: uuid.NewString(),
-					Groups:     []string{keyAdminGroupName},
-				},
-			}
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:            http.MethodPost,
 				Endpoint:          "/workflows",
 				Tenant:            tenant,
 				Body:              testutils.WithString(t, tt.request),
-				AdditionalContext: clientData,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code, w.Body.String())
 		})
@@ -368,74 +326,34 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 
 func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 	keyAdminGroup2Name := "keyAdminGroup2"
-	group2ID := uuid.MustParse("7a3834b8-1e41-4adc-bda3-73c72ad1d560")
-
-	KAGroup := testutils.NewGroup(func(g *model.Group) {
-		g.ID = group2ID
-		g.Name = keyAdminGroup2Name
-		g.IAMIdentifier = keyAdminGroup2Name
-		g.Role = constants.KeyAdminRole
-	})
-
-	tenantAdminGroupName := "tenantAdminGroup"
-	group3ID := uuid.MustParse("7a3834b8-1e41-4adc-bda4-73c72ad1d560")
-
-	TAGroup := testutils.NewGroup(func(g *model.Group) {
-		g.ID = group3ID
-		g.Name = tenantAdminGroupName
-		g.IAMIdentifier = tenantAdminGroupName
-		g.Role = constants.TenantAdminRole
-	})
-
-	tenantAuditorGroupName := "tenantAuditorGroup"
-	group4ID := uuid.MustParse("7a3834b8-1e41-4adc-bda5-73c72ad1d560")
-
-	TAuditGroup := testutils.NewGroup(func(g *model.Group) {
-		g.ID = group4ID
-		g.Name = tenantAuditorGroupName
-		g.IAMIdentifier = tenantAuditorGroupName
-		g.Role = constants.TenantAuditorRole
-	})
-
+	keyAdminGroup2ID := "7a3834b8-1e41-4adc-bda3-73c72ad1d560"
 	tests := []struct {
 		name                 string
-		clientData           auth.ClientData
+		clientMap            map[any]any
 		expectedCheckStatus  int
 		expectedCreateStatus int
 	}{
 		{
-			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_InKAGroup",
-			clientData: auth.ClientData{
-				Identifier: uuid.NewString(),
-				Groups:     []string{keyAdminGroupName},
-			},
+			name:                 "TestWorkflowControllerCheckCreateWorkflowAuthz_InKAGroup",
+			clientMap:            testutils.GetKeyAdminClientMap(),
 			expectedCheckStatus:  http.StatusOK,
 			expectedCreateStatus: http.StatusCreated,
 		},
 		{
-			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_InOtherKAGroup",
-			clientData: auth.ClientData{
-				Identifier: uuid.NewString(),
-				Groups:     []string{keyAdminGroup2Name},
-			},
+			name:                 "TestWorkflowControllerCheckCreateWorkflowAuthz_InOtherKAGroup",
+			clientMap:            testutils.GetClientGroupMap(testutils.KeyAdminName, keyAdminGroup2Name),
 			expectedCheckStatus:  http.StatusForbidden,
 			expectedCreateStatus: http.StatusForbidden,
 		},
 		{
-			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_InTAGroup",
-			clientData: auth.ClientData{
-				Identifier: uuid.NewString(),
-				Groups:     []string{tenantAdminGroupName},
-			},
+			name:                 "TestWorkflowControllerCheckCreateWorkflowAuthz_InTAGroup",
+			clientMap:            testutils.GetTenantAdminClientMap(),
 			expectedCheckStatus:  http.StatusForbidden,
 			expectedCreateStatus: http.StatusForbidden,
 		},
 		{
-			name: "TestWorkflowControllerCheckCreateWorkflowAuthz_InTAuditGroup",
-			clientData: auth.ClientData{
-				Identifier: uuid.NewString(),
-				Groups:     []string{tenantAuditorGroupName},
-			},
+			name:                 "TestWorkflowControllerCheckCreateWorkflowAuthz_InTAuditGroup",
+			clientMap:            testutils.GetAuditorClientMap(),
 			expectedCheckStatus:  http.StatusForbidden,
 			expectedCreateStatus: http.StatusForbidden,
 		},
@@ -464,19 +382,15 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 		for _, request := range requests {
 			t.Run(tt.name, func(t *testing.T) {
 				_, r, sv, tenant, ctx := setupTestWorkflowControllerCreateWorkflow(t)
-
-				testutils.CreateTestEntities(ctx, t, r, KAGroup, TAGroup, TAuditGroup)
-
-				clientData := map[any]any{
-					constants.ClientData: &tt.clientData,
-				}
+				testutils.CreateOtherKeyAdminGroup(ctx, t, r, keyAdminGroup2Name,
+					ptr.PointTo(keyAdminGroup2ID))
 
 				w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 					Method:            http.MethodPost,
 					Endpoint:          "/workflows/check",
 					Tenant:            tenant,
 					Body:              testutils.WithString(t, request),
-					AdditionalContext: clientData,
+					AdditionalContext: tt.clientMap,
 				})
 				assert.Equal(t, tt.expectedCheckStatus, w.Code, w.Body.String())
 
@@ -485,7 +399,7 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 					Endpoint:          "/workflows",
 					Tenant:            tenant,
 					Body:              testutils.WithString(t, request),
-					AdditionalContext: clientData,
+					AdditionalContext: tt.clientMap,
 				})
 				assert.Equal(t, tt.expectedCreateStatus, w.Code, w.Body.String())
 			})
@@ -550,21 +464,14 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, r, sv, tenant, ctx := setupTestWorkflowControllerCreateWorkflow(t)
 
-			testutils.CreateTestEntities(ctx, t, r, keyConfigWithoutUser, KAGroup)
-
-			clientData := map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Identifier: uuid.NewString(),
-					Groups:     []string{keyAdminGroupName},
-				},
-			}
+			testutils.CreateTestEntities(ctx, t, r, keyConfigWithoutUser)
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:            http.MethodPost,
 				Endpoint:          "/workflows/check",
 				Tenant:            tenant,
 				Body:              testutils.WithString(t, tt.request),
-				AdditionalContext: clientData,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 			assert.Equal(t, tt.expectedCheckStatus, w.Code, w.Body.String())
 
@@ -573,7 +480,7 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 				Endpoint:          "/workflows",
 				Tenant:            tenant,
 				Body:              testutils.WithString(t, tt.request),
-				AdditionalContext: clientData,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 			assert.Equal(t, tt.expectedCreateStatus, w.Code, w.Body.String())
 		})
@@ -584,7 +491,8 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
-	workflows := createTestWorkflows(ctx, t, r)
+	group := testutils.CreateKeyAdminGroup(ctx, t, r)
+	workflows := createTestWorkflows(ctx, t, r, *group)
 
 	groupIDsBytes, err := json.Marshal([]uuid.UUID{uuid.New()})
 	assert.NoError(t, err)
@@ -661,18 +569,12 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 				defer teardown()
 			}
 
-			additionalContext := map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Identifier: tt.userID,
-					Groups:     []string{adminGroupIAMIdentifier},
-				},
-			}
-
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/workflows/" + tt.workflowID,
-				Tenant:            tenant,
-				AdditionalContext: additionalContext,
+				Method:   http.MethodGet,
+				Endpoint: "/workflows/" + tt.workflowID,
+				Tenant:   tenant,
+				AdditionalContext: testutils.GetClientGroupMap(tt.userID,
+					testutils.KeyAdminGroupName),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -696,83 +598,70 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
-	workflows := createTestWorkflows(ctx, t, r)
-	createAuditorGroup(ctx, t, r)
+
+	group := testutils.CreateKeyAdminGroup(ctx, t, r)
+	workflows := createTestWorkflows(ctx, t, r, *group)
+	testutils.CreateAuditorGroup(ctx, t, r)
 
 	tests := []struct {
 		name           string
 		sideEffect     func() func()
-		clientData     auth.ClientData
+		clientMap      map[any]any
 		expectedStatus int
 		expectedCount  int
 		count          bool
 	}{
 		{
-			name: "TestWorkflowControllerListWorkflows_Okay_AsAuditor",
-			clientData: auth.ClientData{
-				Identifier: userID,
-				Groups:     []string{auditorGroupName},
-			},
+			name:           "TestWorkflowControllerListWorkflows_Okay_AsAuditor",
+			clientMap:      testutils.GetClientGroupMap(userID, testutils.AuditorGroupName),
 			expectedStatus: http.StatusOK,
 			expectedCount:  3,
 			count:          false,
 		},
 		{
 			name: "TestWorkflowControllerListWorkflows_Okay_AsInitiator",
-			clientData: auth.ClientData{
-				Identifier: workflows[0].InitiatorID,
-				Groups:     []string{keyAdminGroupName},
-			},
+			clientMap: testutils.GetClientGroupMap(workflows[0].InitiatorID,
+				testutils.KeyAdminGroupName),
 			expectedStatus: http.StatusOK,
 			expectedCount:  1,
 			count:          false,
 		},
 		{
 			name: "TestWorkflowControllerListWorkflows_Okay_AsApprover",
-			clientData: auth.ClientData{
-				Identifier: userID,
-				Groups:     []string{keyAdminGroupName},
-			},
+			clientMap: testutils.GetClientGroupMap(userID,
+				testutils.KeyAdminGroupName),
 			expectedStatus: http.StatusOK,
 			expectedCount:  2,
 			count:          false,
 		},
 		{
 			name: "TestWorkflowControllerListWorkflowsWithCount_Okay_AsAuditor",
-			clientData: auth.ClientData{
-				Identifier: userID,
-				Groups:     []string{auditorGroupName},
-			},
+			clientMap: testutils.GetClientGroupMap(userID,
+				testutils.AuditorGroupName),
 			expectedStatus: http.StatusOK,
 			expectedCount:  3,
 			count:          true,
 		},
 		{
 			name: "TestWorkflowControllerListWorkflowsWithCount_Okay_AsInitiator",
-			clientData: auth.ClientData{
-				Identifier: workflows[2].InitiatorID,
-				Groups:     []string{keyAdminGroupName},
-			},
+			clientMap: testutils.GetClientGroupMap(workflows[0].InitiatorID,
+				testutils.KeyAdminGroupName),
 			expectedStatus: http.StatusOK,
 			expectedCount:  1,
 			count:          true,
 		},
 		{
 			name: "TestWorkflowControllerListWorkflowsWithCount_Okay_AsApprover",
-			clientData: auth.ClientData{
-				Identifier: userID,
-				Groups:     []string{keyAdminGroupName},
-			},
+			clientMap: testutils.GetClientGroupMap(userID,
+				testutils.KeyAdminGroupName),
 			expectedStatus: http.StatusOK,
 			expectedCount:  2,
 			count:          true,
 		},
 		{
 			name: "TestWorkflowControllerListWorkflows_InternalError",
-			clientData: auth.ClientData{
-				Identifier: userID,
-				Groups:     []string{auditorGroupName},
-			},
+			clientMap: testutils.GetClientGroupMap(userID,
+				testutils.AuditorGroupName),
 			sideEffect: func() func() {
 				errForced := testutils.NewDBErrorForced(db, errMockInternalError)
 				errForced.WithQuery().Register()
@@ -795,15 +684,11 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 				path += "?$count=true"
 			}
 
-			additionalContext := map[any]any{
-				constants.ClientData: &tt.clientData,
-			}
-
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:            http.MethodGet,
 				Endpoint:          path,
 				Tenant:            tenant,
-				AdditionalContext: additionalContext,
+				AdditionalContext: tt.clientMap,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -826,7 +711,9 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
-	createAuditorGroup(ctx, t, r)
+
+	testutils.CreateAuditorGroup(ctx, t, r)
+	testutils.CreateKeyAdminGroup(ctx, t, r)
 
 	user1ID := "76e06743-80c6-4372-a195-269e4473036d"
 	user2ID := "76e06743-80c6-4372-a195-269e4473036e"
@@ -862,24 +749,19 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 	}{
 		{
 			name:             "user in auditor group",
-			groups:           []string{auditorGroupName},
+			groups:           []string{testutils.AuditorGroupName},
 			allowedWorkflows: []*model.Workflow{workflow, workflow2, workflow3, workflow4},
 		},
 		{
-			name:             "user not in auditor group",
-			groups:           []string{},
+			name:             "user in key admin group",
+			groups:           []string{testutils.KeyAdminGroupName},
 			allowedWorkflows: []*model.Workflow{workflow2, workflow3, workflow4},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			additionalContext := map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Identifier: userID,
-					Groups:     tt.groups,
-				},
-			}
+			additionalContext := testutils.GetClientGroupsMap(userID, tt.groups)
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:            http.MethodGet,
@@ -918,7 +800,7 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
-	createAuditorGroup(ctx, t, r)
+	testutils.CreateAuditorGroup(ctx, t, r)
 
 	for range totalRecordCount {
 		workflow := testutils.NewWorkflow(func(_ *model.Workflow) {})
@@ -1002,18 +884,11 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 				defer teardown()
 			}
 
-			additionalContext := map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Identifier: userID,
-					Groups:     []string{auditorGroupName},
-				},
-			}
-
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:            http.MethodGet,
 				Endpoint:          tt.query,
 				Tenant:            tenant,
-				AdditionalContext: additionalContext,
+				AdditionalContext: testutils.GetAuditorClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -1036,7 +911,8 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
-	createTestWorkflows(ctx, t, r)
+	group := testutils.CreateKeyAdminGroup(ctx, t, r)
+	createTestWorkflows(ctx, t, r, *group)
 
 	workflowID := uuid.New()
 	initiatorID := uuid.NewString()
@@ -1245,17 +1121,16 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 				testutils.DeleteTestEntities(ctx, t, r, &tt.workflow)
 			}()
 
-			testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodPost,
 				Endpoint: fmt.Sprintf("/workflows/%s/state", tt.workflowID),
 				Tenant:   tenant,
 				Body:     testutils.WithString(t, tt.request),
-				AdditionalContext: map[any]any{
-					constants.ClientData: &auth.ClientData{
-						Identifier: tt.actorID,
-					},
-				},
+				AdditionalContext: testutils.GetClientGroupMap(tt.actorID,
+					testutils.KeyAdminGroupName),
 			})
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedState != "" {
 				id, err := uuid.Parse(tt.workflowID)
@@ -1275,8 +1150,9 @@ func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
 	db, sv, tenant := startAPIWorkflows(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
-	createAuditorGroup(ctx, t, r)
-	workflows := createTestWorkflows(ctx, t, r)
+	testutils.CreateAuditorGroup(ctx, t, r)
+	group := testutils.CreateKeyAdminGroup(ctx, t, r)
+	workflows := createTestWorkflows(ctx, t, r, *group)
 
 	tests := []struct {
 		name           string
@@ -1343,18 +1219,12 @@ func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			additionalContext := map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Identifier: userID,
-					Groups:     []string{auditorGroupName},
-				},
-			}
-
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          tt.query,
-				Tenant:            tenant,
-				AdditionalContext: additionalContext,
+				Method:   http.MethodGet,
+				Endpoint: tt.query,
+				Tenant:   tenant,
+				AdditionalContext: testutils.GetClientGroupMap(userID,
+					testutils.AuditorGroupName),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)

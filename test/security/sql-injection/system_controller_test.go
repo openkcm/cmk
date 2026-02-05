@@ -34,7 +34,7 @@ func TestAPIController_GetAllSystems_ForInjection(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig := testutils.NewAuthzKeyConfig(func(_ *model.KeyConfiguration) {})
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
@@ -52,18 +52,20 @@ func TestAPIController_GetAllSystems_ForInjection(t *testing.T) {
 
 	t.Run("Test normal paths", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: "/systems?$count=true",
-			Tenant:   tenant,
+			Method:            http.MethodGet,
+			Endpoint:          "/systems?$count=true",
+			Tenant:            tenant,
+			AdditionalContext: testutils.GetKeyAdminClientMap(),
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 		response := testutils.GetJSONBody[cmkapi.SystemList](t, w)
 		assert.Equal(t, 2, *response.Count)
 
 		w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: "/systems?$count=true&$filter=status eq 'DISCONNECTED'",
-			Tenant:   tenant,
+			Method:            http.MethodGet,
+			Endpoint:          "/systems?$count=true&$filter=status eq 'DISCONNECTED'",
+			Tenant:            tenant,
+			AdditionalContext: testutils.GetKeyAdminClientMap(),
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 		response = testutils.GetJSONBody[cmkapi.SystemList](t, w)
@@ -79,9 +81,10 @@ func TestAPIController_GetAllSystems_ForInjection(t *testing.T) {
 
 		for _, attackString := range attackStrings {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: "/systems?$count=true&$filter=" + attackString,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          "/systems?$count=true&$filter=" + attackString,
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 
 			response := testutils.GetJSONBody[cmkapi.SystemList](t, w)
@@ -111,16 +114,18 @@ func TestAPIController_GetAllSystems_ForInjection(t *testing.T) {
 
 		for _, attackString := range attackStrings {
 			testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: "/systems?$count=true&$filter=" + attackString,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          "/systems?$count=true&$filter=" + attackString,
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 
 			// Check there are still entries in the table
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: "/systems?$count=true",
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          "/systems?$count=true",
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 			assert.Equal(t, http.StatusOK, w.Code)
 			response := testutils.GetJSONBody[cmkapi.SystemList](t, w)

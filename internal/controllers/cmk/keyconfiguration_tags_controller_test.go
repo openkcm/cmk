@@ -37,7 +37,7 @@ func TestGetTagsForKeyConfiguration(t *testing.T) {
 	bytes, err := json.Marshal(tags)
 	assert.NoError(t, err)
 
-	keyConfig := testutils.NewKeyConfig(func(*model.KeyConfiguration) {})
+	keyConfig := testutils.NewAuthzKeyConfig(func(*model.KeyConfiguration) {})
 
 	tag := testutils.NewTag(func(t *model.Tag) {
 		t.ID = keyConfig.ID
@@ -88,9 +88,10 @@ func TestGetTagsForKeyConfiguration(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: url,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          url,
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -114,7 +115,7 @@ func TestAddTagsToKeyConfiguration(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig := testutils.NewAuthzKeyConfig(func(_ *model.KeyConfiguration) {})
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	tests := []struct {
@@ -144,10 +145,11 @@ func TestAddTagsToKeyConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodPut,
-				Endpoint: fmt.Sprintf("/keyConfigurations/%s/tags", tt.keyConfigID),
-				Tenant:   tenant,
-				Body:     testutils.WithJSON(t, tt.requestBody),
+				Method:            http.MethodPut,
+				Endpoint:          fmt.Sprintf("/keyConfigurations/%s/tags", tt.keyConfigID),
+				Tenant:            tenant,
+				Body:              testutils.WithJSON(t, tt.requestBody),
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
