@@ -113,6 +113,9 @@ func TestGetTenantInfo(t *testing.T) {
 	assert.NoError(t, err)
 
 	tenantCtx := cmkContext.CreateTenantContext(t.Context(), tenant.ID)
+
+	testutils.CreateTenantAdminGroup(tenantCtx, t, r)
+
 	group := testutils.NewGroup(func(group *model.Group) {
 		group.IAMIdentifier = "sysadmin"
 	})
@@ -120,19 +123,16 @@ func TestGetTenantInfo(t *testing.T) {
 	err = r.Create(tenantCtx, group)
 	assert.NoError(t, err)
 
-	t.Run("Should 404 on get tenant info that does not exist", func(t *testing.T) {
+	t.Run("Should 403 on get tenant info that does not exist", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/tenantInfo",
 			Tenant:   "nonexistent-tenant-id",
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{"sysadmin", "othergroup"},
-				},
-			},
+			AdditionalContext: testutils.GetClientGroupsMap(testutils.TenantAdminName,
+				[]string{testutils.TenantAdminGroupName, "othergroup"}),
 		})
 
-		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 
 	t.Run("Should 403 on get tenant info without a user group", func(t *testing.T) {
@@ -150,11 +150,8 @@ func TestGetTenantInfo(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/tenantInfo",
 			Tenant:   tenant.ID,
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{"sysadmin", "othergroup"},
-				},
-			},
+			AdditionalContext: testutils.GetClientGroupsMap(testutils.TenantAdminName,
+				[]string{testutils.TenantAdminGroupName, "othergroup"}),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -177,9 +174,8 @@ func TestGetTenantInfo(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/tenantInfo",
 			Tenant:   tenant.ID,
-			AdditionalContext: map[any]any{
-				"Groups": []string{"otheradm"},
-			},
+			AdditionalContext: testutils.GetClientGroupMap(testutils.TenantAdminName,
+				"othergroup"),
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)

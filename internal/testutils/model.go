@@ -61,10 +61,33 @@ func NewSystem(m func(*model.System)) *model.System {
 func NewKeyConfig(m func(*model.KeyConfiguration)) *model.KeyConfiguration {
 	mut := NewMutator(func() model.KeyConfiguration {
 		return model.KeyConfiguration{
-			ID:         uuid.New(),
-			Name:       uuid.NewString(),
-			AdminGroup: model.Group{ID: uuid.New(), Name: uuid.NewString(), IAMIdentifier: uuid.NewString()},
-			CreatorID:  uuid.NewString(),
+			ID:   uuid.New(),
+			Name: uuid.NewString(),
+			AdminGroup: model.Group{
+				ID:            uuid.New(),
+				Name:          uuid.NewString(),
+				IAMIdentifier: uuid.NewString(),
+				Role:          constants.KeyAdminRole,
+			},
+			CreatorID: uuid.NewString(),
+		}
+	})
+
+	return ptr.PointTo(mut(m))
+}
+
+func NewAuthzKeyConfig(m func(*model.KeyConfiguration)) *model.KeyConfiguration {
+	mut := NewMutator(func() model.KeyConfiguration {
+		return model.KeyConfiguration{
+			ID:   uuid.New(),
+			Name: uuid.NewString(),
+			AdminGroup: model.Group{
+				ID:            KeyAdminGroupUUID,
+				Name:          KeyAdminGroupName,
+				IAMIdentifier: KeyAdminGroupName,
+				Role:          constants.KeyAdminRole,
+			},
+			CreatorID: uuid.NewString(),
 		}
 	})
 

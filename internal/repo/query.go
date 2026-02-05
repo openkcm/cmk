@@ -317,17 +317,16 @@ type LoadingFields struct {
 func NewQueryWithFieldLoading(table table, fields ...LoadingFields) *Query {
 	query := NewQuery()
 
-	selectFields := []*SelectField{
-		NewSelectField(table.TableName(), QueryFunction{Function: AllFunc}),
-	}
+	selectFields := make([]*SelectField, 1+len(fields))
+	selectFields[0] = NewSelectField(table.TableName(), QueryFunction{Function: AllFunc})
 
-	for _, f := range fields {
+	for i, f := range fields {
 		selectField := NewSelectField(fmt.Sprintf("%s.%s", f.Table.TableName(), f.SelectField.Field), f.SelectField.Func)
 		if f.SelectField.Alias != "" {
 			selectField.SetAlias(f.SelectField.Alias)
 		}
 
-		selectFields = append(selectFields, selectField)
+		selectFields[1+i] = selectField
 	}
 
 	query = query.Select(selectFields...)

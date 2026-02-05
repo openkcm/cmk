@@ -33,24 +33,26 @@ func TestAddTagsToKeyConfiguration_ForXSS(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig := testutils.NewAuthzKeyConfig(func(_ *model.KeyConfiguration) {})
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	inputTags := []string{"tag1", "Hello <STYLE></STYLE>World"}
 	outputTags := []string{"tag1", "Hello World"}
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:   http.MethodPut,
-		Endpoint: fmt.Sprintf("/keyConfigurations/%s/tags", keyConfig.ID.String()),
-		Tenant:   tenant,
-		Body:     testutils.WithJSON(t, cmkapi.Tags{Tags: inputTags}),
+		Method:            http.MethodPut,
+		Endpoint:          fmt.Sprintf("/keyConfigurations/%s/tags", keyConfig.ID.String()),
+		Tenant:            tenant,
+		Body:              testutils.WithJSON(t, cmkapi.Tags{Tags: inputTags}),
+		AdditionalContext: testutils.GetKeyAdminClientMap(),
 	})
 	assert.Equal(t, http.StatusNoContent, w.Code)
 
 	w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:   http.MethodGet,
-		Endpoint: fmt.Sprintf("/keyConfigurations/%s/tags", keyConfig.ID.String()),
-		Tenant:   tenant,
+		Method:            http.MethodGet,
+		Endpoint:          fmt.Sprintf("/keyConfigurations/%s/tags", keyConfig.ID.String()),
+		Tenant:            tenant,
+		AdditionalContext: testutils.GetKeyAdminClientMap(),
 	})
 	assert.Equal(t, http.StatusOK, w.Code)
 
