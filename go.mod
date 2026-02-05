@@ -29,7 +29,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/runtime v1.1.2
-	github.com/openkcm/api-sdk v0.14.0
+	github.com/openkcm/api-sdk v0.15.0
 	github.com/openkcm/common-sdk v1.11.0
 	github.com/openkcm/orbital v0.3.1
 	github.com/openkcm/plugin-sdk v0.9.1
