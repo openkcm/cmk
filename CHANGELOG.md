@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/openkcm/cmk/compare/v0.2.1...v0.3.0) (2026-02-05)
+
+
+### Features
+
+* Update workflow email ([#54](https://github.com/openkcm/cmk/issues/54)) ([dc00b93](https://github.com/openkcm/cmk/commit/dc00b93b709635ab3571722c127b049456707e30))
+
+
+### Bug Fixes
+
+* only unmap system from tenant on unlink system action ([#62](https://github.com/openkcm/cmk/issues/62)) ([2304821](https://github.com/openkcm/cmk/commit/2304821fd2cacfe0c639d773046a0183c63ba3ca))
+* system type must be lowercase for registry ([#61](https://github.com/openkcm/cmk/issues/61)) ([627bb71](https://github.com/openkcm/cmk/commit/627bb71a1159e350d5de659a9407810e4cd5c1e5))
+
 ## [0.2.1](https://github.com/openkcm/cmk/compare/v0.2.0...v0.2.1) (2026-02-05)
 
 
