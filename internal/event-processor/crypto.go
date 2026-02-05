@@ -632,7 +632,7 @@ func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.J
 		}
 		_, err = c.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
 			ExternalId: system.Identifier,
-			Type:       system.Type,
+			Type:       strings.ToLower(system.Type),
 			TenantId:   jobData.TenantID,
 		})
 		if err != nil {
