@@ -1157,6 +1157,11 @@ func (w *WorkflowManager) createWorkflowTransitionNotificationTask(
 		return err
 	}
 
+	if task == nil {
+		log.Info(ctx, "No workflow transition task created, skipping enqueue")
+		return nil
+	}
+
 	_, err = w.asyncClient.Enqueue(task)
 	if err != nil {
 		log.Error(ctx, "Enqueue workflow transition task failed", err)
