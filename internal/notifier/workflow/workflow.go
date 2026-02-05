@@ -102,7 +102,14 @@ func (w *Creator) createWorkflowCreatedTask(data NotificationData, recipients []
 	return w.createNotificationTask(data, recipients, subject, message, actionText)
 }
 
+//nolint:nilnil
 func (w *Creator) createWorkflowApprovedTask(data NotificationData, recipients []string) (*asynq.Task, error) {
+	// Only send email notification when minimum approvals threshold is met (WAIT_CONFIRMATION state)
+	// Do not send for partial approvals (WAIT_APPROVAL state)
+	if wf.State(data.Workflow.State) != wf.StateWaitConfirmation {
+		return nil, nil
+	}
+
 	subject := fmt.Sprintf(
 		"Workflow Approved - %s %s",
 		data.Workflow.ActionType,
@@ -111,8 +118,8 @@ func (w *Creator) createWorkflowApprovedTask(data NotificationData, recipients [
 
 	subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
 
-	message := "Your workflow has been approved and is now being processed."
-	actionText := "You can track the progress in the CMK portal."
+	message := "Your workflow has been fully approved."
+	actionText := "The workflow is ready for confirmation. You can track the progress in the CMK portal."
 
 	return w.createNotificationTask(data, recipients, subject, message, actionText)
 }
