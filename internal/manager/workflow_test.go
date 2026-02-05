@@ -1086,6 +1086,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 				ActionType:   "CREATE",
 				ArtifactType: "KEY",
 				ArtifactID:   uuid.New(),
+				State:        string(workflow.StateWaitConfirmation),
 			}
 
 			recipients := []string{"approver1@example.com", "approver2@example.com"}
@@ -1192,7 +1193,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 			recipients := []string{"approver@example.com"}
 
 			// Act
-			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
+			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionConfirm, recipients)
 
 			// Assert
 			assert.Error(t, err)
@@ -1214,7 +1215,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 				ActionType:   "CREATE",
 				ArtifactType: "KEY",
 				ArtifactID:   uuid.New(),
-				State:        string(workflow.StateSuccessful),
+				State:        string(workflow.StateWaitConfirmation),
 			}
 
 			recipients := []string{"user@example.com"}

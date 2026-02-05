@@ -93,54 +93,79 @@ func TestCreator_CreateTask(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		transition  wf.Transition
-		recipients  []string
-		expectError bool
+		name          string
+		transition    wf.Transition
+		recipients    []string
+		expectError   bool
+		wfState       string
+		expectNilTask bool
 	}{
 		{
-			name:        "create transition",
-			transition:  wf.TransitionCreate,
-			recipients:  []string{"approver@example.com"},
-			expectError: false,
+			name:          "create transition",
+			transition:    wf.TransitionCreate,
+			recipients:    []string{"approver@example.com"},
+			expectError:   false,
+			wfState:       string(wf.StateWaitApproval),
+			expectNilTask: false,
 		},
 		{
-			name:        "approve transition",
-			transition:  wf.TransitionApprove,
-			recipients:  []string{"initiator@example.com"},
-			expectError: false,
+			name:          "approve transition - WAIT_CONFIRMATION state (email sent)",
+			transition:    wf.TransitionApprove,
+			recipients:    []string{"initiator@example.com"},
+			expectError:   false,
+			wfState:       string(wf.StateWaitConfirmation),
+			expectNilTask: false,
 		},
 		{
-			name:        "reject transition",
-			transition:  wf.TransitionReject,
-			recipients:  []string{"initiator@example.com"},
-			expectError: false,
+			name:          "approve transition - WAIT_APPROVAL state (no email)",
+			transition:    wf.TransitionApprove,
+			recipients:    []string{"initiator@example.com"},
+			expectError:   false,
+			wfState:       string(wf.StateWaitApproval),
+			expectNilTask: true,
 		},
 		{
-			name:        "confirm transition",
-			transition:  wf.TransitionConfirm,
-			recipients:  []string{"approver@example.com"},
-			expectError: false,
+			name:          "reject transition",
+			transition:    wf.TransitionReject,
+			recipients:    []string{"initiator@example.com"},
+			expectError:   false,
+			wfState:       string(wf.StateRejected),
+			expectNilTask: false,
 		},
 		{
-			name:        "revoke transition",
-			transition:  wf.TransitionRevoke,
-			recipients:  []string{"approver@example.com"},
-			expectError: false,
+			name:          "confirm transition",
+			transition:    wf.TransitionConfirm,
+			recipients:    []string{"approver@example.com"},
+			expectError:   false,
+			wfState:       string(wf.StateSuccessful),
+			expectNilTask: false,
 		},
 		{
-			name:        "unsupported transition",
-			transition:  wf.Transition("unsupported"),
-			recipients:  []string{"test@example.com"},
-			expectError: true,
+			name:          "revoke transition",
+			transition:    wf.TransitionRevoke,
+			recipients:    []string{"approver@example.com"},
+			expectError:   false,
+			wfState:       string(wf.StateRevoked),
+			expectNilTask: false,
+		},
+		{
+			name:          "unsupported transition",
+			transition:    wf.Transition("unsupported"),
+			recipients:    []string{"test@example.com"},
+			expectError:   true,
+			wfState:       string(wf.StateWaitApproval),
+			expectNilTask: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			workflowData := testWorkflow
+			workflowData.State = tt.wfState
+
 			data := workflow.NotificationData{
 				Tenant:     testTenant,
-				Workflow:   testWorkflow,
+				Workflow:   workflowData,
 				Transition: tt.transition,
 			}
 
@@ -149,20 +174,27 @@ func TestCreator_CreateTask(t *testing.T) {
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Nil(t, task)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, task)
-				assert.Equal(t, config.TypeSendNotifications, task.Type())
-
-				// Verify task payload
-				var notifData client.Data
-
-				err = json.Unmarshal(task.Payload(), &notifData)
-				assert.NoError(t, err)
-				assert.Equal(t, tt.recipients, notifData.Recipients)
-				assert.NotEmpty(t, notifData.Subject)
-				assert.NotEmpty(t, notifData.Body)
+				return
 			}
+
+			assert.NoError(t, err)
+
+			if tt.expectNilTask {
+				assert.Nil(t, task)
+				return
+			}
+
+			assert.NotNil(t, task)
+			assert.Equal(t, config.TypeSendNotifications, task.Type())
+
+			// Verify task payload
+			var notifData client.Data
+
+			err = json.Unmarshal(task.Payload(), &notifData)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.recipients, notifData.Recipients)
+			assert.NotEmpty(t, notifData.Subject)
+			assert.NotEmpty(t, notifData.Body)
 		})
 	}
 }
@@ -266,42 +298,81 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 	workflowID := uuid.New()
 	artifactID := uuid.New()
 
-	data := workflow.NotificationData{
-		Tenant: model.Tenant{
-			ID:     "test-tenant",
-			Region: "us-east-1",
+	tests := []struct {
+		name                string
+		workflowState       string
+		shouldSendEmail     bool
+		expectedMessagePart string
+		expectedActionPart  string
+	}{
+		{
+			name:            "StateWaitApproval - no email sent for partial approval",
+			workflowState:   string(wf.StateWaitApproval),
+			shouldSendEmail: false,
 		},
-		Workflow: model.Workflow{
-			ID:           workflowID,
-			ActionType:   "DELETE",
-			ArtifactType: "KEY",
-			ArtifactID:   artifactID,
+		{
+			name:                "StateWaitConfirmation - email sent when threshold met",
+			workflowState:       string(wf.StateWaitConfirmation),
+			shouldSendEmail:     true,
+			expectedMessagePart: "Your workflow has been fully approved.",
+			expectedActionPart:  "ready for confirmation",
 		},
-		Transition: wf.TransitionApprove,
+		{
+			name:            "StateExecuting - no email sent",
+			workflowState:   string(wf.StateExecuting),
+			shouldSendEmail: false,
+		},
 	}
 
-	recipients := []string{"initiator@example.com"}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := workflow.NotificationData{
+				Tenant: model.Tenant{
+					ID:     "test-tenant",
+					Region: "us-east-1",
+				},
+				Workflow: model.Workflow{
+					ID:           workflowID,
+					ActionType:   "DELETE",
+					ArtifactType: "KEY",
+					ArtifactID:   artifactID,
+					State:        tt.workflowState,
+				},
+				Transition: wf.TransitionApprove,
+			}
 
-	task, err := creator.CreateWorkflowApprovedTask(data, recipients)
+			recipients := []string{"initiator@example.com"}
 
-	assert.NoError(t, err)
-	assert.NotNil(t, task)
+			task, err := creator.CreateWorkflowApprovedTask(data, recipients)
 
-	var notifData client.Data
+			assert.NoError(t, err)
 
-	err = json.Unmarshal(task.Payload(), &notifData)
-	assert.NoError(t, err)
+			if !tt.shouldSendEmail {
+				// Verify no email is sent for non-WAIT_CONFIRMATION states
+				assert.Nil(t, task)
+				return
+			}
 
-	expectedSubject := fmt.Sprintf(
-		"Workflow Approved - %s %s",
-		data.Workflow.ActionType,
-		data.Workflow.ArtifactType,
-	)
+			// For WAIT_CONFIRMATION state, verify email is sent with correct content
+			assert.NotNil(t, task)
 
-	assert.Equal(t, recipients, notifData.Recipients)
-	assert.Equal(t, expectedSubject, notifData.Subject)
-	assert.Contains(t, notifData.Body, "approved and is now being processed")
-	assert.Contains(t, notifData.Body, "track the progress")
+			var notifData client.Data
+
+			err = json.Unmarshal(task.Payload(), &notifData)
+			assert.NoError(t, err)
+
+			expectedSubject := fmt.Sprintf(
+				"Workflow Approved - %s %s",
+				data.Workflow.ActionType,
+				data.Workflow.ArtifactType,
+			)
+
+			assert.Equal(t, recipients, notifData.Recipients)
+			assert.Equal(t, expectedSubject, notifData.Subject)
+			assert.Contains(t, notifData.Body, tt.expectedMessagePart)
+			assert.Contains(t, notifData.Body, tt.expectedActionPart)
+		})
+	}
 }
 
 func TestCreator_createWorkflowRejectedTask(t *testing.T) {
