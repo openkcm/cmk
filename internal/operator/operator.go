@@ -11,6 +11,8 @@ import (
 	"github.com/openkcm/orbital"
 	"github.com/openkcm/orbital/client/amqp"
 	"github.com/samber/oops"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	goamqp "github.com/Azure/go-amqp"
@@ -349,6 +351,8 @@ func (o *TenantOperator) handleUnblockTenant(
 }
 
 // handleTerminateTenant is handler for Terminate Tenant task
+//
+//nolint:cyclop, funlen
 func (o *TenantOperator) handleTerminateTenant(
 	ctx context.Context,
 	req orbital.HandlerRequest,
@@ -368,7 +372,14 @@ func (o *TenantOperator) handleTerminateTenant(
 			TenantId: tenantProto.GetId(),
 		},
 	)
-	if err != nil {
+	st, ok := status.FromError(err)
+	if !ok {
+		log.Error(ctx, "failed getting info on sessionManager error", err)
+	}
+	if st.Code() == codes.Internal {
+		log.Error(ctx, "removeOIDC failed with internal err", err)
+	}
+	if err != nil && st.Code() != codes.Internal {
 		log.Error(ctx, "error while removing OIDC mapping", err)
 
 		return orbital.HandlerResponse{
