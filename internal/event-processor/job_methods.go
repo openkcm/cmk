@@ -137,11 +137,17 @@ func (c *CryptoReconciler) SystemLink(ctx context.Context, system *model.System,
 }
 
 // SystemUnlink creates a job to unlink a system from a key make sure the ctx provided has the tenant set.
-func (c *CryptoReconciler) SystemUnlink(ctx context.Context, system *model.System, keyID string) (orbital.Job, error) {
+func (c *CryptoReconciler) SystemUnlink(
+	ctx context.Context,
+	system *model.System,
+	keyID string,
+	trigger string,
+) (orbital.Job, error) {
 	return c.handleSystemStatus(ctx, system, func() (orbital.Job, error) {
 		systemUnlinkJobData := SystemActionJobData{
 			SystemID:  system.ID.String(),
 			KeyIDFrom: keyID,
+			Trigger:   trigger,
 		}
 
 		return c.createSystemEventJob(ctx, proto.TaskType_SYSTEM_UNLINK, systemUnlinkJobData)

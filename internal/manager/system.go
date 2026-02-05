@@ -35,7 +35,7 @@ type System interface {
 	GetSystemByID(ctx context.Context, keyConfigID uuid.UUID) (*model.System, error)
 	RefreshSystemsData(ctx context.Context) bool
 	LinkSystemAction(ctx context.Context, systemID uuid.UUID, patchSystem cmkapi.SystemPatch) (*model.System, error)
-	UnlinkSystemAction(ctx context.Context, systemID uuid.UUID) error
+	UnlinkSystemAction(ctx context.Context, systemID uuid.UUID, trigger string) error
 	GetRecoveryActions(ctx context.Context, sytemID uuid.UUID) (cmkapi.SystemRecoveryAction, error)
 	SendRecoveryActions(
 		ctx context.Context,
@@ -352,7 +352,11 @@ func (m *SystemManager) LinkSystemAction(
 	return updatedSystem, nil
 }
 
-func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UUID) error {
+// UnlinkSystemAction unlinks a system.
+// Trigger is used to determinate what triggered the system unlink
+// By default is not set, it's only set for tenant decomission to trigger the unmap system
+// whenever the event finishes
+func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UUID, trigger string) error {
 	var dbSystem *model.System
 
 	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
@@ -391,7 +395,7 @@ func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UU
 			ctx, eventprocessor.Event{
 				Name: proto.TaskType_SYSTEM_UNLINK.String(),
 				Event: func(ctx context.Context) (orbital.Job, error) {
-					return m.reconciler.SystemUnlink(ctx, dbSystem, keyConfig.PrimaryKeyID.String())
+					return m.reconciler.SystemUnlink(ctx, dbSystem, keyConfig.PrimaryKeyID.String(), trigger)
 				},
 			},
 		)
