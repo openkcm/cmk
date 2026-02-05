@@ -29,6 +29,7 @@ import (
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
@@ -572,7 +573,7 @@ func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orb
 
 // jobTerminationFunc is called when a job is terminated.
 //
-//nolint:cyclop
+//nolint:cyclop, funlen, nestif
 func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.Job) error {
 	taskType := proto.TaskType(proto.TaskType_value[job.Type])
 	status := cmkapi.SystemStatusFAILED
@@ -629,6 +630,17 @@ func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.J
 		err = c.setClientL1KeyClaimOnJobTerminate(ctx, jobData.TenantID, system, taskType)
 		if err != nil {
 			return fmt.Errorf("failed to set L1 key claim on job terminate: %w", err)
+		}
+
+		if jobData.Trigger == constants.SystemActionDecomission {
+			_, err = c.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
+				ExternalId: system.Identifier,
+				Type:       strings.ToLower(system.Type),
+				TenantId:   jobData.TenantID,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to unmap system from tenant: %w", err)
+			}
 		}
 	}
 
@@ -698,7 +710,6 @@ func (c *CryptoReconciler) updateSystemOnJobTerminate(
 	return nil
 }
 
-//nolint:cyclop
 func (c *CryptoReconciler) setClientL1KeyClaimOnJobTerminate(
 	ctx context.Context,
 	tenant string,
@@ -732,17 +743,6 @@ func (c *CryptoReconciler) setClientL1KeyClaimOnJobTerminate(
 		return nil
 	} else if err != nil {
 		return errs.Wrap(ErrSettingKeyClaim, err)
-	}
-
-	if taskType == proto.TaskType_SYSTEM_UNLINK {
-		_, err = c.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
-			ExternalId: system.Identifier,
-			Type:       strings.ToLower(system.Type),
-			TenantId:   tenant,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to unmap system from tenant: %w", err)
-		}
 	}
 
 	return nil

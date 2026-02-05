@@ -8,6 +8,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -206,7 +207,7 @@ func (m *TenantManager) unlinkAllSystems(ctx context.Context) (OffboardingResult
 		repo.DefaultLimit,
 		func(sys []*model.System) error {
 			for _, s := range sys {
-				err := m.sys.UnlinkSystemAction(ctx, s.ID)
+				err := m.sys.UnlinkSystemAction(ctx, s.ID, constants.SystemActionDecomission)
 				if err != nil {
 					return err
 				}

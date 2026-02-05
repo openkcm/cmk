@@ -164,7 +164,7 @@ func (c *APIController) UnlinkSystemAction(
 		return nil, apierrors.ErrActionRequireWorkflow
 	}
 
-	err = c.Manager.System.UnlinkSystemAction(ctx, request.SystemID)
+	err = c.Manager.System.UnlinkSystemAction(ctx, request.SystemID, "")
 	if err != nil {
 		return nil, err
 	}
