@@ -1119,7 +1119,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		registerSystem(
 			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, systemUnderTest.Type,
 		)
-		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID)
+		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID, "")
 		assert.ErrorIs(t, err, manager.ErrUnlinkSystemProcessingOrFailed)
 	},
 	)
@@ -1137,7 +1137,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		registerSystem(
 			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, systemUnderTest.Type,
 		)
-		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID)
+		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID, "")
 		assert.ErrorIs(t, err, manager.ErrUnlinkSystemProcessingOrFailed)
 	},
 	)
@@ -1150,7 +1150,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		err := r.Create(ctx, system)
 		assert.NoError(t, err)
 
-		err = m.UnlinkSystemAction(ctx, system.ID)
+		err = m.UnlinkSystemAction(ctx, system.ID, "")
 		assert.ErrorIs(t, err, manager.ErrUpdateSystem)
 	},
 	)
@@ -1161,7 +1161,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 			Identifier:         uuid.New().String(),
 			KeyConfigurationID: nil,
 		}
-		err := m.UnlinkSystemAction(ctx, system.ID)
+		err := m.UnlinkSystemAction(ctx, system.ID, "")
 		assert.ErrorIs(t, err, manager.ErrGettingSystemByID)
 	},
 	)
