@@ -21,7 +21,7 @@ var ErrExpiryGreaterThanMaximum = errors.New("expiry exceeds maximum")
 
 // ToAPI converts a workflow model to an API workflow presentation.
 func ToAPI(w model.Workflow) (*cmkapi.Workflow, error) {
-	err := sanitise.Stringlikes(&w)
+	err := sanitise.Sanitize(&w)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func FromAPI(
 
 // ApproverToAPI converts a workflow approver model to an API workflow approver presentation.
 func ApproverToAPI(approver model.WorkflowApprover) (cmkapi.WorkflowApprover, error) {
-	err := sanitise.Stringlikes(&approver)
+	err := sanitise.Sanitize(&approver)
 	if err != nil {
 		return cmkapi.WorkflowApprover{}, err
 	}

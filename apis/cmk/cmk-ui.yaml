@@ -1606,7 +1606,6 @@ components:
       type: object
       required:
         - hyok
-        # - default
       properties:
         default:
           $ref: "#/components/schemas/DefaultKeystore"
@@ -2052,7 +2051,9 @@ components:
                 "isEditable": bool // true if system on this region failed to connect
             },
           type: object
-          additionalProperties: true
+          additionalProperties:
+            type: object
+            additionalProperties: true
     ImportParams:
       type: object
       description: Import parameters for Bring Your Own Key (BYOK) scenario.

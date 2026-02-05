@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type KeyAccessData map[string]map[string]any // Map of regions and their properties
@@ -30,6 +31,7 @@ type Key struct {
 	ManagementAccessData json.RawMessage `gorm:"type:jsonb"`
 	CryptoAccessData     json.RawMessage `gorm:"type:jsonb"`
 	IsPrimary            bool            `gorm:"type:bool"`
+	EditableRegions      map[string]bool `gorm:"-:all"`
 }
 
 // TableName returns the table name for Key
@@ -67,6 +69,11 @@ func (k Key) Version() *KeyVersion {
 	return &keyVersion
 }
 
+func (k *Key) AfterFind(tx *gorm.DB) error {
+	k.EditableRegions = map[string]bool{}
+	return nil
+}
+
 func (k *Key) GetManagementAccessData() map[string]any {
 	if k.ManagementAccessData == nil {
 		return nil
@@ -95,15 +102,4 @@ func (k *Key) GetCryptoAccessData() KeyAccessData {
 	}
 
 	return data
-}
-
-func (k *Key) SetCryptoAccessData(data KeyAccessData) error {
-	bytes, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-
-	k.CryptoAccessData = bytes
-
-	return nil
 }

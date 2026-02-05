@@ -13,7 +13,7 @@ var ErrFromAPI = errors.New("failed to transform system from API")
 
 // ToAPI transforms a system model to an API system.
 func ToAPI(system model.System, systemCfg *config.System) (*cmkapi.System, error) {
-	err := sanitise.Stringlikes(&system)
+	err := sanitise.Sanitize(&system)
 	if err != nil {
 		return nil, err
 	}
