@@ -650,8 +650,9 @@ func TestLinkSystemAction(t *testing.T) {
 	disableWorkflow(t, ctx, r)
 
 	keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	key := testutils.NewKey(func(_ *model.Key) {})
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(uuid.New())
+		k.PrimaryKeyID = ptr.PointTo(key.ID)
 	})
 
 	system := testutils.NewSystem(func(s *model.System) {
@@ -666,6 +667,7 @@ func TestLinkSystemAction(t *testing.T) {
 		ctx,
 		t,
 		r,
+		key,
 		keyConfig1,
 		keyConfig2,
 		system,
@@ -684,7 +686,7 @@ func TestLinkSystemAction(t *testing.T) {
 		expectedErrorCode  string
 	}{
 		{
-			name:               "SystemUPDATESuccess",
+			name:               "Should 200 on system link",
 			ID:                 systemNoConfig.ID.String(),
 			Identifier:         systemNoConfig.Identifier,
 			KeyConfigurationID: "", // No key config update before event is processed
@@ -692,7 +694,7 @@ func TestLinkSystemAction(t *testing.T) {
 			expectedStatus:     http.StatusOK,
 		},
 		{
-			name:               "SystemUPDATESuccessAlreadyHasKeyConfig",
+			name:               "Should 200 on system switch",
 			ID:                 systemWithKey.ID.String(),
 			Identifier:         systemWithKey.Identifier,
 			KeyConfigurationID: keyConfig2.ID.String(), // Nothing changed

@@ -2378,6 +2378,9 @@ components:
       required:
         - required
         - exists
+        - valid
+        - canCreate
+        - details
       properties:
         required:
           readOnly: true
@@ -2389,6 +2392,23 @@ components:
           description: If a workflow on the same artifact exists
           type: boolean
           example: true
+        valid:
+          readOnly: true
+          description: If the workflow arfifact and/or parameters are valid
+          type: boolean
+          example: true
+        canCreate:
+          readOnly: true
+          description: If a workflow can be created
+          type: boolean
+          example: true
+        details:
+          readOnly: true
+          description: |
+            Workflow canCreate details provides insights on why the canCreate flag is set to false.
+            This is nil whenever canCreate is true
+          type: string
+          example: "system can't connect to keyconfig without an enabled primary key"
     WorkflowBody:
       type: object
       required:

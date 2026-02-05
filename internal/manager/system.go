@@ -291,7 +291,7 @@ func (m *SystemManager) GetSystemByID(ctx context.Context, systemID uuid.UUID) (
 	return system, nil
 }
 
-//nolint:cyclop
+//nolint:cyclop, funlen
 func (m *SystemManager) LinkSystemAction(
 	ctx context.Context,
 	systemID uuid.UUID,
@@ -324,8 +324,21 @@ func (m *SystemManager) LinkSystemAction(
 			return errs.Wrap(ErrGettingKeyConfigByID, err)
 		}
 
+		// Check if primary key exists
 		if !ptr.IsNotNilUUID(keyConfig.PrimaryKeyID) {
-			return ErrAddSystemNoPrimaryKey
+			return ErrConnectSystemNoPrimaryKey
+		}
+
+		pKey := &model.Key{ID: *keyConfig.PrimaryKeyID}
+		_, err = m.repo.First(ctx, pKey, *repo.NewQuery())
+		if err != nil {
+			return errs.Wrap(ErrGettingKeyByID, err)
+		}
+
+		// Pre-check System key state.
+		// Should fail if the key is not enabled
+		if pKey.State != string(cmkapi.KeyStateENABLED) {
+			return ErrConnectSystemNoPrimaryKey
 		}
 
 		if system.Status == cmkapi.SystemStatusPROCESSING || system.Status == cmkapi.SystemStatusFAILED {

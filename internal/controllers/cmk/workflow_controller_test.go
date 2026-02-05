@@ -19,6 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	cmksql "github.com/openkcm/cmk/internal/repo/sql"
@@ -159,15 +160,16 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T) (*multitenancy.DB,
 		g.Role = constants.KeyAdminRole
 	})
 
+	key := testutils.NewKey(func(k *model.Key) {
+		k.ID = uuid.MustParse(key1ID)
+		k.KeyConfigurationID = uuid.MustParse(keyConfigID)
+	})
+
 	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 		c.ID = uuid.MustParse(keyConfigID)
 		c.AdminGroup = *group
 		c.AdminGroupID = uuid.MustParse(groupID)
-	})
-
-	key := testutils.NewKey(func(k *model.Key) {
-		k.ID = uuid.MustParse(key1ID)
-		k.KeyConfigurationID = uuid.MustParse(keyConfigID)
+		c.PrimaryKeyID = &key.ID
 	})
 
 	key2 := testutils.NewKey(func(k *model.Key) {
@@ -180,7 +182,7 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T) (*multitenancy.DB,
 		w.KeyConfigurationID = ptr.PointTo(uuid.MustParse(keyConfigID))
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, group, keyConfig, key, key2, system)
+	testutils.CreateTestEntities(ctx, t, r, group, key, keyConfig, key2, system)
 
 	// Do a create to ensure that the config is created. We need this for any
 	// tests simulating a DB failure, otherwise the config creation will hit the
@@ -212,7 +214,7 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T) (*multitenancy.DB,
 }
 
 func TestWorkflowControllerCheckWorkflow(t *testing.T) {
-	t.Run("should 200 with exists and required false", func(t *testing.T) {
+	t.Run("should 200 with valid and canCreate as true", func(t *testing.T) {
 		_, _, sv, tenant, _ := setupTestWorkflowControllerCreateWorkflow(t)
 
 		clientData := map[any]any{
@@ -240,7 +242,68 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 
 		res := testutils.GetJSONBody[cmkapi.CheckWorkflow200JSONResponse](t, w)
 		assert.False(t, *res.Exists)
+		assert.True(t, *res.Valid)
+		assert.True(t, *res.CanCreate)
 		assert.True(t, *res.Required)
+		assert.Nil(t, res.Details)
+	})
+
+	t.Run("Should 200 with valid and canCreate as false on wf system connect invalid key state", func(t *testing.T) {
+		_, r, sv, tenant, ctx := setupTestWorkflowControllerCreateWorkflow(t)
+
+		groupName := uuid.NewString()
+		group := testutils.NewGroup(func(g *model.Group) {
+			g.Name = groupName
+			g.IAMIdentifier = groupName
+			g.Role = constants.KeyAdminRole
+		})
+
+		clientData := map[any]any{
+			constants.ClientData: &auth.ClientData{
+				Identifier: uuid.NewString(),
+				Groups:     []string{groupName},
+			},
+		}
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.State = string(cmkapi.KeyStateUNKNOWN)
+		})
+
+		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.AdminGroup = *group
+			c.AdminGroupID = group.ID
+			c.PrimaryKeyID = &key.ID
+		})
+
+		system := testutils.NewSystem(func(w *model.System) {
+			w.KeyConfigurationID = &keyConfig.ID
+		})
+
+		testutils.CreateTestEntities(ctx, t, r, group, key, keyConfig, system)
+
+		wf := cmkapi.Workflow{
+			ActionType:   cmkapi.WorkflowActionTypeEnumLINK,
+			ArtifactID:   system.ID,
+			ArtifactType: cmkapi.WorkflowArtifactTypeEnumSYSTEM,
+			Parameters:   ptr.PointTo(keyConfig.ID.String()),
+		}
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:            http.MethodPost,
+			Endpoint:          "/workflows/check",
+			Tenant:            tenant,
+			Body:              testutils.WithJSON(t, wf),
+			AdditionalContext: clientData,
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		res := testutils.GetJSONBody[cmkapi.CheckWorkflow200JSONResponse](t, w)
+		assert.False(t, *res.Exists)
+		assert.False(t, *res.Valid)
+		assert.False(t, *res.CanCreate)
+		assert.True(t, *res.Required)
+		assert.Equal(t, manager.ErrConnectSystemNoPrimaryKey.Error(), *res.Details)
 	})
 }
 

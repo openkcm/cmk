@@ -715,8 +715,27 @@ func TestSendRecoveryAction(t *testing.T) {
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	t.Run("Should error on retry with system status not failed", func(t *testing.T) {
-		system := testutils.NewSystem(func(_ *model.System) {})
-		testutils.CreateTestEntities(ctx, t, r, system)
+		groupIdentifier := uuid.NewString()
+		ctx := testutils.InjectClientDataIntoContext(ctx, "test-user", []string{groupIdentifier})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.State = string(cmkapi.KeyStateENABLED)
+		})
+
+		testGroup := testutils.NewGroup(
+			func(g *model.Group) {
+				g.IAMIdentifier = groupIdentifier
+			},
+		)
+
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.PrimaryKeyID = ptr.PointTo(key.ID)
+			kc.AdminGroup = *testGroup
+			kc.AdminGroupID = testGroup.ID
+		})
+		system := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		})
+		testutils.CreateTestEntities(ctx, t, r, key, testGroup, keyConfig, system)
 
 		_, err := m.LinkSystemAction(
 			ctx, system.ID, cmkapi.SystemPatch{
@@ -901,7 +920,7 @@ func TestLinkSystemAction(t *testing.T) {
 	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
 	r := sql.NewRepository(db)
 
-	primaryKeyID := uuid.New()
+	key := testutils.NewKey(func(_ *model.Key) {})
 	testGroup := testutils.NewGroup(
 		func(g *model.Group) {
 			g.IAMIdentifier = "test-group"
@@ -909,7 +928,7 @@ func TestLinkSystemAction(t *testing.T) {
 	)
 	keyConfig := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = &primaryKeyID
+			k.PrimaryKeyID = &key.ID
 			k.AdminGroupID = testGroup.ID
 			k.AdminGroup = *testGroup
 		},
@@ -942,7 +961,7 @@ func TestLinkSystemAction(t *testing.T) {
 		),
 	}
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyConfig2)
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyConfig2, key)
 
 	for i := range allSystems {
 		testutils.CreateTestEntities(ctx, t, r, allSystems[i])
@@ -1019,39 +1038,92 @@ func TestLinkSystemAction(t *testing.T) {
 	},
 	)
 
-	t.Run("Should fail on link to keyconfig without pkey", func(t *testing.T) {
-		m, db, tenant := SetupSystemManager(t, nil)
-		ctx := testutils.CreateCtxWithTenant(tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
-		r := sql.NewRepository(db)
-		testGroup := testutils.NewGroup(
-			func(g *model.Group) {
-				g.IAMIdentifier = "test-group"
+	tests := []struct {
+		name           string
+		setupKeyConfig func(group *model.Group) (*model.KeyConfiguration, *model.Key)
+	}{
+		{
+			name: "Should fail on link to keyConfig without pkey",
+			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
+				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+					kc.PrimaryKeyID = nil
+					kc.AdminGroupID = group.ID
+					kc.AdminGroup = *group
+				}), testutils.NewKey(func(_ *model.Key) {})
 			},
-		)
+		},
+		{
+			name: "Should fail on link to keyConfig with pkey disabled",
+			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
+				key := testutils.NewKey(func(k *model.Key) {
+					k.State = string(cmkapi.KeyStateDISABLED)
+				})
+				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+					kc.PrimaryKeyID = ptr.PointTo(key.ID)
+					kc.AdminGroupID = group.ID
+					kc.AdminGroup = *group
+				}), key
+			},
+		},
+		{
+			name: "Should fail on link to keyConfig with pkey forbidden",
+			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
+				key := testutils.NewKey(func(k *model.Key) {
+					k.State = string(cmkapi.KeyStateFORBIDDEN)
+				})
+				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+					kc.PrimaryKeyID = ptr.PointTo(key.ID)
+					kc.AdminGroupID = group.ID
+					kc.AdminGroup = *group
+				}), key
+			},
+		},
+		{
+			name: "Should fail on link to keyConfig with pkey unknown",
+			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
+				key := testutils.NewKey(func(k *model.Key) {
+					k.State = string(cmkapi.KeyStateUNKNOWN)
+				})
+				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+					kc.PrimaryKeyID = ptr.PointTo(key.ID)
+					kc.AdminGroupID = group.ID
+					kc.AdminGroup = *group
+				}), key
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, db, tenant := SetupSystemManager(t, nil)
+			ctx := testutils.CreateCtxWithTenant(tenant)
+			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+			r := sql.NewRepository(db)
+			testGroup := testutils.NewGroup(
+				func(g *model.Group) {
+					g.IAMIdentifier = "test-group"
+				},
+			)
 
-		keyConfig := testutils.NewKeyConfig(
-			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = nil
-				k.AdminGroupID = testGroup.ID
-				k.AdminGroup = *testGroup
-			},
-		)
-		system := testutils.NewSystem(
-			func(s *model.System) {
-				s.KeyConfigurationID = &keyConfig.ID
-				s.KeyConfigurationName = &keyConfig.Name
-			},
-		)
+			keyConfig, key := tt.setupKeyConfig(testGroup)
+			system := testutils.NewSystem(
+				func(s *model.System) {
+					s.KeyConfigurationID = &keyConfig.ID
+					s.KeyConfigurationName = &keyConfig.Name
+				},
+			)
 
-		testutils.CreateTestEntities(ctx, t, r, system, keyConfig)
-		_, err := m.LinkSystemAction(
-			ctx, system.ID, cmkapi.SystemPatch{
-				KeyConfigurationID: keyConfig.ID,
-			},
-		)
+			testutils.CreateTestEntities(ctx, t, r, system, keyConfig, key)
+			_, err := m.LinkSystemAction(
+				ctx, system.ID, cmkapi.SystemPatch{
+					KeyConfigurationID: keyConfig.ID,
+				},
+			)
 
-		assert.ErrorIs(t, err, manager.ErrAddSystemNoPrimaryKey)
+			assert.ErrorIs(t, err, manager.ErrConnectSystemNoPrimaryKey)
+		})
+	}
+
+	t.Run("Should fail on link to keyconfig with pkey on invalid state", func(t *testing.T) {
 	})
 }
 
