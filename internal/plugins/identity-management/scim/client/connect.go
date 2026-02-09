@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/pointers"
 
@@ -49,7 +49,7 @@ type RequestParams struct {
 }
 
 type Client struct {
-	logger     hclog.Logger
+	logger     *slog.Logger
 	httpClient *http.Client
 
 	basicAuth *basicAuth
@@ -59,7 +59,7 @@ type basicAuth struct {
 	clientSecret string
 }
 
-func NewClient(authRef commoncfg.SecretRef, logger hclog.Logger) (*Client, error) {
+func NewClient(authRef commoncfg.SecretRef, logger *slog.Logger) (*Client, error) {
 	switch authRef.Type {
 	case commoncfg.BasicSecretType:
 		clientId, err := commoncfg.LoadValueFromSourceRef(authRef.Basic.Username)

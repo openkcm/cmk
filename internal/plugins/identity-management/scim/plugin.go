@@ -86,7 +86,7 @@ type Plugin struct {
 	idmangv1.UnsafeIdentityManagementServiceServer
 	configv1.UnsafeConfigServer
 
-	logger     hclog.Logger
+	logger     *slog.Logger
 	scimClient *client.Client
 	params     *Params
 	buildInfo  string
@@ -104,8 +104,7 @@ func NewPlugin() *Plugin {
 }
 
 func (p *Plugin) SetLogger(logger hclog.Logger) {
-	p.logger = logger // Keep a copy of the logger for client creation
-	slog.SetDefault(hclog2slog.New(logger))
+	p.logger = hclog2slog.New(logger)
 }
 
 func (p *Plugin) Configure(_ context.Context, req *configv1.ConfigureRequest) (*configv1.ConfigureResponse, error) {
@@ -118,7 +117,7 @@ func (p *Plugin) Configure(_ context.Context, req *configv1.ConfigureRequest) (*
 		return nil, ErrID.Wrapf(err, "Failed to get yaml Configuration")
 	}
 
-	params, err := createParams(cfg)
+	params, err := CreateParams(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +404,7 @@ func getFilter(defaultAttribute, value string, setAttribute string) scim.FilterE
 	return filter
 }
 
-func createParams(cfg *config.Config) (*Params, error) {
+func CreateParams(cfg *config.Config) (*Params, error) {
 	baseHostBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Host)
 	if err != nil {
 		return nil, ErrID.Wrapf(err, "Failed loading base host")

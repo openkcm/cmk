@@ -1,19 +1,24 @@
 package scim_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/pointers"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 
 	idmangv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
+	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 
 	"github.com/openkcm/cmk/internal/plugins/identity-management/scim"
 	"github.com/openkcm/cmk/internal/plugins/identity-management/scim/client"
+	"github.com/openkcm/cmk/internal/plugins/identity-management/scim/config"
 )
 
 const (
@@ -364,4 +369,161 @@ func TestGetGroupsForUser(t *testing.T) {
 func TestNewPlugin(t *testing.T) {
 	p := setupTest(t, "", "", "")
 	assert.NotNil(t, p)
+}
+
+//nolint:cyclop
+func TestCreateParams(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		authContextYAML := `
+hostField: host
+basePath: /api
+headerFields:
+  Authorization: Bearer token
+`
+		cfg := &config.Config{
+			Host:        embeddedSourceRef("https://example.com"),
+			AuthContext: embeddedSourceRef(authContextYAML),
+			Params: config.Params{
+				GroupAttribute:          embeddedSourceRef("groups"),
+				UserAttribute:           embeddedSourceRef("users"),
+				GroupMembersAttribute:   embeddedSourceRef("members"),
+				ListMethod:              embeddedSourceRef("GET"),
+				AllowSearchUsersByGroup: embeddedSourceRef("true"),
+			},
+		}
+
+		params, err := scim.CreateParams(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if params.BaseHost != "https://example.com" {
+			t.Errorf("BaseHost mismatch: %s", params.BaseHost)
+		}
+		if !params.AllowSearchUsersByGroup {
+			t.Errorf("AllowSearchUsersByGroup expected true")
+		}
+		if params.AuthContext.BasePath != "/api" {
+			t.Errorf("AuthContext not parsed correctly")
+		}
+	})
+
+	t.Run("invalid boolean", func(t *testing.T) {
+		cfg := &config.Config{
+			Host:        embeddedSourceRef("https://example.com"),
+			AuthContext: embeddedSourceRef(`hostField: host`),
+			Params: config.Params{
+				GroupAttribute:          embeddedSourceRef("groups"),
+				UserAttribute:           embeddedSourceRef("users"),
+				GroupMembersAttribute:   embeddedSourceRef("members"),
+				ListMethod:              embeddedSourceRef("GET"),
+				AllowSearchUsersByGroup: embeddedSourceRef("not-a-bool"),
+			},
+		}
+
+		params, err := scim.CreateParams(cfg)
+		if err == nil || params != nil {
+			t.Fatal("expected error due to invalid boolean")
+		}
+	})
+
+	t.Run("invalid auth context yaml", func(t *testing.T) {
+		cfg := &config.Config{
+			Host: embeddedSourceRef("https://example.com"),
+			Params: config.Params{
+				GroupAttribute:          embeddedSourceRef("groups"),
+				UserAttribute:           embeddedSourceRef("users"),
+				GroupMembersAttribute:   embeddedSourceRef("members"),
+				ListMethod:              embeddedSourceRef("GET"),
+				AllowSearchUsersByGroup: embeddedSourceRef("true"),
+			},
+		}
+
+		params, err := scim.CreateParams(cfg)
+		if err == nil || params != nil {
+			t.Fatal("expected error due to invalid auth context yaml")
+		}
+	})
+
+	t.Run("failed loading host", func(t *testing.T) {
+		cfg := &config.Config{
+			Host: commoncfg.SourceRef{}, // empty SourceRef → load failure
+		}
+
+		params, err := scim.CreateParams(cfg)
+		if err == nil || params != nil {
+			t.Fatal("expected error due to missing host")
+		}
+	})
+}
+
+func TestPlugin_Configure(t *testing.T) {
+	cfg := config.Config{
+		Host: embeddedSourceRef("example.com"),
+	}
+	yamlStr, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		yaml        string
+		expectError bool
+	}{
+		{
+			name:        "no credential found",
+			yaml:        string(yamlStr),
+			expectError: true,
+		},
+		{
+			name:        "invalid yaml",
+			yaml:        ":::",
+			expectError: true,
+		},
+		{
+			name:        "createParams fails",
+			yaml:        "host: example.com",
+			expectError: true,
+		},
+		{
+			name:        "client creation fails",
+			yaml:        "host: example.com",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &scim.Plugin{}
+
+			req := &configv1.ConfigureRequest{
+				YamlConfiguration: tt.yaml,
+			}
+
+			resp, err := p.Configure(context.Background(), req)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if resp == nil {
+				t.Fatal("expected response, got nil")
+			}
+		})
+	}
+}
+
+func embeddedSourceRef(value string) commoncfg.SourceRef {
+	return commoncfg.SourceRef{
+		Source: commoncfg.EmbeddedSourceValue,
+		Value:  value,
+	}
 }

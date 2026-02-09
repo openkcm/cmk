@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/magodo/slog2hclog"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"github.com/openkcm/plugin-sdk/pkg/hclog2slog"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/plugins/identity-management/scim/client"
@@ -96,11 +96,10 @@ var (
 	}
 )
 
-func getLogger() hclog.Logger {
+func getLogger() *slog.Logger {
 	logLevelPlugin := new(slog.LevelVar)
 	logLevelPlugin.Set(slog.LevelError)
-
-	return slog2hclog.New(slog.Default(), logLevelPlugin)
+	return hclog2slog.New(slog2hclog.New(slog.Default(), logLevelPlugin))
 }
 
 func getServer(t *testing.T, responseStatus int, responseBody string) *httptest.Server {
@@ -114,7 +113,7 @@ func getServer(t *testing.T, responseStatus int, responseBody string) *httptest.
 }
 
 func getBasicClient() *client.Client {
-	client, _ := client.NewClient(
+	c, _ := client.NewClient(
 		commoncfg.SecretRef{
 			Type: commoncfg.BasicSecretType,
 			Basic: commoncfg.BasicAuth{
@@ -127,7 +126,7 @@ func getBasicClient() *client.Client {
 			},
 		}, getLogger())
 
-	return client
+	return c
 }
 
 func TestNewClient(t *testing.T) {
@@ -189,15 +188,15 @@ func TestNewClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := client.NewClient(tt.auth, getLogger())
+			c, err := client.NewClient(tt.auth, getLogger())
 
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorContains)
-				assert.Nil(t, client)
+				assert.Nil(t, c)
 			} else {
 				assert.NoError(t, err)
-				assert.NotNil(t, client)
+				assert.NotNil(t, c)
 			}
 		})
 	}
