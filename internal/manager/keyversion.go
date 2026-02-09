@@ -69,10 +69,21 @@ func (kvm *KeyVersionManager) GetKeyVersions(
 	ck := repo.NewCompositeKey().
 		Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), keyID)
 
-	count, err := kvm.repo.List(
+	err := kvm.repo.List(
 		ctx,
 		model.KeyVersion{},
 		&versions,
+		*repo.NewQuery().
+			Where(repo.NewCompositeKeyGroup(ck)).
+			SetLimit(top).
+			SetOffset(skip),
+	)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrListKeyVersionsDB, err)
+	}
+	count, err := kvm.repo.Count(
+		ctx,
+		&model.KeyVersion{},
 		*repo.NewQuery().
 			Where(repo.NewCompositeKeyGroup(ck)).
 			SetLimit(top).
@@ -260,7 +271,7 @@ func (kvm *KeyVersionManager) disablePrimaryVersions(ctx context.Context, key *m
 	ck := repo.NewCompositeKey().
 		Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), key.ID)
 
-	_, err := kvm.repo.List(
+	err := kvm.repo.List(
 		ctx,
 		model.KeyVersion{},
 		&oldKeyVersions,

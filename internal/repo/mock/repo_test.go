@@ -56,11 +56,10 @@ func TestInMemoryRepository_List(t *testing.T) {
 	// Act
 	var result []model.Key
 
-	count, err := mockRepo.List(ctx, model.Key{}, &result, repo.Query{})
+	err = mockRepo.List(ctx, model.Key{}, &result, repo.Query{})
 
 	// Assert
 	assert.NoError(t, err)
-	assert.Equal(t, 3, count)
 }
 
 func TestInMemoryRepository_First(t *testing.T) {

@@ -176,7 +176,8 @@ func (m *SystemManager) GetAllSystems(
 		}
 	}
 
-	systems, count, err := repo.ListSystemWithProperties(ctx, m.repo, params.GetQuery(ctx))
+	query := params.GetQuery(ctx)
+	systems, count, err := repo.ListAndCountSystemWithProperties(ctx, m.repo, query)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrQuerySystemList, err)
 	}

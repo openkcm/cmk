@@ -57,9 +57,11 @@ func (m *GroupManager) GetGroups(ctx context.Context, skip int, top int) ([]*mod
 	}
 
 	var groups []*model.Group
-	count, err := m.repo.List(
-		ctx, model.Group{}, &groups, *query,
-	)
+	err = m.repo.List(ctx, model.Group{}, &groups, *query)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrListGroups, err)
+	}
+	count, err := m.repo.Count(ctx, &model.Group{}, *query)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrListGroups, err)
 	}

@@ -77,11 +77,11 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 	repository := sql.NewRepository(db)
 
 	ck := repo.NewCompositeKey().Where(repo.Name, groupName)
-	count, err := repository.List(ctx, model.Group{}, &groups,
+	err = repository.List(ctx, model.Group{}, &groups,
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 	assert.NoError(t, err)
 
-	if count == 0 {
+	if len(groups) == 0 {
 		adminGroup = testutils.NewGroup(func(g *model.Group) {
 			g.Name = groupName
 			g.IAMIdentifier = model.NewIAMIdentifier(groupName, tenantID)
@@ -123,10 +123,8 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	var approvers []model.WorkflowApprover
-
 	ck = repo.NewCompositeKey().Where("workflow_id", workflow.ID)
-	count, err = repository.List(ctx, model.WorkflowApprover{}, &approvers,
+	count, err := repository.Count(ctx, &model.WorkflowApprover{},
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 
 	assert.NoError(t, err)

@@ -208,7 +208,11 @@ func (km *KeyManager) GetKeys(
 
 	var keys []*model.Key
 
-	count, err := km.repo.List(ctx, model.Key{}, &keys, *query)
+	err := km.repo.List(ctx, model.Key{}, &keys, *query)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrListKeysDB, err)
+	}
+	count, err := km.repo.Count(ctx, &model.Key{}, *query)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrListKeysDB, err)
 	}
@@ -747,7 +751,7 @@ func (km *KeyManager) setPrimaryIfFirstKey(ctx context.Context, key *model.Key) 
 func (km *KeyManager) getPrimaryKeys(ctx context.Context, keyConfigID *uuid.UUID) ([]*model.Key, error) {
 	keys := []*model.Key{}
 
-	_, err := km.repo.List(
+	err := km.repo.List(
 		ctx,
 		model.Key{},
 		&keys,

@@ -178,20 +178,13 @@ func (r *ResourceRepository) List(
 	resource repo.Resource,
 	result any,
 	query repo.Query,
-) (int, error) {
-	var count int64
-
-	err := r.WithTenant(
+) error {
+	return r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
 			tx = tx.Debug()
 			db, err := applyQuery(tx.Model(result), query)
 			if err != nil {
 				return err
-			}
-
-			db = db.Count(&count)
-			if db.Error != nil {
-				return db.Error
 			}
 
 			for _, order := range query.OrderFields {
@@ -213,11 +206,6 @@ func (r *ResourceRepository) List(
 			return nil
 		},
 	)
-	if err != nil {
-		return 0, err
-	}
-
-	return int(count), nil
 }
 
 // Delete removes the Resource.

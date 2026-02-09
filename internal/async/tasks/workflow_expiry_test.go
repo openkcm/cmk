@@ -44,7 +44,12 @@ func (s *WorkflowExpiryMock) GetWorkflows(ctx context.Context,
 
 	workflows := []*model.Workflow{}
 
-	count, err := s.repo.List(ctx, model.Workflow{}, &workflows, *params.GetQuery(ctx))
+	query := *params.GetQuery(ctx)
+	err := s.repo.List(ctx, model.Workflow{}, &workflows, *params.GetQuery(ctx))
+	if err != nil {
+		return nil, 0, err
+	}
+	count, err := s.repo.Count(ctx, model.Workflow{}, query)
 	if err != nil {
 		return nil, 0, err
 	}

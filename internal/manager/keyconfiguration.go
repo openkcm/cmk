@@ -103,10 +103,18 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 		return []*model.KeyConfiguration{}, 0, nil
 	}
 
-	count, err := m.repository.List(
+	err = m.repository.List(
 		ctx,
 		model.KeyConfiguration{},
 		&res,
+		*query,
+	)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrQueryKeyConfigurationList, err)
+	}
+	count, err := m.repository.Count(
+		ctx,
+		&model.KeyConfiguration{},
 		*query,
 	)
 	if err != nil {

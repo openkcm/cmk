@@ -128,7 +128,7 @@ func TestTenantManager(t *testing.T) {
 		_, err = m.GetTenant(ctx)
 		assert.ErrorIs(t, err, repo.ErrTenantNotFound)
 
-		count, err := r.Count(ctx, model.System{}, *repo.NewQuery())
+		count, err := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		assert.ErrorIs(t, err, repo.ErrTenantNotFound)
 		assert.Equal(t, 0, count)
 	},

@@ -152,10 +152,21 @@ func (m *LabelManager) GetKeyLabels(
 	ck := repo.NewCompositeKey().
 		Where(repo.ResourceIDField, keyID)
 
-	count, err := m.repository.List(
+	err = m.repository.List(
 		ctx,
 		model.KeyLabel{},
 		&labels,
+		*repo.NewQuery().
+			Where(repo.NewCompositeKeyGroup(ck)).
+			SetOffset(skip).
+			SetLimit(top),
+	)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrQueryLabelList, err)
+	}
+	count, err := m.repository.Count(
+		ctx,
+		&model.KeyLabel{},
 		*repo.NewQuery().
 			Where(repo.NewCompositeKeyGroup(ck)).
 			SetOffset(skip).

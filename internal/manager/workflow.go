@@ -384,10 +384,20 @@ func (w *WorkflowManager) ListWorkflowApprovers(
 		ck = ck.Where(repo.ApprovedField, repo.NotNull)
 	}
 
-	count, err := w.repo.List(
+	err = w.repo.List(
 		ctx,
 		model.WorkflowApprover{},
 		&approvers,
+		*repo.NewQuery().
+			Where(repo.NewCompositeKeyGroup(ck)).
+			SetLimit(top).SetOffset(skip),
+	)
+	if err != nil {
+		return nil, 0, errs.Wrap(wf.ErrListApprovers, err)
+	}
+	count, err := w.repo.Count(
+		ctx,
+		&model.WorkflowApprover{},
 		*repo.NewQuery().
 			Where(repo.NewCompositeKeyGroup(ck)).
 			SetLimit(top).SetOffset(skip),
@@ -692,14 +702,14 @@ func (w *WorkflowManager) getWorkflows(
 
 	workflows := []*model.Workflow{}
 
-	_, err = w.repo.List(ctx, model.Workflow{}, &workflows, *query)
+	err = w.repo.List(ctx, model.Workflow{}, &workflows, *query)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 	}
 
 	count, err := w.repo.Count(
 		ctx,
-		model.Workflow{},
+		&model.Workflow{},
 		*query.Select(repo.NewSelectField(repo.IDField, repo.QueryFunction{
 			Function: repo.CountFunc,
 			Distinct: true,
@@ -794,14 +804,12 @@ func (w *WorkflowManager) checkOngoingWorkflowForArtifact(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (bool, error) {
-	workflows := []*model.Workflow{}
-
 	ck := repo.NewCompositeKey().
 		Where(fmt.Sprintf("%s_%s", repo.ArtifactField, repo.TypeField), workflow.ArtifactType).
 		Where(fmt.Sprintf("%s_%s", repo.ArtifactField, repo.IDField), workflow.ArtifactID).
 		Where(repo.StateField, wf.NonTerminalStates)
 
-	count, err := w.repo.List(ctx, model.Workflow{}, &workflows, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
+	count, err := w.repo.Count(ctx, &model.Workflow{}, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 	if err != nil {
 		return false, errs.Wrap(ErrCheckOngoingWorkflow, err)
 	}

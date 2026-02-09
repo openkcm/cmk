@@ -1388,8 +1388,7 @@ func (s *KeyManagerSuite) TestFillKeystorePool() {
 	s.NoError(err)
 
 	// Verify that keystore pool has been filled
-	keystorePool := &[]model.Keystore{}
-	count, err := s.repo.List(s.ctx, model.Keystore{}, keystorePool, *repo.NewQuery())
+	count, err := s.repo.Count(s.ctx, &model.Keystore{}, *repo.NewQuery())
 	s.NoError(err)
 
 	s.Equal(2, count)

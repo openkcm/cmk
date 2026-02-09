@@ -60,14 +60,14 @@ func TestSchedulerHYOKSync(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	// Check that new keys have been created
 	keys := []*model.Key{}
-	countAll, err := repository.List(
+	err = repository.List(
 		ctx,
 		model.Key{},
 		&keys,
 		*repo.NewQuery(),
 	)
 	assert.NoError(t, err)
-	assert.Positive(t, countAll, "No keys found after sync")
+	assert.Positive(t, len(keys), "No keys found after sync")
 
 	for _, k := range keys {
 		log.Info(ctx, "Key found", slog.Any("Key", k))

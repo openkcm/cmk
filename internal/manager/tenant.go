@@ -147,7 +147,11 @@ func (m *TenantManager) ListTenantInfo(
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
 	}
 
-	count, err := m.repo.List(ctx, model.Tenant{}, &tenants, *query)
+	err := m.repo.List(ctx, model.Tenant{}, &tenants, *query)
+	if err != nil {
+		return nil, 0, ErrListTenants
+	}
+	count, err := m.repo.Count(ctx, &model.Tenant{}, *query)
 	if err != nil {
 		return nil, 0, ErrListTenants
 	}

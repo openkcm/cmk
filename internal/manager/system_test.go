@@ -1280,10 +1280,9 @@ func TestRefreshSystems(t *testing.T) {
 		// Act
 		m.RefreshSystemsData(ctx)
 		// Verify
-		var allSystems []*model.System
 
-		count, err := r.List(
-			ctx, &model.System{}, &allSystems, *repo.NewQuery().Where(
+		count, err := r.Count(
+			ctx, &model.System{}, *repo.NewQuery().Where(
 				repo.NewCompositeKeyGroup(
 					repo.NewCompositeKey().
 						Where(
@@ -1314,9 +1313,8 @@ func TestRefreshSystems(t *testing.T) {
 		// Act
 		m.RefreshSystemsData(ctx)
 		// Verify
-		var allSystems []*model.System
 
-		count, err := r.List(ctx, &model.System{}, &allSystems, *repo.NewQuery())
+		count, err := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, 0, count)
 	},
@@ -1363,9 +1361,7 @@ func TestRefreshSystems(t *testing.T) {
 		)
 		m.RefreshSystemsData(ctx)
 
-		var allSystems []*model.System
-
-		count, err := r.List(ctx, &model.System{}, &allSystems, *repo.NewQuery())
+		count, err := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, 1, count)
 
@@ -1391,8 +1387,7 @@ func TestRefreshSystems(t *testing.T) {
 		// Prepare
 		testutils.CreateTestEntities(ctx, t, r, existingSystem)
 
-		existingSystems := []*model.System{}
-		existingSystemsCount, _ := r.List(ctx, &model.System{}, &existingSystems, *repo.NewQuery())
+		existingSystemsCount, _ := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		registerSystem(
 			ctx, t, systemService, existingSystem.Identifier, existingSystem.Region, existingSystem.Type,
 			func(req *systemgrpc.RegisterSystemRequest) {
@@ -1411,11 +1406,13 @@ func TestRefreshSystems(t *testing.T) {
 		)
 		m.RefreshSystemsData(ctx)
 
-		var allSystems []*model.System
-
-		count, err := r.List(ctx, &model.System{}, &allSystems, *repo.NewQuery())
+		count, err := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, existingSystemsCount+1, count)
+
+		var allSystems []*model.System
+		err = r.List(ctx, &model.System{}, &allSystems, *repo.NewQuery())
+		assert.NoError(t, err)
 
 		for _, sys := range allSystems {
 			if sys.Identifier == existingSystem.Identifier {

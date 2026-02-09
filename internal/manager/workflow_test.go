@@ -1334,13 +1334,12 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 			assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed)
 
 			// Verify workflow approvers were also deleted
-			var approversAfter []*model.WorkflowApprover
 			approverQuery := repo.NewQuery().Where(
 				repo.NewCompositeKeyGroup(
 					repo.NewCompositeKey().Where(model.WorkflowID, oldTerminalWf.ID),
 				),
 			)
-			countAfter, err := r.List(ctx, &model.WorkflowApprover{}, &approversAfter, *approverQuery)
+			countAfter, err := r.Count(ctx, &model.WorkflowApprover{}, *approverQuery)
 			assert.NoError(t, err)
 			assert.Equal(t, 0, countAfter, "Approvers should be deleted with workflow")
 		},
@@ -1367,13 +1366,12 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Verify workflow approvers still exist
-			var approvers []*model.WorkflowApprover
 			approverQuery := repo.NewQuery().Where(
 				repo.NewCompositeKeyGroup(
 					repo.NewCompositeKey().Where(model.WorkflowID, recentTerminalWf.ID),
 				),
 			)
-			count, err := r.List(ctx, &model.WorkflowApprover{}, &approvers, *approverQuery)
+			count, err := r.Count(ctx, &model.WorkflowApprover{}, *approverQuery)
 			assert.NoError(t, err)
 			assert.Positive(t, count, "Approvers should still exist for recent workflow")
 		},
