@@ -108,7 +108,6 @@ func (p *Plugin) SetLogger(logger hclog.Logger) {
 	slog.SetDefault(hclog2slog.New(logger))
 }
 
-//nolint:gci
 func (p *Plugin) Configure(_ context.Context, req *configv1.ConfigureRequest) (*configv1.ConfigureResponse, error) {
 	slog.Info("Configuring plugin")
 
