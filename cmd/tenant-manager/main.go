@@ -252,7 +252,7 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 		),
 	)
 
-	healthOptions := make([]health.Option, 0) //nolint:prealloc
+	healthOptions := make([]health.Option, 0, 3)
 	healthOptions = append(
 		healthOptions,
 		health.WithDisabledAutostart(),
