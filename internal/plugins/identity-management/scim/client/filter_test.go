@@ -3,9 +3,10 @@ package client_test
 import (
 	"testing"
 
-	"github.com/openkcm/cmk/internal/plugins/identity-management/scim/client"
 	"github.com/openkcm/identity-management-plugins/pkg/clients/scim"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/openkcm/cmk/internal/plugins/identity-management/scim/client"
 )
 
 func TestFilterComparison(t *testing.T) {
