@@ -213,7 +213,7 @@ func createTargets(ctx context.Context, cfg *config.EventProcessor) (map[string]
 }
 
 func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
-	options := make([]amqp.ClientOption, 0)
+	options := make([]amqp.ClientOption, 0) //nolint:prealloc
 
 	if cfg.SecretRef.Type != commoncfg.MTLSSecretType {
 		return options, nil

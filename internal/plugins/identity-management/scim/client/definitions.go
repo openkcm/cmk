@@ -1,5 +1,6 @@
 package client
 
+//nolint:tagliatelle
 type BaseResource struct {
 	ID         string   `json:"id"`
 	ExternalID string   `json:"externalId,omitempty"`

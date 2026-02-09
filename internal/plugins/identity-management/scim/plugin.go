@@ -46,6 +46,7 @@ var (
 	ErrGetGroupsForUser       = errors.New("failed to get groups for user")
 	ErrGetUsersForGroup       = errors.New("failed to get users for group")
 	ErrNoID                   = errors.New("no filter id provided")
+	ErrNoGroupAttribute       = errors.New("no group attribute configured")
 )
 
 // allFilter is used to get all users or groups
@@ -87,7 +88,7 @@ type Plugin struct {
 
 	logger     hclog.Logger
 	scimClient *client.Client
-	params     Params
+	params     *Params
 	buildInfo  string
 }
 
@@ -107,75 +108,23 @@ func (p *Plugin) SetLogger(logger hclog.Logger) {
 	slog.SetDefault(hclog2slog.New(logger))
 }
 
-func (p *Plugin) Configure(
-	_ context.Context,
-	req *configv1.ConfigureRequest,
-) (*configv1.ConfigureResponse, error) {
+//nolint:gci
+func (p *Plugin) Configure(_ context.Context, req *configv1.ConfigureRequest) (*configv1.ConfigureResponse, error) {
 	slog.Info("Configuring plugin")
 
-	cfg := config.Config{}
+	cfg := &config.Config{}
 
-	err := yaml.Unmarshal([]byte(req.GetYamlConfiguration()), &cfg)
+	err := yaml.Unmarshal([]byte(req.GetYamlConfiguration()), cfg)
 	if err != nil {
 		return nil, ErrID.Wrapf(err, "Failed to get yaml Configuration")
 	}
 
-	baseHostBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Host)
+	params, err := createParams(cfg)
 	if err != nil {
-		return nil, ErrID.Wrapf(err, "Failed loading base host")
+		return nil, err
 	}
 
-	groupAttrBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Params.GroupAttribute)
-	if err != nil {
-		return nil, ErrID.Wrapf(err, "Failed loading group attribute")
-	}
-
-	userAttrBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Params.UserAttribute)
-	if err != nil {
-		return nil, ErrID.Wrapf(err, "Failed loading user attribute")
-	}
-
-	groupMemberAttrBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Params.GroupMembersAttribute)
-	if err != nil {
-		return nil, ErrID.Wrapf(err, "Failed loading group members attribute")
-	}
-
-	listMethodBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Params.ListMethod)
-	if err != nil {
-		return nil, ErrID.Wrapf(err, "Failed loading list method")
-	}
-
-	allowSearchUsersByGroupBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Params.AllowSearchUsersByGroup)
-	if err != nil {
-		return nil, ErrID.Wrapf(err, "Failed loading allow search users by group")
-	}
-
-	allowSearchUsersByGroup, err := strconv.ParseBool(string(allowSearchUsersByGroupBytes))
-	if err != nil {
-		return nil, ErrID.Wrapf(err, "Failed parsing allow search users by group")
-	}
-
-	authContextBytes, err := commoncfg.LoadValueFromSourceRef(cfg.AuthContext)
-	if err != nil {
-		return nil, ErrID.Wrapf(err, "Failed loading auth context")
-	}
-
-	cfgAuthContext := config.AuthContextConfig{}
-
-	err = yaml.Unmarshal(authContextBytes, &cfgAuthContext)
-	if err != nil {
-		return nil, ErrID.Wrapf(err, "Failed to unmarshal auth context")
-	}
-
-	p.params = Params{
-		BaseHost:                string(baseHostBytes),
-		GroupAttribute:          string(groupAttrBytes),
-		UserAttribute:           string(userAttrBytes),
-		GroupMembersAttribute:   string(groupMemberAttrBytes),
-		ListMethod:              string(listMethodBytes),
-		AllowSearchUsersByGroup: allowSearchUsersByGroup,
-		AuthContext:             cfgAuthContext,
-	}
+	p.params = params
 
 	client, err := client.NewClient(cfg.Auth, p.logger)
 	if err != nil {
@@ -348,7 +297,7 @@ func (p *Plugin) getUsersForGroupUsingUserList(
 
 	attr := p.params.GroupAttribute
 	if attr == "" {
-		return nil, errs.Wrap(ErrGetUsersForGroup, errors.New("no group attribute configured"))
+		return nil, errs.Wrap(ErrGetUsersForGroup, ErrNoGroupAttribute)
 	}
 
 	filter := getFilter(defaultUserListAttribute, groupID, attr)
@@ -455,6 +404,65 @@ func getFilter(defaultAttribute, value string, setAttribute string) scim.FilterE
 	}
 
 	return filter
+}
+
+func createParams(cfg *config.Config) (*Params, error) {
+	baseHostBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Host)
+	if err != nil {
+		return nil, ErrID.Wrapf(err, "Failed loading base host")
+	}
+
+	groupAttrBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Params.GroupAttribute)
+	if err != nil {
+		return nil, ErrID.Wrapf(err, "Failed loading group attribute")
+	}
+
+	userAttrBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Params.UserAttribute)
+	if err != nil {
+		return nil, ErrID.Wrapf(err, "Failed loading user attribute")
+	}
+
+	groupMemberAttrBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Params.GroupMembersAttribute)
+	if err != nil {
+		return nil, ErrID.Wrapf(err, "Failed loading group members attribute")
+	}
+
+	listMethodBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Params.ListMethod)
+	if err != nil {
+		return nil, ErrID.Wrapf(err, "Failed loading list method")
+	}
+
+	allowSearchUsersByGroupBytes, err := commoncfg.LoadValueFromSourceRef(cfg.Params.AllowSearchUsersByGroup)
+	if err != nil {
+		return nil, ErrID.Wrapf(err, "Failed loading allow search users by group")
+	}
+
+	allowSearchUsersByGroup, err := strconv.ParseBool(string(allowSearchUsersByGroupBytes))
+	if err != nil {
+		return nil, ErrID.Wrapf(err, "Failed parsing allow search users by group")
+	}
+
+	authContextBytes, err := commoncfg.LoadValueFromSourceRef(cfg.AuthContext)
+	if err != nil {
+		return nil, ErrID.Wrapf(err, "Failed loading auth context")
+	}
+
+	cfgAuthContext := config.AuthContextConfig{}
+
+	err = yaml.Unmarshal(authContextBytes, &cfgAuthContext)
+	if err != nil {
+		return nil, ErrID.Wrapf(err, "Failed to unmarshal auth context")
+	}
+
+	return &Params{
+		BaseHost:                string(baseHostBytes),
+		GroupAttribute:          string(groupAttrBytes),
+		UserAttribute:           string(userAttrBytes),
+		GroupMembersAttribute:   string(groupMemberAttrBytes),
+		ListMethod:              string(listMethodBytes),
+		AllowSearchUsersByGroup: allowSearchUsersByGroup,
+		AuthContext:             cfgAuthContext,
+	}, nil
 }
 
 func getPrimaryEmailAddress(user *client.User) string {

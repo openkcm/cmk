@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/common-sdk/pkg/pointers"
 
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 var (

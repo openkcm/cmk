@@ -317,7 +317,7 @@ type LoadingFields struct {
 func NewQueryWithFieldLoading(table table, fields ...LoadingFields) *Query {
 	query := NewQuery()
 
-	selectFields := []*SelectField{
+	selectFields := []*SelectField{ //nolint:prealloc
 		NewSelectField(table.TableName(), QueryFunction{Function: AllFunc}),
 	}
 

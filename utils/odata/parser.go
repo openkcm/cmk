@@ -138,7 +138,7 @@ func startsWithOp(slicedFilterParam, op string) bool {
 // splitBooleanOperandsFromIndices is a parse helper function which splits
 // indexed anded ops into fields and values.
 func splitBooleanOperandsFromIndices(param string, boolOpIndices []int) []string {
-	booleanOperands := []string{}
+	booleanOperands := make([]string, 0, len(boolOpIndices))
 
 	lastSplitIndex := 0
 	for _, andOpIndex := range boolOpIndices {
