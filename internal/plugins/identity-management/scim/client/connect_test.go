@@ -54,8 +54,8 @@ var (
 			ExternalID: "",
 			Meta:       struct{}{},
 			Schemas: []string{
-				"urn:ietf:params:clients:schemas:core:2.0:User",
-				"urn:ietf:params:clients:schemas:extension:sap:2.0:User",
+				"urn:ietf:params:scim:schemas:core:2.0:User",
+				"urn:ietf:params:scim:schemas:extension:sap:2.0:User",
 			},
 		},
 		UserName:    "cloudanalyst",
@@ -83,8 +83,8 @@ var (
 			ExternalID: "",
 			Meta:       struct{}{},
 			Schemas: []string{
-				"urn:ietf:params:clients:schemas:core:2.0:Group",
-				"urn:sap:cloud:clients:schemas:extension:custom:2.0:Group",
+				"urn:ietf:params:scim:schemas:core:2.0:Group",
+				"urn:sap:cloud:scim:schemas:extension:custom:2.0:Group",
 			},
 		},
 		DisplayName: "KeyAdmin",
@@ -228,7 +228,7 @@ func TestGetUser(t *testing.T) {
 			responseBody:   `{"detail": "User not found"}`,
 			expectedUser:   nil,
 			expectError:    true,
-			errorContains:  "error getting clients user",
+			errorContains:  "error getting SCIM user",
 		},
 		{
 			name:           "Invalid JSON",
@@ -237,7 +237,7 @@ func TestGetUser(t *testing.T) {
 			responseBody:   `invalid-json`,
 			expectedUser:   nil,
 			expectError:    true,
-			errorContains:  "error getting clients user",
+			errorContains:  "error getting SCIM user",
 		},
 	}
 
@@ -293,7 +293,7 @@ func TestListUsers(t *testing.T) {
 			responseBody:   `invalid-json`,
 			expectedUsers:  nil,
 			expectError:    true,
-			errorContains:  "error listing clients users",
+			errorContains:  "error listing SCIM users",
 		},
 	}
 
@@ -352,7 +352,7 @@ func TestGetGroup(t *testing.T) {
 			responseBody:   `{"detail": "Group not found"}`,
 			expectedGroup:  nil,
 			expectError:    true,
-			errorContains:  "error getting clients group",
+			errorContains:  "error getting SCIM group",
 		},
 		{
 			name:           "Invalid JSON",
@@ -361,7 +361,7 @@ func TestGetGroup(t *testing.T) {
 			responseBody:   `invalid-json`,
 			expectedGroup:  nil,
 			expectError:    true,
-			errorContains:  "error getting clients group",
+			errorContains:  "error getting SCIM group",
 		},
 	}
 
@@ -417,7 +417,7 @@ func TestListGroups(t *testing.T) {
 			responseBody:   `invalid-json`,
 			expectedGroups: nil,
 			expectError:    true,
-			errorContains:  "error listing clients groups",
+			errorContains:  "error listing SCIM groups",
 		},
 	}
 
