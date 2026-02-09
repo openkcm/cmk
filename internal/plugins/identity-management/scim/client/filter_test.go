@@ -3,6 +3,7 @@ package client_test
 import (
 	"testing"
 
+	"github.com/openkcm/cmk/internal/plugins/identity-management/scim/client"
 	"github.com/openkcm/identity-management-plugins/pkg/clients/scim"
 	"github.com/stretchr/testify/assert"
 )
@@ -155,5 +156,139 @@ func TestFilterComparison(t *testing.T) {
 			result := tt.input.ToString()
 			assert.Equal(t, tt.expected, result)
 		})
+	}
+}
+
+func TestNullFilterExpression(t *testing.T) {
+	f := client.NullFilterExpression{}
+	if got := f.ToString(); got != "" {
+		t.Fatalf("expected empty string, got %q", got)
+	}
+}
+
+func TestFilterComparison_ToString(t *testing.T) {
+	tests := []struct {
+		name     string
+		filter   client.FilterComparison
+		expected string
+	}{
+		{
+			name: "equal operator",
+			filter: client.FilterComparison{
+				Attribute: "userName",
+				Operator:  client.FilterOperatorEqual,
+				Value:     "john",
+			},
+			expected: `userName eq "john"`,
+		},
+		{
+			name: "case insensitive equal operator",
+			filter: client.FilterComparison{
+				Attribute: "email",
+				Operator:  client.FilterOperatorEqualCI,
+				Value:     "TEST@EXAMPLE.COM",
+			},
+			expected: `email eq_ci "TEST@EXAMPLE.COM"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.filter.ToString(); got != tt.expected {
+				t.Fatalf("expected %q, got %q", tt.expected, got)
+			}
+		})
+	}
+}
+
+func TestFilterLogicalGroupAnd_ToString(t *testing.T) {
+	filter := client.FilterLogicalGroupAnd{
+		Expressions: []client.FilterExpression{
+			client.FilterComparison{
+				Attribute: "userName",
+				Operator:  client.FilterOperatorEqual,
+				Value:     "john",
+			},
+			client.FilterComparison{
+				Attribute: "active",
+				Operator:  client.FilterOperatorEqual,
+				Value:     "true",
+			},
+		},
+	}
+
+	expected := `(userName eq "john" and active eq "true")`
+	if got := filter.ToString(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestFilterLogicalGroupOr_ToString(t *testing.T) {
+	filter := client.FilterLogicalGroupOr{
+		Expressions: []client.FilterExpression{
+			client.FilterComparison{
+				Attribute: "role",
+				Operator:  client.FilterOperatorEqual,
+				Value:     "admin",
+			},
+			client.FilterComparison{
+				Attribute: "role",
+				Operator:  client.FilterOperatorEqual,
+				Value:     "user",
+			},
+		},
+	}
+
+	expected := `(role eq "admin" or role eq "user")`
+	if got := filter.ToString(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestFilterLogicalGroupNot_ToString(t *testing.T) {
+	filter := client.FilterLogicalGroupNot{
+		Expression: client.FilterComparison{
+			Attribute: "active",
+			Operator:  client.FilterOperatorEqual,
+			Value:     "false",
+		},
+	}
+
+	expected := `not active eq "false"`
+	if got := filter.ToString(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestNestedLogicalGroups(t *testing.T) {
+	filter := client.FilterLogicalGroupAnd{
+		Expressions: []client.FilterExpression{
+			client.FilterLogicalGroupOr{
+				Expressions: []client.FilterExpression{
+					client.FilterComparison{
+						Attribute: "role",
+						Operator:  client.FilterOperatorEqual,
+						Value:     "admin",
+					},
+					client.FilterComparison{
+						Attribute: "role",
+						Operator:  client.FilterOperatorEqual,
+						Value:     "user",
+					},
+				},
+			},
+			client.FilterLogicalGroupNot{
+				Expression: client.FilterComparison{
+					Attribute: "active",
+					Operator:  client.FilterOperatorEqual,
+					Value:     "false",
+				},
+			},
+		},
+	}
+
+	expected := `((role eq "admin" or role eq "user") and not active eq "false")`
+	if got := filter.ToString(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
 	}
 }
