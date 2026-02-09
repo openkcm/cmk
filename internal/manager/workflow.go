@@ -687,16 +687,24 @@ func (w *WorkflowManager) getWorkflows(
 			Where(repo.UserIDField, iamIdentifier)
 		orCK.IsStrict = false
 
-		distinctOption := repo.DistinctOption{
-			Enabled: true,
-			CountOn: repo.IDField,
-		}
-		query = query.Where(repo.NewCompositeKeyGroup(orCK)).Distinct(distinctOption)
+		query = query.Where(repo.NewCompositeKeyGroup(orCK))
 	}
 
 	workflows := []*model.Workflow{}
 
-	count, err := w.repo.List(ctx, model.Workflow{}, &workflows, *query)
+	_, err = w.repo.List(ctx, model.Workflow{}, &workflows, *query)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
+	}
+
+	count, err := w.repo.Count(
+		ctx,
+		model.Workflow{},
+		*query.Select(repo.NewSelectField(repo.IDField, repo.QueryFunction{
+			Function: repo.CountFunc,
+			Distinct: true,
+		})),
+	)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 	}

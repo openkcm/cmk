@@ -218,6 +218,42 @@ func TestGetKeyConfigurations(t *testing.T) {
 		_, _, err := m.GetKeyConfigurations(t.Context(), filter)
 		assert.Error(t, err)
 	})
+
+	t.Run("Should get user keyconfig count", func(t *testing.T) {
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+		groupA := testutils.NewGroup(func(_ *model.Group) {})
+		groupB := testutils.NewGroup(func(_ *model.Group) {})
+		testutils.CreateTestEntities(ctx, t, r, groupA, groupB)
+		kcCount := 10
+		for i := range 2 {
+			var g *model.Group
+			if i%2 == 1 {
+				g = groupA
+			} else {
+				g = groupB
+			}
+
+			for range kcCount {
+				kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+					kc.AdminGroup = *g
+					kc.AdminGroupID = g.ID
+				})
+				testutils.CreateTestEntities(ctx, t, r, kc)
+				for range 2 {
+					k := testutils.NewKey(func(k *model.Key) {
+						k.KeyConfigurationID = kc.ID
+					})
+					testutils.CreateTestEntities(ctx, t, r, k)
+				}
+			}
+		}
+
+		ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{groupA.IAMIdentifier})
+		_, count, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{})
+		assert.NoError(t, err)
+		assert.Equal(t, kcCount, count)
+	})
 }
 
 func TestTotalSystemAndKey(t *testing.T) {

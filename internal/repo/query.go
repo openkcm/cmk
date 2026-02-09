@@ -191,8 +191,6 @@ type Query struct {
 	Group []QueryField
 
 	OrderFields []OrderField
-
-	DistinctOption DistinctOption
 }
 
 type JoinType string
@@ -397,11 +395,6 @@ func (ckg *CompositeKeyGroup) String() string {
 	return str
 }
 
-type DistinctOption struct {
-	Enabled bool
-	CountOn string // COUNT(DISTINCT ...) requires the field to be specified
-}
-
 func (q *Query) Where(conds ...CompositeKeyGroup) *Query {
 	q.CompositeKeyGroup = append(q.CompositeKeyGroup, conds...)
 	return q
@@ -459,10 +452,5 @@ func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {
 
 func (q *Query) Order(orderFields ...OrderField) *Query {
 	q.OrderFields = append(q.OrderFields, orderFields...)
-	return q
-}
-
-func (q *Query) Distinct(distinct DistinctOption) *Query {
-	q.DistinctOption = distinct
 	return q
 }
