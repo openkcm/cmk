@@ -3,7 +3,6 @@ package client_test
 import (
 	"testing"
 
-	"github.com/openkcm/identity-management-plugins/pkg/clients/scim"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/plugins/identity-management/scim/client"
@@ -12,50 +11,50 @@ import (
 func TestFilterComparison(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    scim.FilterExpression
+		input    client.FilterExpression
 		expected string
 	}{
 		{
 			name: "Equal operator",
-			input: scim.FilterComparison{
+			input: client.FilterComparison{
 				Attribute: "name",
-				Operator:  scim.FilterOperatorEqual,
+				Operator:  client.FilterOperatorEqual,
 				Value:     "John",
 			},
 			expected: `name eq "John"`,
 		},
 		{
 			name: "Not Equal operator",
-			input: scim.FilterComparison{
+			input: client.FilterComparison{
 				Attribute: "type",
-				Operator:  scim.FilterOperatorNotEqual,
+				Operator:  client.FilterOperatorNotEqual,
 				Value:     "employee",
 			},
 			expected: `type ne "employee"`,
 		},
 		{
 			name: "Starts With operator",
-			input: scim.FilterComparison{
+			input: client.FilterComparison{
 				Attribute: "name",
-				Operator:  scim.FilterOperatorStartsWith,
+				Operator:  client.FilterOperatorStartsWith,
 				Value:     "KMS",
 			},
 			expected: `name sw "KMS"`,
 		}, {
 			name: "Ends With operator",
-			input: scim.FilterComparison{
+			input: client.FilterComparison{
 				Attribute: "name",
-				Operator:  scim.FilterOperatorEndsWith,
+				Operator:  client.FilterOperatorEndsWith,
 				Value:     "KMS",
 			},
 			expected: `name ew "KMS"`,
 		},
 		{
 			name: "Negate expression",
-			input: scim.FilterLogicalGroupNot{
-				Expression: scim.FilterComparison{
+			input: client.FilterLogicalGroupNot{
+				Expression: client.FilterComparison{
 					Attribute: "name",
-					Operator:  scim.FilterOperatorEqual,
+					Operator:  client.FilterOperatorEqual,
 					Value:     "John",
 				},
 			},
@@ -63,11 +62,11 @@ func TestFilterComparison(t *testing.T) {
 		},
 		{
 			name: "And Single expression",
-			input: scim.FilterLogicalGroupAnd{
-				Expressions: []scim.FilterExpression{
-					scim.FilterComparison{
+			input: client.FilterLogicalGroupAnd{
+				Expressions: []client.FilterExpression{
+					client.FilterComparison{
 						Attribute: "name",
-						Operator:  scim.FilterOperatorEqual,
+						Operator:  client.FilterOperatorEqual,
 						Value:     "John",
 					},
 				},
@@ -76,16 +75,16 @@ func TestFilterComparison(t *testing.T) {
 		},
 		{
 			name: "And Multiple expressions",
-			input: scim.FilterLogicalGroupAnd{
-				Expressions: []scim.FilterExpression{
-					scim.FilterComparison{
+			input: client.FilterLogicalGroupAnd{
+				Expressions: []client.FilterExpression{
+					client.FilterComparison{
 						Attribute: "name",
-						Operator:  scim.FilterOperatorEqual,
+						Operator:  client.FilterOperatorEqual,
 						Value:     "John",
 					},
-					scim.FilterComparison{
+					client.FilterComparison{
 						Attribute: "group",
-						Operator:  scim.FilterOperatorEqual,
+						Operator:  client.FilterOperatorEqual,
 						Value:     "CMK",
 					},
 				},
@@ -94,11 +93,11 @@ func TestFilterComparison(t *testing.T) {
 		},
 		{
 			name: "Or Single expression",
-			input: scim.FilterLogicalGroupOr{
-				Expressions: []scim.FilterExpression{
-					scim.FilterComparison{
+			input: client.FilterLogicalGroupOr{
+				Expressions: []client.FilterExpression{
+					client.FilterComparison{
 						Attribute: "name",
-						Operator:  scim.FilterOperatorEqual,
+						Operator:  client.FilterOperatorEqual,
 						Value:     "John",
 					},
 				},
@@ -107,16 +106,16 @@ func TestFilterComparison(t *testing.T) {
 		},
 		{
 			name: "Or Multiple expressions",
-			input: scim.FilterLogicalGroupOr{
-				Expressions: []scim.FilterExpression{
-					scim.FilterComparison{
+			input: client.FilterLogicalGroupOr{
+				Expressions: []client.FilterExpression{
+					client.FilterComparison{
 						Attribute: "name",
-						Operator:  scim.FilterOperatorEqual,
+						Operator:  client.FilterOperatorEqual,
 						Value:     "John",
 					},
-					scim.FilterComparison{
+					client.FilterComparison{
 						Attribute: "group",
-						Operator:  scim.FilterOperatorEqual,
+						Operator:  client.FilterOperatorEqual,
 						Value:     "CMK",
 					},
 				},
@@ -125,23 +124,23 @@ func TestFilterComparison(t *testing.T) {
 		},
 		{
 			name: "Combination expression",
-			input: scim.FilterLogicalGroupAnd{
-				Expressions: []scim.FilterExpression{
-					scim.FilterComparison{
+			input: client.FilterLogicalGroupAnd{
+				Expressions: []client.FilterExpression{
+					client.FilterComparison{
 						Attribute: "name",
-						Operator:  scim.FilterOperatorEqual,
+						Operator:  client.FilterOperatorEqual,
 						Value:     "John",
 					},
-					scim.FilterLogicalGroupOr{
-						Expressions: []scim.FilterExpression{
-							scim.FilterComparison{
+					client.FilterLogicalGroupOr{
+						Expressions: []client.FilterExpression{
+							client.FilterComparison{
 								Attribute: "group",
-								Operator:  scim.FilterOperatorEqual,
+								Operator:  client.FilterOperatorEqual,
 								Value:     "CMK",
 							},
-							scim.FilterComparison{
+							client.FilterComparison{
 								Attribute: "type",
-								Operator:  scim.FilterOperatorEqual,
+								Operator:  client.FilterOperatorEqual,
 								Value:     "employee",
 							},
 						},

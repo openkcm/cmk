@@ -11,7 +11,6 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/identity-management-plugins/pkg/clients/scim"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/openkcm/plugin-sdk/pkg/hclog2slog"
 	"github.com/samber/oops"
@@ -51,9 +50,9 @@ var (
 
 // allFilter is used to get all users or groups
 // by comparing the modified time to the zero timestamp
-var allFilter = scim.FilterComparison{
+var allFilter = client.FilterComparison{
 	Attribute: modifiedByAttribute,
-	Operator:  scim.FilterOperatorGreater,
+	Operator:  client.FilterOperatorGreater,
 	Value:     time.Unix(0, 0).Format(time.RFC3339),
 }
 
@@ -248,10 +247,10 @@ func (p *Plugin) GetGroupsForUser(
 
 func (p *Plugin) listGroups(
 	ctx context.Context,
-	filter scim.FilterExpression,
+	filter client.FilterExpression,
 	authContextData map[string]string,
 ) ([]*idmangv1.Group, error) {
-	if (filter == scim.NullFilterExpression{}) {
+	if (filter == client.NullFilterExpression{}) {
 		return nil, ErrNoID
 	}
 
@@ -386,14 +385,14 @@ func (p *Plugin) extractAuthContext(authContextData map[string]string) (string, 
 	return host, headers
 }
 
-func getFilter(defaultAttribute, value string, setAttribute string) scim.FilterExpression {
+func getFilter(defaultAttribute, value string, setAttribute string) client.FilterExpression {
 	if value == "" {
-		return scim.NullFilterExpression{}
+		return client.NullFilterExpression{}
 	}
 
-	filter := scim.FilterComparison{
+	filter := client.FilterComparison{
 		Attribute: defaultAttribute,
-		Operator:  scim.FilterOperatorEqual,
+		Operator:  client.FilterOperatorEqual,
 		Value:     value,
 	}
 
