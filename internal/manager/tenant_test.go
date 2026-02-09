@@ -103,7 +103,7 @@ func TestTenantManager(t *testing.T) {
 	},
 	)
 	t.Run("Should list tenants", func(t *testing.T) {
-		tenantsModel, _, err := m.ListTenantInfo(t.Context(), nil, 0, 0)
+		tenantsModel, _, err := m.ListTenantInfo(t.Context(), nil, repo.Pagination{})
 		assert.NoError(t, err)
 
 		for i := range nTenants {

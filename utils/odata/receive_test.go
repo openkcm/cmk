@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/odata"
 )
@@ -23,14 +24,16 @@ func makeExpectedQuery(fields []string, values []any) *repo.Query {
 				Operation: repo.Equal,
 			},
 		}
-		cond := repo.Condition{Field: fields[i],
-			Value: entry}
+		cond := repo.Condition{
+			Field: fields[i],
+			Value: entry,
+		}
 		ck.Conds = append(ck.Conds, cond)
 		ckg := repo.NewCompositeKeyGroup(ck)
 		query.Where(ckg)
 	}
 
-	return query.SetLimit(20)
+	return query
 }
 
 func TestBasicSchema(t *testing.T) {
@@ -98,8 +101,10 @@ func TestBasicSchema(t *testing.T) {
 			},
 			filterString: `test1 eq 1 and test2 eq 'teststr' and test3 eq true and test4 eq ` +
 				`'14641e57-bd17-4d91-9552-aa0468dc6c91'`,
-			expectedQuery: makeExpectedQuery([]string{"test1DB", "test2DB",
-				"test3DB", "test4DB"},
+			expectedQuery: makeExpectedQuery([]string{
+				"test1DB", "test2DB",
+				"test3DB", "test4DB",
+			},
 				[]any{int64(1), "teststr", true, testUUID}),
 			expectedError: nil,
 		},
@@ -245,6 +250,28 @@ func TestBasicSchema(t *testing.T) {
 			if err == nil {
 				assert.Equal(t, tt.expectedQuery, fieldMap.GetQuery(t.Context()))
 			}
+		})
+	}
+}
+
+func TestPagination(t *testing.T) {
+	tests := []struct {
+		name     string
+		expected repo.Pagination
+		input    []odata.FilterSchemaEntry
+	}{
+		{
+			name:     "Should have default top if not set",
+			expected: repo.Pagination{Top: constants.DefaultTop},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fieldMap := odata.NewQueryOdataMapper(odata.FilterSchema{
+				Entries: []odata.FilterSchemaEntry{},
+			})
+
+			assert.Equal(t, tt.expected, fieldMap.GetPagination())
 		})
 	}
 }
@@ -540,27 +567,37 @@ func TestValueModifier(t *testing.T) {
 
 	filterSchema := odata.FilterSchema{
 		Entries: []odata.FilterSchemaEntry{
-			{"test1", odata.Int, "test1DB", odata.WhereQuery,
+			{
+				"test1", odata.Int, "test1DB", odata.WhereQuery,
 				func(s string) (string, bool) {
 					i, _ := strconv.ParseInt(s, 10, 64)
 					return strconv.Itoa(int(i * 20)), true
 				},
-				nil},
-			{"test2", odata.String, "test2DB", odata.WhereQuery,
+				nil,
+			},
+			{
+				"test2", odata.String, "test2DB", odata.WhereQuery,
 				func(s string) (string, bool) { return strings.ToUpper(s), true },
-				nil},
-			{"test3", odata.Bool, "test3DB", odata.WhereQuery,
+				nil,
+			},
+			{
+				"test3", odata.Bool, "test3DB", odata.WhereQuery,
 				func(string) (string, bool) { return "false", true },
-				nil},
-			{"test4", odata.UUID, "test4DB", odata.WhereQuery,
+				nil,
+			},
+			{
+				"test4", odata.UUID, "test4DB", odata.WhereQuery,
 				func(s string) (string, bool) { return s, true },
-				nil},
+				nil,
+			},
 		},
 	}
 	filterString := `test1 eq 1 and test2 eq 'teststr' and test3 eq true and test4 eq ` +
 		`'14641e57-bd17-4d91-9552-aa0468dc6c91'`
-	expectedQuery := makeExpectedQuery([]string{"test1DB", "test2DB",
-		"test3DB", "test4DB"},
+	expectedQuery := makeExpectedQuery([]string{
+		"test1DB", "test2DB",
+		"test3DB", "test4DB",
+	},
 		[]any{int64(20), "TESTSTR", false, testUUID})
 
 	fieldMap := odata.NewQueryOdataMapper(filterSchema)
@@ -572,7 +609,8 @@ func TestValueModifier(t *testing.T) {
 func TestValueValidation(t *testing.T) {
 	filterSchema := odata.FilterSchema{
 		Entries: []odata.FilterSchemaEntry{
-			{"test1", odata.Int, "test1DB", odata.WhereQuery, nil,
+			{
+				"test1", odata.Int, "test1DB", odata.WhereQuery, nil,
 				func(s string) bool {
 					i, _ := strconv.ParseInt(s, 10, 64)
 					return i < 10

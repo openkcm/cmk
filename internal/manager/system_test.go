@@ -168,8 +168,9 @@ func TestGetAllSystems(t *testing.T) {
 	t.Run("Should get all systems", func(t *testing.T) {
 		expected := []*model.System{system1, system2}
 		filter := manager.SystemFilter{
-			Skip: constants.DefaultSkip,
-			Top:  constants.DefaultTop,
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.NoError(t, err)
@@ -187,8 +188,9 @@ func TestGetAllSystems(t *testing.T) {
 		)
 
 		filter := manager.SystemFilter{
-			Skip: constants.DefaultSkip,
-			Top:  constants.DefaultTop,
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.Nil(t, allSystems)
@@ -204,6 +206,7 @@ func TestGetAllSystems(t *testing.T) {
 			KeyConfigID: keyConfig.ID,
 			Skip:        constants.DefaultSkip,
 			Top:         constants.DefaultTop,
+			Count:       true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.NoError(t, err)
@@ -224,6 +227,7 @@ func TestGetAllSystems(t *testing.T) {
 			KeyConfigID: keyConfig.ID,
 			Skip:        constants.DefaultSkip,
 			Top:         constants.DefaultTop,
+			Count:       true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.Nil(t, allSystems)
@@ -260,6 +264,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 			Region: "Region1",
 			Skip:   constants.DefaultSkip,
 			Top:    constants.DefaultTop,
+			Count:  true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 
@@ -271,9 +276,10 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 
 	t.Run("Should get all systems filtered by type", func(t *testing.T) {
 		filter := manager.SystemFilter{
-			Type: "Type1",
-			Skip: constants.DefaultSkip,
-			Top:  constants.DefaultTop,
+			Type:  "Type1",
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 
@@ -288,6 +294,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 			Region: "RegionInvalid",
 			Skip:   constants.DefaultSkip,
 			Top:    constants.DefaultTop,
+			Count:  true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.NoError(t, err)
@@ -297,9 +304,10 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 	)
 	t.Run("Should fail to get systems filtered by type", func(t *testing.T) {
 		filter := manager.SystemFilter{
-			Type: "TypeInvalid",
-			Skip: constants.DefaultSkip,
-			Top:  constants.DefaultTop,
+			Type:  "TypeInvalid",
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.NoError(t, err)

@@ -61,39 +61,18 @@ func NewKeyVersionManager(
 func (kvm *KeyVersionManager) GetKeyVersions(
 	ctx context.Context,
 	keyID uuid.UUID,
-	skip int,
-	top int,
+	pagination repo.Pagination,
 ) ([]*model.KeyVersion, int, error) {
-	var versions []*model.KeyVersion
-
 	ck := repo.NewCompositeKey().
 		Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), keyID)
 
-	err := kvm.repo.List(
+	return repo.ListAndCount(
 		ctx,
+		kvm.repo,
+		pagination,
 		model.KeyVersion{},
-		&versions,
-		*repo.NewQuery().
-			Where(repo.NewCompositeKeyGroup(ck)).
-			SetLimit(top).
-			SetOffset(skip),
+		repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
 	)
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrListKeyVersionsDB, err)
-	}
-	count, err := kvm.repo.Count(
-		ctx,
-		&model.KeyVersion{},
-		*repo.NewQuery().
-			Where(repo.NewCompositeKeyGroup(ck)).
-			SetLimit(top).
-			SetOffset(skip),
-	)
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrListKeyVersionsDB, err)
-	}
-
-	return versions, count, nil
 }
 
 func (kvm *KeyVersionManager) CreateKeyVersion(

@@ -94,6 +94,7 @@ const (
 type QueryMapper interface {
 	GetQuery(ctx context.Context) *Query
 	GetUUID(field QueryField) (uuid.UUID, error)
+	GetPagination() Pagination
 }
 
 type Key struct {

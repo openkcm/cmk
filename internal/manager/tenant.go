@@ -19,7 +19,7 @@ import (
 
 type Tenant interface {
 	GetTenant(ctx context.Context) (*model.Tenant, error) // Get tenant from context
-	ListTenantInfo(ctx context.Context, issuerURL *string, skip int, top int) ([]*model.Tenant, int, error)
+	ListTenantInfo(ctx context.Context, issuerURL *string, pagination repo.Pagination) ([]*model.Tenant, int, error)
 	CreateTenant(ctx context.Context, tenant *model.Tenant) error
 	OffboardTenant(ctx context.Context) (OffboardingResult, error)
 	DeleteTenant(ctx context.Context) error
@@ -135,28 +135,16 @@ func (m *TenantManager) GetTenant(ctx context.Context) (*model.Tenant, error) {
 func (m *TenantManager) ListTenantInfo(
 	ctx context.Context,
 	issuerURL *string,
-	skip int,
-	top int,
+	pagination repo.Pagination,
 ) ([]*model.Tenant, int, error) {
-	var tenants []*model.Tenant
-
-	query := repo.NewQuery().SetLimit(top).SetOffset(skip)
+	query := repo.NewQuery()
 
 	if issuerURL != nil {
 		ck := repo.NewCompositeKey().Where(repo.IssuerURLField, issuerURL)
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
 	}
 
-	err := m.repo.List(ctx, model.Tenant{}, &tenants, *query)
-	if err != nil {
-		return nil, 0, ErrListTenants
-	}
-	count, err := m.repo.Count(ctx, &model.Tenant{}, *query)
-	if err != nil {
-		return nil, 0, ErrListTenants
-	}
-
-	return tenants, count, nil
+	return repo.ListAndCount(ctx, m.repo, pagination, model.Tenant{}, query)
 }
 
 func (m *TenantManager) CreateTenant(ctx context.Context, tenant *model.Tenant) error {

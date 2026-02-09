@@ -183,12 +183,9 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 func (km *KeyManager) GetKeys(
 	ctx context.Context,
 	keyConfigID *uuid.UUID,
-	skip int,
-	top int,
+	pagination repo.Pagination,
 ) ([]*model.Key, int, error) {
 	query := repo.NewQuery().
-		SetLimit(top).
-		SetOffset(skip).
 		Preload(repo.Preload{"KeyVersions"})
 
 	if keyConfigID != nil {
@@ -206,18 +203,7 @@ func (km *KeyManager) GetKeys(
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
 	}
 
-	var keys []*model.Key
-
-	err := km.repo.List(ctx, model.Key{}, &keys, *query)
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrListKeysDB, err)
-	}
-	count, err := km.repo.Count(ctx, &model.Key{}, *query)
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrListKeysDB, err)
-	}
-
-	return keys, count, nil
+	return repo.ListAndCount(ctx, km.repo, pagination, model.Key{}, query)
 }
 
 //nolint:cyclop

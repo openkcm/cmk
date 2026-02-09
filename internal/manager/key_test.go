@@ -807,7 +807,7 @@ func (s *KeyManagerSuite) TestList() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			results, total, err := s.km.GetKeys(s.ctx, nil, tt.skip, tt.top)
+			results, total, err := s.km.GetKeys(s.ctx, nil, repo.Pagination{Skip: tt.skip, Top: tt.top, Count: true})
 
 			if tt.wantErr {
 				s.Error(err)

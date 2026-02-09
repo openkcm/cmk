@@ -69,52 +69,25 @@ func NewCertificateManager(
 	}
 }
 
-func (m *CertificateManager) GetAllCertificates(
-	ctx context.Context,
-	certificateID *uuid.UUID,
-) ([]*model.Certificate, int, error) {
-	var certificates []*model.Certificate
-
-	if certificateID != nil {
-		cert := &model.Certificate{ID: *certificateID}
-
-		_, err := m.repo.First(
-			ctx,
-			cert,
-			*repo.NewQuery())
-		if err != nil {
-			return nil, 0, errs.Wrap(ErrCertificateManager, err)
-		}
-
-		return []*model.Certificate{cert}, 1, nil
-	}
-
-	err := m.repo.List(ctx, &model.Certificate{}, &certificates, *repo.NewQuery())
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrCertificateManager, err)
-	}
-	count, err := m.repo.Count(ctx, &model.Certificate{}, *repo.NewQuery())
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrCertificateManager, err)
-	}
-
-	return certificates, count, nil
-}
-
 func (m *CertificateManager) GetCertificate(
 	ctx context.Context,
 	certificateID *uuid.UUID,
 ) (*model.Certificate, error) {
-	certificates, _, err := m.GetAllCertificates(ctx, certificateID)
+	cert := &model.Certificate{ID: *certificateID}
+
+	_, err := m.repo.First(
+		ctx,
+		cert,
+		*repo.NewQuery())
 	if err != nil {
-		return nil, err
+		return nil, errs.Wrap(ErrCertificateManager, err)
 	}
 
-	return certificates[0], nil
+	return cert, nil
 }
 
 func (m *CertificateManager) GetCertificatesForRotation(ctx context.Context,
-) ([]*model.Certificate, int, error) {
+) ([]*model.Certificate, error) {
 	certificates := []*model.Certificate{}
 	rotateDate := time.Now().AddDate(0, 0, m.cfg.RotationThresholdDays)
 	compositeKey := repo.NewCompositeKey().Where(
@@ -128,18 +101,10 @@ func (m *CertificateManager) GetCertificatesForRotation(ctx context.Context,
 		*query,
 	)
 	if err != nil {
-		return nil, 0, errs.Wrap(ErrCertificateManager, err)
-	}
-	count, err := m.repo.Count(
-		ctx,
-		&model.Certificate{},
-		*query,
-	)
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrCertificateManager, err)
+		return nil, errs.Wrap(ErrCertificateManager, err)
 	}
 
-	return certificates, count, nil
+	return certificates, nil
 }
 
 func (m *CertificateManager) UpdateCertificate(ctx context.Context, certificateID *uuid.UUID,
@@ -174,10 +139,6 @@ func (m *CertificateManager) UpdateCertificate(ctx context.Context, certificateI
 	cert.AutoRotate = autoRotate
 
 	_, err = m.repo.Patch(ctx, cert, *repo.NewQuery().UpdateAll(true))
-	if err != nil {
-		return nil, errs.Wrap(ErrCertificateManager, err)
-	}
-
 	if err != nil {
 		return nil, errs.Wrap(ErrCertificateManager, err)
 	}

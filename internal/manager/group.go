@@ -44,29 +44,19 @@ type GroupIAMExistence struct {
 	Exists        bool
 }
 
-func (m *GroupManager) GetGroups(ctx context.Context, skip int, top int) ([]*model.Group, int, error) {
+func (m *GroupManager) GetGroups(ctx context.Context, pagination repo.Pagination) ([]*model.Group, int, error) {
 	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.ActionRead, authz.ResourceTypeUserGroup)
 	if err != nil {
 		return []*model.Group{}, 0, err
 	}
 
-	query := repo.NewQuery().SetLimit(top).SetOffset(skip)
+	query := repo.NewQuery()
 
 	if isGroupFiltered {
 		m.applyIAMGroupFilter(ctx, query)
 	}
 
-	var groups []*model.Group
-	err = m.repo.List(ctx, model.Group{}, &groups, *query)
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrListGroups, err)
-	}
-	count, err := m.repo.Count(ctx, &model.Group{}, *query)
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrListGroups, err)
-	}
-
-	return groups, count, nil
+	return repo.ListAndCount(ctx, m.repo, pagination, model.Group{}, query)
 }
 
 func (m *GroupManager) CreateGroup(ctx context.Context, group *model.Group) (*model.Group, error) {

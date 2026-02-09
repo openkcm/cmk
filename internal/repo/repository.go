@@ -76,6 +76,12 @@ type LoadEntity interface {
 		model.KeyConfiguration
 }
 
+type Pagination struct {
+	Skip  int
+	Top   int
+	Count bool
+}
+
 type Opt[T LoadEntity] func(*T) error
 
 // ToSharedModel is a generic function used to lazy load model values that are not stored in the database.
@@ -118,7 +124,7 @@ func GetSystemByIDWithProperties(ctx context.Context, r Repo, systemID uuid.UUID
 		),
 	)
 
-	systems, _, err := ListAndCountSystemWithProperties(ctx, r, query)
+	systems, _, err := ListAndCountSystemWithProperties(ctx, r, Pagination{}, query)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetResource, err)
 	}
@@ -131,14 +137,16 @@ func GetSystemByIDWithProperties(ctx context.Context, r Repo, systemID uuid.UUID
 }
 
 //nolint:funlen
-func ListAndCountSystemWithProperties(ctx context.Context, r Repo, query *Query) ([]*model.System, int, error) {
+func ListAndCountSystemWithProperties(
+	ctx context.Context,
+	r Repo,
+	pagination Pagination,
+	query *Query,
+) ([]*model.System, int, error) {
 	var systems []*model.System
+	var count int
 
-	err := r.List(ctx, model.System{}, &systems, *query)
-	if err != nil {
-		return nil, 0, err
-	}
-	count, err := r.Count(ctx, &model.System{}, *query)
+	systems, count, err := ListAndCount(ctx, r, pagination, model.System{}, query)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -288,6 +296,41 @@ func ProcessInBatch[T Resource](
 	processFunc func([]*T) error,
 ) error {
 	return ProcessInBatchWithOptions(ctx, repo, baseQuery, batchSize, BatchProcessOptions{}, processFunc)
+}
+
+// ListAndCount lists items paginated and returns total count of elements
+// Total count is only returned if pagination.count is true
+func ListAndCount[T Resource](
+	ctx context.Context,
+	r Repo,
+	pagination Pagination,
+	item T,
+	query *Query,
+) ([]*T, int, error) {
+	var res []*T
+	resource := *new(T)
+	var top int
+
+	if pagination.Top == 0 {
+		top = DefaultLimit
+	} else {
+		top = pagination.Top
+	}
+
+	query = query.SetLimit(top).SetOffset(pagination.Skip)
+	err := r.List(ctx, resource, &res, *query)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrListingItems, err)
+	}
+	if !pagination.Count {
+		return res, 0, nil
+	}
+
+	count, err := r.Count(ctx, resource, *query)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrCountingItem, err)
+	}
+	return res, count, nil
 }
 
 func GetTenant(ctx context.Context, r Repo) (*model.Tenant, error) {
