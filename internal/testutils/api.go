@@ -46,6 +46,7 @@ func NewAPIServer(
 	tb testing.TB,
 	dbCon *multitenancy.DB,
 	testCfg TestAPIServerConfig,
+	dbCfg *config.Database,
 ) cmkapi.ServeMux {
 	tb.Helper()
 
@@ -89,12 +90,19 @@ func NewAPIServer(
 
 	controller := cmk.NewAPIController(tb.Context(), r, &cfg, factory, migrator)
 
-	return startAPIServer(tb, controller)
+	if dbCfg != nil {
+		authRepo := sql.NewRepository(makeDBConnection(tb, *dbCfg))
+		authController := cmk.NewAPIController(tb.Context(), authRepo, &cfg, factory, migrator)
+		return startAPIServer(tb, controller, authController)
+	} else {
+		return startAPIServer(tb, controller, controller)
+	}
 }
 
 func startAPIServer(
 	tb testing.TB,
 	controller *cmk.APIController,
+	controller2 *cmk.APIController,
 ) cmkapi.ServeMux {
 	tb.Helper()
 
@@ -116,25 +124,30 @@ func startAPIServer(
 
 	swagger, _ := daemon.SetupSwagger()
 
+	mws := []cmkapi.MiddlewareFunc{
+		md.OapiRequestValidatorWithOptions(swagger, &md.Options{
+			ErrorHandlerWithOpts:  handlers.OAPIValidatorHandler,
+			SilenceServersWarning: true,
+			Options: openapi3filter.Options{
+				AuthenticationFunc:    openapi3filter.NoopAuthenticationFunc,
+				IncludeResponseStatus: true,
+			},
+		}),
+	}
+
+	mws = append(mws, middleware.AuthzMiddleware(controller2))
+
+	mws = append(mws, middleware.LoggingMiddleware(),
+		middleware.PanicRecoveryMiddleware(),
+		middleware.InjectMultiTenancy(),
+		middleware.InjectRequestID())
+
 	cmkapi.HandlerWithOptions(strictController,
 		cmkapi.StdHTTPServerOptions{
 			BaseRouter:       r,
 			BaseURL:          constants.BasePath,
 			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
-			Middlewares: []cmkapi.MiddlewareFunc{
-				md.OapiRequestValidatorWithOptions(swagger, &md.Options{
-					ErrorHandlerWithOpts:  handlers.OAPIValidatorHandler,
-					SilenceServersWarning: true,
-					Options: openapi3filter.Options{
-						AuthenticationFunc:    openapi3filter.NoopAuthenticationFunc,
-						IncludeResponseStatus: true,
-					},
-				}),
-				middleware.LoggingMiddleware(),
-				middleware.PanicRecoveryMiddleware(),
-				middleware.InjectMultiTenancy(),
-				middleware.InjectRequestID(),
-			},
+			Middlewares:      mws,
 		})
 
 	return r

@@ -65,9 +65,9 @@ func (am *Engine) ReloadAllowList(ctx context.Context) error {
 	defer am.mu.Unlock()
 
 	// Collect all tenants which were previously loaded
-	tenantList := make([]authz.TenantID, 0)
-	for _, entity := range am.AuthzHandler.Entities {
-		tenantList = append(tenantList, entity.TenantID)
+	tenantList := make([]authz.TenantID, len(am.AuthzHandler.Entities))
+	for i, entity := range am.AuthzHandler.Entities {
+		tenantList[i] = entity.TenantID
 	}
 
 	am.AuthzHandler.Entities = []authz.Entity{}

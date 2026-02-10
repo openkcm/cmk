@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -37,13 +35,23 @@ func startAPISystems(t *testing.T, cfg testutils.TestAPIServerConfig) (*multiten
 
 	cfg.Config.Database = dbCfg
 
-	sv := testutils.NewAPIServer(t, db, cfg)
-
+	sv := testutils.NewAPIServer(t, db, cfg, &dbCfg)
 	return db, sv, tenants[0]
 }
 
 func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
-	_, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		r,
+		keyConfig,
+	)
 
 	tests := []struct {
 		name               string
@@ -71,9 +79,10 @@ func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: "/systems?$filter=keyConfigurationID eq '" + tt.keyConfigurationID + "'",
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          "/systems?$filter=keyConfigurationID eq '" + tt.keyConfigurationID + "'",
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -96,6 +105,9 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
+
 	systemWithProps := testutils.NewSystem(func(s *model.System) {
 		s.Properties = map[string]string{
 			"test": "test",
@@ -107,15 +119,17 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 		ctx,
 		t,
 		r,
+		keyConfig,
 		systemWithProps,
 		systemWithoutProps,
 	)
 
 	t.Run("Should not show properties field on system without properties", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: fmt.Sprintf("/systems/%s", systemWithoutProps.ID),
-			Tenant:   tenant,
+			Method:            http.MethodGet,
+			Endpoint:          fmt.Sprintf("/systems/%s", systemWithoutProps.ID),
+			Tenant:            tenant,
+			AdditionalContext: testutils.GetKeyAdminClientMap(),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -127,9 +141,10 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 	t.Run("Should show properties field on system with properties", func(t *testing.T) {
 		expected := &map[string]any{"test": "test"}
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: fmt.Sprintf("/systems/%s", systemWithProps.ID),
-			Tenant:   tenant,
+			Method:            http.MethodGet,
+			Endpoint:          fmt.Sprintf("/systems/%s", systemWithProps.ID),
+			Tenant:            tenant,
+			AdditionalContext: testutils.GetKeyAdminClientMap(),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -146,8 +161,10 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 
 	keyConfiguration3ID := ptr.PointTo(uuid.New())
 
-	keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
-	keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
+	keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
 	systems1 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig1.ID)
 	})
@@ -211,6 +228,10 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: url,
 				Tenant:   tenant,
+				AdditionalContext: testutils.GetClientGroupsMap(
+					testutils.KeyAdminName,
+					[]string{keyConfig1.AdminGroup.IAMIdentifier,
+						keyConfig2.AdminGroup.IAMIdentifier}),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -251,7 +272,8 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
@@ -322,9 +344,10 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: endpoint,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          endpoint,
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -348,12 +371,17 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
+	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
 	for range totalRecordCount {
 		system := testutils.NewSystem(func(s *model.System) {
 			s.Properties = map[string]string{
 				"key-1": "val-1",
 				"key-2": "val-2",
 			}
+			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 		})
 		testutils.CreateTestEntities(ctx, t, r, system)
 	}
@@ -446,9 +474,10 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: tt.query,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          tt.query,
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -475,11 +504,14 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	system := testutils.NewSystem(func(_ *model.System) {})
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
+
+	system := testutils.NewSystem(func(s *model.System) { s.KeyConfigurationID = ptr.PointTo(keyConfig.ID) })
 	systemInvalidKeyConfig := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(uuid.New())
 	})
-	testutils.CreateTestEntities(ctx, t, r, system, systemInvalidKeyConfig)
+	testutils.CreateTestEntities(ctx, t, r, system, keyConfig, systemInvalidKeyConfig)
 
 	tests := []struct {
 		name              string
@@ -509,9 +541,10 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: "/systems/" + tt.id,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          "/systems/" + tt.id,
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -532,13 +565,16 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	}
 }
 
-func TestAPIController_GetSystemByIDWithError(t *testing.T) {
+func TestAPIController_GetSystemByIDWithDBError(t *testing.T) {
 	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
+
 	system := testutils.NewSystem(func(_ *model.System) {})
-	testutils.CreateTestEntities(ctx, t, r, system)
+	testutils.CreateTestEntities(ctx, t, r, system, keyConfig)
 
 	forced := testutils.NewDBErrorForced(db, ErrForced)
 
@@ -562,9 +598,10 @@ func TestAPIController_GetSystemByIDWithError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: "/systems/" + tt.id,
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          "/systems/" + tt.id,
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -580,6 +617,10 @@ func TestSendRecoveryActions(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
+	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
 	t.Run("Should 400 on cancel without previous state", func(t *testing.T) {
 		sys := testutils.NewSystem(func(_ *model.System) {})
 		testutils.CreateTestEntities(ctx, t, r, sys)
@@ -592,7 +633,8 @@ func TestSendRecoveryActions(t *testing.T) {
 					Action: cmkapi.SystemRecoveryActionBodyActionCANCEL,
 				},
 			),
-			Tenant: tenant,
+			Tenant:            tenant,
+			AdditionalContext: testutils.GetKeyAdminClientMap(),
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -618,7 +660,8 @@ func TestSendRecoveryActions(t *testing.T) {
 					Action: cmkapi.SystemRecoveryActionBodyActionCANCEL,
 				},
 			),
-			Tenant: tenant,
+			Tenant:            tenant,
+			AdditionalContext: testutils.GetKeyAdminClientMap(),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -649,10 +692,11 @@ func TestLinkSystemAction(t *testing.T) {
 	// Disable workflow to allow direct linking via system controller
 	disableWorkflow(t, ctx, r)
 
-	keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	})
+	}, testutils.WithKeyAdminGroup())
 
 	system := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig1.ID)
@@ -766,14 +810,10 @@ func TestLinkSystemAction(t *testing.T) {
 				Endpoint: fmt.Sprintf("/systems/%s/link", tt.ID),
 				Tenant:   tenant,
 				Body:     testutils.WithString(t, tt.inputJSON),
-				AdditionalContext: map[any]any{
-					constants.ClientData: &auth.ClientData{
-						Groups: []string{
-							keyConfig1.AdminGroup.IAMIdentifier,
-							keyConfig2.AdminGroup.IAMIdentifier,
-						},
-					},
-				},
+				AdditionalContext: testutils.GetClientGroupsMap(
+					testutils.KeyAdminName,
+					[]string{keyConfig1.AdminGroup.IAMIdentifier,
+						keyConfig2.AdminGroup.IAMIdentifier}),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -809,7 +849,9 @@ func TestUnlinkSystemAction(t *testing.T) {
 	// Disable workflow to allow direct unlinking via system controller
 	disableWorkflow(t, ctx, r)
 
-	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) { k.PrimaryKeyID = ptr.PointTo(uuid.New()) })
+	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.PrimaryKeyID = ptr.PointTo(uuid.New())
+	}, testutils.WithKeyAdminGroup())
 	system := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 	})
@@ -857,14 +899,10 @@ func TestUnlinkSystemAction(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodDelete,
-				Endpoint: fmt.Sprintf("/systems/%s/link", tt.id),
-				Tenant:   tenant,
-				AdditionalContext: map[any]any{
-					constants.ClientData: &auth.ClientData{
-						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
-					},
-				},
+				Method:            http.MethodDelete,
+				Endpoint:          fmt.Sprintf("/systems/%s/link", tt.id),
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)

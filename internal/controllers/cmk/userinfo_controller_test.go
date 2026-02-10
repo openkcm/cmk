@@ -27,7 +27,7 @@ func startAPIUserInfo(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) 
 
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
 		Config: config.Config{Database: dbCfg},
-	}), tenants[0]
+	}, nil), tenants[0]
 }
 
 func TestGetUserInfo(t *testing.T) {

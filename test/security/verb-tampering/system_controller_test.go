@@ -25,7 +25,7 @@ func startAPIAndDB(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	dbConfig := testutils.TestDBConfig{}
 	db, tenants, _ := testutils.NewTestDB(t, dbConfig)
 
-	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{}, nil)
 
 	return db, sv, tenants[0]
 }
@@ -37,7 +37,8 @@ func TestAPIController_GetAllSystems_ForVerbTampering(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
@@ -54,9 +55,10 @@ func TestAPIController_GetAllSystems_ForVerbTampering(t *testing.T) {
 
 	// First test the expected VERB
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:   http.MethodGet,
-		Endpoint: "/systems?$count=true",
-		Tenant:   tenant,
+		Method:            http.MethodGet,
+		Endpoint:          "/systems?$count=true",
+		Tenant:            tenant,
+		AdditionalContext: testutils.GetKeyAdminClientMap(),
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -69,9 +71,10 @@ func TestAPIController_GetAllSystems_ForVerbTampering(t *testing.T) {
 
 	for _, verb := range verbs {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   verb,
-			Endpoint: "/systems?$count=true",
-			Tenant:   tenant,
+			Method:            verb,
+			Endpoint:          "/systems?$count=true",
+			Tenant:            tenant,
+			AdditionalContext: testutils.GetKeyAdminClientMap(),
 		})
 		if verb == http.MethodHead {
 			// This case is a bug. 405 should also be returned here but not a security issue.

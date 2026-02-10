@@ -28,19 +28,6 @@ import (
 
 var ErrEnqueuingTask = errors.New("error enqueuing task")
 
-var auditorGroupName = "auditors"
-
-func createAuditorGroup(ctx context.Context, tb testing.TB, r repo.Repo) {
-	tb.Helper()
-
-	group := testutils.NewGroup(func(g *model.Group) {
-		g.Name = auditorGroupName
-		g.IAMIdentifier = auditorGroupName
-		g.Role = constants.TenantAuditorRole
-	})
-	testutils.CreateTestEntities(ctx, tb, r, group)
-}
-
 func SetupWorkflowManager(t *testing.T, cfg *config.Config,
 	opts ...testutils.TestDBConfigOpt) (
 	*manager.WorkflowManager,
@@ -142,7 +129,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	testutils.CreateTestEntities(ctx, t, repo, workflowConfig)
 
 	keyConfig, key := createTestObjects(t, repo, ctx)
-	createAuditorGroup(ctx, t, repo)
+	testutils.CreateAuditorGroup(ctx, t, repo)
 
 	ctxSys := context.WithValue(
 		ctx,
@@ -240,7 +227,6 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 	})
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	createAuditorGroup(ctx, t, repo)
 
 	ctxSys := context.WithValue(
 		ctx,
@@ -272,6 +258,15 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 
 	t.Run(
 		"Should create workflow", func(t *testing.T) {
+			testutils.CreateAuditorGroup(ctx, t, repo)
+
+			ctxSys := context.WithValue(
+				ctx,
+				constants.ClientData, &auth.ClientData{
+					Identifier: constants.SystemUser.String(),
+				},
+			)
+
 			expected := &model.Workflow{
 				ID:           uuid.New(),
 				State:        "INITIAL",
@@ -798,13 +793,13 @@ func TestWorkflowManager_ListApprovers(t *testing.T) {
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	createAuditorGroup(ctx, t, r)
+	testutils.CreateAuditorGroup(ctx, t, r)
 
 	ctxSys := context.WithValue(
 		ctx,
 		constants.ClientData, &auth.ClientData{
 			Identifier: constants.SystemUser.String(),
-			Groups:     []string{auditorGroupName},
+			Groups:     []string{testutils.AuditorGroupName},
 		},
 	)
 
@@ -860,7 +855,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"KMS_001", "KMS_002"})
 
-	createAuditorGroup(ctx, t, r)
+	testutils.CreateAuditorGroup(ctx, t, r)
 
 	adminGroups := []*model.Group{
 		{ID: uuid.New(), Name: "group1", IAMIdentifier: "KMS_001", Role: constants.KeyAdminRole},
@@ -1050,7 +1045,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 					ctx,
 					constants.ClientData, &auth.ClientData{
 						Identifier: constants.SystemUser.String(),
-						Groups:     []string{auditorGroupName},
+						Groups:     []string{testutils.AuditorGroupName},
 					},
 				)
 				_, err = m.AutoAssignApprovers(ctxSys, wf.ID)

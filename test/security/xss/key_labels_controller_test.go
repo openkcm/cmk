@@ -29,7 +29,7 @@ func startAPIAndDBForKeyLabels(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux,
 	db, tenants, _ := testutils.NewTestDB(t, dbConfig)
 
 	sv := testutils.NewAPIServer(t, db,
-		testutils.TestAPIServerConfig{})
+		testutils.TestAPIServerConfig{}, nil)
 
 	return db, sv, tenants[0]
 }
@@ -48,22 +48,26 @@ func TestLabelsController_Labels_ForXSS(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	key := testutils.NewKey(func(_ *model.Key) {})
-	testutils.CreateTestEntities(ctx, t, r, key)
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
+	key := testutils.NewKey(func(k *model.Key) { k.KeyConfigurationID = keyConfig.ID })
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:   http.MethodPost,
-		Endpoint: fmt.Sprintf(apiCreateOrUpdateLabelsFmt, key.ID.String()),
-		Tenant:   tenant,
-		Body:     testutils.WithJSON(t, inputLabels),
+		Method:            http.MethodPost,
+		Endpoint:          fmt.Sprintf(apiCreateOrUpdateLabelsFmt, key.ID.String()),
+		Tenant:            tenant,
+		Body:              testutils.WithJSON(t, inputLabels),
+		AdditionalContext: testutils.GetKeyAdminClientMap(),
 	})
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
 
 	w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:   http.MethodGet,
-		Endpoint: fmt.Sprintf(apiGetKeyLabelsFmt, key.ID.String()),
-		Tenant:   tenant,
+		Method:            http.MethodGet,
+		Endpoint:          fmt.Sprintf(apiGetKeyLabelsFmt, key.ID.String()),
+		Tenant:            tenant,
+		AdditionalContext: testutils.GetKeyAdminClientMap(),
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code)

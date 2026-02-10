@@ -27,7 +27,12 @@ func LoadConfig(opts ...commoncfg.Option) (*Config, error) {
 		),
 	}
 
-	options = append(options, opts...)
+	providedOptions := make([]commoncfg.Option, len(opts))
+	for i, opt := range opts {
+		providedOptions[i] = opt
+	}
+
+	options = append(options, providedOptions...)
 
 	loader := commoncfg.NewLoader(
 		cfg,

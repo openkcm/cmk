@@ -16,7 +16,7 @@ func TestStartAPIServerReturnsServeMux(t *testing.T) {
 	db := &multitenancy.DB{}
 	server := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
 		Plugins: []testutils.MockPlugin{},
-	})
+	}, nil)
 	assert.NotNil(t, server)
 	assert.IsType(t, &daemon.ServeMux{}, server)
 }

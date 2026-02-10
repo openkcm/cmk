@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -41,7 +40,7 @@ func startAPIAndDBForKey(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, strin
 	db, tenants, _ := testutils.NewTestDB(t, dbConfig)
 
 	sv := testutils.NewAPIServer(t, db,
-		testutils.TestAPIServerConfig{Plugins: []testutils.MockPlugin{testutils.KeyStorePlugin}})
+		testutils.TestAPIServerConfig{Plugins: []testutils.MockPlugin{testutils.KeyStorePlugin}}, nil)
 
 	return db, sv, tenants[0]
 }
@@ -49,7 +48,8 @@ func startAPIAndDBForKey(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, strin
 func TestKeyController_ForXSS(t *testing.T) {
 	db, sv, tenant := startAPIAndDBForKey(t)
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -184,15 +184,11 @@ func TestKeyController_ForXSS(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodPost,
-				Endpoint: "keys",
-				Tenant:   tenant,
-				Body:     testutils.WithJSON(t, tt.inputMap),
-				AdditionalContext: map[any]any{
-					constants.ClientData: &auth.ClientData{
-						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
-					},
-				},
+				Method:            http.MethodPost,
+				Endpoint:          "keys",
+				Tenant:            tenant,
+				Body:              testutils.WithJSON(t, tt.inputMap),
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 
 			assert.Equal(t, http.StatusCreated, w.Code)
@@ -200,14 +196,10 @@ func TestKeyController_ForXSS(t *testing.T) {
 			postResponse := testutils.GetJSONBody[cmkapi.Key](t, w)
 
 			w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: "/keys/" + postResponse.Id.String(),
-				Tenant:   tenant,
-				AdditionalContext: map[any]any{
-					constants.ClientData: &auth.ClientData{
-						Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
-					},
-				},
+				Method:            http.MethodGet,
+				Endpoint:          "/keys/" + postResponse.Id.String(),
+				Tenant:            tenant,
+				AdditionalContext: testutils.GetKeyAdminClientMap(),
 			})
 
 			assert.Equal(t, http.StatusOK, w.Code)
@@ -228,7 +220,8 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithKeyAdminGroup())
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.IsPrimary = true
@@ -252,14 +245,10 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 	)
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:   http.MethodGet,
-		Endpoint: "/keys/" + key.ID.String(),
-		Tenant:   tenant,
-		AdditionalContext: map[any]any{
-			constants.ClientData: &auth.ClientData{
-				Groups: []string{kc.AdminGroup.IAMIdentifier},
-			},
-		},
+		Method:            http.MethodGet,
+		Endpoint:          "/keys/" + key.ID.String(),
+		Tenant:            tenant,
+		AdditionalContext: testutils.GetKeyAdminClientMap(),
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code)
