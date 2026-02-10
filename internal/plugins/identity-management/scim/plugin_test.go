@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/common-sdk/pkg/pointers"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
 
@@ -57,8 +56,6 @@ const (
 		`"schemas":["urn:ietf:params:scim:api:messages:2.0:ListResponse"],` +
 		`"totalResults":0,"itemsPerPage":1,"startIndex":0}`
 )
-
-var NonExistentFieldPtr *string = pointers.To(NonExistentField)
 
 func setupTest(t *testing.T, url string, groupFilterAttribute, userFilterAttribute string) *scim.Plugin {
 	t.Helper()
@@ -361,6 +358,55 @@ func TestGetGroupsForUser(t *testing.T) {
 				}
 			} else {
 				assert.ErrorIs(t, err, *tt.testExpectedError)
+			}
+		})
+	}
+}
+func TestGetGroup(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := w.Write([]byte(ListGroupsResponse))
+		assert.NoError(t, err)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		name              string
+		serverUrl         string
+		groupName         string
+		expectedGroupID   string
+		expectedGroupName string
+		expectedError     error
+	}{
+		{
+			name:              "Group found",
+			serverUrl:         server.URL,
+			groupName:         "KeyAdmin",
+			expectedGroupID:   "16e720aa-a009-4949-9bf9-aaaaaaaaaaaa",
+			expectedGroupName: "KeyAdmin",
+			expectedError:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := setupTest(t, tt.serverUrl, "", "")
+
+			resp, err := p.GetGroup(
+				t.Context(),
+				&idmangv1.GetGroupRequest{
+					GroupName: tt.groupName,
+				},
+			)
+
+			if tt.expectedError == nil {
+				assert.NoError(t, err)
+				assert.NotNil(t, resp)
+				assert.Equal(t, tt.expectedGroupID, resp.Group.Id)
+				assert.Equal(t, tt.expectedGroupName, resp.Group.Name)
+			} else {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, tt.expectedError)
 			}
 		})
 	}
