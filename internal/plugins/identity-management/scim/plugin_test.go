@@ -402,8 +402,8 @@ func TestGetGroup(t *testing.T) {
 			if tt.expectedError == nil {
 				assert.NoError(t, err)
 				assert.NotNil(t, resp)
-				assert.Equal(t, tt.expectedGroupID, resp.Group.Id)
-				assert.Equal(t, tt.expectedGroupName, resp.Group.Name)
+				assert.Equal(t, tt.expectedGroupID, resp.GetGroup().GetId())
+				assert.Equal(t, tt.expectedGroupName, resp.GetGroup().GetName())
 			} else {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, tt.expectedError)
