@@ -16,6 +16,7 @@ import (
 
 	idmv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
@@ -44,8 +45,11 @@ var (
 )
 
 type WorkflowStatus struct {
-	Enabled bool
-	Exists  bool
+	Enabled    bool
+	Exists     bool
+	Valid      bool
+	CanCreate  bool
+	ErrDetails error
 }
 
 type Workflow interface {
@@ -266,7 +270,8 @@ func (w *WorkflowManager) WorkflowConfig(ctx context.Context) (*model.WorkflowCo
 	return workflowConfig, nil
 }
 
-func (w *WorkflowManager) CheckWorkflow(ctx context.Context,
+func (w *WorkflowManager) CheckWorkflow(
+	ctx context.Context,
 	workflow *model.Workflow,
 ) (WorkflowStatus, error) {
 	workflowConfig, err := w.WorkflowConfig(ctx)
@@ -287,7 +292,8 @@ func (w *WorkflowManager) CheckWorkflow(ctx context.Context,
 	}
 
 	// After this point user is authorised, we can reveal information
-	return w.checkWorkflow(ctx, workflow, enabled)
+	status, err := w.checkWorkflow(ctx, workflow, enabled)
+	return transformCheckWorkflowError(status, err)
 }
 
 func (w *WorkflowManager) CreateWorkflow(
@@ -296,19 +302,15 @@ func (w *WorkflowManager) CreateWorkflow(
 ) (*model.Workflow, error) {
 	workflow.State = wf.StateInitial.String()
 
-	exist, err := w.checkOngoingWorkflowForArtifact(ctx, workflow)
+	status, err := w.CheckWorkflow(ctx, workflow)
 	if err != nil {
 		return nil, err
-	} else if exist {
+	}
+	if status.Exists {
 		return nil, ErrOngoingWorkflowExist
 	}
-
-	allowed, err := w.checkPermissionToCreateWorkflow(ctx, workflow)
-	if err != nil {
-		return nil, errs.Wrap(ErrCreateWorkflowDB, err)
-	}
-	if !allowed {
-		return nil, errs.Wrap(ErrCreateWorkflowDB, ErrWorkflowCreationNotAllowed)
+	if status.ErrDetails != nil {
+		return nil, err
 	}
 
 	err = w.populateArtifact(ctx, workflow)
@@ -573,30 +575,89 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 	return nil
 }
 
+// transformCheckWorkflowError checks the returned error from validate
+// If it's an error created by invalid action set it in status and don't return an error
+// Otherwise throw an error that will create a non 2xx HTTP Code
+func transformCheckWorkflowError(status WorkflowStatus, err error) (WorkflowStatus, error) {
+	if err == nil {
+		return status, nil
+	}
+
+	if errors.Is(err, ErrConnectSystemNoPrimaryKey) || errors.Is(err, ErrCheckOngoingWorkflow) {
+		status.ErrDetails = err
+		status.CanCreate = false
+		return status, nil
+	}
+	return status, errs.Wrap(ErrCheckWorkflow, err)
+}
+
 func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 	workflow *model.Workflow,
 	enabled bool,
 ) (WorkflowStatus, error) {
+	// If workflow is disabled, all others are false
 	if !enabled {
-		// If workflow is disabled, Exists is always false regardless
 		return WorkflowStatus{
-			Enabled: enabled,
-			Exists:  false,
+			Enabled: false,
 		}, nil
+	}
+
+	isValid, err := w.validateWorkflow(ctx, workflow)
+	if err != nil {
+		return WorkflowStatus{
+			Enabled:   enabled,
+			Valid:     isValid,
+			CanCreate: false,
+		}, err
 	}
 
 	exists, err := w.checkOngoingWorkflowForArtifact(ctx, workflow)
 	if err != nil {
 		return WorkflowStatus{
-			Enabled: enabled,
-			Exists:  false,
-		}, oops.Join(ErrCheckWorkflow, err)
+			Enabled:   enabled,
+			Exists:    exists,
+			Valid:     isValid,
+			CanCreate: false,
+		}, err
+	}
+	return WorkflowStatus{
+		Enabled:   enabled,
+		Exists:    exists,
+		Valid:     isValid,
+		CanCreate: !exists && isValid,
+	}, nil
+}
+
+func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.Workflow) (bool, error) {
+	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
+	if err != nil {
+		return false, err
 	}
 
-	return WorkflowStatus{
-		Enabled: enabled,
-		Exists:  exists,
-	}, nil
+	if w.isSystemConnect(workflow) {
+		for _, kc := range keyConfigs {
+			if !ptr.IsNotNilUUID(kc.PrimaryKeyID) {
+				return false, ErrConnectSystemNoPrimaryKey
+			}
+
+			key := &model.Key{ID: *kc.PrimaryKeyID}
+			_, err := w.repo.First(ctx, key, *repo.NewQuery())
+			if err != nil {
+				return false, err
+			}
+
+			if key.State != string(cmkapi.KeyStateENABLED) {
+				return false, ErrConnectSystemNoPrimaryKey
+			}
+		}
+	}
+
+	return true, nil
+}
+
+func (w *WorkflowManager) isSystemConnect(workflow *model.Workflow) bool {
+	return workflow.ArtifactType == wf.ArtifactTypeSystem.String() &&
+		(workflow.ActionType == string(wf.ActionTypeLink) || workflow.ActionType == string(wf.ActionTypeSwitch))
 }
 
 // getWorkflows retrieves workflows based on the provided query,

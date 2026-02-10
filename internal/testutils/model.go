@@ -9,6 +9,7 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
@@ -88,6 +89,7 @@ func NewKey(m func(*model.Key)) *model.Key {
 			ID:      uuid.New(),
 			KeyType: constants.KeyTypeSystemManaged,
 			Name:    uuid.NewString(),
+			State:   string(cmkapi.KeyStateENABLED),
 		}
 	})
 
