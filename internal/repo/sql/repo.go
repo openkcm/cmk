@@ -418,6 +418,8 @@ func applyUpdateQuery(db *gorm.DB, query repo.Query) *gorm.DB {
 }
 
 // applyQuery applies the query to the database.
+//
+//nolint:cyclop
 func applyQuery(db *gorm.DB, query repo.Query) (*gorm.DB, error) {
 	if len(query.SelectFields) > 0 {
 		fields := make([]string, 0, len(query.SelectFields))

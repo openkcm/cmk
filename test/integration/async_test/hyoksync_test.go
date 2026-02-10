@@ -67,7 +67,7 @@ func TestSchedulerHYOKSync(t *testing.T) {
 		*repo.NewQuery(),
 	)
 	assert.NoError(t, err)
-	assert.Positive(t, len(keys), "No keys found after sync")
+	assert.NotEmpty(t, keys, "No keys found after sync")
 
 	for _, k := range keys {
 		log.Info(ctx, "Key found", slog.Any("Key", k))

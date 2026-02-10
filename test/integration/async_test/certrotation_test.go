@@ -84,7 +84,7 @@ func TestCertRotation(t *testing.T) {
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey)),
 	)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(certsAuto))
+	assert.Len(t, certsAuto, 1)
 
 	err = cronWorker.Shutdown(ctx)
 	assert.NoError(t, err)

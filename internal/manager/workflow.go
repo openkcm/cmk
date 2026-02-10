@@ -392,7 +392,9 @@ func (w *WorkflowManager) ListWorkflowApprovers(
 		ck = ck.Where(repo.ApprovedField, repo.NotNull)
 	}
 
-	return repo.ListAndCount(ctx, w.repo, pagination, model.WorkflowApprover{}, repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+
+	return repo.ListAndCount(ctx, w.repo, pagination, model.WorkflowApprover{}, query)
 }
 
 func (w *WorkflowManager) AutoAssignApprovers(
