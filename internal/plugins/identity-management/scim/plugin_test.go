@@ -57,11 +57,11 @@ const (
 		`"totalResults":0,"itemsPerPage":1,"startIndex":0}`
 )
 
-func setupTest(t *testing.T, url string, groupFilterAttribute, userFilterAttribute string) *scim.Plugin {
+func setupTest(t *testing.T, url string, groupFilterAttribute, userFilterAttribute, groupMembersAttribute string, allowSearchUsersByGroup bool) *scim.Plugin {
 	t.Helper()
 
 	p := scim.NewPlugin()
-	p.SetTestClient(t, url, groupFilterAttribute, userFilterAttribute)
+	p.SetTestClient(t, url, groupFilterAttribute, userFilterAttribute, groupMembersAttribute, allowSearchUsersByGroup)
 	assert.NotNil(t, p)
 
 	return p
@@ -121,7 +121,7 @@ func TestGetAllGroups(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := setupTest(t, tt.serverUrl, "", "")
+			p := setupTest(t, tt.serverUrl, "", "", "", true)
 
 			responseMsg, err := p.GetAllGroups(t.Context(),
 				&idmangv1.GetAllGroupsRequest{})
@@ -226,7 +226,7 @@ func TestGetUsersForGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := setupTest(t, tt.serverUrl, tt.groupFilterAttribute, "")
+			p := setupTest(t, tt.serverUrl, tt.groupFilterAttribute, "", "", true)
 
 			var request = idmangv1.GetUsersForGroupRequest{}
 			if tt.groupFilterValue != "" {
@@ -331,7 +331,7 @@ func TestGetGroupsForUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := setupTest(t, tt.serverUrl, "", tt.userFilterAttribute)
+			p := setupTest(t, tt.serverUrl, "", tt.userFilterAttribute, "", true)
 
 			var userFilterValue = idmangv1.GetGroupsForUserRequest{}
 			if tt.userFilterValue != "" {
@@ -390,7 +390,7 @@ func TestGetGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := setupTest(t, tt.serverUrl, "", "")
+			p := setupTest(t, tt.serverUrl, "", "", "", true)
 
 			resp, err := p.GetGroup(
 				t.Context(),
@@ -413,7 +413,7 @@ func TestGetGroup(t *testing.T) {
 }
 
 func TestNewPlugin(t *testing.T) {
-	p := setupTest(t, "", "", "")
+	p := setupTest(t, "", "", "", "", true)
 	assert.NotNil(t, p)
 }
 
@@ -562,6 +562,77 @@ func TestPlugin_Configure(t *testing.T) {
 
 			if resp == nil {
 				t.Fatal("expected response, got nil")
+			}
+		})
+	}
+}
+
+func TestGetUsersForGroupUsingGroupMembers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/Groups/"):
+			_, err := w.Write([]byte(GetGroupResponse))
+			assert.NoError(t, err)
+			w.WriteHeader(http.StatusOK)
+
+		case strings.Contains(r.URL.Path, "/Users/"):
+			_, err := w.Write([]byte(GetUserResponse))
+			assert.NoError(t, err)
+			w.WriteHeader(http.StatusOK)
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		name          string
+		serverUrl     string
+		groupID       string
+		expectUsers   int
+		expectedError error
+	}{
+		{
+			name:          "Bad server",
+			serverUrl:     "badurl",
+			groupID:       "group-id",
+			expectedError: scim.ErrGetUsersForGroup,
+		},
+		{
+			name:        "Success",
+			serverUrl:   server.URL,
+			groupID:     "group-id",
+			expectUsers: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := setupTest(t, tt.serverUrl, "", "", tt.groupID, false)
+
+			resp, err := p.GetUsersForGroup(
+				t.Context(),
+				&idmangv1.GetUsersForGroupRequest{
+					GroupId: tt.groupID,
+				},
+			)
+
+			if tt.expectedError != nil {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, tt.expectedError)
+				return
+			}
+
+			users := resp.GetUsers()
+
+			assert.NoError(t, err)
+			assert.Len(t, users, tt.expectUsers)
+
+			if tt.expectUsers > 0 {
+				assert.Equal(t, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", users[0].GetId())
+				assert.Equal(t, "cloudanalyst", users[0].GetName())
+				assert.Equal(t, "cloud.analyst@example.com", users[0].GetEmail())
 			}
 		})
 	}

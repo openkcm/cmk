@@ -24,6 +24,8 @@ func DecodeResponse[T any](
 		result  T
 	)
 
+	defer resp.Body.Close()
+
 	if resp.StatusCode == expectedStatus {
 		respErr = json.NewDecoder(resp.Body).Decode(&result)
 	} else {
