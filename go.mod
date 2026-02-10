@@ -23,13 +23,13 @@ require (
 	github.com/hibiken/asynq v0.25.1
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/jxskiss/base62 v1.1.0
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.11.1
 	github.com/looplab/fsm v1.0.3
 	github.com/magodo/slog2hclog v0.0.0-20240614031327-090ebd72a033
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/runtime v1.1.2
-	github.com/openkcm/api-sdk v0.14.0
+	github.com/openkcm/api-sdk v0.15.0
 	github.com/openkcm/common-sdk v1.11.0
 	github.com/openkcm/orbital v0.3.1
 	github.com/openkcm/plugin-sdk v0.9.1
