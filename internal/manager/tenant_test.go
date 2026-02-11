@@ -46,10 +46,8 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 
 	ctlg, err := catalog.New(ctx, cfg)
 	assert.NoError(t, err)
-	reconciler, err := eventprocessor.NewCryptoReconciler(
-		ctx, cfg, r,
-		ctlg, nil,
-	)
+
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(ctx, cfg)
@@ -66,7 +64,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 		ctx,
 		r,
 		f,
-		reconciler,
+		eventFactory,
 		ctlg,
 		cfg,
 		kcm,
@@ -80,7 +78,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 		kcm,
 		um,
 		cm,
-		reconciler,
+		eventFactory,
 		cmkAuditor,
 	)
 

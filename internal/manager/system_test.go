@@ -76,16 +76,13 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 	tagManager := manager.NewTagManager(dbRepository)
 	keyConfigManager := manager.NewKeyConfigManager(dbRepository, certManager, userManager, tagManager, nil, &cfg)
 
-	eventProcessor, err := eventprocessor.NewCryptoReconciler(
-		t.Context(), &cfg, dbRepository,
-		ctlg, clientsFactory,
-	)
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), &cfg, dbRepository)
 	require.NoError(t, err)
 
 	systemManager := manager.NewSystemManager(
 		t.Context(), dbRepository,
 		clientsFactory,
-		eventProcessor, ctlg,
+		eventFactory, ctlg,
 		&cfg,
 		keyConfigManager,
 		userManager,
@@ -842,7 +839,7 @@ func TestSendRecoveryAction(t *testing.T) {
 	}
 }
 
-func TestEventSelector(t *testing.T) {
+func TestSelectEvent(t *testing.T) {
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
@@ -857,7 +854,7 @@ func TestEventSelector(t *testing.T) {
 
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
 		system := testutils.NewSystem(func(_ *model.System) {})
-		event, err := m.EventSelector(ctx, system, keyConfig)
+		event, err := m.SelectEvent(ctx, system, keyConfig)
 		assert.Equal(t, proto.TaskType_SYSTEM_LINK.String(), event.Name)
 		assert.NoError(t, err)
 	})
@@ -883,7 +880,7 @@ func TestEventSelector(t *testing.T) {
 		)
 
 		// when
-		event, err := m.EventSelector(ctx, system, newKeyConfig)
+		event, err := m.SelectEvent(ctx, system, newKeyConfig)
 
 		// then
 		assert.Equal(t, proto.TaskType_SYSTEM_SWITCH.String(), event.Name)
@@ -906,7 +903,7 @@ func TestEventSelector(t *testing.T) {
 		)
 
 		// when
-		event, err := m.EventSelector(ctx, system, keyConfig)
+		event, err := m.SelectEvent(ctx, system, keyConfig)
 
 		// then
 		assert.Equal(t, proto.TaskType_SYSTEM_LINK.String(), event.Name)

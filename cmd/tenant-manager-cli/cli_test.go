@@ -70,10 +70,7 @@ func (s *CLISuite) SetupSuite() {
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	s.NoError(err)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(
-		ctx, cfg, r,
-		ctlg, clientsFactory,
-	)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	s.NoError(err)
 
 	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
@@ -85,7 +82,7 @@ func (s *CLISuite) SetupSuite() {
 		ctx,
 		r,
 		clientsFactory,
-		reconciler,
+		eventFactory,
 		ctlg,
 		cfg,
 		kcm,
@@ -99,7 +96,7 @@ func (s *CLISuite) SetupSuite() {
 		kcm,
 		um,
 		cm,
-		reconciler,
+		eventFactory,
 		cmkAuditor,
 	)
 

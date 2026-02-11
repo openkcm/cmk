@@ -128,6 +128,18 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
+Event Reconciler labels
+*/}}
+{{- define "cmk.event-reconciler.labels" -}}
+helm.sh/chart: {{ include "cmk.chart" . }}
+{{ include "cmk.event-reconciler.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
 Selector labels
 */}}
 {{- define "cmk.selectorLabels" -}}
@@ -179,6 +191,15 @@ Tenant Manager CLI Selector labels
 app.kubernetes.io/name: {{ include "cmk.name" . }}-tenant-manager-cli
 app.kubernetes.io/instance: {{ .Release.Name }}-tenant-manager-cli
 app.kubernetes.io/component: {{ .Chart.Name }}-tenant-manager-cli
+{{- end }}
+
+{{/*
+Event Reconciler Selector Labels
+*/}}
+{{- define "cmk.event-reconciler.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "cmk.name" . }}-event-reconciler
+app.kubernetes.io/instance: {{ .Release.Name }}-event-reconciler
+app.kubernetes.io/component: {{ .Chart.Name }}-event-reconciler
 {{- end }}
 
 {{/*
