@@ -452,7 +452,7 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 			name:            "empty state",
 			workflowState:   "",
 			expectedSubject: "Workflow Confirmed - DELETE KEY",
-			expectedMessage: "Your workflow has been confirmed.",
+			expectedMessage: "The workflow has been confirmed.",
 			expectedAction:  "Please check the CMK portal for more details",
 		},
 	}
