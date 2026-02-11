@@ -42,7 +42,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/rabbitmq v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0
-	github.com/veqryn/slog-context v0.8.0
+	github.com/veqryn/slog-context v0.9.0
 	github.com/zeebo/assert v1.3.1
 	go.opentelemetry.io/collector/pdata v1.51.0
 	golang.org/x/oauth2 v0.35.0
