@@ -44,7 +44,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0
 	github.com/veqryn/slog-context v0.8.0
 	github.com/zeebo/assert v1.3.1
-	go.opentelemetry.io/collector/pdata v1.50.0
+	go.opentelemetry.io/collector/pdata v1.51.0
 	golang.org/x/oauth2 v0.34.0
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
@@ -170,7 +170,7 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/errs/v2 v2.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/featuregate v1.50.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.51.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.14.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.64.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0 // indirect
