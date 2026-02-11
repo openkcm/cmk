@@ -76,11 +76,11 @@ func (s *KeyManagerSuite) setup() {
 	tagManager := manager.NewTagManager(s.repo)
 	keyConfigManager := manager.NewKeyConfigManager(dbRepo, certManager, userManager, tagManager, cmkAuditor, cfg)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(s.ctx, cfg, dbRepo, ctlg, nil)
+	eventFactory, err := eventprocessor.NewEventFactory(s.ctx, cfg, dbRepo)
 	s.Require().NoError(err)
 
 	s.km = manager.NewKeyManager(
-		dbRepo, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, reconciler, cmkAuditor)
+		dbRepo, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
 
 	// Create test key configuration once for all tests
 	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {

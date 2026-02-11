@@ -1,0 +1,39 @@
+{{- if .Values.apiServer.deploy }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cmk.name" . }}-event-reconciler-config
+  labels:
+    {{- include "cmk.event-reconciler.labels" . | nindent 4 }}
+immutable: {{ .Values.config.isImmutable | default false }}
+data:
+  config.yaml: |-
+    application:
+      name: event-reconciler
+    {{- with .Values.config }}
+      environment: {{ .environment }}
+      {{- with .labels }}
+      labels:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+    logger:
+      {{- toYaml .logger | nindent 6 }}
+
+    status:
+      {{- toYaml .status | nindent 6 }}
+
+    # Telemetry configuration
+    telemetry:
+      {{- toYaml .telemetry | nindent 6 }}
+
+    # Database configuration
+    database:
+      {{- toYaml .database | nindent 6 }}
+
+    eventProcessor:
+      {{- toYaml .eventProcessor | nindent 6 }}
+
+    {{- end }}
+{{- end }}

@@ -78,7 +78,7 @@ linters:
         path: (.+)_controller_test\.go
       - linters:
           - contextcheck
-        path: (.+)crypto_test\.go
+        path: (.+)/event-processor/(.+)_test\.go
       - linters:
           - contextcheck
           - fatcontext

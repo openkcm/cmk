@@ -2000,7 +2000,7 @@ components:
         the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions
         are in UNKNOWN state if the authentication to the customer key fails due to any reason. FORBIDDEN state is for
         when a HYOK customer key permission is not granted to the system.
-        DETATCHED state is applicable for keys that have been marked with a detatch call on tenant termination
+        DETACHED state is applicable for keys that have been marked with a detach call on tenant termination
       type: string
       readOnly: true
       enum:
@@ -2011,7 +2011,7 @@ components:
         - DELETED
         - UNKNOWN
         - FORBIDDEN
-        - DETATCHED
+        - DETACHED
     KeyAlgorithm:
       description: The algorithm of the Key
       type: string

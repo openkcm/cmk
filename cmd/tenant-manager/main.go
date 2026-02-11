@@ -127,10 +127,7 @@ func createTenantManager(
 ) (manager.Tenant, error) {
 	cmkAuditor := auditor.New(ctx, cfg)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(
-		ctx, cfg, r,
-		ctlg, clients,
-	)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +142,7 @@ func createTenantManager(
 		ctx,
 		r,
 		clients,
-		reconciler,
+		eventFactory,
 		ctlg,
 		cfg,
 		kcm,
@@ -159,7 +156,7 @@ func createTenantManager(
 		kcm,
 		um,
 		cm,
-		reconciler,
+		eventFactory,
 		cmkAuditor,
 	)
 
