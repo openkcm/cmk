@@ -29,7 +29,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 	ctx context.Context,
 	taskName string,
 	asynqTask *asynq.Task,
-	processTenant func(ctx context.Context, tenant *model.Tenant, index int) error,
+	processTenant func(ctx context.Context, tenant *model.Tenant) error,
 ) error {
 	totalTenantCount := 0
 
@@ -56,9 +56,9 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 			log.Debug(ctx, "Processing batch of tenants for "+taskName,
 				slog.Int("batchSize", len(tenants)), slog.Int("totalTenantCount", totalTenantCount))
 
-			for i, tenant := range tenants {
+			for _, tenant := range tenants {
 				tenantCtx := model.LogInjectTenant(cmkcontext.CreateTenantContext(ctx, tenant.ID), tenant)
-				err := processTenant(tenantCtx, tenant, i+1)
+				err := processTenant(tenantCtx, tenant)
 				if err != nil {
 					return err
 				}

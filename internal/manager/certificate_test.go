@@ -247,9 +247,6 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	assert.True(t, gotOrigCert.AutoRotate)
 
 	m.SetRotationThreshold(9999) // Want to catch all for testing auto rotate
-	rotCerts, err := m.GetCertificatesForRotation(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, gotOrigCert.ID, rotCerts[0].ID)
 
 	// Do first rotation
 	rot1Cert, _, err := m.RotateCertificate(ctx,
@@ -268,10 +265,6 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	gotRot1Cert, err := m.GetCertificate(ctx, ptr.PointTo(rot1Cert.ID))
 	assert.NoError(t, err)
 	assert.True(t, gotRot1Cert.AutoRotate)
-
-	rotCerts, err = m.GetCertificatesForRotation(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, gotRot1Cert.ID, rotCerts[0].ID)
 
 	// Do second rotation
 	rot2Cert, _, err := m.RotateCertificate(ctx,
@@ -294,10 +287,6 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	gotRot2Cert, err := m.GetCertificate(ctx, ptr.PointTo(rot2Cert.ID))
 	assert.NoError(t, err)
 	assert.True(t, gotRot2Cert.AutoRotate)
-
-	rotCerts, err = m.GetCertificatesForRotation(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, gotRot2Cert.ID, rotCerts[0].ID)
 }
 
 func TestGetCertificateByPurpose(t *testing.T) {

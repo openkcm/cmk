@@ -86,25 +86,31 @@ func (m *CertificateManager) GetCertificate(
 	return cert, nil
 }
 
-func (m *CertificateManager) GetCertificatesForRotation(ctx context.Context,
-) ([]*model.Certificate, error) {
-	certificates := []*model.Certificate{}
+func (m *CertificateManager) RotateExpiredCertificates(ctx context.Context) error {
 	rotateDate := time.Now().AddDate(0, 0, m.cfg.RotationThresholdDays)
 	compositeKey := repo.NewCompositeKey().Where(
 		repo.AutoRotateField, true).Where(repo.ExpirationDateField, rotateDate, repo.Lt)
 	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey))
 
-	err := m.repo.List(
-		ctx,
-		model.Certificate{},
-		&certificates,
-		*query,
-	)
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
-		return nil, errs.Wrap(ErrCertificateManager, err)
+		return err
 	}
 
-	return certificates, nil
+	return repo.ProcessInBatch(ctx, m.repo, query, repo.DefaultLimit, func(certs []*model.Certificate) error {
+		for _, cert := range certs {
+			_, _, err := m.RotateCertificate(ctx, model.RequestCertArgs{
+				CertPurpose: cert.Purpose,
+				Supersedes:  &cert.ID,
+				CommonName:  cert.CommonName,
+				Locality:    []string{tenantID},
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (m *CertificateManager) UpdateCertificate(ctx context.Context, certificateID *uuid.UUID,
@@ -121,9 +127,9 @@ func (m *CertificateManager) UpdateCertificate(ctx context.Context, certificateI
 		var defaultCert *model.Certificate
 
 		if cert.Purpose == model.CertificatePurposeTenantDefault {
-			defaultCert, _, err = m.GetDefaultTenantCertificate(ctx)
+			defaultCert, _, err = m.getDefaultTenantCertificate(ctx)
 		} else {
-			defaultCert, _, err = m.GetDefaultKeystoreCertificate(ctx)
+			defaultCert, _, err = m.getDefaultKeystoreCertificate(ctx)
 		}
 
 		if err != nil {
@@ -146,26 +152,13 @@ func (m *CertificateManager) UpdateCertificate(ctx context.Context, certificateI
 	return cert, nil
 }
 
-func (m *CertificateManager) GeneratePrivateKey() (*rsa.PrivateKey, error) {
-	if m.privateKeyGenerator != nil {
-		return m.privateKeyGenerator()
-	}
-
-	privateKey, err := crypto.GeneratePrivateKey(DefaultKeyBitSize)
-	if err != nil {
-		return nil, errs.Wrap(ErrCertificateManager, err)
-	}
-
-	return privateKey, nil
-}
-
 func (m *CertificateManager) RequestNewCertificate(
 	ctx context.Context,
 	privateKey *rsa.PrivateKey,
 	args model.RequestCertArgs,
 ) (*model.Certificate, *rsa.PrivateKey, error) {
 	if args.CertPurpose == model.CertificatePurposeTenantDefault {
-		exist, err := m.IsTenantDefaultCertExist(ctx)
+		exist, err := m.isTenantDefaultCertExist(ctx)
 		if err != nil {
 			return nil, nil, errs.Wrap(ErrCertificateManager, err)
 		}
@@ -192,6 +185,19 @@ func (m *CertificateManager) RotateCertificate(ctx context.Context,
 	}
 
 	return cert, pk, nil
+}
+
+func (m *CertificateManager) generatePrivateKey() (*rsa.PrivateKey, error) {
+	if m.privateKeyGenerator != nil {
+		return m.privateKeyGenerator()
+	}
+
+	privateKey, err := crypto.GeneratePrivateKey(DefaultKeyBitSize)
+	if err != nil {
+		return nil, errs.Wrap(ErrCertificateManager, err)
+	}
+
+	return privateKey, nil
 }
 
 func getFingerprint(cert *x509.Certificate) string {
@@ -260,7 +266,7 @@ func verifyCertificateWithPrivateKey(cert *x509.Certificate, privateKey *rsa.Pri
 	}
 }
 
-func DecodeCertificateChain(certificationChain []byte) ([]*x509.Certificate, []byte, error) {
+func decodeCertificateChain(certificationChain []byte) ([]*x509.Certificate, []byte, error) {
 	// we expect 1 PEM block to be returned
 	p7DER, _ := pem.Decode(certificationChain)
 	if p7DER == nil || len(p7DER.Bytes) == 0 {
@@ -287,7 +293,7 @@ func DecodeCertificateChain(certificationChain []byte) ([]*x509.Certificate, []b
 	return p7.Certificates, clientCertChain, nil
 }
 
-func (m *CertificateManager) IsTenantDefaultCertExist(ctx context.Context) (bool, error) {
+func (m *CertificateManager) isTenantDefaultCertExist(ctx context.Context) (bool, error) {
 	compositeKey := repo.NewCompositeKey().Where(repo.PurposeField,
 		model.CertificatePurposeTenantDefault)
 
@@ -314,11 +320,11 @@ func createCertificateIssuerClient(
 	return certissuerv1.NewCertificateIssuerServiceClient(certIssuer.ClientConnection()), nil
 }
 
-func (m *CertificateManager) GetDefaultTenantCertificate(ctx context.Context) (*model.Certificate, bool, error) {
+func (m *CertificateManager) getDefaultTenantCertificate(ctx context.Context) (*model.Certificate, bool, error) {
 	return m.getCertificateByPurpose(ctx, model.CertificatePurposeTenantDefault)
 }
 
-func (m *CertificateManager) GetDefaultKeystoreCertificate(ctx context.Context) (*model.Certificate, bool, error) {
+func (m *CertificateManager) getDefaultKeystoreCertificate(ctx context.Context) (*model.Certificate, bool, error) {
 	return m.getCertificateByPurpose(ctx, model.CertificatePurposeKeystoreDefault)
 }
 
@@ -350,7 +356,7 @@ func (m *CertificateManager) getNewCertificate(
 	if privateKey == nil {
 		var pkErr error
 
-		privateKey, pkErr = m.GeneratePrivateKey()
+		privateKey, pkErr = m.generatePrivateKey()
 		if pkErr != nil {
 			return nil, nil, errs.Wrap(ErrCertificateManager, pkErr)
 		}
@@ -378,7 +384,7 @@ func (m *CertificateManager) getNewCertificate(
 
 	certificationChain := response.GetCertificateChain()
 
-	_, clientCertChain, err := DecodeCertificateChain([]byte(certificationChain))
+	_, clientCertChain, err := decodeCertificateChain([]byte(certificationChain))
 	if err != nil {
 		return nil, nil, errs.Wrap(ErrCertificateManager, err)
 	}
@@ -402,7 +408,7 @@ func (m *CertificateManager) getNewCertificate(
 func (m *CertificateManager) getDefaultHYOKClientCert(
 	ctx context.Context,
 ) (*model.Certificate, error) {
-	cert, exists, err := m.GetDefaultTenantCertificate(ctx)
+	cert, exists, err := m.getDefaultTenantCertificate(ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetDefaultTenantCertificate, err)
 	}
@@ -449,7 +455,7 @@ func (m *CertificateManager) getDefaultKeystoreClientCert(
 		exists bool
 	)
 
-	cert, exists, err = m.GetDefaultKeystoreCertificate(ctx)
+	cert, exists, err = m.getDefaultKeystoreCertificate(ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetDefaultKeystoreCertificate, err)
 	}
