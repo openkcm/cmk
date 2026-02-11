@@ -44,8 +44,11 @@ func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithKeyAdminGroup())
+		testutils.InitialiseKeyConfig(authClient))
+
 	testutils.CreateTestEntities(
 		ctx,
 		t,
@@ -82,7 +85,7 @@ func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
 				Method:            http.MethodGet,
 				Endpoint:          "/systems?$filter=keyConfigurationID eq '" + tt.keyConfigurationID + "'",
 				Tenant:            tenant,
-				AdditionalContext: testutils.GetKeyAdminClientMap(),
+				AdditionalContext: authClient.GetClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -105,8 +108,10 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithKeyAdminGroup())
+		testutils.InitialiseKeyConfig(authClient))
 
 	systemWithProps := testutils.NewSystem(func(s *model.System) {
 		s.Properties = map[string]string{
@@ -129,7 +134,7 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 			Method:            http.MethodGet,
 			Endpoint:          fmt.Sprintf("/systems/%s", systemWithoutProps.ID),
 			Tenant:            tenant,
-			AdditionalContext: testutils.GetKeyAdminClientMap(),
+			AdditionalContext: authClient.GetClientMap(),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -144,7 +149,7 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 			Method:            http.MethodGet,
 			Endpoint:          fmt.Sprintf("/systems/%s", systemWithProps.ID),
 			Tenant:            tenant,
-			AdditionalContext: testutils.GetKeyAdminClientMap(),
+			AdditionalContext: authClient.GetClientMap(),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -161,10 +166,13 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 
 	keyConfiguration3ID := ptr.PointTo(uuid.New())
 
+	authClient1 := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	authClient2 := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
 	keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithKeyAdminGroup())
+		testutils.InitialiseKeyConfig(authClient1))
 	keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithKeyAdminGroup())
+		testutils.InitialiseKeyConfig(authClient2))
 	systems1 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig1.ID)
 	})
@@ -228,10 +236,8 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: url,
 				Tenant:   tenant,
-				AdditionalContext: testutils.GetClientGroupsMap(
-					testutils.KeyAdminName,
-					[]string{keyConfig1.AdminGroup.IAMIdentifier,
-						keyConfig2.AdminGroup.IAMIdentifier}),
+				AdditionalContext: testutils.GetClientGroupsMap(authClient1.Identifier,
+					[]string{authClient1.Group.IAMIdentifier, authClient2.Group.IAMIdentifier}),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -272,8 +278,11 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithKeyAdminGroup())
+		testutils.InitialiseKeyConfig(authClient))
+
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
@@ -347,7 +356,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 				Method:            http.MethodGet,
 				Endpoint:          endpoint,
 				Tenant:            tenant,
-				AdditionalContext: testutils.GetKeyAdminClientMap(),
+				AdditionalContext: authClient.GetClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -371,8 +380,11 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithKeyAdminGroup())
+		testutils.InitialiseKeyConfig(authClient))
+
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	for range totalRecordCount {
@@ -477,7 +489,7 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 				Method:            http.MethodGet,
 				Endpoint:          tt.query,
 				Tenant:            tenant,
-				AdditionalContext: testutils.GetKeyAdminClientMap(),
+				AdditionalContext: authClient.GetClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -504,8 +516,10 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithKeyAdminGroup())
+		testutils.InitialiseKeyConfig(authClient))
 
 	system := testutils.NewSystem(func(s *model.System) { s.KeyConfigurationID = ptr.PointTo(keyConfig.ID) })
 	systemInvalidKeyConfig := testutils.NewSystem(func(s *model.System) {
@@ -544,7 +558,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 				Method:            http.MethodGet,
 				Endpoint:          "/systems/" + tt.id,
 				Tenant:            tenant,
-				AdditionalContext: testutils.GetKeyAdminClientMap(),
+				AdditionalContext: authClient.GetClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -570,8 +584,10 @@ func TestAPIController_GetSystemByIDWithDBError(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
-		testutils.WithKeyAdminGroup())
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.InitialiseKeyConfig(authClient))
 
 	system := testutils.NewSystem(func(_ *model.System) {})
 	testutils.CreateTestEntities(ctx, t, r, system, keyConfig)
@@ -601,7 +617,7 @@ func TestAPIController_GetSystemByIDWithDBError(t *testing.T) {
 				Method:            http.MethodGet,
 				Endpoint:          "/systems/" + tt.id,
 				Tenant:            tenant,
-				AdditionalContext: testutils.GetKeyAdminClientMap(),
+				AdditionalContext: authClient.GetClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -617,8 +633,11 @@ func TestSendRecoveryActions(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
-		testutils.WithKeyAdminGroup())
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.InitialiseKeyConfig(authClient))
+
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	t.Run("Should 400 on cancel without previous state", func(t *testing.T) {
@@ -634,7 +653,7 @@ func TestSendRecoveryActions(t *testing.T) {
 				},
 			),
 			Tenant:            tenant,
-			AdditionalContext: testutils.GetKeyAdminClientMap(),
+			AdditionalContext: authClient.GetClientMap(),
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -661,7 +680,7 @@ func TestSendRecoveryActions(t *testing.T) {
 				},
 			),
 			Tenant:            tenant,
-			AdditionalContext: testutils.GetKeyAdminClientMap(),
+			AdditionalContext: authClient.GetClientMap(),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -692,11 +711,14 @@ func TestLinkSystemAction(t *testing.T) {
 	// Disable workflow to allow direct linking via system controller
 	disableWorkflow(t, ctx, r)
 
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
 	keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithKeyAdminGroup())
+		testutils.InitialiseKeyConfig(authClient))
+
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	}, testutils.WithKeyAdminGroup())
+	})
 
 	system := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig1.ID)
@@ -810,10 +832,8 @@ func TestLinkSystemAction(t *testing.T) {
 				Endpoint: fmt.Sprintf("/systems/%s/link", tt.ID),
 				Tenant:   tenant,
 				Body:     testutils.WithString(t, tt.inputJSON),
-				AdditionalContext: testutils.GetClientGroupsMap(
-					testutils.KeyAdminName,
-					[]string{keyConfig1.AdminGroup.IAMIdentifier,
-						keyConfig2.AdminGroup.IAMIdentifier}),
+				AdditionalContext: testutils.GetClientGroupsMap(authClient.Identifier,
+					[]string{authClient.Group.IAMIdentifier, keyConfig2.AdminGroup.IAMIdentifier}),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -849,9 +869,11 @@ func TestUnlinkSystemAction(t *testing.T) {
 	// Disable workflow to allow direct unlinking via system controller
 	disableWorkflow(t, ctx, r)
 
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	}, testutils.WithKeyAdminGroup())
+	}, testutils.InitialiseKeyConfig(authClient))
 	system := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 	})
@@ -902,7 +924,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 				Method:            http.MethodDelete,
 				Endpoint:          fmt.Sprintf("/systems/%s/link", tt.id),
 				Tenant:            tenant,
-				AdditionalContext: testutils.GetKeyAdminClientMap(),
+				AdditionalContext: authClient.GetClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)

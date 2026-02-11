@@ -207,10 +207,6 @@ func GetClientGroupsData(identifier string, groupNames []string) *auth.ClientDat
 	}
 }
 
-func GetClientGroupsMap(identifier string, groupNames []string) map[any]any {
-	return map[any]any{constants.ClientData: GetClientGroupsData(identifier, groupNames)}
-}
-
 func GetClientNoGroupsMap(identifier string) map[any]any {
 	return map[any]any{constants.ClientData: GetClientGroupsData(identifier, []string{})}
 }
