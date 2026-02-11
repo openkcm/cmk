@@ -175,6 +175,130 @@ func TestAuthzMiddleware_AllowedAPI(t *testing.T) {
 	}
 }
 
+func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
+	tests := []struct {
+		name           string
+		method         string
+		groupRole      constants.Role
+		expectedStatus int
+	}{
+		// GET tests - all roles can read
+		{
+			name:           "GET: TenantAdmin can view workflow config",
+			method:         http.MethodGet,
+			groupRole:      constants.TenantAdminRole,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "GET: KeyAdmin can view workflow config",
+			method:         http.MethodGet,
+			groupRole:      constants.KeyAdminRole,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "GET: TenantAuditor can view workflow config",
+			method:         http.MethodGet,
+			groupRole:      constants.TenantAuditorRole,
+			expectedStatus: http.StatusOK,
+		},
+		// PATCH tests - only TenantAdmin can edit
+		{
+			name:           "PATCH: TenantAdmin can edit workflow config",
+			method:         http.MethodPatch,
+			groupRole:      constants.TenantAdminRole,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "PATCH: KeyAdmin cannot edit workflow config",
+			method:         http.MethodPatch,
+			groupRole:      constants.KeyAdminRole,
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "PATCH: TenantAuditor cannot edit workflow config",
+			method:         http.MethodPatch,
+			groupRole:      constants.TenantAuditorRole,
+			expectedStatus: http.StatusForbidden,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tenantID := "test-tenant"
+			groupIdentifier := "test-group-" + string(tt.groupRole)
+
+			ctx := testutils.CreateCtxWithTenant(tenantID)
+			ctx = testutils.InjectClientDataIntoContext(ctx, groupIdentifier, []string{groupIdentifier})
+			ctx = cmkcontext.InjectRequestID(ctx)
+
+			engine := setupAuthzEngineWithRole(t, tenantID, groupIdentifier, tt.groupRole)
+
+			ctr := &cmk.APIController{
+				Repository:  nil,
+				Manager:     &manager.Manager{},
+				AuthzEngine: engine,
+			}
+
+			mw := middleware.AuthzMiddleware(ctr)
+			handler := mw(
+				http.HandlerFunc(
+					func(w http.ResponseWriter, _ *http.Request) {
+						w.WriteHeader(http.StatusOK)
+					},
+				),
+			)
+
+			endpoint := "/cmk/v1/{tenant}/tenantConfigurations/workflow"
+			pattern := tt.method + " " + endpoint
+			req := httptest.NewRequest(tt.method, endpoint, nil)
+			req.Pattern = pattern
+			req = req.WithContext(ctx)
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d, body: %s", tt.expectedStatus, rr.Code, rr.Body.String())
+			}
+		})
+	}
+}
+
+// Helper function to setup authz engine with a specific role
+func setupAuthzEngineWithRole(t *testing.T, tenantID, groupIdentifier string, role constants.Role) *authzmodel.Engine {
+	t.Helper()
+
+	repo := repomock.NewInMemoryRepository()
+	ctx := testutils.CreateCtxWithTenant(tenantID)
+
+	err := repo.Create(
+		ctx, &model.Tenant{
+			TenantModel: multitenancy.TenantModel{},
+			ID:          tenantID,
+			Region:      tenantID,
+			Status:      "Test",
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
+	}
+
+	group := &model.Group{
+		ID:            uuid.New(),
+		IAMIdentifier: groupIdentifier,
+		Role:          role,
+	}
+	err = repo.Create(ctx, group)
+	if err != nil {
+		t.Fatalf("failed to create group: %v", err)
+	}
+
+	cfg := &config.Config{}
+	engine := authzmodel.NewEngine(t.Context(), repo, cfg)
+
+	return engine
+}
+
 // Go
 func SetupAuthzEngineWithAllowList(t *testing.T) *authzmodel.Engine {
 	t.Helper()

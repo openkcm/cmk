@@ -270,3 +270,15 @@ func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
 
 	return ptr.PointTo(mut(m))
 }
+
+// NewDefaultWorkflowConfig creates a default WorkflowConfig for testing
+// with commonly used default values
+func NewDefaultWorkflowConfig(enabled bool) *model.WorkflowConfig {
+	return &model.WorkflowConfig{
+		Enabled:                 enabled,
+		MinimumApprovals:        constants.DefaultMinimumApprovalCount,
+		RetentionPeriodDays:     constants.DefaultRetentionPeriodDays,
+		DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
+		MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
+	}
+}

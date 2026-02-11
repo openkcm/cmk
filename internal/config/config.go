@@ -47,6 +47,7 @@ type Config struct {
 
 	KeystorePool KeystorePool `yaml:"keystorePool"`
 	Landscape    Landscape    `yaml:"landscape"`
+	Workflow     Workflow     `yaml:"workflow"`
 }
 
 type ContextModels struct {
@@ -302,4 +303,11 @@ type KeystorePool struct {
 type Landscape struct {
 	Name      string `yaml:"name"`
 	UIBaseUrl string `yaml:"uiBaseUrl"`
+}
+
+type Workflow struct {
+	DefaultMinimumApprovals    int `yaml:"defaultMinimumApprovals"`
+	DefaultRetentionPeriodDays int `yaml:"defaultRetentionPeriodDays"`
+	DefaultExpiryPeriodDays    int `yaml:"defaultExpiryPeriodDays"`
+	DefaultMaxExpiryPeriodDays int `yaml:"defaultMaxExpiryPeriodDays"`
 }

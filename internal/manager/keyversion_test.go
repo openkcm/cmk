@@ -54,7 +54,7 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	ctlg, err := catalog.New(s.ctx, &cfg)
 	s.Require().NoError(err)
 
-	tenantConfigManager := manager.NewTenantConfigManager(s.r, ctlg)
+	tenantConfigManager := manager.NewTenantConfigManager(s.r, ctlg, nil)
 	certManager := manager.NewCertificateManager(
 		s.ctx, s.r, ctlg, &config.Certificates{ValidityDays: config.MinCertificateValidityDays})
 	cmkAuditor := auditor.New(s.ctx, &cfg)
