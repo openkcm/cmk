@@ -74,6 +74,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.hostIP
+          {{- with (default .Values.resources .Values.tenantManagerCLI.resources) }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: {{ include "cmk.name" . }}-tenant-manager-cli-config-volume
               mountPath: /etc/tenant-manager-cli
