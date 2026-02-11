@@ -76,7 +76,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	km := manager.NewKeyManager(
 		r,
 		ctlg,
-		manager.NewTenantConfigManager(r, ctlg),
+		manager.NewTenantConfigManager(r, ctlg, nil),
 		kcm,
 		um,
 		cm,

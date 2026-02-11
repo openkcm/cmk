@@ -105,7 +105,7 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 	})
 
 	ctlg, err := catalog.New(ctx, testConfig)
-	tenantConfigManager := manager.NewTenantConfigManager(repository, ctlg)
+	tenantConfigManager := manager.NewTenantConfigManager(repository, ctlg, nil)
 	cmkAuditor := auditor.New(ctx, testConfig)
 	userManager := manager.NewUserManager(repository, cmkAuditor)
 	tagManager := manager.NewTagManager(repository)

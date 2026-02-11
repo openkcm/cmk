@@ -350,6 +350,20 @@ var allRestrictions = []Restricted{
 		RepoOperation:    OpFirst,
 	},
 	{
+		APIPath:          "/tenantConfigurations/workflow",
+		APIMethod:        APIMethodGet,
+		ResourceTypeName: ResourceTypeTenantSettings,
+		Action:           ActionRead,
+		RepoOperation:    OpFirst,
+	},
+	{
+		APIPath:          "/tenantConfigurations/workflow",
+		APIMethod:        APIMethodPatch,
+		ResourceTypeName: ResourceTypeTenantSettings,
+		Action:           ActionUpdate,
+		RepoOperation:    OpPatch,
+	},
+	{
 		APIPath:          "/tenantInfo",
 		APIMethod:        APIMethodGet,
 		ResourceTypeName: ResourceTypeTenant,

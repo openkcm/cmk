@@ -95,7 +95,7 @@ func (s *CLISuite) SetupSuite() {
 	km := manager.NewKeyManager(
 		r,
 		ctlg,
-		manager.NewTenantConfigManager(r, ctlg),
+		manager.NewTenantConfigManager(r, ctlg, nil),
 		kcm,
 		um,
 		cm,
