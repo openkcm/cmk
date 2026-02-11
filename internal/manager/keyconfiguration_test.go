@@ -363,6 +363,25 @@ func TestPostKeyConfigurations(t *testing.T) {
 		assert.Equal(t, CreatorID, actual.CreatorID)
 	})
 
+	t.Run("Should error on empty keyconfig name", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.AdminGroupID = adminGroup.ID
+			c.AdminGroup = *adminGroup
+			c.CreatorID = CreatorID
+			c.CreatorName = CreatorName
+			c.Name = "  "
+		})
+
+		ctx := testutils.InjectClientDataIntoContext(
+			ctx,
+			"example-user",
+			[]string{testAdminGroupIAM, keyConfig.AdminGroup.IAMIdentifier},
+		)
+
+		_, err := m.PostKeyConfigurations(ctx, keyConfig)
+		assert.ErrorIs(t, err, manager.ErrNameCannotBeEmpty)
+	})
+
 	t.Run("Should error when wrong group admin role - TENANT_ADMINISTRATOR", func(t *testing.T) {
 		wrongRoleGroup := testutils.NewGroup(func(g *model.Group) {
 			g.IAMIdentifier = "KMS_wrong_role_group"
@@ -604,6 +623,18 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			cmkapi.KeyConfigurationPatch{
 				Description: ptr.PointTo("test-description"),
 				Name:        ptr.PointTo(""),
+			},
+		)
+		assert.ErrorIs(t, err, manager.ErrNameCannotBeEmpty)
+	})
+
+	t.Run("Should error on name with only spaces", func(t *testing.T) {
+		_, err := m.UpdateKeyConfigurationByID(
+			ctx,
+			expected.ID,
+			cmkapi.KeyConfigurationPatch{
+				Description: ptr.PointTo("test-description"),
+				Name:        ptr.PointTo("   "),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrNameCannotBeEmpty)
