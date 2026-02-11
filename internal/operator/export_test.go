@@ -10,17 +10,20 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 )
 
-func (o *TenantOperator) HandleCreateTenant(ctx context.Context, req orbital.HandlerRequest) (
-	orbital.HandlerResponse, error,
-) {
-	return o.handleCreateTenant(ctx, req)
+func (o *TenantOperator) HandleCreateTenant(
+	ctx context.Context,
+	req orbital.HandlerRequest,
+	resp *orbital.HandlerResponse,
+) error {
+	return o.handleCreateTenant(ctx, req, resp)
 }
 
 func (o *TenantOperator) HandleApplyTenantAuth(
 	ctx context.Context,
 	req orbital.HandlerRequest,
-) (orbital.HandlerResponse, error) {
-	return o.handleApplyTenantAuth(ctx, req)
+	resp *orbital.HandlerResponse,
+) error {
+	return o.handleApplyTenantAuth(ctx, req, resp)
 }
 
 func CheckTenantSchemaExistenceStatus(
