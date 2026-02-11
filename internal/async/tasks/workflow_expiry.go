@@ -47,30 +47,33 @@ func NewWorkflowExpiryProcessor(
 func (s *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Workflow Expiry Task")
 
-	err := s.processor.ProcessTenantsInBatch(ctx, "Workflow Expiry", task,
-		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
-			log.Debug(tenantCtx, "Processing expired workflows for tenant",
-				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
+	err := s.processor.ProcessTenantsInBatch(
+		ctx,
+		"Workflow Expiry",
+		task,
+		func(ctx context.Context, tenant *model.Tenant) error {
+			log.Debug(ctx, "Processing expired workflows for tenant",
+				slog.String("schemaName", tenant.SchemaName))
 
-			wfs, _, getErr := s.updater.GetWorkflows(tenantCtx, manager.WorkflowFilter{})
+			wfs, _, getErr := s.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
 			if getErr != nil {
-				return s.handleErrorTask(tenantCtx, getErr)
+				return s.handleErrorTask(ctx, getErr)
 			}
 			for _, wf := range wfs {
 				if wf.ExpiryDate == nil || time.Now().Before(*wf.ExpiryDate) {
 					continue
 				}
 
-				expireErr := s.expireWorkflow(tenantCtx, wf.ID)
+				expireErr := s.expireWorkflow(ctx, wf.ID)
 				if expireErr != nil {
 					return errs.Wrap(ErrRunningTask, expireErr)
 				}
 			}
-			log.Debug(tenantCtx, "Workflow expiry processing completed for tenant",
+			log.Debug(ctx, "Workflow expiry processing completed for tenant",
 				slog.String("schemaName", tenant.SchemaName))
 			return nil
-		})
-
+		},
+	)
 	if err != nil {
 		return s.handleErrorTenants(ctx, err)
 	}
