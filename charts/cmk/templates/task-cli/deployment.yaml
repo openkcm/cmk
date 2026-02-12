@@ -74,6 +74,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.hostIP
+          {{- with (default .Values.resources .Values.taskCLI.resources) }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: {{ include "cmk.name" . }}-task-cli-config-volume
               mountPath: /etc/cmk

@@ -25,6 +25,9 @@ apiServer:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
   topologySpreadConstraints: []
 
+  # Component-specific resources override; falls back to global `resources`.
+  resources: {}
+
 # tenant-manager configuration
 tenantManager:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
@@ -60,6 +63,9 @@ tenantManager:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
   topologySpreadConstraints: []
 
+  # Component-specific resources override; falls back to global `resources`.
+  resources: {}
+
 # tenant-manager-cli configuration
 tenantManagerCLI:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
@@ -86,6 +92,9 @@ tenantManagerCLI:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
   topologySpreadConstraints: []
 
+  # Component-specific resources override; falls back to global `resources`.
+  resources: {}
+
 # task scheduler configuration
 taskScheduler:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
@@ -107,6 +116,9 @@ taskScheduler:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
   topologySpreadConstraints: []
 
+  # Component-specific resources override; falls back to global `resources`.
+  resources: {}
+
 # task worker configuration
 taskWorker:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
@@ -127,6 +139,9 @@ taskWorker:
   # This is for setting up pod topology spread constraints, more information can be found here:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
   topologySpreadConstraints: []
+
+  # Component-specific resources override; falls back to global `resources`.
+  resources: {}
 
 # task-cli configuration
 taskCLI:
@@ -153,6 +168,17 @@ taskCLI:
   # This is for setting up pod topology spread constraints, more information can be found here:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
   topologySpreadConstraints: []
+
+  # Component-specific resources override; falls back to global `resources`.
+  resources: {}
+
+# db-migrator configuration
+dbMigrator:
+  image:
+    command: ""
+    args: []
+  # Enable the db-migrator job.
+  deploy: false
 
 # Override the "name" value, which is used to annotate some of
 # the resources that are created by this Chart (using "app.kubernetes.io/name").

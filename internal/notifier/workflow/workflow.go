@@ -150,7 +150,7 @@ func (w *Creator) createWorkflowConfirmedTask(data NotificationData, recipients 
 			data.Workflow.ArtifactType,
 		)
 		subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
-		message = "Your workflow has been confirmed and completed successfully."
+		message = "The workflow has been confirmed and completed successfully."
 		actionText = "No further action required. You can view the details in the CMK portal."
 
 	case wf.StateFailed:
@@ -160,7 +160,7 @@ func (w *Creator) createWorkflowConfirmedTask(data NotificationData, recipients 
 			data.Workflow.ArtifactType,
 		)
 		subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
-		message = "Your workflow has been confirmed but failed during execution." +
+		message = "The workflow has been confirmed but failed during execution." +
 			" Please check the details and take necessary actions."
 		actionText = "Review the failure reason and contact support if needed." +
 			" You can view the details in the CMK portal."
@@ -171,7 +171,7 @@ func (w *Creator) createWorkflowConfirmedTask(data NotificationData, recipients 
 			data.Workflow.ArtifactType,
 		)
 		subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
-		message = "Your workflow has been confirmed."
+		message = "The workflow has been confirmed."
 		actionText = "Please check the CMK portal for more details."
 	}
 
@@ -187,7 +187,7 @@ func (w *Creator) createWorkflowRevokedTask(data NotificationData, recipients []
 
 	subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
 
-	message := "Your workflow has been revoked and is no longer active."
+	message := "The workflow has been revoked and is no longer active."
 	actionText := "Please contact your administrator if you have questions about this revocation."
 
 	return w.createNotificationTask(data, recipients, subject, message, actionText)

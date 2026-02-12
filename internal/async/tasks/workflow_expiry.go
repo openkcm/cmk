@@ -15,12 +15,16 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
+	ctxUtils "github.com/openkcm/cmk/utils/context"
 )
 
 type WorkflowExpiryUpdater interface {
 	GetWorkflows(ctx context.Context, params repo.QueryMapper) ([]*model.Workflow, int, error)
-	TransitionWorkflow(ctx context.Context, userID uuid.UUID,
-		workflowID uuid.UUID, transition wfMechanism.Transition) (*model.Workflow, error)
+	TransitionWorkflow(
+		ctx context.Context,
+		workflowID uuid.UUID,
+		transition wfMechanism.Transition,
+	) (*model.Workflow, error)
 }
 
 type WorkflowExpiryProcessor struct {
@@ -79,51 +83,16 @@ func (s *WorkflowExpiryProcessor) TaskType() string {
 }
 
 func (s *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID uuid.UUID) error {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error(ctx, "Panic occurred while processing workflow auto assign task", nil,
-				slog.Any("panic", r),
-			)
+	ctx = ctxUtils.InjectSystemUser(ctx)
+	workflow, err := s.updater.TransitionWorkflow(ctx, workflowID, wfMechanism.TransitionExpire)
 
-			updateErr := s.putWorkflowInFailedState(ctx, workflowID, "internal error when assigning approvers")
-			if updateErr != nil {
-				log.Error(ctx, "Failed to put workflow in failed state after panic", updateErr)
-			}
-		}
-	}()
-
-	workflow, err := s.updater.TransitionWorkflow(ctx, wfMechanism.SystemUserUUID, workflowID,
-		wfMechanism.TransitionExpire)
 	if err != nil {
-		log.Error(ctx, "Failed to auto assign approvers", err)
-
-		updateErr := s.putWorkflowInFailedState(ctx, workflowID, err.Error())
-		if updateErr != nil {
-			log.Error(ctx, "Failed to put workflow in failed state after error", updateErr)
-		}
-
+		log.Error(ctx, "Failed to expire workflow", err)
 		return err
 	}
-	log.Info(ctx, "Expiredworkflow",
-		slog.String("workflow_id", workflow.ID.String()))
+	log.Info(ctx, "Expired workflow", slog.String("workflow_id", workflow.ID.String()))
 
 	return nil
-}
-
-func (s *WorkflowExpiryProcessor) putWorkflowInFailedState(
-	ctx context.Context,
-	workflowID uuid.UUID,
-	failureReason string,
-) error {
-	workflow := &model.Workflow{
-		ID:            workflowID,
-		State:         wfMechanism.StateFailed.String(),
-		FailureReason: failureReason,
-	}
-
-	_, err := s.repo.Patch(ctx, workflow, *repo.NewQuery())
-
-	return err
 }
 
 func (s *WorkflowExpiryProcessor) handleErrorTenants(ctx context.Context, err error) error {
@@ -132,6 +101,6 @@ func (s *WorkflowExpiryProcessor) handleErrorTenants(ctx context.Context, err er
 }
 
 func (s *WorkflowExpiryProcessor) handleErrorTask(ctx context.Context, err error) error {
-	log.Error(ctx, "Running Cert Refresh", err)
+	log.Error(ctx, "Error running Workflow Expiry", err)
 	return errs.Wrap(ErrRunningTask, err)
 }

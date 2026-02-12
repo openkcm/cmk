@@ -47,6 +47,7 @@ type Config struct {
 
 	KeystorePool KeystorePool `yaml:"keystorePool"`
 	Landscape    Landscape    `yaml:"landscape"`
+	Workflow     Workflow     `yaml:"workflow"`
 }
 
 type ContextModels struct {
@@ -207,7 +208,7 @@ func (t *TenantManager) Validate() error {
 type EventProcessor struct {
 	SecretRef         commoncfg.SecretRef `yaml:"secretRef"`
 	Targets           []Target            `yaml:"targets"`
-	MaxReconcileCount int64               `yaml:"maxReconcileCount"`
+	MaxReconcileCount uint64              `yaml:"maxReconcileCount"`
 }
 
 // Validate checks the EventProcessor configuration values
@@ -302,4 +303,11 @@ type KeystorePool struct {
 type Landscape struct {
 	Name      string `yaml:"name"`
 	UIBaseUrl string `yaml:"uiBaseUrl"`
+}
+
+type Workflow struct {
+	DefaultMinimumApprovals    int `yaml:"defaultMinimumApprovals"`
+	DefaultRetentionPeriodDays int `yaml:"defaultRetentionPeriodDays"`
+	DefaultExpiryPeriodDays    int `yaml:"defaultExpiryPeriodDays"`
+	DefaultMaxExpiryPeriodDays int `yaml:"defaultMaxExpiryPeriodDays"`
 }
