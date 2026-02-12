@@ -9,6 +9,7 @@ const (
 	TypeWorkflowAutoAssign = "workflow:auto-assign"
 	TypeWorkflowCleanup    = "workflow:cleanup"
 	TypeWorkflowExpire     = "workflow:expire"
+	TypeTenantRefreshName  = "tenant:refresh-name"
 )
 
 const defaultRetryCount = 3
@@ -43,6 +44,13 @@ var PeriodicTasks = map[string]Task{
 	TypeWorkflowCleanup: {
 		Enabled:  true,
 		Cronspec: "0 2 * * *", // At 02:00 AM daily
+		Retries:  defaultRetryCount,
+	},
+	// The TenantRefreshName was added to sync old tenants to have a tenant name
+	// This should be deleted on next release
+	TypeTenantRefreshName: {
+		Enabled:  true,
+		Cronspec: "0 3 * * *", // At 03:00 AM daily
 		Retries:  defaultRetryCount,
 	},
 }
