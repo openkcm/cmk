@@ -311,6 +311,16 @@ func (u *user) hasKeyConfigAccess(
 		return false, err
 	}
 
+	role, err := u.GetRoleFromIAM(ctx, iamIdentifiers)
+	if err != nil {
+		return false, err
+	}
+
+	// Auditors have read-only access to all keyconfigs
+	if role == constants.TenantAuditorRole && action == authz.ActionRead {
+		return true, nil
+	}
+
 	// If no IAM identifiers provided, user cannot be authorized through IAM groups
 	if len(iamIdentifiers) == 0 {
 		return false, ErrKeyConfigurationNotAllowed
