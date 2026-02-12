@@ -13,6 +13,7 @@ func LogInjectTenant(ctx context.Context, tenant *Tenant) context.Context {
 		slog.Group("tenantData",
 			slog.String("region", tenant.Region),
 			slog.String("schema", tenant.SchemaName),
+			slog.String("name", tenant.Name),
 		),
 	)
 }
