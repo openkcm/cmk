@@ -56,7 +56,6 @@ func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) er
 			}
 			return nil
 		})
-
 	if err != nil {
 		log.Error(ctx, "Error during systems refresh batch processing", err)
 		return errs.Wrap(ErrRunningTask, err)
