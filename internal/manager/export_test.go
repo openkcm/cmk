@@ -30,12 +30,12 @@ func (si *SystemInformation) SetClient(systemInformation systeminformationv1.Sys
 	si.sisClient = systemInformation
 }
 
-func (m *SystemManager) EventSelector(
+func (m *SystemManager) SelectEvent(
 	ctx context.Context,
 	system *model.System,
 	newKeyConfig *model.KeyConfiguration,
 ) (eventprocessor.Event, error) {
-	return m.eventSelector(ctx, system, newKeyConfig)
+	return m.selectEvent(ctx, system, newKeyConfig)
 }
 
 func (m *CertificateManager) SetClient(client certissuerv1.CertificateIssuerServiceClient) {

@@ -80,7 +80,7 @@ func (m *TenantManager) OffboardTenant(ctx context.Context) (OffboardingResult, 
 		return systemResult, err
 	}
 
-	keyResult, err := m.detatchAllKeys(ctx)
+	keyResult, err := m.detachAllKeys(ctx)
 	if err != nil || keyResult.Status == OffboardingProcessing {
 		return keyResult, err
 	}
@@ -199,7 +199,7 @@ func (m *TenantManager) unlinkAllSystems(ctx context.Context) (OffboardingResult
 		repo.DefaultLimit,
 		func(sys []*model.System) error {
 			for _, s := range sys {
-				err := m.sys.UnlinkSystemAction(ctx, s.ID, constants.SystemActionDecomission)
+				err := m.sys.UnlinkSystemAction(ctx, s.ID, constants.SystemActionDecommission)
 				if err != nil {
 					return err
 				}
@@ -233,25 +233,25 @@ func (m *TenantManager) unlinkAllSystems(ctx context.Context) (OffboardingResult
 	return result, nil
 }
 
-// detatchAllKeys triggers key detatch events. On a successful created event
+// detachAllKeys triggers key detach events. On a successful created event
 // the key state is changed to detached. It's considered a success if
 // all keys are no longer enabled or disabled
-func (m *TenantManager) detatchAllKeys(ctx context.Context) (OffboardingResult, error) {
+func (m *TenantManager) detachAllKeys(ctx context.Context) (OffboardingResult, error) {
 	result := OffboardingResult{Status: OffboardingSuccess}
 
-	detatch := repo.NewCompositeKey().
+	query := repo.NewCompositeKey().
 		Where(repo.StateField, cmkapi.KeyStateENABLED).
 		Where(repo.StateField, cmkapi.KeyStateDISABLED)
-	detatch.IsStrict = false
+	query.IsStrict = false
 
 	err := repo.ProcessInBatch(
 		ctx,
 		m.repo,
-		repo.NewQuery().Where(repo.NewCompositeKeyGroup(detatch)),
+		repo.NewQuery().Where(repo.NewCompositeKeyGroup(query)),
 		repo.DefaultLimit,
 		func(keys []*model.Key) error {
 			for _, k := range keys {
-				err := m.key.Detatch(ctx, k)
+				err := m.key.Detach(ctx, k)
 				if err != nil {
 					return err
 				}
@@ -267,7 +267,7 @@ func (m *TenantManager) detatchAllKeys(ctx context.Context) (OffboardingResult, 
 	count, err := m.repo.Count(
 		ctx,
 		&model.Key{},
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(detatch)),
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(query)),
 	)
 	if err != nil {
 		return OffboardingResult{}, err

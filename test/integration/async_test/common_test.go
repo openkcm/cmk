@@ -89,7 +89,7 @@ func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *conf
 	certCl = reflect.NewAt(certCl.Type(), unsafe.Pointer(certCl.UnsafeAddr())).Elem()
 	certCl.Set(reflect.ValueOf(cm))
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, tenancyRepo, ctlg, nil)
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, tenancyRepo)
 	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(t.Context(), cfg)
@@ -97,7 +97,7 @@ func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *conf
 	um := manager.NewUserManager(tenancyRepo, cmkAuditor)
 	tam := manager.NewTagManager(tenancyRepo)
 	kc := manager.NewKeyConfigManager(tenancyRepo, cm, um, tam, nil, cfg)
-	km := manager.NewKeyManager(tenancyRepo, ctlg, tc, kc, um, cm, reconciler, nil)
+	km := manager.NewKeyManager(tenancyRepo, ctlg, tc, kc, um, cm, eventFactory, nil)
 
 	hyokCl := val.FieldByName("hyokClient")
 	hyokCl = reflect.NewAt(hyokCl.Type(), unsafe.Pointer(hyokCl.UnsafeAddr())).Elem()

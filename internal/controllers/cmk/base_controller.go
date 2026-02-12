@@ -40,14 +40,9 @@ func NewAPIController(
 		log.Error(ctx, "Failed to load plugin", err)
 	}
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, config, r, ctlg, clientsFactory)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, config, r)
 	if err != nil {
-		log.Error(ctx, "Failed to create event reconciler", err)
-	} else {
-		err = reconciler.Start(ctx)
-		if err != nil {
-			log.Error(ctx, "Failed to start event reconciler", err)
-		}
+		log.Error(ctx, "Failed to create event factory", err)
 	}
 
 	var asyncClient async.Client
@@ -60,7 +55,7 @@ func NewAPIController(
 	}
 
 	return &APIController{
-		Manager:       manager.New(ctx, r, config, clientsFactory, ctlg, reconciler, asyncClient, migrator),
+		Manager:       manager.New(ctx, r, config, clientsFactory, ctlg, eventFactory, asyncClient, migrator),
 		config:        config,
 		pluginCatalog: ctlg,
 		AuthzEngine:   authzmodel.NewEngine(ctx, r, config),

@@ -38,10 +38,7 @@ func NewCommandFactory(
 		return nil, err
 	}
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(
-		ctx, cfg, r,
-		ctlg, clientsFactory,
-	)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +52,7 @@ func NewCommandFactory(
 		ctx,
 		r,
 		clientsFactory,
-		reconciler,
+		eventFactory,
 		ctlg,
 		cfg,
 		kcm,
@@ -69,7 +66,7 @@ func NewCommandFactory(
 		kcm,
 		um,
 		cm,
-		reconciler,
+		eventFactory,
 		cmkAuditor,
 	)
 

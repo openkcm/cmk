@@ -60,7 +60,7 @@ type KeyManager struct {
 	repo             repo.Repo
 	keyConfigManager *KeyConfigManager
 	user             User
-	reconciler       *eventprocessor.CryptoReconciler
+	eventFactory     *eventprocessor.EventFactory
 	cmkAuditor       *auditor.Auditor
 }
 
@@ -71,7 +71,7 @@ func NewKeyManager(
 	keyConfigManager *KeyConfigManager,
 	user User,
 	certManager *CertificateManager,
-	reconciler *eventprocessor.CryptoReconciler,
+	eventFactory *eventprocessor.EventFactory,
 	cmkAuditor *auditor.Auditor,
 ) *KeyManager {
 	return &KeyManager{
@@ -85,7 +85,7 @@ func NewKeyManager(
 		repo:             repo,
 		keyConfigManager: keyConfigManager,
 		user:             user,
-		reconciler:       reconciler,
+		eventFactory:     eventFactory,
 		cmkAuditor:       cmkAuditor,
 	}
 }
@@ -421,23 +421,23 @@ func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 	})
 }
 
-func (km *KeyManager) Detatch(ctx context.Context, key *model.Key) error {
+func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 	return km.repo.Transaction(ctx, func(ctx context.Context) error {
-		key.State = string(cmkapi.KeyStateDETATCHED)
+		key.State = string(cmkapi.KeyStateDETACHED)
 
 		_, err := km.repo.Patch(ctx, key, *repo.NewQuery())
 		if err != nil {
 			return err
 		}
 
-		err = km.sendDetatchEvent(ctx, key)
+		err = km.sendDetachEvent(ctx, key)
 		if err != nil {
 			return err
 		}
 
 		err = km.cmkAuditor.SendCmkDetachAuditLog(ctx, key.ID.String())
 		if err != nil {
-			log.Error(ctx, "Failed to send detatch log for CMK key", err)
+			log.Error(ctx, "Failed to send detach log for CMK key", err)
 		}
 
 		return nil
@@ -1002,7 +1002,7 @@ func (km *KeyManager) sendSystemSwitchEvents(ctx context.Context, key *model.Key
 		repo.DefaultLimit,
 		func(systems []*model.System) error {
 			for _, s := range systems {
-				_, err := km.reconciler.SystemSwitch(
+				_, err := km.eventFactory.SystemSwitch(
 					ctx, s, key.ID.String(), keyConfig.PrimaryKeyID.String(), constants.KeyActionSetPrimary)
 				if err != nil {
 					return err
@@ -1146,10 +1146,10 @@ func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keys
 }
 
 func (km *KeyManager) sendEnableEvent(ctx context.Context, key *model.Key) error {
-	return km.reconciler.SendEvent(ctx, eventprocessor.Event{
+	return km.eventFactory.SendEvent(ctx, eventprocessor.Event{
 		Name: proto.TaskType_KEY_ENABLE.String(),
 		Event: func(ctx context.Context) (orbital.Job, error) {
-			job, err := km.reconciler.KeyEnable(ctx, key.ID.String())
+			job, err := km.eventFactory.KeyEnable(ctx, key.ID.String())
 			if errors.Is(err, orbital.ErrJobAlreadyExists) {
 				log.Info(ctx, "Key enable event already exists", slog.String("jobId", job.ID.String()))
 				return job, nil
@@ -1161,10 +1161,10 @@ func (km *KeyManager) sendEnableEvent(ctx context.Context, key *model.Key) error
 }
 
 func (km *KeyManager) sendDisableEvent(ctx context.Context, key *model.Key) error {
-	return km.reconciler.SendEvent(ctx, eventprocessor.Event{
+	return km.eventFactory.SendEvent(ctx, eventprocessor.Event{
 		Name: proto.TaskType_KEY_DISABLE.String(),
 		Event: func(ctx context.Context) (orbital.Job, error) {
-			job, err := km.reconciler.KeyDisable(ctx, key.ID.String())
+			job, err := km.eventFactory.KeyDisable(ctx, key.ID.String())
 			if errors.Is(err, orbital.ErrJobAlreadyExists) {
 				log.Info(ctx, "Key disable event already exists", slog.String("jobId", job.ID.String()))
 				return job, nil
@@ -1175,13 +1175,13 @@ func (km *KeyManager) sendDisableEvent(ctx context.Context, key *model.Key) erro
 	})
 }
 
-func (km *KeyManager) sendDetatchEvent(ctx context.Context, key *model.Key) error {
-	return km.reconciler.SendEvent(ctx, eventprocessor.Event{
+func (km *KeyManager) sendDetachEvent(ctx context.Context, key *model.Key) error {
+	return km.eventFactory.SendEvent(ctx, eventprocessor.Event{
 		Name: proto.TaskType_KEY_DETACH.String(),
 		Event: func(ctx context.Context) (orbital.Job, error) {
-			job, err := km.reconciler.KeyDetach(ctx, key.ID.String())
+			job, err := km.eventFactory.KeyDetach(ctx, key.ID.String())
 			if errors.Is(err, orbital.ErrJobAlreadyExists) {
-				log.Info(ctx, "Key detatch event already exists", slog.String("jobId", job.ID.String()))
+				log.Info(ctx, "Key detach event already exists", slog.String("jobId", job.ID.String()))
 				return job, nil
 			}
 
