@@ -51,12 +51,12 @@ func TestSerializesKeyAccessData(t *testing.T) {
 				"accountID": "123456789012",
 				"userID":    "123456789012:user/test-user",
 			}),
-			Crypto: ptr.PointTo(map[string]any{
-				"serviceA": map[string]any{
+			Crypto: ptr.PointTo(map[string]map[string]any{
+				"serviceA": {
 					"accountID": "12344",
 					"userID":    "123456789012:user/serviceA",
 				},
-				"serviceB": map[string]any{
+				"serviceB": {
 					"accountID": "12345",
 					"userID":    "123456789012:user/serviceB",
 				},
@@ -77,7 +77,7 @@ func TestSerializesKeyAccessData_Invalid(t *testing.T) {
 	key := cmkapi.Key{
 		AccessDetails: &cmkapi.KeyAccessDetails{
 			Management: ptr.PointTo(map[string]any{}),
-			Crypto:     ptr.PointTo(map[string]any{}),
+			Crypto:     ptr.PointTo(map[string]map[string]any{}),
 		},
 	}
 

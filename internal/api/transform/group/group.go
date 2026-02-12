@@ -11,7 +11,7 @@ import (
 )
 
 func ToAPI(group model.Group) (*cmkapi.Group, error) {
-	err := sanitise.Stringlikes(&group)
+	err := sanitise.Sanitize(&group)
 	if err != nil {
 		return nil, err
 	}
