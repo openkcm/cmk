@@ -23,7 +23,7 @@ require (
 	github.com/hibiken/asynq v0.26.0
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/jxskiss/base62 v1.1.0
-	github.com/lib/pq v1.11.1
+	github.com/lib/pq v1.11.2
 	github.com/looplab/fsm v1.0.3
 	github.com/magodo/slog2hclog v0.0.0-20240614031327-090ebd72a033
 	github.com/microcosm-cc/bluemonday v1.0.27
