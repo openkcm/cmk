@@ -56,11 +56,9 @@ func TestKeystorePoolFilling(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	ks := []*model.Keystore{}
-	count, err := repository.List(
+	count, err := repository.Count(
 		ctx,
-		model.Keystore{},
-		&ks,
+		&model.Keystore{},
 		*repo.NewQuery(),
 	)
 	assert.NoError(t, err)

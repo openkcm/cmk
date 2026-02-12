@@ -244,10 +244,8 @@ func (u *user) HasTenantAccess(ctx context.Context) (bool, error) {
 
 	ck := repo.NewCompositeKey().Where(repo.IAMIdField, iamIdentifiers)
 
-	var groups []model.Group
-
-	count, err := u.repo.List(
-		ctx, &model.Group{}, &groups,
+	count, err := u.repo.Count(
+		ctx, &model.Group{},
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).SetLimit(0),
 	)
 	if err != nil {
@@ -262,7 +260,7 @@ func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (con
 
 	var groups []model.Group
 
-	count, err := u.repo.List(
+	err := u.repo.List(
 		ctx, &model.Group{}, &groups,
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
 	)
@@ -270,7 +268,7 @@ func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (con
 		return "", errs.Wrap(ErrGetGroups, err)
 	}
 
-	if count == 0 {
+	if len(groups) == 0 {
 		return "", nil
 	}
 

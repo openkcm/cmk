@@ -9,6 +9,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -17,10 +18,13 @@ func (c *APIController) GetGroups(
 	ctx context.Context,
 	request cmkapi.GetGroupsRequestObject,
 ) (cmkapi.GetGroupsResponseObject, error) {
-	skip := ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip)
-	top := ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop)
+	pagination := repo.Pagination{
+		Skip:  ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip),
+		Top:   ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop),
+		Count: ptr.GetSafeDeref(request.Params.Count),
+	}
 
-	groups, total, err := c.Manager.Group.GetGroups(ctx, skip, top)
+	groups, total, err := c.Manager.Group.GetGroups(ctx, pagination)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +42,7 @@ func (c *APIController) GetGroups(
 		Value: values,
 	}
 
-	if ptr.GetSafeDeref(request.Params.Count) {
+	if pagination.Count {
 		response.Count = ptr.PointTo(total)
 	}
 

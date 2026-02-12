@@ -59,9 +59,8 @@ type KeyConfigManager struct {
 }
 
 type KeyConfigFilter struct {
-	Expand bool
-	Skip   int
-	Top    int
+	Expand     bool
+	Pagination repo.Pagination
 }
 
 func NewKeyConfigManager(
@@ -86,9 +85,7 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 	ctx context.Context,
 	filter KeyConfigFilter,
 ) ([]*model.KeyConfiguration, int, error) {
-	var res []*model.KeyConfiguration
-
-	query := getKeyConfigWithTotalsQuery().SetLimit(filter.Top).SetOffset(filter.Skip)
+	query := getKeyConfigWithTotalsQuery()
 	if filter.Expand {
 		query.Preload(repo.Preload{"AdminGroup"})
 	}
@@ -103,17 +100,7 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 		return []*model.KeyConfiguration{}, 0, nil
 	}
 
-	count, err := m.repository.List(
-		ctx,
-		model.KeyConfiguration{},
-		&res,
-		*query,
-	)
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrQueryKeyConfigurationList, err)
-	}
-
-	return res, count, nil
+	return repo.ListAndCount(ctx, m.repository, filter.Pagination, model.KeyConfiguration{}, query)
 }
 
 func (m *KeyConfigManager) PostKeyConfigurations(

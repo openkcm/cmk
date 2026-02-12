@@ -57,9 +57,9 @@ func TestRepo_List_ForInjection(t *testing.T) {
 
 		ck := repo.NewCompositeKey().Where("name", names[0]+attackString)
 		query := *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
-		count, err := r.List(ctx, testutils.TestModel{}, &res, query)
+		err := r.List(ctx, testutils.TestModel{}, &res, query)
 		assert.NoError(t, err)
-		assert.Equal(t, 0, count)
+		assert.Empty(t, res)
 		assert.Empty(t, res)
 	}
 
@@ -67,9 +67,9 @@ func TestRepo_List_ForInjection(t *testing.T) {
 	res := []*testutils.TestModel{}
 	ck := repo.NewCompositeKey().Where("name", names[0])
 	query := *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
-	count, err := r.List(ctx, testutils.TestModel{}, &res, query)
+	err := r.List(ctx, testutils.TestModel{}, &res, query)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, count)
+	assert.Len(t, res, 1)
 	assert.Len(t, res, 1)
 }
 

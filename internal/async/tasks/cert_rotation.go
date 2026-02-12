@@ -17,7 +17,7 @@ import (
 
 type CertUpdater interface {
 	GetCertificatesForRotation(ctx context.Context,
-	) ([]*model.Certificate, int, error)
+	) ([]*model.Certificate, error)
 	RotateCertificate(ctx context.Context, args model.RequestCertArgs) (*model.Certificate,
 		*rsa.PrivateKey, error)
 }
@@ -49,7 +49,7 @@ func (s *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
 			log.Debug(tenantCtx, "Rotating Certificates for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
 
-			certs, _, certErr := s.certClient.GetCertificatesForRotation(tenantCtx)
+			certs, certErr := s.certClient.GetCertificatesForRotation(tenantCtx)
 			if certErr != nil {
 				return s.handleErrorTask(tenantCtx, certErr)
 			}

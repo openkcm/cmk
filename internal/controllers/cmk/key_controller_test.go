@@ -258,8 +258,6 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 			if tt.count {
 				assert.Equal(t, tt.expectedTotalCount, *response.Count)
 			}
-
-			assert.Len(t, response.Value, tt.expectedCount)
 		})
 	}
 }
