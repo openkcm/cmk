@@ -150,6 +150,7 @@ func registerTasks(
 		tasks.NewKeystorePoolFiller(keyManager, r, cfg.KeystorePool),
 		tasks.NewWorkflowProcessor(workflowManager, r),
 		tasks.NewNotificationSender(notificationClient),
+		tasks.NewWorkflowExpiryProcessor(workflowManager, r),
 		tasks.NewWorkflowCleaner(workflowManager, r),
 	})
 

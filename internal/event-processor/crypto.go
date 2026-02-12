@@ -58,7 +58,7 @@ var (
 
 type Option func(manager *orbital.Manager)
 
-func WithMaxReconcileCount(n int64) Option {
+func WithMaxReconcileCount(n uint64) Option {
 	return func(m *orbital.Manager) {
 		m.Config.MaxReconcileCount = n
 	}
@@ -184,8 +184,8 @@ func (c *CryptoReconciler) CreateJob(ctx context.Context, event *model.Event) (o
 }
 
 // createTargets initializes the AMQP clients for each manager target defined in the orbital configuration.
-func createTargets(ctx context.Context, cfg *config.EventProcessor) (map[string]orbital.ManagerTarget, error) {
-	targets := make(map[string]orbital.ManagerTarget)
+func createTargets(ctx context.Context, cfg *config.EventProcessor) (map[string]orbital.TargetManager, error) {
+	targets := make(map[string]orbital.TargetManager)
 
 	options, err := getAMQPOptions(cfg)
 	if err != nil {
@@ -204,7 +204,7 @@ func createTargets(ctx context.Context, cfg *config.EventProcessor) (map[string]
 			return nil, fmt.Errorf("failed to create AMQP client for responder %s: %w", r.Region, err)
 		}
 
-		targets[r.Region] = orbital.ManagerTarget{
+		targets[r.Region] = orbital.TargetManager{
 			Client: client,
 		}
 	}
@@ -821,7 +821,7 @@ func initOrbitalSchema(ctx context.Context, cfg config.Database) (*sql.DB, error
 	return orbitalDB, nil
 }
 
-func getMaxReconcileCount(cfg *config.EventProcessor) int64 {
+func getMaxReconcileCount(cfg *config.EventProcessor) uint64 {
 	if cfg.MaxReconcileCount <= 0 {
 		return defaultMaxReconcileCount
 	}

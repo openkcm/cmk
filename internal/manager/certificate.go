@@ -69,65 +69,42 @@ func NewCertificateManager(
 	}
 }
 
-func (m *CertificateManager) GetAllCertificates(
-	ctx context.Context,
-	certificateID *uuid.UUID,
-) ([]*model.Certificate, int, error) {
-	var certificates []*model.Certificate
-
-	if certificateID != nil {
-		cert := &model.Certificate{ID: *certificateID}
-
-		_, err := m.repo.First(
-			ctx,
-			cert,
-			*repo.NewQuery())
-		if err != nil {
-			return nil, 0, errs.Wrap(ErrCertificateManager, err)
-		}
-
-		return []*model.Certificate{cert}, 1, nil
-	}
-
-	count, err := m.repo.List(ctx, &model.Certificate{}, &certificates, *repo.NewQuery())
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrCertificateManager, err)
-	}
-
-	return certificates, count, nil
-}
-
 func (m *CertificateManager) GetCertificate(
 	ctx context.Context,
 	certificateID *uuid.UUID,
 ) (*model.Certificate, error) {
-	certificates, _, err := m.GetAllCertificates(ctx, certificateID)
+	cert := &model.Certificate{ID: *certificateID}
+
+	_, err := m.repo.First(
+		ctx,
+		cert,
+		*repo.NewQuery())
 	if err != nil {
-		return nil, err
+		return nil, errs.Wrap(ErrCertificateManager, err)
 	}
 
-	return certificates[0], nil
+	return cert, nil
 }
 
 func (m *CertificateManager) GetCertificatesForRotation(ctx context.Context,
-) ([]*model.Certificate, int, error) {
+) ([]*model.Certificate, error) {
 	certificates := []*model.Certificate{}
 	rotateDate := time.Now().AddDate(0, 0, m.cfg.RotationThresholdDays)
 	compositeKey := repo.NewCompositeKey().Where(
 		repo.AutoRotateField, true).Where(repo.ExpirationDateField, rotateDate, repo.Lt)
 	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey))
 
-	count, err := m.repo.List(
+	err := m.repo.List(
 		ctx,
 		model.Certificate{},
 		&certificates,
 		*query,
 	)
 	if err != nil {
-		return nil, 0, errs.Wrap(ErrCertificateManager, err)
+		return nil, errs.Wrap(ErrCertificateManager, err)
 	}
 
-	return certificates, count, nil
+	return certificates, nil
 }
 
 func (m *CertificateManager) UpdateCertificate(ctx context.Context, certificateID *uuid.UUID,
@@ -162,10 +139,6 @@ func (m *CertificateManager) UpdateCertificate(ctx context.Context, certificateI
 	cert.AutoRotate = autoRotate
 
 	_, err = m.repo.Patch(ctx, cert, *repo.NewQuery().UpdateAll(true))
-	if err != nil {
-		return nil, errs.Wrap(ErrCertificateManager, err)
-	}
-
 	if err != nil {
 		return nil, errs.Wrap(ErrCertificateManager, err)
 	}
@@ -318,11 +291,9 @@ func (m *CertificateManager) IsTenantDefaultCertExist(ctx context.Context) (bool
 	compositeKey := repo.NewCompositeKey().Where(repo.PurposeField,
 		model.CertificatePurposeTenantDefault)
 
-	var certs []model.Certificate
-
-	count, err := m.repo.List(
+	count, err := m.repo.Count(
 		ctx,
-		model.Certificate{}, &certs, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey)),
+		&model.Certificate{}, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey)),
 	)
 	if err != nil {
 		return false, errs.Wrap(ErrDefaultTenantError, err)
@@ -357,19 +328,15 @@ func (m *CertificateManager) getCertificateByPurpose(
 ) (*model.Certificate, bool, error) {
 	compositeKey := repo.NewCompositeKey().Where(repo.PurposeField, purpose)
 
-	var cert *model.Certificate
+	cert := &model.Certificate{}
 
-	count, err := m.repo.List(ctx, model.Certificate{}, &cert, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+	_, err := m.repo.First(ctx, cert, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(
 		compositeKey)).Order(repo.OrderField{
 		Field:     repo.CreationDateField,
 		Direction: repo.Desc,
-	}).SetLimit(1))
-	if err != nil {
+	}))
+	if err != nil && !errors.Is(err, repo.ErrNotFound) {
 		return nil, false, errs.Wrap(ErrCertificateManager, err)
-	}
-
-	if count == 0 {
-		return nil, false, nil
 	}
 
 	return cert, true, nil

@@ -189,7 +189,7 @@ func initializeLoggerAndTelemetry(ctx context.Context, cfg *config.Config) error
 	return nil
 }
 
-func createAMQPClient(ctx context.Context, cfg *config.Config) (orbital.OperatorTarget, error) {
+func createAMQPClient(ctx context.Context, cfg *config.Config) (orbital.TargetOperator, error) {
 	opts := amqp.WithNoAuth()
 	if cfg.TenantManager.SecretRef.Type == commoncfg.MTLSSecretType {
 		opts = operator.WithMTLS(cfg.TenantManager.SecretRef.MTLS)
@@ -197,7 +197,7 @@ func createAMQPClient(ctx context.Context, cfg *config.Config) (orbital.Operator
 
 	target, err := createOperatorTarget(ctx, cfg, opts)
 	if err != nil {
-		return orbital.OperatorTarget{}, oops.In(logDomain).
+		return orbital.TargetOperator{}, oops.In(logDomain).
 			Wrapf(err, "Failed to create AMQP client")
 	}
 
@@ -205,7 +205,7 @@ func createAMQPClient(ctx context.Context, cfg *config.Config) (orbital.Operator
 }
 
 func createOperatorTarget(ctx context.Context, cfg *config.Config, opts amqp.ClientOption) (
-	orbital.OperatorTarget, error,
+	orbital.TargetOperator, error,
 ) {
 	amqpClient, err := amqp.NewClient(
 		ctx, codec.Proto{}, amqp.ConnectionInfo{
@@ -215,11 +215,11 @@ func createOperatorTarget(ctx context.Context, cfg *config.Config, opts amqp.Cli
 		}, opts,
 	)
 	if err != nil {
-		return orbital.OperatorTarget{}, oops.In(logDomain).
+		return orbital.TargetOperator{}, oops.In(logDomain).
 			Wrapf(err, "Failed to create AMQP client: %v", err)
 	}
 
-	return orbital.OperatorTarget{Client: amqpClient}, nil
+	return orbital.TargetOperator{Client: amqpClient}, nil
 }
 
 func validateAndGetClients(cfg *config.Config) (

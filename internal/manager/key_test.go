@@ -453,9 +453,8 @@ func (s *KeyManagerSuite) TestEditableCryptoData() {
 		key, err = s.km.Get(s.ctx, key.ID)
 		s.NoError(err)
 
-		cryptoAccessData := key.GetCryptoAccessData()
-		s.Equal(true, cryptoAccessData[regionEditable][manager.IsEditableCryptoAccess])
-		s.Equal(true, cryptoAccessData[regionNonEditable][manager.IsEditableCryptoAccess])
+		s.True(key.EditableRegions[regionEditable])
+		s.True(key.EditableRegions[regionNonEditable])
 	})
 
 	s.Run("Should be editable on pkey only on failed regions", func() {
@@ -488,9 +487,8 @@ func (s *KeyManagerSuite) TestEditableCryptoData() {
 		key, err = s.km.Get(s.ctx, key.ID)
 		s.NoError(err)
 
-		cryptoAccessData := key.GetCryptoAccessData()
-		s.Equal(true, cryptoAccessData[regionEditable][manager.IsEditableCryptoAccess])
-		s.Equal(false, cryptoAccessData[regionNonEditable][manager.IsEditableCryptoAccess])
+		s.True(key.EditableRegions[regionEditable])
+		s.False(key.EditableRegions[regionNonEditable])
 	})
 }
 
@@ -809,7 +807,7 @@ func (s *KeyManagerSuite) TestList() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			results, total, err := s.km.GetKeys(s.ctx, nil, tt.skip, tt.top)
+			results, total, err := s.km.GetKeys(s.ctx, nil, repo.Pagination{Skip: tt.skip, Top: tt.top, Count: true})
 
 			if tt.wantErr {
 				s.Error(err)
@@ -1390,8 +1388,7 @@ func (s *KeyManagerSuite) TestFillKeystorePool() {
 	s.NoError(err)
 
 	// Verify that keystore pool has been filled
-	keystorePool := &[]model.Keystore{}
-	count, err := s.repo.List(s.ctx, model.Keystore{}, keystorePool, *repo.NewQuery())
+	count, err := s.repo.Count(s.ctx, &model.Keystore{}, *repo.NewQuery())
 	s.NoError(err)
 
 	s.Equal(2, count)

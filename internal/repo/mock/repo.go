@@ -66,20 +66,20 @@ func (r *InMemoryRepository) List(
 	resource repo.Resource,
 	result any,
 	_ repo.Query,
-) (int, error) {
+) error {
 	tenantDB, err := r.WithTenant(ctx, resource)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
-	results, count := tenantDB.GetAll(result)
+	results, _ := tenantDB.GetAll(result)
 
 	err = assignList(result, results)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
-	return count, nil
+	return nil
 }
 
 // Delete removes the Resource

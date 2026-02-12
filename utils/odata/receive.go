@@ -16,6 +16,7 @@ type QueryOdataMapper struct {
 	filterSchema FilterSchema
 	skip         *int
 	top          *int
+	count        *bool
 
 	// The following are internal datas constructed from the parsed odata filter string.
 	// There is redundancy here. So that we have both quick look ups when getting values
@@ -57,10 +58,15 @@ func (mf *QueryOdataMapper) GetQuery(_ context.Context) *repo.Query {
 		}
 	}
 
-	skip := ptr.GetIntOrDefault(mf.skip, constants.DefaultSkip)
-	top := ptr.GetIntOrDefault(mf.top, constants.DefaultTop)
+	return query
+}
 
-	return query.SetOffset(skip).SetLimit(top)
+func (mf *QueryOdataMapper) GetPagination() repo.Pagination {
+	return repo.Pagination{
+		Skip:  ptr.GetIntOrDefault(mf.skip, constants.DefaultSkip),
+		Top:   ptr.GetIntOrDefault(mf.top, constants.DefaultTop),
+		Count: ptr.GetSafeDeref(mf.count),
+	}
 }
 
 func (mf *QueryOdataMapper) GetString(field repo.QueryField) (string, error) {
@@ -110,9 +116,10 @@ func (mf *QueryOdataMapper) GetUUID(field repo.QueryField) (uuid.UUID, error) {
 // Non QueryMapper interface functions:
 
 // SetPaging is used in the controller to set the paging.
-func (mf *QueryOdataMapper) SetPaging(skip, top *int) {
+func (mf *QueryOdataMapper) SetPaging(skip, top *int, count *bool) {
 	mf.skip = skip
 	mf.top = top
+	mf.count = count
 }
 
 // ParseFilter is used in the controller to parse the http odata parameter string.
@@ -148,8 +155,8 @@ func (mf *QueryOdataMapper) ParseFilter(param *string) error {
 	return nil
 }
 
-func (mf *QueryOdataMapper) GetPaging() (*int, *int) {
-	return mf.skip, mf.top
+func (mf *QueryOdataMapper) GetPaging() (*int, *int, *bool) {
+	return mf.skip, mf.top, mf.count
 }
 
 // setFieldValue sets each parsed filter field and value into the internal data.

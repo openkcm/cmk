@@ -95,7 +95,12 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_AddKeyVersion() {
 		s.NoError(err)
 		s.NotNil(resultKeyVersion)
 		s.Equal(keyVersion.Version, resultKeyVersion.Version)
-		oldKeyVersions, _, err := s.kvm.GetKeyVersions(s.ctx, key.ID, constants.DefaultSkip, constants.DefaultTop)
+		pagination := repo.Pagination{
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
+		}
+		oldKeyVersions, _, err := s.kvm.GetKeyVersions(s.ctx, key.ID, pagination)
 		s.NoError(err)
 
 		for _, keyVersion := range oldKeyVersions {
@@ -165,7 +170,12 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 		})
 		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key)
 
-		result, _, err := s.kvm.GetKeyVersions(s.ctx, key.ID, constants.DefaultSkip, constants.DefaultTop)
+		pagination := repo.Pagination{
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
+		}
+		result, _, err := s.kvm.GetKeyVersions(s.ctx, key.ID, pagination)
 
 		s.NoError(err)
 		s.NotNil(result)

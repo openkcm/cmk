@@ -125,8 +125,12 @@ func TestGetKeyConfigurations(t *testing.T) {
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
 		)
-		filter := manager.KeyConfigFilter{Skip: constants.DefaultSkip, Top: constants.DefaultTop}
-		actual, total, err := m.GetKeyConfigurations(ctxWithGroups, filter)
+		pagination := repo.Pagination{
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
+		}
+		actual, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Pagination: pagination})
 		assert.NoError(t, err)
 		assert.Equal(t, len(expected), total)
 
@@ -140,7 +144,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 		}
 	})
 
-	t.Run("Should get key configuration - Auditor read", func(t *testing.T) {
+	t.Run("Should get key configurations - Auditor read", func(t *testing.T) {
 		testAuditorGroupIAM := "KMS_test_auditor_group"
 		auditorGroup := testutils.NewGroup(func(g *model.Group) {
 			g.IAMIdentifier = testAuditorGroupIAM
@@ -153,8 +157,12 @@ func TestGetKeyConfigurations(t *testing.T) {
 			[]string{testAuditorGroupIAM, "some_other_group"},
 		)
 		testutils.CreateTestEntities(ctx, t, r, auditorGroup)
-		filter := manager.KeyConfigFilter{Skip: constants.DefaultSkip, Top: constants.DefaultTop}
-		actual, total, err := m.GetKeyConfigurations(ctx, filter)
+		pagination := repo.Pagination{
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
+		}
+		actual, total, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Pagination: pagination})
 		assert.NoError(t, err)
 		assert.NotEqual(t, 0, total)
 		assert.NotEmpty(t, actual)
@@ -166,8 +174,11 @@ func TestGetKeyConfigurations(t *testing.T) {
 			"example-user",
 			[]string{"group-no-access", "some_other_group"},
 		)
-		filter := manager.KeyConfigFilter{Skip: constants.DefaultSkip, Top: constants.DefaultTop}
-		_, total, err := m.GetKeyConfigurations(ctxWithGroups, filter)
+		pagination := repo.Pagination{
+			Skip: constants.DefaultSkip,
+			Top:  constants.DefaultTop,
+		}
+		_, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Pagination: pagination})
 		assert.NoError(t, err)
 		assert.Equal(t, 0, total)
 	})
@@ -178,8 +189,11 @@ func TestGetKeyConfigurations(t *testing.T) {
 			"example-user",
 			[]string{},
 		)
-		filter := manager.KeyConfigFilter{Skip: constants.DefaultSkip, Top: constants.DefaultTop}
-		_, total, err := m.GetKeyConfigurations(ctxWithGroups, filter)
+		pagination := repo.Pagination{
+			Skip: constants.DefaultSkip,
+			Top:  constants.DefaultTop,
+		}
+		_, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Pagination: pagination})
 		assert.NoError(t, err)
 		assert.Equal(t, 0, total)
 	})
@@ -202,8 +216,12 @@ func TestGetKeyConfigurations(t *testing.T) {
 			"example-user",
 			[]string{adminGroupName2, "some_other_group"},
 		)
-		filter := manager.KeyConfigFilter{Skip: constants.DefaultSkip, Top: constants.DefaultTop}
-		_, total, err := m.GetKeyConfigurations(ctxWithGroups, filter)
+		pagination := repo.Pagination{
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
+		}
+		_, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Pagination: pagination})
 		assert.NoError(t, err)
 		assert.Equal(t, 1, total)
 	})
@@ -214,9 +232,48 @@ func TestGetKeyConfigurations(t *testing.T) {
 		forced.Register()
 		defer forced.Unregister()
 
-		filter := manager.KeyConfigFilter{Skip: constants.DefaultSkip, Top: constants.DefaultTop}
-		_, _, err := m.GetKeyConfigurations(t.Context(), filter)
+		pagination := repo.Pagination{
+			Skip: constants.DefaultSkip,
+			Top:  constants.DefaultTop,
+		}
+		_, _, err := m.GetKeyConfigurations(t.Context(), manager.KeyConfigFilter{Pagination: pagination})
 		assert.Error(t, err)
+	})
+
+	t.Run("Should get user keyconfig count", func(t *testing.T) {
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+		groupA := testutils.NewGroup(func(_ *model.Group) {})
+		groupB := testutils.NewGroup(func(_ *model.Group) {})
+		testutils.CreateTestEntities(ctx, t, r, groupA, groupB)
+		kcCount := 10
+		for i := range 2 {
+			var g *model.Group
+			if i%2 == 1 {
+				g = groupA
+			} else {
+				g = groupB
+			}
+
+			for range kcCount {
+				kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+					kc.AdminGroup = *g
+					kc.AdminGroupID = g.ID
+				})
+				testutils.CreateTestEntities(ctx, t, r, kc)
+				for range 2 {
+					k := testutils.NewKey(func(k *model.Key) {
+						k.KeyConfigurationID = kc.ID
+					})
+					testutils.CreateTestEntities(ctx, t, r, k)
+				}
+			}
+		}
+
+		ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{groupA.IAMIdentifier})
+		_, count, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Pagination: repo.Pagination{Count: true}})
+		assert.NoError(t, err)
+		assert.Equal(t, kcCount, count)
 	})
 }
 
@@ -315,7 +372,11 @@ func TestKeyConfigurationsWithGroupID(t *testing.T) {
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	t.Run("Should get key configuration and group", func(t *testing.T) {
-		filter := manager.KeyConfigFilter{Skip: constants.DefaultSkip, Top: constants.DefaultTop}
+		pagination := repo.Pagination{
+			Skip: constants.DefaultSkip,
+			Top:  constants.DefaultTop,
+		}
+		filter := manager.KeyConfigFilter{Pagination: pagination}
 		actual, _, err := m.GetKeyConfigurations(ctx, filter)
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfig.AdminGroupID, actual[0].AdminGroupID)
@@ -545,6 +606,26 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfigWithAdminGroup.ID, actual.ID)
 		assert.Equal(t, keyConfigWithAdminGroup.Name, actual.Name)
+	})
+
+	t.Run("Should allow read access for auditors on non managed keyconfig", func(t *testing.T) {
+		testAuditorGroupIAM := "KMS_test_auditor_group"
+		auditorGroup := testutils.NewGroup(func(g *model.Group) {
+			g.IAMIdentifier = testAuditorGroupIAM
+			g.Role = constants.TenantAuditorRole
+		})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+
+		ctx := testutils.InjectClientDataIntoContext(
+			ctx,
+			"example-user",
+			[]string{testAuditorGroupIAM, "some_other_group"},
+		)
+		testutils.CreateTestEntities(ctx, t, r, auditorGroup, keyConfig)
+		actual, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, keyConfig.ID, actual.ID)
+		assert.Equal(t, keyConfig.Name, actual.Name)
 	})
 
 	t.Run("Should deny access when user does not belong to admin group", func(t *testing.T) {
