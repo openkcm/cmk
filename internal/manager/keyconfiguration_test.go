@@ -140,7 +140,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 		}
 	})
 
-	t.Run("Should get key configuration - Auditor read", func(t *testing.T) {
+	t.Run("Should get key configurations - Auditor read", func(t *testing.T) {
 		testAuditorGroupIAM := "KMS_test_auditor_group"
 		auditorGroup := testutils.NewGroup(func(g *model.Group) {
 			g.IAMIdentifier = testAuditorGroupIAM
@@ -526,6 +526,26 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfigWithAdminGroup.ID, actual.ID)
 		assert.Equal(t, keyConfigWithAdminGroup.Name, actual.Name)
+	})
+
+	t.Run("Should allow read access for auditors on non managed keyconfig", func(t *testing.T) {
+		testAuditorGroupIAM := "KMS_test_auditor_group"
+		auditorGroup := testutils.NewGroup(func(g *model.Group) {
+			g.IAMIdentifier = testAuditorGroupIAM
+			g.Role = constants.TenantAuditorRole
+		})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+
+		ctx := testutils.InjectClientDataIntoContext(
+			ctx,
+			"example-user",
+			[]string{testAuditorGroupIAM, "some_other_group"},
+		)
+		testutils.CreateTestEntities(ctx, t, r, auditorGroup, keyConfig)
+		actual, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, keyConfig.ID, actual.ID)
+		assert.Equal(t, keyConfig.Name, actual.Name)
 	})
 
 	t.Run("Should deny access when user does not belong to admin group", func(t *testing.T) {
