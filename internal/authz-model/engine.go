@@ -184,9 +184,7 @@ func (am *Engine) loadAllowListInternal(ctx context.Context, tenantID string) er
 func listGroups(ctx context.Context, amrepo repo.Repo) ([]model.Group, error) {
 	var groups []model.Group
 
-	_, err := amrepo.List(
-		ctx, &model.Group{}, &groups, *repo.NewQuery(),
-	)
+	err := amrepo.List(ctx, &model.Group{}, &groups, *repo.NewQuery())
 	if err != nil {
 		return nil, errs.Wrap(ErrLoadAuthzAllowList, err)
 	}

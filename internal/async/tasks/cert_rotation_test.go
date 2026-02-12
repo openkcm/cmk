@@ -18,8 +18,8 @@ import (
 type CertUpdaterMock struct{}
 
 func (s *CertUpdaterMock) GetCertificatesForRotation(_ context.Context,
-) ([]*model.Certificate, int, error) {
-	return []*model.Certificate{}, 0, nil
+) ([]*model.Certificate, error) {
+	return []*model.Certificate{}, nil
 }
 
 func (s *CertUpdaterMock) RotateCertificate(_ context.Context,

@@ -58,11 +58,7 @@ func TestGetGroups(t *testing.T) {
 		_, err := manager.CreateGroup(ctx, group)
 		assert.NoError(t, err)
 
-		groups, total, err := manager.GetGroups(
-			ctx,
-			constants.DefaultSkip,
-			constants.DefaultTop,
-		)
+		groups, total, err := manager.GetGroups(ctx, repo.Pagination{Count: true})
 		assert.NoError(t, err)
 		assert.Equal(t, groups[0].ID, group.ID)
 		assert.Equal(t, groups[0].IAMIdentifier, group.IAMIdentifier)

@@ -21,7 +21,7 @@ type TransactionFunc func(context.Context) error
 // Repo defines an interface for Repository operations.
 type Repo interface {
 	Create(ctx context.Context, resource Resource) error
-	List(ctx context.Context, resource Resource, result any, query Query) (int, error)
+	List(ctx context.Context, resource Resource, result any, query Query) error
 	Delete(ctx context.Context, resource Resource, query Query) (bool, error)
 	First(ctx context.Context, resource Resource, query Query) (bool, error)
 	Patch(ctx context.Context, resource Resource, query Query) (bool, error)
@@ -76,6 +76,12 @@ type LoadEntity interface {
 		model.KeyConfiguration
 }
 
+type Pagination struct {
+	Skip  int
+	Top   int
+	Count bool
+}
+
 type Opt[T LoadEntity] func(*T) error
 
 // ToSharedModel is a generic function used to lazy load model values that are not stored in the database.
@@ -93,18 +99,15 @@ func ToSharedModel[T LoadEntity](v *T, opts ...Opt[T]) (*T, error) {
 }
 
 func HasConnectedSystems(ctx context.Context, r Repo, keyConfigID uuid.UUID) (bool, error) {
-	var sys []*model.System
-
-	count, err := r.List(
+	count, err := r.Count(
 		ctx,
-		model.System{},
-		&sys,
+		&model.System{},
 		*NewQuery().Where(
 			NewCompositeKeyGroup(
 				NewCompositeKey().Where(
 					KeyConfigIDField, keyConfigID),
 			),
-		).SetLimit(0),
+		),
 	)
 	if err != nil {
 		return true, err
@@ -121,7 +124,7 @@ func GetSystemByIDWithProperties(ctx context.Context, r Repo, systemID uuid.UUID
 		),
 	)
 
-	systems, _, err := ListSystemWithProperties(ctx, r, query)
+	systems, _, err := ListAndCountSystemWithProperties(ctx, r, Pagination{}, query)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetResource, err)
 	}
@@ -134,10 +137,16 @@ func GetSystemByIDWithProperties(ctx context.Context, r Repo, systemID uuid.UUID
 }
 
 //nolint:funlen
-func ListSystemWithProperties(ctx context.Context, r Repo, query *Query) ([]*model.System, int, error) {
+func ListAndCountSystemWithProperties(
+	ctx context.Context,
+	r Repo,
+	pagination Pagination,
+	query *Query,
+) ([]*model.System, int, error) {
 	var systems []*model.System
+	var count int
 
-	count, err := r.List(ctx, model.System{}, &systems, *query)
+	systems, count, err := ListAndCount(ctx, r, pagination, model.System{}, query)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -238,7 +247,7 @@ func ProcessInBatchWithOptions[T Resource](
 
 		query := baseQuery.SetLimit(batchSize).SetOffset(offset)
 
-		count, err := repo.List(ctx, *new(T), &items, *query)
+		err := repo.List(ctx, *new(T), &items, *query)
 		if err != nil {
 			return err
 		}
@@ -259,6 +268,10 @@ func ProcessInBatchWithOptions[T Resource](
 			offset += batchSize
 		}
 
+		count, err := repo.Count(ctx, *new(T), *query)
+		if err != nil {
+			return err
+		}
 		// Stop if we've processed all items (only relevant in non-delete mode)
 		if !options.DeleteMode && offset >= count {
 			break
@@ -283,6 +296,41 @@ func ProcessInBatch[T Resource](
 	processFunc func([]*T) error,
 ) error {
 	return ProcessInBatchWithOptions(ctx, repo, baseQuery, batchSize, BatchProcessOptions{}, processFunc)
+}
+
+// ListAndCount lists items paginated and returns total count of elements
+// Total count is only returned if pagination.count is true
+func ListAndCount[T Resource](
+	ctx context.Context,
+	r Repo,
+	pagination Pagination,
+	item T,
+	query *Query,
+) ([]*T, int, error) {
+	var res []*T
+	resource := *new(T)
+	var top int
+
+	if pagination.Top == 0 {
+		top = DefaultLimit
+	} else {
+		top = pagination.Top
+	}
+
+	query = query.SetLimit(top).SetOffset(pagination.Skip)
+	err := r.List(ctx, resource, &res, *query)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrListingItems, err)
+	}
+	if !pagination.Count {
+		return res, 0, nil
+	}
+
+	count, err := r.Count(ctx, resource, *query)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrCountingItem, err)
+	}
+	return res, count, nil
 }
 
 func GetTenant(ctx context.Context, r Repo) (*model.Tenant, error) {

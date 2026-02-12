@@ -27,9 +27,7 @@ func (c *Pool) Count(ctx context.Context) (int, error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	ks := &model.Keystore{}
-
-	count, err := c.repo.List(ctx, &model.Keystore{}, ks, *repo.NewQuery().SetLimit(0))
+	count, err := c.repo.Count(ctx, &model.Keystore{}, *repo.NewQuery())
 	if err != nil {
 		return 0, err
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -16,10 +17,13 @@ import (
 func (c *APIController) GetKeyLabels(ctx context.Context,
 	r cmkapi.GetKeyLabelsRequestObject,
 ) (cmkapi.GetKeyLabelsResponseObject, error) {
-	skip := ptr.GetIntOrDefault(r.Params.Skip, constants.DefaultSkip)
-	top := ptr.GetIntOrDefault(r.Params.Top, constants.DefaultTop)
+	pagination := repo.Pagination{
+		Skip:  ptr.GetIntOrDefault(r.Params.Skip, constants.DefaultSkip),
+		Top:   ptr.GetIntOrDefault(r.Params.Top, constants.DefaultTop),
+		Count: ptr.GetSafeDeref(r.Params.Count),
+	}
 
-	labelsDBModels, total, err := c.Manager.Labels.GetKeyLabels(ctx, r.KeyID, skip, top)
+	labelsDBModels, total, err := c.Manager.Labels.GetKeyLabels(ctx, r.KeyID, pagination)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetKeyLabels, err)
 	}

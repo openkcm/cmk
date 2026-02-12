@@ -178,41 +178,27 @@ func (r *ResourceRepository) List(
 	resource repo.Resource,
 	result any,
 	query repo.Query,
-) (int, error) {
-	var count int64
-
-	err := r.WithTenant(
+) error {
+	return r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
-			// For safety, we create 2 separate queries for count and find operations
-			dbFind := applySelectQuery(tx.Model(result), query)
-			dbFind, err := applyQuery(dbFind, query)
+			tx = tx.Debug()
+			db, err := applyQuery(tx.Model(result), query)
 			if err != nil {
 				return err
-			}
-
-			dbCount, err := applyQuery(tx.Model(result), query)
-			if err != nil {
-				return err
-			}
-
-			dbCount = prepareCountQuery(dbCount, query)
-			dbCount = dbCount.Count(&count)
-			if dbCount.Error != nil {
-				return dbCount.Error
 			}
 
 			for _, order := range query.OrderFields {
 				switch order.Direction {
 				case repo.Desc:
-					dbFind = dbFind.Order(order.Field + " desc")
+					db = db.Order(order.Field + " desc")
 				case repo.Asc:
-					dbFind = dbFind.Order(order.Field + " asc")
+					db = db.Order(order.Field + " asc")
 				default:
 					return ErrUnsupportedOrderDirective
 				}
 			}
 
-			res := applyPagination(dbFind, query).Find(result)
+			res := applyPagination(db, query).Find(result)
 			if res.Error != nil {
 				return res.Error
 			}
@@ -220,11 +206,6 @@ func (r *ResourceRepository) List(
 			return nil
 		},
 	)
-	if err != nil {
-		return 0, err
-	}
-
-	return int(count), nil
 }
 
 // Delete removes the Resource.
@@ -278,16 +259,14 @@ func (r *ResourceRepository) First(
 
 	err := r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
-			dbQuery := applySelectQuery(tx.Model(resource), query)
-
-			db, err := applyQuery(dbQuery, query)
+			db, err := applyQuery(tx.Model(resource), query)
 			if err != nil {
 				return err
 			}
 
-			dbQuery = applyPagination(db, query)
+			db = applyPagination(db, query)
 
-			res = dbQuery.First(resource)
+			res = db.First(resource)
 
 			if res.Error != nil {
 				log.Error(ctx, "error finding the resource", res.Error)
@@ -422,28 +401,6 @@ func (r *ResourceRepository) getSchemaFromCtx(ctx context.Context) (string, erro
 	return existingTenant.SchemaName, nil
 }
 
-func applySelectQuery(db *gorm.DB, query repo.Query) *gorm.DB {
-	if len(query.SelectFields) > 0 {
-		fields := make([]string, 0, len(query.SelectFields))
-
-		for _, f := range query.SelectFields {
-			fields = append(fields, f.SelectStatement())
-		}
-
-		s := strings.Join(fields, ",")
-		db = db.Select(s)
-
-		if len(query.Group) > 0 {
-			sel := strings.Join(query.Group, ",")
-			db = db.Group(sel)
-		}
-	}
-
-	db.Statement.Distinct = query.DistinctOption.Enabled
-
-	return db
-}
-
 // apply update operations on the db action
 //
 //nolint:unqueryvet
@@ -461,7 +418,25 @@ func applyUpdateQuery(db *gorm.DB, query repo.Query) *gorm.DB {
 }
 
 // applyQuery applies the query to the database.
+//
+//nolint:cyclop
 func applyQuery(db *gorm.DB, query repo.Query) (*gorm.DB, error) {
+	if len(query.SelectFields) > 0 {
+		fields := make([]string, 0, len(query.SelectFields))
+
+		for _, f := range query.SelectFields {
+			fields = append(fields, f.SelectStatement())
+		}
+
+		s := strings.Join(fields, ",")
+		db = db.Select(s)
+
+		if len(query.Group) > 0 {
+			sel := strings.Join(query.Group, ",")
+			db = db.Group(sel)
+		}
+	}
+
 	if len(query.Joins) > 0 {
 		for _, join := range query.Joins {
 			db = db.Joins(join.JoinStatement())
@@ -507,18 +482,6 @@ func applyPagination(db *gorm.DB, query repo.Query) *gorm.DB {
 	}
 
 	return db.Offset(query.Offset).Limit(query.Limit)
-}
-
-func prepareCountQuery(db *gorm.DB, query repo.Query) *gorm.DB {
-	if len(db.Statement.Selects) == 0 {
-		expr := "COUNT(*)"
-		if query.DistinctOption.Enabled {
-			expr = fmt.Sprintf("COUNT(DISTINCT %s)", query.DistinctOption.CountOn)
-		}
-		db.Statement.Selects = append(db.Statement.Selects, expr)
-	}
-
-	return db
 }
 
 // handleCompositeKey applies the composite key to the query.

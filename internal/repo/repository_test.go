@@ -212,8 +212,7 @@ func TestProcessInBatchWithOptionsDeleteMode(t *testing.T) {
 			" always processes one extra iteration to detect there are no more items.")
 
 		// Verify all items were actually deleted
-		var remainingItems []*testutils.TestModel
-		count, err := r.List(ctx, testutils.TestModel{}, &remainingItems, *baseQuery)
+		count, err := r.Count(ctx, &testutils.TestModel{}, *baseQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, count, "All items should be deleted")
 	})

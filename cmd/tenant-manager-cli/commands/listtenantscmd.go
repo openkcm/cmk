@@ -22,7 +22,7 @@ func (f *CommandFactory) NewListTenantsCmd(ctx context.Context) *cobra.Command {
 
 			var tenants []model.Tenant
 
-			_, err := f.r.List(
+			err := f.r.List(
 				ctx, &model.Tenant{}, &tenants, *repo.NewQuery(),
 			)
 			if err != nil {

@@ -168,8 +168,9 @@ func TestGetAllSystems(t *testing.T) {
 	t.Run("Should get all systems", func(t *testing.T) {
 		expected := []*model.System{system1, system2}
 		filter := manager.SystemFilter{
-			Skip: constants.DefaultSkip,
-			Top:  constants.DefaultTop,
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.NoError(t, err)
@@ -187,8 +188,9 @@ func TestGetAllSystems(t *testing.T) {
 		)
 
 		filter := manager.SystemFilter{
-			Skip: constants.DefaultSkip,
-			Top:  constants.DefaultTop,
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.Nil(t, allSystems)
@@ -204,6 +206,7 @@ func TestGetAllSystems(t *testing.T) {
 			KeyConfigID: keyConfig.ID,
 			Skip:        constants.DefaultSkip,
 			Top:         constants.DefaultTop,
+			Count:       true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.NoError(t, err)
@@ -224,6 +227,7 @@ func TestGetAllSystems(t *testing.T) {
 			KeyConfigID: keyConfig.ID,
 			Skip:        constants.DefaultSkip,
 			Top:         constants.DefaultTop,
+			Count:       true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.Nil(t, allSystems)
@@ -260,6 +264,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 			Region: "Region1",
 			Skip:   constants.DefaultSkip,
 			Top:    constants.DefaultTop,
+			Count:  true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 
@@ -271,9 +276,10 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 
 	t.Run("Should get all systems filtered by type", func(t *testing.T) {
 		filter := manager.SystemFilter{
-			Type: "Type1",
-			Skip: constants.DefaultSkip,
-			Top:  constants.DefaultTop,
+			Type:  "Type1",
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 
@@ -288,6 +294,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 			Region: "RegionInvalid",
 			Skip:   constants.DefaultSkip,
 			Top:    constants.DefaultTop,
+			Count:  true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.NoError(t, err)
@@ -297,9 +304,10 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 	)
 	t.Run("Should fail to get systems filtered by type", func(t *testing.T) {
 		filter := manager.SystemFilter{
-			Type: "TypeInvalid",
-			Skip: constants.DefaultSkip,
-			Top:  constants.DefaultTop,
+			Type:  "TypeInvalid",
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.NoError(t, err)
@@ -1280,10 +1288,9 @@ func TestRefreshSystems(t *testing.T) {
 		// Act
 		m.RefreshSystemsData(ctx)
 		// Verify
-		var allSystems []*model.System
 
-		count, err := r.List(
-			ctx, &model.System{}, &allSystems, *repo.NewQuery().Where(
+		count, err := r.Count(
+			ctx, &model.System{}, *repo.NewQuery().Where(
 				repo.NewCompositeKeyGroup(
 					repo.NewCompositeKey().
 						Where(
@@ -1314,9 +1321,8 @@ func TestRefreshSystems(t *testing.T) {
 		// Act
 		m.RefreshSystemsData(ctx)
 		// Verify
-		var allSystems []*model.System
 
-		count, err := r.List(ctx, &model.System{}, &allSystems, *repo.NewQuery())
+		count, err := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, 0, count)
 	},
@@ -1363,9 +1369,7 @@ func TestRefreshSystems(t *testing.T) {
 		)
 		m.RefreshSystemsData(ctx)
 
-		var allSystems []*model.System
-
-		count, err := r.List(ctx, &model.System{}, &allSystems, *repo.NewQuery())
+		count, err := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, 1, count)
 
@@ -1391,8 +1395,7 @@ func TestRefreshSystems(t *testing.T) {
 		// Prepare
 		testutils.CreateTestEntities(ctx, t, r, existingSystem)
 
-		existingSystems := []*model.System{}
-		existingSystemsCount, _ := r.List(ctx, &model.System{}, &existingSystems, *repo.NewQuery())
+		existingSystemsCount, _ := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		registerSystem(
 			ctx, t, systemService, existingSystem.Identifier, existingSystem.Region, existingSystem.Type,
 			func(req *systemgrpc.RegisterSystemRequest) {
@@ -1411,11 +1414,13 @@ func TestRefreshSystems(t *testing.T) {
 		)
 		m.RefreshSystemsData(ctx)
 
-		var allSystems []*model.System
-
-		count, err := r.List(ctx, &model.System{}, &allSystems, *repo.NewQuery())
+		count, err := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, existingSystemsCount+1, count)
+
+		var allSystems []*model.System
+		err = r.List(ctx, &model.System{}, &allSystems, *repo.NewQuery())
+		assert.NoError(t, err)
 
 		for _, sys := range allSystems {
 			if sys.Identifier == existingSystem.Identifier {

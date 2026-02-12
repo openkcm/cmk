@@ -61,8 +61,7 @@ type Workflow interface {
 		ctx context.Context,
 		id uuid.UUID,
 		decisionMade bool,
-		skip int,
-		top int,
+		pagination repo.Pagination,
 	) ([]*model.WorkflowApprover, int, error)
 	GetWorkflowAvailableTransitions(ctx context.Context, workflow *model.Workflow) ([]wf.Transition, error)
 	GetWorkflowApprovalSummary(ctx context.Context, workflow *model.Workflow) (*wf.ApprovalSummary, error)
@@ -121,14 +120,16 @@ type WorkflowFilter struct {
 	ActionType             string
 	Skip                   int
 	Top                    int
+	Count                  bool
 }
 
 var _ repo.QueryMapper = (*WorkflowFilter)(nil) // Assert interface impl
 
 func NewWorkflowFilterFromOData(queryMapper odata.QueryOdataMapper) (*WorkflowFilter, error) {
-	skipPtr, topPtr := queryMapper.GetPaging()
+	skipPtr, topPtr, countPtr := queryMapper.GetPaging()
 	skip := ptr.GetIntOrDefault(skipPtr, constants.DefaultSkip)
 	top := ptr.GetIntOrDefault(topPtr, constants.DefaultTop)
+	count := ptr.GetSafeDeref(countPtr)
 
 	state, err := queryMapper.GetString(repo.StateField)
 	if err != nil {
@@ -169,6 +170,7 @@ func NewWorkflowFilterFromOData(queryMapper odata.QueryOdataMapper) (*WorkflowFi
 		ActionType:             actionType,
 		Skip:                   skip,
 		Top:                    top,
+		Count:                  count,
 	}, nil
 }
 
@@ -180,7 +182,7 @@ var approverJoinCond = repo.JoinCondition{
 }
 
 func (w WorkflowFilter) GetQuery(_ context.Context) *repo.Query {
-	query := repo.NewQuery().SetLimit(w.Top).SetOffset(w.Skip)
+	query := repo.NewQuery()
 
 	ck := repo.NewCompositeKey()
 
@@ -233,6 +235,14 @@ func (w WorkflowFilter) GetUUID(field repo.QueryField) (uuid.UUID, error) {
 	return id, nil
 }
 
+func (w WorkflowFilter) GetPagination() repo.Pagination {
+	return repo.Pagination{
+		Skip:  w.Skip,
+		Top:   w.Top,
+		Count: w.Count,
+	}
+}
+
 func (w WorkflowFilter) GetString(field repo.QueryField) (string, error) {
 	var val string
 
@@ -258,7 +268,8 @@ func (w *WorkflowManager) GetWorkflows(
 	ctx context.Context,
 	params repo.QueryMapper,
 ) ([]*model.Workflow, int, error) {
-	return w.getWorkflows(ctx, params.GetQuery(ctx))
+	pagination := params.GetPagination()
+	return w.getWorkflows(ctx, pagination, params.GetQuery(ctx))
 }
 
 func (w *WorkflowManager) WorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
@@ -349,12 +360,12 @@ func (w *WorkflowManager) GetWorkflowByID(ctx context.Context, workflowID uuid.U
 	ck = ck.Where(repo.IDField, workflowID)
 	query = query.Where(repo.NewCompositeKeyGroup(ck))
 
-	workflows, count, err := w.getWorkflows(ctx, query)
+	workflows, _, err := w.getWorkflows(ctx, repo.Pagination{}, query)
 	if err != nil {
 		return nil, err
 	}
 
-	if count == 0 {
+	if len(workflows) == 0 {
 		return nil, errs.Wrap(ErrWorkflowNotAllowed, err)
 	}
 
@@ -367,15 +378,12 @@ func (w *WorkflowManager) ListWorkflowApprovers(
 	ctx context.Context,
 	id uuid.UUID,
 	decisionMade bool,
-	skip int,
-	top int,
+	pagination repo.Pagination,
 ) ([]*model.WorkflowApprover, int, error) {
 	_, err := w.GetWorkflowByID(ctx, id)
 	if err != nil {
 		return nil, 0, err
 	}
-
-	var approvers []*model.WorkflowApprover
 
 	ck := repo.NewCompositeKey().
 		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), id)
@@ -384,19 +392,9 @@ func (w *WorkflowManager) ListWorkflowApprovers(
 		ck = ck.Where(repo.ApprovedField, repo.NotNull)
 	}
 
-	count, err := w.repo.List(
-		ctx,
-		model.WorkflowApprover{},
-		&approvers,
-		*repo.NewQuery().
-			Where(repo.NewCompositeKeyGroup(ck)).
-			SetLimit(top).SetOffset(skip),
-	)
-	if err != nil {
-		return nil, 0, errs.Wrap(wf.ErrListApprovers, err)
-	}
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
 
-	return approvers, count, nil
+	return repo.ListAndCount(ctx, w.repo, pagination, model.WorkflowApprover{}, query)
 }
 
 func (w *WorkflowManager) AutoAssignApprovers(
@@ -665,6 +663,7 @@ func (w *WorkflowManager) isSystemConnect(workflow *model.Workflow) bool {
 // This must not be used in conjunction with preloading approvers.
 func (w *WorkflowManager) getWorkflows(
 	ctx context.Context,
+	pagination repo.Pagination,
 	query *repo.Query,
 ) ([]*model.Workflow, int, error) {
 	isGroupFiltered, err := w.userManager.NeedsGroupFiltering(ctx, authz.ActionRead, authz.ResourceTypeWorkFlow)
@@ -687,16 +686,26 @@ func (w *WorkflowManager) getWorkflows(
 			Where(repo.UserIDField, iamIdentifier)
 		orCK.IsStrict = false
 
-		distinctOption := repo.DistinctOption{
-			Enabled: true,
-			CountOn: repo.IDField,
-		}
-		query = query.Where(repo.NewCompositeKeyGroup(orCK)).Distinct(distinctOption)
+		query = query.Where(repo.NewCompositeKeyGroup(orCK))
 	}
+
+	query = query.SetLimit(pagination.Top).SetOffset(pagination.Skip)
 
 	workflows := []*model.Workflow{}
 
-	count, err := w.repo.List(ctx, model.Workflow{}, &workflows, *query)
+	err = w.repo.List(ctx, model.Workflow{}, &workflows, *query)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
+	}
+
+	count, err := w.repo.Count(
+		ctx,
+		&model.Workflow{},
+		*query.Select(repo.NewSelectField(repo.IDField, repo.QueryFunction{
+			Function: repo.CountFunc,
+			Distinct: true,
+		})),
+	)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 	}
@@ -786,14 +795,12 @@ func (w *WorkflowManager) checkOngoingWorkflowForArtifact(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (bool, error) {
-	workflows := []*model.Workflow{}
-
 	ck := repo.NewCompositeKey().
 		Where(fmt.Sprintf("%s_%s", repo.ArtifactField, repo.TypeField), workflow.ArtifactType).
 		Where(fmt.Sprintf("%s_%s", repo.ArtifactField, repo.IDField), workflow.ArtifactID).
 		Where(repo.StateField, wf.NonTerminalStates)
 
-	count, err := w.repo.List(ctx, model.Workflow{}, &workflows, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
+	count, err := w.repo.Count(ctx, &model.Workflow{}, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 	if err != nil {
 		return false, errs.Wrap(ErrCheckOngoingWorkflow, err)
 	}
