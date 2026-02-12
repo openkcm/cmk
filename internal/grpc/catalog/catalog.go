@@ -23,6 +23,7 @@ func New(ctx context.Context, cfg *config.Config) (*plugincatalog.Catalog, error
 		HostServices:  []api.ServiceServer{},
 	}
 
+	//nolint:staticcheck
 	catalog, err := plugincatalog.Load(ctx, catalogConfig)
 	if err != nil {
 		catalogLogger.ErrorContext(ctx, "Error loading plugins", "error", err)
@@ -30,6 +31,7 @@ func New(ctx context.Context, cfg *config.Config) (*plugincatalog.Catalog, error
 	}
 
 	pluginBuildInfos := make([]string, 0)
+	//nolint:staticcheck
 	for _, pluginInfo := range catalog.ListPluginInfo() {
 		pluginBuildInfos = append(pluginBuildInfos, pluginInfo.Build())
 	}

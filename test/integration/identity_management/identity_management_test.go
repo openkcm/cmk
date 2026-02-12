@@ -37,6 +37,7 @@ func TestCreateNotificationManager(t *testing.T) {
 	catalog := IdentityManagementPlugin(t)
 	defer catalog.Close()
 
+	//nolint:staticcheck
 	idmang := catalog.LookupByTypeAndName(idmangv1.Type, "IDENTITY_MANAGEMENT")
 	assert.NotNil(t, idmang)
 

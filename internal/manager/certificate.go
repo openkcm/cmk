@@ -335,6 +335,7 @@ func (m *CertificateManager) IsTenantDefaultCertExist(ctx context.Context) (bool
 func createCertificateIssuerClient(
 	catalog *plugincatalog.Catalog,
 ) (certissuerv1.CertificateIssuerServiceClient, error) {
+	//nolint:staticcheck
 	certIssuer := catalog.LookupByTypeAndName(certissuerv1.Type, CertificateIssuerPluginName)
 	if certIssuer == nil {
 		return nil, ErrNoPluginInCatalog

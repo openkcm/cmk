@@ -246,6 +246,7 @@ func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
 		return HYOKKeystore{}
 	}
 
+	//nolint:staticcheck
 	plugins := m.catalog.LookupByType(keystoreopv1.Type)
 	if len(plugins) == 0 {
 		return HYOKKeystore{}

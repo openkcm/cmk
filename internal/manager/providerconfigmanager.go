@@ -161,6 +161,7 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 	}
 
 	// Initialize client
+	//nolint:staticcheck
 	plugin := pmc.catalog.LookupByTypeAndName(keystoreopv1.Type, provider)
 	if plugin == nil {
 		return nil, errs.Wrapf(ErrPluginNotFound, provider)
@@ -211,6 +212,7 @@ func (pmc *ProviderConfigManager) CreateKeystore(ctx context.Context) (string, m
 		return "", nil, err
 	}
 
+	//nolint:staticcheck
 	plugin := pmc.catalog.LookupByTypeAndName(keystoremanagerv1.Type, provider)
 	if plugin == nil {
 		return "", nil, errs.Wrapf(ErrPluginNotFound, provider)
@@ -255,6 +257,7 @@ func (pmc *ProviderConfigManager) GetDefaultKeystoreFromCatalog() (string, error
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no plugin catalog available")
 	}
 
+	//nolint:staticcheck
 	plugins := pmc.catalog.LookupByType(keystoreopv1.Type)
 	if len(plugins) == 0 {
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no keystore plugins found in catalog")

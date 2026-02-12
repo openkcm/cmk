@@ -213,7 +213,7 @@ func createTargets(ctx context.Context, cfg *config.EventProcessor) (map[string]
 }
 
 func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
-	options := make([]amqp.ClientOption, 0)
+	options := make([]amqp.ClientOption, 0, 1)
 
 	if cfg.SecretRef.Type != commoncfg.MTLSSecretType {
 		return options, nil
@@ -503,6 +503,7 @@ func (c *CryptoReconciler) getKeyAccessMetadata(
 	key model.Key,
 	systemRegion string,
 ) ([]byte, error) {
+	//nolint:staticcheck
 	plugin := c.pluginCatalog.LookupByTypeAndName(keystoreopv1.Type, key.Provider)
 	if plugin == nil {
 		return nil, ErrPluginNotFound

@@ -18,14 +18,15 @@ func LoadConfig(opts ...commoncfg.Option) (*Config, error) {
 
 	// If loadconfig is called with one of the default ones but different values
 	// these are overridden as only the last one takes efect
-	options := []commoncfg.Option{
+	options := make([]commoncfg.Option, 0, 2)
+	options = append(options,
 		commoncfg.WithDefaults(defaultConfig),
 		commoncfg.WithPaths(
 			constants.DefaultConfigPath1,
 			constants.DefaultConfigPath2,
 			".",
 		),
-	}
+	)
 
 	options = append(options, opts...)
 

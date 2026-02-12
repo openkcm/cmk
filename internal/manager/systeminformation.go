@@ -10,7 +10,6 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -85,24 +84,13 @@ func (si *SystemInformation) UpdateSystemByExternalID(ctx context.Context, exter
 }
 
 func (si *SystemInformation) updateSystem(ctx context.Context, system *model.System) error {
-	var typ systeminformationv1.RequestType
-
 	ctx = model.LogInjectSystem(ctx, system)
 
 	log.Debug(ctx, "Requesting SIS for properties")
 
-	switch system.Type {
-	case string(systems.SystemTypeSUBACCOUNT):
-		typ = systeminformationv1.RequestType_REQUEST_TYPE_SUBACCOUNT
-	case string(systems.SystemTypeSYSTEM):
-		typ = systeminformationv1.RequestType_REQUEST_TYPE_SYSTEM
-	default:
-		typ = systeminformationv1.RequestType_REQUEST_TYPE_UNSPECIFIED
-	}
-
 	resp, err := si.sisClient.Get(ctx, &systeminformationv1.GetRequest{
 		Id:   system.Identifier,
-		Type: typ,
+		Type: system.Type,
 	})
 	if err != nil {
 		log.Warn(ctx, "Could not get information from SIS", log.ErrorAttr(err))
@@ -136,6 +124,7 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 }
 
 func createClient(catalog *plugincatalog.Catalog) (systeminformationv1.SystemInformationServiceClient, error) {
+	//nolint:staticcheck
 	systemInformation := catalog.LookupByTypeAndName(systeminformationv1.Type, pluginName)
 	if systemInformation == nil {
 		return nil, ErrNoPluginInCatalog

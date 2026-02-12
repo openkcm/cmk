@@ -28,7 +28,7 @@ func CreateCertificateChain(
 		Subject: subject,
 	}
 
-	var certChain []byte
+	var certChain []byte //nolint:prealloc
 
 	certChain = append(certChain, CreateCertificatePEM(t, csr, pkey)...)
 	certChain = append(certChain, CreateCACertificatePEM(t)...)
