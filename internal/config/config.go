@@ -208,7 +208,7 @@ func (t *TenantManager) Validate() error {
 type EventProcessor struct {
 	SecretRef         commoncfg.SecretRef `yaml:"secretRef"`
 	Targets           []Target            `yaml:"targets"`
-	MaxReconcileCount int64               `yaml:"maxReconcileCount"`
+	MaxReconcileCount uint64              `yaml:"maxReconcileCount"`
 }
 
 // Validate checks the EventProcessor configuration values
