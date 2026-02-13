@@ -156,7 +156,9 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 		health.WithCheck(health.Check{
 			Name: "HTTP Server",
 			Check: func(ctx context.Context) error {
-				dialer := &net.Dialer{}
+				dialer := &net.Dialer{
+					Timeout: time.Second * 1,
+				}
 
 				conn, err := dialer.DialContext(ctx, "tcp", cfg.HTTP.Address)
 				if err != nil {
