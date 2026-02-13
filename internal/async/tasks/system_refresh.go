@@ -39,12 +39,15 @@ func NewSystemsRefresher(
 func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Systems Refresh Task")
 
-	err := s.processor.ProcessTenantsInBatch(ctx, "Systems Refresh", task,
-		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
-			log.Debug(tenantCtx, "Refreshing systems for tenant",
+	err := s.processor.ProcessTenantsInBatch(
+		ctx,
+		"Systems Refresh",
+		task,
+		func(ctx context.Context, tenant *model.Tenant, index int) error {
+			log.Debug(ctx, "Refreshing systems for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
 
-			updateErr := s.systemClient.UpdateSystems(tenantCtx)
+			updateErr := s.systemClient.UpdateSystems(ctx)
 			// If network error return an error triggering
 			// another task attempt with a backoff
 			if isConnectionError(updateErr) {
@@ -52,11 +55,10 @@ func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) er
 			}
 
 			if updateErr != nil {
-				log.Error(tenantCtx, "Running Refresh System Task", updateErr)
+				log.Error(ctx, "Running Refresh System Task", updateErr)
 			}
 			return nil
 		})
-
 	if err != nil {
 		log.Error(ctx, "Error during systems refresh batch processing", err)
 		return errs.Wrap(ErrRunningTask, err)

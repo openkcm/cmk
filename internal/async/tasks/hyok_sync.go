@@ -37,21 +37,23 @@ func NewHYOKSync(
 func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting HYOK Sync Task")
 
-	err := h.processor.ProcessTenantsInBatch(ctx, "HYOK Sync", task,
-		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
-			log.Debug(tenantCtx, "Syncing HYOK keys for tenant",
+	err := h.processor.ProcessTenantsInBatch(
+		ctx,
+		"HYOK Sync",
+		task,
+		func(ctx context.Context, tenant *model.Tenant, index int) error {
+			log.Debug(ctx, "Syncing HYOK keys for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
 
-			syncErr := h.hyokClient.SyncHYOKKeys(tenantCtx)
+			syncErr := h.hyokClient.SyncHYOKKeys(ctx)
 			if syncErr != nil {
-				_ = h.handleErrorTask(tenantCtx, syncErr)
+				_ = h.handleErrorTask(ctx, syncErr)
 				return nil
 			}
-			log.Debug(tenantCtx, "HYOK keys for tenant synced successfully", slog.String("schemaName", tenant.SchemaName))
+			log.Debug(ctx, "HYOK keys for tenant synced successfully", slog.String("schemaName", tenant.SchemaName))
 			return nil
 		},
 	)
-
 	if err != nil {
 		return h.handleErrorTenants(ctx, err)
 	}
