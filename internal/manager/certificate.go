@@ -330,16 +330,16 @@ func (m *CertificateManager) getCertificateByPurpose(
 
 	cert := &model.Certificate{}
 
-	_, err := m.repo.First(ctx, cert, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+	found, err := m.repo.First(ctx, cert, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(
 		compositeKey)).Order(repo.OrderField{
 		Field:     repo.CreationDateField,
 		Direction: repo.Desc,
 	}))
 	if err != nil && !errors.Is(err, repo.ErrNotFound) {
-		return nil, false, errs.Wrap(ErrCertificateManager, err)
+		return nil, found, errs.Wrap(ErrCertificateManager, err)
 	}
 
-	return cert, true, nil
+	return cert, found, nil
 }
 
 func (m *CertificateManager) getNewCertificate(

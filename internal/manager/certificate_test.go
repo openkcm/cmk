@@ -300,6 +300,29 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	assert.Equal(t, gotRot2Cert.ID, rotCerts[0].ID)
 }
 
+func TestGetCertificateByPurpose(t *testing.T) {
+	m, db, tenant := SetupCertificateManager(t)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	t.Run("Should return false on cert not exist", func(t *testing.T) {
+		_, exist, err := m.GetCertificateByPurpose(ctx, model.CertificatePurposeTenantDefault)
+		assert.NoError(t, err)
+		assert.False(t, exist)
+	})
+
+	t.Run("Should return true if cert exists", func(t *testing.T) {
+		cert := testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeTenantDefault
+		})
+		testutils.CreateTestEntities(ctx, t, r, cert)
+		res, exist, err := m.GetCertificateByPurpose(ctx, model.CertificatePurposeTenantDefault)
+		assert.NoError(t, err)
+		assert.Equal(t, cert.ID, res.ID)
+		assert.True(t, exist)
+	})
+}
+
 func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 	m, db, tenant := SetupCertificateManager(t)
 	r := sql.NewRepository(db)
