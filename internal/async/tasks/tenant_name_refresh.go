@@ -34,11 +34,8 @@ func (t *TenantNameRefresher) ProcessTask(ctx context.Context, task *asynq.Task)
 		ctx,
 		"Tenant Name Refresher",
 		task,
+		repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.Name, repo.Empty))),
 		func(ctx context.Context, tenant *model.Tenant, index int) error {
-			// If name is already set there is no need to try and refresh
-			if tenant.Name != "" {
-				return nil
-			}
 			res, err := t.registry.Tenant().GetTenant(ctx, &tenantv1.GetTenantRequest{
 				Id: tenant.ID,
 			})
@@ -63,6 +60,6 @@ func (t *TenantNameRefresher) ProcessTask(ctx context.Context, task *asynq.Task)
 	return nil
 }
 
-func (s *TenantNameRefresher) TaskType() string {
+func (t *TenantNameRefresher) TaskType() string {
 	return config.TypeTenantRefreshName
 }

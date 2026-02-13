@@ -44,7 +44,7 @@ var ErrRotatingCert = errors.New("error rotating certificate")
 func (s *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Certificate Rotation Task")
 
-	err := s.processor.ProcessTenantsInBatch(ctx, "Certificate Rotation", task,
+	err := s.processor.ProcessTenantsInBatch(ctx, "Certificate Rotation", task, repo.NewQuery(),
 		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(tenantCtx, "Rotating Certificates for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))

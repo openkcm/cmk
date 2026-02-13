@@ -37,7 +37,7 @@ func NewHYOKSync(
 func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting HYOK Sync Task")
 
-	err := h.processor.ProcessTenantsInBatch(ctx, "HYOK Sync", task,
+	err := h.processor.ProcessTenantsInBatch(ctx, "HYOK Sync", task, repo.NewQuery(),
 		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(tenantCtx, "Syncing HYOK keys for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
@@ -51,7 +51,6 @@ func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
 			return nil
 		},
 	)
-
 	if err != nil {
 		return h.handleErrorTenants(ctx, err)
 	}

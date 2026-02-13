@@ -37,7 +37,7 @@ func NewWorkflowCleaner(
 func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Workflow Cleanup Task")
 
-	err := wc.processor.ProcessTenantsInBatch(ctx, "Workflow Cleanup", task,
+	err := wc.processor.ProcessTenantsInBatch(ctx, "Workflow Cleanup", task, repo.NewQuery(),
 		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(tenantCtx, "Cleaning up expired workflows for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
@@ -48,7 +48,6 @@ func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) er
 			}
 			return nil
 		})
-
 	if err != nil {
 		log.Error(ctx, "Error during workflow cleanup batch processing", err)
 		return errs.Wrap(ErrRunningTask, err)
