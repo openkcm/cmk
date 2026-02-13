@@ -85,15 +85,6 @@ taskCLI:
 
   topologySpreadConstraints: []
 
-dbMigrator:
-  image:
-    command: "/bin/db-migrator"
-    args:
-      - --target=all
-      - --type=schema
-
-  deploy: true
-
 # Override the "name" value, which is used to annotate some of
 # the resources that are created by this Chart (using "app.kubernetes.io/name").
 # +docs:property
