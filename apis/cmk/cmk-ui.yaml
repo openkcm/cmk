@@ -1656,6 +1656,15 @@ components:
           maxLength: 50
           description: Region of the tenant
           example: eu10
+        role:
+          type: string
+          description: Role of the tenant
+          example: LIVE
+          enum:
+            - UNSPECIFIED
+            - LIVE
+            - TEST
+            - TRIAL
     TenantKeystore:
       type: object
       required:
