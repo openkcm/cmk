@@ -59,9 +59,8 @@ type KeyConfigManager struct {
 }
 
 type KeyConfigFilter struct {
-	Expand bool
-	Skip   int
-	Top    int
+	Expand     bool
+	Pagination repo.Pagination
 }
 
 func NewKeyConfigManager(
@@ -86,9 +85,7 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 	ctx context.Context,
 	filter KeyConfigFilter,
 ) ([]*model.KeyConfiguration, int, error) {
-	var res []*model.KeyConfiguration
-
-	query := getKeyConfigWithTotalsQuery().SetLimit(filter.Top).SetOffset(filter.Skip)
+	query := getKeyConfigWithTotalsQuery()
 	if filter.Expand {
 		query.Preload(repo.Preload{"AdminGroup"})
 	}
@@ -103,17 +100,7 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 		return []*model.KeyConfiguration{}, 0, nil
 	}
 
-	count, err := m.repository.List(
-		ctx,
-		model.KeyConfiguration{},
-		&res,
-		*query,
-	)
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrQueryKeyConfigurationList, err)
-	}
-
-	return res, count, nil
+	return repo.ListAndCount(ctx, m.repository, filter.Pagination, model.KeyConfiguration{}, query)
 }
 
 func (m *KeyConfigManager) PostKeyConfigurations(
@@ -141,6 +128,10 @@ func (m *KeyConfigManager) PostKeyConfigurations(
 	_, err = m.user.HasKeyConfigAccess(ctx, authz.ActionCreate, keyConfiguration)
 	if err != nil {
 		return nil, err
+	}
+
+	if strings.TrimSpace(keyConfiguration.Name) == "" {
+		return nil, ErrNameCannotBeEmpty
 	}
 
 	err = m.repository.Create(ctx, keyConfiguration)
@@ -226,8 +217,8 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 		return nil, errs.Wrap(ErrGettingKeyConfigByID, err)
 	}
 
-	if patchKeyConfig.Name != nil && *patchKeyConfig.Name == "" {
-		return nil, errs.Wrap(ErrNameCannotBeEmpty, nil)
+	if patchKeyConfig.Name != nil && strings.TrimSpace(*patchKeyConfig.Name) == "" {
+		return nil, ErrNameCannotBeEmpty
 	}
 
 	if patchKeyConfig.Name != nil {

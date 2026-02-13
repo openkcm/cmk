@@ -621,7 +621,7 @@ func TestWorkflowFilter_GetString(t *testing.T) {
 }
 
 func TestWorkfowManager_GetWorkflows(t *testing.T) {
-	m, repo, tenant := SetupWorkflowManager(t, &config.Config{})
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
 	userID := uuid.NewString()
 	allWorkflowUserID := uuid.NewString()
 	artifactID := uuid.New()
@@ -630,7 +630,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 
 	workflow1, err := createTestWorkflow(
 		testutils.CreateCtxWithTenant(tenant),
-		repo,
+		r,
 		testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = workflow.StateInitial.String()
@@ -647,7 +647,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 
 	workflow2, err := createTestWorkflow(
 		testutils.CreateCtxWithTenant(tenant),
-		repo,
+		r,
 		testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = workflow.StateInitial.String()
@@ -665,7 +665,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 
 	workflow3, err := createTestWorkflow(
 		testutils.CreateCtxWithTenant(tenant),
-		repo,
+		r,
 		testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = workflow.StateRejected.String()
@@ -682,7 +682,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 
 	workflow4, err := createTestWorkflow(
 		testutils.CreateCtxWithTenant(tenant),
-		repo,
+		r,
 		testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = workflow.StateInitial.String()
@@ -801,9 +801,15 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 					}
 				}
 
+				pagination := repo.Pagination{
+					Skip:  0,
+					Top:   5,
+					Count: true,
+				}
+
 				if tc.expectedInitiatorID != "" {
 					for _, wf := range workflows {
-						approvers, count, err := m.ListWorkflowApprovers(ctx, wf.ID, false, 0, 5)
+						approvers, count, err := m.ListWorkflowApprovers(ctx, wf.ID, false, pagination)
 						assert.NoError(t, err)
 						assert.Equal(t, 1, count)
 						assert.True(
@@ -888,9 +894,14 @@ func TestWorkflowManager_ListApprovers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(
 			tt.name, func(t *testing.T) {
+				pagination := repo.Pagination{
+					Skip:  constants.DefaultSkip,
+					Top:   constants.DefaultTop,
+					Count: true,
+				}
 				approvers, _, err := m.ListWorkflowApprovers(
 					ctxSys, tt.workflowID, false,
-					constants.DefaultSkip, constants.DefaultTop,
+					pagination,
 				)
 				if tt.expectErr {
 					assert.Error(t, err)
@@ -1118,7 +1129,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				} else {
 					assert.NoError(t, err)
 
-					count, _, err := m.ListWorkflowApprovers(ctxSys, wf.ID, false, 0, 0)
+					count, _, err := m.ListWorkflowApprovers(ctxSys, wf.ID, false, repo.Pagination{})
 					assert.NoError(t, err)
 					assert.Len(t, count, tt.approversCount)
 				}
@@ -1334,13 +1345,12 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 			assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed)
 
 			// Verify workflow approvers were also deleted
-			var approversAfter []*model.WorkflowApprover
 			approverQuery := repo.NewQuery().Where(
 				repo.NewCompositeKeyGroup(
 					repo.NewCompositeKey().Where(model.WorkflowID, oldTerminalWf.ID),
 				),
 			)
-			countAfter, err := r.List(ctx, &model.WorkflowApprover{}, &approversAfter, *approverQuery)
+			countAfter, err := r.Count(ctx, &model.WorkflowApprover{}, *approverQuery)
 			assert.NoError(t, err)
 			assert.Equal(t, 0, countAfter, "Approvers should be deleted with workflow")
 		},
@@ -1367,13 +1377,12 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Verify workflow approvers still exist
-			var approvers []*model.WorkflowApprover
 			approverQuery := repo.NewQuery().Where(
 				repo.NewCompositeKeyGroup(
 					repo.NewCompositeKey().Where(model.WorkflowID, recentTerminalWf.ID),
 				),
 			)
-			count, err := r.List(ctx, &model.WorkflowApprover{}, &approvers, *approverQuery)
+			count, err := r.Count(ctx, &model.WorkflowApprover{}, *approverQuery)
 			assert.NoError(t, err)
 			assert.Positive(t, count, "Approvers should still exist for recent workflow")
 		},

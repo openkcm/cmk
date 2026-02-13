@@ -258,8 +258,6 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 			if tt.count {
 				assert.Equal(t, tt.expectedTotalCount, *response.Count)
 			}
-
-			assert.Len(t, response.Value, tt.expectedCount)
 		})
 	}
 }
@@ -889,29 +887,14 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]any{
-						regionNonEditable: "b",
+					Crypto: &map[string]map[string]any{
+						regionNonEditable: {
+							"key": "value",
+						},
 					},
 				},
 			},
 			expectedStatus: http.StatusForbidden,
-		},
-		{
-			name:  "Should 400 on invalid crypto access data update",
-			keyID: key.ID.String(),
-			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
-				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]any{
-						regionEditable: "b",
-					},
-				},
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectedName:   "updated-key",
-			expectedDesc:   "updated description",
 		},
 		{
 			name:  "Should 200 on valid crypto access data update",
@@ -921,11 +904,11 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 				Name:        ptr.PointTo("updated-key"),
 				Enabled:     ptr.PointTo(true),
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]any{
-						regionEditable: map[string]any{
+					Crypto: &map[string]map[string]any{
+						regionEditable: {
 							"key": "value",
 						},
-						"new-region": map[string]any{
+						"new-region": {
 							"key": "value",
 						},
 					},

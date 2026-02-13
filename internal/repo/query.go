@@ -94,6 +94,7 @@ const (
 type QueryMapper interface {
 	GetQuery(ctx context.Context) *Query
 	GetUUID(field QueryField) (uuid.UUID, error)
+	GetPagination() Pagination
 }
 
 type Key struct {
@@ -191,8 +192,6 @@ type Query struct {
 	Group []QueryField
 
 	OrderFields []OrderField
-
-	DistinctOption DistinctOption
 }
 
 type JoinType string
@@ -317,11 +316,7 @@ type LoadingFields struct {
 func NewQueryWithFieldLoading(table table, fields ...LoadingFields) *Query {
 	query := NewQuery()
 
-	selectFields := make([]*SelectField, 0, 1)
-	selectFields = append(selectFields,
-		NewSelectField(table.TableName(), QueryFunction{Function: AllFunc}),
-	)
-
+	selectFields := make([]*SelectField, 0, len(fields))
 	for _, f := range fields {
 		selectField := NewSelectField(fmt.Sprintf("%s.%s", f.Table.TableName(), f.SelectField.Field), f.SelectField.Func)
 		if f.SelectField.Alias != "" {
@@ -331,7 +326,13 @@ func NewQueryWithFieldLoading(table table, fields ...LoadingFields) *Query {
 		selectFields = append(selectFields, selectField)
 	}
 
-	query = query.Select(selectFields...)
+	query = query.Select(
+		append(
+			[]*SelectField{
+				NewSelectField(table.TableName(), QueryFunction{Function: AllFunc}),
+			}, selectFields...,
+		)...,
+	)
 
 	for _, f := range fields {
 		// It's an aggregate on the same table
@@ -398,11 +399,6 @@ func (ckg *CompositeKeyGroup) String() string {
 	return str
 }
 
-type DistinctOption struct {
-	Enabled bool
-	CountOn string // COUNT(DISTINCT ...) requires the field to be specified
-}
-
 func (q *Query) Where(conds ...CompositeKeyGroup) *Query {
 	q.CompositeKeyGroup = append(q.CompositeKeyGroup, conds...)
 	return q
@@ -460,10 +456,5 @@ func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {
 
 func (q *Query) Order(orderFields ...OrderField) *Query {
 	q.OrderFields = append(q.OrderFields, orderFields...)
-	return q
-}
-
-func (q *Query) Distinct(distinct DistinctOption) *Query {
-	q.DistinctOption = distinct
 	return q
 }

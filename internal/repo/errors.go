@@ -9,4 +9,6 @@ var (
 	ErrOnboardingTenant      = errors.New("onboarding tenant failed")
 	ErrOnboardingInProgress  = errors.New("another onboarding is already in progress")
 	ErrValidatingTenant      = errors.New("validating tenant failed")
+	ErrCountingItem          = errors.New("couldn't count total number of items for pagination")
+	ErrListingItems          = errors.New("couldn't list items")
 )

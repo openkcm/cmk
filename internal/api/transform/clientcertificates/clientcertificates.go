@@ -27,7 +27,7 @@ func transformCrypto(cc manager.ClientCertificate) (*cmkapi.CryptoCertificate, e
 
 func ToAPI(cc map[model.CertificatePurpose][]*manager.ClientCertificate) (*cmkapi.ClientCertificates, error) {
 	for _, v := range cc {
-		err := sanitise.Stringlikes(&v)
+		err := sanitise.Sanitize(&v)
 		if err != nil {
 			return nil, err
 		}
@@ -50,9 +50,13 @@ func ToAPI(cc map[model.CertificatePurpose][]*manager.ClientCertificate) (*cmkap
 	}
 
 	return &cmkapi.ClientCertificates{
-		TenantDefault: &cmkapi.TenantDefaultCertificateList{Count: ptr.PointTo(len(tenantDefaultCertList)),
-			Value: tenantDefaultCertList},
-		Crypto: &cmkapi.CryptoCertificateList{Count: ptr.PointTo(len(cryptoCertList)),
-			Value: cryptoCertList},
+		TenantDefault: &cmkapi.TenantDefaultCertificateList{
+			Count: ptr.PointTo(len(tenantDefaultCertList)),
+			Value: tenantDefaultCertList,
+		},
+		Crypto: &cmkapi.CryptoCertificateList{
+			Count: ptr.PointTo(len(cryptoCertList)),
+			Value: cryptoCertList,
+		},
 	}, nil
 }

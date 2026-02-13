@@ -9,7 +9,7 @@ import (
 
 // ToAPI converts KeyVersion db model to a KeyVersion api model
 func ToAPI(kv model.KeyVersion) (*cmkapi.KeyVersion, error) {
-	err := sanitise.Stringlikes(&kv)
+	err := sanitise.Sanitize(&kv)
 	if err != nil {
 		return nil, err
 	}

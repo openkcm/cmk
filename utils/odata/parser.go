@@ -7,8 +7,10 @@ import (
 
 // We currently only support "eq" and "and" odata operations.
 // As we extend support we will have to expand the parsers below.
-var nonSupportedOperations = []string{" or ", " not ", " ne ",
-	" gt ", " ge ", " lt ", " le ", "(", ")"}
+var nonSupportedOperations = []string{
+	" or ", " not ", " ne ",
+	" gt ", " ge ", " lt ", " le ", "(", ")",
+}
 
 const numComparisonOperands = 2
 

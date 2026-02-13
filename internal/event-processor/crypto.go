@@ -213,10 +213,8 @@ func createTargets(ctx context.Context, cfg *config.EventProcessor) (map[string]
 }
 
 func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
-	options := make([]amqp.ClientOption, 0, 1)
-
 	if cfg.SecretRef.Type != commoncfg.MTLSSecretType {
-		return options, nil
+		return []amqp.ClientOption{}, nil
 	}
 
 	tlsConfig, err := commoncfg.LoadMTLSConfig(&cfg.SecretRef.MTLS)
@@ -224,15 +222,14 @@ func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
 		return nil, errs.Wrap(config.ErrLoadMTLSConfig, err)
 	}
 
-	options = append(options,
+	return []amqp.ClientOption{
 		func(o *goAmqp.ConnOptions) error {
 			o.TLSConfig = tlsConfig
 			o.SASLType = goAmqp.SASLTypeExternal("")
 
 			return nil
-		})
-
-	return options, nil
+		},
+	}, nil
 }
 
 // resolveTasks is called to resolve tasks for a job.

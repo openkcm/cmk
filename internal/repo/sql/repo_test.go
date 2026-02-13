@@ -45,6 +45,25 @@ func TestRepo_WithTenant(t *testing.T) {
 	})
 }
 
+func TestRepo_Count(t *testing.T) {
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenants[0])
+
+	n := 3
+	for i := range n {
+		err := r.Create(ctx, &testutils.TestModel{ID: uuid.New(), Name: fmt.Sprintf("test-%d", i)})
+		assert.NoError(t, err)
+	}
+
+	t.Run("Should count total when paginated resources", func(t *testing.T) {
+		limit := 1
+		count, err := r.Count(ctx, &testutils.TestModel{}, *repo.NewQuery().SetLimit(limit))
+		assert.NoError(t, err)
+		assert.Equal(t, count, n)
+	})
+}
+
 func TestRepo_List(t *testing.T) {
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
@@ -58,28 +77,17 @@ func TestRepo_List(t *testing.T) {
 
 	t.Run("Should list resources", func(t *testing.T) {
 		res := []*testutils.TestModel{}
-		count, err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery())
+		err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, count, n)
 		assert.Len(t, res, n)
-	})
-
-	t.Run("Should count total when paginated resources", func(t *testing.T) {
-		res := []*testutils.TestModel{}
-		limit := 1
-		count, err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery().SetLimit(limit))
-		assert.NoError(t, err)
-		assert.Equal(t, count, n)
-		assert.Len(t, res, limit)
 	})
 
 	t.Run("Should list IN", func(t *testing.T) {
 		res := []*testutils.TestModel{}
 		compositeKey := repo.NewCompositeKey().Where("name", []string{"test-0", "test-1"})
 		query := *repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey))
-		count, err := r.List(ctx, testutils.TestModel{}, &res, query)
+		err := r.List(ctx, testutils.TestModel{}, &res, query)
 		assert.NoError(t, err)
-		assert.Equal(t, 2, count)
 	})
 }
 
@@ -96,12 +104,11 @@ func TestRepo_List_Order(t *testing.T) {
 
 	t.Run("Should order resources descending", func(t *testing.T) {
 		res := []*testutils.TestModel{}
-		count, err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery().Order(repo.OrderField{
+		err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery().Order(repo.OrderField{
 			Field:     "name",
 			Direction: repo.Desc,
 		}))
 		assert.NoError(t, err)
-		assert.Equal(t, n, count)
 		assert.Len(t, res, n)
 		assert.Equal(t, "4", res[0].Name)
 		assert.Equal(t, "0", res[4].Name)
@@ -109,12 +116,11 @@ func TestRepo_List_Order(t *testing.T) {
 
 	t.Run("Should order resources ascending", func(t *testing.T) {
 		res := []*testutils.TestModel{}
-		count, err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery().Order(repo.OrderField{
+		err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery().Order(repo.OrderField{
 			Field:     "name",
 			Direction: repo.Asc,
 		}))
 		assert.NoError(t, err)
-		assert.Equal(t, n, count)
 		assert.Len(t, res, n)
 		assert.Equal(t, "0", res[0].Name)
 		assert.Equal(t, "4", res[4].Name)
@@ -123,24 +129,22 @@ func TestRepo_List_Order(t *testing.T) {
 	t.Run("Should get lowest name", func(t *testing.T) {
 		var res *testutils.TestModel
 
-		count, err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery().Order(repo.OrderField{
+		err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery().Order(repo.OrderField{
 			Field:     "name",
 			Direction: repo.Asc,
 		}).SetLimit(1))
 		assert.NoError(t, err)
-		assert.Equal(t, 5, count)
 		assert.Equal(t, "0", res.Name)
 	})
 
 	t.Run("Should get highest name", func(t *testing.T) {
 		var res *testutils.TestModel
 
-		count, err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery().Order(repo.OrderField{
+		err := r.List(ctx, testutils.TestModel{}, &res, *repo.NewQuery().Order(repo.OrderField{
 			Field:     "name",
 			Direction: repo.Desc,
 		}).SetLimit(1))
 		assert.NoError(t, err)
-		assert.Equal(t, 5, count)
 		assert.Equal(t, "4", res.Name)
 	})
 }

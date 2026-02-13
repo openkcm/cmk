@@ -17,16 +17,13 @@ import (
 
 func WithTotalKeys(ctx context.Context, r repo.Repo) func(*model.KeyConfiguration) error {
 	return func(k *model.KeyConfiguration) error {
-		var keys []*model.Key
-
-		count, err := r.List(
+		count, err := r.Count(
 			ctx,
-			model.Key{},
-			&keys,
+			&model.Key{},
 			*repo.NewQuery().Where(
 				repo.NewCompositeKeyGroup(
 					repo.NewCompositeKey().Where(
-						repo.KeyConfigIDField, k.ID))).SetLimit(1),
+						repo.KeyConfigIDField, k.ID))),
 		)
 		if err != nil {
 			return err
@@ -40,16 +37,13 @@ func WithTotalKeys(ctx context.Context, r repo.Repo) func(*model.KeyConfiguratio
 
 func WithTotalSystems(ctx context.Context, r repo.Repo) func(*model.KeyConfiguration) error {
 	return func(k *model.KeyConfiguration) error {
-		var sys []*model.System
-
-		count, err := r.List(
+		count, err := r.Count(
 			ctx,
-			model.System{},
-			&sys,
+			&model.System{},
 			*repo.NewQuery().Where(
 				repo.NewCompositeKeyGroup(
 					repo.NewCompositeKey().Where(
-						repo.KeyConfigIDField, k.ID))).SetLimit(1),
+						repo.KeyConfigIDField, k.ID))),
 		)
 		if err != nil {
 			return err
@@ -91,7 +85,7 @@ func BenchmarkTotalKeyLoad(b *testing.B) {
 		for b.Loop() {
 			var keyConfigs []*model.KeyConfiguration
 
-			_, err := r.List(ctx, model.KeyConfiguration{}, &keyConfigs, *repo.NewQuery())
+			err := r.List(ctx, model.KeyConfiguration{}, &keyConfigs, *repo.NewQuery())
 			assert.NoError(b, err)
 
 			for _, k := range keyConfigs {
@@ -107,7 +101,7 @@ func BenchmarkTotalKeyLoad(b *testing.B) {
 		for b.Loop() {
 			var keyConfigs []*model.KeyConfiguration
 
-			_, err := r.List(
+			err := r.List(
 				ctx,
 				model.KeyConfiguration{},
 				&keyConfigs,

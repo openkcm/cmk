@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/looplab/fsm"
 
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
@@ -314,10 +313,9 @@ func (l *Lifecycle) validateUserIsApprover(ctx context.Context) (bool, error) {
 		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID).Where(
 		fmt.Sprintf("%s_%s", repo.UserField, repo.IDField), l.ActorID)
 
-	count, err := l.Repository.List(
+	count, err := l.Repository.Count(
 		ctx,
-		model.WorkflowApprover{},
-		&[]model.WorkflowApprover{},
+		&model.WorkflowApprover{},
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 	if err != nil {
 		return false, errs.Wrap(ErrCheckApprovers, err)
@@ -417,7 +415,7 @@ func (l *Lifecycle) getAllApprovers(ctx context.Context) ([]*model.WorkflowAppro
 	ck := repo.NewCompositeKey().Where(
 		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID)
 
-	_, err := l.Repository.List(
+	err := l.Repository.List(
 		ctx,
 		model.WorkflowApprover{},
 		&allApprovers,
@@ -519,14 +517,11 @@ func (l *Lifecycle) getNumberOfApprovers(ctx context.Context) (int, error) {
 
 	ck := repo.NewCompositeKey().Where(
 		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID)
-	approvers := []*model.WorkflowApprover{}
 
-	count, err := l.Repository.List(
+	count, err := l.Repository.Count(
 		ctx,
-		model.WorkflowApprover{},
-		&approvers,
+		&model.WorkflowApprover{},
 		*repo.NewQuery().
-			SetLimit(constants.DefaultTop).
 			Where(repo.NewCompositeKeyGroup(ck)),
 	)
 	if err != nil {

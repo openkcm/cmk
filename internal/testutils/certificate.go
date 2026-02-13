@@ -28,10 +28,12 @@ func CreateCertificateChain(
 		Subject: subject,
 	}
 
-	certChain := make([]byte, 0, 1)
+	cert := CreateCertificatePEM(t, csr, pkey)
+	ca := CreateCACertificatePEM(t)
 
-	certChain = append(certChain, CreateCertificatePEM(t, csr, pkey)...)
-	certChain = append(certChain, CreateCACertificatePEM(t)...)
+	certChain := make([]byte, 0, len(cert)+len(ca))
+	certChain = append(certChain, cert...)
+	certChain = append(certChain, ca...)
 
 	var data []byte
 

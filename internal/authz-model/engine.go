@@ -65,7 +65,7 @@ func (am *Engine) ReloadAllowList(ctx context.Context) error {
 	defer am.mu.Unlock()
 
 	// Collect all tenants which were previously loaded
-	tenantList := make([]authz.TenantID, 0, 1)
+	tenantList := make([]authz.TenantID, 0, len(am.AuthzHandler.Entities))
 	for _, entity := range am.AuthzHandler.Entities {
 		tenantList = append(tenantList, entity.TenantID)
 	}
@@ -184,9 +184,7 @@ func (am *Engine) loadAllowListInternal(ctx context.Context, tenantID string) er
 func listGroups(ctx context.Context, amrepo repo.Repo) ([]model.Group, error) {
 	var groups []model.Group
 
-	_, err := amrepo.List(
-		ctx, &model.Group{}, &groups, *repo.NewQuery(),
-	)
+	err := amrepo.List(ctx, &model.Group{}, &groups, *repo.NewQuery())
 	if err != nil {
 		return nil, errs.Wrap(ErrLoadAuthzAllowList, err)
 	}

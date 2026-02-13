@@ -72,56 +72,6 @@ func SetupCertificateManager(
 	return m, db, tenants[0]
 }
 
-func TestCertificateManager_GetAllCertificates(t *testing.T) {
-	m, db, tenant := SetupCertificateManager(t)
-	assert.NotNil(t, db)
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	r := sql.NewRepository(db)
-
-	now := time.Now()
-
-	expected := []*model.Certificate{
-		{
-			ID:             uuid.New(),
-			Fingerprint:    "Fingerprint1",
-			CommonName:     "TestCommonName1",
-			State:          model.CertificateStateActive,
-			Purpose:        model.CertificatePurposeGeneric,
-			CreationDate:   now,
-			ExpirationDate: now.AddDate(0, 0, 3),
-		},
-		{
-			ID:             uuid.New(),
-			Fingerprint:    "Fingerprint2",
-			CommonName:     "TestCommonName2",
-			State:          model.CertificateStateActive,
-			Purpose:        model.CertificatePurposeGeneric,
-			CreationDate:   now,
-			ExpirationDate: now.AddDate(0, 0, 3),
-		},
-	}
-
-	testutils.CreateTestEntities(ctx, t, r, expected[0], expected[1])
-
-	t.Run("Should get all certificates", func(t *testing.T) {
-		result, total, err := m.GetAllCertificates(testutils.CreateCtxWithTenant(tenant), nil)
-		assert.NoError(t, err)
-		assert.Equal(t, len(expected), total)
-		assert.NotNil(t, result)
-	})
-
-	t.Run("Should get certificate", func(t *testing.T) {
-		result, total, err := m.GetAllCertificates(testutils.CreateCtxWithTenant(tenant), &expected[0].ID)
-		assert.NoError(t, err)
-		assert.Equal(t, 1, total)
-		assert.NotNil(t, result)
-
-		result2, err := m.GetCertificate(testutils.CreateCtxWithTenant(tenant), &expected[0].ID)
-		assert.NoError(t, err)
-		assert.NotNil(t, result2)
-	})
-}
-
 func TestCertificate_UpdateCertificate(t *testing.T) {
 	m, db, tenant := SetupCertificateManager(t)
 	assert.NotNil(t, db)
@@ -153,24 +103,18 @@ func TestCertificate_UpdateCertificate(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, r, expected[0], expected[1])
 
-	t.Run("Should get all certificates", func(t *testing.T) {
-		result, total, err := m.GetAllCertificates(testutils.CreateCtxWithTenant(tenant), nil)
-		assert.NoError(t, err)
-		assert.Equal(t, len(expected), total)
-		assert.True(t, result[0].AutoRotate)
-		assert.True(t, result[1].AutoRotate)
-	})
-
 	t.Run("Should update certificate", func(t *testing.T) {
 		result, err := m.UpdateCertificate(testutils.CreateCtxWithTenant(tenant), &expected[0].ID, false)
 		assert.NoError(t, err)
 		assert.NotNil(t, result.AutoRotate)
 
-		result2, total, err := m.GetAllCertificates(testutils.CreateCtxWithTenant(tenant), nil)
+		res, err := m.GetCertificate(testutils.CreateCtxWithTenant(tenant), &expected[0].ID)
 		assert.NoError(t, err)
-		assert.Equal(t, len(expected), total)
-		assert.True(t, result2[0].AutoRotate)
-		assert.False(t, result2[1].AutoRotate)
+		assert.False(t, res.AutoRotate)
+
+		res, err = m.GetCertificate(testutils.CreateCtxWithTenant(tenant), &expected[1].ID)
+		assert.NoError(t, err)
+		assert.True(t, res.AutoRotate)
 	})
 }
 
@@ -303,9 +247,8 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	assert.True(t, gotOrigCert.AutoRotate)
 
 	m.SetRotationThreshold(9999) // Want to catch all for testing auto rotate
-	rotCerts, length, err := m.GetCertificatesForRotation(ctx)
+	rotCerts, err := m.GetCertificatesForRotation(ctx)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, length)
 	assert.Equal(t, gotOrigCert.ID, rotCerts[0].ID)
 
 	// Do first rotation
@@ -326,9 +269,8 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, gotRot1Cert.AutoRotate)
 
-	rotCerts, length, err = m.GetCertificatesForRotation(ctx)
+	rotCerts, err = m.GetCertificatesForRotation(ctx)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, length)
 	assert.Equal(t, gotRot1Cert.ID, rotCerts[0].ID)
 
 	// Do second rotation
@@ -353,9 +295,8 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, gotRot2Cert.AutoRotate)
 
-	rotCerts, length, err = m.GetCertificatesForRotation(ctx)
+	rotCerts, err = m.GetCertificatesForRotation(ctx)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, length)
 	assert.Equal(t, gotRot2Cert.ID, rotCerts[0].ID)
 }
 

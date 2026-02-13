@@ -62,7 +62,7 @@ func (m *MockTenantManager) GetTenant(_ context.Context) (*model.Tenant, error) 
 	return &model.Tenant{}, nil
 }
 
-func (m *MockTenantManager) ListTenantInfo(_ context.Context, _ *string, _ int, _ int) ([]*model.Tenant, int, error) {
+func (m *MockTenantManager) ListTenantInfo(_ context.Context, _ *string, _ repo.Pagination) ([]*model.Tenant, int, error) {
 	return nil, 0, nil
 }
 
