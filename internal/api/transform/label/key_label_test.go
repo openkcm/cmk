@@ -12,6 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 type labelsTransformerTestCase struct {
@@ -142,7 +143,7 @@ func TestTransformLabel_ToAPI(t *testing.T) {
 		{
 			labelsTransformerTestCase: labelsTransformerTestCase{
 				name:        "Nil_DB_Model_Label",
-				expectedErr: label.ErrInvalidLabelDBModel,
+				expectedErr: sanitise.ErrNilPtr,
 			},
 			inputLabelModel: nil,
 		},

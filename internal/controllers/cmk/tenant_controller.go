@@ -9,6 +9,7 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -16,15 +17,18 @@ func (c *APIController) GetTenants(
 	ctx context.Context,
 	request cmkapi.GetTenantsRequestObject,
 ) (cmkapi.GetTenantsResponseObject, error) {
-	skip := ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip)
-	top := ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop)
+	pagination := repo.Pagination{
+		Skip:  ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip),
+		Top:   ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop),
+		Count: ptr.GetSafeDeref(request.Params.Count),
+	}
 
 	currentTenant, err := c.Manager.Tenant.GetTenant(ctx)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrListTenants, err)
 	}
 
-	tenants, total, err := c.Manager.Tenant.ListTenantInfo(ctx, ptr.PointTo(currentTenant.IssuerURL), skip, top)
+	tenants, total, err := c.Manager.Tenant.ListTenantInfo(ctx, ptr.PointTo(currentTenant.IssuerURL), pagination)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrListTenants, err)
 	}
@@ -41,7 +45,7 @@ func (c *APIController) GetTenants(
 		Value: values,
 	}
 
-	if ptr.GetSafeDeref(request.Params.Count) {
+	if pagination.Count {
 		response.Count = ptr.PointTo(total)
 	}
 

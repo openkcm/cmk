@@ -41,13 +41,9 @@ func FromAPI(keyUUID cmkapi.KeyIDPath, apiKeyLabel cmkapi.Label) (*model.KeyLabe
 }
 
 func ToAPI(modelKeyLabel *model.KeyLabel) (cmkapi.Label, error) {
-	err := sanitise.Stringlikes(modelKeyLabel)
+	err := sanitise.Sanitize(modelKeyLabel)
 	if err != nil {
 		return cmkapi.Label{}, err
-	}
-
-	if modelKeyLabel == nil {
-		return cmkapi.Label{}, ErrInvalidLabelDBModel
 	}
 
 	if modelKeyLabel.Key == "" {

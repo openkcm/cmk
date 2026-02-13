@@ -20,14 +20,16 @@ func makeExpectedQuery(fields []string, values []any) *repo.Query {
 				Operation: repo.Equal,
 			},
 		}
-		cond := repo.Condition{Field: fields[i],
-			Value: entry}
+		cond := repo.Condition{
+			Field: fields[i],
+			Value: entry,
+		}
 		ck.Conds = append(ck.Conds, cond)
 		ckg := repo.NewCompositeKeyGroup(ck)
 		query.Where(ckg)
 	}
 
-	return query.SetLimit(20)
+	return query
 }
 
 func TestOdata_ForSqlInjection(t *testing.T) {
