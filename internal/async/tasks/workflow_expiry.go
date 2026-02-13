@@ -51,9 +51,9 @@ func (s *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 		ctx,
 		"Workflow Expiry",
 		task,
-		func(ctx context.Context, tenant *model.Tenant) error {
+		func(ctx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(ctx, "Processing expired workflows for tenant",
-				slog.String("schemaName", tenant.SchemaName))
+				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
 
 			wfs, _, getErr := s.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
 			if getErr != nil {

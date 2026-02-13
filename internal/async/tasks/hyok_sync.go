@@ -41,9 +41,9 @@ func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
 		ctx,
 		"HYOK Sync",
 		task,
-		func(ctx context.Context, tenant *model.Tenant) error {
+		func(ctx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(ctx, "Syncing HYOK keys for tenant",
-				slog.String("schemaName", tenant.SchemaName))
+				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
 
 			syncErr := h.hyokClient.SyncHYOKKeys(ctx)
 			if syncErr != nil {
