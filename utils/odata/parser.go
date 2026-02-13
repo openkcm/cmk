@@ -7,8 +7,10 @@ import (
 
 // We currently only support "eq" and "and" odata operations.
 // As we extend support we will have to expand the parsers below.
-var nonSupportedOperations = []string{" or ", " not ", " ne ",
-	" gt ", " ge ", " lt ", " le ", "(", ")"}
+var nonSupportedOperations = []string{
+	" or ", " not ", " ne ",
+	" gt ", " ge ", " lt ", " le ", "(", ")",
+}
 
 const numComparisonOperands = 2
 
@@ -138,7 +140,7 @@ func startsWithOp(slicedFilterParam, op string) bool {
 // splitBooleanOperandsFromIndices is a parse helper function which splits
 // indexed anded ops into fields and values.
 func splitBooleanOperandsFromIndices(param string, boolOpIndices []int) []string {
-	var booleanOperands []string //nolint:prealloc
+	booleanOperands := make([]string, 0, len(boolOpIndices))
 
 	lastSplitIndex := 0
 	for _, andOpIndex := range boolOpIndices {
