@@ -130,6 +130,10 @@ func (m *KeyConfigManager) PostKeyConfigurations(
 		return nil, err
 	}
 
+	if strings.TrimSpace(keyConfiguration.Name) == "" {
+		return nil, ErrNameCannotBeEmpty
+	}
+
 	err = m.repository.Create(ctx, keyConfiguration)
 	if err != nil {
 		return nil, errs.Wrap(ErrCreateKeyConfiguration, err)
@@ -213,8 +217,8 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 		return nil, errs.Wrap(ErrGettingKeyConfigByID, err)
 	}
 
-	if patchKeyConfig.Name != nil && *patchKeyConfig.Name == "" {
-		return nil, errs.Wrap(ErrNameCannotBeEmpty, nil)
+	if patchKeyConfig.Name != nil && strings.TrimSpace(*patchKeyConfig.Name) == "" {
+		return nil, ErrNameCannotBeEmpty
 	}
 
 	if patchKeyConfig.Name != nil {
