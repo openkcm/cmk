@@ -252,30 +252,24 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 		),
 	)
 
-	healthOptions := make([]health.Option, 0)
-	healthOptions = append(
-		healthOptions,
-		health.WithDisabledAutostart(),
-		health.WithTimeout(defaultTimeout*time.Second),
-		health.WithStatusListener(
-			func(ctx context.Context, state health.State) {
-				log.Info(ctx, "readiness status changed", slog.String("status", string(state.Status)))
-			},
-		),
-	)
-
 	dsnFromConfig, err := dsn.FromDBConfig(cfg.Database)
 	if err != nil {
 		log.Error(ctx, "Could not load DSN from database config", err)
 	}
 
-	healthOptions = append(
-		healthOptions,
+	healthOptions := []health.Option{
+		health.WithDisabledAutostart(),
+		health.WithTimeout(defaultTimeout * time.Second),
+		health.WithStatusListener(
+			func(ctx context.Context, state health.State) {
+				log.Info(ctx, "readiness status changed", slog.String("status", string(state.Status)))
+			},
+		),
 		health.WithDatabaseChecker(
 			postgresDriverName,
 			dsnFromConfig,
 		),
-	)
+	}
 
 	readiness := status.WithReadiness(
 		health.NewHandler(

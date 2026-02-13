@@ -316,10 +316,7 @@ type LoadingFields struct {
 func NewQueryWithFieldLoading(table table, fields ...LoadingFields) *Query {
 	query := NewQuery()
 
-	selectFields := []*SelectField{
-		NewSelectField(table.TableName(), QueryFunction{Function: AllFunc}),
-	}
-
+	selectFields := make([]*SelectField, 0, len(fields))
 	for _, f := range fields {
 		selectField := NewSelectField(fmt.Sprintf("%s.%s", f.Table.TableName(), f.SelectField.Field), f.SelectField.Func)
 		if f.SelectField.Alias != "" {
@@ -329,7 +326,13 @@ func NewQueryWithFieldLoading(table table, fields ...LoadingFields) *Query {
 		selectFields = append(selectFields, selectField)
 	}
 
-	query = query.Select(selectFields...)
+	query = query.Select(
+		append(
+			[]*SelectField{
+				NewSelectField(table.TableName(), QueryFunction{Function: AllFunc}),
+			}, selectFields...,
+		)...,
+	)
 
 	for _, f := range fields {
 		// It's an aggregate on the same table
