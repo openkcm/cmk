@@ -189,7 +189,7 @@ func initializeLoggerAndTelemetry(ctx context.Context, cfg *config.Config) error
 	return nil
 }
 
-func createAMQPClient(ctx context.Context, cfg *config.Config) (orbital.OperatorTarget, error) {
+func createAMQPClient(ctx context.Context, cfg *config.Config) (orbital.TargetOperator, error) {
 	opts := amqp.WithNoAuth()
 	if cfg.TenantManager.SecretRef.Type == commoncfg.MTLSSecretType {
 		opts = operator.WithMTLS(cfg.TenantManager.SecretRef.MTLS)
@@ -197,7 +197,7 @@ func createAMQPClient(ctx context.Context, cfg *config.Config) (orbital.Operator
 
 	target, err := createOperatorTarget(ctx, cfg, opts)
 	if err != nil {
-		return orbital.OperatorTarget{}, oops.In(logDomain).
+		return orbital.TargetOperator{}, oops.In(logDomain).
 			Wrapf(err, "Failed to create AMQP client")
 	}
 
@@ -205,7 +205,7 @@ func createAMQPClient(ctx context.Context, cfg *config.Config) (orbital.Operator
 }
 
 func createOperatorTarget(ctx context.Context, cfg *config.Config, opts amqp.ClientOption) (
-	orbital.OperatorTarget, error,
+	orbital.TargetOperator, error,
 ) {
 	amqpClient, err := amqp.NewClient(
 		ctx, codec.Proto{}, amqp.ConnectionInfo{
@@ -215,11 +215,11 @@ func createOperatorTarget(ctx context.Context, cfg *config.Config, opts amqp.Cli
 		}, opts,
 	)
 	if err != nil {
-		return orbital.OperatorTarget{}, oops.In(logDomain).
+		return orbital.TargetOperator{}, oops.In(logDomain).
 			Wrapf(err, "Failed to create AMQP client: %v", err)
 	}
 
-	return orbital.OperatorTarget{Client: amqpClient}, nil
+	return orbital.TargetOperator{Client: amqpClient}, nil
 }
 
 func validateAndGetClients(cfg *config.Config) (
@@ -252,30 +252,24 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 		),
 	)
 
-	healthOptions := make([]health.Option, 0)
-	healthOptions = append(
-		healthOptions,
-		health.WithDisabledAutostart(),
-		health.WithTimeout(defaultTimeout*time.Second),
-		health.WithStatusListener(
-			func(ctx context.Context, state health.State) {
-				log.Info(ctx, "readiness status changed", slog.String("status", string(state.Status)))
-			},
-		),
-	)
-
 	dsnFromConfig, err := dsn.FromDBConfig(cfg.Database)
 	if err != nil {
 		log.Error(ctx, "Could not load DSN from database config", err)
 	}
 
-	healthOptions = append(
-		healthOptions,
+	healthOptions := []health.Option{
+		health.WithDisabledAutostart(),
+		health.WithTimeout(defaultTimeout * time.Second),
+		health.WithStatusListener(
+			func(ctx context.Context, state health.State) {
+				log.Info(ctx, "readiness status changed", slog.String("status", string(state.Status)))
+			},
+		),
 		health.WithDatabaseChecker(
 			postgresDriverName,
 			dsnFromConfig,
 		),
-	)
+	}
 
 	readiness := status.WithReadiness(
 		health.NewHandler(

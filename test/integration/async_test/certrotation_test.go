@@ -59,32 +59,32 @@ func TestCertRotation(t *testing.T) {
 
 	// Check that new certificates have been created
 	certsAll := []*model.Certificate{}
-	countAll, err := repository.List(
+	err = repository.List(
 		ctx,
 		model.Certificate{},
 		&certsAll,
 		*repo.NewQuery(),
 	)
 	assert.NoError(t, err)
-	assert.Greater(t, countAll, 1)
+	assert.Greater(t, len(certsAll), 1)
 
 	// Check that all rotated certs have a SupersedesID. Only original doesn't
 	certsMod := slices.DeleteFunc(certsAll, func(c *model.Certificate) bool {
 		return c.SupersedesID == nil
 	})
-	assert.Len(t, certsMod, countAll-1)
+	assert.Len(t, certsMod, len(certsAll)-1)
 
 	// Check only the head has AutoRotate remaining
 	certsAuto := []*model.Certificate{}
 	compositeKey := repo.NewCompositeKey().Where(repo.AutoRotateField, true)
-	countAuto, err := repository.List(
+	err = repository.List(
 		ctx,
 		model.Certificate{},
 		&certsAuto,
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey)),
 	)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, countAuto)
+	assert.Len(t, certsAuto, 1)
 
 	err = cronWorker.Shutdown(ctx)
 	assert.NoError(t, err)

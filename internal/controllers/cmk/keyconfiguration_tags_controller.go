@@ -20,7 +20,7 @@ func (c *APIController) GetTagsForKeyConfiguration(
 		return nil, errs.Wrap(apierrors.ErrGettingTagsByKeyConfigurationID, err)
 	}
 
-	err = sanitise.Stringlikes(&tags)
+	err = sanitise.Sanitize(&tags)
 	if err != nil {
 		return nil, err
 	}

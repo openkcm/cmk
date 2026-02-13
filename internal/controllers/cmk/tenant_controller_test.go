@@ -37,7 +37,7 @@ func TestGetTenants(t *testing.T) {
 
 	var tenants []model.Tenant
 
-	_, err := r.List(t.Context(), model.Tenant{}, &tenants, *repo.NewQuery())
+	err := r.List(t.Context(), model.Tenant{}, &tenants, *repo.NewQuery())
 	assert.NoError(t, err)
 
 	// Set issuerURL for first 3 tenants

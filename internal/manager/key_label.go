@@ -15,8 +15,7 @@ type Label interface {
 	GetKeyLabels(
 		ctx context.Context,
 		keyID uuid.UUID,
-		skip int,
-		top int,
+		pagination repo.Pagination,
 	) ([]*model.KeyLabel, int, error)
 	CreateOrUpdateLabel(
 		ctx context.Context,
@@ -137,8 +136,7 @@ func (m *LabelManager) CreateOrUpdateLabel(
 func (m *LabelManager) GetKeyLabels(
 	ctx context.Context,
 	keyID uuid.UUID,
-	skip int,
-	top int,
+	pagination repo.Pagination,
 ) ([]*model.KeyLabel, int, error) {
 	key := &model.Key{ID: keyID}
 
@@ -147,23 +145,10 @@ func (m *LabelManager) GetKeyLabels(
 		return nil, 0, errs.Wrap(ErrGettingKeyByID, err)
 	}
 
-	var labels []*model.KeyLabel
-
 	ck := repo.NewCompositeKey().
 		Where(repo.ResourceIDField, keyID)
 
-	count, err := m.repository.List(
-		ctx,
-		model.KeyLabel{},
-		&labels,
-		*repo.NewQuery().
-			Where(repo.NewCompositeKeyGroup(ck)).
-			SetOffset(skip).
-			SetLimit(top),
-	)
-	if err != nil {
-		return nil, 0, errs.Wrap(ErrQueryLabelList, err)
-	}
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
 
-	return labels, count, nil
+	return repo.ListAndCount(ctx, m.repository, pagination, model.KeyLabel{}, query)
 }

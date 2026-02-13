@@ -10,6 +10,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -19,12 +20,15 @@ func (c *APIController) GetKeyConfigurations(
 	ctx context.Context,
 	r cmkapi.GetKeyConfigurationsRequestObject,
 ) (cmkapi.GetKeyConfigurationsResponseObject, error) {
-	skip := ptr.GetIntOrDefault(r.Params.Skip, constants.DefaultSkip)
-	top := ptr.GetIntOrDefault(r.Params.Top, constants.DefaultTop)
+	pagination := repo.Pagination{
+		Skip:  ptr.GetIntOrDefault(r.Params.Skip, constants.DefaultSkip),
+		Top:   ptr.GetIntOrDefault(r.Params.Top, constants.DefaultTop),
+		Count: ptr.GetSafeDeref(r.Params.Count),
+	}
 
 	expand := r.Params.ExpandGroup != nil && *r.Params.ExpandGroup
 
-	filter := manager.KeyConfigFilter{Skip: skip, Top: top, Expand: expand}
+	filter := manager.KeyConfigFilter{Pagination: pagination, Expand: expand}
 
 	keyConfigs, total, err := c.Manager.KeyConfig.GetKeyConfigurations(ctx, filter)
 	if err != nil {
@@ -46,7 +50,7 @@ func (c *APIController) GetKeyConfigurations(
 		Value: values,
 	}
 
-	if ptr.GetSafeDeref(r.Params.Count) {
+	if pagination.Count {
 		response.Count = ptr.PointTo(total)
 	}
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commongrpc"
 	"github.com/openkcm/orbital"
 	"github.com/openkcm/orbital/client/amqp"
 	"github.com/openkcm/orbital/respondertest"
@@ -61,7 +62,7 @@ func (m *MockTenantManager) GetTenant(_ context.Context) (*model.Tenant, error) 
 	return &model.Tenant{}, nil
 }
 
-func (m *MockTenantManager) ListTenantInfo(_ context.Context, _ *string, _ int, _ int) ([]*model.Tenant, int, error) {
+func (m *MockTenantManager) ListTenantInfo(_ context.Context, _ *string, _ repo.Pagination) ([]*model.Tenant, int, error) {
 	return nil, 0, nil
 }
 
@@ -128,6 +129,45 @@ func createManagers(
 	return manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator), manager.NewGroupManager(r, ctlg, um)
 }
 
+func createInvalidOperatorRequest(
+	t *testing.T,
+	taskType string,
+	unusedRegistryClient tenantgrpc.ServiceClient,
+	unusedDB *multitenancy.DB,
+	clientCon *commongrpc.DynamicClientConn,
+	tenantManager manager.Tenant,
+	groupManager *manager.GroupManager,
+) (*sessionmanager.FakeSessionManagerClient, orbital.TaskRequest, *respondertest.Responder) {
+	t.Helper()
+
+	sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
+	responder := respondertest.NewResponder()
+	operatorTarget := orbital.TargetOperator{
+		Client: responder,
+	}
+	clientFactory := mockClient.NewMockFactory(
+		registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
+		sessionmanager.NewMockService(sessionManagerClient),
+	)
+
+	op, err := operator.NewTenantOperator(unusedDB, operatorTarget, clientFactory, tenantManager, groupManager)
+	require.NoError(t, err)
+
+	go func() {
+		err = op.RunOperator(t.Context())
+		assert.NoError(t, err)
+	}()
+
+	invalidData := []byte("invalid-proto")
+	taskReq := orbital.TaskRequest{
+		TaskID: uuid.New(),
+		Type:   taskType,
+		Data:   invalidData,
+	}
+
+	return sessionManagerClient, taskReq, responder
+}
+
 func TestNewTenantOperator(t *testing.T) {
 	amqpClient := &amqp.Client{}
 	dbConn := &multitenancy.DB{}
@@ -145,7 +185,7 @@ func TestNewTenantOperator(t *testing.T) {
 		},
 	)
 
-	operatorTarget := orbital.OperatorTarget{
+	operatorTarget := orbital.TargetOperator{
 		Client: amqpClient,
 	}
 
@@ -166,7 +206,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	t.Run(
 		"nil amqp", func(t *testing.T) {
-			target := orbital.OperatorTarget{}
+			target := orbital.TargetOperator{}
 			op, err := operator.NewTenantOperator(dbConn, target, clientFactory, tenantManager, groupManager)
 			assert.Nil(t, op)
 			assert.Error(t, err)
@@ -252,7 +292,8 @@ func TestHandleCreateTenant(t *testing.T) {
 			setup: func() {
 				// Create tenant first to simulate second probe
 				req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), validData)
-				_, err = testConfig.TenantOperator.HandleCreateTenant(ctx, req)
+				resp := &orbital.HandlerResponse{}
+				err = testConfig.TenantOperator.HandleCreateTenant(ctx, req, resp)
 				require.NoError(t, err)
 			},
 			checkDB: true,
@@ -267,7 +308,8 @@ func TestHandleCreateTenant(t *testing.T) {
 			setup: func() {
 				// First create the tenant schema and groups
 				req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), validData)
-				_, err = testConfig.TenantOperator.HandleCreateTenant(ctx, req)
+				resp := &orbital.HandlerResponse{}
+				err = testConfig.TenantOperator.HandleCreateTenant(ctx, req, resp)
 				require.NoError(t, err)
 
 				// Configure the fake service to fail on the second call
@@ -293,7 +335,8 @@ func TestHandleCreateTenant(t *testing.T) {
 				tt.setup()
 
 				req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), tt.data)
-				resp, err := testConfig.TenantOperator.HandleCreateTenant(ctx, req)
+				resp := &orbital.HandlerResponse{}
+				err := testConfig.TenantOperator.HandleCreateTenant(ctx, req, resp)
 
 				if tt.wantErr {
 					assert.Error(t, err)
@@ -304,7 +347,7 @@ func TestHandleCreateTenant(t *testing.T) {
 				assert.Equal(t, tt.wantResult, resp.Result)
 
 				if tt.wantState != "" {
-					assert.Contains(t, string(resp.WorkingState), tt.wantState)
+					assert.Contains(t, string(resp.RawWorkingState), tt.wantState)
 				}
 
 				if tt.checkDB {
@@ -345,7 +388,7 @@ func TestHandleCreateTenantConcurrent(t *testing.T) {
 	)
 
 	errs := make(chan error, numRoutines)
-	resps := make(chan orbital.HandlerResponse, numRoutines)
+	resps := make(chan *orbital.HandlerResponse, numRoutines)
 
 	for i := range numRoutines {
 		wg.Add(1)
@@ -356,7 +399,8 @@ func TestHandleCreateTenantConcurrent(t *testing.T) {
 			rCtx := slogctx.Prepend(ctx, "Routine:", i)
 			req := buildRequest(taskID, tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), validData)
 
-			resp, opErr := testConfig.TenantOperator.HandleCreateTenant(rCtx, req)
+			resp := &orbital.HandlerResponse{}
+			opErr := testConfig.TenantOperator.HandleCreateTenant(rCtx, req, resp)
 			if opErr != nil {
 				errs <- fmt.Errorf("onboarding failed: %w", opErr)
 			} else {
@@ -441,7 +485,7 @@ func TestHandleApplyAuth_InvalidData(t *testing.T) {
 				)
 
 				responder := respondertest.NewResponder()
-				target := orbital.OperatorTarget{
+				target := orbital.TargetOperator{
 					Client: responder,
 				}
 				op, err := operator.NewTenantOperator(unusedDB, target, clientFactory, nil, nil)
@@ -480,7 +524,7 @@ func TestHandleApplyAuth_IssuerUpdate(t *testing.T) {
 			unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
 			unusedSMClient := sessionmanager.NewFakeSessionManagerClient()
 			responder := respondertest.NewResponder()
-			operatorTarget := orbital.OperatorTarget{
+			operatorTarget := orbital.TargetOperator{
 				Client: responder,
 			}
 
@@ -576,7 +620,7 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
 				sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
 				responder := respondertest.NewResponder()
-				operatorTarget := orbital.OperatorTarget{
+				operatorTarget := orbital.TargetOperator{
 					Client: responder,
 				}
 
@@ -663,31 +707,8 @@ func TestHandleBlockTenant(t *testing.T) {
 	tenantManager, groupManager := createManagers(t, unusedDB, cfg)
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
-		sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
-		responder := respondertest.NewResponder()
-		operatorTarget := orbital.OperatorTarget{
-			Client: responder,
-		}
-		clientFactory := mockClient.NewMockFactory(
-			registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
-			sessionmanager.NewMockService(sessionManagerClient),
-		)
-
-		op, err := operator.NewTenantOperator(unusedDB, operatorTarget, clientFactory, tenantManager, groupManager)
-		require.NoError(t, err)
-
-		go func() {
-			err = op.RunOperator(t.Context())
-			assert.NoError(t, err)
-		}()
-
-		invalidData := []byte("invalid-proto")
-		taskReq := orbital.TaskRequest{
-			TaskID: uuid.New(),
-			Type:   taskType,
-			Data:   invalidData,
-		}
-
+		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
+			t, taskType, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager)
 		noOfCalls := 0
 		sessionManagerClient.MockBlockOIDCMapping = func(
 			_ context.Context,
@@ -745,7 +766,7 @@ func TestHandleBlockTenant(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
 			responder := respondertest.NewResponder()
-			target := orbital.OperatorTarget{
+			target := orbital.TargetOperator{
 				Client: responder,
 			}
 			clientFactory := mockClient.NewMockFactory(
@@ -812,31 +833,8 @@ func TestHandleUnblockTenant(t *testing.T) {
 	tenantManager, groupManager := createManagers(t, unusedDB, cfg)
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
-		sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
-		responder := respondertest.NewResponder()
-		operatorTarget := orbital.OperatorTarget{
-			Client: responder,
-		}
-		clientFactory := mockClient.NewMockFactory(
-			registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
-			sessionmanager.NewMockService(sessionManagerClient),
-		)
-
-		op, err := operator.NewTenantOperator(unusedDB, operatorTarget, clientFactory, tenantManager, groupManager)
-		require.NoError(t, err)
-
-		go func() {
-			err = op.RunOperator(t.Context())
-			assert.NoError(t, err)
-		}()
-
-		invalidData := []byte("invalid-proto")
-		taskReq := orbital.TaskRequest{
-			TaskID: uuid.New(),
-			Type:   taskType,
-			Data:   invalidData,
-		}
-
+		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
+			t, taskType, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager)
 		noOfCalls := 0
 		sessionManagerClient.MockUnblockOIDCMapping = func(
 			_ context.Context,
@@ -894,7 +892,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
 			responder := respondertest.NewResponder()
-			target := orbital.OperatorTarget{
+			target := orbital.TargetOperator{
 				Client: responder,
 			}
 			clientFactory := mockClient.NewMockFactory(
@@ -960,31 +958,8 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 	taskType := tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String()
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
-		sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
-		responder := respondertest.NewResponder()
-		target := orbital.OperatorTarget{
-			Client: responder,
-		}
-		clientFactory := mockClient.NewMockFactory(
-			registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
-			sessionmanager.NewMockService(sessionManagerClient),
-		)
-
-		op, err := operator.NewTenantOperator(unusedDB, target, clientFactory, mockTenantManager, groupManager)
-		require.NoError(t, err)
-
-		go func() {
-			err = op.RunOperator(t.Context())
-			assert.NoError(t, err)
-		}()
-
-		invalidData := []byte("invalid-proto")
-		taskReq := orbital.TaskRequest{
-			TaskID: uuid.New(),
-			Type:   taskType,
-			Data:   invalidData,
-		}
-
+		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
+			t, taskType, unusedRegistryClient, unusedDB, clientCon, mockTenantManager, groupManager)
 		noOfCalls := 0
 		sessionManagerClient.MockRemoveOIDCMapping = func(
 			_ context.Context,
@@ -1036,7 +1011,7 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
 			responder := respondertest.NewResponder()
-			target := orbital.OperatorTarget{
+			target := orbital.TargetOperator{
 				Client: responder,
 			}
 			clientFactory := mockClient.NewMockFactory(
@@ -1180,7 +1155,7 @@ func TestHandleTerminateTenant(t *testing.T) {
 			expTenantID := uuid.NewString()
 
 			responder := respondertest.NewResponder()
-			target := orbital.OperatorTarget{
+			target := orbital.TargetOperator{
 				Client: responder,
 			}
 			op, err := operator.NewTenantOperator(
@@ -1437,7 +1412,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 		Database: cfgDB,
 	}
 
-	operatorTarget := orbital.OperatorTarget{
+	operatorTarget := orbital.TargetOperator{
 		Client: amqpClient,
 	}
 	tenantClient := tenantgrpc.NewServiceClient(grpcClient)

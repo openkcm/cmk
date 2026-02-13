@@ -371,7 +371,7 @@ func TestLabelsController_CreateOrUpdateLabels(t *testing.T) {
 			if tc.validateByFetchingDataFromDB && tc.doesKeyExist {
 				var ls []*model.KeyLabel
 
-				_, err := r.List(ctx, model.KeyLabel{}, &ls, *repo.NewQuery().Order(repo.OrderField{
+				err := r.List(ctx, model.KeyLabel{}, &ls, *repo.NewQuery().Order(repo.OrderField{
 					Field:     "Key",
 					Direction: repo.Asc,
 				}).Where(
@@ -469,7 +469,7 @@ func TestLabelsController_DeleteLabel(t *testing.T) {
 			if tc.validateByFetchingDataFromDB && tc.doesKeyExist {
 				var ls []*model.KeyLabel
 
-				_, err := r.List(ctx, model.KeyLabel{}, &ls, *repo.NewQuery().Order(repo.OrderField{
+				err := r.List(ctx, model.KeyLabel{}, &ls, *repo.NewQuery().Order(repo.OrderField{
 					Field:     "Key",
 					Direction: repo.Asc,
 				}).Where(

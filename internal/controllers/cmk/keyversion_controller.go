@@ -9,6 +9,7 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -16,14 +17,16 @@ import (
 func (c *APIController) GetKeyVersions(ctx context.Context,
 	request cmkapi.GetKeyVersionsRequestObject,
 ) (cmkapi.GetKeyVersionsResponseObject, error) {
-	skip := ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip)
-	top := ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop)
+	pagination := repo.Pagination{
+		Skip:  ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip),
+		Top:   ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop),
+		Count: ptr.GetSafeDeref(request.Params.Count),
+	}
 
 	keyVersions, count, err := c.Manager.KeyVersions.GetKeyVersions(
 		ctx,
 		request.KeyID,
-		skip,
-		top,
+		pagination,
 	)
 	if err != nil {
 		return nil, apierrors.ErrQueryKeyVersionList

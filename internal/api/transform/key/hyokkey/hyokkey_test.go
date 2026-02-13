@@ -137,7 +137,9 @@ func TestFromCmkAPIKey(t *testing.T) {
 				Provider: ptr.PointTo("TEST"),
 				AccessDetails: &cmkapi.KeyAccessDetails{
 					Management: ptr.PointTo(map[string]any{"key": "value"}),
-					Crypto:     ptr.PointTo(map[string]any{"cryptoKey": "cryptoValue"}),
+					Crypto: ptr.PointTo(map[string]map[string]any{"cryptoRegion": {
+						"cryptoKey": "cryptoValue",
+					}}),
 				},
 			},
 			expected: &model.Key{
@@ -145,7 +147,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 				Provider:             "TEST",
 				Region:               "test-region",
 				ManagementAccessData: []byte(`{"key":"value"}`),
-				CryptoAccessData:     []byte(`{"cryptoKey":"cryptoValue"}`),
+				CryptoAccessData:     []byte(`{"cryptoRegion":{"cryptoKey":"cryptoValue"}}`),
 			},
 			errMsg: "",
 		},
