@@ -42,8 +42,7 @@ var (
 
 const AppName = "worker"
 const (
-	healthStatusTimeoutS = 5 * time.Second
-	postgresDriverName   = "pgx"
+	postgresDriverName = "pgx"
 )
 
 // - Starts the status server
@@ -158,37 +157,20 @@ func registerTasks(
 }
 
 func startStatusServer(ctx context.Context, cfg *config.Config) {
-	liveness := status.WithLiveness(
-		health.NewHandler(
-			health.NewChecker(health.WithDisabledAutostart()),
-		),
-	)
-
 	dsnFromConfig, err := dsn.FromDBConfig(cfg.Database)
 	if err != nil {
 		log.Error(ctx, "Could not load DSN from database config", err)
 	}
 
 	healthOptions := []health.Option{
-		health.WithDisabledAutostart(),
-		health.WithTimeout(healthStatusTimeoutS),
-		health.WithStatusListener(func(ctx context.Context, state health.State) {
-			log.Info(ctx, "readiness status changed", slog.String("status", string(state.Status)))
-		}),
 		health.WithDatabaseChecker(
 			postgresDriverName,
 			dsnFromConfig,
 		),
 	}
 
-	readiness := status.WithReadiness(
-		health.NewHandler(
-			health.NewChecker(healthOptions...),
-		),
-	)
-
 	go func() {
-		err := status.Start(ctx, &cfg.BaseConfig, liveness, readiness)
+		err := status.Serve(ctx, &cfg.BaseConfig, healthOptions...)
 		if err != nil {
 			log.Error(ctx, "Failure on the status server", err)
 
