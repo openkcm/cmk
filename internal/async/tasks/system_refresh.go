@@ -39,7 +39,7 @@ func NewSystemsRefresher(
 func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Systems Refresh Task")
 
-	err := s.processor.ProcessTenantsInBatch(ctx, "Systems Refresh", task,
+	err := s.processor.ProcessTenantsInBatch(ctx, "Systems Refresh", task, repo.NewQuery(),
 		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(tenantCtx, "Refreshing systems for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
@@ -56,7 +56,6 @@ func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) er
 			}
 			return nil
 		})
-
 	if err != nil {
 		log.Error(ctx, "Error during systems refresh batch processing", err)
 		return errs.Wrap(ErrRunningTask, err)

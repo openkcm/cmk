@@ -47,7 +47,7 @@ func NewWorkflowExpiryProcessor(
 func (s *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Workflow Expiry Task")
 
-	err := s.processor.ProcessTenantsInBatch(ctx, "Workflow Expiry", task,
+	err := s.processor.ProcessTenantsInBatch(ctx, "Workflow Expiry", task, repo.NewQuery(),
 		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(tenantCtx, "Processing expired workflows for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
@@ -70,7 +70,6 @@ func (s *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 				slog.String("schemaName", tenant.SchemaName))
 			return nil
 		})
-
 	if err != nil {
 		return s.handleErrorTenants(ctx, err)
 	}
@@ -85,7 +84,6 @@ func (s *WorkflowExpiryProcessor) TaskType() string {
 func (s *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID uuid.UUID) error {
 	ctx = ctxUtils.InjectSystemUser(ctx)
 	workflow, err := s.updater.TransitionWorkflow(ctx, workflowID, wfMechanism.TransitionExpire)
-
 	if err != nil {
 		log.Error(ctx, "Failed to expire workflow", err)
 		return err

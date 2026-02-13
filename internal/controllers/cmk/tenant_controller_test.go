@@ -160,6 +160,7 @@ func TestGetTenantInfo(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		resp := testutils.GetJSONBody[cmkapi.Tenant](t, w)
 		assert.Equal(t, tenant.ID, *resp.Id)
+		assert.Equal(t, tenant.Name, resp.Name)
 	})
 
 	t.Run("Should 403 on get tenant by valid ID and no client data", func(t *testing.T) {
