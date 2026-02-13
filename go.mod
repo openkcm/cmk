@@ -32,7 +32,7 @@ require (
 	github.com/openkcm/api-sdk v0.15.0
 	github.com/openkcm/common-sdk v1.11.0
 	github.com/openkcm/orbital v0.4.0
-	github.com/openkcm/plugin-sdk v0.9.3-0.20260213104442-c67a165c536b
+	github.com/openkcm/plugin-sdk v0.9.3-0.20260213121121-9ff4087385bd
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/samber/oops v1.21.0
@@ -46,7 +46,7 @@ require (
 	github.com/zeebo/assert v1.3.1
 	go.opentelemetry.io/collector/pdata v1.51.0
 	golang.org/x/oauth2 v0.35.0
-	google.golang.org/grpc v1.78.0
+	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.0
@@ -57,7 +57,7 @@ require (
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20251209175733-2a1774d88802.1 // indirect
 	buf.build/go/protovalidate v1.1.2 // indirect
-	cel.dev/expr v0.24.0 // indirect
+	cel.dev/expr v0.25.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/Dynatrace/OneAgent-SDK-for-Go v1.1.0 // indirect
@@ -204,7 +204,7 @@ require (
 	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217 // indirect
