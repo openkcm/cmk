@@ -53,7 +53,7 @@ func NewSystemInformationManager(repo repo.Repo,
 func (si *SystemInformation) UpdateSystems(ctx context.Context) error {
 	systems := []*model.System{}
 
-	_, err := si.repo.List(ctx, model.System{}, &systems, *repo.NewQuery())
+	err := si.repo.List(ctx, model.System{}, &systems, *repo.NewQuery())
 	if err != nil {
 		return errs.Wrap(ErrGettingSystemList, err)
 	}

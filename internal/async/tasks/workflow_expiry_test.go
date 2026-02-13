@@ -42,14 +42,8 @@ func (s *WorkflowExpiryMock) GetWorkflows(ctx context.Context,
 		return nil, 0, s.getErr
 	}
 
-	workflows := []*model.Workflow{}
-
-	count, err := s.repo.List(ctx, model.Workflow{}, &workflows, *params.GetQuery(ctx))
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return workflows, count, nil
+	query := params.GetQuery(ctx)
+	return repo.ListAndCount(ctx, s.repo, params.GetPagination(), model.Workflow{}, query)
 }
 
 func (s *WorkflowExpiryMock) TransitionWorkflow(ctx context.Context,

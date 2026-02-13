@@ -120,7 +120,7 @@ func (c *APIController) GetWorkflows(
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
 	}
 
-	odataQueryMapper.SetPaging(request.Params.Skip, request.Params.Top)
+	odataQueryMapper.SetPaging(request.Params.Skip, request.Params.Top, request.Params.Count)
 
 	workflowQueryMapper, err := manager.NewWorkflowFilterFromOData(*odataQueryMapper)
 	if err != nil {
@@ -189,8 +189,9 @@ func (c *APIController) GetWorkflowByID(ctx context.Context,
 		return nil, err
 	}
 
+	pagination := repo.Pagination{}
 	// Expand approvers
-	approvers, _, err := c.Manager.Workflow.ListWorkflowApprovers(ctx, request.WorkflowID, true, 0, 0)
+	approvers, _, err := c.Manager.Workflow.ListWorkflowApprovers(ctx, request.WorkflowID, true, pagination)
 	if err != nil {
 		return nil, err
 	}

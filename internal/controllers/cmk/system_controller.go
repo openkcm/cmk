@@ -56,7 +56,7 @@ func (c *APIController) GetAllSystems(ctx context.Context,
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
 	}
 
-	queryMapper.SetPaging(request.Params.Skip, request.Params.Top)
+	queryMapper.SetPaging(request.Params.Skip, request.Params.Top, request.Params.Count)
 
 	systems, total, err := c.Manager.System.GetAllSystems(ctx, queryMapper)
 	if err != nil {

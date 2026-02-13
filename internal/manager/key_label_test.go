@@ -40,8 +40,7 @@ func TestGetKeyLabels(t *testing.T) {
 		labels, count, err := m.GetKeyLabels(
 			testutils.CreateCtxWithTenant(tenant),
 			key.ID,
-			0,
-			repo.DefaultLimit,
+			repo.Pagination{Count: true},
 		)
 		assert.NoError(t, err)
 
@@ -56,8 +55,7 @@ func TestGetKeyLabels(t *testing.T) {
 		_, _, err := m.GetKeyLabels(
 			testutils.CreateCtxWithTenant(tenant),
 			uuid.New(),
-			0,
-			repo.DefaultLimit,
+			repo.Pagination{},
 		)
 		assert.ErrorIs(t, err, manager.ErrGettingKeyByID)
 	})
@@ -90,8 +88,7 @@ func TestCreateOrUpdateLabel(t *testing.T) {
 		labels, _, _ := m.GetKeyLabels(
 			ctx,
 			key.ID,
-			0,
-			repo.DefaultLimit,
+			repo.Pagination{Count: true},
 		)
 
 		assert.NoError(t, err)
@@ -111,8 +108,7 @@ func TestCreateOrUpdateLabel(t *testing.T) {
 		labels, count, _ := m.GetKeyLabels(
 			ctx,
 			key.ID,
-			0,
-			repo.DefaultLimit,
+			repo.Pagination{Count: true},
 		)
 
 		assert.NoError(t, err)
@@ -165,8 +161,7 @@ func TestDeleteKeyLabel(t *testing.T) {
 		labels, _, err := m.GetKeyLabels(
 			ctx,
 			key.ID,
-			0,
-			repo.DefaultLimit,
+			repo.Pagination{},
 		)
 		assert.NoError(t, err)
 		assert.Len(t, labels, 1)

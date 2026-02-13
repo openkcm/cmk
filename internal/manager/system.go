@@ -60,6 +60,7 @@ type SystemFilter struct {
 	Type        string
 	Skip        int
 	Top         int
+	Count       bool
 }
 
 var SystemEvents = []string{
@@ -69,6 +70,14 @@ var SystemEvents = []string{
 }
 
 var _ repo.QueryMapper = (*SystemFilter)(nil) // Assert interface impl
+
+func (s SystemFilter) GetPagination() repo.Pagination {
+	return repo.Pagination{
+		Skip:  s.Skip,
+		Top:   s.Top,
+		Count: s.Count,
+	}
+}
 
 func (s SystemFilter) GetQuery(_ context.Context) *repo.Query {
 	query := repo.NewQuery()
@@ -176,7 +185,9 @@ func (m *SystemManager) GetAllSystems(
 		}
 	}
 
-	systems, count, err := repo.ListSystemWithProperties(ctx, m.repo, params.GetQuery(ctx))
+	query := params.GetQuery(ctx)
+	pagination := params.GetPagination()
+	systems, count, err := repo.ListAndCountSystemWithProperties(ctx, m.repo, pagination, query)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrQuerySystemList, err)
 	}
