@@ -66,27 +66,33 @@ func (m *MockTenantRegistry) SetTenantUserGroups(ctx context.Context, in *tenant
 }
 
 func TestTenantNameRefresher(t *testing.T) {
-	initTenant := testutils.NewTenant(func(t *model.Tenant) {
+	emptyNameTenant := testutils.NewTenant(func(t *model.Tenant) {
 		t.Name = ""
 	})
+	namedTenant := testutils.NewTenant(func(t *model.Tenant) {})
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
-	}, testutils.WithInitTenants(*initTenant))
+	}, testutils.WithInitTenants(*emptyNameTenant, *namedTenant))
 	r := sql.NewRepository(db)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
 
 	registry := registry.NewMockService(nil, &MockTenantRegistry{}, nil)
 	refresher := tasks.NewTenantNameRefresher(r, registry)
 
-	t.Run("Should complete successfully", func(t *testing.T) {
+	t.Run("Should update tenant names if empty", func(t *testing.T) {
 		err := refresher.ProcessTask(ctx, nil)
 		assert.NoError(t, err)
 
-		tenant := &model.Tenant{ID: initTenant.ID}
+		tenant := &model.Tenant{ID: emptyNameTenant.ID}
 		_, err = r.First(ctx, tenant, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, RefreshedName, tenant.Name)
+
+		tenant = &model.Tenant{ID: namedTenant.ID}
+		_, err = r.First(ctx, tenant, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, namedTenant.Name, tenant.Name)
 	})
 
 	t.Run("Task type is correct", func(t *testing.T) {

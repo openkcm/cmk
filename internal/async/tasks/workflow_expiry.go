@@ -51,8 +51,9 @@ func (s *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 		ctx,
 		"Workflow Expiry",
 		task,
-		func(ctx context.Context, tenant *model.Tenant, index int) error {
-			log.Debug(ctx, "Processing expired workflows for tenant",
+		repo.NewQuery(),
+		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
+			log.Debug(tenantCtx, "Processing expired workflows for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
 
 			wfs, _, getErr := s.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
@@ -88,7 +89,6 @@ func (s *WorkflowExpiryProcessor) TaskType() string {
 func (s *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID uuid.UUID) error {
 	ctx = ctxUtils.InjectSystemUser(ctx)
 	workflow, err := s.updater.TransitionWorkflow(ctx, workflowID, wfMechanism.TransitionExpire)
-
 	if err != nil {
 		log.Error(ctx, "Failed to expire workflow", err)
 		return err
