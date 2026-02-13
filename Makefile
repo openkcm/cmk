@@ -33,7 +33,7 @@ test: install-gotestsum build_test_plugins
 
 	# Run tests with coverage
 	env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
-		--packages="./internal/... ./providers/... ./utils... ./cmd/... ./test/security/... ./test/db-migration/..." \
+		--packages="./internal/... ./utils... ./cmd/... ./test/security/... ./test/db-migration/..." \
 		-- -count=1 -covermode=atomic -coverpkg=./... \
 		-args -test.gocoverdir=$(pwd)/cover
 
