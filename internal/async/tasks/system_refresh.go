@@ -43,9 +43,9 @@ func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) er
 		ctx,
 		"Systems Refresh",
 		task,
-		func(ctx context.Context, tenant *model.Tenant) error {
+		func(ctx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(ctx, "Refreshing systems for tenant",
-				slog.String("schemaName", tenant.SchemaName))
+				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
 
 			updateErr := s.systemClient.UpdateSystems(ctx)
 			// If network error return an error triggering
