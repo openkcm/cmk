@@ -276,6 +276,8 @@ github.com/openkcm/api-sdk v0.15.0 h1:JfA7nEy4JnoxLafFIEerCpjmmhkJfNeEncSVB1VHn6
 github.com/openkcm/api-sdk v0.15.0/go.mod h1:oYv9C+bUTcNHHhVN91nRoTveO9XSkd/EO1mFCM+a0fA=
 github.com/openkcm/common-sdk v1.11.0 h1:C4mkKV8wI2ucYL9+CDGASODY+JBkngTGVwep2yyPU8M=
 github.com/openkcm/common-sdk v1.11.0/go.mod h1:5QUCIBsjOkbwRxq9uqC0DnDhlHSX4OfVLm3s0s4UlO0=
+github.com/openkcm/identity-management-plugins v0.1.0 h1:QiH5or2ENLq69S9PuRdNJq7hM0KqUdWrI/o7hCwEyuo=
+github.com/openkcm/identity-management-plugins v0.1.0/go.mod h1:i1dJISA/rEtsXKCJhUgwMSxQZ/8z/wiu/9+Rs2Y3+a4=
 github.com/openkcm/orbital v0.4.0 h1:3uzaJ1qZMkaaLvQdvAsBEDeFQ3zXGvkoNKrCH06nDpA=
 github.com/openkcm/orbital v0.4.0/go.mod h1:BbCHxg/qS1zI5L1VtHdG0RUURPufbdLiFubEA1zFXA0=
 github.com/openkcm/plugin-sdk v0.9.1 h1:lbQNu2/YK/5jMpXVCAaLB4ba0pE2QzYKRJHlbX31NB0=
