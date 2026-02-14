@@ -5,32 +5,34 @@ import (
 	"encoding/json"
 
 	"github.com/hibiken/asynq"
+	"github.com/openkcm/plugin-sdk/api/service/notification"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/notifier/client"
 )
 
-type NotificationClient interface {
-	CreateNotification(ctx context.Context, notif client.Data) error
-}
-
 type NotificationSender struct {
-	client NotificationClient
+	service notification.Notification
 }
 
 func NewNotificationSender(
-	client NotificationClient,
+	service notification.Notification,
 ) *NotificationSender {
 	return &NotificationSender{
-		client: client,
+		service: service,
 	}
+}
+
+type emailNotificationData struct {
+	Recipients []string
+	Subject    string
+	Body       string
 }
 
 func (n *NotificationSender) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "starting notification sender task")
 
-	var data client.Data
+	var data emailNotificationData
 
 	err := json.Unmarshal(task.Payload(), &data)
 	if err != nil {
@@ -38,7 +40,12 @@ func (n *NotificationSender) ProcessTask(ctx context.Context, task *asynq.Task) 
 		return err
 	}
 
-	err = n.client.CreateNotification(ctx, data)
+	_, err = n.service.Send(ctx, &notification.SendNotificationRequest{
+		Type:       notification.Email,
+		Recipients: data.Recipients,
+		Subject:    data.Subject,
+		Body:       data.Body,
+	})
 	if err != nil {
 		log.Error(ctx, "failed to create notification", err)
 		return err

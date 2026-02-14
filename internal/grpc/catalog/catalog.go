@@ -1,4 +1,4 @@
-package catalog
+package cmkplugincatalog
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"log/slog"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/plugin-sdk/api"
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	slogctx "github.com/veqryn/slog-context"
@@ -15,12 +14,11 @@ import (
 )
 
 // New creates a new instance of Catalog with the provided configuration.
-func New(ctx context.Context, cfg *config.Config) (*plugincatalog.Catalog, error) {
+func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	catalogLogger := slog.With("context", "plugin-catalog")
 	catalogConfig := plugincatalog.Config{
 		Logger:        catalogLogger,
 		PluginConfigs: cfg.Plugins,
-		HostServices:  []api.ServiceServer{},
 	}
 
 	catalog, err := plugincatalog.Load(ctx, catalogConfig)
@@ -39,5 +37,11 @@ func New(ctx context.Context, cfg *config.Config) (*plugincatalog.Catalog, error
 		slogctx.Error(ctx, "Failed to update components of build info")
 	}
 
-	return catalog, nil
+	c := NewPluginCatalog(catalog)
+	err = c.Validate()
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
 }

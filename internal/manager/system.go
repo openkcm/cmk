@@ -3,15 +3,11 @@ package manager
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/orbital"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/authz"
@@ -23,6 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -135,7 +132,7 @@ func NewSystemManager(
 	repository repo.Repo,
 	clientsFactory clients.Factory,
 	reconciler *eventprocessor.CryptoReconciler,
-	ctlg *plugincatalog.Catalog,
+	ctlg *cmkplugincatalog.Registry,
 	cfg *config.Config,
 	keyConfigManager *KeyConfigManager,
 	user User,
@@ -154,13 +151,7 @@ func NewSystemManager(
 	}
 
 	manager.ContextModelsCfg = cfg.ContextModels.System
-
-	sisClient, err := NewSystemInformationManager(repository, ctlg, &cfg.ContextModels.System)
-	if err != nil {
-		log.Warn(ctx, "Failed to create sis client", slog.String(slogctx.ErrKey, err.Error()))
-	}
-
-	manager.sisClient = sisClient
+	manager.sisClient = NewSystemInformationManager(repository, ctlg.SystemInformation(), &cfg.ContextModels.System)
 
 	return manager
 }

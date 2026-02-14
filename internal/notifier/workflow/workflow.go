@@ -8,13 +8,13 @@ import (
 	"html/template"
 
 	"github.com/hibiken/asynq"
+	"github.com/openkcm/plugin-sdk/api/service/notification"
 
 	_ "embed"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
-	notifClient "github.com/openkcm/cmk/internal/notifier/client"
 	wf "github.com/openkcm/cmk/internal/workflow"
 )
 
@@ -203,7 +203,8 @@ func (w *Creator) createNotificationTask(
 		return nil, err
 	}
 
-	d := notifClient.Data{
+	d := notification.SendNotificationRequest{
+		Type:       notification.Email,
 		Recipients: recipients,
 		Subject:    subject,
 		Body:       body,

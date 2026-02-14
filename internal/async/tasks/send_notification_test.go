@@ -7,11 +7,12 @@ import (
 	"testing"
 
 	"github.com/hibiken/asynq"
+	"github.com/openkcm/plugin-sdk/api"
+	"github.com/openkcm/plugin-sdk/api/service/notification"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/notifier/client"
 )
 
 var ErrMockNotification = errors.New("mock notification error")
@@ -19,8 +20,14 @@ var ErrMockNotification = errors.New("mock notification error")
 // SuccessfulNotifierMock always succeeds
 type SuccessfulNotifierMock struct{}
 
-func (s *SuccessfulNotifierMock) CreateNotification(_ context.Context, _ client.Data) error {
-	return nil
+var _ notification.Notification = (*SuccessfulNotifierMock)(nil)
+
+func (s *SuccessfulNotifierMock) ServiceInfo() api.Info {
+	panic("implement me")
+}
+
+func (s *SuccessfulNotifierMock) Send(_ context.Context, _ *notification.SendNotificationRequest) (*notification.SendNotificationResponse, error) {
+	panic("implement me")
 }
 
 // FailingNotifierMock always fails with a predefined error
@@ -28,8 +35,12 @@ type FailingNotifierMock struct {
 	err error
 }
 
-func (f *FailingNotifierMock) CreateNotification(_ context.Context, _ client.Data) error {
-	return f.err
+func (s *FailingNotifierMock) ServiceInfo() api.Info {
+	panic("implement me")
+}
+
+func (s *FailingNotifierMock) Send(_ context.Context, _ *notification.SendNotificationRequest) (*notification.SendNotificationResponse, error) {
+	panic("implement me")
 }
 
 func TestNewNotificationSender(t *testing.T) {
@@ -56,7 +67,7 @@ func TestNotificationSender_ProcessTask_Success(t *testing.T) {
 	notifier := &SuccessfulNotifierMock{}
 	sender := tasks.NewNotificationSender(notifier)
 
-	notifData := client.Data{
+	notifData := notification.SendNotificationRequest{
 		Recipients: []string{"test@example.com", "admin@example.com"},
 		Subject:    "Test Notification",
 		Body:       "This is a test notification body",
@@ -81,7 +92,7 @@ func TestNotificationSender_ProcessTask_NotificationFailure(t *testing.T) {
 	notifier := &FailingNotifierMock{err: expectedErr}
 	sender := tasks.NewNotificationSender(notifier)
 
-	notifData := client.Data{
+	notifData := notification.SendNotificationRequest{
 		Recipients: []string{"test@example.com"},
 		Subject:    "Test Notification",
 		Body:       "This is a test notification body",
@@ -137,7 +148,7 @@ func TestNotificationSender_ProcessTask_EmptyRecipients(t *testing.T) {
 	notifier := &SuccessfulNotifierMock{}
 	sender := tasks.NewNotificationSender(notifier)
 
-	notifData := client.Data{
+	notifData := notification.SendNotificationRequest{
 		Recipients: []string{},
 		Subject:    "Test Notification",
 		Body:       "This is a test notification body",
@@ -161,7 +172,7 @@ func TestNotificationSender_ProcessTask_SingleRecipient(t *testing.T) {
 	notifier := &SuccessfulNotifierMock{}
 	sender := tasks.NewNotificationSender(notifier)
 
-	notifData := client.Data{
+	notifData := notification.SendNotificationRequest{
 		Recipients: []string{"single@example.com"},
 		Subject:    "Single Recipient Test",
 		Body:       "Notification for single recipient",

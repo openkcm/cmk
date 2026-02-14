@@ -15,7 +15,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -34,7 +34,7 @@ func SetupTenantConfigManager(t *testing.T, plugins []testutils.MockPlugin) (*ma
 
 	dbRepository := sql.NewRepository(db)
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
-	ctlg, err := catalog.New(t.Context(), &cfg)
+	ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
 	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg, nil)
@@ -52,7 +52,7 @@ func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []testu
 
 	dbRepository := sql.NewRepository(db)
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
-	ctlg, err := catalog.New(t.Context(), &cfg)
+	ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
 	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg, nil)
@@ -213,7 +213,7 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 				cfg.Plugins = testutils.SetupMockPlugins(testutils.KeyStorePlugin)
 			}
 
-			ctlg, err := catalog.New(t.Context(), &cfg)
+			ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
 			mgr := manager.NewTenantConfigManager(nil, ctlg, nil)

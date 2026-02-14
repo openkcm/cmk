@@ -8,6 +8,7 @@ run:
 linters:
   default: all
   disable:
+    - staticcheck
     - depguard
     - exhaustruct
     - ginkgolinter

@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/plugin-sdk/api/service/notification"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/notifier/client"
 	"github.com/openkcm/cmk/internal/notifier/workflow"
 	wf "github.com/openkcm/cmk/internal/workflow"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -188,7 +188,7 @@ func TestCreator_CreateTask(t *testing.T) {
 			assert.Equal(t, config.TypeSendNotifications, task.Type())
 
 			// Verify task payload
-			var notifData client.Data
+			var notifData notification.SendNotificationRequest
 
 			err = json.Unmarshal(task.Payload(), &notifData)
 			assert.NoError(t, err)
@@ -276,7 +276,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, task)
 
-			var notifData client.Data
+			var notifData notification.SendNotificationRequest
 
 			err = json.Unmarshal(task.Payload(), &notifData)
 			assert.NoError(t, err)
@@ -356,7 +356,7 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 			// For WAIT_CONFIRMATION state, verify email is sent with correct content
 			assert.NotNil(t, task)
 
-			var notifData client.Data
+			var notifData notification.SendNotificationRequest
 
 			err = json.Unmarshal(task.Payload(), &notifData)
 			assert.NoError(t, err)
@@ -403,7 +403,7 @@ func TestCreator_createWorkflowRejectedTask(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, task)
 
-	var notifData client.Data
+	var notifData notification.SendNotificationRequest
 
 	err = json.Unmarshal(task.Payload(), &notifData)
 	assert.NoError(t, err)
@@ -481,7 +481,7 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, task)
 
-			var notifData client.Data
+			var notifData notification.SendNotificationRequest
 
 			err = json.Unmarshal(task.Payload(), &notifData)
 			assert.NoError(t, err)
@@ -522,7 +522,7 @@ func TestCreator_createWorkflowRevokedTask(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, task)
 
-	var notifData client.Data
+	var notifData notification.SendNotificationRequest
 
 	err = json.Unmarshal(task.Payload(), &notifData)
 	assert.NoError(t, err)
@@ -607,7 +607,7 @@ func TestCreator_createNotificationTask(t *testing.T) {
 	assert.NotNil(t, task)
 	assert.Equal(t, config.TypeSendNotifications, task.Type())
 
-	var notifData client.Data
+	var notifData notification.SendNotificationRequest
 
 	err = json.Unmarshal(task.Payload(), &notifData)
 	assert.NoError(t, err)
@@ -647,7 +647,7 @@ func TestCreator_createNotificationTask_EmptyRecipients(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, task)
 
-	var notifData client.Data
+	var notifData notification.SendNotificationRequest
 
 	err = json.Unmarshal(task.Payload(), &notifData)
 	assert.NoError(t, err)

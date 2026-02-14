@@ -12,7 +12,7 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -48,7 +48,7 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 		testutils.CreateTestEntities(ctx, t, repository, sys)
 	}
 
-	clg, err := catalog.New(
+	clg, err := cmkplugincatalog.New(
 		t.Context(),
 		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
@@ -58,7 +58,7 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 
 	assert.NoError(t, err)
 
-	si, err := manager.NewSystemInformationManager(repository, clg, &config.System{
+	si := manager.NewSystemInformationManager(repository, clg.SystemInformation(), &config.System{
 		OptionalProperties: map[string]config.SystemProperty{
 			SystemRole:   {},
 			SystemRoleID: {},
@@ -124,7 +124,7 @@ func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 		assert.True(t, ok)
 	}()
 
-	clg, err := catalog.New(
+	clg, err := cmkplugincatalog.New(
 		t.Context(),
 		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
@@ -134,7 +134,7 @@ func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 
 	assert.NoError(t, err)
 
-	si, err := manager.NewSystemInformationManager(repository, clg, &config.System{
+	si := manager.NewSystemInformationManager(repository, clg.SystemInformation(), &config.System{
 		OptionalProperties: map[string]config.SystemProperty{
 			SystemRole:   {},
 			SystemRoleID: {},

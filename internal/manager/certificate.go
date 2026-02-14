@@ -13,11 +13,11 @@ import (
 	"github.com/fullsailor/pkcs7"
 	"github.com/google/uuid"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	certissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -54,7 +54,7 @@ type CertificateManager struct {
 func NewCertificateManager(
 	ctx context.Context,
 	repo repo.Repo,
-	catalog *plugincatalog.Catalog,
+	catalog *cmkplugincatalog.Registry,
 	cfg *config.Certificates,
 ) *CertificateManager {
 	client, err := createCertificateIssuerClient(catalog)
@@ -304,7 +304,7 @@ func (m *CertificateManager) IsTenantDefaultCertExist(ctx context.Context) (bool
 
 //nolint:ireturn
 func createCertificateIssuerClient(
-	catalog *plugincatalog.Catalog,
+	catalog *cmkplugincatalog.Registry,
 ) (certissuerv1.CertificateIssuerServiceClient, error) {
 	certIssuer := catalog.LookupByTypeAndName(certissuerv1.Type, CertificateIssuerPluginName)
 	if certIssuer == nil {

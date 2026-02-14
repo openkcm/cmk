@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
+	"github.com/openkcm/plugin-sdk/api/service/systeminformation"
 	"gorm.io/gorm"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
-
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -19,36 +17,26 @@ import (
 )
 
 var (
-	ErrSisPlugin         = errors.New("system information plugin error")
 	ErrGettingSystemList = errors.New("error getting system list")
 	ErrUpdatingSystem    = errors.New("error updating system")
 	ErrNoPluginInCatalog = errors.New("no plugin in catalog")
 	ErrNoSystem          = errors.New("no system found")
 )
 
-const (
-	pluginName = "SYSINFO"
-)
-
 type SystemInformation struct {
 	repo      repo.Repo
-	sisClient systeminformationv1.SystemInformationServiceClient
+	service   systeminformation.SystemInformation
 	systemCfg *config.System
 }
 
 func NewSystemInformationManager(repo repo.Repo,
-	catalog *plugincatalog.Catalog, systemCfg *config.System,
-) (*SystemInformation, error) {
-	client, err := createClient(catalog)
-	if err != nil {
-		return nil, err
-	}
-
+	service systeminformation.SystemInformation, systemCfg *config.System,
+) *SystemInformation {
 	return &SystemInformation{
-		sisClient: client,
+		service:   service,
 		repo:      repo,
 		systemCfg: systemCfg,
-	}, nil
+	}
 }
 
 func (si *SystemInformation) UpdateSystems(ctx context.Context) error {
@@ -85,31 +73,20 @@ func (si *SystemInformation) UpdateSystemByExternalID(ctx context.Context, exter
 }
 
 func (si *SystemInformation) updateSystem(ctx context.Context, system *model.System) error {
-	var typ systeminformationv1.RequestType
-
 	ctx = model.LogInjectSystem(ctx, system)
 
 	log.Debug(ctx, "Requesting SIS for properties")
 
-	switch system.Type {
-	case string(systems.SystemTypeSUBACCOUNT):
-		typ = systeminformationv1.RequestType_REQUEST_TYPE_SUBACCOUNT
-	case string(systems.SystemTypeSYSTEM):
-		typ = systeminformationv1.RequestType_REQUEST_TYPE_SYSTEM
-	default:
-		typ = systeminformationv1.RequestType_REQUEST_TYPE_UNSPECIFIED
-	}
-
-	resp, err := si.sisClient.Get(ctx, &systeminformationv1.GetRequest{
-		Id:   system.Identifier,
-		Type: typ,
+	resp, err := si.service.GetSystemInfo(ctx, &systeminformation.GetSystemInfoRequest{
+		ID:   system.Identifier,
+		Type: strings.ToLower(system.Type),
 	})
 	if err != nil {
 		log.Warn(ctx, "Could not get information from SIS", log.ErrorAttr(err))
 		return nil
 	}
 
-	metadata := resp.GetMetadata()
+	metadata := resp.Metadata
 	if metadata == nil {
 		log.Warn(ctx, "No system information from SIS")
 		return nil
@@ -133,13 +110,4 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 	}
 
 	return nil
-}
-
-func createClient(catalog *plugincatalog.Catalog) (systeminformationv1.SystemInformationServiceClient, error) {
-	systemInformation := catalog.LookupByTypeAndName(systeminformationv1.Type, pluginName)
-	if systemInformation == nil {
-		return nil, ErrNoPluginInCatalog
-	}
-
-	return systeminformationv1.NewSystemInformationServiceClient(systemInformation.ClientConnection()), nil
 }

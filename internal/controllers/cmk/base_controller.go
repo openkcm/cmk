@@ -3,15 +3,13 @@ package cmk
 import (
 	"context"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-
 	"github.com/openkcm/cmk/internal/async"
 	authzmodel "github.com/openkcm/cmk/internal/authz-model"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
@@ -19,7 +17,7 @@ import (
 
 // APIController handles API requests related to CMK (Customer Managed Keys).
 type APIController struct {
-	pluginCatalog *plugincatalog.Catalog
+	pluginCatalog *cmkplugincatalog.Registry
 	Repository    repo.Repo
 	Manager       *manager.Manager
 	config        *config.Config
@@ -35,7 +33,7 @@ func NewAPIController(
 	clientsFactory clients.Factory,
 	migrator db.Migrator,
 ) *APIController {
-	ctlg, err := catalog.New(ctx, config)
+	ctlg, err := cmkplugincatalog.New(ctx, config)
 	if err != nil {
 		log.Error(ctx, "Failed to load plugin", err)
 	}

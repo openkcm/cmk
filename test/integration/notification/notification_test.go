@@ -5,13 +5,13 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/openkcm/plugin-sdk/api/service/notification"
 	"github.com/stretchr/testify/assert"
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
-	"github.com/openkcm/cmk/internal/notifier/client"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
 
@@ -24,9 +24,9 @@ func init() {
 	ansPath = filepath.Join(baseDir, "../../notification-plugins/bin/notification")
 }
 
-func NotificationPlugin(t *testing.T) *plugincatalog.Catalog {
+func NotificationPlugin(t *testing.T) *cmkplugincatalog.Registry {
 	t.Helper()
-	plugins, err := catalog.New(t.Context(), &config.Config{
+	plugins, err := cmkplugincatalog.New(t.Context(), &config.Config{
 		Plugins: []plugincatalog.PluginConfig{
 			integrationutils.NotificationPlugin(t),
 		},
@@ -49,9 +49,8 @@ func TestCreateNotificationManager(t *testing.T) {
 	pluginCatalog := NotificationPlugin(t)
 	defer pluginCatalog.Close()
 
-	m := client.New(t.Context(), pluginCatalog)
-
-	err := m.CreateNotification(t.Context(), client.Data{
+	_, err := pluginCatalog.Notification().Send(t.Context(), &notification.SendNotificationRequest{
+		Type:       notification.Email,
 		Recipients: []string{"TestRecipient"},
 		Subject:    "Test Notification",
 		Body:       "This was a test notification",

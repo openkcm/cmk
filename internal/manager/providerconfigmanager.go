@@ -13,13 +13,13 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	kscommonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
 	keystoremanagerv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/management/v1"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -71,7 +71,7 @@ func (c ProviderConfig) IsExpired() bool {
 }
 
 type ProviderConfigManager struct {
-	catalog       *plugincatalog.Catalog
+	catalog       *cmkplugincatalog.Registry
 	providers     map[ProviderCachedKey]*ProviderConfig
 	mu            sync.RWMutex
 	tenantConfigs *TenantConfigManager

@@ -11,14 +11,14 @@ import (
 	idmangv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
 
-func IdentityManagementPlugin(t *testing.T) *plugincatalog.Catalog {
+func IdentityManagementPlugin(t *testing.T) *cmkplugincatalog.Registry {
 	t.Helper()
 
-	cat, err := catalog.New(t.Context(), &config.Config{
+	cat, err := cmkplugincatalog.New(t.Context(), &config.Config{
 		Plugins: []plugincatalog.PluginConfig{integrationutils.IDMangementPlugin(t)},
 	})
 	assert.NoError(t, err)

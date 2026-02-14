@@ -1,4 +1,4 @@
-package catalog_test
+package cmkplugincatalog_test
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 )
 
 func TestNew(t *testing.T) {
@@ -62,14 +62,14 @@ func TestNew(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
-			ctlg, err := catalog.New(ctx, tc.cfg)
+			ctlg, err := cmkplugincatalog.New(ctx, tc.cfg)
 
 			if tc.wantErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 				assert.NotNil(t, ctlg)
-				assert.IsType(t, &plugincatalog.Catalog{}, ctlg)
+				assert.IsType(t, &cmkplugincatalog.Registry{}, ctlg)
 			}
 		})
 	}

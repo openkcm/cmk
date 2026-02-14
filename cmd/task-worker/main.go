@@ -26,10 +26,9 @@ import (
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/notifier/client"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
@@ -109,17 +108,14 @@ func registerTasks(
 		return errs.Wrap(db.ErrStartingDBCon, err)
 	}
 
-	ctlg, err := catalog.New(ctx, cfg)
+	ctlg, err := cmkplugincatalog.New(ctx, cfg)
 	if err != nil {
 		return errs.Wrapf(err, "failed to start loading catalog")
 	}
 
 	r := sql.NewRepository(dbCon)
 
-	sis, err := manager.NewSystemInformationManager(r, ctlg, &cfg.ContextModels.System)
-	if err != nil {
-		return errs.Wrapf(err, "failed to start system information manager")
-	}
+	sis := manager.NewSystemInformationManager(r, ctlg.SystemInformation(), &cfg.ContextModels.System)
 
 	cfg.EventProcessor.Targets = nil // Disable consumer creation in the event processor
 
@@ -140,7 +136,6 @@ func registerTasks(
 	groupManager := manager.NewGroupManager(r, ctlg, userManager)
 	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, cron.Client(), tenantConfigManager, cfg)
-	notificationClient := client.New(ctx, ctlg)
 
 	cron.RegisterTasks(ctx, []async.TaskHandler{
 		tasks.NewSystemsRefresher(sis, r),
@@ -148,7 +143,7 @@ func registerTasks(
 		tasks.NewHYOKSync(keyManager, r),
 		tasks.NewKeystorePoolFiller(keyManager, r, cfg.KeystorePool),
 		tasks.NewWorkflowProcessor(workflowManager, r),
-		tasks.NewNotificationSender(notificationClient),
+		tasks.NewNotificationSender(ctlg.Notification()),
 		tasks.NewWorkflowExpiryProcessor(workflowManager, r),
 		tasks.NewWorkflowCleaner(workflowManager, r),
 	})

@@ -12,7 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -104,7 +104,7 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 		w.ActionType = wfMechanism.ActionTypeDelete.String()
 	})
 
-	ctlg, err := catalog.New(ctx, testConfig)
+	ctlg, err := cmkplugincatalog.New(ctx, testConfig)
 	tenantConfigManager := manager.NewTenantConfigManager(repository, ctlg, nil)
 	cmkAuditor := auditor.New(ctx, testConfig)
 	userManager := manager.NewUserManager(repository, cmkAuditor)

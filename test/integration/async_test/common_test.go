@@ -21,7 +21,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -69,15 +69,14 @@ func getConfig(t *testing.T, schCfg config.Scheduler) *config.Config {
 func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *config.Config) {
 	t.Helper()
 
-	ctlg, err := catalog.New(t.Context(), cfg)
+	ctlg, err := cmkplugincatalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	tenancyRepo := sql.NewRepository(db)
 
 	val := reflect.ValueOf(a).Elem()
 
-	sis, err := manager.NewSystemInformationManager(tenancyRepo, ctlg, &cfg.ContextModels.System)
-	assert.NoError(t, err)
+	sis := manager.NewSystemInformationManager(tenancyRepo, ctlg.SystemInformation(), &cfg.ContextModels.System)
 
 	sysCl := val.FieldByName("systemClient")
 	sysCl = reflect.NewAt(sysCl.Type(), unsafe.Pointer(sysCl.UnsafeAddr())).Elem()
