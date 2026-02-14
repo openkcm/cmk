@@ -17,7 +17,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -54,7 +54,7 @@ func SetupWorkflowManager(t *testing.T, cfg *config.Config,
 
 	r := sql.NewRepository(db)
 
-	ctlg, err := catalog.New(t.Context(), cfg)
+	ctlg, err := cmkplugincatalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	tenantConfigManager := manager.NewTenantConfigManager(r, ctlg, nil)

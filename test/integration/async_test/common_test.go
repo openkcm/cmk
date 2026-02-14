@@ -11,17 +11,17 @@ import (
 	"unsafe"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -37,7 +37,7 @@ func getConfig(t *testing.T, schCfg config.Scheduler) *config.Config {
 
 	return &config.Config{
 		Database: integrationutils.DB,
-		Plugins: []plugincatalog.PluginConfig{
+		Plugins: []catalog.PluginConfig{
 			integrationutils.SISPlugin(t),
 			integrationutils.PKIPlugin(t),
 			integrationutils.KeystorePlugin(t),
@@ -69,7 +69,7 @@ func getConfig(t *testing.T, schCfg config.Scheduler) *config.Config {
 func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *config.Config) {
 	t.Helper()
 
-	ctlg, err := catalog.New(t.Context(), cfg)
+	ctlg, err := cmkplugincatalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	tenancyRepo := sql.NewRepository(db)

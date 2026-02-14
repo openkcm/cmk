@@ -19,7 +19,6 @@ import (
 	goAmqp "github.com/Azure/go-amqp"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	orbsql "github.com/openkcm/orbital/store/sql"
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 	protoPkg "google.golang.org/protobuf/proto"
 
@@ -33,6 +32,7 @@ import (
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -85,7 +85,7 @@ type CryptoReconciler struct {
 	manager       *orbital.Manager
 	targets       map[string]struct{}
 	initiators    []orbital.Initiator
-	pluginCatalog *plugincatalog.Catalog
+	pluginCatalog *cmkplugincatalog.Registry
 	cmkAuditor    *auditor.Auditor
 	registry      registry.Service
 }
@@ -97,7 +97,7 @@ func NewCryptoReconciler(
 	ctx context.Context,
 	cfg *config.Config,
 	repository repo.Repo,
-	pluginCatalog *plugincatalog.Catalog,
+	pluginCatalog *cmkplugincatalog.Registry,
 	clientsFactory clients.Factory,
 	opts ...Option,
 ) (*CryptoReconciler, error) {

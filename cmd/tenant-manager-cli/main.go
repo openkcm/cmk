@@ -13,12 +13,11 @@ import (
 	"github.com/spf13/cobra"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/cmd/tenant-manager-cli/commands"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 )
 
@@ -71,7 +70,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return oops.In("main").Wrapf(err, "Failed to initialise db connection")
 	}
 
-	ctlg, err := catalog.New(ctx, cfg)
+	ctlg, err := cmkplugincatalog.New(ctx, cfg)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "Failed to initialise plugin catalog")
 	}
@@ -94,7 +93,7 @@ func setupCommands(
 	ctx context.Context,
 	cfg *config.Config,
 	dbCon *multitenancy.DB,
-	catalog *plugincatalog.Catalog,
+	catalog *cmkplugincatalog.Registry,
 ) (*cobra.Command, error) {
 	factory, err := commands.NewCommandFactory(ctx, cfg, dbCon, catalog)
 	if err != nil {

@@ -5,12 +5,11 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/notifier/client"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
@@ -24,10 +23,10 @@ func init() {
 	ansPath = filepath.Join(baseDir, "../../notification-plugins/bin/notification")
 }
 
-func NotificationPlugin(t *testing.T) *plugincatalog.Catalog {
+func NotificationPlugin(t *testing.T) *cmkplugincatalog.Registry {
 	t.Helper()
-	plugins, err := catalog.New(t.Context(), &config.Config{
-		Plugins: []plugincatalog.PluginConfig{
+	plugins, err := cmkplugincatalog.New(t.Context(), &config.Config{
+		Plugins: []catalog.PluginConfig{
 			integrationutils.NotificationPlugin(t),
 		},
 	})

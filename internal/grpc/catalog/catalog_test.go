@@ -1,16 +1,16 @@
-package catalog_test
+package cmkplugincatalog_test
 
 import (
 	"testing"
 
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 )
 
 func TestNew(t *testing.T) {
@@ -27,7 +27,7 @@ func TestNew(t *testing.T) {
 		{
 			name: "plugin disabled",
 			cfg: &config.Config{
-				Plugins: []plugincatalog.PluginConfig{
+				Plugins: []catalog.PluginConfig{
 					{
 						Name:     "TestPlugin",
 						Type:     keystoreopv1.Type,
@@ -44,7 +44,7 @@ func TestNew(t *testing.T) {
 		{
 			name: "invalid plugin path",
 			cfg: &config.Config{
-				Plugins: []plugincatalog.PluginConfig{
+				Plugins: []catalog.PluginConfig{
 					{
 						Name:     "InvalidPlugin",
 						Type:     keystoreopv1.Type,
@@ -62,14 +62,14 @@ func TestNew(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
-			ctlg, err := catalog.New(ctx, tc.cfg)
+			ctlg, err := cmkplugincatalog.New(ctx, tc.cfg)
 
 			if tc.wantErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 				assert.NotNil(t, ctlg)
-				assert.IsType(t, &plugincatalog.Catalog{}, ctlg)
+				assert.IsType(t, &cmkplugincatalog.Registry{}, ctlg)
 			}
 		})
 	}
