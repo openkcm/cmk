@@ -1,8 +1,6 @@
 package cmkplugincatalog
 
 import (
-	"errors"
-
 	"github.com/openkcm/plugin-sdk/api/service/certificateissuer"
 	"github.com/openkcm/plugin-sdk/api/service/identitymanagement"
 	"github.com/openkcm/plugin-sdk/api/service/keymanagement"
@@ -10,7 +8,6 @@ import (
 	"github.com/openkcm/plugin-sdk/api/service/notification"
 	"github.com/openkcm/plugin-sdk/api/service/systeminformation"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
-	"github.com/zeebo/errs/v2"
 
 	serviceapi "github.com/openkcm/plugin-sdk/api/service"
 )
@@ -40,24 +37,6 @@ func NewPluginCatalog(clg *catalog.Catalog) *Registry {
 
 		Catalog: *clg,
 	}
-}
-
-func (p *Registry) Validate() error {
-	groupError := &errs.Group{}
-
-	if _, ok := p.registry.Notification(); !ok {
-		//nolint: err113
-		err := errors.New("notification plugin is mandatory")
-		groupError.Append(err)
-	}
-
-	if _, ok := p.registry.SystemInformation(); !ok {
-		//nolint: err113
-		err := errors.New("system information plugin is mandatory")
-		groupError.Append(err)
-	}
-
-	return groupError.Err()
 }
 
 func (p *Registry) CertificateIssuer() certificateissuer.CertificateIssuer {

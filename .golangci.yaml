@@ -8,6 +8,8 @@ run:
 linters:
   default: all
   disable:
+    - testpackage
+    - thelper
     - staticcheck
     - depguard
     - exhaustruct
