@@ -11,7 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -51,7 +51,7 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	s.r = sql.NewRepository(db)
 
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.KeyStorePlugin)}
-	ctlg, err := catalog.New(s.ctx, &cfg)
+	ctlg, err := cmkplugincatalog.New(s.ctx, &cfg)
 	s.Require().NoError(err)
 
 	tenantConfigManager := manager.NewTenantConfigManager(s.r, ctlg, nil)

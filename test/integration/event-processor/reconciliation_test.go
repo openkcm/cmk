@@ -25,7 +25,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	sqlPkg "github.com/openkcm/cmk/internal/repo/sql"
@@ -83,7 +83,7 @@ func setupTest(t *testing.T) tester {
 		Database: dbConf,
 	}
 
-	ctlg, err := catalog.New(t.Context(), &cfg)
+	ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
 	require.NoError(t, err)
 
 	r := sqlPkg.NewRepository(db)

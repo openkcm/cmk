@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -48,9 +47,9 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 		testutils.CreateTestEntities(ctx, t, repository, sys)
 	}
 
-	clg, err := catalog.New(
+	clg, err := cmkplugincatalog.New(
 		t.Context(),
-		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
+		&config.Config{Plugins: []catalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
 	assert.NoError(t, err)
 
@@ -124,9 +123,9 @@ func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 		assert.True(t, ok)
 	}()
 
-	clg, err := catalog.New(
+	clg, err := cmkplugincatalog.New(
 		t.Context(),
-		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
+		&config.Config{Plugins: []catalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
 	assert.NoError(t, err)
 

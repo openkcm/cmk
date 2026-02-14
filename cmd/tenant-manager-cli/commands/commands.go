@@ -4,13 +4,13 @@ import (
 	"context"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -27,7 +27,7 @@ func NewCommandFactory(
 	ctx context.Context,
 	cfg *config.Config,
 	dbCon *multitenancy.DB,
-	ctlg *plugincatalog.Catalog,
+	ctlg *cmkplugincatalog.Registry,
 ) (*CommandFactory, error) {
 	r := sql.NewRepository(dbCon)
 

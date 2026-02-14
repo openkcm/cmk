@@ -14,7 +14,6 @@ import (
 	"github.com/openkcm/orbital"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
 	commonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
@@ -27,6 +26,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -66,7 +66,7 @@ type KeyManager struct {
 
 func NewKeyManager(
 	repo repo.Repo,
-	catalog *plugincatalog.Catalog,
+	catalog *cmkplugincatalog.Registry,
 	tenantConfigs *TenantConfigManager,
 	keyConfigManager *KeyConfigManager,
 	user User,

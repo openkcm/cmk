@@ -19,15 +19,13 @@ import (
 	"github.com/openkcm/orbital/codec"
 	"github.com/samber/oops"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/operator"
@@ -89,7 +87,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	ctlg, err := catalog.New(ctx, cfg)
+	ctlg, err := cmkplugincatalog.New(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -122,7 +120,7 @@ func createTenantManager(
 	ctx context.Context,
 	r repo.Repo,
 	clients clients.Factory,
-	ctlg *plugincatalog.Catalog,
+	ctlg *cmkplugincatalog.Registry,
 	cfg *config.Config,
 ) (manager.Tenant, error) {
 	cmkAuditor := auditor.New(ctx, cfg)

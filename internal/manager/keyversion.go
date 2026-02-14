@@ -9,12 +9,12 @@ import (
 
 	"github.com/google/uuid"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/errs"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -41,7 +41,7 @@ type KeyVersionManager struct {
 
 func NewKeyVersionManager(
 	repo repo.Repo,
-	catalog *plugincatalog.Catalog,
+	catalog *cmkplugincatalog.Registry,
 	tenantConfigs *TenantConfigManager,
 	certManager *CertificateManager,
 	cmkAuditor *auditor.Auditor,

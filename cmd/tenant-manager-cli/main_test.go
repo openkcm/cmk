@@ -12,7 +12,7 @@ import (
 
 	tmCLI "github.com/openkcm/cmk/cmd/tenant-manager-cli"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
@@ -41,7 +41,7 @@ func TestSetupCommands(t *testing.T) {
 			Database: dbCfg,
 		}
 
-		ctlg, err := catalog.New(t.Context(), cfg)
+		ctlg, err := cmkplugincatalog.New(t.Context(), cfg)
 		assert.NoError(t, err, "Failed to create catalog")
 
 		rootCmd, err := tmCLI.SetupCommands(ctx, cfg, nil, ctlg)

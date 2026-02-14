@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -23,6 +22,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -135,7 +135,7 @@ func NewSystemManager(
 	repository repo.Repo,
 	clientsFactory clients.Factory,
 	reconciler *eventprocessor.CryptoReconciler,
-	ctlg *plugincatalog.Catalog,
+	ctlg *cmkplugincatalog.Registry,
 	cfg *config.Config,
 	keyConfigManager *KeyConfigManager,
 	user User,

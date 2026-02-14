@@ -12,7 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -44,7 +44,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 
 	r := sql.NewRepository(dbCon)
 
-	ctlg, err := catalog.New(ctx, cfg)
+	ctlg, err := cmkplugincatalog.New(ctx, cfg)
 	assert.NoError(t, err)
 	reconciler, err := eventprocessor.NewCryptoReconciler(
 		ctx, cfg, r,

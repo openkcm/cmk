@@ -5,8 +5,7 @@ import (
 	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/errs"
 )
@@ -27,14 +26,14 @@ var (
 type Config struct {
 	commoncfg.BaseConfig `mapstructure:",squash" yaml:",inline"`
 
-	Database         Database                     `yaml:"database"`
-	DatabaseReplicas []Database                   `yaml:"databaseReplicas"`
-	Scheduler        Scheduler                    `yaml:"scheduler"`
-	HTTP             HTTPServer                   `yaml:"http"`
-	Plugins          []plugincatalog.PluginConfig `yaml:"plugins"`
-	Services         Services                     `yaml:"services"`
-	Certificates     Certificates                 `yaml:"certificates"`
-	Provisioning     Provisioning                 `yaml:"provisioning"`
+	Database         Database               `yaml:"database"`
+	DatabaseReplicas []Database             `yaml:"databaseReplicas"`
+	Scheduler        Scheduler              `yaml:"scheduler"`
+	HTTP             HTTPServer             `yaml:"http"`
+	Plugins          []catalog.PluginConfig `yaml:"plugins"`
+	Services         Services               `yaml:"services"`
+	Certificates     Certificates           `yaml:"certificates"`
+	Provisioning     Provisioning           `yaml:"provisioning"`
 
 	ConfigurableContext commoncfg.SourceRef `yaml:"configurableContext"`
 	ContextModels       ContextModels       // Loaded with ConfigurableContext

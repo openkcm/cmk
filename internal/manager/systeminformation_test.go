@@ -14,7 +14,7 @@ import (
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -37,7 +37,7 @@ func SetupSystemInfoManager(t *testing.T) (
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepository := sql.NewRepository(db)
-	ctlg, err := catalog.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
+	ctlg, err := cmkplugincatalog.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
 	assert.NoError(t, err)
 	systemManager, err := manager.NewSystemInformationManager(
 		dbRepository,
@@ -164,7 +164,7 @@ func TestNewSystemInformationManager(t *testing.T) {
 					},
 				},
 			}
-			ctlg, err := catalog.New(t.Context(), &cfg)
+			ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
 			_, err = manager.NewSystemInformationManager(nil, ctlg, &cfg.ContextModels.System)

@@ -3,14 +3,13 @@ package manager
 import (
 	"context"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -29,7 +28,7 @@ type Manager struct {
 
 	Tenant Tenant
 
-	Catalog    *plugincatalog.Catalog
+	Catalog    *cmkplugincatalog.Registry
 	Reconciler *eventprocessor.CryptoReconciler
 	Auditor    *auditor.Auditor
 }
@@ -39,7 +38,7 @@ func New(
 	repo repo.Repo,
 	config *config.Config,
 	clientsFactory clients.Factory,
-	catalog *plugincatalog.Catalog,
+	catalog *cmkplugincatalog.Registry,
 	reconciler *eventprocessor.CryptoReconciler,
 	asyncClient async.Client,
 	migrator db.Migrator,

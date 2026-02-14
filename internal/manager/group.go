@@ -8,13 +8,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	idmv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -23,13 +23,13 @@ import (
 
 type GroupManager struct {
 	repo        repo.Repo
-	catalog     *plugincatalog.Catalog
+	catalog     *cmkplugincatalog.Registry
 	userManager User
 }
 
 func NewGroupManager(
 	repository repo.Repo,
-	catalog *plugincatalog.Catalog,
+	catalog *cmkplugincatalog.Registry,
 	userManager User,
 ) *GroupManager {
 	return &GroupManager{

@@ -3,10 +3,10 @@ package client
 import (
 	"context"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 
 	cmkcatalog "github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 )
 
@@ -26,7 +26,7 @@ type Client struct {
 
 func New(
 	ctx context.Context,
-	catalog *plugincatalog.Catalog,
+	catalog *cmkplugincatalog.Registry,
 ) *Client {
 	client, err := createNotificationClient(catalog)
 	if err != nil {
@@ -40,7 +40,7 @@ func New(
 
 //nolint:ireturn
 func createNotificationClient(
-	catalog *plugincatalog.Catalog,
+	catalog *cmkplugincatalog.Registry,
 ) (notificationv1.NotificationServiceClient, error) {
 	notification := catalog.LookupByTypeAndName(notificationv1.Type, PluginName)
 	if notification == nil {

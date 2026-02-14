@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"gorm.io/gorm"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -37,7 +37,7 @@ type SystemInformation struct {
 }
 
 func NewSystemInformationManager(repo repo.Repo,
-	catalog *plugincatalog.Catalog, systemCfg *config.System,
+	catalog *cmkplugincatalog.Registry, systemCfg *config.System,
 ) (*SystemInformation, error) {
 	client, err := createClient(catalog)
 	if err != nil {
@@ -85,24 +85,13 @@ func (si *SystemInformation) UpdateSystemByExternalID(ctx context.Context, exter
 }
 
 func (si *SystemInformation) updateSystem(ctx context.Context, system *model.System) error {
-	var typ systeminformationv1.RequestType
-
 	ctx = model.LogInjectSystem(ctx, system)
 
 	log.Debug(ctx, "Requesting SIS for properties")
 
-	switch system.Type {
-	case string(systems.SystemTypeSUBACCOUNT):
-		typ = systeminformationv1.RequestType_REQUEST_TYPE_SUBACCOUNT
-	case string(systems.SystemTypeSYSTEM):
-		typ = systeminformationv1.RequestType_REQUEST_TYPE_SYSTEM
-	default:
-		typ = systeminformationv1.RequestType_REQUEST_TYPE_UNSPECIFIED
-	}
-
 	resp, err := si.sisClient.Get(ctx, &systeminformationv1.GetRequest{
 		Id:   system.Identifier,
-		Type: typ,
+		Type: strings.ToLower(system.Type),
 	})
 	if err != nil {
 		log.Warn(ctx, "Could not get information from SIS", log.ErrorAttr(err))
@@ -135,7 +124,7 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 	return nil
 }
 
-func createClient(catalog *plugincatalog.Catalog) (systeminformationv1.SystemInformationServiceClient, error) {
+func createClient(catalog *cmkplugincatalog.Registry) (systeminformationv1.SystemInformationServiceClient, error) {
 	systemInformation := catalog.LookupByTypeAndName(systeminformationv1.Type, pluginName)
 	if systemInformation == nil {
 		return nil, ErrNoPluginInCatalog
