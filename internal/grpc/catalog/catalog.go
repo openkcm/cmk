@@ -37,11 +37,5 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 		slogctx.Error(ctx, "Failed to update components of build info")
 	}
 
-	c := NewPluginCatalog(catalog)
-	//err = c.Validate()
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	return c, nil
+	return NewPluginCatalog(catalog), nil
 }
