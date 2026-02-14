@@ -38,10 +38,10 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	}
 
 	c := NewPluginCatalog(catalog)
-	err = c.Validate()
-	if err != nil {
-		return nil, err
-	}
+	//err = c.Validate()
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	return c, nil
 }
