@@ -7,6 +7,7 @@ import (
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
+	"github.com/openkcm/plugin-sdk/pkg/service"
 
 	slogctx "github.com/veqryn/slog-context"
 
@@ -22,7 +23,7 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	}
 
 	//nolint: staticcheck
-	clg, err := catalog.Load(ctx, catalogConfig)
+	svcRepo, err := service.CreateServiceRepository(ctx, catalogConfig)
 	if err != nil {
 		catalogLogger.ErrorContext(ctx, "Error loading plugins", "error", err)
 		return nil, fmt.Errorf("error loading plugins: %w", err)
@@ -30,7 +31,7 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 
 	pluginBuildInfos := make([]string, 0)
 	//nolint: staticcheck
-	for _, pluginInfo := range clg.ListPluginInfo() {
+	for _, pluginInfo := range svcRepo.RawCatalog.ListPluginInfo() {
 		pluginBuildInfos = append(pluginBuildInfos, pluginInfo.Build())
 	}
 
@@ -40,7 +41,7 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	}
 
 	return &Registry{
-		Registry: catalog.WrapAsPluginRepository(clg),
-		Catalog:  clg,
+		Registry: svcRepo,
+		Catalog:  svcRepo.RawCatalog,
 	}, nil
 }
