@@ -32,7 +32,7 @@ require (
 	github.com/openkcm/api-sdk v0.15.0
 	github.com/openkcm/common-sdk v1.12.0
 	github.com/openkcm/orbital v0.4.0
-	github.com/openkcm/plugin-sdk v0.9.3-0.20260215213144-45eb7a7ad1e6
+	github.com/openkcm/plugin-sdk v0.9.3-0.20260215215646-4333911f4684
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/samber/oops v1.21.0

@@ -20,12 +20,11 @@ var ErrNoPluginInCatalog = errors.New("no plugin in catalog")
 // New creates a new instance of Catalog with the provided configuration.
 func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	catalogLogger := slog.With("context", "plugin-catalog")
-	catalogConfig := catalog.Config{
+
+	svcRepo, err := servicewrapper.CreateServiceRepository(ctx, catalog.Config{
 		Logger:        catalogLogger,
 		PluginConfigs: cfg.Plugins,
-	}
-
-	svcRepo, err := servicewrapper.CreateServiceRepository(ctx, catalogConfig)
+	})
 	if err != nil {
 		catalogLogger.ErrorContext(ctx, "Error loading plugins", "error", err)
 		return nil, fmt.Errorf("error loading plugins: %w", err)
