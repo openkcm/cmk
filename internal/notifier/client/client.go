@@ -6,7 +6,6 @@ import (
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 
 	"github.com/openkcm/cmk/internal/log"
-	cmkcatalog "github.com/openkcm/cmk/internal/plugincatalog"
 	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
 )
 
@@ -44,7 +43,7 @@ func createNotificationClient(
 ) (notificationv1.NotificationServiceClient, error) {
 	notification := catalog.LookupByTypeAndName(notificationv1.Type, PluginName)
 	if notification == nil {
-		return nil, cmkcatalog.ErrNoPluginInCatalog
+		return nil, cmkplugincatalog.ErrNoPluginInCatalog
 	}
 
 	return notificationv1.NewNotificationServiceClient(notification.ClientConnection()), nil
