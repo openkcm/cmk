@@ -26,10 +26,10 @@ import (
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/notifier/client"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 

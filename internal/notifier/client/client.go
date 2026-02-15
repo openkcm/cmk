@@ -5,9 +5,9 @@ import (
 
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 
-	cmkcatalog "github.com/openkcm/cmk/internal/grpc/catalog"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
+	cmkcatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
 )
 
 const (

@@ -11,7 +11,7 @@ import (
 	idmangv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 
 	"github.com/openkcm/cmk/internal/config"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
 

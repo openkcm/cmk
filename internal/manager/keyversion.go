@@ -14,9 +14,9 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/errs"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )

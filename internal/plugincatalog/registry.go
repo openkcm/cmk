@@ -27,54 +27,57 @@ type ServiceRegistry interface {
 var _ ServiceRegistry = (*Registry)(nil)
 
 type Registry struct {
-	registry        serviceapi.Registry
-	catalog.Catalog //nolint:embeddedstructfieldcheck
+	serviceapi.Registry
+	catalog.Catalog
 }
 
 func NewPluginCatalog(clg *catalog.Catalog) *Registry {
 	return &Registry{
-		registry: catalog.WrapAsPluginRepository(clg),
-
-		Catalog: *clg,
+		Registry: catalog.WrapAsPluginRepository(clg),
+		Catalog:  *clg,
 	}
 }
 
+func (p *Registry) Close() error {
+	return p.Registry.Close()
+}
+
 func (p *Registry) CertificateIssuer() certificateissuer.CertificateIssuer {
-	instance, _ := p.registry.CertificateIssuer()
+	instance, _ := p.Registry.CertificateIssuer()
 	return instance
 }
 
 func (p *Registry) Notification() notification.Notification {
-	instance, _ := p.registry.Notification()
+	instance, _ := p.Registry.Notification()
 	return instance
 }
 
 func (p *Registry) SystemInformation() systeminformation.SystemInformation {
-	instance, _ := p.registry.SystemInformation()
+	instance, _ := p.Registry.SystemInformation()
 	return instance
 }
 
 func (p *Registry) IdentityManagement() identitymanagement.IdentityManagement {
-	instance, _ := p.registry.IdentityManagement()
+	instance, _ := p.Registry.IdentityManagement()
 	return instance
 }
 
 func (p *Registry) KeystoreManagements() map[string]keystoremanagement.KeystoreManagement {
-	instance, _ := p.registry.KeystoreManagements()
+	instance, _ := p.Registry.KeystoreManagements()
 	return instance
 }
 
 func (p *Registry) KeystoreManagementList() []keystoremanagement.KeystoreManagement {
-	instance, _ := p.registry.KeystoreManagementList()
+	instance, _ := p.Registry.KeystoreManagementList()
 	return instance
 }
 
 func (p *Registry) KeyManagements() map[string]keymanagement.KeyManagement {
-	instance, _ := p.registry.KeyManagements()
+	instance, _ := p.Registry.KeyManagements()
 	return instance
 }
 
 func (p *Registry) KeyManagementList() []keymanagement.KeyManagement {
-	instance, _ := p.registry.KeyManagementList()
+	instance, _ := p.Registry.KeyManagementList()
 	return instance
 }

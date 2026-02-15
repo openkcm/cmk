@@ -12,7 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
 	"github.com/openkcm/cmk/internal/errs"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
 	"github.com/openkcm/cmk/utils/protobuf"
 )
 

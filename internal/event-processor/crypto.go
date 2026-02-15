@@ -32,9 +32,9 @@ import (
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )

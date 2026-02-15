@@ -12,7 +12,7 @@ import (
 
 	tmCLI "github.com/openkcm/cmk/cmd/tenant-manager-cli"
 	"github.com/openkcm/cmk/internal/config"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 

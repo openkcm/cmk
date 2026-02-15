@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/config"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/notifier/client"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
 

@@ -17,8 +17,8 @@ import (
 	"github.com/openkcm/cmk/cmd/tenant-manager-cli/commands"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
+	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
 )
 
 func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {

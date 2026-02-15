@@ -182,7 +182,7 @@ func TestRegistry_Singletons(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := tt.setupMock()
 			// Inject the mock directly into the struct to bypass NewPluginCatalog for unit testing
-			reg := &Registry{registry: mock}
+			reg := &Registry{Registry: mock}
 			tt.executeAndTest(t, reg)
 		})
 	}
@@ -268,7 +268,7 @@ func TestRegistry_Collections(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := tt.setupMock()
-			reg := &Registry{registry: mock}
+			reg := &Registry{Registry: mock}
 			tt.executeAndTest(t, reg)
 		})
 	}
