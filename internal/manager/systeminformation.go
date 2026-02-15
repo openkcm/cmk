@@ -125,6 +125,7 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 }
 
 func createClient(catalog *cmkplugincatalog.Registry) (systeminformationv1.SystemInformationServiceClient, error) {
+	//nolint: staticcheck
 	systemInformation := catalog.LookupByTypeAndName(systeminformationv1.Type, pluginName)
 	if systemInformation == nil {
 		return nil, ErrNoPluginInCatalog

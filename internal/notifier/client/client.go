@@ -41,6 +41,7 @@ func New(
 func createNotificationClient(
 	catalog *cmkplugincatalog.Registry,
 ) (notificationv1.NotificationServiceClient, error) {
+	//nolint: staticcheck
 	notification := catalog.LookupByTypeAndName(notificationv1.Type, PluginName)
 	if notification == nil {
 		return nil, cmkplugincatalog.ErrNoPluginInCatalog

@@ -238,6 +238,7 @@ func (m *GroupManager) GetIdentityManagementPlugin() (idmv1.IdentityManagementSe
 		return nil, errs.Wrapf(ErrLoadIdentityManagementPlugin, "plugin catalog is not initialized")
 	}
 
+	//nolint: staticcheck
 	plugins := m.catalog.LookupByType(idmv1.Type)
 	if len(plugins) == 0 {
 		return nil, errs.Wrapf(ErrLoadIdentityManagementPlugin, "no identity management plugins found in catalog")

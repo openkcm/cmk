@@ -57,6 +57,7 @@ func NewPluginProviderTransformer(
 	pluginCatalog *cmkplugincatalog.Registry,
 	provider string,
 ) (*PluginProviderTransformer, error) {
+	//nolint: staticcheck
 	plugin := pluginCatalog.LookupByTypeAndName(keystoreopv1.Type, provider)
 	if plugin == nil {
 		return nil, errs.Wrapf(keyshared.ErrInvalidKeyProvider, provider)

@@ -21,6 +21,7 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 		PluginConfigs: cfg.Plugins,
 	}
 
+	//nolint: staticcheck
 	catalog, err := catalog.Load(ctx, catalogConfig)
 	if err != nil {
 		catalogLogger.ErrorContext(ctx, "Error loading plugins", "error", err)
@@ -28,6 +29,7 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	}
 
 	pluginBuildInfos := make([]string, 0)
+	//nolint: staticcheck
 	for _, pluginInfo := range catalog.ListPluginInfo() {
 		pluginBuildInfos = append(pluginBuildInfos, pluginInfo.Build())
 	}
@@ -38,4 +40,11 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	}
 
 	return NewPluginCatalog(catalog), nil
+}
+
+func NewPluginCatalog(clg *catalog.Catalog) *Registry {
+	return &Registry{
+		Registry: catalog.WrapAsPluginRepository(clg),
+		Catalog:  *clg,
+	}
 }
