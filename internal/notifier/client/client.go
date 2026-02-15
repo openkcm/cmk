@@ -41,7 +41,6 @@ func New(
 func createNotificationClient(
 	svcRegistry *cmkplugincatalog.Registry,
 ) (notificationv1.NotificationServiceClient, error) {
-
 	notification := svcRegistry.LookupByTypeAndName(notificationv1.Type, PluginName)
 	if notification == nil {
 		return nil, cmkplugincatalog.ErrNoPluginInCatalog
