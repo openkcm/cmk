@@ -52,7 +52,7 @@ func (s *DBSuite) SetupSuite() {
 	cfg := &config.Config{
 		Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
 	}
-	ctlg, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
 	s.NoError(err)
 
 	f, err := clients.NewFactory(config.Services{})
@@ -60,13 +60,13 @@ func (s *DBSuite) SetupSuite() {
 
 	reconciler, err := eventprocessor.NewCryptoReconciler(
 		ctx, cfg, r,
-		ctlg, f,
+		svcRegistry, f,
 	)
 	s.NoError(err)
 
 	cmkAuditor := auditor.New(ctx, cfg)
 
-	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
 	um := manager.NewUserManager(r, cmkAuditor)
 	tagm := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
@@ -76,7 +76,7 @@ func (s *DBSuite) SetupSuite() {
 		r,
 		f,
 		reconciler,
-		ctlg,
+		svcRegistry,
 		cfg,
 		kcm,
 		um,
@@ -84,8 +84,8 @@ func (s *DBSuite) SetupSuite() {
 
 	km := manager.NewKeyManager(
 		r,
-		ctlg,
-		manager.NewTenantConfigManager(r, ctlg, nil),
+		svcRegistry,
+		manager.NewTenantConfigManager(r, svcRegistry, nil),
 		kcm,
 		um,
 		cm,
@@ -97,7 +97,7 @@ func (s *DBSuite) SetupSuite() {
 	s.NoError(err)
 
 	s.tm = manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator)
-	s.gm = manager.NewGroupManager(sql.NewRepository(s.db), ctlg, um)
+	s.gm = manager.NewGroupManager(sql.NewRepository(s.db), svcRegistry, um)
 }
 
 func (s *DBSuite) TearDownSuite() {

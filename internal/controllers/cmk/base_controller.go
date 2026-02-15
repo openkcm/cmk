@@ -33,12 +33,12 @@ func NewAPIController(
 	clientsFactory clients.Factory,
 	migrator db.Migrator,
 ) *APIController {
-	ctlg, err := cmkplugincatalog.New(ctx, config)
+	svcRegistry, err := cmkplugincatalog.New(ctx, config)
 	if err != nil {
 		log.Error(ctx, "Failed to load plugin", err)
 	}
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, config, r, ctlg, clientsFactory)
+	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, config, r, svcRegistry, clientsFactory)
 	if err != nil {
 		log.Error(ctx, "Failed to create event reconciler", err)
 	} else {
@@ -58,9 +58,9 @@ func NewAPIController(
 	}
 
 	return &APIController{
-		Manager:       manager.New(ctx, r, config, clientsFactory, ctlg, reconciler, asyncClient, migrator),
+		Manager:       manager.New(ctx, r, config, clientsFactory, svcRegistry, reconciler, asyncClient, migrator),
 		config:        config,
-		pluginCatalog: ctlg,
+		pluginCatalog: svcRegistry,
 		AuthzEngine:   authzmodel.NewEngine(ctx, r, config),
 	}
 }

@@ -54,22 +54,22 @@ func SetupWorkflowManager(t *testing.T, cfg *config.Config,
 
 	r := sql.NewRepository(db)
 
-	ctlg, err := cmkplugincatalog.New(t.Context(), cfg)
+	svcRegistry, err := cmkplugincatalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
-	tenantConfigManager := manager.NewTenantConfigManager(r, ctlg, nil)
-	certManager := manager.NewCertificateManager(t.Context(), r, ctlg, &cfg.Certificates)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, &cfg.Certificates)
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
-	groupManager := manager.NewGroupManager(r, ctlg, userManager)
+	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
-	systemManager := manager.NewSystemManager(t.Context(), r, clientsFactory, nil, ctlg, cfg, keyConfigManager, userManager)
+	systemManager := manager.NewSystemManager(t.Context(), r, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
 
-	keym := manager.NewKeyManager(r, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
+	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 	m := manager.NewWorkflowManager(
 		r, keym, keyConfigManager, systemManager,
 		groupManager, userManager, nil, tenantConfigManager, cfg,

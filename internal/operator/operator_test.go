@@ -88,7 +88,7 @@ func createManagers(
 	r := sql.NewRepository(dbCon)
 	ctx := t.Context()
 
-	ctlg, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
 	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(ctx, cfg)
@@ -96,7 +96,7 @@ func createManagers(
 	f, err := clients.NewFactory(config.Services{})
 	assert.NoError(t, err)
 
-	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
 	um := manager.NewUserManager(r, cmkAuditor)
 	tagm := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
@@ -106,7 +106,7 @@ func createManagers(
 		r,
 		f,
 		nil,
-		ctlg,
+		svcRegistry,
 		cfg,
 		kcm,
 		um,
@@ -114,8 +114,8 @@ func createManagers(
 
 	km := manager.NewKeyManager(
 		r,
-		ctlg,
-		manager.NewTenantConfigManager(r, ctlg, nil),
+		svcRegistry,
+		manager.NewTenantConfigManager(r, svcRegistry, nil),
 		kcm,
 		um,
 		cm,
@@ -126,7 +126,7 @@ func createManagers(
 	migrator, err := db.NewMigrator(r, cfg)
 	assert.NoError(t, err)
 
-	return manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator), manager.NewGroupManager(r, ctlg, um)
+	return manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator), manager.NewGroupManager(r, svcRegistry, um)
 }
 
 func createInvalidOperatorRequest(

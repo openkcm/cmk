@@ -45,12 +45,12 @@ func TestCreateNotificationManager(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		// Setup
 		cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.Notification)}
-		ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
+		svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
 		assert.NoError(t, err)
 
-		defer ctlg.Close()
+		defer svcRegistry.Close()
 
-		c := client.New(t.Context(), ctlg)
+		c := client.New(t.Context(), svcRegistry)
 		c.SetClient(NotificationServiceMock{})
 		// Act
 		err = c.CreateNotification(t.Context(), msg)
@@ -61,12 +61,12 @@ func TestCreateNotificationManager(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
 		// Setup
 		cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.Notification)}
-		ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
+		svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
 		assert.NoError(t, err)
 
-		defer ctlg.Close()
+		defer svcRegistry.Close()
 
-		c := client.New(t.Context(), ctlg)
+		c := client.New(t.Context(), svcRegistry)
 		c.SetClient(NotificationServiceMock{
 			SendNotificationFunc: func(
 				ctx context.Context,

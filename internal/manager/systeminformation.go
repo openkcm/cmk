@@ -37,9 +37,9 @@ type SystemInformation struct {
 }
 
 func NewSystemInformationManager(repo repo.Repo,
-	catalog *cmkplugincatalog.Registry, systemCfg *config.System,
+	svcRegistry *cmkplugincatalog.Registry, systemCfg *config.System,
 ) (*SystemInformation, error) {
-	client, err := createClient(catalog)
+	client, err := createClient(svcRegistry)
 	if err != nil {
 		return nil, err
 	}
@@ -124,9 +124,8 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 	return nil
 }
 
-func createClient(catalog *cmkplugincatalog.Registry) (systeminformationv1.SystemInformationServiceClient, error) {
-	//nolint: staticcheck
-	systemInformation := catalog.LookupByTypeAndName(systeminformationv1.Type, pluginName)
+func createClient(svcRegistry *cmkplugincatalog.Registry) (systeminformationv1.SystemInformationServiceClient, error) {
+	systemInformation := svcRegistry.LookupByTypeAndName(systeminformationv1.Type, pluginName)
 	if systemInformation == nil {
 		return nil, ErrNoPluginInCatalog
 	}

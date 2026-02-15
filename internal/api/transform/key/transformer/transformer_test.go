@@ -18,10 +18,10 @@ func getPluginProviderTransformer(t *testing.T) *transformer.PluginProviderTrans
 
 	plugins := testutils.SetupMockPlugins(testutils.KeyStorePlugin)
 	cfg := &config.Config{Plugins: plugins}
-	ctlg, err := cmkplugincatalog.New(t.Context(), cfg)
+	svcRegistry, err := cmkplugincatalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
-	tf, err := transformer.NewPluginProviderTransformer(ctlg, "TEST")
+	tf, err := transformer.NewPluginProviderTransformer(svcRegistry, "TEST")
 	assert.NoError(t, err)
 
 	return tf

@@ -57,7 +57,7 @@ func setup(t *testing.T, targetRegions []string) (*eventprocessor.CryptoReconcil
 		}
 	}
 
-	ctlg, err := cmkplugincatalog.New(t.Context(), cfg)
+	svcRegistry, err := cmkplugincatalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	logger := testutils.SetupLoggerWithBuffer()
@@ -83,7 +83,7 @@ func setup(t *testing.T, targetRegions []string) (*eventprocessor.CryptoReconcil
 
 	eventProcessor, err := eventprocessor.NewCryptoReconciler(
 		t.Context(), cfg, r,
-		ctlg, clientsFactory,
+		svcRegistry, clientsFactory,
 	)
 	assert.NoError(t, err)
 

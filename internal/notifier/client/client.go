@@ -25,9 +25,9 @@ type Client struct {
 
 func New(
 	ctx context.Context,
-	catalog *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 ) *Client {
-	client, err := createNotificationClient(catalog)
+	client, err := createNotificationClient(svcRegistry)
 	if err != nil {
 		log.Error(ctx, "Creating notification client", err)
 	}
@@ -39,10 +39,10 @@ func New(
 
 //nolint:ireturn
 func createNotificationClient(
-	catalog *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 ) (notificationv1.NotificationServiceClient, error) {
-	//nolint: staticcheck
-	notification := catalog.LookupByTypeAndName(notificationv1.Type, PluginName)
+
+	notification := svcRegistry.LookupByTypeAndName(notificationv1.Type, PluginName)
 	if notification == nil {
 		return nil, cmkplugincatalog.ErrNoPluginInCatalog
 	}

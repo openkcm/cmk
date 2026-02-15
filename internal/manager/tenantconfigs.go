@@ -24,19 +24,19 @@ const minimumRetentionPeriodDays = 2
 
 type TenantConfigManager struct {
 	repo             repo.Repo
-	catalog          *cmkplugincatalog.Registry
+	svcRegistry      *cmkplugincatalog.Registry
 	keystorePool     *Pool
 	deploymentConfig *config.Config
 }
 
 func NewTenantConfigManager(
 	repo repo.Repo,
-	catalog *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 	deploymentConfig *config.Config,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
 		repo:             repo,
-		catalog:          catalog,
+		svcRegistry:      svcRegistry,
 		keystorePool:     NewPool(repo),
 		deploymentConfig: deploymentConfig,
 	}
@@ -242,12 +242,11 @@ func (m *TenantConfigManager) setDefaultKeystore(ctx context.Context, keystore *
 }
 
 func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
-	if m.catalog == nil {
+	if m.svcRegistry == nil {
 		return HYOKKeystore{}
 	}
 
-	//nolint: staticcheck
-	plugins := m.catalog.LookupByType(keystoreopv1.Type)
+	plugins := m.svcRegistry.LookupByType(keystoreopv1.Type)
 	if len(plugins) == 0 {
 		return HYOKKeystore{}
 	}

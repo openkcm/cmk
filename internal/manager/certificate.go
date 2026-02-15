@@ -54,10 +54,10 @@ type CertificateManager struct {
 func NewCertificateManager(
 	ctx context.Context,
 	repo repo.Repo,
-	catalog *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 	cfg *config.Certificates,
 ) *CertificateManager {
-	client, err := createCertificateIssuerClient(catalog)
+	client, err := createCertificateIssuerClient(svcRegistry)
 	if err != nil {
 		log.Error(ctx, "failed creating certificate issuer client", err)
 	}
@@ -304,10 +304,9 @@ func (m *CertificateManager) IsTenantDefaultCertExist(ctx context.Context) (bool
 
 //nolint:ireturn
 func createCertificateIssuerClient(
-	catalog *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 ) (certissuerv1.CertificateIssuerServiceClient, error) {
-	//nolint: staticcheck
-	certIssuer := catalog.LookupByTypeAndName(certissuerv1.Type, CertificateIssuerPluginName)
+	certIssuer := svcRegistry.LookupByTypeAndName(certissuerv1.Type, CertificateIssuerPluginName)
 	if certIssuer == nil {
 		return nil, ErrNoPluginInCatalog
 	}

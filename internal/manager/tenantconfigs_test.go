@@ -34,10 +34,10 @@ func SetupTenantConfigManager(t *testing.T, plugins []testutils.MockPlugin) (*ma
 
 	dbRepository := sql.NewRepository(db)
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
-	ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
-	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg, nil)
+	tenantManager := manager.NewTenantConfigManager(dbRepository, svcRegistry, nil)
 
 	return tenantManager, db, tenants[0]
 }
@@ -52,10 +52,10 @@ func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []testu
 
 	dbRepository := sql.NewRepository(db)
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
-	ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
-	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg, nil)
+	tenantManager := manager.NewTenantConfigManager(dbRepository, svcRegistry, nil)
 
 	return tenantManager, db, tenants[0]
 }
@@ -213,10 +213,10 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 				cfg.Plugins = testutils.SetupMockPlugins(testutils.KeyStorePlugin)
 			}
 
-			ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
+			svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
-			mgr := manager.NewTenantConfigManager(nil, ctlg, nil)
+			mgr := manager.NewTenantConfigManager(nil, svcRegistry, nil)
 
 			result := mgr.GetTenantConfigsHyokKeystore()
 			assert.ElementsMatch(t, tt.expectedOutput, result.Provider)

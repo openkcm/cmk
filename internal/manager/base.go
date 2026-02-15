@@ -38,20 +38,20 @@ func New(
 	repo repo.Repo,
 	config *config.Config,
 	clientsFactory clients.Factory,
-	catalog *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 	reconciler *eventprocessor.CryptoReconciler,
 	asyncClient async.Client,
 	migrator db.Migrator,
 ) *Manager {
 	cmkAuditor := auditor.New(ctx, config)
-	tenantConfigManager := NewTenantConfigManager(repo, catalog, config)
+	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config)
 	userManager := NewUserManager(repo, cmkAuditor)
-	certManager := NewCertificateManager(ctx, repo, catalog, &config.Certificates)
+	certManager := NewCertificateManager(ctx, repo, svcRegistry, &config.Certificates)
 	tagManager := NewTagManager(repo)
 	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, config)
 	keyManager := NewKeyManager(
 		repo,
-		catalog,
+		svcRegistry,
 		tenantConfigManager,
 		keyConfigManager,
 		userManager,
@@ -64,16 +64,16 @@ func New(
 		repo,
 		clientsFactory,
 		reconciler,
-		catalog,
+		svcRegistry,
 		config,
 		keyConfigManager,
 		userManager,
 	)
-	groupManager := NewGroupManager(repo, catalog, userManager)
+	groupManager := NewGroupManager(repo, svcRegistry, userManager)
 
 	return &Manager{
 		Keys:          keyManager,
-		KeyVersions:   NewKeyVersionManager(repo, catalog, tenantConfigManager, certManager, cmkAuditor),
+		KeyVersions:   NewKeyVersionManager(repo, svcRegistry, tenantConfigManager, certManager, cmkAuditor),
 		TenantConfigs: tenantConfigManager,
 		System:        systemManager,
 		KeyConfig:     keyConfigManager,
@@ -87,7 +87,7 @@ func New(
 
 		Tenant: NewTenantManager(repo, systemManager, keyManager, userManager, cmkAuditor, migrator),
 
-		Catalog:    catalog,
+		Catalog:    svcRegistry,
 		Reconciler: reconciler,
 	}
 }

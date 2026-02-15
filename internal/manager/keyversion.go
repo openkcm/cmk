@@ -41,14 +41,14 @@ type KeyVersionManager struct {
 
 func NewKeyVersionManager(
 	repo repo.Repo,
-	catalog *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 	tenantConfigs *TenantConfigManager,
 	certManager *CertificateManager,
 	cmkAuditor *auditor.Auditor,
 ) *KeyVersionManager {
 	return &KeyVersionManager{
 		ProviderConfigManager: ProviderConfigManager{
-			catalog:       catalog,
+			svcRegistry:   svcRegistry,
 			providers:     make(map[ProviderCachedKey]*ProviderConfig),
 			tenantConfigs: tenantConfigs,
 			repo:          repo,

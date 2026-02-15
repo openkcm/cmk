@@ -30,7 +30,7 @@ func SetupGroupManager(t *testing.T) (*manager.GroupManager, *multitenancy.DB, s
 		},
 	)
 
-	ctlg, err := cmkplugincatalog.New(
+	svcRegistry, err := cmkplugincatalog.New(
 		t.Context(), &config.Config{
 			Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
 		},
@@ -39,7 +39,7 @@ func SetupGroupManager(t *testing.T) (*manager.GroupManager, *multitenancy.DB, s
 
 	dbRepository := sql.NewRepository(db)
 
-	m := manager.NewGroupManager(dbRepository, ctlg, manager.NewUserManager(dbRepository, auditor.New(t.Context(), &config.Config{})))
+	m := manager.NewGroupManager(dbRepository, svcRegistry, manager.NewUserManager(dbRepository, auditor.New(t.Context(), &config.Config{})))
 
 	return m, db, tenants[0]
 }

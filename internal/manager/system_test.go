@@ -52,7 +52,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 		Database: dbCfg,
 	}
 
-	ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
 	require.NoError(t, err)
 
 	dbRepository := sql.NewRepository(db)
@@ -69,7 +69,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 	)
 
 	certManager := manager.NewCertificateManager(
-		t.Context(), dbRepository, ctlg,
+		t.Context(), dbRepository, svcRegistry,
 		&config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 	)
 	userManager := manager.NewUserManager(dbRepository, auditor.New(t.Context(), &cfg))
@@ -78,14 +78,14 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 
 	eventProcessor, err := eventprocessor.NewCryptoReconciler(
 		t.Context(), &cfg, dbRepository,
-		ctlg, clientsFactory,
+		svcRegistry, clientsFactory,
 	)
 	require.NoError(t, err)
 
 	systemManager := manager.NewSystemManager(
 		t.Context(), dbRepository,
 		clientsFactory,
-		eventProcessor, ctlg,
+		eventProcessor, svcRegistry,
 		&cfg,
 		keyConfigManager,
 		userManager,

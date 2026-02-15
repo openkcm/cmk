@@ -23,18 +23,18 @@ import (
 
 type GroupManager struct {
 	repo        repo.Repo
-	catalog     *cmkplugincatalog.Registry
+	svcRegistry *cmkplugincatalog.Registry
 	userManager User
 }
 
 func NewGroupManager(
 	repository repo.Repo,
-	catalog *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 	userManager User,
 ) *GroupManager {
 	return &GroupManager{
 		repo:        repository,
-		catalog:     catalog,
+		svcRegistry: svcRegistry,
 		userManager: userManager,
 	}
 }
@@ -234,12 +234,11 @@ func (m *GroupManager) BuildIAMIdentifier(groupType, tenantID string) (string, e
 }
 
 func (m *GroupManager) GetIdentityManagementPlugin() (idmv1.IdentityManagementServiceClient, error) {
-	if m.catalog == nil {
+	if m.svcRegistry == nil {
 		return nil, errs.Wrapf(ErrLoadIdentityManagementPlugin, "plugin catalog is not initialized")
 	}
 
-	//nolint: staticcheck
-	plugins := m.catalog.LookupByType(idmv1.Type)
+	plugins := m.svcRegistry.LookupByType(idmv1.Type)
 	if len(plugins) == 0 {
 		return nil, errs.Wrapf(ErrLoadIdentityManagementPlugin, "no identity management plugins found in catalog")
 	}

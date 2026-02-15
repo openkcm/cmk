@@ -135,7 +135,7 @@ func NewSystemManager(
 	repository repo.Repo,
 	clientsFactory clients.Factory,
 	reconciler *eventprocessor.CryptoReconciler,
-	ctlg *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 	cfg *config.Config,
 	keyConfigManager *KeyConfigManager,
 	user User,
@@ -155,7 +155,7 @@ func NewSystemManager(
 
 	manager.ContextModelsCfg = cfg.ContextModels.System
 
-	sisClient, err := NewSystemInformationManager(repository, ctlg, &cfg.ContextModels.System)
+	sisClient, err := NewSystemInformationManager(repository, svcRegistry, &cfg.ContextModels.System)
 	if err != nil {
 		log.Warn(ctx, "Failed to create sis client", slog.String(slogctx.ErrKey, err.Error()))
 	}

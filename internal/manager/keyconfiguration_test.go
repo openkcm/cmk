@@ -77,13 +77,13 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	cfg := setupCfg(t)
-	ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(t.Context(), &cfg)
 
 	dbRepository := sql.NewRepository(db)
-	certManager := manager.NewCertificateManager(t.Context(), dbRepository, ctlg, &cfg.Certificates)
+	certManager := manager.NewCertificateManager(t.Context(), dbRepository, svcRegistry, &cfg.Certificates)
 	userManager := manager.NewUserManager(dbRepository, cmkAuditor)
 	tagManager := manager.NewTagManager(dbRepository)
 	m := manager.NewKeyConfigManager(dbRepository, certManager, userManager, tagManager, cmkAuditor, &cfg)
@@ -933,12 +933,12 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 
 	t.Run("Should get certificates", func(t *testing.T) {
 		cfg := setupCfg(t)
-		ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
+		svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
 		assert.NoError(t, err)
 		certManager := manager.NewCertificateManager(
 			t.Context(),
 			sql.NewRepository(db),
-			ctlg,
+			svcRegistry,
 			&cfg.Certificates,
 		)
 

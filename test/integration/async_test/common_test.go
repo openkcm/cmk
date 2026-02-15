@@ -69,35 +69,35 @@ func getConfig(t *testing.T, schCfg config.Scheduler) *config.Config {
 func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *config.Config) {
 	t.Helper()
 
-	ctlg, err := cmkplugincatalog.New(t.Context(), cfg)
+	svcRegistry, err := cmkplugincatalog.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	tenancyRepo := sql.NewRepository(db)
 
 	val := reflect.ValueOf(a).Elem()
 
-	sis, err := manager.NewSystemInformationManager(tenancyRepo, ctlg, &cfg.ContextModels.System)
+	sis, err := manager.NewSystemInformationManager(tenancyRepo, svcRegistry, &cfg.ContextModels.System)
 	assert.NoError(t, err)
 
 	sysCl := val.FieldByName("systemClient")
 	sysCl = reflect.NewAt(sysCl.Type(), unsafe.Pointer(sysCl.UnsafeAddr())).Elem()
 	sysCl.Set(reflect.ValueOf(sis))
 
-	cm := manager.NewCertificateManager(t.Context(), tenancyRepo, ctlg, &cfg.Certificates)
+	cm := manager.NewCertificateManager(t.Context(), tenancyRepo, svcRegistry, &cfg.Certificates)
 
 	certCl := val.FieldByName("certificateClient")
 	certCl = reflect.NewAt(certCl.Type(), unsafe.Pointer(certCl.UnsafeAddr())).Elem()
 	certCl.Set(reflect.ValueOf(cm))
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, tenancyRepo, ctlg, nil)
+	reconciler, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, tenancyRepo, svcRegistry, nil)
 	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(t.Context(), cfg)
-	tc := manager.NewTenantConfigManager(tenancyRepo, ctlg, nil)
+	tc := manager.NewTenantConfigManager(tenancyRepo, svcRegistry, nil)
 	um := manager.NewUserManager(tenancyRepo, cmkAuditor)
 	tam := manager.NewTagManager(tenancyRepo)
 	kc := manager.NewKeyConfigManager(tenancyRepo, cm, um, tam, nil, cfg)
-	km := manager.NewKeyManager(tenancyRepo, ctlg, tc, kc, um, cm, reconciler, nil)
+	km := manager.NewKeyManager(tenancyRepo, svcRegistry, tc, kc, um, cm, reconciler, nil)
 
 	hyokCl := val.FieldByName("hyokClient")
 	hyokCl = reflect.NewAt(hyokCl.Type(), unsafe.Pointer(hyokCl.UnsafeAddr())).Elem()

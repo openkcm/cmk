@@ -37,11 +37,11 @@ func SetupSystemInfoManager(t *testing.T) (
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepository := sql.NewRepository(db)
-	ctlg, err := cmkplugincatalog.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
+	svcRegistry, err := cmkplugincatalog.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
 	assert.NoError(t, err)
 	systemManager, err := manager.NewSystemInformationManager(
 		dbRepository,
-		ctlg,
+		svcRegistry,
 		&config.System{
 			OptionalProperties: map[string]config.SystemProperty{
 				SystemRole:   {},
@@ -164,10 +164,10 @@ func TestNewSystemInformationManager(t *testing.T) {
 					},
 				},
 			}
-			ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
+			svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
-			_, err = manager.NewSystemInformationManager(nil, ctlg, &cfg.ContextModels.System)
+			_, err = manager.NewSystemInformationManager(nil, svcRegistry, &cfg.ContextModels.System)
 			if tt.expectedError != nil {
 				assert.ErrorIs(t, err, tt.expectedError)
 			} else {

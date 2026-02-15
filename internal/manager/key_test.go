@@ -64,23 +64,23 @@ func (s *KeyManagerSuite) setup() {
 		),
 		Database: dbConf,
 	}
-	ctlg, err := cmkplugincatalog.New(s.ctx, cfg)
+	svcRegistry, err := cmkplugincatalog.New(s.ctx, cfg)
 	s.Require().NoError(err)
 
 	cmkAuditor := auditor.New(s.ctx, cfg)
 
-	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, ctlg, nil)
-	certManager := manager.NewCertificateManager(s.ctx, dbRepo, ctlg,
+	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, svcRegistry, nil)
+	certManager := manager.NewCertificateManager(s.ctx, dbRepo, svcRegistry,
 		&config.Certificates{ValidityDays: config.MinCertificateValidityDays})
 	userManager := manager.NewUserManager(dbRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(s.repo)
 	keyConfigManager := manager.NewKeyConfigManager(dbRepo, certManager, userManager, tagManager, cmkAuditor, cfg)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(s.ctx, cfg, dbRepo, ctlg, nil)
+	reconciler, err := eventprocessor.NewCryptoReconciler(s.ctx, cfg, dbRepo, svcRegistry, nil)
 	s.Require().NoError(err)
 
 	s.km = manager.NewKeyManager(
-		dbRepo, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, reconciler, cmkAuditor)
+		dbRepo, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, reconciler, cmkAuditor)
 
 	// Create test key configuration once for all tests
 	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {

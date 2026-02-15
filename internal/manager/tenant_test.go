@@ -44,11 +44,11 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 
 	r := sql.NewRepository(dbCon)
 
-	ctlg, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
 	assert.NoError(t, err)
 	reconciler, err := eventprocessor.NewCryptoReconciler(
 		ctx, cfg, r,
-		ctlg, nil,
+		svcRegistry, nil,
 	)
 	assert.NoError(t, err)
 
@@ -57,7 +57,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	f, err := clients.NewFactory(config.Services{})
 	assert.NoError(t, err)
 
-	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
 	um := testutils.NewUserManager()
 	tagManager := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, cfg)
@@ -67,7 +67,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 		r,
 		f,
 		reconciler,
-		ctlg,
+		svcRegistry,
 		cfg,
 		kcm,
 		um,
@@ -75,8 +75,8 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 
 	km := manager.NewKeyManager(
 		r,
-		ctlg,
-		manager.NewTenantConfigManager(r, ctlg, nil),
+		svcRegistry,
+		manager.NewTenantConfigManager(r, svcRegistry, nil),
 		kcm,
 		um,
 		cm,

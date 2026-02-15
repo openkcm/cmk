@@ -62,7 +62,7 @@ func (s *CLISuite) SetupSuite() {
 		Database: dbCfg,
 	}
 	r := sql.NewRepository(s.db)
-	ctlg, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
 	s.NoError(err)
 
 	cmkAuditor := auditor.New(ctx, cfg)
@@ -72,11 +72,11 @@ func (s *CLISuite) SetupSuite() {
 
 	reconciler, err := eventprocessor.NewCryptoReconciler(
 		ctx, cfg, r,
-		ctlg, clientsFactory,
+		svcRegistry, clientsFactory,
 	)
 	s.NoError(err)
 
-	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
 	um := manager.NewUserManager(r, cmkAuditor)
 	tagm := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
@@ -86,7 +86,7 @@ func (s *CLISuite) SetupSuite() {
 		r,
 		clientsFactory,
 		reconciler,
-		ctlg,
+		svcRegistry,
 		cfg,
 		kcm,
 		um,
@@ -94,8 +94,8 @@ func (s *CLISuite) SetupSuite() {
 
 	km := manager.NewKeyManager(
 		r,
-		ctlg,
-		manager.NewTenantConfigManager(r, ctlg, nil),
+		svcRegistry,
+		manager.NewTenantConfigManager(r, svcRegistry, nil),
 		kcm,
 		um,
 		cm,
@@ -106,10 +106,10 @@ func (s *CLISuite) SetupSuite() {
 	migrator, err := db.NewMigrator(r, cfg)
 	s.NoError(err)
 
-	s.gm = manager.NewGroupManager(r, ctlg, um)
+	s.gm = manager.NewGroupManager(r, svcRegistry, um)
 	s.tm = manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator)
 
-	factory, err := commands.NewCommandFactory(ctx, cfg, s.db, ctlg)
+	factory, err := commands.NewCommandFactory(ctx, cfg, s.db, svcRegistry)
 	s.NoError(err)
 	s.rootCmd = factory.NewRootCmd(s.T().Context())
 

@@ -83,7 +83,7 @@ func setupTest(t *testing.T) tester {
 		Database: dbConf,
 	}
 
-	ctlg, err := cmkplugincatalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
 	require.NoError(t, err)
 
 	r := sqlPkg.NewRepository(db)
@@ -94,7 +94,7 @@ func setupTest(t *testing.T) tester {
 		reconcilerCtx,
 		&cfg,
 		r,
-		ctlg,
+		svcRegistry,
 		nil,
 		eventprocessor.WithExecInterval(5*time.Millisecond),
 		eventprocessor.WithConfirmJobAfter(10*time.Millisecond),

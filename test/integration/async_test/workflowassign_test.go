@@ -104,15 +104,15 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 		w.ActionType = wfMechanism.ActionTypeDelete.String()
 	})
 
-	ctlg, err := cmkplugincatalog.New(ctx, testConfig)
-	tenantConfigManager := manager.NewTenantConfigManager(repository, ctlg, nil)
+	svcRegistry, err := cmkplugincatalog.New(ctx, testConfig)
+	tenantConfigManager := manager.NewTenantConfigManager(repository, svcRegistry, nil)
 	cmkAuditor := auditor.New(ctx, testConfig)
 	userManager := manager.NewUserManager(repository, cmkAuditor)
 	tagManager := manager.NewTagManager(repository)
 	keyConfigManager := manager.NewKeyConfigManager(repository, nil, userManager, tagManager, nil, testConfig)
-	keyManager := manager.NewKeyManager(repository, ctlg, nil, keyConfigManager, userManager, nil, nil, nil)
-	systemManager := manager.NewSystemManager(ctx, repository, nil, nil, ctlg, testConfig, keyConfigManager, userManager)
-	groupManager := manager.NewGroupManager(repository, ctlg, userManager)
+	keyManager := manager.NewKeyManager(repository, svcRegistry, nil, keyConfigManager, userManager, nil, nil, nil)
+	systemManager := manager.NewSystemManager(ctx, repository, nil, nil, svcRegistry, testConfig, keyConfigManager, userManager)
+	groupManager := manager.NewGroupManager(repository, svcRegistry, userManager)
 	workflowManager := manager.NewWorkflowManager(repository, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, asyncApp.Client(), tenantConfigManager, testConfig)
 

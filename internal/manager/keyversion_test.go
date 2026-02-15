@@ -51,20 +51,20 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	s.r = sql.NewRepository(db)
 
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.KeyStorePlugin)}
-	ctlg, err := cmkplugincatalog.New(s.ctx, &cfg)
+	svcRegistry, err := cmkplugincatalog.New(s.ctx, &cfg)
 	s.Require().NoError(err)
 
-	tenantConfigManager := manager.NewTenantConfigManager(s.r, ctlg, nil)
+	tenantConfigManager := manager.NewTenantConfigManager(s.r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(
-		s.ctx, s.r, ctlg, &config.Certificates{ValidityDays: config.MinCertificateValidityDays})
+		s.ctx, s.r, svcRegistry, &config.Certificates{ValidityDays: config.MinCertificateValidityDays})
 	cmkAuditor := auditor.New(s.ctx, &cfg)
 	userManager := manager.NewUserManager(s.r, cmkAuditor)
 	tagManager := manager.NewTagManager(s.r)
 	keyConfigManager := manager.NewKeyConfigManager(s.r, certManager, userManager, tagManager, cmkAuditor, &cfg)
-	s.km = manager.NewKeyManager(s.r, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
+	s.km = manager.NewKeyManager(s.r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 	s.kvm = manager.NewKeyVersionManager(
 		s.r,
-		ctlg,
+		svcRegistry,
 		tenantConfigManager,
 		certManager,
 		cmkAuditor,

@@ -87,7 +87,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	ctlg, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -98,14 +98,14 @@ func run(ctx context.Context, cfg *config.Config) error {
 		ctx,
 		r,
 		clients,
-		ctlg,
+		svcRegistry,
 		cfg,
 	)
 	if err != nil {
 		return err
 	}
 
-	groupManager := manager.NewGroupManager(r, ctlg, manager.NewUserManager(r, auditor.New(ctx, cfg)))
+	groupManager := manager.NewGroupManager(r, svcRegistry, manager.NewUserManager(r, auditor.New(ctx, cfg)))
 
 	operator, err := operator.NewTenantOperator(dbConn, target, clients, tenantManager, groupManager)
 	if err != nil {
@@ -120,20 +120,20 @@ func createTenantManager(
 	ctx context.Context,
 	r repo.Repo,
 	clients clients.Factory,
-	ctlg *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 	cfg *config.Config,
 ) (manager.Tenant, error) {
 	cmkAuditor := auditor.New(ctx, cfg)
 
 	reconciler, err := eventprocessor.NewCryptoReconciler(
 		ctx, cfg, r,
-		ctlg, clients,
+		svcRegistry, clients,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
 	um := manager.NewUserManager(r, cmkAuditor)
 
 	tagm := manager.NewTagManager(r)
@@ -144,7 +144,7 @@ func createTenantManager(
 		r,
 		clients,
 		reconciler,
-		ctlg,
+		svcRegistry,
 		cfg,
 		kcm,
 		um,
@@ -152,8 +152,8 @@ func createTenantManager(
 
 	km := manager.NewKeyManager(
 		r,
-		ctlg,
-		manager.NewTenantConfigManager(r, ctlg, cfg),
+		svcRegistry,
+		manager.NewTenantConfigManager(r, svcRegistry, cfg),
 		kcm,
 		um,
 		cm,

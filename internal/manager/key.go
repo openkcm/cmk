@@ -66,7 +66,7 @@ type KeyManager struct {
 
 func NewKeyManager(
 	repo repo.Repo,
-	catalog *cmkplugincatalog.Registry,
+	svcRegistry *cmkplugincatalog.Registry,
 	tenantConfigs *TenantConfigManager,
 	keyConfigManager *KeyConfigManager,
 	user User,
@@ -76,7 +76,7 @@ func NewKeyManager(
 ) *KeyManager {
 	return &KeyManager{
 		ProviderConfigManager: ProviderConfigManager{
-			catalog:       catalog,
+			svcRegistry:   svcRegistry,
 			providers:     make(map[ProviderCachedKey]*ProviderConfig),
 			tenantConfigs: tenantConfigs,
 			certs:         certManager,
@@ -488,7 +488,7 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 		return nil
 	}
 
-	providerTransformer, err := transformer.NewPluginProviderTransformer(km.catalog, key.Provider)
+	providerTransformer, err := transformer.NewPluginProviderTransformer(km.svcRegistry, key.Provider)
 	if err != nil {
 		return err
 	}

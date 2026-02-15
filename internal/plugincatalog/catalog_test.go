@@ -62,14 +62,14 @@ func TestNew(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
-			ctlg, err := cmkplugincatalog.New(ctx, tc.cfg)
+			svcRegistry, err := cmkplugincatalog.New(ctx, tc.cfg)
 
 			if tc.wantErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				assert.NotNil(t, ctlg)
-				assert.IsType(t, &cmkplugincatalog.Registry{}, ctlg)
+				assert.NotNil(t, svcRegistry)
+				assert.IsType(t, &cmkplugincatalog.Registry{}, svcRegistry)
 			}
 		})
 	}
