@@ -8,7 +8,7 @@ import (
 
 type Registry struct {
 	serviceapi.Registry
-	catalog.Catalog
+	*catalog.Catalog
 }
 
 func (p *Registry) Close() error {

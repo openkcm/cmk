@@ -41,6 +41,6 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 
 	return &Registry{
 		Registry: catalog.WrapAsPluginRepository(clg),
-		Catalog:  *clg,
+		Catalog:  clg,
 	}, nil
 }
