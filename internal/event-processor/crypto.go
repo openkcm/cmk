@@ -500,7 +500,6 @@ func (c *CryptoReconciler) getKeyAccessMetadata(
 	key model.Key,
 	systemRegion string,
 ) ([]byte, error) {
-	//nolint: staticcheck
 	plugin := c.pluginCatalog.LookupByTypeAndName(keystoreopv1.Type, key.Provider)
 	if plugin == nil {
 		return nil, ErrPluginNotFound

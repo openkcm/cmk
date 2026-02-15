@@ -32,7 +32,7 @@ require (
 	github.com/openkcm/api-sdk v0.15.0
 	github.com/openkcm/common-sdk v1.12.0
 	github.com/openkcm/orbital v0.4.0
-	github.com/openkcm/plugin-sdk v0.9.3-0.20260215205204-6b28e534a0fb
+	github.com/openkcm/plugin-sdk v0.9.3-0.20260215213144-45eb7a7ad1e6
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/samber/oops v1.21.0
@@ -44,7 +44,6 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0
 	github.com/veqryn/slog-context v0.9.0
 	github.com/zeebo/assert v1.3.1
-	github.com/zeebo/errs/v2 v2.0.5
 	go.opentelemetry.io/collector/pdata v1.51.0
 	golang.org/x/oauth2 v0.35.0
 	google.golang.org/grpc v1.79.1
@@ -175,6 +174,7 @@ require (
 	github.com/veqryn/slog-context/otel v0.9.0 // indirect
 	github.com/woodsbury/decimal128 v1.4.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	github.com/zeebo/errs/v2 v2.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/collector/featuregate v1.51.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.15.0 // indirect

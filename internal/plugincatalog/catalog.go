@@ -2,17 +2,20 @@ package cmkplugincatalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
-	"github.com/openkcm/plugin-sdk/pkg/service"
 
+	servicewrapper "github.com/openkcm/plugin-sdk/service/wrapper"
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/config"
 )
+
+var ErrNoPluginInCatalog = errors.New("no plugin in catalog")
 
 // New creates a new instance of Catalog with the provided configuration.
 func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
@@ -22,15 +25,13 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 		PluginConfigs: cfg.Plugins,
 	}
 
-	//nolint: staticcheck
-	svcRepo, err := service.CreateServiceRepository(ctx, catalogConfig)
+	svcRepo, err := servicewrapper.CreateServiceRepository(ctx, catalogConfig)
 	if err != nil {
 		catalogLogger.ErrorContext(ctx, "Error loading plugins", "error", err)
 		return nil, fmt.Errorf("error loading plugins: %w", err)
 	}
 
 	pluginBuildInfos := make([]string, 0)
-	//nolint: staticcheck
 	for _, pluginInfo := range svcRepo.RawCatalog.ListPluginInfo() {
 		pluginBuildInfos = append(pluginBuildInfos, pluginInfo.Build())
 	}

@@ -1,14 +1,13 @@
 package cmkplugincatalog
 
 import (
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
-
-	serviceapi "github.com/openkcm/plugin-sdk/api/service"
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
+	serviceapi "github.com/openkcm/plugin-sdk/service/api"
 )
 
 type Registry struct {
 	serviceapi.Registry
-	*catalog.Catalog
+	*plugincatalog.Catalog
 }
 
 func (p *Registry) Close() error {
