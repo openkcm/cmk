@@ -22,7 +22,7 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	}
 
 	//nolint: staticcheck
-	catalog, err := catalog.Load(ctx, catalogConfig)
+	clg, err := catalog.Load(ctx, catalogConfig)
 	if err != nil {
 		catalogLogger.ErrorContext(ctx, "Error loading plugins", "error", err)
 		return nil, fmt.Errorf("error loading plugins: %w", err)
@@ -30,7 +30,7 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 
 	pluginBuildInfos := make([]string, 0)
 	//nolint: staticcheck
-	for _, pluginInfo := range catalog.ListPluginInfo() {
+	for _, pluginInfo := range clg.ListPluginInfo() {
 		pluginBuildInfos = append(pluginBuildInfos, pluginInfo.Build())
 	}
 
@@ -39,12 +39,8 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 		slogctx.Error(ctx, "Failed to update components of build info")
 	}
 
-	return NewPluginCatalog(catalog), nil
-}
-
-func NewPluginCatalog(clg *catalog.Catalog) *Registry {
 	return &Registry{
 		Registry: catalog.WrapAsPluginRepository(clg),
 		Catalog:  *clg,
-	}
+	}, nil
 }
