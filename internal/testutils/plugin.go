@@ -4,8 +4,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
-
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	certificate_issuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 	identityv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 	keystoremanv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/management/v1"
@@ -98,11 +97,11 @@ func GetPluginDir(dir string) string {
 	return filepath.Join(pluginsPath, dir, pluginBin)
 }
 
-func SetupMockPlugins(mocks ...MockPlugin) []catalog.PluginConfig {
-	plugins := make([]catalog.PluginConfig, 0, len(mocks))
+func SetupMockPlugins(mocks ...MockPlugin) []plugincatalog.PluginConfig {
+	plugins := make([]plugincatalog.PluginConfig, 0, len(mocks))
 
 	for _, mock := range mocks {
-		plugins = append(plugins, catalog.PluginConfig{
+		plugins = append(plugins, plugincatalog.PluginConfig{
 			Name:              mock.name,
 			Type:              mock.typ,
 			Path:              GetPluginDir(mock.dir),

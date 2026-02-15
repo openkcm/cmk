@@ -5,8 +5,9 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
+
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/notifier/client"
@@ -26,7 +27,7 @@ func init() {
 func NotificationPlugin(t *testing.T) *cmkplugincatalog.Registry {
 	t.Helper()
 	plugins, err := cmkplugincatalog.New(t.Context(), &config.Config{
-		Plugins: []catalog.PluginConfig{
+		Plugins: []plugincatalog.PluginConfig{
 			integrationutils.NotificationPlugin(t),
 		},
 	})

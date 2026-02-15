@@ -10,9 +10,9 @@ import (
 	"github.com/openkcm/plugin-sdk/api/service/keystoremanagement"
 	"github.com/openkcm/plugin-sdk/api/service/notification"
 	"github.com/openkcm/plugin-sdk/api/service/systeminformation"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	serviceapi "github.com/openkcm/plugin-sdk/api/service"
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 )
 
 // mockServiceAPIRegistry acts as a fake underlying registry to control the boolean returns.
@@ -98,7 +98,7 @@ func TestNewPluginCatalog(t *testing.T) {
 	// Note: Because NewPluginCatalog relies on an external package function
 	// (catalog.WrapAsPluginRepository), an integration test is typically best here.
 	// This ensures the struct initializes without panicking.
-	clg := &catalog.Catalog{}
+	clg := &plugincatalog.Catalog{}
 
 	// If WrapAsPluginRepository panics on a nil or empty catalog,
 	// ensure clg is properly populated before this call.

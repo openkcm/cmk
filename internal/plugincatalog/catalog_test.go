@@ -3,10 +3,10 @@ package cmkplugincatalog_test
 import (
 	"testing"
 
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/config"
@@ -27,7 +27,7 @@ func TestNew(t *testing.T) {
 		{
 			name: "plugin disabled",
 			cfg: &config.Config{
-				Plugins: []catalog.PluginConfig{
+				Plugins: []plugincatalog.PluginConfig{
 					{
 						Name:     "TestPlugin",
 						Type:     keystoreopv1.Type,
@@ -44,7 +44,7 @@ func TestNew(t *testing.T) {
 		{
 			name: "invalid plugin path",
 			cfg: &config.Config{
-				Plugins: []catalog.PluginConfig{
+				Plugins: []plugincatalog.PluginConfig{
 					{
 						Name:     "InvalidPlugin",
 						Type:     keystoreopv1.Type,

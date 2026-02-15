@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
 
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	certificate_issuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 	idmangv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 	keystoremanv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/management/v1"
@@ -28,10 +28,10 @@ const (
 	IdentityManagementConfigPath = "../../env/secret/identity-management/scim.json"
 )
 
-var KeystorePlugin = func(t *testing.T) catalog.PluginConfig {
+var KeystorePlugin = func(t *testing.T) plugincatalog.PluginConfig {
 	t.Helper()
 
-	return catalog.PluginConfig{
+	return plugincatalog.PluginConfig{
 		Name:     "AWS",
 		Type:     keystoreopv1.Type,
 		LogLevel: "debug",
@@ -48,10 +48,10 @@ var keystorePath = func() string {
 	return filepath.Join(baseDir, "../../keystore-plugins/bin/keystoreop/aws")
 }
 
-var PKIPlugin = func(t *testing.T) catalog.PluginConfig {
+var PKIPlugin = func(t *testing.T) plugincatalog.PluginConfig {
 	t.Helper()
 
-	return catalog.PluginConfig{
+	return plugincatalog.PluginConfig{
 		Name:              "CERT_ISSUER",
 		Type:              certificate_issuerv1.Type,
 		LogLevel:          "debug",
@@ -126,10 +126,10 @@ var notificationYaml = func(t *testing.T) string {
 	return string(bytes)
 }
 
-var SISPlugin = func(t *testing.T) catalog.PluginConfig {
+var SISPlugin = func(t *testing.T) plugincatalog.PluginConfig {
 	t.Helper()
 
-	return catalog.PluginConfig{
+	return plugincatalog.PluginConfig{
 		Name:              "SYSINFO",
 		Type:              systeminformationv1.Type,
 		Path:              sisPath(),
@@ -138,10 +138,10 @@ var SISPlugin = func(t *testing.T) catalog.PluginConfig {
 	}
 }
 
-var NotificationPlugin = func(t *testing.T) catalog.PluginConfig {
+var NotificationPlugin = func(t *testing.T) plugincatalog.PluginConfig {
 	t.Helper()
 
-	return catalog.PluginConfig{
+	return plugincatalog.PluginConfig{
 		Name:              "NOTIFICATION",
 		Type:              notificationv1.Type,
 		LogLevel:          "debug",
@@ -208,10 +208,10 @@ var sisPath = func() string {
 	return filepath.Join(baseDir, "../../sis-plugins/bin/uli")
 }
 
-var KeystoreProviderPlugin = func(t *testing.T) catalog.PluginConfig {
+var KeystoreProviderPlugin = func(t *testing.T) plugincatalog.PluginConfig {
 	t.Helper()
 
-	return catalog.PluginConfig{
+	return plugincatalog.PluginConfig{
 		Name:     "AWS",
 		Type:     keystoremanv1.Type,
 		Path:     keystoreProviderPath(),
@@ -227,10 +227,10 @@ var keystoreProviderPath = func() string {
 		"../../internal/testutils/testplugins/keystoreman/testpluginbinary")
 }
 
-var IDMangementPlugin = func(t *testing.T) catalog.PluginConfig {
+var IDMangementPlugin = func(t *testing.T) plugincatalog.PluginConfig {
 	t.Helper()
 
-	return catalog.PluginConfig{
+	return plugincatalog.PluginConfig{
 		Name:              "IDENTITY_MANAGEMENT",
 		Type:              idmangv1.Type,
 		Path:              IDManagementPath(),

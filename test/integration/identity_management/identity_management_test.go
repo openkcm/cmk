@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	idmangv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 
 	"github.com/openkcm/cmk/internal/config"
@@ -19,7 +19,7 @@ func IdentityManagementPlugin(t *testing.T) *cmkplugincatalog.Registry {
 	t.Helper()
 
 	cat, err := cmkplugincatalog.New(t.Context(), &config.Config{
-		Plugins: []catalog.PluginConfig{integrationutils.IDMangementPlugin(t)},
+		Plugins: []plugincatalog.PluginConfig{integrationutils.IDMangementPlugin(t)},
 	})
 	assert.NoError(t, err)
 

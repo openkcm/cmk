@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
@@ -49,7 +50,7 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 
 	clg, err := cmkplugincatalog.New(
 		t.Context(),
-		&config.Config{Plugins: []catalog.PluginConfig{integrationutils.SISPlugin(t)}},
+		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
 	assert.NoError(t, err)
 
@@ -125,7 +126,7 @@ func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 
 	clg, err := cmkplugincatalog.New(
 		t.Context(),
-		&config.Config{Plugins: []catalog.PluginConfig{integrationutils.SISPlugin(t)}},
+		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
 	assert.NoError(t, err)
 

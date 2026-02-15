@@ -11,10 +11,10 @@ import (
 	"unsafe"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
@@ -37,7 +37,7 @@ func getConfig(t *testing.T, schCfg config.Scheduler) *config.Config {
 
 	return &config.Config{
 		Database: integrationutils.DB,
-		Plugins: []catalog.PluginConfig{
+		Plugins: []plugincatalog.PluginConfig{
 			integrationutils.SISPlugin(t),
 			integrationutils.PKIPlugin(t),
 			integrationutils.KeystorePlugin(t),
