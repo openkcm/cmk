@@ -918,6 +918,14 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			expectedName:   "updated-key",
 			expectedDesc:   "updated description",
 		},
+		{
+			name:  "Should 403 when update primary key and workflow is required",
+			keyID: key.ID.String(),
+			input: cmkapi.KeyPatch{
+				IsPrimary: ptr.PointTo(true),
+			},
+			expectedStatus: http.StatusForbidden,
+		},
 	}
 
 	for _, tt := range tests {
