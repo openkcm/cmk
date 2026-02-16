@@ -8,12 +8,8 @@ import (
 	"github.com/openkcm/plugin-sdk/api"
 	"github.com/openkcm/plugin-sdk/service/api/systeminformation"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
@@ -55,14 +51,6 @@ func SetupSystemInfoManager(t *testing.T) (
 	assert.NoError(t, err)
 
 	return systemManager, db, tenants[0]
-}
-
-type ErrorMockClient struct{}
-
-func (ErrorMockClient) Get(_ context.Context,
-	_ *systeminformationv1.GetRequest, _ ...grpc.CallOption,
-) (*systeminformationv1.GetResponse, error) {
-	return nil, status.Errorf(codes.Internal, "error")
 }
 
 func allFakeData(id string) map[string]string {
