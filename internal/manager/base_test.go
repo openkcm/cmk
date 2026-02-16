@@ -18,9 +18,12 @@ const providerTest = "TEST"
 func TestNewManager(t *testing.T) {
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepo := sql.NewRepository(db)
-	svcRegistry := &cmkpluginregistry.Registry{}
 
-	cfg := &config.Config{}
+	cfg := &config.Config{
+		Plugins: testutils.SetupMockPlugins(testutils.SystemInfo),
+	}
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
+	assert.NoError(t, err)
 
 	factory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
