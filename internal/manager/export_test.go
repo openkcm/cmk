@@ -64,6 +64,13 @@ func (m *CertificateManager) GetDefaultHYOKClientCert(
 	return m.getDefaultHYOKClientCert(ctx)
 }
 
+func (m *CertificateManager) GetCertificateByPurpose(
+	ctx context.Context,
+	purpose model.CertificatePurpose,
+) (*model.Certificate, bool, error) {
+	return m.getCertificateByPurpose(ctx, purpose)
+}
+
 func (w *WorkflowManager) CreateWorkflowTransitionNotificationTask(
 	ctx context.Context,
 	workflow model.Workflow,

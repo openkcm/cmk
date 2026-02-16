@@ -37,9 +37,8 @@ var (
 )
 
 const (
-	healthStatusTimeoutS = 5 * time.Second
-	postgresDriverName   = "pgx"
-	labelKeystore        = "keystore"
+	postgresDriverName = "pgx"
+	labelKeystore      = "keystore"
 )
 
 // - Starts the status server
@@ -144,23 +143,12 @@ func monitorKeystorePoolSize(
 }
 
 func startStatusServer(ctx context.Context, cfg *config.Config) {
-	liveness := status.WithLiveness(
-		health.NewHandler(
-			health.NewChecker(health.WithDisabledAutostart()),
-		),
-	)
-
 	dsnFromConfig, err := dsn.FromDBConfig(cfg.Database)
 	if err != nil {
 		log.Error(ctx, "Could not load DSN from database config", err)
 	}
 
 	healthOptions := []health.Option{
-		health.WithDisabledAutostart(),
-		health.WithTimeout(healthStatusTimeoutS),
-		health.WithStatusListener(func(ctx context.Context, state health.State) {
-			log.Info(ctx, "readiness status changed", slog.String("status", string(state.Status)))
-		}),
 		health.WithDatabaseChecker(
 			postgresDriverName,
 			dsnFromConfig,
@@ -168,28 +156,27 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 		health.WithCheck(health.Check{
 			Name: "HTTP Server",
 			Check: func(ctx context.Context) error {
-				conn, err := net.DialTimeout("tcp", cfg.HTTP.Address, 1*time.Second)
-				if err != nil {
-					return fmt.Errorf("%s health check failed on connect: %w", cfg.HTTP.Address, err)
+				dialer := &net.Dialer{
+					Timeout: time.Second * 1,
 				}
-				conn.Close()
+
+				conn, err := dialer.DialContext(ctx, "tcp", cfg.HTTP.Address)
+				if err != nil {
+					return fmt.Errorf("health check: cannot connect to %s: %w", cfg.HTTP.Address, err)
+				}
+				defer func() { _ = conn.Close() }()
+
 				return nil
 			},
 		}),
 	}
-
-	readiness := status.WithReadiness(
-		health.NewHandler(
-			health.NewChecker(healthOptions...),
-		),
-	)
 
 	if cfg.Telemetry.Metrics.Prometheus.Enabled {
 		go monitorKeystorePoolSize(ctx, cfg)
 	}
 
 	go func() {
-		err := status.Start(ctx, &cfg.BaseConfig, liveness, readiness)
+		err := status.Serve(ctx, &cfg.BaseConfig, healthOptions...)
 		if err != nil {
 			log.Error(ctx, "Failure on the status server", err)
 
