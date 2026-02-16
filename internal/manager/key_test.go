@@ -18,9 +18,9 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -64,23 +64,23 @@ func (s *KeyManagerSuite) setup() {
 		),
 		Database: dbConf,
 	}
-	ctlg, err := catalog.New(s.ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(s.ctx, cfg)
 	s.Require().NoError(err)
 
 	cmkAuditor := auditor.New(s.ctx, cfg)
 
-	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, ctlg, nil)
-	certManager := manager.NewCertificateManager(s.ctx, dbRepo, ctlg,
+	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, svcRegistry, nil)
+	certManager := manager.NewCertificateManager(s.ctx, dbRepo, svcRegistry,
 		&config.Certificates{ValidityDays: config.MinCertificateValidityDays})
 	userManager := manager.NewUserManager(dbRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(s.repo)
 	keyConfigManager := manager.NewKeyConfigManager(dbRepo, certManager, userManager, tagManager, cmkAuditor, cfg)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(s.ctx, cfg, dbRepo, ctlg, nil)
+	eventFactory, err := eventprocessor.NewEventFactory(s.ctx, cfg, dbRepo)
 	s.Require().NoError(err)
 
 	s.km = manager.NewKeyManager(
-		dbRepo, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, reconciler, cmkAuditor)
+		dbRepo, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
 
 	// Create test key configuration once for all tests
 	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {

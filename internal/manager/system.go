@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -25,6 +24,7 @@ import (
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -47,7 +47,7 @@ type System interface {
 type SystemManager struct {
 	repo             repo.Repo
 	registry         registry.Service
-	reconciler       *eventprocessor.CryptoReconciler
+	eventFactory     *eventprocessor.EventFactory
 	sisClient        *SystemInformation
 	KeyConfigManager *KeyConfigManager
 	ContextModelsCfg config.System
@@ -134,15 +134,15 @@ func NewSystemManager(
 	ctx context.Context,
 	repository repo.Repo,
 	clientsFactory clients.Factory,
-	reconciler *eventprocessor.CryptoReconciler,
-	ctlg *plugincatalog.Catalog,
+	eventFactory *eventprocessor.EventFactory,
+	svcRegistry *cmkpluginregistry.Registry,
 	cfg *config.Config,
 	keyConfigManager *KeyConfigManager,
 	user User,
 ) *SystemManager {
 	manager := &SystemManager{
 		repo:             repository,
-		reconciler:       reconciler,
+		eventFactory:     eventFactory,
 		KeyConfigManager: keyConfigManager,
 		user:             user,
 	}
@@ -155,7 +155,7 @@ func NewSystemManager(
 
 	manager.ContextModelsCfg = cfg.ContextModels.System
 
-	sisClient, err := NewSystemInformationManager(repository, ctlg, &cfg.ContextModels.System)
+	sisClient, err := NewSystemInformationManager(repository, svcRegistry, &cfg.ContextModels.System)
 	if err != nil {
 		log.Warn(ctx, "Failed to create sis client", slog.String(slogctx.ErrKey, err.Error()))
 	}
@@ -254,7 +254,7 @@ func (m *SystemManager) GetRecoveryActions(
 
 	// If there are no entries on last event for this system
 	// cancel and retry are not possible
-	lastEvent, err := m.reconciler.GetLastEvent(ctx, systemID.String())
+	lastEvent, err := m.eventFactory.GetLastEvent(ctx, systemID.String())
 	if err != nil {
 		return cmkapi.SystemRecoveryAction{
 			CanRetry:  false,
@@ -356,12 +356,12 @@ func (m *SystemManager) LinkSystemAction(
 			return ErrLinkSystemProcessingOrFailed
 		}
 
-		event, err := m.eventSelector(ctx, system, keyConfig)
+		event, err := m.selectEvent(ctx, system, keyConfig)
 		if err != nil {
 			return err
 		}
 
-		err = m.reconciler.SendEvent(ctx, event)
+		err = m.eventFactory.SendEvent(ctx, event)
 		if err != nil {
 			return err
 		}
@@ -415,11 +415,11 @@ func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UU
 
 		dbSystem = system
 
-		err = m.reconciler.SendEvent(
+		err = m.eventFactory.SendEvent(
 			ctx, eventprocessor.Event{
 				Name: proto.TaskType_SYSTEM_UNLINK.String(),
 				Event: func(ctx context.Context) (orbital.Job, error) {
-					return m.reconciler.SystemUnlink(ctx, dbSystem, keyConfig.PrimaryKeyID.String(), trigger)
+					return m.eventFactory.SystemUnlink(ctx, dbSystem, keyConfig.PrimaryKeyID.String(), trigger)
 				},
 			},
 		)
@@ -438,7 +438,7 @@ func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UU
 }
 
 func (m *SystemManager) cancelSystemAction(ctx context.Context, systemID uuid.UUID) error {
-	event, err := m.reconciler.GetLastEvent(ctx, systemID.String())
+	event, err := m.eventFactory.GetLastEvent(ctx, systemID.String())
 	if err != nil {
 		return err
 	}
@@ -463,7 +463,7 @@ func (m *SystemManager) retrySystemAction(ctx context.Context, systemID uuid.UUI
 		return ErrRetryNonFailedSystem
 	}
 
-	lastJob, err := m.reconciler.GetLastEvent(ctx, systemID.String())
+	lastJob, err := m.eventFactory.GetLastEvent(ctx, systemID.String())
 	if err != nil {
 		return err
 	}
@@ -481,7 +481,7 @@ func (m *SystemManager) retrySystemAction(ctx context.Context, systemID uuid.UUI
 					return err
 				}
 
-				job, err = m.reconciler.CreateJob(ctx, lastJob)
+				job, err = m.eventFactory.CreateJob(ctx, lastJob)
 
 				return err
 			},
@@ -491,10 +491,10 @@ func (m *SystemManager) retrySystemAction(ctx context.Context, systemID uuid.UUI
 		},
 	}
 
-	return m.reconciler.SendEvent(ctx, event)
+	return m.eventFactory.SendEvent(ctx, event)
 }
 
-func (m *SystemManager) eventSelector(
+func (m *SystemManager) selectEvent(
 	ctx context.Context,
 	system *model.System,
 	newKeyConfig *model.KeyConfiguration,
@@ -506,7 +506,7 @@ func (m *SystemManager) eventSelector(
 		return eventprocessor.Event{
 			Name: proto.TaskType_SYSTEM_LINK.String(),
 			Event: func(ctx context.Context) (orbital.Job, error) {
-				return m.reconciler.SystemLink(ctx, system, newKeyConfig.PrimaryKeyID.String())
+				return m.eventFactory.SystemLink(ctx, system, newKeyConfig.PrimaryKeyID.String())
 			},
 		}, nil
 	}
@@ -524,7 +524,7 @@ func (m *SystemManager) eventSelector(
 			return eventprocessor.Event{
 				Name: proto.TaskType_SYSTEM_SWITCH.String(),
 				Event: func(ctx context.Context) (orbital.Job, error) {
-					return m.reconciler.SystemSwitch(
+					return m.eventFactory.SystemSwitch(
 						ctx,
 						system,
 						newKeyConfig.PrimaryKeyID.String(),
@@ -539,7 +539,7 @@ func (m *SystemManager) eventSelector(
 	return eventprocessor.Event{
 		Name: proto.TaskType_SYSTEM_LINK.String(),
 		Event: func(ctx context.Context) (orbital.Job, error) {
-			return m.reconciler.SystemLink(ctx, system, newKeyConfig.PrimaryKeyID.String())
+			return m.eventFactory.SystemLink(ctx, system, newKeyConfig.PrimaryKeyID.String())
 		},
 	}, nil
 }

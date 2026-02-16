@@ -15,9 +15,9 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -34,10 +34,10 @@ func SetupTenantConfigManager(t *testing.T, plugins []testutils.MockPlugin) (*ma
 
 	dbRepository := sql.NewRepository(db)
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
-	ctlg, err := catalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
-	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg, nil)
+	tenantManager := manager.NewTenantConfigManager(dbRepository, svcRegistry, nil)
 
 	return tenantManager, db, tenants[0]
 }
@@ -52,10 +52,10 @@ func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []testu
 
 	dbRepository := sql.NewRepository(db)
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
-	ctlg, err := catalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
-	tenantManager := manager.NewTenantConfigManager(dbRepository, ctlg, nil)
+	tenantManager := manager.NewTenantConfigManager(dbRepository, svcRegistry, nil)
 
 	return tenantManager, db, tenants[0]
 }
@@ -213,10 +213,10 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 				cfg.Plugins = testutils.SetupMockPlugins(testutils.KeyStorePlugin)
 			}
 
-			ctlg, err := catalog.New(t.Context(), &cfg)
+			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
-			mgr := manager.NewTenantConfigManager(nil, ctlg, nil)
+			mgr := manager.NewTenantConfigManager(nil, svcRegistry, nil)
 
 			result := mgr.GetTenantConfigsHyokKeystore()
 			assert.ElementsMatch(t, tt.expectedOutput, result.Provider)

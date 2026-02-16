@@ -13,13 +13,12 @@ import (
 	"github.com/spf13/cobra"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/cmd/tenant-manager-cli/commands"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 )
 
 func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {
@@ -71,12 +70,12 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return oops.In("main").Wrapf(err, "Failed to initialise db connection")
 	}
 
-	ctlg, err := catalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "Failed to initialise plugin catalog")
 	}
 
-	rootCmd, err := setupCommands(ctx, cfg, dbCon, ctlg)
+	rootCmd, err := setupCommands(ctx, cfg, dbCon, svcRegistry)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "Failed to initialise commands")
 	}
@@ -94,9 +93,9 @@ func setupCommands(
 	ctx context.Context,
 	cfg *config.Config,
 	dbCon *multitenancy.DB,
-	catalog *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 ) (*cobra.Command, error) {
-	factory, err := commands.NewCommandFactory(ctx, cfg, dbCon, catalog)
+	factory, err := commands.NewCommandFactory(ctx, cfg, dbCon, svcRegistry)
 	if err != nil {
 		return nil, err
 	}

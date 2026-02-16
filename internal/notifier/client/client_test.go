@@ -10,8 +10,8 @@ import (
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/notifier/client"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
@@ -45,12 +45,12 @@ func TestCreateNotificationManager(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		// Setup
 		cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.Notification)}
-		ctlg, err := catalog.New(t.Context(), &cfg)
+		svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 		assert.NoError(t, err)
 
-		defer ctlg.Close()
+		defer svcRegistry.Close()
 
-		c := client.New(t.Context(), ctlg)
+		c := client.New(t.Context(), svcRegistry)
 		c.SetClient(NotificationServiceMock{})
 		// Act
 		err = c.CreateNotification(t.Context(), msg)
@@ -61,12 +61,12 @@ func TestCreateNotificationManager(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
 		// Setup
 		cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.Notification)}
-		ctlg, err := catalog.New(t.Context(), &cfg)
+		svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 		assert.NoError(t, err)
 
-		defer ctlg.Close()
+		defer svcRegistry.Close()
 
-		c := client.New(t.Context(), ctlg)
+		c := client.New(t.Context(), svcRegistry)
 		c.SetClient(NotificationServiceMock{
 			SendNotificationFunc: func(
 				ctx context.Context,

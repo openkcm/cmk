@@ -4,7 +4,6 @@ import (
 	"context"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
@@ -12,6 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
@@ -27,7 +27,7 @@ func NewCommandFactory(
 	ctx context.Context,
 	cfg *config.Config,
 	dbCon *multitenancy.DB,
-	ctlg *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 ) (*CommandFactory, error) {
 	r := sql.NewRepository(dbCon)
 
@@ -38,15 +38,12 @@ func NewCommandFactory(
 		return nil, err
 	}
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(
-		ctx, cfg, r,
-		ctlg, clientsFactory,
-	)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	if err != nil {
 		return nil, err
 	}
 
-	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
 	um := manager.NewUserManager(r, cmkAuditor)
 	tagm := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
@@ -55,8 +52,8 @@ func NewCommandFactory(
 		ctx,
 		r,
 		clientsFactory,
-		reconciler,
-		ctlg,
+		eventFactory,
+		svcRegistry,
 		cfg,
 		kcm,
 		um,
@@ -64,12 +61,12 @@ func NewCommandFactory(
 
 	km := manager.NewKeyManager(
 		r,
-		ctlg,
-		manager.NewTenantConfigManager(r, ctlg, cfg),
+		svcRegistry,
+		manager.NewTenantConfigManager(r, svcRegistry, cfg),
 		kcm,
 		um,
 		cm,
-		reconciler,
+		eventFactory,
 		cmkAuditor,
 	)
 
@@ -81,7 +78,7 @@ func NewCommandFactory(
 	return &CommandFactory{
 		dbCon: dbCon,
 		r:     r,
-		gm:    manager.NewGroupManager(r, ctlg, um),
+		gm:    manager.NewGroupManager(r, svcRegistry, um),
 		tm:    manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator),
 	}, nil
 }

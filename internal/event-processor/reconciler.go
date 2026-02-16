@@ -2,7 +2,6 @@ package eventprocessor
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,8 +17,6 @@ import (
 
 	goAmqp "github.com/Azure/go-amqp"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
-	orbsql "github.com/openkcm/orbital/store/sql"
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 	protoPkg "google.golang.org/protobuf/proto"
 
@@ -30,11 +27,11 @@ import (
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -81,13 +78,13 @@ func WithExecInterval(d time.Duration) Option {
 
 // CryptoReconciler is responsible for handling orbital jobs and managing the lifecycle of systems in CMK.
 type CryptoReconciler struct {
-	repo          repo.Repo
-	manager       *orbital.Manager
-	targets       map[string]struct{}
-	initiators    []orbital.Initiator
-	pluginCatalog *plugincatalog.Catalog
-	cmkAuditor    *auditor.Auditor
-	registry      registry.Service
+	repo        repo.Repo
+	manager     *orbital.Manager
+	targets     map[string]struct{}
+	initiators  []orbital.Initiator
+	svcRegistry *cmkpluginregistry.Registry
+	cmkAuditor  *auditor.Auditor
+	registry    registry.Service
 }
 
 // NewCryptoReconciler creates a new CryptoReconciler instance.
@@ -97,21 +94,14 @@ func NewCryptoReconciler(
 	ctx context.Context,
 	cfg *config.Config,
 	repository repo.Repo,
-	pluginCatalog *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 	clientsFactory clients.Factory,
 	opts ...Option,
 ) (*CryptoReconciler, error) {
-	db, err := initOrbitalSchema(ctx, cfg.Database)
+	orbRepo, err := createOrbitalRepository(ctx, cfg.Database)
 	if err != nil {
-		return nil, err
+		return nil, errs.Wrapf(err, "failed to create orbital repository")
 	}
-
-	store, err := orbsql.New(ctx, db)
-	if err != nil {
-		return nil, errs.Wrapf(err, "failed to create orbital store")
-	}
-
-	orbRepo := orbital.NewRepository(store)
 
 	targets, err := createTargets(ctx, &cfg.EventProcessor)
 	if err != nil {
@@ -129,11 +119,11 @@ func NewCryptoReconciler(
 	cmkAuditor := auditor.New(ctx, cfg)
 
 	reconciler := &CryptoReconciler{
-		repo:          repository,
-		targets:       targetMap,
-		initiators:    initiators,
-		pluginCatalog: pluginCatalog,
-		cmkAuditor:    cmkAuditor,
+		repo:        repository,
+		targets:     targetMap,
+		initiators:  initiators,
+		svcRegistry: svcRegistry,
+		cmkAuditor:  cmkAuditor,
 	}
 
 	if clientsFactory != nil {
@@ -176,11 +166,6 @@ func (c *CryptoReconciler) CloseAmqpClients(ctx context.Context) {
 			_ = amqpClient.Close(ctx)
 		}
 	}
-}
-
-func (c *CryptoReconciler) CreateJob(ctx context.Context, event *model.Event) (orbital.Job, error) {
-	job := orbital.NewJob(event.Type, event.Data).WithExternalID(event.Identifier)
-	return c.manager.PrepareJob(ctx, job)
 }
 
 // createTargets initializes the AMQP clients for each manager target defined in the orbital configuration.
@@ -500,7 +485,7 @@ func (c *CryptoReconciler) getKeyAccessMetadata(
 	key model.Key,
 	systemRegion string,
 ) ([]byte, error) {
-	plugin := c.pluginCatalog.LookupByTypeAndName(keystoreopv1.Type, key.Provider)
+	plugin := c.svcRegistry.LookupByTypeAndName(keystoreopv1.Type, key.Provider)
 	if plugin == nil {
 		return nil, ErrPluginNotFound
 	}
@@ -526,7 +511,12 @@ func (c *CryptoReconciler) getKeyAccessMetadata(
 
 // confirmJob is called to confirm if a job can be processed.
 func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orbital.JobConfirmResult, error) {
-	taskType := proto.TaskType(proto.TaskType_value[job.Type])
+	jobType, ok := proto.TaskType_value[job.Type]
+	if !ok {
+		return orbital.JobConfirmResult{}, errs.Wrapf(ErrUnsupportedTaskType, job.Type)
+	}
+
+	taskType := proto.TaskType(jobType)
 
 	// if key event nothing to check for confirmation
 	if isKeyActionTask(taskType) {
@@ -569,8 +559,6 @@ func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orb
 }
 
 // jobTerminationFunc is called when a job is terminated.
-//
-//nolint:cyclop, funlen, nestif
 func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.Job) error {
 	taskType := proto.TaskType(proto.TaskType_value[job.Type])
 	status := cmkapi.SystemStatusFAILED
@@ -605,43 +593,58 @@ func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.J
 	jobDone := job.Status == orbital.JobStatusDone
 
 	if jobDone {
-		// Clean the event if it was successful as we no longer need to hold
-		// previous state for cancel/retry actions
-		_, err := c.repo.Delete(
-			ctx,
-			&model.Event{},
-			*repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().
-				Where(repo.IdentifierField, job.ExternalID).
-				Where(repo.TypeField, job.Type),
-			)),
-		)
+		err = c.handleDoneSystemJob(ctx, job, system, taskType, jobData)
 		if err != nil {
-			return fmt.Errorf("failed to delete event: %w", err)
-		}
-
-		err = c.sendSystemAuditLogOnJobTerminate(ctx, system, jobData, taskType)
-		if err != nil {
-			log.Error(ctx, "failed to send audit log for successful system event", err)
-		}
-
-		err = c.setClientL1KeyClaimOnJobTerminate(ctx, jobData.TenantID, system, taskType)
-		if err != nil {
-			return fmt.Errorf("failed to set L1 key claim on job terminate: %w", err)
-		}
-
-		if jobData.Trigger == constants.SystemActionDecomission {
-			_, err = c.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
-				ExternalId: system.Identifier,
-				Type:       strings.ToLower(system.Type),
-				TenantId:   jobData.TenantID,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to unmap system from tenant: %w", err)
-			}
+			return err
 		}
 	}
 
 	return c.updateSystemOnJobTerminate(ctx, system, jobData, taskType, status, jobDone)
+}
+
+func (c *CryptoReconciler) handleDoneSystemJob(
+	ctx context.Context,
+	job orbital.Job,
+	system *model.System,
+	taskType proto.TaskType,
+	jobData SystemActionJobData,
+) error {
+	// Clean the event if it was successful as we no longer need to hold
+	// previous state for cancel/retry actions
+	_, err := c.repo.Delete(
+		ctx,
+		&model.Event{},
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().
+			Where(repo.IdentifierField, job.ExternalID).
+			Where(repo.TypeField, job.Type),
+		)),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete event: %w", err)
+	}
+
+	err = c.sendSystemAuditLogOnJobTerminate(ctx, system, jobData, taskType)
+	if err != nil {
+		log.Error(ctx, "failed to send audit log for successful system event", err)
+	}
+
+	err = c.setClientL1KeyClaimOnJobTerminate(ctx, jobData.TenantID, system, taskType)
+	if err != nil {
+		return fmt.Errorf("failed to set L1 key claim on job terminate: %w", err)
+	}
+
+	if jobData.Trigger == constants.SystemActionDecommission {
+		_, err = c.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
+			ExternalId: system.Identifier,
+			Type:       strings.ToLower(system.Type),
+			TenantId:   jobData.TenantID,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to unmap system from tenant: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // sendSystemAuditLogOnJobTerminate sends an audit log based on the task type and job data when a job is terminated.
@@ -795,27 +798,6 @@ func (c *CryptoReconciler) getTenantByID(ctx context.Context, tenantID string) (
 	}
 
 	return &tenant, nil
-}
-
-func initOrbitalSchema(ctx context.Context, cfg config.Database) (*sql.DB, error) {
-	baseDSN, err := dsn.FromDBConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	orbitalDSN := baseDSN + " search_path=orbital,public sslmode=disable"
-
-	orbitalDB, err := sql.Open("postgres", orbitalDSN)
-	if err != nil {
-		return nil, fmt.Errorf("orbit pool: %w", err)
-	}
-
-	_, err = orbitalDB.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS orbital")
-	if err != nil {
-		return nil, fmt.Errorf("ensure schema: %w", err)
-	}
-
-	return orbitalDB, nil
 }
 
 func getMaxReconcileCount(cfg *config.EventProcessor) uint64 {

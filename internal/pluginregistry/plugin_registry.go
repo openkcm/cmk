@@ -1,40 +1,40 @@
-package catalog
+package cmkpluginregistry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/plugin-sdk/api"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
+	servicewrapper "github.com/openkcm/plugin-sdk/service/wrapper"
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/plugins"
 )
 
+var ErrNoPluginInCatalog = errors.New("no plugin in catalog")
+
 // New creates a new instance of Catalog with the provided configuration.
-func New(ctx context.Context, cfg *config.Config) (*plugincatalog.Catalog, error) {
-	buildInPlugins := plugincatalog.DefaultBuiltInPluginRegistry()
+func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
+	catalogLogger := slog.With("context", "plugin-catalog")
+	buildInPlugins := catalog.CreateBuiltInPluginRegistry()
 	plugins.RegisterAllBuiltInPlugins(buildInPlugins)
 
-	catalogLogger := slog.With("context", "plugin-catalog")
-	catalogConfig := plugincatalog.Config{
+	svcRepo, err := servicewrapper.CreateServiceRepository(ctx, catalog.Config{
 		Logger:        catalogLogger,
 		PluginConfigs: cfg.Plugins,
-		HostServices:  []api.ServiceServer{},
-	}
-
-	catalog, err := plugincatalog.Load(ctx, catalogConfig, buildInPlugins.Get()...)
+	}, buildInPlugins.Retrieve()...)
 	if err != nil {
 		catalogLogger.ErrorContext(ctx, "Error loading plugins", "error", err)
 		return nil, fmt.Errorf("error loading plugins: %w", err)
 	}
 
 	pluginBuildInfos := make([]string, 0)
-	for _, pluginInfo := range catalog.ListPluginInfo() {
+	for _, pluginInfo := range svcRepo.RawCatalog.ListPluginInfo() {
 		pluginBuildInfos = append(pluginBuildInfos, pluginInfo.Build())
 	}
 
@@ -43,5 +43,8 @@ func New(ctx context.Context, cfg *config.Config) (*plugincatalog.Catalog, error
 		slogctx.Error(ctx, "Failed to update components of build info")
 	}
 
-	return catalog, nil
+	return &Registry{
+		Registry: svcRepo,
+		Catalog:  svcRepo.RawCatalog,
+	}, nil
 }

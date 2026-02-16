@@ -19,18 +19,16 @@ import (
 	"github.com/openkcm/orbital/codec"
 	"github.com/samber/oops"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/operator"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
@@ -89,7 +87,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	ctlg, err := catalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -100,14 +98,14 @@ func run(ctx context.Context, cfg *config.Config) error {
 		ctx,
 		r,
 		clients,
-		ctlg,
+		svcRegistry,
 		cfg,
 	)
 	if err != nil {
 		return err
 	}
 
-	groupManager := manager.NewGroupManager(r, ctlg, manager.NewUserManager(r, auditor.New(ctx, cfg)))
+	groupManager := manager.NewGroupManager(r, svcRegistry, manager.NewUserManager(r, auditor.New(ctx, cfg)))
 
 	operator, err := operator.NewTenantOperator(dbConn, target, clients, tenantManager, groupManager)
 	if err != nil {
@@ -122,20 +120,17 @@ func createTenantManager(
 	ctx context.Context,
 	r repo.Repo,
 	clients clients.Factory,
-	ctlg *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 	cfg *config.Config,
 ) (manager.Tenant, error) {
 	cmkAuditor := auditor.New(ctx, cfg)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(
-		ctx, cfg, r,
-		ctlg, clients,
-	)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	if err != nil {
 		return nil, err
 	}
 
-	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
 	um := manager.NewUserManager(r, cmkAuditor)
 
 	tagm := manager.NewTagManager(r)
@@ -145,8 +140,8 @@ func createTenantManager(
 		ctx,
 		r,
 		clients,
-		reconciler,
-		ctlg,
+		eventFactory,
+		svcRegistry,
 		cfg,
 		kcm,
 		um,
@@ -154,12 +149,12 @@ func createTenantManager(
 
 	km := manager.NewKeyManager(
 		r,
-		ctlg,
-		manager.NewTenantConfigManager(r, ctlg, cfg),
+		svcRegistry,
+		manager.NewTenantConfigManager(r, svcRegistry, cfg),
 		kcm,
 		um,
 		cm,
-		reconciler,
+		eventFactory,
 		cmkAuditor,
 	)
 

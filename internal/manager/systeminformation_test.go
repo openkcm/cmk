@@ -5,18 +5,16 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/openkcm/plugin-sdk/api"
+	"github.com/openkcm/plugin-sdk/service/api/systeminformation"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -37,11 +35,11 @@ func SetupSystemInfoManager(t *testing.T) (
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepository := sql.NewRepository(db)
-	ctlg, err := catalog.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
 	assert.NoError(t, err)
 	systemManager, err := manager.NewSystemInformationManager(
 		dbRepository,
-		ctlg,
+		svcRegistry,
 		&config.System{
 			OptionalProperties: map[string]config.SystemProperty{
 				SystemRole:   {},
@@ -53,14 +51,6 @@ func SetupSystemInfoManager(t *testing.T) (
 	assert.NoError(t, err)
 
 	return systemManager, db, tenants[0]
-}
-
-type ErrorMockClient struct{}
-
-func (ErrorMockClient) Get(_ context.Context,
-	_ *systeminformationv1.GetRequest, _ ...grpc.CallOption,
-) (*systeminformationv1.GetResponse, error) {
-	return nil, status.Errorf(codes.Internal, "error")
 }
 
 func allFakeData(id string) map[string]string {
@@ -98,18 +88,21 @@ type PredictedResponseMock struct {
 	noResponseIDs []string
 }
 
-func (e PredictedResponseMock) Get(_ context.Context,
-	req *systeminformationv1.GetRequest, _ ...grpc.CallOption,
-) (*systeminformationv1.GetResponse, error) {
-	ID := req.GetId()
-	if slices.Contains(e.noResponseIDs, ID) {
-		return nil, nil //nolint:nilnil
+func (e PredictedResponseMock) ServiceInfo() api.Info {
+	panic("implement me")
+}
+
+func (e PredictedResponseMock) GetSystemInfo(_ context.Context, req *systeminformation.GetSystemInfoRequest) (*systeminformation.GetSystemInfoResponse, error) {
+	if slices.Contains(e.noResponseIDs, req.ID) {
+		return &systeminformation.GetSystemInfoResponse{}, nil
 	}
 
-	return &systeminformationv1.GetResponse{
-		Metadata: e.ResponseFunc(ID),
+	return &systeminformation.GetSystemInfoResponse{
+		Metadata: e.ResponseFunc(req.ID),
 	}, nil
 }
+
+var _ systeminformation.SystemInformation = (*PredictedResponseMock)(nil)
 
 func createSystemForTestsWithEmptyExternalData() *model.System {
 	system := testutils.NewSystem(func(s *model.System) {
@@ -164,10 +157,10 @@ func TestNewSystemInformationManager(t *testing.T) {
 					},
 				},
 			}
-			ctlg, err := catalog.New(t.Context(), &cfg)
+			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
-			_, err = manager.NewSystemInformationManager(nil, ctlg, &cfg.ContextModels.System)
+			_, err = manager.NewSystemInformationManager(nil, svcRegistry, &cfg.ContextModels.System)
 			if tt.expectedError != nil {
 				assert.ErrorIs(t, err, tt.expectedError)
 			} else {

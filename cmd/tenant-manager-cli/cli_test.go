@@ -21,9 +21,9 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
@@ -62,7 +62,7 @@ func (s *CLISuite) SetupSuite() {
 		Database: dbCfg,
 	}
 	r := sql.NewRepository(s.db)
-	ctlg, err := catalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	s.NoError(err)
 
 	cmkAuditor := auditor.New(ctx, cfg)
@@ -70,13 +70,10 @@ func (s *CLISuite) SetupSuite() {
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	s.NoError(err)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(
-		ctx, cfg, r,
-		ctlg, clientsFactory,
-	)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	s.NoError(err)
 
-	cm := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
+	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
 	um := manager.NewUserManager(r, cmkAuditor)
 	tagm := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
@@ -85,8 +82,8 @@ func (s *CLISuite) SetupSuite() {
 		ctx,
 		r,
 		clientsFactory,
-		reconciler,
-		ctlg,
+		eventFactory,
+		svcRegistry,
 		cfg,
 		kcm,
 		um,
@@ -94,22 +91,22 @@ func (s *CLISuite) SetupSuite() {
 
 	km := manager.NewKeyManager(
 		r,
-		ctlg,
-		manager.NewTenantConfigManager(r, ctlg, nil),
+		svcRegistry,
+		manager.NewTenantConfigManager(r, svcRegistry, nil),
 		kcm,
 		um,
 		cm,
-		reconciler,
+		eventFactory,
 		cmkAuditor,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)
 	s.NoError(err)
 
-	s.gm = manager.NewGroupManager(r, ctlg, um)
+	s.gm = manager.NewGroupManager(r, svcRegistry, um)
 	s.tm = manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator)
 
-	factory, err := commands.NewCommandFactory(ctx, cfg, s.db, ctlg)
+	factory, err := commands.NewCommandFactory(ctx, cfg, s.db, svcRegistry)
 	s.NoError(err)
 	s.rootCmd = factory.NewRootCmd(s.T().Context())
 

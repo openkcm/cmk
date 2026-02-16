@@ -6,14 +6,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
-
 	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
 	"github.com/openkcm/cmk/internal/errs"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/utils/protobuf"
 )
 
@@ -54,7 +53,10 @@ type PluginProviderTransformer struct {
 	pluginClient keystoreopv1.KeystoreInstanceKeyOperationClient
 }
 
-func NewPluginProviderTransformer(pluginCatalog *catalog.Catalog, provider string) (*PluginProviderTransformer, error) {
+func NewPluginProviderTransformer(
+	pluginCatalog *cmkpluginregistry.Registry,
+	provider string,
+) (*PluginProviderTransformer, error) {
 	plugin := pluginCatalog.LookupByTypeAndName(keystoreopv1.Type, provider)
 	if plugin == nil {
 		return nil, errs.Wrapf(keyshared.ErrInvalidKeyProvider, provider)

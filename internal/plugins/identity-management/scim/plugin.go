@@ -75,7 +75,7 @@ func Register(registry catalog.BuiltInPluginRegistry) {
 }
 
 func builtin(p *Plugin) catalog.BuiltInPlugin {
-	return catalog.AsBuiltIn(pluginName,
+	return catalog.MakeBuiltIn(pluginName,
 		idmangv1.IdentityManagementServicePluginServer(p),
 		configv1.ConfigServiceServer(p))
 }
