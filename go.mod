@@ -27,7 +27,7 @@ require (
 	github.com/openkcm/api-sdk v0.15.0
 	github.com/openkcm/common-sdk v1.12.0
 	github.com/openkcm/orbital v0.4.0
-	github.com/openkcm/plugin-sdk v0.9.3-0.20260215215646-4333911f4684
+	github.com/openkcm/plugin-sdk v0.9.3
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/samber/oops v1.21.0
@@ -40,7 +40,7 @@ require (
 	github.com/veqryn/slog-context v0.9.0
 	github.com/zeebo/assert v1.3.1
 	go.opentelemetry.io/collector/pdata v1.51.0
-  google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.0
