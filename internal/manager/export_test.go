@@ -27,8 +27,8 @@ func (m *TenantConfigManager) SetDefaultKeystore(ctx context.Context, keystore *
 	return m.setDefaultKeystore(ctx, keystore)
 }
 
-func (si *SystemInformation) SetClient(systemInformation systeminformation.SystemInformation) {
-	si.client = systemInformation
+func (m *SystemInformation) SetClient(systemInformation systeminformation.SystemInformation) {
+	m.svc = systemInformation
 }
 
 func (m *SystemManager) SelectEvent(

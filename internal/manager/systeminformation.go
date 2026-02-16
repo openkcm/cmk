@@ -28,34 +28,34 @@ type SystemInformation struct {
 	repo      repo.Repo
 	systemCfg *config.System
 
-	client systeminformation.SystemInformation
+	svc systeminformation.SystemInformation
 }
 
 func NewSystemInformationManager(repo repo.Repo,
 	svcRegistry *cmkpluginregistry.Registry, systemCfg *config.System,
 ) (*SystemInformation, error) {
-	client, ok := svcRegistry.SystemInformation()
+	svc, ok := svcRegistry.SystemInformation()
 	if !ok {
 		return nil, errs.Wrapf(ErrNoPluginInCatalog, "system information not found in registry")
 	}
 
 	return &SystemInformation{
-		client:    client,
+		svc:       svc,
 		repo:      repo,
 		systemCfg: systemCfg,
 	}, nil
 }
 
-func (si *SystemInformation) UpdateSystems(ctx context.Context) error {
+func (m *SystemInformation) UpdateSystems(ctx context.Context) error {
 	var systems []*model.System
 
-	err := si.repo.List(ctx, model.System{}, &systems, *repo.NewQuery())
+	err := m.repo.List(ctx, model.System{}, &systems, *repo.NewQuery())
 	if err != nil {
 		return errs.Wrap(ErrGettingSystemList, err)
 	}
 
 	for _, sys := range systems {
-		err = si.updateSystem(ctx, sys)
+		err = m.updateSystem(ctx, sys)
 		if err != nil {
 			return err
 		}
@@ -64,10 +64,10 @@ func (si *SystemInformation) UpdateSystems(ctx context.Context) error {
 	return nil
 }
 
-func (si *SystemInformation) UpdateSystemByExternalID(ctx context.Context, externalID string) error {
+func (m *SystemInformation) UpdateSystemByExternalID(ctx context.Context, externalID string) error {
 	sys := &model.System{Identifier: externalID}
 
-	_, err := si.repo.First(ctx, sys, *repo.NewQuery())
+	_, err := m.repo.First(ctx, sys, *repo.NewQuery())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errs.Wrap(ErrNoSystem, err)
@@ -76,15 +76,15 @@ func (si *SystemInformation) UpdateSystemByExternalID(ctx context.Context, exter
 		return errs.Wrap(ErrGettingSystem, err)
 	}
 
-	return si.updateSystem(ctx, sys)
+	return m.updateSystem(ctx, sys)
 }
 
-func (si *SystemInformation) updateSystem(ctx context.Context, system *model.System) error {
+func (m *SystemInformation) updateSystem(ctx context.Context, system *model.System) error {
 	ctx = model.LogInjectSystem(ctx, system)
 
 	log.Debug(ctx, "Requesting SIS for properties")
 
-	resp, err := si.client.GetSystemInfo(ctx, &systeminformation.GetSystemInfoRequest{
+	resp, err := m.svc.GetSystemInfo(ctx, &systeminformation.GetSystemInfoRequest{
 		ID:   system.Identifier,
 		Type: strings.ToLower(system.Type),
 	})
@@ -101,16 +101,16 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 
 	log.Debug(ctx, "SIS Response", slog.Any("SIS Response", metadata))
 
-	system, err = repo.GetSystemByIDWithProperties(ctx, si.repo, system.ID, repo.NewQuery())
+	system, err = repo.GetSystemByIDWithProperties(ctx, m.repo, system.ID, repo.NewQuery())
 	if err != nil {
 		return errs.Wrap(err, repo.ErrSystemProperties)
 	}
 
-	updated := system.UpdateSystemProperties(metadata, si.systemCfg)
+	updated := system.UpdateSystemProperties(metadata, m.systemCfg)
 	if updated {
 		log.Debug(ctx, "Update System with SIS Information", slog.Any("sisSystem", *system))
 
-		_, err := si.repo.Patch(ctx, system, *repo.NewQuery())
+		_, err := m.repo.Patch(ctx, system, *repo.NewQuery())
 		if err != nil {
 			return errs.Wrap(ErrUpdatingSystem, err)
 		}
