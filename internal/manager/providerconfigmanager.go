@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	kscommonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
 	keystoremanagerv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/management/v1"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
@@ -22,6 +21,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
@@ -71,7 +71,7 @@ func (c ProviderConfig) IsExpired() bool {
 }
 
 type ProviderConfigManager struct {
-	catalog       *plugincatalog.Catalog
+	svcRegistry   *cmkpluginregistry.Registry
 	providers     map[ProviderCachedKey]*ProviderConfig
 	mu            sync.RWMutex
 	tenantConfigs *TenantConfigManager
@@ -161,7 +161,7 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 	}
 
 	// Initialize client
-	plugin := pmc.catalog.LookupByTypeAndName(keystoreopv1.Type, provider)
+	plugin := pmc.svcRegistry.LookupByTypeAndName(keystoreopv1.Type, provider)
 	if plugin == nil {
 		return nil, errs.Wrapf(ErrPluginNotFound, provider)
 	}
@@ -211,7 +211,7 @@ func (pmc *ProviderConfigManager) CreateKeystore(ctx context.Context) (string, m
 		return "", nil, err
 	}
 
-	plugin := pmc.catalog.LookupByTypeAndName(keystoremanagerv1.Type, provider)
+	plugin := pmc.svcRegistry.LookupByTypeAndName(keystoremanagerv1.Type, provider)
 	if plugin == nil {
 		return "", nil, errs.Wrapf(ErrPluginNotFound, provider)
 	}
@@ -251,11 +251,11 @@ func (pmc *ProviderConfigManager) AddKeystoreToPool(
 }
 
 func (pmc *ProviderConfigManager) GetDefaultKeystoreFromCatalog() (string, error) {
-	if pmc.catalog == nil {
+	if pmc.svcRegistry == nil {
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no plugin catalog available")
 	}
 
-	plugins := pmc.catalog.LookupByType(keystoreopv1.Type)
+	plugins := pmc.svcRegistry.LookupByType(keystoreopv1.Type)
 	if len(plugins) == 0 {
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no keystore plugins found in catalog")
 	}

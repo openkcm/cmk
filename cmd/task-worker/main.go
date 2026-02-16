@@ -26,10 +26,10 @@ import (
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/notifier/client"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
@@ -109,14 +109,14 @@ func registerTasks(
 		return errs.Wrap(db.ErrStartingDBCon, err)
 	}
 
-	ctlg, err := catalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	if err != nil {
 		return errs.Wrapf(err, "failed to start loading catalog")
 	}
 
 	r := sql.NewRepository(dbCon)
 
-	sis, err := manager.NewSystemInformationManager(r, ctlg, &cfg.ContextModels.System)
+	sis, err := manager.NewSystemInformationManager(r, svcRegistry, &cfg.ContextModels.System)
 	if err != nil {
 		return errs.Wrapf(err, "failed to start system information manager")
 	}
@@ -128,17 +128,17 @@ func registerTasks(
 
 	cmkAuditor := auditor.New(ctx, cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
-	certManager := manager.NewCertificateManager(ctx, r, ctlg, &cfg.Certificates)
-	tenantConfigManager := manager.NewTenantConfigManager(r, ctlg, cfg)
+	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
 	keyManager := manager.NewKeyManager(
-		r, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
-	systemManager := manager.NewSystemManager(ctx, r, nil, eventFactory, ctlg, cfg, keyConfigManager, userManager)
-	groupManager := manager.NewGroupManager(r, ctlg, userManager)
+		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
+	systemManager := manager.NewSystemManager(ctx, r, nil, eventFactory, svcRegistry, cfg, keyConfigManager, userManager)
+	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, cron.Client(), tenantConfigManager, cfg)
-	notificationClient := client.New(ctx, ctlg)
+	notificationClient := client.New(ctx, svcRegistry)
 
 	cron.RegisterTasks(ctx, []async.TaskHandler{
 		tasks.NewSystemsRefresher(sis, r),

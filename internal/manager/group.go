@@ -8,7 +8,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	idmv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -17,24 +16,25 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type GroupManager struct {
 	repo        repo.Repo
-	catalog     *plugincatalog.Catalog
+	svcRegistry *cmkpluginregistry.Registry
 	userManager User
 }
 
 func NewGroupManager(
 	repository repo.Repo,
-	catalog *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 	userManager User,
 ) *GroupManager {
 	return &GroupManager{
 		repo:        repository,
-		catalog:     catalog,
+		svcRegistry: svcRegistry,
 		userManager: userManager,
 	}
 }
@@ -234,11 +234,11 @@ func (m *GroupManager) BuildIAMIdentifier(groupType, tenantID string) (string, e
 }
 
 func (m *GroupManager) GetIdentityManagementPlugin() (idmv1.IdentityManagementServiceClient, error) {
-	if m.catalog == nil {
+	if m.svcRegistry == nil {
 		return nil, errs.Wrapf(ErrLoadIdentityManagementPlugin, "plugin catalog is not initialized")
 	}
 
-	plugins := m.catalog.LookupByType(idmv1.Type)
+	plugins := m.svcRegistry.LookupByType(idmv1.Type)
 	if len(plugins) == 0 {
 		return nil, errs.Wrapf(ErrLoadIdentityManagementPlugin, "no identity management plugins found in catalog")
 	}

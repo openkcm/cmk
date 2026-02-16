@@ -3,23 +3,21 @@ package cmk
 import (
 	"context"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-
 	"github.com/openkcm/cmk/internal/async"
 	authzmodel "github.com/openkcm/cmk/internal/authz-model"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
 // APIController handles API requests related to CMK (Customer Managed Keys).
 type APIController struct {
-	pluginCatalog *plugincatalog.Catalog
+	pluginCatalog *cmkpluginregistry.Registry
 	Repository    repo.Repo
 	Manager       *manager.Manager
 	config        *config.Config
@@ -35,7 +33,7 @@ func NewAPIController(
 	clientsFactory clients.Factory,
 	migrator db.Migrator,
 ) *APIController {
-	ctlg, err := catalog.New(ctx, config)
+	svcRegistry, err := cmkpluginregistry.New(ctx, config)
 	if err != nil {
 		log.Error(ctx, "Failed to load plugin", err)
 	}
@@ -55,9 +53,9 @@ func NewAPIController(
 	}
 
 	return &APIController{
-		Manager:       manager.New(ctx, r, config, clientsFactory, ctlg, eventFactory, asyncClient, migrator),
+		Manager:       manager.New(ctx, r, config, clientsFactory, svcRegistry, eventFactory, asyncClient, migrator),
 		config:        config,
-		pluginCatalog: ctlg,
+		pluginCatalog: svcRegistry,
 		AuthzEngine:   authzmodel.NewEngine(ctx, r, config),
 	}
 }

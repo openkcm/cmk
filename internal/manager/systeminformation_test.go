@@ -14,9 +14,9 @@ import (
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -37,11 +37,11 @@ func SetupSystemInfoManager(t *testing.T) (
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepository := sql.NewRepository(db)
-	ctlg, err := catalog.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
 	assert.NoError(t, err)
 	systemManager, err := manager.NewSystemInformationManager(
 		dbRepository,
-		ctlg,
+		svcRegistry,
 		&config.System{
 			OptionalProperties: map[string]config.SystemProperty{
 				SystemRole:   {},
@@ -164,10 +164,10 @@ func TestNewSystemInformationManager(t *testing.T) {
 					},
 				},
 			}
-			ctlg, err := catalog.New(t.Context(), &cfg)
+			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
-			_, err = manager.NewSystemInformationManager(nil, ctlg, &cfg.ContextModels.System)
+			_, err = manager.NewSystemInformationManager(nil, svcRegistry, &cfg.ContextModels.System)
 			if tt.expectedError != nil {
 				assert.ErrorIs(t, err, tt.expectedError)
 			} else {

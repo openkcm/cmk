@@ -18,8 +18,8 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/log"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/utils/cmd"
 )
@@ -76,12 +76,12 @@ func run(ctx context.Context, cfg *config.Config) error {
 		log.Error(ctx, "error connecting to registry service gRPC server", err)
 	}
 
-	ctlg, err := catalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	if err != nil {
 		log.Error(ctx, "Failed to load plugin", err)
 	}
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, repo, ctlg, clientsFactory)
+	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, repo, svcRegistry, clientsFactory)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "Failed to create crypto reconciler")
 	}

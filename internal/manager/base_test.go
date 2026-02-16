@@ -5,11 +5,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 )
@@ -19,14 +18,14 @@ const providerTest = "TEST"
 func TestNewManager(t *testing.T) {
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepo := sql.NewRepository(db)
-	catalog := &plugincatalog.Catalog{}
+	svcRegistry := &cmkpluginregistry.Registry{}
 
 	cfg := &config.Config{}
 
 	factory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
 
-	m := manager.New(t.Context(), dbRepo, cfg, factory, catalog, nil, nil, nil)
+	m := manager.New(t.Context(), dbRepo, cfg, factory, svcRegistry, nil, nil, nil)
 
 	assert.NotNil(t, m)
 	assert.NotNil(t, m.Keys)

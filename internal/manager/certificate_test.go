@@ -18,9 +18,9 @@ import (
 	certificate_issuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -59,7 +59,7 @@ func SetupCertificateManager(
 	dbRepository := sql.NewRepository(db)
 	cfg := &config.Config{Plugins: testutils.SetupMockPlugins(testutils.CertIssuer)}
 
-	catalog, err := catalog.New(t.Context(), cfg)
+	catalog, err := cmkpluginregistry.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	m := manager.NewCertificateManager(

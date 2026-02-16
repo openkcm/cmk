@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -17,6 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -41,14 +41,14 @@ type KeyVersionManager struct {
 
 func NewKeyVersionManager(
 	repo repo.Repo,
-	catalog *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 	tenantConfigs *TenantConfigManager,
 	certManager *CertificateManager,
 	cmkAuditor *auditor.Auditor,
 ) *KeyVersionManager {
 	return &KeyVersionManager{
 		ProviderConfigManager: ProviderConfigManager{
-			catalog:       catalog,
+			svcRegistry:   svcRegistry,
 			providers:     make(map[ProviderCachedKey]*ProviderConfig),
 			tenantConfigs: tenantConfigs,
 			repo:          repo,
