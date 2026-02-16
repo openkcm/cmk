@@ -345,7 +345,7 @@ var allRestrictions = []Restricted{
 	{
 		APIPath:          "/tenantConfigurations/keystores",
 		APIMethod:        APIMethodGet,
-		ResourceTypeName: ResourceTypeKey,
+		ResourceTypeName: ResourceTypeTenantSettings,
 		Action:           ActionRead,
 		RepoOperation:    OpFirst,
 	},

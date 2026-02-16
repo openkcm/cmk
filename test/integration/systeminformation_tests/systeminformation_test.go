@@ -50,7 +50,11 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 
 	clg, err := cmkpluginregistry.New(
 		t.Context(),
-		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
+		&config.Config{
+			Plugins: []plugincatalog.PluginConfig{
+				integrationutils.SISPlugin(t),
+			},
+		},
 	)
 	assert.NoError(t, err)
 
