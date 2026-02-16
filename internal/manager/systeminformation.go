@@ -6,9 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/openkcm/plugin-sdk/service/api/systeminformation"
 	"gorm.io/gorm"
-
-	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
@@ -19,40 +18,36 @@ import (
 )
 
 var (
-	ErrSisPlugin         = errors.New("system information plugin error")
 	ErrGettingSystemList = errors.New("error getting system list")
 	ErrUpdatingSystem    = errors.New("error updating system")
 	ErrNoPluginInCatalog = errors.New("no plugin in catalog")
 	ErrNoSystem          = errors.New("no system found")
 )
 
-const (
-	pluginName = "SYSINFO"
-)
-
 type SystemInformation struct {
 	repo      repo.Repo
-	sisClient systeminformationv1.SystemInformationServiceClient
 	systemCfg *config.System
+
+	client systeminformation.SystemInformation
 }
 
 func NewSystemInformationManager(repo repo.Repo,
 	svcRegistry *cmkpluginregistry.Registry, systemCfg *config.System,
 ) (*SystemInformation, error) {
-	client, err := createClient(svcRegistry)
-	if err != nil {
-		return nil, err
+	client, ok := svcRegistry.SystemInformation()
+	if !ok {
+		return nil, errs.Wrapf(ErrNoPluginInCatalog, "system information not found in registry")
 	}
 
 	return &SystemInformation{
-		sisClient: client,
+		client:    client,
 		repo:      repo,
 		systemCfg: systemCfg,
 	}, nil
 }
 
 func (si *SystemInformation) UpdateSystems(ctx context.Context) error {
-	systems := []*model.System{}
+	var systems []*model.System
 
 	err := si.repo.List(ctx, model.System{}, &systems, *repo.NewQuery())
 	if err != nil {
@@ -89,8 +84,8 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 
 	log.Debug(ctx, "Requesting SIS for properties")
 
-	resp, err := si.sisClient.Get(ctx, &systeminformationv1.GetRequest{
-		Id:   system.Identifier,
+	resp, err := si.client.GetSystemInfo(ctx, &systeminformation.GetSystemInfoRequest{
+		ID:   system.Identifier,
 		Type: strings.ToLower(system.Type),
 	})
 	if err != nil {
@@ -98,7 +93,7 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 		return nil
 	}
 
-	metadata := resp.GetMetadata()
+	metadata := resp.Metadata
 	if metadata == nil {
 		log.Warn(ctx, "No system information from SIS")
 		return nil
@@ -122,13 +117,4 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 	}
 
 	return nil
-}
-
-func createClient(svcRegistry *cmkpluginregistry.Registry) (systeminformationv1.SystemInformationServiceClient, error) {
-	systemInformation := svcRegistry.LookupByTypeAndName(systeminformationv1.Type, pluginName)
-	if systemInformation == nil {
-		return nil, ErrNoPluginInCatalog
-	}
-
-	return systeminformationv1.NewSystemInformationServiceClient(systemInformation.ClientConnection()), nil
 }

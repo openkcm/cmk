@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/rsa"
 
+	"github.com/openkcm/plugin-sdk/service/api/systeminformation"
+
 	certissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
-	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
 	"github.com/openkcm/cmk/internal/async"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
@@ -26,8 +27,8 @@ func (m *TenantConfigManager) SetDefaultKeystore(ctx context.Context, keystore *
 	return m.setDefaultKeystore(ctx, keystore)
 }
 
-func (si *SystemInformation) SetClient(systemInformation systeminformationv1.SystemInformationServiceClient) {
-	si.sisClient = systemInformation
+func (si *SystemInformation) SetClient(systemInformation systeminformation.SystemInformation) {
+	si.client = systemInformation
 }
 
 func (m *SystemManager) SelectEvent(

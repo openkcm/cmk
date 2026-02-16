@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/openkcm/plugin-sdk/api"
+	"github.com/openkcm/plugin-sdk/service/api/systeminformation"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -98,18 +100,21 @@ type PredictedResponseMock struct {
 	noResponseIDs []string
 }
 
-func (e PredictedResponseMock) Get(_ context.Context,
-	req *systeminformationv1.GetRequest, _ ...grpc.CallOption,
-) (*systeminformationv1.GetResponse, error) {
-	ID := req.GetId()
-	if slices.Contains(e.noResponseIDs, ID) {
+func (e PredictedResponseMock) ServiceInfo() api.Info {
+	panic("implement me")
+}
+
+func (e PredictedResponseMock) GetSystemInfo(ctx context.Context, req *systeminformation.GetSystemInfoRequest) (*systeminformation.GetSystemInfoResponse, error) {
+	if slices.Contains(e.noResponseIDs, req.ID) {
 		return nil, nil //nolint:nilnil
 	}
 
-	return &systeminformationv1.GetResponse{
-		Metadata: e.ResponseFunc(ID),
+	return &systeminformation.GetSystemInfoResponse{
+		Metadata: e.ResponseFunc(req.ID),
 	}, nil
 }
+
+var _ systeminformation.SystemInformation = (*PredictedResponseMock)(nil)
 
 func createSystemForTestsWithEmptyExternalData() *model.System {
 	system := testutils.NewSystem(func(s *model.System) {
