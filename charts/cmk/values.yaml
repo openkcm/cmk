@@ -195,7 +195,8 @@ eventReconciler:
     #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
 
   # Enable the event-reconciler deployment.
-  deploy: false
+  # Should be enabled by default
+  deploy: true
 
   # task-cli service configuration
   service:
