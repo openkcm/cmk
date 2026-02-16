@@ -270,8 +270,6 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	// TODO: MAKE THIS TABELAR TESTS
-	//
 	t.Run("should not be valid on primary key change with unconnected system", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
 		system := testutils.NewSystem(func(s *model.System) {
@@ -296,7 +294,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("should have canCreate  on primary key change without unconnected system", func(t *testing.T) {
+	t.Run("should have canCreate on primary key change without unconnected system", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID

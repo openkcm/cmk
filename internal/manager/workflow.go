@@ -626,13 +626,15 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 	}, nil
 }
 
+//nolint:cyclop
 func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.Workflow) (bool, error) {
 	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
 	if err != nil {
 		return false, err
 	}
 
-	if w.isSystemConnect(workflow) {
+	switch {
+	case w.isSystemConnect(workflow):
 		for _, kc := range keyConfigs {
 			if !ptr.IsNotNilUUID(kc.PrimaryKeyID) {
 				return false, ErrConnectSystemNoPrimaryKey
@@ -648,9 +650,7 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 				return false, ErrConnectSystemNoPrimaryKey
 			}
 		}
-	}
-
-	if w.isPrimaryKeySwitch(workflow) {
+	case w.isPrimaryKeySwitch(workflow):
 		query := *repo.NewQuery().
 			Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().
 				Where(repo.KeyConfigIDField, workflow.ArtifactID)))
@@ -670,6 +670,7 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 			}
 			return false, err
 		}
+	default:
 	}
 
 	return true, nil
