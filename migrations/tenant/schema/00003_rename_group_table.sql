@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS "groups" (
 	CONSTRAINT uni_groups_name UNIQUE (name)
 );
 
+-- Add foreign key constraint to key_configurations referencing the new groups table
+ALTER TABLE key_configurations
+ADD CONSTRAINT fk_key_configurations_admin_groups
+FOREIGN KEY (admin_group_id) REFERENCES "groups" (id) ON DELETE SET NULL
+
 -- Copy data from old table to new table
 INSERT INTO "groups" (id, name, description, role, iam_identifier)
 SELECT id, name, description, role, iam_identifier FROM "group";
@@ -20,11 +25,6 @@ SELECT id, name, description, role, iam_identifier FROM "group";
 -- Remove constraint fk_key_configurations_admin_group from table key_configurations
 ALTER TABLE key_configurations
 DROP CONSTRAINT IF EXISTS fk_key_configurations_admin_group;
-
--- Add foreign key constraint to key_configurations referencing the new groups table
-ALTER TABLE key_configurations
-ADD CONSTRAINT fk_key_configurations_admin_groups
-FOREIGN KEY (admin_group_id) REFERENCES "groups" (id) ON DELETE SET NULL
 -- +goose StatementEnd
 
 -- +goose Down
