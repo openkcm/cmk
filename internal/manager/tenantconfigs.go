@@ -14,7 +14,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
@@ -24,14 +24,14 @@ const minimumRetentionPeriodDays = 2
 
 type TenantConfigManager struct {
 	repo             repo.Repo
-	svcRegistry      *cmkplugincatalog.Registry
+	svcRegistry      *cmkpluginregistry.Registry
 	keystorePool     *Pool
 	deploymentConfig *config.Config
 }
 
 func NewTenantConfigManager(
 	repo repo.Repo,
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 	deploymentConfig *config.Config,
 ) *TenantConfigManager {
 	return &TenantConfigManager{

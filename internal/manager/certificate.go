@@ -19,7 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
@@ -54,7 +54,7 @@ type CertificateManager struct {
 func NewCertificateManager(
 	ctx context.Context,
 	repo repo.Repo,
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 	cfg *config.Certificates,
 ) *CertificateManager {
 	client, err := createCertificateIssuerClient(svcRegistry)
@@ -304,7 +304,7 @@ func (m *CertificateManager) IsTenantDefaultCertExist(ctx context.Context) (bool
 
 //nolint:ireturn
 func createCertificateIssuerClient(
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 ) (certissuerv1.CertificateIssuerServiceClient, error) {
 	certIssuer := svcRegistry.LookupByTypeAndName(certissuerv1.Type, CertificateIssuerPluginName)
 	if certIssuer == nil {

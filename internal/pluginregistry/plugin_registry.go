@@ -1,4 +1,4 @@
-package cmkplugincatalog
+package cmkpluginregistry
 
 import (
 	"context"

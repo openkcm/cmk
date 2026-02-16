@@ -34,7 +34,7 @@ import (
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -85,7 +85,7 @@ type CryptoReconciler struct {
 	manager       *orbital.Manager
 	targets       map[string]struct{}
 	initiators    []orbital.Initiator
-	pluginCatalog *cmkplugincatalog.Registry
+	pluginCatalog *cmkpluginregistry.Registry
 	cmkAuditor    *auditor.Auditor
 	registry      registry.Service
 }
@@ -97,7 +97,7 @@ func NewCryptoReconciler(
 	ctx context.Context,
 	cfg *config.Config,
 	repository repo.Repo,
-	pluginCatalog *cmkplugincatalog.Registry,
+	pluginCatalog *cmkpluginregistry.Registry,
 	clientsFactory clients.Factory,
 	opts ...Option,
 ) (*CryptoReconciler, error) {

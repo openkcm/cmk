@@ -11,7 +11,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/notifier/client"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
@@ -45,7 +45,7 @@ func TestCreateNotificationManager(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		// Setup
 		cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.Notification)}
-		svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
+		svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 		assert.NoError(t, err)
 
 		defer svcRegistry.Close()
@@ -61,7 +61,7 @@ func TestCreateNotificationManager(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
 		// Setup
 		cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.Notification)}
-		svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
+		svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 		assert.NoError(t, err)
 
 		defer svcRegistry.Close()

@@ -11,7 +11,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/notifier/client"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
 
@@ -24,9 +24,9 @@ func init() {
 	ansPath = filepath.Join(baseDir, "../../notification-plugins/bin/notification")
 }
 
-func NotificationPlugin(t *testing.T) *cmkplugincatalog.Registry {
+func NotificationPlugin(t *testing.T) *cmkpluginregistry.Registry {
 	t.Helper()
-	plugins, err := cmkplugincatalog.New(t.Context(), &config.Config{
+	plugins, err := cmkpluginregistry.New(t.Context(), &config.Config{
 		Plugins: []plugincatalog.PluginConfig{
 			integrationutils.NotificationPlugin(t),
 		},

@@ -16,20 +16,20 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type GroupManager struct {
 	repo        repo.Repo
-	svcRegistry *cmkplugincatalog.Registry
+	svcRegistry *cmkpluginregistry.Registry
 	userManager User
 }
 
 func NewGroupManager(
 	repository repo.Repo,
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 	userManager User,
 ) *GroupManager {
 	return &GroupManager{

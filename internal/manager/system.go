@@ -24,7 +24,7 @@ import (
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -135,7 +135,7 @@ func NewSystemManager(
 	repository repo.Repo,
 	clientsFactory clients.Factory,
 	reconciler *eventprocessor.CryptoReconciler,
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 	cfg *config.Config,
 	keyConfigManager *KeyConfigManager,
 	user User,

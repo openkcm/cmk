@@ -16,7 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -37,7 +37,7 @@ func SetupSystemInfoManager(t *testing.T) (
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepository := sql.NewRepository(db)
-	svcRegistry, err := cmkplugincatalog.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
 	assert.NoError(t, err)
 	systemManager, err := manager.NewSystemInformationManager(
 		dbRepository,
@@ -164,7 +164,7 @@ func TestNewSystemInformationManager(t *testing.T) {
 					},
 				},
 			}
-			svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
+			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 			assert.NoError(t, err)
 
 			_, err = manager.NewSystemInformationManager(nil, svcRegistry, &cfg.ContextModels.System)

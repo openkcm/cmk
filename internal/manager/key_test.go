@@ -20,7 +20,7 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -64,7 +64,7 @@ func (s *KeyManagerSuite) setup() {
 		),
 		Database: dbConf,
 	}
-	svcRegistry, err := cmkplugincatalog.New(s.ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(s.ctx, cfg)
 	s.Require().NoError(err)
 
 	cmkAuditor := auditor.New(s.ctx, cfg)

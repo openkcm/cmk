@@ -23,7 +23,7 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -69,7 +69,7 @@ func getConfig(t *testing.T, schCfg config.Scheduler) *config.Config {
 func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *config.Config) {
 	t.Helper()
 
-	svcRegistry, err := cmkplugincatalog.New(t.Context(), cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	tenancyRepo := sql.NewRepository(db)

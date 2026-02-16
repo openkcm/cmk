@@ -8,7 +8,7 @@ import (
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 )
@@ -18,7 +18,7 @@ const providerTest = "TEST"
 func TestNewManager(t *testing.T) {
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepo := sql.NewRepository(db)
-	svcRegistry := &cmkplugincatalog.Registry{}
+	svcRegistry := &cmkpluginregistry.Registry{}
 
 	cfg := &config.Config{}
 

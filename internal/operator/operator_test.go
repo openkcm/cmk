@@ -34,7 +34,7 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/operator"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -88,7 +88,7 @@ func createManagers(
 	r := sql.NewRepository(dbCon)
 	ctx := t.Context()
 
-	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(ctx, cfg)

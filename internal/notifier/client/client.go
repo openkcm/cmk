@@ -6,7 +6,7 @@ import (
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 
 	"github.com/openkcm/cmk/internal/log"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 )
 
 const (
@@ -25,7 +25,7 @@ type Client struct {
 
 func New(
 	ctx context.Context,
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 ) *Client {
 	client, err := createNotificationClient(svcRegistry)
 	if err != nil {
@@ -39,11 +39,11 @@ func New(
 
 //nolint:ireturn
 func createNotificationClient(
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 ) (notificationv1.NotificationServiceClient, error) {
 	notification := svcRegistry.LookupByTypeAndName(notificationv1.Type, PluginName)
 	if notification == nil {
-		return nil, cmkplugincatalog.ErrNoPluginInCatalog
+		return nil, cmkpluginregistry.ErrNoPluginInCatalog
 	}
 
 	return notificationv1.NewNotificationServiceClient(notification.ClientConnection()), nil

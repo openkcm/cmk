@@ -22,7 +22,7 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
@@ -52,7 +52,7 @@ func (s *DBSuite) SetupSuite() {
 	cfg := &config.Config{
 		Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
 	}
-	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	s.NoError(err)
 
 	f, err := clients.NewFactory(config.Services{})

@@ -9,7 +9,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -28,7 +28,7 @@ type Manager struct {
 
 	Tenant Tenant
 
-	Catalog    *cmkplugincatalog.Registry
+	Catalog    *cmkpluginregistry.Registry
 	Reconciler *eventprocessor.CryptoReconciler
 	Auditor    *auditor.Auditor
 }
@@ -38,7 +38,7 @@ func New(
 	repo repo.Repo,
 	config *config.Config,
 	clientsFactory clients.Factory,
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 	reconciler *eventprocessor.CryptoReconciler,
 	asyncClient async.Client,
 	migrator db.Migrator,

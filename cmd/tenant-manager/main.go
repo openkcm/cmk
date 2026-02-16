@@ -28,7 +28,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/operator"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
@@ -87,7 +87,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func createTenantManager(
 	ctx context.Context,
 	r repo.Repo,
 	clients clients.Factory,
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 	cfg *config.Config,
 ) (manager.Tenant, error) {
 	cmkAuditor := auditor.New(ctx, cfg)

@@ -19,7 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -77,7 +77,7 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	cfg := setupCfg(t)
-	svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(t.Context(), &cfg)
@@ -933,7 +933,7 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 
 	t.Run("Should get certificates", func(t *testing.T) {
 		cfg := setupCfg(t)
-		svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
+		svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 		assert.NoError(t, err)
 		certManager := manager.NewCertificateManager(
 			t.Context(),

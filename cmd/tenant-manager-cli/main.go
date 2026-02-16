@@ -18,7 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/log"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 )
 
 func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {
@@ -70,7 +70,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return oops.In("main").Wrapf(err, "Failed to initialise db connection")
 	}
 
-	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "Failed to initialise plugin catalog")
 	}
@@ -93,7 +93,7 @@ func setupCommands(
 	ctx context.Context,
 	cfg *config.Config,
 	dbCon *multitenancy.DB,
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 ) (*cobra.Command, error) {
 	factory, err := commands.NewCommandFactory(ctx, cfg, dbCon, svcRegistry)
 	if err != nil {

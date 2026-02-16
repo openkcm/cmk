@@ -1,4 +1,4 @@
-package cmkplugincatalog
+package cmkpluginregistry
 
 import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"

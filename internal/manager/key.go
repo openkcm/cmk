@@ -28,7 +28,7 @@ import (
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -66,7 +66,7 @@ type KeyManager struct {
 
 func NewKeyManager(
 	repo repo.Repo,
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 	tenantConfigs *TenantConfigManager,
 	keyConfigManager *KeyConfigManager,
 	user User,

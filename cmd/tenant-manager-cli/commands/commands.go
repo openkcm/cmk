@@ -11,7 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
@@ -27,7 +27,7 @@ func NewCommandFactory(
 	ctx context.Context,
 	cfg *config.Config,
 	dbCon *multitenancy.DB,
-	svcRegistry *cmkplugincatalog.Registry,
+	svcRegistry *cmkpluginregistry.Registry,
 ) (*CommandFactory, error) {
 	r := sql.NewRepository(dbCon)
 

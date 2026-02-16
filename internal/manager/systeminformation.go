@@ -14,7 +14,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -37,7 +37,7 @@ type SystemInformation struct {
 }
 
 func NewSystemInformationManager(repo repo.Repo,
-	svcRegistry *cmkplugincatalog.Registry, systemCfg *config.System,
+	svcRegistry *cmkpluginregistry.Registry, systemCfg *config.System,
 ) (*SystemInformation, error) {
 	client, err := createClient(svcRegistry)
 	if err != nil {
@@ -124,7 +124,7 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 	return nil
 }
 
-func createClient(svcRegistry *cmkplugincatalog.Registry) (systeminformationv1.SystemInformationServiceClient, error) {
+func createClient(svcRegistry *cmkpluginregistry.Registry) (systeminformationv1.SystemInformationServiceClient, error) {
 	systemInformation := svcRegistry.LookupByTypeAndName(systeminformationv1.Type, pluginName)
 	if systemInformation == nil {
 		return nil, ErrNoPluginInCatalog

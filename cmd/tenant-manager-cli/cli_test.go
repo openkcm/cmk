@@ -23,7 +23,7 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
@@ -62,7 +62,7 @@ func (s *CLISuite) SetupSuite() {
 		Database: dbCfg,
 	}
 	r := sql.NewRepository(s.db)
-	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	s.NoError(err)
 
 	cmkAuditor := auditor.New(ctx, cfg)

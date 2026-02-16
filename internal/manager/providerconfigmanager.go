@@ -21,7 +21,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
@@ -71,7 +71,7 @@ func (c ProviderConfig) IsExpired() bool {
 }
 
 type ProviderConfigManager struct {
-	svcRegistry   *cmkplugincatalog.Registry
+	svcRegistry   *cmkpluginregistry.Registry
 	providers     map[ProviderCachedKey]*ProviderConfig
 	mu            sync.RWMutex
 	tenantConfigs *TenantConfigManager

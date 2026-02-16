@@ -29,7 +29,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/notifier/client"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
@@ -109,7 +109,7 @@ func registerTasks(
 		return errs.Wrap(db.ErrStartingDBCon, err)
 	}
 
-	svcRegistry, err := cmkplugincatalog.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	if err != nil {
 		return errs.Wrapf(err, "failed to start loading catalog")
 	}

@@ -26,7 +26,7 @@ import (
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -52,7 +52,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 		Database: dbCfg,
 	}
 
-	svcRegistry, err := cmkplugincatalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 	require.NoError(t, err)
 
 	dbRepository := sql.NewRepository(db)

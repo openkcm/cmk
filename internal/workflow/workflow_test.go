@@ -19,7 +19,7 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -49,7 +49,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	svcRegistry, err := cmkplugincatalog.New(ctx, &cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, &cfg)
 	assert.NoError(t, err)
 
 	logger := testutils.SetupLoggerWithBuffer()

@@ -14,7 +14,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkplugincatalog "github.com/openkcm/cmk/internal/plugincatalog"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -104,7 +104,7 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 		w.ActionType = wfMechanism.ActionTypeDelete.String()
 	})
 
-	svcRegistry, err := cmkplugincatalog.New(ctx, testConfig)
+	svcRegistry, err := cmkpluginregistry.New(ctx, testConfig)
 	tenantConfigManager := manager.NewTenantConfigManager(repository, svcRegistry, nil)
 	cmkAuditor := auditor.New(ctx, testConfig)
 	userManager := manager.NewUserManager(repository, cmkAuditor)
