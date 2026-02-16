@@ -66,16 +66,12 @@ type Params struct {
 	AuthContext             config.AuthContextConfig
 }
 
-const (
-	pluginName = "SYSINFO"
-)
-
 func Register(registry catalog.BuiltInPluginRegistry) {
 	registry.Register(builtin(NewPlugin()))
 }
 
 func builtin(p *Plugin) catalog.BuiltInPlugin {
-	return catalog.MakeBuiltIn(pluginName,
+	return catalog.MakeBuiltIn("scim",
 		idmangv1.IdentityManagementServicePluginServer(p),
 		configv1.ConfigServiceServer(p))
 }
