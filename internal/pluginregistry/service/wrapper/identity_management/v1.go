@@ -13,6 +13,10 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 )
 
+const (
+	errFailedValidationMsg = "failed validation: %w"
+)
+
 type V1 struct {
 	plugin.Facade
 	grpcidentitymanagementv1.IdentityManagementServicePluginClient
@@ -35,7 +39,7 @@ func (v1 *V1) GetGroup(
 		AuthContext: AuthContextToGRPC(&req.AuthContext),
 	}
 	if err := protovalidate.Validate(in); err != nil {
-		return nil, fmt.Errorf("failed validation: %w", err)
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
 	}
 
 	grpcResp, err := v1.IdentityManagementServicePluginClient.GetGroup(ctx, in)
@@ -55,7 +59,7 @@ func (v1 *V1) ListGroups(
 		AuthContext: AuthContextToGRPC(&req.AuthContext),
 	}
 	if err := protovalidate.Validate(in); err != nil {
-		return nil, fmt.Errorf("failed validation: %w", err)
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
 	}
 
 	grpcResp, err := v1.GetAllGroups(ctx, in)
@@ -76,7 +80,7 @@ func (v1 *V1) ListGroupUsers(
 		AuthContext: AuthContextToGRPC(&req.AuthContext),
 	}
 	if err := protovalidate.Validate(in); err != nil {
-		return nil, fmt.Errorf("failed validation: %w", err)
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
 	}
 
 	grpcResp, err := v1.GetUsersForGroup(ctx, in)
@@ -97,7 +101,7 @@ func (v1 *V1) ListUserGroups(
 		AuthContext: AuthContextToGRPC(&req.AuthContext),
 	}
 	if err := protovalidate.Validate(in); err != nil {
-		return nil, fmt.Errorf("failed validation: %w", err)
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
 	}
 
 	grpcResp, err := v1.GetGroupsForUser(ctx, in)
