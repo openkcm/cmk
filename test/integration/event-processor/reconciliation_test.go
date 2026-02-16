@@ -24,8 +24,8 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	sqlPkg "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -82,7 +82,7 @@ func setupTest(t *testing.T) tester {
 		Database: dbConf,
 	}
 
-	ctlg, err := catalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 	require.NoError(t, err)
 
 	r := sqlPkg.NewRepository(db)
@@ -93,7 +93,7 @@ func setupTest(t *testing.T) tester {
 		reconcilerCtx,
 		&cfg,
 		r,
-		ctlg,
+		svcRegistry,
 		nil,
 		eventprocessor.WithExecInterval(5*time.Millisecond),
 		eventprocessor.WithConfirmJobAfter(10*time.Millisecond),

@@ -12,9 +12,9 @@ import (
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -30,7 +30,7 @@ func SetupGroupManager(t *testing.T) (*manager.GroupManager, *multitenancy.DB, s
 		},
 	)
 
-	ctlg, err := catalog.New(
+	svcRegistry, err := cmkpluginregistry.New(
 		t.Context(), &config.Config{
 			Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
 		},
@@ -39,7 +39,7 @@ func SetupGroupManager(t *testing.T) (*manager.GroupManager, *multitenancy.DB, s
 
 	dbRepository := sql.NewRepository(db)
 
-	m := manager.NewGroupManager(dbRepository, ctlg, manager.NewUserManager(dbRepository, auditor.New(t.Context(), &config.Config{})))
+	m := manager.NewGroupManager(dbRepository, svcRegistry, manager.NewUserManager(dbRepository, auditor.New(t.Context(), &config.Config{})))
 
 	return m, db, tenants[0]
 }

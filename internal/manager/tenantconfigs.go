@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -15,6 +14,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
@@ -24,19 +24,19 @@ const minimumRetentionPeriodDays = 2
 
 type TenantConfigManager struct {
 	repo             repo.Repo
-	catalog          *plugincatalog.Catalog
+	svcRegistry      *cmkpluginregistry.Registry
 	keystorePool     *Pool
 	deploymentConfig *config.Config
 }
 
 func NewTenantConfigManager(
 	repo repo.Repo,
-	catalog *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 	deploymentConfig *config.Config,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
 		repo:             repo,
-		catalog:          catalog,
+		svcRegistry:      svcRegistry,
 		keystorePool:     NewPool(repo),
 		deploymentConfig: deploymentConfig,
 	}
@@ -242,11 +242,11 @@ func (m *TenantConfigManager) setDefaultKeystore(ctx context.Context, keystore *
 }
 
 func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
-	if m.catalog == nil {
+	if m.svcRegistry == nil {
 		return HYOKKeystore{}
 	}
 
-	plugins := m.catalog.LookupByType(keystoreopv1.Type)
+	plugins := m.svcRegistry.LookupByType(keystoreopv1.Type)
 	if len(plugins) == 0 {
 		return HYOKKeystore{}
 	}

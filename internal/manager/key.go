@@ -14,7 +14,6 @@ import (
 	"github.com/openkcm/orbital"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
 	commonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
@@ -29,6 +28,7 @@ import (
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -66,7 +66,7 @@ type KeyManager struct {
 
 func NewKeyManager(
 	repo repo.Repo,
-	catalog *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 	tenantConfigs *TenantConfigManager,
 	keyConfigManager *KeyConfigManager,
 	user User,
@@ -76,7 +76,7 @@ func NewKeyManager(
 ) *KeyManager {
 	return &KeyManager{
 		ProviderConfigManager: ProviderConfigManager{
-			catalog:       catalog,
+			svcRegistry:   svcRegistry,
 			providers:     make(map[ProviderCachedKey]*ProviderConfig),
 			tenantConfigs: tenantConfigs,
 			certs:         certManager,
@@ -488,7 +488,7 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 		return nil
 	}
 
-	providerTransformer, err := transformer.NewPluginProviderTransformer(km.catalog, key.Provider)
+	providerTransformer, err := transformer.NewPluginProviderTransformer(km.svcRegistry, key.Provider)
 	if err != nil {
 		return err
 	}

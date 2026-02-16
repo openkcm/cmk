@@ -17,9 +17,9 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -49,7 +49,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	ctlg, err := catalog.New(ctx, &cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, &cfg)
 	assert.NoError(t, err)
 
 	logger := testutils.SetupLoggerWithBuffer()
@@ -88,7 +88,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	migrator, err := db.NewMigrator(r, &cfg)
 	assert.NoError(t, err)
 
-	return manager.New(ctx, r, &cfg, clientsFactory, ctlg, eventFactory, nil, migrator), dbCon, tenants[0]
+	return manager.New(ctx, r, &cfg, clientsFactory, svcRegistry, eventFactory, nil, migrator), dbCon, tenants[0]
 }
 
 func TestWorkflowLifecycleTransitions(t *testing.T) {

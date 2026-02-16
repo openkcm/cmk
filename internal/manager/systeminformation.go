@@ -8,13 +8,13 @@ import (
 
 	"gorm.io/gorm"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -37,9 +37,9 @@ type SystemInformation struct {
 }
 
 func NewSystemInformationManager(repo repo.Repo,
-	catalog *plugincatalog.Catalog, systemCfg *config.System,
+	svcRegistry *cmkpluginregistry.Registry, systemCfg *config.System,
 ) (*SystemInformation, error) {
-	client, err := createClient(catalog)
+	client, err := createClient(svcRegistry)
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +124,8 @@ func (si *SystemInformation) updateSystem(ctx context.Context, system *model.Sys
 	return nil
 }
 
-func createClient(catalog *plugincatalog.Catalog) (systeminformationv1.SystemInformationServiceClient, error) {
-	systemInformation := catalog.LookupByTypeAndName(systeminformationv1.Type, pluginName)
+func createClient(svcRegistry *cmkpluginregistry.Registry) (systeminformationv1.SystemInformationServiceClient, error) {
+	systemInformation := svcRegistry.LookupByTypeAndName(systeminformationv1.Type, pluginName)
 	if systemInformation == nil {
 		return nil, ErrNoPluginInCatalog
 	}

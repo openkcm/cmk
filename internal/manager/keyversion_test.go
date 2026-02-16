@@ -11,9 +11,9 @@ import (
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -51,20 +51,20 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	s.r = sql.NewRepository(db)
 
 	cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.KeyStorePlugin)}
-	ctlg, err := catalog.New(s.ctx, &cfg)
+	svcRegistry, err := cmkpluginregistry.New(s.ctx, &cfg)
 	s.Require().NoError(err)
 
-	tenantConfigManager := manager.NewTenantConfigManager(s.r, ctlg, nil)
+	tenantConfigManager := manager.NewTenantConfigManager(s.r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(
-		s.ctx, s.r, ctlg, &config.Certificates{ValidityDays: config.MinCertificateValidityDays})
+		s.ctx, s.r, svcRegistry, &config.Certificates{ValidityDays: config.MinCertificateValidityDays})
 	cmkAuditor := auditor.New(s.ctx, &cfg)
 	userManager := manager.NewUserManager(s.r, cmkAuditor)
 	tagManager := manager.NewTagManager(s.r)
 	keyConfigManager := manager.NewKeyConfigManager(s.r, certManager, userManager, tagManager, cmkAuditor, &cfg)
-	s.km = manager.NewKeyManager(s.r, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
+	s.km = manager.NewKeyManager(s.r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 	s.kvm = manager.NewKeyVersionManager(
 		s.r,
-		ctlg,
+		svcRegistry,
 		tenantConfigManager,
 		certManager,
 		cmkAuditor,
