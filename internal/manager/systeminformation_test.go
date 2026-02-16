@@ -92,9 +92,9 @@ func (e PredictedResponseMock) ServiceInfo() api.Info {
 	panic("implement me")
 }
 
-func (e PredictedResponseMock) GetSystemInfo(ctx context.Context, req *systeminformation.GetSystemInfoRequest) (*systeminformation.GetSystemInfoResponse, error) {
+func (e PredictedResponseMock) GetSystemInfo(_ context.Context, req *systeminformation.GetSystemInfoRequest) (*systeminformation.GetSystemInfoResponse, error) {
 	if slices.Contains(e.noResponseIDs, req.ID) {
-		return nil, nil //nolint:nilnil
+		return &systeminformation.GetSystemInfoResponse{}, nil
 	}
 
 	return &systeminformation.GetSystemInfoResponse{
