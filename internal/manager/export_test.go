@@ -4,13 +4,12 @@ import (
 	"context"
 	"crypto/rsa"
 
-	"github.com/openkcm/plugin-sdk/service/api/systeminformation"
-
 	certissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 
 	"github.com/openkcm/cmk/internal/async"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
 	wf "github.com/openkcm/cmk/internal/workflow"
 )
 

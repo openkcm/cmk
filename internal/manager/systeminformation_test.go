@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/openkcm/plugin-sdk/api"
-	"github.com/openkcm/plugin-sdk/service/api/systeminformation"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -15,6 +14,7 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
