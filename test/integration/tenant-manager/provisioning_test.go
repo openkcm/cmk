@@ -58,10 +58,7 @@ func (s *DBSuite) SetupSuite() {
 	f, err := clients.NewFactory(config.Services{})
 	s.NoError(err)
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(
-		ctx, cfg, r,
-		ctlg, f,
-	)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	s.NoError(err)
 
 	cmkAuditor := auditor.New(ctx, cfg)
@@ -75,7 +72,7 @@ func (s *DBSuite) SetupSuite() {
 		ctx,
 		r,
 		f,
-		reconciler,
+		eventFactory,
 		ctlg,
 		cfg,
 		kcm,
@@ -89,7 +86,7 @@ func (s *DBSuite) SetupSuite() {
 		kcm,
 		um,
 		cm,
-		reconciler,
+		eventFactory,
 		cmkAuditor,
 	)
 

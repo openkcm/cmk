@@ -94,6 +94,18 @@ dbMigrator:
 
   deploy: true
 
+eventReconciler:
+  image:
+    command: "/bin/event-reconciler"
+    args: []
+
+  deploy: true
+
+  service:
+    enabled: true
+
+  topologySpreadConstraints: []
+
 # Override the "name" value, which is used to annotate some of
 # the resources that are created by this Chart (using "app.kubernetes.io/name").
 # +docs:property

@@ -29,9 +29,9 @@ type Manager struct {
 
 	Tenant Tenant
 
-	Catalog    *plugincatalog.Catalog
-	Reconciler *eventprocessor.CryptoReconciler
-	Auditor    *auditor.Auditor
+	Catalog      *plugincatalog.Catalog
+	EventFactory *eventprocessor.EventFactory
+	Auditor      *auditor.Auditor
 }
 
 func New(
@@ -40,7 +40,7 @@ func New(
 	config *config.Config,
 	clientsFactory clients.Factory,
 	catalog *plugincatalog.Catalog,
-	reconciler *eventprocessor.CryptoReconciler,
+	eventFactory *eventprocessor.EventFactory,
 	asyncClient async.Client,
 	migrator db.Migrator,
 ) *Manager {
@@ -57,14 +57,14 @@ func New(
 		keyConfigManager,
 		userManager,
 		certManager,
-		reconciler,
+		eventFactory,
 		cmkAuditor,
 	)
 	systemManager := NewSystemManager(
 		ctx,
 		repo,
 		clientsFactory,
-		reconciler,
+		eventFactory,
 		catalog,
 		config,
 		keyConfigManager,
@@ -88,7 +88,7 @@ func New(
 
 		Tenant: NewTenantManager(repo, systemManager, keyManager, userManager, cmkAuditor, migrator),
 
-		Catalog:    catalog,
-		Reconciler: reconciler,
+		Catalog:      catalog,
+		EventFactory: eventFactory,
 	}
 }

@@ -400,7 +400,7 @@ k3d-build-image: docker-dev-build
 	@echo "Importing docker image into k3d"
 	k3d image import $(CMK_IMAGE_NAME) -c $(CLUSTER_NAME)
 
-VALUE_DIR ?= charts
+VALUE_DIR ?= charts/cmk
 
 k3d-apply-helm-chart:
 	@echo "Applying Helm chart."
@@ -411,10 +411,10 @@ k3d-apply-helm-chart:
 
 k3d-apply-cmk-helm-chart:
 	@echo "Applying CMK Helm chart."
-	$(MAKE) k3d-apply-helm-chart CHART_NAME=cmk CHART_DIR=$(pwd)/charts APPLY_NAMESPACE=$(NAMESPACE)
+	$(MAKE) k3d-apply-helm-chart CHART_NAME=cmk CHART_DIR=$(pwd)/charts/cmk APPLY_NAMESPACE=$(NAMESPACE)
 
 k3d-build-helm:
-	helm dependency build ./charts
+	helm dependency build ./charts/cmk
 
 # Target to clean everything in the namespace
 clean-k3d:

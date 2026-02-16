@@ -75,7 +75,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	assert.NoError(t, clientsFactory.Close())
 
 	r := sqlRepo.NewRepository(dbCon)
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, &cfg, r, ctlg, clientsFactory)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, &cfg, r)
 	assert.NoError(t, err)
 
 	ksConfig := testutils.NewKeystore(func(_ *model.Keystore) {})
@@ -88,7 +88,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	migrator, err := db.NewMigrator(r, &cfg)
 	assert.NoError(t, err)
 
-	return manager.New(ctx, r, &cfg, clientsFactory, ctlg, reconciler, nil, migrator), dbCon, tenants[0]
+	return manager.New(ctx, r, &cfg, clientsFactory, ctlg, eventFactory, nil, migrator), dbCon, tenants[0]
 }
 
 func TestWorkflowLifecycleTransitions(t *testing.T) {

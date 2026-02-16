@@ -121,11 +121,9 @@ func registerTasks(
 		return errs.Wrapf(err, "failed to start system information manager")
 	}
 
-	cfg.EventProcessor.Targets = nil // Disable consumer creation in the event processor
-
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, r, ctlg, nil)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	if err != nil {
-		return errs.Wrapf(err, "failed to create event reconciler")
+		return errs.Wrapf(err, "failed to create event factory")
 	}
 
 	cmkAuditor := auditor.New(ctx, cfg)
@@ -135,8 +133,8 @@ func registerTasks(
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
 	keyManager := manager.NewKeyManager(
-		r, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, reconciler, cmkAuditor)
-	systemManager := manager.NewSystemManager(ctx, r, nil, reconciler, ctlg, cfg, keyConfigManager, userManager)
+		r, ctlg, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
+	systemManager := manager.NewSystemManager(ctx, r, nil, eventFactory, ctlg, cfg, keyConfigManager, userManager)
 	groupManager := manager.NewGroupManager(r, ctlg, userManager)
 	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, cron.Client(), tenantConfigManager, cfg)

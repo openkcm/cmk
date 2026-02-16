@@ -44,9 +44,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 RUN --mount=type=cache,target=/go/pkg/mod \
   --mount=type=cache,target=/root/.cache/go-build \
-  --mount=type=bind,target=.,source=./identity-management-plugins \
+  --mount=type=bind,target=. \
   CGO_ENABLED=0 \
-  go build -o /bin/scim ./cmd/scim
+  go build -o /bin/event-reconciler ./cmd/event-reconciler
+
 
 RUN --mount=type=cache,target=/go/pkg/mod \
   --mount=type=cache,target=/root/.cache/go-build \
@@ -65,8 +66,7 @@ COPY --from=builder /bin/task-cli /bin/task-cli
 COPY --from=builder /bin/tenant-manager /bin/tenant-manager
 COPY --from=builder /bin/tenant-manager-cli /bin/tenant-manager-cli
 COPY --from=builder /bin/db-migrator /bin/db-migrator
-
-COPY --from=builder /bin/scim /bin/scim
+COPY --from=builder /bin/event-reconciler /bin/event-reconciler
 
 EXPOSE 8080
 ENTRYPOINT ["/bin/api-server"]

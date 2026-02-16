@@ -1,4 +1,3 @@
-//nolint:contextcheck
 package eventprocessor_test
 
 import (
@@ -35,11 +34,11 @@ import (
 )
 
 type tester struct {
-	repository repo.Repo
-	db         *multitenancy.DB
-	tenant     string
-	reconciler *eventprocessor.CryptoReconciler
-	config     *config.Config
+	repository   repo.Repo
+	db           *multitenancy.DB
+	tenant       string
+	eventFactory *eventprocessor.EventFactory
+	config       *config.Config
 }
 
 func setupTest(t *testing.T) tester {
@@ -102,6 +101,9 @@ func setupTest(t *testing.T) tester {
 	require.NoError(t, err)
 	require.NoError(t, reconciler.Start(reconcilerCtx))
 
+	eventFactory, err := eventprocessor.NewEventFactory(reconcilerCtx, &cfg, r)
+	require.NoError(t, err)
+
 	t.Cleanup(func() {
 		// Cancel reconciler context to stop background processes
 		cancelFunc()
@@ -110,11 +112,11 @@ func setupTest(t *testing.T) tester {
 	})
 
 	return tester{
-		repository: r,
-		db:         db,
-		tenant:     tenants[0],
-		reconciler: reconciler,
-		config:     &cfg,
+		repository:   r,
+		db:           db,
+		tenant:       tenants[0],
+		eventFactory: eventFactory,
+		config:       &cfg,
 	}
 }
 
@@ -155,11 +157,11 @@ func TestReconciler_TaskResolution_KeyAction(t *testing.T) {
 
 			switch tc.jobType {
 			case eventProto.TaskType_KEY_ENABLE.String():
-				job, err = tester.reconciler.KeyEnable(ctx, keyID)
+				job, err = tester.eventFactory.KeyEnable(ctx, keyID)
 			case eventProto.TaskType_KEY_DISABLE.String():
-				job, err = tester.reconciler.KeyDisable(ctx, keyID)
+				job, err = tester.eventFactory.KeyDisable(ctx, keyID)
 			case eventProto.TaskType_KEY_DETACH.String():
-				job, err = tester.reconciler.KeyDetach(ctx, keyID)
+				job, err = tester.eventFactory.KeyDetach(ctx, keyID)
 			default:
 				assert.Failf(t, "unsupported job type: %s", tc.jobType)
 			}
@@ -233,9 +235,9 @@ func TestReconciler_TaskResolution_SystemAction(t *testing.T) {
 			var job orbital.Job
 
 			if tc.jobType == "SYSTEM_LINK" {
-				job, err = tester.reconciler.SystemLink(ctx, tc.system, tc.keyIDTo)
+				job, err = tester.eventFactory.SystemLink(ctx, tc.system, tc.keyIDTo)
 			} else {
-				job, err = tester.reconciler.SystemUnlink(ctx, tc.system, tc.keyIDFrom, "")
+				job, err = tester.eventFactory.SystemUnlink(ctx, tc.system, tc.keyIDFrom, "")
 			}
 
 			require.NoError(t, err)
@@ -284,7 +286,7 @@ func TestReconciler_TaskResolution_Errors(t *testing.T) {
 
 		updateSystemRegion(ctx, t, tester.repository, system, "eu-west-10")
 
-		job, err := tester.reconciler.SystemLink(ctx, system, keyID)
+		job, err := tester.eventFactory.SystemLink(ctx, system, keyID)
 		require.NoError(t, err)
 
 		err = waitForJobStatus(ctx, t, tester.db, job.ID.String(), orbital.JobStatusResolveCanceled)
@@ -297,7 +299,7 @@ func TestReconciler_TaskResolution_Errors(t *testing.T) {
 	t.Run("task resolution for system event fails when key does not exist", func(t *testing.T) {
 		system, _ := addDataToDB(ctx, t, tester.repository)
 
-		job, err := tester.reconciler.SystemLink(ctx, system, "non-existent-key")
+		job, err := tester.eventFactory.SystemLink(ctx, system, "non-existent-key")
 		require.NoError(t, err)
 
 		err = waitForJobStatus(ctx, t, tester.db, job.ID.String(), orbital.JobStatusResolveCanceled)
@@ -346,7 +348,7 @@ func TestReconciler_JobTermination(t *testing.T) {
 			}(t.Context())
 
 			// When
-			systemJob, err := tester.reconciler.SystemLink(ctx, systemID, keyID)
+			systemJob, err := tester.eventFactory.SystemLink(ctx, systemID, keyID)
 			require.NoError(t, err)
 
 			// Then
@@ -368,7 +370,7 @@ func TestReconciler_JobTermination(t *testing.T) {
 		defer updateSystemRegion(ctx, t, tester.repository, systemID, "eu-east-10")
 
 		// When
-		systemJob, err := tester.reconciler.SystemLink(ctx, systemID, keyID)
+		systemJob, err := tester.eventFactory.SystemLink(ctx, systemID, keyID)
 		require.NoError(t, err)
 
 		// Then
