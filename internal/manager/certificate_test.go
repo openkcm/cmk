@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -21,6 +20,7 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -209,6 +209,53 @@ func TestCertificateManager_RequestNewCertificate(t *testing.T) {
 	}
 }
 
+func TestRotateExpiredCertificates(t *testing.T) {
+	t.Run("Should rotate expired certs", func(t *testing.T) {
+		m, db, tenant := SetupCertificateManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
+		assert.NoError(t, err)
+
+		m.SetPrivateKeyGenerator(func() (*rsa.PrivateKey, error) {
+			return privateKey, nil
+		})
+
+		m.SetClient(CertificateIssuerMock{NewCertificateChain: func() string {
+			return testutils.CreateCertificateChain(t, pkix.Name{
+				Country:            []string{"test"},
+				Organization:       []string{"test"},
+				OrganizationalUnit: []string{"test"},
+				Locality:           []string{"test"},
+				CommonName:         "test",
+			}, privateKey)
+		}})
+
+		input, _, err := m.RequestNewCertificate(ctx, privateKey,
+			model.RequestCertArgs{
+				CertPurpose: model.CertificatePurposeTenantDefault,
+				Supersedes:  nil,
+				CommonName:  "MyCert",
+				Locality:    []string{"locality"},
+			})
+		assert.NoError(t, err)
+
+		input.ExpirationDate = time.Now().AddDate(-1, 0, 0)
+		_, err = r.Patch(ctx, input, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		err = m.RotateExpiredCertificates(ctx)
+		assert.NoError(t, err)
+
+		cert := &model.Certificate{ID: input.ID}
+		_, err = r.First(ctx, cert, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		assert.NotEqual(t, input, cert)
+	})
+}
+
 func TestCertificateManager_RotateCertificate(t *testing.T) {
 	privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
 	assert.NoError(t, err)
@@ -237,10 +284,7 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 			CommonName:  "MyCert",
 			Locality:    []string{"locality"},
 		})
-	// Sometimes this fails due to tenant not found, but I cant find why it happens
-	// Change it to require so the test fails before panicing trying to access the pointer
-	// so it is retried
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	gotOrigCert, err := m.GetCertificate(ctx, ptr.PointTo(origCert.ID))
 	assert.NoError(t, err)
