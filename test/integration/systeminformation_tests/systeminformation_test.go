@@ -12,9 +12,9 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -48,7 +48,7 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 		testutils.CreateTestEntities(ctx, t, repository, sys)
 	}
 
-	clg, err := catalog.New(
+	clg, err := cmkpluginregistry.New(
 		t.Context(),
 		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)
@@ -124,7 +124,7 @@ func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 		assert.True(t, ok)
 	}()
 
-	clg, err := catalog.New(
+	clg, err := cmkpluginregistry.New(
 		t.Context(),
 		&config.Config{Plugins: []plugincatalog.PluginConfig{integrationutils.SISPlugin(t)}},
 	)

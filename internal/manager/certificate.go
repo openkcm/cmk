@@ -13,13 +13,13 @@ import (
 	"github.com/fullsailor/pkcs7"
 	"github.com/google/uuid"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	certissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
@@ -54,10 +54,10 @@ type CertificateManager struct {
 func NewCertificateManager(
 	ctx context.Context,
 	repo repo.Repo,
-	catalog *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 	cfg *config.Certificates,
 ) *CertificateManager {
-	client, err := createCertificateIssuerClient(catalog)
+	client, err := createCertificateIssuerClient(svcRegistry)
 	if err != nil {
 		log.Error(ctx, "failed creating certificate issuer client", err)
 	}
@@ -304,9 +304,9 @@ func (m *CertificateManager) IsTenantDefaultCertExist(ctx context.Context) (bool
 
 //nolint:ireturn
 func createCertificateIssuerClient(
-	catalog *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 ) (certissuerv1.CertificateIssuerServiceClient, error) {
-	certIssuer := catalog.LookupByTypeAndName(certissuerv1.Type, CertificateIssuerPluginName)
+	certIssuer := svcRegistry.LookupByTypeAndName(certissuerv1.Type, CertificateIssuerPluginName)
 	if certIssuer == nil {
 		return nil, ErrNoPluginInCatalog
 	}

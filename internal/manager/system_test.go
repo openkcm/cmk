@@ -24,9 +24,9 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -52,7 +52,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 		Database: dbCfg,
 	}
 
-	ctlg, err := catalog.New(t.Context(), &cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 	require.NoError(t, err)
 
 	dbRepository := sql.NewRepository(db)
@@ -69,7 +69,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 	)
 
 	certManager := manager.NewCertificateManager(
-		t.Context(), dbRepository, ctlg,
+		t.Context(), dbRepository, svcRegistry,
 		&config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 	)
 	userManager := manager.NewUserManager(dbRepository, auditor.New(t.Context(), &cfg))
@@ -82,7 +82,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 	systemManager := manager.NewSystemManager(
 		t.Context(), dbRepository,
 		clientsFactory,
-		eventFactory, ctlg,
+		eventFactory, svcRegistry,
 		&cfg,
 		keyConfigManager,
 		userManager,

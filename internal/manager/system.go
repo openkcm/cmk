@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -25,6 +24,7 @@ import (
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -135,7 +135,7 @@ func NewSystemManager(
 	repository repo.Repo,
 	clientsFactory clients.Factory,
 	eventFactory *eventprocessor.EventFactory,
-	ctlg *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 	cfg *config.Config,
 	keyConfigManager *KeyConfigManager,
 	user User,
@@ -155,7 +155,7 @@ func NewSystemManager(
 
 	manager.ContextModelsCfg = cfg.ContextModels.System
 
-	sisClient, err := NewSystemInformationManager(repository, ctlg, &cfg.ContextModels.System)
+	sisClient, err := NewSystemInformationManager(repository, svcRegistry, &cfg.ContextModels.System)
 	if err != nil {
 		log.Warn(ctx, "Failed to create sis client", slog.String(slogctx.ErrKey, err.Error()))
 	}

@@ -23,8 +23,8 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
-	"github.com/openkcm/cmk/internal/grpc/catalog"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -63,7 +63,7 @@ func setupReconciler(
 		}
 	}
 
-	ctlg, err := catalog.New(t.Context(), cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
 	logger := testutils.SetupLoggerWithBuffer()
@@ -89,7 +89,7 @@ func setupReconciler(
 
 	eventProcessor, err := eventprocessor.NewCryptoReconciler(
 		t.Context(), cfg, r,
-		ctlg, clientsFactory,
+		svcRegistry, clientsFactory,
 	)
 	assert.NoError(t, err)
 

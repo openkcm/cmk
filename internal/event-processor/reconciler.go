@@ -17,7 +17,6 @@ import (
 
 	goAmqp "github.com/Azure/go-amqp"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 	protoPkg "google.golang.org/protobuf/proto"
 
@@ -32,6 +31,7 @@ import (
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -78,13 +78,13 @@ func WithExecInterval(d time.Duration) Option {
 
 // CryptoReconciler is responsible for handling orbital jobs and managing the lifecycle of systems in CMK.
 type CryptoReconciler struct {
-	repo          repo.Repo
-	manager       *orbital.Manager
-	targets       map[string]struct{}
-	initiators    []orbital.Initiator
-	pluginCatalog *plugincatalog.Catalog
-	cmkAuditor    *auditor.Auditor
-	registry      registry.Service
+	repo        repo.Repo
+	manager     *orbital.Manager
+	targets     map[string]struct{}
+	initiators  []orbital.Initiator
+	svcRegistry *cmkpluginregistry.Registry
+	cmkAuditor  *auditor.Auditor
+	registry    registry.Service
 }
 
 // NewCryptoReconciler creates a new CryptoReconciler instance.
@@ -94,7 +94,7 @@ func NewCryptoReconciler(
 	ctx context.Context,
 	cfg *config.Config,
 	repository repo.Repo,
-	pluginCatalog *plugincatalog.Catalog,
+	svcRegistry *cmkpluginregistry.Registry,
 	clientsFactory clients.Factory,
 	opts ...Option,
 ) (*CryptoReconciler, error) {
@@ -119,11 +119,11 @@ func NewCryptoReconciler(
 	cmkAuditor := auditor.New(ctx, cfg)
 
 	reconciler := &CryptoReconciler{
-		repo:          repository,
-		targets:       targetMap,
-		initiators:    initiators,
-		pluginCatalog: pluginCatalog,
-		cmkAuditor:    cmkAuditor,
+		repo:        repository,
+		targets:     targetMap,
+		initiators:  initiators,
+		svcRegistry: svcRegistry,
+		cmkAuditor:  cmkAuditor,
 	}
 
 	if clientsFactory != nil {
@@ -485,7 +485,7 @@ func (c *CryptoReconciler) getKeyAccessMetadata(
 	key model.Key,
 	systemRegion string,
 ) ([]byte, error) {
-	plugin := c.pluginCatalog.LookupByTypeAndName(keystoreopv1.Type, key.Provider)
+	plugin := c.svcRegistry.LookupByTypeAndName(keystoreopv1.Type, key.Provider)
 	if plugin == nil {
 		return nil, ErrPluginNotFound
 	}
