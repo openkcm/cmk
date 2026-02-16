@@ -268,8 +268,57 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.True(t, status.Valid)
 		assert.True(t, status.CanCreate)
 		assert.NoError(t, err)
-	},
-	)
+	})
+
+	// TODO: MAKE THIS TABELAR TESTS
+	//
+	t.Run("should not be valid on primary key change with unconnected system", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+		system := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfig.ID
+			s.Status = cmkapi.SystemStatusDISCONNECTED
+		})
+		testutils.CreateTestEntities(ctxSys, t, repo, keyConfig, system)
+		wf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateInitial.String()
+				w.ActionType = workflow.ActionTypeUpdatePrimary.String()
+				w.ArtifactID = keyConfig.ID
+				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+			},
+		)
+
+		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.True(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.False(t, status.Valid)
+		assert.False(t, status.CanCreate)
+		assert.NoError(t, err)
+	})
+
+	t.Run("should have canCreate  on primary key change without unconnected system", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+		system := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfig.ID
+			s.Status = cmkapi.SystemStatusCONNECTED
+		})
+		testutils.CreateTestEntities(ctxSys, t, repo, keyConfig, system)
+		wf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateInitial.String()
+				w.ActionType = workflow.ActionTypeUpdatePrimary.String()
+				w.ArtifactID = keyConfig.ID
+				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+			},
+		)
+
+		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.True(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.True(t, status.Valid)
+		assert.True(t, status.CanCreate)
+		assert.NoError(t, err)
+	})
 
 	t.Run(
 		"Should return authorization error on non active artifact", func(t *testing.T) {

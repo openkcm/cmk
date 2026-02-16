@@ -650,7 +650,34 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 		}
 	}
 
+	if w.isPrimaryKeySwitch(workflow) {
+		query := *repo.NewQuery().
+			Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().
+				Where(repo.KeyConfigIDField, workflow.ArtifactID)))
+
+		err := repo.ProcessInBatch(ctx, w.repo, &query, repo.DefaultLimit, func(systems []*model.System) error {
+			for _, s := range systems {
+				if s.Status != cmkapi.SystemStatusCONNECTED {
+					return ErrNotAllSystemsConnected
+				}
+			}
+			return nil
+		},
+		)
+		if err != nil {
+			if errors.Is(err, ErrNotAllSystemsConnected) {
+				return false, nil
+			}
+			return false, err
+		}
+	}
+
 	return true, nil
+}
+
+func (w *WorkflowManager) isPrimaryKeySwitch(workflow *model.Workflow) bool {
+	return workflow.ArtifactType == wf.ArtifactTypeKeyConfiguration.String() &&
+		workflow.ActionType == string(wf.ActionTypeUpdatePrimary)
 }
 
 func (w *WorkflowManager) isSystemConnect(workflow *model.Workflow) bool {
@@ -1218,13 +1245,13 @@ func (w *WorkflowManager) populateParametersResource(
 	switch workflow.ArtifactType {
 	case wf.ArtifactTypeKeyConfiguration.String():
 		if workflow.ActionType == wf.ActionTypeUpdatePrimary.String() {
-			key, err := w.keyManager.Get(ctx, workflow.ArtifactID)
+			keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, workflow.ArtifactID)
 			if err != nil {
 				return err
 			}
 
-			workflow.ParametersResourceType = ptr.PointTo(wf.ParametersResourceTypeKey.String())
-			workflow.ParametersResourceName = ptr.PointTo(key.Name)
+			workflow.ParametersResourceType = ptr.PointTo(wf.ParametersResourceTypeKeyConfiguration.String())
+			workflow.ParametersResourceName = ptr.PointTo(keyConfig.Name)
 		}
 
 	case wf.ArtifactTypeSystem.String():

@@ -139,6 +139,7 @@ var (
 	ErrUpdateSystem              = errors.New("failed to update system")
 	ErrSystemNotLinked           = errors.New("system is not linked to a key configuration")
 	ErrFailedToReencryptSystem   = errors.New("system reencrypt failed on new key")
+	ErrNotAllSystemsConnected    = errors.New("keyconfig contains systems not connected")
 
 	ErrGetWorkflowDB        = errors.New("failed to get workflow")
 	ErrOngoingWorkflowExist = errors.New("ongoing workflow for artifact already exists")
