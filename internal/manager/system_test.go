@@ -1183,7 +1183,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
-	t.Run("Should not delete system link blocked state failed", func(t *testing.T) {
+	t.Run("Should delete system link - state failed", func(t *testing.T) {
 		systemUnderTest := &model.System{
 			ID:                 uuid.New(),
 			Identifier:         uuid.New().String(),
@@ -1197,7 +1197,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, systemUnderTest.Type,
 		)
 		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID, "")
-		assert.ErrorIs(t, err, manager.ErrUnlinkSystemProcessingOrFailed)
+		assert.NoError(t, err)
 	},
 	)
 
@@ -1215,7 +1215,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, systemUnderTest.Type,
 		)
 		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID, "")
-		assert.ErrorIs(t, err, manager.ErrUnlinkSystemProcessingOrFailed)
+		assert.ErrorIs(t, err, manager.ErrUnlinkSystemProcessing)
 	},
 	)
 

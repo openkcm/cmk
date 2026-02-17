@@ -73,9 +73,9 @@ var (
 	ErrKeyNotAssignedToKeyConfiguration = errors.New("key not assigned to key configuration")
 	ErrUpdateKeyVersionDisabled         = errors.New("cannot update key version when key is disabled")
 	ErrUpdateSystemNoRegClient          = errors.New("system cannot be updated since no registry client")
-	ErrLinkSystemProcessingOrFailed     = errors.New("System cannot be linked in PROCESSING/FAILED state")
-	ErrUnlinkSystemProcessingOrFailed   = errors.New("System cannot be unlinked in PROCESSING/FAILED state")
-	ErrRetryNonFailedSystem             = errors.New("System can action only be retried on failed state")
+	ErrLinkSystemProcessingOrFailed     = errors.New("system cannot be linked in PROCESSING/FAILED state")
+	ErrUnlinkSystemProcessing           = errors.New("system cannot be unlinked in PROCESSING state")
+	ErrRetryNonFailedSystem             = errors.New("system can action only be retried on failed state")
 
 	ErrRotateBYOKKey                       = errors.New("byok key must not be rotated")
 	ErrUnsupportedBYOKProvider             = errors.New("unsupported BYOK provider")
