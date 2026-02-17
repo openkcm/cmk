@@ -34,8 +34,10 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 		return nil, fmt.Errorf("error loading plugins: %w", err)
 	}
 
+	baseConfig := &cfg.BaseConfig
+
 	defaultBuildInfo := "{}"
-	data, err := json.Marshal(cfg.BaseConfig.Application.BuildInfo.Component)
+	data, err := json.Marshal(baseConfig.Application.BuildInfo.Component)
 	if err == nil {
 		defaultBuildInfo = string(data)
 	}
@@ -49,7 +51,7 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 		pluginBuildInfos = append(pluginBuildInfos, buildInfo)
 	}
 
-	err = commoncfg.UpdateComponentsOfBuildInfo(&cfg.BaseConfig, pluginBuildInfos...)
+	err = commoncfg.UpdateComponentsOfBuildInfo(baseConfig, pluginBuildInfos...)
 	if err != nil {
 		slogctx.Error(ctx, "Failed to update components of build info")
 	}
