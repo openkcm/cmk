@@ -134,6 +134,16 @@ func (c *APIController) GetKeysKeyID(ctx context.Context,
 func (c *APIController) UpdateKey(ctx context.Context,
 	request cmkapi.UpdateKeyRequestObject,
 ) (cmkapi.UpdateKeyResponseObject, error) {
+	if ptr.GetSafeDeref(request.Body.IsPrimary) {
+		required, err := c.Manager.Workflow.IsWorkflowRequired(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if required {
+			return nil, apierrors.ErrActionRequireWorkflow
+		}
+	}
 	dbKey, err := c.Manager.Keys.UpdateKey(ctx, request.KeyID, *request.Body)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrUpdateKey, err)
