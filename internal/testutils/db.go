@@ -169,11 +169,6 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 		})
 	}
 
-	tb.Cleanup(func() {
-		sqlDB, _ := dbCon.DB.DB()
-		sqlDB.Close()
-	})
-
 	tenantIDs := make([]string, 0, max(cfg.generateTenants, len(cfg.initTenants)))
 
 	// Return instance with only init tenants
@@ -389,21 +384,12 @@ func processNameForDB(n string) string {
 func newTestDBCon(tb testing.TB, cfg *TestDBConfig) *multitenancy.DB {
 	tb.Helper()
 
-	// Create new context so cleanup functions execute
-	ctx := context.Background()
-
-	if !cfg.CreateDatabase {
-		con, err := db.StartDBConnection(
-			ctx,
-			cfg.dbCon,
-			[]config.Database{},
-		)
-		assert.NoError(tb, err)
-
-		return con
+	if cfg.CreateDatabase {
+		cfg.dbCon = NewIsolatedDB(tb, cfg.dbCon)
 	}
 
-	cfg.dbCon = NewIsolatedDB(tb, cfg.dbCon)
+	// Create new context so cleanup functions execute
+	ctx := context.Background()
 
 	con, err := db.StartDBConnection(
 		ctx,
@@ -411,6 +397,11 @@ func newTestDBCon(tb testing.TB, cfg *TestDBConfig) *multitenancy.DB {
 		[]config.Database{},
 	)
 	assert.NoError(tb, err)
+
+	tb.Cleanup(func() {
+		sqlDB, _ := con.DB.DB()
+		sqlDB.Close()
+	})
 
 	return con
 }

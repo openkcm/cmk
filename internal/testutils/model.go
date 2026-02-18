@@ -59,14 +59,23 @@ func NewSystem(m func(*model.System)) *model.System {
 	return ptr.PointTo(mut(m))
 }
 
-func NewKeyConfig(m func(*model.KeyConfiguration)) *model.KeyConfiguration {
+type KeyConfigOpt func(*model.KeyConfiguration)
+
+func NewKeyConfig(m func(*model.KeyConfiguration),
+	opts ...KeyConfigOpt) *model.KeyConfiguration {
+	keyConfig := model.KeyConfiguration{
+		ID:         uuid.New(),
+		Name:       uuid.NewString(),
+		AdminGroup: *NewGroup(func(*model.Group) {}),
+		CreatorID:  uuid.NewString(),
+	}
+
+	for _, o := range opts {
+		o(&keyConfig)
+	}
+
 	mut := NewMutator(func() model.KeyConfiguration {
-		return model.KeyConfiguration{
-			ID:         uuid.New(),
-			Name:       uuid.NewString(),
-			AdminGroup: model.Group{ID: uuid.New(), Name: uuid.NewString(), IAMIdentifier: uuid.NewString()},
-			CreatorID:  uuid.NewString(),
-		}
+		return keyConfig
 	})
 
 	return ptr.PointTo(mut(m))

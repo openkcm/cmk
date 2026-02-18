@@ -5,14 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openkcm/common-sdk/pkg/auth"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -61,11 +60,8 @@ func TestGetTenants(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/tenants",
 			Tenant:   tenants[0].ID,
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{"sysadmin", "othergroup"},
-				},
-			},
+			AdditionalContext: testutils.GetClientMap("test",
+				[]string{"sysadmin", "othergroup"}),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -78,11 +74,8 @@ func TestGetTenants(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/tenants",
 			Tenant:   "non-existing-tenant-id",
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{"sysadmin", "othergroup"},
-				},
-			},
+			AdditionalContext: testutils.GetClientMap("test",
+				[]string{"sysadmin", "othergroup"}),
 		})
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
@@ -93,11 +86,8 @@ func TestGetTenants(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/tenants",
 			Tenant:   tenants[0].ID,
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{"othergroup"},
-				},
-			},
+			AdditionalContext: testutils.GetClientMap("test",
+				[]string{"othergroup"}),
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
@@ -114,6 +104,9 @@ func TestGetTenantInfo(t *testing.T) {
 	assert.NoError(t, err)
 
 	tenantCtx := cmkContext.CreateTenantContext(t.Context(), tenant.ID)
+
+	authClient := testutils.NewAuthClient(tenantCtx, t, r, testutils.WithTenantAdminRole())
+
 	group := testutils.NewGroup(func(group *model.Group) {
 		group.IAMIdentifier = "sysadmin"
 	})
@@ -121,19 +114,16 @@ func TestGetTenantInfo(t *testing.T) {
 	err = r.Create(tenantCtx, group)
 	assert.NoError(t, err)
 
-	t.Run("Should 404 on get tenant info that does not exist", func(t *testing.T) {
+	t.Run("Should 403 on get tenant info that does not exist", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/tenantInfo",
 			Tenant:   "nonexistent-tenant-id",
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{"sysadmin", "othergroup"},
-				},
-			},
+			AdditionalContext: authClient.GetClientMap(
+				testutils.WithAdditionalGroup(uuid.NewString())),
 		})
 
-		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 
 	t.Run("Should 403 on get tenant info without a user group", func(t *testing.T) {
@@ -151,11 +141,8 @@ func TestGetTenantInfo(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/tenantInfo",
 			Tenant:   tenant.ID,
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{"sysadmin", "othergroup"},
-				},
-			},
+			AdditionalContext: authClient.GetClientMap(
+				testutils.WithAdditionalGroup(uuid.NewString())),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -178,12 +165,10 @@ func TestGetTenantInfo(t *testing.T) {
 
 	t.Run("Should 403 on get tenant by valid ID and no valid group", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: "/tenantInfo",
-			Tenant:   tenant.ID,
-			AdditionalContext: map[any]any{
-				"Groups": []string{"otheradm"},
-			},
+			Method:            http.MethodGet,
+			Endpoint:          "/tenantInfo",
+			Tenant:            tenant.ID,
+			AdditionalContext: authClient.GetClientMap(testutils.WithOverriddenGroup(1)),
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
