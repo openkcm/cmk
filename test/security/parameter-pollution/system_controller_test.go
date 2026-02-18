@@ -35,7 +35,11 @@ func TestAPIController_GetAllSystems_ForParameterPollution(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthClientDataKC(authClient))
+
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
@@ -52,9 +56,10 @@ func TestAPIController_GetAllSystems_ForParameterPollution(t *testing.T) {
 
 	// First test ok with single parameter
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:   http.MethodGet,
-		Endpoint: "/systems?$count=true",
-		Tenant:   tenant,
+		Method:            http.MethodGet,
+		Endpoint:          "/systems?$count=true",
+		Tenant:            tenant,
+		AdditionalContext: authClient.GetClientMap(),
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code)
