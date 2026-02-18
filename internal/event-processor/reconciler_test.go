@@ -93,11 +93,35 @@ func setupReconciler(
 	)
 	assert.NoError(t, err)
 
+	eventProcessor.DisableAuditLog()
+
 	t.Cleanup(func() {
 		eventProcessor.CloseAmqpClients(context.Background())
 	})
 
 	return eventProcessor, systemService, r, tenants[0]
+}
+
+func TestGetHandlerByJobType(t *testing.T) {
+	reconciler, _, _, _ := setupReconciler(t, []string{"region1"}) //nolint: dogsled
+
+	t.Run("returns handler for supported job type", func(t *testing.T) {
+		handler, err := reconciler.GetHandlerByJobType(string(eventprocessor.JobTypeSystemLink))
+		assert.NoError(t, err)
+		assert.NotNil(t, handler)
+	})
+
+	t.Run("returns error for unsupported job type", func(t *testing.T) {
+		handler, err := reconciler.GetHandlerByJobType("nonexistent-job-type")
+		assert.Error(t, err)
+		assert.Nil(t, handler)
+	})
+
+	t.Run("returns error for empty job type", func(t *testing.T) {
+		handler, err := reconciler.GetHandlerByJobType("")
+		assert.Error(t, err)
+		assert.Nil(t, handler)
+	})
 }
 
 func TestResolveKeyTasks(t *testing.T) {
@@ -139,7 +163,6 @@ func TestResolveKeyTasks(t *testing.T) {
 		keylessSystem.Region,
 		systemlessTarget,
 	})
-	resolveTaskFn := reconciler.ResolveTasks()
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	for _, sys := range []*model.System{connectedSystem, disconnectedSystem, targetlessSystem, keylessSystem} {
@@ -149,34 +172,40 @@ func TestResolveKeyTasks(t *testing.T) {
 
 	allTargets := []string{connectedSystem.Region, disconnectedSystem.Region, keylessSystem.Region, systemlessTarget}
 
-	t.Run("should return correct targets for", func(t *testing.T) {
+	t.Run("should resolve targets for", func(t *testing.T) {
 		tests := []struct {
 			name       string
+			jobType    string
 			taskType   string
 			expTargets []string
 		}{
 			{
 				name:       "KEY_ENABLE task",
+				jobType:    eventprocessor.JobTypeKeyEnable.String(),
 				taskType:   eventProto.TaskType_KEY_ENABLE.String(),
 				expTargets: []string{connectedSystem.Region},
 			},
 			{
 				name:       "KEY_DISABLE task",
+				jobType:    eventprocessor.JobTypeKeyDisable.String(),
 				taskType:   eventProto.TaskType_KEY_DISABLE.String(),
 				expTargets: []string{connectedSystem.Region},
 			},
 			{
 				name:       "KEY_DETACH task",
+				jobType:    eventprocessor.JobTypeKeyDetach.String(),
 				taskType:   eventProto.TaskType_KEY_DETACH.String(),
 				expTargets: allTargets,
 			},
 			{
 				name:       "KEY_DELETE task",
+				jobType:    eventprocessor.JobTypeKeyDelete.String(),
 				taskType:   eventProto.TaskType_KEY_DELETE.String(),
 				expTargets: allTargets,
 			},
 			{
 				name:       "KEY_ROTATE task",
+				jobType:    eventprocessor.JobTypeKeyRotate.String(),
 				taskType:   eventProto.TaskType_KEY_ROTATE.String(),
 				expTargets: allTargets,
 			},
@@ -198,32 +227,28 @@ func TestResolveKeyTasks(t *testing.T) {
 				}
 				dataBytes, err := json.Marshal(data)
 				assert.NoError(t, err)
-				j := orbital.NewJob(tt.taskType, dataBytes)
+
+				j := orbital.NewJob(tt.jobType, dataBytes)
+				handler, err := reconciler.GetHandlerByJobType(tt.jobType)
+				assert.NoError(t, err)
 
 				// when
-				result, err := resolveTaskFn(t.Context(), j, "")
+				tasks, err := handler.ResolveTasks(ctx, j)
 
 				// then
 				assert.NoError(t, err)
-				assert.Empty(t, result.CanceledErrorMessage)
-				assert.True(t, result.Done)
-
-				actTargets := make([]string, 0, len(result.TaskInfos))
-				for _, ti := range result.TaskInfos {
+				actTargets := make([]string, 0, len(tasks))
+				for _, ti := range tasks {
 					assert.Equal(t, tt.taskType, ti.Type)
-
 					actData := eventProto.Data{}
 					err = proto.Unmarshal(ti.Data, &actData)
 					assert.NoError(t, err)
-
 					keyAction := actData.GetKeyAction()
 					assert.NotNil(t, keyAction)
 					assert.Equal(t, keyID.String(), keyAction.GetKeyId())
 					assert.Equal(t, tenant, keyAction.GetTenantId())
-
 					actTargets = append(actTargets, ti.Target)
 				}
-
 				assert.ElementsMatch(t, tt.expTargets, actTargets)
 			})
 		}
@@ -231,16 +256,16 @@ func TestResolveKeyTasks(t *testing.T) {
 
 	t.Run("should cancel task for", func(t *testing.T) {
 		tests := []struct {
-			name          string
-			data          func() []byte
-			cancelMessage string
+			name         string
+			data         func() []byte
+			errorMessage string
 		}{
 			{
 				name: "invalid JSON data",
 				data: func() []byte {
 					return []byte("{invalid-json}")
 				},
-				cancelMessage: "failed to unmarshal job data",
+				errorMessage: "failed to unmarshal job data",
 			},
 			{
 				name: "missing tenant ID",
@@ -260,7 +285,7 @@ func TestResolveKeyTasks(t *testing.T) {
 					assert.NoError(t, err)
 					return dataBytes
 				},
-				cancelMessage: "record not found",
+				errorMessage: "record not found",
 			},
 			{
 				name: "missing key ID",
@@ -272,7 +297,7 @@ func TestResolveKeyTasks(t *testing.T) {
 					assert.NoError(t, err)
 					return dataBytes
 				},
-				cancelMessage: "failed to get key by ID",
+				errorMessage: "failed to get key by ID",
 			},
 			{
 				name: "no matching region targets",
@@ -293,22 +318,23 @@ func TestResolveKeyTasks(t *testing.T) {
 					assert.NoError(t, err)
 					return dataBytes
 				},
-				cancelMessage: "no connected regions found for key",
+				errorMessage: "no connected regions found for key",
 			},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				j := orbital.NewJob(eventProto.TaskType_KEY_ENABLE.String(), tt.data())
+				j := orbital.NewJob(eventprocessor.JobTypeKeyEnable.String(), tt.data())
+				handler, err := reconciler.GetHandlerByJobType(eventprocessor.JobTypeKeyEnable.String())
+				assert.NoError(t, err)
 
 				// when
-				result, err := resolveTaskFn(ctx, j, "")
+				result, err := handler.ResolveTasks(ctx, j)
 
 				// then
-				assert.NoError(t, err)
-				assert.True(t, result.IsCanceled)
-				assert.Empty(t, result.TaskInfos)
-				assert.Contains(t, result.CanceledErrorMessage, tt.cancelMessage)
+				assert.Error(t, err)
+				assert.Empty(t, result)
+				assert.Contains(t, err.Error(), tt.errorMessage)
 			})
 		}
 	})
@@ -318,7 +344,6 @@ func TestResolveSystemTasks(t *testing.T) {
 	// given
 	region := "test-region"
 	reconciler, _, r, tenant := setupReconciler(t, []string{region})
-	resolveTaskFn := reconciler.ResolveTasks()
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 
@@ -346,11 +371,13 @@ func TestResolveSystemTasks(t *testing.T) {
 	t.Run("should return correct task info for", func(t *testing.T) {
 		tests := []struct {
 			name     string
+			jobType  string
 			taskType string
 			data     func() []byte
 		}{
 			{
 				name:     "SYSTEM_LINK task",
+				jobType:  eventprocessor.JobTypeSystemLink.String(),
 				taskType: eventProto.TaskType_SYSTEM_LINK.String(),
 				data: func() []byte {
 					d := eventprocessor.SystemActionJobData{
@@ -365,6 +392,7 @@ func TestResolveSystemTasks(t *testing.T) {
 			},
 			{
 				name:     "SYSTEM_UNLINK task",
+				jobType:  eventprocessor.JobTypeSystemUnlink.String(),
 				taskType: eventProto.TaskType_SYSTEM_UNLINK.String(),
 				data: func() []byte {
 					d := eventprocessor.SystemActionJobData{
@@ -379,6 +407,7 @@ func TestResolveSystemTasks(t *testing.T) {
 			},
 			{
 				name:     "SYSTEM_SWITCH task",
+				jobType:  eventprocessor.JobTypeSystemSwitch.String(),
 				taskType: eventProto.TaskType_SYSTEM_SWITCH.String(),
 				data: func() []byte {
 					d := eventprocessor.SystemActionJobData{
@@ -396,17 +425,17 @@ func TestResolveSystemTasks(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				j := orbital.NewJob(tt.taskType, tt.data())
+				j := orbital.NewJob(tt.jobType, tt.data())
+				handler, err := reconciler.GetHandlerByJobType(tt.jobType)
+				assert.NoError(t, err)
 
 				// when
-				result, err := resolveTaskFn(ctx, j, "")
+				tasks, err := handler.ResolveTasks(ctx, j)
 
 				// then
 				assert.NoError(t, err)
-				assert.Empty(t, result.CanceledErrorMessage)
-				assert.True(t, result.Done)
-				if assert.Len(t, result.TaskInfos, 1) {
-					ti := result.TaskInfos[0]
+				if assert.Len(t, tasks, 1) {
+					ti := tasks[0]
 					assert.Equal(t, tt.taskType, ti.Type)
 					assert.Equal(t, system.Region, ti.Target)
 
@@ -442,22 +471,22 @@ func TestResolveSystemTasks(t *testing.T) {
 		assert.NoError(t, r.Create(ctx, sysNC))
 
 		tests := []struct {
-			name          string
-			taskType      string
-			data          func() []byte
-			cancelMessage string
+			name         string
+			jobType      string
+			data         func() []byte
+			errorMessage string
 		}{
 			{
-				name:     "invalid JSON data",
-				taskType: eventProto.TaskType_SYSTEM_LINK.String(),
+				name:    "invalid JSON data",
+				jobType: eventprocessor.JobTypeSystemLink.String(),
 				data: func() []byte {
 					return []byte("{invalid-json}")
 				},
-				cancelMessage: "failed to unmarshal job data",
+				errorMessage: "failed to unmarshal job data",
 			},
 			{
-				name:     "missing tenant ID",
-				taskType: eventProto.TaskType_SYSTEM_LINK.String(),
+				name:    "missing tenant ID",
+				jobType: eventprocessor.JobTypeSystemLink.String(),
 				data: func() []byte {
 					d := eventprocessor.SystemActionJobData{
 						SystemID: system.ID.String(),
@@ -467,11 +496,11 @@ func TestResolveSystemTasks(t *testing.T) {
 					assert.NoError(t, err)
 					return b
 				},
-				cancelMessage: "record not found",
+				errorMessage: "record not found",
 			},
 			{
-				name:     "missing system ID",
-				taskType: eventProto.TaskType_SYSTEM_LINK.String(),
+				name:    "missing system ID",
+				jobType: eventprocessor.JobTypeSystemLink.String(),
 				data: func() []byte {
 					d := eventprocessor.SystemActionJobData{
 						TenantID: tenant,
@@ -481,11 +510,11 @@ func TestResolveSystemTasks(t *testing.T) {
 					assert.NoError(t, err)
 					return b
 				},
-				cancelMessage: "invalid input syntax",
+				errorMessage: "invalid input syntax",
 			},
 			{
-				name:     "system not found",
-				taskType: eventProto.TaskType_SYSTEM_LINK.String(),
+				name:    "system not found",
+				jobType: eventprocessor.JobTypeSystemLink.String(),
 				data: func() []byte {
 					d := eventprocessor.SystemActionJobData{
 						TenantID: tenant,
@@ -496,11 +525,11 @@ func TestResolveSystemTasks(t *testing.T) {
 					assert.NoError(t, err)
 					return b
 				},
-				cancelMessage: "record not found",
+				errorMessage: "record not found",
 			},
 			{
-				name:     "target region not configured",
-				taskType: eventProto.TaskType_SYSTEM_LINK.String(),
+				name:    "target region not configured",
+				jobType: eventprocessor.JobTypeSystemLink.String(),
 				data: func() []byte {
 					d := eventprocessor.SystemActionJobData{
 						TenantID: tenant,
@@ -511,11 +540,11 @@ func TestResolveSystemTasks(t *testing.T) {
 					assert.NoError(t, err)
 					return b
 				},
-				cancelMessage: "target not configured for region",
+				errorMessage: "target not configured for region",
 			},
 			{
-				name:     "missing key ID for LINK",
-				taskType: eventProto.TaskType_SYSTEM_LINK.String(),
+				name:    "missing key ID for LINK",
+				jobType: eventprocessor.JobTypeSystemLink.String(),
 				data: func() []byte {
 					d := eventprocessor.SystemActionJobData{
 						TenantID: tenant,
@@ -525,11 +554,11 @@ func TestResolveSystemTasks(t *testing.T) {
 					assert.NoError(t, err)
 					return b
 				},
-				cancelMessage: "failed to get key by ID",
+				errorMessage: "failed to get key by ID",
 			},
 			{
-				name:     "missing key ID for UNLINK",
-				taskType: eventProto.TaskType_SYSTEM_UNLINK.String(),
+				name:    "missing key ID for UNLINK",
+				jobType: eventprocessor.JobTypeSystemUnlink.String(),
 				data: func() []byte {
 					d := eventprocessor.SystemActionJobData{
 						TenantID: tenant,
@@ -539,22 +568,25 @@ func TestResolveSystemTasks(t *testing.T) {
 					assert.NoError(t, err)
 					return b
 				},
-				cancelMessage: "failed to get key by ID",
+				errorMessage: "failed to get key by ID",
 			},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				j := orbital.NewJob(tt.taskType, tt.data())
+				j := orbital.NewJob(tt.jobType, tt.data())
 
 				// when
-				result, err := resolveTaskFn(ctx, j, "")
+				handler, err := reconciler.GetHandlerByJobType(tt.jobType)
+				assert.NoError(t, err)
+
+				// when
+				tasks, err := handler.ResolveTasks(ctx, j)
 
 				// then
-				assert.NoError(t, err)
-				assert.True(t, result.IsCanceled)
-				assert.Empty(t, result.TaskInfos)
-				assert.Contains(t, result.CanceledErrorMessage, tt.cancelMessage)
+				assert.Error(t, err)
+				assert.Empty(t, tasks)
+				assert.Contains(t, err.Error(), tt.errorMessage)
 			})
 		}
 	})
@@ -565,11 +597,11 @@ func TestConfirmJob(t *testing.T) {
 
 	t.Run("key tasks are confirmed as done", func(t *testing.T) {
 		keyJobTypes := []string{
-			eventProto.TaskType_KEY_DELETE.String(),
-			eventProto.TaskType_KEY_ROTATE.String(),
-			eventProto.TaskType_KEY_DISABLE.String(),
-			eventProto.TaskType_KEY_ENABLE.String(),
-			eventProto.TaskType_KEY_DETACH.String(),
+			eventprocessor.JobTypeKeyDelete.String(),
+			eventprocessor.JobTypeKeyRotate.String(),
+			eventprocessor.JobTypeKeyDisable.String(),
+			eventprocessor.JobTypeKeyEnable.String(),
+			eventprocessor.JobTypeKeyDetach.String(),
 		}
 
 		for _, tt := range keyJobTypes {
@@ -582,10 +614,12 @@ func TestConfirmJob(t *testing.T) {
 				assert.NoError(t, err)
 
 				job := orbital.NewJob(tt, b)
-				res, err := reconciler.ConfirmJob(t.Context(), job)
+				handler, err := reconciler.GetHandlerByJobType(tt)
 				assert.NoError(t, err)
-				assert.True(t, res.Done)
-				assert.False(t, res.IsCanceled)
+
+				res, err := handler.HandleJobConfirm(t.Context(), job)
+				assert.NoError(t, err)
+				assert.IsType(t, orbital.CompleteJobConfirmer(), res)
 			})
 		}
 	})
@@ -594,14 +628,16 @@ func TestConfirmJob(t *testing.T) {
 		job := orbital.NewJob("UNKNOWN_TASK_TYPE", []byte("{}"))
 		res, err := reconciler.ConfirmJob(t.Context(), job)
 		assert.Error(t, err)
-		assert.False(t, res.Done)
+		assert.Contains(t, err.Error(), "unsupported job type")
+		assert.IsType(t, orbital.CancelJobConfirmer(""), res)
 	})
 
 	t.Run("invalid JSON for system task returns error", func(t *testing.T) {
-		job := orbital.NewJob(eventProto.TaskType_SYSTEM_LINK.String(), []byte("{invalid-json}"))
+		job := orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), []byte("{invalid-json}"))
 		res, err := reconciler.ConfirmJob(t.Context(), job)
 		assert.Error(t, err)
-		assert.False(t, res.Done)
+		assert.Contains(t, err.Error(), "failed to unmarshal job data")
+		assert.IsType(t, orbital.CancelJobConfirmer(""), res)
 	})
 
 	t.Run("missing system returns canceled with error", func(t *testing.T) {
@@ -612,11 +648,10 @@ func TestConfirmJob(t *testing.T) {
 		b, err := json.Marshal(data)
 		assert.NoError(t, err)
 
-		job := orbital.NewJob(eventProto.TaskType_SYSTEM_LINK.String(), b)
+		job := orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), b)
 		res, err := reconciler.ConfirmJob(t.Context(), job)
-		assert.Error(t, err)
-		assert.False(t, res.Done)
-		assert.False(t, res.IsCanceled) // function returns error with Done:false for missing system
+		assert.NoError(t, err)
+		assert.IsType(t, orbital.CancelJobConfirmer(""), res)
 	})
 
 	t.Run("system not in PROCESSING is canceled", func(t *testing.T) {
@@ -632,11 +667,10 @@ func TestConfirmJob(t *testing.T) {
 		b, err := json.Marshal(data)
 		assert.NoError(t, err)
 
-		job := orbital.NewJob(eventProto.TaskType_SYSTEM_LINK.String(), b)
+		job := orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), b)
 		res, err := reconciler.ConfirmJob(t.Context(), job)
 		assert.NoError(t, err)
-		assert.True(t, res.IsCanceled)
-		assert.Contains(t, res.CanceledErrorMessage, "system status is in")
+		assert.IsType(t, orbital.CancelJobConfirmer(""), res)
 	})
 
 	t.Run("system in PROCESSING is confirmed as done", func(t *testing.T) {
@@ -652,10 +686,10 @@ func TestConfirmJob(t *testing.T) {
 		b, err := json.Marshal(data)
 		assert.NoError(t, err)
 
-		job := orbital.NewJob(eventProto.TaskType_SYSTEM_LINK.String(), b)
+		job := orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), b)
 		res, err := reconciler.ConfirmJob(t.Context(), job)
 		assert.NoError(t, err)
-		assert.True(t, res.Done)
+		assert.IsType(t, orbital.CompleteJobConfirmer(), res)
 	})
 }
 
@@ -694,7 +728,7 @@ func TestJobTermination(t *testing.T) {
 		item := uuid.NewString()
 		terminateNewJob(t, eventProcessor, &model.Event{
 			Identifier: item,
-			Type:       eventProto.TaskType_SYSTEM_LINK.String(),
+			Type:       eventprocessor.JobTypeSystemLink.String(),
 			Data:       dataBytes,
 		}, true)
 
@@ -709,7 +743,7 @@ func TestJobTermination(t *testing.T) {
 		item = uuid.NewString()
 		terminateNewJob(t, eventProcessor, &model.Event{
 			Identifier: item,
-			Type:       eventProto.TaskType_SYSTEM_UNLINK.String(),
+			Type:       eventprocessor.JobTypeSystemUnlink.String(),
 			Data:       unlinkDataBytes,
 		}, true)
 
@@ -737,7 +771,7 @@ func TestJobTermination(t *testing.T) {
 		item := uuid.NewString()
 		terminateNewJob(t, eventProcessor, &model.Event{
 			Identifier: item,
-			Type:       eventProto.TaskType_SYSTEM_LINK.String(),
+			Type:       eventprocessor.JobTypeSystemLink.String(),
 			Data:       dataBytes,
 		}, true)
 
@@ -752,7 +786,7 @@ func TestJobTermination(t *testing.T) {
 		item = uuid.NewString()
 		terminateNewJob(t, eventProcessor, &model.Event{
 			Identifier: item,
-			Type:       eventProto.TaskType_SYSTEM_UNLINK.String(),
+			Type:       eventprocessor.JobTypeSystemUnlink.String(),
 			Data:       dataBytes,
 		}, true)
 
@@ -768,7 +802,7 @@ func TestJobTermination(t *testing.T) {
 	t.Run("Should delete item in cmk events db on successful job termination", func(t *testing.T) {
 		event := &model.Event{
 			Identifier: uuid.NewString(),
-			Type:       eventProto.TaskType_SYSTEM_LINK.String(),
+			Type:       eventprocessor.JobTypeSystemLink.String(),
 			Data:       dataBytes,
 			Status:     orbital.JobStatusDone,
 		}
@@ -784,7 +818,7 @@ func TestJobTermination(t *testing.T) {
 	t.Run("Should not delete item in cmk events db on unsuccessful job termination", func(t *testing.T) {
 		event := &model.Event{
 			Identifier: uuid.NewString(),
-			Type:       eventProto.TaskType_SYSTEM_LINK.String(),
+			Type:       eventprocessor.JobTypeSystemLink.String(),
 			Data:       dataBytes,
 			Status:     orbital.JobStatusProcessing,
 		}
@@ -819,12 +853,12 @@ func TestJobTermination(t *testing.T) {
 		// Terminate unlink with Done to invoke UnmapSystemFromTenant branch
 		job := orbital.Job{
 			ExternalID: uuid.NewString(),
-			Type:       eventProto.TaskType_SYSTEM_UNLINK.String(),
+			Type:       eventprocessor.JobTypeSystemUnlink.String(),
 			Data:       b,
 			Status:     orbital.JobStatusDone,
 		}
 
-		err = eventProcessor.JobTerminationFunc(t.Context(), job)
+		err = eventProcessor.JobDoneFunc(t.Context(), job)
 		assert.NoError(t, err)
 
 		// Assert system is disconnected after unlink
@@ -838,9 +872,9 @@ func TestJobTermination(t *testing.T) {
 func TestWithOptions(t *testing.T) {
 	t.Run("WithMaxReconcileCount", func(t *testing.T) {
 		var m orbital.Manager
-		opt := eventprocessor.WithMaxReconcileCount(42)
+		opt := eventprocessor.WithMaxPendingReconciles(42)
 		opt(&m)
-		assert.Equal(t, uint64(42), m.Config.MaxReconcileCount)
+		assert.Equal(t, uint64(42), m.Config.MaxPendingReconciles)
 	})
 
 	t.Run("WithConfirmJobAfter", func(t *testing.T) {
@@ -878,13 +912,16 @@ func terminateNewJob(
 		Status:     e.Status,
 	}
 
-	// Ignored as this test is not testing the system update capabilities
-	_ = eventProcessor.JobTerminationFunc(t.Context(), job)
+	var err error
 	if jobDone {
 		job.Status = orbital.JobStatusDone
+		err = eventProcessor.JobDoneFunc(t.Context(), job)
+	} else {
+		job.Status = orbital.JobStatusFailed
+		err = eventProcessor.JobFailedFunc(t.Context(), job)
 	}
 
-	err := eventProcessor.JobTerminationFunc(t.Context(), job)
+	// Ignored as this test is not testing the system update capabilities
 	if err != nil {
 		t.Logf("Job termination returned error: %v", err)
 	}
