@@ -116,25 +116,28 @@ func startAPIServer(
 
 	swagger, _ := daemon.SetupSwagger()
 
+	mws := []cmkapi.MiddlewareFunc{
+		md.OapiRequestValidatorWithOptions(swagger, &md.Options{
+			ErrorHandlerWithOpts:  handlers.OAPIValidatorHandler,
+			SilenceServersWarning: true,
+			Options: openapi3filter.Options{
+				AuthenticationFunc:    openapi3filter.NoopAuthenticationFunc,
+				IncludeResponseStatus: true,
+			},
+		}),
+		middleware.AuthzMiddleware(controller),
+		middleware.LoggingMiddleware(),
+		middleware.PanicRecoveryMiddleware(),
+		middleware.InjectMultiTenancy(),
+		middleware.InjectRequestID(),
+	}
+
 	cmkapi.HandlerWithOptions(strictController,
 		cmkapi.StdHTTPServerOptions{
 			BaseRouter:       r,
 			BaseURL:          constants.BasePath,
 			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
-			Middlewares: []cmkapi.MiddlewareFunc{
-				md.OapiRequestValidatorWithOptions(swagger, &md.Options{
-					ErrorHandlerWithOpts:  handlers.OAPIValidatorHandler,
-					SilenceServersWarning: true,
-					Options: openapi3filter.Options{
-						AuthenticationFunc:    openapi3filter.NoopAuthenticationFunc,
-						IncludeResponseStatus: true,
-					},
-				}),
-				middleware.LoggingMiddleware(),
-				middleware.PanicRecoveryMiddleware(),
-				middleware.InjectMultiTenancy(),
-				middleware.InjectRequestID(),
-			},
+			Middlewares:      mws,
 		})
 
 	return r
