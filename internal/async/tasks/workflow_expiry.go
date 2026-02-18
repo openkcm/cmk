@@ -15,7 +15,6 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
-	ctxUtils "github.com/openkcm/cmk/utils/context"
 )
 
 type WorkflowExpiryUpdater interface {
@@ -87,7 +86,6 @@ func (s *WorkflowExpiryProcessor) TaskType() string {
 }
 
 func (s *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID uuid.UUID) error {
-	ctx = ctxUtils.InjectSystemUser(ctx)
 	workflow, err := s.updater.TransitionWorkflow(ctx, workflowID, wfMechanism.TransitionExpire)
 	if err != nil {
 		log.Error(ctx, "Failed to expire workflow", err)
