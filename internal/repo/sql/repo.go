@@ -181,7 +181,6 @@ func (r *ResourceRepository) List(
 ) error {
 	return r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
-			tx = tx.Debug()
 			db, err := applyQuery(tx.Model(result), query)
 			if err != nil {
 				return err
@@ -430,11 +429,11 @@ func applyQuery(db *gorm.DB, query repo.Query) (*gorm.DB, error) {
 
 		s := strings.Join(fields, ",")
 		db = db.Select(s)
+	}
 
-		if len(query.Group) > 0 {
-			sel := strings.Join(query.Group, ",")
-			db = db.Group(sel)
-		}
+	if len(query.Group) > 0 {
+		sel := strings.Join(query.Group, ",")
+		db = db.Group(sel)
 	}
 
 	if len(query.Joins) > 0 {
