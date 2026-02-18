@@ -9,14 +9,14 @@ import (
 )
 
 // SendCmkOnboardingAuditLog sends an audit log for CMK onboarding
-func (a *Auditor) SendCmkOnboardingAuditLog(ctx context.Context, cmkID, systemID string) error {
+func (a *Auditor) SendCmkOnboardingAuditLog(ctx context.Context, systemID, cmkID string) error {
 	return a.sendEvent(ctx, func(metadata otlpaudit.EventMetadata) (plog.Logs, error) {
 		return otlpaudit.NewCmkOnboardingEvent(metadata, cmkID, systemID)
 	})
 }
 
 // SendCmkOffboardingAuditLog sends an audit log for CMK offboarding
-func (a *Auditor) SendCmkOffboardingAuditLog(ctx context.Context, cmkID, systemID string) error {
+func (a *Auditor) SendCmkOffboardingAuditLog(ctx context.Context, systemID, cmkID string) error {
 	return a.sendEvent(ctx, func(metadata otlpaudit.EventMetadata) (plog.Logs, error) {
 		return otlpaudit.NewCmkOffboardingEvent(metadata, cmkID, systemID)
 	})
@@ -32,7 +32,7 @@ func (a *Auditor) SendCmkSwitchAuditLog(ctx context.Context, systemID, cmkIDOld,
 // SendCmkTenantModificationAuditLog sends an audit log for CMK tenant modification
 func (a *Auditor) SendCmkTenantModificationAuditLog(
 	ctx context.Context,
-	cmkID, systemID string,
+	systemID, cmkID string,
 	action otlpaudit.CmkAction,
 ) error {
 	return a.sendEvent(ctx, func(metadata otlpaudit.EventMetadata) (plog.Logs, error) {

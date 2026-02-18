@@ -86,6 +86,13 @@ var errorMapper = errs.NewMapper(
 				Code:    "UNSUPPORTED_REGION",
 			},
 		},
+		{
+			InternalErrorChain: []error{ErrNoTasksResolvedForJob},
+			ExposedError: &OrbitalError{
+				Message: "no tasks resolved for the job",
+				Code:    "NO_TASKS_RESOLVED_FOR_JOB",
+			},
+		},
 	},
 	nil,
 )
