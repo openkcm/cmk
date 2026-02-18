@@ -393,7 +393,6 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 	})
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	createAuditorGroup(ctx, t, repo)
 
 	ctxSys := context.WithValue(
 		ctx,
@@ -419,6 +418,15 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 	)
 
 	t.Run("Should create workflow", func(t *testing.T) {
+		createAuditorGroup(ctx, t, repo)
+
+		ctxSys := context.WithValue(
+			ctx,
+			constants.ClientData, &auth.ClientData{
+				Identifier: constants.SystemUser.String(),
+			},
+		)
+
 		_, key := createTestObjects(t, repo, ctxSys)
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
 			w.State = workflow.StateInitial.String()
@@ -953,7 +961,7 @@ func TestWorkflowManager_ListApprovers(t *testing.T) {
 		ctx,
 		constants.ClientData, &auth.ClientData{
 			Identifier: constants.SystemUser.String(),
-			Groups:     []string{auditorGroupName},
+			Groups:     []string{"auditorGroup"},
 		},
 	)
 
@@ -1204,7 +1212,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 					ctx,
 					constants.ClientData, &auth.ClientData{
 						Identifier: constants.SystemUser.String(),
-						Groups:     []string{auditorGroupName},
+						Groups:     []string{"auditorGroup"},
 					},
 				)
 				_, err = m.AutoAssignApprovers(ctxSys, wf.ID)
