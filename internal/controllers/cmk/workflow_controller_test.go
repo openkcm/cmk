@@ -71,8 +71,6 @@ func createAuditorGroup(ctx context.Context, tb testing.TB, r repo.Repo) {
 func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo) []*model.Workflow {
 	tb.Helper()
 
-	approverID := "76e06743-80c6-4372-a195-269e4473036d"
-
 	group := testutils.NewGroup(func(g *model.Group) {
 		g.IAMIdentifier = adminGroupIAMIdentifier
 	})
@@ -107,26 +105,31 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo) []*mod
 		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
 		w.ArtifactID = key2.ID
 		w.ArtifactName = &key2.Name
-		w.Approvers = []model.WorkflowApprover{{UserID: approverID}}
+		w.Approvers = []model.WorkflowApprover{{UserID: uuid.NewString()}}
 		w.ApproverGroupIDs = groupIDsBytes
 		w.Parameters = "DISABLED"
 	})
 
+	wfID := uuid.New()
 	workflow3 := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.Approvers = []model.WorkflowApprover{
 			{
-				UserID:   userID,
-				Approved: sql.NullBool{Bool: true, Valid: true},
+				UserID:     userID,
+				Approved:   sql.NullBool{Bool: true, Valid: true},
+				WorkflowID: wfID,
 			},
 			{
-				UserID:   uuid.NewString(),
-				Approved: sql.NullBool{Bool: false, Valid: true},
+				UserID:     uuid.NewString(),
+				Approved:   sql.NullBool{Bool: false, Valid: true},
+				WorkflowID: wfID,
 			},
 			{
-				UserID:   uuid.NewString(),
-				Approved: sql.NullBool{Bool: false, Valid: false},
+				UserID:     uuid.NewString(),
+				Approved:   sql.NullBool{Bool: false, Valid: false},
+				WorkflowID: wfID,
 			},
 		}
+		w.ID = wfID
 		w.ApproverGroupIDs = groupIDsBytes
 		w.State = wfMechanism.StateWaitApproval.String()
 		w.ActionType = wfMechanism.ActionTypeLink.String()
@@ -876,6 +879,7 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 
 				if tt.count {
 					assert.Equal(t, tt.expectedCount, *response.Count)
+					assert.Len(t, response.Value, tt.expectedCount)
 				} else {
 					assert.Nil(t, response.Count)
 					assert.Len(t, response.Value, tt.expectedCount)
@@ -891,8 +895,8 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 	r := cmksql.NewRepository(db)
 	createAuditorGroup(ctx, t, r)
 
-	user1ID := "76e06743-80c6-4372-a195-269e4473036d"
-	user2ID := "76e06743-80c6-4372-a195-269e4473036e"
+	user1ID := uuid.NewString()
+	user2ID := uuid.NewString()
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}

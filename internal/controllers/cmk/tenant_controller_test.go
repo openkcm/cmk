@@ -2,6 +2,7 @@ package cmk_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/auth"
@@ -160,6 +161,9 @@ func TestGetTenantInfo(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		resp := testutils.GetJSONBody[cmkapi.Tenant](t, w)
 		assert.Equal(t, tenant.ID, *resp.Id)
+		assert.NotNil(t, resp.Role)
+		expectedRole := strings.TrimPrefix(string(tenant.Role), "ROLE_")
+		assert.Equal(t, cmkapi.TenantRole(expectedRole), *resp.Role)
 	})
 
 	t.Run("Should 403 on get tenant by valid ID and no client data", func(t *testing.T) {

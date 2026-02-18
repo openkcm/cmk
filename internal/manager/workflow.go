@@ -693,7 +693,7 @@ func (w *WorkflowManager) getWorkflows(
 
 	workflows := []*model.Workflow{}
 
-	err = w.repo.List(ctx, model.Workflow{}, &workflows, *query)
+	err = w.repo.List(ctx, model.Workflow{}, &workflows, *query.GroupBy(repo.IDField))
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 	}
