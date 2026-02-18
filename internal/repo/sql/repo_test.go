@@ -2,6 +2,7 @@ package sql_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"testing"
@@ -186,6 +187,7 @@ func TestRepo_First(t *testing.T) {
 		ID:        uuid.New(),
 		Name:      uuid.New().String(),
 		CreatedAt: time.Now(),
+		Data:      json.RawMessage("{\"testKey\": \"testValue\"}"),
 	}
 
 	err := r.Create(ctx, testModel)
@@ -230,6 +232,19 @@ func TestRepo_First(t *testing.T) {
 			"created_at", time.Now().AddDate(0, 0, 7), repo.Lt)
 		query := *repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey))
 		ok, err := r.First(ctx, res, query)
+		assert.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("Should get resource filtered in jsonb", func(t *testing.T) {
+		res := &testutils.TestModel{}
+		query := repo.NewQuery().Where(
+			repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where(
+					repo.JSONBField(repo.DataField, "testKey"), "testValue"),
+			),
+		)
+		ok, err := r.First(ctx, res, *query)
 		assert.NoError(t, err)
 		assert.True(t, ok)
 	})
