@@ -573,19 +573,31 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 	return nil
 }
 
+func isInvalidAction(err error) bool {
+	return errors.Is(err, ErrConnectSystemNoPrimaryKey) ||
+		errors.Is(err, ErrNotAllSystemsConnected) ||
+		errors.Is(err, ErrAlreadyPrimaryKey)
+}
+
 // transformCheckWorkflowError checks the returned error from validate
 // If it's an error created by invalid action set it in status and don't return an error
 // Otherwise throw an error that will create a non 2xx HTTP Code
 func transformCheckWorkflowError(status WorkflowStatus, err error) (WorkflowStatus, error) {
+	if !status.CanCreate && status.Exists {
+		status.ErrDetails = ErrOngoingWorkflowExist
+		return status, nil
+	}
+
 	if err == nil {
 		return status, nil
 	}
 
-	if errors.Is(err, ErrConnectSystemNoPrimaryKey) || errors.Is(err, ErrCheckOngoingWorkflow) {
+	if isInvalidAction(err) {
 		status.ErrDetails = err
 		status.CanCreate = false
 		return status, nil
 	}
+
 	return status, errs.Wrap(ErrCheckWorkflow, err)
 }
 
@@ -628,6 +640,7 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 
 //nolint:cyclop
 func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.Workflow) (bool, error) {
+	// Always returns at least one key configuration
 	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
 	if err != nil {
 		return false, err
@@ -651,23 +664,29 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 			}
 		}
 	case w.isPrimaryKeySwitch(workflow):
+		keyID, err := uuid.Parse(workflow.Parameters)
+		if err != nil {
+			return false, err
+		}
+
+		// There is always only one keyconfig from KeyConfig ArtifactType
+		if ptr.GetSafeDeref(keyConfigs[0].PrimaryKeyID) == keyID {
+			return false, ErrAlreadyPrimaryKey
+		}
+
 		query := *repo.NewQuery().
 			Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().
 				Where(repo.KeyConfigIDField, workflow.ArtifactID)))
 
-		err := repo.ProcessInBatch(ctx, w.repo, &query, repo.DefaultLimit, func(systems []*model.System) error {
+		err = repo.ProcessInBatch(ctx, w.repo, &query, repo.DefaultLimit, func(systems []*model.System) error {
 			for _, s := range systems {
 				if s.Status != cmkapi.SystemStatusCONNECTED {
 					return ErrNotAllSystemsConnected
 				}
 			}
 			return nil
-		},
-		)
+		})
 		if err != nil {
-			if errors.Is(err, ErrNotAllSystemsConnected) {
-				return false, nil
-			}
 			return false, err
 		}
 	default:
@@ -678,12 +697,12 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 
 func (w *WorkflowManager) isPrimaryKeySwitch(workflow *model.Workflow) bool {
 	return workflow.ArtifactType == wf.ArtifactTypeKeyConfiguration.String() &&
-		workflow.ActionType == string(wf.ActionTypeUpdatePrimary)
+		workflow.ActionType == wf.ActionTypeUpdatePrimary.String()
 }
 
 func (w *WorkflowManager) isSystemConnect(workflow *model.Workflow) bool {
 	return workflow.ArtifactType == wf.ArtifactTypeSystem.String() &&
-		(workflow.ActionType == string(wf.ActionTypeLink) || workflow.ActionType == string(wf.ActionTypeSwitch))
+		(workflow.ActionType == wf.ActionTypeLink.String() || workflow.ActionType == wf.ActionTypeSwitch.String())
 }
 
 // getWorkflows retrieves workflows based on the provided query,
@@ -1246,13 +1265,18 @@ func (w *WorkflowManager) populateParametersResource(
 	switch workflow.ArtifactType {
 	case wf.ArtifactTypeKeyConfiguration.String():
 		if workflow.ActionType == wf.ActionTypeUpdatePrimary.String() {
-			keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, workflow.ArtifactID)
+			keyID, err := uuid.Parse(workflow.Parameters)
 			if err != nil {
 				return err
 			}
 
-			workflow.ParametersResourceType = ptr.PointTo(wf.ParametersResourceTypeKeyConfiguration.String())
-			workflow.ParametersResourceName = ptr.PointTo(keyConfig.Name)
+			key, err := w.keyManager.Get(ctx, keyID)
+			if err != nil {
+				return err
+			}
+
+			workflow.ParametersResourceType = ptr.PointTo(wf.ParametersResourceTypeKey.String())
+			workflow.ParametersResourceName = ptr.PointTo(key.Name)
 		}
 
 	case wf.ArtifactTypeSystem.String():

@@ -161,6 +161,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.True(t, status.Exists)
 		assert.True(t, status.Valid)
 		assert.False(t, status.CanCreate)
+		assert.Equal(t, manager.ErrOngoingWorkflowExist, status.ErrDetails)
 		assert.NoError(t, err)
 	})
 
@@ -205,6 +206,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.False(t, status.Exists)
 		assert.False(t, status.Valid)
 		assert.False(t, status.CanCreate)
+		assert.Equal(t, manager.ErrConnectSystemNoPrimaryKey, status.ErrDetails)
 		assert.NoError(t, err)
 	})
 
@@ -241,10 +243,9 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		status, err := m.CheckWorkflow(ctx, wf)
 		assert.True(t, status.Enabled)
 		assert.False(t, status.Exists)
-		assert.True(t, status.Enabled)
-		assert.False(t, status.Exists)
 		assert.False(t, status.Valid)
 		assert.False(t, status.CanCreate)
+		assert.Equal(t, manager.ErrConnectSystemNoPrimaryKey, status.ErrDetails)
 		assert.NoError(t, err)
 	})
 
@@ -254,7 +255,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 				func(w *model.Workflow) {
 					w.State = workflow.StateInitial.String()
 					w.State = workflow.StateRejected.String()
-					w.ActionType = workflow.ActionTypeUpdatePrimary.String()
+					w.ActionType = workflow.ActionTypeDelete.String()
 					w.ArtifactID = keyConfig.ID
 					w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
 				},
@@ -271,18 +272,24 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	})
 
 	t.Run("should not be valid on primary key change with unconnected system", func(t *testing.T) {
-		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.IsPrimary = true
+		})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.PrimaryKeyID = &key.ID
+		})
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.Status = cmkapi.SystemStatusDISCONNECTED
 		})
-		testutils.CreateTestEntities(ctxSys, t, repo, keyConfig, system)
+		testutils.CreateTestEntities(ctxSys, t, repo, keyConfig, key, system)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = workflow.StateInitial.String()
 				w.ActionType = workflow.ActionTypeUpdatePrimary.String()
 				w.ArtifactID = keyConfig.ID
 				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+				w.Parameters = uuid.NewString()
 			},
 		)
 
@@ -292,6 +299,37 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.False(t, status.Valid)
 		assert.False(t, status.CanCreate)
 		assert.NoError(t, err)
+		assert.Equal(t, manager.ErrNotAllSystemsConnected, status.ErrDetails)
+	})
+
+	t.Run("should not be valid on change primary key to primary key", func(t *testing.T) {
+		key := testutils.NewKey(func(k *model.Key) {
+			k.IsPrimary = true
+		})
+
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.PrimaryKeyID = &key.ID
+		})
+
+		testutils.CreateTestEntities(ctxSys, t, repo, key, keyConfig)
+
+		wf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateInitial.String()
+				w.ActionType = workflow.ActionTypeUpdatePrimary.String()
+				w.ArtifactID = keyConfig.ID
+				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+				w.Parameters = key.ID.String()
+			},
+		)
+
+		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.True(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.False(t, status.Valid)
+		assert.False(t, status.CanCreate)
+		assert.NoError(t, err)
+		assert.Equal(t, manager.ErrAlreadyPrimaryKey, status.ErrDetails)
 	})
 
 	t.Run("should have canCreate on primary key change without unconnected system", func(t *testing.T) {
@@ -307,6 +345,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 				w.ActionType = workflow.ActionTypeUpdatePrimary.String()
 				w.ArtifactID = keyConfig.ID
 				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+				w.Parameters = uuid.NewString()
 			},
 		)
 
@@ -318,24 +357,23 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run(
-		"Should return authorization error on non active artifact", func(t *testing.T) {
-			wf, err := createTestWorkflow(
-				ctxSys, repo, testutils.NewWorkflow(
-					func(w *model.Workflow) {
-						w.State = workflow.StateRejected.String()
-						w.ActionType = workflow.ActionTypeDelete.String()
-						w.ArtifactType = workflow.ArtifactTypeKey.String()
-					},
-				),
-			)
-			assert.NoError(t, err)
+	t.Run("Should return authorization error on non active artifact", func(t *testing.T) {
+		wf, err := createTestWorkflow(
+			ctxSys, repo, testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateRejected.String()
+					w.ActionType = workflow.ActionTypeDelete.String()
+					w.ArtifactType = workflow.ArtifactTypeKey.String()
+				},
+			),
+		)
+		assert.NoError(t, err)
 
-			status, err := m.CheckWorkflow(ctxSys, wf)
-			assert.False(t, status.Enabled)
-			assert.False(t, status.Exists)
-			assert.ErrorIs(t, err, manager.ErrWorkflowCreationNotAllowed)
-		},
+		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.False(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.ErrorIs(t, err, manager.ErrWorkflowCreationNotAllowed)
+	},
 	)
 }
 

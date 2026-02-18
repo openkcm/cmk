@@ -141,6 +141,7 @@ var (
 	ErrFailedToReencryptSystem   = errors.New("system reencrypt failed on new key")
 	ErrNotAllSystemsConnected    = errors.New("keyconfig contains systems not connected")
 
+	ErrAlreadyPrimaryKey    = errors.New("key is already primary key")
 	ErrGetWorkflowDB        = errors.New("failed to get workflow")
 	ErrOngoingWorkflowExist = errors.New("ongoing workflow for artifact already exists")
 	ErrCreateWorkflowDB     = errors.New("failed to create workflow")
