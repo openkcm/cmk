@@ -1,5 +1,15 @@
 package eventprocessor
 
+type JobType string
+
+const (
+	JobTypeSystemLink         JobType = "SYSTEM_LINK"
+	JobTypeSystemUnlink       JobType = "SYSTEM_UNLINK"
+	JobTypeKeyEnable          JobType = "KEY_ENABLE"
+	JobTypeKeyDisable         JobType = "KEY_DISABLE"
+	JobTypeTenantDecommission JobType = "TENANT_DECOMMISSION"
+)
+
 // KeyActionJobData contains the data needed for a key action orbital job.
 type KeyActionJobData struct {
 	TenantID string `json:"tenantID"`
