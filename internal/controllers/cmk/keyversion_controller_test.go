@@ -9,14 +9,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -39,6 +37,11 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 	db, sv, tenant := startAPIKeyVersion(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthClientDataKC(authClient))
 
 	key1 := testutils.NewKey(func(k *model.Key) {
 		k.CreatedAt = time.Now()
@@ -68,6 +71,7 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 	})
 
 	testutils.CreateTestEntities(ctx, t, r,
+		keyConfig,
 		key1,
 		key2,
 		key1Version1,
@@ -108,9 +112,10 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: fmt.Sprintf("/keys/%s/versions", tt.keyID),
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          fmt.Sprintf("/keys/%s/versions", tt.keyID),
+				Tenant:            tenant,
+				AdditionalContext: authClient.GetClientMap(),
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -133,8 +138,12 @@ func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	key := testutils.NewKey(func(_ *model.Key) {})
-	testutils.CreateTestEntities(ctx, t, r, key)
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthClientDataKC(authClient))
+	key := testutils.NewKey(func(k *model.Key) { k.KeyConfigurationID = keyConfig.ID })
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
 	for i := range totalRecordCount {
 		keyVersion := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
@@ -238,9 +247,10 @@ func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: fmt.Sprintf(tt.query, tt.keyID),
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          fmt.Sprintf(tt.query, tt.keyID),
+				Tenant:            tenant,
+				AdditionalContext: authClient.GetClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -266,7 +276,10 @@ func TestKeyVersionController_CreateKeyVersion(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthClientDataKC(authClient))
 
 	key1 := testutils.NewKey(func(k *model.Key) {
 		k.Provider = providerTest
@@ -373,10 +386,11 @@ func TestKeyVersionController_CreateKeyVersion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodPost,
-				Endpoint: fmt.Sprintf("/keys/%s/versions", tt.key.ID.String()),
-				Tenant:   tenant,
-				Body:     testutils.WithString(t, tt.inputJSON),
+				Method:            http.MethodPost,
+				Endpoint:          fmt.Sprintf("/keys/%s/versions", tt.key.ID.String()),
+				Tenant:            tenant,
+				Body:              testutils.WithString(t, tt.inputJSON),
+				AdditionalContext: authClient.GetClientMap(),
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -393,7 +407,10 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthClientDataKC(authClient))
 
 	keyID := uuid.New()
 	key := testutils.NewKey(func(k *model.Key) {
@@ -426,18 +443,20 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 	t.Run("Should rotate key", func(t *testing.T) {
 		// Refresh Key
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodPost,
-			Endpoint: fmt.Sprintf("/keys/%s/versions", key.ID),
-			Tenant:   tenant,
-			Body:     testutils.WithString(t, "{}"),
+			Method:            http.MethodPost,
+			Endpoint:          fmt.Sprintf("/keys/%s/versions", key.ID),
+			Tenant:            tenant,
+			Body:              testutils.WithString(t, "{}"),
+			AdditionalContext: authClient.GetClientMap(),
 		})
 		assert.Equal(t, http.StatusCreated, w.Code)
 
 		// Get key versions
 		w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: fmt.Sprintf("/keys/%s/versions", key.ID),
-			Tenant:   tenant,
+			Method:            http.MethodGet,
+			Endpoint:          fmt.Sprintf("/keys/%s/versions", key.ID),
+			Tenant:            tenant,
+			AdditionalContext: authClient.GetClientMap(),
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -451,28 +470,20 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 	t.Run("Re-enabling key should restore enabling and previous state", func(t *testing.T) {
 		// Disable Key
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodPatch,
-			Endpoint: fmt.Sprintf("/keys/%s", key.ID),
-			Tenant:   tenant,
-			Body:     testutils.WithString(t, `{"enabled": false}`),
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
-				},
-			},
+			Method:            http.MethodPatch,
+			Endpoint:          fmt.Sprintf("/keys/%s", key.ID),
+			Tenant:            tenant,
+			Body:              testutils.WithString(t, `{"enabled": false}`),
+			AdditionalContext: authClient.GetClientMap(),
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		// Get key versions
 		w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: fmt.Sprintf("/keys/%s/versions", key.ID),
-			Tenant:   tenant,
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
-				},
-			},
+			Method:            http.MethodGet,
+			Endpoint:          fmt.Sprintf("/keys/%s/versions", key.ID),
+			Tenant:            tenant,
+			AdditionalContext: authClient.GetClientMap(),
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -483,28 +494,20 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 
 		// Enable Key
 		w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodPatch,
-			Endpoint: fmt.Sprintf("/keys/%s", key.ID),
-			Tenant:   tenant,
-			Body:     testutils.WithString(t, `{"enabled": true}`),
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
-				},
-			},
+			Method:            http.MethodPatch,
+			Endpoint:          fmt.Sprintf("/keys/%s", key.ID),
+			Tenant:            tenant,
+			Body:              testutils.WithString(t, `{"enabled": true}`),
+			AdditionalContext: authClient.GetClientMap(),
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		// Get key versions
 		w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: fmt.Sprintf("/keys/%s/versions", key.ID),
-			Tenant:   tenant,
-			AdditionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
-					Groups: []string{keyConfig.AdminGroup.IAMIdentifier},
-				},
-			},
+			Method:            http.MethodGet,
+			Endpoint:          fmt.Sprintf("/keys/%s/versions", key.ID),
+			Tenant:            tenant,
+			AdditionalContext: authClient.GetClientMap(),
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -520,8 +523,14 @@ func TestKeyVersionController_GetKeyVersionAndNumber(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthClientDataKC(authClient))
+
 	key1ID := uuid.New()
 	key1 := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
 		k.KeyVersions = []model.KeyVersion{
 			*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
 				kv.Version = 1
@@ -534,6 +543,7 @@ func TestKeyVersionController_GetKeyVersionAndNumber(t *testing.T) {
 
 	key2ID := uuid.New()
 	key2 := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
 		k.KeyVersions = []model.KeyVersion{
 			*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
 				kv.Version = 1
@@ -553,6 +563,7 @@ func TestKeyVersionController_GetKeyVersionAndNumber(t *testing.T) {
 		ctx,
 		t,
 		r,
+		keyConfig,
 		key1,
 		key2,
 	)
@@ -601,9 +612,10 @@ func TestKeyVersionController_GetKeyVersionAndNumber(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:   http.MethodGet,
-				Endpoint: fmt.Sprintf("/keys/%s/versions/%s", tt.key.ID.String(), tt.inputValue),
-				Tenant:   tenant,
+				Method:            http.MethodGet,
+				Endpoint:          fmt.Sprintf("/keys/%s/versions/%s", tt.key.ID.String(), tt.inputValue),
+				Tenant:            tenant,
+				AdditionalContext: authClient.GetClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
