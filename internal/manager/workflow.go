@@ -174,13 +174,6 @@ func NewWorkflowFilterFromOData(queryMapper odata.QueryOdataMapper) (*WorkflowFi
 	}, nil
 }
 
-var approverJoinCond = repo.JoinCondition{
-	Table:     &model.Workflow{},
-	Field:     repo.IDField,
-	JoinField: fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField),
-	JoinTable: &model.WorkflowApprover{},
-}
-
 func (w WorkflowFilter) GetQuery(_ context.Context) *repo.Query {
 	query := repo.NewQuery()
 
@@ -679,11 +672,19 @@ func (w *WorkflowManager) getWorkflows(
 
 		query = query.Join(
 			repo.LeftJoin,
-			approverJoinCond,
+			repo.JoinCondition{
+				Table:     &model.Workflow{},
+				Field:     repo.IDField,
+				JoinField: fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField),
+				JoinTable: &model.WorkflowApprover{},
+			},
 		)
 		orCK := repo.NewCompositeKey().
 			Where(repo.InitiatorIDField, iamIdentifier).
-			Where(repo.UserIDField, iamIdentifier)
+			Where(
+				fmt.Sprintf("%s.%s", model.WorkflowApprover{}.TableName(), repo.UserIDField),
+				iamIdentifier,
+			)
 		orCK.IsStrict = false
 
 		query = query.Where(repo.NewCompositeKeyGroup(orCK))
