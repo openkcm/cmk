@@ -224,6 +224,32 @@ func (f *EventFactory) createSystemEventJob(
 	return f.CreateJob(ctx, event)
 }
 
+func (f *EventFactory) createSystemEventJob(
+	ctx context.Context,
+	taskType proto.TaskType,
+	data SystemActionJobData,
+) (orbital.Job, error) {
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return orbital.Job{}, err
+	}
+
+	data.TenantID = tenantID
+
+	jobData, err := json.Marshal(data)
+	if err != nil {
+		return orbital.Job{}, err
+	}
+
+	event := &model.Event{
+		Identifier: data.SystemID,
+		Type:       taskType.String(),
+		Data:       jobData,
+	}
+
+	return f.CreateJob(ctx, event)
+}
+
 func (f *EventFactory) handleSystemStatus(
 	ctx context.Context,
 	system *model.System,

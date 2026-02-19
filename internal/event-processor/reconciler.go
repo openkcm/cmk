@@ -2,10 +2,8 @@ package eventprocessor
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
@@ -16,23 +14,14 @@ import (
 	_ "github.com/lib/pq" // Import PostgreSQL driver to initialize the database connection
 
 	goAmqp "github.com/Azure/go-amqp"
-	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
-	protoPkg "google.golang.org/protobuf/proto"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry"
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 const (
@@ -86,6 +75,8 @@ type CryptoReconciler struct {
 	svcRegistry *cmkpluginregistry.Registry
 	cmkAuditor  *auditor.Auditor
 	registry    registry.Service
+
+	jobHandlerMap map[JobType]JobHandler
 }
 
 // NewCryptoReconciler creates a new CryptoReconciler instance.
@@ -153,6 +144,24 @@ func NewCryptoReconciler(
 
 	reconciler.manager = manager
 
+	systemResolver := &SystemTaskInfoResolver{
+		repo:        repository,
+		svcRegistry: svcRegistry,
+		targets:     targetMap,
+	}
+
+	//keyResolver := &KeyTaskInfoResolver{
+	//	repo:        repository,
+	//	targets:     targetMap,
+	//}
+
+	jobHandlerMap := map[JobType]JobHandler{
+		JobTypeSystemLink:   NewSystemLinkJobHandler(repository, cmkAuditor, reconciler.registry, systemResolver),
+		JobTypeSystemUnlink: NewSystemUnlinkJobHandler(repository, cmkAuditor, reconciler.registry, systemResolver),
+		JobTypeSystemSwitch: NewSystemSwitchJobHandler(repository, cmkAuditor, reconciler.registry, systemResolver),
+	}
+	reconciler.jobHandlerMap = jobHandlerMap
+
 	return reconciler, nil
 }
 
@@ -167,6 +176,103 @@ func (c *CryptoReconciler) CloseAmqpClients(ctx context.Context) {
 			_ = amqpClient.Close(ctx)
 		}
 	}
+}
+
+func (c *CryptoReconciler) getHandlerByJobType(jobType JobType) (JobHandler, error) {
+	handler, ok := c.jobHandlerMap[jobType]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedTaskType, jobType)
+	}
+	return handler, nil
+}
+
+// resolveTasks is called to resolve tasks for a job.
+func (c *CryptoReconciler) resolveTasks() orbital.TaskResolveFunc {
+	return func(ctx context.Context, job orbital.Job, _ orbital.TaskResolverCursor) (orbital.TaskResolverResult, error) {
+		handler := c.jobHandlerMap[JobType(job.Type)]
+		if handler == nil {
+			return orbital.TaskResolverResult{
+				IsCanceled:           true,
+				CanceledErrorMessage: fmt.Sprintf("unsupported job type: %s", job.Type),
+			}, nil
+		}
+
+		tasks, err := handler.ResolveTasks(ctx, job)
+		if err != nil {
+			return orbital.TaskResolverResult{
+				IsCanceled:           true,
+				CanceledErrorMessage: fmt.Sprintf("failed to resolve tasks for job: %v", err),
+			}, nil
+		}
+
+		if len(tasks) == 0 {
+			return orbital.TaskResolverResult{
+				IsCanceled:           true,
+				CanceledErrorMessage: "no tasks resolved for the job",
+			}, nil
+		}
+
+		return orbital.TaskResolverResult{
+			TaskInfos: tasks,
+			Done:      true,
+		}, nil
+	}
+}
+
+// confirmJob is called to confirm if a job can be processed.
+func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orbital.JobConfirmResult, error) {
+	handler := c.jobHandlerMap[JobType(job.Type)]
+	if handler == nil {
+		return orbital.JobConfirmResult{
+			IsCanceled:           true,
+			CanceledErrorMessage: fmt.Sprintf("unsupported job type: %s", job.Type),
+		}, nil
+	}
+
+	result, err := handler.Confirm(ctx, job)
+	if err != nil {
+		return orbital.JobConfirmResult{
+			IsCanceled:           true,
+			CanceledErrorMessage: fmt.Sprintf("failed to confirm job: %v", err),
+		}, nil
+	}
+
+	return result, nil
+}
+
+// jobTerminationFunc is called when a job is terminated.
+func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.Job) error {
+	handler := c.jobHandlerMap[JobType(job.Type)]
+	if handler == nil {
+		log.Warn(ctx, fmt.Sprintf("No job handler found for job type: %s", job.Type))
+		return nil
+	}
+
+	err := handler.Terminate(ctx, job)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+//if jobData.Trigger == constants.SystemActionDecommission {
+//	_, err = c.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
+//		ExternalId: system.Identifier,
+//		Type:       strings.ToLower(system.Type),
+//		TenantId:   jobData.TenantID,
+//	})
+//	if err != nil {
+//		return fmt.Errorf("failed to unmap system from tenant: %w", err)
+//	}
+//}
+
+func getMaxReconcileCount(cfg *config.EventProcessor) uint64 {
+	if cfg.MaxReconcileCount <= 0 {
+		return defaultMaxReconcileCount
+	}
+
+	return cfg.MaxReconcileCount
 }
 
 // createTargets initializes the AMQP clients for each manager target defined in the orbital configuration.
@@ -216,409 +322,4 @@ func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
 			return nil
 		},
 	}, nil
-}
-
-// resolveTasks is called to resolve tasks for a job.
-func (c *CryptoReconciler) resolveTasks() orbital.TaskResolveFunc {
-	return func(ctx context.Context, job orbital.Job, _ orbital.TaskResolverCursor) (orbital.TaskResolverResult, error) {
-		var (
-			result []orbital.TaskInfo
-			err    error
-		)
-
-		taskType := proto.TaskType(proto.TaskType_value[job.Type])
-		if isKeyActionTask(taskType) {
-			result, err = c.getKeyTaskInfo(ctx, job.Data, taskType)
-			if err != nil {
-				return orbital.TaskResolverResult{
-					IsCanceled:           true,
-					CanceledErrorMessage: fmt.Sprintf("failed to get key task info: %v", err),
-				}, nil
-			}
-		} else {
-			result, err = c.getSystemTaskInfo(ctx, job.Data, taskType)
-			if err != nil {
-				return orbital.TaskResolverResult{
-					IsCanceled:           true,
-					CanceledErrorMessage: fmt.Sprintf("failed to get system task info: %v", err),
-				}, nil
-			}
-		}
-
-		if len(result) == 0 {
-			return orbital.TaskResolverResult{
-				IsCanceled:           true,
-				CanceledErrorMessage: "no tasks to process for job",
-			}, nil
-		}
-
-		return orbital.TaskResolverResult{
-			TaskInfos: result,
-			Done:      true,
-		}, nil
-	}
-}
-
-func isKeyActionTask(taskType proto.TaskType) bool {
-	return taskType == proto.TaskType_KEY_DELETE ||
-		taskType == proto.TaskType_KEY_ROTATE ||
-		taskType == proto.TaskType_KEY_DISABLE ||
-		taskType == proto.TaskType_KEY_ENABLE ||
-		taskType == proto.TaskType_KEY_DETACH
-}
-
-func isSystemActionTask(taskType proto.TaskType) bool {
-	return taskType == proto.TaskType_SYSTEM_LINK ||
-		taskType == proto.TaskType_SYSTEM_UNLINK ||
-		taskType == proto.TaskType_SYSTEM_SWITCH
-}
-
-func (c *CryptoReconciler) getKeyTaskInfo(
-	ctx context.Context,
-	jobData []byte,
-	taskType proto.TaskType,
-) ([]orbital.TaskInfo, error) {
-	var data KeyActionJobData
-
-	err := json.Unmarshal(jobData, &data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal job data: %w", err)
-	}
-
-	tenant, err := c.getTenantByID(ctx, data.TenantID)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
-
-	var targets map[string]struct{}
-	switch taskType {
-	case proto.TaskType_KEY_ENABLE, proto.TaskType_KEY_DISABLE:
-		regions, err := c.getRegionsByKeyID(ctx, data.KeyID)
-		if err != nil {
-			return nil, err
-		}
-		if len(regions) == 0 {
-			return nil, ErrNoConnectedRegionsForKey
-		}
-		targets = regions
-	default:
-		targets = c.targets
-	}
-
-	result := make([]orbital.TaskInfo, 0, len(targets))
-
-	for target := range targets {
-		taskData := &proto.Data{
-			TaskType: taskType,
-			Data: &proto.Data_KeyAction{
-				KeyAction: &proto.KeyAction{
-					KeyId:     data.KeyID,
-					TenantId:  tenant.ID,
-					CmkRegion: tenant.Region,
-				},
-			},
-		}
-
-		taskDataBytes, err := protoPkg.Marshal(taskData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal task data: %w", err)
-		}
-
-		result = append(result, orbital.TaskInfo{
-			Target: target,
-			Data:   taskDataBytes,
-			Type:   taskType.String(),
-		})
-	}
-
-	return result, nil
-}
-
-// getRegionsByKeyID gets all distinct regions with CONNECTED systems for a given key ID.
-func (c *CryptoReconciler) getRegionsByKeyID(ctx context.Context, keyID string) (map[string]struct{}, error) {
-	key := &model.Key{}
-	_, err := c.repo.First(ctx, key, *repo.NewQuery().Where(
-		repo.NewCompositeKeyGroup(
-			repo.NewCompositeKey().Where(repo.IDField, keyID),
-		),
-	))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get key by ID %s: %w", keyID, err)
-	}
-
-	regions := make(map[string]struct{})
-
-	query := repo.NewQuery().Where(
-		repo.NewCompositeKeyGroup(
-			repo.NewCompositeKey().Where(repo.KeyConfigIDField, key.KeyConfigurationID),
-		),
-	)
-	err = repo.ProcessInBatch(ctx, c.repo, query, repo.DefaultLimit, func(systems []*model.System) error {
-		for _, system := range systems {
-			if system.Status == cmkapi.SystemStatusCONNECTED {
-				if _, ok := c.targets[system.Region]; !ok {
-					ctx := model.LogInjectSystem(ctx, system)
-					log.Error(ctx,
-						"skipping region for connected system as target is not configured", ErrUnsupportedRegion)
-					continue
-				}
-				regions[system.Region] = struct{}{}
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get connected regions for key ID %s: %w", keyID, err)
-	}
-
-	return regions, nil
-}
-
-// confirmJob is called to confirm if a job can be processed.
-func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orbital.JobConfirmResult, error) {
-	jobType, ok := proto.TaskType_value[job.Type]
-	if !ok {
-		return orbital.JobConfirmResult{}, errs.Wrapf(ErrUnsupportedTaskType, job.Type)
-	}
-
-	taskType := proto.TaskType(jobType)
-
-	// if key event nothing to check for confirmation
-	if isKeyActionTask(taskType) {
-		return orbital.JobConfirmResult{
-			Done: true,
-		}, nil
-	}
-
-	if !isSystemActionTask(taskType) {
-		return orbital.JobConfirmResult{}, errs.Wrapf(ErrUnsupportedTaskType, taskType.String())
-	}
-
-	var systemJobData SystemActionJobData
-
-	err := json.Unmarshal(job.Data, &systemJobData)
-	if err != nil {
-		return orbital.JobConfirmResult{}, err
-	}
-
-	ctx = cmkcontext.CreateTenantContext(ctx, systemJobData.TenantID)
-
-	system, err := c.getSystemByID(ctx, systemJobData.SystemID)
-	if err != nil {
-		return orbital.JobConfirmResult{
-			Done:                 false,
-			CanceledErrorMessage: err.Error(),
-		}, err
-	}
-
-	if system.Status != cmkapi.SystemStatusPROCESSING {
-		return orbital.JobConfirmResult{
-			IsCanceled:           true,
-			CanceledErrorMessage: fmt.Sprintf("system status is in %v instead of processing", system.Status),
-		}, nil
-	}
-
-	return orbital.JobConfirmResult{
-		Done: true,
-	}, nil
-}
-
-// jobTerminationFunc is called when a job is terminated.
-func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.Job) error {
-	taskType := proto.TaskType(proto.TaskType_value[job.Type])
-	status := cmkapi.SystemStatusFAILED
-
-	var jobData SystemActionJobData
-
-	switch taskType {
-	case proto.TaskType_SYSTEM_LINK, proto.TaskType_SYSTEM_SWITCH:
-		if job.Status == orbital.JobStatusDone {
-			status = cmkapi.SystemStatusCONNECTED
-		}
-	case proto.TaskType_SYSTEM_UNLINK:
-		if job.Status == orbital.JobStatusDone {
-			status = cmkapi.SystemStatusDISCONNECTED
-		}
-	default:
-		return nil
-	}
-
-	err := json.Unmarshal(job.Data, &jobData)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal system action job data: %w", err)
-	}
-
-	ctx = cmkcontext.CreateTenantContext(ctx, jobData.TenantID)
-
-	system, err := c.getSystemByID(ctx, jobData.SystemID)
-	if err != nil {
-		return err
-	}
-
-	jobDone := job.Status == orbital.JobStatusDone
-
-	if jobDone {
-		err = c.handleDoneSystemJob(ctx, job, system, taskType, jobData)
-		if err != nil {
-			return err
-		}
-	}
-
-	return c.updateSystemOnJobTerminate(ctx, system, jobData, taskType, status, jobDone)
-}
-
-func (c *CryptoReconciler) handleDoneSystemJob(
-	ctx context.Context,
-	job orbital.Job,
-	system *model.System,
-	taskType proto.TaskType,
-	jobData SystemActionJobData,
-) error {
-	// Clean the event if it was successful as we no longer need to hold
-	// previous state for cancel/retry actions
-	_, err := c.repo.Delete(
-		ctx,
-		&model.Event{},
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().
-			Where(repo.IdentifierField, job.ExternalID).
-			Where(repo.TypeField, job.Type),
-		)),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to delete event: %w", err)
-	}
-
-	err = c.sendSystemAuditLogOnJobTerminate(ctx, system, jobData, taskType)
-	if err != nil {
-		log.Error(ctx, "failed to send audit log for successful system event", err)
-	}
-
-	err = c.setClientL1KeyClaimOnJobTerminate(ctx, jobData.TenantID, system, taskType)
-	if err != nil {
-		return fmt.Errorf("failed to set L1 key claim on job terminate: %w", err)
-	}
-
-	if jobData.Trigger == constants.SystemActionDecommission {
-		_, err = c.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
-			ExternalId: system.Identifier,
-			Type:       strings.ToLower(system.Type),
-			TenantId:   jobData.TenantID,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to unmap system from tenant: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// sendSystemAuditLogOnJobTerminate sends an audit log based on the task type and job data when a job is terminated.
-func (c *CryptoReconciler) sendSystemAuditLogOnJobTerminate(
-	ctx context.Context,
-	system *model.System,
-	jobData SystemActionJobData,
-	taskType proto.TaskType,
-) error {
-	var err error
-
-	switch taskType {
-	case proto.TaskType_SYSTEM_LINK:
-		err = c.cmkAuditor.SendCmkOnboardingAuditLog(ctx, jobData.KeyIDTo, system.Identifier)
-	case proto.TaskType_SYSTEM_UNLINK:
-		err = c.cmkAuditor.SendCmkOffboardingAuditLog(ctx, jobData.KeyIDFrom, system.Identifier)
-	case proto.TaskType_SYSTEM_SWITCH:
-		err = c.cmkAuditor.SendCmkSwitchAuditLog(ctx, system.Identifier, jobData.KeyIDFrom, jobData.KeyIDTo)
-	default:
-		return nil
-	}
-
-	return err
-}
-
-// updateSystemOnJobTerminate updates the status of systems in a transaction
-func (c *CryptoReconciler) updateSystemOnJobTerminate(
-	ctx context.Context,
-	system *model.System,
-	jobData SystemActionJobData,
-	taskType proto.TaskType,
-	status cmkapi.SystemStatus,
-	updateKeyConfigID bool,
-) error {
-	system.Status = status
-
-	var err error
-
-	if updateKeyConfigID {
-		switch taskType {
-		case proto.TaskType_SYSTEM_LINK, proto.TaskType_SYSTEM_SWITCH:
-			key, err := c.getKeyByKeyID(ctx, jobData.KeyIDTo)
-			if err != nil {
-				return err
-			}
-
-			system.KeyConfigurationID = &key.KeyConfigurationID
-		case proto.TaskType_SYSTEM_UNLINK:
-			system.KeyConfigurationID = nil
-		default:
-			return nil
-		}
-	}
-
-	ck := repo.NewCompositeKey().Where(repo.IDField, system.ID)
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).UpdateAll(true)
-
-	_, err = c.repo.Patch(ctx, system, *query)
-	if err != nil {
-		return fmt.Errorf("failed to update system %s status and keyConfigID: %w", system.ID, err)
-	}
-
-	return nil
-}
-
-func (c *CryptoReconciler) setClientL1KeyClaimOnJobTerminate(
-	ctx context.Context,
-	tenant string,
-	system *model.System,
-	taskType proto.TaskType,
-) error {
-	if c.registry == nil {
-		log.Warn(ctx, "Could not set L1 key claim - CryptoReconciler systems client is nil")
-		return nil
-	}
-
-	var keyClaim bool
-
-	switch taskType {
-	case proto.TaskType_SYSTEM_LINK:
-		keyClaim = true
-	case proto.TaskType_SYSTEM_UNLINK:
-		keyClaim = false
-	default:
-		return nil
-	}
-
-	err := c.registry.System().ExtendedUpdateSystemL1KeyClaim(ctx, systems.SystemFilter{
-		ExternalID: system.Identifier,
-		Region:     system.Region,
-		TenantID:   tenant,
-	}, keyClaim)
-	if errors.Is(err, systems.ErrKeyClaimAlreadyActive) && keyClaim ||
-		errors.Is(err, systems.ErrKeyClaimAlreadyInactive) && !keyClaim {
-		// If the key claim is already set to the desired state, we can ignore the error.
-		return nil
-	} else if err != nil {
-		return errs.Wrap(ErrSettingKeyClaim, err)
-	}
-
-	return nil
-}
-
-func getMaxReconcileCount(cfg *config.EventProcessor) uint64 {
-	if cfg.MaxReconcileCount <= 0 {
-		return defaultMaxReconcileCount
-	}
-
-	return cfg.MaxReconcileCount
 }

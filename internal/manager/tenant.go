@@ -188,9 +188,7 @@ func (m *TenantManager) GetTenantByID(ctx context.Context, tenantID string) (*mo
 // all systems are no longer connected or in processing
 func (m *TenantManager) unlinkAllSystems(ctx context.Context) (OffboardingResult, error) {
 	result := OffboardingResult{Status: OffboardingSuccess}
-	toUnlinkCond := repo.NewCompositeKey().
-		Where(repo.StatusField, cmkapi.SystemStatusCONNECTED).
-		Where(repo.StatusField, cmkapi.SystemStatusPROCESSING, repo.NotEq)
+	toUnlinkCond := repo.NewCompositeKey().Where(repo.StatusField, cmkapi.SystemStatusCONNECTED)
 
 	err := repo.ProcessInBatch(
 		ctx,
@@ -268,6 +266,51 @@ func (m *TenantManager) detachAllKeys(ctx context.Context) (OffboardingResult, e
 		ctx,
 		&model.Key{},
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(query)),
+	)
+	if err != nil {
+		return OffboardingResult{}, err
+	}
+
+	if count > 0 {
+		return OffboardingResult{Status: OffboardingProcessing}, nil
+	}
+
+	return result, nil
+}
+
+func (m *TenantManager) offboardKeyConfiguration(ctx context.Context) (OffboardingResult, error) {
+	result := OffboardingResult{Status: OffboardingSuccess}
+	cond := repo.NewCompositeKey().Where(repo.StatusField, cmkapi.SystemStatusCONNECTED)
+
+	err := repo.ProcessInBatch(
+		ctx,
+		m.repo,
+		repo.NewQuery().Where(repo.NewCompositeKeyGroup(toUnlinkCond)),
+		repo.DefaultLimit,
+		func(sys []*model.System) error {
+			for _, s := range sys {
+				err := m.sys.UnlinkSystemAction(ctx, s.ID, constants.SystemActionDecommission)
+				if err != nil {
+					return err
+				}
+			}
+
+			return nil
+		},
+	)
+	if err != nil {
+		return OffboardingResult{}, err
+	}
+
+	unlinkingCond := repo.NewCompositeKey().
+		Where(repo.StatusField, cmkapi.SystemStatusCONNECTED).
+		Where(repo.StatusField, cmkapi.SystemStatusPROCESSING)
+	unlinkingCond.IsStrict = false
+
+	count, err := m.repo.Count(
+		ctx,
+		&model.System{},
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(unlinkingCond)),
 	)
 	if err != nil {
 		return OffboardingResult{}, err
