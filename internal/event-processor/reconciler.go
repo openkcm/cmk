@@ -560,6 +560,8 @@ func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orb
 }
 
 // jobTerminationFunc is called when a job is terminated.
+//
+//nolint:cyclop
 func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.Job) error {
 	taskType := proto.TaskType(proto.TaskType_value[job.Type])
 	status := cmkapi.SystemStatusFAILED

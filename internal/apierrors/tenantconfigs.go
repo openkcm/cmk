@@ -4,33 +4,35 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
-var ErrGetDefaultKeystore = errors.New("failed to get default keystore")
-var ErrGetWorkflowConfig = errors.New("failed to get workflow config")
-var ErrSetWorkflowConfig = errors.New("failed to set workflow config")
+var (
+	ErrGetDefaultKeystore = errors.New("failed to get default keystore")
+	ErrGetWorkflowConfig  = errors.New("failed to get workflow config")
+	ErrSetWorkflowConfig  = errors.New("failed to set workflow config")
+)
 
-var tenantconfig = []APIErrors{
+var tenantconfig = []errs.ExposedErrors[*APIError]{
 	{
-		Errors: []error{ErrGetDefaultKeystore},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrGetDefaultKeystore},
+		ExposedError: &APIError{
 			Code:    "GET_DEFAULT_KEYSTORE",
 			Message: "Failed to get default keystore",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrGetWorkflowConfig},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrGetWorkflowConfig},
+		ExposedError: &APIError{
 			Code:    "GET_WORKFLOW_CONFIG",
 			Message: "Failed to get workflow configuration",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrSetWorkflowConfig},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrSetWorkflowConfig},
+		ExposedError: &APIError{
 			Code:    "SET_WORKFLOW_CONFIG",
 			Message: "Failed to update workflow configuration",
 			Status:  http.StatusInternalServerError,

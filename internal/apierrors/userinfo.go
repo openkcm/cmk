@@ -3,19 +3,19 @@ package apierrors
 import (
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/errs"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
-var ErrNoClientData = cmkapi.DetailedError{
+var ErrNoClientData = &APIError{
 	Code:    "NO_CLIENT_DATA",
 	Message: "Missing client data",
 	Status:  http.StatusInternalServerError,
 }
 
-var userinfo = []APIErrors{
+var userinfo = []errs.ExposedErrors[*APIError]{
 	{
-		Errors:       []error{cmkcontext.ErrExtractClientData},
-		ExposedError: ErrNoClientData,
+		InternalErrorChain: []error{cmkcontext.ErrExtractClientData},
+		ExposedError:       ErrNoClientData,
 	},
 }

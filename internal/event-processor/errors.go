@@ -12,7 +12,7 @@ type Error struct {
 	Code    string
 }
 
-// ParseOrbitalError returns a parsed orbitalError
+// ParseOrbitalError returns a parsed error in orbital format
 // If there is no code or no entries to parse, it sets the code to the default value
 // The parsing is done with an expression expect a ":"
 // right after the error code in SCREAMING_SNAKE_CASE

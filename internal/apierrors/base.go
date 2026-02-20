@@ -2,8 +2,6 @@ package apierrors
 
 import (
 	"net/http"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
 )
 
 const (
@@ -17,61 +15,61 @@ const (
 	ForbiddenErr      = "FORBIDDEN"
 )
 
-func InternalServerErrorMessage() cmkapi.ErrorMessage {
-	return cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+func InternalServerErrorMessage() *APIError {
+	return &APIError{
 		Code:    InternalServerErr,
 		Message: "Internal server error",
 		Status:  http.StatusInternalServerError,
-	}}
+	}
 }
 
-func JSONDecodeErrorMessage() cmkapi.ErrorMessage {
-	return cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+func JSONDecodeErrorMessage() *APIError {
+	return &APIError{
 		Code:    JSONDecodeErr,
 		Message: "Can't decode JSON body",
 		Status:  http.StatusBadRequest,
-	}}
+	}
 }
 
-func OAPIValidatorErrorMessage(message string, code int) cmkapi.ErrorMessage {
+func OAPIValidatorErrorMessage(message string, code int) *APIError {
 	switch code {
 	case http.StatusBadRequest:
-		return cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+		return &APIError{
 			Code:    ValidationErr,
 			Message: message,
 			Status:  code,
-		}}
+		}
 	case http.StatusForbidden:
-		return cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+		return &APIError{
 			Code:    ForbiddenErr,
 			Message: message,
 			Status:  code,
-		}}
+		}
 	}
 
 	return InternalServerErrorMessage()
 }
 
-func TooManyParameters(message string) cmkapi.ErrorMessage {
-	return cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+func TooManyParameters(message string) *APIError {
+	return &APIError{
 		Code:    ParamsErr,
 		Message: message,
 		Status:  http.StatusBadRequest,
-	}}
+	}
 }
 
-func RequiredHeaderError(message string) cmkapi.ErrorMessage {
-	return cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+func RequiredHeaderError(message string) *APIError {
+	return &APIError{
 		Code:    RequiredHeaderErr,
 		Message: message,
 		Status:  http.StatusBadRequest,
-	}}
+	}
 }
 
-func RequiredParamError(message string) cmkapi.ErrorMessage {
-	return cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+func RequiredParamError(message string) *APIError {
+	return &APIError{
 		Code:    RequiredParamErr,
 		Message: message,
 		Status:  http.StatusBadRequest,
-	}}
+	}
 }
