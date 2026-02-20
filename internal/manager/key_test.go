@@ -18,6 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
@@ -1021,7 +1022,7 @@ func (s *KeyManagerSuite) TestUpdateVersion() {
 func (s *KeyManagerSuite) TestUpdateKeyPrimary() {
 	t := s.T()
 
-	t.Run("Should update primary key", func(t *testing.T) {
+	t.Run("Should update primary key and exiting events", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
 			k.Name = uuid.NewString()
@@ -1040,20 +1041,38 @@ func (s *KeyManagerSuite) TestUpdateKeyPrimary() {
 			k.KeyConfigurationID = keyConfig.ID
 		})
 
-		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, keyConfig, oldPrimaryKey, key, sys)
+		data := eventprocessor.SystemActionJobData{
+			KeyIDTo: oldPrimaryKey.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		event := &model.Event{
+			Identifier: uuid.NewString(),
+			Type:       proto.TaskType_SYSTEM_SWITCH.String(),
+			Data:       dataBytes,
+		}
+
+		testutils.CreateTestEntities(s.ctx, s.T(), s.repo, keyConfig, oldPrimaryKey, key, sys, event)
 		ctx := testutils.InjectClientDataIntoContext(s.ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
-		k, err := s.km.UpdateKey(ctx, key.ID, cmkapi.KeyPatch{
+		key, err = s.km.UpdateKey(ctx, key.ID, cmkapi.KeyPatch{
 			IsPrimary: ptr.PointTo(true),
 		})
 		assert.NoError(t, err)
-		assert.True(t, k.IsPrimary)
+		assert.True(t, key.IsPrimary)
 
 		resKeyConfig := &model.KeyConfiguration{ID: keyConfig.ID}
 		_, err = s.repo.First(ctx, resKeyConfig, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		assert.Equal(t, key.ID, *resKeyConfig.PrimaryKeyID)
+
+		_, err = s.repo.First(ctx, event, *repo.NewQuery())
+		assert.NoError(t, err)
+		jobData, err := eventprocessor.GetSystemJobData(event)
+		assert.NoError(t, err)
+		assert.Equal(t, key.ID.String(), jobData.KeyIDTo)
 
 		oldK1, err := s.km.Get(ctx, oldPrimaryKey.ID)
 		assert.NoError(t, err)
