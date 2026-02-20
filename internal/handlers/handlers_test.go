@@ -8,10 +8,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/write"
+	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/handlers"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -131,15 +133,12 @@ func TestResponseErrorHandlerFunc(t *testing.T) {
 func TestErrorResponse(t *testing.T) {
 	w := httptest.NewRecorder()
 
-	ctx := cmkcontext.InjectRequestID(t.Context())
-	requestID, _ := cmkcontext.GetRequestID(ctx)
+	requestID := uuid.NewString()
+	ctx := cmkcontext.InjectRequestID(t.Context(), requestID)
 
-	errorMessage := cmkapi.ErrorMessage{
-		Error: cmkapi.DetailedError{
-			RequestID: &requestID,
-			Message:   "Test error message",
-			Status:    http.StatusInternalServerError,
-		},
+	errorMessage := &apierrors.APIError{
+		Message: "Test error message",
+		Status:  http.StatusInternalServerError,
 	}
 
 	write.ErrorResponse(ctx, w, errorMessage)
@@ -148,7 +147,13 @@ func TestErrorResponse(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	err := json.NewEncoder(&buf).Encode(errorMessage)
+	err := json.NewEncoder(&buf).Encode(cmkapi.ErrorMessage{
+		Error: cmkapi.DetailedError{
+			Message:   errorMessage.Message,
+			Status:    errorMessage.Status,
+			RequestID: &requestID,
+		},
+	})
 	assert.NoError(t, err)
 
 	assert.JSONEq(t, buf.String(), w.Body.String())

@@ -1521,6 +1521,19 @@ components:
           example: new-key-configuration-name
         keyConfigurationID:
           $ref: "#/components/schemas/KeyConfigurationID"
+        Metadata:
+          $ref: "#/components/schemas/SystemMetadata"
+    SystemMetadata:
+      description: System Metadata
+      type: object
+      readOnly: true
+      properties:
+        errorCode:
+          type: string
+          description: The code of an error of a failed system
+        errorMessage:
+          type: string
+          description: The details of an error of a failed system
     SystemPatch:
       description: Request to update a System object.
       type: object

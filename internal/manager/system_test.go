@@ -331,7 +331,7 @@ func TestGetSystemByID(t *testing.T) {
 			k.AdminGroup = *testGroup
 		},
 	)
-	newSystem := testutils.NewSystem(
+	system := testutils.NewSystem(
 		func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.KeyConfigurationName = &keyConfig.Name
@@ -339,40 +339,31 @@ func TestGetSystemByID(t *testing.T) {
 				"a": "b",
 				"b": "c",
 			}
+			s.ErrorCode = "errorCode"
+			s.ErrorMessage = "errorMessage"
 		},
 	)
+	event := testutils.NewEvent(func(e *model.Event) {
+		e.Identifier = system.Identifier
+		e.ErrorCode = "errorCode"
+		e.ErrorMessage = "errorMessage"
+	})
 
-	testutils.CreateTestEntities(ctx, t, r, newSystem, keyConfig)
+	testutils.CreateTestEntities(ctx, t, r, system, keyConfig, event)
 
-	t.Run("Should get newSystem by id", func(t *testing.T) {
-		actualSystem, err := m.GetSystemByID(ctx, newSystem.ID)
+	t.Run("Should get system by id and loaded fields", func(t *testing.T) {
+		actualSystem, err := m.GetSystemByID(ctx, system.ID)
 
-		assert.Equal(t, newSystem, actualSystem)
+		assert.Equal(t, system, actualSystem)
 		assert.NoError(t, err)
-	},
-	)
+	})
 
-	t.Run("Should fail on get newSystem by id", func(t *testing.T) {
+	t.Run("Should fail on getting system with non-existing id", func(t *testing.T) {
 		actualSystem, err := m.GetSystemByID(ctx, uuid.New())
 
 		assert.Nil(t, actualSystem)
 		assert.ErrorIs(t, err, manager.ErrGettingSystemByID)
-	},
-	)
-
-	t.Run("Should not get keyconfig name", func(t *testing.T) {
-		system := testutils.NewSystem(
-			func(s *model.System) {
-				s.KeyConfigurationID = ptr.PointTo(uuid.New())
-			},
-		)
-
-		testutils.CreateTestEntities(ctx, t, r, system)
-		actualSystem, err := m.GetSystemByID(ctx, system.ID)
-		assert.Nil(t, actualSystem)
-		assert.Error(t, err)
-	},
-	)
+	})
 }
 
 func TestGetRecoveryAction(t *testing.T) {
