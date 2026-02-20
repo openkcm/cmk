@@ -169,6 +169,11 @@ func ListAndCountSystemWithProperties(
 		JoinField: IDField,
 		Table:     &model.System{},
 		Field:     KeyConfigIDField,
+	}).Join(LeftJoin, JoinCondition{
+		JoinTable: &model.Event{},
+		JoinField: IdentifierField,
+		Table:     &model.System{},
+		Field:     IdentifierField,
 	}).Select(
 		// Get All System Fields
 		NewSelectField(model.System{}.TableName(), QueryFunction{
@@ -183,6 +188,16 @@ func ListAndCountSystemWithProperties(
 			fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), NameField),
 			QueryFunction{},
 		).SetAlias(SystemKeyconfigName),
+		// Get ErrorMessage so it's injected into System ErrorMessage
+		NewSelectField(
+			fmt.Sprintf("%s.%s", model.Event{}.TableName(), ErrorMessageField),
+			QueryFunction{},
+		),
+		// Get ErrorCode with alias so it's injected into System ErrorCode
+		NewSelectField(
+			fmt.Sprintf("%s.%s", model.Event{}.TableName(), ErrorCodeField),
+			QueryFunction{},
+		),
 	).Where(
 		NewCompositeKeyGroup(ck),
 	).SetOffset(0).SetLimit(DefaultLimit) // Reset offset and limit as this is for the join table
@@ -196,6 +211,8 @@ func ListAndCountSystemWithProperties(
 				sys = &row.System
 				sys.Properties = map[string]string{}
 				sys.KeyConfigurationName = row.KeyConfigurationName
+				sys.ErrorCode = row.ErrorCode
+				sys.ErrorMessage = row.ErrorMessage
 				systemsMap[row.ID] = sys
 			}
 

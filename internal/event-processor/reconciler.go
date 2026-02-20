@@ -218,6 +218,7 @@ func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
 }
 
 // resolveTasks is called to resolve tasks for a job.
+// TODO: Process CMK internal errors to follow OrbitalFormat
 func (c *CryptoReconciler) resolveTasks() orbital.TaskResolveFunc {
 	return func(ctx context.Context, job orbital.Job, _ orbital.TaskResolverCursor) (orbital.TaskResolverResult, error) {
 		var (
@@ -599,7 +600,24 @@ func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.J
 		}
 	}
 
+	if job.Status == orbital.JobStatusFailed {
+		err := c.updateEventError(ctx, job.ExternalID, job.ErrorMessage)
+		if err != nil {
+			return err
+		}
+	}
+
 	return c.updateSystemOnJobTerminate(ctx, system, jobData, taskType, status, jobDone)
+}
+
+func (c *CryptoReconciler) updateEventError(ctx context.Context, identifier string, errorMessage string) error {
+	orbitalErr := ParseOrbitalError(errorMessage)
+	event := &model.Event{Identifier: identifier}
+	event.ErrorCode = orbitalErr.Code
+	event.ErrorMessage = orbitalErr.Message
+
+	_, err := c.repo.Patch(ctx, event, *repo.NewQuery())
+	return err
 }
 
 func (c *CryptoReconciler) handleDoneSystemJob(
@@ -609,21 +627,7 @@ func (c *CryptoReconciler) handleDoneSystemJob(
 	taskType proto.TaskType,
 	jobData SystemActionJobData,
 ) error {
-	// Clean the event if it was successful as we no longer need to hold
-	// previous state for cancel/retry actions
-	_, err := c.repo.Delete(
-		ctx,
-		&model.Event{},
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().
-			Where(repo.IdentifierField, job.ExternalID).
-			Where(repo.TypeField, job.Type),
-		)),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to delete event: %w", err)
-	}
-
-	err = c.sendSystemAuditLogOnJobTerminate(ctx, system, jobData, taskType)
+	err := c.sendSystemAuditLogOnJobTerminate(ctx, system, jobData, taskType)
 	if err != nil {
 		log.Error(ctx, "failed to send audit log for successful system event", err)
 	}
@@ -642,6 +646,20 @@ func (c *CryptoReconciler) handleDoneSystemJob(
 		if err != nil {
 			return fmt.Errorf("failed to unmap system from tenant: %w", err)
 		}
+	}
+
+	// Clean the event if it was successful as we no longer need to hold
+	// previous state for cancel/retry actions
+	_, err = c.repo.Delete(
+		ctx,
+		&model.Event{},
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().
+			Where(repo.IdentifierField, job.ExternalID).
+			Where(repo.TypeField, job.Type),
+		)),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete event: %w", err)
 	}
 
 	return nil

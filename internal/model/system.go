@@ -22,6 +22,10 @@ type System struct {
 
 	// Status can be 'CONNECTED', 'DISCONNECTED', 'FAILED', or 'PROCESSING'
 	Status cmkapi.SystemStatus `gorm:"type:varchar(50);default:'DISCONNECTED'"`
+
+	// Only set for failed systems by the event table
+	ErrorCode    string `gorm:"->"`
+	ErrorMessage string `gorm:"->"`
 }
 
 // TableName returns the table name for System
