@@ -17,9 +17,8 @@ import (
 
 type CertUpdaterMock struct{}
 
-func (s *CertUpdaterMock) GetCertificatesForRotation(_ context.Context,
-) ([]*model.Certificate, error) {
-	return []*model.Certificate{}, nil
+func (s *CertUpdaterMock) RotateExpiredCertificates(_ context.Context) error {
+	return nil
 }
 
 func (s *CertUpdaterMock) RotateCertificate(_ context.Context,
