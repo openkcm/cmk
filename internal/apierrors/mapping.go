@@ -21,7 +21,7 @@ func (e *APIError) DefaultError() *APIError {
 	return InternalServerErrorMessage()
 }
 
-var APIErrorMapper = errs.NewMapper[*APIError](slices.Concat(
+var APIErrorMapper = errs.NewMapper(slices.Concat(
 	keyConfiguration,
 	keyVersion,
 	workflow,

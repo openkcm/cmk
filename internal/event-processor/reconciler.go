@@ -218,7 +218,6 @@ func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
 }
 
 // resolveTasks is called to resolve tasks for a job.
-// TODO: Process CMK internal errors to follow OrbitalFormat
 func (c *CryptoReconciler) resolveTasks() orbital.TaskResolveFunc {
 	return func(ctx context.Context, job orbital.Job, _ orbital.TaskResolverCursor) (orbital.TaskResolverResult, error) {
 		var (
@@ -232,7 +231,7 @@ func (c *CryptoReconciler) resolveTasks() orbital.TaskResolveFunc {
 			if err != nil {
 				return orbital.TaskResolverResult{
 					IsCanceled:           true,
-					CanceledErrorMessage: fmt.Sprintf("failed to get key task info: %v", err),
+					CanceledErrorMessage: GetOrbitalError(ctx, err),
 				}, nil
 			}
 		} else {
@@ -240,7 +239,7 @@ func (c *CryptoReconciler) resolveTasks() orbital.TaskResolveFunc {
 			if err != nil {
 				return orbital.TaskResolverResult{
 					IsCanceled:           true,
-					CanceledErrorMessage: fmt.Sprintf("failed to get system task info: %v", err),
+					CanceledErrorMessage: GetOrbitalError(ctx, err),
 				}, nil
 			}
 		}
