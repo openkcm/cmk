@@ -409,8 +409,8 @@ func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UU
 			return errs.Wrap(ErrGettingKeyConfigByID, err)
 		}
 
-		if system.Status == cmkapi.SystemStatusPROCESSING || system.Status == cmkapi.SystemStatusFAILED {
-			return ErrUnlinkSystemProcessingOrFailed
+		if system.Status == cmkapi.SystemStatusPROCESSING {
+			return ErrUnlinkSystemProcessing
 		}
 
 		dbSystem = system

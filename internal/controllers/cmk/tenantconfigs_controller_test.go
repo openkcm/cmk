@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -34,13 +34,23 @@ func startAPIServerTenantConfig(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux
 }
 
 func TestAPIController_GetTenantKeystores(t *testing.T) {
-	_, sv, tenant := startAPIServerTenantConfig(t)
+	db, sv, tenant := startAPIServerTenantConfig(t)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.PrimaryKeyID = ptr.PointTo(uuid.New())
+	}, testutils.WithAuthClientDataKC(authClient))
+	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	t.Run("Should 200 on get keystores", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: "/tenantConfigurations/keystores",
-			Tenant:   tenant,
+			Method:            http.MethodGet,
+			Endpoint:          "/tenantConfigurations/keystores",
+			Tenant:            tenant,
+			AdditionalContext: authClient.GetClientMap(),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -48,13 +58,15 @@ func TestAPIController_GetTenantKeystores(t *testing.T) {
 }
 
 // getWorkflowConfig is a helper function to retrieve workflow configuration via API
-func getWorkflowConfig(t *testing.T, sv cmkapi.ServeMux, tenant string) cmkapi.TenantWorkflowConfiguration {
+func getWorkflowConfig(t *testing.T, sv cmkapi.ServeMux,
+	tenant string, authClient testutils.AuthClientData) cmkapi.TenantWorkflowConfiguration {
 	t.Helper()
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:   http.MethodGet,
-		Endpoint: "/tenantConfigurations/workflow",
-		Tenant:   tenant,
+		Method:            http.MethodGet,
+		Endpoint:          "/tenantConfigurations/workflow",
+		Tenant:            tenant,
+		AdditionalContext: authClient.GetClientMap(),
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -72,11 +84,13 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+
 		// Setup: Create a workflow config
 		setupWorkflowConfig(t, r, ctx)
 
 		// Test
-		response := getWorkflowConfig(t, sv, tenant)
+		response := getWorkflowConfig(t, sv, tenant, authClient)
 
 		assert.NotNil(t, response.Enabled)
 		assert.True(t, *response.Enabled)
@@ -87,9 +101,13 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 	})
 
 	t.Run("Should 200 getting default workflow config when none exists", func(t *testing.T) {
-		_, sv, tenant := startAPIServerTenantConfig(t)
+		db, sv, tenant := startAPIServerTenantConfig(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
 
-		response := getWorkflowConfig(t, sv, tenant)
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+
+		response := getWorkflowConfig(t, sv, tenant, authClient)
 
 		assert.NotNil(t, response.Enabled)
 		assert.NotNil(t, response.MinimumApprovals)
@@ -116,10 +134,12 @@ func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Co
 }
 
 func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
-	t.Run("Should 200 updating workflow configuration", func(t *testing.T) {
+	t.Run("Should 200 updating workflow configuration for tenant admin", func(t *testing.T) {
 		db, sv, tenant := startAPIServerTenantConfig(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 		// Setup: Create initial workflow config
 		workflowConfig := testutils.NewDefaultWorkflowConfig(false)
@@ -140,10 +160,11 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodPatch,
-			Endpoint: "/tenantConfigurations/workflow",
-			Tenant:   tenant,
-			Body:     testutils.WithJSON(t, updateRequest),
+			Method:            http.MethodPatch,
+			Endpoint:          "/tenantConfigurations/workflow",
+			Tenant:            tenant,
+			Body:              testutils.WithJSON(t, updateRequest),
+			AdditionalContext: authClient.GetClientMap(),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -165,6 +186,8 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+
 		// Setup: Create initial workflow config
 		setupDefaultWorkflowConfig(t, r, ctx)
 
@@ -174,51 +197,14 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodPatch,
-			Endpoint: "/tenantConfigurations/workflow",
-			Tenant:   tenant,
-			Body:     testutils.WithJSON(t, updateRequest),
-		})
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("Should 200 updating workflow config for TenantAdmin", func(t *testing.T) {
-		db, sv, tenant := startAPIServerTenantConfig(t)
-		ctx := testutils.CreateCtxWithTenant(tenant)
-		r := sql.NewRepository(db)
-
-		// Setup initial config
-		setupDefaultWorkflowConfig(t, r, ctx)
-
-		tenantAdminGroup := testutils.NewGroup(func(g *model.Group) {
-			g.ID = uuid.New()
-			g.Name = "tenant-admin-group"
-			g.IAMIdentifier = "tenant-admin-group"
-			g.Role = constants.TenantAdminRole
-		})
-		testutils.CreateTestEntities(ctx, t, r, tenantAdminGroup)
-
-		clientData := map[any]any{
-			constants.ClientData: &auth.ClientData{
-				Identifier: uuid.NewString(),
-				Groups:     []string{tenantAdminGroup.IAMIdentifier},
-			},
-		}
-
-		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: ptr.PointTo(4),
-		}
-
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:            http.MethodPatch,
 			Endpoint:          "/tenantConfigurations/workflow",
 			Tenant:            tenant,
 			Body:              testutils.WithJSON(t, updateRequest),
-			AdditionalContext: clientData,
+			AdditionalContext: authClient.GetClientMap(),
 		})
 
-		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }
 
