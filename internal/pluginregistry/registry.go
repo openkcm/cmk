@@ -2,7 +2,8 @@ package cmkpluginregistry
 
 import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-	serviceapi "github.com/openkcm/plugin-sdk/service/api"
+
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 )
 
 type Registry struct {

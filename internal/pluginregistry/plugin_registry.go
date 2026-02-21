@@ -9,10 +9,10 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 
-	servicewrapper "github.com/openkcm/plugin-sdk/service/wrapper"
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/config"
+	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 )
 
 var ErrNoPluginInCatalog = errors.New("no plugin in catalog")
