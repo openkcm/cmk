@@ -17,38 +17,30 @@ type Registry interface {
 	io.Closer
 
 	// CertificateIssuer returns the active CertificateIssuer service.
-	// The boolean returns false if the service is not configured or available.
-	CertificateIssuer() (certificateissuer.CertificateIssuer, bool)
+	CertificateIssuer() (certificateissuer.CertificateIssuer, error)
 
 	// Notification returns the active Notification service.
-	// The boolean returns false if the service is not configured or available.
-	Notification() (notification.Notification, bool)
+	Notification() (notification.Notification, error)
 
 	// SystemInformation returns the active SystemInformation service.
-	// The boolean returns false if the service is not configured or available.
-	SystemInformation() (systeminformation.SystemInformation, bool)
+	SystemInformation() (systeminformation.SystemInformation, error)
 
 	// IdentityManagement returns the active IdentityManagement service.
-	// The boolean returns false if the service is not configured or available.
-	IdentityManagement() (identitymanagement.IdentityManagement, bool)
+	IdentityManagement() (identitymanagement.IdentityManagement, error)
 
 	// KeystoreManagements returns a map of all available KeystoreManagement services,
 	// typically keyed by their unique configuration name or provider ID (e.g., "aws-kms").
-	// The boolean returns false if no keystore services are loaded.
-	KeystoreManagements() (map[string]keystoremanagement.KeystoreManagement, bool)
+	KeystoreManagements() (map[string]keystoremanagement.KeystoreManagement, error)
 
 	// KeystoreManagementList returns a slice of all available KeystoreManagement services.
 	// This is optimized for scenarios where ordered iteration is preferred over key lookup.
-	// The boolean returns false if no keystore services are loaded.
-	KeystoreManagementList() ([]keystoremanagement.KeystoreManagement, bool)
+	KeystoreManagementList() ([]keystoremanagement.KeystoreManagement, error)
 
 	// KeyManagements returns a map of all available KeyManagement services,
 	// typically keyed by their unique configuration name or provider ID.
-	// The boolean returns false if no key management services are loaded.
-	KeyManagements() (map[string]keymanagement.KeyManagement, bool)
+	KeyManagements() (map[string]keymanagement.KeyManagement, error)
 
 	// KeyManagementList returns a slice of all available KeyManagement services.
 	// This is optimized for scenarios where ordered iteration is preferred over key lookup.
-	// The boolean returns false if no key management services are loaded.
-	KeyManagementList() ([]keymanagement.KeyManagement, bool)
+	KeyManagementList() ([]keymanagement.KeyManagement, error)
 }

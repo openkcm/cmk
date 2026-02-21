@@ -34,9 +34,9 @@ type SystemInformation struct {
 func NewSystemInformationManager(repo repo.Repo,
 	svcRegistry *cmkpluginregistry.Registry, systemCfg *config.System,
 ) (*SystemInformation, error) {
-	svc, ok := svcRegistry.SystemInformation()
-	if !ok {
-		return nil, errs.Wrapf(ErrNoPluginInCatalog, "system information not found in registry")
+	svc, err := svcRegistry.SystemInformation()
+	if err != nil {
+		return nil, err
 	}
 
 	return &SystemInformation{
