@@ -1,3 +1,5 @@
+SHELL := $(shell command -v bash || echo /bin/sh)
+
 .PHONY: default test coverage clean install-gotestsum squash codegen docker-compose clean-docker-compose swagger-ui \
 swagger-ui-stop go-imports install-gci install-golines install-goimports lint cmk-env docker-dev-build tidy \
 prepare_integration_test clean_integration_test build_test_plugins clean_plugins clean_test benchmark
@@ -15,10 +17,22 @@ GIT_PASSWORD=$(shell echo "" | git credential-$(GIT_CREDENTIAL_HELPER) get | awk
 SIS_PLUGIN ?= "uli"
 ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer,identity_management,notification}"
 
+
+PARALLEL := $(shell \
+	if command -v nproc >/dev/null 2>&1; then \
+		nproc | awk '{print $$1 * 4}'; \
+	elif command -v sysctl >/dev/null 2>&1; then \
+		sysctl -n hw.ncpu | awk '{print $$1 * 4}'; \
+	else \
+		echo 8; \
+	fi \
+)
+
 # get git values
-squash: HEAD := $(shell git rev-parse HEAD)
-squash: CURRENT_BRANCH := $(shell git branch --show-current)
-squash: MERGE_BASE := $(shell git merge-base origin/main $(CURRENT_BRANCH))
+HEAD := $(shell git rev-parse HEAD)
+CURRENT_BRANCH := $(shell git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD || echo HEAD)
+MERGE_BASE := $(shell git merge-base origin/main $$CURRENT_BRANCH 2>/dev/null || echo unknown)
+
 
 default: test
 
@@ -31,15 +45,33 @@ test: install-gotestsum build_test_plugins
 	mkdir -p cover
 	go clean -testcache
 
-	# Run tests with coverage
-	env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
-		--packages="./internal/... ./utils... ./cmd/... ./test/security/... ./test/db-migration/..." \
-		-- -count=1 -covermode=atomic -coverpkg=./... \
-		-args -test.gocoverdir=$(pwd)/cover
-
-	go tool covdata textfmt -i=./cover -o cover.out
-
-	$(MAKE) clean_test_plugins
+	@set -euo pipefail; \
+	status=0; \
+	PARALLEL=${PARALLEL}; \
+	echo "🧪 Running tests in parallel with $$PARALLEL cores..."; \
+	status=0; \
+	{ \
+		env GOMAXPROCS=$$PARALLEL TEST_ENV=make gotestsum \
+			--rerun-fails=10 \
+			--rerun-fails-abort-on-data-race \
+			--rerun-fails-max-failures=1550 \
+			--format testname \
+			--junitfile junit.xml \
+			--packages="./internal/... ./utils... ./cmd/... ./test/security/... ./test/db-migration/..." \
+			-- -count=1 -covermode=atomic -coverpkg=./... -parallel=$$PARALLEL \
+			-args -test.gocoverdir=$$(pwd)/cover; \
+	} || status=$$?; \
+	if [ -f junit.xml ] && grep -q '<failure' junit.xml; then \
+		echo "❌ Tests failed (detected in JUnit report)"; \
+		status=1; \
+	else \
+	  	echo "✅ All tests passed"; \
+	fi; \
+	go tool covdata textfmt -i=./cover -o cover.out || true; \
+	$(MAKE) clean_test_plugins >/dev/null 2>&1 || true; \
+	echo "🧹 Cleanup of test environment completed."; \
+	echo "🏁 Finished tests with status $$status"; \
+	exit $$status
 
 
 benchmark:
