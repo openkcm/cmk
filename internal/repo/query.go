@@ -239,10 +239,10 @@ func NewConditionalSelectField(alias string, ck ...CompositeKeyGroup) *SelectFie
 
 	for i, k := range ck {
 		if i != 0 {
-			fieldBuilder.WriteString(fmt.Sprintf(" %v ", isStrictToString(k.IsStrict)))
+			fmt.Fprintf(&fieldBuilder, " %v ", isStrictToString(k.IsStrict))
 		}
 
-		fieldBuilder.WriteString(fmt.Sprintf("(%s)", k.String()))
+		fmt.Fprintf(&fieldBuilder, "(%s)", k.String())
 	}
 
 	field := fmt.Sprintf("(%s)", fieldBuilder.String())
@@ -388,7 +388,7 @@ func (ckg *CompositeKeyGroup) String() string {
 
 	for i, ck := range ckg.CompositeKey.Conds {
 		if i != 0 {
-			strBuilder.WriteString(fmt.Sprintf(" %s ", isStrictToString(ckg.CompositeKey.IsStrict)))
+			fmt.Fprintf(&strBuilder, " %s ", isStrictToString(ckg.CompositeKey.IsStrict))
 		}
 
 		strBuilder.WriteString(ck.String())

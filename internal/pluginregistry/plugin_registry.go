@@ -13,6 +13,7 @@ import (
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/plugins"
 )
 
 var ErrNoPluginInCatalog = errors.New("no plugin in catalog")
@@ -21,10 +22,13 @@ var ErrNoPluginInCatalog = errors.New("no plugin in catalog")
 func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	catalogLogger := slog.With("context", "plugin-catalog")
 
+	buildInPlugins := catalog.CreateBuiltInPluginRegistry()
+	plugins.RegisterAllBuiltInPlugins(buildInPlugins)
+
 	svcRepo, err := servicewrapper.CreateServiceRepository(ctx, catalog.Config{
 		Logger:        catalogLogger,
 		PluginConfigs: cfg.Plugins,
-	})
+	}, buildInPlugins.Retrieve()...)
 	if err != nil {
 		catalogLogger.ErrorContext(ctx, "Error loading plugins", "error", err)
 		return nil, fmt.Errorf("error loading plugins: %w", err)
