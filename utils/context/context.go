@@ -20,6 +20,20 @@ var (
 	ErrExtractClientDataAuthContext = errors.New("could not extract field from client data auth context")
 )
 
+type Opt func(ctx context.Context) context.Context
+
+//nolint:fatcontext
+func New(ctx context.Context, opts ...Opt) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	for _, opt := range opts {
+		ctx = opt(ctx)
+	}
+	return ctx
+}
+
 func ExtractTenantID(ctx context.Context) (string, error) {
 	tenantID, ok := ctx.Value(nethttp.TenantKey).(string)
 	if !ok || tenantID == "" {
@@ -35,6 +49,12 @@ func CreateTenantContext(ctx context.Context, tenantSchema string) context.Conte
 	}
 
 	return context.WithValue(ctx, nethttp.TenantKey, tenantSchema)
+}
+
+func WithTenant(tenantSchema string) Opt {
+	return func(ctx context.Context) context.Context {
+		return CreateTenantContext(ctx, tenantSchema)
+	}
 }
 
 type key string
@@ -74,6 +94,12 @@ func InjectClientData(
 	ctx = context.WithValue(ctx, constants.ClientData, clientData)
 
 	return ctx
+}
+
+func WithInjectClientData(clientData *auth.ClientData, authContextFields []string) Opt {
+	return func(ctx context.Context) context.Context {
+		return InjectClientData(ctx, clientData, authContextFields)
+	}
 }
 
 func ExtractClientData(ctx context.Context) (*auth.ClientData, error) {
