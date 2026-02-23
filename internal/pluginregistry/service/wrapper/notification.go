@@ -15,7 +15,7 @@ func (repo *notificationRepository) Binder() any {
 }
 
 func (repo *notificationRepository) Constraints() api.Constraints {
-	return api.ExactlyOne()
+	return api.MaybeOne()
 }
 
 func (repo *notificationRepository) Versions() []api.Version {

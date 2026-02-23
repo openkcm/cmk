@@ -15,7 +15,7 @@ func (repo *identityManagementRepository) Binder() any {
 }
 
 func (repo *identityManagementRepository) Constraints() api.Constraints {
-	return api.ExactlyOne()
+	return api.MaybeOne()
 }
 
 func (repo *identityManagementRepository) Versions() []api.Version {
