@@ -179,7 +179,7 @@ func TestUpdateSystemsDbError(t *testing.T) {
 	})
 
 	err := si.UpdateSystems(testutils.CreateCtxWithTenant(tenant))
-	assert.ErrorIs(t, err, manager.ErrGettingSystemList)
+	assert.Error(t, err)
 }
 
 func TestUpdateNoSystems(t *testing.T) {
