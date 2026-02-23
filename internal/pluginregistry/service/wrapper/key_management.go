@@ -15,7 +15,7 @@ func (repo *keyManagementRepository) Binder() any {
 }
 
 func (repo *keyManagementRepository) Constraints() api.Constraints {
-	return api.ZeroOrMore()
+	return api.AtLeastOne()
 }
 
 func (repo *keyManagementRepository) Versions() []api.Version {

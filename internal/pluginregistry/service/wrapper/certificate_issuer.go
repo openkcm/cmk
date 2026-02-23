@@ -15,7 +15,7 @@ func (repo *certificateIssuerRepository) Binder() any {
 }
 
 func (repo *certificateIssuerRepository) Constraints() api.Constraints {
-	return api.MaybeOne()
+	return api.ExactlyOne()
 }
 
 func (repo *certificateIssuerRepository) Versions() []api.Version {

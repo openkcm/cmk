@@ -15,7 +15,7 @@ func (repo *systemInformationRepository) Binder() any {
 }
 
 func (repo *systemInformationRepository) Constraints() api.Constraints {
-	return api.MaybeOne()
+	return api.ExactlyOne()
 }
 
 func (repo *systemInformationRepository) Versions() []api.Version {
