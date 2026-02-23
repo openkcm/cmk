@@ -22,7 +22,6 @@ func builtin(p *Plugin) catalog.BuiltInPlugin {
 		configv1.ConfigServiceServer(p))
 }
 
-// Plugin is a simple test implementation of KeystoreProviderServer
 type Plugin struct {
 	certificateissuerv1.UnsafeCertificateIssuerServiceServer
 	configv1.UnsafeConfigServer
