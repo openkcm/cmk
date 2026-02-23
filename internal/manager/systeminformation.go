@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"strings"
 
 	"gorm.io/gorm"
 
@@ -47,21 +46,15 @@ func NewSystemInformationManager(repo repo.Repo,
 }
 
 func (m *SystemInformation) UpdateSystems(ctx context.Context) error {
-	var systems []*model.System
-
-	err := m.repo.List(ctx, model.System{}, &systems, *repo.NewQuery())
-	if err != nil {
-		return errs.Wrap(ErrGettingSystemList, err)
-	}
-
-	for _, sys := range systems {
-		err = m.updateSystem(ctx, sys)
-		if err != nil {
-			return err
+	return repo.ProcessInBatch(ctx, m.repo, repo.NewQuery(), repo.DefaultLimit, func(systems []*model.System) error {
+		for _, sys := range systems {
+			err := m.updateSystem(ctx, sys)
+			if err != nil {
+				return err
+			}
 		}
-	}
-
-	return nil
+		return nil
+	})
 }
 
 func (m *SystemInformation) UpdateSystemByExternalID(ctx context.Context, externalID string) error {
@@ -86,7 +79,7 @@ func (m *SystemInformation) updateSystem(ctx context.Context, system *model.Syst
 
 	resp, err := m.svc.GetSystemInfo(ctx, &systeminformation.GetSystemInfoRequest{
 		ID:   system.Identifier,
-		Type: strings.ToLower(system.Type),
+		Type: system.Type,
 	})
 	if err != nil {
 		log.Warn(ctx, "Could not get information from SIS", log.ErrorAttr(err))
