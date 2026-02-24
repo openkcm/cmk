@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/openkcm/cmk/internal/plugins"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 
