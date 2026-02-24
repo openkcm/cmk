@@ -560,7 +560,7 @@ func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orb
 
 // jobTerminationFunc is called when a job is terminated.
 //
-//nolint:cyclop
+//nolint:cyclop, funlen
 func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.Job) error {
 	taskType := proto.TaskType(proto.TaskType_value[job.Type])
 	status := cmkapi.SystemStatusFAILED
@@ -594,18 +594,36 @@ func (c *CryptoReconciler) jobTerminationFunc(ctx context.Context, job orbital.J
 
 	jobDone := job.Status == orbital.JobStatusDone
 
-	if jobDone {
+	switch job.Status {
+	case orbital.JobStatusDone:
 		err = c.handleDoneSystemJob(ctx, job, system, taskType, jobData)
 		if err != nil {
 			return err
 		}
-	}
+	case orbital.JobStatusFailed:
+		tasks, err := c.manager.ListTasks(ctx, orbital.ListTasksQuery{
+			JobID: job.ID,
+		})
+		if err != nil {
+			return err
+		}
 
-	if job.Status == orbital.JobStatusFailed {
+		errors := make([]string, 0, len(tasks))
+		for _, t := range tasks {
+			errors = append(errors, t.ErrorMessage)
+		}
+		message := strings.Join(errors, ":")
+		err = c.updateEventError(ctx, job.ExternalID, message)
+		if err != nil {
+			return err
+		}
+
+	case orbital.JobStatusConfirmCanceled, orbital.JobStatusUserCanceled, orbital.JobStatusResolveCanceled:
 		err := c.updateEventError(ctx, job.ExternalID, job.ErrorMessage)
 		if err != nil {
 			return err
 		}
+	default:
 	}
 
 	return c.updateSystemOnJobTerminate(ctx, system, jobData, taskType, status, jobDone)
