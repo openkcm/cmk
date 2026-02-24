@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/openkcm/cmk/internal/plugins"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 
@@ -14,6 +13,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/config"
 	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
+	"github.com/openkcm/cmk/internal/plugins"
 )
 
 var ErrNoPluginInCatalog = errors.New("no plugin in catalog")
