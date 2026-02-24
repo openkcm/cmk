@@ -3,6 +3,7 @@ module github.com/openkcm/cmk
 go 1.25.6
 
 require (
+	buf.build/go/protovalidate v1.1.3
 	github.com/Azure/go-amqp v1.5.1
 	github.com/avast/retry-go/v5 v5.0.0
 	github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8 v8.9.0
@@ -51,7 +52,6 @@ require (
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260209202127-80ab13bee0bf.1 // indirect
-	buf.build/go/protovalidate v1.1.3 // indirect
 	cel.dev/expr v0.25.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
