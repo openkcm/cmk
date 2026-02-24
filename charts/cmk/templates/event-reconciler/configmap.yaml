@@ -24,11 +24,15 @@ data:
     status:
       {{- toYaml .status | nindent 6 }}
 
-    # Telemetry configuration
+    audit:
+      {{- toYaml .audit | nindent 6 }}
+
+    services:
+      {{- toYaml .services | nindent 6 }}
+
     telemetry:
       {{- toYaml .telemetry | nindent 6 }}
 
-    # Database configuration
     database:
       {{- toYaml .database | nindent 6 }}
 
