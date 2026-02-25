@@ -2,6 +2,7 @@ package cmkpluginregistry
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -34,12 +35,24 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 		return nil, fmt.Errorf("error loading plugins: %w", err)
 	}
 
-	pluginBuildInfos := make([]string, 0)
-	for _, pluginInfo := range svcRepo.RawCatalog.ListPluginInfo() {
-		pluginBuildInfos = append(pluginBuildInfos, pluginInfo.Build())
+	baseConfig := &cfg.BaseConfig
+
+	defaultBuildInfo := "{}"
+	data, err := json.Marshal(baseConfig.Application.BuildInfo.Component)
+	if err == nil {
+		defaultBuildInfo = string(data)
 	}
 
-	err = commoncfg.UpdateComponentsOfBuildInfo(&cfg.BaseConfig, pluginBuildInfos...)
+	pluginBuildInfos := make([]string, 0)
+	for _, pluginInfo := range svcRepo.RawCatalog.ListPluginInfo() {
+		buildInfo := pluginInfo.Build()
+		if buildInfo == "{}" {
+			buildInfo = defaultBuildInfo
+		}
+		pluginBuildInfos = append(pluginBuildInfos, buildInfo)
+	}
+
+	err = commoncfg.UpdateComponentsOfBuildInfo(baseConfig, pluginBuildInfos...)
 	if err != nil {
 		slogctx.Error(ctx, "Failed to update components of build info")
 	}

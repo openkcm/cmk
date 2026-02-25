@@ -5,6 +5,7 @@ import (
 
 	certificateissuernoop "github.com/openkcm/cmk/internal/plugins/certificate-issuer/noop"
 	identitymanagementnoop "github.com/openkcm/cmk/internal/plugins/identity-management/noop"
+	identitymanagementscim "github.com/openkcm/cmk/internal/plugins/identity-management/scim"
 	keymanagementnoop "github.com/openkcm/cmk/internal/plugins/key-management/noop"
 	keystoremanagementnoop "github.com/openkcm/cmk/internal/plugins/keystore-management/noop"
 	notificationnoop "github.com/openkcm/cmk/internal/plugins/notification/noop"
@@ -13,6 +14,7 @@ import (
 
 func RegisterAllBuiltInPlugins(registry catalog.BuiltInPluginRegistry) {
 	identitymanagementnoop.Register(registry)
+	identitymanagementscim.Register(registry)
 	notificationnoop.Register(registry)
 	systeminformationnoop.Register(registry)
 	certificateissuernoop.Register(registry)
