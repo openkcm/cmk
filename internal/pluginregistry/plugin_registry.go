@@ -25,6 +25,9 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	buildInPlugins := catalog.CreateBuiltInPluginRegistry()
 	plugins.RegisterAllBuiltInPlugins(buildInPlugins)
 
+	buildInPlugins := catalog.CreateBuiltInPluginRegistry()
+	plugins.RegisterAllBuiltInPlugins(buildInPlugins)
+
 	svcRepo, err := servicewrapper.CreateServiceRepository(ctx, catalog.Config{
 		Logger:        catalogLogger,
 		PluginConfigs: cfg.Plugins,
