@@ -27,6 +27,9 @@ data:
     audit:
       {{- toYaml .audit | nindent 6 }}
 
+    plugins:
+    {{ include "cmk.plugins" . | nindent 6 }}
+
     services:
       {{- toYaml .services | nindent 6 }}
 
