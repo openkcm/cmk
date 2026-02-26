@@ -85,15 +85,6 @@ taskCLI:
 
   topologySpreadConstraints: []
 
-dbMigrator:
-  image:
-    command: "/bin/db-migrator"
-    args:
-      - --target=all
-      - --type=schema
-
-  deploy: true
-
 eventReconciler:
   image:
     command: "/bin/event-reconciler"

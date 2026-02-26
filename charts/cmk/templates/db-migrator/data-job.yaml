@@ -1,13 +1,12 @@
-{{- if .Values.dbMigrator.deploy }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "cmk.name" . }}-db-migrator
+  name: {{ include "cmk.name" . }}-data-db-migrator
   labels:
     {{- include "cmk.db-migrator.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": "pre-install, pre-upgrade"
+    "helm.sh/hook": "post-install, post-upgrade"
     "helm.sh/hook-weight": "0"
     "helm.sh/hook-delete-policy": "before-hook-creation,hook-succeeded"
 spec:
@@ -47,13 +46,10 @@ spec:
           {{- end }}
           image: "{{ template "cmk.image" (tuple .Values.image $.Chart.AppVersion) }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- with .Values.dbMigrator.image.command }}
-          command: [ "{{- toYaml . }}" ]
-          {{- end }}
-          {{- with .Values.dbMigrator.image.args }}
+          command: ["/bin/db-migrator"]
           args:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            - --target=all
+            - --type=data
           env:
             - name: MY_POD_IP
               valueFrom:
@@ -92,4 +88,3 @@ spec:
       {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
-{{- end }}

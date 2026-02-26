@@ -314,6 +314,76 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 	)
 }
 
+func TestGetAllSystemsOrderByIdentifier(t *testing.T) {
+	m, db, tenant := SetupSystemManager(t, nil)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+	r := sql.NewRepository(db)
+
+	// Create systems with identifiers in non-alphabetical order
+	system1 := testutils.NewSystem(
+		func(s *model.System) {
+			s.Identifier = "system-charlie"
+			s.Region = "us-east-2"
+		},
+	)
+	system2 := testutils.NewSystem(
+		func(s *model.System) {
+			s.Identifier = "system-alpha"
+			s.Region = "us-east-1"
+		},
+	)
+	system3 := testutils.NewSystem(
+		func(s *model.System) {
+			s.Identifier = "system-bravo"
+			s.Region = "us-east-1"
+		},
+	)
+
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		r,
+		system1,
+		system2,
+		system3,
+	)
+
+	t.Run("Should get all systems ordered by identifier ascending", func(t *testing.T) {
+		filter := manager.SystemFilter{
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
+		}
+		allSystems, total, err := m.GetAllSystems(ctx, filter)
+		assert.NoError(t, err)
+		assert.Equal(t, 3, total)
+		require.Len(t, allSystems, 3)
+
+		// Verify the systems are ordered by identifier in ascending order
+		assert.Equal(t, "system-alpha", allSystems[0].Identifier)
+		assert.Equal(t, "system-bravo", allSystems[1].Identifier)
+		assert.Equal(t, "system-charlie", allSystems[2].Identifier)
+	})
+
+	t.Run("Should get filtered systems ordered by identifier ascending", func(t *testing.T) {
+		filter := manager.SystemFilter{
+			Region: "us-east-1",
+			Skip:   constants.DefaultSkip,
+			Top:    constants.DefaultTop,
+			Count:  true,
+		}
+		allSystems, total, err := m.GetAllSystems(ctx, filter)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, total)
+		require.Len(t, allSystems, 2)
+
+		// Verify the systems are ordered by identifier in ascending order
+		assert.Equal(t, "system-alpha", allSystems[0].Identifier)
+		assert.Equal(t, "system-bravo", allSystems[1].Identifier)
+	})
+}
+
 func TestGetSystemByID(t *testing.T) {
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
