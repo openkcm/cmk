@@ -2,15 +2,17 @@ package client
 
 import (
 	"context"
+	"errors"
 
 	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 
+	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 )
 
-const (
-	PluginName = "NOTIFICATION"
+var (
+	ErrLoadNotificationPlugin = errors.New("failed to load notification plugin")
 )
 
 type Data struct {
@@ -41,10 +43,15 @@ func New(
 func createNotificationClient(
 	svcRegistry *cmkpluginregistry.Registry,
 ) (notificationv1.NotificationServiceClient, error) {
-	notification := svcRegistry.LookupByTypeAndName(notificationv1.Type, PluginName)
-	if notification == nil {
+	plugins := svcRegistry.LookupByType(notificationv1.Type)
+	if len(plugins) == 0 {
 		return nil, cmkpluginregistry.ErrNoPluginInCatalog
 	}
+	if len(plugins) > 1 {
+		return nil, errs.Wrapf(ErrLoadNotificationPlugin, "multiple notification plugins found in catalog")
+	}
+
+	notification := plugins[0]
 
 	return notificationv1.NewNotificationServiceClient(notification.ClientConnection()), nil
 }
