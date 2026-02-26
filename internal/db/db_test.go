@@ -3,6 +3,7 @@ package db_test
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -368,4 +369,50 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, db.ErrEmptyRegionTechName, err)
 	})
+}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name          string
+		schema        string
+		expectedError error
+	}{
+		{
+			name:   "valid schema",
+			schema: "KMS_validschema",
+		},
+		{
+			name:          "schema name too long",
+			schema:        "KMS_" + strings.Repeat("a", 60), // 64+ characters
+			expectedError: db.ErrSchemaNameLength,
+		},
+		{
+			name:          "schema name too short",
+			schema:        "sc",
+			expectedError: db.ErrInvalidSchema,
+		},
+		{
+			name:          "namespace validation fails forbidden prefix",
+			schema:        "pg_invalid",
+			expectedError: db.ErrInvalidSchema,
+		},
+		{
+			name:          "namespace validation fails regex check",
+			schema:        "invalid@name",
+			expectedError: db.ErrInvalidSchema,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := db.ValidateSchema(tt.schema)
+			if tt.expectedError != nil {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, tt.expectedError)
+			} else {
+				assert.NoError(t, err)
+			}
+		},
+		)
+	}
 }

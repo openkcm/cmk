@@ -26,6 +26,9 @@ CMK (Customer-Managed-Keys) layer of Key Management Service.
     - [Building](#building)
     - [Unit tests](#unit-tests)
       - [How to write Unit Tests](#how-to-write-unit-tests)
+    - [Database Migrations](#database-migrations)
+      - [Data Migration](#data-migrations)
+      - [Destructive Migrations](#destructive-migrations)
     - [Integration tests](#integration-tests)
     - [Debugging](#debugging)
     - [API Implementations](#api-implementations)
@@ -35,6 +38,7 @@ CMK (Customer-Managed-Keys) layer of Key Management Service.
   - [CLI tools](#cli-tools)
     - [Tenant Manager CLI](#tenant-manager-cli)
     - [Async Task CLI](#async-task-cli)
+    - [DB Migrator](#db-migrator)
   - [Authors](#authors)
   - [Version History](#version-history)
   - [License](#license)
@@ -251,6 +255,66 @@ Refer to code documentation on the following functions for it's usage and availa
 
 <a name="integration-tests"></a>
 
+### Database Migrations
+
+Migrations are ran as K8s Jobs which uses [DB Migrator Binary](#db-migrator). There are two migration jobs:
+- Schema Migrations: Runs before the cluster is create and blocks the cluster creation until it finishes
+- Data Migrations: Runs at the same time as the cluster is being initiated, running in parallel
+
+The migrations are located in the migrations dir and are separated as follows:
+
+```
+migrations
+
+└───shared
+│   │   
+│   └───schema
+│   │   │   0001_migration.sql
+│   │   │   ...
+│   │    
+│   └───data
+│       │   main.go
+│       │   0001_migration.go
+│       │   ...
+
+└───public
+│   │   
+│   └───schema
+│   │   │   0001_migration.sql
+│   │   │   ...
+│   │    
+│   └───data
+│       │   main.go
+│       │   0001_migration.go
+│       │   ...
+```
+
+
+#### Data Migrations
+Data migrations are specified in Go implementing the Goose AddMigrationContext interface. 
+
+This is done in GO instead of SQL as it might require more complex changes that would be harder to implement directly in SQL.
+
+For the GO based migrations, they need to be created and declared explicity. As we are only using GO based migrations for data migrations, on each data dir, main.go needs to be extended on the GetMigrations() method
+
+#### Destructive Migrations
+Migrations that require destructive changes, are done in 2 Steps (Expand & Contract). This will result in needing two releases to finish the changes and to provide an implementation supporting both the old entity and the new one
+
+**Expand**:
+1. Create the new entry
+2. Provide an implementation to keep reading from the older entity but have a dual write to the new one
+3. Provide a data migration from the older one to the new one
+
+**Contract**:
+1. Remove the dual write 
+2. Read from the new entity 
+3. Remove the older entity
+
+The data migration need to have a mechanism to check if it should execute. This check is needed as on a new database with fully applied migrations, as the schema migrations run before the data migrations, the data migrations related with destructive changes should not be executed.
+
+NOTE: Remember that certain changes can have side effects, such as if changing to table indexes and key constraints need to be checked
+
+
 ### Integration tests
 
 Running integration tests can be done through a Make command:
@@ -453,7 +517,8 @@ make task-cli ARGS="--help"
 A command-line tool to trigger db-migrations. It can run schema and data migrations 
 for public and tenant schemas 
 
-This tool should be run as a K8s Job in the cluster as a helm pre-hook to run schema migrations before other deployments
+This tool should be run as a K8s Job in the cluster to run migrations
+
 
 To list all supported commands, run:
 ```shell
