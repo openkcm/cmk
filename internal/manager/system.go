@@ -99,6 +99,11 @@ func (s SystemFilter) GetQuery(_ context.Context) *repo.Query {
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
 	}
 
+	query = query.Order(repo.OrderField{
+		Field:     repo.IdentifierField,
+		Direction: repo.Asc,
+	})
+
 	return query
 }
 

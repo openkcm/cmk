@@ -36,12 +36,12 @@ var (
 	ErrDefaultTenantCertificateAlreadyExists = errors.New(
 		"default tenant certificate already exists; only one is allowed per tenant",
 	)
-	ErrDefaultTenantError = errors.New("default tenant cert error")
+	ErrDefaultTenantError          = errors.New("default tenant cert error")
+	ErrLoadCertificateIssuerPlugin = errors.New("failed to load certificate issuer plugin")
 )
 
 const (
-	CertificateIssuerPluginName = "CERT_ISSUER"
-	DefaultKeyBitSize           = 3076
+	DefaultKeyBitSize = 3076
 )
 
 type CertificateManager struct {
@@ -312,10 +312,14 @@ func (m *CertificateManager) isTenantDefaultCertExist(ctx context.Context) (bool
 func createCertificateIssuerClient(
 	svcRegistry *cmkpluginregistry.Registry,
 ) (certissuerv1.CertificateIssuerServiceClient, error) {
-	certIssuer := svcRegistry.LookupByTypeAndName(certissuerv1.Type, CertificateIssuerPluginName)
-	if certIssuer == nil {
+	plugins := svcRegistry.LookupByType(certissuerv1.Type)
+	if len(plugins) == 0 {
 		return nil, ErrNoPluginInCatalog
 	}
+	if len(plugins) > 1 {
+		return nil, errs.Wrapf(ErrLoadCertificateIssuerPlugin, "multiple certificate issuer plugins found in catalog")
+	}
+	certIssuer := plugins[0]
 
 	return certissuerv1.NewCertificateIssuerServiceClient(certIssuer.ClientConnection()), nil
 }
