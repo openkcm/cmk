@@ -195,6 +195,12 @@ var PolicyData = policies{
 						ActionRead,
 					},
 				},
+				{
+					ID: ResourceTypeTenant,
+					Actions: []Action{
+						ActionRead,
+					},
+				},
 			},
 		},
 		{

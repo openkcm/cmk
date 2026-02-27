@@ -2538,6 +2538,7 @@ components:
             SYSTEM + LINK: key configuration ID
             SYSTEM + SWITCH: new key configuration ID
             SYSTEM + UNLINK: needs no parameters
+            KEY_CONFIGURATION + UPDATE_PRIMARY: new key ID
         expiresAt:
           description: The datetime of when the workflow expires (RFC3339 format)
           type: string
