@@ -51,6 +51,11 @@ func buildCfg(t *testing.T) *config.Config {
 		Certificates: config.Certificates{
 			ValidityDays: config.MinCertificateValidityDays,
 		},
+		Services: config.Services{
+			Registry: &commoncfg.GRPCClient{
+				Enabled: true,
+			},
+		},
 		Database: dbCfg,
 		Plugins:  testutils.SetupMockPlugins(testutils.SystemInfo),
 	}
