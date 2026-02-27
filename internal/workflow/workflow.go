@@ -536,12 +536,12 @@ type workflowHandlerFunc func(context.Context) error
 func (l *Lifecycle) executeWorkflowAction(ctx context.Context) error {
 	handlers := map[string]map[string]workflowHandlerFunc{
 		ArtifactTypeKey.String(): {
-			ActionTypeUpdateState.String():   l.updateKeyState,
-			ActionTypeDelete.String():        l.deleteKey,
-			ActionTypeUpdatePrimary.String(): l.updatePrimaryKey,
+			ActionTypeUpdateState.String(): l.updateKeyState,
+			ActionTypeDelete.String():      l.deleteKey,
 		},
 		ArtifactTypeKeyConfiguration.String(): {
-			ActionTypeDelete.String(): l.deleteKeyConfiguration,
+			ActionTypeDelete.String():        l.deleteKeyConfiguration,
+			ActionTypeUpdatePrimary.String(): l.updatePrimaryKey,
 		},
 		ArtifactTypeSystem.String(): {
 			ActionTypeLink.String():   l.systemLinkOrSwitch,
