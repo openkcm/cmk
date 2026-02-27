@@ -5,21 +5,29 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 
 	"github.com/pressly/goose/v3"
 
+	slogctx "github.com/veqryn/slog-context"
+
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db/dsn"
+	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	shareddatamigrations "github.com/openkcm/cmk/migrations/shared/data"
+	tenantdatamigrations "github.com/openkcm/cmk/migrations/tenant/data"
 )
 
 var ErrCommandUnsuported = errors.New("command not supported")
 
 type (
-	MigrationType   string
-	MigrationTarget string
-	migrateFunc     func(ctx context.Context, db *sql.DB, dir string) error
+	MigrationType      string
+	MigrationTarget    string
+	migrateFunc        func(provider *goose.Provider) ([]*goose.MigrationResult, error)
+	MigrationResultMap map[string][]*goose.MigrationResult // Map[schema]migrationResults
 )
 
 const (
@@ -48,9 +56,9 @@ type Migration struct {
 }
 
 type Migrator interface {
-	MigrateTenantToLatest(ctx context.Context, tenant *model.Tenant) error
-	MigrateToLatest(ctx context.Context, migration Migration) error
-	MigrateTo(ctx context.Context, migration Migration, version int64) error
+	MigrateTenantToLatest(ctx context.Context, tenant *model.Tenant) ([]*goose.MigrationResult, error)
+	MigrateToLatest(ctx context.Context, migration Migration) (MigrationResultMap, error)
+	MigrateTo(ctx context.Context, migration Migration, version int64) (MigrationResultMap, error)
 }
 
 func NewMigrator(r repo.Repo, cfg *config.Config) (Migrator, error) {
@@ -72,12 +80,13 @@ func NewMigrator(r repo.Repo, cfg *config.Config) (Migrator, error) {
 func (m *migrator) MigrateToLatest(
 	ctx context.Context,
 	migration Migration,
-) error {
-	return m.migrate(ctx, migration, func(ctx context.Context, db *sql.DB, dir string) error {
+) (MigrationResultMap, error) {
+	return m.migrate(ctx, migration, func(gp *goose.Provider) ([]*goose.MigrationResult, error) {
 		if migration.Downgrade {
-			return goose.DownContext(ctx, db, dir)
+			r, err := gp.Down(ctx)
+			return []*goose.MigrationResult{r}, err
 		}
-		return goose.UpContext(ctx, db, dir)
+		return gp.Up(ctx)
 	})
 }
 
@@ -88,58 +97,74 @@ func (m *migrator) MigrateTo(
 	ctx context.Context,
 	migration Migration,
 	version int64,
-) error {
-	return m.migrate(ctx, migration, func(ctx context.Context, db *sql.DB, dir string) error {
+) (MigrationResultMap, error) {
+	return m.migrate(ctx, migration, func(gp *goose.Provider) ([]*goose.MigrationResult, error) {
 		if migration.Downgrade {
-			return goose.DownToContext(ctx, db, dir, version)
+			return gp.DownTo(ctx, version)
 		}
-		return goose.UpToContext(ctx, db, dir, version)
+		return gp.UpTo(ctx, version)
 	})
 }
 
 // MigrateTenantToLatest runs schema migrations on the tenant up to the latest version
 // It's inteded to be used only whenever creating new tenants
-func (m *migrator) MigrateTenantToLatest(ctx context.Context, tenant *model.Tenant) error {
+func (m *migrator) MigrateTenantToLatest(
+	ctx context.Context,
+	tenant *model.Tenant,
+) ([]*goose.MigrationResult, error) {
 	mig := Migration{
 		Downgrade: false,
 		Type:      SchemaMigration,
 		Target:    TenantTarget,
 	}
 
-	return m.migrateTenant(ctx, mig, tenant, func(ctx context.Context, db *sql.DB, dir string) error {
-		return goose.UpContext(ctx, db, dir)
-	})
+	return m.runMigration(
+		ctx,
+		mig,
+		tenant.SchemaName,
+		func(p *goose.Provider) ([]*goose.MigrationResult, error) {
+			return p.Up(ctx)
+		},
+	)
 }
 
 func (m *migrator) migrate(
 	ctx context.Context,
 	migration Migration,
-	migrateFunc migrateFunc,
-) error {
+	f migrateFunc,
+) (MigrationResultMap, error) {
 	switch migration.Target {
 	case SharedTarget:
-		return m.runMigration(ctx, migration, SharedSchema, func(ctx context.Context, db *sql.DB, dir string) error {
-			return migrateFunc(ctx, db, dir)
-		})
+		res, err := m.runMigration(ctx, migration, SharedSchema, f)
+		if err != nil {
+			return nil, err
+		}
+		return MigrationResultMap{
+			SharedSchema: res,
+		}, nil
 	case TenantTarget:
-		return m.migrateTenants(ctx, migration, func(ctx context.Context, db *sql.DB, dir string) error {
-			return migrateFunc(ctx, db, dir)
+		return m.migrateTenants(ctx, migration, func(p *goose.Provider) ([]*goose.MigrationResult, error) {
+			return f(p)
 		})
 	case AllTarget:
-		mig := migration
-		mig.Target = SharedTarget
-		err := m.runMigration(ctx, mig, SharedSchema, func(ctx context.Context, db *sql.DB, dir string) error {
-			return migrateFunc(ctx, db, dir)
+		migration.Target = SharedTarget
+		sharedRes, err := m.runMigration(ctx, migration, SharedSchema, f)
+		if err != nil {
+			return nil, err
+		}
+		migration.Target = TenantTarget
+		tenantsRes, err := m.migrateTenants(ctx, migration, func(p *goose.Provider) ([]*goose.MigrationResult, error) {
+			return f(p)
 		})
 		if err != nil {
-			return err
+			return MigrationResultMap{
+				SharedSchema: sharedRes,
+			}, err
 		}
-		mig.Target = TenantTarget
-		return m.migrateTenants(ctx, mig, func(ctx context.Context, db *sql.DB, dir string) error {
-			return migrateFunc(ctx, db, dir)
-		})
+		tenantsRes[SharedSchema] = sharedRes
+		return tenantsRes, nil
 	default:
-		return ErrUnsupportedMigration
+		return nil, ErrUnsupportedMigration
 	}
 }
 
@@ -147,79 +172,112 @@ func (m *migrator) migrateTenants(
 	ctx context.Context,
 	migration Migration,
 	f migrateFunc,
-) error {
-	return repo.ProcessInBatch(ctx, m.r, repo.NewQuery(), repo.DefaultLimit, func(tenants []*model.Tenant) error {
+) (MigrationResultMap, error) {
+	res := make(MigrationResultMap)
+	err := repo.ProcessInBatch(ctx, m.r, repo.NewQuery(), repo.DefaultLimit, func(tenants []*model.Tenant) error {
 		for _, t := range tenants {
-			err := m.migrateTenant(ctx, migration, t, f)
+			iRes, err := m.runMigration(ctx, migration, t.SchemaName, f)
 			if err != nil {
 				return err
 			}
+			res[t.ID] = iRes
 		}
 		return nil
 	})
-}
-
-func (m *migrator) migrateTenant(
-	ctx context.Context,
-	migration Migration,
-	t *model.Tenant,
-	f migrateFunc,
-) error {
-	return m.runMigration(ctx, migration, t.SchemaName, func(ctx context.Context, db *sql.DB, dir string) error {
-		_, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+QuoteSchema(t.SchemaName))
-		if err != nil {
-			return err
-		}
-		return f(ctx, db, dir)
-	})
+	return res, err
 }
 
 func (m *migrator) runMigration(
 	ctx context.Context,
-	migration Migration,
+	mig Migration,
 	schema string,
-	f migrateFunc,
-) error {
-	dbCon, err := m.newSchemaDBCon(migration, schema)
+	f func(*goose.Provider) ([]*goose.MigrationResult, error),
+) ([]*goose.MigrationResult, error) {
+	dbCon, err := m.newSchemaDBCon(schema)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer dbCon.Close()
-	dir, err := m.getMigrationDir(migration)
-	if err != nil {
-		return err
+
+	ctx = slogctx.With(ctx,
+		slog.String("Schema", schema),
+		slog.Any("Migration", mig),
+	)
+
+	if mig.Target == TenantTarget {
+		err := ValidateSchema(schema)
+		if err != nil {
+			return nil, err
+		}
+
+		query := "CREATE SCHEMA IF NOT EXISTS " + quoteSchema(schema)
+
+		// NOSONAR is required here because DDL statements cannot be parameterized.
+		// The schema variable is strictly validated and quoted prior to this execution.
+		_, err = dbCon.ExecContext(ctx, query) // NOSONAR
+		if err != nil {
+			return nil, err
+		}
 	}
-	return f(ctx, dbCon, dir)
-}
 
-func (m *migrator) newSchemaDBCon(
-	migration Migration,
-	schema string,
-) (*sql.DB, error) {
-	schema = QuoteSchema(schema)
-
-	dsn := fmt.Sprintf("%s search_path=%s", m.dsn, schema)
-	db, err := goose.OpenDBWithDriver(string(goose.DialectPostgres), dsn)
+	provider, err := m.newGooseProvider(dbCon, mig)
+	if errors.Is(err, goose.ErrNoMigrations) {
+		log.Warn(ctx, "No migration files found, skipping")
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	switch migration.Type {
+	return f(provider)
+}
+
+func (m *migrator) newGooseProvider(dbCon *sql.DB, mig Migration) (*goose.Provider, error) {
+	var versionTable string
+	var goMigrations []*goose.Migration
+	switch mig.Type {
 	case DataMigration:
-		schema = fmt.Sprintf("%s.%s", schema, DataMigrationTable)
+		versionTable = DataMigrationTable
+		if mig.Target == TenantTarget {
+			goMigrations = tenantdatamigrations.GetMigrations()
+		} else {
+			goMigrations = shareddatamigrations.GetMigrations()
+		}
 	case SchemaMigration:
-		schema = fmt.Sprintf("%s.%s", schema, SchemaMigrationTable)
+		versionTable = SchemaMigrationTable
 	default:
 		return nil, ErrUnsupportedMigration
 	}
 
-	goose.SetTableName(schema)
+	dir, err := m.getMigrationDir(mig)
+	if err != nil {
+		return nil, err
+	}
 
-	return db, nil
+	provider, err := goose.NewProvider(
+		goose.DialectPostgres,
+		dbCon,
+		os.DirFS(dir),
+		goose.WithTableName(versionTable),
+		goose.WithGoMigrations(goMigrations...),
+	)
+
+	return provider, err
 }
 
-func QuoteSchema(schema string) string {
-	return fmt.Sprintf("\"%s\"", schema)
+func (m *migrator) newSchemaDBCon(
+	schema string,
+) (*sql.DB, error) {
+	schema = quoteSchema(schema)
+
+	dsn := fmt.Sprintf("%s search_path=%s", m.dsn, schema)
+	db, err := goose.OpenDBWithDriver(string(goose.DialectPostgres), dsn)
+
+	return db, err
+}
+
+func quoteSchema(schema string) string {
+	return fmt.Sprintf(`"%s"`, schema)
 }
 
 func (m *migrator) getMigrationDir(mig Migration) (string, error) {

@@ -15,6 +15,7 @@ import (
 	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
 	"gorm.io/gorm"
@@ -137,9 +138,11 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 	cfg.dbCon.Migrator = config.Migrator{
 		Shared: config.MigrationPath{
 			Schema: filepath.Join(migrationPath, "/shared/schema"),
+			Data:   filepath.Join(migrationPath, "/shared/data"),
 		},
 		Tenant: config.MigrationPath{
 			Schema: filepath.Join(migrationPath, "/tenant/schema"),
+			Data:   filepath.Join(migrationPath, "/tenant/data"),
 		},
 	}
 
@@ -259,13 +262,13 @@ func runMigration(
 
 	// Not set, migrate to latest
 	if version == nil {
-		err := migrator.MigrateToLatest(tb.Context(), req)
+		_, err := migrator.MigrateToLatest(tb.Context(), req)
 		assert.NoError(tb, err)
 		return
 	}
 
 	if *version != 0 {
-		err := migrator.MigrateTo(tb.Context(), req, *version)
+		_, err := migrator.MigrateTo(tb.Context(), req, *version)
 		assert.NoError(tb, err)
 	} else {
 		return
@@ -441,14 +444,20 @@ func NewMigrator() db.Migrator {
 	return &migrator{}
 }
 
-func (m *migrator) MigrateTenantToLatest(ctx context.Context, tenant *model.Tenant) error {
-	return nil
+func (m *migrator) MigrateTenantToLatest(ctx context.Context, tenant *model.Tenant) ([]*goose.MigrationResult, error) {
+	return nil, nil
 }
 
-func (m *migrator) MigrateToLatest(ctx context.Context, migration db.Migration) error {
-	return nil
+//nolint:nilnil
+func (m *migrator) MigrateToLatest(ctx context.Context, migration db.Migration) (db.MigrationResultMap, error) {
+	return nil, nil
 }
 
-func (m *migrator) MigrateTo(ctx context.Context, migration db.Migration, version int64) error {
-	return nil
+//nolint:nilnil
+func (m *migrator) MigrateTo(
+	ctx context.Context,
+	migration db.Migration,
+	version int64,
+) (db.MigrationResultMap, error) {
+	return nil, nil
 }

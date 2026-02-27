@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jxskiss/base62"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
@@ -62,7 +63,8 @@ func NewSystem(m func(*model.System)) *model.System {
 type KeyConfigOpt func(*model.KeyConfiguration)
 
 func NewKeyConfig(m func(*model.KeyConfiguration),
-	opts ...KeyConfigOpt) *model.KeyConfiguration {
+	opts ...KeyConfigOpt,
+) *model.KeyConfiguration {
 	keyConfig := model.KeyConfiguration{
 		ID:         uuid.New(),
 		Name:       uuid.NewString(),
@@ -243,10 +245,11 @@ func NewKeyLabel(m func(l *model.KeyLabel)) *model.KeyLabel {
 
 func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 	tenantID := uuid.NewString()
+	schema := "_" + base62.EncodeToString([]byte(tenantID))
 	mut := NewMutator(func() model.Tenant {
 		return model.Tenant{
 			TenantModel: multitenancy.TenantModel{
-				SchemaName: tenantID,
+				SchemaName: schema,
 				DomainURL:  tenantID,
 			},
 			ID:        tenantID,

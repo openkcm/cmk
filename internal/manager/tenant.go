@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/namespace"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/constants"
@@ -148,7 +146,7 @@ func (m *TenantManager) ListTenantInfo(
 }
 
 func (m *TenantManager) CreateTenant(ctx context.Context, tenant *model.Tenant) error {
-	err := validateSchema(tenant.SchemaName)
+	err := db.ValidateSchema(tenant.SchemaName)
 	if err != nil {
 		return errs.Wrap(repo.ErrOnboardingTenant, err)
 	}
@@ -159,7 +157,7 @@ func (m *TenantManager) CreateTenant(ctx context.Context, tenant *model.Tenant) 
 	}
 
 	err = m.repo.Transaction(ctx, func(ctx context.Context) error {
-		err = m.repo.Create(ctx, tenant)
+		err := m.repo.Create(ctx, tenant)
 		if err != nil {
 			if errors.Is(err, repo.ErrUniqueConstraint) {
 				err = errs.Wrap(ErrOnboardingInProgress, err)
@@ -168,7 +166,8 @@ func (m *TenantManager) CreateTenant(ctx context.Context, tenant *model.Tenant) 
 			return errs.Wrap(ErrCreatingTenant, err)
 		}
 
-		return m.migrator.MigrateTenantToLatest(ctx, tenant)
+		_, err = m.migrator.MigrateTenantToLatest(ctx, tenant)
+		return err
 	})
 
 	return err
@@ -278,17 +277,4 @@ func (m *TenantManager) detachAllKeys(ctx context.Context) (OffboardingResult, e
 	}
 
 	return result, nil
-}
-
-func validateSchema(schema string) error {
-	err := namespace.Validate(schema)
-	if err != nil {
-		return errs.Wrap(ErrInvalidSchema, err)
-	}
-
-	if len(schema) < 3 || len(schema) > 63 {
-		return ErrSchemaNameLength
-	}
-
-	return nil
 }

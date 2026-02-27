@@ -68,89 +68,81 @@ func TestGetGroups(t *testing.T) {
 
 func TestCreateGroup(t *testing.T) {
 	groupManager, db, tenant := SetupGroupManager(t)
-	t.Run(
-		"Should create group", func(t *testing.T) {
-			expected := testutils.NewGroup(
+	t.Run("Should create group", func(t *testing.T) {
+		expected := testutils.NewGroup(
+			func(g *model.Group) {
+				g.IAMIdentifier = "test-group-create"
+			},
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-create"})
+		res, err := groupManager.CreateGroup(
+			ctx,
+			expected,
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, expected.Name, res.Name)
+	})
+
+	t.Run("Should error on create group with duplicated name", func(t *testing.T) {
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"duplicated-iam"})
+		_, err := groupManager.CreateGroup(
+			ctx,
+			testutils.NewGroup(
 				func(g *model.Group) {
-					g.IAMIdentifier = "test-group-create"
+					g.Name = "duplicated-name"
+					g.IAMIdentifier = "duplicated-iam"
 				},
-			)
-			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-create"})
-			res, err := groupManager.CreateGroup(
-				ctx,
-				expected,
-			)
-			assert.NoError(t, err)
-			assert.Equal(t, expected.Name, res.Name)
-		},
-	)
+			),
+		)
+		assert.NoError(t, err)
+		_, err = groupManager.CreateGroup(
+			ctx,
+			testutils.NewGroup(
+				func(g *model.Group) {
+					g.Name = "duplicated-name"
+					g.IAMIdentifier = "duplicated-iam"
+				},
+			),
+		)
+		assert.ErrorIs(t, err, repo.ErrUniqueConstraint)
+	})
 
-	t.Run(
-		"Should error on create group with duplicated name", func(t *testing.T) {
-			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"duplicated-iam"})
-			_, err := groupManager.CreateGroup(
-				ctx,
-				testutils.NewGroup(
-					func(g *model.Group) {
-						g.Name = "duplicated-name"
-						g.IAMIdentifier = "duplicated-iam"
-					},
-				),
-			)
-			assert.NoError(t, err)
-			_, err = groupManager.CreateGroup(
-				ctx,
-				testutils.NewGroup(
-					func(g *model.Group) {
-						g.Name = "duplicated-name"
-						g.IAMIdentifier = "duplicated-iam"
-					},
-				),
-			)
-			assert.ErrorIs(t, err, repo.ErrUniqueConstraint)
-		},
-	)
+	t.Run("Should error on create group with invalid role", func(t *testing.T) {
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-role"})
+		_, err := groupManager.CreateGroup(
+			ctx,
+			testutils.NewGroup(
+				func(g *model.Group) {
+					g.Role = "invalid-role"
+					g.IAMIdentifier = "test-group-role"
+				},
+			),
+		)
+		assert.ErrorIs(t, err, manager.ErrGroupRole)
+	})
 
-	t.Run(
-		"Should error on create group with invalid role", func(t *testing.T) {
-			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-role"})
-			_, err := groupManager.CreateGroup(
-				ctx,
-				testutils.NewGroup(
-					func(g *model.Group) {
-						g.Role = "invalid-role"
-						g.IAMIdentifier = "test-group-role"
-					},
-				),
-			)
-			assert.ErrorIs(t, err, manager.ErrGroupRole)
-		},
-	)
+	t.Run("Should error on create group", func(t *testing.T) {
+		forced := testutils.NewDBErrorForced(db, ErrForced)
 
-	t.Run(
-		"Should error on create group", func(t *testing.T) {
-			forced := testutils.NewDBErrorForced(db, ErrForced)
+		forced.Register()
+		defer forced.Unregister()
 
-			forced.Register()
-			defer forced.Unregister()
-
-			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-error"})
-			res, err := groupManager.CreateGroup(
-				ctx,
-				testutils.NewGroup(
-					func(g *model.Group) {
-						g.IAMIdentifier = "test-group-error"
-					},
-				),
-			)
-			assert.Error(t, err)
-			assert.Nil(t, res)
-		},
-	)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-error"})
+		res, err := groupManager.CreateGroup(
+			ctx,
+			testutils.NewGroup(
+				func(g *model.Group) {
+					g.IAMIdentifier = "test-group-error"
+				},
+			),
+		)
+		assert.Error(t, err)
+		assert.Nil(t, res)
+	})
 }
 
 func TestDeleteGroupByID(t *testing.T) {
