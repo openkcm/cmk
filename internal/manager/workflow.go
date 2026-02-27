@@ -574,9 +574,7 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 }
 
 func isInvalidAction(err error) bool {
-	return errors.Is(err, ErrConnectSystemNoPrimaryKey) ||
-		errors.Is(err, ErrNotAllSystemsConnected) ||
-		errors.Is(err, ErrAlreadyPrimaryKey)
+	return errs.IsAnyError(err, ErrConnectSystemNoPrimaryKey, ErrNotAllSystemsConnected, ErrAlreadyPrimaryKey)
 }
 
 // transformCheckWorkflowError checks the returned error from validate
