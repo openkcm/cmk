@@ -46,6 +46,14 @@ func NewPlugin() *Plugin {
 	}
 }
 
+func (p *Plugin) GetBuildInfo() string {
+	return p.buildInfo
+}
+
+func (p *Plugin) GetLogger() *slog.Logger {
+	return p.logger
+}
+
 func (p *Plugin) SetLogger(logger hclog.Logger) {
 	p.logger = hclog2slog.New(logger)
 }
@@ -81,7 +89,7 @@ func (p *Plugin) GetGroup(
 	req *idmangv1.GetGroupRequest,
 ) (*idmangv1.GetGroupResponse, error) {
 	for _, group := range p.staticConfiguration.Groups {
-		if group.Name == req.GroupName {
+		if group.Name == req.GetGroupName() {
 			return &idmangv1.GetGroupResponse{
 				Group: &idmangv1.Group{
 					Id:   group.ID,
@@ -115,7 +123,7 @@ func (p *Plugin) GetUsersForGroup(
 ) (*idmangv1.GetUsersForGroupResponse, error) {
 	users := make([]*idmangv1.User, 0)
 	for _, group := range p.staticConfiguration.Groups {
-		if group.ID == req.GroupId {
+		if group.ID == req.GetGroupId() {
 			for _, user := range group.Users {
 				users = append(users, &idmangv1.User{
 					Id:    user.ID,
@@ -137,7 +145,7 @@ func (p *Plugin) GetGroupsForUser(
 	groups := make([]*idmangv1.Group, 0, len(p.staticConfiguration.Groups))
 	for _, group := range p.staticConfiguration.Groups {
 		for _, user := range group.Users {
-			if user.ID == req.UserId {
+			if user.ID == req.GetUserId() {
 				groups = append(groups, &idmangv1.Group{
 					Id:   group.ID,
 					Name: group.Name,

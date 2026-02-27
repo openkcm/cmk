@@ -1,4 +1,4 @@
-package noop
+package noop_test
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 
 	idmangv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
+
+	"github.com/openkcm/cmk/internal/plugins/identity-management/noop"
 )
 
 const testStaticConfig = `
@@ -29,12 +31,12 @@ groups:
         email: "user2@example.com"
 `
 
-func setupPlugin(t *testing.T) *Plugin {
+func setupPlugin(t *testing.T) *noop.Plugin {
 	t.Helper()
-	p := NewPlugin()
+	p := noop.NewPlugin()
 	p.SetLogger(hclog.NewNullLogger())
 
-	tmpFile, err := os.CreateTemp("", "static-config-*.yaml")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "static-config-*.yaml")
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
@@ -65,27 +67,27 @@ staticJsonContent:
 }
 
 func TestNewPlugin(t *testing.T) {
-	p := NewPlugin()
+	p := noop.NewPlugin()
 	if p == nil {
 		t.Fatal("NewPlugin() returned nil")
 	}
-	if p.buildInfo != "{}" {
-		t.Errorf("Expected buildInfo to be '{}', got '%s'", p.buildInfo)
+	if p.GetBuildInfo() != "{}" {
+		t.Errorf("Expected buildInfo to be '{}', got '%s'", p.GetBuildInfo())
 	}
 }
 
 func TestSetLogger(t *testing.T) {
-	p := NewPlugin()
+	p := noop.NewPlugin()
 	logger := hclog.NewNullLogger()
 	p.SetLogger(logger)
 	expectedLogger := hclog2slog.New(logger)
-	if !reflect.DeepEqual(p.logger, expectedLogger) {
-		t.Errorf("Expected logger to be %v, got %v", expectedLogger, p.logger)
+	if !reflect.DeepEqual(p.GetLogger(), expectedLogger) {
+		t.Errorf("Expected logger to be %v, got %v", expectedLogger, p.GetLogger())
 	}
 }
 
 func TestConfigure(t *testing.T) {
-	p := NewPlugin()
+	p := noop.NewPlugin()
 
 	t.Run("Invalid YAML", func(t *testing.T) {
 		req := &configv1.ConfigureRequest{
@@ -117,14 +119,14 @@ func TestGetGroup(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetGroup failed: %v", err)
 		}
-		if resp.Group == nil {
+		if resp.GetGroup() == nil {
 			t.Fatal("Expected group, but got nil")
 		}
-		if resp.Group.Id != "group-1" {
-			t.Errorf("Expected group ID 'group-1', got '%s'", resp.Group.Id)
+		if resp.GetGroup().GetId() != "group-1" {
+			t.Errorf("Expected group ID 'group-1', got '%s'", resp.GetGroup().GetId())
 		}
-		if resp.Group.Name != "group1" {
-			t.Errorf("Expected group name 'group1', got '%s'", resp.Group.Name)
+		if resp.GetGroup().GetName() != "group1" {
+			t.Errorf("Expected group name 'group1', got '%s'", resp.GetGroup().GetName())
 		}
 	})
 
@@ -134,8 +136,8 @@ func TestGetGroup(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetGroup failed: %v", err)
 		}
-		if resp.Group != nil {
-			t.Errorf("Expected nil group, but got %v", resp.Group)
+		if resp.GetGroup() != nil {
+			t.Errorf("Expected nil group, but got %v", resp.GetGroup())
 		}
 	})
 }
@@ -148,8 +150,8 @@ func TestGetAllGroups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAllGroups failed: %v", err)
 	}
-	if len(resp.Groups) != 2 {
-		t.Errorf("Expected 2 groups, got %d", len(resp.Groups))
+	if len(resp.GetGroups()) != 2 {
+		t.Errorf("Expected 2 groups, got %d", len(resp.GetGroups()))
 	}
 }
 
@@ -162,11 +164,11 @@ func TestGetUsersForGroup(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetUsersForGroup failed: %v", err)
 		}
-		if len(resp.Users) != 1 {
-			t.Fatalf("Expected 1 user, got %d", len(resp.Users))
+		if len(resp.GetUsers()) != 1 {
+			t.Fatalf("Expected 1 user, got %d", len(resp.GetUsers()))
 		}
-		if resp.Users[0].Id != "user-1" {
-			t.Errorf("Expected user ID 'user-1', got '%s'", resp.Users[0].Id)
+		if resp.GetUsers()[0].GetId() != "user-1" {
+			t.Errorf("Expected user ID 'user-1', got '%s'", resp.GetUsers()[0].GetId())
 		}
 	})
 
@@ -176,8 +178,8 @@ func TestGetUsersForGroup(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetUsersForGroup failed: %v", err)
 		}
-		if len(resp.Users) != 0 {
-			t.Errorf("Expected 0 users, got %d", len(resp.Users))
+		if len(resp.GetUsers()) != 0 {
+			t.Errorf("Expected 0 users, got %d", len(resp.GetUsers()))
 		}
 	})
 }
@@ -191,11 +193,11 @@ func TestGetGroupsForUser(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetGroupsForUser failed: %v", err)
 		}
-		if len(resp.Groups) != 1 {
-			t.Fatalf("Expected 1 group, got %d", len(resp.Groups))
+		if len(resp.GetGroups()) != 1 {
+			t.Fatalf("Expected 1 group, got %d", len(resp.GetGroups()))
 		}
-		if resp.Groups[0].Id != "group-1" {
-			t.Errorf("Expected group ID 'group-1', got '%s'", resp.Groups[0].Id)
+		if resp.GetGroups()[0].GetId() != "group-1" {
+			t.Errorf("Expected group ID 'group-1', got '%s'", resp.GetGroups()[0].GetId())
 		}
 	})
 
@@ -205,8 +207,8 @@ func TestGetGroupsForUser(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetGroupsForUser failed: %v", err)
 		}
-		if len(resp.Groups) != 0 {
-			t.Errorf("Expected 0 groups, got %d", len(resp.Groups))
+		if len(resp.GetGroups()) != 0 {
+			t.Errorf("Expected 0 groups, got %d", len(resp.GetGroups()))
 		}
 	})
 }
