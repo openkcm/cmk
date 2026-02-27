@@ -173,8 +173,8 @@ func (m *TenantConfigManager) GetTenantsKeystores() (TenantKeystores, error) {
 	}, nil
 }
 
-// GetDefaultKeystoreConfig retrieves the default keystore config
-// If the config doesn't exist, it gets the config from the pool and sets it
+// GetDefaultKeystoreConfig retrieves the default keystore config from DB only.
+// If the config doesn't exist in DB, returns nil (does not onboard from keystore pool).
 func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, error) {
 	var config model.TenantConfig
 
@@ -189,26 +189,8 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 	}
 
 	if !found {
-		var keystore *model.KeystoreConfig
-
-		err = m.repo.Transaction(ctx, func(ctx context.Context) error {
-			keystore, err = m.getKeystoreConfigFromPool(ctx)
-			if err != nil {
-				return err
-			}
-
-			err = m.setDefaultKeystore(ctx, keystore)
-			if err != nil {
-				return err
-			}
-
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		return keystore, nil
+		// Not found, do not onboard from keystore pool
+		return nil, nil
 	}
 
 	keystore := &model.KeystoreConfig{}

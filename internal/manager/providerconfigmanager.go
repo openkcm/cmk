@@ -312,6 +312,10 @@ func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 	if err != nil {
 		return nil, nil, err
 	}
+	// If GetDefaultKeystoreConfig returns nil, return error
+	if ksConfig == nil {
+		return nil, nil, errs.Wrapf(ErrGetDefaultKeystore, "default keystore not configured for tenant")
+	}
 
 	cert, err := pmc.certs.getDefaultKeystoreClientCert(
 		ctx,

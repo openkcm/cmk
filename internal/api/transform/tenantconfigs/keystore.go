@@ -12,10 +12,14 @@ func ToAPI(keystore manager.TenantKeystores) (*cmkapi.TenantKeystore, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	// Hardcoded allowManaged and allowBYOK to true for now
+	allowManaged := true
+	allowBYOK := false
 	apiTenant := &cmkapi.TenantKeystore{
-		//nolint:godox
-		Default: nil, // TODO: AS PER KMS20-2740 this is disabled. To be enabled on KMS20-2742
+		Default: &cmkapi.DefaultKeystore{
+			AllowManaged: &allowManaged,
+			AllowBYOK:    &allowBYOK,
+		},
 		Hyok: cmkapi.HYOKKeystore{
 			Providers: &keystore.HYOK.Provider,
 			Allow:     &keystore.HYOK.Allow,

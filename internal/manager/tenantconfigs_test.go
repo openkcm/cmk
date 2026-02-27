@@ -68,23 +68,17 @@ func TestNewTenantConfigManager(t *testing.T) {
 
 // TestGetDefaultKeystore tests the GetDefaultKeystore method
 func TestGetDefaultKeystore(t *testing.T) {
-	t.Run("DefaultKeystore tenant config not exists, get from pool", func(t *testing.T) {
-		// Arrange
-		configManager, db, tenant := SetupTenantConfigManager(t, nil)
-		// Add a keystore configuration to the pool
+	t.Run("DefaultKeystore tenant config not exists, returns nil", func(t *testing.T) {
+		// Arrange - no tenant config in DB, no pool fallback (KMS20-2742)
+		configManager, _, tenant := SetupTenantConfigManager(t, nil)
 		ctx := testutils.CreateCtxWithTenant(tenant)
-		r := sql.NewRepository(db)
-		testutils.CreateTestEntities(ctx, t, r, ksConfig)
 
 		// Act
-		keystore, err := configManager.GetDefaultKeystoreConfig(testutils.CreateCtxWithTenant(tenant))
+		keystore, err := configManager.GetDefaultKeystoreConfig(ctx)
 
 		// Assert
 		assert.NoError(t, err)
-		assert.NotNil(t, keystore)
-		assert.NotEmpty(t, keystore.LocalityID)
-		assert.NotEmpty(t, keystore.CommonName)
-		assert.NotEmpty(t, keystore.ManagementAccessData)
+		assert.Nil(t, keystore)
 	})
 
 	t.Run("Config Exists", func(t *testing.T) {
