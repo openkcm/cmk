@@ -260,7 +260,8 @@ func TestHandleCreateTenant(t *testing.T) {
 	testConfig := newTestOperator(t)
 
 	validTenantID := uuid.NewString()
-	validData, err := createValidTenantData(validTenantID, RegionUSWest1, "ValidTenant")
+	tenantName := "ValidTenant"
+	validData, err := createValidTenantData(validTenantID, RegionUSWest1, tenantName)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -354,6 +355,13 @@ func TestHandleCreateTenant(t *testing.T) {
 					schemaName, _ := tmdb.EncodeSchemaNameBase62(validTenantID)
 					integrationutils.TenantExists(t, testConfig.DB, schemaName, model.Group{}.TableName())
 					integrationutils.CheckRegion(ctx, t, testConfig.DB, validTenantID, tt.region)
+
+					ctx := cmkcontext.CreateTenantContext(ctx, schemaName)
+					tenant := &model.Tenant{ID: validTenantID}
+					r := sql.NewRepository(testConfig.DB)
+					_, err := r.First(ctx, tenant, *repo.NewQuery())
+					assert.NoError(t, err)
+					assert.Equal(t, tenantName, tenant.Name)
 				}
 			},
 		)

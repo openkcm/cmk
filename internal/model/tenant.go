@@ -11,6 +11,7 @@ type Tenant struct {
 
 	ID        string       `gorm:"type:varchar(255);not null;unique"`
 	Region    string       `gorm:"type:varchar(50);not null"`
+	Name      string       `gorm:"type:varchar(255)"`
 	Status    TenantStatus `gorm:"type:varchar(50);not null"`
 	OwnerType string       `gorm:"type:varchar(50);not null;default:''"`
 	OwnerID   string       `gorm:"type:varchar(255);not null;default:''"`

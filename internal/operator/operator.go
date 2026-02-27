@@ -560,6 +560,7 @@ func unmarshalTenantData(ctx context.Context, data []byte) (*model.Tenant, error
 		Status:    model.TenantStatus(tenantgrpc.Status_STATUS_ACTIVE.String()),
 		OwnerType: tenantProto.GetOwnerType(),
 		OwnerID:   tenantProto.GetOwnerId(),
+		Name:      tenantProto.GetName(),
 		Role:      model.TenantRole(tenantProto.GetRole().String()),
 		TenantModel: multitenancy.TenantModel{
 			DomainURL:  encodedSchemaName,

@@ -151,6 +151,7 @@ func TestGetTenantInfo(t *testing.T) {
 		assert.NotNil(t, resp.Role)
 		expectedRole := strings.TrimPrefix(string(tenant.Role), "ROLE_")
 		assert.Equal(t, cmkapi.TenantRole(expectedRole), *resp.Role)
+		assert.Equal(t, tenant.Name, resp.Name)
 	})
 
 	t.Run("Should 403 on get tenant by valid ID and no client data", func(t *testing.T) {
