@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/plog"
 
@@ -15,7 +16,7 @@ import (
 )
 
 func createTestContext() context.Context {
-	ctx := cmkcontext.InjectRequestID(context.Background())
+	ctx := cmkcontext.InjectRequestID(context.Background(), uuid.NewString())
 	ctx = cmkcontext.CreateTenantContext(ctx, "test-tenant-123")
 
 	return ctx

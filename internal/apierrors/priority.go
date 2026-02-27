@@ -3,7 +3,7 @@ package apierrors
 import (
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -11,10 +11,10 @@ const (
 	TenantNotFound = "TENANT_NOT_FOUND"
 )
 
-var highPrio = []APIErrors{
+var highPrio = []errs.ExposedErrors[*APIError]{
 	{
-		Errors: []error{repo.ErrTenantNotFound},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{repo.ErrTenantNotFound},
+		ExposedError: &APIError{
 			Code:    TenantNotFound,
 			Message: "Tenant does not exist",
 			Status:  http.StatusNotFound,

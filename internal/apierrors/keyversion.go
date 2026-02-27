@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 )
 
@@ -19,114 +19,114 @@ var (
 	ErrUpdateKeyVersion          = errors.New("failed to update key version")
 )
 
-var keyVersion = []APIErrors{
+var keyVersion = []errs.ExposedErrors[*APIError]{
 	{
-		Errors: []error{manager.ErrUpdateKeyVersionDisabled},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{manager.ErrUpdateKeyVersionDisabled},
+		ExposedError: &APIError{
 			Code:    "KEY_DISABLED",
 			Message: "key must be enabled before attempting to update version",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
-		Errors: []error{manager.ErrNoBodyForCustomerHeldDB},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{manager.ErrNoBodyForCustomerHeldDB},
+		ExposedError: &APIError{
 			Code:    "NO_BODY_FOR_CUSTOMER_HELD",
 			Message: "body must be provided for customer held key rotation",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
-		Errors: []error{ErrCreateKeyVersion, manager.ErrNoBodyForCustomerHeldDB},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrCreateKeyVersion, manager.ErrNoBodyForCustomerHeldDB},
+		ExposedError: &APIError{
 			Code:    "NO_BODY_FOR_CUSTOMER_HELD",
 			Message: "body must be provided for customer held key rotation",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
-		Errors: []error{ErrCreateKeyVersion, manager.ErrBodyForNoCustomerHeldDB},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrCreateKeyVersion, manager.ErrBodyForNoCustomerHeldDB},
+		ExposedError: &APIError{
 			Code:    "BODY_FOR_NO_CUSTOMER_HELD",
 			Message: "body must be provided only for customer held key rotation",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
-		Errors: []error{ErrKeyIDPath},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrKeyIDPath},
+		ExposedError: &APIError{
 			Code:    "KEY_ID_PATH",
 			Message: "keyID path is invalid",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
-		Errors: []error{ErrQueryKeyVersionList},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrQueryKeyVersionList},
+		ExposedError: &APIError{
 			Code:    "QUERY_KEY_VERSION_LIST",
 			Message: "failed to query key version list",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrTransformKeyVersionList},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrTransformKeyVersionList},
+		ExposedError: &APIError{
 			Code:    "TRANSFORM_KEY_VERSION_LIST",
 			Message: "failed to transform key version list",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{manager.ErrCreateKeyVersionDB},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{manager.ErrCreateKeyVersionDB},
+		ExposedError: &APIError{
 			Code:    "CREATE_KEY_VERSION",
 			Message: "failed to create key version",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrCreateKeyVersion},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrCreateKeyVersion},
+		ExposedError: &APIError{
 			Code:    "CREATE_KEY_VERSION",
 			Message: "failed to create key version",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrTransformKeyVersionToAPI},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrTransformKeyVersionToAPI},
+		ExposedError: &APIError{
 			Code:    "TRANSFORM_KEY_VERSION",
 			Message: "failed to transform key version",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrGettingKeyVersionByNumber},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrGettingKeyVersionByNumber},
+		ExposedError: &APIError{
 			Code:    "GET_KEY_VERSION_NUMBER",
 			Message: "failed to get key version by number",
 			Status:  http.StatusNotFound,
 		},
 	},
 	{
-		Errors: []error{manager.ErrUpdateKeyVersionDB},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{manager.ErrUpdateKeyVersionDB},
+		ExposedError: &APIError{
 			Code:    "UPDATE_KEY_VERSION",
 			Message: "failed to update key version",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrUpdateKeyVersion},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrUpdateKeyVersion},
+		ExposedError: &APIError{
 			Code:    "UPDATE_KEY_VERSION",
 			Message: "failed to update key version",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrKeyVersionUpdateWrongBody},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrKeyVersionUpdateWrongBody},
+		ExposedError: &APIError{
 			Code:    "WRONG_BODY",
 			Message: "wrong body",
 			Status:  http.StatusBadRequest,

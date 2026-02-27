@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 
@@ -16,7 +17,7 @@ import (
 )
 
 func createTestContextForAuthz() context.Context {
-	ctx := cmkcontext.InjectRequestID(context.Background())
+	ctx := cmkcontext.InjectRequestID(context.Background(), uuid.NewString())
 	ctx = cmkcontext.CreateTenantContext(ctx, "test-tenant1")
 
 	return ctx

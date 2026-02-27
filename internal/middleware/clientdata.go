@@ -11,7 +11,6 @@ import (
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/write"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
@@ -48,10 +47,10 @@ func ClientDataMiddleware(
 					log.Debug(r.Context(), "Client data processing error", log.ErrorAttr(err))
 					if errors.Is(err, manager.ErrMultipleRolesInGroups) ||
 						errors.Is(err, manager.ErrZeroRolesInGroups) {
-						e := apierrors.TransformToAPIError(r.Context(), err)
-						write.ErrorResponse(r.Context(), w, *e)
+						e := apierrors.APIErrorMapper.Transform(r.Context(), err)
+						write.ErrorResponse(r.Context(), w, e)
 					} else {
-						write.ErrorResponse(r.Context(), w, cmkapi.ErrorMessage{Error: apierrors.ErrNoClientData})
+						write.ErrorResponse(r.Context(), w, apierrors.ErrNoClientData)
 					}
 
 					return

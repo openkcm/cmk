@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	md "github.com/oapi-codegen/nethttp-middleware"
 	slogctx "github.com/veqryn/slog-context"
 
@@ -33,7 +35,7 @@ func OAPIValidatorHandler(
 // Must create RequestID and logger because middlewares weren't ran
 func ParamsErrorHandler() func(w http.ResponseWriter, r *http.Request, err error) {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
-		ctx := cmkcontext.InjectRequestID(r.Context())
+		ctx := cmkcontext.InjectRequestID(r.Context(), uuid.NewString())
 		requestID, _ := cmkcontext.GetRequestID(ctx)
 
 		ctx = slogctx.With(ctx,
@@ -42,7 +44,7 @@ func ParamsErrorHandler() func(w http.ResponseWriter, r *http.Request, err error
 
 		log.Error(ctx, "The error encountered during parameters binding", err)
 
-		var errorResponse cmkapi.ErrorMessage
+		var errorResponse *apierrors.APIError
 
 		var (
 			invalidFormatErr     *cmkapi.InvalidParamFormatError
@@ -82,7 +84,7 @@ func ResponseErrorHandlerFunc() func(w http.ResponseWriter, r *http.Request, err
 	return func(w http.ResponseWriter, r *http.Request, err error) {
 		log.Error(r.Context(), "Processing Response", err)
 
-		e := apierrors.TransformToAPIError(r.Context(), err)
-		write.ErrorResponse(r.Context(), w, *e)
+		e := apierrors.APIErrorMapper.Transform(r.Context(), err)
+		write.ErrorResponse(r.Context(), w, e)
 	}
 }

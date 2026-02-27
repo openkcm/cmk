@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 var (
@@ -12,18 +12,18 @@ var (
 	ErrGettingTagsByKeyConfigurationID = errors.New("failed to get tags by KeyConfigurationID")
 )
 
-var tags = []APIErrors{
+var tags = []errs.ExposedErrors[*APIError]{
 	{
-		Errors: []error{ErrCreatingTags},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrCreatingTags},
+		ExposedError: &APIError{
 			Code:    "CREATE_TAGS",
 			Message: "Failed to create tags",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrGettingTagsByKeyConfigurationID},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrGettingTagsByKeyConfigurationID},
+		ExposedError: &APIError{
 			Code:    "GET_TAGS_BY_KEY_CONFIGURATION_ID",
 			Message: "Failed to get tags by KeyConfigurationID",
 			Status:  http.StatusInternalServerError,
