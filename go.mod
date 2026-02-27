@@ -24,7 +24,7 @@ require (
 	github.com/magodo/slog2hclog v0.0.0-20240614031327-090ebd72a033
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
-	github.com/oapi-codegen/runtime v1.1.2
+	github.com/oapi-codegen/runtime v1.2.0
 	github.com/openkcm/api-sdk v0.15.0
 	github.com/openkcm/common-sdk v1.12.0
 	github.com/openkcm/orbital v0.4.0
@@ -153,7 +153,6 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
-	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/veqryn/slog-context/otel v0.9.0 // indirect
 	github.com/woodsbury/decimal128 v1.4.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
