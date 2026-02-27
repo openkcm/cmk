@@ -2,6 +2,7 @@ package testutils
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -40,6 +41,7 @@ type TestModel struct {
 	ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Name        string    `gorm:"type:varchar(255);unique"`
 	Description string
+	Data        json.RawMessage `gorm:"type:jsonb"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }

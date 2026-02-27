@@ -2,7 +2,6 @@ package manager
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 
 	"github.com/google/uuid"
@@ -643,8 +642,8 @@ func (m *SystemManager) determineRecoveryPermissions(
 	var canRetry, canCancel bool
 	// Helper to check authorization
 	checkAuth := func(getKeyID func(*eventprocessor.SystemActionJobData) string) bool {
-		var jobData eventprocessor.SystemActionJobData
-		if json.Unmarshal(event.Data, &jobData) == nil {
+		jobData, err := eventprocessor.GetSystemJobData(event)
+		if err == nil {
 			return m.hasKeyAdminAccess(ctx, getKeyID(&jobData))
 		}
 		return false
@@ -657,8 +656,8 @@ func (m *SystemManager) determineRecoveryPermissions(
 		canCancel = true
 
 	case proto.TaskType_SYSTEM_SWITCH.String():
-		var jobData eventprocessor.SystemActionJobData
-		if json.Unmarshal(event.Data, &jobData) == nil {
+		jobData, err := eventprocessor.GetSystemJobData(event)
+		if err == nil {
 			if jobData.Trigger == constants.KeyActionSetPrimary {
 				// Make Primary Key: Retry allowed for Key Admins of target KeyConfig, cancel not allowed
 				canRetry = m.hasKeyAdminAccess(ctx, jobData.KeyIDTo)
@@ -669,7 +668,6 @@ func (m *SystemManager) determineRecoveryPermissions(
 				canCancel = true
 			}
 		} else {
-			// If unmarshalling fails, disable both actions
 			canRetry = false
 			canCancel = false
 		}

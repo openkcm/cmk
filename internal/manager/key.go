@@ -980,7 +980,8 @@ func (km *KeyManager) importProviderKeyMaterial(
 }
 
 // Whenever Keyconfig PrimaryKey switches, systems need to send switch events
-func (km *KeyManager) sendSystemSwitchEvents(ctx context.Context, key *model.Key) error {
+// If systems had a previous switch event the event key needs to be updated for the retru
+func (km *KeyManager) handleSystemsOnNewPrimaryKey(ctx context.Context, key *model.Key) error {
 	keyConfig := &model.KeyConfiguration{ID: key.KeyConfigurationID}
 
 	_, err := km.repo.First(ctx, keyConfig, *repo.NewQuery())
@@ -988,13 +989,18 @@ func (km *KeyManager) sendSystemSwitchEvents(ctx context.Context, key *model.Key
 		return errs.Wrap(ErrGettingKeyConfigByID, err)
 	}
 
+	err = km.updatePrimaryKeySystemEvents(ctx, ptr.GetSafeDeref(keyConfig.PrimaryKeyID).String(), key.ID.String())
+	if err != nil {
+		return err
+	}
+
+	// Send system switches for systems in keyconfig
 	query := repo.NewQuery().Where(
 		repo.NewCompositeKeyGroup(
 			repo.NewCompositeKey().Where(
 				repo.KeyConfigIDField, keyConfig.ID),
 		),
 	)
-
 	return repo.ProcessInBatch(
 		ctx,
 		km.repo,
@@ -1003,7 +1009,12 @@ func (km *KeyManager) sendSystemSwitchEvents(ctx context.Context, key *model.Key
 		func(systems []*model.System) error {
 			for _, s := range systems {
 				_, err := km.eventFactory.SystemSwitch(
-					ctx, s, key.ID.String(), keyConfig.PrimaryKeyID.String(), constants.KeyActionSetPrimary)
+					ctx,
+					s,
+					key.ID.String(),
+					keyConfig.PrimaryKeyID.String(),
+					constants.KeyActionSetPrimary,
+				)
 				if err != nil {
 					return err
 				}
@@ -1012,6 +1023,40 @@ func (km *KeyManager) sendSystemSwitchEvents(ctx context.Context, key *model.Key
 			return nil
 		},
 	)
+}
+
+// updateOldPKeySystemEvents updates keyTo for system event retries
+// This can be done as now there is a new primary key and systems
+// can only be linked to primary keys, the previous keyTo needs now
+// updated the newly set primary key
+func (km *KeyManager) updatePrimaryKeySystemEvents(ctx context.Context, oldPkey string, newPkey string) error {
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(
+				repo.JSONBField(repo.DataField, "keyIDTo"), oldPkey),
+		),
+	)
+	return repo.ProcessInBatch(ctx, km.repo, query, repo.DefaultLimit, func(events []*model.Event) error {
+		for _, e := range events {
+			systemJobData, err := eventprocessor.GetSystemJobData(e)
+			if err != nil {
+				return err
+			}
+
+			systemJobData.KeyIDTo = newPkey
+			bytes, err := json.Marshal(systemJobData)
+			if err != nil {
+				return err
+			}
+
+			e.Data = bytes
+			_, err = km.repo.Patch(ctx, e, *repo.NewQuery())
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Ensures only the updated key is primary and updates the keyconfig primaryKeyID
@@ -1025,7 +1070,7 @@ func (km *KeyManager) setPrimaryKey(ctx context.Context, key *model.Key) error {
 		return errs.Wrap(ErrUpdateKeyDB, err)
 	}
 
-	err = km.sendSystemSwitchEvents(ctx, key)
+	err = km.handleSystemsOnNewPrimaryKey(ctx, key)
 	if err != nil {
 		return errs.Wrap(ErrFailedToReencryptSystem, err)
 	}
