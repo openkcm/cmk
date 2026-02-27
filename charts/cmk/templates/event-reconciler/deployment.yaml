@@ -42,7 +42,7 @@ spec:
         {{- with .Values.extraContainers }}
           {{- toYaml . | nindent 8 }}
         {{- end }}
-        - name: {{ include "cmk.name" . }}
+        - name: {{ include "cmk.name" . }}-event-reconciler
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
