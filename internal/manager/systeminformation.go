@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/openkcm/plugin-sdk/service/api/systeminformation"
 	"gorm.io/gorm"
 
 	"github.com/openkcm/cmk/internal/config"
@@ -13,6 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -33,9 +33,9 @@ type SystemInformation struct {
 func NewSystemInformationManager(repo repo.Repo,
 	svcRegistry *cmkpluginregistry.Registry, systemCfg *config.System,
 ) (*SystemInformation, error) {
-	svc, ok := svcRegistry.SystemInformation()
-	if !ok {
-		return nil, errs.Wrapf(ErrNoPluginInCatalog, "system information not found in registry")
+	svc, err := svcRegistry.SystemInformation()
+	if err != nil {
+		return nil, err
 	}
 
 	return &SystemInformation{

@@ -37,7 +37,14 @@ func TestCreateNotificationManager(t *testing.T) {
 	catalog := IdentityManagementPlugin(t)
 	defer catalog.Close()
 
-	idmang := catalog.LookupByTypeAndName(idmangv1.Type, "IDENTITY_MANAGEMENT")
+	plugins := catalog.LookupByType(idmangv1.Type)
+	if len(plugins) == 0 {
+		t.Fatalf("catalog returned no identity management plugins")
+	}
+	if len(plugins) > 1 {
+		t.Fatalf("catalog returned multiple identity management plugins")
+	}
+	idmang := plugins[0]
 	assert.NotNil(t, idmang)
 
 	client := idmangv1.NewIdentityManagementServiceClient(idmang.ClientConnection())
