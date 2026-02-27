@@ -1521,7 +1521,7 @@ components:
           example: new-key-configuration-name
         keyConfigurationID:
           $ref: "#/components/schemas/KeyConfigurationID"
-        Metadata:
+        metadata:
           $ref: "#/components/schemas/SystemMetadata"
     SystemMetadata:
       description: System Metadata
