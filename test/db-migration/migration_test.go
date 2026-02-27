@@ -198,6 +198,19 @@ func TestSchemaMigrations(t *testing.T) {
 			version:   2,
 		},
 		{
+			name:      "Should up shared/00003_add_tenant_name.sql",
+			downgrade: false,
+			target:    db.SharedTarget,
+			version:   3,
+		},
+		{
+			name:      "Should down shared/00003_add_tenant_name.sql",
+			downgrade: true,
+			target:    db.SharedTarget,
+			version:   3,
+		},
+
+		{
 			name:      "Should up tenant/00001_init_shared.sql",
 			downgrade: false,
 			target:    db.TenantTarget,
