@@ -258,6 +258,7 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 			Role:      "ROLE_LIVE",
 			OwnerID:   tenantID + "-owner-id",
 			OwnerType: "owner-type",
+			Name:      tenantID,
 		}
 	})
 
