@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/async/tasks"
 	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
@@ -38,6 +40,7 @@ var (
 	gracefulShutdownSec     = flag.Int64("graceful-shutdown", 1, "graceful shutdown seconds")
 	gracefulShutdownMessage = flag.String("graceful-shutdown-message", "Graceful shutdown in %d seconds",
 		"graceful shutdown message")
+	ErrRegistryEnabled = errors.New("failed to create registry client")
 )
 
 const AppName = "worker"
@@ -99,6 +102,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
+//nolint:funlen
 func registerTasks(
 	ctx context.Context,
 	cfg *config.Config,
@@ -126,6 +130,15 @@ func registerTasks(
 		return errs.Wrapf(err, "failed to create event factory")
 	}
 
+	f, err := clients.NewFactory(cfg.Services)
+	if err != nil {
+		return err
+	}
+
+	if f.Registry() == nil || !cfg.Services.Registry.Enabled {
+		return ErrRegistryEnabled
+	}
+
 	cmkAuditor := auditor.New(ctx, cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
@@ -149,6 +162,7 @@ func registerTasks(
 		tasks.NewNotificationSender(notificationClient),
 		tasks.NewWorkflowExpiryProcessor(workflowManager, r),
 		tasks.NewWorkflowCleaner(workflowManager, r),
+		tasks.NewTenantNameRefresher(r, f.Registry()),
 	})
 
 	return nil
