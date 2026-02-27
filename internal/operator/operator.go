@@ -3,9 +3,9 @@ package operator
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/orbital"
@@ -36,20 +36,31 @@ import (
 )
 
 const (
-	reconcileAfterSecProcessing uint64 = 3
-	reconcileAfterSecError      uint64 = 15
+	reconcileAfterSecProcessing = 3 * time.Second
+	reconcileAfterSecError      = 15 * time.Second
 
 	operatorComponent       = "operator"
 	msgRegisteringHandler   = "registering handler"
 	msgInitializingOperator = "initializing operator"
 
+	WorkingStateSchemaEncodingFailed = "schema encoding failed"
+	WorkingStateUnmarshallingFailed  = "unmarshalling task data failed"
+	WorkingStateInvalidTaskData      = "invalid task data"
+
+	WorkingStateOIDCApplyFailed         = "failed to apply OIDC configuration"
+	WorkingStateOIDCBlockFailed         = "failed to block OIDC mapping"
+	WorkingStateOIDCUnblockFailed       = "failed to unblock OIDC mapping"
+	WorkingStateOIDCMappingRemoveFailed = "failed to remove OIDC mapping"
+
 	WorkingStateTenantCreating            = "tenant is being created"
 	WorkingStateTenantCreatedSuccessfully = "tenant created successfully"
-	WorkingStateSchemaEncodingFailed      = "schema encoding failed"
-	WorkingStateUnmarshallingFailed       = "failed to unmarshal data"
 	WorkingStateSchemaCreationFailed      = "schema creation failed"
 	WorkingStateGroupsCreationFailed      = "group creation failed"
 	WorkingStateSendingGroupsFailed       = "failed to send groups to registry"
+
+	WorkingStateWaitingTenantOffboarding = "waiting for tenant offboarding to complete"
+	WorkingStateTenantOffboardingFailed  = "tenant offboarding failed"
+	WorkingStateTenantProbingFailed      = "tenant probing failed"
 )
 
 var (
@@ -157,11 +168,12 @@ func (o *TenantOperator) handleCreateTenant(
 	ctx context.Context,
 	req orbital.HandlerRequest,
 	resp *orbital.HandlerResponse,
-) error {
+) {
 	// Step 1: Unmarshal tenant data
-	tenant, err := unmarshalTenantData(ctx, req.Data)
+	tenant, err := unmarshalTenantData(ctx, req.TaskData)
 	if err != nil {
-		return newHandlerResponse(ctx, WorkingStateUnmarshallingFailed, orbital.ResultFailed, resp, err)
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidData, err), WorkingStateInvalidTaskData)
+		return
 	}
 
 	ctx = model.LogInjectTenant(ctx, tenant)
@@ -174,19 +186,22 @@ func (o *TenantOperator) handleCreateTenant(
 
 	probeResult, err := probe.Check(ctx, tenant)
 	if err != nil {
-		return newHandlerResponse(ctx, err.Error(), orbital.ResultProcessing, resp, err)
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateTenantProbingFailed)
+		return
 	}
 
 	// Step 3: If all steps completed, finalize tenant creation by sending user groups to registry
 	if isProvisioningComplete(probeResult) {
-		return o.finalizeTenantProvisioning(ctx, tenant.ID, resp)
+		o.finalizeTenantProvisioning(ctx, tenant.ID, resp)
+		return
 	}
 
 	// Step 4: If schema creation is pending, create the schema
 	if probeResult.SchemaStatus != SchemaExists {
 		err = o.createTenantSchema(ctx, tenant)
 		if err != nil {
-			return newHandlerResponse(ctx, WorkingStateSchemaCreationFailed, orbital.ResultProcessing, resp, err)
+			setErrorStateAndContinue(ctx, resp, err, WorkingStateSchemaCreationFailed)
+			return
 		}
 	}
 
@@ -194,11 +209,13 @@ func (o *TenantOperator) handleCreateTenant(
 	if probeResult.GroupsStatus != GroupsExist {
 		err = o.createTenantGroups(ctx, tenant)
 		if err != nil {
-			return newHandlerResponse(ctx, WorkingStateGroupsCreationFailed, orbital.ResultProcessing, resp, err)
+			setErrorStateAndContinue(ctx, resp, err, WorkingStateGroupsCreationFailed)
+			return
 		}
 	}
 	// Step 6: Return processing state, if no errors, to re-invoke the handler for finalization
-	return newHandlerResponse(ctx, WorkingStateTenantCreating, orbital.ResultProcessing, resp, nil)
+	resp.UseRawWorkingState([]byte(WorkingStateTenantCreating))
+	resp.ContinueAndWaitFor(reconcileAfterSecProcessing)
 }
 
 // handleApplyTenantAuth is handler for the Apply Tenant Auth task.
@@ -206,43 +223,42 @@ func (o *TenantOperator) handleApplyTenantAuth(
 	ctx context.Context,
 	req orbital.HandlerRequest,
 	resp *orbital.HandlerResponse,
-) error {
+) {
 	authProto := &authgrpc.Auth{}
 
-	err := proto.Unmarshal(req.Data, authProto)
+	err := proto.Unmarshal(req.TaskData, authProto)
 	if err != nil {
-		return errs.Wrap(ErrInvalidData, err)
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidData, err), WorkingStateInvalidTaskData)
+		return
 	}
 
 	tenantID := authProto.GetTenantId()
 	if tenantID == "" {
-		return ErrInvalidTenantID
+		setErrorStateAndFail(ctx, resp, ErrInvalidTenantID, WorkingStateInvalidTaskData)
+		return
 	}
 
 	ctx = slogctx.With(ctx, "tenantID", tenantID)
 
 	oidcConfig, err := extractOIDCConfig(authProto.GetProperties())
 	if err != nil {
-		return errs.Wrap(ErrInvalidAuthProps, err)
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidAuthProps, err), WorkingStateInvalidTaskData)
+		return
 	}
 
 	err = o.applyOIDC(ctx, tenantID, oidcConfig)
 	if errors.Is(err, ErrFailedApplyOIDC) {
-		return err
+		// We cannot recover from this
+		setErrorStateAndFail(ctx, resp, err, WorkingStateOIDCApplyFailed)
+		return
 	}
 
 	if err != nil {
-		slogctx.Error(ctx, "error while applying OIDC", "error", err)
-
-		resp.Result = orbital.ResultProcessing
-		resp.ReconcileAfterSec = reconcileAfterSecError
-
-		return nil
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateOIDCApplyFailed)
+		return
 	}
 
-	resp.Result = orbital.ResultDone
-
-	return nil
+	resp.Complete()
 }
 
 // applyOIDC applies the OIDC configuration to the tenant by updating the issuer URL
@@ -288,12 +304,13 @@ func (o *TenantOperator) handleBlockTenant(
 	ctx context.Context,
 	req orbital.HandlerRequest,
 	resp *orbital.HandlerResponse,
-) error {
+) {
 	tenantProto := &tenantgrpc.Tenant{}
 
-	err := proto.Unmarshal(req.Data, tenantProto)
+	err := proto.Unmarshal(req.TaskData, tenantProto)
 	if err != nil {
-		return errs.Wrap(ErrInvalidData, err)
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidData, err), WorkingStateInvalidTaskData)
+		return
 	}
 
 	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().BlockOIDCMapping(
@@ -302,20 +319,19 @@ func (o *TenantOperator) handleBlockTenant(
 			TenantId: tenantProto.GetId(),
 		},
 	)
-	//nolint:nilerr
+
 	if err != nil {
-		resp.Result = orbital.ResultProcessing
-		resp.ReconcileAfterSec = reconcileAfterSecError
-		return nil
+		resp.ContinueAndWaitFor(reconcileAfterSecError)
+		return
 	}
 
 	if !grpcResp.GetSuccess() {
-		return errs.Wrapf(ErrFailedResponse, "session manager could not block OIDC mapping")
+		err = errs.Wrapf(ErrFailedResponse, "session manager could not block OIDC mapping")
+		setErrorStateAndFail(ctx, resp, err, WorkingStateOIDCBlockFailed)
+		return
 	}
 
-	resp.Result = orbital.ResultDone
-
-	return nil
+	resp.Complete()
 }
 
 // handleUnblockTenant is handler for Unblock Tenant task
@@ -323,12 +339,13 @@ func (o *TenantOperator) handleUnblockTenant(
 	ctx context.Context,
 	req orbital.HandlerRequest,
 	resp *orbital.HandlerResponse,
-) error {
+) {
 	tenantProto := &tenantgrpc.Tenant{}
 
-	err := proto.Unmarshal(req.Data, tenantProto)
+	err := proto.Unmarshal(req.TaskData, tenantProto)
 	if err != nil {
-		return errs.Wrap(ErrInvalidData, err)
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidData, err), WorkingStateInvalidTaskData)
+		return
 	}
 
 	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().UnblockOIDCMapping(
@@ -337,35 +354,35 @@ func (o *TenantOperator) handleUnblockTenant(
 			TenantId: tenantProto.GetId(),
 		},
 	)
-	//nolint:nilerr
+
 	if err != nil {
-		resp.Result = orbital.ResultProcessing
-		resp.ReconcileAfterSec = reconcileAfterSecError
-		return nil
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateOIDCUnblockFailed)
+		return
 	}
 
 	if !grpcResp.GetSuccess() {
-		return errs.Wrapf(ErrFailedResponse, "session manager could not unblock OIDC mapping")
+		err = errs.Wrapf(ErrFailedResponse, "session manager could not unblock OIDC mapping")
+		setErrorStateAndFail(ctx, resp, err, WorkingStateOIDCUnblockFailed)
+		return
 	}
 
-	resp.Result = orbital.ResultDone
-
-	return nil
+	resp.Complete()
 }
 
 // handleTerminateTenant is handler for Terminate Tenant task
 //
-//nolint:cyclop, funlen
+//nolint:cyclop
 func (o *TenantOperator) handleTerminateTenant(
 	ctx context.Context,
 	req orbital.HandlerRequest,
 	resp *orbital.HandlerResponse,
-) error {
+) {
 	tenantProto := &tenantgrpc.Tenant{}
 
-	err := proto.Unmarshal(req.Data, tenantProto)
+	err := proto.Unmarshal(req.TaskData, tenantProto)
 	if err != nil {
-		return errs.Wrap(ErrInvalidData, err)
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidData, err), WorkingStateInvalidTaskData)
+		return
 	}
 
 	ctx = slogctx.With(ctx, "tenantID", tenantProto.GetId())
@@ -385,40 +402,37 @@ func (o *TenantOperator) handleTerminateTenant(
 	}
 	if err != nil && st.Code() != codes.Internal {
 		log.Error(ctx, "error while removing OIDC mapping", err)
-
-		resp.Result = orbital.ResultProcessing
-		resp.ReconcileAfterSec = reconcileAfterSecError
-
-		return nil
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateOIDCMappingRemoveFailed)
+		return
 	}
 
 	if !grpcResp.GetSuccess() {
-		return errs.Wrapf(ErrFailedResponse, "session manager could not remove OIDC mapping")
+		err = errs.Wrapf(
+			ErrFailedResponse,
+			"session manager could not remove OIDC mapping: "+grpcResp.GetMessage(),
+		)
+		setErrorStateAndFail(ctx, resp, err, WorkingStateOIDCMappingRemoveFailed)
+		return
 	}
 
 	result, err := o.terminateTenant(ctx, tenantProto.GetId())
 	if err != nil {
 		log.Error(ctx, "error while terminating tenant", err)
-
-		resp.Result = orbital.ResultProcessing
-		resp.ReconcileAfterSec = reconcileAfterSecError
-
-		return nil
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateWaitingTenantOffboarding)
+		return
 	}
 
 	switch result.Status {
 	case manager.OffboardingFailed:
-		return ErrTenantOffboarding
+		setErrorStateAndFail(ctx, resp, ErrTenantOffboarding, WorkingStateTenantOffboardingFailed)
 	case manager.OffboardingProcessing:
-		resp.Result = orbital.ResultProcessing
-		resp.ReconcileAfterSec = reconcileAfterSecProcessing
+		resp.UseRawWorkingState([]byte(WorkingStateWaitingTenantOffboarding))
+		resp.ContinueAndWaitFor(reconcileAfterSecProcessing)
 	case manager.OffboardingSuccess:
-		resp.Result = orbital.ResultDone
+		resp.Complete()
 	default:
-		return errs.Wrapf(ErrTenantOffboarding, "unknown offboarding status")
+		setErrorStateAndFail(ctx, resp, ErrTenantOffboarding, "unexpected error: unknown offboarding status")
 	}
-
-	return nil
 }
 
 func (o *TenantOperator) terminateTenant(ctx context.Context, tenantID string) (manager.OffboardingResult, error) {
@@ -441,52 +455,41 @@ func (o *TenantOperator) terminateTenant(ctx context.Context, tenantID string) (
 	return result, nil
 }
 
-func newHandlerResponse(
-	ctx context.Context,
-	state string,
-	result orbital.Result,
-	resp *orbital.HandlerResponse,
-	err error,
-) error {
-	reconcileAfter := reconcileAfterSecProcessing
-
-	if err != nil {
-		log.Error(ctx, "Task Failed", err, slog.String("State", state))
-
-		if result == orbital.ResultProcessing {
-			state = fmt.Sprintf("%s: %s", state, err.Error())
-			reconcileAfter = reconcileAfterSecError
-			err = nil // clear the error to avoid task termination by orbital
-		}
+func setWorkingState(ctx context.Context, resp *orbital.HandlerResponse, err error, state string) {
+	workingState, getErr := resp.WorkingState()
+	if getErr != nil || workingState == nil {
+		log.Error(ctx, "failed to get working state", getErr)
+		return
 	}
 
-	newHandlerResponse := orbital.HandlerResponse{
-		RawWorkingState:   []byte(state),
-		Result:            result,
-		ReconcileAfterSec: reconcileAfter,
-	}
+	workingState.Set("state", state)
+	workingState.Set("error", err.Error())
+}
 
-	if resp != nil {
-		*resp = newHandlerResponse
-	} else {
-		log.Warn(ctx, "Handler response is nil, cannot set the response", slog.String("State", state))
-	}
+func setErrorStateAndContinue(ctx context.Context, resp *orbital.HandlerResponse, err error, state string) {
+	log.Error(ctx, "Task Failed, will continue to reconcile", err, slog.String("State", state))
+	setWorkingState(ctx, resp, err, state)
+	resp.ContinueAndWaitFor(reconcileAfterSecError)
+}
 
-	return err
+func setErrorStateAndFail(ctx context.Context, resp *orbital.HandlerResponse, err error, state string) {
+	log.Error(ctx, "Task Failed, ending processing", err, slog.String("State", state))
+	setWorkingState(ctx, resp, err, state)
+	resp.Fail(err.Error())
 }
 
 func (o *TenantOperator) injectSystemUser(
-	next orbital.Handler,
-) orbital.Handler {
-	return func(ctx context.Context, request orbital.HandlerRequest, response *orbital.HandlerResponse) error {
+	next orbital.HandlerFunc,
+) orbital.HandlerFunc {
+	return func(ctx context.Context, request orbital.HandlerRequest, response *orbital.HandlerResponse) {
 		ctx = cmkcontext.InjectSystemUser(ctx)
-		return next(ctx, request, response)
+		next(ctx, request, response)
 	}
 }
 
 // registerHandlers registers all task handlers with the orbital operator
 func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
-	handlers := map[string]orbital.Handler{
+	handlers := map[string]orbital.HandlerFunc{
 		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():  o.handleCreateTenant,
 		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():      o.handleBlockTenant,
 		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():    o.handleUnblockTenant,
@@ -579,15 +582,17 @@ func (o *TenantOperator) finalizeTenantProvisioning(
 	ctx context.Context,
 	tenantID string,
 	resp *orbital.HandlerResponse,
-) error {
+) {
 	success, err := o.sendTenantUserGroupsToRegistry(ctx, tenantID)
 	if err != nil || !success {
-		return newHandlerResponse(ctx, WorkingStateSendingGroupsFailed, orbital.ResultProcessing, resp, err)
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateSendingGroupsFailed)
+		return
 	}
 
 	log.Info(ctx, WorkingStateTenantCreatedSuccessfully)
 
-	return newHandlerResponse(ctx, WorkingStateTenantCreatedSuccessfully, orbital.ResultDone, resp, nil)
+	resp.UseRawWorkingState([]byte(WorkingStateTenantCreatedSuccessfully))
+	resp.Complete()
 }
 
 // createTenantSchema creates the tenant schema in the database

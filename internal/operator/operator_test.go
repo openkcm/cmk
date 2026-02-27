@@ -2,7 +2,7 @@ package operator_test
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 	"os"
 	"sync"
@@ -46,12 +46,9 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
-const (
-	RegionUSWest1 = "us-west-1"
-	AMQPURL       = "amqp://guest:guest@localhost:5672"
-	AMQPTarget    = "cmk.global.tenants"
-	AMQPSource    = "cmk.emea.tenants"
-)
+const RegionUSWest1 = "us-west-1"
+
+var ErrOnboardingFailed = errors.New("onboarding failed")
 
 type MockTenantManager struct {
 	mockOffboardTenant func(ctx context.Context) (manager.OffboardingResult, error)
@@ -266,7 +263,8 @@ func TestHandleCreateTenant(t *testing.T) {
 	tests := []struct {
 		name       string
 		data       []byte
-		wantResult orbital.Result
+		wantDone   bool
+		wantResult string
 		wantState  string
 		wantErr    bool
 		setup      func()
@@ -276,7 +274,7 @@ func TestHandleCreateTenant(t *testing.T) {
 		{
 			name:       "valid tenant creation - first probe",
 			data:       validData,
-			wantResult: orbital.ResultProcessing,
+			wantResult: "PROCESSING",
 			wantState:  operator.WorkingStateTenantCreating,
 			wantErr:    false,
 			setup:      func() {},
@@ -286,15 +284,14 @@ func TestHandleCreateTenant(t *testing.T) {
 		{
 			name:       "valid tenant creation - second probe (idempotent)",
 			data:       validData,
-			wantResult: orbital.ResultDone,
+			wantResult: "DONE",
 			wantState:  operator.WorkingStateTenantCreatedSuccessfully,
 			wantErr:    false,
 			setup: func() {
 				// Create tenant first to simulate second probe
 				req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), validData)
-				resp := &orbital.HandlerResponse{}
-				err = testConfig.TenantOperator.HandleCreateTenant(ctx, req, resp)
-				require.NoError(t, err)
+				resp := orbital.ExecuteHandler(ctx, testConfig.TenantOperator.HandleCreateTenant, req)
+				assert.Empty(t, resp.ErrorMessage, "Expected no error on first tenant creation")
 			},
 			checkDB: true,
 			region:  RegionUSWest1,
@@ -302,15 +299,14 @@ func TestHandleCreateTenant(t *testing.T) {
 		{
 			name:       "sending groups to registry fails",
 			data:       validData,
-			wantResult: orbital.ResultProcessing,
+			wantResult: "PROCESSING",
 			wantState:  operator.WorkingStateSendingGroupsFailed,
 			wantErr:    false,
 			setup: func() {
 				// First create the tenant schema and groups
 				req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), validData)
-				resp := &orbital.HandlerResponse{}
-				err = testConfig.TenantOperator.HandleCreateTenant(ctx, req, resp)
-				require.NoError(t, err)
+				resp := orbital.ExecuteHandler(ctx, testConfig.TenantOperator.HandleCreateTenant, req)
+				assert.Empty(t, resp.ErrorMessage, "Expected no error on tenant creation")
 
 				// Configure the fake service to fail on the second call
 				testConfig.FakeTenantService.SetTenantUserGroupsError = operator.ErrSendingGroupsFailed
@@ -321,7 +317,7 @@ func TestHandleCreateTenant(t *testing.T) {
 		{
 			name:       "invalid proto data",
 			data:       []byte("invalid-proto"),
-			wantResult: orbital.ResultFailed,
+			wantResult: "FAILED",
 			wantState:  operator.WorkingStateUnmarshallingFailed,
 			wantErr:    true,
 			setup:      func() {},
@@ -335,20 +331,15 @@ func TestHandleCreateTenant(t *testing.T) {
 				tt.setup()
 
 				req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), tt.data)
-				resp := &orbital.HandlerResponse{}
-				err := testConfig.TenantOperator.HandleCreateTenant(ctx, req, resp)
+				resp := orbital.ExecuteHandler(ctx, testConfig.TenantOperator.HandleCreateTenant, req)
 
 				if tt.wantErr {
-					assert.Error(t, err)
+					assert.NotEmpty(t, resp.ErrorMessage, "Expected an error message for invalid input")
 				} else {
-					assert.NoError(t, err)
+					assert.Empty(t, resp.ErrorMessage, "Expected no error message for valid input")
 				}
 
-				assert.Equal(t, tt.wantResult, resp.Result)
-
-				if tt.wantState != "" {
-					assert.Contains(t, string(resp.RawWorkingState), tt.wantState)
-				}
+				assert.Equal(t, tt.wantResult, resp.Status, "Unexpected task status")
 
 				if tt.checkDB {
 					schemaName, _ := tmdb.EncodeSchemaNameBase62(validTenantID)
@@ -388,7 +379,7 @@ func TestHandleCreateTenantConcurrent(t *testing.T) {
 	)
 
 	errs := make(chan error, numRoutines)
-	resps := make(chan *orbital.HandlerResponse, numRoutines)
+	resps := make(chan orbital.TaskResponse, numRoutines)
 
 	for i := range numRoutines {
 		wg.Add(1)
@@ -399,10 +390,9 @@ func TestHandleCreateTenantConcurrent(t *testing.T) {
 			rCtx := slogctx.Prepend(ctx, "Routine:", i)
 			req := buildRequest(taskID, tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), validData)
 
-			resp := &orbital.HandlerResponse{}
-			opErr := testConfig.TenantOperator.HandleCreateTenant(rCtx, req, resp)
-			if opErr != nil {
-				errs <- fmt.Errorf("onboarding failed: %w", opErr)
+			resp := orbital.ExecuteHandler(rCtx, testConfig.TenantOperator.HandleCreateTenant, req)
+			if resp.ErrorMessage != "" {
+				errs <- ErrOnboardingFailed
 			} else {
 				errs <- nil
 			}
@@ -1440,9 +1430,9 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 	}
 }
 
-// buildRequest creates a properly structured handler request with TaskID
-func buildRequest(taskID uuid.UUID, actionType string, data []byte) orbital.HandlerRequest {
-	return orbital.HandlerRequest{
+// buildRequest creates a properly structured task request with TaskID
+func buildRequest(taskID uuid.UUID, actionType string, data []byte) orbital.TaskRequest {
+	return orbital.TaskRequest{
 		TaskID: taskID,
 		Type:   actionType,
 		Data:   data,

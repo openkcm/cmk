@@ -21,7 +21,6 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
@@ -61,12 +60,6 @@ type SystemFilter struct {
 	Skip        int
 	Top         int
 	Count       bool
-}
-
-var SystemEvents = []string{
-	proto.TaskType_SYSTEM_LINK.String(),
-	proto.TaskType_SYSTEM_UNLINK.String(),
-	proto.TaskType_SYSTEM_SWITCH.String(),
 }
 
 var _ repo.QueryMapper = (*SystemFilter)(nil) // Assert interface impl
@@ -422,7 +415,7 @@ func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UU
 
 		err = m.eventFactory.SendEvent(
 			ctx, eventprocessor.Event{
-				Name: proto.TaskType_SYSTEM_UNLINK.String(),
+				Name: eventprocessor.JobTypeSystemUnlink.String(),
 				Event: func(ctx context.Context) (orbital.Job, error) {
 					return m.eventFactory.SystemUnlink(ctx, dbSystem, keyConfig.PrimaryKeyID.String(), trigger)
 				},
@@ -509,7 +502,7 @@ func (m *SystemManager) selectEvent(
 	// If system doesn't have a link already, we send SYSTEM_LINK
 	if !ptr.IsNotNilUUID(oldKeyConfigID) {
 		return eventprocessor.Event{
-			Name: proto.TaskType_SYSTEM_LINK.String(),
+			Name: eventprocessor.JobTypeSystemLink.String(),
 			Event: func(ctx context.Context) (orbital.Job, error) {
 				return m.eventFactory.SystemLink(ctx, system, newKeyConfig.PrimaryKeyID.String())
 			},
@@ -527,14 +520,13 @@ func (m *SystemManager) selectEvent(
 
 		if ptr.IsNotNilUUID(oldKeyConfig.PrimaryKeyID) {
 			return eventprocessor.Event{
-				Name: proto.TaskType_SYSTEM_SWITCH.String(),
+				Name: eventprocessor.JobTypeSystemSwitch.String(),
 				Event: func(ctx context.Context) (orbital.Job, error) {
 					return m.eventFactory.SystemSwitch(
 						ctx,
 						system,
 						newKeyConfig.PrimaryKeyID.String(),
 						oldKeyConfig.PrimaryKeyID.String(),
-						"", // Empty trigger for regular switch actions
 					)
 				},
 			}, nil
@@ -542,7 +534,7 @@ func (m *SystemManager) selectEvent(
 	}
 
 	return eventprocessor.Event{
-		Name: proto.TaskType_SYSTEM_LINK.String(),
+		Name: eventprocessor.JobTypeSystemLink.String(),
 		Event: func(ctx context.Context) (orbital.Job, error) {
 			return m.eventFactory.SystemLink(ctx, system, newKeyConfig.PrimaryKeyID.String())
 		},
@@ -651,14 +643,15 @@ func (m *SystemManager) determineRecoveryPermissions(
 	}
 
 	switch event.Type {
-	case proto.TaskType_SYSTEM_UNLINK.String():
+	case eventprocessor.JobTypeSystemUnlink.String():
 		// Retry allowed for Key Admins of the source KeyConfig (KeyIDFrom)
 		canRetry = checkAuth(func(d *eventprocessor.SystemActionJobData) string { return d.KeyIDFrom })
 		canCancel = true
 
-	case proto.TaskType_SYSTEM_SWITCH.String():
+	case eventprocessor.JobTypeSystemSwitch.String():
 		var jobData eventprocessor.SystemActionJobData
 		if json.Unmarshal(event.Data, &jobData) == nil {
+			// The trigger will be deprecated and replaced with a separate job type for setting primary key.
 			if jobData.Trigger == constants.KeyActionSetPrimary {
 				// Make Primary Key: Retry allowed for Key Admins of target KeyConfig, cancel not allowed
 				canRetry = m.hasKeyAdminAccess(ctx, jobData.KeyIDTo)
@@ -673,8 +666,12 @@ func (m *SystemManager) determineRecoveryPermissions(
 			canRetry = false
 			canCancel = false
 		}
+	case eventprocessor.JobTypeSystemSwitchNewPK.String():
+		// Retry allowed for Key Admins of the target KeyConfig (KeyIDTo), cancel not allowed
+		canRetry = checkAuth(func(d *eventprocessor.SystemActionJobData) string { return d.KeyIDTo })
+		canCancel = false
 
-	case proto.TaskType_SYSTEM_LINK.String():
+	case eventprocessor.JobTypeSystemLink.String():
 		// Retry allowed for Key Admins of the target KeyConfig (KeyIDTo)
 		canRetry = checkAuth(func(d *eventprocessor.SystemActionJobData) string { return d.KeyIDTo })
 		canCancel = true
