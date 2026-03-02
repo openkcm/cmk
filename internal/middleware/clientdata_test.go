@@ -474,6 +474,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		name            string
 		roles           []constants.Role
 		clientGroups    []string
+		apiPath         string
 		expectError     bool
 		expectHttpCode  int
 		expectErrorCode string
@@ -482,6 +483,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 			name:           "single_role_key_admin",
 			roles:          []constants.Role{constants.KeyAdminRole},
 			clientGroups:   []string{"group1", "group2"},
+			apiPath:        "/keys",
 			expectError:    false,
 			expectHttpCode: http.StatusOK,
 		},
@@ -489,6 +491,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 			name:           "single_role_tenant_admin",
 			roles:          []constants.Role{constants.TenantAdminRole},
 			clientGroups:   []string{"group1", "group2"},
+			apiPath:        "/keys",
 			expectError:    false,
 			expectHttpCode: http.StatusOK,
 		},
@@ -496,6 +499,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 			name:           "single_role_tenant_auditor",
 			roles:          []constants.Role{constants.TenantAuditorRole},
 			clientGroups:   []string{"group1", "group2"},
+			apiPath:        "/keys",
 			expectError:    false,
 			expectHttpCode: http.StatusOK,
 		},
@@ -503,6 +507,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 			name:            "mixed_roles_key_admin_and_tenant_admin",
 			roles:           []constants.Role{constants.KeyAdminRole, constants.TenantAdminRole},
 			clientGroups:    []string{"group1", "group2"},
+			apiPath:         "/keys",
 			expectError:     true,
 			expectHttpCode:  http.StatusForbidden,
 			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
@@ -511,6 +516,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 			name:            "mixed_roles_key_admin_and_tenant_auditor",
 			roles:           []constants.Role{constants.KeyAdminRole, constants.TenantAuditorRole},
 			clientGroups:    []string{"group1", "group2"},
+			apiPath:         "/keys",
 			expectError:     true,
 			expectHttpCode:  http.StatusForbidden,
 			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
@@ -519,6 +525,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 			name:            "mixed_roles_tenant_admin_and_tenant_auditor",
 			roles:           []constants.Role{constants.TenantAdminRole, constants.TenantAuditorRole},
 			clientGroups:    []string{"group1", "group2"},
+			apiPath:         "/keys",
 			expectError:     true,
 			expectHttpCode:  http.StatusForbidden,
 			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
@@ -527,6 +534,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 			name:           "single_group_no_validation_needed",
 			roles:          []constants.Role{},
 			clientGroups:   []string{"group1"},
+			apiPath:        "/keys",
 			expectError:    false,
 			expectHttpCode: http.StatusOK,
 		},
@@ -534,8 +542,36 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 			name:           "no_groups_access_denied",
 			roles:          []constants.Role{},
 			clientGroups:   []string{},
+			apiPath:        "/keys",
 			expectError:    false,
 			expectHttpCode: http.StatusForbidden,
+		},
+		// Allowed API test cases
+		{
+			name:           "allowed_api_succeeds_with_mixed_roles",
+			roles:          []constants.Role{constants.KeyAdminRole, constants.TenantAdminRole},
+			clientGroups:   []string{"group1", "group2"},
+			apiPath:        "/userInfo",
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name:            "allowed_api_fails_with_no_groups",
+			roles:           []constants.Role{},
+			clientGroups:    []string{},
+			apiPath:         "/userInfo",
+			expectError:     false,
+			expectHttpCode:  http.StatusForbidden,
+			expectErrorCode: "ZERO_ROLES_NOT_ALLOWED",
+		},
+		{
+			name:            "non_allowed_api_fails_with_mixed_roles",
+			roles:           []constants.Role{constants.KeyAdminRole, constants.TenantAdminRole},
+			clientGroups:    []string{"group1", "group2"},
+			apiPath:         "/keys",
+			expectError:     true,
+			expectHttpCode:  http.StatusForbidden,
+			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
 		},
 	}
 
@@ -586,8 +622,15 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 				// Apply middleware
 				handler := middlewareFunc(testHandler)
 
-				// Create request
-				req := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+				// Use apiPath from test case, default to /keys if not specified
+				apiPath := tc.apiPath
+				if apiPath == "" {
+					apiPath = "/keys"
+				}
+
+				// Create request (all test scenarios use GET)
+				req := httptest.NewRequest(http.MethodGet, constants.BasePath+apiPath, nil)
+				req.Pattern = "GET " + constants.BasePath + apiPath
 				req.Header.Set(auth.HeaderClientData, clientDataStr)
 				req.Header.Set(auth.HeaderClientDataSignature, signature)
 
@@ -599,7 +642,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 				assert.Equal(t, tc.expectHttpCode, w.Result().StatusCode)
 				if tc.expectErrorCode != "" {
 					response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-					assert.Equal(t, apierrors.MultipleRolesInGroupsCode, response.Error.Code)
+					assert.Equal(t, tc.expectErrorCode, response.Error.Code)
 				}
 
 				if tc.expectError {
