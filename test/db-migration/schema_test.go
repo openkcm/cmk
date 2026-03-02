@@ -168,6 +168,30 @@ func TestMigrations(t *testing.T) {
 			version:   2,
 		},
 		{
+			name:      "Should up tenant/0003_add_tenant_name.sql",
+			downgrade: false,
+			target:    db.SharedTarget,
+			version:   3,
+		},
+		{
+			name:      "Should down tenant/0003_add_tenant_name.sql",
+			downgrade: true,
+			target:    db.SharedTarget,
+			version:   3,
+		},
+		{
+			name:      "Should up tenant/0004_delete_tenant_region.sql",
+			downgrade: false,
+			target:    db.SharedTarget,
+			version:   4,
+		},
+		{
+			name:      "Should down tenant/0004_delete_tenant_region.sql",
+			downgrade: true,
+			target:    db.SharedTarget,
+			version:   4,
+		},
+		{
 			name:      "Should up tenant/0001_init_shared.sql",
 			downgrade: false,
 			target:    db.TenantTarget,
