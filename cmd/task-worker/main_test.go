@@ -52,7 +52,10 @@ func buildCfg(t *testing.T) *config.Config {
 			ValidityDays: config.MinCertificateValidityDays,
 		},
 		Database: dbCfg,
-		Plugins:  testutils.SetupMockPlugins(testutils.SystemInfo),
+		Services: config.Services{
+			Registry: testutils.TestRegistryConfig,
+		},
+		Plugins: testutils.SetupMockPlugins(testutils.SystemInfo),
 	}
 }
 
@@ -117,15 +120,14 @@ func TestExitSignal(t *testing.T) {
 			filename := "config.yaml"
 			f, err := os.Create(filename)
 			require.NoError(t, err)
+			defer f.Close()
+			defer os.Remove(filename)
 
 			bytes, err := yaml.Marshal(tt.cfg(t))
 			require.NoError(t, err)
 
 			_, err = f.Write(bytes)
 			require.NoError(t, err)
-
-			defer f.Close()
-			defer os.Remove(filename)
 
 			exitCode := taskWorker.RunFunctionWithSigHandling(func(ctx context.Context, cfg *config.Config) error {
 				if tt.exitCode != 0 {

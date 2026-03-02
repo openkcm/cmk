@@ -20,8 +20,8 @@ func ToAPI(tenant model.Tenant) (*cmkapi.Tenant, error) {
 	apiTenant := &cmkapi.Tenant{
 		Id:     &tenant.ID,
 		Region: tenant.Region,
-		Name:   tenant.SchemaName,
 		Role:   &role,
+		Name:   tenant.Name,
 	}
 
 	return apiTenant, nil

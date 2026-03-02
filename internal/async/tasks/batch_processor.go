@@ -29,6 +29,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 	ctx context.Context,
 	taskName string,
 	asynqTask *asynq.Task,
+	query *repo.Query,
 	processTenant func(ctx context.Context, tenant *model.Tenant, index int) error,
 ) error {
 	totalTenantCount := 0
@@ -44,7 +45,6 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 		}
 	}
 
-	query := repo.NewQuery()
 	if len(tenantIDs) > 0 {
 		ck := repo.NewCompositeKey().Where(repo.IDField, tenantIDs)
 		query = query.Where(repo.NewCompositeKeyGroup(ck))

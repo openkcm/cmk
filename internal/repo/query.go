@@ -57,6 +57,7 @@ const (
 	CreatedField        QueryField = "created_at"
 	IssuerURLField      QueryField = "issuer_url"
 	IAMIdField          QueryField = "iam_identifier"
+	DataField           QueryField = "data"
 	Name                QueryField = "name"
 
 	ArtifactNameField      QueryField = "artifact_name"
@@ -162,6 +163,11 @@ func Gt(v any) Key {
 
 func Lt(v any) Key {
 	return Key{Value: v, Operation: LessThan}
+}
+
+// JSONBField is used to point to a key in a jsonb
+func JSONBField(column QueryField, key string) QueryField {
+	return fmt.Sprintf("%s->>'%s'", column, key)
 }
 
 type Query struct {

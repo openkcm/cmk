@@ -52,6 +52,7 @@ type NotificationTemplateData struct {
 	WorkflowURL         string
 	TenantID            string
 	TenantRegion        string
+	TenantName          string
 	Landscape           string
 	ActionText          string
 	InitiatorName       string
@@ -233,6 +234,7 @@ func (w *Creator) createHTMLBody(data NotificationData, message, actionText stri
 		WorkflowURL:         workflowURL,
 		TenantID:            data.Tenant.ID,
 		TenantRegion:        data.Tenant.Region,
+		TenantName:          data.Tenant.Name,
 		Landscape:           w.cfg.Landscape.Name,
 		ActionText:          actionText,
 		InitiatorName:       data.Workflow.InitiatorName,
