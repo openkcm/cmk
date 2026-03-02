@@ -41,6 +41,9 @@ data:
     certificates:
       {{- toYaml .certificates | nindent 6 }}
 
+    services:
+      {{- toYaml .services | nindent 6 }}
+
     # Plugins configuration
     plugins:
       {{- include "cmk.plugins" . | nindent 6 }}

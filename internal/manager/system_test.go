@@ -1197,9 +1197,6 @@ func TestLinkSystemAction(t *testing.T) {
 			assert.ErrorIs(t, err, manager.ErrConnectSystemNoPrimaryKey)
 		})
 	}
-
-	t.Run("Should fail on link to keyconfig with pkey on invalid state", func(t *testing.T) {
-	})
 }
 
 func TestUnlinkSystemAction(t *testing.T) {

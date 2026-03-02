@@ -41,8 +41,9 @@ func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) er
 		ctx,
 		"Workflow Cleanup",
 		task,
-		func(ctx context.Context, tenant *model.Tenant, index int) error {
-			log.Debug(ctx, "Cleaning up expired workflows for tenant",
+		repo.NewQuery(),
+		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
+			log.Debug(tenantCtx, "Cleaning up expired workflows for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
 
 			cleanupErr := wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
