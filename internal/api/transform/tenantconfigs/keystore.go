@@ -12,7 +12,7 @@ func ToAPI(keystore manager.TenantKeystores) (*cmkapi.TenantKeystore, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Hardcoded allowManaged and allowBYOK to true for now
+	// Hardcoded allowManaged=true and allowBYOK=false for now
 	allowManaged := true
 	allowBYOK := false
 	apiTenant := &cmkapi.TenantKeystore{
