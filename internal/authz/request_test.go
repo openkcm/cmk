@@ -3,6 +3,7 @@ package authz_test
 import (
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/authz"
@@ -43,7 +44,7 @@ func TestNewRequest_ValidCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(
 			tt.name, func(t *testing.T) {
-				ctx := cmkcontext.CreateTenantContext(cmkcontext.InjectRequestID(t.Context()), string(tt.tenantID))
+				ctx := cmkcontext.CreateTenantContext(cmkcontext.InjectRequestID(t.Context(), uuid.NewString()), string(tt.tenantID))
 
 				req, err := authz.NewRequest(ctx, tt.tenantID, tt.user, tt.resourceType, tt.action)
 				assert.NoError(t, err)

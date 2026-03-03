@@ -144,7 +144,7 @@ func (r *ResourceRepository) Count(
 		ctx, resource, func(tx *multitenancy.DB) error {
 			db := tx.Model(resource)
 
-			db, err := applyQuery(db, query)
+			db, err := applyQuery(db, resource, query)
 			if err != nil {
 				return err
 			}
@@ -181,7 +181,7 @@ func (r *ResourceRepository) List(
 ) error {
 	return r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
-			db, err := applyQuery(tx.Model(result), query)
+			db, err := applyQuery(tx.Model(result), resource, query)
 			if err != nil {
 				return err
 			}
@@ -224,6 +224,7 @@ func (r *ResourceRepository) Delete(
 		ctx, resource, func(tx *multitenancy.DB) error {
 			db, err := applyQuery(
 				tx.Clauses(clause.Returning{}),
+				resource,
 				query,
 			)
 			if err != nil {
@@ -258,7 +259,7 @@ func (r *ResourceRepository) First(
 
 	err := r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
-			db, err := applyQuery(tx.Model(resource), query)
+			db, err := applyQuery(tx.Model(resource), resource, query)
 			if err != nil {
 				return err
 			}
@@ -307,7 +308,7 @@ func (r *ResourceRepository) Patch(
 				query,
 			).Updates(resource)
 
-			db, err := applyQuery(res, query)
+			db, err := applyQuery(res, resource, query)
 			if err != nil {
 				return err
 			}
@@ -419,7 +420,7 @@ func applyUpdateQuery(db *gorm.DB, query repo.Query) *gorm.DB {
 // applyQuery applies the query to the database.
 //
 //nolint:cyclop
-func applyQuery(db *gorm.DB, query repo.Query) (*gorm.DB, error) {
+func applyQuery(db *gorm.DB, resource repo.Resource, query repo.Query) (*gorm.DB, error) {
 	if len(query.SelectFields) > 0 {
 		fields := make([]string, 0, len(query.SelectFields))
 
@@ -446,7 +447,7 @@ func applyQuery(db *gorm.DB, query repo.Query) (*gorm.DB, error) {
 		baseQuery := db.Session(&gorm.Session{NewDB: true})
 
 		for i, ck := range query.CompositeKeyGroup {
-			tk, err := handleCompositeKey(db, ck.CompositeKey)
+			tk, err := handleCompositeKey(db, resource, ck.CompositeKey)
 			if err != nil {
 				return nil, err
 			}
@@ -484,10 +485,21 @@ func applyPagination(db *gorm.DB, query repo.Query) *gorm.DB {
 }
 
 // handleCompositeKey applies the composite key to the query.
-func handleCompositeKey(db *gorm.DB, compositeKey repo.CompositeKey) (*gorm.DB, error) {
+func handleCompositeKey(db *gorm.DB, resource repo.Resource, compositeKey repo.CompositeKey) (*gorm.DB, error) {
 	tx := db.Session(&gorm.Session{NewDB: true})
 
 	for _, cond := range compositeKey.Conds {
+		// Table of field not set, by default use FROM table
+		if !strings.Contains(cond.Field, ".") {
+			// Quote in case table has reserved keyword
+			// If it's public.Table, public quote should end before "."
+			if !resource.IsSharedModel() {
+				cond.Field = fmt.Sprintf(`"%s".%s`, resource.TableName(), cond.Field)
+			} else {
+				tableParts := strings.SplitN(resource.TableName(), ".", 2)
+				cond.Field = fmt.Sprintf(`%s."%s".%s`, tableParts[0], tableParts[1], cond.Field)
+			}
+		}
 		entry := cond.Value
 		if entry.Err != nil {
 			return nil, entry.Err

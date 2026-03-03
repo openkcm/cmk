@@ -51,6 +51,8 @@ const (
 	PrimaryKeyIDField   QueryField = "primary_key_id"
 	PurposeField        QueryField = "purpose"
 	NameField           QueryField = "name"
+	ErrorMessageField   QueryField = "error_message"
+	ErrorCodeField      QueryField = "error_code"
 	AutoRotateField     QueryField = "auto_rotate"
 	ExpirationDateField QueryField = "expiration_date"
 	CreationDateField   QueryField = "creation_date"

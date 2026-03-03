@@ -191,6 +191,18 @@ func TestMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   2,
 		},
+		{
+			name:      "Should up tenant/0003_add_error_event_table.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   3,
+		},
+		{
+			name:      "Should down tenant/0003_add_error_event_table.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   3,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

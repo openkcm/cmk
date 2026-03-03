@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/orbital"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
@@ -62,7 +63,8 @@ func NewSystem(m func(*model.System)) *model.System {
 type KeyConfigOpt func(*model.KeyConfiguration)
 
 func NewKeyConfig(m func(*model.KeyConfiguration),
-	opts ...KeyConfigOpt) *model.KeyConfiguration {
+	opts ...KeyConfigOpt,
+) *model.KeyConfiguration {
 	keyConfig := model.KeyConfiguration{
 		ID:         uuid.New(),
 		Name:       uuid.NewString(),
@@ -207,6 +209,19 @@ func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 			ArtifactID:   uuid.New(),
 			ActionType:   wfMechanism.ActionTypeDelete.String(),
 			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+		}
+	})
+
+	return ptr.PointTo(mut(m))
+}
+
+func NewEvent(m func(*model.Event)) *model.Event {
+	mut := NewMutator(func() model.Event {
+		return model.Event{
+			Identifier: uuid.NewString(),
+			Type:       uuid.NewString(),
+			Data:       json.RawMessage("{}"),
+			Status:     orbital.JobStatusFailed,
 		}
 	})
 
