@@ -243,22 +243,6 @@ func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
 	return HYOKKeystore{Provider: providers, Allow: len(providers) > 0}
 }
 
-func (m *TenantConfigManager) getKeystoreConfigFromPool(ctx context.Context) (*model.KeystoreConfig, error) {
-	cfg, err := m.keystorePool.Pop(ctx)
-	if err != nil {
-		return nil, errs.Wrap(ErrGetKeystoreFromPool, err)
-	}
-
-	ksConfig := &model.KeystoreConfig{}
-
-	err = json.Unmarshal(cfg.Config, ksConfig)
-	if err != nil {
-		return nil, errs.Wrap(ErrUnmarshalConfig, err)
-	}
-
-	return ksConfig, nil
-}
-
 // convertToWorkflowConfig converts TenantConfig to WorkflowConfig
 func (m *TenantConfigManager) convertToWorkflowConfig(config *model.TenantConfig) (*model.WorkflowConfig, error) {
 	var workflowConfig model.WorkflowConfig
