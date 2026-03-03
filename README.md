@@ -257,7 +257,7 @@ Refer to code documentation on the following functions for it's usage and availa
 
 ### Database Migrations
 
-Migrations are ran as K8s Jobs which uses [DB Migrator Binary](#db-migrator). There are two migration jobs:
+Migrations are run as K8s Jobs which uses [DB Migrator Binary](#db-migrator). There are two migration jobs:
 - Schema Migrations: Runs before the cluster is create and blocks the cluster creation until it finishes
 - Data Migrations: Runs at the same time as the cluster is being initiated, running in parallel
 
@@ -295,7 +295,7 @@ Data migrations are specified in Go implementing the Goose AddMigrationContext i
 
 This is done in GO instead of SQL as it might require more complex changes that would be harder to implement directly in SQL.
 
-For the GO based migrations, they need to be created and declared explicity. As we are only using GO based migrations for data migrations, on each data dir, main.go needs to be extended on the GetMigrations() method
+For the GO based migrations, they need to be created and declared explicitly. As we are only using GO based migrations for data migrations, on each data dir, main.go needs to be extended on the GetMigrations() method
 
 #### Destructive Migrations
 Migrations that require destructive changes, are done in 2 Steps (Expand & Contract). This will result in needing two releases to finish the changes and to provide an implementation supporting both the old entity and the new one

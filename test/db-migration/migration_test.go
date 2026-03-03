@@ -155,12 +155,13 @@ func TestMissingSchemaScripts(t *testing.T) {
 		ORDER BY table_name, ordinal_position`
 
 		var gooseRows []ColumnInfo
-		err := gooseMigrated.Raw(query, gooseTenant).Scan(&gooseRows).Error
+		err := gooseMigrated.Raw(query, gooseTenant[0]).Scan(&gooseRows).Error
 		assert.NoError(t, err)
 
 		var gormRows []ColumnInfo
 		err = gormMigrated.Raw(query, gormTenant.SchemaName).Scan(&gormRows).Error
 		assert.NoError(t, err)
+
 		assert.Subset(t, gooseRows, gormRows)
 	})
 }
@@ -235,10 +236,22 @@ func TestSchemaMigrations(t *testing.T) {
 			version:   2,
 		},
 		{
-			name:      "Should up tenant/00003_create_group_table.sql",
+			name:      "Should up tenant/00003_add_error_event_table.sql",
 			downgrade: false,
 			target:    db.TenantTarget,
 			version:   3,
+		},
+		{
+			name:      "Should down tenant/00003_add_error_event_table.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   3,
+		},
+		{
+			name:      "Should up tenant/00004_create_group_table.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   4,
 			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
 				t.Helper()
 				return func(db *multitenancy.DB) error {
@@ -278,10 +291,10 @@ func TestSchemaMigrations(t *testing.T) {
 			},
 		},
 		{
-			name:      "Should down tenant/00003_create_group_table.sql",
+			name:      "Should down tenant/00004_create_group_table.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
-			version:   3,
+			version:   4,
 		},
 	}
 	for _, tt := range tests {
@@ -342,7 +355,7 @@ func TestDataMigrations(t *testing.T) {
 			name:          "Should apply tenant/00001_copy_group_to_groups.go",
 			target:        db.TenantTarget,
 			version:       1,
-			schemaVersion: ptr.PointTo(int64((3))),
+			schemaVersion: ptr.PointTo(int64((4))),
 			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
 				t.Helper()
 				return func(db *multitenancy.DB) error {
