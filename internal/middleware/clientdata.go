@@ -6,14 +6,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/write"
 	"github.com/openkcm/cmk/internal/apierrors"
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
@@ -48,10 +49,10 @@ func ClientDataMiddleware(
 					log.Debug(r.Context(), "Client data processing error", log.ErrorAttr(err))
 					if errors.Is(err, manager.ErrMultipleRolesInGroups) ||
 						errors.Is(err, manager.ErrZeroRolesInGroups) {
-						e := apierrors.TransformToAPIError(r.Context(), err)
-						write.ErrorResponse(r.Context(), w, *e)
+						e := apierrors.APIErrorMapper.Transform(r.Context(), err)
+						write.ErrorResponse(r.Context(), w, e)
 					} else {
-						write.ErrorResponse(r.Context(), w, cmkapi.ErrorMessage{Error: apierrors.ErrNoClientData})
+						write.ErrorResponse(r.Context(), w, apierrors.ErrNoClientData)
 					}
 
 					return
@@ -78,7 +79,7 @@ func prepareClientContext(
 	// Validate that all groups belong to only one role type
 	// either KeyAdminRole, TenantAdminRole, or TenantAuditorRole.
 	// Also reject tenant access if no groups are provided.
-	err = validateGroupRoles(r.Context(), clientData, roleGetter)
+	err = validateGroupRoles(r, clientData, roleGetter)
 	if err != nil {
 		return r.Context(), err
 	}
@@ -166,16 +167,34 @@ func verifyClientDataSignature(r *http.Request, clientData *auth.ClientData, pub
 
 // validateGroupRoles ensures that all groups in client data belong to only one role type
 func validateGroupRoles(
-	ctx context.Context,
+	r *http.Request,
 	clientData *auth.ClientData,
 	roleGetter RoleGetter,
 ) error {
-	// If there are no groups or only one group, no need to validate
-	if len(clientData.Groups) == 1 {
-		return nil
-	} else if len(clientData.Groups) == 0 {
+	ctx := r.Context()
+
+	// Always check that groups are provided - reject tenant access if no groups
+	if len(clientData.Groups) == 0 {
 		log.Debug(ctx, "No groups provided in client data for tenant access")
 		return manager.ErrZeroRolesInGroups
+	}
+
+	// Check if the API is on the allow list
+	pattern := strings.Replace(r.Pattern, constants.BasePath, "", 1)
+	_, isAllowedAPI := authz.AllowListByAPI[pattern]
+
+	// If API is allowed, skip mixed role validation
+	if isAllowedAPI {
+		log.Debug(
+			ctx, "API is on allow list, skipping group role validation",
+			slog.String("pattern", pattern),
+		)
+		return nil
+	}
+
+	// For non-allowed APIs, if there is only one group, no need to validate for mixed roles
+	if len(clientData.Groups) == 1 {
+		return nil
 	}
 
 	// Get all roles associated with the groups using existing GroupManager method
