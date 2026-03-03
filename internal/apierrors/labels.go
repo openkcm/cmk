@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 )
 
@@ -20,114 +20,114 @@ var (
 	ErrDeleteLabel           = errors.New("failed to delete label")
 )
 
-var label = []APIErrors{
+var label = []errs.ExposedErrors[*APIError]{
 	{
-		Errors: []error{ErrGetKeyLabels, gorm.ErrRecordNotFound},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrGetKeyLabels, gorm.ErrRecordNotFound},
+		ExposedError: &APIError{
 			Code:    "KEY_NOT_FOUND",
 			Message: "Label by KeyID not found",
 			Status:  http.StatusNotFound,
 		},
 	},
 	{
-		Errors: []error{ErrLabelNotFound},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrLabelNotFound},
+		ExposedError: &APIError{
 			Code:    "LABEL_NOT_FOUND",
 			Message: "Label not found",
 			Status:  http.StatusNotFound,
 		},
 	},
 	{
-		Errors: []error{manager.ErrQueryLabelList},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{manager.ErrQueryLabelList},
+		ExposedError: &APIError{
 			Code:    "QUERY_LABEL_LIST",
 			Message: "Failed to query label list",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrTransformLabelList},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrTransformLabelList},
+		ExposedError: &APIError{
 			Code:    "TRANSFORM_LABEL_LIST",
 			Message: "Failed to transform label list",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrEmptyInputLabel},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrEmptyInputLabel},
+		ExposedError: &APIError{
 			Code:    "EMPTY_INPUT_LABEL",
 			Message: "Invalid input empty label name",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
-		Errors: []error{manager.ErrEmptyInputLabelDB},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{manager.ErrEmptyInputLabelDB},
+		ExposedError: &APIError{
 			Code:    "EMPTY_INPUT_LABEL",
 			Message: "Invalid input empty label name",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
-		Errors: []error{manager.ErrFetchLabel},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{manager.ErrFetchLabel},
+		ExposedError: &APIError{
 			Code:    "FETCH_LABEL",
 			Message: "Error fetching label",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{manager.ErrInsertLabel},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{manager.ErrInsertLabel},
+		ExposedError: &APIError{
 			Code:    "INSERT_LABEL",
 			Message: "Error inserting label",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{manager.ErrUpdateLabelDB},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{manager.ErrUpdateLabelDB},
+		ExposedError: &APIError{
 			Code:    "UPDATE_LABEL",
 			Message: "Error updating label",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrUpdateLabel},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrUpdateLabel},
+		ExposedError: &APIError{
 			Code:    "UPDATE_LABEL",
 			Message: "Error updating label",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrUpdateLabel, gorm.ErrRecordNotFound},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrUpdateLabel, gorm.ErrRecordNotFound},
+		ExposedError: &APIError{
 			Code:    "KEY_NOT_FOUND",
 			Message: "Update Label by KeyID not found",
 			Status:  http.StatusNotFound,
 		},
 	},
 	{
-		Errors: []error{ErrDeleteLabel},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrDeleteLabel},
+		ExposedError: &APIError{
 			Code:    "DELETE_LABEL",
 			Message: "Error deleting label",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{manager.ErrDeleteLabelDB},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{manager.ErrDeleteLabelDB},
+		ExposedError: &APIError{
 			Code:    "DELETE_LABEL",
 			Message: "Error deleting label",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrTransformLabelFromAPI},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrTransformLabelFromAPI},
+		ExposedError: &APIError{
 			Code:    "TRANSFORM_LABEL_FROM_API",
 			Message: "Failed to transform label from API",
 			Status:  http.StatusBadRequest,

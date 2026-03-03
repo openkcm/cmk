@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jxskiss/base62"
+	"github.com/openkcm/orbital"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
@@ -209,6 +210,19 @@ func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 			ArtifactID:   uuid.New(),
 			ActionType:   wfMechanism.ActionTypeDelete.String(),
 			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+		}
+	})
+
+	return ptr.PointTo(mut(m))
+}
+
+func NewEvent(m func(*model.Event)) *model.Event {
+	mut := NewMutator(func() model.Event {
+		return model.Event{
+			Identifier: uuid.NewString(),
+			Type:       uuid.NewString(),
+			Data:       json.RawMessage("{}"),
+			Status:     orbital.JobStatusFailed,
 		}
 	})
 
