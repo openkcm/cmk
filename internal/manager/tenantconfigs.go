@@ -189,7 +189,7 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 	}
 
 	if !found {
-		return nil, errs.Wrap(ErrGetDefaultKeystore, "default keystore not found")
+		return nil, errs.Wrapf(ErrGetDefaultKeystore, "default keystore not found")
 	}
 
 	keystore := &model.KeystoreConfig{}
