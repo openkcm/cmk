@@ -277,7 +277,7 @@ migrations
 │       │   0001_migration.go
 │       │   ...
 
-└───public
+└───tenant
 │   │   
 │   └───schema
 │   │   │   0001_migration.sql
