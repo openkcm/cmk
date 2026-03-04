@@ -85,7 +85,7 @@ func testCmkSystemAuditMethod(
 
 			testAuditor := createTestAuditor(mockCollectorServer.URL)
 
-			err := auditMethod(testAuditor, tt.setupCtx(), tt.cmkID, tt.systemID)
+			err := auditMethod(testAuditor, tt.setupCtx(), tt.systemID, tt.cmkID)
 
 			if tt.expectErr {
 				assert.Error(t, err)
@@ -300,8 +300,8 @@ func TestAuditor_SendCmkOnboardingAuditLog(t *testing.T) {
 	testCmkSystemAuditMethod(
 		t,
 		"cmk onboarding",
-		func(a *auditor.Auditor, ctx context.Context, cmkID, systemID string) error {
-			return a.SendCmkOnboardingAuditLog(ctx, cmkID, systemID)
+		func(a *auditor.Auditor, ctx context.Context, systemID, cmkID string) error {
+			return a.SendCmkOnboardingAuditLog(ctx, systemID, cmkID)
 		},
 	)
 }
@@ -310,8 +310,8 @@ func TestAuditor_SendCmkOffboardingAuditLog(t *testing.T) {
 	testCmkSystemAuditMethod(
 		t,
 		"cmk offboarding",
-		func(a *auditor.Auditor, ctx context.Context, cmkID, systemID string) error {
-			return a.SendCmkOffboardingAuditLog(ctx, cmkID, systemID)
+		func(a *auditor.Auditor, ctx context.Context, systemID, cmkID string) error {
+			return a.SendCmkOffboardingAuditLog(ctx, systemID, cmkID)
 		},
 	)
 }
@@ -330,8 +330,8 @@ func TestAuditor_SendCmkTenantModificationAuditLog(t *testing.T) {
 	testCmkTenantModificationAuditMethod(
 		t,
 		"cmk tenant modification",
-		func(a *auditor.Auditor, ctx context.Context, cmkID, systemID string, action otlpaudit.CmkAction) error {
-			return a.SendCmkTenantModificationAuditLog(ctx, cmkID, systemID, action)
+		func(a *auditor.Auditor, ctx context.Context, systemID, cmkID string, action otlpaudit.CmkAction) error {
+			return a.SendCmkTenantModificationAuditLog(ctx, systemID, cmkID, action)
 		},
 	)
 }
