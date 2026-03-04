@@ -35,7 +35,12 @@ import (
 
 func setupReconciler(
 	t *testing.T, targetRegions []string,
-) (*eventprocessor.CryptoReconciler, *systems.FakeService, repo.Repo, string) {
+) (
+	*eventprocessor.CryptoReconciler,
+	*systems.FakeService,
+	repo.Repo,
+	string,
+) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
@@ -47,6 +52,9 @@ func setupReconciler(
 	cfg := &config.Config{
 		Database: dbCfg,
 		Plugins:  testutils.SetupMockPlugins(testutils.KeyStorePlugin),
+		Landscape: config.Landscape{
+			Region: uuid.NewString(),
+		},
 	}
 	if len(targetRegions) > 0 {
 		rabbitMQURL := testutils.StartRabbitMQ(t)

@@ -265,7 +265,6 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 				DomainURL:  tenantID,
 			},
 			ID:        tenantID,
-			Region:    "test-region",
 			Status:    "STATUS_ACTIVE",
 			Role:      "ROLE_LIVE",
 			OwnerID:   tenantID + "-owner-id",

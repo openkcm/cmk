@@ -11,6 +11,7 @@ import (
 	protoPkg "google.golang.org/protobuf/proto"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
@@ -26,6 +27,7 @@ type SystemTaskInfoResolver struct {
 	repo        repo.Repo
 	targets     map[string]struct{}
 	svcRegistry *cmkpluginregistry.Registry
+	cfg         *config.Config
 }
 
 func (r *SystemTaskInfoResolver) Resolve(
@@ -108,7 +110,7 @@ func (r *SystemTaskInfoResolver) getTaskInfo(
 				TenantId:          tenant.ID,
 				TenantOwnerId:     tenant.OwnerID,
 				TenantOwnerType:   tenant.OwnerType,
-				CmkRegion:         tenant.Region,
+				CmkRegion:         r.cfg.Landscape.Region,
 				KeyAccessMetaData: keyAccessMetadata,
 			},
 		},
@@ -160,6 +162,7 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 type KeyTaskInfoResolver struct {
 	repo    repo.Repo
 	targets map[string]struct{}
+	cfg     *config.Config
 }
 
 func (r *KeyTaskInfoResolver) Resolve(
@@ -231,7 +234,7 @@ func (r *KeyTaskInfoResolver) getTaskInfo(
 				KeyAction: &proto.KeyAction{
 					KeyId:     data.KeyID,
 					TenantId:  tenant.ID,
-					CmkRegion: tenant.Region,
+					CmkRegion: r.cfg.Landscape.Region,
 				},
 			},
 		}
