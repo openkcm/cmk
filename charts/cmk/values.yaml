@@ -862,6 +862,7 @@ config:
   landscape:
     # name: one of Local, Staging, Canary, Production
     # uiBaseUrl: http://localhost:8086/#
+    # region: cmk-region
     # Note: The URL must have # at the end to properly redirect to the UI and not ending with slash /
 
   # Contains the configurable context properties

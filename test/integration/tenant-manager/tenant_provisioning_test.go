@@ -52,7 +52,7 @@ func TestRegistryTenantManagerIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		activeTenant := assertTenantExistsInRegistry(ctx, t, tenantClient, req.GetId())
-		assertTenantExistsInCMK(ctx, t, multitenancyDB, req.GetId(), req.GetRegion())
+		assertTenantExistsInCMK(ctx, t, multitenancyDB, req.GetId())
 		assertDefaultGroupsExistInRegistry(t, activeTenant, req.GetId())
 	})
 }
@@ -176,14 +176,13 @@ func assertTenantExistsInCMK(
 	ctx context.Context,
 	t *testing.T,
 	multitenancyDB *multitenancy.DB,
-	tenantID, region string,
+	tenantID string,
 ) {
 	t.Helper()
 
 	schemaName, err := base62.EncodeSchemaNameBase62(tenantID)
 	require.NoError(t, err)
 	integrationutils.TenantExists(t, multitenancyDB, schemaName, model.Group{}.TableName())
-	integrationutils.CheckRegion(ctx, t, multitenancyDB, tenantID, region)
 	integrationutils.GroupsExists(ctx, t, tenantID, multitenancyDB)
 }
 

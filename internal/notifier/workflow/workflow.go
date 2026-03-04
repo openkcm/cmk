@@ -233,7 +233,7 @@ func (w *Creator) createHTMLBody(data NotificationData, message, actionText stri
 		InfoTitle:           "Workflow Description",
 		WorkflowURL:         workflowURL,
 		TenantID:            data.Tenant.ID,
-		TenantRegion:        data.Tenant.Region,
+		TenantRegion:        w.cfg.Landscape.Region,
 		TenantName:          data.Tenant.Name,
 		Landscape:           w.cfg.Landscape.Name,
 		ActionText:          actionText,
