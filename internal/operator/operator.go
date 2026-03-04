@@ -219,7 +219,7 @@ func (o *TenantOperator) handleApplyTenantAuth(
 		return ErrInvalidTenantID
 	}
 
-	ctx = slogctx.With(ctx, "tenantID", tenantID)
+	ctx = slogctx.With(ctx, "tenantId", tenantID)
 
 	oidcConfig, err := extractOIDCConfig(authProto.GetProperties())
 	if err != nil {
@@ -368,7 +368,7 @@ func (o *TenantOperator) handleTerminateTenant(
 		return errs.Wrap(ErrInvalidData, err)
 	}
 
-	ctx = slogctx.With(ctx, "tenantID", tenantProto.GetId())
+	ctx = slogctx.With(ctx, "tenantId", tenantProto.GetId())
 
 	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().RemoveOIDCMapping(
 		ctx,
@@ -451,7 +451,7 @@ func newHandlerResponse(
 	reconcileAfter := reconcileAfterSecProcessing
 
 	if err != nil {
-		log.Error(ctx, "Task Failed", err, slog.String("State", state))
+		log.Error(ctx, "Task Failed", err, slog.String("state", state))
 
 		if result == orbital.ResultProcessing {
 			state = fmt.Sprintf("%s: %s", state, err.Error())
@@ -469,7 +469,7 @@ func newHandlerResponse(
 	if resp != nil {
 		*resp = newHandlerResponse
 	} else {
-		log.Warn(ctx, "Handler response is nil, cannot set the response", slog.String("State", state))
+		log.Warn(ctx, "Handler response is nil, cannot set the response", slog.String("state", state))
 	}
 
 	return err

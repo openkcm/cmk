@@ -129,17 +129,17 @@ func extractClientData(r *http.Request) (*auth.ClientData, error) {
 		log.Debug(r.Context(), "extracted client data group:", slog.String("group", group))
 	}
 
-	log.Debug(r.Context(), "extracted client data:", slog.String("Type", clientData.Type))
-	log.Debug(r.Context(), "extracted client data:", slog.String("Region", clientData.Region))
+	log.Debug(r.Context(), "extracted client data:", slog.String("type", clientData.Type))
+	log.Debug(r.Context(), "extracted client data:", slog.String("region", clientData.Region))
 
 	for k, v := range clientData.AuthContext {
 		log.Debug(r.Context(), "extracted client data auth context:", slog.String(k, v))
 	}
 
-	log.Debug(r.Context(), "extracted client data:", slog.String("keyID", clientData.KeyID))
+	log.Debug(r.Context(), "extracted client data:", slog.String("keyId", clientData.KeyID))
 	log.Debug(
 		r.Context(), "extracted client data:",
-		slog.String("SignatureAlgorithm", string(clientData.SignatureAlgorithm)),
+		slog.String("signatureAlgorithm", string(clientData.SignatureAlgorithm)),
 	)
 
 	if clientData.Identifier == constants.SystemUser.String() {
