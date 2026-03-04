@@ -559,7 +559,6 @@ func unmarshalTenantData(ctx context.Context, data []byte) (*model.Tenant, error
 	// Create a tenant model from the request data
 	return &model.Tenant{
 		ID:        tenantProto.GetId(),
-		Region:    tenantProto.GetRegion(),
 		Status:    model.TenantStatus(tenantgrpc.Status_STATUS_ACTIVE.String()),
 		OwnerType: tenantProto.GetOwnerType(),
 		OwnerID:   tenantProto.GetOwnerId(),
