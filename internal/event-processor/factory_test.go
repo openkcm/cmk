@@ -11,7 +11,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -87,21 +86,21 @@ func TestKeyEventCreation(t *testing.T) {
 			keyEventFn: eventProcessor.KeyDetach,
 			keyID:      "keyID",
 			tenantID:   tenant,
-			expType:    eventProto.TaskType_KEY_DETACH.String(),
+			expType:    eventprocessor.JobTypeKeyDetach.String(),
 		},
 		{
 			name:       "should create key enable event",
 			keyEventFn: eventProcessor.KeyEnable,
 			keyID:      "keyID",
 			tenantID:   tenant,
-			expType:    eventProto.TaskType_KEY_ENABLE.String(),
+			expType:    eventprocessor.JobTypeKeyEnable.String(),
 		},
 		{
 			name:       "should create key disable event",
 			keyEventFn: eventProcessor.KeyDisable,
 			keyID:      "keyID",
 			tenantID:   tenant,
-			expType:    eventProto.TaskType_KEY_DISABLE.String(),
+			expType:    eventprocessor.JobTypeKeyDisable.String(),
 		},
 	}
 
@@ -170,7 +169,7 @@ func TestSystemEventCreation(t *testing.T) {
 			systemStatus: cmkapi.SystemStatusCONNECTED,
 			tenantID:     tenant,
 			keyIDTo:      "keyIDTo",
-			expType:      eventProto.TaskType_SYSTEM_LINK.String(),
+			expType:      eventprocessor.JobTypeSystemLink.String(),
 			expStatus:    cmkapi.SystemStatusPROCESSING,
 			assertKeyID: func(t *testing.T, keyIDTo, _ string, data eventprocessor.SystemActionJobData) {
 				t.Helper()
@@ -202,7 +201,7 @@ func TestSystemEventCreation(t *testing.T) {
 			systemStatus: cmkapi.SystemStatusCONNECTED,
 			tenantID:     tenant,
 			keyIDFrom:    "keyIDFrom",
-			expType:      eventProto.TaskType_SYSTEM_UNLINK.String(),
+			expType:      eventprocessor.JobTypeSystemUnlink.String(),
 			expStatus:    cmkapi.SystemStatusPROCESSING,
 			assertKeyID: func(t *testing.T, _, keyIDFrom string, data eventprocessor.SystemActionJobData) {
 				t.Helper()
@@ -212,7 +211,7 @@ func TestSystemEventCreation(t *testing.T) {
 		{
 			name: "should return error on missing tenant from ctx for system switch",
 			systemEventFn: func(ctx context.Context, system *model.System, to, from string) (orbital.Job, error) {
-				return eventProcessor.SystemSwitch(ctx, system, to, from, "")
+				return eventProcessor.SystemSwitch(ctx, system, to, from)
 			},
 			systemStatus: cmkapi.SystemStatusCONNECTED,
 			expErr:       cmkcontext.ErrExtractTenantID,
@@ -220,7 +219,7 @@ func TestSystemEventCreation(t *testing.T) {
 		{
 			name: "should return error on system in processing state for system switch - KMS20-3467",
 			systemEventFn: func(ctx context.Context, system *model.System, to, from string) (orbital.Job, error) {
-				return eventProcessor.SystemSwitch(ctx, system, to, from, "")
+				return eventProcessor.SystemSwitch(ctx, system, to, from)
 			},
 			systemStatus: cmkapi.SystemStatusPROCESSING,
 			tenantID:     tenant,
@@ -229,13 +228,13 @@ func TestSystemEventCreation(t *testing.T) {
 		{
 			name: "should create system switch event and set system to processing - KMS20-3467",
 			systemEventFn: func(ctx context.Context, system *model.System, to, from string) (orbital.Job, error) {
-				return eventProcessor.SystemSwitch(ctx, system, to, from, "")
+				return eventProcessor.SystemSwitch(ctx, system, to, from)
 			},
 			systemStatus: cmkapi.SystemStatusCONNECTED,
 			tenantID:     tenant,
 			keyIDTo:      "keyIDTo",
 			keyIDFrom:    "keyIDFrom",
-			expType:      eventProto.TaskType_SYSTEM_SWITCH.String(),
+			expType:      eventprocessor.JobTypeSystemSwitch.String(),
 			expStatus:    cmkapi.SystemStatusPROCESSING,
 			assertKeyID: func(t *testing.T, keyIDTo, keyIDFrom string, data eventprocessor.SystemActionJobData) {
 				t.Helper()
