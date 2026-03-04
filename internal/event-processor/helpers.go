@@ -55,3 +55,25 @@ func GetSystemJobData(e *model.Event) (SystemActionJobData, error) {
 	var jobData SystemActionJobData
 	return jobData, json.Unmarshal(e.Data, &jobData)
 }
+
+func unmarshalKeyJobData(job orbital.Job) (KeyActionJobData, error) {
+	var data KeyActionJobData
+
+	err := json.Unmarshal(job.Data, &data)
+	if err != nil {
+		return KeyActionJobData{}, fmt.Errorf("failed to unmarshal job data: %w", err)
+	}
+
+	return data, nil
+}
+
+func unmarshalSystemJobData(job orbital.Job) (SystemActionJobData, error) {
+	var systemJobData SystemActionJobData
+
+	err := json.Unmarshal(job.Data, &systemJobData)
+	if err != nil {
+		return SystemActionJobData{}, fmt.Errorf("failed to unmarshal job data: %w", err)
+	}
+
+	return systemJobData, nil
+}

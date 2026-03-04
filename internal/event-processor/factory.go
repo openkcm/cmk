@@ -11,7 +11,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -105,7 +104,7 @@ func (f *EventFactory) SystemLink(ctx context.Context, system *model.System, key
 			KeyIDTo:  keyID,
 		}
 
-		return f.createSystemEventJob(ctx, proto.TaskType_SYSTEM_LINK, systemLinkJobData)
+		return f.createSystemEventJob(ctx, JobTypeSystemLink, systemLinkJobData)
 	})
 }
 
@@ -123,7 +122,7 @@ func (f *EventFactory) SystemUnlink(
 			Trigger:   trigger,
 		}
 
-		return f.createSystemEventJob(ctx, proto.TaskType_SYSTEM_UNLINK, systemUnlinkJobData)
+		return f.createSystemEventJob(ctx, JobTypeSystemUnlink, systemUnlinkJobData)
 	})
 }
 
@@ -135,40 +134,57 @@ func (f *EventFactory) SystemSwitch(
 	system *model.System,
 	keyIDTo string,
 	keyIDFrom string,
-	trigger string,
 ) (orbital.Job, error) {
 	return f.handleSystemStatus(ctx, system, func() (orbital.Job, error) {
 		systemSwitchJobData := SystemActionJobData{
 			SystemID:  system.ID.String(),
 			KeyIDTo:   keyIDTo,
 			KeyIDFrom: keyIDFrom,
-			Trigger:   trigger,
 		}
 
-		return f.createSystemEventJob(ctx, proto.TaskType_SYSTEM_SWITCH, systemSwitchJobData)
+		return f.createSystemEventJob(ctx, JobTypeSystemSwitch, systemSwitchJobData)
+	})
+}
+
+// SystemSwitchNewPrimaryKey creates a job to switch the key of a system from keyIDFrom to keyIDTo
+// make sure the ctx provided has the tenant set, triggered by a new primary key being set.
+func (f *EventFactory) SystemSwitchNewPrimaryKey(
+	ctx context.Context,
+	system *model.System,
+	keyIDTo string,
+	keyIDFrom string,
+) (orbital.Job, error) {
+	return f.handleSystemStatus(ctx, system, func() (orbital.Job, error) {
+		systemSwitchJobData := SystemActionJobData{
+			SystemID:  system.ID.String(),
+			KeyIDTo:   keyIDTo,
+			KeyIDFrom: keyIDFrom,
+		}
+
+		return f.createSystemEventJob(ctx, JobTypeSystemSwitchNewPK, systemSwitchJobData)
 	})
 }
 
 // KeyEnable creates a job to enable a key make sure the ctx provided has the tenant set.
 func (f *EventFactory) KeyEnable(ctx context.Context, keyID string) (orbital.Job, error) {
-	return f.createKeyEventJob(ctx, keyID, proto.TaskType_KEY_ENABLE)
+	return f.createKeyEventJob(ctx, keyID, JobTypeKeyEnable)
 }
 
 // KeyDisable creates a job to disable a key make sure the ctx provided has the tenant set.
 func (f *EventFactory) KeyDisable(ctx context.Context, keyID string) (orbital.Job, error) {
-	return f.createKeyEventJob(ctx, keyID, proto.TaskType_KEY_DISABLE)
+	return f.createKeyEventJob(ctx, keyID, JobTypeKeyDisable)
 }
 
 // KeyDetach creates a job to detach a key.
 // Context provided must have the tenant set.
 func (f *EventFactory) KeyDetach(ctx context.Context, keyID string) (orbital.Job, error) {
-	return f.createKeyEventJob(ctx, keyID, proto.TaskType_KEY_DETACH)
+	return f.createKeyEventJob(ctx, keyID, JobTypeKeyDetach)
 }
 
 func (f *EventFactory) createKeyEventJob(
 	ctx context.Context,
 	keyID string,
-	taskType proto.TaskType,
+	jobType JobType,
 ) (orbital.Job, error) {
 	if keyID == "" {
 		return orbital.Job{}, ErrMissingKeyID
@@ -191,7 +207,7 @@ func (f *EventFactory) createKeyEventJob(
 
 	event := &model.Event{
 		Identifier: keyID,
-		Type:       taskType.String(),
+		Type:       jobType.String(),
 		Data:       jobData,
 	}
 
@@ -200,7 +216,7 @@ func (f *EventFactory) createKeyEventJob(
 
 func (f *EventFactory) createSystemEventJob(
 	ctx context.Context,
-	taskType proto.TaskType,
+	jobType JobType,
 	data SystemActionJobData,
 ) (orbital.Job, error) {
 	tenantID, err := cmkcontext.ExtractTenantID(ctx)
@@ -217,7 +233,7 @@ func (f *EventFactory) createSystemEventJob(
 
 	event := &model.Event{
 		Identifier: data.SystemID,
-		Type:       taskType.String(),
+		Type:       jobType.String(),
 		Data:       jobData,
 	}
 
@@ -273,5 +289,5 @@ func dummyResolveTask(
 	_ orbital.Job,
 	_ orbital.TaskResolverCursor,
 ) (orbital.TaskResolverResult, error) {
-	return orbital.TaskResolverResult{}, nil
+	return orbital.CompleteTaskResolver(), nil
 }
