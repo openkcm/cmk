@@ -43,7 +43,7 @@ func TestLoggingMiddleware(t *testing.T) {
 	assertions := []string{
 		"Request Completed",
 		"Received Request",
-		fmt.Sprintf("HttpStatus=%d", http.StatusOK),
+		fmt.Sprintf("httpStatus=%d", http.StatusOK),
 	}
 
 	for _, assertion := range assertions {
