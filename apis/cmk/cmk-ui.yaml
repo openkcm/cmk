@@ -1521,6 +1521,19 @@ components:
           example: new-key-configuration-name
         keyConfigurationID:
           $ref: "#/components/schemas/KeyConfigurationID"
+        metadata:
+          $ref: "#/components/schemas/SystemMetadata"
+    SystemMetadata:
+      description: System Metadata
+      type: object
+      readOnly: true
+      properties:
+        errorCode:
+          type: string
+          description: The code of an error of a failed system
+        errorMessage:
+          type: string
+          description: The details of an error of a failed system
     SystemPatch:
       description: Request to update a System object.
       type: object
@@ -1637,7 +1650,6 @@ components:
       required:
         - id
         - name
-        - region
       properties:
         id:
           description: The ID of tenant
@@ -1651,11 +1663,6 @@ components:
           maxLength: 63
           type: string
           example: tenant1
-        region:
-          type: string
-          maxLength: 50
-          description: Region of the tenant
-          example: eu10
         role:
           type: string
           description: Role of the tenant
@@ -2525,6 +2532,7 @@ components:
             SYSTEM + LINK: key configuration ID
             SYSTEM + SWITCH: new key configuration ID
             SYSTEM + UNLINK: needs no parameters
+            KEY_CONFIGURATION + UPDATE_PRIMARY: new key ID
         expiresAt:
           description: The datetime of when the workflow expires (RFC3339 format)
           type: string

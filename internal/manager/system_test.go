@@ -23,7 +23,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
@@ -401,7 +400,7 @@ func TestGetSystemByID(t *testing.T) {
 			k.AdminGroup = *testGroup
 		},
 	)
-	newSystem := testutils.NewSystem(
+	system := testutils.NewSystem(
 		func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.KeyConfigurationName = &keyConfig.Name
@@ -409,40 +408,31 @@ func TestGetSystemByID(t *testing.T) {
 				"a": "b",
 				"b": "c",
 			}
+			s.ErrorCode = "errorCode"
+			s.ErrorMessage = "errorMessage"
 		},
 	)
+	event := testutils.NewEvent(func(e *model.Event) {
+		e.Identifier = system.Identifier
+		e.ErrorCode = "errorCode"
+		e.ErrorMessage = "errorMessage"
+	})
 
-	testutils.CreateTestEntities(ctx, t, r, newSystem, keyConfig)
+	testutils.CreateTestEntities(ctx, t, r, system, keyConfig, event)
 
-	t.Run("Should get newSystem by id", func(t *testing.T) {
-		actualSystem, err := m.GetSystemByID(ctx, newSystem.ID)
+	t.Run("Should get system by id and loaded fields", func(t *testing.T) {
+		actualSystem, err := m.GetSystemByID(ctx, system.ID)
 
-		assert.Equal(t, newSystem, actualSystem)
+		assert.Equal(t, system, actualSystem)
 		assert.NoError(t, err)
-	},
-	)
+	})
 
-	t.Run("Should fail on get newSystem by id", func(t *testing.T) {
+	t.Run("Should fail on getting system with non-existing id", func(t *testing.T) {
 		actualSystem, err := m.GetSystemByID(ctx, uuid.New())
 
 		assert.Nil(t, actualSystem)
 		assert.ErrorIs(t, err, manager.ErrGettingSystemByID)
-	},
-	)
-
-	t.Run("Should not get keyconfig name", func(t *testing.T) {
-		system := testutils.NewSystem(
-			func(s *model.System) {
-				s.KeyConfigurationID = ptr.PointTo(uuid.New())
-			},
-		)
-
-		testutils.CreateTestEntities(ctx, t, r, system)
-		actualSystem, err := m.GetSystemByID(ctx, system.ID)
-		assert.Nil(t, actualSystem)
-		assert.Error(t, err)
-	},
-	)
+	})
 }
 
 func TestGetRecoveryAction(t *testing.T) {
@@ -547,7 +537,7 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 
 		testutils.CreateTestEntities(adminCtx, t, r, sys, &model.Event{
 			Identifier: sys.ID.String(),
-			Type:       proto.TaskType_SYSTEM_UNLINK.String(),
+			Type:       eventprocessor.JobTypeSystemUnlink.String(),
 			Data:       data,
 		})
 
@@ -571,7 +561,7 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 
 		testutils.CreateTestEntities(nonAdminCtx, t, r, sys, &model.Event{
 			Identifier: sys.ID.String(),
-			Type:       proto.TaskType_SYSTEM_UNLINK.String(),
+			Type:       eventprocessor.JobTypeSystemUnlink.String(),
 			Data:       data,
 		})
 
@@ -591,13 +581,12 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 			TenantID:  tenant,
 			KeyIDTo:   key1.ID.String(),
 			KeyIDFrom: key2.ID.String(),
-			Trigger:   constants.KeyActionSetPrimary,
 		}
 		data, _ := json.Marshal(jobData)
 
 		testutils.CreateTestEntities(adminCtx, t, r, sys, &model.Event{
 			Identifier: sys.ID.String(),
-			Type:       proto.TaskType_SYSTEM_SWITCH.String(),
+			Type:       eventprocessor.JobTypeSystemSwitchNewPK.String(),
 			Data:       data,
 		})
 
@@ -617,13 +606,12 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 			TenantID:  tenant,
 			KeyIDTo:   key1.ID.String(),
 			KeyIDFrom: key2.ID.String(),
-			Trigger:   constants.KeyActionSetPrimary,
 		}
 		data, _ := json.Marshal(jobData)
 
 		testutils.CreateTestEntities(nonAdminCtx, t, r, sys, &model.Event{
 			Identifier: sys.ID.String(),
-			Type:       proto.TaskType_SYSTEM_SWITCH.String(),
+			Type:       eventprocessor.JobTypeSystemSwitchNewPK.String(),
 			Data:       data,
 		})
 
@@ -649,7 +637,7 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 
 		testutils.CreateTestEntities(adminCtx, t, r, sys, &model.Event{
 			Identifier: sys.ID.String(),
-			Type:       proto.TaskType_SYSTEM_SWITCH.String(),
+			Type:       eventprocessor.JobTypeSystemSwitch.String(),
 			Data:       data,
 		})
 
@@ -675,7 +663,7 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 
 		testutils.CreateTestEntities(nonAdminCtx, t, r, sys, &model.Event{
 			Identifier: sys.ID.String(),
-			Type:       proto.TaskType_SYSTEM_SWITCH.String(),
+			Type:       eventprocessor.JobTypeSystemSwitch.String(),
 			Data:       data,
 		})
 
@@ -699,7 +687,7 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 
 		testutils.CreateTestEntities(adminCtx, t, r, sys, &model.Event{
 			Identifier: sys.ID.String(),
-			Type:       proto.TaskType_SYSTEM_LINK.String(),
+			Type:       eventprocessor.JobTypeSystemLink.String(),
 			Data:       data,
 		})
 
@@ -723,7 +711,7 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 
 		testutils.CreateTestEntities(nonAdminCtx, t, r, sys, &model.Event{
 			Identifier: sys.ID.String(),
-			Type:       proto.TaskType_SYSTEM_LINK.String(),
+			Type:       eventprocessor.JobTypeSystemLink.String(),
 			Data:       data,
 		})
 
@@ -849,27 +837,27 @@ func TestSendRecoveryAction(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		eventType proto.TaskType
+		eventType eventprocessor.JobType
 		f         func(t *testing.T, ctx context.Context, system *model.System)
 	}{
 		{
 			name:      "should retry link event",
-			eventType: proto.TaskType_SYSTEM_LINK,
+			eventType: eventprocessor.JobTypeSystemLink,
 			f:         sucessRetry,
 		},
 		{
 			name:      "should retry switch event",
-			eventType: proto.TaskType_SYSTEM_SWITCH,
+			eventType: eventprocessor.JobTypeSystemSwitch,
 			f:         sucessRetry,
 		},
 		{
 			name:      "should retry unlink event",
-			eventType: proto.TaskType_SYSTEM_UNLINK,
+			eventType: eventprocessor.JobTypeSystemUnlink,
 			f:         sucessRetry,
 		},
 		{
 			name:      "should fail on second retry",
-			eventType: proto.TaskType_SYSTEM_UNLINK,
+			eventType: eventprocessor.JobTypeSystemUnlink,
 			f: func(t *testing.T, ctx context.Context, system *model.System) {
 				t.Helper()
 
@@ -933,7 +921,7 @@ func TestSelectEvent(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
 		system := testutils.NewSystem(func(_ *model.System) {})
 		event, err := m.SelectEvent(ctx, system, keyConfig)
-		assert.Equal(t, proto.TaskType_SYSTEM_LINK.String(), event.Name)
+		assert.Equal(t, eventprocessor.JobTypeSystemLink.String(), event.Name)
 		assert.NoError(t, err)
 	})
 
@@ -961,7 +949,7 @@ func TestSelectEvent(t *testing.T) {
 		event, err := m.SelectEvent(ctx, system, newKeyConfig)
 
 		// then
-		assert.Equal(t, proto.TaskType_SYSTEM_SWITCH.String(), event.Name)
+		assert.Equal(t, eventprocessor.JobTypeSystemSwitch.String(), event.Name)
 		assert.NoError(t, err)
 	})
 
@@ -984,7 +972,7 @@ func TestSelectEvent(t *testing.T) {
 		event, err := m.SelectEvent(ctx, system, keyConfig)
 
 		// then
-		assert.Equal(t, proto.TaskType_SYSTEM_LINK.String(), event.Name)
+		assert.Equal(t, eventprocessor.JobTypeSystemLink.String(), event.Name)
 		assert.NoError(t, err)
 	})
 }
@@ -1197,9 +1185,6 @@ func TestLinkSystemAction(t *testing.T) {
 			assert.ErrorIs(t, err, manager.ErrConnectSystemNoPrimaryKey)
 		})
 	}
-
-	t.Run("Should fail on link to keyconfig with pkey on invalid state", func(t *testing.T) {
-	})
 }
 
 func TestUnlinkSystemAction(t *testing.T) {

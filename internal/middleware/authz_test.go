@@ -60,7 +60,7 @@ func TestAuthzMiddleware_RestrictionExists(t *testing.T) {
 	identifier := "group1a" // must match a group in allowlist
 	groups := []string{"group1a", "group1b"}
 	ctx = testutils.InjectClientDataIntoContext(ctx, identifier, groups)
-	ctx = cmkcontext.InjectRequestID(ctx)
+	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 	engine := SetupAuthzEngineWithAllowList(t)
 
@@ -229,7 +229,7 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 
 			ctx := testutils.CreateCtxWithTenant(tenantID)
 			ctx = testutils.InjectClientDataIntoContext(ctx, groupIdentifier, []string{groupIdentifier})
-			ctx = cmkcontext.InjectRequestID(ctx)
+			ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 			engine := setupAuthzEngineWithRole(t, tenantID, groupIdentifier, tt.groupRole)
 
@@ -275,7 +275,6 @@ func setupAuthzEngineWithRole(t *testing.T, tenantID, groupIdentifier string, ro
 		ctx, &model.Tenant{
 			TenantModel: multitenancy.TenantModel{},
 			ID:          tenantID,
-			Region:      tenantID,
 			Status:      "Test",
 		},
 	)
@@ -325,7 +324,6 @@ func SetupAuthzEngineWithAllowList(t *testing.T) *authzmodel.Engine {
 			ctx, &model.Tenant{
 				TenantModel: multitenancy.TenantModel{},
 				ID:          ts.tenantID,
-				Region:      ts.tenantID,
 				Status:      "Test",
 			},
 		)

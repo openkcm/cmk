@@ -11,19 +11,18 @@ import (
 
 // NewUpdateTenantCmd creates a Cobra command that updates single tenant.
 //
-//nolint:funlen
+
 func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
-		Short: "Update existing tenant. Usage: tm update -i [tenant id] (-r [tenant region]) (-s [tenant status])",
+		Short: "Update existing tenant. Usage: tm update -i [tenant id] (-s [tenant status])",
 		Long: "Update existing tenant. Usage: tm update --id [tenant id] " +
-			"(--region [tenant region]) (--status [tenant status])",
+			"(--status [tenant status])",
 		Args: cobra.ExactArgs(0),
 
 		//nolint:contextcheck
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			id, _ := cmd.Flags().GetString("id")
-			region, _ := cmd.Flags().GetString("region")
 			status, _ := cmd.Flags().GetString("status")
 
 			ctx := cmd.Context()
@@ -47,10 +46,6 @@ func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command 
 				tenant.Status = model.TenantStatus(status)
 			}
 
-			if region != "" {
-				tenant.Region = region
-			}
-
 			_, err = f.r.Patch(ctx, tenant, *query)
 			if err != nil {
 				cmd.PrintErrf("Failed to update tenant: %v\n", err)
@@ -63,11 +58,8 @@ func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command 
 		},
 	}
 
-	var (
-		id, region, status string
-	)
+	var id, status string
 	cmd.Flags().StringVarP(&id, "id", "i", "", "Tenant id")
-	cmd.Flags().StringVarP(&region, "region", "r", "", "Tenant region")
 	cmd.Flags().StringVarP(&status, "status", "s", "", "Tenant status")
 
 	err := cmd.MarkFlagRequired("id")

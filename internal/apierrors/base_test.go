@@ -6,26 +6,25 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/apierrors"
 )
 
 func TestInternalServerErrorMessage(t *testing.T) {
-	expected := cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+	expected := &apierrors.APIError{
 		Code:    "INTERNAL_SERVER_ERROR",
 		Message: "Internal server error",
 		Status:  http.StatusInternalServerError,
-	}}
+	}
 	result := apierrors.InternalServerErrorMessage()
 	assert.Equal(t, expected, result)
 }
 
 func TestJSONDecodeErrorMessage(t *testing.T) {
-	expected := cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+	expected := &apierrors.APIError{
 		Message: "Can't decode JSON body",
 		Code:    "JSON_DECODE_ERROR",
 		Status:  http.StatusBadRequest,
-	}}
+	}
 	result := apierrors.JSONDecodeErrorMessage()
 	assert.Equal(t, expected, result)
 }
@@ -34,11 +33,11 @@ func TestOAPIValidationErrorMessage(t *testing.T) {
 	t.Run("Should bad request", func(t *testing.T) {
 		message := "Invalid input"
 		code := http.StatusBadRequest
-		expected := cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+		expected := &apierrors.APIError{
 			Code:    "VALIDATION_ERROR",
 			Message: message,
 			Status:  code,
-		}}
+		}
 		result := apierrors.OAPIValidatorErrorMessage(message, code)
 		assert.Equal(t, expected, result)
 	})
@@ -52,22 +51,22 @@ func TestOAPIValidationErrorMessage(t *testing.T) {
 
 func TestParamsError(t *testing.T) {
 	message := "Missing parameters"
-	expected := cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+	expected := &apierrors.APIError{
 		Code:    "PARAMS_ERROR",
 		Message: message,
 		Status:  http.StatusBadRequest,
-	}}
+	}
 	result := apierrors.TooManyParameters(message)
 	assert.Equal(t, expected, result)
 }
 
 func TestHeaderError(t *testing.T) {
 	message := "Invalid headers"
-	expected := cmkapi.ErrorMessage{Error: cmkapi.DetailedError{
+	expected := &apierrors.APIError{
 		Code:    "REQUIRED_HEADER_ERROR",
 		Message: message,
 		Status:  http.StatusBadRequest,
-	}}
+	}
 	result := apierrors.RequiredHeaderError(message)
 	assert.Equal(t, expected, result)
 }

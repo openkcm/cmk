@@ -18,10 +18,9 @@ func ToAPI(tenant model.Tenant) (*cmkapi.Tenant, error) {
 	roleStr := strings.TrimPrefix(string(tenant.Role), "ROLE_")
 	role := cmkapi.TenantRole(roleStr)
 	apiTenant := &cmkapi.Tenant{
-		Id:     &tenant.ID,
-		Region: tenant.Region,
-		Name:   tenant.SchemaName,
-		Role:   &role,
+		Id:   &tenant.ID,
+		Role: &role,
+		Name: tenant.Name,
 	}
 
 	return apiTenant, nil

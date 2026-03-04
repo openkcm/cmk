@@ -22,14 +22,12 @@ const (
 	testSubject    = "Test Identifier"
 )
 
-var (
-	testConfig = &config.Config{
-		Landscape: config.Landscape{
-			Name:      "Staging",
-			UIBaseUrl: "https://cmk-staging.example.com/#",
-		},
-	}
-)
+var testConfig = &config.Config{
+	Landscape: config.Landscape{
+		Name:      "Staging",
+		UIBaseUrl: "https://cmk-staging.example.com/#",
+	},
+}
 
 func TestNotificationData_GetType(t *testing.T) {
 	tests := []struct {
@@ -88,8 +86,7 @@ func TestCreator_CreateTask(t *testing.T) {
 	}
 
 	testTenant := model.Tenant{
-		ID:     "test-tenant",
-		Region: "us-east-1",
+		ID: "test-tenant",
 	}
 
 	tests := []struct {
@@ -254,8 +251,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 
 			data := workflow.NotificationData{
 				Tenant: model.Tenant{
-					ID:     "test-tenant",
-					Region: "us-east-1",
+					ID: "test-tenant",
 				},
 				Workflow: model.Workflow{
 					ID:            workflowID,
@@ -328,8 +324,7 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			data := workflow.NotificationData{
 				Tenant: model.Tenant{
-					ID:     "test-tenant",
-					Region: "us-east-1",
+					ID: "test-tenant",
 				},
 				Workflow: model.Workflow{
 					ID:           workflowID,
@@ -384,8 +379,7 @@ func TestCreator_createWorkflowRejectedTask(t *testing.T) {
 
 	data := workflow.NotificationData{
 		Tenant: model.Tenant{
-			ID:     "test-tenant",
-			Region: "us-east-1",
+			ID: "test-tenant",
 		},
 		Workflow: model.Workflow{
 			ID:           workflowID,
@@ -461,8 +455,7 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			data := workflow.NotificationData{
 				Tenant: model.Tenant{
-					ID:     "test-tenant",
-					Region: "us-east-1",
+					ID: "test-tenant",
 				},
 				Workflow: model.Workflow{
 					ID:           workflowID,
@@ -503,8 +496,7 @@ func TestCreator_createWorkflowRevokedTask(t *testing.T) {
 
 	data := workflow.NotificationData{
 		Tenant: model.Tenant{
-			ID:     "test-tenant",
-			Region: "us-east-1",
+			ID: "test-tenant",
 		},
 		Workflow: model.Workflow{
 			ID:           workflowID,
@@ -548,8 +540,8 @@ func TestCreator_createHTMLBody(t *testing.T) {
 
 	data := workflow.NotificationData{
 		Tenant: model.Tenant{
-			ID:     "test-tenant",
-			Region: "us-east-1",
+			ID:   "test-tenant",
+			Name: "test-tenant-name",
 		},
 		Workflow: model.Workflow{
 			ID:            workflowID,
@@ -572,7 +564,8 @@ func TestCreator_createHTMLBody(t *testing.T) {
 	assert.Contains(t, body, testMessage)
 	assert.Contains(t, body, testActionText)
 	assert.Contains(t, body, data.Tenant.ID)
-	assert.Contains(t, body, data.Tenant.Region)
+	assert.Contains(t, body, testConfig.Landscape.Region)
+	assert.Contains(t, body, data.Tenant.Name)
 	expectedWorkflowURL := fmt.Sprintf(
 		"%s/%s/tasks/%s", testConfig.Landscape.UIBaseUrl, data.Tenant.ID, data.Workflow.ID)
 	assert.Contains(t, body, expectedWorkflowURL)
@@ -587,8 +580,7 @@ func TestCreator_createNotificationTask(t *testing.T) {
 
 	data := workflow.NotificationData{
 		Tenant: model.Tenant{
-			ID:     "test-tenant",
-			Region: "us-east-1",
+			ID: "test-tenant",
 		},
 		Workflow: model.Workflow{
 			ID:           workflowID,
@@ -628,8 +620,7 @@ func TestCreator_createNotificationTask_EmptyRecipients(t *testing.T) {
 
 	data := workflow.NotificationData{
 		Tenant: model.Tenant{
-			ID:     "test-tenant",
-			Region: "us-east-1",
+			ID: "test-tenant",
 		},
 		Workflow: model.Workflow{
 			ID:           workflowID,

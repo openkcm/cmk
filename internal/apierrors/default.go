@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -22,66 +22,66 @@ var (
 	ErrBadOdataFilter        = errors.New("bad odata filter")
 )
 
-var defaultMapper = []APIErrors{
+var defaultMapper = []errs.ExposedErrors[*APIError]{
 	{
-		Errors: []error{sql.ErrNoRows},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{sql.ErrNoRows},
+		ExposedError: &APIError{
 			Code:    ResourceNotFound,
 			Message: "Requested resource not found",
 			Status:  http.StatusNotFound,
 		},
 	},
 	{
-		Errors: []error{repo.ErrUniqueConstraint},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{repo.ErrUniqueConstraint},
+		ExposedError: &APIError{
 			Code:    UniqueError,
 			Message: "Resource with such ID already exists",
 			Status:  http.StatusConflict,
 		},
 	},
 	{
-		Errors: []error{repo.ErrNotFound},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{repo.ErrNotFound},
+		ExposedError: &APIError{
 			Code:    ResourceNotFound,
 			Message: "The requested resource was not found",
 			Status:  http.StatusNotFound,
 		},
 	},
 	{
-		Errors: []error{repo.ErrInvalidUUID},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{repo.ErrInvalidUUID},
+		ExposedError: &APIError{
 			Code:    BadRequest,
 			Message: "Invalid uuid provided",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
-		Errors: []error{ErrBadOdataFilter},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrBadOdataFilter},
+		ExposedError: &APIError{
 			Code:    BadRequest,
 			Message: "Bad Odata filter provided",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
-		Errors: []error{repo.ErrGetResource},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{repo.ErrGetResource},
+		ExposedError: &APIError{
 			Code:    GetResource,
 			Message: "The requested resource was not found",
 			Status:  http.StatusInternalServerError,
 		},
 	},
 	{
-		Errors: []error{ErrUnknownProperty},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrUnknownProperty},
+		ExposedError: &APIError{
 			Code:    "UNKNOWN_PROPERTY",
 			Message: "Unknown property",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
-		Errors: []error{ErrActionRequireWorkflow},
-		ExposedError: cmkapi.DetailedError{
+		InternalErrorChain: []error{ErrActionRequireWorkflow},
+		ExposedError: &APIError{
 			Code:    "ACTION_REQUIRE_WORKFLOW",
 			Message: "Action requires a workflow",
 			Status:  http.StatusForbidden,

@@ -303,6 +303,7 @@ type KeystorePool struct {
 type Landscape struct {
 	Name      string `yaml:"name"`
 	UIBaseUrl string `yaml:"uiBaseUrl"`
+	Region    string `yaml:"region"`
 }
 
 type Workflow struct {
