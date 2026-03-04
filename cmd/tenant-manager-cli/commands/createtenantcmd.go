@@ -19,15 +19,14 @@ import (
 func (f *CommandFactory) NewCreateTenantCmd(ctx context.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a new tenant. Usage: tm create -i [tenant id] -r [tenant region] -s [tenant status] -R [tenant role]",
-		Long: "Create a new tenant. Usage: tm create -id [tenant id] -region [tenant region]" +
+		Short: "Create a new tenant. Usage: tm create -i [tenant id] -s [tenant status] -R [tenant role]",
+		Long: "Create a new tenant. Usage: tm create -id [tenant id]" +
 			" -status [tenant status] -role [tenant role]",
 		Args: cobra.ExactArgs(0),
 
 		//nolint:contextcheck
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			id, _ := cmd.Flags().GetString("id")
-			region, _ := cmd.Flags().GetString("region")
 			status, _ := cmd.Flags().GetString("status")
 			role, _ := cmd.Flags().GetString("role")
 
@@ -39,7 +38,6 @@ func (f *CommandFactory) NewCreateTenantCmd(ctx context.Context) *cobra.Command 
 
 			tenant := &model.Tenant{
 				ID:     id,
-				Region: region,
 				Status: model.TenantStatus(status),
 				Role:   model.TenantRole(role),
 				TenantModel: multitenancy.TenantModel{
@@ -63,23 +61,15 @@ func (f *CommandFactory) NewCreateTenantCmd(ctx context.Context) *cobra.Command 
 		},
 	}
 
-	var (
-		id, region, status, role string
-	)
+	var id, status, role string
 
 	cmd.Flags().StringVarP(&id, "id", "i", "", "Tenant id")
-	cmd.Flags().StringVarP(&region, "region", "r", "", "Tenant region")
 	cmd.Flags().StringVarP(&status, "status", "s", "", "Tenant status")
 	cmd.Flags().StringVarP(&role, "role", "R", "", "Tenant role")
 
 	err := cmd.MarkFlagRequired("id")
 	if err != nil {
 		cmd.PrintErrf("failed to mark flag 'id' as required: %v\n", err)
-	}
-
-	err = cmd.MarkFlagRequired("region")
-	if err != nil {
-		cmd.PrintErrf("failed to mark flag 'region' as required: %v\n", err)
 	}
 
 	err = cmd.MarkFlagRequired("status")

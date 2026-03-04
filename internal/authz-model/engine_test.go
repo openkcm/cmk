@@ -61,7 +61,6 @@ func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {
 					SchemaName: "",
 				},
 				ID:     ts.tenantID,
-				Region: ts.tenantID,
 				Status: "Test",
 			},
 		)

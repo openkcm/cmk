@@ -1650,7 +1650,6 @@ components:
       required:
         - id
         - name
-        - region
       properties:
         id:
           description: The ID of tenant
@@ -1664,11 +1663,6 @@ components:
           maxLength: 63
           type: string
           example: tenant1
-        region:
-          type: string
-          maxLength: 50
-          description: Region of the tenant
-          example: eu10
         role:
           type: string
           description: Role of the tenant

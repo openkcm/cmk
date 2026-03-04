@@ -188,9 +188,7 @@ func (m *TenantManager) GetTenantByID(ctx context.Context, tenantID string) (*mo
 // all systems are no longer connected or in processing
 func (m *TenantManager) unlinkAllSystems(ctx context.Context) (OffboardingResult, error) {
 	result := OffboardingResult{Status: OffboardingSuccess}
-	toUnlinkCond := repo.NewCompositeKey().
-		Where(repo.StatusField, cmkapi.SystemStatusCONNECTED).
-		Where(repo.StatusField, cmkapi.SystemStatusPROCESSING, repo.NotEq)
+	toUnlinkCond := repo.NewCompositeKey().Where(repo.StatusField, cmkapi.SystemStatusCONNECTED)
 
 	err := repo.ProcessInBatch(
 		ctx,

@@ -12,8 +12,7 @@ import (
 
 func TestWithLogInjectTenant(t *testing.T) {
 	tenant := &model.Tenant{
-		ID:     "tenant1",
-		Region: "us-east-1",
+		ID: "tenant1",
 	}
 	ctx := context.Background()
 	opt := model.WithLogInjectTenant(tenant)
