@@ -1727,11 +1727,23 @@ components:
           type: boolean
           example: true
         supportedRegions:
-          description: Supported region ids
+          description: Supported regions for default keystore
           type: array
           items:
-            type: string
-            maxLength: 50
+            $ref: "#/components/schemas/SupportedRegion"
+    SupportedRegion:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 50
+          description: The display region name, e.g. the name of the region shown in the UI
+          example: Europe (Frankfurt)
+        technicalName:
+          type: string
+          maxLength: 50
+          description: The technical region name used for API calls, if different from the display name
+          example: eu-central-1
     HYOKKeystore:
       type: object
       properties:
