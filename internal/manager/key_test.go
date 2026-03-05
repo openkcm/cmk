@@ -1092,7 +1092,6 @@ func TestGetImportParams(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
 
 		byokEnabledKey := testutils.NewKey(func(k *model.Key) {
-			k.Name = "enabled-byok-importparams"
 			k.KeyType = string(cmkapi.KeyTypeBYOK)
 			k.State = string(cmkapi.KeyStateENABLED)
 			k.KeyConfigurationID = keyConfig.ID
