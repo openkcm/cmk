@@ -259,7 +259,7 @@ func TestSchemaMigrations(t *testing.T) {
 			version:   3,
 		},
 		{
-			name:      "Should up tenant/00004_create_group_table.sql",
+			name:      "Should up tenant/00004_rename_group_table_expand.sql",
 			downgrade: false,
 			target:    db.TenantTarget,
 			version:   4,
@@ -268,32 +268,32 @@ func TestSchemaMigrations(t *testing.T) {
 				return func(db *multitenancy.DB) error {
 					// Verify Insert
 					id := uuid.NewString()
-					res := db.Exec(`INSERT INTO "group" (id, "name", description, "role", iam_identifier) VALUES(?, ?, ?, ?, ?)`,
+					res := db.Exec(`INSERT INTO "groups" (id, "name", description, "role", iam_identifier) VALUES(?, ?, ?, ?, ?)`,
 						id, uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString())
 					assert.NoError(t, res.Error)
 					assert.Equal(t, 1, int(res.RowsAffected))
 
 					var count int
-					err := db.Raw(`SELECT COUNT(*) FROM "groups" WHERE id = ?`, id).Scan(&count).Error
+					err := db.Raw(`SELECT COUNT(*) FROM "group" WHERE id = ?`, id).Scan(&count).Error
 					assert.NoError(t, err)
 					assert.Equal(t, 1, count)
 
 					// Verify Update
 					newName := uuid.NewString()
-					res = db.Exec(`UPDATE "group" SET "name" = ?`, newName)
+					res = db.Exec(`UPDATE "groups" SET "name" = ?`, newName)
 					assert.NoError(t, res.Error)
 					assert.Equal(t, 1, int(res.RowsAffected))
 
-					err = db.Raw(`SELECT COUNT(*) FROM "groups" WHERE id = ? AND "name" = ?`, id, newName).Scan(&count).Error
+					err = db.Raw(`SELECT COUNT(*) FROM "group" WHERE id = ? AND "name" = ?`, id, newName).Scan(&count).Error
 					assert.NoError(t, err)
 					assert.Equal(t, 1, count)
 
 					// Verify Delete
-					res = db.Exec(`DELETE FROM "group" WHERE id = ?`, id)
+					res = db.Exec(`DELETE FROM "groups" WHERE id = ?`, id)
 					assert.NoError(t, res.Error)
 					assert.Equal(t, 1, int(res.RowsAffected))
 
-					err = db.Raw(`SELECT COUNT(*) FROM "groups" WHERE id = ?`, id).Scan(&count).Error
+					err = db.Raw(`SELECT COUNT(*) FROM "group" WHERE id = ?`, id).Scan(&count).Error
 					assert.NoError(t, err)
 					assert.Equal(t, 0, count)
 
@@ -302,7 +302,7 @@ func TestSchemaMigrations(t *testing.T) {
 			},
 		},
 		{
-			name:      "Should down tenant/00004_create_group_table.sql",
+			name:      "Should down tenant/00004_rename_group_table_expand.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
 			version:   4,
@@ -355,40 +355,7 @@ func TestDataMigrations(t *testing.T) {
 		schemaVersion   *int64
 		assertMigration func(t *testing.T) func(db *multitenancy.DB) error
 		setupData       func(t *testing.T) func(db *multitenancy.DB) error
-	}{
-		{
-			name:          "Should skip tenant/00001_copy_group_to_groups.go",
-			target:        db.TenantTarget,
-			version:       1,
-			schemaVersion: ptr.PointTo(int64((0))),
-		},
-		{
-			name:          "Should apply tenant/00001_copy_group_to_groups.go",
-			target:        db.TenantTarget,
-			version:       1,
-			schemaVersion: ptr.PointTo(int64((4))),
-			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-				return func(db *multitenancy.DB) error {
-					res := db.Exec(`INSERT INTO "group" (id, "name", description, "role", iam_identifier) VALUES(?, ?, ?, ?, ?)`,
-						uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString())
-					assert.NoError(t, res.Error)
-					assert.GreaterOrEqual(t, int(res.RowsAffected), 1)
-					return nil
-				}
-			},
-			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-				return func(db *multitenancy.DB) error {
-					var count int
-					err := db.Raw(`SELECT COUNT(*) FROM "groups"`).Scan(&count).Error
-					assert.NoError(t, err)
-					assert.GreaterOrEqual(t, count, 1)
-					return nil
-				}
-			},
-		},
-	}
+	}{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			migration := db.Migration{

@@ -27,7 +27,7 @@ CMK (Customer-Managed-Keys) layer of Key Management Service.
     - [Unit tests](#unit-tests)
       - [How to write Unit Tests](#how-to-write-unit-tests)
     - [Database Migrations](#database-migrations)
-      - [Data Migration](#data-migrations)
+      - [Data Migrations](#data-migrations)
       - [Destructive Migrations](#destructive-migrations)
     - [Integration tests](#integration-tests)
     - [Debugging](#debugging)

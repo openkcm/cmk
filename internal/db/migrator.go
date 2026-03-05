@@ -205,7 +205,7 @@ func (m *migrator) runMigration(
 	)
 
 	if mig.Target == TenantTarget {
-		err := ValidateSchema(schema)
+		err = ValidateSchema(schema)
 		if err != nil {
 			return nil, err
 		}
