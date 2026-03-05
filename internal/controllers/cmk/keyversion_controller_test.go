@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -18,11 +19,12 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func startAPIKeyVersion(t *testing.T, plugins ...testutils.MockPlugin) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIKeyVersion(t *testing.T, plugins ...catalog.BuiltInPlugin) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
@@ -272,7 +274,7 @@ func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
 }
 
 func TestKeyVersionController_CreateKeyVersion(t *testing.T) {
-	db, sv, tenant := startAPIKeyVersion(t, testutils.KeyStorePlugin)
+	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -403,7 +405,7 @@ func TestKeyVersionController_CreateKeyVersion(t *testing.T) {
 }
 
 func TestKeyVersionRefreshAndDisable(t *testing.T) {
-	db, sv, tenant := startAPIKeyVersion(t, testutils.KeyStorePlugin)
+	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 

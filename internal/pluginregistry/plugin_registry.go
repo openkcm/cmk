@@ -19,12 +19,18 @@ import (
 
 var ErrNoPluginInCatalog = errors.New("no plugin in catalog")
 
+type Option func(catalog.BuiltInPluginRegistry)
+
 // New creates a new instance of Catalog with the provided configuration.
-func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
+func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Registry, error) {
 	catalogLogger := slog.With("context", "plugin-catalog")
 
 	buildInPlugins := catalog.CreateBuiltInPluginRegistry()
 	plugins.RegisterAllBuiltInPlugins(buildInPlugins)
+
+	for _, o := range opts {
+		o(buildInPlugins)
+	}
 
 	svcRepo, err := servicewrapper.CreateServiceRepository(ctx, catalog.Config{
 		Logger:        catalogLogger,
@@ -61,4 +67,12 @@ func New(ctx context.Context, cfg *config.Config) (*Registry, error) {
 		Registry: svcRepo,
 		Catalog:  svcRepo.RawCatalog,
 	}, nil
+}
+
+func WithBuiltInPlugins(plugins []catalog.BuiltInPlugin) Option {
+	return func(buildInPlugins catalog.BuiltInPluginRegistry) {
+		for _, p := range plugins {
+			buildInPlugins.Register(p)
+		}
+	}
 }

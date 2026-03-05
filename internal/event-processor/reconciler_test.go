@@ -29,6 +29,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/clients/registry/mapping"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -49,9 +50,11 @@ func setupReconciler(
 	})
 	r := sql.NewRepository(db)
 
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
+
 	cfg := &config.Config{
 		Database: dbCfg,
-		Plugins:  testutils.SetupMockPlugins(testutils.KeyStorePlugin),
+		Plugins:  psCfg,
 		Landscape: config.Landscape{
 			Region: uuid.NewString(),
 		},
@@ -71,7 +74,7 @@ func setupReconciler(
 		}
 	}
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 
 	logger := testutils.SetupLoggerWithBuffer()

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -20,12 +21,13 @@ import (
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrForced = errors.New("forced")
 
-func SetupTenantConfigManager(t *testing.T, plugins []testutils.MockPlugin) (*manager.TenantConfigManager,
+func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*manager.TenantConfigManager,
 	*multitenancy.DB, string,
 ) {
 	t.Helper()
@@ -33,8 +35,9 @@ func SetupTenantConfigManager(t *testing.T, plugins []testutils.MockPlugin) (*ma
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	dbRepository := sql.NewRepository(db)
-	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
+	ps, psCfg := testutils.NewTestPlugins(plugins...)
+	cfg := config.Config{Plugins: psCfg}
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 
 	tenantManager := manager.NewTenantConfigManager(dbRepository, svcRegistry, nil)
@@ -43,7 +46,7 @@ func SetupTenantConfigManager(t *testing.T, plugins []testutils.MockPlugin) (*ma
 }
 
 // SetupTenantConfigManagerWithRole creates a test tenant with a specific role
-func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []testutils.MockPlugin) (*manager.TenantConfigManager,
+func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []catalog.BuiltInPlugin) (*manager.TenantConfigManager,
 	*multitenancy.DB, string,
 ) {
 	t.Helper()
@@ -51,8 +54,9 @@ func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []testu
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithTenantRole(model.TenantRole(role)))
 
 	dbRepository := sql.NewRepository(db)
-	cfg := config.Config{Plugins: testutils.SetupMockPlugins(plugins...)}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
+	ps, psCfg := testutils.NewTestPlugins(plugins...)
+	cfg := config.Config{Plugins: psCfg}
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 
 	tenantManager := manager.NewTenantConfigManager(dbRepository, svcRegistry, nil)
@@ -209,11 +213,15 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.Config{}
+			var ps []catalog.BuiltInPlugin
+			var psCfg []catalog.PluginConfig
 			if tt.enabledPlugins {
-				cfg.Plugins = testutils.SetupMockPlugins(testutils.KeyStorePlugin)
+				ps, psCfg = testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
 			}
 
-			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
+			cfg.Plugins = psCfg
+
+			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 			assert.NoError(t, err)
 
 			mgr := manager.NewTenantConfigManager(nil, svcRegistry, nil)
@@ -226,7 +234,7 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 
 func TestGetTenantsKeystore(t *testing.T) {
 	t.Run("Should get tenant keystores with hyok", func(t *testing.T) {
-		m, _, _ := SetupTenantConfigManager(t, []testutils.MockPlugin{testutils.KeyStorePlugin})
+		m, _, _ := SetupTenantConfigManager(t, []catalog.BuiltInPlugin{testplugins.NewKeystoreOperator()})
 		res, err := m.GetTenantsKeystores()
 		assert.NoError(t, err)
 		assert.NotEmpty(t, res.HYOK)
@@ -243,7 +251,8 @@ func TestGetTenantsKeystore(t *testing.T) {
 func TestUpdateWorkflowConfig(t *testing.T) {
 	// Helper to setup config for a tenant
 	setupConfig := func(t *testing.T,
-		mgr *manager.TenantConfigManager, ctx context.Context, cfg *model.WorkflowConfig) {
+		mgr *manager.TenantConfigManager, ctx context.Context, cfg *model.WorkflowConfig,
+	) {
 		t.Helper()
 		_, err := mgr.SetWorkflowConfig(ctx, cfg)
 		assert.NoError(t, err)
