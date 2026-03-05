@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -704,7 +706,7 @@ func TestLinkSystemAction(t *testing.T) {
 	)
 
 	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
-		Plugins: []testutils.MockPlugin{testutils.SystemInfo},
+		Plugins: []catalog.BuiltInPlugin{testplugins.NewSystemInformation()},
 		GRPCCon: grpcCon,
 	})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -867,7 +869,7 @@ func TestLinkSystemAction(t *testing.T) {
 
 func TestUnlinkSystemAction(t *testing.T) {
 	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
-		Plugins: []testutils.MockPlugin{testutils.SystemInfo},
+		Plugins: []catalog.BuiltInPlugin{testplugins.NewSystemInformation()},
 	})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)

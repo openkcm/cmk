@@ -1,4 +1,4 @@
-package main
+package testplugins
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
-	"github.com/openkcm/plugin-sdk/pkg/plugin"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -19,9 +19,14 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
-const importParamsValidityHours = 24
-
 var (
+	EnabledKeyStatus         = "ENABLED"
+	DisabledKeyStatus        = "DISABLED"
+	CreatedKeyStatus         = "CREATED"
+	PendingImportKeyStatus   = "PENDING_IMPORT"
+	PendingDeletionKeyStatus = "PENDING_DELETION"
+	UnknownKeyStatus         = "UNKNOWN"
+
 	ErrRequestIsNil       = errors.New("request is nil")
 	ErrParameterIsNil     = errors.New("parameter is nil")
 	ErrKeyIDIsNil         = errors.New("keyId is nil")
@@ -30,22 +35,43 @@ var (
 	ErrMarshalProto       = errors.New("failed to marshal proto access data")
 )
 
-var initialKeys = map[string]KeyRecord{
+const importParamsValidityHours = 24
+
+type KeyRecord struct {
+	KeyID  string `gorm:"primaryKey;column:key_id"`
+	Status string
+}
+
+type KeystoreOperator struct {
+	keyopv1.UnsafeKeystoreInstanceKeyOperationServer
+	configv1.UnsafeConfigServer
+
+	logger   hclog.Logger
+	KeyStore map[string]*KeyRecord
+}
+
+var InitialKeys = map[string]KeyRecord{
 	"mock-key/11111111": {Status: EnabledKeyStatus},
 	"mock-key/22222222": {Status: EnabledKeyStatus},
 	"mock-key/33333333": {Status: EnabledKeyStatus},
 }
 
-// TestPlugin is a simple test implementation of KeystoreProviderClient
-type TestPlugin struct {
-	keyopv1.UnsafeKeystoreInstanceKeyOperationServer
-	configv1.UnsafeConfigServer
+func NewKeystoreOperator() catalog.BuiltInPlugin {
+	p := &KeystoreOperator{
+		KeyStore: make(map[string]*KeyRecord),
+	}
 
-	logger   hclog.Logger
-	keyStore map[string]*KeyRecord
+	for keyID, record := range InitialKeys {
+		p.HandleKeyRecord(keyID, record.Status)
+	}
+	return catalog.MakeBuiltIn(
+		Name,
+		keyopv1.KeystoreInstanceKeyOperationPluginServer(p),
+		configv1.ConfigServiceServer(p),
+	)
 }
 
-func (p *TestPlugin) CreateKey(
+func (p *KeystoreOperator) CreateKey(
 	_ context.Context,
 	request *keyopv1.CreateKeyRequest,
 ) (*keyopv1.CreateKeyResponse, error) {
@@ -58,7 +84,7 @@ func (p *TestPlugin) CreateKey(
 
 	keyID := "mock-key/" + uuid.NewString()
 
-	p.handleKeyRecord(keyID, status)
+	p.HandleKeyRecord(keyID, status)
 
 	return &keyopv1.CreateKeyResponse{
 		KeyId:  keyID,
@@ -66,7 +92,7 @@ func (p *TestPlugin) CreateKey(
 	}, nil
 }
 
-func (p *TestPlugin) DeleteKey(
+func (p *KeystoreOperator) DeleteKey(
 	_ context.Context,
 	request *keyopv1.DeleteKeyRequest,
 ) (*keyopv1.DeleteKeyResponse, error) {
@@ -75,8 +101,8 @@ func (p *TestPlugin) DeleteKey(
 	if request != nil && request.GetParameters() != nil {
 		keyID := request.GetParameters().GetKeyId()
 		if keyID != "" {
-			if p.keyStore != nil {
-				p.handleKeyRecord(keyID, PendingDeletionKeyStatus)
+			if p.KeyStore != nil {
+				p.HandleKeyRecord(keyID, PendingDeletionKeyStatus)
 			}
 		}
 	}
@@ -84,7 +110,7 @@ func (p *TestPlugin) DeleteKey(
 	return &keyopv1.DeleteKeyResponse{}, nil
 }
 
-func (p *TestPlugin) EnableKey(
+func (p *KeystoreOperator) EnableKey(
 	_ context.Context,
 	request *keyopv1.EnableKeyRequest,
 ) (*keyopv1.EnableKeyResponse, error) {
@@ -103,12 +129,12 @@ func (p *TestPlugin) EnableKey(
 
 	p.logger.Info("EnableKey method has been called;")
 
-	p.handleKeyRecord(keyID, EnabledKeyStatus)
+	p.HandleKeyRecord(keyID, EnabledKeyStatus)
 
 	return &keyopv1.EnableKeyResponse{}, nil
 }
 
-func (p *TestPlugin) DisableKey(
+func (p *KeystoreOperator) DisableKey(
 	_ context.Context,
 	request *keyopv1.DisableKeyRequest,
 ) (*keyopv1.DisableKeyResponse, error) {
@@ -127,12 +153,12 @@ func (p *TestPlugin) DisableKey(
 
 	p.logger.Info("DisableKey method has been called;")
 
-	p.handleKeyRecord(keyID, DisabledKeyStatus)
+	p.HandleKeyRecord(keyID, DisabledKeyStatus)
 
 	return &keyopv1.DisableKeyResponse{}, nil
 }
 
-func (p *TestPlugin) GetKey(
+func (p *KeystoreOperator) GetKey(
 	_ context.Context,
 	request *keyopv1.GetKeyRequest,
 ) (*keyopv1.GetKeyResponse, error) {
@@ -150,11 +176,11 @@ func (p *TestPlugin) GetKey(
 
 	keyID := request.GetParameters().GetKeyId()
 
-	if p.keyStore == nil {
-		p.keyStore = make(map[string]*KeyRecord)
+	if p.KeyStore == nil {
+		p.KeyStore = make(map[string]*KeyRecord)
 	}
 
-	record, exists := p.keyStore[keyID]
+	record, exists := p.KeyStore[keyID]
 
 	var status string
 
@@ -170,7 +196,7 @@ func (p *TestPlugin) GetKey(
 	}, nil
 }
 
-func (p *TestPlugin) GetImportParameters(
+func (p *KeystoreOperator) GetImportParameters(
 	_ context.Context,
 	request *keyopv1.GetImportParametersRequest,
 ) (*keyopv1.GetImportParametersResponse, error) {
@@ -193,7 +219,7 @@ func (p *TestPlugin) GetImportParameters(
 	}, nil
 }
 
-func (p *TestPlugin) ImportKeyMaterial(
+func (p *KeystoreOperator) ImportKeyMaterial(
 	_ context.Context,
 	request *keyopv1.ImportKeyMaterialRequest,
 ) (*keyopv1.ImportKeyMaterialResponse, error) {
@@ -201,13 +227,13 @@ func (p *TestPlugin) ImportKeyMaterial(
 
 	keyID := request.GetParameters().GetKeyId()
 	if keyID != "" {
-		p.handleKeyRecord(keyID, EnabledKeyStatus)
+		p.HandleKeyRecord(keyID, EnabledKeyStatus)
 	}
 
 	return &keyopv1.ImportKeyMaterialResponse{}, nil
 }
 
-func (p *TestPlugin) ValidateKey(
+func (p *KeystoreOperator) ValidateKey(
 	_ context.Context,
 	_ *keyopv1.ValidateKeyRequest,
 ) (*keyopv1.ValidateKeyResponse, error) {
@@ -215,7 +241,7 @@ func (p *TestPlugin) ValidateKey(
 	return &keyopv1.ValidateKeyResponse{IsValid: true}, nil
 }
 
-func (p *TestPlugin) ValidateKeyAccessData(
+func (p *KeystoreOperator) ValidateKeyAccessData(
 	_ context.Context,
 	req *keyopv1.ValidateKeyAccessDataRequest,
 ) (*keyopv1.ValidateKeyAccessDataResponse, error) {
@@ -228,7 +254,7 @@ func (p *TestPlugin) ValidateKeyAccessData(
 	return &keyopv1.ValidateKeyAccessDataResponse{IsValid: true}, nil
 }
 
-func (p *TestPlugin) TransformCryptoAccessData(
+func (p *KeystoreOperator) TransformCryptoAccessData(
 	_ context.Context,
 	request *keyopv1.TransformCryptoAccessDataRequest,
 ) (*keyopv1.TransformCryptoAccessDataResponse, error) {
@@ -265,7 +291,7 @@ func (p *TestPlugin) TransformCryptoAccessData(
 	}, nil
 }
 
-func (p *TestPlugin) ExtractKeyRegion(
+func (p *KeystoreOperator) ExtractKeyRegion(
 	_ context.Context,
 	_ *keyopv1.ExtractKeyRegionRequest,
 ) (*keyopv1.ExtractKeyRegionResponse, error) {
@@ -273,60 +299,39 @@ func (p *TestPlugin) ExtractKeyRegion(
 	return &keyopv1.ExtractKeyRegionResponse{Region: "test-region"}, nil
 }
 
-func New() *TestPlugin {
-	p := &TestPlugin{
-		keyStore: make(map[string]*KeyRecord),
-	}
-
-	for keyID, record := range initialKeys {
-		p.handleKeyRecord(keyID, record.Status)
-	}
-
-	return p
-}
-
-func (p *TestPlugin) SetLogger(logger hclog.Logger) {
+func (p *KeystoreOperator) SetLogger(logger hclog.Logger) {
 	p.logger = logger
 	p.logger.Info("SetLogger method has been called;")
 }
 
 // Configure configures the plugin.
 
-func (p *TestPlugin) Configure(
+func (p *KeystoreOperator) Configure(
 	_ context.Context,
 	_ *configv1.ConfigureRequest,
 ) (*configv1.ConfigureResponse, error) {
 	p.logger.Info("Configure method has been called;")
 
-	var buildInfo = "{}"
+	buildInfo := "{}"
 
 	return &configv1.ConfigureResponse{
 		BuildInfo: &buildInfo,
 	}, nil
 }
 
-func (p *TestPlugin) handleKeyRecord(keyID, status string) {
-	if p.keyStore == nil {
-		p.keyStore = make(map[string]*KeyRecord)
+func (p *KeystoreOperator) HandleKeyRecord(keyID, status string) {
+	if p.KeyStore == nil {
+		p.KeyStore = make(map[string]*KeyRecord)
 	}
 
-	record, exists := p.keyStore[keyID]
+	record, exists := p.KeyStore[keyID]
 	if !exists {
 		record = &KeyRecord{
 			KeyID:  keyID,
 			Status: status,
 		}
-		p.keyStore[keyID] = record
+		p.KeyStore[keyID] = record
 	}
 
 	record.Status = status
-}
-
-func main() {
-	p := New()
-
-	plugin.Serve(
-		keyopv1.KeystoreInstanceKeyOperationPluginServer(p),
-		configv1.ConfigServiceServer(p),
-	)
 }
