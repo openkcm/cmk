@@ -22,17 +22,17 @@ includes:
         - COMPONENT_NAME: cmk-full-plugins
           DOCKER_FILE_IDENTIFIER: full-plugins
           BASE_IMAGE_NAME: cmk:cmk-full-base
-          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins
+          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins identity-management-plugins:identity-management-plugins
         - COMPONENT_NAME: api-server-plugins
           DOCKER_FILE_IDENTIFIER: api-server-plugins
           BASE_IMAGE_NAME: cmk:api-server
-          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins
+          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins identity-management-plugins:identity-management-plugins
         - COMPONENT_NAME: task-worker-plugins
           DOCKER_FILE_IDENTIFIER: task-worker-plugins
           BASE_IMAGE_NAME: cmk:task-worker
-          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins
+          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins identity-management-plugins:identity-management-plugins
         - COMPONENT_NAME: event-reconciler-plugins
           DOCKER_FILE_IDENTIFIER: event-reconciler-plugins
           BASE_IMAGE_NAME: cmk:event-reconciler
-          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins
+          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins identity-management-plugins:identity-management-plugins
 
