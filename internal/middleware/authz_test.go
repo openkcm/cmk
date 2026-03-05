@@ -275,7 +275,6 @@ func setupAuthzEngineWithRole(t *testing.T, tenantID, groupIdentifier string, ro
 		ctx, &model.Tenant{
 			TenantModel: multitenancy.TenantModel{},
 			ID:          tenantID,
-			Region:      tenantID,
 			Status:      "Test",
 		},
 	)
@@ -325,7 +324,6 @@ func SetupAuthzEngineWithAllowList(t *testing.T) *authzmodel.Engine {
 			ctx, &model.Tenant{
 				TenantModel: multitenancy.TenantModel{},
 				ID:          ts.tenantID,
-				Region:      ts.tenantID,
 				Status:      "Test",
 			},
 		)

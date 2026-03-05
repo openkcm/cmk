@@ -25,7 +25,6 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
@@ -1008,12 +1007,11 @@ func (km *KeyManager) handleSystemsOnNewPrimaryKey(ctx context.Context, key *mod
 		repo.DefaultLimit,
 		func(systems []*model.System) error {
 			for _, s := range systems {
-				_, err := km.eventFactory.SystemSwitch(
+				_, err := km.eventFactory.SystemSwitchNewPrimaryKey(
 					ctx,
 					s,
 					key.ID.String(),
 					keyConfig.PrimaryKeyID.String(),
-					constants.KeyActionSetPrimary,
 				)
 				if err != nil {
 					return err
@@ -1192,7 +1190,7 @@ func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keys
 
 func (km *KeyManager) sendEnableEvent(ctx context.Context, key *model.Key) error {
 	return km.eventFactory.SendEvent(ctx, eventprocessor.Event{
-		Name: proto.TaskType_KEY_ENABLE.String(),
+		Name: eventprocessor.JobTypeKeyEnable.String(),
 		Event: func(ctx context.Context) (orbital.Job, error) {
 			job, err := km.eventFactory.KeyEnable(ctx, key.ID.String())
 			if errors.Is(err, orbital.ErrJobAlreadyExists) {
@@ -1207,7 +1205,7 @@ func (km *KeyManager) sendEnableEvent(ctx context.Context, key *model.Key) error
 
 func (km *KeyManager) sendDisableEvent(ctx context.Context, key *model.Key) error {
 	return km.eventFactory.SendEvent(ctx, eventprocessor.Event{
-		Name: proto.TaskType_KEY_DISABLE.String(),
+		Name: eventprocessor.JobTypeKeyDisable.String(),
 		Event: func(ctx context.Context) (orbital.Job, error) {
 			job, err := km.eventFactory.KeyDisable(ctx, key.ID.String())
 			if errors.Is(err, orbital.ErrJobAlreadyExists) {
@@ -1222,7 +1220,7 @@ func (km *KeyManager) sendDisableEvent(ctx context.Context, key *model.Key) erro
 
 func (km *KeyManager) sendDetachEvent(ctx context.Context, key *model.Key) error {
 	return km.eventFactory.SendEvent(ctx, eventprocessor.Event{
-		Name: proto.TaskType_KEY_DETACH.String(),
+		Name: eventprocessor.JobTypeKeyDetach.String(),
 		Event: func(ctx context.Context) (orbital.Job, error) {
 			job, err := km.eventFactory.KeyDetach(ctx, key.ID.String())
 			if errors.Is(err, orbital.ErrJobAlreadyExists) {
