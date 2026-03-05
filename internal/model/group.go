@@ -40,7 +40,7 @@ func NewIAMIdentifier(name string, tenantID string) string {
 
 // TableName returns the table name for Key
 func (Group) TableName() string {
-	return "group"
+	return "groups"
 }
 
 func (Group) IsSharedModel() bool {

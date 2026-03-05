@@ -13,10 +13,7 @@ import (
 	wf "github.com/openkcm/cmk/internal/workflow"
 )
 
-var (
-	GetPluginAlgorithm = getPluginAlgorithm
-	ValidateSchema     = validateSchema
-)
+var GetPluginAlgorithm = getPluginAlgorithm
 
 func (m *TenantConfigManager) GetTenantConfigsHyokKeystore() HYOKKeystore {
 	return m.getTenantConfigsHyokKeystore()
