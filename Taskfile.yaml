@@ -7,7 +7,32 @@ includes:
     excludes: [] # put task names in here which are overwritten in this file
     vars:
       CODE_DIRS: '{{.ROOT_DIR}}/cmd/... {{.ROOT_DIR}}/internal/... {{.ROOT_DIR}}/apis/... {{.ROOT_DIR}}/test/... {{.ROOT_DIR}}/utils/...'
-      COMPONENTS: 'api-server db-migrator task-cli task-scheduler task-worker tenant-manager tenant-manager-cli'
+      COMPONENTS: 'api-server db-migrator event-reconciler task-cli task-scheduler task-worker tenant-manager tenant-manager-cli'
       CHART_COMPONENTS: 'cmk'
-      SKIP_VALIDATION_TESTS: "true"
+      SKIP_VALIDATION_TESTS: 'true'
+      OVERWRITE_COMPONENTS: 'true'
+
+      BUILD_IMAGE_MODE: 'single-multi'
+      SINGLE_IMAGE_NAME: 'cmk-full-base'
+      SINGLE_DOCKER_FILE_IDENTIFIER: 'full-base'
+
+      IMG_COMPONENTS: 'cmk-full-base cmk-full-plugins api-server api-server-plugins event-reconciler event-reconciler-plugins db-migrator task-cli task-scheduler task-worker task-worker-plugins tenant-manager tenant-manager-cli'
+
+      COMPOSITE_COMPONENTS:
+        - COMPONENT_NAME: cmk-full-plugins
+          DOCKER_FILE_IDENTIFIER: full-plugins
+          BASE_IMAGE_NAME: cmk:cmk-full-base
+          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins
+        - COMPONENT_NAME: api-server-plugins
+          DOCKER_FILE_IDENTIFIER: api-server-plugins
+          BASE_IMAGE_NAME: cmk:api-server
+          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins
+        - COMPONENT_NAME: task-worker-plugins
+          DOCKER_FILE_IDENTIFIER: task-worker-plugins
+          BASE_IMAGE_NAME: cmk:task-worker
+          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins
+        - COMPONENT_NAME: event-reconciler-plugins
+          DOCKER_FILE_IDENTIFIER: event-reconciler-plugins
+          BASE_IMAGE_NAME: cmk:event-reconciler
+          PLUGINS_IMAGE_NAME: keystore-plugins:keystore-plugins
 
