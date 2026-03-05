@@ -151,7 +151,7 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 
 	// Initialize config
 	log.Debug(ctx, "Initializing Provider",
-		slog.String("keyStore", keystoreName),
+		slog.String("keystore", keystoreName),
 		slog.String("provider", provider),
 	)
 
