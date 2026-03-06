@@ -32,7 +32,7 @@ test: install-gotestsum build_test_plugins
 	go clean -testcache
 
 	# Run tests with coverage
-	env TEST_ENV=make gotestsum --rerun-fails --format testname --junitfile junit.xml \
+	env TEST_ENV=make gotestsum --rerun-fails --format testname --jsonfile tmp.json \
 		--packages="./internal/... ./utils... ./cmd/... ./test/security/... ./test/db-migration/..." \
 		-- -count=1 -covermode=atomic -coverpkg=./... \
 		-args -test.gocoverdir=$(pwd)/cover
