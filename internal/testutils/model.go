@@ -13,7 +13,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -21,6 +20,7 @@ import (
 
 const (
 	DaysToExpiration              = 7
+	TestTenantCertCommonName      = "testkms-cmk"
 	TestLocalityID                = "12345678-90ab-cdef-1234-567890abcdef"
 	TestDefaultKeystoreCommonName = "default.kms.cmk"
 	TestRoleArn                   = "arn:aws:iam::123456789012:role/ExampleRole"
@@ -173,7 +173,7 @@ func NewCertificate(m func(*model.Certificate)) *model.Certificate {
 		return model.Certificate{
 			ID:             uuid.New(),
 			Purpose:        model.CertificatePurposeTenantDefault,
-			CommonName:     manager.DefaultHYOKCertCommonName,
+			CommonName:     TestTenantCertCommonName,
 			State:          model.CertificateStateActive,
 			CreationDate:   now,
 			ExpirationDate: now.AddDate(0, 0, DaysToExpiration),

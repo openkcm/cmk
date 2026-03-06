@@ -83,7 +83,7 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 	cmkAuditor := auditor.New(t.Context(), &cfg)
 
 	dbRepository := sql.NewRepository(db)
-	certManager := manager.NewCertificateManager(t.Context(), dbRepository, svcRegistry, &cfg.Certificates)
+	certManager := manager.NewCertificateManager(t.Context(), dbRepository, svcRegistry, &cfg)
 	userManager := manager.NewUserManager(dbRepository, cmkAuditor)
 	tagManager := manager.NewTagManager(dbRepository)
 	m := manager.NewKeyConfigManager(dbRepository, certManager, userManager, tagManager, cmkAuditor, &cfg)
@@ -939,7 +939,7 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 			t.Context(),
 			sql.NewRepository(db),
 			svcRegistry,
-			&cfg.Certificates,
+			&cfg,
 		)
 
 		ctx := testutils.CreateCtxWithTenant(tenant)

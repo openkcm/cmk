@@ -435,6 +435,8 @@ config:
     validityDays: 30
     # Threshold in days to rotate the certificates; Must be between 1 and 30 days
     rotationThresholdDays: 7
+    # Default prefix for tenant certificates;
+    # defaultTenantCertPrefix: "examplekms-cmk_"
 
   ## Crypto layer configuration
   cryptoLayer:
