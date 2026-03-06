@@ -30,8 +30,7 @@ func TestTenantsTable(t *testing.T) {
 
 		r := sql.NewRepository(db)
 		err := r.Create(t.Context(), &model.Tenant{
-			ID:     "test-id",
-			Region: "test-region",
+			ID: "test-id",
 			TenantModel: multitenancy.TenantModel{
 				DomainURL:  "test-domain.example.com",
 				SchemaName: "test-schema",
@@ -40,8 +39,7 @@ func TestTenantsTable(t *testing.T) {
 		assert.NoError(t, err)
 
 		err = r.Create(t.Context(), &model.Tenant{
-			ID:     "test-id1",
-			Region: "test-region",
+			ID: "test-id1",
 			TenantModel: multitenancy.TenantModel{
 				DomainURL:  "test-domain1.example.com",
 				SchemaName: "test-schema1",

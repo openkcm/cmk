@@ -71,12 +71,11 @@ func WithExecInterval(d time.Duration) Option {
 
 // CryptoReconciler is responsible for handling orbital jobs and managing the lifecycle of systems in CMK.
 type CryptoReconciler struct {
-	repo        repo.Repo
-	manager     *orbital.Manager
-	targets     map[string]struct{}
-	initiators  []orbital.Initiator
-	svcRegistry *cmkpluginregistry.Registry
-
+	repo          repo.Repo
+	manager       *orbital.Manager
+	targets       map[string]struct{}
+	initiators    []orbital.Initiator
+	svcRegistry   *cmkpluginregistry.Registry
 	jobHandlerMap map[JobType]JobHandler
 }
 
@@ -149,11 +148,13 @@ func NewCryptoReconciler(
 		repo:        repository,
 		svcRegistry: svcRegistry,
 		targets:     targetMap,
+		cfg:         cfg,
 	}
 
 	keyResolver := &KeyTaskInfoResolver{
 		repo:    repository,
 		targets: targetMap,
+		cfg:     cfg,
 	}
 
 	jobHandlerMap := map[JobType]JobHandler{

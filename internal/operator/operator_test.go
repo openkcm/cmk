@@ -345,7 +345,6 @@ func TestHandleCreateTenant(t *testing.T) {
 				if tt.checkDB {
 					schemaName, _ := tmdb.EncodeSchemaNameBase62(validTenantID)
 					integrationutils.TenantExists(t, testConfig.DB, schemaName, model.Group{}.TableName())
-					integrationutils.CheckRegion(ctx, t, testConfig.DB, validTenantID, tt.region)
 
 					ctx := cmkcontext.CreateTenantContext(ctx, schemaName)
 					tenant := &model.Tenant{ID: validTenantID}
