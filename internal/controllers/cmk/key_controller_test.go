@@ -496,7 +496,7 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 		testutils.WithAuthClientDataKC(authClient))
 
 	// No tenant config, no keystore in pool - KMS20-2742: GetDefaultKeystoreConfig returns an error
-	// instead of onboarding from pool. Error propagates via key creation and is wrapped as ErrCreateKey,
+	// instead of onboarding from pool. Error propagates via key creation and is wrapped as ErrCreateKey.
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	t.Run("Should fail to create system managed key if default keystore not configured", func(t *testing.T) {
