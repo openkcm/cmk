@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/openkcm/cmk/compare/v0.4.0...v0.4.1) (2026-03-06)
+
+
+### Bug Fixes
+
+* publish workflow updated including the image signing and composite image ([#176](https://github.com/openkcm/cmk/issues/176)) ([c995207](https://github.com/openkcm/cmk/commit/c995207929332f5bd92d394052103322df94f780))
+
 ## [0.4.0](https://github.com/openkcm/cmk/compare/v0.3.0...v0.4.0) (2026-03-06)
 
 
