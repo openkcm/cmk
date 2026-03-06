@@ -316,7 +316,9 @@ func NewDefaultWorkflowConfig(enabled bool) *model.WorkflowConfig {
 // GetDefaultKeystoreConfig no longer auto-onboards from the keystore pool.
 func CreateDefaultKeystoreConfigForTests(ctx context.Context, tb testing.TB, r repo.Repo) {
 	tb.Helper()
-	ksConfig := NewKeystoreConfig(func(_ *model.KeystoreConfig) {})
+	ksConfig := NewKeystoreConfig(func(_ *model.KeystoreConfig) {
+		// Use default KeystoreConfig values, no customization needed for tests
+	})
 	value, err := json.Marshal(ksConfig)
 	assert.NoError(tb, err)
 	conf := &model.TenantConfig{
