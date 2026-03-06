@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -59,4 +60,36 @@ func getTenantByID(ctx context.Context, r repo.Repo, tenantID string) (*model.Te
 	}
 
 	return &tenant, nil
+}
+
+func updateSystem(ctx context.Context, r repo.Repo, system *model.System) error {
+	ck := repo.NewCompositeKey().Where(repo.IDField, system.ID)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).UpdateAll(true)
+
+	updated, err := r.Patch(ctx, system, *query)
+	if err != nil {
+		return fmt.Errorf("failed to update system %s upon job termination: %w", system.ID, err)
+	}
+
+	if !updated {
+		log.Warn(ctx, fmt.Sprintf("system with ID %s was not updated", system.ID))
+	}
+
+	return nil
+}
+
+func updateKey(ctx context.Context, r repo.Repo, key *model.Key) error {
+	ck := repo.NewCompositeKey().Where(repo.IDField, key.ID)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).UpdateAll(true)
+
+	updated, err := r.Patch(ctx, key, *query)
+	if err != nil {
+		return fmt.Errorf("failed to update key %s upon job termination: %w", key.ID, err)
+	}
+
+	if !updated {
+		log.Warn(ctx, fmt.Sprintf("key with ID %s was not updated", key.ID))
+	}
+
+	return nil
 }
