@@ -1137,7 +1137,7 @@ func TestHandleTerminateTenant(t *testing.T) {
 				ReconcileAfterSec: 3,
 			},
 			expDeleteCalls: 0,
-			status:         manager.OffboardingProcessing,
+			status:         manager.OffboardingContinueAndWait,
 		},
 		{
 			name: "should return task in progress and not delete tenant when offboarding returns error",

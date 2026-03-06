@@ -158,15 +158,17 @@ func NewCryptoReconciler(
 	}
 
 	jobHandlerMap := map[JobType]JobHandler{
-		JobTypeSystemLink:        NewSystemLinkJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
-		JobTypeSystemUnlink:      NewSystemUnlinkJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
+		JobTypeSystemLink:   NewSystemLinkJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
+		JobTypeSystemUnlink: NewSystemUnlinkJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
+		JobTypeSystemUnlinkDecommission: NewSystemUnlinkDecommissionJobHandler(
+			repository, registry, cmkAuditor, manager, systemResolver),
 		JobTypeSystemSwitch:      NewSystemSwitchJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
 		JobTypeSystemSwitchNewPK: NewSystemSwitchJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
 		JobTypeKeyEnable:         NewKeyJobHandler(keyResolver),
 		JobTypeKeyDisable:        NewKeyJobHandler(keyResolver),
 		JobTypeKeyRotate:         NewKeyJobHandler(keyResolver),
 		JobTypeKeyDelete:         NewKeyJobHandler(keyResolver),
-		JobTypeKeyDetach:         NewKeyJobHandler(keyResolver),
+		JobTypeKeyDetach:         NewKeyDetachJobHandler(repository, cmkAuditor, manager, keyResolver),
 	}
 	reconciler.jobHandlerMap = jobHandlerMap
 

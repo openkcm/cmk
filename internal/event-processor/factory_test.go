@@ -179,7 +179,7 @@ func TestSystemEventCreation(t *testing.T) {
 		{
 			name: "should return error on missing tenant from ctx for system unlink",
 			systemEventFn: func(ctx context.Context, system *model.System, _, from string) (orbital.Job, error) {
-				return eventProcessor.SystemUnlink(ctx, system, from, "")
+				return eventProcessor.SystemUnlink(ctx, system, from)
 			},
 			systemStatus: cmkapi.SystemStatusCONNECTED,
 			expErr:       cmkcontext.ErrExtractTenantID,
@@ -187,7 +187,7 @@ func TestSystemEventCreation(t *testing.T) {
 		{
 			name: "should return error on system in processing state for system unlink - KMS20-3467",
 			systemEventFn: func(ctx context.Context, system *model.System, _, from string) (orbital.Job, error) {
-				return eventProcessor.SystemUnlink(ctx, system, from, "")
+				return eventProcessor.SystemUnlink(ctx, system, from)
 			},
 			systemStatus: cmkapi.SystemStatusPROCESSING,
 			tenantID:     tenant,
@@ -196,7 +196,7 @@ func TestSystemEventCreation(t *testing.T) {
 		{
 			name: "should create system unlink event and set system to processing - KMS20-3467",
 			systemEventFn: func(ctx context.Context, system *model.System, _, from string) (orbital.Job, error) {
-				return eventProcessor.SystemUnlink(ctx, system, from, "")
+				return eventProcessor.SystemUnlink(ctx, system, from)
 			},
 			systemStatus: cmkapi.SystemStatusCONNECTED,
 			tenantID:     tenant,
@@ -299,7 +299,7 @@ func TestJobConfirmation(t *testing.T) {
 		{
 			name: "should confirm system unlink job",
 			job: func(s *model.System, keyID string) (orbital.Job, error) {
-				return eventProcessor.SystemUnlink(ctx, s, keyID, "")
+				return eventProcessor.SystemUnlink(ctx, s, keyID)
 			},
 		},
 		{
