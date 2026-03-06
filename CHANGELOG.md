@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.4.1](https://github.com/openkcm/cmk/compare/v0.4.0...v0.4.1) (2026-03-06)
+
+
+### Bug Fixes
+
+* publish workflow updated including the image signing and composite image ([#176](https://github.com/openkcm/cmk/issues/176)) ([c995207](https://github.com/openkcm/cmk/commit/c995207929332f5bd92d394052103322df94f780))
+
+## [0.4.0](https://github.com/openkcm/cmk/compare/v0.3.0...v0.4.0) (2026-03-06)
+
+
+### Features
+
+* add noop plugins ([#136](https://github.com/openkcm/cmk/issues/136)) ([3935230](https://github.com/openkcm/cmk/commit/3935230acf3e26ae616c128db99b10b73a3a9a5e))
+* Add Tenant Name ([#110](https://github.com/openkcm/cmk/issues/110)) ([d9e548f](https://github.com/openkcm/cmk/commit/d9e548f84e33bdbc0bee7527663ae8f71de760bf))
+* deploy data migrator post hook ([#87](https://github.com/openkcm/cmk/issues/87)) ([81d2149](https://github.com/openkcm/cmk/commit/81d2149d00cbf1cf806addcb9d4ce3097be8c28e))
+* Enable workflow for primary key switch ([#126](https://github.com/openkcm/cmk/issues/126)) ([5191639](https://github.com/openkcm/cmk/commit/519163968691731f883bfaea48da3877f33cd7aa))
+* grant key admin permission to access tenantInfo ([#155](https://github.com/openkcm/cmk/issues/155)) ([7e968fd](https://github.com/openkcm/cmk/commit/7e968fdd0fe7a1aae3292abd9d59ce69e93e4c75))
+* include the SCIM identity management as builtin plugin ([#77](https://github.com/openkcm/cmk/issues/77)) ([939439e](https://github.com/openkcm/cmk/commit/939439ec314f278486176e972e4e64317b4a72ff))
+* order systems by identifier ascending ([#149](https://github.com/openkcm/cmk/issues/149)) ([4c2d1ff](https://github.com/openkcm/cmk/commit/4c2d1fffea4a8b7409d04bd49f3346d3c8452d08))
+* remove mixed roles check for allow list APIs ([#160](https://github.com/openkcm/cmk/issues/160)) ([3607c24](https://github.com/openkcm/cmk/commit/3607c242b249762e31c2463ed506dc13576453b2))
+
+
+### Bug Fixes
+
+* add dockerfiles to be used to create different images ([#170](https://github.com/openkcm/cmk/issues/170)) ([103f816](https://github.com/openkcm/cmk/commit/103f81644cf5ac5dea2e125e02ed0a6b964f559d))
+* add missing sections in reconciler cfgmap ([#145](https://github.com/openkcm/cmk/issues/145)) ([bb69cb3](https://github.com/openkcm/cmk/commit/bb69cb3bef645bcfdda41b7c2c85d3b85fcb70d4))
+* add plugin service api and wrappers from plugin-sdk ([#125](https://github.com/openkcm/cmk/issues/125)) ([7d8818e](https://github.com/openkcm/cmk/commit/7d8818e334c4f4293797d457a3796fd84f006fae))
+* add plugins to event reconciler configmap ([#150](https://github.com/openkcm/cmk/issues/150)) ([878585a](https://github.com/openkcm/cmk/commit/878585a271e65f773ab5f4643a55cc58e3445c51))
+* add sonar separate workflow ([#173](https://github.com/openkcm/cmk/issues/173)) ([eb15052](https://github.com/openkcm/cmk/commit/eb1505255bdb64b7c29c4b4803366800e763f907))
+* change keyIDTo for system events on pkey change ([#131](https://github.com/openkcm/cmk/issues/131)) ([819af68](https://github.com/openkcm/cmk/commit/819af68a22c26dc4aa52df7327eaf5dd56809257))
+* change tenant-manager podDisruptionBudgets name and labels ([#147](https://github.com/openkcm/cmk/issues/147)) ([90628bc](https://github.com/openkcm/cmk/commit/90628bce9e99ac2eb5f05964cd7a5277f84ee80f))
+* include static configuration for identity management builtin plugin ([#157](https://github.com/openkcm/cmk/issues/157)) ([dfb83c6](https://github.com/openkcm/cmk/commit/dfb83c62771b0947306e13e6dbc7201049c6bb0a))
+* remove usage name of plugins for single plugins ([#151](https://github.com/openkcm/cmk/issues/151)) ([247ac75](https://github.com/openkcm/cmk/commit/247ac7538f3367212f6a4ef2a280a4cf419ee524))
+* update the plugin-sdk version introducing back buildinfo ([#146](https://github.com/openkcm/cmk/issues/146)) ([7acc30c](https://github.com/openkcm/cmk/commit/7acc30c73614a5eec9c75cf6cba2592d571786a0))
+* use system user context for all batched periodic tasks ([#130](https://github.com/openkcm/cmk/issues/130)) ([9019edc](https://github.com/openkcm/cmk/commit/9019edc9bbf832dd649509a20f52d33f298050b1))
+* wrong ctx on tasks ([#161](https://github.com/openkcm/cmk/issues/161)) ([8b63a07](https://github.com/openkcm/cmk/commit/8b63a07f68893b93a5a95423aa7c72c314b9b2c9))
+
 ## [0.3.0](https://github.com/openkcm/cmk/compare/v0.2.1...v0.3.0) (2026-02-23)
 
 
