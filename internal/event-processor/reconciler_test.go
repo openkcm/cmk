@@ -23,7 +23,6 @@ import (
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/model"
@@ -673,7 +672,6 @@ func TestConfirmJob(t *testing.T) {
 			eventprocessor.JobTypeKeyRotate.String(),
 			eventprocessor.JobTypeKeyDisable.String(),
 			eventprocessor.JobTypeKeyEnable.String(),
-			eventprocessor.JobTypeKeyDetach.String(),
 		}
 
 		for _, tt := range keyJobTypes {
@@ -694,6 +692,72 @@ func TestConfirmJob(t *testing.T) {
 				assert.IsType(t, orbital.CompleteJobConfirmer(), res)
 			})
 		}
+	})
+
+	t.Run("key detach task is confirmed as done", func(t *testing.T) {
+		kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = kc.ID
+			k.State = string(cmkapi.KeyStateDETACHING)
+		})
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		testutils.CreateTestEntities(ctx, t, r, kc, key)
+
+		data := eventprocessor.KeyActionJobData{
+			TenantID: tenant,
+			KeyID:    key.ID.String(),
+		}
+		b, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		job := orbital.NewJob(eventprocessor.JobTypeKeyDetach.String(), b)
+		handler, err := reconciler.GetHandlerByJobType(eventprocessor.JobTypeKeyDetach.String())
+		assert.NoError(t, err)
+
+		res, err := handler.HandleJobConfirm(t.Context(), job)
+		assert.NoError(t, err)
+		assert.IsType(t, orbital.CompleteJobConfirmer(), res)
+	})
+
+	t.Run("key detach task with missing key is canceled", func(t *testing.T) {
+		data := eventprocessor.KeyActionJobData{
+			TenantID: tenant,
+			KeyID:    uuid.NewString(), // not in DB
+		}
+		b, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		job := orbital.NewJob(eventprocessor.JobTypeKeyDetach.String(), b)
+		handler, err := reconciler.GetHandlerByJobType(eventprocessor.JobTypeKeyDetach.String())
+		assert.NoError(t, err)
+
+		res, err := handler.HandleJobConfirm(t.Context(), job)
+		assert.NoError(t, err)
+		assert.IsType(t, orbital.CancelJobConfirmer(""), res)
+	})
+
+	t.Run("key detach task with key not in DETACHING state is canceled", func(t *testing.T) {
+		kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = kc.ID
+		})
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		testutils.CreateTestEntities(ctx, t, r, kc, key)
+
+		data := eventprocessor.KeyActionJobData{
+			TenantID: tenant,
+			KeyID:    key.ID.String(),
+		}
+		b, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		job := orbital.NewJob(eventprocessor.JobTypeKeyDetach.String(), b)
+		handler, err := reconciler.GetHandlerByJobType(eventprocessor.JobTypeKeyDetach.String())
+		assert.NoError(t, err)
+
+		res, err := handler.HandleJobConfirm(t.Context(), job)
+		assert.NoError(t, err)
+		assert.IsType(t, orbital.CancelJobConfirmer(""), res)
 	})
 
 	t.Run("unsupported task type returns error", func(t *testing.T) {
@@ -937,41 +1001,242 @@ func TestJobTermination(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("Should call UnmapSystemFromTenant on decommission trigger", func(t *testing.T) {
-		// Prepare entities
-		sys := testutils.NewSystem(func(_ *model.System) {})
-		keyCfg := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
-		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = keyCfg.ID
+	t.Run("System status on canceled job termination", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusPROCESSING
 		})
-		testutils.CreateTestEntities(ctx, t, r, sys, keyCfg, key)
+		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
 
-		// Build unlink job data with decomission trigger
-		decomJobData := eventprocessor.SystemActionJobData{
+		data := eventprocessor.SystemActionJobData{
 			TenantID:  tenant,
 			SystemID:  sys.ID.String(),
 			KeyIDFrom: key.ID.String(),
-			Trigger:   constants.SystemActionDecommission,
 		}
-		b, err := json.Marshal(decomJobData)
+		dataBytes, err := json.Marshal(data)
 		assert.NoError(t, err)
 
-		// Terminate unlink with Done to invoke UnmapSystemFromTenant branch
-		job := orbital.Job{
-			ExternalID: uuid.NewString(),
-			Type:       eventprocessor.JobTypeSystemUnlink.String(),
-			Data:       b,
-			Status:     orbital.JobStatusDone,
-		}
-
-		err = eventProcessor.JobDoneFunc(t.Context(), job)
+		item := uuid.NewString()
+		err = eventProcessor.JobCanceledFunc(t.Context(), orbital.Job{
+			ExternalID: item,
+			Type:       eventprocessor.JobTypeSystemLink.String(),
+			Data:       dataBytes,
+		})
 		assert.NoError(t, err)
 
-		// Assert system is disconnected after unlink
-		sysAfter := &model.System{ID: sys.ID}
+		sysAfter := &model.System{
+			ID: sys.ID,
+		}
+		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusFAILED, sysAfter.Status)
+	})
+
+	t.Run("System switch to new key on successful SYSTEM_SWITCH job termination", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusPROCESSING
+		})
+		keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		key2 := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig2.ID
+		})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig2, key2)
+		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
+
+		data := eventprocessor.SystemActionJobData{
+			TenantID:  tenant,
+			SystemID:  sys.ID.String(),
+			KeyIDFrom: key.ID.String(),
+			KeyIDTo:   key2.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventprocessor.JobTypeSystemSwitch.String(),
+			Data:       dataBytes,
+		}, true)
+
+		sysAfter := &model.System{
+			ID: sys.ID,
+		}
+		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, keyConfig2.ID, *sysAfter.KeyConfigurationID)
+	})
+
+	t.Run("System status on success SYSTEM_UNLINK_DECOMMISSION job termination", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusPROCESSING
+		})
+		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
+
+		data := eventprocessor.SystemActionJobData{
+			TenantID:  tenant,
+			SystemID:  sys.ID.String(),
+			KeyIDFrom: key.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventprocessor.JobTypeSystemUnlinkDecommission.String(),
+			Data:       dataBytes,
+		}, true)
+
+		sysAfter := &model.System{
+			ID: sys.ID,
+		}
 		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, cmkapi.SystemStatusDISCONNECTED, sysAfter.Status)
+	})
+
+	t.Run("System status on failed SYSTEM_UNLINK_DECOMMISSION job termination", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusPROCESSING
+		})
+		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
+
+		data := eventprocessor.SystemActionJobData{
+			TenantID:  tenant,
+			SystemID:  sys.ID.String(),
+			KeyIDFrom: key.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventprocessor.JobTypeSystemUnlinkDecommission.String(),
+			Data:       dataBytes,
+		}, false)
+
+		sysAfter := &model.System{
+			ID: sys.ID,
+		}
+		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusDISCONNECTED, sysAfter.Status)
+	})
+
+	t.Run("System status on canceled SYSTEM_UNLINK_DECOMMISSION job termination", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusPROCESSING
+		})
+		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
+
+		data := eventprocessor.SystemActionJobData{
+			TenantID:  tenant,
+			SystemID:  sys.ID.String(),
+			KeyIDFrom: key.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		err = eventProcessor.JobCanceledFunc(t.Context(), orbital.Job{
+			ExternalID: item,
+			Type:       eventprocessor.JobTypeSystemUnlinkDecommission.String(),
+			Data:       dataBytes,
+		})
+		assert.NoError(t, err)
+
+		sysAfter := &model.System{
+			ID: sys.ID,
+		}
+		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusFAILED, sysAfter.Status)
+	})
+
+	t.Run("Should update key state to DETACHED on successful key detach job termination", func(t *testing.T) {
+		keyToDetach := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		assert.NoError(t, r.Create(ctx, keyToDetach))
+
+		data := eventprocessor.KeyActionJobData{
+			TenantID: tenant,
+			KeyID:    keyToDetach.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventprocessor.JobTypeKeyDetach.String(),
+			Data:       dataBytes,
+		}, true)
+
+		keyAfter := &model.Key{
+			ID: keyToDetach.ID,
+		}
+		_, err = r.First(ctx, keyAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, string(cmkapi.KeyStateDETACHED), keyAfter.State)
+	})
+
+	t.Run("Should update key state to DETACHED on failed key detach job termination", func(t *testing.T) {
+		keyToDetach := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		assert.NoError(t, r.Create(ctx, keyToDetach))
+
+		data := eventprocessor.KeyActionJobData{
+			TenantID: tenant,
+			KeyID:    keyToDetach.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventprocessor.JobTypeKeyDetach.String(),
+			Data:       dataBytes,
+		}, false)
+
+		keyAfter := &model.Key{
+			ID: keyToDetach.ID,
+		}
+		_, err = r.First(ctx, keyAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, string(cmkapi.KeyStateDETACHED), keyAfter.State)
+	})
+
+	t.Run("Should update key state to UNKNOWN on canceled key detach job termination", func(t *testing.T) {
+		keyToDetach := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		assert.NoError(t, r.Create(ctx, keyToDetach))
+
+		data := eventprocessor.KeyActionJobData{
+			TenantID: tenant,
+			KeyID:    keyToDetach.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		err = eventProcessor.JobCanceledFunc(t.Context(), orbital.Job{
+			ExternalID: item,
+			Type:       eventprocessor.JobTypeKeyDetach.String(),
+			Data:       dataBytes,
+		})
+		assert.NoError(t, err)
+
+		keyAfter := &model.Key{
+			ID: keyToDetach.ID,
+		}
+		_, err = r.First(ctx, keyAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, string(cmkapi.KeyStateUNKNOWN), keyAfter.State)
 	})
 
 	t.Run("should add trace with correct attributes for JobDone", func(t *testing.T) {
@@ -1081,7 +1346,7 @@ func terminateNewJob(
 		err = eventProcessor.JobFailedFunc(t.Context(), job)
 	}
 
-	// Ignored as this test is not testing the system update capabilities
+	// Ignored as this test is not testing the system/key update capabilities
 	if err != nil {
 		t.Logf("Job termination returned error: %v", err)
 	}

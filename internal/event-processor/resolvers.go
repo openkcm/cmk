@@ -43,7 +43,7 @@ func (r *SystemTaskInfoResolver) Resolve(
 	switch JobType(job.Type) {
 	case JobTypeSystemLink:
 		taskType = proto.TaskType_SYSTEM_LINK
-	case JobTypeSystemUnlink:
+	case JobTypeSystemUnlink, JobTypeSystemUnlinkDecommission:
 		taskType = proto.TaskType_SYSTEM_UNLINK
 	case JobTypeSystemSwitch, JobTypeSystemSwitchNewPK:
 		taskType = proto.TaskType_SYSTEM_SWITCH

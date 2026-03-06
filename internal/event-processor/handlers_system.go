@@ -5,17 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/openkcm/orbital"
-
-	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
@@ -75,14 +71,9 @@ func (h *SystemLinkJobHandler) HandleJobDoneEvent(ctx context.Context, job orbit
 		return err
 	}
 
-	err = h.cmkAuditor.SendCmkOnboardingAuditLog(ctx, system.Identifier, data.KeyIDTo)
-	if err != nil {
-		return fmt.Errorf("failed to send onboarding audit log for system %s: %w", system.ID, err)
-	}
-
 	err = sendL1KeyClaim(ctx, *system, h.registry, data.TenantID, true)
 	if err != nil {
-		return fmt.Errorf("failed to update key claim for system %s: %w", system.ID, err)
+		return err
 	}
 
 	key, err := getKeyByKeyID(ctx, h.repo, data.KeyIDTo)
@@ -90,16 +81,23 @@ func (h *SystemLinkJobHandler) HandleJobDoneEvent(ctx context.Context, job orbit
 		return fmt.Errorf("failed to get key config ID for key %s: %w", data.KeyIDTo, err)
 	}
 
-	system.Status = cmkapi.SystemStatusCONNECTED
-	system.KeyConfigurationID = &key.KeyConfigurationID
-	err = updateSystem(ctx, h.repo, system)
+	err = h.repo.Transaction(ctx, func(ctx context.Context) error {
+		system.Status = cmkapi.SystemStatusCONNECTED
+		system.KeyConfigurationID = &key.KeyConfigurationID
+		err = updateSystem(ctx, h.repo, system)
+		if err != nil {
+			return err
+		}
+
+		return cleanUpEvent(ctx, h.repo, job)
+	})
 	if err != nil {
-		return fmt.Errorf("failed to update system %s: %w", system.ID, err)
+		return err
 	}
 
-	err = cleanUpEvent(ctx, h.repo, job)
+	err = h.cmkAuditor.SendCmkOnboardingAuditLog(ctx, system.Identifier, data.KeyIDTo)
 	if err != nil {
-		return fmt.Errorf("failed to clean up event for system %s: %w", system.ID, err)
+		log.Error(ctx, fmt.Sprintf("failed to send onboarding audit log for system %s: %v", system.ID, err), err)
 	}
 
 	return nil
@@ -165,39 +163,28 @@ func (h *SystemUnlinkJobHandler) HandleJobDoneEvent(ctx context.Context, job orb
 		return err
 	}
 
-	err = h.cmkAuditor.SendCmkOffboardingAuditLog(ctx, system.Identifier, data.KeyIDFrom)
-	if err != nil {
-		return fmt.Errorf("failed to send offboarding audit log for system %s: %w", system.ID, err)
-	}
-
 	err = sendL1KeyClaim(ctx, *system, h.registry, data.TenantID, false)
 	if err != nil {
-		return fmt.Errorf("failed to update key claim for system %s: %w", system.ID, err)
+		return err
 	}
 
-	// This should be moved out of here on tenant decommission refactor
-	if data.Trigger == constants.SystemActionDecommission {
-		_, err = h.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
-			ExternalId: system.Identifier,
-			Type:       strings.ToLower(system.Type),
-			TenantId:   data.TenantID,
-		})
-
+	err = h.repo.Transaction(ctx, func(ctx context.Context) error {
+		system.Status = cmkapi.SystemStatusDISCONNECTED
+		system.KeyConfigurationID = nil
+		err := updateSystem(ctx, h.repo, system)
 		if err != nil {
-			return fmt.Errorf("failed to unmap system from tenant: %w", err)
+			return err
 		}
+
+		return cleanUpEvent(ctx, h.repo, job)
+	})
+	if err != nil {
+		return err
 	}
 
-	system.Status = cmkapi.SystemStatusDISCONNECTED
-	system.KeyConfigurationID = nil
-	err = updateSystem(ctx, h.repo, system)
+	err = h.cmkAuditor.SendCmkOffboardingAuditLog(ctx, system.Identifier, data.KeyIDFrom)
 	if err != nil {
-		return fmt.Errorf("failed to update system %s: %w", system.ID, err)
-	}
-
-	err = cleanUpEvent(ctx, h.repo, job)
-	if err != nil {
-		return fmt.Errorf("failed to clean up event for system %s: %w", system.ID, err)
+		log.Error(ctx, fmt.Sprintf("failed to send offboarding audit log for system %s: %v", system.ID, err), err)
 	}
 
 	return nil
@@ -250,7 +237,7 @@ func (h *SystemSwitchJobHandler) HandleJobConfirm(
 }
 
 func (h *SystemSwitchJobHandler) HandleJobDoneEvent(ctx context.Context, job orbital.Job) error {
-	log.InjectSystemEvent(ctx, job.Type)
+	ctx = log.InjectSystemEvent(ctx, job.Type)
 
 	data, err := unmarshalSystemJobData(job)
 	if err != nil {
@@ -263,25 +250,27 @@ func (h *SystemSwitchJobHandler) HandleJobDoneEvent(ctx context.Context, job orb
 		return err
 	}
 
-	err = h.cmkAuditor.SendCmkSwitchAuditLog(ctx, system.Identifier, data.KeyIDFrom, data.KeyIDTo)
-	if err != nil {
-		return fmt.Errorf("failed to send rotation audit log for system %s: %w", system.ID, err)
-	}
-
 	key, err := getKeyByKeyID(ctx, h.repo, data.KeyIDTo)
 	if err != nil {
 		return fmt.Errorf("failed to get key config ID for key %s: %w", data.KeyIDTo, err)
 	}
 
-	system.KeyConfigurationID = &key.KeyConfigurationID
-	err = updateSystem(ctx, h.repo, system)
+	err = h.repo.Transaction(ctx, func(ctx context.Context) error {
+		system.KeyConfigurationID = &key.KeyConfigurationID
+		err = updateSystem(ctx, h.repo, system)
+		if err != nil {
+			return err
+		}
+
+		return cleanUpEvent(ctx, h.repo, job)
+	})
 	if err != nil {
-		return fmt.Errorf("failed to update system %s: %w", system.ID, err)
+		return err
 	}
 
-	err = cleanUpEvent(ctx, h.repo, job)
+	err = h.cmkAuditor.SendCmkSwitchAuditLog(ctx, system.Identifier, data.KeyIDFrom, data.KeyIDTo)
 	if err != nil {
-		return fmt.Errorf("failed to clean up event for system %s: %w", system.ID, err)
+		log.Error(ctx, fmt.Sprintf("failed to send switch audit log for system %s: %v", system.ID, err), err)
 	}
 
 	return nil
@@ -293,6 +282,136 @@ func (h *SystemSwitchJobHandler) HandleJobFailedEvent(ctx context.Context, job o
 
 func (h *SystemSwitchJobHandler) HandleJobCanceledEvent(ctx context.Context, job orbital.Job) error {
 	return terminateCanceledSystemJob(ctx, h.repo, job)
+}
+
+type SystemUnlinkDecommissionJobHandler struct {
+	repo           repo.Repo
+	registry       registry.Service
+	cmkAuditor     *auditor.Auditor
+	orbitalManager *orbital.Manager
+	taskResolver   *SystemTaskInfoResolver
+}
+
+func NewSystemUnlinkDecommissionJobHandler(
+	repo repo.Repo,
+	registry registry.Service,
+	cmkAuditor *auditor.Auditor,
+	orbitalManager *orbital.Manager,
+	taskResolver *SystemTaskInfoResolver,
+) *SystemUnlinkDecommissionJobHandler {
+	return &SystemUnlinkDecommissionJobHandler{
+		repo:           repo,
+		registry:       registry,
+		cmkAuditor:     cmkAuditor,
+		orbitalManager: orbitalManager,
+		taskResolver:   taskResolver,
+	}
+}
+
+func (h *SystemUnlinkDecommissionJobHandler) ResolveTasks(
+	ctx context.Context,
+	job orbital.Job,
+) ([]orbital.TaskInfo, error) {
+	return h.taskResolver.Resolve(ctx, job)
+}
+
+func (h *SystemUnlinkDecommissionJobHandler) HandleJobConfirm(
+	ctx context.Context,
+	job orbital.Job,
+) (orbital.JobConfirmerResult, error) {
+	return handleSystemJobConfirm(ctx, h.repo, job)
+}
+
+func (h *SystemUnlinkDecommissionJobHandler) HandleJobDoneEvent(ctx context.Context, job orbital.Job) error {
+	system, keyID, err := h.terminate(ctx, job)
+	if err != nil {
+		return fmt.Errorf("failed to handle job done event for system unlink decommission job: %w", err)
+	}
+
+	err = h.cmkAuditor.SendCmkOffboardingAuditLog(ctx, system.Identifier, keyID)
+	if err != nil {
+		log.Error(ctx, fmt.Sprintf("failed to send offboarding audit log for system %s: %v", system.ID, err), err)
+	}
+
+	return nil
+}
+
+func (h *SystemUnlinkDecommissionJobHandler) HandleJobFailedEvent(ctx context.Context, job orbital.Job) error {
+	taskErrorMessage, err := mergeOrbitalTaskErrors(ctx, h.orbitalManager, job)
+	if err != nil {
+		log.Error(ctx, "Failed to extract error message for failed system unlink decommission job", err)
+		taskErrorMessage = "unknown error"
+	}
+
+	log.Warn(ctx, "System unlink decommission job failed, marking system as disconnected and cleaning up key claim",
+		slog.String("errorMessage", taskErrorMessage),
+	)
+
+	_, _, err = h.terminate(ctx, job)
+	if err != nil {
+		return fmt.Errorf("failed to handle job failed event for system unlink decommission job: %w", err)
+	}
+
+	return nil
+}
+
+// HandleJobCanceledEvent puts the system to failed state so the system can be processed again during the next
+// decommission reconciliation loop.
+func (h *SystemUnlinkDecommissionJobHandler) HandleJobCanceledEvent(ctx context.Context, job orbital.Job) error {
+	ctx = log.InjectSystemEvent(ctx, job.Type)
+
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+	system, err := getSystemByID(ctx, h.repo, data.SystemID)
+	if err != nil {
+		return err
+	}
+
+	system.Status = cmkapi.SystemStatusFAILED
+	err = updateSystem(ctx, h.repo, system)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (h *SystemUnlinkDecommissionJobHandler) terminate(
+	ctx context.Context,
+	job orbital.Job,
+) (*model.System, string, error) {
+	ctx = log.InjectSystemEvent(ctx, job.Type)
+
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return nil, "", err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+	system, err := getSystemByID(ctx, h.repo, data.SystemID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// For unlink decommission, we want to mark the system as disconnected and clean up the key claim regardless
+	// of whether the job succeeded or failed.
+	system.Status = cmkapi.SystemStatusDISCONNECTED
+	system.KeyConfigurationID = nil
+	err = updateSystem(ctx, h.repo, system)
+	if err != nil {
+		return nil, "", err
+	}
+
+	err = sendL1KeyClaim(ctx, *system, h.registry, data.TenantID, false)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return system, data.KeyIDFrom, nil
 }
 
 func handleSystemJobConfirm(
@@ -328,7 +447,14 @@ func terminateFailedSystemJob(
 	r repo.Repo,
 	job orbital.Job,
 ) error {
-	system, err := getSystemFromJob(ctx, r, job)
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+
+	system, err := getSystemByID(ctx, r, data.SystemID)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			log.Warn(ctx, "System not found when handling job termination, skipping system update",
@@ -340,21 +466,22 @@ func terminateFailedSystemJob(
 
 	errorMessage, err := mergeOrbitalTaskErrors(ctx, orbitalManager, job)
 	if err != nil {
-		log.Error(ctx, "Failed to merge orbital task errors", err, slog.String("jobID", job.ID.String()))
+		log.Error(ctx, "Failed to merge orbital task errors", err)
 		errorMessage = job.ErrorMessage // Fall back to the job error message if we fail to get task errors
 	}
 
-	// Attempt to get task error messages from orbital to provide more context on the failure
-	err = updateEventError(ctx, r, job.ExternalID, errorMessage)
+	err = r.Transaction(ctx, func(ctx context.Context) error {
+		// Attempt to get task error messages from orbital to provide more context on the failure
+		err := updateEventError(ctx, r, job.ExternalID, errorMessage)
+		if err != nil {
+			return err
+		}
+
+		system.Status = cmkapi.SystemStatusFAILED
+		return updateSystem(ctx, r, system)
+	})
 	if err != nil {
 		return err
-	}
-
-	system.Status = cmkapi.SystemStatusFAILED
-	err = updateSystem(ctx, r, system)
-
-	if err != nil {
-		return fmt.Errorf("failed to update system %s: %w", system.ID, err)
 	}
 
 	return nil
@@ -365,7 +492,14 @@ func terminateCanceledSystemJob(
 	r repo.Repo,
 	job orbital.Job,
 ) error {
-	system, err := getSystemFromJob(ctx, r, job)
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+
+	system, err := getSystemByID(ctx, r, data.SystemID)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			log.Warn(ctx, "System not found when handling job termination, skipping system update",
@@ -375,17 +509,18 @@ func terminateCanceledSystemJob(
 		return err
 	}
 
-	// Attempt to get task error messages from orbital to provide more context on the cancellation
-	err = updateEventError(ctx, r, job.ExternalID, job.ErrorMessage)
+	err = r.Transaction(ctx, func(ctx context.Context) error {
+		// Attempt to get task error messages from orbital to provide more context on the cancellation
+		err := updateEventError(ctx, r, job.ExternalID, job.ErrorMessage)
+		if err != nil {
+			return err
+		}
+
+		system.Status = cmkapi.SystemStatusFAILED
+		return updateSystem(ctx, r, system)
+	})
 	if err != nil {
 		return err
-	}
-
-	system.Status = cmkapi.SystemStatusFAILED
-	err = updateSystem(ctx, r, system)
-
-	if err != nil {
-		return fmt.Errorf("failed to update system %s: %w", system.ID, err)
 	}
 
 	return nil
@@ -425,35 +560,6 @@ func updateEventError(ctx context.Context, r repo.Repo, identifier string, error
 	return err
 }
 
-func getSystemFromJob(ctx context.Context, r repo.Repo, job orbital.Job) (*model.System, error) {
-	log.InjectSystemEvent(ctx, job.Type)
-
-	data, err := unmarshalSystemJobData(job)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
-	system, err := getSystemByID(ctx, r, data.SystemID)
-	if err != nil {
-		return nil, err
-	}
-
-	return system, nil
-}
-
-func updateSystem(ctx context.Context, r repo.Repo, system *model.System) error {
-	ck := repo.NewCompositeKey().Where(repo.IDField, system.ID)
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).UpdateAll(true)
-
-	_, err := r.Patch(ctx, system, *query)
-	if err != nil {
-		return fmt.Errorf("failed to update system %s upon job termination: %w", system.ID, err)
-	}
-
-	return nil
-}
-
 func cleanUpEvent(ctx context.Context, r repo.Repo, job orbital.Job) error {
 	// Clean the event if it was successful as we no longer need to hold
 	// previous state for cancel/retry actions
@@ -465,28 +571,10 @@ func cleanUpEvent(ctx context.Context, r repo.Repo, job orbital.Job) error {
 			Where(repo.TypeField, job.Type),
 		)),
 	)
-	return err
-}
-
-func mergeOrbitalTaskErrors(
-	ctx context.Context,
-	orbitalManager *orbital.Manager,
-	job orbital.Job,
-) (string, error) {
-	tasks, err := orbitalManager.ListTasks(ctx, orbital.ListTasksQuery{
-		JobID:  job.ID,
-		Status: orbital.TaskStatusFailed,
-	})
 
 	if err != nil {
-		return "", err
+		return fmt.Errorf("failed to clean up event for job %s: %w", job.ID, err)
 	}
 
-	taskErrors := make([]string, 0, len(tasks))
-	for _, t := range tasks {
-		taskErrors = append(taskErrors, t.ErrorMessage)
-	}
-	message := strings.Join(taskErrors, ":")
-
-	return message, nil
+	return nil
 }
