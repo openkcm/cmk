@@ -238,7 +238,7 @@ func (o *TenantOperator) handleApplyTenantAuth(
 		return
 	}
 
-	ctx = slogctx.With(ctx, "tenantID", tenantID)
+	ctx = slogctx.With(ctx, "tenantId", tenantID)
 
 	oidcConfig, err := extractOIDCConfig(authProto.GetProperties())
 	if err != nil {
@@ -385,7 +385,7 @@ func (o *TenantOperator) handleTerminateTenant(
 		return
 	}
 
-	ctx = slogctx.With(ctx, "tenantID", tenantProto.GetId())
+	ctx = slogctx.With(ctx, "tenantId", tenantProto.GetId())
 
 	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().RemoveOIDCMapping(
 		ctx,
@@ -467,13 +467,13 @@ func setWorkingState(ctx context.Context, resp *orbital.HandlerResponse, err err
 }
 
 func setErrorStateAndContinue(ctx context.Context, resp *orbital.HandlerResponse, err error, state string) {
-	log.Error(ctx, "Task Failed, will continue to reconcile", err, slog.String("State", state))
+	log.Error(ctx, "Task Failed, will continue to reconcile", err, slog.String("state", state))
 	setWorkingState(ctx, resp, err, state)
 	resp.ContinueAndWaitFor(reconcileAfterSecError)
 }
 
 func setErrorStateAndFail(ctx context.Context, resp *orbital.HandlerResponse, err error, state string) {
-	log.Error(ctx, "Task Failed, ending processing", err, slog.String("State", state))
+	log.Error(ctx, "Task Failed, ending processing", err, slog.String("state", state))
 	setWorkingState(ctx, resp, err, state)
 	resp.Fail(err.Error())
 }
