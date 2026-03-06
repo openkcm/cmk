@@ -84,6 +84,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
 	})
 	testutils.CreateTestEntities(ctx, t, r, ksConfig, keystoreDefaultCert)
+	testutils.CreateDefaultKeystoreConfigForTests(ctx, t, r)
 
 	migrator, err := db.NewMigrator(r, &cfg)
 	assert.NoError(t, err)

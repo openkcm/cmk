@@ -101,6 +101,9 @@ func (s *KeyManagerSuite) setup() {
 		keystoreDefaultCert,
 		ksConfig,
 	)
+
+	err = tenantConfigManager.SetDefaultKeystore(s.ctx, testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {}))
+	s.Require().NoError(err)
 }
 
 func (s *KeyManagerSuite) SetupTest() {

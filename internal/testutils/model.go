@@ -1,12 +1,15 @@
 package testutils
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/orbital"
+	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
@@ -15,6 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -305,4 +309,22 @@ func NewDefaultWorkflowConfig(enabled bool) *model.WorkflowConfig {
 		DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
 		MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
 	}
+}
+
+// CreateDefaultKeystoreConfigForTests creates the tenant config DEFAULT_KEYSTORE for tests
+// that need to create keys (system managed / BYOK). Required after KMS20-2742 when
+// GetDefaultKeystoreConfig no longer auto-onboards from the keystore pool.
+func CreateDefaultKeystoreConfigForTests(ctx context.Context, tb testing.TB, r repo.Repo) {
+	tb.Helper()
+	ksConfig := NewKeystoreConfig(func(_ *model.KeystoreConfig) {
+		// Use default KeystoreConfig values, no customization needed for tests
+	})
+	value, err := json.Marshal(ksConfig)
+	assert.NoError(tb, err)
+	conf := &model.TenantConfig{
+		Key:   constants.DefaultKeyStore,
+		Value: value,
+	}
+	err = r.Set(ctx, conf)
+	assert.NoError(tb, err)
 }

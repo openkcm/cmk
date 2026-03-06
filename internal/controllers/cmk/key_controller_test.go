@@ -279,6 +279,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 		keystore,
 		keystoreDefaultCert,
 	)
+	testutils.CreateDefaultKeystoreConfigForTests(ctx, t, r)
 
 	SystemManagedRequest := map[string]any{
 		"name":               "test-key",
@@ -494,9 +495,11 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthClientDataKC(authClient))
 
+	// No tenant config, no keystore in pool - KMS20-2742: GetDefaultKeystoreConfig returns an error
+	// instead of onboarding from pool. Error propagates via key creation and is wrapped as ErrCreateKey.
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
-	t.Run("Should fail to create system managed key if keystore pool is drained", func(t *testing.T) {
+	t.Run("Should fail to create system managed key if default keystore not configured", func(t *testing.T) {
 		// Arrange
 		sysManagedKey := map[string]any{
 			"name":               "test-key",
@@ -515,13 +518,13 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 			Body:              testutils.WithJSON(t, sysManagedKey),
 			AdditionalContext: authClient.GetClientMap(),
 		})
-		// Assert
-		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+		// Assert - error chain maps to CREATE_KEY (ErrCreateKey wraps the default keystore error)
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
 		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "KEYSTORE_POOL_DRAINED", response.Error.Code)
+		assert.Equal(t, "CREATE_KEY", response.Error.Code)
 	})
 
-	t.Run("Should fail to create BYOK key if keystore pool is drained", func(t *testing.T) {
+	t.Run("Should fail to create BYOK key if default keystore not configured", func(t *testing.T) {
 		// Arrange
 		byokKey := map[string]any{
 			"name":               "test-key",
@@ -540,10 +543,10 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 			Body:              testutils.WithJSON(t, byokKey),
 			AdditionalContext: authClient.GetClientMap(),
 		})
-		// Assert
-		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+		// Assert - error chain maps to CREATE_KEY (ErrCreateKey wraps the default keystore error)
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
 		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "KEYSTORE_POOL_DRAINED", response.Error.Code)
+		assert.Equal(t, "CREATE_KEY", response.Error.Code)
 	})
 }
 
@@ -656,6 +659,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		pkey,
 		sys,
 	)
+	testutils.CreateDefaultKeystoreConfigForTests(ctx, t, r)
 
 	tests := []struct {
 		name           string
@@ -765,10 +769,12 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		k.Provider = providerTest
 	})
 
+	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 	testutils.CreateTestEntities(
 		ctx,
 		t,
 		r,
+		tenantDefaultCert,
 		key,
 		kc,
 		keystore,
@@ -776,6 +782,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		sysFailed,
 		sys,
 	)
+	testutils.CreateDefaultKeystoreConfigForTests(ctx, t, r)
 
 	tests := []struct {
 		name           string
@@ -1138,6 +1145,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		keystore,
 		keystoreDefaultCert,
 	)
+	testutils.CreateDefaultKeystoreConfigForTests(ctx, t, r)
 
 	t.Run("ImportKeyMaterialSuccess", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
