@@ -5,7 +5,11 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc"
+
+	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
@@ -18,6 +22,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/clients/registry/mapping"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -52,18 +57,33 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 
 	cmkAuditor := auditor.New(ctx, cfg)
 
-	f, err := clients.NewFactory(config.Services{})
-	assert.NoError(t, err)
-
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
 	um := testutils.NewUserManager()
 	tagManager := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, cfg)
 
+	mappingService := mapping.NewFakeService()
+	_, grpcClient := testutils.NewGRPCSuite(t,
+		func(s *grpc.Server) {
+			mappingv1.RegisterServiceServer(s, mappingService)
+		},
+	)
+
+	clientsFactory, err := clients.NewFactory(config.Services{
+		Registry: &commoncfg.GRPCClient{
+			Enabled: true,
+			Address: grpcClient.Target(),
+			SecretRef: &commoncfg.SecretRef{
+				Type: commoncfg.InsecureSecretType,
+			},
+		},
+	})
+	assert.NoError(t, err)
+
 	sys := manager.NewSystemManager(
 		ctx,
 		r,
-		f,
+		clientsFactory,
 		eventFactory,
 		svcRegistry,
 		cfg,
@@ -164,10 +184,18 @@ func TestOffboardTenant(t *testing.T) {
 
 	t.Run("Should return success", func(t *testing.T) {
 		testutils.CreateTestEntities(
-			ctx, t, r, testutils.NewSystem(
+			ctx, t, r,
+			testutils.NewSystem(
 				func(s *model.System) {
-					s.Status = cmkapi.SystemStatusFAILED
-					s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+					s.Status = cmkapi.SystemStatusDISCONNECTED
+					s.KeyConfigurationID = nil
+				},
+			),
+			testutils.NewKey(
+				func(k *model.Key) {
+					k.KeyConfigurationID = keyConfig.ID
+					k.IsPrimary = true
+					k.State = string(cmkapi.KeyStateDETACHED)
 				},
 			),
 		)
@@ -207,6 +235,37 @@ func TestOffboardTenant(t *testing.T) {
 		_, err = r.First(ctx, system, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, cmkapi.SystemStatusPROCESSING, system.Status)
+	},
+	)
+
+	t.Run("Should return in processing on keys that havent been processed", func(t *testing.T) {
+		key := testutils.NewKey(
+			func(k *model.Key) {
+				k.KeyConfigurationID = keyConfig.ID
+				k.IsPrimary = true
+				k.State = string(cmkapi.KeyStateENABLED)
+			},
+		)
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		// Disconnect all systems
+		var systems []*model.System
+		err := r.List(ctx, model.System{}, &systems, *repo.NewQuery())
+		assert.NoError(t, err)
+		for _, system := range systems {
+			system.Status = cmkapi.SystemStatusDISCONNECTED
+			system.KeyConfigurationID = nil
+			_, err = r.Patch(ctx, system, *repo.NewQuery().UpdateAll(true))
+			assert.NoError(t, err)
+		}
+
+		result, err := m.OffboardTenant(ctx)
+		assert.NoError(t, err)
+		assert.Equal(t, manager.OffboardingProcessing, result.Status)
+
+		_, err = r.First(ctx, key, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, string(cmkapi.KeyStateDETACHING), key.State)
 	},
 	)
 }

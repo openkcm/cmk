@@ -60,3 +60,27 @@ func getTenantByID(ctx context.Context, r repo.Repo, tenantID string) (*model.Te
 
 	return &tenant, nil
 }
+
+func updateSystem(ctx context.Context, r repo.Repo, system *model.System) error {
+	ck := repo.NewCompositeKey().Where(repo.IDField, system.ID)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).UpdateAll(true)
+
+	_, err := r.Patch(ctx, system, *query)
+	if err != nil {
+		return fmt.Errorf("failed to update system %s upon job termination: %w", system.ID, err)
+	}
+
+	return nil
+}
+
+func updateKey(ctx context.Context, r repo.Repo, key *model.Key) error {
+	ck := repo.NewCompositeKey().Where(repo.IDField, key.ID)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).UpdateAll(true)
+
+	_, err := r.Patch(ctx, key, *query)
+	if err != nil {
+		return fmt.Errorf("failed to update key %s upon job termination: %w", key.ID, err)
+	}
+
+	return nil
+}
