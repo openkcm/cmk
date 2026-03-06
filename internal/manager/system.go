@@ -3,12 +3,14 @@ package manager
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/orbital"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -32,6 +34,7 @@ type System interface {
 	GetAllSystems(ctx context.Context, params repo.QueryMapper) ([]*model.System, int, error)
 	GetSystemByID(ctx context.Context, keyConfigID uuid.UUID) (*model.System, error)
 	RefreshSystemsData(ctx context.Context) bool
+	UnmapSystemFromRegistry(ctx context.Context, system *model.System) error
 	LinkSystemAction(ctx context.Context, systemID uuid.UUID, patchSystem cmkapi.SystemPatch) (*model.System, error)
 	UnlinkSystemAction(ctx context.Context, systemID uuid.UUID, trigger string) error
 	GetRecoveryActions(ctx context.Context, sytemID uuid.UUID) (cmkapi.SystemRecoveryAction, error)
@@ -411,15 +414,7 @@ func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UU
 		}
 
 		dbSystem = system
-
-		err = m.eventFactory.SendEvent(
-			ctx, eventprocessor.Event{
-				Name: eventprocessor.JobTypeSystemUnlink.String(),
-				Event: func(ctx context.Context) (orbital.Job, error) {
-					return m.eventFactory.SystemUnlink(ctx, dbSystem, keyConfig.PrimaryKeyID.String(), trigger)
-				},
-			},
-		)
+		err = m.sendSystemUnlinkEvent(ctx, dbSystem, keyConfig, trigger)
 		if err != nil {
 			return err
 		}
@@ -432,6 +427,21 @@ func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UU
 	}
 
 	return nil
+}
+
+func (m *SystemManager) UnmapSystemFromRegistry(ctx context.Context, system *model.System) error {
+	tenant, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = m.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
+		ExternalId: system.Identifier,
+		Type:       strings.ToLower(system.Type),
+		TenantId:   tenant,
+	})
+
+	return err
 }
 
 func (m *SystemManager) cancelSystemAction(ctx context.Context, systemID uuid.UUID) error {
@@ -699,4 +709,31 @@ func (m *SystemManager) hasKeyAdminAccess(ctx context.Context, keyIDStr string) 
 	// Check if user has Key Admin access (ActionUpdate implies admin access)
 	_, err = m.user.HasKeyAccess(ctx, authz.ActionUpdate, key.KeyConfigurationID)
 	return err == nil
+}
+
+func (m *SystemManager) sendSystemUnlinkEvent(
+	ctx context.Context,
+	system *model.System,
+	keyConfig *model.KeyConfiguration,
+	trigger string,
+) error {
+	var event eventprocessor.Event
+
+	if trigger == constants.SystemActionDecommission {
+		event = eventprocessor.Event{
+			Name: eventprocessor.JobTypeSystemUnlink.String(),
+			Event: func(ctx context.Context) (orbital.Job, error) {
+				return m.eventFactory.SystemUnlinkDecommission(ctx, system, keyConfig.PrimaryKeyID.String())
+			},
+		}
+	} else {
+		event = eventprocessor.Event{
+			Name: eventprocessor.JobTypeSystemUnlinkDecommission.String(),
+			Event: func(ctx context.Context) (orbital.Job, error) {
+				return m.eventFactory.SystemUnlink(ctx, system, keyConfig.PrimaryKeyID.String())
+			},
+		}
+	}
+
+	return m.eventFactory.SendEvent(ctx, event)
 }

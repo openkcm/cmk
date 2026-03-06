@@ -371,7 +371,7 @@ func (o *TenantOperator) handleUnblockTenant(
 
 // handleTerminateTenant is handler for Terminate Tenant task
 //
-//nolint:cyclop
+
 func (o *TenantOperator) handleTerminateTenant(
 	ctx context.Context,
 	req orbital.HandlerRequest,
@@ -385,37 +385,20 @@ func (o *TenantOperator) handleTerminateTenant(
 		return
 	}
 
-	ctx = slogctx.With(ctx, "tenantID", tenantProto.GetId())
-
-	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().RemoveOIDCMapping(
-		ctx,
-		&oidcmappinggrpc.RemoveOIDCMappingRequest{
-			TenantId: tenantProto.GetId(),
-		},
-	)
-	st, ok := status.FromError(err)
-	if !ok {
-		log.Error(ctx, "failed getting info on sessionManager error", err)
-	}
-	if st.Code() == codes.Internal {
-		log.Error(ctx, "removeOIDC failed with internal err", err)
-	}
-	if err != nil && st.Code() != codes.Internal {
-		log.Error(ctx, "error while removing OIDC mapping", err)
-		setErrorStateAndContinue(ctx, resp, err, WorkingStateOIDCMappingRemoveFailed)
+	tenantId := tenantProto.GetId()
+	if tenantId == "" {
+		setErrorStateAndFail(ctx, resp, ErrInvalidTenantID, WorkingStateInvalidTaskData)
 		return
 	}
 
-	if !grpcResp.GetSuccess() {
-		err = errs.Wrapf(
-			ErrFailedResponse,
-			"session manager could not remove OIDC mapping: "+grpcResp.GetMessage(),
-		)
-		setErrorStateAndFail(ctx, resp, err, WorkingStateOIDCMappingRemoveFailed)
+	ctx = slogctx.With(ctx, "tenantID", tenantId)
+
+	continueOrFail := o.removeOIDCMapping(ctx, resp, tenantId)
+	if continueOrFail {
 		return
 	}
 
-	result, err := o.terminateTenant(ctx, tenantProto.GetId())
+	result, err := o.terminateTenant(ctx, tenantId)
 	if err != nil {
 		log.Error(ctx, "error while terminating tenant", err)
 		setErrorStateAndContinue(ctx, resp, err, WorkingStateWaitingTenantOffboarding)
@@ -433,6 +416,38 @@ func (o *TenantOperator) handleTerminateTenant(
 	default:
 		setErrorStateAndFail(ctx, resp, ErrTenantOffboarding, "unexpected error: unknown offboarding status")
 	}
+}
+
+func (o *TenantOperator) removeOIDCMapping(ctx context.Context, resp *orbital.HandlerResponse, tenantID string) bool {
+	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().RemoveOIDCMapping(
+		ctx,
+		&oidcmappinggrpc.RemoveOIDCMappingRequest{
+			TenantId: tenantID,
+		},
+	)
+	st, ok := status.FromError(err)
+	if !ok {
+		log.Error(ctx, "failed getting info on sessionManager error", err)
+	}
+	if st.Code() == codes.Internal {
+		log.Error(ctx, "removeOIDC failed with internal err", err)
+	}
+	if err != nil && st.Code() != codes.Internal {
+		log.Error(ctx, "error while removing OIDC mapping", err)
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateOIDCMappingRemoveFailed)
+		return true
+	}
+
+	if !grpcResp.GetSuccess() {
+		err = errs.Wrapf(
+			ErrFailedResponse,
+			"session manager could not remove OIDC mapping: "+grpcResp.GetMessage(),
+		)
+		setErrorStateAndFail(ctx, resp, err, WorkingStateOIDCMappingRemoveFailed)
+		return true
+	}
+
+	return false
 }
 
 func (o *TenantOperator) terminateTenant(ctx context.Context, tenantID string) (manager.OffboardingResult, error) {
