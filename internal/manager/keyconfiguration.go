@@ -255,7 +255,7 @@ func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 
 	for i, certificate := range defaultCerts {
 		configCert, err := m.transformTenantDefaultCertificate(ctx, certificate.CertPEM,
-			certConfig.RootCertURL, ErrGetDefaultCerts)
+			certConfig.Certificates.RootCertURL, ErrGetDefaultCerts)
 		if err != nil {
 			return nil, err
 		}

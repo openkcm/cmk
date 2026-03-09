@@ -74,9 +74,10 @@ type CryptoLayer struct {
 
 // Certificates holds certificates config
 type Certificates struct {
-	RootCertURL           string
-	ValidityDays          int
-	RotationThresholdDays int
+	RootCertURL             string
+	ValidityDays            int
+	RotationThresholdDays   int
+	DefaultTenantCertPrefix string
 }
 
 const (
