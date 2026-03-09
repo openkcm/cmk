@@ -26,6 +26,7 @@ default: test
 run:
 	AWS_ACCESS_KEY_ID="exampleAccessKeyID" AWS_SECRET_ACCESS_KEY="exampleSecretAccessKey" go run ./cmd/api-server
 
+
 test: install-gotestsum build_test_plugins
 	rm -rf cover cover.* junit.xml
 	mkdir -p cover
