@@ -24,11 +24,11 @@ require (
 	github.com/magodo/slog2hclog v0.0.0-20240614031327-090ebd72a033
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
-	github.com/oapi-codegen/runtime v1.1.2
+	github.com/oapi-codegen/runtime v1.2.0
 	github.com/openkcm/api-sdk v0.15.0
 	github.com/openkcm/common-sdk v1.12.0
 	github.com/openkcm/orbital v0.5.0
-	github.com/openkcm/plugin-sdk v0.9.7
+	github.com/openkcm/plugin-sdk v0.9.9
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/prometheus/client_golang v1.23.2
@@ -41,7 +41,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0
 	github.com/veqryn/slog-context v0.9.0
 	github.com/zeebo/assert v1.3.1
-	go.opentelemetry.io/collector/pdata v1.52.0
+	go.opentelemetry.io/collector/pdata v1.53.0
 	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
@@ -153,13 +153,12 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
-	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/veqryn/slog-context/otel v0.9.0 // indirect
 	github.com/woodsbury/decimal128 v1.4.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/errs/v2 v2.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/featuregate v1.52.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.53.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.15.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.65.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.64.0 // indirect
@@ -183,12 +182,12 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
-	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409 // indirect
