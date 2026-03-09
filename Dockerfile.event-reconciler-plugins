@@ -1,0 +1,15 @@
+ARG EVENT_RECONCILER_IMAGE
+ARG KEYSTORE_PLUGINS_IMAGE
+ARG IDENTITY_MANAGEMENT_PLUGINS_IMAGE
+
+
+FROM ghcr.io/openkcm/keystore-plugins/images/keystore-plugins:${KEYSTORE_PLUGINS_IMAGE} AS keystore-plugins
+FROM ghcr.io/openkcm/identity-management-plugins/images/identity-management-plugins:${IDENTITY_MANAGEMENT_PLUGINS_IMAGE} AS identity-management-plugins
+
+# --- Final Stage ---
+FROM ghcr.io/openkcm/cmk/images/event-reconciler:${EVENT_RECONCILER_IMAGE}
+
+WORKDIR /
+
+COPY --from=keystore-plugins /binaries/** /etc/plugins/keystore/
+COPY --from=identity-management-plugins /binaries/** /etc/plugins/identity-management/

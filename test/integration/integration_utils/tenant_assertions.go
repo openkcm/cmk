@@ -3,7 +3,6 @@ package integrationutils
 import (
 	"context"
 	"errors"
-	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -126,18 +125,4 @@ func TenantExists(t require.TestingT, multitenancydb *multitenancy.DB, schemaNam
 	exists, err = TableInTenantSchemaExist(multitenancydb, schemaName, tableName)
 	assert.True(t, exists, "Table %s should exist in tenant %s schema", tableName, schemaName)
 	assert.NoError(t, err)
-}
-
-func CheckRegion(ctx context.Context, t *testing.T, database *multitenancy.DB, tenantID string, expectedRegion string) {
-	t.Helper()
-
-	r := sql.NewRepository(database)
-
-	tenant := model.Tenant{}
-
-	_, err := r.First(ctx, &tenant, *repo.NewQuery().
-		Where(repo.NewCompositeKeyGroup(
-			repo.NewCompositeKey().Where(repo.IDField, tenantID))))
-	assert.NoError(t, err, "Failed to get tenant %s", tenantID)
-	assert.Equal(t, expectedRegion, tenant.Region, "Tenant %s region should be %s", tenantID, expectedRegion)
 }

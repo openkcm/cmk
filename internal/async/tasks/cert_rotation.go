@@ -47,6 +47,7 @@ func (s *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
 		ctx,
 		"Certificate Rotation",
 		task,
+		repo.NewQuery(),
 		func(ctx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(ctx, "Rotating Certificates for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))

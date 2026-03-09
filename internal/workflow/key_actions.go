@@ -8,7 +8,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type KeyActions interface {
@@ -49,20 +48,6 @@ func (l *Lifecycle) updateKeyState(ctx context.Context) error {
 
 func (l *Lifecycle) deleteKey(ctx context.Context) error {
 	err := l.KeyActions.Delete(ctx, l.Workflow.ArtifactID)
-	if err != nil {
-		return errs.Wrap(ErrWorkflowExecution, err)
-	}
-
-	return nil
-}
-
-func (l *Lifecycle) updatePrimaryKey(ctx context.Context) error {
-	keyID, err := uuid.Parse(l.Workflow.Parameters)
-	if err != nil {
-		return errs.Wrap(ErrWorkflowExecution, err)
-	}
-
-	_, err = l.KeyActions.UpdateKey(ctx, keyID, cmkapi.KeyPatch{IsPrimary: ptr.PointTo(true)})
 	if err != nil {
 		return errs.Wrap(ErrWorkflowExecution, err)
 	}

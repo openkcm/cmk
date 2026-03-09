@@ -3,6 +3,7 @@ package eventprocessor
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"github.com/openkcm/orbital"
@@ -12,6 +13,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/model"
 )
 
 func initOrbitalSchema(ctx context.Context, dbCfg config.Database) (*sql.DB, error) {
@@ -47,4 +49,31 @@ func createOrbitalRepository(ctx context.Context, dbCfg config.Database) (*orbit
 	}
 
 	return orbital.NewRepository(store), nil
+}
+
+func GetSystemJobData(e *model.Event) (SystemActionJobData, error) {
+	var jobData SystemActionJobData
+	return jobData, json.Unmarshal(e.Data, &jobData)
+}
+
+func unmarshalKeyJobData(job orbital.Job) (KeyActionJobData, error) {
+	var data KeyActionJobData
+
+	err := json.Unmarshal(job.Data, &data)
+	if err != nil {
+		return KeyActionJobData{}, fmt.Errorf("failed to unmarshal job data: %w", err)
+	}
+
+	return data, nil
+}
+
+func unmarshalSystemJobData(job orbital.Job) (SystemActionJobData, error) {
+	var systemJobData SystemActionJobData
+
+	err := json.Unmarshal(job.Data, &systemJobData)
+	if err != nil {
+		return SystemActionJobData{}, fmt.Errorf("failed to unmarshal job data: %w", err)
+	}
+
+	return systemJobData, nil
 }

@@ -194,8 +194,6 @@ func (s *CLISuite) TestCreateTenantCmd() {
 
 	err := s.createCmd.Flags().Set("id", cliTenantID)
 	s.NoError(err)
-	err = s.createCmd.Flags().Set("region", "us-west")
-	s.NoError(err)
 	err = s.createCmd.Flags().Set("status", "STATUS_ACTIVE")
 	s.NoError(err)
 	err = s.createCmd.Flags().Set("role", "ROLE_TEST")
@@ -226,8 +224,6 @@ func (s *CLISuite) TestUpdateTenantCmd() {
 	encodedSchemaName := tenant.SchemaName
 
 	err = s.updateTenantCmd.Flags().Set("id", id)
-	s.Require().NoError(err)
-	err = s.updateTenantCmd.Flags().Set("region", "us-east-1")
 	s.Require().NoError(err)
 	err = s.updateTenantCmd.Flags().Set("status", "STATUS_BLOCKED")
 	s.Require().NoError(err)
@@ -352,7 +348,6 @@ func (s *CLISuite) createTenant() (*model.Tenant, error) {
 			l.ID = id
 			l.SchemaName = encodedSchemaName
 			l.DomainURL = encodedSchemaName
-			l.Region = "us-west-2"
 			l.Status = model.TenantStatus(tenantgrpc.Status_STATUS_ACTIVE.String())
 		},
 	)

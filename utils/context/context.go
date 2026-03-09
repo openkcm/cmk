@@ -59,14 +59,17 @@ func WithTenant(tenantSchema string) Opt {
 
 type key string
 
-const requestID = key("requestID")
+const requestIDKey = key("requestID")
 
-func InjectRequestID(ctx context.Context) context.Context {
-	return context.WithValue(ctx, requestID, uuid.NewString())
+func InjectRequestID(ctx context.Context, requestID string) context.Context {
+	if requestID == "" {
+		requestID = uuid.NewString()
+	}
+	return context.WithValue(ctx, requestIDKey, requestID)
 }
 
 func GetRequestID(ctx context.Context) (string, error) {
-	requestID, ok := ctx.Value(requestID).(string)
+	requestID, ok := ctx.Value(requestIDKey).(string)
 	if !ok || requestID == "" {
 		return "", ErrGetRequestID
 	}

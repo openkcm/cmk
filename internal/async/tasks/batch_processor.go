@@ -29,6 +29,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 	ctx context.Context,
 	taskName string,
 	asynqTask *asynq.Task,
+	query *repo.Query,
 	processTenant func(ctx context.Context, tenant *model.Tenant, index int) error,
 ) error {
 	totalTenantCount := 0
@@ -44,7 +45,6 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 		}
 	}
 
-	query := repo.NewQuery()
 	if len(tenantIDs) > 0 {
 		ck := repo.NewCompositeKey().Where(repo.IDField, tenantIDs)
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
@@ -57,14 +57,14 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 				slog.Int("batchSize", len(tenants)), slog.Int("totalTenantCount", totalTenantCount))
 
 			for i, tenant := range tenants {
-				tenantCtx := cmkcontext.New(
+				ctx := cmkcontext.New(
 					ctx,
 					cmkcontext.WithTenant(tenant.ID),
 					cmkcontext.InjectSystemUser,
 					model.WithLogInjectTenant(tenant),
 				)
 
-				err := processTenant(tenantCtx, tenant, i+1)
+				err := processTenant(ctx, tenant, i+1)
 				if err != nil {
 					return err
 				}

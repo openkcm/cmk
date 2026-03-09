@@ -36,16 +36,16 @@ func (c *Pool) Count(ctx context.Context) (int, error) {
 }
 
 // Add `KeystoreConfiguration` to the pool.
-func (c *Pool) Add(ctx context.Context, cfg *model.Keystore) (*model.Keystore, error) {
+func (c *Pool) Add(ctx context.Context, ks *model.Keystore) (*model.Keystore, error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	err := c.repo.Create(ctx, cfg)
+	err := c.repo.Create(ctx, ks)
 	if err != nil {
 		return nil, errs.Wrap(ErrCouldNotSaveConfiguration, err)
 	}
 
-	return cfg, nil
+	return ks, nil
 }
 
 // Pop `KeystoreConfiguration` from the pool and return it.

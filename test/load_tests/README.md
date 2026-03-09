@@ -64,7 +64,6 @@ k6 run grpc_test.js \
 - `DURATION`: Test duration (default: `30s`)
 - `TENANT_ID`: Tenant ID to use for testing (default: `race-acme-fixed-001`)
 - `TENANT_NAME`: Tenant name (default: `Acme Corp Fixed`)
-- `REGION`: Tenant region (default: `eu10`)
 - `PROTO_PATH`: Path to proto file (default: `../../vendor/github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1/tenant.proto`)
 
 ### For `grpc_test.js`:

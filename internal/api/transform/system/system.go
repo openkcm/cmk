@@ -5,6 +5,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
@@ -41,6 +42,20 @@ func ToAPI(system model.System, systemCfg *config.System) (*cmkapi.System, error
 		KeyConfigurationID:   system.KeyConfigurationID,
 		KeyConfigurationName: system.KeyConfigurationName,
 		Status:               system.Status,
+	}
+
+	if system.Status == cmkapi.SystemStatusFAILED {
+		if system.ErrorCode == "" {
+			system.ErrorCode = constants.DefaultErrorCode
+		}
+		if system.ErrorMessage == "" {
+			system.ErrorMessage = constants.DefaultErrorMessage
+		}
+
+		apiSystem.Metadata = &cmkapi.SystemMetadata{
+			ErrorCode:    &system.ErrorCode,
+			ErrorMessage: &system.ErrorMessage,
+		}
 	}
 
 	return apiSystem, nil
