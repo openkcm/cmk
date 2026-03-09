@@ -57,14 +57,14 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 				slog.Int("batchSize", len(tenants)), slog.Int("totalTenantCount", totalTenantCount))
 
 			for i, tenant := range tenants {
-				tenantCtx := cmkcontext.New(
+				ctx := cmkcontext.New(
 					ctx,
 					cmkcontext.WithTenant(tenant.ID),
 					cmkcontext.InjectSystemUser,
 					model.WithLogInjectTenant(tenant),
 				)
 
-				err := processTenant(tenantCtx, tenant, i+1)
+				err := processTenant(ctx, tenant, i+1)
 				if err != nil {
 					return err
 				}
