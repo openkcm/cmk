@@ -72,7 +72,9 @@ func (s *KeyManagerSuite) setup() {
 
 	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(s.ctx, dbRepo, svcRegistry,
-		&config.Certificates{ValidityDays: config.MinCertificateValidityDays})
+		&config.Config{
+			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+		})
 	userManager := manager.NewUserManager(dbRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(s.repo)
 	keyConfigManager := manager.NewKeyConfigManager(dbRepo, certManager, userManager, tagManager, cmkAuditor, cfg)

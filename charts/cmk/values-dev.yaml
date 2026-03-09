@@ -352,6 +352,7 @@ config:
     rootCertURL: https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt
     validityDays: 30
     rotationThresholdDays: 7
+    defaultTenantCertPrefix: "examplekms-cmk_"
 
   cryptoLayer:
     certX509Trusts:
