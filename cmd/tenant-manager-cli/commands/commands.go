@@ -43,7 +43,7 @@ func NewCommandFactory(
 		return nil, err
 	}
 
-	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
+	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := manager.NewUserManager(r, cmkAuditor)
 	tagm := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)

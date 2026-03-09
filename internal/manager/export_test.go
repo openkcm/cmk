@@ -40,7 +40,7 @@ func (m *CertificateManager) SetClient(client certissuerv1.CertificateIssuerServ
 }
 
 func (m *CertificateManager) SetRotationThreshold(days int) {
-	m.cfg.RotationThresholdDays = days
+	m.cfg.Certificates.RotationThresholdDays = days
 }
 
 func (m *CertificateManager) SetPrivateKeyGenerator(generator func() (*rsa.PrivateKey, error)) {
@@ -59,6 +59,14 @@ func (m *CertificateManager) GetDefaultHYOKClientCert(
 	ctx context.Context,
 ) (*model.Certificate, error) {
 	return m.getDefaultHYOKClientCert(ctx)
+}
+
+func (m *CertificateManager) ResolveRotationLocality(certPEM string) []string {
+	return m.resolveRotationLocality(certPEM)
+}
+
+func (m *CertificateManager) SetRegion(region string) {
+	m.cfg.Landscape.Region = region
 }
 
 func (m *CertificateManager) GetCertificateByPurpose(
