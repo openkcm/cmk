@@ -92,7 +92,7 @@ func createManagers(
 	f, err := clients.NewFactory(config.Services{})
 	assert.NoError(t, err)
 
-	cm := manager.NewCertificateManager(ctx, r, svcRegistry, &cfg.Certificates)
+	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := manager.NewUserManager(r, cmkAuditor)
 	tagm := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)

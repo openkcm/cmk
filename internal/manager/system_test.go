@@ -74,7 +74,9 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 
 	certManager := manager.NewCertificateManager(
 		t.Context(), dbRepository, svcRegistry,
-		&config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+		&config.Config{
+			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+		},
 	)
 	userManager := manager.NewUserManager(dbRepository, auditor.New(t.Context(), &cfg))
 	tagManager := manager.NewTagManager(dbRepository)

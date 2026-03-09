@@ -46,7 +46,7 @@ func New(
 	cmkAuditor := auditor.New(ctx, config)
 	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config)
 	userManager := NewUserManager(repo, cmkAuditor)
-	certManager := NewCertificateManager(ctx, repo, svcRegistry, &config.Certificates)
+	certManager := NewCertificateManager(ctx, repo, svcRegistry, config)
 	tagManager := NewTagManager(repo)
 	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, config)
 	keyManager := NewKeyManager(
