@@ -83,7 +83,7 @@ func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *conf
 	sysCl = reflect.NewAt(sysCl.Type(), unsafe.Pointer(sysCl.UnsafeAddr())).Elem()
 	sysCl.Set(reflect.ValueOf(sis))
 
-	cm := manager.NewCertificateManager(t.Context(), tenancyRepo, svcRegistry, &cfg.Certificates)
+	cm := manager.NewCertificateManager(t.Context(), tenancyRepo, svcRegistry, cfg)
 
 	certCl := val.FieldByName("certificateClient")
 	certCl = reflect.NewAt(certCl.Type(), unsafe.Pointer(certCl.UnsafeAddr())).Elem()

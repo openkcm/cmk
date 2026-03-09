@@ -47,7 +47,7 @@ const (
 type CertificateManager struct {
 	repo                repo.Repo
 	certIssuerClient    certissuerv1.CertificateIssuerServiceClient
-	cfg                 *config.Certificates
+	cfg                 *config.Config
 	privateKeyGenerator func() (*rsa.PrivateKey, error)
 }
 
@@ -55,7 +55,7 @@ func NewCertificateManager(
 	ctx context.Context,
 	repo repo.Repo,
 	svcRegistry *cmkpluginregistry.Registry,
-	cfg *config.Certificates,
+	cfg *config.Config,
 ) *CertificateManager {
 	client, err := createCertificateIssuerClient(svcRegistry)
 	if err != nil {
@@ -87,15 +87,10 @@ func (m *CertificateManager) GetCertificate(
 }
 
 func (m *CertificateManager) RotateExpiredCertificates(ctx context.Context) error {
-	rotateDate := time.Now().AddDate(0, 0, m.cfg.RotationThresholdDays)
+	rotateDate := time.Now().AddDate(0, 0, m.cfg.Certificates.RotationThresholdDays)
 	compositeKey := repo.NewCompositeKey().Where(
 		repo.AutoRotateField, true).Where(repo.ExpirationDateField, rotateDate, repo.Lt)
 	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey))
-
-	tenantID, err := cmkcontext.ExtractTenantID(ctx)
-	if err != nil {
-		return err
-	}
 
 	return repo.ProcessInBatch(ctx, m.repo, query, repo.DefaultLimit, func(certs []*model.Certificate) error {
 		for _, cert := range certs {
@@ -103,7 +98,7 @@ func (m *CertificateManager) RotateExpiredCertificates(ctx context.Context) erro
 				CertPurpose: cert.Purpose,
 				Supersedes:  &cert.ID,
 				CommonName:  cert.CommonName,
-				Locality:    []string{tenantID},
+				Locality:    m.resolveRotationLocality(cert.CertPEM),
 			})
 			if err != nil {
 				return err
@@ -375,7 +370,7 @@ func (m *CertificateManager) getNewCertificate(
 		CommonName: args.CommonName,
 		Locality:   args.Locality,
 		Validity: &certissuerv1.GetCertificateValidity{
-			Value: int64(m.cfg.ValidityDays),
+			Value: int64(m.cfg.Certificates.ValidityDays),
 			Type:  certissuerv1.ValidityType_VALIDITY_TYPE_DAYS,
 		},
 		PrivateKey: &certissuerv1.PrivateKey{
@@ -423,22 +418,27 @@ func (m *CertificateManager) getDefaultHYOKClientCert(
 	}
 
 	if !exists {
+		commonName := m.cfg.Certificates.DefaultTenantCertPrefix + tenantID
 		cert, _, err = m.RequestNewCertificate(ctx, nil,
 			model.RequestCertArgs{
 				CertPurpose: model.CertificatePurposeTenantDefault,
 				Supersedes:  nil,
-				CommonName:  DefaultHYOKCertCommonName,
-				Locality:    []string{tenantID},
+				CommonName:  commonName,
+				Locality:    []string{m.cfg.Landscape.Region},
 			})
 		if err != nil {
 			return nil, errs.Wrap(ErrGetDefaultTenantCertificate, err)
 		}
 	} else if cert.ExpirationDate.Before(time.Now()) {
+		// Determine locality for rotation: preserve backward compatibility.
+		// Old certs were issued with tenantID as locality; new certs use region.
+		// Parse the existing cert's PEM to detect which locality was used.
+		locality := m.resolveRotationLocality(cert.CertPEM)
 		cert, _, err = m.RotateCertificate(ctx, model.RequestCertArgs{
 			CertPurpose: cert.Purpose,
 			Supersedes:  &cert.ID,
 			CommonName:  cert.CommonName,
-			Locality:    []string{tenantID},
+			Locality:    locality,
 		})
 		if err != nil {
 			return nil, err
@@ -446,6 +446,25 @@ func (m *CertificateManager) getDefaultHYOKClientCert(
 	}
 
 	return cert, nil
+}
+
+// resolveRotationLocality returns the locality that should be used when rotating a certificate.
+// It reads the locality directly from the existing cert's PEM so the rotated cert is always
+// issued with the same locality as the one it supersedes — preserving backward compatibility
+// for old certs that were issued with tenantID as locality, while new certs continue to use region.
+// Falls back to the configured region if the PEM cannot be parsed or carries no locality.
+func (m *CertificateManager) resolveRotationLocality(certPEM string) []string {
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		return []string{m.cfg.Landscape.Region}
+	}
+
+	parsed, err := x509.ParseCertificate(block.Bytes)
+	if err != nil || len(parsed.Subject.Locality) == 0 {
+		return []string{m.cfg.Landscape.Region}
+	}
+
+	return parsed.Subject.Locality
 }
 
 func (m *CertificateManager) getDefaultKeystoreClientCert(
