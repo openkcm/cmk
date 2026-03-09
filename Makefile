@@ -214,6 +214,8 @@ swagger-ui-stop:
 # Formatting and Linting
 #
 
+
+
 go-imports: install-goimports install-golines install-gci
 	find . -name "*.go" -exec sh -c \
       'gofmt -w "$$1" && \
