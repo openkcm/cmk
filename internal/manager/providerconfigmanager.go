@@ -28,10 +28,7 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-const (
-	DefaultHYOKCertCommonName            = "default.hyok.cmk"
-	DefaultProviderConfigCacheExpiration = 24 * time.Hour
-)
+const DefaultProviderConfigCacheExpiration = 24 * time.Hour
 
 var (
 	ErrCreateKeystore                = errors.New("failed to create keystore")

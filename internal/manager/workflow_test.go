@@ -58,7 +58,7 @@ func SetupWorkflowManager(t *testing.T, cfg *config.Config,
 	assert.NoError(t, err)
 
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
-	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, &cfg.Certificates)
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)

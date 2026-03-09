@@ -12,7 +12,7 @@ import (
 
 func TestValidateCertificate(t *testing.T) {
 	t.Run("Should successfully validate", func(t *testing.T) {
-		certs := config.Certificates{ValidityDays: 7, RotationThresholdDays: 3}
+		certs := config.Certificates{ValidityDays: 7, RotationThresholdDays: 3, DefaultTenantCertPrefix: "prefix"}
 		assert.NoError(t, certs.Validate())
 	})
 
