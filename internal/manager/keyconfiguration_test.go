@@ -944,7 +944,7 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
-		certManager.SetClient(CertificateIssuerMock{NewCertificateChain: func() string {
+		certManager.SetCertIssuerService(CertificateIssuerMock{NewCertificateChain: func() string {
 			return testutils.CreateCertificateChain(t, pkix.Name{
 				Country:            []string{"DE"},
 				Organization:       []string{"KCM"},

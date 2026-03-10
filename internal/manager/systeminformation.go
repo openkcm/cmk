@@ -30,8 +30,10 @@ type SystemInformation struct {
 	svc systeminformation.SystemInformation
 }
 
-func NewSystemInformationManager(repo repo.Repo,
-	svcRegistry *cmkpluginregistry.Registry, systemCfg *config.System,
+func NewSystemInformationManager(
+	repo repo.Repo,
+	svcRegistry *cmkpluginregistry.Registry,
+	systemCfg *config.System,
 ) (*SystemInformation, error) {
 	svc, err := svcRegistry.SystemInformation()
 	if err != nil {
