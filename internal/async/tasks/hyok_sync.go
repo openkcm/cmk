@@ -6,6 +6,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -20,38 +21,40 @@ type HYOKUpdater interface {
 type HYOKSync struct {
 	hyokClient HYOKUpdater
 	repo       repo.Repo
-	processor  *BatchProcessor
+	processor  *async.BatchProcessor
 }
 
 func NewHYOKSync(
 	hyokClient HYOKUpdater,
 	repo repo.Repo,
+	asyncClient async.Client,
 ) *HYOKSync {
+	var bp *async.BatchProcessor
+	if asyncClient == nil {
+		bp = async.NewBatchProcessor(repo)
+	} else {
+		bp = async.NewBatchProcessor(repo, async.WithFanOut(asyncClient))
+	}
+	log.Debug(context.Background(), "Created HYOK Sync Client Task", slog.Bool("fanOut", asyncClient != nil))
+
 	return &HYOKSync{
 		hyokClient: hyokClient,
 		repo:       repo,
-		processor:  NewBatchProcessor(repo),
+		processor:  bp,
 	}
 }
 
 func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.Info(ctx, "Starting HYOK Sync Task")
-
 	err := h.processor.ProcessTenantsInBatch(
 		ctx,
-		"HYOK Sync",
 		task,
 		repo.NewQuery(),
 		func(ctx context.Context, tenant *model.Tenant, index int) error {
-			log.Debug(ctx, "Syncing HYOK keys for tenant",
-				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
-
 			syncErr := h.hyokClient.SyncHYOKKeys(ctx)
 			if syncErr != nil {
 				_ = h.handleErrorTask(ctx, syncErr)
 				return nil
 			}
-			log.Debug(ctx, "HYOK keys for tenant synced successfully", slog.String("schemaName", tenant.SchemaName))
 			return nil
 		},
 	)
