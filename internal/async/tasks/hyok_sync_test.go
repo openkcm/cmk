@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
@@ -30,10 +31,12 @@ func (s *HyokHYOKClientMockFailed) SyncHYOKKeys(_ context.Context) error {
 func TestHYOKSyncProcessAction(t *testing.T) {
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	repo := sql.NewRepository(db)
-	sync := tasks.NewHYOKSync(&HyokHYOKClientMock{}, repo)
+	sync := tasks.NewHYOKSync(&HyokHYOKClientMock{}, repo, nil)
+
+	task := asynq.NewTask(config.TypeHYOKSync, nil)
 
 	t.Run("Should complete", func(t *testing.T) {
-		err := sync.ProcessTask(t.Context(), nil)
+		err := sync.ProcessTask(t.Context(), task)
 		assert.NoError(t, err)
 	})
 
@@ -43,8 +46,8 @@ func TestHYOKSyncProcessAction(t *testing.T) {
 	})
 
 	t.Run("Task continues one failure of hyok client", func(t *testing.T) {
-		sync := tasks.NewHYOKSync(&HyokHYOKClientMockFailed{}, repo)
-		err := sync.ProcessTask(t.Context(), nil)
+		sync := tasks.NewHYOKSync(&HyokHYOKClientMockFailed{}, repo, nil)
+		err := sync.ProcessTask(t.Context(), task)
 		assert.NoError(t, err)
 	})
 }

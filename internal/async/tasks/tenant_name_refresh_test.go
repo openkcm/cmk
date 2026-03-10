@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hibiken/asynq"
 	"github.com/zeebo/assert"
 	"google.golang.org/grpc"
 
@@ -80,8 +81,10 @@ func TestTenantNameRefresher(t *testing.T) {
 	registry := registry.NewMockService(nil, &MockTenantRegistry{}, nil)
 	refresher := tasks.NewTenantNameRefresher(r, registry)
 
+	task := asynq.NewTask(config.TypeTenantRefreshName, nil)
+
 	t.Run("Should update tenant names if empty", func(t *testing.T) {
-		err := refresher.ProcessTask(ctx, nil)
+		err := refresher.ProcessTask(ctx, task)
 		assert.NoError(t, err)
 
 		tenant := &model.Tenant{ID: emptyNameTenant.ID}
@@ -101,7 +104,7 @@ func TestTenantNameRefresher(t *testing.T) {
 	})
 
 	t.Run("Should handle nil task parameter", func(t *testing.T) {
-		err := refresher.ProcessTask(t.Context(), nil)
+		err := refresher.ProcessTask(t.Context(), task)
 		assert.NoError(t, err)
 	})
 }

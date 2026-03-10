@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/rsa"
 	"errors"
-	"log/slog"
 
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -24,7 +24,7 @@ type CertUpdater interface {
 type CertRotator struct {
 	certClient CertUpdater
 	repo       repo.Repo
-	processor  *BatchProcessor
+	processor  *async.BatchProcessor
 }
 
 func NewCertRotator(
@@ -34,7 +34,7 @@ func NewCertRotator(
 	return &CertRotator{
 		certClient: certClient,
 		repo:       repo,
-		processor:  NewBatchProcessor(repo),
+		processor:  async.NewBatchProcessor(repo),
 	}
 }
 
@@ -45,18 +45,13 @@ func (s *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
 
 	err := s.processor.ProcessTenantsInBatch(
 		ctx,
-		"Certificate Rotation",
 		task,
 		repo.NewQuery(),
 		func(ctx context.Context, tenant *model.Tenant, index int) error {
-			log.Debug(ctx, "Rotating Certificates for tenant",
-				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
-
 			err := s.certClient.RotateExpiredCertificates(ctx)
 			if err != nil {
 				return err
 			}
-			log.Debug(ctx, "Certificates for tenant are up-to-date", slog.String("schemaName", tenant.SchemaName))
 			return nil
 		},
 	)

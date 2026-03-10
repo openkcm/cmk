@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -34,7 +35,8 @@ func TestCertificateRotatorProcessAction(t *testing.T) {
 	rotator := tasks.NewCertRotator(&CertUpdaterMock{}, repo)
 
 	t.Run("Should Create", func(t *testing.T) {
-		err := rotator.ProcessTask(t.Context(), nil)
+		task := asynq.NewTask(config.TypeCertificateTask, nil)
+		err := rotator.ProcessTask(t.Context(), task)
 		assert.NoError(t, err)
 	})
 
@@ -43,7 +45,7 @@ func TestCertificateRotatorProcessAction(t *testing.T) {
 		payloadBytes, err := payload.ToBytes()
 		assert.NoError(t, err)
 
-		task := asynq.NewTask("", payloadBytes)
+		task := asynq.NewTask(config.TypeCertificateTask, payloadBytes)
 		err = rotator.ProcessTask(t.Context(), task)
 		assert.NoError(t, err)
 	})

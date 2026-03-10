@@ -2,10 +2,10 @@ package tasks
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -20,7 +20,7 @@ type WorkflowRemoval interface {
 type WorkflowCleaner struct {
 	workflowRemoval WorkflowRemoval
 	repo            repo.Repo
-	processor       *BatchProcessor
+	processor       *async.BatchProcessor
 }
 
 func NewWorkflowCleaner(
@@ -30,7 +30,7 @@ func NewWorkflowCleaner(
 	return &WorkflowCleaner{
 		workflowRemoval: workflowRemoval,
 		repo:            repo,
-		processor:       NewBatchProcessor(repo),
+		processor:       async.NewBatchProcessor(repo),
 	}
 }
 
@@ -39,13 +39,9 @@ func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) er
 
 	err := wc.processor.ProcessTenantsInBatch(
 		ctx,
-		"Workflow Cleanup",
 		task,
 		repo.NewQuery(),
 		func(ctx context.Context, tenant *model.Tenant, index int) error {
-			log.Debug(ctx, "Cleaning up expired workflows for tenant",
-				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
-
 			cleanupErr := wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
 			if cleanupErr != nil {
 				log.Error(ctx, "Running Workflow Cleanup", cleanupErr)

@@ -7,6 +7,7 @@ import (
 
 	tenantv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
@@ -16,14 +17,14 @@ import (
 )
 
 type TenantNameRefresher struct {
-	processor *BatchProcessor
+	processor *async.BatchProcessor
 	r         repo.Repo
 	registry  registry.Service
 }
 
 func NewTenantNameRefresher(r repo.Repo, registry registry.Service) *TenantNameRefresher {
 	return &TenantNameRefresher{
-		processor: NewBatchProcessor(r),
+		processor: async.NewBatchProcessor(r),
 		registry:  registry,
 		r:         r,
 	}
@@ -32,7 +33,6 @@ func NewTenantNameRefresher(r repo.Repo, registry registry.Service) *TenantNameR
 func (t *TenantNameRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	err := t.processor.ProcessTenantsInBatch(
 		ctx,
-		"Tenant Name Refresher",
 		task,
 		repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.Name, repo.Empty))),
 		func(ctx context.Context, tenant *model.Tenant, index int) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
@@ -22,11 +23,13 @@ func TestWorkflowCleanerProcessTask(t *testing.T) {
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	repo := sql.NewRepository(db)
 
+	task := asynq.NewTask(config.TypeWorkflowCleanup, nil)
+
 	t.Run("Should complete successfully", func(t *testing.T) {
 		mock := &WorkflowRemovalMock{}
 		cleaner := tasks.NewWorkflowCleaner(mock, repo)
 
-		err := cleaner.ProcessTask(context.Background(), nil)
+		err := cleaner.ProcessTask(context.Background(), task)
 		assert.NoError(t, err)
 	})
 
@@ -42,7 +45,7 @@ func TestWorkflowCleanerProcessTask(t *testing.T) {
 		mock := &WorkflowRemovalMock{}
 		cleaner := tasks.NewWorkflowCleaner(mock, repo)
 
-		err := cleaner.ProcessTask(context.Background(), nil)
+		err := cleaner.ProcessTask(context.Background(), task)
 		assert.NoError(t, err, "Should handle nil task parameter")
 	})
 }
