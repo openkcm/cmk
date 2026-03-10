@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/hibiken/asynq"
 
@@ -22,40 +21,42 @@ type HYOKSync struct {
 	hyokClient HYOKUpdater
 	repo       repo.Repo
 	processor  *async.BatchProcessor
+	fanout     bool
 }
 
 func NewHYOKSync(
 	hyokClient HYOKUpdater,
 	repo repo.Repo,
-	asyncClient async.Client,
-) *HYOKSync {
-	var bp *async.BatchProcessor
-	if asyncClient == nil {
-		bp = async.NewBatchProcessor(repo)
-	} else {
-		bp = async.NewBatchProcessor(repo, async.WithFanOut(asyncClient))
-	}
-	log.Debug(context.Background(), "Created HYOK Sync Client Task", slog.Bool("fanOut", asyncClient != nil))
-
-	return &HYOKSync{
+	opts ...async.TaskOption,
+) async.TaskHandler {
+	h := &HYOKSync{
 		hyokClient: hyokClient,
 		repo:       repo,
-		processor:  bp,
+		processor:  async.NewBatchProcessor(repo),
 	}
+
+	for _, o := range opts {
+		o(h)
+	}
+
+	log.Debug(context.Background(), "Created HYOK Sync Task")
+
+	return h
 }
 
 func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	log.Info(ctx, "Starting HYOK Sync Task")
+
+	if async.IsChildTask(task) {
+		return async.ProcessChildTask(ctx, task, h.process)
+	}
+
 	err := h.processor.ProcessTenantsInBatch(
 		ctx,
 		task,
 		repo.NewQuery(),
-		func(ctx context.Context, tenant *model.Tenant, index int) error {
-			syncErr := h.hyokClient.SyncHYOKKeys(ctx)
-			if syncErr != nil {
-				_ = h.handleErrorTask(ctx, syncErr)
-				return nil
-			}
-			return nil
+		func(ctx context.Context, _ *model.Tenant) error {
+			return h.process(ctx)
 		},
 	)
 	if err != nil {
@@ -65,16 +66,28 @@ func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	return nil
 }
 
+func (h *HYOKSync) process(ctx context.Context) error {
+	syncErr := h.hyokClient.SyncHYOKKeys(ctx)
+	if syncErr != nil {
+		log.Error(ctx, "Running HYOK Sync", syncErr)
+	}
+	return nil
+}
+
 func (h *HYOKSync) TaskType() string {
 	return config.TypeHYOKSync
 }
 
-func (h *HYOKSync) handleErrorTenants(ctx context.Context, err error) error {
-	log.Error(ctx, "Error during HYOK sync batch processing", err)
-	return errs.Wrap(ErrRunningTask, err)
+func (h *HYOKSync) SetFanOut(client async.Client) {
+	h.processor = async.NewBatchProcessor(h.repo, async.WithFanOutTenants(client))
+	h.fanout = true
 }
 
-func (h *HYOKSync) handleErrorTask(ctx context.Context, err error) error {
-	log.Error(ctx, "Running HYOK Sync", err)
+func (h *HYOKSync) IsFanOutEnabled() bool {
+	return h.fanout
+}
+
+func (h *HYOKSync) handleErrorTenants(ctx context.Context, err error) error {
+	log.Error(ctx, "Error during HYOK sync batch processing", err)
 	return errs.Wrap(ErrRunningTask, err)
 }

@@ -3,20 +3,13 @@ package async
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hibiken/asynq"
+	"github.com/openkcm/cmk/internal/log"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
-
-// NewFanOutTask registers both the parent task and its child task handler
-// This is a convenience function to avoid manually registering both handlers
-// Returns a slice containing both handlers ready for registration
-func NewFanOutTask(handler TaskHandler) []TaskHandler {
-	return []TaskHandler{
-		handler,               // Parent task
-		NewChildTask(handler), // Child task with ":child" suffix
-	}
-}
 
 // FanOutTask enqueues a child task for a task
 // This is used to allow parallelism on tasks running in a loop manner
@@ -57,10 +50,43 @@ func NewChildTask(parentHandler TaskHandler) *ChildTaskWrapper {
 	}
 }
 
+func IsChildTask(task *asynq.Task) bool {
+	return strings.HasSuffix(task.Type(), ":child")
+}
+
+func ProcessChildTask(ctx context.Context, task *asynq.Task, f func(ctx context.Context) error) error {
+	payload, err := asyncUtils.ParseTaskPayload(task.Payload())
+	if err != nil {
+		log.Error(ctx, "Failed to parse tenant from child task payload", err)
+		return err
+	}
+
+	ctx = cmkcontext.New(
+		ctx,
+		cmkcontext.WithTenant(payload.TenantID),
+		cmkcontext.InjectSystemUser,
+	)
+
+	err = f(ctx)
+	if err != nil {
+		log.Error(ctx, "Error processing tenant in child task", err)
+		return err
+	}
+
+	return nil
+}
+
 func (c *ChildTaskWrapper) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	return c.parentHandler.ProcessTask(ctx, task)
 }
 
 func (c *ChildTaskWrapper) TaskType() string {
 	return c.childTaskType
+}
+
+func (c *ChildTaskWrapper) SetFanOut(client Client) {
+}
+
+func (c *ChildTaskWrapper) IsFanOutEnabled() bool {
+	return false
 }

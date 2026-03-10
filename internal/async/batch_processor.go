@@ -14,9 +14,9 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
-type Options func(*BatchProcessor)
+type BatchProcessorOptions func(*BatchProcessor)
 
-func WithFanOut(asyncClient Client) Options {
+func WithFanOutTenants(asyncClient Client) BatchProcessorOptions {
 	return func(bp *BatchProcessor) {
 		bp.fanOutMode = true
 		bp.asyncClient = asyncClient
@@ -29,7 +29,7 @@ type BatchProcessor struct {
 	fanOutMode  bool
 }
 
-func NewBatchProcessor(repo repo.Repo, opts ...Options) *BatchProcessor {
+func NewBatchProcessor(repo repo.Repo, opts ...BatchProcessorOptions) *BatchProcessor {
 	bp := &BatchProcessor{
 		repo:       repo,
 		fanOutMode: false,
@@ -49,7 +49,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 	ctx context.Context,
 	asynqTask *asynq.Task,
 	query *repo.Query,
-	processTenant func(ctx context.Context, tenant *model.Tenant, index int) error,
+	processTenant func(ctx context.Context, tenant *model.Tenant) error,
 ) error {
 	totalTenantCount := 0
 
@@ -98,18 +98,21 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 
 				if !bp.fanOutMode {
 					log.Debug(ctx, "Starting async task processing")
-					err := processTenant(ctx, tenant, i+1)
+					err := processTenant(ctx, tenant)
 					if err != nil {
 						return err
 					}
 					log.Debug(ctx, "Finished async task processig")
 				} else {
 					log.Debug(ctx, "Creating Fanned-Out Task")
+
+					// Create child task with tenant information in payload
+					payload := asyncUtils.NewTaskPayload(ctx, asynqTask.Payload())
 					err := FanOutTask(
 						ctx,
 						bp.asyncClient,
 						asynqTask,
-						asyncUtils.NewTaskPayload(ctx, asynqTask.Payload()),
+						payload,
 					)
 					if err != nil {
 						return err

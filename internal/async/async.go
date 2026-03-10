@@ -29,10 +29,20 @@ var (
 	ErrACLUsername         = errors.New("ACL is not load username for redis client")
 )
 
+type TaskOption func(TaskHandler)
+
+func WithFanOut(client Client) TaskOption {
+	return func(h TaskHandler) {
+		h.SetFanOut(client)
+	}
+}
+
 // TaskHandler defines the interface for handling async
 type TaskHandler interface {
 	ProcessTask(ctx context.Context, task *asynq.Task) error
 	TaskType() string
+	SetFanOut(Client)
+	IsFanOutEnabled() bool
 }
 
 type Client interface {
@@ -117,11 +127,25 @@ func (a *App) Enqueue(
 }
 
 // RegisterTasks registers multiple task handlers
+// Automatically registers child handlers for tasks with FanOut() == true
 func (a *App) RegisterTasks(ctx context.Context, handlers []TaskHandler) {
 	for _, handler := range handlers {
 		taskType := handler.TaskType()
 		a.tasks[taskType] = handler
-		log.Info(ctx, "Registered task", slog.String("name", taskType))
+		log.Info(
+			ctx,
+			"Registered task",
+			slog.String("name", taskType),
+			slog.Bool("fanOut", handler.IsFanOutEnabled()),
+		)
+
+		// Auto-register child handler if fanout is enabled
+		if handler.IsFanOutEnabled() {
+			childHandler := NewChildTask(handler)
+			childTaskType := childHandler.TaskType()
+			a.tasks[childTaskType] = childHandler.parentHandler
+			log.Info(ctx, "Registered child task", slog.String("name", childTaskType))
+		}
 	}
 }
 
