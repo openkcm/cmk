@@ -21,32 +21,42 @@ type WorkflowCleaner struct {
 	workflowRemoval WorkflowRemoval
 	repo            repo.Repo
 	processor       *async.BatchProcessor
+	fanout          bool
 }
 
 func NewWorkflowCleaner(
 	workflowRemoval WorkflowRemoval,
 	repo repo.Repo,
+	opts ...async.TaskOption,
 ) *WorkflowCleaner {
-	return &WorkflowCleaner{
+	wc := &WorkflowCleaner{
 		workflowRemoval: workflowRemoval,
 		repo:            repo,
 		processor:       async.NewBatchProcessor(repo),
 	}
+
+	for _, o := range opts {
+		o(wc)
+	}
+
+	log.Debug(context.Background(), "Created Workflow Cleanup Task")
+
+	return wc
 }
 
 func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Workflow Cleanup Task")
 
+	if async.IsChildTask(task) {
+		return async.ProcessChildTask(ctx, task, wc.process)
+	}
+
 	err := wc.processor.ProcessTenantsInBatch(
 		ctx,
 		task,
 		repo.NewQuery(),
-		func(ctx context.Context, tenant *model.Tenant, index int) error {
-			cleanupErr := wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
-			if cleanupErr != nil {
-				log.Error(ctx, "Running Workflow Cleanup", cleanupErr)
-			}
-			return nil
+		func(ctx context.Context, _ *model.Tenant) error {
+			return wc.process(ctx)
 		},
 	)
 	if err != nil {
@@ -55,6 +65,22 @@ func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) er
 	}
 
 	return nil
+}
+
+func (wc *WorkflowCleaner) process(ctx context.Context) error {
+	cleanupErr := wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
+	if cleanupErr != nil {
+		log.Error(ctx, "Running Workflow Cleanup", cleanupErr)
+	}
+	return nil
+}
+
+func (wc *WorkflowCleaner) SetFanOut(client async.Client) {
+	wc.processor = async.NewBatchProcessor(wc.repo, async.WithFanOutTenants(client))
+}
+
+func (wc *WorkflowCleaner) IsFanOutEnabled() bool {
+	return wc.fanout
 }
 
 func (wc *WorkflowCleaner) TaskType() string {
