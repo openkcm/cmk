@@ -157,10 +157,6 @@ func registerTasks(
 	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, cron.Client(), tenantConfigManager, cfg)
 
-	// Create HYOK Sync with fan-out enabled
-	hyokSync := tasks.NewHYOKSync(keyManager, r, cron.Client())
-
-	// Collect all task handlers
 	taskHandlers := []async.TaskHandler{
 		tasks.NewSystemsRefresher(sis, r),
 		tasks.NewCertRotator(certManager, r),
@@ -170,11 +166,9 @@ func registerTasks(
 		tasks.NewWorkflowExpiryProcessor(workflowManager, r),
 		tasks.NewWorkflowCleaner(workflowManager, r),
 		tasks.NewTenantNameRefresher(r, f.Registry()),
+		tasks.NewHYOKSync(keyManager, r, async.WithFanOut(cron.Client())),
 	}
 
-	taskHandlers = append(taskHandlers, async.NewFanOutTask(hyokSync)...)
-
-	// Register all tasks
 	cron.RegisterTasks(ctx, taskHandlers)
 
 	return nil

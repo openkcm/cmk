@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -87,6 +88,14 @@ func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) e
 
 func (s *WorkflowProcessor) TaskType() string {
 	return config.TypeWorkflowAutoAssign
+}
+
+func (s *WorkflowProcessor) SetFanOut(client async.Client) {
+	return
+}
+
+func (s *WorkflowProcessor) IsFanOutEnabled() bool {
+	return false
 }
 
 func (s *WorkflowProcessor) putWorkflowInFailedState(
