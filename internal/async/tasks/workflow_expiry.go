@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -29,7 +30,7 @@ type WorkflowExpiryUpdater interface {
 type WorkflowExpiryProcessor struct {
 	updater   WorkflowExpiryUpdater
 	repo      repo.Repo
-	processor *BatchProcessor
+	processor *async.BatchProcessor
 }
 
 func NewWorkflowExpiryProcessor(
@@ -39,7 +40,7 @@ func NewWorkflowExpiryProcessor(
 	return &WorkflowExpiryProcessor{
 		updater:   updater,
 		repo:      repo,
-		processor: NewBatchProcessor(repo),
+		processor: async.NewBatchProcessor(repo),
 	}
 }
 
@@ -48,13 +49,9 @@ func (s *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 
 	err := s.processor.ProcessTenantsInBatch(
 		ctx,
-		"Workflow Expiry",
 		task,
 		repo.NewQuery(),
 		func(ctx context.Context, tenant *model.Tenant, index int) error {
-			log.Debug(ctx, "Processing expired workflows for tenant",
-				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
-
 			wfs, _, getErr := s.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
 			if getErr != nil {
 				return s.handleErrorTask(ctx, getErr)
@@ -69,8 +66,6 @@ func (s *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 					return errs.Wrap(ErrRunningTask, expireErr)
 				}
 			}
-			log.Debug(ctx, "Workflow expiry processing completed for tenant",
-				slog.String("schemaName", tenant.SchemaName))
 			return nil
 		},
 	)

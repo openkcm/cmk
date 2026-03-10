@@ -4,11 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 )
@@ -27,8 +29,10 @@ func TestSystemRefresherProcessAction(t *testing.T) {
 
 	refresher := tasks.NewSystemsRefresher(&SystemUpdaterMock{}, repo)
 
+	task := asynq.NewTask(config.TypeSystemsTask, nil)
+
 	t.Run("Should error on network error", func(t *testing.T) {
-		err := refresher.ProcessTask(t.Context(), nil)
+		err := refresher.ProcessTask(t.Context(), task)
 		assert.ErrorIs(t, err, tasks.ErrRunningTask)
 	})
 }

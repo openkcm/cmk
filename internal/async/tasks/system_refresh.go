@@ -2,12 +2,12 @@ package tasks
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/hibiken/asynq"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -22,7 +22,7 @@ type SystemUpdater interface {
 type SystemsRefresher struct {
 	systemClient SystemUpdater
 	repo         repo.Repo
-	processor    *BatchProcessor
+	processor    *async.BatchProcessor
 }
 
 func NewSystemsRefresher(
@@ -32,7 +32,7 @@ func NewSystemsRefresher(
 	return &SystemsRefresher{
 		systemClient: systemClient,
 		repo:         repo,
-		processor:    NewBatchProcessor(repo),
+		processor:    async.NewBatchProcessor(repo),
 	}
 }
 
@@ -41,13 +41,9 @@ func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) er
 
 	err := s.processor.ProcessTenantsInBatch(
 		ctx,
-		"Systems Refresh",
 		task,
 		repo.NewQuery(),
 		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
-			log.Debug(tenantCtx, "Refreshing systems for tenant",
-				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
-
 			updateErr := s.systemClient.UpdateSystems(ctx)
 			// If network error return an error triggering
 			// another task attempt with a backoff
