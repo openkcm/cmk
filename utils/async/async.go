@@ -12,9 +12,7 @@ import (
 	ctxUtils "github.com/openkcm/cmk/utils/context"
 )
 
-var (
-	ErrParsingPayload = errors.New("could not parse task payload")
-)
+var ErrParsingPayload = errors.New("could not parse task payload")
 
 // TaskPayload represents the payload for an async task, including tenant context.
 type TaskPayload struct {

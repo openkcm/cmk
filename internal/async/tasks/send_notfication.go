@@ -6,6 +6,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/notifier/client"
@@ -47,6 +48,14 @@ func (n *NotificationSender) ProcessTask(ctx context.Context, task *asynq.Task) 
 	log.Info(ctx, "notification sent successfully")
 
 	return nil
+}
+
+func (k *NotificationSender) SetFanOut(client async.Client) {
+	return
+}
+
+func (k *NotificationSender) IsFanOutEnabled() bool {
+	return false
 }
 
 func (n *NotificationSender) TaskType() string {

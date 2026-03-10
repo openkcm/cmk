@@ -5,6 +5,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
@@ -42,6 +43,14 @@ func (k *KeystorePoolFiller) ProcessTask(ctx context.Context, _ *asynq.Task) err
 	}
 
 	return nil
+}
+
+func (k *KeystorePoolFiller) SetFanOut(client async.Client) {
+	return
+}
+
+func (k *KeystorePoolFiller) IsFanOutEnabled() bool {
+	return false
 }
 
 func (k *KeystorePoolFiller) TaskType() string {

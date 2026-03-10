@@ -31,7 +31,7 @@ func (s *HyokHYOKClientMockFailed) SyncHYOKKeys(_ context.Context) error {
 func TestHYOKSyncProcessAction(t *testing.T) {
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	repo := sql.NewRepository(db)
-	sync := tasks.NewHYOKSync(&HyokHYOKClientMock{}, repo, nil)
+	sync := tasks.NewHYOKSync(&HyokHYOKClientMock{}, repo)
 
 	task := asynq.NewTask(config.TypeHYOKSync, nil)
 
@@ -46,7 +46,7 @@ func TestHYOKSyncProcessAction(t *testing.T) {
 	})
 
 	t.Run("Task continues one failure of hyok client", func(t *testing.T) {
-		sync := tasks.NewHYOKSync(&HyokHYOKClientMockFailed{}, repo, nil)
+		sync := tasks.NewHYOKSync(&HyokHYOKClientMockFailed{}, repo)
 		err := sync.ProcessTask(t.Context(), task)
 		assert.NoError(t, err)
 	})
