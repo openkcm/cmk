@@ -78,8 +78,8 @@ func (h *HYOKSync) TaskType() string {
 	return config.TypeHYOKSync
 }
 
-func (h *HYOKSync) SetFanOut(client async.Client) {
-	h.processor = async.NewBatchProcessor(h.repo, async.WithFanOutTenants(client))
+func (h *HYOKSync) SetFanOut(client async.Client, opts ...asynq.Option) {
+	h.processor = async.NewBatchProcessor(h.repo, async.WithFanOutTenants(client, opts...))
 	h.fanout = true
 }
 

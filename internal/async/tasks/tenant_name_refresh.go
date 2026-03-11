@@ -94,8 +94,9 @@ func (t *TenantNameRefresher) process(ctx context.Context, tenant *model.Tenant)
 	return nil
 }
 
-func (t *TenantNameRefresher) SetFanOut(client async.Client) {
-	t.processor = async.NewBatchProcessor(t.r, async.WithFanOutTenants(client))
+func (t *TenantNameRefresher) SetFanOut(client async.Client, opts ...asynq.Option) {
+	t.processor = async.NewBatchProcessor(t.r, async.WithFanOutTenants(client, opts...))
+	t.fanout = true
 }
 
 func (t *TenantNameRefresher) IsFanOutEnabled() bool {

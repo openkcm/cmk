@@ -19,6 +19,7 @@ func FanOutTask(
 	asyncClient Client,
 	parentTask *asynq.Task,
 	payload asyncUtils.TaskPayload,
+	opts ...asynq.Option,
 ) error {
 	// Determine child task type
 	childTaskType := parentTask.Type() + ":child"
@@ -28,7 +29,7 @@ func FanOutTask(
 		return err
 	}
 
-	childTask := asynq.NewTask(childTaskType, payloadBytes)
+	childTask := asynq.NewTask(childTaskType, payloadBytes, opts...)
 	_, err = asyncClient.Enqueue(childTask)
 	if err != nil {
 		return fmt.Errorf("failed to enqueue child task")
@@ -83,7 +84,7 @@ func (c *ChildTaskWrapper) TaskType() string {
 	return c.childTaskType
 }
 
-func (c *ChildTaskWrapper) SetFanOut(client Client) {
+func (c *ChildTaskWrapper) SetFanOut(client Client, opts ...asynq.Option) {
 }
 
 func (c *ChildTaskWrapper) IsFanOutEnabled() bool {
