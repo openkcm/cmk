@@ -75,8 +75,9 @@ func (wc *WorkflowCleaner) process(ctx context.Context) error {
 	return nil
 }
 
-func (wc *WorkflowCleaner) SetFanOut(client async.Client) {
-	wc.processor = async.NewBatchProcessor(wc.repo, async.WithFanOutTenants(client))
+func (wc *WorkflowCleaner) SetFanOut(client async.Client, opts ...asynq.Option) {
+	wc.processor = async.NewBatchProcessor(wc.repo, async.WithFanOutTenants(client, opts...))
+	wc.fanout = true
 }
 
 func (wc *WorkflowCleaner) IsFanOutEnabled() bool {

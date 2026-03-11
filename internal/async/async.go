@@ -31,17 +31,34 @@ var (
 
 type TaskOption func(TaskHandler)
 
-func WithFanOut(client Client) TaskOption {
+func WithFanOut(client Client, opts ...asynq.Option) TaskOption {
 	return func(h TaskHandler) {
-		h.SetFanOut(client)
+		h.SetFanOut(client, opts...)
 	}
+}
+
+func WithFanOutFromConfig(client Client, cfg *conf.Config, taskType string) TaskOption {
+	task, ok := cfg.Scheduler.GetTasks()[taskType]
+
+	// No child config, use fanout with no special options
+	if !ok || task.ChildTask == nil {
+		return WithFanOut(client)
+	}
+
+	opts := []asynq.Option{asynq.MaxRetry(task.ChildTask.Retries)}
+
+	if task.ChildTask.TimeOut > 0 {
+		opts = append(opts, asynq.Timeout(task.ChildTask.TimeOut))
+	}
+
+	return WithFanOut(client, opts...)
 }
 
 // TaskHandler defines the interface for handling async
 type TaskHandler interface {
 	ProcessTask(ctx context.Context, task *asynq.Task) error
 	TaskType() string
-	SetFanOut(Client)
+	SetFanOut(Client, ...asynq.Option)
 	IsFanOutEnabled() bool
 }
 

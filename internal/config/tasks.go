@@ -28,6 +28,10 @@ var PeriodicTasks = map[string]Task{
 		Cronspec: "*/5 * * * *", // Every 5 minutes
 		Retries:  0,
 		TimeOut:  5 * time.Minute,
+		ChildTask: &Task{
+			Retries: 0,
+			TimeOut: 2 * time.Minute,
+		},
 	},
 	TypeKeystorePool: {
 		Enabled:  true,

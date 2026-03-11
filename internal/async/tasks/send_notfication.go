@@ -50,7 +50,7 @@ func (n *NotificationSender) ProcessTask(ctx context.Context, task *asynq.Task) 
 	return nil
 }
 
-func (k *NotificationSender) SetFanOut(client async.Client) {
+func (k *NotificationSender) SetFanOut(client async.Client, opts ...asynq.Option) {
 	return
 }
 
