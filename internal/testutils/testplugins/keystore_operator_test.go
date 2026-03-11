@@ -1,9 +1,8 @@
-package main_test
+package testplugins_test
 
 import (
 	"encoding/json"
 	"log/slog"
-	"reflect"
 	"testing"
 
 	"github.com/magodo/slog2hclog"
@@ -11,15 +10,20 @@ import (
 
 	keyopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
-	tp "github.com/openkcm/cmk/internal/testutils/testplugins/keystoreop"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func setupTest() *tp.TestPlugin {
-	p := tp.New()
-	logLevelPlugin := new(slog.LevelVar)
-	logLevelPlugin.Set(slog.LevelError)
+func setupTest() *testplugins.KeystoreOperator {
+	p := &testplugins.KeystoreOperator{
+		KeyStore: make(map[string]*testplugins.KeyRecord),
+	}
 
+	for keyID, record := range testplugins.InitialKeys {
+		p.HandleKeyRecord(keyID, record.Status)
+	}
+
+	logLevelPlugin := new(slog.LevelVar)
 	p.SetLogger(slog2hclog.New(slog.Default(), logLevelPlugin))
 
 	return p
@@ -33,7 +37,6 @@ func TestGetKey(t *testing.T) {
 	_, err := p.GetKey(t.Context(), &keyopv1.GetKeyRequest{
 		Parameters: &keyopv1.RequestParameters{KeyId: "mock-key/11111111"},
 	})
-
 	// Assert
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -48,7 +51,6 @@ func TestGetKeyUpdateState(t *testing.T) {
 	_, err := p.GetKey(t.Context(), &keyopv1.GetKeyRequest{
 		Parameters: &keyopv1.RequestParameters{KeyId: "mock-key/22222222"},
 	})
-
 	// Assert
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -77,7 +79,6 @@ func TestCreateKeyVersion(t *testing.T) {
 	resp, err := p.CreateKey(t.Context(), &keyopv1.CreateKeyRequest{
 		Algorithm: keyopv1.KeyAlgorithm_KEY_ALGORITHM_AES256,
 	})
-
 	// Assert
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -95,7 +96,6 @@ func TestDeleteKeyVersion(t *testing.T) {
 		Parameters: &keyopv1.RequestParameters{KeyId: "test-key-id"},
 		Window:     ptr.PointTo(int32(7)),
 	})
-
 	// Assert
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -110,7 +110,6 @@ func TestEnableKeyVersion(t *testing.T) {
 	response, err := p.EnableKey(t.Context(), &keyopv1.EnableKeyRequest{
 		Parameters: &keyopv1.RequestParameters{KeyId: "test-key-id"},
 	})
-
 	// Assert
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -162,7 +161,6 @@ func TestDisableKeyVersion(t *testing.T) {
 	response, err := p.DisableKey(t.Context(), &keyopv1.DisableKeyRequest{
 		Parameters: &keyopv1.RequestParameters{KeyId: "test-key-id"},
 	})
-
 	// Assert
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -275,7 +273,6 @@ func TestConfigure(t *testing.T) {
 
 	// Act
 	res, err := p.Configure(t.Context(), nil)
-
 	// Assert
 	if err != nil {
 		t.Errorf("Configure() error = %v, want nil", err)
@@ -283,22 +280,5 @@ func TestConfigure(t *testing.T) {
 
 	if res == nil {
 		t.Errorf("Configure() = nil, want non-nil")
-	}
-}
-
-func TestNew(t *testing.T) {
-	// Act
-	p := tp.New()
-
-	// Assert
-	if p == nil {
-		t.Errorf("Expected non-nil TestPlugin instance, got nil")
-	}
-
-	expectedType := "*main.TestPlugin"
-	actualType := reflect.TypeFor[*tp.TestPlugin]().String()
-
-	if actualType != expectedType {
-		t.Errorf("Expected type %s, got %s", expectedType, actualType)
 	}
 }

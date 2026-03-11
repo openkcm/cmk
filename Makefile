@@ -1,6 +1,6 @@
 .PHONY: default test coverage clean install-gotestsum squash codegen docker-compose clean-docker-compose swagger-ui \
 swagger-ui-stop go-imports install-gci install-golines install-goimports lint cmk-env docker-dev-build tidy \
-prepare_integration_test clean_integration_test build_test_plugins clean_plugins clean_test benchmark
+prepare_integration_test clean_integration_test clean_plugins benchmark
 
 CMK_API_V1_SPEC_PATH := apis/cmk
 CMK_API_V1_OUT_PATH := internal/api/cmkapi
@@ -26,7 +26,7 @@ default: test
 run:
 	AWS_ACCESS_KEY_ID="exampleAccessKeyID" AWS_SECRET_ACCESS_KEY="exampleSecretAccessKey" go run ./cmd/api-server
 
-test: install-gotestsum build_test_plugins
+test: install-gotestsum
 	rm -rf cover cover.* junit.xml
 	mkdir -p cover
 	go clean -testcache
@@ -39,17 +39,10 @@ test: install-gotestsum build_test_plugins
 
 	go tool covdata textfmt -i=./cover -o cover.out
 
-	$(MAKE) clean_test_plugins
 
 
 benchmark:
 	go test ./benchmark -bench=.
-
-
-clean_test:
-	$(MAKE) clean-postgres-db
-	$(MAKE) clean-rabbitmq
-	$(MAKE) clean_test_plugins
 
 
 integration_test:  prepare_integration_test
@@ -151,30 +144,6 @@ codegen-commit:
 	! git diff --cached --exit-code > /dev/null  # Fail if there is nothing staged
 	@echo "Committing"
 	git commit -m "Update generated CMK api code"
-
-
-
-TEST_PLUGINS_DIR := ./internal/testutils/testplugins
-TEST_PLUGINS := $(shell find $(TEST_PLUGINS_DIR) -mindepth 1 -maxdepth 1 -type d)
-PLUGIN_NAME := testpluginbinary
-
-build_test_plugins:
-	@echo "Building plugins..."
-	@for plugin_dir in $(TEST_PLUGINS); do \
-		echo "Building $${plugin_dir}"; \
-		(cd $${plugin_dir} && go build -o $(PLUGIN_NAME) .); \
-		if [ $$? -ne 0 ]; then \
-			echo "Failed to build $${plugin_dir}"; \
-			exit 1; \
-		fi; \
-	done
-	@echo "All plugins built successfully"
-
-clean_test_plugins:
-	@find $(TEST_PLUGINS_DIR) -name "$(PLUGIN_NAME)" -exec rm -f {} +
-	@echo "Cleaned all plugin binaries"
-	# Kill all leftover processes
-	@killall testpluginbinary || true
 
 
 stack_name := cmk-stack-local

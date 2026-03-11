@@ -23,6 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -43,8 +44,11 @@ func createAuditorGroup(ctx context.Context, tb testing.TB, r repo.Repo) {
 	testutils.CreateTestEntities(ctx, tb, r, group)
 }
 
-func SetupWorkflowManager(t *testing.T, cfg *config.Config,
-	opts ...testutils.TestDBConfigOpt) (
+func SetupWorkflowManager(
+	t *testing.T,
+	cfg *config.Config,
+	opts ...testutils.TestDBConfigOpt,
+) (
 	*manager.WorkflowManager,
 	repo.Repo, string,
 ) {
@@ -54,11 +58,15 @@ func SetupWorkflowManager(t *testing.T, cfg *config.Config,
 
 	r := sql.NewRepository(db)
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
+
+	cfg.Plugins = psCfg
+
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
-	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, &cfg.Certificates)
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
@@ -1015,9 +1023,7 @@ func TestWorkflowManager_ListApprovers(t *testing.T) {
 
 func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 	m, r, tenant := SetupWorkflowManager(
-		t, &config.Config{
-			Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
-		},
+		t, &config.Config{},
 	)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"KMS_001", "KMS_002"})

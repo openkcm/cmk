@@ -12,20 +12,21 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/stretchr/testify/assert"
 )
 
 func SetupProviderManager(t *testing.T) (*manager.ProviderConfigManager, string, *multitenancy.DB) {
-	// TODO: Verify how to do this with builtin plugins
+	ps, psCfg := testutils.NewTestPlugins(
+		testplugins.NewKeystoreOperator(),
+		testplugins.NewKeystoreManagement(),
+	)
+
 	cfg := &config.Config{
-		Plugins: testutils.SetupMockPlugins(
-			testutils.KeyStorePlugin,
-			testutils.KeystoreProviderPlugin,
-			testutils.CertIssuer,
-		),
+		Plugins: psCfg,
 	}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
@@ -34,7 +35,7 @@ func SetupProviderManager(t *testing.T) (*manager.ProviderConfigManager, string,
 		svcRegistry,
 		make(map[manager.ProviderCachedKey]*manager.ProviderConfig),
 		manager.NewTenantConfigManager(r, svcRegistry, cfg),
-		manager.NewCertificateManager(t.Context(), r, svcRegistry, &cfg.Certificates),
+		manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg),
 		manager.NewPool(r),
 		r,
 	)

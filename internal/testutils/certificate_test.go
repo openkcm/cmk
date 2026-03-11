@@ -5,7 +5,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/testutils"
 )
@@ -22,7 +21,7 @@ func TestCreateTestCertificate(t *testing.T) {
 			validate: func(t *testing.T, cert *model.Certificate) {
 				t.Helper()
 				assert.Equal(t, model.CertificatePurposeTenantDefault, cert.Purpose)
-				assert.Equal(t, manager.DefaultHYOKCertCommonName, cert.CommonName)
+				assert.Equal(t, testutils.TestTenantCertCommonName, cert.CommonName)
 				assert.Equal(t, model.CertificateStateActive, cert.State)
 				assert.NotEmpty(t, cert.CertPEM)
 				assert.NotEmpty(t, cert.PrivateKeyPEM)
@@ -37,7 +36,7 @@ func TestCreateTestCertificate(t *testing.T) {
 				t.Helper()
 				assert.Equal(t, "custom-fingerprint", cert.Fingerprint)
 				assert.Equal(t, model.CertificatePurposeTenantDefault, cert.Purpose)
-				assert.Equal(t, manager.DefaultHYOKCertCommonName, cert.CommonName)
+				assert.Equal(t, testutils.TestTenantCertCommonName, cert.CommonName)
 				assert.Equal(t, model.CertificateStateActive, cert.State)
 				assert.NotEmpty(t, cert.CertPEM)
 				assert.NotEmpty(t, cert.PrivateKeyPEM)

@@ -626,8 +626,8 @@ func (km *KeyManager) registerHYOKKey(
 		ctx,
 		"Key Register",
 		slog.Group("Provider Key",
-			slog.String("ID", keyResp.GetKeyId()),
-			slog.String("Status", keyResp.GetStatus()),
+			slog.String("id", keyResp.GetKeyId()),
+			slog.String("status", keyResp.GetStatus()),
 		),
 	)
 

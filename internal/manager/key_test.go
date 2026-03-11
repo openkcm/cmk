@@ -24,6 +24,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -44,23 +45,24 @@ func SetupKeyTest(t *testing.T) (
 
 	r = sql.NewRepository(db)
 
+	ps, psCfg := testutils.NewTestPlugins(
+		testplugins.NewKeystoreOperator(),
+	)
+
 	cfg := &config.Config{
-		Plugins: testutils.SetupMockPlugins(
-			testutils.KeyStorePlugin,
-			testutils.KeystoreProviderPlugin,
-			testutils.CertIssuer,
-		),
+		Plugins:  psCfg,
 		Database: dbConf,
 	}
-
-	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
-	require.NoError(t, err)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
+	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(ctx, cfg)
 
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry,
-		&config.Certificates{ValidityDays: config.MinCertificateValidityDays})
+		&config.Config{
+			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+		})
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)

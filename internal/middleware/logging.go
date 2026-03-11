@@ -24,8 +24,8 @@ func LoggingMiddleware() func(http.Handler) http.Handler {
 			duration := time.Since(start)
 
 			log.Info(ctx, "Request Completed",
-				slog.Int("HttpStatus", lrw.statusCode),
-				slog.Duration("Duration", duration),
+				slog.Int("httpStatus", lrw.statusCode),
+				slog.Duration("duration", duration),
 			)
 		})
 	}
