@@ -14,8 +14,6 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/samber/oops"
 
-	idmv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/authz"
@@ -26,6 +24,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/notifier"
 	wn "github.com/openkcm/cmk/internal/notifier/workflow"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	wf "github.com/openkcm/cmk/internal/workflow"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
@@ -1076,7 +1075,7 @@ func (w *WorkflowManager) getApproversAndGroupsFromKeyConfigs(
 	workflow *model.Workflow,
 	keyConfigs []*model.KeyConfiguration,
 ) ([]*model.WorkflowApprover, []*model.Group, error) {
-	idmClient, err := w.groupManager.GetIdentityManagementPlugin()
+	idm, err := w.groupManager.GetIdentityManagementPlugin()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1099,24 +1098,24 @@ func (w *WorkflowManager) getApproversAndGroupsFromKeyConfigs(
 			return nil, nil, errs.Wrap(ErrAutoAssignApprover, err)
 		}
 
-		idmGroup, err := idmClient.GetGroup(ctx, &idmv1.GetGroupRequest{
+		idmGroup, err := idm.GetGroup(ctx, &identitymanagement.GetGroupRequest{
 			GroupName:   group.IAMIdentifier,
-			AuthContext: &idmv1.AuthContext{Data: authCtx},
+			AuthContext: identitymanagement.AuthContext{Data: authCtx},
 		})
 		if err != nil {
 			return nil, nil, errs.Wrap(ErrAutoAssignApprover, err)
 		}
 
-		groupUsers, err := idmClient.GetUsersForGroup(ctx, &idmv1.GetUsersForGroupRequest{
-			GroupId:     idmGroup.GetGroup().GetId(),
-			AuthContext: &idmv1.AuthContext{Data: authCtx},
+		groupUsers, err := idm.ListGroupUsers(ctx, &identitymanagement.ListGroupUsersRequest{
+			GroupID:     idmGroup.Group.ID,
+			AuthContext: identitymanagement.AuthContext{Data: authCtx},
 		})
 		if err != nil {
 			return nil, nil, errs.Wrap(ErrAutoAssignApprover, err)
 		}
 
-		for _, user := range groupUsers.GetUsers() {
-			userID := user.GetId()
+		for _, user := range groupUsers.Users {
+			userID := user.ID
 
 			if userID == workflow.InitiatorID {
 				continue // Skip initiator
@@ -1124,7 +1123,7 @@ func (w *WorkflowManager) getApproversAndGroupsFromKeyConfigs(
 
 			approverMap[userID] = model.WorkflowApprover{
 				UserID:   userID,
-				UserName: user.GetEmail(),
+				UserName: user.Email,
 			}
 		}
 	}
