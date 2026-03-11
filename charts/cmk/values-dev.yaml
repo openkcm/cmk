@@ -627,10 +627,10 @@ config:
       - cronspec: "@every 1h"
         taskType: key:sync
         retries: 0
-        timeout: 5m
+        timeOut: 5m
         childTask:
           retries: 3
-          timeout: 2m
+          timeOut: 2m
       - cronspec: "@every 1h"
         taskType: keystore:fill
         retries: 3

@@ -48,8 +48,6 @@ func NewWorkflowExpiryProcessor(
 		o(w)
 	}
 
-	log.Debug(context.Background(), "Created System Refresh Task")
-
 	return w
 }
 
@@ -75,6 +73,24 @@ func (w *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 	return nil
 }
 
+func (w *WorkflowExpiryProcessor) TaskType() string {
+	return config.TypeWorkflowExpire
+}
+
+func (w *WorkflowExpiryProcessor) SetFanOut(client async.Client, opts ...asynq.Option) {
+	w.processor = async.NewBatchProcessor(w.repo, async.WithFanOutTenants(client, opts...))
+	w.fanout = true
+}
+
+func (w *WorkflowExpiryProcessor) IsFanOutEnabled() bool {
+	return w.fanout
+}
+
+func (w *WorkflowExpiryProcessor) handleErrorTenants(ctx context.Context, err error) error {
+	log.Error(ctx, "Error during workflow expiry batch processing", err)
+	return errs.Wrap(ErrRunningTask, err)
+}
+
 func (w *WorkflowExpiryProcessor) process(ctx context.Context) error {
 	wfs, _, getErr := w.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
 	if getErr != nil {
@@ -94,10 +110,6 @@ func (w *WorkflowExpiryProcessor) process(ctx context.Context) error {
 	return nil
 }
 
-func (w *WorkflowExpiryProcessor) TaskType() string {
-	return config.TypeWorkflowExpire
-}
-
 func (w *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID uuid.UUID) error {
 	workflow, err := w.updater.TransitionWorkflow(ctx, workflowID, wfMechanism.TransitionExpire)
 	if err != nil {
@@ -107,18 +119,4 @@ func (w *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID
 	log.Info(ctx, "Expired workflow", slog.String("workflow_id", workflow.ID.String()))
 
 	return nil
-}
-
-func (w *WorkflowExpiryProcessor) SetFanOut(client async.Client, opts ...asynq.Option) {
-	w.processor = async.NewBatchProcessor(w.repo, async.WithFanOutTenants(client, opts...))
-	w.fanout = true
-}
-
-func (w *WorkflowExpiryProcessor) IsFanOutEnabled() bool {
-	return w.fanout
-}
-
-func (w *WorkflowExpiryProcessor) handleErrorTenants(ctx context.Context, err error) error {
-	log.Error(ctx, "Error during workflow expiry batch processing", err)
-	return errs.Wrap(ErrRunningTask, err)
 }

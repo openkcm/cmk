@@ -58,7 +58,7 @@ func WithFanOutFromConfig(client Client, cfg *conf.Config, taskType string) Task
 type TaskHandler interface {
 	ProcessTask(ctx context.Context, task *asynq.Task) error
 	TaskType() string
-	SetFanOut(Client, ...asynq.Option)
+	SetFanOut(client Client, opts ...asynq.Option)
 	IsFanOutEnabled() bool
 }
 

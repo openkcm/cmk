@@ -5,12 +5,13 @@ import (
 	"testing"
 
 	"github.com/hibiken/asynq"
+	"github.com/zeebo/assert"
+
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/zeebo/assert"
 )
 
 func TestBatchProcessor(t *testing.T) {
