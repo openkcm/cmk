@@ -3,7 +3,10 @@ package manager_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
+
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
@@ -14,10 +17,11 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/stretchr/testify/assert"
 )
 
 func SetupProviderManager(t *testing.T) (*manager.ProviderConfigManager, string, *multitenancy.DB) {
+	t.Helper()
+
 	ps, psCfg := testutils.NewTestPlugins(
 		testplugins.NewKeystoreOperator(),
 		testplugins.NewKeystoreManagement(),
@@ -64,6 +68,8 @@ func TestGetPluginAlgorithm(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			result := manager.GetPluginAlgorithm(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -118,6 +124,8 @@ func TestGetOrInitProvider(t *testing.T) {
 				k.Provider = providerTest
 			}),
 			assert: func(t *testing.T, provider *manager.ProviderConfig, err error) {
+				t.Helper()
+
 				assert.NoError(t, err)
 				assert.NotNil(t, provider)
 			},
@@ -129,6 +137,8 @@ func TestGetOrInitProvider(t *testing.T) {
 				k.Provider = "GCP"
 			}),
 			assert: func(t *testing.T, provider *manager.ProviderConfig, err error) {
+				t.Helper()
+
 				assert.Error(t, err)
 				assert.Nil(t, provider)
 				assert.ErrorIs(t, err, manager.ErrPluginNotFound)

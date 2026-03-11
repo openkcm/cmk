@@ -29,10 +29,10 @@ import (
 )
 
 func SetupKeyTest(t *testing.T) (
-	km *manager.KeyManager,
-	r repo.Repo,
-	ctx context.Context,
-	keyConfig *model.KeyConfiguration,
+	*manager.KeyManager,
+	repo.Repo,
+	context.Context,
+	*model.KeyConfiguration,
 ) {
 	t.Helper()
 
@@ -41,9 +41,8 @@ func SetupKeyTest(t *testing.T) (
 		WithOrbital:    true,
 	})
 	tenant := tenants[0]
-	ctx = testutils.CreateCtxWithTenant(tenant)
-
-	r = sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
 
 	ps, psCfg := testutils.NewTestPlugins(
 		testplugins.NewKeystoreOperator(),
@@ -70,10 +69,10 @@ func SetupKeyTest(t *testing.T) (
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	require.NoError(t, err)
 
-	km = manager.NewKeyManager(
+	km := manager.NewKeyManager(
 		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
 
-	keyConfig = testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 
 	testutils.CreateTestEntities(
@@ -701,6 +700,7 @@ func TestList(t *testing.T) {
 	}
 }
 
+//nolint:nestif
 func TestUpdate(t *testing.T) {
 	km, _, ctx, keyConfig := SetupKeyTest(t)
 	createdKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
