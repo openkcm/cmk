@@ -16,10 +16,11 @@ import (
 
 type BatchProcessorOptions func(*BatchProcessor)
 
-func WithFanOutTenants(asyncClient Client) BatchProcessorOptions {
+func WithFanOutTenants(asyncClient Client, opts ...asynq.Option) BatchProcessorOptions {
 	return func(bp *BatchProcessor) {
 		bp.fanOutMode = true
 		bp.asyncClient = asyncClient
+		bp.fanOutOpts = opts
 	}
 }
 
@@ -27,6 +28,7 @@ type BatchProcessor struct {
 	repo        repo.Repo
 	asyncClient Client
 	fanOutMode  bool
+	fanOutOpts  []asynq.Option
 }
 
 func NewBatchProcessor(repo repo.Repo, opts ...BatchProcessorOptions) *BatchProcessor {
@@ -112,6 +114,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 						bp.asyncClient,
 						asynqTask,
 						payload,
+						bp.fanOutOpts...,
 					)
 					if err != nil {
 						return err

@@ -389,7 +389,7 @@ func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 		),
 	)
 
-	return repo.ProcessInBatch[model.Key](ctx, km.repo, baseQuery, repo.DefaultLimit, func(keys []*model.Key) error {
+	return repo.ProcessInBatch(ctx, km.repo, baseQuery, repo.DefaultLimit, func(keys []*model.Key) error {
 		for _, key := range keys {
 			err := km.syncHYOKKeyState(ctx, key)
 			if err != nil {
