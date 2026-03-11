@@ -43,8 +43,6 @@ func NewCertRotator(
 		o(c)
 	}
 
-	log.Debug(context.Background(), "Created Cert Rotation Task")
-
 	return c
 }
 
@@ -72,14 +70,6 @@ func (s *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	return nil
 }
 
-func (s *CertRotator) process(ctx context.Context) error {
-	err := s.certClient.RotateExpiredCertificates(ctx)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (s *CertRotator) TaskType() string {
 	return config.TypeCertificateTask
 }
@@ -96,4 +86,12 @@ func (s *CertRotator) IsFanOutEnabled() bool {
 func (s *CertRotator) handleErrorTenants(ctx context.Context, err error) error {
 	log.Error(ctx, "Error during certificate rotation batch processing", err)
 	return errs.Wrap(ErrRunningTask, err)
+}
+
+func (s *CertRotator) process(ctx context.Context) error {
+	err := s.certClient.RotateExpiredCertificates(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
 }

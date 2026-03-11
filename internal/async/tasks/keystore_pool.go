@@ -45,9 +45,7 @@ func (k *KeystorePoolFiller) ProcessTask(ctx context.Context, _ *asynq.Task) err
 	return nil
 }
 
-func (k *KeystorePoolFiller) SetFanOut(client async.Client, opts ...asynq.Option) {
-	return
-}
+func (k *KeystorePoolFiller) SetFanOut(client async.Client, opts ...asynq.Option) {}
 
 func (k *KeystorePoolFiller) IsFanOutEnabled() bool {
 	return false

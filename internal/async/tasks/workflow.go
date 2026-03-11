@@ -90,9 +90,7 @@ func (s *WorkflowProcessor) TaskType() string {
 	return config.TypeWorkflowAutoAssign
 }
 
-func (s *WorkflowProcessor) SetFanOut(client async.Client, opts ...asynq.Option) {
-	return
-}
+func (s *WorkflowProcessor) SetFanOut(client async.Client, opts ...asynq.Option) {}
 
 func (s *WorkflowProcessor) IsFanOutEnabled() bool {
 	return false

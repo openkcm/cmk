@@ -2,10 +2,10 @@ package async
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/hibiken/asynq"
+
 	"github.com/openkcm/cmk/internal/log"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -32,7 +32,7 @@ func FanOutTask(
 	childTask := asynq.NewTask(childTaskType, payloadBytes, opts...)
 	_, err = asyncClient.Enqueue(childTask)
 	if err != nil {
-		return fmt.Errorf("failed to enqueue child task")
+		return ErrEnqueueingTask
 	}
 
 	return nil
