@@ -32,12 +32,8 @@ func NewAPIController(
 	config *config.Config,
 	clientsFactory clients.Factory,
 	migrator db.Migrator,
+	svcRegistry *cmkpluginregistry.Registry,
 ) *APIController {
-	svcRegistry, err := cmkpluginregistry.New(ctx, config)
-	if err != nil {
-		log.Error(ctx, "Failed to load plugin", err)
-	}
-
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, config, r)
 	if err != nil {
 		log.Error(ctx, "Failed to create event factory", err)

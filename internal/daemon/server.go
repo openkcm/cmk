@@ -25,6 +25,7 @@ import (
 	"github.com/openkcm/cmk/internal/handlers"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/middleware"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
@@ -67,7 +68,12 @@ func NewCMKServer(
 		return nil, oops.In(ServerLogDomain).Wrapf(err, "creating db migrator")
 	}
 
-	controller := cmk.NewAPIController(ctx, repo, cfg, clientsFactory, migrator)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
+	if err != nil {
+		log.Error(ctx, "Failed to load plugin", err)
+	}
+
+	controller := cmk.NewAPIController(ctx, repo, cfg, clientsFactory, migrator, svcRegistry)
 
 	controller.AuthzEngine.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
 

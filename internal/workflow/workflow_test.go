@@ -23,6 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/internal/workflow"
 )
 
@@ -41,15 +42,17 @@ var (
 func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, string) {
 	t.Helper()
 
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
+
 	dbCon, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
 	cfg := config.Config{
-		Plugins:  testutils.SetupMockPlugins(testutils.KeyStorePlugin, testutils.CertIssuer),
+		Plugins:  psCfg,
 		Database: dbConf,
 	}
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	svcRegistry, err := cmkpluginregistry.New(ctx, &cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 
 	logger := testutils.SetupLoggerWithBuffer()

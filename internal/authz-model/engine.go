@@ -131,14 +131,14 @@ func (am *Engine) loadAllowListInternal(ctx context.Context, tenantID string) er
 
 	if am.AuthzHandler.AuthorizationData.ContainsTenant(authz.TenantID(tenantID)) {
 		slog.Debug(
-			"tenantID", "tenantID", tenantID, "message", "tenantID already exists in AuthzHandler, skipping load",
+			"tenantId", "tenantId", tenantID, "message", "tenantId already exists in AuthzHandler, skipping load",
 		)
 
 		return nil
 	}
 
 	groups, err := listGroups(ctx, am.repo)
-	slog.Debug("tenantID", "tenantID", tenantID, "groups", len(groups), "err", err)
+	slog.Debug("tenantId", "tenantId", tenantID, "groups", len(groups), "err", err)
 
 	if err != nil {
 		return err
@@ -159,7 +159,7 @@ func (am *Engine) loadAllowListInternal(ctx context.Context, tenantID string) er
 		}
 	}
 
-	slog.Debug("tenantID", "tenantID", tenantID, "roleToEntity", len(roleToEntity))
+	slog.Debug("tenantId", "tenantId", tenantID, "roleToEntity", len(roleToEntity))
 
 	entities := make([]authz.Entity, 0, len(roleToEntity))
 	for _, entity := range roleToEntity {
@@ -174,7 +174,7 @@ func (am *Engine) loadAllowListInternal(ctx context.Context, tenantID string) er
 			return errs.Wrap(ErrLoadAuthzAllowList, err)
 		}
 
-		slog.Debug("tenantID", "tenantID", tenantID, "authzData", authzData)
+		slog.Debug("tenantId", "tenantId", tenantID, "authzData", authzData)
 		am.AuthzHandler.AuthorizationData = *authzData
 	}
 

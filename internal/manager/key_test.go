@@ -25,6 +25,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -57,15 +58,16 @@ func (s *KeyManagerSuite) setup() {
 	dbRepo := sql.NewRepository(s.db)
 	s.repo = dbRepo
 
+	ps, psCfg := testutils.NewTestPlugins(
+		testplugins.NewKeystoreOperator(),
+		testplugins.NewKeystoreManagement(),
+	)
+
 	cfg := &config.Config{
-		Plugins: testutils.SetupMockPlugins(
-			testutils.KeyStorePlugin,
-			testutils.KeystoreProviderPlugin,
-			testutils.CertIssuer,
-		),
+		Plugins:  psCfg,
 		Database: dbConf,
 	}
-	svcRegistry, err := cmkpluginregistry.New(s.ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(s.ctx, cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	s.Require().NoError(err)
 
 	cmkAuditor := auditor.New(s.ctx, cfg)

@@ -14,9 +14,11 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/operator"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
@@ -35,12 +37,17 @@ func SetupProbeTest(t *testing.T) (*manager.GroupManager, *manager.TenantManager
 
 	dbRepository := sql.NewRepository(db)
 
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
+
 	cfg := &config.Config{
-		Plugins:  testutils.SetupMockPlugins(testutils.IdentityPlugin),
+		Plugins:  psCfg,
 		Database: cfgDB,
 	}
 
-	tm, gm := createManagers(t, db, cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
+	assert.NoError(t, err)
+
+	tm, gm := createManagers(t, db, cfg, svcRegistry)
 
 	return gm, tm, db, dbRepository
 }

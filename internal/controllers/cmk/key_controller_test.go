@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -35,7 +37,7 @@ var (
 	})
 )
 
-func startAPIKeys(t *testing.T, plugins ...testutils.MockPlugin) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIKeys(t *testing.T, plugins ...catalog.BuiltInPlugin) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
@@ -259,7 +261,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 }
 
 func TestKeyControllerPostKeys(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testutils.KeyStorePlugin)
+	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
 	r := sql.NewRepository(db)
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -486,7 +488,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 }
 
 func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testutils.KeyStorePlugin)
+	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -624,7 +626,7 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testutils.KeyStorePlugin)
+	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -731,7 +733,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerUpdateKey(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testutils.KeyStorePlugin)
+	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -1109,7 +1111,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 }
 
 func TestKeyControllerImportKeyMaterial(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testutils.KeyStorePlugin)
+	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 

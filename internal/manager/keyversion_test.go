@@ -17,6 +17,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 )
 
 var (
@@ -50,8 +51,12 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	s.ctx = testutils.CreateCtxWithTenant(s.tenant)
 	s.r = sql.NewRepository(db)
 
-	cfg := config.Config{Plugins: testutils.SetupMockPlugins(testutils.KeyStorePlugin)}
-	svcRegistry, err := cmkpluginregistry.New(s.ctx, &cfg)
+	ps, psCfg := testutils.NewTestPlugins(
+		testplugins.NewKeystoreOperator(),
+	)
+
+	cfg := config.Config{Plugins: psCfg}
+	svcRegistry, err := cmkpluginregistry.New(s.ctx, &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	s.Require().NoError(err)
 
 	tenantConfigManager := manager.NewTenantConfigManager(s.r, svcRegistry, nil)
