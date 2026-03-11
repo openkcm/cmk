@@ -28,10 +28,7 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-const (
-	DefaultHYOKCertCommonName            = "default.hyok.cmk"
-	DefaultProviderConfigCacheExpiration = 24 * time.Hour
-)
+const DefaultProviderConfigCacheExpiration = 24 * time.Hour
 
 var (
 	ErrCreateKeystore                = errors.New("failed to create keystore")
@@ -151,8 +148,8 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 
 	// Initialize config
 	log.Debug(ctx, "Initializing Provider",
-		slog.String("KeyStore", keystoreName),
-		slog.String("Provider", provider),
+		slog.String("keystore", keystoreName),
+		slog.String("provider", provider),
 	)
 
 	config, expiration, err := pmc.getKeystoreConfig(ctx, keystoreName)
@@ -182,8 +179,8 @@ func (pmc *ProviderConfigManager) FillKeystorePool(ctx context.Context, size int
 	}
 
 	log.Debug(ctx, "Filling keystore pool",
-		slog.Int("Current Size", count),
-		slog.Int("Target Size", size),
+		slog.Int("currentSize", count),
+		slog.Int("targetSize", size),
 	)
 
 	for i := count; i < size; i++ {
@@ -199,7 +196,7 @@ func (pmc *ProviderConfigManager) FillKeystorePool(ctx context.Context, size int
 	}
 
 	log.Debug(ctx, "Keystore Pool Filled",
-		slog.Int("New Size", size),
+		slog.Int("newSize", size),
 	)
 
 	return nil

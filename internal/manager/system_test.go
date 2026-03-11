@@ -29,6 +29,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -41,8 +42,12 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
+	ps, psCfg := testutils.NewTestPlugins(
+		testplugins.NewSystemInformation(),
+	)
+
 	cfg := config.Config{
-		Plugins: testutils.SetupMockPlugins(testutils.SystemInfo),
+		Plugins: psCfg,
 		BaseConfig: commoncfg.BaseConfig{
 			Audit: commoncfg.Audit{
 				Endpoint: "http://localhost:4318/v1/logs",
@@ -51,7 +56,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 		Database: dbCfg,
 	}
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	require.NoError(t, err)
 
 	dbRepository := sql.NewRepository(db)
@@ -69,7 +74,9 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 
 	certManager := manager.NewCertificateManager(
 		t.Context(), dbRepository, svcRegistry,
-		&config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+		&config.Config{
+			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+		},
 	)
 	userManager := manager.NewUserManager(dbRepository, auditor.New(t.Context(), &cfg))
 	tagManager := manager.NewTagManager(dbRepository)

@@ -3,7 +3,9 @@ package manager_test
 import (
 	"context"
 	"crypto/rsa"
+	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"net/http"
 	"testing"
@@ -23,6 +25,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -57,16 +60,22 @@ func SetupCertificateManager(
 	})
 
 	dbRepository := sql.NewRepository(db)
-	cfg := &config.Config{Plugins: testutils.SetupMockPlugins(testutils.CertIssuer)}
 
-	catalog, err := cmkpluginregistry.New(t.Context(), cfg)
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewCertificateIssuer())
+	cfg := &config.Config{Plugins: psCfg}
+
+	catalog, err := cmkpluginregistry.New(
+		t.Context(),
+		cfg,
+		cmkpluginregistry.WithBuiltInPlugins(ps),
+	)
 	assert.NoError(t, err)
 
 	m := manager.NewCertificateManager(
 		t.Context(),
 		dbRepository,
 		catalog,
-		&cfg.Certificates,
+		cfg,
 	)
 
 	return m, db, tenants[0]
@@ -331,6 +340,223 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	gotRot2Cert, err := m.GetCertificate(ctx, ptr.PointTo(rot2Cert.ID))
 	assert.NoError(t, err)
 	assert.True(t, gotRot2Cert.AutoRotate)
+}
+
+// RequestCapturingIssuerMock issues a real certificate that reflects the CommonName and
+// Locality from each request, allowing tests to assert those values on the stored cert.
+type RequestCapturingIssuerMock struct {
+	t          *testing.T
+	privateKey *rsa.PrivateKey
+}
+
+func (c RequestCapturingIssuerMock) GetCertificate(
+	_ context.Context,
+	req *certificate_issuerv1.GetCertificateRequest,
+	_ ...grpc.CallOption,
+) (*certificate_issuerv1.GetCertificateResponse, error) {
+	chain := testutils.CreateCertificateChain(c.t, pkix.Name{
+		CommonName: req.GetCommonName(),
+		Locality:   req.GetLocality(),
+	}, c.privateKey)
+
+	return &certificate_issuerv1.GetCertificateResponse{CertificateChain: chain}, nil
+}
+
+func setupCertificateManagerWithCapturingMock(
+	t *testing.T,
+) (*manager.CertificateManager, *multitenancy.DB, string, *rsa.PrivateKey) {
+	t.Helper()
+
+	m, db, tenant := SetupCertificateManager(t)
+
+	privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
+	assert.NoError(t, err)
+
+	m.SetPrivateKeyGenerator(func() (*rsa.PrivateKey, error) { return privateKey, nil })
+	m.SetClient(RequestCapturingIssuerMock{t: t, privateKey: privateKey})
+
+	return m, db, tenant, privateKey
+}
+
+// parseCertLocality decodes the first PEM block from certPEM and returns the cert's
+// Subject.Locality so tests can assert on what was actually stored.
+func parseCertLocality(t *testing.T, certPEM string) []string {
+	t.Helper()
+
+	block, _ := pem.Decode([]byte(certPEM))
+	assert.NotNil(t, block, "certPEM should contain a valid PEM block")
+
+	parsed, err := x509.ParseCertificate(block.Bytes)
+	assert.NoError(t, err)
+
+	return parsed.Subject.Locality
+}
+
+func TestResolveRotationLocality(t *testing.T) {
+	m, _, _, privateKey := setupCertificateManagerWithCapturingMock(t)
+
+	const region = "eu-west-1"
+	m.SetRegion(region)
+
+	tenantLocality := []string{"tenant-abc-123"}
+	regionLocality := []string{region}
+
+	makePEM := func(locality []string) string {
+		csr := &x509.CertificateRequest{Subject: pkix.Name{Locality: locality}}
+		return string(testutils.CreateCertificatePEM(t, csr, privateKey))
+	}
+
+	tests := []struct {
+		name             string
+		locality         []string
+		expectedLocality []string
+	}{
+		{
+			name:             "old cert with tenantID locality is preserved",
+			locality:         tenantLocality,
+			expectedLocality: tenantLocality,
+		},
+		{
+			name:             "new cert with region locality stays on region",
+			locality:         regionLocality,
+			expectedLocality: regionLocality,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			certPEM := makePEM(tt.locality)
+			got := m.ResolveRotationLocality(certPEM)
+			assert.Equal(t, tt.expectedLocality, got)
+		})
+	}
+
+	t.Run("falls back to region when PEM is empty", func(t *testing.T) {
+		got := m.ResolveRotationLocality("")
+		assert.Equal(t, regionLocality, got)
+	})
+
+	t.Run("falls back to region when cert has no locality", func(t *testing.T) {
+		certPEM := makePEM(nil)
+		got := m.ResolveRotationLocality(certPEM)
+		assert.Equal(t, regionLocality, got)
+	})
+}
+
+func TestRotateExpiredCertificates_LocalityAndCommonName(t *testing.T) {
+	const region = "eu-west-1"
+	const tenantLocality = "tenant-abc-123"
+	const commonName = "my-cert"
+
+	tests := []struct {
+		name             string
+		originalLocality string
+		expectedLocality string
+	}{
+		{
+			name:             "old cert with tenantID locality rotates with tenantID",
+			originalLocality: tenantLocality,
+			expectedLocality: tenantLocality,
+		},
+		{
+			name:             "new cert with region locality rotates with region",
+			originalLocality: region,
+			expectedLocality: region,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, db, tenant, privateKey := setupCertificateManagerWithCapturingMock(t)
+			m.SetRegion(region)
+			ctx := testutils.CreateCtxWithTenant(tenant)
+			r := sql.NewRepository(db)
+
+			// Issue original cert with the test-specific locality.
+			origCert, _, err := m.RequestNewCertificate(ctx, privateKey,
+				model.RequestCertArgs{
+					CertPurpose: model.CertificatePurposeTenantDefault,
+					CommonName:  commonName,
+					Locality:    []string{tt.originalLocality},
+				})
+			assert.NoError(t, err)
+
+			// Back-date it so RotateExpiredCertificates picks it up.
+			origCert.ExpirationDate = time.Now().AddDate(-1, 0, 0)
+			_, err = r.Patch(ctx, origCert, *repo.NewQuery())
+			assert.NoError(t, err)
+
+			err = m.RotateExpiredCertificates(ctx)
+			assert.NoError(t, err)
+
+			// Fetch the newly created rotated cert (latest by creation date).
+			rotatedCert, exists, err := m.GetCertificateByPurpose(ctx, model.CertificatePurposeTenantDefault)
+			assert.NoError(t, err)
+			assert.True(t, exists)
+			assert.NotEqual(t, origCert.ID, rotatedCert.ID)
+
+			// Assert common name is preserved.
+			assert.Equal(t, commonName, rotatedCert.CommonName)
+
+			// Assert locality is preserved correctly.
+			assert.Equal(t, []string{tt.expectedLocality}, parseCertLocality(t, rotatedCert.CertPEM))
+		})
+	}
+}
+
+func TestGetDefaultHYOKClientCert_RotationLocality(t *testing.T) {
+	const region = "eu-west-1"
+
+	tests := []struct {
+		name             string
+		originalLocality string
+		expectedLocality string
+	}{
+		{
+			name:             "old cert with tenantID locality rotates with tenantID",
+			originalLocality: "tenant-abc-123",
+			expectedLocality: "tenant-abc-123",
+		},
+		{
+			name:             "new cert with region locality rotates with region",
+			originalLocality: region,
+			expectedLocality: region,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, db, tenant, privateKey := setupCertificateManagerWithCapturingMock(t)
+			m.SetRegion(region)
+			ctx := testutils.CreateCtxWithTenant(tenant)
+			r := sql.NewRepository(db)
+
+			// Issue an original cert with the test-specific locality.
+			origCert, _, err := m.RequestNewCertificate(ctx, privateKey,
+				model.RequestCertArgs{
+					CertPurpose: model.CertificatePurposeTenantDefault,
+					CommonName:  "prefix-" + tenant,
+					Locality:    []string{tt.originalLocality},
+				})
+			assert.NoError(t, err)
+
+			// Back-date it so getDefaultHYOKClientCert treats it as expired.
+			origCert.ExpirationDate = time.Now().Add(-1 * time.Hour)
+			_, err = r.Patch(ctx, origCert, *repo.NewQuery())
+			assert.NoError(t, err)
+
+			rotatedCert, err := m.GetDefaultHYOKClientCert(ctx)
+			assert.NoError(t, err)
+			assert.NotNil(t, rotatedCert)
+			assert.NotEqual(t, origCert.ID, rotatedCert.ID)
+
+			// Assert common name is preserved from the original cert.
+			assert.Equal(t, origCert.CommonName, rotatedCert.CommonName)
+
+			// Assert locality is preserved correctly.
+			assert.Equal(t, []string{tt.expectedLocality}, parseCertLocality(t, rotatedCert.CertPEM))
+		})
+	}
 }
 
 func TestGetCertificateByPurpose(t *testing.T) {
