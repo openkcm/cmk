@@ -14,6 +14,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -28,6 +29,7 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/handlers"
 	"github.com/openkcm/cmk/internal/middleware"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
@@ -36,7 +38,7 @@ const TestCertURL = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.cr
 const TestHostPrefix = "https://kms.test/cmk/v1/"
 
 type TestAPIServerConfig struct {
-	Plugins []MockPlugin                  // HashiCorp plugins only set if needed
+	Plugins []catalog.BuiltInPlugin       // Plugins only set if needed
 	GRPCCon *commongrpc.DynamicClientConn // GRPCClient only set if needed
 	Config  config.Config
 }
@@ -51,7 +53,9 @@ func NewAPIServer(
 
 	cfg := testCfg.Config
 
-	cfg.Plugins = SetupMockPlugins(testCfg.Plugins...)
+	ps, psCfg := NewTestPlugins(testCfg.Plugins...)
+	cfg.Plugins = psCfg
+
 	cfg.Certificates.RootCertURL = TestCertURL
 	if cfg.Database == (config.Database{}) {
 		cfg.Database = TestDB
@@ -87,7 +91,10 @@ func NewAPIServer(
 	migrator, err := db.NewMigrator(r, &cfg)
 	assert.NoError(tb, err)
 
-	controller := cmk.NewAPIController(tb.Context(), r, &cfg, factory, migrator)
+	svcRegistry, err := cmkpluginregistry.New(tb.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
+	assert.NoError(tb, err)
+
+	controller := cmk.NewAPIController(tb.Context(), r, &cfg, factory, migrator, svcRegistry)
 
 	return startAPIServer(tb, controller)
 }

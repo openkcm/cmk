@@ -1,11 +1,11 @@
-package main
+package testplugins
 
 import (
 	"context"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
-	"github.com/openkcm/plugin-sdk/pkg/plugin"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	kscommonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
@@ -13,15 +13,28 @@ import (
 	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
 )
 
-// TestPlugin is a simple test implementation of KeystoreProviderClient
-type TestPlugin struct {
+type KeystoreManagement struct {
 	keymanv1.UnsafeKeystoreProviderServer
 	configv1.UnsafeConfigServer
 
 	logger hclog.Logger
 }
 
-func (p *TestPlugin) CreateKeystore(
+func NewKeystoreManagement() catalog.BuiltInPlugin {
+	p := &KeystoreManagement{}
+	return catalog.MakeBuiltIn(
+		Name,
+		keymanv1.KeystoreProviderPluginServer(p),
+		configv1.ConfigServiceServer(p),
+	)
+}
+
+func (p *KeystoreManagement) SetLogger(logger hclog.Logger) {
+	p.logger = logger
+	p.logger.Info("SetLogger method has been called;")
+}
+
+func (p *KeystoreManagement) CreateKeystore(
 	_ context.Context,
 	_ *keymanv1.CreateKeystoreRequest,
 ) (*keymanv1.CreateKeystoreResponse, error) {
@@ -48,42 +61,24 @@ func (p *TestPlugin) CreateKeystore(
 	}, nil
 }
 
-func (p *TestPlugin) DeleteKeystore(
+func (p *KeystoreManagement) DeleteKeystore(
 	_ context.Context,
 	_ *keymanv1.DeleteKeystoreRequest,
 ) (*keymanv1.DeleteKeystoreResponse, error) {
 	return &keymanv1.DeleteKeystoreResponse{}, nil
 }
 
-func New() *TestPlugin {
-	return &TestPlugin{
-		logger: hclog.New(&hclog.LoggerOptions{
-			Name:  "keystoreop-test-plugin",
-			Level: hclog.LevelFromString("DEBUG"),
-		}),
-	}
-}
-
 // Configure configures the plugin.
 
-func (p *TestPlugin) Configure(
+func (p *KeystoreManagement) Configure(
 	_ context.Context,
 	_ *configv1.ConfigureRequest,
 ) (*configv1.ConfigureResponse, error) {
 	p.logger.Info("Configure method has been called;")
 
-	var buildInfo = "{}"
+	buildInfo := "{}"
 
 	return &configv1.ConfigureResponse{
 		BuildInfo: &buildInfo,
 	}, nil
-}
-
-func main() {
-	p := New()
-
-	plugin.Serve(
-		keymanv1.KeystoreProviderPluginServer(p),
-		configv1.ConfigServiceServer(p),
-	)
 }

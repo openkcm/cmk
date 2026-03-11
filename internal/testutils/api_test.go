@@ -14,9 +14,7 @@ import (
 // TestStartAPIServerReturnsServeMux tests if StartAPIServer returns a ServeMux
 func TestStartAPIServerReturnsServeMux(t *testing.T) {
 	db := &multitenancy.DB{}
-	server := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Plugins: []testutils.MockPlugin{},
-	})
+	server := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
 	assert.NotNil(t, server)
 	assert.IsType(t, &daemon.ServeMux{}, server)
 }

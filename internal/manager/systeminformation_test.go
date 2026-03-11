@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/openkcm/plugin-sdk/api"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -19,6 +20,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 )
 
 const (
@@ -36,7 +38,12 @@ func SetupSystemInfoManager(t *testing.T) (
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepository := sql.NewRepository(db)
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &config.Config{Plugins: testutils.SetupMockPlugins(testutils.SystemInfo)})
+
+	ps, psCfg := testutils.NewTestPlugins(
+		testplugins.NewSystemInformation(),
+	)
+
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &config.Config{Plugins: psCfg}, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 	systemManager, err := manager.NewSystemInformationManager(
 		dbRepository,
@@ -129,25 +136,28 @@ func createSystemForTests() *model.System {
 func TestNewSystemInformationManager(t *testing.T) {
 	tests := []struct {
 		name          string
-		plugins       []testutils.MockPlugin
+		plugins       []catalog.BuiltInPlugin
 		expectedError error
 	}{
 		{
 			name:          "NoPluginInCatalog",
-			plugins:       []testutils.MockPlugin{},
+			plugins:       []catalog.BuiltInPlugin{},
 			expectedError: system_information.ErrNotConfigured,
 		},
 		{
 			name:          "ValidPluginInCatalog",
-			plugins:       []testutils.MockPlugin{testutils.SystemInfo},
+			plugins:       []catalog.BuiltInPlugin{testplugins.NewSystemInformation()},
 			expectedError: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ps, psCfg := testutils.NewTestPlugins(
+				tt.plugins...,
+			)
 			cfg := config.Config{
-				Plugins: testutils.SetupMockPlugins(tt.plugins...),
+				Plugins: psCfg,
 				ContextModels: config.ContextModels{
 					System: config.System{
 						OptionalProperties: map[string]config.SystemProperty{
@@ -158,7 +168,7 @@ func TestNewSystemInformationManager(t *testing.T) {
 					},
 				},
 			}
-			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
+			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 			assert.NoError(t, err)
 
 			_, err = manager.NewSystemInformationManager(nil, svcRegistry, &cfg.ContextModels.System)
