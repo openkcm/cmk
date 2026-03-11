@@ -169,6 +169,7 @@ type Task struct {
 	Cronspec string
 	TaskType string
 	Retries  int
+	TimeOut  time.Duration
 }
 
 // Redis holds Redis client config
