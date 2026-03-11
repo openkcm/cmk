@@ -39,8 +39,6 @@ func NewWorkflowCleaner(
 		o(wc)
 	}
 
-	log.Debug(context.Background(), "Created Workflow Cleanup Task")
-
 	return wc
 }
 
@@ -67,14 +65,6 @@ func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) er
 	return nil
 }
 
-func (wc *WorkflowCleaner) process(ctx context.Context) error {
-	cleanupErr := wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
-	if cleanupErr != nil {
-		log.Error(ctx, "Running Workflow Cleanup", cleanupErr)
-	}
-	return nil
-}
-
 func (wc *WorkflowCleaner) SetFanOut(client async.Client, opts ...asynq.Option) {
 	wc.processor = async.NewBatchProcessor(wc.repo, async.WithFanOutTenants(client, opts...))
 	wc.fanout = true
@@ -86,4 +76,12 @@ func (wc *WorkflowCleaner) IsFanOutEnabled() bool {
 
 func (wc *WorkflowCleaner) TaskType() string {
 	return config.TypeWorkflowCleanup
+}
+
+func (wc *WorkflowCleaner) process(ctx context.Context) error {
+	cleanupErr := wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
+	if cleanupErr != nil {
+		log.Error(ctx, "Running Workflow Cleanup", cleanupErr)
+	}
+	return nil
 }

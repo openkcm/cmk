@@ -719,6 +719,9 @@ config:
   #      - cronspec: "@every 3h"
   #        taskType: taskType3
   #        retries: 3
+  #        timeOut: 5s
+  #        childTask:
+  #          retries: 0
 
   # Services that CMK depends on configuration
   services:

@@ -3,10 +3,10 @@ package tasks
 import (
 	"context"
 
+	"github.com/hibiken/asynq"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/hibiken/asynq"
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
@@ -40,8 +40,6 @@ func NewSystemsRefresher(
 		o(s)
 	}
 
-	log.Debug(context.Background(), "Created System Refresh Task")
-
 	return s
 }
 
@@ -65,20 +63,6 @@ func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) er
 		return errs.Wrap(ErrRunningTask, err)
 	}
 
-	return nil
-}
-
-func (s *SystemsRefresher) process(ctx context.Context) error {
-	updateErr := s.systemClient.UpdateSystems(ctx)
-	// If network error return an error triggering
-	// another task attempt with a backoff
-	if isConnectionError(updateErr) {
-		return updateErr
-	}
-
-	if updateErr != nil {
-		log.Error(ctx, "Running Refresh System Task", updateErr)
-	}
 	return nil
 }
 
@@ -106,4 +90,18 @@ func isConnectionError(err error) bool {
 	code := st.Code()
 
 	return code == codes.Unavailable || code == codes.DeadlineExceeded
+}
+
+func (s *SystemsRefresher) process(ctx context.Context) error {
+	updateErr := s.systemClient.UpdateSystems(ctx)
+	// If network error return an error triggering
+	// another task attempt with a backoff
+	if isConnectionError(updateErr) {
+		return updateErr
+	}
+
+	if updateErr != nil {
+		log.Error(ctx, "Running Refresh System Task", updateErr)
+	}
+	return nil
 }
