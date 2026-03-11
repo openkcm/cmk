@@ -31,8 +31,6 @@ type ctxKey string
 const dbCtxKey ctxKey = "transactionRepo"
 
 var (
-	ErrPatchForeign              = errors.New("failed patching foreign key entity")
-	ErrTenantOffboarding         = errors.New("tenant offboarding error")
 	ErrUnsupportedOrderDirective = errors.New("unsupported order directive")
 )
 
@@ -186,15 +184,9 @@ func (r *ResourceRepository) List(
 				return err
 			}
 
-			for _, order := range query.OrderFields {
-				switch order.Direction {
-				case repo.Desc:
-					db = db.Order(order.Field + " desc")
-				case repo.Asc:
-					db = db.Order(order.Field + " asc")
-				default:
-					return ErrUnsupportedOrderDirective
-				}
+			db, err = applyOrder(db, query)
+			if err != nil {
+				return err
 			}
 
 			res := applyPagination(db, query).Find(result)
@@ -260,6 +252,11 @@ func (r *ResourceRepository) First(
 	err := r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
 			db, err := applyQuery(tx.Model(resource), resource, query)
+			if err != nil {
+				return err
+			}
+
+			db, err = applyOrder(db, query)
 			if err != nil {
 				return err
 			}
@@ -550,4 +547,19 @@ func applyCondition(tx *gorm.DB, field, operator string, value any, isStrict boo
 	}
 
 	return tx.Or(fmt.Sprintf("%s %s ?", field, operator), value)
+}
+
+func applyOrder(db *gorm.DB, query repo.Query) (*gorm.DB, error) {
+	for _, order := range query.OrderFields {
+		switch order.Direction {
+		case repo.Desc:
+			db = db.Order(order.Field + " desc")
+		case repo.Asc:
+			db = db.Order(order.Field + " asc")
+		default:
+			return nil, ErrUnsupportedOrderDirective
+		}
+	}
+
+	return db, nil
 }

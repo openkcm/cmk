@@ -4,11 +4,10 @@ import (
 	"context"
 	"crypto/rsa"
 
-	certissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
-
 	"github.com/openkcm/cmk/internal/async"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
 	wf "github.com/openkcm/cmk/internal/workflow"
 )
@@ -38,8 +37,8 @@ func (m *SystemManager) SelectEvent(
 	return m.selectEvent(ctx, system, newKeyConfig)
 }
 
-func (m *CertificateManager) SetClient(client certissuerv1.CertificateIssuerServiceClient) {
-	m.certIssuerClient = client
+func (m *CertificateManager) SetCertIssuerService(certIssuer certificateissuer.CertificateIssuer) {
+	m.certIssuer = certIssuer
 }
 
 func (m *CertificateManager) SetRotationThreshold(days int) {

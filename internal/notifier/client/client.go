@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 
-	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
-
-	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/notification"
 )
 
 var (
@@ -22,46 +20,30 @@ type Data struct {
 }
 
 type Client struct {
-	notificationClient notificationv1.NotificationServiceClient
+	svc notification.Notification
 }
 
 func New(
 	ctx context.Context,
 	svcRegistry *cmkpluginregistry.Registry,
-) *Client {
-	client, err := createNotificationClient(svcRegistry)
+) (*Client, error) {
+	svc, err := svcRegistry.Notification()
 	if err != nil {
-		log.Error(ctx, "Creating notification client", err)
+		log.Error(ctx, "Getting notification service from registry", err)
+		return nil, ErrLoadNotificationPlugin
 	}
 
 	return &Client{
-		notificationClient: client,
-	}
-}
-
-//nolint:ireturn
-func createNotificationClient(
-	svcRegistry *cmkpluginregistry.Registry,
-) (notificationv1.NotificationServiceClient, error) {
-	plugins := svcRegistry.LookupByType(notificationv1.Type)
-	if len(plugins) == 0 {
-		return nil, cmkpluginregistry.ErrNoPluginInCatalog
-	}
-	if len(plugins) > 1 {
-		return nil, errs.Wrapf(ErrLoadNotificationPlugin, "multiple notification plugins found in catalog")
-	}
-
-	notification := plugins[0]
-
-	return notificationv1.NewNotificationServiceClient(notification.ClientConnection()), nil
+		svc: svc,
+	}, nil
 }
 
 func (c *Client) CreateNotification(ctx context.Context, data Data) error {
-	_, err := c.notificationClient.SendNotification(ctx, &notificationv1.SendNotificationRequest{
-		NotificationType: notificationv1.NotificationType_NOTIFICATION_TYPE_EMAIL,
-		Recipients:       data.Recipients,
-		Subject:          data.Subject,
-		Body:             data.Body,
+	_, err := c.svc.Send(ctx, &notification.SendNotificationRequest{
+		Type:       notification.Email,
+		Recipients: data.Recipients,
+		Subject:    data.Subject,
+		Body:       data.Body,
 	})
 
 	return err

@@ -49,9 +49,10 @@ func TestCreateNotificationManager(t *testing.T) {
 	pluginCatalog := NotificationPlugin(t)
 	defer pluginCatalog.Close()
 
-	m := client.New(t.Context(), pluginCatalog)
+	m, err := client.New(t.Context(), pluginCatalog)
+	assert.NoError(t, err)
 
-	err := m.CreateNotification(t.Context(), client.Data{
+	err = m.CreateNotification(t.Context(), client.Data{
 		Recipients: []string{"TestRecipient"},
 		Subject:    "Test Notification",
 		Body:       "This was a test notification",
