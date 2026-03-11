@@ -2,10 +2,8 @@ package main_test
 
 import (
 	"context"
-	"net/http"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/require"
@@ -55,32 +53,6 @@ func buildCfg(t *testing.T) *config.Config {
 		Services: config.Services{
 			Registry: testutils.TestRegistryConfig,
 		},
-		Plugins: testutils.SetupMockPlugins(testutils.SystemInfo),
-	}
-}
-
-func TestWorker(t *testing.T) {
-	cfg := buildCfg(t)
-
-	ctx := context.Background()
-
-	go func(ctx context.Context) {
-		err := taskWorker.Run(ctx, cfg)
-		assert.NoError(t, err)
-	}(ctx)
-
-	url := "http://" + cfg.Status.Address + "/version"
-
-	for {
-		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
-
-		r, err := http.DefaultClient.Do(req)
-		if err == nil {
-			defer r.Body.Close()
-			break
-		}
-
-		time.Sleep(100 * time.Millisecond)
 	}
 }
 

@@ -25,6 +25,7 @@ import (
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 	"github.com/openkcm/cmk/utils/base62"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -49,10 +50,12 @@ func (s *DBSuite) SetupSuite() {
 	r := sql.NewRepository(s.db)
 
 	ctx := s.T().Context()
+
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
 	cfg := &config.Config{
-		Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
+		Plugins: psCfg,
 	}
-	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	s.NoError(err)
 
 	f, err := clients.NewFactory(config.Services{})

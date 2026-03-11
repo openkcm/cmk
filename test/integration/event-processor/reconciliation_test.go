@@ -29,6 +29,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	sqlPkg "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -54,6 +55,8 @@ func setupTest(t *testing.T) tester {
 		},
 	)
 
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
+
 	cfg := config.Config{
 		EventProcessor: config.EventProcessor{
 			SecretRef: commoncfg.SecretRef{
@@ -78,11 +81,11 @@ func setupTest(t *testing.T) tester {
 				},
 			},
 		},
-		Plugins:  testutils.SetupMockPlugins(testutils.KeyStorePlugin),
+		Plugins:  psCfg,
 		Database: dbConf,
 	}
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	require.NoError(t, err)
 
 	r := sqlPkg.NewRepository(db)
