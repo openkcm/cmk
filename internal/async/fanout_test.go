@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	"github.com/hibiken/asynq"
+	"github.com/zeebo/assert"
+
 	"github.com/openkcm/cmk/internal/async"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
-	"github.com/zeebo/assert"
 )
 
 func TestFanOutCreation(t *testing.T) {

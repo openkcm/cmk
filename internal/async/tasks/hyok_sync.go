@@ -39,8 +39,6 @@ func NewHYOKSync(
 		o(h)
 	}
 
-	log.Debug(context.Background(), "Created HYOK Sync Task")
-
 	return h
 }
 
@@ -66,14 +64,6 @@ func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	return nil
 }
 
-func (h *HYOKSync) process(ctx context.Context) error {
-	syncErr := h.hyokClient.SyncHYOKKeys(ctx)
-	if syncErr != nil {
-		log.Error(ctx, "Running HYOK Sync", syncErr)
-	}
-	return nil
-}
-
 func (h *HYOKSync) TaskType() string {
 	return config.TypeHYOKSync
 }
@@ -90,4 +80,12 @@ func (h *HYOKSync) IsFanOutEnabled() bool {
 func (h *HYOKSync) handleErrorTenants(ctx context.Context, err error) error {
 	log.Error(ctx, "Error during HYOK sync batch processing", err)
 	return errs.Wrap(ErrRunningTask, err)
+}
+
+func (h *HYOKSync) process(ctx context.Context) error {
+	syncErr := h.hyokClient.SyncHYOKKeys(ctx)
+	if syncErr != nil {
+		log.Error(ctx, "Running HYOK Sync", syncErr)
+	}
+	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/hibiken/asynq"
+
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/log"
@@ -47,6 +48,8 @@ func NewBatchProcessor(repo repo.Repo, opts ...BatchProcessorOptions) *BatchProc
 // ProcessTenantsInBatch iterates through tenants in batches and applies the process function
 // It tracks the total tenant count, logs batch progress, and logs task completion
 // In fan-out mode, it enqueues child tasks instead of processing inline
+//
+//nolint:funlen
 func (bp *BatchProcessor) ProcessTenantsInBatch(
 	ctx context.Context,
 	asynqTask *asynq.Task,

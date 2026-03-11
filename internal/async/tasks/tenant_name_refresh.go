@@ -37,8 +37,6 @@ func NewTenantNameRefresher(
 		o(t)
 	}
 
-	log.Debug(context.Background(), "Created Tenant Name Refresh Task")
-
 	return t
 }
 
@@ -66,14 +64,17 @@ func (t *TenantNameRefresher) ProcessTask(ctx context.Context, task *asynq.Task)
 	return nil
 }
 
-func (t *TenantNameRefresher) processChildTask(ctx context.Context, task *asynq.Task) error {
-	return async.ProcessChildTask(ctx, task, func(ctx context.Context) error {
-		tenant, err := repo.GetTenant(ctx, t.r)
-		if err != nil {
-			return err
-		}
-		return t.process(ctx, tenant)
-	})
+func (t *TenantNameRefresher) SetFanOut(client async.Client, opts ...asynq.Option) {
+	t.processor = async.NewBatchProcessor(t.r, async.WithFanOutTenants(client, opts...))
+	t.fanout = true
+}
+
+func (t *TenantNameRefresher) IsFanOutEnabled() bool {
+	return t.fanout
+}
+
+func (t *TenantNameRefresher) TaskType() string {
+	return config.TypeTenantRefreshName
 }
 
 func (t *TenantNameRefresher) process(ctx context.Context, tenant *model.Tenant) error {
@@ -94,15 +95,12 @@ func (t *TenantNameRefresher) process(ctx context.Context, tenant *model.Tenant)
 	return nil
 }
 
-func (t *TenantNameRefresher) SetFanOut(client async.Client, opts ...asynq.Option) {
-	t.processor = async.NewBatchProcessor(t.r, async.WithFanOutTenants(client, opts...))
-	t.fanout = true
-}
-
-func (t *TenantNameRefresher) IsFanOutEnabled() bool {
-	return t.fanout
-}
-
-func (t *TenantNameRefresher) TaskType() string {
-	return config.TypeTenantRefreshName
+func (t *TenantNameRefresher) processChildTask(ctx context.Context, task *asynq.Task) error {
+	return async.ProcessChildTask(ctx, task, func(ctx context.Context) error {
+		tenant, err := repo.GetTenant(ctx, t.r)
+		if err != nil {
+			return err
+		}
+		return t.process(ctx, tenant)
+	})
 }

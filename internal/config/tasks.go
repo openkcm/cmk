@@ -30,7 +30,7 @@ var PeriodicTasks = map[string]Task{
 		TimeOut:  5 * time.Minute,
 		ChildTask: &Task{
 			Retries: 0,
-			TimeOut: 2 * time.Minute,
+			TimeOut: 5 * time.Minute,
 		},
 	},
 	TypeKeystorePool: {
