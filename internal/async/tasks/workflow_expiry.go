@@ -109,8 +109,9 @@ func (w *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID
 	return nil
 }
 
-func (w *WorkflowExpiryProcessor) SetFanOut(client async.Client) {
-	w.processor = async.NewBatchProcessor(w.repo, async.WithFanOutTenants(client))
+func (w *WorkflowExpiryProcessor) SetFanOut(client async.Client, opts ...asynq.Option) {
+	w.processor = async.NewBatchProcessor(w.repo, async.WithFanOutTenants(client, opts...))
+	w.fanout = true
 }
 
 func (w *WorkflowExpiryProcessor) IsFanOutEnabled() bool {

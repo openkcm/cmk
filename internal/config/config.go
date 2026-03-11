@@ -98,6 +98,7 @@ func (c *Certificates) Validate() error {
 type Scheduler struct {
 	TaskQueue Redis
 	Tasks     []Task
+	taskMap   map[string]Task
 }
 
 func (s *Scheduler) Validate() error {
@@ -119,13 +120,18 @@ func (s *Scheduler) Validate() error {
 	return nil
 }
 
+func (s *Scheduler) GetTasks() map[string]Task {
+	return s.taskMap
+}
+
 // Task holds a task config
 type Task struct {
-	Enabled  bool
-	Cronspec string
-	TaskType string
-	Retries  int
-	TimeOut  time.Duration
+	Enabled   bool
+	Cronspec  string
+	TaskType  string
+	Retries   int
+	TimeOut   time.Duration
+	ChildTask *Task
 }
 
 // Redis holds Redis client config

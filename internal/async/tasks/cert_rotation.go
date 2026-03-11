@@ -84,8 +84,8 @@ func (s *CertRotator) TaskType() string {
 	return config.TypeCertificateTask
 }
 
-func (s *CertRotator) SetFanOut(client async.Client) {
-	s.processor = async.NewBatchProcessor(s.repo, async.WithFanOutTenants(client))
+func (s *CertRotator) SetFanOut(client async.Client, opts ...asynq.Option) {
+	s.processor = async.NewBatchProcessor(s.repo, async.WithFanOutTenants(client, opts...))
 	s.fanout = true
 }
 

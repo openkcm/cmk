@@ -82,8 +82,8 @@ func (s *SystemsRefresher) process(ctx context.Context) error {
 	return nil
 }
 
-func (s *SystemsRefresher) SetFanOut(client async.Client) {
-	s.processor = async.NewBatchProcessor(s.repo, async.WithFanOutTenants(client))
+func (s *SystemsRefresher) SetFanOut(client async.Client, opts ...asynq.Option) {
+	s.processor = async.NewBatchProcessor(s.repo, async.WithFanOutTenants(client, opts...))
 	s.fanout = true
 }
 
