@@ -16,7 +16,6 @@ import (
 // Example of it's usage is for example in the ProcessTenantsInBatch
 // to spawn a task for each tenant
 func FanOutTask(
-	ctx context.Context,
 	asyncClient Client,
 	parentTask *asynq.Task,
 	payload asyncUtils.TaskPayload,
