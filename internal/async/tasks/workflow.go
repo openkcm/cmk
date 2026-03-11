@@ -79,7 +79,7 @@ func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) e
 
 	log.InjectTask(ctx, task)
 	log.Info(ctx, "Auto assigned approvers to workflow",
-		slog.String("workflow_id", workflow.ID.String()),
+		slog.String("workflowId", workflow.ID.String()),
 		slog.String("status", workflow.State))
 
 	return nil
