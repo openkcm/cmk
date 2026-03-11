@@ -202,7 +202,6 @@ go-imports-changed:
 	done < $$tempfile; \
 	rm -f $$tempfile
 
-
 install-gci:
 	command -v gci >/dev/null 2>&1 || go install github.com/daixiang0/gci@latest
 
