@@ -1263,7 +1263,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 
 		// Assert
 		assert.NoError(t, err)
-		assert.Equal(t, 1, mockClient.CallCount)
+		assert.Equal(t, 1, mockClient.EnqueueCallCount)
 		assert.NotNil(t, mockClient.LastTask)
 	})
 
@@ -1311,7 +1311,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 
 			// Assert
 			assert.NoError(t, err)
-			assert.Equal(t, 0, mockClient.CallCount)
+			assert.Equal(t, 0, mockClient.EnqueueCallCount)
 		},
 	)
 
@@ -1364,7 +1364,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 			// Assert
 			assert.Error(t, err)
 			assert.Equal(t, expectedError, err)
-			assert.Equal(t, 1, mockClient.CallCount)
+			assert.Equal(t, 1, mockClient.EnqueueCallCount)
 		},
 	)
 
@@ -1400,7 +1400,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 				assert.NoError(t, err)
 			}
 
-			assert.Equal(t, len(transitions), mockClient.CallCount)
+			assert.Equal(t, len(transitions), mockClient.EnqueueCallCount)
 		},
 	)
 }
