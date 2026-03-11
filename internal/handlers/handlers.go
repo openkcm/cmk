@@ -39,7 +39,7 @@ func ParamsErrorHandler() func(w http.ResponseWriter, r *http.Request, err error
 		requestID, _ := cmkcontext.GetRequestID(ctx)
 
 		ctx = slogctx.With(ctx,
-			slog.String("RequestID", requestID),
+			slog.String("requestId", requestID),
 		)
 
 		log.Error(ctx, "The error encountered during parameters binding", err)

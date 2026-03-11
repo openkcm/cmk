@@ -280,5 +280,5 @@ func (kvm *KeyVersionManager) sendRotateAuditLog(ctx context.Context, key *model
 		log.Error(ctx, "Failed to send Audit log for CMK Rotate", err)
 	}
 
-	log.Info(ctx, "Audit log for CMK Rotate sent successfully", slog.String("keyID", key.ID.String()))
+	log.Info(ctx, "Audit log for CMK Rotate sent successfully", slog.String("keyId", key.ID.String()))
 }
