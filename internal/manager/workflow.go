@@ -1162,8 +1162,8 @@ func (w *WorkflowManager) createAutoAssignApproversAsyncTask(
 		}
 
 		log.Info(ctx, "Enqueued workflow auto-assign approvers task",
-			slog.String("task_id", info.ID),
-			slog.String("workflow_id", workflow.ID.String()))
+			slog.String("taskId", info.ID),
+			slog.String("workflowId", workflow.ID.String()))
 	} else {
 		log.Warn(ctx, "async client is not initialized, skipping workflow creation task enqueue")
 	}

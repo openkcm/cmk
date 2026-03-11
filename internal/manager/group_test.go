@@ -18,6 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -30,10 +31,12 @@ func SetupGroupManager(t *testing.T) (*manager.GroupManager, *multitenancy.DB, s
 		},
 	)
 
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
+
 	svcRegistry, err := cmkpluginregistry.New(
 		t.Context(), &config.Config{
-			Plugins: testutils.SetupMockPlugins(testutils.IdentityPlugin),
-		},
+			Plugins: psCfg,
+		}, cmkpluginregistry.WithBuiltInPlugins(ps),
 	)
 	assert.NoError(t, err)
 
