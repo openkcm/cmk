@@ -8,7 +8,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/keyversion"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -48,23 +47,6 @@ func (c *APIController) GetKeyVersions(ctx context.Context,
 	}
 
 	return cmkapi.GetKeyVersions200JSONResponse(apiresponse), nil
-}
-
-// CreateKeyVersion creates a new key version for L1 Key ID
-func (c *APIController) CreateKeyVersion(ctx context.Context,
-	request cmkapi.CreateKeyVersionRequestObject,
-) (cmkapi.CreateKeyVersionResponseObject, error) {
-	keyVersion, err := c.Manager.KeyVersions.CreateKeyVersion(ctx, request.KeyID, request.Body.NativeID)
-	if err != nil || keyVersion == nil {
-		return nil, errs.Wrap(apierrors.ErrCreateKeyVersion, err)
-	}
-
-	response, err := keyversion.ToAPI(*keyVersion)
-	if err != nil {
-		return nil, apierrors.ErrTransformKeyVersionToAPI
-	}
-
-	return cmkapi.CreateKeyVersion201JSONResponse(*response), nil
 }
 
 // GetKeyVersionByNumber returns a key version by key version number and L1 key ID
