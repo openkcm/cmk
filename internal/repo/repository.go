@@ -150,7 +150,7 @@ func ListAndCountSystemWithProperties(
 	}
 
 	if len(systems) == 0 {
-		return []*model.System{}, 0, nil
+		return []*model.System{}, count, nil
 	}
 
 	ck := NewCompositeKey()
