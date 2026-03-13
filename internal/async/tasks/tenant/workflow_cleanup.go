@@ -7,8 +7,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -41,29 +39,12 @@ func NewWorkflowCleaner(
 	return wc
 }
 
-func (wc *WorkflowCleaner) Process(ctx context.Context, _ *asynq.Task) error {
-	cleanupErr := wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
-	if cleanupErr != nil {
-		log.Error(ctx, "Running Workflow Cleanup", cleanupErr)
-	}
-	return nil
+func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	return wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
 }
 
-func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.Info(ctx, "Starting Workflow Cleanup Task")
-
-	err := wc.processor.ProcessTenantsInBatch(
-		ctx,
-		task,
-		repo.NewQuery(),
-		wc.Process,
-	)
-	if err != nil {
-		log.Error(ctx, "Error during workflow cleanup batch processing", err)
-		return errs.Wrap(ErrRunningTask, err)
-	}
-
-	return nil
+func (wc *WorkflowCleaner) TenantQuery() *repo.Query {
+	return repo.NewQuery()
 }
 
 func (wc *WorkflowCleaner) SetFanOut(client async.Client, opts ...asynq.Option) {

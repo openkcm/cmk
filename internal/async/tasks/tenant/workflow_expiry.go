@@ -51,39 +51,26 @@ func NewWorkflowExpiryProcessor(
 	return w
 }
 
-func (w *WorkflowExpiryProcessor) Process(ctx context.Context, _ *asynq.Task) error {
-	wfs, _, getErr := w.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
-	if getErr != nil {
-		log.Error(ctx, "Error running Workflow Expiry", getErr)
-		return errs.Wrap(ErrRunningTask, getErr)
+func (w *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	wfs, _, err := w.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
+	if err != nil {
+		return err
 	}
 	for _, wf := range wfs {
 		if wf.ExpiryDate == nil || time.Now().Before(*wf.ExpiryDate) {
 			continue
 		}
 
-		expireErr := w.expireWorkflow(ctx, wf.ID)
-		if expireErr != nil {
-			return errs.Wrap(ErrRunningTask, expireErr)
+		err := w.expireWorkflow(ctx, wf.ID)
+		if err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func (w *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.Info(ctx, "Starting Workflow Expiry Task")
-
-	err := w.processor.ProcessTenantsInBatch(
-		ctx,
-		task,
-		repo.NewQuery(),
-		w.Process,
-	)
-	if err != nil {
-		return w.handleErrorTenants(ctx, err)
-	}
-
-	return nil
+func (w *WorkflowExpiryProcessor) TenantQuery() *repo.Query {
+	return repo.NewQuery()
 }
 
 func (w *WorkflowExpiryProcessor) TaskType() string {
@@ -99,16 +86,10 @@ func (w *WorkflowExpiryProcessor) IsFanOutEnabled() bool {
 	return w.fanout
 }
 
-func (w *WorkflowExpiryProcessor) handleErrorTenants(ctx context.Context, err error) error {
-	log.Error(ctx, "Error during workflow expiry batch processing", err)
-	return errs.Wrap(ErrRunningTask, err)
-}
-
 func (w *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID uuid.UUID) error {
 	workflow, err := w.updater.TransitionWorkflow(ctx, workflowID, wfMechanism.TransitionExpire)
 	if err != nil {
-		log.Error(ctx, "Failed to expire workflow", err)
-		return err
+		return errs.Wrapf(err, "Failed to expire workflow")
 	}
 	log.Info(ctx, "Expired workflow", slog.String("workflow_id", workflow.ID.String()))
 

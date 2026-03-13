@@ -77,11 +77,7 @@ func ProcessChildTask(ctx context.Context, task *asynq.Task, f func(ctx context.
 }
 
 func (c *ChildTaskWrapper) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	return ProcessChildTask(ctx, task, c.parentHandler.Process)
-}
-
-func (c *ChildTaskWrapper) Process(_ context.Context, _ *asynq.Task) error {
-	panic("this method is not intended to be used")
+	return ProcessChildTask(ctx, task, c.parentHandler.ProcessTask)
 }
 
 func (c *ChildTaskWrapper) TaskType() string {

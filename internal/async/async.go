@@ -13,6 +13,7 @@ import (
 	conf "github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/repo"
 )
 
 const (
@@ -29,10 +30,10 @@ var (
 	ErrACLUsername         = errors.New("ACL is not load username for redis client")
 )
 
-type TaskOption func(TaskHandler)
+type TaskOption func(TenantTaskHandler)
 
 func WithFanOut(client Client, opts ...asynq.Option) TaskOption {
-	return func(h TaskHandler) {
+	return func(h TenantTaskHandler) {
 		h.SetFanOut(client, opts...)
 	}
 }
@@ -54,15 +55,23 @@ func WithFanOutFromConfig(client Client, cfg *conf.Config, taskType string) Task
 	return WithFanOut(client, opts...)
 }
 
-// TaskHandler defines the interface for handling async
-type TaskHandler interface {
-	// ProcessTask is used for the asynq framework to pickup the task execution
-	// Wrapper for the Process function that can call the tenant batcher
-	ProcessTask(ctx context.Context, task *asynq.Task) error
-	TaskType() string
-	Process(ctx context.Context, task *asynq.Task) error
+// Fanout task into child tasks per tenant
+type FanOut interface {
 	SetFanOut(client Client, opts ...asynq.Option)
 	IsFanOutEnabled() bool
+}
+
+// TenantTaskHandler is a task that is run for a selection of tenants
+type TenantTaskHandler interface {
+	TaskHandler
+	FanOut
+	TenantQuery() *repo.Query
+}
+
+// TaskHandler defines the interface for handling async
+type TaskHandler interface {
+	ProcessTask(ctx context.Context, task *asynq.Task) error
+	TaskType() string
 }
 
 type Client interface {
@@ -150,25 +159,33 @@ func (a *App) RegisterTasks(ctx context.Context, handlers []TaskHandler) {
 	for _, handler := range handlers {
 		taskType := handler.TaskType()
 		a.tasks[taskType] = handler
+
 		log.Info(
 			ctx,
 			"Registered task",
 			slog.String("name", taskType),
-			slog.Bool("fanOut", handler.IsFanOutEnabled()),
 		)
 
-		// Auto-register child handler if fanout is enabled
-		if handler.IsFanOutEnabled() {
-			childHandler := NewChildTask(handler)
-			childTaskType := childHandler.TaskType()
-			a.tasks[childTaskType] = childHandler
-			log.Info(ctx, "Registered child task", slog.String("name", childTaskType))
+		if fanOutHandler, ok := handler.(FanOut); ok {
+			if fanOutHandler.IsFanOutEnabled() {
+				// Go in loop registering
+			}
+		}
+
+		if tenantHandler, ok := handler.(TenantTaskHandler); ok {
+			if tenantHandler.IsFanOutEnabled() {
+				childHandler := NewChildTask(handler)
+				childTaskType := childHandler.TaskType()
+				a.tasks[childTaskType] = childHandler
+				log.Info(ctx, "Registered child task", slog.String("name", childTaskType))
+
+			}
 		}
 	}
 }
 
 // RunWorker starts the worker process to process the tasks
-func (a *App) RunWorker(ctx context.Context) error {
+func (a *App) RunWorker(ctx context.Context, r repo.Repo) error {
 	log.Info(ctx, "Starting async worker")
 
 	a.asynqServer = asynq.NewServer(a.taskQueueCfg, a.asynqServerCfg)
@@ -177,10 +194,22 @@ func (a *App) RunWorker(ctx context.Context) error {
 	mux := asynq.NewServeMux()
 
 	for taskName, handler := range a.tasks {
-		h := handler // Create a local copy to avoid closure problems
-
 		mux.HandleFunc(taskName, func(ctx context.Context, task *asynq.Task) error {
-			return h.ProcessTask(ctx, task)
+			switch h := handler.(type) {
+			case TenantTaskHandler:
+				if h.IsFanOutEnabled() {
+					processor := NewBatchProcessor(
+						r,
+						WithFanOutTenants(a.Client()),
+						WithTenantQuery(h.TenantQuery()),
+					)
+					return processor.ProcessTenantsInBatch(ctx, task, h.ProcessTask)
+				}
+				processor := NewBatchProcessor(r)
+				return processor.ProcessTenantsInBatch(ctx, task, h.ProcessTask)
+			default:
+				return h.ProcessTask(ctx, task)
+			}
 		})
 	}
 

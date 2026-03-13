@@ -9,7 +9,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -32,7 +31,7 @@ func NewCertRotator(
 	certClient CertUpdater,
 	repo repo.Repo,
 	opts ...async.TaskOption,
-) *CertRotator {
+) async.TenantTaskHandler {
 	c := &CertRotator{
 		certClient: certClient,
 		repo:       repo,
@@ -48,23 +47,10 @@ func NewCertRotator(
 
 var ErrRotatingCert = errors.New("error rotating certificate")
 
-func (s *CertRotator) Process(ctx context.Context, _ *asynq.Task) error {
-	err := s.certClient.RotateExpiredCertificates(ctx)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (s *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Certificate Rotation Task")
 
-	err := s.processor.ProcessTenantsInBatch(
-		ctx,
-		task,
-		repo.NewQuery(),
-		s.Process,
-	)
+	err := s.certClient.RotateExpiredCertificates(ctx)
 	if err != nil {
 		return s.handleErrorTenants(ctx, err)
 	}
@@ -81,11 +67,15 @@ func (s *CertRotator) SetFanOut(client async.Client, opts ...asynq.Option) {
 	s.fanout = true
 }
 
+func (s *CertRotator) TenantQuery() *repo.Query {
+	return repo.NewQuery()
+}
+
 func (s *CertRotator) IsFanOutEnabled() bool {
 	return s.fanout
 }
 
 func (s *CertRotator) handleErrorTenants(ctx context.Context, err error) error {
 	log.Error(ctx, "Error during certificate rotation batch processing", err)
-	return errs.Wrap(ErrRunningTask, err)
+	return err
 }
