@@ -194,12 +194,12 @@ func ListAndCountSystemWithProperties(
 		NewSelectField(
 			fmt.Sprintf("%s.%s", model.Event{}.TableName(), ErrorMessageField),
 			QueryFunction{},
-		),
+		).SetAlias(ErrorMessageField),
 		// Get ErrorCode with alias so it's injected into System ErrorCode
 		NewSelectField(
 			fmt.Sprintf("%s.%s", model.Event{}.TableName(), ErrorCodeField),
 			QueryFunction{},
-		),
+		).SetAlias(ErrorCodeField),
 	).Where(
 		NewCompositeKeyGroup(ck),
 	).SetOffset(0).SetLimit(DefaultLimit) // Reset offset and limit as this is for the join table

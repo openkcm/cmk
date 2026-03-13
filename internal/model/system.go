@@ -17,15 +17,15 @@ type System struct {
 	Region               string            `gorm:"type:varchar(50);not null;uniqueindex:region_sys,priority:1"`
 	Type                 string            `gorm:"type:varchar(50);not null"`
 	KeyConfigurationID   *uuid.UUID        `gorm:"type:uuid"`
-	KeyConfigurationName *string           `gorm:"->;-:migration"`
+	KeyConfigurationName *string           `gorm:"->;-:migration;column:key_configuration_name"`
 	Properties           map[string]string `gorm:"-:all"`
 
 	// Status can be 'CONNECTED', 'DISCONNECTED', 'FAILED', or 'PROCESSING'
 	Status cmkapi.SystemStatus `gorm:"type:varchar(50);default:'DISCONNECTED'"`
 
 	// Only set for failed systems by the event table
-	ErrorCode    string `gorm:"->"`
-	ErrorMessage string `gorm:"->"`
+	ErrorCode    string `gorm:"->;-:migration;column:error_code"`
+	ErrorMessage string `gorm:"->;-:migration;column:error_message"`
 }
 
 // TableName returns the table name for System

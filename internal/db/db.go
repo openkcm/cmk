@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/bartventer/gorm-multitenancy/v8/pkg/namespace"
 	"github.com/google/uuid"
 	"github.com/samber/oops"
 	"gopkg.in/yaml.v3"
@@ -27,9 +28,24 @@ var (
 	ErrEmptySupportedRegions     = errors.New("supported regions cannot be empty")
 	ErrEmptyRegionName           = errors.New("region name cannot be empty")
 	ErrEmptyRegionTechName       = errors.New("region technical name cannot be empty")
+	ErrInvalidSchema             = errors.New("invalid schema name pattern")
+	ErrSchemaNameLength          = errors.New("schema name length must be between 3 and 63 characters")
 )
 
 const DBLogDomain = "db"
+
+func ValidateSchema(schema string) error {
+	err := namespace.Validate(schema)
+	if err != nil {
+		return errs.Wrap(ErrInvalidSchema, err)
+	}
+
+	if len(schema) < 3 || len(schema) > 63 {
+		return ErrSchemaNameLength
+	}
+
+	return nil
+}
 
 // StartDB starts DB connection and runs migrations
 func StartDB(
