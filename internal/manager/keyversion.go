@@ -47,13 +47,14 @@ func NewKeyVersionManager(
 	cmkAuditor *auditor.Auditor,
 ) *KeyVersionManager {
 	return &KeyVersionManager{
-		ProviderConfigManager: ProviderConfigManager{
-			svcRegistry:   svcRegistry,
-			providers:     make(map[ProviderCachedKey]*ProviderConfig),
-			tenantConfigs: tenantConfigs,
-			repo:          repo,
-			certs:         certManager,
-		},
+		ProviderConfigManager: *NewProviderConfigManager(
+			svcRegistry,
+			make(map[ProviderCachedKey]*ProviderConfig),
+			tenantConfigs,
+			certManager,
+			nil,
+			repo,
+		),
 		cmkAuditor: cmkAuditor,
 	}
 }

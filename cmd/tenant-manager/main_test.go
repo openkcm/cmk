@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
@@ -92,24 +91,13 @@ func TestRunFuncWithSignalHandling(t *testing.T) {
 	})
 }
 
-func TestStartStatusServer(t *testing.T) {
-	cfg := &config.Config{}
-
-	// Call and check for no panic.
-	tenantmanager.StartStatusServer(t.Context(), cfg)
-
-	// Optionally, wait a short time to let the goroutine start
-	time.Sleep(100 * time.Millisecond)
-}
-
 func TestBusinessMain(t *testing.T) {
 	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	_, amqpCfg := testutils.NewAMQPClient(t, testutils.AMQPCfg{})
 	tests := []struct {
-		name        string
-		config      func() *config.Config
-		expectError bool
-		errorMsg    string
+		name     string
+		config   func() *config.Config
+		errorMsg string
 	}{
 		{
 			name: "no amqp connection",
@@ -128,8 +116,7 @@ func TestBusinessMain(t *testing.T) {
 					BaseConfig: testutils.TestBaseConfig,
 				}
 			},
-			expectError: true,
-			errorMsg:    "Expected error due to missing AMQP connection info",
+			errorMsg: "Expected error due to missing AMQP connection info",
 		},
 		{
 			name: "no db connection",
@@ -149,8 +136,7 @@ func TestBusinessMain(t *testing.T) {
 					BaseConfig: testutils.TestBaseConfig,
 				}
 			},
-			expectError: true,
-			errorMsg:    "Expected error due to missing database configuration",
+			errorMsg: "Expected error due to missing database configuration",
 		},
 		{
 			name: "no grpc configuration",
@@ -167,8 +153,7 @@ func TestBusinessMain(t *testing.T) {
 					BaseConfig: testutils.TestBaseConfig,
 				}
 			},
-			expectError: true,
-			errorMsg:    "Expected error due to missing gRPC configuration",
+			errorMsg: "Expected error due to missing gRPC configuration",
 		},
 		{
 			name: "missing registry service configuration",
@@ -188,8 +173,7 @@ func TestBusinessMain(t *testing.T) {
 					BaseConfig: testutils.TestBaseConfig,
 				}
 			},
-			expectError: true,
-			errorMsg:    "registry service configuration is required",
+			errorMsg: "registry service configuration is required",
 		},
 		{
 			name: "missing session-manager service configuration",
@@ -209,48 +193,44 @@ func TestBusinessMain(t *testing.T) {
 					BaseConfig: testutils.TestBaseConfig,
 				}
 			},
-			expectError: true,
-			errorMsg:    "session-manager service configuration is required",
-		},
-		{
-			name: "valid configuration",
-			config: func() *config.Config {
-				return &config.Config{
-					TenantManager: config.TenantManager{
-						SecretRef: commoncfg.SecretRef{
-							Type: commoncfg.InsecureSecretType,
-						},
-						AMQP: amqpCfg,
-					},
-					Database: dbCfg,
-					Services: config.Services{
-						Registry:       testutils.TestRegistryConfig,
-						SessionManager: testutils.TestSessionManagerConfig,
-					},
-					BaseConfig: commoncfg.BaseConfig{
-						Logger: commoncfg.Logger{
-							Format: "json",
-							Level:  "info",
-						},
-					},
-				}
-			},
-			expectError: false,
+			errorMsg: "session-manager service configuration is required",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-			defer cancel()
-
-			err := tenantmanager.Run(ctx, tt.config())
-
-			if tt.expectError {
-				assert.Error(t, err, tt.errorMsg)
-			} else {
-				assert.NoError(t, err)
-			}
+			err := tenantmanager.Run(t.Context(), tt.config())
+			assert.Error(t, err, tt.errorMsg)
 		})
 	}
+
+	t.Run("valid configuration", func(t *testing.T) {
+		cfg := &config.Config{
+			TenantManager: config.TenantManager{
+				SecretRef: commoncfg.SecretRef{
+					Type: commoncfg.InsecureSecretType,
+				},
+				AMQP: amqpCfg,
+			},
+			Database: dbCfg,
+			Services: config.Services{
+				Registry:       testutils.TestRegistryConfig,
+				SessionManager: testutils.TestSessionManagerConfig,
+			},
+			BaseConfig: commoncfg.BaseConfig{
+				Logger: commoncfg.Logger{
+					Format: "json",
+					Level:  "info",
+				},
+				Status: commoncfg.Status{
+					Enabled: true,
+					Address: ":8888",
+				},
+			},
+		}
+
+		testutils.TestBinStartup(t, cfg.Status.Address, func() error {
+			return tenantmanager.Run(t.Context(), cfg)
+		})
+	})
 }
