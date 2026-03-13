@@ -33,7 +33,7 @@ func NewKeystorePoolFiller(
 	}
 }
 
-func (k *KeystorePoolFiller) ProcessTask(ctx context.Context, _ *asynq.Task) error {
+func (k *KeystorePoolFiller) Process(ctx context.Context, _ *asynq.Task) error {
 	log.Info(ctx, "Starting Keystore Pool Filler Task")
 
 	err := k.updater.FillKeystorePool(ctx, k.size)
@@ -43,6 +43,12 @@ func (k *KeystorePoolFiller) ProcessTask(ctx context.Context, _ *asynq.Task) err
 	}
 
 	return nil
+}
+
+func (k *KeystorePoolFiller) ProcessTask(ctx context.Context, _ *asynq.Task) error {
+	log.Info(ctx, "Starting Keystore Pool Filler Task")
+
+	return k.Process(ctx, nil)
 }
 
 func (k *KeystorePoolFiller) SetFanOut(client async.Client, opts ...asynq.Option) {}

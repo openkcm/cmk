@@ -41,18 +41,22 @@ func NewWorkflowCleaner(
 	return wc
 }
 
+func (wc *WorkflowCleaner) Process(ctx context.Context, _ *asynq.Task) error {
+	cleanupErr := wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
+	if cleanupErr != nil {
+		log.Error(ctx, "Running Workflow Cleanup", cleanupErr)
+	}
+	return nil
+}
+
 func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Workflow Cleanup Task")
-
-	if async.IsChildTask(task) {
-		return async.ProcessChildTask(ctx, task, wc.process)
-	}
 
 	err := wc.processor.ProcessTenantsInBatch(
 		ctx,
 		task,
 		repo.NewQuery(),
-		wc.process,
+		wc.Process,
 	)
 	if err != nil {
 		log.Error(ctx, "Error during workflow cleanup batch processing", err)
@@ -73,12 +77,4 @@ func (wc *WorkflowCleaner) IsFanOutEnabled() bool {
 
 func (wc *WorkflowCleaner) TaskType() string {
 	return config.TypeWorkflowCleanup
-}
-
-func (wc *WorkflowCleaner) process(ctx context.Context) error {
-	cleanupErr := wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
-	if cleanupErr != nil {
-		log.Error(ctx, "Running Workflow Cleanup", cleanupErr)
-	}
-	return nil
 }

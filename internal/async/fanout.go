@@ -54,7 +54,7 @@ func IsChildTask(task *asynq.Task) bool {
 	return strings.HasSuffix(task.Type(), ":child")
 }
 
-func ProcessChildTask(ctx context.Context, task *asynq.Task, f func(ctx context.Context) error) error {
+func ProcessChildTask(ctx context.Context, task *asynq.Task, f func(ctx context.Context, task *asynq.Task) error) error {
 	payload, err := asyncUtils.ParseTaskPayload(task.Payload())
 	if err != nil {
 		log.Error(ctx, "Failed to parse tenant from child task payload", err)
@@ -67,7 +67,7 @@ func ProcessChildTask(ctx context.Context, task *asynq.Task, f func(ctx context.
 		cmkcontext.InjectSystemUser,
 	)
 
-	err = f(ctx)
+	err = f(ctx, task)
 	if err != nil {
 		log.Error(ctx, "Error processing tenant in child task", err)
 		return err
@@ -77,7 +77,11 @@ func ProcessChildTask(ctx context.Context, task *asynq.Task, f func(ctx context.
 }
 
 func (c *ChildTaskWrapper) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	return c.parentHandler.ProcessTask(ctx, task)
+	return ProcessChildTask(ctx, task, c.parentHandler.Process)
+}
+
+func (c *ChildTaskWrapper) Process(_ context.Context, _ *asynq.Task) error {
+	panic("this method is not intended to be used")
 }
 
 func (c *ChildTaskWrapper) TaskType() string {

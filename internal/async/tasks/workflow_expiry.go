@@ -51,18 +51,33 @@ func NewWorkflowExpiryProcessor(
 	return w
 }
 
+func (w *WorkflowExpiryProcessor) Process(ctx context.Context, _ *asynq.Task) error {
+	wfs, _, getErr := w.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
+	if getErr != nil {
+		log.Error(ctx, "Error running Workflow Expiry", getErr)
+		return errs.Wrap(ErrRunningTask, getErr)
+	}
+	for _, wf := range wfs {
+		if wf.ExpiryDate == nil || time.Now().Before(*wf.ExpiryDate) {
+			continue
+		}
+
+		expireErr := w.expireWorkflow(ctx, wf.ID)
+		if expireErr != nil {
+			return errs.Wrap(ErrRunningTask, expireErr)
+		}
+	}
+	return nil
+}
+
 func (w *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Workflow Expiry Task")
-
-	if async.IsChildTask(task) {
-		return async.ProcessChildTask(ctx, task, w.process)
-	}
 
 	err := w.processor.ProcessTenantsInBatch(
 		ctx,
 		task,
 		repo.NewQuery(),
-		w.process,
+		w.Process,
 	)
 	if err != nil {
 		return w.handleErrorTenants(ctx, err)
@@ -87,25 +102,6 @@ func (w *WorkflowExpiryProcessor) IsFanOutEnabled() bool {
 func (w *WorkflowExpiryProcessor) handleErrorTenants(ctx context.Context, err error) error {
 	log.Error(ctx, "Error during workflow expiry batch processing", err)
 	return errs.Wrap(ErrRunningTask, err)
-}
-
-func (w *WorkflowExpiryProcessor) process(ctx context.Context) error {
-	wfs, _, getErr := w.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
-	if getErr != nil {
-		log.Error(ctx, "Error running Workflow Expiry", getErr)
-		return errs.Wrap(ErrRunningTask, getErr)
-	}
-	for _, wf := range wfs {
-		if wf.ExpiryDate == nil || time.Now().Before(*wf.ExpiryDate) {
-			continue
-		}
-
-		expireErr := w.expireWorkflow(ctx, wf.ID)
-		if expireErr != nil {
-			return errs.Wrap(ErrRunningTask, expireErr)
-		}
-	}
-	return nil
 }
 
 func (w *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID uuid.UUID) error {
