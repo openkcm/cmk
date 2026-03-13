@@ -62,9 +62,7 @@ func (w *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 		ctx,
 		task,
 		repo.NewQuery(),
-		func(ctx context.Context, _ *model.Tenant) error {
-			return w.process(ctx)
-		},
+		w.process,
 	)
 	if err != nil {
 		return w.handleErrorTenants(ctx, err)

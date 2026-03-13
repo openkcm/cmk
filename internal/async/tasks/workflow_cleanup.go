@@ -9,7 +9,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -53,9 +52,7 @@ func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) er
 		ctx,
 		task,
 		repo.NewQuery(),
-		func(ctx context.Context, _ *model.Tenant) error {
-			return wc.process(ctx)
-		},
+		wc.process,
 	)
 	if err != nil {
 		log.Error(ctx, "Error during workflow cleanup batch processing", err)
