@@ -301,7 +301,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.NoError(t, err)
-		assert.Nil(t, allSystems)
+		assert.Empty(t, allSystems)
 		assert.Equal(t, 0, total)
 	},
 	)
@@ -314,7 +314,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 		}
 		allSystems, total, err := m.GetAllSystems(ctx, filter)
 		assert.NoError(t, err)
-		assert.Nil(t, allSystems)
+		assert.Empty(t, allSystems)
 		assert.Equal(t, 0, total)
 	},
 	)

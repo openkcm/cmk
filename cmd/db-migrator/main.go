@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"log/slog"
 	"os"
 
 	"github.com/openkcm/common-sdk/pkg/logger"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
+	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/utils/cmd"
 )
@@ -59,13 +61,20 @@ func run(ctx context.Context, cfg *config.Config) error {
 		Target:    db.MigrationTarget(*target),
 	}
 
+	var res db.MigrationResultMap
 	if *version != 0 {
-		err = m.MigrateTo(ctx, req, *version)
+		res, err = m.MigrateTo(ctx, req, *version)
 	} else {
-		err = m.MigrateToLatest(ctx, req)
+		res, err = m.MigrateToLatest(ctx, req)
 	}
 	if err != nil {
 		return err
+	}
+
+	for k, v := range res {
+		for _, migration := range v {
+			log.Info(ctx, "Migration Result", slog.String("Schema", k), slog.String("Result", migration.String()))
+		}
 	}
 
 	return nil
