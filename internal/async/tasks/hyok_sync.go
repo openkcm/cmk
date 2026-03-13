@@ -9,7 +9,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -53,9 +52,7 @@ func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
 		ctx,
 		task,
 		repo.NewQuery(),
-		func(ctx context.Context, _ *model.Tenant) error {
-			return h.process(ctx)
-		},
+		h.process,
 	)
 	if err != nil {
 		return h.handleErrorTenants(ctx, err)
