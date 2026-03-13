@@ -3,8 +3,11 @@ package manager
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/bartventer/gorm-multitenancy/v8/pkg/namespace"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
@@ -46,8 +49,14 @@ type (
 )
 
 const (
-	OffboardingProcessing OffboardingStatus = iota + 1
+	// OffboardingGoToNextStep indicates that the offboarding process can proceed to the next step.
+	OffboardingGoToNextStep OffboardingStatus = iota
+	// OffboardingContinueAndWait indicates that the offboarding process is still in progress, waiting
+	// for some steps to complete, and should be reconciled later.
+	OffboardingContinueAndWait
+	// OffboardingFailed indicates that the offboarding process has failed and should not be reconciled.
 	OffboardingFailed
+	// OffboardingSuccess indicates that the offboarding process has completed successfully and can terminate.
 	OffboardingSuccess
 )
 
@@ -74,15 +83,57 @@ func NewTenantManager(
 // - OffboardingFailed: if any step has failed permanently
 // - OffboardingSuccess: if all steps completed successfully
 // - error: if the offboarding process encounters an unexpected error, in which case it should be retried later
+//
+//nolint:cyclop
 func (m *TenantManager) OffboardTenant(ctx context.Context) (OffboardingResult, error) {
-	systemResult, err := m.unlinkAllSystems(ctx)
-	if err != nil || systemResult.Status == OffboardingProcessing {
-		return systemResult, err
+	// Step 1: Unlink all (remaining) connected systems
+	err := m.sendUnlinkForConnectedSystems(ctx)
+	if err != nil {
+		return OffboardingResult{}, err
 	}
 
-	keyResult, err := m.detachAllKeys(ctx)
-	if err != nil || keyResult.Status == OffboardingProcessing {
-		return keyResult, err
+	// Check if all systems are unlinked. If not, return processing status to reconcile later.
+	systemsUnlinked, err := m.checkAllSystemsUnlinked(ctx)
+	if err != nil {
+		return OffboardingResult{}, err
+	}
+
+	if !systemsUnlinked {
+		return OffboardingResult{Status: OffboardingContinueAndWait}, nil
+	}
+
+	// Step 2: Detach all (remaining) primary keys
+	err = m.detachPrimaryKeys(ctx)
+	if err != nil {
+		return OffboardingResult{}, err
+	}
+
+	// Now wait for all primary keys to be at least in detaching state.
+	// This does not wait for the event tasks to respond.
+	keysProcessed, err := m.checkAllPrimaryKeysProcessed(ctx)
+	if err != nil {
+		return OffboardingResult{}, err
+	}
+
+	if !keysProcessed {
+		return OffboardingResult{Status: OffboardingContinueAndWait}, nil
+	}
+
+	// Step 3: Unmap all systems from tenant. Not yet need to wait for step 2 to complete
+	st := m.unmapAllSystemsFromRegistry(ctx)
+	if st == OffboardingFailed || st == OffboardingContinueAndWait {
+		return OffboardingResult{Status: st}, nil
+	}
+
+	// Step 4: Wait until all keys are detached. After this we can delete
+	// the tenant data and the tenant itself in the next step.
+	keysDetached, err := m.checkAllPrimaryKeysDetached(ctx)
+	if err != nil {
+		return OffboardingResult{}, err
+	}
+
+	if !keysDetached {
+		return OffboardingResult{Status: OffboardingContinueAndWait}, nil
 	}
 
 	return OffboardingResult{OffboardingSuccess}, nil
@@ -183,17 +234,17 @@ func (m *TenantManager) GetTenantByID(ctx context.Context, tenantID string) (*mo
 	return t, nil
 }
 
-// unlinkSystems triggers system delete events. On a successful created event
-// the system status is changed to processing. It's considered a success if
-// all systems are no longer connected or in processing
-func (m *TenantManager) unlinkAllSystems(ctx context.Context) (OffboardingResult, error) {
-	result := OffboardingResult{Status: OffboardingSuccess}
-	toUnlinkCond := repo.NewCompositeKey().Where(repo.StatusField, cmkapi.SystemStatusCONNECTED)
+func (m *TenantManager) sendUnlinkForConnectedSystems(ctx context.Context) error {
+	// Select all systems that are still linked to a key configuration and are not in processing state,
+	// and send unlink events for them.
+	condition := repo.NewCompositeKey().
+		Where(repo.KeyConfigIDField, repo.NotNull).
+		Where(repo.StatusField, cmkapi.SystemStatusPROCESSING, repo.NotEq)
 
-	err := repo.ProcessInBatch(
+	return repo.ProcessInBatch(
 		ctx,
 		m.repo,
-		repo.NewQuery().Where(repo.NewCompositeKeyGroup(toUnlinkCond)),
+		repo.NewQuery().Where(repo.NewCompositeKeyGroup(condition)),
 		repo.DefaultLimit,
 		func(sys []*model.System) error {
 			for _, s := range sys {
@@ -206,43 +257,31 @@ func (m *TenantManager) unlinkAllSystems(ctx context.Context) (OffboardingResult
 			return nil
 		},
 	)
-	if err != nil {
-		return OffboardingResult{}, err
-	}
+}
 
-	unlinkingCond := repo.NewCompositeKey().
-		Where(repo.StatusField, cmkapi.SystemStatusCONNECTED).
-		Where(repo.StatusField, cmkapi.SystemStatusPROCESSING)
-	unlinkingCond.IsStrict = false
-
+func (m *TenantManager) checkAllSystemsUnlinked(ctx context.Context) (bool, error) {
+	// Unlinked systems will be removed from key configuration
+	condition := repo.NewCompositeKey().Where(repo.KeyConfigIDField, repo.NotNull)
 	count, err := m.repo.Count(
 		ctx,
 		&model.System{},
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(unlinkingCond)),
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(condition)),
 	)
 	if err != nil {
-		return OffboardingResult{}, err
+		return false, err
 	}
 
-	if count > 0 {
-		return OffboardingResult{Status: OffboardingProcessing}, nil
-	}
-
-	return result, nil
+	return count == 0, nil
 }
 
-// detachAllKeys triggers key detach events. On a successful created event
-// the key state is changed to detached. It's considered a success if
-// all keys are no longer enabled or disabled
-func (m *TenantManager) detachAllKeys(ctx context.Context) (OffboardingResult, error) {
-	result := OffboardingResult{Status: OffboardingSuccess}
-
+func (m *TenantManager) detachPrimaryKeys(ctx context.Context) error {
+	// List all primary keys that are not yet detached and trigger detach events for them.
 	query := repo.NewCompositeKey().
-		Where(repo.StateField, cmkapi.KeyStateENABLED).
-		Where(repo.StateField, cmkapi.KeyStateDISABLED)
-	query.IsStrict = false
+		Where(repo.IsPrimaryField, true).
+		Where(repo.StateField, cmkapi.KeyStateDETACHING, repo.NotEq).
+		Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq)
 
-	err := repo.ProcessInBatch(
+	return repo.ProcessInBatch(
 		ctx,
 		m.repo,
 		repo.NewQuery().Where(repo.NewCompositeKeyGroup(query)),
@@ -258,9 +297,87 @@ func (m *TenantManager) detachAllKeys(ctx context.Context) (OffboardingResult, e
 			return nil
 		},
 	)
+}
+
+func (m *TenantManager) unmapAllSystemsFromRegistry(ctx context.Context) OffboardingStatus {
+	hasOffboardingFailed := false
+	hasOffboardingContinueAndWait := false
+
+	err := repo.ProcessInBatch(
+		ctx,
+		m.repo,
+		repo.NewQuery(),
+		repo.DefaultLimit,
+		func(systems []*model.System) error {
+			for _, s := range systems {
+				err := m.sys.UnmapSystemFromRegistry(ctx, s)
+				st := m.unmapSystemErrorCanContinue(ctx, err)
+				switch st {
+				case OffboardingGoToNextStep, OffboardingSuccess:
+					continue
+				case OffboardingContinueAndWait:
+					hasOffboardingContinueAndWait = true
+				case OffboardingFailed:
+					hasOffboardingFailed = true
+				}
+			}
+			return nil
+		},
+	)
+
 	if err != nil {
-		return OffboardingResult{}, err
+		log.Error(ctx, "error while processing systems in batch to unmap from registry", err)
+		return OffboardingContinueAndWait
 	}
+
+	// Returns OffboardingFailed if any of the unmapping operations has failed with a non-retryable error.
+	// Otherwise, returns OffboardingContinueAndWait if any of the unmapping operations has failed with a retryable error.
+	switch {
+	case hasOffboardingFailed:
+		return OffboardingFailed
+	case hasOffboardingContinueAndWait:
+		return OffboardingContinueAndWait
+	default:
+		return OffboardingGoToNextStep
+	}
+}
+
+// Return OffboardingStatus to indicate if offboarding should continue or if it has failed.
+// - OffboardingGoToNextStep: if the error can be ignored (e.g. system already unlinked)
+// - OffboardingFailed: if the error is not retryable or invalid arguments are provided
+// - OffboardingContinueAndWait: if the error is retryable and offboarding should continue in next reconciliation
+func (m *TenantManager) unmapSystemErrorCanContinue(ctx context.Context, err error) OffboardingStatus {
+	if err == nil {
+		return OffboardingGoToNextStep
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		log.Error(ctx, "failed getting status from error when removing system mapping", err)
+	}
+	switch {
+	case st.Code() == codes.FailedPrecondition && strings.Contains(st.Message(), "system is not linked to the tenant"):
+		log.Info(ctx, "system is not linked to the tenant in registry, might have been already unlinked")
+		return OffboardingGoToNextStep
+	case st.Code() == codes.NotFound && strings.Contains(st.Message(), "system not found"):
+		log.Info(ctx, "system mapping not found in registry, might have been already removed")
+		return OffboardingGoToNextStep
+	case st.Code() == codes.InvalidArgument:
+		log.Error(ctx, "invalid argument error while unmapping system from tenant", err)
+		return OffboardingFailed
+	case err != nil:
+		log.Error(ctx, "error while removing OIDC mapping", err)
+		return OffboardingContinueAndWait
+	default:
+		return OffboardingGoToNextStep
+	}
+}
+
+func (m *TenantManager) checkAllPrimaryKeysProcessed(ctx context.Context) (bool, error) {
+	query := repo.NewCompositeKey().
+		Where(repo.IsPrimaryField, true).
+		Where(repo.StateField, cmkapi.KeyStateDETACHING, repo.NotEq).
+		Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq)
 
 	count, err := m.repo.Count(
 		ctx,
@@ -268,14 +385,27 @@ func (m *TenantManager) detachAllKeys(ctx context.Context) (OffboardingResult, e
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(query)),
 	)
 	if err != nil {
-		return OffboardingResult{}, err
+		return false, err
 	}
 
-	if count > 0 {
-		return OffboardingResult{Status: OffboardingProcessing}, nil
+	return count == 0, nil
+}
+
+func (m *TenantManager) checkAllPrimaryKeysDetached(ctx context.Context) (bool, error) {
+	query := repo.NewCompositeKey().
+		Where(repo.IsPrimaryField, true).
+		Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq)
+
+	count, err := m.repo.Count(
+		ctx,
+		&model.Key{},
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(query)),
+	)
+	if err != nil {
+		return false, err
 	}
 
-	return result, nil
+	return count == 0, nil
 }
 
 func validateSchema(schema string) error {
