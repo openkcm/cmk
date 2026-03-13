@@ -46,7 +46,8 @@ spec:
           {{- end }}
           image: "{{ template "cmk.image" (tuple .Values.image $.Chart.AppVersion) }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["/bin/db-migrator"]
+          command:
+            - {{ default "/bin/db-migrator" .Values.dbMigrator.image.command | quote }}
           args:
             - --target=all
             - --type=schema
