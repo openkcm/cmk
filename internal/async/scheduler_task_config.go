@@ -29,7 +29,12 @@ func (p *ScheduledTaskConfigProvider) GetConfigs() ([]*asynq.PeriodicTaskConfig,
 		}
 		configs = append(configs, &asynq.PeriodicTaskConfig{
 			Cronspec: cfg.Cronspec,
-			Task:     asynq.NewTask(name, nil, asynq.MaxRetry(cfg.Retries)),
+			Task: asynq.NewTask(
+				name,
+				nil,
+				asynq.MaxRetry(cfg.Retries),
+				asynq.Timeout(cfg.TimeOut),
+			),
 		})
 	}
 

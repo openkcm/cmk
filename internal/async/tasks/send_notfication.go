@@ -6,28 +6,29 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/notifier/client"
 )
 
-type NotificationClient interface {
+type NotificationSender interface {
 	CreateNotification(ctx context.Context, notif client.Data) error
 }
 
-type NotificationSender struct {
-	client NotificationClient
+type notificationSender struct {
+	client NotificationSender
 }
 
 func NewNotificationSender(
-	client NotificationClient,
-) *NotificationSender {
-	return &NotificationSender{
+	client NotificationSender,
+) async.TaskHandler {
+	return &notificationSender{
 		client: client,
 	}
 }
 
-func (n *NotificationSender) ProcessTask(ctx context.Context, task *asynq.Task) error {
+func (n *notificationSender) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "starting notification sender task")
 
 	var data client.Data
@@ -49,6 +50,6 @@ func (n *NotificationSender) ProcessTask(ctx context.Context, task *asynq.Task) 
 	return nil
 }
 
-func (n *NotificationSender) TaskType() string {
+func (n *notificationSender) TaskType() string {
 	return config.TypeSendNotifications
 }
