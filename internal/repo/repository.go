@@ -149,6 +149,10 @@ func ListAndCountSystemWithProperties(
 		return nil, 0, err
 	}
 
+	if len(systems) == 0 {
+		return []*model.System{}, 0, nil
+	}
+
 	ck := NewCompositeKey()
 
 	ck.IsStrict = false
