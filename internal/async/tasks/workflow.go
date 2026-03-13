@@ -36,9 +36,7 @@ func NewWorkflowProcessor(
 	}
 }
 
-func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.Info(ctx, "Started processing workflow auto assign task")
-
+func (s *WorkflowProcessor) Process(ctx context.Context, task *asynq.Task) error {
 	payload, err := asyncUtils.ParseTaskPayload(task.Payload())
 	if err != nil {
 		log.Error(ctx, "Failed to parse task payload", err)
@@ -84,6 +82,12 @@ func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) e
 		slog.String("status", workflow.State))
 
 	return nil
+}
+
+func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	log.Info(ctx, "Started processing workflow auto assign task")
+
+	return s.Process(ctx, task)
 }
 
 func (s *WorkflowProcessor) TaskType() string {

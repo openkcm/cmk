@@ -56,8 +56,11 @@ func WithFanOutFromConfig(client Client, cfg *conf.Config, taskType string) Task
 
 // TaskHandler defines the interface for handling async
 type TaskHandler interface {
+	// ProcessTask is used for the asynq framework to pickup the task execution
+	// Wrapper for the Process function that can call the tenant batcher
 	ProcessTask(ctx context.Context, task *asynq.Task) error
 	TaskType() string
+	Process(ctx context.Context, task *asynq.Task) error
 	SetFanOut(client Client, opts ...asynq.Option)
 	IsFanOutEnabled() bool
 }
