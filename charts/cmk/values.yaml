@@ -706,7 +706,8 @@ config:
   #        taskType: taskType3
   #        retries: 3
   #        timeOut: 5s
-  #        childTask:
+  #        fanOutTask:
+  #        enabled: true
   #          retries: 0
 
   # Services that CMK depends on configuration

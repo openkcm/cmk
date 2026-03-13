@@ -628,7 +628,8 @@ config:
         taskType: key:sync
         retries: 0
         timeOut: 5m
-        childTask:
+        fanOutTask:
+          enabled: true
           retries: 3
           timeOut: 2m
       - cronspec: "@every 1h"

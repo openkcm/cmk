@@ -26,9 +26,10 @@ var PeriodicTasks = map[string]Task{
 	TypeHYOKSync: {
 		Enabled:  true,
 		Cronspec: "*/5 * * * *", // Every 5 minutes
-		Retries:  0,
+		Retries:  3,
 		TimeOut:  5 * time.Minute,
-		ChildTask: &Task{
+		FanOutTask: FanOutTask{
+			Enabled: true,
 			Retries: 0,
 			TimeOut: 5 * time.Minute,
 		},

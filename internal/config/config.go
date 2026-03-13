@@ -126,12 +126,18 @@ func (s *Scheduler) GetTasks() map[string]Task {
 
 // Task holds a task config
 type Task struct {
-	Enabled   bool          `yaml:"enabled"`
-	Cronspec  string        `yaml:"cronspec"`
-	TaskType  string        `yaml:"taskType"`
-	Retries   int           `yaml:"retries"`
-	TimeOut   time.Duration `yaml:"timeOut"`
-	ChildTask *Task         `yaml:"childTask"`
+	Enabled    bool          `yaml:"enabled"`
+	Cronspec   string        `yaml:"cronspec"`
+	TaskType   string        `yaml:"taskType"`
+	Retries    int           `yaml:"retries"`
+	TimeOut    time.Duration `yaml:"timeOut"`
+	FanOutTask FanOutTask    `yaml:"fanOutTask"`
+}
+
+type FanOutTask struct {
+	Enabled bool          `yaml:"enabled"`
+	Retries int           `yaml:"retries"`
+	TimeOut time.Duration `yaml:"timeOut"`
 }
 
 // Redis holds Redis client config

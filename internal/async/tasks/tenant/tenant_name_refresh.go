@@ -20,14 +20,13 @@ type TenantNameRefresher struct {
 	processor *async.BatchProcessor
 	r         repo.Repo
 	registry  registry.Service
-	fanout    bool
 }
 
 func NewTenantNameRefresher(
 	r repo.Repo,
 	registry registry.Service,
 	opts ...async.TaskOption,
-) *TenantNameRefresher {
+) async.TenantTaskHandler {
 	t := &TenantNameRefresher{
 		processor: async.NewBatchProcessor(r),
 		registry:  registry,
@@ -68,13 +67,8 @@ func (t *TenantNameRefresher) TenantQuery() *repo.Query {
 	return repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.Name, repo.Empty)))
 }
 
-func (t *TenantNameRefresher) SetFanOut(client async.Client, opts ...asynq.Option) {
-	t.processor = async.NewBatchProcessor(t.r, async.WithFanOutTenants(client, opts...))
-	t.fanout = true
-}
-
-func (t *TenantNameRefresher) IsFanOutEnabled() bool {
-	return t.fanout
+func (t *TenantNameRefresher) FanOutFunc() async.FunOutFunc {
+	return async.TenantFanOut
 }
 
 func (t *TenantNameRefresher) TaskType() string {

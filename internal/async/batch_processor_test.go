@@ -2,6 +2,7 @@ package async_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/hibiken/asynq"
@@ -42,5 +43,17 @@ func TestBatchProcessor(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 0, count)
 		assert.Equal(t, tenantCount, client.EnqueueCallCount)
+	})
+
+	//nolint:err113
+	t.Run("Should continue executing tenants if one fails", func(t *testing.T) {
+		bp := async.NewBatchProcessor(r)
+		count := 0
+		err := bp.ProcessTenantsInBatch(t.Context(), task, func(ctx context.Context, _ *asynq.Task) error {
+			count++
+			return errors.New("err")
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, tenantCount, count)
 	})
 }

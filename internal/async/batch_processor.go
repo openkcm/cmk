@@ -19,7 +19,7 @@ type BatchProcessorOptions func(*BatchProcessor)
 
 func WithFanOutTenants(asyncClient Client, opts ...asynq.Option) BatchProcessorOptions {
 	return func(bp *BatchProcessor) {
-		bp.fanOutMode = true
+		bp.fanOut = true
 		bp.asyncClient = asyncClient
 		bp.fanOutOpts = opts
 	}
@@ -35,14 +35,14 @@ type BatchProcessor struct {
 	repo        repo.Repo
 	asyncClient Client
 	tenantQuery *repo.Query
-	fanOutMode  bool
+	fanOut      bool
 	fanOutOpts  []asynq.Option
 }
 
 func NewBatchProcessor(r repo.Repo, opts ...BatchProcessorOptions) *BatchProcessor {
 	bp := &BatchProcessor{
 		repo:        r,
-		fanOutMode:  false,
+		fanOut:      false,
 		tenantQuery: repo.NewQuery(),
 	}
 
@@ -108,7 +108,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 					log.WithLogInjectAttrs(slog.Int("index", i)),
 				)
 
-				if !bp.fanOutMode {
+				if !bp.fanOut {
 					err := processTenant(ctx, asynqTask)
 					if err != nil {
 						log.Error(ctx, "Task failed", err)
