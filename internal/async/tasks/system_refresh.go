@@ -11,7 +11,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -54,9 +53,7 @@ func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) er
 		ctx,
 		task,
 		repo.NewQuery(),
-		func(ctx context.Context, _ *model.Tenant) error {
-			return s.process(ctx)
-		},
+		s.process,
 	)
 	if err != nil {
 		log.Error(ctx, "Error during systems refresh batch processing", err)

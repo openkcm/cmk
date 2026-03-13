@@ -160,7 +160,7 @@ func (a *App) RegisterTasks(ctx context.Context, handlers []TaskHandler) {
 		if handler.IsFanOutEnabled() {
 			childHandler := NewChildTask(handler)
 			childTaskType := childHandler.TaskType()
-			a.tasks[childTaskType] = childHandler.parentHandler
+			a.tasks[childTaskType] = childHandler
 			log.Info(ctx, "Registered child task", slog.String("name", childTaskType))
 		}
 	}
