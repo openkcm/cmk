@@ -12,41 +12,23 @@ import (
 	"github.com/openkcm/cmk/internal/notifier/client"
 )
 
-type NotificationClient interface {
+type NotificationSender interface {
 	CreateNotification(ctx context.Context, notif client.Data) error
 }
 
-type NotificationSender struct {
-	client NotificationClient
+type notificationSender struct {
+	client NotificationSender
 }
 
 func NewNotificationSender(
-	client NotificationClient,
-) *NotificationSender {
-	return &NotificationSender{
+	client NotificationSender,
+) async.TaskHandler {
+	return &notificationSender{
 		client: client,
 	}
 }
 
-func (n *NotificationSender) Process(ctx context.Context, task *asynq.Task) error {
-	var data client.Data
-
-	err := json.Unmarshal(task.Payload(), &data)
-	if err != nil {
-		log.Error(ctx, "failed to unmarshal notification payload", err)
-		return err
-	}
-
-	err = n.client.CreateNotification(ctx, data)
-	if err != nil {
-		log.Error(ctx, "failed to create notification", err)
-		return err
-	}
-
-	return nil
-}
-
-func (n *NotificationSender) ProcessTask(ctx context.Context, task *asynq.Task) error {
+func (n *notificationSender) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "starting notification sender task")
 
 	var data client.Data
@@ -68,12 +50,6 @@ func (n *NotificationSender) ProcessTask(ctx context.Context, task *asynq.Task) 
 	return nil
 }
 
-func (k *NotificationSender) SetFanOut(client async.Client, opts ...asynq.Option) {}
-
-func (k *NotificationSender) IsFanOutEnabled() bool {
-	return false
-}
-
-func (n *NotificationSender) TaskType() string {
+func (n *notificationSender) TaskType() string {
 	return config.TypeSendNotifications
 }

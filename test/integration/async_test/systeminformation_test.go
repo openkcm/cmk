@@ -41,12 +41,12 @@ func TestSchedulerSystemRefresh(t *testing.T) {
 	testDB, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
-	repository := sql.NewRepository(testDB)
+	r := sql.NewRepository(testDB)
 
 	id := 20
 	externalID := fmt.Sprintf("External%d", id)
 
-	testutils.CreateTestEntities(ctx, t, repository, testutils.NewSystem(func(s *model.System) {
+	testutils.CreateTestEntities(ctx, t, r, testutils.NewSystem(func(s *model.System) {
 		s.Identifier = externalID
 	}))
 
@@ -57,7 +57,7 @@ func TestSchedulerSystemRefresh(t *testing.T) {
 
 	// Start worker
 	go func() {
-		err := cronWorker.RunWorker(t.Context())
+		err := cronWorker.RunWorker(t.Context(), r)
 		assert.NoError(t, err)
 	}()
 
@@ -72,7 +72,7 @@ func TestSchedulerSystemRefresh(t *testing.T) {
 	sys := &model.System{Identifier: externalID}
 	ck := repo.NewCompositeKey().
 		Where(repo.IdentifierField, externalID)
-	ok, err := repository.First(
+	ok, err := r.First(
 		ctx,
 		sys,
 		*repo.NewQuery().
@@ -81,7 +81,7 @@ func TestSchedulerSystemRefresh(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
-	sys, err = repo.GetSystemByIDWithProperties(ctx, repository, sys.ID, repo.NewQuery())
+	sys, err = repo.GetSystemByIDWithProperties(ctx, r, sys.ID, repo.NewQuery())
 	assert.NoError(t, err)
 	assert.Equal(
 		t,
@@ -94,7 +94,7 @@ func TestSchedulerSystemRefresh(t *testing.T) {
 		sys.Properties[SystemRoleID],
 	)
 
-	ok, err = repository.Delete(ctx, sys, *repo.NewQuery())
+	ok, err = r.Delete(ctx, sys, *repo.NewQuery())
 	assert.NoError(t, err)
 	assert.True(t, ok)
 
