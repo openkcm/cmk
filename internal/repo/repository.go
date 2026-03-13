@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 
 	"github.com/google/uuid"
 
@@ -151,6 +149,10 @@ func ListAndCountSystemWithProperties(
 		return nil, 0, err
 	}
 
+	if len(systems) == 0 {
+		return []*model.System{}, count, nil
+	}
+
 	ck := NewCompositeKey()
 
 	ck.IsStrict = false
@@ -229,7 +231,13 @@ func ListAndCountSystemWithProperties(
 		return nil, 0, err
 	}
 
-	sys := slices.Collect(maps.Values(systemsMap))
+	// Iterate over the original slice to preserve order
+	sys := make([]*model.System, 0, len(systemsMap))
+	for _, s := range systems {
+		if enrichedSys, exists := systemsMap[s.ID]; exists {
+			sys = append(sys, enrichedSys)
+		}
+	}
 
 	return sys, count, nil
 }
