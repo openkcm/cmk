@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -35,6 +36,9 @@ type Repo interface {
 type Resource interface {
 	IsSharedModel() bool
 	TableName() string
+	CheckAuthz(ctx context.Context,
+		authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+		action authz.RepoAction) (bool, error)
 }
 
 // UniqueConstraintError represents an error caused by a violation of a unique constraint in the database.

@@ -836,14 +836,14 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 		allowedWorkflows []*model.Workflow
 	}{
 		{
-			name:             "user in auditor group",
-			authClient:       auditorAuthClient,
-			allowedWorkflows: []*model.Workflow{workflow, workflow2, workflow3, workflow4},
-		},
-		{
 			name:             "user in key admin group",
 			authClient:       keyAdminAuthClient,
 			allowedWorkflows: []*model.Workflow{workflow2, workflow3, workflow4},
+		},
+		{
+			name:             "user in auditor group",
+			authClient:       auditorAuthClient,
+			allowedWorkflows: []*model.Workflow{workflow, workflow2, workflow3, workflow4},
 		},
 	}
 

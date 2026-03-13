@@ -24,14 +24,6 @@ var tenants = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{ErrListTenants},
-		ExposedError: &APIError{
-			Code:    "GET_TENANTS",
-			Message: "Failed to get tenants",
-			Status:  http.StatusInternalServerError,
-		},
-	},
-	{
 		InternalErrorChain: []error{ErrTransformTenants},
 		ExposedError: &APIError{
 			Code:    "TRANSFORM_TENANTS_TO_API",
