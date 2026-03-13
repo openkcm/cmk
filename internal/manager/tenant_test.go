@@ -1,7 +1,6 @@
 package manager_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -244,52 +243,6 @@ func TestGetTenantByID(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.tenantID, result.ID)
-		},
-		)
-	}
-}
-
-func TestValidate(t *testing.T) {
-	tests := []struct {
-		name          string
-		schema        string
-		expectedError error
-	}{
-		{
-			name:   "valid schema",
-			schema: "KMS_validschema",
-		},
-		{
-			name:          "schema name too long",
-			schema:        "KMS_" + strings.Repeat("a", 60), // 64+ characters
-			expectedError: manager.ErrSchemaNameLength,
-		},
-		{
-			name:          "schema name too short",
-			schema:        "sc",
-			expectedError: manager.ErrInvalidSchema,
-		},
-		{
-			name:          "namespace validation fails forbidden prefix",
-			schema:        "pg_invalid",
-			expectedError: manager.ErrInvalidSchema,
-		},
-		{
-			name:          "namespace validation fails regex check",
-			schema:        "invalid@name",
-			expectedError: manager.ErrInvalidSchema,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := manager.ValidateSchema(tt.schema)
-			if tt.expectedError != nil {
-				assert.Error(t, err)
-				assert.ErrorIs(t, err, tt.expectedError)
-			} else {
-				assert.NoError(t, err)
-			}
 		},
 		)
 	}

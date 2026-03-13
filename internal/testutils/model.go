@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jxskiss/base62"
 	"github.com/openkcm/orbital"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -258,10 +259,11 @@ func NewKeyLabel(m func(l *model.KeyLabel)) *model.KeyLabel {
 
 func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 	tenantID := uuid.NewString()
+	schema := "_" + base62.EncodeToString([]byte(tenantID))
 	mut := NewMutator(func() model.Tenant {
 		return model.Tenant{
 			TenantModel: multitenancy.TenantModel{
-				SchemaName: tenantID,
+				SchemaName: schema,
 				DomainURL:  tenantID,
 			},
 			ID:        tenantID,

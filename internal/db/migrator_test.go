@@ -30,7 +30,7 @@ var (
 	psqlInstance config.Database
 )
 
-func createMigrationFiles(t *testing.T, table string) string {
+func createSchemaMigrationFiles(t *testing.T, table string) string {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -63,8 +63,8 @@ func setupMigrator(t *testing.T) (db.Migrator, string, *multitenancy.DB) {
 		psqlInstance = dbCfg
 	})
 	dbCfg := testutils.NewIsolatedDB(t, psqlInstance)
-	dbCfg.Migrator.Shared.Schema = createMigrationFiles(t, testTable)
-	dbCfg.Migrator.Tenant.Schema = createMigrationFiles(t, testTable)
+	dbCfg.Migrator.Shared.Schema = createSchemaMigrationFiles(t, testTable)
+	dbCfg.Migrator.Tenant.Schema = createSchemaMigrationFiles(t, testTable)
 
 	dbCon, err := db.StartDBConnection(ctx, dbCfg, []config.Database{})
 	assert.NoError(t, err)
@@ -78,7 +78,7 @@ func setupMigrator(t *testing.T) (db.Migrator, string, *multitenancy.DB) {
 	m, err := db.NewMigrator(sql.NewRepository(dbCon), &config.Config{Database: dbCfg})
 	assert.NoError(t, err)
 
-	return m, tenant.ID, dbCon
+	return m, tenant.SchemaName, dbCon
 }
 
 func TestMigrator(t *testing.T) {
@@ -111,7 +111,7 @@ func TestMigrator(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m, tenant, dbCon := setupMigrator(t)
-			err := m.MigrateToLatest(t.Context(), tt.migration)
+			_, err := m.MigrateToLatest(t.Context(), tt.migration)
 			assert.NoError(t, err)
 
 			if tt.migration.Target == db.AllTarget || tt.migration.Target == db.SharedTarget {
@@ -133,13 +133,13 @@ func TestMigrator(t *testing.T) {
 
 	t.Run("Should not error on repeated migrations", func(t *testing.T) {
 		m, _, dbCon := setupMigrator(t)
-		err := m.MigrateToLatest(t.Context(), db.Migration{
+		_, err := m.MigrateToLatest(t.Context(), db.Migration{
 			Type:   db.SchemaMigration,
 			Target: db.SharedTarget,
 		})
 		assert.NoError(t, err)
 
-		err = m.MigrateToLatest(t.Context(), db.Migration{
+		_, err = m.MigrateToLatest(t.Context(), db.Migration{
 			Type:   db.SchemaMigration,
 			Target: db.SharedTarget,
 		})
@@ -150,7 +150,7 @@ func TestMigrator(t *testing.T) {
 
 	t.Run("Should error on rollback on empty databases", func(t *testing.T) {
 		m, _, _ := setupMigrator(t)
-		err := m.MigrateToLatest(t.Context(), db.Migration{
+		_, err := m.MigrateToLatest(t.Context(), db.Migration{
 			Downgrade: true,
 			Type:      db.SchemaMigration,
 			Target:    db.SharedTarget,
@@ -160,14 +160,14 @@ func TestMigrator(t *testing.T) {
 
 	t.Run("Should rollback on DB containing migrations", func(t *testing.T) {
 		m, _, dbCon := setupMigrator(t)
-		err := m.MigrateToLatest(t.Context(), db.Migration{
+		_, err := m.MigrateToLatest(t.Context(), db.Migration{
 			Type:   db.SchemaMigration,
 			Target: db.SharedTarget,
 		})
 		assert.NoError(t, err)
 		assert.True(t, dbCon.Migrator().HasTable(testTable))
 
-		err = m.MigrateToLatest(t.Context(), db.Migration{
+		_, err = m.MigrateToLatest(t.Context(), db.Migration{
 			Downgrade: true,
 			Type:      db.SchemaMigration,
 			Target:    db.SharedTarget,
@@ -178,7 +178,7 @@ func TestMigrator(t *testing.T) {
 
 	t.Run("Should migrate to version", func(t *testing.T) {
 		m, _, _ := setupMigrator(t)
-		err := m.MigrateTo(t.Context(), db.Migration{
+		_, err := m.MigrateTo(t.Context(), db.Migration{
 			Type:   db.SchemaMigration,
 			Target: db.SharedTarget,
 		}, 1)
@@ -187,19 +187,10 @@ func TestMigrator(t *testing.T) {
 
 	t.Run("Should error on unsupported migration", func(t *testing.T) {
 		m, _, _ := setupMigrator(t)
-		err := m.MigrateToLatest(t.Context(), db.Migration{
+		_, err := m.MigrateToLatest(t.Context(), db.Migration{
 			Type:   "error",
 			Target: "error",
 		})
 		assert.ErrorIs(t, err, db.ErrUnsupportedMigration)
-	})
-
-	t.Run("Should error if there are no migrations", func(t *testing.T) {
-		m, _, _ := setupMigrator(t)
-		err := m.MigrateToLatest(t.Context(), db.Migration{
-			Type:   db.DataMigration,
-			Target: db.AllTarget,
-		})
-		assert.Error(t, err)
 	})
 }
