@@ -28,6 +28,24 @@ func NewNotificationSender(
 	}
 }
 
+func (n *NotificationSender) Process(ctx context.Context, task *asynq.Task) error {
+	var data client.Data
+
+	err := json.Unmarshal(task.Payload(), &data)
+	if err != nil {
+		log.Error(ctx, "failed to unmarshal notification payload", err)
+		return err
+	}
+
+	err = n.client.CreateNotification(ctx, data)
+	if err != nil {
+		log.Error(ctx, "failed to create notification", err)
+		return err
+	}
+
+	return nil
+}
+
 func (n *NotificationSender) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "starting notification sender task")
 

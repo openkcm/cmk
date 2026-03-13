@@ -42,18 +42,28 @@ func NewSystemsRefresher(
 	return s
 }
 
+func (s *SystemsRefresher) Process(ctx context.Context, _ *asynq.Task) error {
+	updateErr := s.systemClient.UpdateSystems(ctx)
+	// If network error return an error triggering
+	// another task attempt with a backoff
+	if isConnectionError(updateErr) {
+		return updateErr
+	}
+
+	if updateErr != nil {
+		log.Error(ctx, "Running Refresh System Task", updateErr)
+	}
+	return nil
+}
+
 func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Systems Refresh Task")
-
-	if async.IsChildTask(task) {
-		return async.ProcessChildTask(ctx, task, s.process)
-	}
 
 	err := s.processor.ProcessTenantsInBatch(
 		ctx,
 		task,
 		repo.NewQuery(),
-		s.process,
+		s.Process,
 	)
 	if err != nil {
 		log.Error(ctx, "Error during systems refresh batch processing", err)
@@ -87,18 +97,4 @@ func isConnectionError(err error) bool {
 	code := st.Code()
 
 	return code == codes.Unavailable || code == codes.DeadlineExceeded
-}
-
-func (s *SystemsRefresher) process(ctx context.Context) error {
-	updateErr := s.systemClient.UpdateSystems(ctx)
-	// If network error return an error triggering
-	// another task attempt with a backoff
-	if isConnectionError(updateErr) {
-		return updateErr
-	}
-
-	if updateErr != nil {
-		log.Error(ctx, "Running Refresh System Task", updateErr)
-	}
-	return nil
 }
