@@ -24,7 +24,7 @@ func TestBatchProcessor(t *testing.T) {
 	t.Run("Should run task on one job", func(t *testing.T) {
 		bp := async.NewBatchProcessor(r)
 		count := 0
-		err := bp.ProcessTenantsInBatch(t.Context(), task, repo.NewQuery(), func(ctx context.Context) error {
+		err := bp.ProcessTenantsInBatch(t.Context(), task, repo.NewQuery(), func(ctx context.Context, _ *asynq.Task) error {
 			count++
 			return nil
 		})
@@ -36,7 +36,7 @@ func TestBatchProcessor(t *testing.T) {
 		client := &async.MockClient{}
 		bp := async.NewBatchProcessor(r, async.WithFanOutTenants(client))
 		count := 0
-		err := bp.ProcessTenantsInBatch(t.Context(), task, repo.NewQuery(), func(ctx context.Context) error {
+		err := bp.ProcessTenantsInBatch(t.Context(), task, repo.NewQuery(), func(ctx context.Context, _ *asynq.Task) error {
 			count++
 			return nil
 		})

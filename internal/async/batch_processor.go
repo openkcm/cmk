@@ -54,7 +54,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 	ctx context.Context,
 	asynqTask *asynq.Task,
 	query *repo.Query,
-	processTenant func(ctx context.Context) error,
+	processTenant func(ctx context.Context, task *asynq.Task) error,
 ) error {
 	totalTenantCount := 0
 
@@ -103,7 +103,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 
 				if !bp.fanOutMode {
 					log.Debug(ctx, "Starting async task processing")
-					err := processTenant(ctx)
+					err := processTenant(ctx, asynqTask)
 					if err != nil {
 						return err
 					}
