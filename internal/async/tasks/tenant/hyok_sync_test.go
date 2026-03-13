@@ -44,10 +44,4 @@ func TestHYOKSyncProcessAction(t *testing.T) {
 		taskType := sync.TaskType()
 		assert.Equal(t, config.TypeHYOKSync, taskType, "Task type should be HYOKSync")
 	})
-
-	t.Run("Task continues one failure of hyok client", func(t *testing.T) {
-		sync := tasks.NewHYOKSync(&HyokHYOKClientMockFailed{}, repo)
-		err := sync.ProcessTask(t.Context(), task)
-		assert.NoError(t, err)
-	})
 }

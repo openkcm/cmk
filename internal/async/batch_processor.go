@@ -19,7 +19,7 @@ type BatchProcessorOptions func(*BatchProcessor)
 
 func WithFanOutTenants(asyncClient Client, opts ...asynq.Option) BatchProcessorOptions {
 	return func(bp *BatchProcessor) {
-		bp.fanOutMode = true
+		bp.fanOut = true
 		bp.asyncClient = asyncClient
 		bp.fanOutOpts = opts
 	}
@@ -35,14 +35,14 @@ type BatchProcessor struct {
 	repo        repo.Repo
 	asyncClient Client
 	tenantQuery *repo.Query
-	fanOutMode  bool
+	fanOut      bool
 	fanOutOpts  []asynq.Option
 }
 
 func NewBatchProcessor(r repo.Repo, opts ...BatchProcessorOptions) *BatchProcessor {
 	bp := &BatchProcessor{
 		repo:        r,
-		fanOutMode:  false,
+		fanOut:      false,
 		tenantQuery: repo.NewQuery(),
 	}
 
@@ -57,7 +57,7 @@ func NewBatchProcessor(r repo.Repo, opts ...BatchProcessorOptions) *BatchProcess
 // It tracks the total tenant count, logs batch progress, and logs task completion
 // In fan-out mode, it enqueues child tasks instead of processing inline
 //
-//nolint:funlen
+//nolint:funlen,cyclop
 func (bp *BatchProcessor) ProcessTenantsInBatch(
 	ctx context.Context,
 	asynqTask *asynq.Task,
@@ -65,9 +65,11 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 ) error {
 	totalTenantCount := 0
 
-	ctx = slogctx.With(ctx,
-		slog.String("task", asynqTask.Type()),
-	)
+	if asynqTask != nil {
+		ctx = slogctx.With(ctx,
+			slog.String("task", asynqTask.Type()),
+		)
+	}
 
 	var tenantIDs []string
 	if asynqTask != nil && asynqTask.Payload() != nil {
@@ -108,7 +110,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 					log.WithLogInjectAttrs(slog.Int("index", i)),
 				)
 
-				if !bp.fanOutMode {
+				if !bp.fanOut {
 					err := processTenant(ctx, asynqTask)
 					if err != nil {
 						log.Error(ctx, "Task failed", err)

@@ -103,8 +103,8 @@ func TestTenantNameRefresher(t *testing.T) {
 		assert.Equal(t, config.TypeTenantRefreshName, taskType)
 	})
 
-	t.Run("Should handle nil task parameter", func(t *testing.T) {
+	t.Run("Should error if no tenantID", func(t *testing.T) {
 		err := refresher.ProcessTask(t.Context(), task)
-		assert.NoError(t, err)
+		assert.Error(t, err)
 	})
 }

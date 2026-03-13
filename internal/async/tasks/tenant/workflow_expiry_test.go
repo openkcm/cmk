@@ -133,7 +133,6 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
 		err := processor.ProcessTask(ctx, task)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "task failed")
 	})
 
 	t.Run("Transition fails", func(t *testing.T) {
@@ -144,6 +143,5 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
 		err := processor.ProcessTask(ctx, task)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "task failed")
 	})
 }

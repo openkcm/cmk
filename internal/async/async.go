@@ -32,39 +32,18 @@ var (
 
 type TaskOption func(TenantTaskHandler)
 
-func WithFanOut(client Client, opts ...asynq.Option) TaskOption {
-	return func(h TenantTaskHandler) {
-		h.SetFanOut(client, opts...)
-	}
-}
+// FanOutHandler task into child tasks per tenant
+type FanOutHandler interface {
+	TaskHandler
 
-func WithFanOutFromConfig(client Client, cfg *conf.Config, taskType string) TaskOption {
-	task, ok := cfg.Scheduler.GetTasks()[taskType]
-
-	// No child config, use fanout with no special options
-	if !ok || task.ChildTask == nil {
-		return WithFanOut(client)
-	}
-
-	opts := []asynq.Option{asynq.MaxRetry(task.ChildTask.Retries)}
-
-	if task.ChildTask.TimeOut > 0 {
-		opts = append(opts, asynq.Timeout(task.ChildTask.TimeOut))
-	}
-
-	return WithFanOut(client, opts...)
-}
-
-// Fanout task into child tasks per tenant
-type FanOut interface {
-	SetFanOut(client Client, opts ...asynq.Option)
-	IsFanOutEnabled() bool
+	FanOutFunc() FunOutFunc
 }
 
 // TenantTaskHandler is a task that is run for a selection of tenants
 type TenantTaskHandler interface {
 	TaskHandler
-	FanOut
+	FanOutHandler
+
 	TenantQuery() *repo.Query
 }
 
@@ -154,31 +133,17 @@ func (a *App) Enqueue(
 }
 
 // RegisterTasks registers multiple task handlers
-// Automatically registers child handlers for tasks with FanOut() == true
 func (a *App) RegisterTasks(ctx context.Context, handlers []TaskHandler) {
 	for _, handler := range handlers {
-		taskType := handler.TaskType()
-		a.tasks[taskType] = handler
+		a.registerTask(ctx, handler)
 
-		log.Info(
-			ctx,
-			"Registered task",
-			slog.String("name", taskType),
-		)
-
-		if fanOutHandler, ok := handler.(FanOut); ok {
-			if fanOutHandler.IsFanOutEnabled() {
-				// Go in loop registering
-			}
-		}
-
-		if tenantHandler, ok := handler.(TenantTaskHandler); ok {
-			if tenantHandler.IsFanOutEnabled() {
-				childHandler := NewChildTask(handler)
-				childTaskType := childHandler.TaskType()
-				a.tasks[childTaskType] = childHandler
-				log.Info(ctx, "Registered child task", slog.String("name", childTaskType))
-
+		// Check if scheduled task has fanout enabled on config
+		taskCfg, ok := a.cfg.Scheduler.GetTasks()[handler.TaskType()]
+		if ok && taskCfg.FanOutTask.Enabled {
+			// Configure fanout on tasks that support it
+			if h, ok := handler.(FanOutHandler); ok {
+				childHandler := NewFanOutHandler(h, h.FanOutFunc())
+				a.registerTask(ctx, childHandler)
 			}
 		}
 	}
@@ -197,10 +162,11 @@ func (a *App) RunWorker(ctx context.Context, r repo.Repo) error {
 		mux.HandleFunc(taskName, func(ctx context.Context, task *asynq.Task) error {
 			switch h := handler.(type) {
 			case TenantTaskHandler:
-				if h.IsFanOutEnabled() {
+				enabled, opts := a.getFanOutOpts(h.TaskType())
+				if enabled {
 					processor := NewBatchProcessor(
 						r,
-						WithFanOutTenants(a.Client()),
+						WithFanOutTenants(a.Client(), opts...),
 						WithTenantQuery(h.TenantQuery()),
 					)
 					return processor.ProcessTenantsInBatch(ctx, task, h.ProcessTask)
@@ -313,4 +279,32 @@ func loadALCAuthFromConfig(cfg conf.Redis) ([]byte, []byte, error) {
 	}
 
 	return username, password, nil
+}
+
+func (a *App) getFanOutOpts(taskType string) (bool, []asynq.Option) {
+	taskCfg, ok := a.cfg.Scheduler.GetTasks()[taskType]
+	if !ok || !taskCfg.FanOutTask.Enabled {
+		return false, nil
+	}
+
+	opts := []asynq.Option{
+		asynq.MaxRetry(taskCfg.FanOutTask.Retries),
+	}
+	if taskCfg.FanOutTask.TimeOut > 0 {
+		opts = append(opts, asynq.Timeout(taskCfg.FanOutTask.TimeOut))
+	}
+
+	return taskCfg.Enabled, opts
+}
+
+func (a *App) registerTask(ctx context.Context, handler TaskHandler) {
+	taskType := handler.TaskType()
+
+	a.tasks[taskType] = handler
+
+	log.Info(
+		ctx,
+		"Registered task",
+		slog.String("name", taskType),
+	)
 }
