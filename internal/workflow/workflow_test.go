@@ -1025,12 +1025,10 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		ctx,
 		t,
 		r,
-		&model.Key{
-			ID:                 artifactID01,
-			Provider:           "TEST",
-			KeyType:            "SYSTEM_MANAGED",
-			KeyConfigurationID: keyConf.ID,
-		},
+		testutils.NewKey(func(k *model.Key) {
+			k.ID = artifactID01
+			k.KeyConfigurationID = keyConf.ID
+		}),
 	)
 
 	for _, tt := range tests {
@@ -1262,12 +1260,12 @@ func TestAvailableBusinessUserTransitions(t *testing.T) {
 		CreatorID:  uuid.NewString(),
 	}
 	assert.NoError(t, r.Create(ctx, keyConf))
-	assert.NoError(t, r.Create(ctx, &model.Key{
-		ID:                 artifactID01,
-		Provider:           "TEST",
-		KeyType:            "SYSTEM_MANAGED",
-		KeyConfigurationID: keyConf.ID,
-	}))
+	assert.NoError(t, r.Create(ctx,
+		testutils.NewKey(func(k *model.Key) {
+			k.ID = artifactID01
+			k.KeyConfigurationID = keyConf.ID
+		}),
+	))
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1374,12 +1372,12 @@ func TestGetApprovalSummary(t *testing.T) {
 		CreatorID:  uuid.NewString(),
 	}
 	assert.NoError(t, r.Create(ctx, keyConf))
-	assert.NoError(t, r.Create(ctx, &model.Key{
-		ID:                 artifactID01,
-		Provider:           "TEST",
-		KeyType:            "SYSTEM_MANAGED",
-		KeyConfigurationID: keyConf.ID,
-	}))
+	assert.NoError(t, r.Create(ctx,
+		testutils.NewKey(func(k *model.Key) {
+			k.ID = artifactID01
+			k.KeyConfigurationID = keyConf.ID
+		}),
+	))
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

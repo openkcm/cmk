@@ -177,8 +177,6 @@ func (v PluginProviderTransformer) GetRegion(
 
 func convertKeyType(keyType cmkapi.KeyType) keystoreopv1.KeyType {
 	switch keyType {
-	case cmkapi.KeyTypeSYSTEMMANAGED:
-		return keystoreopv1.KeyType_KEY_TYPE_SYSTEM_MANAGED
 	case cmkapi.KeyTypeBYOK:
 		return keystoreopv1.KeyType_KEY_TYPE_BYOK
 	case cmkapi.KeyTypeHYOK:
