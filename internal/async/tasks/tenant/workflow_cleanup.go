@@ -18,14 +18,13 @@ type WorkflowCleaner struct {
 	workflowRemoval WorkflowRemoval
 	repo            repo.Repo
 	processor       *async.BatchProcessor
-	fanout          bool
 }
 
 func NewWorkflowCleaner(
 	workflowRemoval WorkflowRemoval,
 	repo repo.Repo,
 	opts ...async.TaskOption,
-) *WorkflowCleaner {
+) async.TenantTaskHandler {
 	wc := &WorkflowCleaner{
 		workflowRemoval: workflowRemoval,
 		repo:            repo,
@@ -47,13 +46,8 @@ func (wc *WorkflowCleaner) TenantQuery() *repo.Query {
 	return repo.NewQuery()
 }
 
-func (wc *WorkflowCleaner) SetFanOut(client async.Client, opts ...asynq.Option) {
-	wc.processor = async.NewBatchProcessor(wc.repo, async.WithFanOutTenants(client, opts...))
-	wc.fanout = true
-}
-
-func (wc *WorkflowCleaner) IsFanOutEnabled() bool {
-	return wc.fanout
+func (wc *WorkflowCleaner) FanOutFunc() async.FunOutFunc {
+	return async.TenantFanOut
 }
 
 func (wc *WorkflowCleaner) TaskType() string {

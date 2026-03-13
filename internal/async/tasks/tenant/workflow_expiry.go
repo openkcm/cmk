@@ -31,14 +31,13 @@ type WorkflowExpiryProcessor struct {
 	updater   WorkflowExpiryUpdater
 	repo      repo.Repo
 	processor *async.BatchProcessor
-	fanout    bool
 }
 
 func NewWorkflowExpiryProcessor(
 	updater WorkflowExpiryUpdater,
 	repo repo.Repo,
 	opts ...async.TaskOption,
-) *WorkflowExpiryProcessor {
+) async.TenantTaskHandler {
 	w := &WorkflowExpiryProcessor{
 		updater:   updater,
 		repo:      repo,
@@ -77,13 +76,8 @@ func (w *WorkflowExpiryProcessor) TaskType() string {
 	return config.TypeWorkflowExpire
 }
 
-func (w *WorkflowExpiryProcessor) SetFanOut(client async.Client, opts ...asynq.Option) {
-	w.processor = async.NewBatchProcessor(w.repo, async.WithFanOutTenants(client, opts...))
-	w.fanout = true
-}
-
-func (w *WorkflowExpiryProcessor) IsFanOutEnabled() bool {
-	return w.fanout
+func (w *WorkflowExpiryProcessor) FanOutFunc() async.FunOutFunc {
+	return async.TenantFanOut
 }
 
 func (w *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID uuid.UUID) error {

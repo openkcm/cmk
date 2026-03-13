@@ -21,14 +21,13 @@ type SystemsRefresher struct {
 	systemClient SystemUpdater
 	repo         repo.Repo
 	processor    *async.BatchProcessor
-	fanout       bool
 }
 
 func NewSystemsRefresher(
 	systemClient SystemUpdater,
 	repo repo.Repo,
 	opts ...async.TaskOption,
-) *SystemsRefresher {
+) async.TenantTaskHandler {
 	s := &SystemsRefresher{
 		systemClient: systemClient,
 		repo:         repo,
@@ -45,7 +44,6 @@ func (s *SystemsRefresher) Process(ctx context.Context, _ *asynq.Task) error {
 	return nil
 }
 
-// TODO: How to force task to run again
 func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	err := s.systemClient.UpdateSystems(ctx)
 
@@ -65,13 +63,8 @@ func (s *SystemsRefresher) TenantQuery() *repo.Query {
 	return repo.NewQuery()
 }
 
-func (s *SystemsRefresher) SetFanOut(client async.Client, opts ...asynq.Option) {
-	s.processor = async.NewBatchProcessor(s.repo, async.WithFanOutTenants(client, opts...))
-	s.fanout = true
-}
-
-func (s *SystemsRefresher) IsFanOutEnabled() bool {
-	return s.fanout
+func (s *SystemsRefresher) FanOutFunc() async.FunOutFunc {
+	return async.TenantFanOut
 }
 
 func (s *SystemsRefresher) TaskType() string {
