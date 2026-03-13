@@ -334,6 +334,7 @@ func TestKeyVersionController_CreateKeyVersion(t *testing.T) {
 		keystore,
 		keystoreDefaultCert,
 	)
+	testutils.CreateDefaultKeystoreConfigForTests(ctx, t, r)
 
 	expectedNewKeyVersion := model.KeyVersion{
 		Version:   3,
@@ -441,6 +442,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 		keystore,
 		keystoreDefaultCert,
 	)
+	testutils.CreateDefaultKeystoreConfigForTests(ctx, t, r)
 
 	t.Run("Should rotate key", func(t *testing.T) {
 		// Refresh Key

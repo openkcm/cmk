@@ -70,6 +70,7 @@ func TestKeyController_ForXSS(t *testing.T) {
 		ksConfig,
 		keystoreDefaultCert,
 	)
+	testutils.CreateDefaultKeystoreConfigForTests(ctx, t, r)
 
 	baseKey := map[string]any{
 		"name":               "test-key",
@@ -250,6 +251,7 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 		kc,
 		ksConfig,
 	)
+	testutils.CreateDefaultKeystoreConfigForTests(ctx, t, r)
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 		Method:            http.MethodGet,

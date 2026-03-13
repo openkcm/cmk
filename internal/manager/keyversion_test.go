@@ -89,6 +89,9 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 		keystoreDefaultCert,
 	)
 	s.keyConfigID = keyConfig.ID
+
+	err = tenantConfigManager.SetDefaultKeystore(s.ctx, testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {}))
+	s.Require().NoError(err)
 }
 
 func (s *KeyVersionManagerSuit) TestKeyVersionManager_AddKeyVersion() {

@@ -74,7 +74,14 @@ func CreateTestEntities(ctx context.Context, tb testing.TB, r repo.Repo, entitie
 	tb.Helper()
 
 	for _, e := range entities {
-		err := r.Create(ctx, e)
+		var err error
+		// Use Set for Keystore (shared pool) to avoid duplicate key when same config
+		// is created by multiple tests sharing the same DB
+		if _, ok := e.(*model.Keystore); ok {
+			err = r.Set(ctx, e)
+		} else {
+			err = r.Create(ctx, e)
+		}
 		assert.NoError(tb, err)
 	}
 }

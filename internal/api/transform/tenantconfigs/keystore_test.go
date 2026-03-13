@@ -14,8 +14,13 @@ import (
 
 func TestToAPI(t *testing.T) {
 	providers := []string{"AWS"}
+	allowManaged := true
+	allowBYOK := false
 	expected := cmkapi.TenantKeystore{
-		Default: nil,
+		Default: &cmkapi.DefaultKeystore{
+			AllowManaged: &allowManaged,
+			AllowBYOK:    &allowBYOK,
+		},
 		Hyok: cmkapi.HYOKKeystore{
 			Providers: &providers,
 			Allow:     ptr.PointTo(true),
