@@ -11,29 +11,29 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 )
 
-type KeystorePoolUpdater interface {
+type KeystorePoolFiller interface {
 	FillKeystorePool(ctx context.Context, size int) error
 }
 
-type KeystorePoolFiller struct {
-	updater KeystorePoolUpdater
+type keystorePoolFiller struct {
+	updater KeystorePoolFiller
 	size    int
 	repo    repo.Repo
 }
 
 func NewKeystorePoolFiller(
-	updater KeystorePoolUpdater,
+	updater KeystorePoolFiller,
 	repo repo.Repo,
 	poolConfig config.KeystorePool,
-) *KeystorePoolFiller {
-	return &KeystorePoolFiller{
+) async.TaskHandler {
+	return &keystorePoolFiller{
 		updater: updater,
 		repo:    repo,
 		size:    poolConfig.Size,
 	}
 }
 
-func (k *KeystorePoolFiller) Process(ctx context.Context, _ *asynq.Task) error {
+func (k *keystorePoolFiller) ProcessTask(ctx context.Context, _ *asynq.Task) error {
 	log.Info(ctx, "Starting Keystore Pool Filler Task")
 
 	err := k.updater.FillKeystorePool(ctx, k.size)
@@ -45,18 +45,6 @@ func (k *KeystorePoolFiller) Process(ctx context.Context, _ *asynq.Task) error {
 	return nil
 }
 
-func (k *KeystorePoolFiller) ProcessTask(ctx context.Context, _ *asynq.Task) error {
-	log.Info(ctx, "Starting Keystore Pool Filler Task")
-
-	return k.Process(ctx, nil)
-}
-
-func (k *KeystorePoolFiller) SetFanOut(client async.Client, opts ...asynq.Option) {}
-
-func (k *KeystorePoolFiller) IsFanOutEnabled() bool {
-	return false
-}
-
-func (k *KeystorePoolFiller) TaskType() string {
+func (k *keystorePoolFiller) TaskType() string {
 	return config.TypeKeystorePool
 }

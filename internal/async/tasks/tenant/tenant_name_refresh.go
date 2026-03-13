@@ -10,7 +10,6 @@ import (
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -41,7 +40,7 @@ func NewTenantNameRefresher(
 	return t
 }
 
-func (t *TenantNameRefresher) Process(ctx context.Context, _ *asynq.Task) error {
+func (t *TenantNameRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	tenantID, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
 		return err
@@ -65,22 +64,8 @@ func (t *TenantNameRefresher) Process(ctx context.Context, _ *asynq.Task) error 
 	return nil
 }
 
-func (t *TenantNameRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.Info(ctx, "Starting Tenant Name Refresh Task")
-
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.Name, repo.Empty)))
-
-	err := t.processor.ProcessTenantsInBatch(
-		ctx,
-		task,
-		query,
-		t.Process,
-	)
-	if err != nil {
-		log.Error(ctx, "Error during tenant name refresh batch processing", err)
-		return errs.Wrap(ErrRunningTask, err)
-	}
-	return nil
+func (t *TenantNameRefresher) TenantQuery() *repo.Query {
+	return repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.Name, repo.Empty)))
 }
 
 func (t *TenantNameRefresher) SetFanOut(client async.Client, opts ...asynq.Option) {

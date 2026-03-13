@@ -8,7 +8,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/async/tasks"
+	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -43,11 +43,5 @@ func TestHYOKSyncProcessAction(t *testing.T) {
 	t.Run("Task type is right", func(t *testing.T) {
 		taskType := sync.TaskType()
 		assert.Equal(t, config.TypeHYOKSync, taskType, "Task type should be HYOKSync")
-	})
-
-	t.Run("Task continues one failure of hyok client", func(t *testing.T) {
-		sync := tasks.NewHYOKSync(&HyokHYOKClientMockFailed{}, repo)
-		err := sync.ProcessTask(t.Context(), task)
-		assert.NoError(t, err)
 	})
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/zeebo/assert"
 
 	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 )
@@ -24,7 +23,7 @@ func TestBatchProcessor(t *testing.T) {
 	t.Run("Should run task on one job", func(t *testing.T) {
 		bp := async.NewBatchProcessor(r)
 		count := 0
-		err := bp.ProcessTenantsInBatch(t.Context(), task, repo.NewQuery(), func(ctx context.Context, _ *asynq.Task) error {
+		err := bp.ProcessTenantsInBatch(t.Context(), task, func(ctx context.Context, _ *asynq.Task) error {
 			count++
 			return nil
 		})
@@ -36,7 +35,7 @@ func TestBatchProcessor(t *testing.T) {
 		client := &async.MockClient{}
 		bp := async.NewBatchProcessor(r, async.WithFanOutTenants(client))
 		count := 0
-		err := bp.ProcessTenantsInBatch(t.Context(), task, repo.NewQuery(), func(ctx context.Context, _ *asynq.Task) error {
+		err := bp.ProcessTenantsInBatch(t.Context(), task, func(ctx context.Context, _ *asynq.Task) error {
 			count++
 			return nil
 		})

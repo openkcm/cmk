@@ -10,7 +10,7 @@ import (
 
 	tenantv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
-	"github.com/openkcm/cmk/internal/async/tasks"
+	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -103,8 +103,8 @@ func TestTenantNameRefresher(t *testing.T) {
 		assert.Equal(t, config.TypeTenantRefreshName, taskType)
 	})
 
-	t.Run("Should handle nil task parameter", func(t *testing.T) {
+	t.Run("Should error if no tenantID", func(t *testing.T) {
 		err := refresher.ProcessTask(t.Context(), task)
-		assert.NoError(t, err)
+		assert.Error(t, err)
 	})
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -43,34 +42,27 @@ func NewSystemsRefresher(
 }
 
 func (s *SystemsRefresher) Process(ctx context.Context, _ *asynq.Task) error {
-	updateErr := s.systemClient.UpdateSystems(ctx)
+	return nil
+}
+
+// TODO: How to force task to run again
+func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	err := s.systemClient.UpdateSystems(ctx)
+
 	// If network error return an error triggering
 	// another task attempt with a backoff
-	if isConnectionError(updateErr) {
-		return updateErr
+	if isConnectionError(err) {
+		return err
 	}
 
-	if updateErr != nil {
-		log.Error(ctx, "Running Refresh System Task", updateErr)
+	if err != nil {
+		log.Error(ctx, "Running Refresh System Task", err)
 	}
 	return nil
 }
 
-func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.Info(ctx, "Starting Systems Refresh Task")
-
-	err := s.processor.ProcessTenantsInBatch(
-		ctx,
-		task,
-		repo.NewQuery(),
-		s.Process,
-	)
-	if err != nil {
-		log.Error(ctx, "Error during systems refresh batch processing", err)
-		return errs.Wrap(ErrRunningTask, err)
-	}
-
-	return nil
+func (s *SystemsRefresher) TenantQuery() *repo.Query {
+	return repo.NewQuery()
 }
 
 func (s *SystemsRefresher) SetFanOut(client async.Client, opts ...asynq.Option) {

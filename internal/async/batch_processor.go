@@ -25,17 +25,25 @@ func WithFanOutTenants(asyncClient Client, opts ...asynq.Option) BatchProcessorO
 	}
 }
 
+func WithTenantQuery(q *repo.Query) BatchProcessorOptions {
+	return func(bp *BatchProcessor) {
+		bp.tenantQuery = q
+	}
+}
+
 type BatchProcessor struct {
 	repo        repo.Repo
 	asyncClient Client
+	tenantQuery *repo.Query
 	fanOutMode  bool
 	fanOutOpts  []asynq.Option
 }
 
-func NewBatchProcessor(repo repo.Repo, opts ...BatchProcessorOptions) *BatchProcessor {
+func NewBatchProcessor(r repo.Repo, opts ...BatchProcessorOptions) *BatchProcessor {
 	bp := &BatchProcessor{
-		repo:       repo,
-		fanOutMode: false,
+		repo:        r,
+		fanOutMode:  false,
+		tenantQuery: repo.NewQuery(),
 	}
 
 	for _, o := range opts {
@@ -53,7 +61,6 @@ func NewBatchProcessor(repo repo.Repo, opts ...BatchProcessorOptions) *BatchProc
 func (bp *BatchProcessor) ProcessTenantsInBatch(
 	ctx context.Context,
 	asynqTask *asynq.Task,
-	query *repo.Query,
 	processTenant func(ctx context.Context, task *asynq.Task) error,
 ) error {
 	totalTenantCount := 0
@@ -77,6 +84,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 		}
 	}
 
+	query := bp.tenantQuery
 	if len(tenantIDs) > 0 {
 		ck := repo.NewCompositeKey().Where(repo.IDField, tenantIDs)
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
@@ -90,7 +98,6 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 				slog.Int("batchSize", len(tenants)),
 				slog.Int("totalTenantCount", totalTenantCount),
 			)
-			log.Debug(ctx, "Processing batch of tenants ")
 
 			for i, tenant := range tenants {
 				ctx := cmkcontext.New(
@@ -102,15 +109,11 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 				)
 
 				if !bp.fanOutMode {
-					log.Debug(ctx, "Starting async task processing")
 					err := processTenant(ctx, asynqTask)
 					if err != nil {
-						return err
+						log.Error(ctx, "Task failed", err)
 					}
-					log.Debug(ctx, "Finished async task processig")
 				} else {
-					log.Debug(ctx, "Creating Fanned-Out Task")
-
 					// Create child task with tenant information in payload
 					payload := asyncUtils.NewTaskPayload(ctx, asynqTask.Payload())
 					err := FanOutTask(
@@ -122,7 +125,6 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 					if err != nil {
 						return err
 					}
-					log.Debug(ctx, "Created Fanned-Out Task")
 				}
 			}
 			return nil
