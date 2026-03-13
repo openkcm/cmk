@@ -628,10 +628,11 @@ config:
         retries: 3
       - cronspec: "@every 1h"
         taskType: key:sync
-        retries: 0
+        retries: 3
         timeOut: 5m
-        childTask:
-          retries: 3
+        fanOutTask:
+          enabled: true
+          retries: 0
           timeOut: 2m
       - cronspec: "@every 1h"
         taskType: keystore:fill

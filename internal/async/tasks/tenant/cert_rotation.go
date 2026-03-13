@@ -24,7 +24,6 @@ type CertRotator struct {
 	certClient CertUpdater
 	repo       repo.Repo
 	processor  *async.BatchProcessor
-	fanout     bool
 }
 
 func NewCertRotator(
@@ -47,35 +46,30 @@ func NewCertRotator(
 
 var ErrRotatingCert = errors.New("error rotating certificate")
 
-func (s *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
+func (c *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Certificate Rotation Task")
 
-	err := s.certClient.RotateExpiredCertificates(ctx)
+	err := c.certClient.RotateExpiredCertificates(ctx)
 	if err != nil {
-		return s.handleErrorTenants(ctx, err)
+		return c.handleErrorTenants(ctx, err)
 	}
 
 	return nil
 }
 
-func (s *CertRotator) TaskType() string {
+func (c *CertRotator) TaskType() string {
 	return config.TypeCertificateTask
 }
 
-func (s *CertRotator) SetFanOut(client async.Client, opts ...asynq.Option) {
-	s.processor = async.NewBatchProcessor(s.repo, async.WithFanOutTenants(client, opts...))
-	s.fanout = true
-}
-
-func (s *CertRotator) TenantQuery() *repo.Query {
+func (c *CertRotator) TenantQuery() *repo.Query {
 	return repo.NewQuery()
 }
 
-func (s *CertRotator) IsFanOutEnabled() bool {
-	return s.fanout
+func (c *CertRotator) FanOutFunc() async.FunOutFunc {
+	return async.TenantFanOut
 }
 
-func (s *CertRotator) handleErrorTenants(ctx context.Context, err error) error {
+func (c *CertRotator) handleErrorTenants(ctx context.Context, err error) error {
 	log.Error(ctx, "Error during certificate rotation batch processing", err)
 	return err
 }

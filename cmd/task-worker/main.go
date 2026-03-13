@@ -169,7 +169,7 @@ func registerTasks(
 		tenantTask.NewWorkflowExpiryProcessor(workflowManager, r),
 		tenantTask.NewWorkflowCleaner(workflowManager, r),
 		tenantTask.NewTenantNameRefresher(r, f.Registry()),
-		tenantTask.NewHYOKSync(keyManager, r, async.WithFanOutFromConfig(cron.Client(), cfg, config.TypeHYOKSync)),
+		tenantTask.NewHYOKSync(keyManager, r),
 	}
 
 	cron.RegisterTasks(ctx, taskHandlers)
