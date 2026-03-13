@@ -59,9 +59,7 @@ func (s *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
 		ctx,
 		task,
 		repo.NewQuery(),
-		func(ctx context.Context, _ *model.Tenant) error {
-			return s.process(ctx)
-		},
+		s.process,
 	)
 	if err != nil {
 		return s.handleErrorTenants(ctx, err)

@@ -14,6 +14,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type TenantNameRefresher struct {
@@ -53,9 +54,7 @@ func (t *TenantNameRefresher) ProcessTask(ctx context.Context, task *asynq.Task)
 		ctx,
 		task,
 		query,
-		func(ctx context.Context, tenant *model.Tenant) error {
-			return t.process(ctx, tenant)
-		},
+		t.process,
 	)
 	if err != nil {
 		log.Error(ctx, "Error during tenant name refresh batch processing", err)
@@ -77,17 +76,23 @@ func (t *TenantNameRefresher) TaskType() string {
 	return config.TypeTenantRefreshName
 }
 
-func (t *TenantNameRefresher) process(ctx context.Context, tenant *model.Tenant) error {
+func (t *TenantNameRefresher) process(ctx context.Context) error {
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return err
+	}
 	res, err := t.registry.Tenant().GetTenant(ctx, &tenantv1.GetTenantRequest{
-		Id: tenant.ID,
+		Id: tenantID,
 	})
-
-	tenant.Name = res.GetTenant().GetName()
 	// Log to not block other tenants if one fails
 	if err != nil {
 		log.Error(ctx, "Could not get tenant details", err)
 	}
 
+	tenant := &model.Tenant{
+		ID:   tenantID,
+		Name: res.GetTenant().GetName(),
+	}
 	_, err = t.r.Patch(ctx, tenant, *repo.NewQuery())
 	if err != nil {
 		return err
@@ -97,10 +102,6 @@ func (t *TenantNameRefresher) process(ctx context.Context, tenant *model.Tenant)
 
 func (t *TenantNameRefresher) processChildTask(ctx context.Context, task *asynq.Task) error {
 	return async.ProcessChildTask(ctx, task, func(ctx context.Context) error {
-		tenant, err := repo.GetTenant(ctx, t.r)
-		if err != nil {
-			return err
-		}
-		return t.process(ctx, tenant)
+		return t.process(ctx)
 	})
 }
