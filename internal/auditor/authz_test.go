@@ -77,7 +77,7 @@ func TestAuditor_SendCmkUnauthorizedRequestAuditLog(t *testing.T) {
 			defer mockCollectorServer.Close()
 
 			testAuditor := createTestAuditorForAuthz(mockCollectorServer.URL)
-			err := testAuditor.SendCmkUnauthorizedRequestAuditLog(tt.setupCtx(), string(authz.ResourceTypeKeyConfiguration), string(authz.ActionRead))
+			err := testAuditor.SendCmkUnauthorizedRequestAuditLog(tt.setupCtx(), string(authz.APIResourceTypeKeyConfiguration), string(authz.APIActionRead))
 
 			if tt.expectErr {
 				assert.Error(t, err)
@@ -94,7 +94,7 @@ func TestAuditor_SendCmkUnauthorizedRequestAuditLog_NilAuditor(t *testing.T) {
 
 	ctx := createTestContextForAuthz()
 
-	err := testAuditor.SendCmkUnauthorizedRequestAuditLog(ctx, string(authz.ResourceTypeKeyConfiguration), string(authz.ActionRead))
+	err := testAuditor.SendCmkUnauthorizedRequestAuditLog(ctx, string(authz.APIResourceTypeKeyConfiguration), string(authz.APIActionRead))
 
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, auditor.ErrNilAuditor)
@@ -104,7 +104,7 @@ func TestAuditor_SendCmkUnauthorizedRequestAuditLog_NilAuditLogger(t *testing.T)
 	testAuditor := &auditor.Auditor{}
 	ctx := createTestContextForAuthz()
 
-	err := testAuditor.SendCmkUnauthorizedRequestAuditLog(ctx, string(authz.ResourceTypeKeyConfiguration), string(authz.ActionRead))
+	err := testAuditor.SendCmkUnauthorizedRequestAuditLog(ctx, string(authz.APIResourceTypeKeyConfiguration), string(authz.APIActionRead))
 
 	// When audit logger is nil, the function should not return an error (it logs a warning and returns nil)
 	assert.NoError(t, err)

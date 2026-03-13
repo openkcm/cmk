@@ -4,7 +4,8 @@ import (
 	"context"
 
 	"github.com/openkcm/cmk/internal/async"
-	authzmodel "github.com/openkcm/cmk/internal/authz-model"
+	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
@@ -21,7 +22,7 @@ type APIController struct {
 	Repository    repo.Repo
 	Manager       *manager.Manager
 	config        *config.Config
-	AuthzEngine   *authzmodel.Engine
+	AuthzLoader   *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction]
 }
 
 // NewAPIController creates a new instance of APIController with the provided Repository.
@@ -33,6 +34,7 @@ func NewAPIController(
 	clientsFactory clients.Factory,
 	migrator db.Migrator,
 	svcRegistry *cmkpluginregistry.Registry,
+	authzLoader *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction],
 ) *APIController {
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, config, r)
 	if err != nil {
@@ -49,9 +51,10 @@ func NewAPIController(
 	}
 
 	return &APIController{
-		Manager:       manager.New(ctx, r, config, clientsFactory, svcRegistry, eventFactory, asyncClient, migrator),
+		Manager: manager.New(ctx, r, config, clientsFactory, svcRegistry,
+			eventFactory, asyncClient, migrator),
 		config:        config,
 		pluginCatalog: svcRegistry,
-		AuthzEngine:   authzmodel.NewEngine(ctx, r, config),
+		AuthzLoader:   authzLoader,
 	}
 }

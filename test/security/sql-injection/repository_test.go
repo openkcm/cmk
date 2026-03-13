@@ -5,11 +5,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 )
+
+var tenantTableName = string(authz.RepoResourceTypeTenant)
 
 func TestRepository_ForInjection(t *testing.T) {
 	db, tenant := startDB(t)
@@ -18,7 +20,7 @@ func TestRepository_ForInjection(t *testing.T) {
 	// Since we use literal string in the tests below we must ensure that the
 	// tests are using the correct tenant table name. If this assertion starts
 	// to fail we will also need to update the table names in the tests below.
-	assert.Equal(t, "public.tenants", model.TenantTableName)
+	assert.Equal(t, "public.tenants", tenantTableName)
 
 	// Following result in SQL like:
 	//  SELECT * FROM "public"."tenants" WHERE id = XXX ORDER BY "tenants"."id" LIMIT 1

@@ -1,10 +1,12 @@
 package model
 
 import (
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-)
+	"context"
 
-var TenantTableName = "public.tenants"
+	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
+
+	"github.com/openkcm/cmk/internal/authz"
+)
 
 type Tenant struct {
 	multitenancy.TenantModel
@@ -19,9 +21,23 @@ type Tenant struct {
 }
 
 // Validate validates given tenant data.
-func (t Tenant) Validate() error {
-	return ValidateAll(t.Status, t.Role)
+func (m Tenant) Validate() error {
+	return ValidateAll(m.Status, m.Role)
 }
 
-func (t Tenant) TableName() string   { return TenantTableName }
-func (t Tenant) IsSharedModel() bool { return true }
+// TableResourceType return the authz resource type
+func (m Tenant) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeTenant
+}
+
+func (m Tenant) TableName() string {
+	return string(m.TableResourceType())
+}
+
+func (m Tenant) IsSharedModel() bool { return true }
+
+func (m Tenant) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
+}
