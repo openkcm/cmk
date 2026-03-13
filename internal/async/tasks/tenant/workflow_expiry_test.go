@@ -10,7 +10,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/async/tasks"
+	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -133,7 +133,6 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
 		err := processor.ProcessTask(ctx, task)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "task failed")
 	})
 
 	t.Run("Transition fails", func(t *testing.T) {
@@ -144,6 +143,5 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
 		err := processor.ProcessTask(ctx, task)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "task failed")
 	})
 }

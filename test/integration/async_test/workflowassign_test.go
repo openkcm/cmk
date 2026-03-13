@@ -61,9 +61,11 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 
 	overrideDatabase(t, asyncApp, db, testConfig)
 
+	r := sql.NewRepository(db)
+
 	// Start worker
 	go func(ctx context.Context) {
-		err := asyncApp.RunWorker(ctx)
+		err := asyncApp.RunWorker(ctx, r)
 		assert.NoError(t, err)
 	}(ctx)
 

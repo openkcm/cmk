@@ -7,7 +7,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -41,28 +40,8 @@ func NewHYOKSync(
 	return h
 }
 
-func (h *HYOKSync) Process(ctx context.Context, task *asynq.Task) error {
-	syncErr := h.hyokClient.SyncHYOKKeys(ctx)
-	if syncErr != nil {
-		log.Error(ctx, "Running HYOK Sync", syncErr)
-	}
-	return nil
-}
-
-func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.Info(ctx, "Starting HYOK Sync Task")
-
-	err := h.processor.ProcessTenantsInBatch(
-		ctx,
-		task,
-		repo.NewQuery(),
-		h.Process,
-	)
-	if err != nil {
-		return h.handleErrorTenants(ctx, err)
-	}
-
-	return nil
+func (h *HYOKSync) ProcessTask(ctx context.Context, _ *asynq.Task) error {
+	return h.hyokClient.SyncHYOKKeys(ctx)
 }
 
 func (h *HYOKSync) TaskType() string {
@@ -78,7 +57,11 @@ func (h *HYOKSync) IsFanOutEnabled() bool {
 	return h.fanout
 }
 
+func (h *HYOKSync) TenantQuery() *repo.Query {
+	return repo.NewQuery()
+}
+
 func (h *HYOKSync) handleErrorTenants(ctx context.Context, err error) error {
 	log.Error(ctx, "Error during HYOK sync batch processing", err)
-	return errs.Wrap(ErrRunningTask, err)
+	return err
 }

@@ -29,14 +29,16 @@ type WorkflowProcessor struct {
 func NewWorkflowProcessor(
 	updater WorkflowUpdater,
 	repo repo.Repo,
-) *WorkflowProcessor {
+) async.TaskHandler {
 	return &WorkflowProcessor{
 		updater: updater,
 		repo:    repo,
 	}
 }
 
-func (s *WorkflowProcessor) Process(ctx context.Context, task *asynq.Task) error {
+func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	log.Info(ctx, "Started processing workflow auto assign task")
+
 	payload, err := asyncUtils.ParseTaskPayload(task.Payload())
 	if err != nil {
 		log.Error(ctx, "Failed to parse task payload", err)
@@ -84,20 +86,8 @@ func (s *WorkflowProcessor) Process(ctx context.Context, task *asynq.Task) error
 	return nil
 }
 
-func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.Info(ctx, "Started processing workflow auto assign task")
-
-	return s.Process(ctx, task)
-}
-
 func (s *WorkflowProcessor) TaskType() string {
 	return config.TypeWorkflowAutoAssign
-}
-
-func (s *WorkflowProcessor) SetFanOut(client async.Client, opts ...asynq.Option) {}
-
-func (s *WorkflowProcessor) IsFanOutEnabled() bool {
-	return false
 }
 
 func (s *WorkflowProcessor) putWorkflowInFailedState(

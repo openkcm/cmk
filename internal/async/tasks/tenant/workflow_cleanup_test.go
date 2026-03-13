@@ -7,7 +7,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/async/tasks"
+	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
