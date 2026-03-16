@@ -29,11 +29,6 @@ func initOrbitalSchema(ctx context.Context, dbCfg config.Database) (*sql.DB, err
 		return nil, fmt.Errorf("orbit pool: %w", err)
 	}
 
-	_, err = orbitalDB.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS orbital")
-	if err != nil {
-		return nil, fmt.Errorf("ensure schema: %w", err)
-	}
-
 	return orbitalDB, nil
 }
 
