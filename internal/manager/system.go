@@ -291,7 +291,7 @@ func (m *SystemManager) GetSystemByID(ctx context.Context, systemID uuid.UUID) (
 
 	// Check authorization for the system's key configuration (if exists)
 	// Note: If the system is not linked to any key configuration, it is accessible to all users
-	_, err = m.user.HasSystemAccess(ctx, authz.ActionRead, system)
+	_, err = m.user.HasSystemAccess(ctx, authz.APIActionRead, system)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +321,7 @@ func (m *SystemManager) LinkSystemAction(
 		// Check authorization for the TARGET key configuration
 		// User must have access to BOTH source (checked above) and target to perform the link
 		if patchSystem.KeyConfigurationID != uuid.Nil {
-			_, err = m.user.HasSystemAccess(ctx, authz.ActionSystemModifyLink, system)
+			_, err = m.user.HasSystemAccess(ctx, authz.APIActionSystemModifyLink, system)
 			if err != nil {
 				return err
 			}
@@ -396,7 +396,7 @@ func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UU
 
 		// Check authorization for the system's key configuration
 		// User must have access to the key configuration to perform the unlink
-		_, err = m.user.HasSystemAccess(ctx, authz.ActionSystemModifyLink, system)
+		_, err = m.user.HasSystemAccess(ctx, authz.APIActionSystemModifyLink, system)
 		if err != nil {
 			return err
 		}
@@ -697,6 +697,6 @@ func (m *SystemManager) hasKeyAdminAccess(ctx context.Context, keyIDStr string) 
 	}
 
 	// Check if user has Key Admin access (ActionUpdate implies admin access)
-	_, err = m.user.HasKeyAccess(ctx, authz.ActionUpdate, key.KeyConfigurationID)
+	_, err = m.user.HasKeyAccess(ctx, authz.APIActionUpdate, key.KeyConfigurationID)
 	return err == nil
 }

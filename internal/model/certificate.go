@@ -1,9 +1,12 @@
 package model
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/openkcm/cmk/internal/authz"
 )
 
 type CertificateState string
@@ -36,13 +39,24 @@ type Certificate struct {
 	SupersedesID   *uuid.UUID         `gorm:"foreignKey:CertificateID"`
 }
 
+// TableResourceType return the authz resource type
+func (Certificate) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeCertificate
+}
+
 // TableName returns the table name for Certificate
-func (Certificate) TableName() string {
-	return "certificates"
+func (m Certificate) TableName() string {
+	return string(m.TableResourceType())
 }
 
 func (Certificate) IsSharedModel() bool {
 	return false
+}
+
+func (m Certificate) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
 type RequestCertArgs struct {

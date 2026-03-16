@@ -1,7 +1,11 @@
 package model
 
 import (
+	"context"
+
 	"github.com/google/uuid"
+
+	"github.com/openkcm/cmk/internal/authz"
 )
 
 // KeyVersion represents a version of a key in the database.
@@ -16,11 +20,22 @@ type KeyVersion struct {
 	IsPrimary  bool      `gorm:"not null;default:false"`
 }
 
+// TableResourceType return the authz resource type
+func (m KeyVersion) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeKeyversion
+}
+
 // TableName returns the table name for KeyVersion
-func (KeyVersion) TableName() string {
-	return "key_versions"
+func (m KeyVersion) TableName() string {
+	return string(m.TableResourceType())
 }
 
 func (KeyVersion) IsSharedModel() bool {
 	return false
+}
+
+func (m KeyVersion) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
