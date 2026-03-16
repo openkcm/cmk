@@ -33,6 +33,6 @@ func FromDBConfig(conf config.Database) (string, error) {
 		return "", errs.Wrap(ErrLoadingDatabasePassword, err)
 	}
 
-	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s",
-		host, user, string(password), conf.Name, conf.Port), nil
+	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+		host, user, string(password), conf.Name, conf.Port, conf.Parameters.SSLMode), nil
 }
