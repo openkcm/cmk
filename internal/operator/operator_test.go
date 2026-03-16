@@ -644,8 +644,8 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				auth := authgrpc.Auth{
 					TenantId: tenants[i],
 					Properties: map[string]string{
-						"issuer": issuerURL,
-						"jwks_uri": jwksURI,
+						"issuer":    issuerURL,
+						"jwks_uri":  jwksURI,
 						"audiences": audiences,
 						"client_id": clientId,
 					},
@@ -1274,10 +1274,10 @@ func TestExtractOIDCConfig(t *testing.T) {
 		{
 			name: "valid properties and additional properties",
 			properties: map[string]string{
-				"issuer":    "https://test.issuer.com",
-				"jwks_uri":  "https://test.jwks1.com",
-				"audiences": "audience1",
-				"client_id": "clientId",
+				"issuer":        "https://test.issuer.com",
+				"jwks_uri":      "https://test.jwks1.com",
+				"audiences":     "audience1",
+				"client_id":     "clientId",
 				"some-property": "some-property-value",
 			},
 			expectedConfig: operator.OIDCConfig{
