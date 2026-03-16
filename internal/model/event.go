@@ -1,9 +1,12 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/openkcm/orbital"
+
+	"github.com/openkcm/cmk/internal/authz"
 )
 
 // Event is a model that holds the result of the latest sent events
@@ -26,11 +29,22 @@ type Event struct {
 	PreviousItemStatus string `gorm:"type:varchar(255)"`
 }
 
+// TableResourceType return the authz resource type
+func (m Event) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeEvent
+}
+
 // TableName returns the table name for Key
-func (Event) TableName() string {
-	return "events"
+func (m Event) TableName() string {
+	return string(m.TableResourceType())
 }
 
 func (Event) IsSharedModel() bool {
 	return false
+}
+
+func (m Event) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }

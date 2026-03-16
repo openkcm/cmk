@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/openkcm/cmk/internal/authz"
 )
 
 var ErrMultipleOperationsProvided = errors.New("multiple operations provided")
@@ -451,6 +453,10 @@ func (q *Query) SetOffset(offset int) *Query {
 
 type table interface {
 	TableName() string
+	TableResourceType() authz.RepoResourceTypeName
+	CheckAuthz(ctx context.Context,
+		authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+		action authz.RepoAction) (bool, error)
 }
 
 func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {

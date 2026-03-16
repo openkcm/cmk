@@ -69,7 +69,7 @@ func TestGetTenants(t *testing.T) {
 		assert.Len(t, resp.Value, 3)
 	})
 
-	t.Run("Should 404 on list tenants with non-existing tenant", func(t *testing.T) {
+	t.Run("Should 403 on list tenants with non-existing tenant", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/tenants",
@@ -78,7 +78,7 @@ func TestGetTenants(t *testing.T) {
 				[]string{"sysadmin", "othergroup"}),
 		})
 
-		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 
 	t.Run("Should 403 on list tenants without permission", func(t *testing.T) {

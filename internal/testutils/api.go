@@ -21,6 +21,8 @@ import (
 	md "github.com/oapi-codegen/nethttp-middleware"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -91,10 +93,17 @@ func NewAPIServer(
 	migrator, err := db.NewMigrator(r, &cfg)
 	assert.NoError(tb, err)
 
+	ctx := tb.Context()
+	authzAPILoader := authz_loader.NewAPIAuthzLoader(ctx, r, &cfg)
+
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, &cfg)
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
 	svcRegistry, err := cmkpluginregistry.New(tb.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(tb, err)
 
-	controller := cmk.NewAPIController(tb.Context(), r, &cfg, factory, migrator, svcRegistry)
+	controller := cmk.NewAPIController(tb.Context(), authzRepo, &cfg, factory, migrator, svcRegistry, authzAPILoader)
 
 	return startAPIServer(tb, controller)
 }

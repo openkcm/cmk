@@ -11,6 +11,7 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -30,6 +31,12 @@ func (SystemProperty) TableName() string {
 
 func (SystemProperty) IsSharedModel() bool {
 	return false
+}
+
+func (SystemProperty) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return true, nil
 }
 
 type System struct {
@@ -64,6 +71,12 @@ func (System) IsSharedModel() bool {
 	return false
 }
 
+func (System) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return true, nil
+}
+
 type SystemWithProperties struct {
 	ID         uuid.UUID         `gorm:"type:uuid;primaryKey"`
 	Region     string            `gorm:"type:varchar(255)"`
@@ -76,6 +89,12 @@ func (SystemWithProperties) TableName() string {
 
 func (SystemWithProperties) IsSharedModel() bool {
 	return false
+}
+
+func (SystemWithProperties) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return true, nil
 }
 
 type JoinSystem struct {

@@ -15,6 +15,14 @@ const (
 	ForbiddenErr      = "FORBIDDEN"
 )
 
+func ForbiddenErrorMessage() *APIError {
+	return &APIError{
+		Code:    ForbiddenErr,
+		Message: "action on resource unauthorized",
+		Status:  http.StatusForbidden,
+	}
+}
+
 func InternalServerErrorMessage() *APIError {
 	return &APIError{
 		Code:    InternalServerErr,

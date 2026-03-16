@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -44,31 +46,45 @@ type Workflow struct {
 	ExpiryDate             *time.Time
 }
 
-func (w Workflow) TableName() string   { return "workflows" }
-func (w Workflow) IsSharedModel() bool { return false }
-
-func (w Workflow) BeforeDelete(tx *gorm.DB) error {
-	// Delete all associated workflow approvers
-	return tx.Where(WorkflowID+" = ?", w.ID).Delete(&WorkflowApprover{}).Error
+// TableResourceType return the authz resource type
+func (m Workflow) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeWorkflow
 }
 
-func (w *Workflow) BeforeSave(tx *gorm.DB) error {
-	if w.ExpiryDate == nil {
-		w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, constants.DefaultExpiryPeriodDays))
+func (m Workflow) TableName() string {
+	return string(m.TableResourceType())
+}
+
+func (Workflow) IsSharedModel() bool { return false }
+
+func (m Workflow) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
+}
+
+func (m Workflow) BeforeDelete(tx *gorm.DB) error {
+	// Delete all associated workflow approvers
+	return tx.Where(WorkflowID+" = ?", m.ID).Delete(&WorkflowApprover{}).Error
+}
+
+func (m *Workflow) BeforeSave(tx *gorm.DB) error {
+	if m.ExpiryDate == nil {
+		m.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, constants.DefaultExpiryPeriodDays))
 	}
 	return nil
 }
 
 // Description generates a human-readable description of the workflow based on its action type
-func (w Workflow) Description() string {
+func (m Workflow) Description() string {
 	// Build workflow description based on artifact type first, then action type
 	var description string
 
-	switch w.ArtifactType {
+	switch m.ArtifactType {
 	case constants.WorkflowArtifactTypeSystem:
-		description = w.buildSystemDescription()
+		description = m.buildSystemDescription()
 	default:
-		description = w.buildDefaultDescription()
+		description = m.buildDefaultDescription()
 	}
 
 	description += "."
@@ -77,31 +93,31 @@ func (w Workflow) Description() string {
 }
 
 // GetArtifactName returns the artifact name or a default value if nil
-func (w Workflow) GetArtifactName() string {
-	if w.ArtifactName != nil {
-		return *w.ArtifactName
+func (m Workflow) GetArtifactName() string {
+	if m.ArtifactName != nil {
+		return *m.ArtifactName
 	}
 	return ""
 }
 
 // buildSystemDescription generates a description for SYSTEM artifact workflows
-func (w Workflow) buildSystemDescription() string {
+func (m Workflow) buildSystemDescription() string {
 	var description string
-	artifactName := w.GetArtifactName()
+	artifactName := m.GetArtifactName()
 
 	description = fmt.Sprintf("%s requested approval to %s %s",
-		w.InitiatorName,
-		w.ActionType,
-		w.ArtifactType,
+		m.InitiatorName,
+		m.ActionType,
+		m.ArtifactType,
 	)
 
 	if artifactName != "" {
 		description += fmt.Sprintf(": '%s'", artifactName)
 	}
 
-	if w.Parameters != "" {
-		resourceType := w.getParametersResourceType()
-		resourceName := w.getParametersResourceName()
+	if m.Parameters != "" {
+		resourceType := m.getParametersResourceType()
+		resourceName := m.getParametersResourceName()
 		if resourceType != "" && resourceName != "" {
 			description += fmt.Sprintf(" to %s: '%s'", resourceType, resourceName)
 		}
@@ -111,36 +127,36 @@ func (w Workflow) buildSystemDescription() string {
 }
 
 // getParametersResourceType returns the parameters resource type or empty string if nil
-func (w Workflow) getParametersResourceType() string {
-	if w.ParametersResourceType != nil {
-		return *w.ParametersResourceType
+func (m Workflow) getParametersResourceType() string {
+	if m.ParametersResourceType != nil {
+		return *m.ParametersResourceType
 	}
 	return ""
 }
 
 // getParametersResourceName returns the parameters resource name or empty string if nil
-func (w Workflow) getParametersResourceName() string {
-	if w.ParametersResourceName != nil {
-		return *w.ParametersResourceName
+func (m Workflow) getParametersResourceName() string {
+	if m.ParametersResourceName != nil {
+		return *m.ParametersResourceName
 	}
 	return ""
 }
 
 // buildDefaultDescription generates a default description for workflows
-func (w Workflow) buildDefaultDescription() string {
-	artifactName := w.GetArtifactName()
+func (m Workflow) buildDefaultDescription() string {
+	artifactName := m.GetArtifactName()
 	description := fmt.Sprintf("%s requested approval to %s %s",
-		w.InitiatorName,
-		w.ActionType,
-		w.ArtifactType,
+		m.InitiatorName,
+		m.ActionType,
+		m.ArtifactType,
 	)
 
 	if artifactName != "" {
 		description += fmt.Sprintf(": '%s'", artifactName)
 	}
 
-	if w.Parameters != "" {
-		description += " with parameters: " + w.Parameters
+	if m.Parameters != "" {
+		description += " with parameters: " + m.Parameters
 	}
 
 	return description
@@ -155,5 +171,19 @@ type WorkflowApprover struct {
 	Approved sql.NullBool `gorm:"default:null"`
 }
 
-func (w WorkflowApprover) TableName() string   { return "workflow_approvers" }
-func (w WorkflowApprover) IsSharedModel() bool { return false }
+// TableResourceType return the authz resource type
+func (m WorkflowApprover) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeWorkflowApprover
+}
+
+func (m WorkflowApprover) TableName() string {
+	return string(m.TableResourceType())
+}
+
+func (WorkflowApprover) IsSharedModel() bool { return false }
+
+func (m WorkflowApprover) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
+}

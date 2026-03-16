@@ -125,7 +125,7 @@ func (m *KeyConfigManager) PostKeyConfigurations(
 		return nil, ErrInvalidKeyAdminGroup
 	}
 
-	_, err = m.user.HasKeyConfigAccess(ctx, authz.ActionCreate, keyConfiguration)
+	_, err = m.user.HasKeyConfigAccess(ctx, authz.APIActionCreate, keyConfiguration)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (m *KeyConfigManager) DeleteKeyConfigurationByID(
 ) error {
 	keyConfig := &model.KeyConfiguration{ID: keyConfigID}
 
-	_, err := m.user.HasKeyConfigAccess(ctx, authz.ActionDelete, keyConfig)
+	_, err := m.user.HasKeyConfigAccess(ctx, authz.APIActionDelete, keyConfig)
 	if err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func (m *KeyConfigManager) GetKeyConfigurationByID(
 		ID: keyConfigID,
 	}
 
-	_, err := m.user.HasKeyConfigAccess(ctx, authz.ActionRead, keyConfig)
+	_, err := m.user.HasKeyConfigAccess(ctx, authz.APIActionRead, keyConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 		ID: keyConfigID,
 	}
 
-	_, err := m.user.HasKeyConfigAccess(ctx, authz.ActionUpdate, keyConfig)
+	_, err := m.user.HasKeyConfigAccess(ctx, authz.APIActionUpdate, keyConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +394,7 @@ func (m *KeyConfigManager) applyIAMGroupFilter(
 		return false, err
 	}
 
-	isGroupFiltered, err := m.user.HasKeyConfigAccess(ctx, authz.ActionRead, nil)
+	isGroupFiltered, err := m.user.HasKeyConfigAccess(ctx, authz.APIActionRead, nil)
 	if err != nil {
 		return false, err
 	}

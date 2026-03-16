@@ -3,37 +3,36 @@ package authz
 import (
 	"errors"
 
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 )
 
-type AuthorizationKey struct {
+type AuthorizationKey[TResourceTypeName, TAction comparable] struct {
 	TenantID         TenantID
 	UserGroup        string
-	ResourceTypeName ResourceTypeName
-	Action           Action
+	ResourceTypeName TResourceTypeName
+	Action           TAction
 }
 
 var ErrInvalidRole = errors.New("invalid role")
 
-type AllowList struct {
-	AuthzKeys map[AuthorizationKey]struct{}
+type AllowList[TResourceTypeName, TAction comparable] struct {
+	AuthzKeys map[AuthorizationKey[TResourceTypeName, TAction]]struct{}
 	TenantIDs map[TenantID]struct{}
 }
 
-func NewAuthorizationData(entities []Entity) (*AllowList, error) {
+func NewAuthorizationData[TResourceTypeName, TAction comparable](
+	entities []Entity,
+	rolePolicies map[constants.Role][]BasePolicy[TResourceTypeName, TAction]) (
+	*AllowList[TResourceTypeName, TAction], error) {
 	// hold only authzKeys actions
-	authzKeys := make(map[AuthorizationKey]struct{})
+	authzKeys := make(map[AuthorizationKey[TResourceTypeName, TAction]]struct{})
 	// hold tenant IDs
 	tenantIDs := make(map[TenantID]struct{})
 
 	for _, entity := range entities {
-		// unknown roles are not authzKeys
-		if _, ok := ValidRoles[entity.Role]; !ok {
-			return nil, errs.Wrap(ErrValidation, ErrInvalidRole)
-		}
-
 		// entities with unknown roles are not authzKeys
-		policies, ok := RolePolicies[entity.Role]
+		policies, ok := rolePolicies[entity.Role]
 		if !ok {
 			return nil, errs.Wrap(ErrValidation, ErrInvalidRole)
 		}
@@ -42,7 +41,7 @@ func NewAuthorizationData(entities []Entity) (*AllowList, error) {
 			for _, policy := range policies {
 				for _, resourceType := range policy.ResourceTypes {
 					for _, action := range resourceType.Actions {
-						key := AuthorizationKey{
+						key := AuthorizationKey[TResourceTypeName, TAction]{
 							TenantID:         entity.TenantID,
 							UserGroup:        group,
 							ResourceTypeName: resourceType.ID,
@@ -59,10 +58,10 @@ func NewAuthorizationData(entities []Entity) (*AllowList, error) {
 		}
 	}
 
-	return &AllowList{AuthzKeys: authzKeys, TenantIDs: tenantIDs}, nil
+	return &AllowList[TResourceTypeName, TAction]{AuthzKeys: authzKeys, TenantIDs: tenantIDs}, nil
 }
 
-func (l AllowList) ContainsTenant(id TenantID) bool {
+func (l AllowList[TResourceTypeName, TAction]) ContainsTenant(id TenantID) bool {
 	if _, ok := l.TenantIDs[id]; ok {
 		return true
 	}
