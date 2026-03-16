@@ -152,6 +152,35 @@ func (v1 *V1) EnableKey(
 	return &keymanagement.EnableKeyResponse{}, nil
 }
 
+func (v1 *V1) DisableKey(
+	ctx context.Context,
+	req *keymanagement.DisableKeyRequest,
+) (*keymanagement.DisableKeyResponse, error) {
+	value, err := structpb.NewStruct(req.Parameters.Config.Values)
+	if err != nil {
+		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+	}
+
+	in := &grpckeymanagerv1.DisableKeyRequest{
+		Parameters: &grpckeymanagerv1.RequestParameters{
+			Config: &grpccommonv1.KeystoreInstanceConfig{
+				Values: value,
+			},
+			KeyId: req.Parameters.KeyID,
+		},
+	}
+	if err := protovalidate.Validate(in); err != nil {
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
+	}
+
+	_, err = v1.KeystoreInstanceKeyOperationPluginClient.DisableKey(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+
+	return &keymanagement.DisableKeyResponse{}, nil
+}
+
 func (v1 *V1) GetImportParameters(
 	ctx context.Context,
 	req *keymanagement.GetImportParametersRequest,

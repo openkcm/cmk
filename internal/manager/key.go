@@ -12,11 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/openkcm/orbital"
-	"google.golang.org/protobuf/types/known/structpb"
 
 	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
-	commonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
@@ -28,6 +25,8 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -565,21 +564,19 @@ func (km *KeyManager) createManagedProviderKey(
 	key *model.Key,
 	provider *ProviderConfig,
 ) error {
-	keyResp, err := provider.Client.CreateKey(ctx, &keystoreopv1.CreateKeyRequest{
-		Config: provider.Config,
-		Algorithm: keystoreopv1.KeyAlgorithm(
-			keystoreopv1.KeyAlgorithm_value[getPluginAlgorithm(key.Algorithm)],
-		),
-		Id:      ptr.PointTo(key.ID.String()),
-		Region:  key.Region,
-		KeyType: keystoreopv1.KeyType(keystoreopv1.KeyType_value[getPluginKeyType(key.KeyType)]),
+	keyResp, err := provider.Client.CreateKey(ctx, &keymanagement.CreateKeyRequest{
+		Config:       common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+		KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
+		ID:           ptr.PointTo(key.ID.String()),
+		Region:       key.Region,
+		KeyType:      convertToAPIKeyType(key.KeyType),
 	})
 	if err != nil {
 		return errs.Wrap(ErrKeyCreationFailed, err)
 	}
 
-	key.NativeID = ptr.PointTo(keyResp.GetKeyId())
-	key.State = keyResp.GetStatus()
+	key.NativeID = ptr.PointTo(keyResp.KeyID)
+	key.State = keyResp.Status
 
 	return nil
 }
@@ -589,33 +586,30 @@ func (km *KeyManager) registerHYOKKey(
 	key *model.Key,
 	provider *ProviderConfig,
 ) error {
-	configValues, err := mergeProviderConfigValuesWithKeyAccessData(provider, key)
-	if err != nil {
-		return errs.Wrap(ErrKeyRegistration, err)
-	}
+	configValues := mergeProviderConfigValuesWithKeyAccessData(provider, key)
 
-	keyResp, err := provider.Client.GetKey(ctx, &keystoreopv1.GetKeyRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *key.NativeID,
-			Config: configValues,
+	keyResp, err := provider.Client.GetKey(ctx, &keymanagement.GetKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: configValues},
+			KeyID:  *key.NativeID,
 		},
 	})
 	if err != nil {
 		return km.convertError(ErrKeyRegistration, err)
 	}
 
-	if keyResp.GetAlgorithm() != keystoreopv1.KeyAlgorithm_KEY_ALGORITHM_AES256 {
+	if keyResp.KeyAlgorithm != keymanagement.AES256 {
 		return errs.Wrapf(
 			ErrUnsupportedKeyAlgorithm,
-			fmt.Sprintf("%s for HYOK registration", keyResp.GetAlgorithm()))
+			fmt.Sprintf("%v for HYOK registration", keyResp.KeyAlgorithm))
 	}
 
 	key.Algorithm = string(cmkapi.KeyAlgorithmAES256)
 
-	if keyResp.GetStatus() != string(cmkapi.KeyStateENABLED) {
+	if keyResp.Status != string(cmkapi.KeyStateENABLED) {
 		return errs.Wrapf(
 			ErrInvalidKeyState,
-			keyResp.GetStatus()+" for HYOK registration",
+			keyResp.Status+" for HYOK registration",
 		)
 	}
 
@@ -625,8 +619,8 @@ func (km *KeyManager) registerHYOKKey(
 		ctx,
 		"Key Register",
 		slog.Group("Provider Key",
-			slog.String("id", keyResp.GetKeyId()),
-			slog.String("status", keyResp.GetStatus()),
+			slog.String("id", keyResp.KeyID),
+			slog.String("status", keyResp.Status),
 		),
 	)
 
@@ -648,10 +642,10 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 	case constants.KeyTypeSystemManaged:
 		// Delete all key versions for system managed keys
 		for _, kv := range key.KeyVersions {
-			_, err = provider.Client.DeleteKey(ctx, &keystoreopv1.DeleteKeyRequest{
-				Parameters: &keystoreopv1.RequestParameters{
-					KeyId:  *kv.NativeID,
-					Config: provider.Config,
+			_, err = provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
+				Parameters: keymanagement.RequestParameters{
+					Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+					KeyID:  *kv.NativeID,
 				},
 			})
 			if err != nil {
@@ -660,10 +654,10 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 		}
 	case constants.KeyTypeBYOK:
 		// For BYOK keys, we delete the key itself, since BYOK keys are not versioned
-		_, err = provider.Client.DeleteKey(ctx, &keystoreopv1.DeleteKeyRequest{
-			Parameters: &keystoreopv1.RequestParameters{
-				KeyId:  *key.NativeID,
-				Config: provider.Config,
+		_, err = provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
+			Parameters: keymanagement.RequestParameters{
+				Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+				KeyID:  *key.NativeID,
 			},
 		})
 		if err != nil {
@@ -695,10 +689,10 @@ func (km *KeyManager) reenableKeyVersions(ctx context.Context, key *model.Key) e
 	wasProviderError := false
 
 	for _, kv := range key.KeyVersions {
-		_, err = provider.Client.EnableKey(ctx, &keystoreopv1.EnableKeyRequest{
-			Parameters: &keystoreopv1.RequestParameters{
-				KeyId:  *kv.NativeID,
-				Config: provider.Config,
+		_, err = provider.Client.EnableKey(ctx, &keymanagement.EnableKeyRequest{
+			Parameters: keymanagement.RequestParameters{
+				Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+				KeyID:  *kv.NativeID,
 			},
 		})
 		if err != nil {
@@ -783,10 +777,10 @@ func (km *KeyManager) disableKeyVersions(ctx context.Context, key *model.Key) er
 	wasProviderError := false
 
 	for _, kv := range key.KeyVersions {
-		_, err = provider.Client.DisableKey(ctx, &keystoreopv1.DisableKeyRequest{
-			Parameters: &keystoreopv1.RequestParameters{
-				KeyId:  *kv.NativeID,
-				Config: provider.Config,
+		_, err = provider.Client.DisableKey(ctx, &keymanagement.DisableKeyRequest{
+			Parameters: keymanagement.RequestParameters{
+				Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+				KeyID:  *kv.NativeID,
 			},
 		})
 		if err != nil {
@@ -828,26 +822,19 @@ func copyFieldsToModelKey(apiKey cmkapi.KeyPatch, dbKey *model.Key) bool {
 func mergeProviderConfigValuesWithKeyAccessData(
 	provider *ProviderConfig,
 	key *model.Key,
-) (*commonv1.KeystoreInstanceConfig, error) {
-	configValues := provider.Config.GetValues().GetFields()
-	configValuesCopy := make(map[string]*structpb.Value, len(configValues))
+) map[string]any {
+	// Start with the provider config values
+	configValues := provider.Config.GetValues().AsMap()
 
-	maps.Copy(configValuesCopy, configValues)
+	// Create a copy to avoid modifying the original
+	merged := make(map[string]any, len(configValues)+len(key.GetManagementAccessData()))
+	maps.Copy(merged, configValues)
 
 	// At this point, we assume the access data is already validated
-	// in the API layer, so we can directly convert it to a struct.
-	for k, v := range key.GetManagementAccessData() {
-		structValue, err := structpb.NewValue(v)
-		if err != nil {
-			return nil, ErrConvertAccessData
-		}
+	// in the API layer, so we can directly merge it.
+	maps.Copy(merged, key.GetManagementAccessData())
 
-		configValuesCopy[k] = structValue
-	}
-
-	return &commonv1.KeystoreInstanceConfig{
-		Values: &structpb.Struct{Fields: configValuesCopy},
-	}, nil
+	return merged
 }
 
 func (km *KeyManager) validateBYOKKey(ctx context.Context, keyID uuid.UUID, action BYOKAction) (*model.Key, error) {
@@ -896,20 +883,18 @@ func (km *KeyManager) fetchImportParams(ctx context.Context, key *model.Key) (*m
 		return nil, errs.Wrap(ErrFailedToInitProvider, err)
 	}
 
-	importParamsResp, err := provider.Client.GetImportParameters(ctx, &keystoreopv1.GetImportParametersRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *key.NativeID,
-			Config: provider.Config,
+	importParamsResp, err := provider.Client.GetImportParameters(ctx, &keymanagement.GetImportParametersRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+			KeyID:  *key.NativeID,
 		},
-		Algorithm: keystoreopv1.KeyAlgorithm(
-			keystoreopv1.KeyAlgorithm_value[getPluginAlgorithm(key.Algorithm)],
-		),
+		KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
 	})
 	if err != nil {
 		return nil, errs.Wrap(ErrGetImportParamsFromProvider, err)
 	}
 
-	importParams, err := BuildImportParams(key, importParamsResp)
+	importParams, err := BuildImportParamsFromAPI(key, importParamsResp)
 	if err != nil {
 		return nil, err
 	}
@@ -946,34 +931,29 @@ func (km *KeyManager) importProviderKeyMaterial(
 		return nil, err
 	}
 
-	providerParams, err := structpb.NewStruct(providerParamsMap)
-	if err != nil {
-		return nil, errs.Wrap(ErrCreateProtobufStruct, err)
-	}
-
-	_, err = provider.Client.ImportKeyMaterial(ctx, &keystoreopv1.ImportKeyMaterialRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *key.NativeID,
-			Config: provider.Config,
+	_, err = provider.Client.ImportKeyMaterial(ctx, &keymanagement.ImportKeyMaterialRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+			KeyID:  *key.NativeID,
 		},
 		EncryptedKeyMaterial: wrappedKeyMaterial,
-		ImportParameters:     providerParams,
+		ImportParameters:     providerParamsMap,
 	})
 	if err != nil {
 		return nil, errs.Wrap(ErrImportKeyMaterialsToProvider, err)
 	}
 
-	keyResp, err := provider.Client.GetKey(ctx, &keystoreopv1.GetKeyRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *key.NativeID,
-			Config: provider.Config,
+	keyResp, err := provider.Client.GetKey(ctx, &keymanagement.GetKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+			KeyID:  *key.NativeID,
 		},
 	})
 	if err != nil {
 		return nil, errs.Wrap(ErrGetProviderKey, err)
 	}
 
-	key.State = keyResp.GetStatus()
+	key.State = keyResp.Status
 
 	return key, nil
 }
@@ -1096,7 +1076,7 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 		km.sendUnavailableAuditLog(ctx, key)
 	} else if keyResp != nil {
 		// Successful case update the status in the database for the HYOK key Enabled/Disabled
-		key.State = keyResp.GetStatus()
+		key.State = keyResp.Status
 	}
 
 	if oldKeyState == key.State {
@@ -1160,7 +1140,7 @@ func (km *KeyManager) handleKeyStateTransition(ctx context.Context, key *model.K
 	}
 }
 
-func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keystoreopv1.GetKeyResponse, error) {
+func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keymanagement.GetKeyResponse, error) {
 	if key.KeyType != constants.KeyTypeHYOK {
 		return nil, ErrInvalidKeyTypeForHYOKSync
 	}
@@ -1170,15 +1150,12 @@ func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keys
 		return nil, errs.Wrap(ErrFailedToInitProvider, err)
 	}
 
-	configValues, err := mergeProviderConfigValuesWithKeyAccessData(provider, key)
-	if err != nil {
-		return nil, err
-	}
+	configValues := mergeProviderConfigValuesWithKeyAccessData(provider, key)
 
-	keyResp, err := provider.Client.GetKey(ctx, &keystoreopv1.GetKeyRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *key.NativeID,
-			Config: configValues,
+	keyResp, err := provider.Client.GetKey(ctx, &keymanagement.GetKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: configValues},
+			KeyID:  *key.NativeID,
 		},
 	})
 	if err != nil {
@@ -1332,4 +1309,30 @@ func (km *KeyManager) disableKey(ctx context.Context, key *model.Key) error {
 	km.sendDisableAuditLog(ctx, key)
 
 	return km.sendDisableEvent(ctx, key)
+}
+
+func convertToAPIKeyAlgorithm(alg string) keymanagement.KeyAlgorithm {
+	switch alg {
+	case string(cmkapi.KeyAlgorithmAES256):
+		return keymanagement.AES256
+	case string(cmkapi.KeyAlgorithmRSA3072):
+		return keymanagement.RSA3072
+	case string(cmkapi.KeyAlgorithmRSA4096):
+		return keymanagement.RSA4096
+	default:
+		return keymanagement.UnspecifiedKeyAlgorithm
+	}
+}
+
+func convertToAPIKeyType(keyType string) keymanagement.KeyType {
+	switch keyType {
+	case constants.KeyTypeSystemManaged:
+		return keymanagement.SystemManaged
+	case constants.KeyTypeBYOK:
+		return keymanagement.BYOK
+	case constants.KeyTypeHYOK:
+		return keymanagement.HYOK
+	default:
+		return keymanagement.UnspecifiedKeyType
+	}
 }

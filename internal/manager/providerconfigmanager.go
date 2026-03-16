@@ -14,7 +14,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	kscommonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
-	keystoremanagerv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/management/v1"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/constants"
@@ -22,6 +21,8 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
@@ -43,13 +44,13 @@ var (
 
 type ProviderConfig struct {
 	Config     *kscommonv1.KeystoreInstanceConfig
-	Client     keystoreopv1.KeystoreInstanceKeyOperationClient
+	Client     keymanagement.KeyManagement
 	Expiration time.Time // Optional expiration time for the provider config
 }
 
 func NewProviderConfig(
 	config *kscommonv1.KeystoreInstanceConfig,
-	client keystoreopv1.KeystoreInstanceKeyOperationClient,
+	client keymanagement.KeyManagement,
 	expiration *time.Time,
 ) *ProviderConfig {
 	if expiration == nil {
@@ -158,12 +159,15 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 	}
 
 	// Initialize client
-	plugin := pmc.svcRegistry.LookupByTypeAndName(keystoreopv1.Type, provider)
-	if plugin == nil {
+	keyManagements, err := pmc.svcRegistry.KeyManagements()
+	if err != nil {
 		return nil, errs.Wrapf(ErrPluginNotFound, provider)
 	}
 
-	client := keystoreopv1.NewKeystoreInstanceKeyOperationClient(plugin.ClientConnection())
+	client, ok := keyManagements[provider]
+	if !ok {
+		return nil, errs.Wrapf(ErrPluginNotFound, provider)
+	}
 
 	providerCfg := NewProviderConfig(config, client, expiration)
 
@@ -208,21 +212,22 @@ func (pmc *ProviderConfigManager) CreateKeystore(ctx context.Context) (string, m
 		return "", nil, err
 	}
 
-	plugin := pmc.svcRegistry.LookupByTypeAndName(keystoremanagerv1.Type, provider)
-	if plugin == nil {
+	keystoreManagements, err := pmc.svcRegistry.KeystoreManagements()
+	if err != nil {
 		return "", nil, errs.Wrapf(ErrPluginNotFound, provider)
 	}
 
-	client := keystoremanagerv1.NewKeystoreProviderClient(plugin.ClientConnection())
+	client, ok := keystoreManagements[provider]
+	if !ok {
+		return "", nil, errs.Wrapf(ErrPluginNotFound, provider)
+	}
 
-	resp, err := client.CreateKeystore(ctx, &keystoremanagerv1.CreateKeystoreRequest{})
+	resp, err := client.CreateKeystore(ctx, &keystoremanagement.CreateKeystoreRequest{})
 	if err != nil {
 		return "", nil, errs.Wrapf(ErrCreateKeystore, fmt.Sprintf("provider: %s, error: %v", provider, err))
 	}
 
-	configValues := resp.GetConfig().GetValues()
-
-	return provider, configValues.AsMap(), nil
+	return provider, resp.Config.Values, nil
 }
 
 func (pmc *ProviderConfigManager) AddKeystoreToPool(

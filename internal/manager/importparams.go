@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"time"
 
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/utils/structreader"
 )
 
@@ -24,12 +25,18 @@ type ProviderImportFields struct {
 	Expires        *time.Time
 }
 
-// BuildImportParams creates import parameters for the specified provider
-func BuildImportParams(
+// BuildImportParamsFromAPI creates import parameters from API response
+func BuildImportParamsFromAPI(
 	key *model.Key,
-	importParamsResp *keystoreopv1.GetImportParametersResponse,
+	importParamsResp *keymanagement.GetImportParametersResponse,
 ) (*model.ImportParams, error) {
-	reader, err := structreader.New(importParamsResp.GetImportParameters())
+	// Convert map to protobuf struct for the reader
+	protoStruct, err := structpb.NewStruct(importParamsResp.ImportParameters)
+	if err != nil {
+		return nil, errs.Wrap(ErrBuildImportParams, err)
+	}
+
+	reader, err := structreader.New(protoStruct)
 	if err != nil {
 		return nil, errs.Wrap(ErrBuildImportParams, err)
 	}

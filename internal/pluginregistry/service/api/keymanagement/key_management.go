@@ -15,6 +15,7 @@ type KeyManagement interface {
 	CreateKey(ctx context.Context, req *CreateKeyRequest) (*CreateKeyResponse, error)
 	DeleteKey(ctx context.Context, req *DeleteKeyRequest) (*DeleteKeyResponse, error)
 	EnableKey(ctx context.Context, req *EnableKeyRequest) (*EnableKeyResponse, error)
+	DisableKey(ctx context.Context, req *DisableKeyRequest) (*DisableKeyResponse, error)
 	GetImportParameters(ctx context.Context, req *GetImportParametersRequest) (*GetImportParametersResponse, error)
 	ImportKeyMaterial(ctx context.Context, req *ImportKeyMaterialRequest) (*ImportKeyMaterialResponse, error)
 	ValidateKey(ctx context.Context, req *ValidateKeyRequest) (*ValidateKeyResponse, error)
@@ -33,7 +34,7 @@ type KeyAlgorithm int32
 
 const (
 	UnspecifiedKeyAlgorithm KeyAlgorithm = iota
-	AES256K
+	AES256
 	RSA3072
 	RSA4096
 )
