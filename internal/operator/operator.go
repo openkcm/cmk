@@ -284,7 +284,7 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 				Issuer:     cfg.Issuer,
 				JwksUri:    &cfg.JwksURI,
 				Audiences:  cfg.Audiences,
-				ClientId:   &cfg.ClientId,
+				ClientId:   &cfg.ClientID,
 				Properties: cfg.AdditionalProperties,
 			},
 		)
