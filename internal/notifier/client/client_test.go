@@ -4,36 +4,37 @@ import (
 	"context"
 	"testing"
 
+	"github.com/openkcm/plugin-sdk/api"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc"
-
-	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/notifier/client"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/notification"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 )
 
-type NotificationServiceMock struct {
+type NotificationMock struct {
 	SendNotificationFunc func(
 		ctx context.Context,
-		in *notificationv1.SendNotificationRequest,
-		opts ...grpc.CallOption) (
-		*notificationv1.SendNotificationResponse, error)
+		req *notification.SendNotificationRequest,
+	) (*notification.SendNotificationResponse, error)
 }
 
-func (m NotificationServiceMock) SendNotification(
+func (m NotificationMock) ServiceInfo() api.Info {
+	panic("implement me")
+}
+
+func (m NotificationMock) Send(
 	ctx context.Context,
-	in *notificationv1.SendNotificationRequest,
-	opts ...grpc.CallOption,
-) (*notificationv1.SendNotificationResponse, error) {
+	req *notification.SendNotificationRequest,
+) (*notification.SendNotificationResponse, error) {
 	if m.SendNotificationFunc != nil {
-		return m.SendNotificationFunc(ctx, in, opts...)
+		return m.SendNotificationFunc(ctx, req)
 	}
 
-	return &notificationv1.SendNotificationResponse{}, nil
+	return &notification.SendNotificationResponse{}, nil
 }
 
 func TestCreateNotificationManager(t *testing.T) {
@@ -53,8 +54,9 @@ func TestCreateNotificationManager(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		// Setup
 
-		c := client.New(t.Context(), svcRegistry)
-		c.SetClient(NotificationServiceMock{})
+		c, err := client.New(t.Context(), svcRegistry)
+		assert.NoError(t, err)
+		c.SetService(NotificationMock{})
 		// Act
 		err = c.CreateNotification(t.Context(), msg)
 		// Verify
@@ -63,14 +65,13 @@ func TestCreateNotificationManager(t *testing.T) {
 
 	t.Run("Failure", func(t *testing.T) {
 		// Setup
-		c := client.New(t.Context(), svcRegistry)
-		c.SetClient(NotificationServiceMock{
+		c, err := client.New(t.Context(), svcRegistry)
+		assert.NoError(t, err)
+		c.SetService(NotificationMock{
 			SendNotificationFunc: func(
 				ctx context.Context,
-				in *notificationv1.SendNotificationRequest,
-				opts ...grpc.CallOption) (
-				*notificationv1.SendNotificationResponse, error,
-			) {
+				req *notification.SendNotificationRequest,
+			) (*notification.SendNotificationResponse, error) {
 				return nil, assert.AnError
 			},
 		})

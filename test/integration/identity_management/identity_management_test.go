@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
-	idmangv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 
 	"github.com/openkcm/cmk/internal/config"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
 
@@ -37,30 +37,21 @@ func TestCreateNotificationManager(t *testing.T) {
 	catalog := IdentityManagementPlugin(t)
 	defer catalog.Close()
 
-	plugins := catalog.LookupByType(idmangv1.Type)
-	if len(plugins) == 0 {
-		t.Fatalf("catalog returned no identity management plugins")
-	}
-	if len(plugins) > 1 {
-		t.Fatalf("catalog returned multiple identity management plugins")
-	}
-	idmang := plugins[0]
-	assert.NotNil(t, idmang)
+	idm, err := catalog.IdentityManagement()
+	assert.NoError(t, err)
 
-	client := idmangv1.NewIdentityManagementServiceClient(idmang.ClientConnection())
-
-	respUsers, err := client.GetUsersForGroup(t.Context(),
-		&idmangv1.GetUsersForGroupRequest{GroupId: "Test"})
+	respUsers, err := idm.ListGroupUsers(t.Context(),
+		&identitymanagement.ListGroupUsersRequest{GroupID: "Test"})
 	if respUsers != nil {
-		slog.Info(fmt.Sprintf("UsersForGroup:%v", respUsers.GetUsers()))
+		slog.Info(fmt.Sprintf("UsersForGroup:%v", respUsers.Users))
 	}
 
 	assert.NoError(t, err)
 
-	respGroups, err := client.GetGroupsForUser(t.Context(),
-		&idmangv1.GetGroupsForUserRequest{UserId: "Test"})
+	respGroups, err := idm.ListUserGroups(t.Context(),
+		&identitymanagement.ListUserGroupsRequest{UserID: "Test"})
 	if respGroups != nil {
-		slog.Info(fmt.Sprintf("GroupsForUser:%v", respGroups.GetGroups()))
+		slog.Info(fmt.Sprintf("GroupsForUser:%v", respGroups.Groups))
 	}
 
 	assert.NoError(t, err)

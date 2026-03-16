@@ -162,8 +162,7 @@ var (
 
 	ErrLoadIdentityManagementPlugin = errors.New("failed to load identity management plugin")
 
-	ErrTenantNotExist = errors.New("tenantID does not exist")
-	ErrEmptyTenantID  = errors.New("tenantID cannot be empty")
+	ErrEmptyTenantID = errors.New("tenantID cannot be empty")
 
 	ErrPoolIsDrained               = errors.New("pool is drained")
 	ErrCouldNotSaveConfiguration   = errors.New("could not save configuration")

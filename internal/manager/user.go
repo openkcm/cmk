@@ -32,19 +32,19 @@ type user struct {
 
 type User interface {
 	HasTenantAccess(ctx context.Context) (bool, error)
-	HasSystemAccess(ctx context.Context, action authz.Action, system *model.System) (bool, error)
-	HasKeyAccess(ctx context.Context, action authz.Action, keyConfig uuid.UUID) (bool, error)
+	HasSystemAccess(ctx context.Context, action authz.APIAction, system *model.System) (bool, error)
+	HasKeyAccess(ctx context.Context, action authz.APIAction, keyConfig uuid.UUID) (bool, error)
 	HasKeyConfigAccess(
 		ctx context.Context,
-		action authz.Action,
+		action authz.APIAction,
 		keyConfig *model.KeyConfiguration,
 	) (bool, error)
 	GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.Role, error)
 	GetUserInfo(ctx context.Context) (UserInfo, error)
 	NeedsGroupFiltering(
 		ctx context.Context,
-		action authz.Action,
-		resource authz.ResourceTypeName,
+		action authz.APIAction,
+		resource authz.APIResourceTypeName,
 	) (bool, error)
 }
 
@@ -56,8 +56,8 @@ func NewUserManager(r repo.Repo, cmkAuditor *auditor.Auditor) User {
 // Returns true if a resource is restricted to certain roles or users and false if all resources can be viewed
 func (u *user) NeedsGroupFiltering(
 	ctx context.Context,
-	action authz.Action,
-	resource authz.ResourceTypeName,
+	action authz.APIAction,
+	resource authz.APIResourceTypeName,
 ) (bool, error) {
 	// System User has access to everything
 	isSystemUser := cmkcontext.IsSystemUser(ctx)
@@ -75,14 +75,14 @@ func (u *user) NeedsGroupFiltering(
 		return true, err
 	}
 
-	if action == authz.ActionRead {
+	if action == authz.APIActionRead {
 		// Tenant auditor has read-only access to all data
 		if role == constants.TenantAuditorRole {
 			return false, nil
 		}
 
 		// Tenant admin has access to all groups
-		if role == constants.TenantAdminRole && resource == authz.ResourceTypeUserGroup {
+		if role == constants.TenantAdminRole && resource == authz.APIResourceTypeUserGroup {
 			return false, nil
 		}
 	}
@@ -94,7 +94,7 @@ func (u *user) NeedsGroupFiltering(
 // It returns true if it's group restricted and errors if the user in not authorized
 func (u *user) HasKeyAccess(
 	ctx context.Context,
-	action authz.Action,
+	action authz.APIAction,
 	keyConfigID uuid.UUID,
 ) (bool, error) {
 	// System User has access to everything
@@ -103,7 +103,7 @@ func (u *user) HasKeyAccess(
 		return false, nil
 	}
 
-	isGroupFiltered, err := u.NeedsGroupFiltering(ctx, action, authz.ResourceTypeKey)
+	isGroupFiltered, err := u.NeedsGroupFiltering(ctx, action, authz.APIResourceTypeKey)
 	if err != nil {
 		return isGroupFiltered, err
 	}
@@ -112,14 +112,14 @@ func (u *user) HasKeyAccess(
 		ctx,
 		&model.KeyConfiguration{ID: keyConfigID},
 		action,
-		authz.ResourceTypeKey,
+		authz.APIResourceTypeKey,
 	)
 	if err != nil {
 		return isGroupFiltered, errs.Wrap(ErrGettingKeyConfigByID, err)
 	}
 
 	if !isAuthorized {
-		u.sendUnauthorizedAccessAuditLog(ctx, authz.ResourceTypeKey, action)
+		u.sendUnauthorizedAccessAuditLog(ctx, authz.APIResourceTypeKey, action)
 		return isGroupFiltered, ErrKeyConfigurationNotAllowed
 	}
 
@@ -130,7 +130,7 @@ func (u *user) HasKeyAccess(
 // It returns true if it's group restricted and errors if the user in not authorized
 func (u *user) HasKeyConfigAccess(
 	ctx context.Context,
-	action authz.Action,
+	action authz.APIAction,
 	keyConfig *model.KeyConfiguration,
 ) (bool, error) {
 	// System User has access to everything
@@ -139,14 +139,14 @@ func (u *user) HasKeyConfigAccess(
 		return false, nil
 	}
 
-	isGroupFiltered, err := u.NeedsGroupFiltering(ctx, action, authz.ResourceTypeKeyConfiguration)
+	isGroupFiltered, err := u.NeedsGroupFiltering(ctx, action, authz.APIResourceTypeKeyConfiguration)
 	if err != nil {
 		return isGroupFiltered, err
 	}
 
 	if keyConfig == nil {
 		// No keyconfig is being accessed, just checking for visibility scope
-		if action == authz.ActionRead {
+		if action == authz.APIActionRead {
 			return isGroupFiltered, nil
 		}
 		return isGroupFiltered, ErrKeyConfigurationNotFound
@@ -156,14 +156,14 @@ func (u *user) HasKeyConfigAccess(
 		ctx,
 		keyConfig,
 		action,
-		authz.ResourceTypeKeyConfiguration,
+		authz.APIResourceTypeKeyConfiguration,
 	)
 	if err != nil {
 		return isGroupFiltered, errs.Wrap(ErrGettingKeyConfigByID, err)
 	}
 
 	if !isAuthorized {
-		u.sendUnauthorizedAccessAuditLog(ctx, authz.ResourceTypeKeyConfiguration, action)
+		u.sendUnauthorizedAccessAuditLog(ctx, authz.APIResourceTypeKeyConfiguration, action)
 		return isGroupFiltered, ErrKeyConfigurationNotAllowed
 	}
 
@@ -174,7 +174,7 @@ func (u *user) HasKeyConfigAccess(
 // It returns true if it's group restricted and errors if the user in not authorized
 func (u *user) HasSystemAccess(
 	ctx context.Context,
-	action authz.Action,
+	action authz.APIAction,
 	system *model.System,
 ) (bool, error) {
 	// System User has access to everything
@@ -188,7 +188,7 @@ func (u *user) HasSystemAccess(
 		return false, nil
 	}
 
-	isGroupFiltered, err := u.NeedsGroupFiltering(ctx, action, authz.ResourceTypeSystem)
+	isGroupFiltered, err := u.NeedsGroupFiltering(ctx, action, authz.APIResourceTypeSystem)
 	if err != nil {
 		return isGroupFiltered, err
 	}
@@ -197,14 +197,14 @@ func (u *user) HasSystemAccess(
 		ctx,
 		&model.KeyConfiguration{ID: *system.KeyConfigurationID},
 		action,
-		authz.ResourceTypeSystem,
+		authz.APIResourceTypeSystem,
 	)
 	if err != nil {
 		return isGroupFiltered, errs.Wrap(ErrGettingKeyConfigByID, err)
 	}
 
 	if !isAuthorized {
-		u.sendUnauthorizedAccessAuditLog(ctx, authz.ResourceTypeSystem, action)
+		u.sendUnauthorizedAccessAuditLog(ctx, authz.APIResourceTypeSystem, action)
 		return isGroupFiltered, ErrKeyConfigurationNotAllowed
 	}
 
@@ -290,11 +290,11 @@ func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (con
 
 func (u *user) isCreateKeyconfig(
 	keyConfig *model.KeyConfiguration,
-	action authz.Action,
-	resource authz.ResourceTypeName,
+	action authz.APIAction,
+	resource authz.APIResourceTypeName,
 ) bool {
-	return action == authz.ActionCreate &&
-		resource == authz.ResourceTypeKeyConfiguration &&
+	return action == authz.APIActionCreate &&
+		resource == authz.APIResourceTypeKeyConfiguration &&
 		(keyConfig.AdminGroup != model.Group{})
 }
 
@@ -303,8 +303,8 @@ func (u *user) isCreateKeyconfig(
 func (u *user) hasKeyConfigAccess(
 	ctx context.Context,
 	keyConfig *model.KeyConfiguration,
-	action authz.Action,
-	resource authz.ResourceTypeName,
+	action authz.APIAction,
+	resource authz.APIResourceTypeName,
 ) (bool, error) {
 	iamIdentifiers, err := cmkcontext.ExtractClientDataGroupsString(ctx)
 	if err != nil {
@@ -317,7 +317,7 @@ func (u *user) hasKeyConfigAccess(
 	}
 
 	// Auditors have read-only access to all keyconfigs
-	if role == constants.TenantAuditorRole && action == authz.ActionRead {
+	if role == constants.TenantAuditorRole && action == authz.APIActionRead {
 		return true, nil
 	}
 
@@ -360,8 +360,8 @@ func (u *user) hasKeyConfigAccess(
 
 func (u *user) sendUnauthorizedAccessAuditLog(
 	ctx context.Context,
-	resource authz.ResourceTypeName,
-	action authz.Action,
+	resource authz.APIResourceTypeName,
+	action authz.APIAction,
 ) {
 	err := u.cmkAuditor.SendCmkUnauthorizedRequestAuditLog(ctx, string(resource), string(action))
 	if err != nil {

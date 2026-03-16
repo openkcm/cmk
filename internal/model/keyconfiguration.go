@@ -1,7 +1,11 @@
 package model
 
 import (
+	"context"
+
 	"github.com/google/uuid"
+
+	"github.com/openkcm/cmk/internal/authz"
 )
 
 // KeyConfiguration represents a key configuration in the database.
@@ -22,13 +26,24 @@ type KeyConfiguration struct {
 	TotalSystems int `gorm:"->;-:migration"`
 }
 
+// TableResourceType return the authz resource type
+func (m KeyConfiguration) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeKeyconfiguration
+}
+
 // TableName returns the table name for KeyConfiguration
-func (KeyConfiguration) TableName() string {
-	return "key_configurations"
+func (m KeyConfiguration) TableName() string {
+	return string(m.TableResourceType())
 }
 
 func (KeyConfiguration) IsSharedModel() bool {
 	return false
+}
+
+func (m KeyConfiguration) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
 func (kc *KeyConfiguration) SetID(id uuid.UUID) {

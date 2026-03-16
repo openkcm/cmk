@@ -17,7 +17,7 @@ func TestIsAllowed(t *testing.T) {
 	tests := []struct {
 		name               string
 		entities           []authz.Entity
-		request            authz.Request
+		request            authz.Request[authz.APIResourceTypeName, authz.APIAction]
 		expectError        bool
 		expectedErrHandler bool
 		expectAllow        bool
@@ -28,10 +28,10 @@ func TestIsAllowed(t *testing.T) {
 			entities: []authz.Entity{
 				{TenantID: "tenant1", Role: "NonExistentRole", UserGroups: []string{"Group1"}},
 			},
-			request: authz.Request{
+			request: authz.Request[authz.APIResourceTypeName, authz.APIAction]{
 				User:             authz.User{UserName: "test_user", Groups: []string{"Group1"}},
-				ResourceTypeName: authz.ResourceTypeKey,
-				Action:           authz.ActionRead,
+				ResourceTypeName: authz.APIResourceTypeKey,
+				Action:           authz.APIActionRead,
 				TenantID:         "tenant1",
 			},
 			expectError:        true,
@@ -42,10 +42,10 @@ func TestIsAllowed(t *testing.T) {
 		{
 			name:     "EmptyEntities",
 			entities: []authz.Entity{},
-			request: authz.Request{
+			request: authz.Request[authz.APIResourceTypeName, authz.APIAction]{
 				User:             authz.User{UserName: "test_user", Groups: []string{"Group1"}},
-				ResourceTypeName: authz.ResourceTypeKey,
-				Action:           authz.ActionRead,
+				ResourceTypeName: authz.APIResourceTypeKey,
+				Action:           authz.APIActionRead,
 				TenantID:         "tenant1",
 			},
 			expectError:        true,
@@ -58,10 +58,10 @@ func TestIsAllowed(t *testing.T) {
 			entities: []authz.Entity{
 				{TenantID: "tenant1", Role: constants.TenantAdminRole, UserGroups: []string{"Group1"}},
 			},
-			request: authz.Request{
+			request: authz.Request[authz.APIResourceTypeName, authz.APIAction]{
 				User:             authz.User{UserName: "test_user", Groups: []string{"Group1"}},
-				ResourceTypeName: authz.ResourceTypeName(""),
-				Action:           authz.Action(""),
+				ResourceTypeName: authz.APIResourceTypeName(""),
+				Action:           authz.APIAction(""),
 				TenantID:         "tenant1",
 			},
 			expectError:        true,
@@ -74,10 +74,10 @@ func TestIsAllowed(t *testing.T) {
 			entities: []authz.Entity{
 				{TenantID: "tenant1", Role: constants.KeyAdminRole, UserGroups: []string{"Group1"}},
 			},
-			request: authz.Request{
+			request: authz.Request[authz.APIResourceTypeName, authz.APIAction]{
 				User:             authz.User{UserName: "test_user", Groups: []string{"Group1"}},
-				ResourceTypeName: authz.ResourceTypeKey,
-				Action:           authz.ActionRead,
+				ResourceTypeName: authz.APIResourceTypeKey,
+				Action:           authz.APIActionRead,
 				TenantID:         authz.EmptyTenantID,
 			},
 			expectError:        true,
@@ -90,10 +90,10 @@ func TestIsAllowed(t *testing.T) {
 			entities: []authz.Entity{
 				{TenantID: "tenant1", Role: constants.KeyAdminRole, UserGroups: []string{"Group1"}},
 			},
-			request: authz.Request{
+			request: authz.Request[authz.APIResourceTypeName, authz.APIAction]{
 				User:             authz.User{UserName: "test_user", Groups: []string{"Group1"}},
-				ResourceTypeName: authz.ResourceTypeKeyConfiguration,
-				Action:           authz.ActionRead,
+				ResourceTypeName: authz.APIResourceTypeKeyConfiguration,
+				Action:           authz.APIActionRead,
 				TenantID:         "tenant1",
 			},
 			expectError:        false,
@@ -106,10 +106,10 @@ func TestIsAllowed(t *testing.T) {
 			entities: []authz.Entity{
 				{TenantID: "tenant1", Role: constants.KeyAdminRole, UserGroups: []string{"Group1"}},
 			},
-			request: authz.Request{
+			request: authz.Request[authz.APIResourceTypeName, authz.APIAction]{
 				User:             authz.User{UserName: "test_user", Groups: []string{"Group1"}},
-				ResourceTypeName: authz.ResourceTypeKeyConfiguration,
-				Action:           authz.ActionKeyRotate,
+				ResourceTypeName: authz.APIResourceTypeKeyConfiguration,
+				Action:           authz.APIActionKeyRotate,
 				TenantID:         "tenant1",
 			},
 			expectError:        true,
@@ -125,7 +125,8 @@ func TestIsAllowed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(
 			tt.name, func(t *testing.T) {
-				authHandler, err := authz.NewAuthorizationHandler(&tt.entities, audit)
+				authHandler, err := authz.NewAuthorizationHandler(&tt.entities, audit,
+					authz.APIRolePolicies, authz.APIResourceTypeActions)
 				if err != nil {
 					if tt.expectedErrHandler {
 						return
@@ -177,7 +178,8 @@ func BenchmarkIsAllowed(b *testing.B) {
 	audit := auditor.New(context.Background(), cfg)
 
 	// Initialize authorization handler
-	authHandler, err := authz.NewAuthorizationHandler(&entities, audit)
+	authHandler, err := authz.NewAuthorizationHandler(&entities, audit,
+		authz.APIRolePolicies, authz.APIResourceTypeActions)
 	if err != nil {
 		b.Fatalf("Failed to create authorization handler: %v", err)
 	}
@@ -185,35 +187,35 @@ func BenchmarkIsAllowed(b *testing.B) {
 	// test different requests
 	request := []struct {
 		name     string
-		request  authz.Request
+		request  authz.Request[authz.APIResourceTypeName, authz.APIAction]
 		tenantID authz.TenantID
 	}{
 		{
 			name: "singleGroupCommonAccess",
-			request: authz.Request{
+			request: authz.Request[authz.APIResourceTypeName, authz.APIAction]{
 				User:             authz.User{UserName: testUsername, Groups: []string{"Group1"}},
-				ResourceTypeName: authz.ResourceTypeKeyConfiguration,
-				Action:           authz.ActionRead,
+				ResourceTypeName: authz.APIResourceTypeKeyConfiguration,
+				Action:           authz.APIActionRead,
 				TenantID:         "tenant2000",
 			},
 			tenantID: authz.TenantID("tenant2000"),
 		},
 		{
 			name: "multipleGroupsCommonAccess",
-			request: authz.Request{
+			request: authz.Request[authz.APIResourceTypeName, authz.APIAction]{
 				User:             authz.User{UserName: testUsername, Groups: []string{"Group1", "Group2"}},
-				ResourceTypeName: authz.ResourceTypeKeyConfiguration,
-				Action:           authz.ActionRead,
+				ResourceTypeName: authz.APIResourceTypeKeyConfiguration,
+				Action:           authz.APIActionRead,
 				TenantID:         "tenant300",
 			},
 			tenantID: authz.TenantID("tenant300"),
 		},
 		{
 			name: "singleGroupNoAccess",
-			request: authz.Request{
+			request: authz.Request[authz.APIResourceTypeName, authz.APIAction]{
 				User:             authz.User{UserName: testUsername, Groups: []string{"Groupxz"}},
-				ResourceTypeName: authz.ResourceTypeKeyConfiguration,
-				Action:           authz.ActionDelete,
+				ResourceTypeName: authz.APIResourceTypeKeyConfiguration,
+				Action:           authz.APIActionDelete,
 				TenantID:         "tenant3",
 			},
 			tenantID: authz.TenantID("tenant3"),

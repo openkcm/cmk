@@ -19,8 +19,8 @@ func NewUserManager() manager.User {
 
 func (u *user) NeedsGroupFiltering(
 	ctx context.Context,
-	action authz.Action,
-	resource authz.ResourceTypeName,
+	action authz.APIAction,
+	resource authz.APIResourceTypeName,
 ) (bool, error) {
 	return false, nil
 }
@@ -29,17 +29,17 @@ func (u *user) HasTenantAccess(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (u *user) HasSystemAccess(ctx context.Context, action authz.Action, system *model.System) (bool, error) {
+func (u *user) HasSystemAccess(ctx context.Context, action authz.APIAction, system *model.System) (bool, error) {
 	return false, nil
 }
 
-func (u *user) HasKeyAccess(ctx context.Context, action authz.Action, keyConfig uuid.UUID) (bool, error) {
+func (u *user) HasKeyAccess(ctx context.Context, action authz.APIAction, keyConfig uuid.UUID) (bool, error) {
 	return false, nil
 }
 
 func (u *user) HasKeyConfigAccess(
 	ctx context.Context,
-	action authz.Action,
+	action authz.APIAction,
 	keyConfig *model.KeyConfiguration,
 ) (bool, error) {
 	return false, nil

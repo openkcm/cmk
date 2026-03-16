@@ -13,13 +13,12 @@ import (
 	"github.com/fullsailor/pkcs7"
 	"github.com/google/uuid"
 
-	certissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
-
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
@@ -36,8 +35,7 @@ var (
 	ErrDefaultTenantCertificateAlreadyExists = errors.New(
 		"default tenant certificate already exists; only one is allowed per tenant",
 	)
-	ErrDefaultTenantError          = errors.New("default tenant cert error")
-	ErrLoadCertificateIssuerPlugin = errors.New("failed to load certificate issuer plugin")
+	ErrDefaultTenantError = errors.New("default tenant cert error")
 )
 
 const (
@@ -46,7 +44,7 @@ const (
 
 type CertificateManager struct {
 	repo                repo.Repo
-	certIssuerClient    certissuerv1.CertificateIssuerServiceClient
+	certIssuer          certificateissuer.CertificateIssuer
 	cfg                 *config.Config
 	privateKeyGenerator func() (*rsa.PrivateKey, error)
 }
@@ -57,15 +55,15 @@ func NewCertificateManager(
 	svcRegistry *cmkpluginregistry.Registry,
 	cfg *config.Config,
 ) *CertificateManager {
-	client, err := createCertificateIssuerClient(svcRegistry)
+	certIssuer, err := svcRegistry.CertificateIssuer()
 	if err != nil {
 		log.Error(ctx, "failed creating certificate issuer client", err)
 	}
 
 	return &CertificateManager{
-		repo:             repo,
-		certIssuerClient: client,
-		cfg:              cfg,
+		repo:       repo,
+		certIssuer: certIssuer,
+		cfg:        cfg,
 	}
 }
 
@@ -303,22 +301,6 @@ func (m *CertificateManager) isTenantDefaultCertExist(ctx context.Context) (bool
 	return count > 0, nil
 }
 
-//nolint:ireturn
-func createCertificateIssuerClient(
-	svcRegistry *cmkpluginregistry.Registry,
-) (certissuerv1.CertificateIssuerServiceClient, error) {
-	plugins := svcRegistry.LookupByType(certissuerv1.Type)
-	if len(plugins) == 0 {
-		return nil, ErrNoPluginInCatalog
-	}
-	if len(plugins) > 1 {
-		return nil, errs.Wrapf(ErrLoadCertificateIssuerPlugin, "multiple certificate issuer plugins found in catalog")
-	}
-	certIssuer := plugins[0]
-
-	return certissuerv1.NewCertificateIssuerServiceClient(certIssuer.ClientConnection()), nil
-}
-
 func (m *CertificateManager) getDefaultTenantCertificate(ctx context.Context) (*model.Certificate, bool, error) {
 	return m.getCertificateByPurpose(ctx, model.CertificatePurposeTenantDefault)
 }
@@ -366,14 +348,14 @@ func (m *CertificateManager) getNewCertificate(
 		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 	})
 
-	response, err := m.certIssuerClient.GetCertificate(ctx, &certissuerv1.GetCertificateRequest{
+	response, err := m.certIssuer.IssueCertificate(ctx, &certificateissuer.IssueCertificateRequest{
 		CommonName: args.CommonName,
-		Locality:   args.Locality,
-		Validity: &certissuerv1.GetCertificateValidity{
+		Localities: args.Locality,
+		Validity: &certificateissuer.CertificateValidity{
 			Value: int64(m.cfg.Certificates.ValidityDays),
-			Type:  certissuerv1.ValidityType_VALIDITY_TYPE_DAYS,
+			Type:  certificateissuer.Days,
 		},
-		PrivateKey: &certissuerv1.PrivateKey{
+		PrivateKey: &certificateissuer.CertificatePrivateKey{
 			Data: pKeyPem,
 		},
 	})
@@ -381,7 +363,7 @@ func (m *CertificateManager) getNewCertificate(
 		return nil, nil, errs.Wrap(ErrCertificateManager, err)
 	}
 
-	certificationChain := response.GetCertificateChain()
+	certificationChain := response.ChainPem
 
 	_, clientCertChain, err := decodeCertificateChain([]byte(certificationChain))
 	if err != nil {

@@ -6,14 +6,13 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"errors"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/plugin-sdk/api"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	certificate_issuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
@@ -22,6 +21,7 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -31,22 +31,20 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-var (
-	ErrMockCertificationServiceResponse = errors.New("mock certification service response")
-	ErrMockCertificateChain             = errors.New("mock certificate chain")
-)
-
 type CertificateIssuerMock struct {
 	NewCertificateChain func() string
 }
 
-func (c CertificateIssuerMock) GetCertificate(
+func (c CertificateIssuerMock) ServiceInfo() api.Info {
+	panic("implement me")
+}
+
+func (c CertificateIssuerMock) IssueCertificate(
 	_ context.Context,
-	_ *certificate_issuerv1.GetCertificateRequest,
-	_ ...grpc.CallOption,
-) (*certificate_issuerv1.GetCertificateResponse, error) {
-	return &certificate_issuerv1.GetCertificateResponse{
-		CertificateChain: c.NewCertificateChain(),
+	_ *certificateissuer.IssueCertificateRequest,
+) (*certificateissuer.IssueCertificateResponse, error) {
+	return &certificateissuer.IssueCertificateResponse{
+		ChainPem: c.NewCertificateChain(),
 	}, nil
 }
 
@@ -171,7 +169,7 @@ func TestCertificateManager_RequestNewCertificate(t *testing.T) {
 	assert.NoError(t, err)
 	m, _, tenant := SetupCertificateManager(t)
 
-	m.SetClient(CertificateIssuerMock{NewCertificateChain: func() string {
+	m.SetCertIssuerService(CertificateIssuerMock{NewCertificateChain: func() string {
 		return testutils.CreateCertificateChain(t, pkix.Name{
 			Country:            []string{"test"},
 			Organization:       []string{"test"},
@@ -231,7 +229,7 @@ func TestRotateExpiredCertificates(t *testing.T) {
 			return privateKey, nil
 		})
 
-		m.SetClient(CertificateIssuerMock{NewCertificateChain: func() string {
+		m.SetCertIssuerService(CertificateIssuerMock{NewCertificateChain: func() string {
 			return testutils.CreateCertificateChain(t, pkix.Name{
 				Country:            []string{"test"},
 				Organization:       []string{"test"},
@@ -274,7 +272,7 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 		return privateKey, nil
 	})
 
-	m.SetClient(CertificateIssuerMock{NewCertificateChain: func() string {
+	m.SetCertIssuerService(CertificateIssuerMock{NewCertificateChain: func() string {
 		return testutils.CreateCertificateChain(t, pkix.Name{
 			Country:            []string{"test"},
 			Organization:       []string{"test"},
@@ -349,17 +347,21 @@ type RequestCapturingIssuerMock struct {
 	privateKey *rsa.PrivateKey
 }
 
-func (c RequestCapturingIssuerMock) GetCertificate(
-	_ context.Context,
-	req *certificate_issuerv1.GetCertificateRequest,
-	_ ...grpc.CallOption,
-) (*certificate_issuerv1.GetCertificateResponse, error) {
-	chain := testutils.CreateCertificateChain(c.t, pkix.Name{
-		CommonName: req.GetCommonName(),
-		Locality:   req.GetLocality(),
-	}, c.privateKey)
+func (c RequestCapturingIssuerMock) ServiceInfo() api.Info {
+	panic("implement me")
+}
 
-	return &certificate_issuerv1.GetCertificateResponse{CertificateChain: chain}, nil
+func (c RequestCapturingIssuerMock) IssueCertificate(
+	_ context.Context,
+	req *certificateissuer.IssueCertificateRequest,
+) (*certificateissuer.IssueCertificateResponse, error) {
+	chain := testutils.CreateCertificateChain(c.t, pkix.Name{
+		CommonName: req.CommonName,
+		Locality:   req.Localities,
+	}, c.privateKey)
+	return &certificateissuer.IssueCertificateResponse{
+		ChainPem: chain,
+	}, nil
 }
 
 func setupCertificateManagerWithCapturingMock(
@@ -373,7 +375,7 @@ func setupCertificateManagerWithCapturingMock(
 	assert.NoError(t, err)
 
 	m.SetPrivateKeyGenerator(func() (*rsa.PrivateKey, error) { return privateKey, nil })
-	m.SetClient(RequestCapturingIssuerMock{t: t, privateKey: privateKey})
+	m.SetCertIssuerService(RequestCapturingIssuerMock{t: t, privateKey: privateKey})
 
 	return m, db, tenant, privateKey
 }
@@ -482,6 +484,7 @@ func TestRotateExpiredCertificates_LocalityAndCommonName(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Back-date it so RotateExpiredCertificates picks it up.
+			origCert.CreationDate = time.Now().AddDate(-2, 0, 0)
 			origCert.ExpirationDate = time.Now().AddDate(-1, 0, 0)
 			_, err = r.Patch(ctx, origCert, *repo.NewQuery())
 			assert.NoError(t, err)
@@ -592,7 +595,7 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 	m.SetPrivateKeyGenerator(func() (*rsa.PrivateKey, error) {
 		return privateKey, nil
 	})
-	m.SetClient(CertificateIssuerMock{NewCertificateChain: func() string {
+	m.SetCertIssuerService(CertificateIssuerMock{NewCertificateChain: func() string {
 		return testutils.CreateCertificateChain(t, pkix.Name{
 			Country:            []string{"test"},
 			Organization:       []string{"test"},

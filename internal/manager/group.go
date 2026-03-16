@@ -8,8 +8,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	idmv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
@@ -17,6 +15,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -45,7 +44,7 @@ type GroupIAMExistence struct {
 }
 
 func (m *GroupManager) GetGroups(ctx context.Context, pagination repo.Pagination) ([]*model.Group, int, error) {
-	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.ActionRead, authz.ResourceTypeUserGroup)
+	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.APIActionRead, authz.APIResourceTypeUserGroup)
 	if err != nil {
 		return []*model.Group{}, 0, err
 	}
@@ -111,7 +110,7 @@ func (m *GroupManager) DeleteGroupByID(ctx context.Context, id uuid.UUID) error 
 }
 
 func (m *GroupManager) GetGroupByID(ctx context.Context, id uuid.UUID) (*model.Group, error) {
-	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.ActionRead, authz.ResourceTypeUserGroup)
+	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.APIActionRead, authz.APIResourceTypeUserGroup)
 	if err != nil {
 		return nil, err
 	}
@@ -233,24 +232,12 @@ func (m *GroupManager) BuildIAMIdentifier(groupType, tenantID string) (string, e
 	return model.NewIAMIdentifier(groupType, tenantID), nil
 }
 
-func (m *GroupManager) GetIdentityManagementPlugin() (idmv1.IdentityManagementServiceClient, error) {
+func (m *GroupManager) GetIdentityManagementPlugin() (identitymanagement.IdentityManagement, error) {
 	if m.svcRegistry == nil {
 		return nil, errs.Wrapf(ErrLoadIdentityManagementPlugin, "plugin catalog is not initialized")
 	}
 
-	plugins := m.svcRegistry.LookupByType(idmv1.Type)
-	if len(plugins) == 0 {
-		return nil, errs.Wrapf(ErrLoadIdentityManagementPlugin, "no identity management plugins found in catalog")
-	}
-
-	if len(plugins) > 1 {
-		return nil, errs.Wrapf(ErrLoadIdentityManagementPlugin, "multiple identity management plugins found in catalog")
-	}
-
-	connection := plugins[0].ClientConnection()
-	client := idmv1.NewIdentityManagementServiceClient(connection)
-
-	return client, nil
+	return m.svcRegistry.IdentityManagement()
 }
 
 func (m *GroupManager) CheckIAMExistenceOfGroups(
@@ -262,19 +249,19 @@ func (m *GroupManager) CheckIAMExistenceOfGroups(
 		return nil, errs.Wrap(ErrAutoAssignApprover, err)
 	}
 
-	client, err := m.GetIdentityManagementPlugin()
+	plugin, err := m.GetIdentityManagementPlugin()
 	if err != nil {
 		return nil, err
 	}
 
 	result := make([]GroupIAMExistence, 0, len(iamIdentifiers))
 	for _, name := range iamIdentifiers {
-		request := &idmv1.GetGroupRequest{
+		request := &identitymanagement.GetGroupRequest{
 			GroupName:   name,
-			AuthContext: &idmv1.AuthContext{Data: authCtx},
+			AuthContext: identitymanagement.AuthContext{Data: authCtx},
 		}
 
-		_, err := client.GetGroup(ctx, request)
+		_, err := plugin.GetGroup(ctx, request)
 		if err != nil {
 			st, ok := status.FromError(err)
 			if ok && st.Code() == codes.NotFound {

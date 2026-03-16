@@ -14,7 +14,7 @@ import (
 
 func TestGroupTable(t *testing.T) {
 	t.Run("Should have table name group", func(t *testing.T) {
-		expectedTableName := "group"
+		expectedTableName := "groups"
 
 		tableName := model.Group{}.TableName()
 

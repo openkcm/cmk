@@ -1,9 +1,9 @@
 package client
 
 import (
-	notificationv1 "github.com/openkcm/plugin-sdk/proto/plugin/notification/v1"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/notification"
 )
 
-func (c *Client) SetClient(notificationClient notificationv1.NotificationServiceClient) {
-	c.notificationClient = notificationClient
+func (c *Client) SetService(svc notification.Notification) {
+	c.svc = svc
 }

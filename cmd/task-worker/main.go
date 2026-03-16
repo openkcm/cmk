@@ -30,7 +30,7 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/notifier/client"
+	notifierclient "github.com/openkcm/cmk/internal/notifier/client"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
@@ -118,6 +118,11 @@ func registerTasks(
 		return errs.Wrapf(err, "failed to start loading catalog")
 	}
 
+	notifierClient, err := notifierclient.New(ctx, svcRegistry)
+	if err != nil {
+		return errs.Wrapf(err, "failed to create notification client")
+	}
+
 	r := sql.NewRepository(dbCon)
 
 	sis, err := manager.NewSystemInformationManager(r, svcRegistry, &cfg.ContextModels.System)
@@ -151,7 +156,6 @@ func registerTasks(
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, cron.Client(), tenantConfigManager, cfg)
-	notificationClient := client.New(ctx, svcRegistry)
 
 	cron.RegisterTasks(ctx, []async.TaskHandler{
 		tasks.NewSystemsRefresher(sis, r),
@@ -159,7 +163,7 @@ func registerTasks(
 		tasks.NewHYOKSync(keyManager, r),
 		tasks.NewKeystorePoolFiller(keyManager, r, cfg.KeystorePool),
 		tasks.NewWorkflowProcessor(workflowManager, r),
-		tasks.NewNotificationSender(notificationClient),
+		tasks.NewNotificationSender(notifierClient),
 		tasks.NewWorkflowExpiryProcessor(workflowManager, r),
 		tasks.NewWorkflowCleaner(workflowManager, r),
 		tasks.NewTenantNameRefresher(r, f.Registry()),
