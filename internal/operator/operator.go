@@ -284,6 +284,7 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 				Issuer:     cfg.Issuer,
 				JwksUri:    &cfg.JwksURI,
 				Audiences:  cfg.Audiences,
+				ClientId:   &cfg.ClientId,
 				Properties: cfg.AdditionalProperties,
 			},
 		)
@@ -628,6 +629,7 @@ type OIDCConfig struct {
 	Issuer               string
 	JwksURI              string
 	Audiences            []string
+	ClientId             string
 	AdditionalProperties map[string]string
 }
 
@@ -635,6 +637,7 @@ const (
 	keyIssuer    = "issuer"
 	keyJWKSURI   = "jwks_uri"
 	keyAudiences = "audiences"
+	keyClientId  = "client_id"
 )
 
 // extractOIDCConfig extracts and validates OIDC configuration from properties map
@@ -643,7 +646,7 @@ func extractOIDCConfig(properties map[string]string) (OIDCConfig, error) {
 		return OIDCConfig{}, ErrMissingProperties
 	}
 
-	var issuer, jwksURI, audiences string
+	var issuer, jwksURI, audiences, clientId string
 
 	additionalProperties := make(map[string]string, len(properties))
 
@@ -655,6 +658,8 @@ func extractOIDCConfig(properties map[string]string) (OIDCConfig, error) {
 			jwksURI = v
 		case keyAudiences:
 			audiences = v
+		case keyClientId:
+			clientId = v
 		default:
 			additionalProperties[k] = v
 		}
@@ -670,6 +675,7 @@ func extractOIDCConfig(properties map[string]string) (OIDCConfig, error) {
 		Issuer:               issuer,
 		JwksURI:              jwksURI,
 		Audiences:            parseCommaSeparatedValues(audiences),
+		ClientId:             clientId,
 		AdditionalProperties: additionalProperties,
 	}
 
