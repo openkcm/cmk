@@ -20,6 +20,10 @@ func (c *CryptoReconciler) JobFailedFunc(ctx context.Context, job orbital.Job) e
 	return c.jobFailedFunc(ctx, job)
 }
 
+func (c *CryptoReconciler) JobCanceledFunc(ctx context.Context, job orbital.Job) error {
+	return c.jobCanceledFunc(ctx, job)
+}
+
 func (c *CryptoReconciler) ResolveTasks() orbital.TaskResolveFunc {
 	return c.resolveTasks()
 }
