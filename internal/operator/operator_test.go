@@ -638,10 +638,16 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				}()
 
 				issuerURL := "http://issuer-url"
+				jwksURI := "http://jwks-uri"
+				audiences := "audience1"
+				clientID := "clientID1"
 				auth := authgrpc.Auth{
 					TenantId: tenants[i],
 					Properties: map[string]string{
-						"issuer": issuerURL,
+						"issuer":    issuerURL,
+						"jwks_uri":  jwksURI,
+						"audiences": audiences,
+						"client_id": clientID,
 					},
 				}
 				data, err := proto.Marshal(&auth)
@@ -659,7 +665,10 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 					req *oidcmappinggrpc.ApplyOIDCMappingRequest,
 				) (*oidcmappinggrpc.ApplyOIDCMappingResponse, error) {
 					assert.Equal(t, auth.GetTenantId(), req.GetTenantId())
-					assert.Equal(t, auth.GetProperties()["issuer"], req.GetIssuer())
+					assert.Equal(t, issuerURL, req.GetIssuer())
+					assert.Equal(t, jwksURI, req.GetJwksUri())
+					assert.Equal(t, []string{audiences}, req.GetAudiences())
+					assert.Equal(t, clientID, req.GetClientId())
 
 					noOfCalls++
 
@@ -1251,29 +1260,33 @@ func TestExtractOIDCConfig(t *testing.T) {
 			properties: map[string]string{
 				"issuer":    "https://test.issuer.com",
 				"jwks_uri":  "https://test.jwks1.com",
-				"audiences": "audience1",
+				"audiences": "audience1, audience2",
+				"client_id": "clientID1",
 			},
 			expectedConfig: operator.OIDCConfig{
 				Issuer:               "https://test.issuer.com",
 				JwksURI:              "https://test.jwks1.com",
-				Audiences:            []string{"audience1"},
+				Audiences:            []string{"audience1", "audience2"},
+				ClientID:             "clientID1",
 				AdditionalProperties: map[string]string{},
 			},
 		},
 		{
 			name: "valid properties and additional properties",
 			properties: map[string]string{
-				"issuer":    "https://test.issuer.com",
-				"jwks_uri":  "https://test.jwks1.com",
-				"audiences": "audience1",
-				"client-id": "some-client-id",
+				"issuer":        "https://test.issuer.com",
+				"jwks_uri":      "https://test.jwks1.com",
+				"audiences":     "audience1",
+				"client_id":     "clientID1",
+				"some-property": "some-property-value",
 			},
 			expectedConfig: operator.OIDCConfig{
 				Issuer:    "https://test.issuer.com",
 				JwksURI:   "https://test.jwks1.com",
 				Audiences: []string{"audience1"},
+				ClientID:  "clientID1",
 				AdditionalProperties: map[string]string{
-					"client-id": "some-client-id",
+					"some-property": "some-property-value",
 				},
 			},
 		},
@@ -1286,6 +1299,7 @@ func TestExtractOIDCConfig(t *testing.T) {
 				Issuer:               "https://test.issuer.com",
 				JwksURI:              "",
 				Audiences:            []string{},
+				ClientID:             "",
 				AdditionalProperties: map[string]string{},
 			},
 		},
