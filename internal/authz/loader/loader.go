@@ -1,4 +1,4 @@
-package authzmodel
+package authz_loader
 
 import (
 	"context"
@@ -23,44 +23,67 @@ var (
 	ErrEmptyTenantID      = errors.New("tenantID cannot be empty")
 )
 
-type Engine struct {
+type AuthzLoader[TResourceTypeName, TAction comparable] struct {
 	repo         repo.Repo
-	AuthzHandler *authz.Handler
+	AuthzHandler *authz.Handler[TResourceTypeName, TAction]
 	mu           sync.Mutex // protects AuthzHandler.Entities and AuthorizationData
 	Auditor      *auditor.Auditor
 }
 
-func NewEngine(
+func NewAuthzLoader[TResourceTypeName, TAction comparable](
 	ctx context.Context,
 	repo repo.Repo,
 	config *config.Config,
-) *Engine {
+	rolePolicies map[constants.Role][]authz.BasePolicy[TResourceTypeName, TAction],
+	resourceTypeActions map[TResourceTypeName][]TAction,
+) *AuthzLoader[TResourceTypeName, TAction] {
 	// start with an empty list of entities
 	entities := &[]authz.Entity{}
 
 	audit := auditor.New(ctx, config)
 
-	authzHandler, err := authz.NewAuthorizationHandler(entities, audit)
+	authzHandler, err := authz.NewAuthorizationHandler(entities, audit,
+		rolePolicies, resourceTypeActions)
 	if err != nil {
 		log.Error(ctx, "failed to create authorization handler", err)
 		return nil
 	}
 
-	return &Engine{
+	return &AuthzLoader[TResourceTypeName, TAction]{
 		repo:         repo,
 		AuthzHandler: authzHandler,
 		Auditor:      audit,
 	}
 }
 
-func (am *Engine) LoadAllowList(ctx context.Context, tenantID string) error {
+func NewAPIAuthzLoader(
+	ctx context.Context,
+	repo repo.Repo,
+	config *config.Config,
+) *AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
+	return NewAuthzLoader(ctx, repo, config,
+		authz.APIRolePolicies, authz.APIResourceTypeActions)
+}
+
+func NewRepoAuthzLoader(
+	ctx context.Context,
+	repo repo.Repo,
+	config *config.Config,
+) *AuthzLoader[authz.RepoResourceTypeName, authz.RepoAction] {
+	return NewAuthzLoader(ctx, repo, config,
+		authz.RepoRolePolicies, authz.RepoResourceTypeActions)
+}
+
+func (am *AuthzLoader[TResourceTypeName, TAction]) LoadAllowList(
+	ctx context.Context, tenantID string) error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
 	return am.loadAllowListInternal(ctx, tenantID)
 }
 
-func (am *Engine) ReloadAllowList(ctx context.Context) error {
+func (am *AuthzLoader[TResourceTypeName, TAction]) ReloadAllowList(
+	ctx context.Context) error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
@@ -71,8 +94,8 @@ func (am *Engine) ReloadAllowList(ctx context.Context) error {
 	}
 
 	am.AuthzHandler.Entities = []authz.Entity{}
-	am.AuthzHandler.AuthorizationData = authz.AllowList{
-		AuthzKeys: make(map[authz.AuthorizationKey]struct{}),
+	am.AuthzHandler.AuthorizationData = authz.AllowList[TResourceTypeName, TAction]{
+		AuthzKeys: make(map[authz.AuthorizationKey[TResourceTypeName, TAction]]struct{}),
 		TenantIDs: make(map[authz.TenantID]struct{}),
 	}
 
@@ -87,7 +110,8 @@ func (am *Engine) ReloadAllowList(ctx context.Context) error {
 }
 
 // StartAuthzDataRefresh starts a background goroutine that refreshes the authorization data periodically
-func (am *Engine) StartAuthzDataRefresh(ctx context.Context, interval time.Duration) {
+func (am *AuthzLoader[TResourceTypeName, TAction]) StartAuthzDataRefresh(
+	ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 
 	go func() {
@@ -119,7 +143,8 @@ func (am *Engine) StartAuthzDataRefresh(ctx context.Context, interval time.Durat
 // If there are no groups, it does not update the AuthzHandler.
 // If there are groups, it creates entities for each role and updates the AuthzHandler's
 // AuthorizationData with the new entities.
-func (am *Engine) loadAllowListInternal(ctx context.Context, tenantID string) error {
+func (am *AuthzLoader[TResourceTypeName, TAction]) loadAllowListInternal(
+	ctx context.Context, tenantID string) error {
 	// Validate tenantID
 	if tenantID == "" {
 		return errs.Wrap(ErrTenantNotExist, ErrEmptyTenantID)
@@ -169,7 +194,8 @@ func (am *Engine) loadAllowListInternal(ctx context.Context, tenantID string) er
 	if len(entities) > 0 {
 		am.AuthzHandler.Entities = append(am.AuthzHandler.Entities, entities...)
 
-		authzData, err := authz.NewAuthorizationData(am.AuthzHandler.Entities)
+		authzData, err := authz.NewAuthorizationData(am.AuthzHandler.Entities,
+			am.AuthzHandler.RolePolicies)
 		if err != nil {
 			return errs.Wrap(ErrLoadAuthzAllowList, err)
 		}
@@ -197,7 +223,8 @@ func isTenantKnown(ctx context.Context, amrepo repo.Repo, tenantID string) bool 
 
 	found, err := amrepo.First(
 		ctx, &tenant,
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.IDField, tenantID))),
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(repo.IDField, tenantID))),
 	)
 	if err != nil || !found {
 		return false

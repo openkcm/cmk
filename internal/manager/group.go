@@ -44,7 +44,7 @@ type GroupIAMExistence struct {
 }
 
 func (m *GroupManager) GetGroups(ctx context.Context, pagination repo.Pagination) ([]*model.Group, int, error) {
-	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.ActionRead, authz.ResourceTypeUserGroup)
+	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.APIActionRead, authz.APIResourceTypeUserGroup)
 	if err != nil {
 		return []*model.Group{}, 0, err
 	}
@@ -110,7 +110,7 @@ func (m *GroupManager) DeleteGroupByID(ctx context.Context, id uuid.UUID) error 
 }
 
 func (m *GroupManager) GetGroupByID(ctx context.Context, id uuid.UUID) (*model.Group, error) {
-	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.ActionRead, authz.ResourceTypeUserGroup)
+	isGroupFiltered, err := m.userManager.NeedsGroupFiltering(ctx, authz.APIActionRead, authz.APIResourceTypeUserGroup)
 	if err != nil {
 		return nil, err
 	}

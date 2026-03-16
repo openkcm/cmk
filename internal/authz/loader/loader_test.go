@@ -1,4 +1,4 @@
-package authzmodel_test
+package authz_loader_test
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/authz"
-	authzmodel "github.com/openkcm/cmk/internal/authz-model"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
@@ -18,7 +18,7 @@ import (
 )
 
 func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {
-	repo := repomock.NewInMemoryRepository()
+	r := repomock.NewInMemoryRepository()
 
 	// Setup tenants and groups
 	type tenantSetup struct {
@@ -48,13 +48,13 @@ func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {
 
 	// Insert groups for each tenantID into the repository
 	// and create the tenants in the repository
-	// This is necessary to simulate the environment where the Engine operates
+	// This is necessary to simulate the environment where the Loader operates
 	// Each tenantID will have its own set of groups with different roles
-	// The Engine will then load these groups into its allowlist
+	// The Loader will then load these groups into its allowlist
 	// and ensure that the roles are correctly assigned to the tenantID
 	for _, ts := range tenants {
 		ctx := testutils.CreateCtxWithTenant(ts.tenantID)
-		err := repo.Create(
+		err := r.Create(
 			ctx, &model.Tenant{
 				TenantModel: multitenancy.TenantModel{
 					DomainURL:  "",
@@ -67,13 +67,13 @@ func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {
 		assert.NoError(t, err, "Failed to create tenantID %s", ts.tenantID)
 
 		for _, g := range ts.groups {
-			err := repo.Create(ctx, g)
+			err := r.Create(ctx, g)
 			assert.NoError(t, err, "Failed to create group for tenantID %s: %v", ts.tenantID, g.Name)
 		}
 	}
 
 	cfg := &config.Config{}
-	am := authzmodel.NewEngine(t.Context(), repo, cfg)
+	am := authz_loader.NewAPIAuthzLoader(t.Context(), r, cfg)
 
 	expectedRoles := []constants.Role{constants.TenantAdminRole, constants.TenantAuditorRole, constants.KeyAdminRole}
 

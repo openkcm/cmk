@@ -2,6 +2,7 @@ package authz
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/openkcm/cmk/internal/errs"
@@ -9,11 +10,11 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
-func CheckAuthz(
+func CheckAuthz[TResourceTypeName, TAction comparable](
 	ctx context.Context,
-	authzHandler *Handler,
-	resourceType ResourceTypeName,
-	action Action,
+	authzHandler *Handler[TResourceTypeName, TAction],
+	resourceType TResourceTypeName,
+	action TAction,
 ) (bool, error) {
 	tenant, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
@@ -37,7 +38,8 @@ func CheckAuthz(
 
 	log.Debug(
 		ctx, "checking authorization request:", slog.String("user", user.UserName),
-		slog.String("resourceType", string(resourceType)), slog.String("action", string(action)),
+		slog.String("resourceType", fmt.Sprintf("%v", resourceType)),
+		slog.String("action", fmt.Sprintf("%v", action)),
 	)
 
 	authzRequest, err := NewRequest(

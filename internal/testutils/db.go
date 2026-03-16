@@ -23,6 +23,7 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/model"
@@ -47,12 +48,22 @@ type TestModel struct {
 	UpdatedAt   time.Time
 }
 
+func (TestModel) TableResourceType() authz.RepoResourceTypeName {
+	return RepoResourceTypeTest
+}
+
 func (TestModel) TableName() string {
 	return TestModelName
 }
 
 func (TestModel) IsSharedModel() bool {
 	return false
+}
+
+func (m TestModel) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
 func CreateCtxWithTenant(tenant string) context.Context {

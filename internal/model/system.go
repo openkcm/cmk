@@ -1,10 +1,13 @@
 package model
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
 )
 
@@ -28,18 +31,29 @@ type System struct {
 	ErrorMessage string `gorm:"->;-:migration;column:error_message"`
 }
 
+// TableResourceType return the authz resource type
+func (m System) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeSystem
+}
+
 // TableName returns the table name for System
-func (System) TableName() string {
-	return "systems"
+func (m System) TableName() string {
+	return string(m.TableResourceType())
 }
 
 func (System) IsSharedModel() bool {
 	return false
 }
 
+func (m System) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
+}
+
 // UpdateSystemProperties if they are set
 // and returns a bool if any field was updated
-func (s *System) UpdateSystemProperties(
+func (m *System) UpdateSystemProperties(
 	props map[string]string,
 	cfg *config.System,
 ) bool {
@@ -48,11 +62,11 @@ func (s *System) UpdateSystemProperties(
 	for k, v := range props {
 		_, ok := cfg.OptionalProperties[k]
 		if ok {
-			if s.Properties == nil {
-				s.Properties = make(map[string]string)
+			if m.Properties == nil {
+				m.Properties = make(map[string]string)
 			}
 
-			s.Properties[k] = v
+			m.Properties[k] = v
 			updated = true
 		}
 	}
@@ -63,11 +77,11 @@ func (s *System) UpdateSystemProperties(
 // AfterSave is ran before any creating/updating the system
 // but before finishing the transaction
 // If this step fails the transaction should be aborted
-func (s *System) AfterSave(tx *gorm.DB) error {
-	props := make([]*SystemProperty, 0, len(s.Properties))
-	for k, v := range s.Properties {
+func (m *System) AfterSave(tx *gorm.DB) error {
+	props := make([]*SystemProperty, 0, len(m.Properties))
+	for k, v := range m.Properties {
 		props = append(props, &SystemProperty{
-			ID:    s.ID,
+			ID:    m.ID,
 			Key:   k,
 			Value: v,
 		})
@@ -84,9 +98,9 @@ func (s *System) AfterSave(tx *gorm.DB) error {
 // BeforeDelete is ran before deleting the system
 // but before finishing the transaction
 // If this step fails the transaction should be aborted
-func (s *System) BeforeDelete(tx *gorm.DB) error {
+func (m *System) BeforeDelete(tx *gorm.DB) error {
 	// Delete all associated system properties
-	return tx.Where("id = ?", s.ID).Delete(&SystemProperty{}).Error
+	return tx.Where("id = ?", m.ID).Delete(&SystemProperty{}).Error
 }
 
 type SystemProperty struct {
@@ -95,12 +109,23 @@ type SystemProperty struct {
 	Value string    `gorm:"type:varchar(255)"`
 }
 
-func (SystemProperty) TableName() string {
-	return "systems_properties"
+// TableResourceType return the authz resource type
+func (m SystemProperty) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeSystemProperty
+}
+
+func (m SystemProperty) TableName() string {
+	return string(m.TableResourceType())
 }
 
 func (SystemProperty) IsSharedModel() bool {
 	return false
+}
+
+func (m SystemProperty) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
 type JoinSystem struct {

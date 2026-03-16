@@ -52,7 +52,7 @@ func AuthzMiddleware(
 				}
 
 				allowed, err := authz.CheckAuthz(
-					ctx, ctr.AuthzEngine.AuthzHandler, restriction.ResourceTypeName, restriction.Action,
+					ctx, ctr.AuthzLoader.AuthzHandler, restriction.APIResourceTypeName, restriction.APIAction,
 				)
 				if err != nil {
 					log.Debug(ctx, "check authz error", log.ErrorAttr(err))
@@ -72,7 +72,7 @@ func AuthzMiddleware(
 						return
 					}
 
-					loadErr := ctr.AuthzEngine.LoadAllowList(ctx, tenantID)
+					loadErr := ctr.AuthzLoader.LoadAllowList(ctx, tenantID)
 					if loadErr != nil {
 						log.Debug(ctx, "LoadAllowList error", log.ErrorAttr(loadErr))
 						write.ErrorResponse(
@@ -84,7 +84,7 @@ func AuthzMiddleware(
 
 					// Retry authorization after allow list is loaded
 					allowed, err = authz.CheckAuthz(
-						ctx, ctr.AuthzEngine.AuthzHandler, restriction.ResourceTypeName, restriction.Action,
+						ctx, ctr.AuthzLoader.AuthzHandler, restriction.APIResourceTypeName, restriction.APIAction,
 					)
 					log.Debug(
 						ctx, "Authz result", slog.String("allowed", strconv.FormatBool(allowed)),

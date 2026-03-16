@@ -10,7 +10,8 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	authzmodel "github.com/openkcm/cmk/internal/authz-model"
+	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/controllers/cmk"
@@ -62,12 +63,12 @@ func TestAuthzMiddleware_RestrictionExists(t *testing.T) {
 	ctx = testutils.InjectClientDataIntoContext(ctx, identifier, groups)
 	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
-	engine := SetupAuthzEngineWithAllowList(t)
+	loader := SetupAuthzLoaderWithAllowList(t)
 
 	ctr := &cmk.APIController{
 		Repository:  nil,
 		Manager:     &manager.Manager{},
-		AuthzEngine: engine,
+		AuthzLoader: loader,
 	}
 
 	mw := middleware.AuthzMiddleware(ctr)
@@ -231,12 +232,12 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 			ctx = testutils.InjectClientDataIntoContext(ctx, groupIdentifier, []string{groupIdentifier})
 			ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
-			engine := setupAuthzEngineWithRole(t, tenantID, groupIdentifier, tt.groupRole)
+			loader := setupAuthzLoaderWithRole(t, tenantID, groupIdentifier, tt.groupRole)
 
 			ctr := &cmk.APIController{
 				Repository:  nil,
 				Manager:     &manager.Manager{},
-				AuthzEngine: engine,
+				AuthzLoader: loader,
 			}
 
 			mw := middleware.AuthzMiddleware(ctr)
@@ -264,14 +265,15 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 	}
 }
 
-// Helper function to setup authz engine with a specific role
-func setupAuthzEngineWithRole(t *testing.T, tenantID, groupIdentifier string, role constants.Role) *authzmodel.Engine {
+// Helper function to setup authz loader with a specific role
+func setupAuthzLoaderWithRole(t *testing.T, tenantID, groupIdentifier string,
+	role constants.Role) *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
 	t.Helper()
 
-	repo := repomock.NewInMemoryRepository()
+	r := repomock.NewInMemoryRepository()
 	ctx := testutils.CreateCtxWithTenant(tenantID)
 
-	err := repo.Create(
+	err := r.Create(
 		ctx, &model.Tenant{
 			TenantModel: multitenancy.TenantModel{},
 			ID:          tenantID,
@@ -287,22 +289,23 @@ func setupAuthzEngineWithRole(t *testing.T, tenantID, groupIdentifier string, ro
 		IAMIdentifier: groupIdentifier,
 		Role:          role,
 	}
-	err = repo.Create(ctx, group)
+	err = r.Create(ctx, group)
 	if err != nil {
 		t.Fatalf("failed to create group: %v", err)
 	}
 
 	cfg := &config.Config{}
-	engine := authzmodel.NewEngine(t.Context(), repo, cfg)
 
-	return engine
+	loader := authz_loader.NewAPIAuthzLoader(ctx, r, cfg)
+
+	return loader
 }
 
 // Go
-func SetupAuthzEngineWithAllowList(t *testing.T) *authzmodel.Engine {
+func SetupAuthzLoaderWithAllowList(t *testing.T) *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
 	t.Helper()
 
-	repo := repomock.NewInMemoryRepository()
+	r := repomock.NewInMemoryRepository()
 	tenants := []struct {
 		tenantID string
 		groups   []*model.Group
@@ -320,7 +323,7 @@ func SetupAuthzEngineWithAllowList(t *testing.T) *authzmodel.Engine {
 	for _, ts := range tenants {
 		ctx := testutils.CreateCtxWithTenant(ts.tenantID)
 
-		err := repo.Create(
+		err := r.Create(
 			ctx, &model.Tenant{
 				TenantModel: multitenancy.TenantModel{},
 				ID:          ts.tenantID,
@@ -332,12 +335,14 @@ func SetupAuthzEngineWithAllowList(t *testing.T) *authzmodel.Engine {
 		}
 
 		for _, g := range ts.groups {
-			_ = repo.Create(ctx, g)
+			_ = r.Create(ctx, g)
 		}
 	}
 
+	ctx := t.Context()
 	cfg := &config.Config{}
-	engine := authzmodel.NewEngine(t.Context(), repo, cfg)
 
-	return engine
+	loader := authz_loader.NewAPIAuthzLoader(ctx, r, cfg)
+
+	return loader
 }

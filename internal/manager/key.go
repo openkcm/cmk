@@ -94,7 +94,7 @@ func (km *KeyManager) Create(
 	key *model.Key,
 ) (*model.Key, error) {
 	ctx = model.LogInjectKey(ctx, key)
-	_, err := km.user.HasKeyAccess(ctx, authz.ActionCreate, key.KeyConfigurationID)
+	_, err := km.user.HasKeyAccess(ctx, authz.APIActionCreate, key.KeyConfigurationID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 		return nil, errs.Wrap(ErrGetKeyDB, err)
 	}
 
-	_, err = km.user.HasKeyAccess(ctx, authz.ActionRead, key.KeyConfigurationID)
+	_, err = km.user.HasKeyAccess(ctx, authz.APIActionRead, key.KeyConfigurationID)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (km *KeyManager) GetKeys(
 		Preload(repo.Preload{"KeyVersions"})
 
 	if keyConfigID != nil {
-		_, err := km.user.HasKeyAccess(ctx, authz.ActionRead, *keyConfigID)
+		_, err := km.user.HasKeyAccess(ctx, authz.APIActionRead, *keyConfigID)
 		if err != nil {
 			return nil, 0, err
 		}
