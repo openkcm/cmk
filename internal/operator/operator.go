@@ -629,7 +629,7 @@ type OIDCConfig struct {
 	Issuer               string
 	JwksURI              string
 	Audiences            []string
-	ClientId             string
+	ClientID             string
 	AdditionalProperties map[string]string
 }
 
@@ -637,7 +637,7 @@ const (
 	keyIssuer    = "issuer"
 	keyJWKSURI   = "jwks_uri"
 	keyAudiences = "audiences"
-	keyClientId  = "client_id"
+	keyClientID  = "client_id"
 )
 
 // extractOIDCConfig extracts and validates OIDC configuration from properties map
@@ -646,7 +646,7 @@ func extractOIDCConfig(properties map[string]string) (OIDCConfig, error) {
 		return OIDCConfig{}, ErrMissingProperties
 	}
 
-	var issuer, jwksURI, audiences, clientId string
+	var issuer, jwksURI, audiences, clientID string
 
 	additionalProperties := make(map[string]string, len(properties))
 
@@ -658,8 +658,8 @@ func extractOIDCConfig(properties map[string]string) (OIDCConfig, error) {
 			jwksURI = v
 		case keyAudiences:
 			audiences = v
-		case keyClientId:
-			clientId = v
+		case keyClientID:
+			clientID = v
 		default:
 			additionalProperties[k] = v
 		}
@@ -675,7 +675,7 @@ func extractOIDCConfig(properties map[string]string) (OIDCConfig, error) {
 		Issuer:               issuer,
 		JwksURI:              jwksURI,
 		Audiences:            parseCommaSeparatedValues(audiences),
-		ClientId:             clientId,
+		ClientID:             clientID,
 		AdditionalProperties: additionalProperties,
 	}
 
