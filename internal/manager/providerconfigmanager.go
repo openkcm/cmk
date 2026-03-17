@@ -88,11 +88,6 @@ func getPluginAlgorithm(alg string) string {
 	return pluginAlgorithmPrefix + alg
 }
 
-// getPluginKeyType returns the plugin key type for the key
-func getPluginKeyType(keyType string) string {
-	return pluginKeyTypePrefix + keyType
-}
-
 type ProviderCachedKey struct {
 	KeyStore string
 	Provider string
