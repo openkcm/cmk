@@ -12,8 +12,6 @@ import (
 
 	"github.com/google/uuid"
 
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
-
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -22,6 +20,7 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
+	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
@@ -251,7 +250,7 @@ func (pmc *ProviderConfigManager) GetDefaultKeystoreFromCatalog() (string, error
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no plugin catalog available")
 	}
 
-	plugins := pmc.svcRegistry.LookupByType(keystoreopv1.Type)
+	plugins := pmc.svcRegistry.LookupByType(servicewrapper.KeyManagementType)
 	if len(plugins) == 0 {
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no keystore plugins found in catalog")
 	}
