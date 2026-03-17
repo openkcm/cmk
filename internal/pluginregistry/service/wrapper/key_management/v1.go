@@ -282,7 +282,11 @@ func (v1 *V1) ValidateKeyAccessData(
 	if err != nil {
 		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
 	}
-	crypto, err := structpb.NewStruct(req.Crypto)
+	cryptoFlat := make(map[string]any, len(req.Crypto))
+	for k, v := range req.Crypto {
+		cryptoFlat[k] = v
+	}
+	crypto, err := structpb.NewStruct(cryptoFlat)
 	if err != nil {
 		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
 	}

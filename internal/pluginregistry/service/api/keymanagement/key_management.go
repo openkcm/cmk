@@ -146,7 +146,7 @@ type ValidateKeyResponse struct {
 type ValidateKeyAccessDataRequest struct {
 	// V1 Fields
 	Management map[string]any
-	Crypto     map[string]any
+	Crypto     map[string]map[string]any
 }
 
 type ValidateKeyAccessDataResponse struct {

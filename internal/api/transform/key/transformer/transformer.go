@@ -103,13 +103,9 @@ func (v PluginProviderTransformer) ValidateKeyAccessData(
 		management = *accessDetails.Management
 	}
 
-	var crypto map[string]any
+	var crypto map[string]map[string]any
 	if accessDetails.Crypto != nil {
-		// Convert map[string]map[string]interface{} to map[string]any
-		crypto = make(map[string]any, len(*accessDetails.Crypto))
-		for k, v := range *accessDetails.Crypto {
-			crypto[k] = v
-		}
+		crypto = *accessDetails.Crypto
 	}
 
 	response, err := v.pluginClient.ValidateKeyAccessData(ctx, &keymanagement.ValidateKeyAccessDataRequest{
