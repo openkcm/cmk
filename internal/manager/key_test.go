@@ -583,7 +583,7 @@ func (s *KeyManagerSuite) TestHYOKSync() {
 		_, err = provider.Client.DisableKey(s.ctx, &keymanagement.DisableKeyRequest{
 			Parameters: keymanagement.RequestParameters{
 				KeyID:  *hyokKey.NativeID,
-				Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+				Config: common.KeystoreConfig{Values: provider.Config.Values},
 			},
 		})
 		s.NoError(err)
@@ -729,7 +729,7 @@ func (s *KeyManagerSuite) disableKey(hyokKey *model.Key) error {
 	_, err = provider.Client.DisableKey(s.ctx, &keymanagement.DisableKeyRequest{
 		Parameters: keymanagement.RequestParameters{
 			KeyID:  *hyokKey.NativeID,
-			Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 		},
 	})
 	s.NoError(err)
@@ -743,7 +743,7 @@ func (s *KeyManagerSuite) deleteKey(hyokKey *model.Key) error {
 	_, err = provider.Client.DeleteKey(s.ctx, &keymanagement.DeleteKeyRequest{
 		Parameters: keymanagement.RequestParameters{
 			KeyID:  *hyokKey.NativeID,
-			Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 		},
 	})
 	s.NoError(err)
@@ -757,7 +757,7 @@ func (s *KeyManagerSuite) enableKey(hyokKey *model.Key) error {
 	_, err = provider.Client.EnableKey(s.ctx, &keymanagement.EnableKeyRequest{
 		Parameters: keymanagement.RequestParameters{
 			KeyID:  *hyokKey.NativeID,
-			Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 		},
 	})
 	s.NoError(err)

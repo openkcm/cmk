@@ -565,7 +565,7 @@ func (km *KeyManager) createManagedProviderKey(
 	provider *ProviderConfig,
 ) error {
 	keyResp, err := provider.Client.CreateKey(ctx, &keymanagement.CreateKeyRequest{
-		Config:       common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+		Config:       common.KeystoreConfig{Values: provider.Config.Values},
 		KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
 		ID:           ptr.PointTo(key.ID.String()),
 		Region:       key.Region,
@@ -644,7 +644,7 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 		for _, kv := range key.KeyVersions {
 			_, err = provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
 				Parameters: keymanagement.RequestParameters{
-					Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+					Config: common.KeystoreConfig{Values: provider.Config.Values},
 					KeyID:  *kv.NativeID,
 				},
 			})
@@ -656,7 +656,7 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 		// For BYOK keys, we delete the key itself, since BYOK keys are not versioned
 		_, err = provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
 			Parameters: keymanagement.RequestParameters{
-				Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+				Config: common.KeystoreConfig{Values: provider.Config.Values},
 				KeyID:  *key.NativeID,
 			},
 		})
@@ -691,7 +691,7 @@ func (km *KeyManager) reenableKeyVersions(ctx context.Context, key *model.Key) e
 	for _, kv := range key.KeyVersions {
 		_, err = provider.Client.EnableKey(ctx, &keymanagement.EnableKeyRequest{
 			Parameters: keymanagement.RequestParameters{
-				Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+				Config: common.KeystoreConfig{Values: provider.Config.Values},
 				KeyID:  *kv.NativeID,
 			},
 		})
@@ -779,7 +779,7 @@ func (km *KeyManager) disableKeyVersions(ctx context.Context, key *model.Key) er
 	for _, kv := range key.KeyVersions {
 		_, err = provider.Client.DisableKey(ctx, &keymanagement.DisableKeyRequest{
 			Parameters: keymanagement.RequestParameters{
-				Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+				Config: common.KeystoreConfig{Values: provider.Config.Values},
 				KeyID:  *kv.NativeID,
 			},
 		})
@@ -824,7 +824,7 @@ func mergeProviderConfigValuesWithKeyAccessData(
 	key *model.Key,
 ) map[string]any {
 	// Start with the provider config values
-	configValues := provider.Config.GetValues().AsMap()
+	configValues := provider.Config.Values
 
 	// Create a copy to avoid modifying the original
 	merged := make(map[string]any, len(configValues)+len(key.GetManagementAccessData()))
@@ -885,7 +885,7 @@ func (km *KeyManager) fetchImportParams(ctx context.Context, key *model.Key) (*m
 
 	importParamsResp, err := provider.Client.GetImportParameters(ctx, &keymanagement.GetImportParametersRequest{
 		Parameters: keymanagement.RequestParameters{
-			Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 			KeyID:  *key.NativeID,
 		},
 		KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
@@ -933,7 +933,7 @@ func (km *KeyManager) importProviderKeyMaterial(
 
 	_, err = provider.Client.ImportKeyMaterial(ctx, &keymanagement.ImportKeyMaterialRequest{
 		Parameters: keymanagement.RequestParameters{
-			Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 			KeyID:  *key.NativeID,
 		},
 		EncryptedKeyMaterial: wrappedKeyMaterial,
@@ -945,7 +945,7 @@ func (km *KeyManager) importProviderKeyMaterial(
 
 	keyResp, err := provider.Client.GetKey(ctx, &keymanagement.GetKeyRequest{
 		Parameters: keymanagement.RequestParameters{
-			Config: common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 			KeyID:  *key.NativeID,
 		},
 	})

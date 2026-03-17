@@ -194,7 +194,7 @@ func (kvm *KeyVersionManager) createKeyProvider(ctx context.Context, key *model.
 
 	// create key in provider
 	keyResponse, err := provider.Client.CreateKey(ctx, &keymanagement.CreateKeyRequest{
-		Config:       common.KeystoreConfig{Values: provider.Config.GetValues().AsMap()},
+		Config:       common.KeystoreConfig{Values: provider.Config.Values},
 		KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
 		ID:           ptr.PointTo(key.ID.String()),
 		Region:       key.Region,

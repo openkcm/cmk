@@ -11,9 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/types/known/structpb"
 
-	kscommonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
 	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/constants"
@@ -21,6 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
 	"github.com/openkcm/cmk/internal/repo"
@@ -43,13 +42,13 @@ var (
 )
 
 type ProviderConfig struct {
-	Config     *kscommonv1.KeystoreInstanceConfig
+	Config     *common.KeystoreConfig
 	Client     keymanagement.KeyManagement
 	Expiration time.Time // Optional expiration time for the provider config
 }
 
 func NewProviderConfig(
-	config *kscommonv1.KeystoreInstanceConfig,
+	config *common.KeystoreConfig,
 	client keymanagement.KeyManagement,
 	expiration *time.Time,
 ) *ProviderConfig {
@@ -280,7 +279,7 @@ func (pmc *ProviderConfigManager) GetDefaultKeystoreFromCatalog() (string, error
 func (pmc *ProviderConfigManager) getKeystoreConfig(
 	ctx context.Context,
 	keystoreName string,
-) (*kscommonv1.KeystoreInstanceConfig, *time.Time, error) {
+) (*common.KeystoreConfig, *time.Time, error) {
 	switch keystoreName {
 	case constants.DefaultKeyStore:
 		return pmc.getDefaultKeystoreConfig(ctx)
@@ -291,20 +290,9 @@ func (pmc *ProviderConfigManager) getKeystoreConfig(
 	}
 }
 
-func (pmc *ProviderConfigManager) createKeystoreInstanceConfig(
-	configMap map[string]any,
-) (*kscommonv1.KeystoreInstanceConfig, error) {
-	config, err := structpb.NewStruct(configMap)
-	if err != nil {
-		return nil, errs.Wrap(ErrCreateProtobufStruct, err)
-	}
-
-	return &kscommonv1.KeystoreInstanceConfig{Values: config}, nil
-}
-
 func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 	ctx context.Context,
-) (*kscommonv1.KeystoreInstanceConfig, *time.Time, error) {
+) (*common.KeystoreConfig, *time.Time, error) {
 	ksConfig, err := pmc.tenantConfigs.GetDefaultKeystoreConfig(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -327,17 +315,12 @@ func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 
 	maps.Copy(configMap, ksConfig.ManagementAccessData)
 
-	config, err := pmc.createKeystoreInstanceConfig(configMap)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return config, &cert.ExpirationDate, nil
+	return &common.KeystoreConfig{Values: configMap}, &cert.ExpirationDate, nil
 }
 
 func (pmc *ProviderConfigManager) getHYOKKeystoreConfig(
 	ctx context.Context,
-) (*kscommonv1.KeystoreInstanceConfig, *time.Time, error) {
+) (*common.KeystoreConfig, *time.Time, error) {
 	cert, err := pmc.certs.getDefaultHYOKClientCert(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -349,10 +332,5 @@ func (pmc *ProviderConfigManager) getHYOKKeystoreConfig(
 		"privateKey": cert.PrivateKeyPEM,
 	}
 
-	config, err := pmc.createKeystoreInstanceConfig(configMap)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return config, &cert.ExpirationDate, nil
+	return &common.KeystoreConfig{Values: configMap}, &cert.ExpirationDate, nil
 }
