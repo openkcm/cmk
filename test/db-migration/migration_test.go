@@ -223,6 +223,36 @@ func TestSchemaMigrations(t *testing.T) {
 			version:   4,
 		},
 		{
+			name:      "Should up shared/00005_create_orbital_schema.sql",
+			downgrade: false,
+			target:    db.SharedTarget,
+			version:   5,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					var exists bool
+					err := con.Raw(`
+						SELECT EXISTS (
+							SELECT 1
+							FROM pg_namespace
+							WHERE nspname = ?
+						)
+						`, "orbital").Scan(&exists).Error
+					assert.NoError(t, err)
+					assert.True(t, exists)
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down shared/00005_create_orbital_schema.sql",
+			downgrade: true,
+			target:    db.SharedTarget,
+			version:   5,
+		},
+
+		{
 			name:      "Should up tenant/00001_init_shared.sql",
 			downgrade: false,
 			target:    db.TenantTarget,
