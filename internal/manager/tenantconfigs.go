@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
@@ -15,6 +14,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 	"github.com/openkcm/cmk/internal/repo"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
@@ -246,7 +246,7 @@ func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
 		return HYOKKeystore{}
 	}
 
-	plugins := m.svcRegistry.LookupByType(keystoreopv1.Type)
+	plugins := m.svcRegistry.LookupByType(servicewrapper.KeyManagementType)
 	if len(plugins) == 0 {
 		return HYOKKeystore{}
 	}
