@@ -148,6 +148,7 @@ type Database struct {
 	Host     commoncfg.SourceRef `yaml:"host"`
 	User     commoncfg.SourceRef `yaml:"user"`
 	Secret   commoncfg.SourceRef `yaml:"secret"`
+	DNSAttributes map[string]string `yaml:"dnsAttributes"`
 	Migrator Migrator            `yaml:"migrator"`
 }
 

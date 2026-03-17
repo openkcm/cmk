@@ -3,6 +3,8 @@ package dsn
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 
@@ -33,6 +35,22 @@ func FromDBConfig(conf config.Database) (string, error) {
 		return "", errs.Wrap(ErrLoadingDatabasePassword, err)
 	}
 
-	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s",
-		host, user, string(password), conf.Name, conf.Port), nil
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s",
+		host, user, string(password), conf.Name, conf.Port)
+
+	keys := make([]string, 0, len(conf.DNSAttributes))
+	for k := range conf.DNSAttributes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	attrs := make([]string, 0, len(keys))
+	for _, k := range keys {
+		attrs = append(attrs, k+"="+conf.DNSAttributes[k])
+	}
+	if len(attrs) > 0 {
+		dsn += " " + strings.Join(attrs, " ")
+	}
+
+	return dsn, nil
 }

@@ -579,6 +579,8 @@ config:
       value: secret
     name: cmk
     port: 5432
+    dnsAttributes:
+      sslmode: "disable"
     migrator:
       shared:
         schema: /etc/cmk/migrations/shared/schema

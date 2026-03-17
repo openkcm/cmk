@@ -663,6 +663,8 @@ config:
       value: secret
     name: name
     port: 1234
+    dnsAttributes:
+      sslmode: "require"
     migrator:
       shared:
         schema: /etc/cmk/migrations/shared/schema
