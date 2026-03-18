@@ -86,6 +86,11 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return errs.Wrap(db.ErrStartingDBCon, err)
 	}
+	sqlDB, err := dbCon.DB.DB()
+	if err != nil {
+		return err
+	}
+	defer sqlDB.Close()
 
 	r := sql.NewRepository(dbCon)
 

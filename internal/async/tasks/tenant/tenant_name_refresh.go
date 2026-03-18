@@ -17,9 +17,8 @@ import (
 )
 
 type TenantNameRefresher struct {
-	processor *async.BatchProcessor
-	r         repo.Repo
-	registry  registry.Service
+	r        repo.Repo
+	registry registry.Service
 }
 
 func NewTenantNameRefresher(
@@ -28,9 +27,8 @@ func NewTenantNameRefresher(
 	opts ...async.TaskOption,
 ) async.TenantTaskHandler {
 	t := &TenantNameRefresher{
-		processor: async.NewBatchProcessor(r),
-		registry:  registry,
-		r:         r,
+		registry: registry,
+		r:        r,
 	}
 	for _, o := range opts {
 		o(t)

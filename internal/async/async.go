@@ -309,7 +309,7 @@ func (a *App) getFanOutOpts(taskType string) (bool, []asynq.Option) {
 		opts = append(opts, asynq.Timeout(taskCfg.FanOutTask.TimeOut))
 	}
 
-	return taskCfg.Enabled, opts
+	return true, opts
 }
 
 func (a *App) registerTask(ctx context.Context, handler TaskHandler) {
