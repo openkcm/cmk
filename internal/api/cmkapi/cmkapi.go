@@ -372,9 +372,6 @@ type Key struct {
 	// Id The ID of the Key
 	Id *KeyID `json:"id,omitempty"`
 
-	// IsPrimary Flag indicating whether this Key is the primary (default) key for its associated key configuration.
-	IsPrimary *bool `json:"isPrimary,omitempty"`
-
 	// KeyConfigurationID The ID of the Key Configuration
 	KeyConfigurationID KeyConfigurationID `json:"keyConfigurationID"`
 
@@ -436,9 +433,6 @@ type KeyCommon struct {
 
 	// Id The ID of the Key
 	Id *KeyID `json:"id,omitempty"`
-
-	// IsPrimary Flag indicating whether this Key is the primary (default) key for its associated key configuration.
-	IsPrimary *bool `json:"isPrimary,omitempty"`
 
 	// KeyConfigurationID The ID of the Key Configuration
 	KeyConfigurationID KeyConfigurationID `json:"keyConfigurationID"`
@@ -534,6 +528,9 @@ type KeyConfigurationPatch struct {
 
 	// Name The name of the Key Configuration
 	Name *string `json:"name,omitempty"`
+
+	// PrimaryKeyID The ID of the primary key of the configuration
+	PrimaryKeyID *openapi_types.UUID `json:"primaryKeyID,omitempty"`
 }
 
 // KeyID The ID of the Key
@@ -580,9 +577,6 @@ type KeyPatch struct {
 
 	// Enabled Flag indicating whether the Key is enabled
 	Enabled *bool `json:"enabled,omitempty"`
-
-	// IsPrimary Flag indicating whether this Key is the primary (default) key for its associated key configuration.
-	IsPrimary *bool `json:"isPrimary,omitempty"`
 
 	// Name The name of the Key
 	Name *string `json:"name,omitempty"`

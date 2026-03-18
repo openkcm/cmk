@@ -243,7 +243,6 @@ func TestTransformKeyToAPI(t *testing.T) {
 			Description:          description,
 			NativeID:             &nativeID,
 			State:                string(cmkapi.KeyStateENABLED),
-			IsPrimary:            false,
 			ManagementAccessData: managementAccessJSON,
 			CryptoAccessData:     cryptoAccessJSON,
 			EditableRegions: map[string]bool{
@@ -262,7 +261,6 @@ func TestTransformKeyToAPI(t *testing.T) {
 			Description:        &description,
 			NativeID:           &nativeID,
 			State:              AnyPtr(cmkapi.KeyStateENABLED),
-			IsPrimary:          ptr.PointTo(false),
 			AccessDetails: &cmkapi.KeyAccessDetails{
 				Management: ptr.PointTo(map[string]any{
 					accessAccountIDField: "123456789012",
