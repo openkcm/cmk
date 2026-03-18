@@ -16,34 +16,19 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 )
 
-func initOrbitalSchema(ctx context.Context, dbCfg config.Database) (*sql.DB, error) {
-	baseDSN, err := dsn.FromDBConfig(dbCfg)
+func createOrbitalRepository(ctx context.Context, cfg config.Database) (*orbital.Repository, error) {
+	baseDSN, err := dsn.FromDBConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	orbitalDSN := baseDSN + " search_path=orbital,public sslmode=disable"
+	dsn := baseDSN + " search_path=orbital,public"
 
-	orbitalDB, err := sql.Open("postgres", orbitalDSN)
+	con, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("orbit pool: %w", err)
 	}
-
-	_, err = orbitalDB.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS orbital")
-	if err != nil {
-		return nil, fmt.Errorf("ensure schema: %w", err)
-	}
-
-	return orbitalDB, nil
-}
-
-func createOrbitalRepository(ctx context.Context, dbCfg config.Database) (*orbital.Repository, error) {
-	orbitalDB, err := initOrbitalSchema(ctx, dbCfg)
-	if err != nil {
-		return nil, fmt.Errorf("init orbital schema: %w", err)
-	}
-
-	store, err := orbsql.New(ctx, orbitalDB)
+	store, err := orbsql.New(ctx, con)
 	if err != nil {
 		return nil, errs.Wrapf(err, "failed to create orbital store")
 	}

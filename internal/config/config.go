@@ -143,12 +143,17 @@ type RedisACL struct {
 
 // Database holds database config
 type Database struct {
-	Name     string              `yaml:"name"`
-	Port     string              `yaml:"port"`
-	Host     commoncfg.SourceRef `yaml:"host"`
-	User     commoncfg.SourceRef `yaml:"user"`
-	Secret   commoncfg.SourceRef `yaml:"secret"`
-	Migrator Migrator            `yaml:"migrator"`
+	Name       string              `yaml:"name"`
+	Port       string              `yaml:"port"`
+	Host       commoncfg.SourceRef `yaml:"host"`
+	User       commoncfg.SourceRef `yaml:"user"`
+	Secret     commoncfg.SourceRef `yaml:"secret"`
+	Migrator   Migrator            `yaml:"migrator"`
+	Parameters DBParameters        `yaml:"parameters"`
+}
+
+type DBParameters struct {
+	SSLMode string `yaml:"sslMode"`
 }
 
 type Migrator struct {
