@@ -13,8 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/openkcm/orbital"
 
-	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/auditor"
@@ -595,7 +593,7 @@ func (km *KeyManager) registerHYOKKey(
 		},
 	})
 	if err != nil {
-		return km.convertError(ErrKeyRegistration, err)
+		return errs.Wrap(ErrKeyRegistration, err)
 	}
 
 	if keyResp.KeyAlgorithm != keymanagement.AES256 {
@@ -666,18 +664,6 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 	}
 
 	return nil
-}
-
-func (km *KeyManager) convertError(base error, err error) error {
-	switch {
-	case keystoreErrs.IsStatus(err, keystoreErrs.StatusProviderAuthenticationError):
-		detailedErr := ErrGRPCHYOKAuthFailed.FromStatusError(err)
-		return errors.Join(base, detailedErr)
-	case keystoreErrs.IsStatus(err, keystoreErrs.StatusKeyNotFound):
-		return errs.Wrap(base, ErrHYOKProviderKeyNotFound)
-	default:
-		return errs.Wrap(base, err)
-	}
 }
 
 func (km *KeyManager) reenableKeyVersions(ctx context.Context, key *model.Key) error {
@@ -1159,7 +1145,7 @@ func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keym
 		},
 	})
 	if err != nil {
-		return nil, km.convertError(ErrGetProviderKey, err)
+		return nil, errs.Wrap(ErrGetProviderKey, err)
 	}
 
 	return keyResp, nil
@@ -1214,9 +1200,9 @@ func (km *KeyManager) getKeyStateOnSyncError(ctx context.Context, key *model.Key
 	var newState string
 
 	switch {
-	case errors.Is(err, ErrGRPCHYOKAuthFailed):
+	case errors.Is(err, keymanagement.ErrProviderAuthenticationFailed):
 		newState = string(cmkapi.KeyStateFORBIDDEN)
-	case errors.Is(err, ErrHYOKProviderKeyNotFound):
+	case errors.Is(err, keymanagement.ErrHYOKKeyNotFound):
 		newState = string(cmkapi.KeyStateDELETED)
 	case errs.IsAnyError(err, ErrFailedToInitProvider, ErrGetProviderKey):
 		newState = string(cmkapi.KeyStateUNKNOWN)

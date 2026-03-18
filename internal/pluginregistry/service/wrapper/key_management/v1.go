@@ -9,6 +9,7 @@ import (
 	"github.com/openkcm/plugin-sdk/pkg/plugin"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
 	grpccommonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
 	grpckeymanagerv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
@@ -33,6 +34,23 @@ func (v1 *V1) ServiceInfo() api.Info {
 	return v1.Info
 }
 
+// convertGRPCError converts gRPC-specific errors from the plugin SDK
+// into semantic Go errors that can be used by consumers of the KeyManagement interface
+func convertGRPCError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	switch {
+	case keystoreErrs.IsStatus(err, keystoreErrs.StatusProviderAuthenticationError):
+		return keymanagement.ErrProviderAuthenticationFailed
+	case keystoreErrs.IsStatus(err, keystoreErrs.StatusKeyNotFound):
+		return keymanagement.ErrHYOKKeyNotFound
+	default:
+		return err
+	}
+}
+
 func (v1 *V1) GetKey(ctx context.Context, req *keymanagement.GetKeyRequest) (*keymanagement.GetKeyResponse, error) {
 	value, err := structpb.NewStruct(req.Parameters.Config.Values)
 	if err != nil {
@@ -49,7 +67,7 @@ func (v1 *V1) GetKey(ctx context.Context, req *keymanagement.GetKeyRequest) (*ke
 	}
 	grpcResp, err := v1.KeystoreInstanceKeyOperationPluginClient.GetKey(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.GetKeyResponse{
@@ -84,7 +102,7 @@ func (v1 *V1) CreateKey(
 
 	grpcResp, err := v1.KeystoreInstanceKeyOperationPluginClient.CreateKey(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.CreateKeyResponse{
@@ -117,7 +135,7 @@ func (v1 *V1) DeleteKey(
 
 	_, err = v1.KeystoreInstanceKeyOperationPluginClient.DeleteKey(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.DeleteKeyResponse{}, nil
@@ -146,7 +164,7 @@ func (v1 *V1) EnableKey(
 
 	_, err = v1.KeystoreInstanceKeyOperationPluginClient.EnableKey(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.EnableKeyResponse{}, nil
@@ -175,7 +193,7 @@ func (v1 *V1) DisableKey(
 
 	_, err = v1.KeystoreInstanceKeyOperationPluginClient.DisableKey(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.DisableKeyResponse{}, nil
@@ -205,7 +223,7 @@ func (v1 *V1) GetImportParameters(
 
 	grpcResp, err := v1.KeystoreInstanceKeyOperationPluginClient.GetImportParameters(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.GetImportParametersResponse{
@@ -243,7 +261,7 @@ func (v1 *V1) ImportKeyMaterial(
 
 	_, err = v1.KeystoreInstanceKeyOperationPluginClient.ImportKeyMaterial(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.ImportKeyMaterialResponse{}, nil
@@ -265,7 +283,7 @@ func (v1 *V1) ValidateKey(
 
 	grpcResp, err := v1.KeystoreInstanceKeyOperationPluginClient.ValidateKey(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.ValidateKeyResponse{
@@ -301,7 +319,7 @@ func (v1 *V1) ValidateKeyAccessData(
 
 	grpcResp, err := v1.KeystoreInstanceKeyOperationPluginClient.ValidateKeyAccessData(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.ValidateKeyAccessDataResponse{
@@ -324,7 +342,7 @@ func (v1 *V1) TransformCryptoAccessData(
 
 	grpcResp, err := v1.KeystoreInstanceKeyOperationPluginClient.TransformCryptoAccessData(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.TransformCryptoAccessDataResponse{
@@ -350,7 +368,7 @@ func (v1 *V1) ExtractKeyRegion(ctx context.Context,
 
 	grpcResp, err := v1.KeystoreInstanceKeyOperationPluginClient.ExtractKeyRegion(ctx, in)
 	if err != nil {
-		return nil, err
+		return nil, convertGRPCError(err)
 	}
 
 	return &keymanagement.ExtractKeyRegionResponse{

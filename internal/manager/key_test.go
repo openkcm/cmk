@@ -298,7 +298,7 @@ func (s *KeyManagerSuite) TestCreate() {
 				}
 			},
 			wantErr: true,
-			errMsg:  "failed to authenticate with the keystore provider: Invalid account information",
+			errMsg:  "failed to authenticate with the keystore provider",
 		},
 		{
 			name: "HYOK key creation key not found",
