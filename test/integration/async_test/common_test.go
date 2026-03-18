@@ -96,7 +96,7 @@ func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *conf
 	tc := manager.NewTenantConfigManager(tenancyRepo, svcRegistry, nil)
 	um := manager.NewUserManager(tenancyRepo, cmkAuditor)
 	tam := manager.NewTagManager(tenancyRepo)
-	kc := manager.NewKeyConfigManager(tenancyRepo, cm, um, tam, nil, cfg)
+	kc := manager.NewKeyConfigManager(tenancyRepo, cm, um, tam, nil, eventFactory, cfg)
 	km := manager.NewKeyManager(tenancyRepo, svcRegistry, tc, kc, um, cm, eventFactory, nil)
 
 	hyokCl := val.FieldByName("hyokClient")
@@ -183,7 +183,6 @@ func createTestKeyEntities() (model.Group, model.KeyConfiguration, model.Key) {
 		KeyConfigurationID:   keyConfig.ID,
 		ManagementAccessData: json.RawMessage(`{"roleArn": "test"}`),
 		CryptoAccessData:     json.RawMessage(`{}`),
-		IsPrimary:            true,
 		State:                "DISABLED",
 	}
 
