@@ -111,25 +111,6 @@ func (s *KeyManagerSuite) SetupTest() {
 	s.setup()
 }
 
-func (s *KeyManagerSuite) createTestSystemManagedKey(name string) *model.Key {
-	key := &model.Key{
-		ID:                 uuid.New(),
-		KeyConfigurationID: s.keyConfigID,
-		KeyType:            constants.KeyTypeSystemManaged,
-		Name:               name,
-		Description:        "Test key description",
-		Algorithm:          "RSA3072",
-		Provider:           providerTest,
-		Region:             "us-east-1",
-		State:              string(cmkapi.KeyStateENABLED),
-	}
-
-	createdKey, err := s.km.Create(s.ctx, key)
-	s.Require().NoError(err)
-
-	return createdKey
-}
-
 func (s *KeyManagerSuite) createTestHYOKKey(name string) *model.Key {
 	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 	s.Require().NoError(err)
@@ -200,7 +181,7 @@ func TestGetPluginAlgorithm(t *testing.T) {
 }
 
 func (s *KeyManagerSuite) TestGetOrInitProvider() {
-	key := s.createTestSystemManagedKey("test")
+	key := s.createEnabledBYOKKey()
 	s.Run("Valid provider", func() {
 		provider, err := s.km.GetOrInitProvider(s.ctx, key)
 		s.NoError(err)
@@ -228,38 +209,6 @@ func (s *KeyManagerSuite) TestCreate() {
 		wantErr bool
 		errMsg  string
 	}{
-		{
-			name: "Valid managed key creation",
-			key: func() *model.Key {
-				return &model.Key{
-					ID:                 uuid.New(),
-					KeyConfigurationID: s.keyConfigID,
-					Name:               "test-key",
-					Description:        "Test key description",
-					Algorithm:          "RSA3072",
-					KeyType:            constants.KeyTypeSystemManaged,
-					Provider:           providerTest,
-					Region:             "us-east-1",
-					State:              string(cmkapi.KeyStateENABLED),
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name: "Invalid provider",
-			key: func() *model.Key {
-				return &model.Key{
-					ID:                 uuid.New(),
-					KeyConfigurationID: s.keyConfigID,
-					Name:               "test-key",
-					Algorithm:          "RSA3072",
-					KeyType:            constants.KeyTypeSystemManaged,
-					Provider:           "INVALID",
-					Region:             "us-east-1",
-				}
-			},
-			wantErr: true,
-		},
 		{
 			name: "Valid HYOK key creation",
 			key: func() *model.Key {
@@ -408,10 +357,10 @@ func (s *KeyManagerSuite) TestSetFirstKeyPrimary() {
 	t := s.T()
 
 	t.Run("Should set first key as primary", func(t *testing.T) {
-		createdKey1 := s.createTestSystemManagedKey("get-test-key-1")
+		createdKey1 := s.createTestHYOKKey(uuid.NewString())
 		assert.True(t, createdKey1.IsPrimary)
 
-		createdKey2 := s.createTestSystemManagedKey("get-test-key-2")
+		createdKey2 := s.createTestHYOKKey(uuid.NewString())
 		assert.False(t, createdKey2.IsPrimary)
 		// Verify that the first key is set as primary in the key configuration
 		resKeyConfig := &model.KeyConfiguration{ID: s.keyConfigID, AdminGroup: model.Group{ID: uuid.New()}}
@@ -498,7 +447,7 @@ func (s *KeyManagerSuite) TestEditableCryptoData() {
 }
 
 func (s *KeyManagerSuite) TestGet() {
-	createdKey := s.createTestSystemManagedKey("get-test-key")
+	createdKey := s.createTestBYOKKey("get-test-key", string(cmkapi.KeyStateENABLED))
 	hyokKey := s.createTestHYOKKey("get-test-hyok-key")
 	byokKey := s.createTestBYOKKey("get-test-byok-key", string(cmkapi.KeyStatePENDINGIMPORT))
 
@@ -766,8 +715,8 @@ func (s *KeyManagerSuite) enableKey(hyokKey *model.Key) error {
 
 func (s *KeyManagerSuite) TestList() {
 	// Create test keys
-	s.createTestSystemManagedKey("list-test-key-1")
-	s.createTestSystemManagedKey("list-test-key-2")
+	s.createTestHYOKKey(uuid.NewString())
+	s.createTestHYOKKey(uuid.NewString())
 
 	sys := testutils.NewSystem(func(sys *model.System) {
 		sys.Status = cmkapi.SystemStatusFAILED
@@ -828,7 +777,7 @@ func (s *KeyManagerSuite) TestList() {
 }
 
 func (s *KeyManagerSuite) TestUpdate() {
-	createdKey := s.createTestSystemManagedKey("update-test-key")
+	createdKey := s.createEnabledBYOKKey()
 
 	tests := []struct {
 		name     string
@@ -915,11 +864,12 @@ func (s *KeyManagerSuite) verifyUpdatedKey(err error, tt struct {
 }
 
 func (s *KeyManagerSuite) TestDelete() {
-	createdKey := s.createTestSystemManagedKey("delete-test-key")
+	createdKey := s.createTestHYOKKey(uuid.NewString())
 	createdPrimaryKey, err := s.km.Create(s.ctx, &model.Key{
 		ID:                 uuid.New(),
 		Name:               uuid.NewString(),
-		KeyType:            constants.KeyTypeSystemManaged,
+		KeyType:            constants.KeyTypeBYOK,
+		Provider:           providerTest,
 		IsPrimary:          true,
 		KeyConfigurationID: s.keyConfigID,
 	})
@@ -979,45 +929,6 @@ func (s *KeyManagerSuite) TestDelete() {
 				s.NoError(err)
 				_, err := s.km.Get(s.ctx, tt.keyID)
 				s.Error(err)
-			}
-		})
-	}
-}
-
-func (s *KeyManagerSuite) TestUpdateVersion() {
-	createdKey := s.createTestSystemManagedKey("update-version-test-key")
-
-	tests := []struct {
-		name    string
-		keyID   uuid.UUID
-		version int
-		wantErr bool
-	}{
-		{
-			name:    "Update Version - SUCCESS",
-			keyID:   createdKey.ID,
-			version: 3,
-			wantErr: false,
-		},
-		{
-			name:    "Update non-existent key - ERROR",
-			keyID:   uuid.New(),
-			version: 3,
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			err := s.km.UpdateVersion(s.ctx, tt.keyID, tt.version)
-
-			if tt.wantErr {
-				s.Error(err)
-			} else {
-				s.NoError(err)
-				key, err := s.km.Get(s.ctx, tt.keyID)
-				s.NoError(err)
-				s.Equal(tt.version, key.Version().Version)
 			}
 		})
 	}
@@ -1178,10 +1089,10 @@ func (s *KeyManagerSuite) createEnabledBYOKKey() *model.Key {
 	)
 
 	byokEnabledKey := testutils.NewKey(func(k *model.Key) {
-		k.Name = "enabled-byok-importparams"
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
 		k.State = string(cmkapi.KeyStateENABLED)
 		k.KeyConfigurationID = s.keyConfigID
+		k.Provider = providerTest
 	})
 	testutils.CreateTestEntities(s.ctx, s.T(), s.repo, byokEnabledKey)
 
@@ -1241,7 +1152,7 @@ func (s *KeyManagerSuite) TestGetImportParams() {
 	})
 
 	t.Run("Error_InvalidKeyType", func(t *testing.T) {
-		sysKey := s.createTestSystemManagedKey("sys-key")
+		sysKey := s.createTestHYOKKey(uuid.NewString())
 		_, err := s.km.GetImportParams(s.ctx, sysKey.ID)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, manager.ErrInvalidKeyTypeForImportParams)
@@ -1357,7 +1268,7 @@ func (s *KeyManagerSuite) TestImportKeyMaterial() {
 
 	s.Run("InvalidKeyType", func() {
 		// Prepare
-		sysKey := s.createTestSystemManagedKey("sys-key")
+		sysKey := s.createTestHYOKKey(uuid.NewString())
 
 		// Act
 		_, err := s.km.ImportKeyMaterial(s.ctx, sysKey.ID, validMaterial)

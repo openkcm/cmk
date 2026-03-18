@@ -116,7 +116,7 @@ func (km *KeyManager) Create(
 	}
 
 	switch key.KeyType {
-	case constants.KeyTypeSystemManaged, constants.KeyTypeBYOK:
+	case constants.KeyTypeBYOK:
 		err = km.createManagedProviderKey(ctx, key, provider)
 	case constants.KeyTypeHYOK:
 		err = km.registerHYOKKey(ctx, key, provider)
@@ -161,7 +161,7 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 	}
 
 	switch key.KeyType {
-	case constants.KeyTypeSystemManaged, constants.KeyTypeBYOK:
+	case constants.KeyTypeBYOK:
 	case constants.KeyTypeHYOK:
 		err := km.syncHYOKKeyState(ctx, key)
 		if err != nil {
@@ -315,23 +315,6 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 	}
 
 	km.sendDeleteAuditLog(ctx, key)
-
-	return nil
-}
-
-func (km *KeyManager) UpdateVersion(ctx context.Context, keyID uuid.UUID, version int) error {
-	key, err := km.Get(ctx, keyID)
-	if err != nil {
-		return fmt.Errorf("failed to get key: %w", err)
-	}
-
-	keyVersion := key.Version()
-	keyVersion.Version = version
-
-	_, err = km.repo.Patch(ctx, keyVersion, *repo.NewQuery())
-	if err != nil {
-		return fmt.Errorf("failed to update key in database: %w", err)
-	}
 
 	return nil
 }
@@ -526,20 +509,6 @@ func (km *KeyManager) createKey(ctx context.Context, key *model.Key) error {
 			return errs.Wrap(ErrCreateKeyDB, err)
 		}
 
-		// Create KeyVersion
-		if key.KeyType == constants.KeyTypeSystemManaged {
-			err = km.repo.Create(ctx, &model.KeyVersion{
-				ExternalID: *key.NativeID,
-				NativeID:   key.NativeID,
-				KeyID:      key.ID,
-				Version:    1,
-				IsPrimary:  true,
-			})
-			if err != nil {
-				return errs.Wrap(ErrCreateKeyVersionDB, err)
-			}
-		}
-
 		if key.IsPrimary {
 			_, err = km.repo.Patch(
 				ctx,
@@ -644,31 +613,14 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 		return errs.Wrap(ErrFailedToInitProvider, err)
 	}
 
-	switch key.KeyType {
-	case constants.KeyTypeSystemManaged:
-		// Delete all key versions for system managed keys
-		for _, kv := range key.KeyVersions {
-			_, err = provider.Client.DeleteKey(ctx, &keystoreopv1.DeleteKeyRequest{
-				Parameters: &keystoreopv1.RequestParameters{
-					KeyId:  *kv.NativeID,
-					Config: provider.Config,
-				},
-			})
-			if err != nil {
-				return errs.Wrap(ErrFailedToDeleteProvider, err)
-			}
-		}
-	case constants.KeyTypeBYOK:
-		// For BYOK keys, we delete the key itself, since BYOK keys are not versioned
-		_, err = provider.Client.DeleteKey(ctx, &keystoreopv1.DeleteKeyRequest{
-			Parameters: &keystoreopv1.RequestParameters{
-				KeyId:  *key.NativeID,
-				Config: provider.Config,
-			},
-		})
-		if err != nil {
-			return errs.Wrap(ErrFailedToDeleteProvider, err)
-		}
+	_, err = provider.Client.DeleteKey(ctx, &keystoreopv1.DeleteKeyRequest{
+		Parameters: &keystoreopv1.RequestParameters{
+			KeyId:  *key.NativeID,
+			Config: provider.Config,
+		},
+	})
+	if err != nil {
+		return errs.Wrap(ErrFailedToDeleteProvider, err)
 	}
 
 	return nil
