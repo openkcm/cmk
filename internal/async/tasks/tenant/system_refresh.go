@@ -20,7 +20,6 @@ type SystemUpdater interface {
 type SystemsRefresher struct {
 	systemClient SystemUpdater
 	repo         repo.Repo
-	processor    *async.BatchProcessor
 }
 
 func NewSystemsRefresher(
@@ -31,17 +30,12 @@ func NewSystemsRefresher(
 	s := &SystemsRefresher{
 		systemClient: systemClient,
 		repo:         repo,
-		processor:    async.NewBatchProcessor(repo),
 	}
 	for _, o := range opts {
 		o(s)
 	}
 
 	return s
-}
-
-func (s *SystemsRefresher) Process(ctx context.Context, _ *asynq.Task) error {
-	return nil
 }
 
 func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {

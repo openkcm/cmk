@@ -17,7 +17,6 @@ type WorkflowRemoval interface {
 type WorkflowCleaner struct {
 	workflowRemoval WorkflowRemoval
 	repo            repo.Repo
-	processor       *async.BatchProcessor
 }
 
 func NewWorkflowCleaner(
@@ -28,7 +27,6 @@ func NewWorkflowCleaner(
 	wc := &WorkflowCleaner{
 		workflowRemoval: workflowRemoval,
 		repo:            repo,
-		processor:       async.NewBatchProcessor(repo),
 	}
 
 	for _, o := range opts {

@@ -76,8 +76,6 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 		groups     []model.Group
 	)
 
-	r := sql.NewRepository(db)
-
 	ck := repo.NewCompositeKey().Where(repo.Name, groupName)
 	err = r.List(ctx, model.Group{}, &groups,
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))

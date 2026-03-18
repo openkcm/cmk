@@ -23,7 +23,6 @@ type CertUpdater interface {
 type CertRotator struct {
 	certClient CertUpdater
 	repo       repo.Repo
-	processor  *async.BatchProcessor
 }
 
 func NewCertRotator(
@@ -34,7 +33,6 @@ func NewCertRotator(
 	c := &CertRotator{
 		certClient: certClient,
 		repo:       repo,
-		processor:  async.NewBatchProcessor(repo),
 	}
 
 	for _, o := range opts {

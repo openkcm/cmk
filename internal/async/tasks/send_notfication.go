@@ -12,16 +12,16 @@ import (
 	"github.com/openkcm/cmk/internal/notifier/client"
 )
 
-type NotificationSender interface {
+type NotificationClient interface {
 	CreateNotification(ctx context.Context, notif client.Data) error
 }
 
 type notificationSender struct {
-	client NotificationSender
+	client NotificationClient
 }
 
 func NewNotificationSender(
-	client NotificationSender,
+	client NotificationClient,
 ) async.TaskHandler {
 	return &notificationSender{
 		client: client,

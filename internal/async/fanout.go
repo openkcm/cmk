@@ -37,7 +37,7 @@ func FanOutTask(
 
 type (
 	ProcessFunc func(ctx context.Context, task *asynq.Task) error
-	FunOutFunc  func(ctx context.Context, task *asynq.Task, f ProcessFunc) error
+	FanOutFunc  func(ctx context.Context, task *asynq.Task, f ProcessFunc) error
 )
 
 // TenantFanOut extracts tenant from payload and injects it into context before executing

@@ -14,7 +14,11 @@ import (
 
 func WithLogInjectAttrs(attrs ...slog.Attr) cmkcontext.Opt {
 	return func(ctx context.Context) context.Context {
-		return slogctx.With(ctx, attrs)
+		args := make([]any, len(attrs))
+		for i, attr := range attrs {
+			args[i] = attr
+		}
+		return slogctx.With(ctx, args...)
 	}
 }
 
