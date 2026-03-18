@@ -77,6 +77,25 @@ type ProviderConfigManager struct {
 	keystorePool  *Pool
 }
 
+func NewProviderConfigManager(
+	svcRegistry *cmkpluginregistry.Registry,
+	providers map[ProviderCachedKey]*ProviderConfig,
+	tenantConfigs *TenantConfigManager,
+	certs *CertificateManager,
+	pool *Pool,
+	repo repo.Repo,
+) *ProviderConfigManager {
+	return &ProviderConfigManager{
+		svcRegistry:   svcRegistry,
+		providers:     providers,
+		mu:            sync.RWMutex{},
+		tenantConfigs: tenantConfigs,
+		certs:         certs,
+		repo:          repo,
+		keystorePool:  pool,
+	}
+}
+
 const (
 	pluginAlgorithmPrefix = "KEY_ALGORITHM_"
 	pluginKeyTypePrefix   = "KEY_TYPE_"
