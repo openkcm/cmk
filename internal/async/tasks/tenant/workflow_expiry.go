@@ -28,9 +28,8 @@ type WorkflowExpiryUpdater interface {
 }
 
 type WorkflowExpiryProcessor struct {
-	updater   WorkflowExpiryUpdater
-	repo      repo.Repo
-	processor *async.BatchProcessor
+	updater WorkflowExpiryUpdater
+	repo    repo.Repo
 }
 
 func NewWorkflowExpiryProcessor(
@@ -39,9 +38,8 @@ func NewWorkflowExpiryProcessor(
 	opts ...async.TaskOption,
 ) async.TenantTaskHandler {
 	w := &WorkflowExpiryProcessor{
-		updater:   updater,
-		repo:      repo,
-		processor: async.NewBatchProcessor(repo),
+		updater: updater,
+		repo:    repo,
 	}
 	for _, o := range opts {
 		o(w)
