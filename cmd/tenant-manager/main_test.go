@@ -229,7 +229,7 @@ func TestBusinessMain(t *testing.T) {
 			},
 		}
 
-		testutils.TestBinStartup(t, cfg.Status.Address, func() error {
+		testutils.SetupTestBinary(t, cfg.Status.Address, func() error {
 			return tenantmanager.Run(t.Context(), cfg)
 		})
 	})

@@ -41,7 +41,7 @@ func TestRun(t *testing.T) {
 		},
 	}
 
-	testutils.TestBinStartup(t, cfg.Status.Address, func() error {
+	testutils.SetupTestBinary(t, cfg.Status.Address, func() error {
 		return eventReconciler.Run(t.Context(), cfg)
 	})
 }

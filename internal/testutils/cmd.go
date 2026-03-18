@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBinStartup(tb testing.TB, statusServer string, f func() error) {
+func SetupTestBinary(tb testing.TB, statusServer string, f func() error) {
 	tb.Helper()
 
 	errCh := make(chan error, 1)
@@ -28,7 +28,7 @@ func TestBinStartup(tb testing.TB, statusServer string, f func() error) {
 func WaitForServer(tb testing.TB, statusServer string) {
 	tb.Helper()
 
-	url := "http://" + statusServer + "/readyz"
+	url := "http://" + statusServer + "/probe/liveness"
 	assert.Eventually(tb, func() bool {
 		req, err := http.NewRequestWithContext(tb.Context(), http.MethodGet, url, nil)
 		if err != nil {
@@ -39,6 +39,6 @@ func WaitForServer(tb testing.TB, statusServer string) {
 			return false
 		}
 		resp.Body.Close()
-		return true
-	}, 3*time.Second, 100*time.Millisecond)
+		return resp.StatusCode == http.StatusOK
+	}, 5*time.Second, 100*time.Millisecond)
 }

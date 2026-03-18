@@ -69,7 +69,7 @@ func TestServerRunningAndShutdown(t *testing.T) {
 	ctx := t.Context()
 	cfg := buildCfg(t)
 
-	testutils.TestBinStartup(t, cfg.Status.Address, func() error {
+	testutils.SetupTestBinary(t, cfg.Status.Address, func() error {
 		return apiServer.Run(ctx, cfg)
 	})
 }
