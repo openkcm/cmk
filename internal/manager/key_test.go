@@ -15,7 +15,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
-	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
@@ -57,6 +56,9 @@ func SetupKeyTest(t *testing.T) (
 
 	cmkAuditor := auditor.New(ctx, cfg)
 
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
+	assert.NoError(t, err)
+
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry,
 		&config.Config{
@@ -64,10 +66,7 @@ func SetupKeyTest(t *testing.T) (
 		})
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
-
-	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
-	require.NoError(t, err)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 
 	km := manager.NewKeyManager(
 		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
@@ -294,10 +293,8 @@ func TestSetFirstKeyPrimary(t *testing.T) {
 
 	t.Run("Should set first key as primary", func(t *testing.T) {
 		createdKey1 := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
-		assert.True(t, createdKey1.IsPrimary)
 
-		createdKey2 := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
-		assert.False(t, createdKey2.IsPrimary)
+		_ = createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
 
 		resKeyConfig := &model.KeyConfiguration{ID: keyConfig.ID, AdminGroup: model.Group{ID: uuid.New()}}
 		_, err := r.First(ctx, resKeyConfig, *repo.NewQuery())
@@ -334,7 +331,6 @@ func TestEditableCryptoData(t *testing.T) {
 		})
 
 		key := testutils.NewKey(func(k *model.Key) {
-			k.IsPrimary = false
 			k.CryptoAccessData = cryptoData
 			k.KeyConfigurationID = kc.ID
 		})
@@ -367,7 +363,6 @@ func TestEditableCryptoData(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, kc, sysFailed, sysConnected)
 
 		key := testutils.NewKey(func(k *model.Key) {
-			k.IsPrimary = true
 			k.CryptoAccessData = cryptoData
 			k.KeyConfigurationID = kc.ID
 		})
@@ -785,18 +780,20 @@ func TestDelete(t *testing.T) {
 	createdKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
 	createdPrimaryKey, err := km.Create(ctx, testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
-		k.IsPrimary = true
 	}))
 	require.NoError(t, err)
 	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
 
-	keyConfigWSystems := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	keyID := uuid.New()
+	keyConfigWSystems := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.PrimaryKeyID = ptr.PointTo(keyID)
+	})
 	sys := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfigWSystems.ID)
 	})
 	keyFailSystems := testutils.NewKey(func(k *model.Key) {
+		k.ID = keyID
 		k.KeyConfigurationID = keyConfigWSystems.ID
-		k.IsPrimary = true
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfigWSystems, sys, keyFailSystems)
@@ -846,141 +843,6 @@ func TestDelete(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestUpdateKeyPrimary(t *testing.T) {
-	t.Run("Should update primary key and exiting events", func(t *testing.T) {
-		km, r, ctx, _ := SetupKeyTest(t)
-
-		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
-		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
-			k.IsPrimary = true
-			k.KeyConfigurationID = keyConfig.ID
-		})
-		keyConfig.PrimaryKeyID = &oldPrimaryKey.ID
-
-		sys := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
-		})
-
-		key := testutils.NewKey(func(k *model.Key) {
-			k.IsPrimary = false
-			k.KeyConfigurationID = keyConfig.ID
-		})
-
-		data := eventprocessor.SystemActionJobData{
-			KeyIDTo: oldPrimaryKey.ID.String(),
-		}
-		dataBytes, err := json.Marshal(data)
-		assert.NoError(t, err)
-
-		event := &model.Event{
-			Identifier: uuid.NewString(),
-			Type:       proto.TaskType_SYSTEM_SWITCH.String(),
-			Data:       dataBytes,
-		}
-
-		testutils.CreateTestEntities(ctx, t, r, keyConfig, oldPrimaryKey, key, sys, event)
-		localCtx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
-
-		key, err = km.UpdateKey(localCtx, key.ID, cmkapi.KeyPatch{
-			IsPrimary: ptr.PointTo(true),
-		})
-		assert.NoError(t, err)
-		assert.True(t, key.IsPrimary)
-
-		resKeyConfig := &model.KeyConfiguration{ID: keyConfig.ID}
-		_, err = r.First(localCtx, resKeyConfig, *repo.NewQuery())
-		assert.NoError(t, err)
-
-		assert.Equal(t, key.ID, *resKeyConfig.PrimaryKeyID)
-
-		_, err = r.First(localCtx, event, *repo.NewQuery())
-		assert.NoError(t, err)
-		jobData, err := eventprocessor.GetSystemJobData(event)
-		assert.NoError(t, err)
-		assert.Equal(t, key.ID.String(), jobData.KeyIDTo)
-
-		oldK1, err := km.Get(localCtx, oldPrimaryKey.ID)
-		assert.NoError(t, err)
-		assert.False(t, oldK1.IsPrimary)
-	})
-
-	t.Run("Should use old pkey on switch event when updating ", func(t *testing.T) {
-		km, r, ctx, _ := SetupKeyTest(t)
-
-		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
-		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
-			k.IsPrimary = true
-			k.KeyConfigurationID = keyConfig.ID
-		})
-		keyConfig.PrimaryKeyID = &oldPrimaryKey.ID
-
-		sys := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
-		})
-
-		key := testutils.NewKey(func(k *model.Key) {
-			k.IsPrimary = false
-			k.KeyConfigurationID = keyConfig.ID
-		})
-
-		testutils.CreateTestEntities(ctx, t, r, keyConfig, oldPrimaryKey, key, sys)
-		localCtx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
-
-		k, err := km.UpdateKey(localCtx, key.ID, cmkapi.KeyPatch{
-			IsPrimary: ptr.PointTo(true),
-		})
-		assert.NoError(t, err)
-		assert.True(t, k.IsPrimary)
-
-		orbitalCtx := testutils.CreateCtxWithTenant("orbital")
-		jobFromDB := &testutils.OrbitalJob{}
-		_, err = r.First(
-			orbitalCtx,
-			jobFromDB,
-			*repo.NewQuery().Where(
-				repo.NewCompositeKeyGroup(
-					repo.NewCompositeKey().Where("external_id", sys.ID.String()),
-				),
-			),
-		)
-		assert.NoError(t, err)
-
-		jobData := &eventprocessor.SystemActionJobData{}
-		err = json.Unmarshal(jobFromDB.Data, jobData)
-		assert.NoError(t, err)
-		assert.Equal(t, oldPrimaryKey.ID.String(), jobData.KeyIDFrom)
-	})
-
-	t.Run("Should error on set primary on disabled key", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-
-		key1 := testutils.NewKey(func(k *model.Key) {
-			k.IsPrimary = false
-			k.State = string(cmkapi.KeyStateDISABLED)
-			k.KeyConfigurationID = keyConfig.ID
-		})
-		testutils.CreateTestEntities(ctx, t, r, key1)
-		_, err := km.UpdateKey(ctx, key1.ID, cmkapi.KeyPatch{
-			IsPrimary: ptr.PointTo(true),
-		})
-		assert.ErrorIs(t, err, manager.ErrKeyIsNotEnabled)
-	})
-
-	t.Run("Should error on unmark primary on primary key", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-
-		key1 := testutils.NewKey(func(k *model.Key) {
-			k.IsPrimary = true
-			k.KeyConfigurationID = keyConfig.ID
-		})
-		testutils.CreateTestEntities(ctx, t, r, key1)
-		_, err := km.UpdateKey(ctx, key1.ID, cmkapi.KeyPatch{
-			IsPrimary: ptr.PointTo(false),
-		})
-		assert.ErrorIs(t, err, manager.ErrPrimaryKeyUnmark)
-	})
 }
 
 func TestGetImportParams(t *testing.T) {

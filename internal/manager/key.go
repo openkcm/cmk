@@ -126,12 +126,14 @@ func (km *KeyManager) Create(
 		return nil, err
 	}
 
-	err = km.setPrimaryIfFirstKey(ctx, key)
-	if err != nil {
-		return nil, errs.Wrap(ErrUpdatePrimary, err)
-	}
+	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
+		err := km.setPrimaryIfFirstKey(ctx, key)
+		if err != nil {
+			return errs.Wrap(ErrUpdatePrimary, err)
+		}
 
-	err = km.createKey(ctx, key)
+		return km.createKey(ctx, key)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +205,6 @@ func (km *KeyManager) GetKeys(
 	return repo.ListAndCount(ctx, km.repo, pagination, model.Key{}, query)
 }
 
-//nolint:cyclop
 func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch cmkapi.KeyPatch) (*model.Key, error) {
 	if isManagementDetailsUpdate(keyPatch) {
 		return nil, ErrManagementDetailsUpdate
@@ -228,19 +229,6 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 	enablementUpdated := copyFieldsToModelKey(keyPatch, key)
 
 	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
-		if keyPatch.IsPrimary != nil {
-			if key.IsPrimary && !*keyPatch.IsPrimary {
-				return ErrPrimaryKeyUnmark
-			}
-
-			err := km.setPrimaryKey(ctx, key)
-			if err != nil {
-				return errs.Wrap(ErrUpdateKeyDB, err)
-			}
-
-			key.IsPrimary = *keyPatch.IsPrimary
-		}
-
 		_, err := km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
 		if err != nil {
 			return errs.Wrap(ErrUpdateKeyDB, err)
@@ -269,7 +257,12 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 		return errs.Wrap(ErrGetKeyDB, err)
 	}
 
-	if key.IsPrimary {
+	isPrimary, err := repo.IsPrimaryKey(ctx, km.repo, key)
+	if err != nil {
+		return err
+	}
+
+	if isPrimary {
 		exist, err := repo.HasConnectedSystems(ctx, km.repo, key.KeyConfigurationID)
 		if err != nil {
 			return err
@@ -424,7 +417,12 @@ func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) err
 		return nil
 	}
 
-	if !key.IsPrimary {
+	isPrimary, err := repo.IsPrimaryKey(ctx, km.repo, key)
+	if err != nil {
+		return err
+	}
+
+	if !isPrimary {
 		for region := range cryptoData {
 			key.EditableRegions[region] = true
 		}
@@ -499,17 +497,6 @@ func (km *KeyManager) createKey(ctx context.Context, key *model.Key) error {
 		err := km.repo.Create(ctx, key)
 		if err != nil {
 			return errs.Wrap(ErrCreateKeyDB, err)
-		}
-
-		if key.IsPrimary {
-			_, err = km.repo.Patch(
-				ctx,
-				&model.KeyConfiguration{ID: key.KeyConfigurationID, PrimaryKeyID: &key.ID},
-				*repo.NewQuery().Update(repo.PrimaryKeyIDField),
-			)
-			if err != nil {
-				return errs.Wrap(ErrUpdateKeyConfigurationDB, err)
-			}
 		}
 
 		return nil
@@ -670,48 +657,18 @@ func (km *KeyManager) setPrimaryIfFirstKey(ctx context.Context, key *model.Key) 
 		return err
 	}
 
+	// Update keyconfig primaryKey
 	if !exist {
-		key.IsPrimary = true
-	}
-
-	return nil
-}
-
-func (km *KeyManager) getPrimaryKeys(ctx context.Context, keyConfigID *uuid.UUID) ([]*model.Key, error) {
-	keys := []*model.Key{}
-
-	err := km.repo.List(
-		ctx,
-		model.Key{},
-		&keys,
-		*repo.NewQuery().Where(
-			repo.NewCompositeKeyGroup(
-				repo.NewCompositeKey().Where(
-					repo.IsPrimaryField, true).Where(
-					repo.KeyConfigIDField, keyConfigID))),
-	)
-	if err != nil {
-		return nil, errs.Wrap(ErrGetPrimaryKeyVersionDB, err)
-	}
-
-	return keys, nil
-}
-
-func (km *KeyManager) removePrimaryKeyState(ctx context.Context, keyConfigID *uuid.UUID) error {
-	keys, err := km.getPrimaryKeys(ctx, keyConfigID)
-	if err != nil {
-		return err
-	}
-
-	for _, k := range keys {
-		k.IsPrimary = false
-
-		_, err := km.repo.Patch(
-			ctx,
-			k,
-			*repo.NewQuery().Update(repo.IsPrimaryField))
+		if key.State == string(cmkapi.KeyStateDISABLED) {
+			return ErrKeyIsNotEnabled
+		}
+		keyConfig := &model.KeyConfiguration{
+			ID:           key.KeyConfigurationID,
+			PrimaryKeyID: &key.ID,
+		}
+		_, err := km.repo.Patch(ctx, keyConfig, *repo.NewQuery())
 		if err != nil {
-			return errs.Wrap(ErrUpdatePrimary, err)
+			return err
 		}
 	}
 
@@ -906,113 +863,6 @@ func (km *KeyManager) importProviderKeyMaterial(
 	key.State = keyResp.Status
 
 	return key, nil
-}
-
-// Whenever Keyconfig PrimaryKey switches, systems need to send switch events
-// If systems had a previous switch event the event key needs to be updated for the retru
-func (km *KeyManager) handleSystemsOnNewPrimaryKey(ctx context.Context, key *model.Key) error {
-	keyConfig := &model.KeyConfiguration{ID: key.KeyConfigurationID}
-
-	_, err := km.repo.First(ctx, keyConfig, *repo.NewQuery())
-	if err != nil {
-		return errs.Wrap(ErrGettingKeyConfigByID, err)
-	}
-
-	err = km.updatePrimaryKeySystemEvents(ctx, ptr.GetSafeDeref(keyConfig.PrimaryKeyID).String(), key.ID.String())
-	if err != nil {
-		return err
-	}
-
-	// Send system switches for systems in keyconfig
-	query := repo.NewQuery().Where(
-		repo.NewCompositeKeyGroup(
-			repo.NewCompositeKey().Where(
-				repo.KeyConfigIDField, keyConfig.ID),
-		),
-	)
-	return repo.ProcessInBatch(
-		ctx,
-		km.repo,
-		query,
-		repo.DefaultLimit,
-		func(systems []*model.System) error {
-			for _, s := range systems {
-				_, err := km.eventFactory.SystemSwitchNewPrimaryKey(
-					ctx,
-					s,
-					key.ID.String(),
-					keyConfig.PrimaryKeyID.String(),
-				)
-				if err != nil {
-					return err
-				}
-			}
-
-			return nil
-		},
-	)
-}
-
-// updateOldPKeySystemEvents updates keyTo for system event retries
-// This can be done as now there is a new primary key and systems
-// can only be linked to primary keys, the previous keyTo needs now
-// updated the newly set primary key
-func (km *KeyManager) updatePrimaryKeySystemEvents(ctx context.Context, oldPkey string, newPkey string) error {
-	query := repo.NewQuery().Where(
-		repo.NewCompositeKeyGroup(
-			repo.NewCompositeKey().Where(
-				repo.JSONBField(repo.DataField, "keyIDTo"), oldPkey),
-		),
-	)
-	return repo.ProcessInBatch(ctx, km.repo, query, repo.DefaultLimit, func(events []*model.Event) error {
-		for _, e := range events {
-			systemJobData, err := eventprocessor.GetSystemJobData(e)
-			if err != nil {
-				return err
-			}
-
-			systemJobData.KeyIDTo = newPkey
-			bytes, err := json.Marshal(systemJobData)
-			if err != nil {
-				return err
-			}
-
-			e.Data = bytes
-			_, err = km.repo.Patch(ctx, e, *repo.NewQuery())
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-// Ensures only the updated key is primary and updates the keyconfig primaryKeyID
-func (km *KeyManager) setPrimaryKey(ctx context.Context, key *model.Key) error {
-	if key.State != string(cmkapi.KeyStateENABLED) {
-		return ErrKeyIsNotEnabled
-	}
-
-	err := km.removePrimaryKeyState(ctx, &key.KeyConfigurationID)
-	if err != nil {
-		return errs.Wrap(ErrUpdateKeyDB, err)
-	}
-
-	err = km.handleSystemsOnNewPrimaryKey(ctx, key)
-	if err != nil {
-		return errs.Wrap(ErrFailedToReencryptSystem, err)
-	}
-
-	_, err = km.repo.Patch(
-		ctx,
-		&model.KeyConfiguration{ID: key.KeyConfigurationID, PrimaryKeyID: &key.ID},
-		*repo.NewQuery().Update(repo.PrimaryKeyIDField),
-	)
-	if err != nil {
-		return errs.Wrap(ErrUpdateKeyDB, err)
-	}
-
-	return nil
 }
 
 func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) error {
