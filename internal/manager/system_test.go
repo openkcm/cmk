@@ -40,7 +40,9 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 ) {
 	t.Helper()
 
-	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		WithOrbital: true,
+	})
 
 	ps, psCfg := testutils.NewTestPlugins(
 		testplugins.NewSystemInformation(),
@@ -80,7 +82,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 	)
 	userManager := manager.NewUserManager(dbRepository, auditor.New(t.Context(), &cfg))
 	tagManager := manager.NewTagManager(dbRepository)
-	keyConfigManager := manager.NewKeyConfigManager(dbRepository, certManager, userManager, tagManager, nil, &cfg)
+	keyConfigManager := manager.NewKeyConfigManager(dbRepository, certManager, userManager, tagManager, nil, nil, &cfg)
 
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), &cfg, dbRepository)
 	require.NoError(t, err)
@@ -1164,14 +1166,16 @@ func TestLinkSystemAction(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m, db, tenant := SetupSystemManager(t, nil)
-			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
-			r := sql.NewRepository(db)
 			testGroup := testutils.NewGroup(
 				func(g *model.Group) {
-					g.IAMIdentifier = "test-group"
+					g.IAMIdentifier = uuid.NewString()
 				},
+			)
+
+			ctx := testutils.InjectClientDataIntoContext(
+				ctx,
+				testGroup.IAMIdentifier,
+				[]string{testGroup.IAMIdentifier},
 			)
 
 			keyConfig, key := tt.setupKeyConfig(testGroup)

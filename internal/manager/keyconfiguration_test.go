@@ -17,6 +17,8 @@ import (
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
@@ -74,19 +76,25 @@ func setupCfg(tb testing.TB) config.Config {
 func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenancy.DB, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		WithOrbital: true,
+	})
 
 	cfg := setupCfg(t)
+	cfg.Database = dbCfg
+
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(t.Context(), &cfg)
 
-	dbRepository := sql.NewRepository(db)
-	certManager := manager.NewCertificateManager(t.Context(), dbRepository, svcRegistry, &cfg)
-	userManager := manager.NewUserManager(dbRepository, cmkAuditor)
-	tagManager := manager.NewTagManager(dbRepository)
-	m := manager.NewKeyConfigManager(dbRepository, certManager, userManager, tagManager, cmkAuditor, &cfg)
+	r := sql.NewRepository(db)
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), &cfg, r)
+	assert.NoError(t, err)
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, &cfg)
+	userManager := manager.NewUserManager(r, cmkAuditor)
+	tagManager := manager.NewTagManager(r)
+	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, &cfg)
 
 	return m, db, tenants[0]
 }
@@ -303,14 +311,12 @@ func TestTotalSystemAndKey(t *testing.T) {
 			ID:                 uuid.New(),
 			Name:               uuid.NewString(),
 			KeyConfigurationID: keyConfig.ID,
-			IsPrimary:          false,
 		}
 
 		key2 := &model.Key{
 			ID:                 uuid.New(),
 			Name:               uuid.NewString(),
 			KeyConfigurationID: keyConfig.ID,
-			IsPrimary:          false,
 		}
 
 		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, sys, key1, key2)
@@ -823,6 +829,126 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
+	})
+
+	t.Run("Should update primary key and existing events", func(t *testing.T) {
+		oldPKeyID := uuid.New()
+		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = ptr.PointTo(oldPKeyID)
+		})
+		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
+			k.ID = oldPKeyID
+			k.KeyConfigurationID = keyConfig.ID
+		})
+
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		})
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+
+		data := eventprocessor.SystemActionJobData{
+			KeyIDTo: oldPrimaryKey.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		event := &model.Event{
+			Identifier: uuid.NewString(),
+			Type:       proto.TaskType_SYSTEM_SWITCH.String(),
+			Data:       dataBytes,
+		}
+
+		testutils.CreateTestEntities(ctx, t, r, keyConfig, oldPrimaryKey, key, sys, event)
+		ctx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		keyConfig, err = m.UpdateKeyConfigurationByID(
+			ctx,
+			keyConfig.ID,
+			cmkapi.KeyConfigurationPatch{
+				PrimaryKeyID: ptr.PointTo(key.ID),
+			},
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, key.ID, *keyConfig.PrimaryKeyID)
+
+		_, err = r.First(ctx, event, *repo.NewQuery())
+		assert.NoError(t, err)
+		jobData, err := eventprocessor.GetSystemJobData(event)
+		assert.NoError(t, err)
+		assert.Equal(t, key.ID.String(), jobData.KeyIDTo)
+	})
+
+	t.Run("Should error on set primary on disabled key", func(t *testing.T) {
+		oldPkeyID := uuid.New()
+		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = ptr.PointTo(oldPkeyID)
+		})
+		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
+			k.ID = oldPkeyID
+			k.KeyConfigurationID = keyConfig.ID
+		})
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.State = string(cmkapi.KeyStateDISABLED)
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		testutils.CreateTestEntities(ctx, t, r, oldPrimaryKey, keyConfig, key)
+		ctx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		_, err := m.UpdateKeyConfigurationByID(
+			ctx,
+			keyConfig.ID,
+			cmkapi.KeyConfigurationPatch{
+				PrimaryKeyID: ptr.PointTo(key.ID),
+			},
+		)
+		assert.ErrorIs(t, err, manager.ErrKeyIsNotEnabled)
+	})
+
+	t.Run("Should use old pkey on switch event when system updating", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		keyConfig.PrimaryKeyID = &oldPrimaryKey.ID
+
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		})
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+
+		testutils.CreateTestEntities(ctx, t, r, keyConfig, oldPrimaryKey, key, sys)
+		ctx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		_, err := m.UpdateKeyConfigurationByID(ctx, keyConfig.ID, cmkapi.KeyConfigurationPatch{
+			PrimaryKeyID: ptr.PointTo(key.ID),
+		})
+
+		assert.NoError(t, err)
+
+		orbitalCtx := cmkcontext.CreateTenantContext(ctx, "orbital")
+		jobFromDB := &testutils.OrbitalJob{}
+		_, err = r.First(
+			orbitalCtx,
+			jobFromDB,
+			*repo.NewQuery().Where(
+				repo.NewCompositeKeyGroup(
+					repo.NewCompositeKey().Where("external_id", sys.ID.String()),
+				),
+			),
+		)
+		assert.NoError(t, err)
+
+		data := &eventprocessor.SystemActionJobData{}
+		err = json.Unmarshal(jobFromDB.Data, data)
+		assert.NoError(t, err)
+		assert.Equal(t, oldPrimaryKey.ID.String(), data.KeyIDFrom)
 	})
 }
 

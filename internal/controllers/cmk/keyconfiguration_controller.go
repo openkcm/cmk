@@ -120,10 +120,28 @@ func (c *APIController) GetKeyConfigurationByID(
 }
 
 // UpdateKeyConfigurationByID updates a key configuration by ID
+//
+//nolint:nestif
 func (c *APIController) UpdateKeyConfigurationByID(
 	ctx context.Context,
 	request cmkapi.UpdateKeyConfigurationByIDRequestObject,
 ) (cmkapi.UpdateKeyConfigurationByIDResponseObject, error) {
+	if request.Body.PrimaryKeyID != nil {
+		required, err := c.Manager.Workflow.IsWorkflowRequired(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if required {
+			kc, err := c.Manager.KeyConfig.GetKeyConfigurationByID(ctx, request.KeyConfigurationID)
+			if err != nil {
+				return nil, err
+			}
+			if *kc.PrimaryKeyID != *request.Body.PrimaryKeyID {
+				return nil, apierrors.ErrActionRequireWorkflow
+			}
+		}
+	}
 	keyConfig, err := c.Manager.KeyConfig.UpdateKeyConfigurationByID(ctx, request.KeyConfigurationID, *request.Body)
 	if err != nil {
 		return nil, err

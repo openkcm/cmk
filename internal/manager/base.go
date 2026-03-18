@@ -48,7 +48,7 @@ func New(
 	userManager := NewUserManager(repo, cmkAuditor)
 	certManager := NewCertificateManager(ctx, repo, svcRegistry, config)
 	tagManager := NewTagManager(repo)
-	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, config)
+	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, eventFactory, config)
 	keyManager := NewKeyManager(
 		repo,
 		svcRegistry,
