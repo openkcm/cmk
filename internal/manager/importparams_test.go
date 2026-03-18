@@ -6,16 +6,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/protobuf/types/known/structpb"
-
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
-func TestBuildImportParams(t *testing.T) {
+func TestBuildImportParamsFromAPI(t *testing.T) {
 	validTime := time.Now().Add(24 * time.Hour)
 	validTimeStr := validTime.Format(time.RFC3339)
 	publicKey := "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0B..."
@@ -35,10 +33,10 @@ func TestBuildImportParams(t *testing.T) {
 			"providerParams":    providerParams,
 			"validTo":           validTimeStr,
 		}
-		structData, _ := structpb.NewStruct(fields)
-		response := &keystoreopv1.GetImportParametersResponse{ImportParameters: structData}
+		// fields is already map[string]any
+		response := &keymanagement.GetImportParametersResponse{ImportParameters: fields}
 
-		result, err := manager.BuildImportParams(key, response)
+		result, err := manager.BuildImportParamsFromAPI(key, response)
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
 		assert.Equal(t, key.ID, result.KeyID)
@@ -62,10 +60,10 @@ func TestBuildImportParams(t *testing.T) {
 			"providerParams":    providerParams,
 			"validTo":           validTimeStr,
 		}
-		structData, _ := structpb.NewStruct(fields)
-		response := &keystoreopv1.GetImportParametersResponse{ImportParameters: structData}
+		// fields is already map[string]any
+		response := &keymanagement.GetImportParametersResponse{ImportParameters: fields}
 
-		result, err := manager.BuildImportParams(key, response)
+		result, err := manager.BuildImportParamsFromAPI(key, response)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 	})
@@ -77,10 +75,10 @@ func TestBuildImportParams(t *testing.T) {
 			"providerParams": providerParams,
 			"validTo":        validTimeStr,
 		}
-		structData, _ := structpb.NewStruct(fields)
-		response := &keystoreopv1.GetImportParametersResponse{ImportParameters: structData}
+		// fields is already map[string]any
+		response := &keymanagement.GetImportParametersResponse{ImportParameters: fields}
 
-		result, err := manager.BuildImportParams(key, response)
+		result, err := manager.BuildImportParamsFromAPI(key, response)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 	})
@@ -92,10 +90,10 @@ func TestBuildImportParams(t *testing.T) {
 			"providerParams":    providerParams,
 			"validTo":           validTimeStr,
 		}
-		structData, _ := structpb.NewStruct(fields)
-		response := &keystoreopv1.GetImportParametersResponse{ImportParameters: structData}
+		// fields is already map[string]any
+		response := &keymanagement.GetImportParametersResponse{ImportParameters: fields}
 
-		result, err := manager.BuildImportParams(key, response)
+		result, err := manager.BuildImportParamsFromAPI(key, response)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 	})
@@ -107,10 +105,10 @@ func TestBuildImportParams(t *testing.T) {
 			"hashFunction":      hashFunction,
 			"validTo":           validTimeStr,
 		}
-		structData, _ := structpb.NewStruct(fields)
-		response := &keystoreopv1.GetImportParametersResponse{ImportParameters: structData}
+		// fields is already map[string]any
+		response := &keymanagement.GetImportParametersResponse{ImportParameters: fields}
 
-		result, err := manager.BuildImportParams(key, response)
+		result, err := manager.BuildImportParamsFromAPI(key, response)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 	})
@@ -122,10 +120,10 @@ func TestBuildImportParams(t *testing.T) {
 			"hashFunction":      hashFunction,
 			"providerParams":    providerParams,
 		}
-		structData, _ := structpb.NewStruct(fields)
-		response := &keystoreopv1.GetImportParametersResponse{ImportParameters: structData}
+		// fields is already map[string]any
+		response := &keymanagement.GetImportParametersResponse{ImportParameters: fields}
 
-		result, err := manager.BuildImportParams(key, response)
+		result, err := manager.BuildImportParamsFromAPI(key, response)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 	})
@@ -138,10 +136,10 @@ func TestBuildImportParams(t *testing.T) {
 			"providerParams":    providerParams,
 			"validTo":           "invalid-date-format",
 		}
-		structData, _ := structpb.NewStruct(fields)
-		response := &keystoreopv1.GetImportParametersResponse{ImportParameters: structData}
+		// fields is already map[string]any
+		response := &keymanagement.GetImportParametersResponse{ImportParameters: fields}
 
-		result, err := manager.BuildImportParams(key, response)
+		result, err := manager.BuildImportParamsFromAPI(key, response)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 	})
@@ -155,18 +153,18 @@ func TestBuildImportParams(t *testing.T) {
 			"wrappingAlgorithm": wrappingAlgorithm,
 			"hashFunction":      hashFunction,
 		}
-		structData, _ := structpb.NewStruct(fields)
-		response := &keystoreopv1.GetImportParametersResponse{ImportParameters: structData}
+		// fields is already map[string]any
+		response := &keymanagement.GetImportParametersResponse{ImportParameters: fields}
 
-		result, err := manager.BuildImportParams(keyUnknownProvider, response)
+		result, err := manager.BuildImportParamsFromAPI(keyUnknownProvider, response)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 	})
 
 	t.Run("AWS_NilImportParameters", func(t *testing.T) {
-		response := &keystoreopv1.GetImportParametersResponse{ImportParameters: nil}
+		response := &keymanagement.GetImportParametersResponse{ImportParameters: nil}
 
-		result, err := manager.BuildImportParams(key, response)
+		result, err := manager.BuildImportParamsFromAPI(key, response)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 	})
@@ -182,10 +180,10 @@ func TestBuildImportParams(t *testing.T) {
 			"providerParams":    providerParams,
 			"validTo":           validTimeStr,
 		}
-		structData, _ := structpb.NewStruct(fields)
-		response := &keystoreopv1.GetImportParametersResponse{ImportParameters: structData}
+		// fields is already map[string]any
+		response := &keymanagement.GetImportParametersResponse{ImportParameters: fields}
 
-		result, err := manager.BuildImportParams(key, response)
+		result, err := manager.BuildImportParamsFromAPI(key, response)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 	})

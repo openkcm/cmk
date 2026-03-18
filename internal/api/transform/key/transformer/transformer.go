@@ -7,13 +7,12 @@ import (
 	"fmt"
 
 	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
 	"github.com/openkcm/cmk/internal/errs"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
-	"github.com/openkcm/cmk/utils/protobuf"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 )
 
 const (
@@ -50,19 +49,22 @@ type ProviderTransformer interface {
 
 type PluginProviderTransformer struct {
 	provider     string
-	pluginClient keystoreopv1.KeystoreInstanceKeyOperationClient
+	pluginClient keymanagement.KeyManagement
 }
 
 func NewPluginProviderTransformer(
 	pluginCatalog *cmkpluginregistry.Registry,
 	provider string,
 ) (*PluginProviderTransformer, error) {
-	plugin := pluginCatalog.LookupByTypeAndName(keystoreopv1.Type, provider)
-	if plugin == nil {
+	keyManagements, err := pluginCatalog.KeyManagements()
+	if err != nil {
 		return nil, errs.Wrapf(keyshared.ErrInvalidKeyProvider, provider)
 	}
 
-	pluginClient := keystoreopv1.NewKeystoreInstanceKeyOperationClient(plugin.ClientConnection())
+	pluginClient, ok := keyManagements[provider]
+	if !ok {
+		return nil, errs.Wrapf(keyshared.ErrInvalidKeyProvider, provider)
+	}
 
 	return &PluginProviderTransformer{
 		provider:     provider,
@@ -71,13 +73,13 @@ func NewPluginProviderTransformer(
 }
 
 func (v PluginProviderTransformer) ValidateAPI(ctx context.Context, k cmkapi.Key) error {
-	validationRequest := keystoreopv1.ValidateKeyRequest{
-		KeyType:   convertKeyType(k.Type),
-		Algorithm: convertKeyAlgorithm(*k.Algorithm),
-		Region:    *k.Region,
+	validationRequest := keymanagement.ValidateKeyRequest{
+		KeyType:      convertKeyType(k.Type),
+		KeyAlgorithm: convertKeyAlgorithm(*k.Algorithm),
+		Region:       *k.Region,
 	}
 	if k.NativeID != nil {
-		validationRequest.NativeKeyId = *k.NativeID
+		validationRequest.NativeKeyID = *k.NativeID
 	}
 
 	response, err := v.pluginClient.ValidateKey(ctx, &validationRequest)
@@ -85,8 +87,8 @@ func (v PluginProviderTransformer) ValidateAPI(ctx context.Context, k cmkapi.Key
 		return errs.Wrap(ErrValidateKey, err)
 	}
 
-	if !response.GetIsValid() {
-		return errs.Wrapf(ErrValidateKey, response.GetMessage())
+	if !response.IsValid {
+		return errs.Wrapf(ErrValidateKey, response.Message)
 	}
 
 	return nil
@@ -96,17 +98,17 @@ func (v PluginProviderTransformer) ValidateKeyAccessData(
 	ctx context.Context,
 	accessDetails *cmkapi.KeyAccessDetails,
 ) error {
-	management, err := protobuf.StructToProtobuf(accessDetails.Management)
-	if err != nil {
-		return errs.Wrap(ErrSerializeKeyAccessData, err)
+	var management map[string]any
+	if accessDetails.Management != nil {
+		management = *accessDetails.Management
 	}
 
-	crypto, err := protobuf.StructToProtobuf(accessDetails.Crypto)
-	if err != nil {
-		return errs.Wrap(ErrSerializeKeyAccessData, err)
+	var crypto map[string]map[string]any
+	if accessDetails.Crypto != nil {
+		crypto = *accessDetails.Crypto
 	}
 
-	response, err := v.pluginClient.ValidateKeyAccessData(ctx, &keystoreopv1.ValidateKeyAccessDataRequest{
+	response, err := v.pluginClient.ValidateKeyAccessData(ctx, &keymanagement.ValidateKeyAccessDataRequest{
 		Management: management,
 		Crypto:     crypto,
 	})
@@ -119,8 +121,8 @@ func (v PluginProviderTransformer) ValidateKeyAccessData(
 		return errs.Wrap(ErrSerializeKeyAccessData, err)
 	}
 
-	if !response.GetIsValid() {
-		return errs.Wrapf(ErrSerializeKeyAccessData, response.GetMessage())
+	if !response.IsValid {
+		return errs.Wrapf(ErrSerializeKeyAccessData, response.Message)
 	}
 
 	return nil
@@ -155,48 +157,48 @@ func (v PluginProviderTransformer) GetRegion(
 	ctx context.Context,
 	key cmkapi.Key,
 ) (string, error) {
-	management, err := protobuf.StructToProtobuf(key.AccessDetails.Management)
-	if err != nil {
-		return "", errs.Wrap(ErrSerializeKeyAccessData, err)
+	var management map[string]any
+	if key.AccessDetails != nil && key.AccessDetails.Management != nil {
+		management = *key.AccessDetails.Management
 	}
 
-	response, err := v.pluginClient.ExtractKeyRegion(ctx, &keystoreopv1.ExtractKeyRegionRequest{
-		NativeKeyId:          *key.NativeID,
+	response, err := v.pluginClient.ExtractKeyRegion(ctx, &keymanagement.ExtractKeyRegionRequest{
+		NativeKeyID:          *key.NativeID,
 		ManagementAccessData: management,
 	})
 	if err != nil {
 		return "", errs.Wrapf(ErrExtractKeyRegion, fmt.Sprintf("failed to extract key region: %v", err))
 	}
 
-	if response.GetRegion() == "" {
+	if response.Region == "" {
 		return "", errs.Wrapf(ErrExtractKeyRegion, "extracted region is empty")
 	}
 
-	return response.GetRegion(), nil
+	return response.Region, nil
 }
 
-func convertKeyType(keyType cmkapi.KeyType) keystoreopv1.KeyType {
+func convertKeyType(keyType cmkapi.KeyType) keymanagement.KeyType {
 	switch keyType {
 	case cmkapi.KeyTypeSYSTEMMANAGED:
-		return keystoreopv1.KeyType_KEY_TYPE_SYSTEM_MANAGED
+		return keymanagement.SystemManaged
 	case cmkapi.KeyTypeBYOK:
-		return keystoreopv1.KeyType_KEY_TYPE_BYOK
+		return keymanagement.BYOK
 	case cmkapi.KeyTypeHYOK:
-		return keystoreopv1.KeyType_KEY_TYPE_HYOK
+		return keymanagement.HYOK
 	}
 
-	return keystoreopv1.KeyType_KEY_TYPE_UNSPECIFIED
+	return keymanagement.UnspecifiedKeyType
 }
 
-func convertKeyAlgorithm(algorithm cmkapi.KeyAlgorithm) keystoreopv1.KeyAlgorithm {
+func convertKeyAlgorithm(algorithm cmkapi.KeyAlgorithm) keymanagement.KeyAlgorithm {
 	switch algorithm {
 	case cmkapi.KeyAlgorithmAES256:
-		return keystoreopv1.KeyAlgorithm_KEY_ALGORITHM_AES256
+		return keymanagement.AES256
 	case cmkapi.KeyAlgorithmRSA3072:
-		return keystoreopv1.KeyAlgorithm_KEY_ALGORITHM_RSA3072
+		return keymanagement.RSA3072
 	case cmkapi.KeyAlgorithmRSA4096:
-		return keystoreopv1.KeyAlgorithm_KEY_ALGORITHM_RSA4096
+		return keymanagement.RSA4096
 	}
 
-	return keystoreopv1.KeyAlgorithm_KEY_ALGORITHM_UNSPECIFIED
+	return keymanagement.UnspecifiedKeyAlgorithm
 }

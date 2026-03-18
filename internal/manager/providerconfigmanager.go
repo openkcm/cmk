@@ -11,17 +11,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/types/known/structpb"
-
-	kscommonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
-	keystoremanagerv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/management/v1"
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
+	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
@@ -42,14 +41,14 @@ var (
 )
 
 type ProviderConfig struct {
-	Config     *kscommonv1.KeystoreInstanceConfig
-	Client     keystoreopv1.KeystoreInstanceKeyOperationClient
+	Config     *common.KeystoreConfig
+	Client     keymanagement.KeyManagement
 	Expiration time.Time // Optional expiration time for the provider config
 }
 
 func NewProviderConfig(
-	config *kscommonv1.KeystoreInstanceConfig,
-	client keystoreopv1.KeystoreInstanceKeyOperationClient,
+	config *common.KeystoreConfig,
+	client keymanagement.KeyManagement,
 	expiration *time.Time,
 ) *ProviderConfig {
 	if expiration == nil {
@@ -85,11 +84,6 @@ const (
 // getPluginAlgorithm returns the plugin algorithm for the key
 func getPluginAlgorithm(alg string) string {
 	return pluginAlgorithmPrefix + alg
-}
-
-// getPluginKeyType returns the plugin key type for the key
-func getPluginKeyType(keyType string) string {
-	return pluginKeyTypePrefix + keyType
 }
 
 type ProviderCachedKey struct {
@@ -158,12 +152,15 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 	}
 
 	// Initialize client
-	plugin := pmc.svcRegistry.LookupByTypeAndName(keystoreopv1.Type, provider)
-	if plugin == nil {
+	keyManagements, err := pmc.svcRegistry.KeyManagements()
+	if err != nil {
 		return nil, errs.Wrapf(ErrPluginNotFound, provider)
 	}
 
-	client := keystoreopv1.NewKeystoreInstanceKeyOperationClient(plugin.ClientConnection())
+	client, ok := keyManagements[provider]
+	if !ok {
+		return nil, errs.Wrapf(ErrPluginNotFound, provider)
+	}
 
 	providerCfg := NewProviderConfig(config, client, expiration)
 
@@ -208,21 +205,22 @@ func (pmc *ProviderConfigManager) CreateKeystore(ctx context.Context) (string, m
 		return "", nil, err
 	}
 
-	plugin := pmc.svcRegistry.LookupByTypeAndName(keystoremanagerv1.Type, provider)
-	if plugin == nil {
+	keystoreManagements, err := pmc.svcRegistry.KeystoreManagements()
+	if err != nil {
 		return "", nil, errs.Wrapf(ErrPluginNotFound, provider)
 	}
 
-	client := keystoremanagerv1.NewKeystoreProviderClient(plugin.ClientConnection())
+	client, ok := keystoreManagements[provider]
+	if !ok {
+		return "", nil, errs.Wrapf(ErrPluginNotFound, provider)
+	}
 
-	resp, err := client.CreateKeystore(ctx, &keystoremanagerv1.CreateKeystoreRequest{})
+	resp, err := client.CreateKeystore(ctx, &keystoremanagement.CreateKeystoreRequest{})
 	if err != nil {
 		return "", nil, errs.Wrapf(ErrCreateKeystore, fmt.Sprintf("provider: %s, error: %v", provider, err))
 	}
 
-	configValues := resp.GetConfig().GetValues()
-
-	return provider, configValues.AsMap(), nil
+	return provider, resp.Config.Values, nil
 }
 
 func (pmc *ProviderConfigManager) AddKeystoreToPool(
@@ -252,7 +250,7 @@ func (pmc *ProviderConfigManager) GetDefaultKeystoreFromCatalog() (string, error
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no plugin catalog available")
 	}
 
-	plugins := pmc.svcRegistry.LookupByType(keystoreopv1.Type)
+	plugins := pmc.svcRegistry.LookupByType(servicewrapper.KeyManagementType)
 	if len(plugins) == 0 {
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no keystore plugins found in catalog")
 	}
@@ -280,7 +278,7 @@ func (pmc *ProviderConfigManager) GetDefaultKeystoreFromCatalog() (string, error
 func (pmc *ProviderConfigManager) getKeystoreConfig(
 	ctx context.Context,
 	keystoreName string,
-) (*kscommonv1.KeystoreInstanceConfig, *time.Time, error) {
+) (*common.KeystoreConfig, *time.Time, error) {
 	switch keystoreName {
 	case constants.DefaultKeyStore:
 		return pmc.getDefaultKeystoreConfig(ctx)
@@ -291,20 +289,9 @@ func (pmc *ProviderConfigManager) getKeystoreConfig(
 	}
 }
 
-func (pmc *ProviderConfigManager) createKeystoreInstanceConfig(
-	configMap map[string]any,
-) (*kscommonv1.KeystoreInstanceConfig, error) {
-	config, err := structpb.NewStruct(configMap)
-	if err != nil {
-		return nil, errs.Wrap(ErrCreateProtobufStruct, err)
-	}
-
-	return &kscommonv1.KeystoreInstanceConfig{Values: config}, nil
-}
-
 func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 	ctx context.Context,
-) (*kscommonv1.KeystoreInstanceConfig, *time.Time, error) {
+) (*common.KeystoreConfig, *time.Time, error) {
 	ksConfig, err := pmc.tenantConfigs.GetDefaultKeystoreConfig(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -327,17 +314,12 @@ func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 
 	maps.Copy(configMap, ksConfig.ManagementAccessData)
 
-	config, err := pmc.createKeystoreInstanceConfig(configMap)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return config, &cert.ExpirationDate, nil
+	return &common.KeystoreConfig{Values: configMap}, &cert.ExpirationDate, nil
 }
 
 func (pmc *ProviderConfigManager) getHYOKKeystoreConfig(
 	ctx context.Context,
-) (*kscommonv1.KeystoreInstanceConfig, *time.Time, error) {
+) (*common.KeystoreConfig, *time.Time, error) {
 	cert, err := pmc.certs.getDefaultHYOKClientCert(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -349,10 +331,5 @@ func (pmc *ProviderConfigManager) getHYOKKeystoreConfig(
 		"privateKey": cert.PrivateKeyPEM,
 	}
 
-	config, err := pmc.createKeystoreInstanceConfig(configMap)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return config, &cert.ExpirationDate, nil
+	return &common.KeystoreConfig{Values: configMap}, &cert.ExpirationDate, nil
 }

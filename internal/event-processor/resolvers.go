@@ -7,7 +7,6 @@ import (
 
 	"github.com/openkcm/orbital"
 
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 	protoPkg "google.golang.org/protobuf/proto"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -17,6 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -133,23 +133,27 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 	key model.Key,
 	systemRegion string,
 ) ([]byte, error) {
-	plugin := r.svcRegistry.LookupByTypeAndName(keystoreopv1.Type, key.Provider)
-	if plugin == nil {
+	keyManagements, err := r.svcRegistry.KeyManagements()
+	if err != nil {
 		return nil, ErrPluginNotFound
 	}
 
-	cryptoAccessData, err := keystoreopv1.NewKeystoreInstanceKeyOperationClient(plugin.ClientConnection()).
-		TransformCryptoAccessData(
-			ctx,
-			&keystoreopv1.TransformCryptoAccessDataRequest{
-				NativeKeyId: *key.NativeID,
-				AccessData:  key.CryptoAccessData,
-			})
+	client, ok := keyManagements[key.Provider]
+	if !ok {
+		return nil, ErrPluginNotFound
+	}
+
+	cryptoAccessData, err := client.TransformCryptoAccessData(
+		ctx,
+		&keymanagement.TransformCryptoAccessDataRequest{
+			NativeKeyID: *key.NativeID,
+			AccessData:  key.CryptoAccessData,
+		})
 	if err != nil {
 		return nil, err
 	}
 
-	keyAccessMetadata, ok := cryptoAccessData.GetTransformedAccessData()[systemRegion]
+	keyAccessMetadata, ok := cryptoAccessData.TransformedAccessData[systemRegion]
 	if !ok {
 		return nil, ErrKeyAccessMetadataNotFound
 	}

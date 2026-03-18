@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
@@ -22,6 +21,8 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -297,7 +298,7 @@ func (s *KeyManagerSuite) TestCreate() {
 				}
 			},
 			wantErr: true,
-			errMsg:  "failed to authenticate with the keystore provider: Invalid account information",
+			errMsg:  "failed to authenticate with the keystore provider",
 		},
 		{
 			name: "HYOK key creation key not found",
@@ -579,10 +580,10 @@ func (s *KeyManagerSuite) TestHYOKSync() {
 
 		provider, err := s.km.GetOrInitProvider(s.ctx, hyokKey)
 		s.NoError(err)
-		_, err = provider.Client.DisableKey(s.ctx, &keystoreopv1.DisableKeyRequest{
-			Parameters: &keystoreopv1.RequestParameters{
-				KeyId:  *hyokKey.NativeID,
-				Config: provider.Config,
+		_, err = provider.Client.DisableKey(s.ctx, &keymanagement.DisableKeyRequest{
+			Parameters: keymanagement.RequestParameters{
+				KeyID:  *hyokKey.NativeID,
+				Config: common.KeystoreConfig{Values: provider.Config.Values},
 			},
 		})
 		s.NoError(err)
@@ -725,10 +726,10 @@ func (s *KeyManagerSuite) SyncAndVerifyState(hyokKey *model.Key, expectedState s
 func (s *KeyManagerSuite) disableKey(hyokKey *model.Key) error {
 	provider, err := s.km.GetOrInitProvider(s.ctx, hyokKey)
 	s.NoError(err)
-	_, err = provider.Client.DisableKey(s.ctx, &keystoreopv1.DisableKeyRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *hyokKey.NativeID,
-			Config: provider.Config,
+	_, err = provider.Client.DisableKey(s.ctx, &keymanagement.DisableKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			KeyID:  *hyokKey.NativeID,
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 		},
 	})
 	s.NoError(err)
@@ -739,10 +740,10 @@ func (s *KeyManagerSuite) disableKey(hyokKey *model.Key) error {
 func (s *KeyManagerSuite) deleteKey(hyokKey *model.Key) error {
 	provider, err := s.km.GetOrInitProvider(s.ctx, hyokKey)
 	s.NoError(err)
-	_, err = provider.Client.DeleteKey(s.ctx, &keystoreopv1.DeleteKeyRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *hyokKey.NativeID,
-			Config: provider.Config,
+	_, err = provider.Client.DeleteKey(s.ctx, &keymanagement.DeleteKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			KeyID:  *hyokKey.NativeID,
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 		},
 	})
 	s.NoError(err)
@@ -753,10 +754,10 @@ func (s *KeyManagerSuite) deleteKey(hyokKey *model.Key) error {
 func (s *KeyManagerSuite) enableKey(hyokKey *model.Key) error {
 	provider, err := s.km.GetOrInitProvider(s.ctx, hyokKey)
 	s.NoError(err)
-	_, err = provider.Client.EnableKey(s.ctx, &keystoreopv1.EnableKeyRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *hyokKey.NativeID,
-			Config: provider.Config,
+	_, err = provider.Client.EnableKey(s.ctx, &keymanagement.EnableKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			KeyID:  *hyokKey.NativeID,
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 		},
 	})
 	s.NoError(err)
