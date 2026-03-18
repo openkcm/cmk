@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/openkcm/cmk/compare/v0.5.0...v0.6.0) (2026-03-18)
+
+
+### Features
+
+* return default keystore support regions ([#166](https://github.com/openkcm/cmk/issues/166)) ([5b3a8bb](https://github.com/openkcm/cmk/commit/5b3a8bbc5bdc05a9d997da04233249834485f953))
+
+
+### Bug Fixes
+
+* load and use keystore operations & management plugins via new interface ([#206](https://github.com/openkcm/cmk/issues/206)) ([0bf62e4](https://github.com/openkcm/cmk/commit/0bf62e4e565d842226737bcb0cc47f347858865f))
+* Orbital Database Setup  ([#204](https://github.com/openkcm/cmk/issues/204)) ([ca4b642](https://github.com/openkcm/cmk/commit/ca4b6420ebed68d6bd241e8bb9e43a6b6ff73dc7))
+
 ## [0.5.0](https://github.com/openkcm/cmk/compare/v0.4.1...v0.5.0) (2026-03-16)
 
 
