@@ -57,7 +57,7 @@ func NewBatchProcessor(r repo.Repo, opts ...BatchProcessorOptions) *BatchProcess
 // It tracks the total tenant count, logs batch progress, and logs task completion
 // In fan-out mode, it enqueues child tasks instead of processing inline
 //
-//nolint:funlen,cyclop
+//nolint:funlen
 func (bp *BatchProcessor) ProcessTenantsInBatch(
 	ctx context.Context,
 	asynqTask *asynq.Task,
@@ -65,14 +65,16 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 ) error {
 	totalTenantCount := 0
 
-	if asynqTask != nil {
-		ctx = slogctx.With(ctx,
-			slog.String("task", asynqTask.Type()),
-		)
+	if asynqTask == nil {
+		return ErrNilTask
 	}
 
+	ctx = slogctx.With(ctx,
+		slog.String("task", asynqTask.Type()),
+	)
+
 	var tenantIDs []string
-	if asynqTask != nil && asynqTask.Payload() != nil {
+	if asynqTask.Payload() != nil {
 		payload, err := asyncUtils.ParseTenantListPayload(asynqTask.Payload())
 		if err != nil {
 			log.Warn(ctx, "Failed to parse tenant IDs from task payload, processing all tenants")

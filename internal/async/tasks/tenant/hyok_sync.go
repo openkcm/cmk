@@ -17,7 +17,6 @@ type HYOKUpdater interface {
 type HYOKSync struct {
 	hyokClient HYOKUpdater
 	repo       repo.Repo
-	processor  *async.BatchProcessor
 }
 
 func NewHYOKSync(
@@ -28,7 +27,6 @@ func NewHYOKSync(
 	h := &HYOKSync{
 		hyokClient: hyokClient,
 		repo:       repo,
-		processor:  async.NewBatchProcessor(repo),
 	}
 
 	for _, o := range opts {

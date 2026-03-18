@@ -10,4 +10,5 @@ var (
 	ErrRunningScheduler  = errors.New("running scheduler")
 	ErrReadingConfig     = errors.New("error reading scheduler task config file")
 	ErrInvalidConfig     = errors.New("invalid scheduler task config")
+	ErrNilTask           = errors.New("task is nil")
 )
