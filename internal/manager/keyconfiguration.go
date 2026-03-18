@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -20,9 +21,15 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/ptr"
+)
+
+const (
+	DefaultCertName = "hyok-default"
 )
 
 var (
@@ -44,12 +51,13 @@ type KeyConfigurationAPI interface {
 }
 
 type KeyConfigManager struct {
-	repository repo.Repo
-	user       User
-	certs      *CertificateManager
-	tagManager Tags
-	cmkAuditor *auditor.Auditor
-	cfg        *config.Config
+	r            repo.Repo
+	user         User
+	certs        *CertificateManager
+	tagManager   Tags
+	cmkAuditor   *auditor.Auditor
+	cfg          *config.Config
+	eventFactory *eventprocessor.EventFactory
 }
 
 type KeyConfigFilter struct {
@@ -63,15 +71,17 @@ func NewKeyConfigManager(
 	user User,
 	tagManager Tags,
 	cmkAuditor *auditor.Auditor,
+	eventFactory *eventprocessor.EventFactory,
 	cfg *config.Config,
 ) *KeyConfigManager {
 	return &KeyConfigManager{
-		repository: repository,
-		certs:      certManager,
-		user:       user,
-		cmkAuditor: cmkAuditor,
-		tagManager: tagManager,
-		cfg:        cfg,
+		r:            repository,
+		certs:        certManager,
+		user:         user,
+		cmkAuditor:   cmkAuditor,
+		tagManager:   tagManager,
+		eventFactory: eventFactory,
+		cfg:          cfg,
 	}
 }
 
@@ -94,7 +104,7 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 		return []*model.KeyConfiguration{}, 0, nil
 	}
 
-	return repo.ListAndCount(ctx, m.repository, filter.Pagination, model.KeyConfiguration{}, query)
+	return repo.ListAndCount(ctx, m.r, filter.Pagination, model.KeyConfiguration{}, query)
 }
 
 func (m *KeyConfigManager) PostKeyConfigurations(
@@ -103,7 +113,7 @@ func (m *KeyConfigManager) PostKeyConfigurations(
 ) (*model.KeyConfiguration, error) {
 	var group model.Group
 
-	exist, err := m.repository.First(
+	exist, err := m.r.First(
 		ctx,
 		&group,
 		*repo.NewQuery().
@@ -128,7 +138,7 @@ func (m *KeyConfigManager) PostKeyConfigurations(
 		return nil, ErrNameCannotBeEmpty
 	}
 
-	err = m.repository.Create(ctx, keyConfiguration)
+	err = m.r.Create(ctx, keyConfiguration)
 	if err != nil {
 		return nil, errs.Wrap(ErrCreateKeyConfiguration, err)
 	}
@@ -147,7 +157,7 @@ func (m *KeyConfigManager) DeleteKeyConfigurationByID(
 		return err
 	}
 
-	exist, err := repo.HasConnectedSystems(ctx, m.repository, keyConfigID)
+	exist, err := repo.HasConnectedSystems(ctx, m.r, keyConfigID)
 	if err != nil {
 		return err
 	}
@@ -156,8 +166,8 @@ func (m *KeyConfigManager) DeleteKeyConfigurationByID(
 		return errs.Wrap(ErrDeleteKeyConfiguration, ErrConnectedSystemToKeyConfig)
 	}
 
-	return m.repository.Transaction(ctx, func(ctx context.Context) error {
-		_, err = m.repository.Delete(ctx, keyConfig, *repo.NewQuery())
+	return m.r.Transaction(ctx, func(ctx context.Context) error {
+		_, err = m.r.Delete(ctx, keyConfig, *repo.NewQuery())
 		if err != nil {
 			return errs.Wrap(ErrDeleteKeyConfiguration, err)
 		}
@@ -180,7 +190,7 @@ func (m *KeyConfigManager) GetKeyConfigurationByID(
 	}
 
 	query := getKeyConfigWithTotalsQuery().Preload(repo.Preload{"AdminGroup"})
-	_, err = m.repository.First(ctx, keyConfig, *query)
+	_, err = m.r.First(ctx, keyConfig, *query)
 	if err != nil {
 		return nil, errs.Wrap(ErrGettingKeyConfigByID, err)
 	}
@@ -188,6 +198,10 @@ func (m *KeyConfigManager) GetKeyConfigurationByID(
 	return keyConfig, nil
 }
 
+// UpdateKeyConfigurationByID updates a keyconfig
+// In case there is an update to the primaryKey invoke system switch events
+//
+//nolint:cyclop
 func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 	ctx context.Context,
 	keyConfigID uuid.UUID,
@@ -202,7 +216,7 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 		return nil, err
 	}
 
-	_, err = m.repository.First(
+	_, err = m.r.First(
 		ctx,
 		keyConfig,
 		*repo.NewQuery(),
@@ -223,9 +237,23 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 		keyConfig.Description = *patchKeyConfig.Description
 	}
 
-	_, err = m.repository.Patch(ctx, keyConfig, *repo.NewQuery())
+	err = m.r.Transaction(ctx, func(ctx context.Context) error {
+		if patchKeyConfig.PrimaryKeyID != nil {
+			err := m.handleUpdatePrimaryKey(ctx, keyConfig, *patchKeyConfig.PrimaryKeyID)
+			if err != nil {
+				return errs.Wrap(ErrUpdateKeyConfiguration, err)
+			}
+			keyConfig.PrimaryKeyID = patchKeyConfig.PrimaryKeyID
+		}
+
+		_, err = m.r.Patch(ctx, keyConfig, *repo.NewQuery())
+		if err != nil {
+			return errs.Wrap(ErrUpdateKeyConfiguration, err)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, errs.Wrap(ErrUpdateKeyConfiguration, err)
+		return nil, err
 	}
 
 	return keyConfig, nil
@@ -436,4 +464,98 @@ func (m *KeyConfigManager) applyIAMGroupFilter(
 		Where(repo.NewCompositeKeyGroup(ck))
 
 	return false, nil
+}
+
+// Whenever Keyconfig PrimaryKey switches, systems need to send switch events
+// If systems had a previous switch event the event key needs to be updated for the retru
+func (m *KeyConfigManager) handleUpdatePrimaryKey(
+	ctx context.Context,
+	keyConfig *model.KeyConfiguration,
+	primaryKeyID uuid.UUID,
+) error {
+	key := &model.Key{ID: primaryKeyID, KeyConfigurationID: keyConfig.ID}
+	_, err := m.r.First(ctx, key, *repo.NewQuery())
+	if err != nil {
+		return err
+	}
+	if key.State == string(cmkapi.KeyStateDISABLED) {
+		return ErrKeyIsNotEnabled
+	}
+
+	// Key is valid. If keyconfig has no existing key no need for further validations
+	if keyConfig.PrimaryKeyID == nil {
+		return nil
+	}
+
+	err = m.updatePrimaryKeySystemEvents(
+		ctx,
+		ptr.GetSafeDeref(keyConfig.PrimaryKeyID).String(),
+		primaryKeyID.String(),
+	)
+	if err != nil {
+		return err
+	}
+
+	// Send system switches for systems in keyconfig
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(
+				repo.KeyConfigIDField, keyConfig.ID),
+		),
+	)
+	return repo.ProcessInBatch(
+		ctx,
+		m.r,
+		query,
+		repo.DefaultLimit,
+		func(systems []*model.System) error {
+			for _, s := range systems {
+				_, err := m.eventFactory.SystemSwitchNewPrimaryKey(
+					ctx,
+					s,
+					primaryKeyID.String(),
+					keyConfig.PrimaryKeyID.String(),
+				)
+				if err != nil {
+					return err
+				}
+			}
+
+			return nil
+		},
+	)
+}
+
+// updateOldPKeySystemEvents updates keyTo for system event retries
+// This can be done as now there is a new primary key and systems
+// can only be linked to primary keys, the previous keyTo needs now
+// updated the newly set primary key
+func (m *KeyConfigManager) updatePrimaryKeySystemEvents(ctx context.Context, oldPkey string, newPkey string) error {
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(
+				repo.JSONBField(repo.DataField, "keyIDTo"), oldPkey),
+		),
+	)
+	return repo.ProcessInBatch(ctx, m.r, query, repo.DefaultLimit, func(events []*model.Event) error {
+		for _, e := range events {
+			systemJobData, err := eventprocessor.GetSystemJobData(e)
+			if err != nil {
+				return err
+			}
+
+			systemJobData.KeyIDTo = newPkey
+			bytes, err := json.Marshal(systemJobData)
+			if err != nil {
+				return err
+			}
+
+			e.Data = bytes
+			_, err = m.r.Patch(ctx, e, *repo.NewQuery())
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

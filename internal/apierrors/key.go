@@ -81,14 +81,6 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{manager.ErrPrimaryKeyUnmark},
-		ExposedError: &APIError{
-			Code:    "PRIMARY_KEY_UNMARK",
-			Message: "Primary key cannot be unmarked primary",
-			Status:  http.StatusForbidden,
-		},
-	},
-	{
 		InternalErrorChain: []error{manager.ErrGetKeyDB, gorm.ErrRecordNotFound},
 		ExposedError: &APIError{
 			Code:    "KEY_ID",

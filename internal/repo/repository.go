@@ -362,6 +362,27 @@ func ListAndCount[T Resource](
 	return res, count, nil
 }
 
+func IsPrimaryKey(ctx context.Context, r Repo, key *model.Key) (bool, error) {
+	keyConfig := &model.KeyConfiguration{
+		ID: key.KeyConfigurationID,
+	}
+
+	exist, err := r.First(
+		ctx,
+		keyConfig,
+		*NewQuery(),
+	)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return false, err
+	}
+
+	if !exist || keyConfig.PrimaryKeyID == nil {
+		return false, nil
+	}
+
+	return *keyConfig.PrimaryKeyID == key.ID, nil
+}
+
 func GetTenant(ctx context.Context, r Repo) (*model.Tenant, error) {
 	tenantID, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {

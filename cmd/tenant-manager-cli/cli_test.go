@@ -79,7 +79,7 @@ func (s *CLISuite) SetupSuite() {
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := manager.NewUserManager(r, cmkAuditor)
 	tagm := manager.NewTagManager(r)
-	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
+	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, eventFactory, cfg)
 
 	sys := manager.NewSystemManager(
 		ctx,
