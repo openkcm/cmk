@@ -13,9 +13,24 @@ func ToAPI(keystore manager.TenantKeystores) (*cmkapi.TenantKeystore, error) {
 		return nil, err
 	}
 
+	// Hardcoded allowManaged=true and allowBYOK=false for now
+	allowManaged := true
+	allowBYOK := false
+
+	supportedRegions := make([]cmkapi.SupportedRegion, len(keystore.Default.SupportedRegions))
+	for i, r := range keystore.Default.SupportedRegions {
+		supportedRegions[i] = cmkapi.SupportedRegion{
+			Name:          &r.Name,
+			TechnicalName: &r.TechnicalName,
+		}
+	}
+
 	apiTenant := &cmkapi.TenantKeystore{
-		//nolint:godox
-		Default: nil, // TODO: AS PER KMS20-2740 this is disabled. To be enabled on KMS20-2742
+		Default: &cmkapi.DefaultKeystore{
+			AllowManaged:     &allowManaged,
+			AllowBYOK:        &allowBYOK,
+			SupportedRegions: &supportedRegions,
+		},
 		Hyok: cmkapi.HYOKKeystore{
 			Providers: &keystore.HYOK.Provider,
 			Allow:     &keystore.HYOK.Allow,
