@@ -214,12 +214,6 @@ func TestResolveKeyTasks(t *testing.T) {
 				taskType:   eventProto.TaskType_KEY_DELETE.String(),
 				expTargets: allTargets,
 			},
-			{
-				name:       "KEY_ROTATE task",
-				jobType:    eventprocessor.JobTypeKeyRotate.String(),
-				taskType:   eventProto.TaskType_KEY_ROTATE.String(),
-				expTargets: allTargets,
-			},
 		}
 
 		for _, tt := range tests {
@@ -432,6 +426,25 @@ func TestResolveSystemTasks(t *testing.T) {
 					return b
 				},
 			},
+			{
+				name:     "SYSTEM_KEY_ROTATE task",
+				jobType:  eventprocessor.JobTypeSystemKeyRotate.String(),
+				taskType: eventProto.TaskType_SYSTEM_KEY_ROTATE.String(),
+				data: func() []byte {
+					d := eventprocessor.SystemActionJobData{
+						TenantID:         tenant,
+						SystemID:         system.ID.String(),
+						KeyIDTo:          keyTo.ID.String(),
+						KeyIDFrom:        keyTo.ID.String(), // Same key, different versions
+						KeyVersionIDFrom: "version-1",
+						KeyVersionIDTo:   "version-2",
+						RotationTime:     "2024-01-15T10:30:00Z",
+					}
+					b, err := json.Marshal(d)
+					assert.NoError(t, err)
+					return b
+				},
+			},
 		}
 
 		for _, tt := range tests {
@@ -609,7 +622,6 @@ func TestConfirmJob(t *testing.T) {
 	t.Run("key tasks are confirmed as done", func(t *testing.T) {
 		keyJobTypes := []string{
 			eventprocessor.JobTypeKeyDelete.String(),
-			eventprocessor.JobTypeKeyRotate.String(),
 			eventprocessor.JobTypeKeyDisable.String(),
 			eventprocessor.JobTypeKeyEnable.String(),
 			eventprocessor.JobTypeKeyDetach.String(),

@@ -162,9 +162,9 @@ func NewCryptoReconciler(
 		JobTypeSystemUnlink:      NewSystemUnlinkJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
 		JobTypeSystemSwitch:      NewSystemSwitchJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
 		JobTypeSystemSwitchNewPK: NewSystemSwitchJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
+		JobTypeSystemKeyRotate:   NewSystemKeyRotateJobHandler(repository, cmkAuditor, manager, systemResolver),
 		JobTypeKeyEnable:         NewKeyJobHandler(keyResolver),
 		JobTypeKeyDisable:        NewKeyJobHandler(keyResolver),
-		JobTypeKeyRotate:         NewKeyJobHandler(keyResolver),
 		JobTypeKeyDelete:         NewKeyJobHandler(keyResolver),
 		JobTypeKeyDetach:         NewKeyJobHandler(keyResolver),
 	}

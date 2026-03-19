@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openkcm/orbital"
 
 	protoPkg "google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
@@ -47,6 +49,8 @@ func (r *SystemTaskInfoResolver) Resolve(
 		taskType = proto.TaskType_SYSTEM_UNLINK
 	case JobTypeSystemSwitch, JobTypeSystemSwitchNewPK:
 		taskType = proto.TaskType_SYSTEM_SWITCH
+	case JobTypeSystemKeyRotate:
+		taskType = proto.TaskType_SYSTEM_KEY_ROTATE
 	default:
 		return nil, errs.Wrapf(ErrInvalidJobType, job.Type)
 	}
@@ -97,6 +101,16 @@ func (r *SystemTaskInfoResolver) getTaskInfo(
 		return nil, err
 	}
 
+	// Convert rotation time from RFC3339 string to protobuf Timestamp
+	var rotationTimestamp *timestamppb.Timestamp
+	if data.RotationTime != "" {
+		t, err := time.Parse(time.RFC3339, data.RotationTime)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse rotation time: %w", err)
+		}
+		rotationTimestamp = timestamppb.New(t)
+	}
+
 	taskData := &proto.Data{
 		TaskType: taskType,
 		Data: &proto.Data_SystemAction{
@@ -112,6 +126,11 @@ func (r *SystemTaskInfoResolver) getTaskInfo(
 				TenantOwnerType:   tenant.OwnerType,
 				CmkRegion:         r.cfg.Landscape.Region,
 				KeyAccessMetaData: keyAccessMetadata,
+
+				// Version information (for SYSTEM_KEY_ROTATE)
+				KeyVersionIdFrom: data.KeyVersionIDFrom,
+				KeyVersionIdTo:   data.KeyVersionIDTo,
+				RotationTime:     rotationTimestamp,
 			},
 		},
 	}
@@ -188,8 +207,6 @@ func (r *KeyTaskInfoResolver) Resolve(
 		taskType = proto.TaskType_KEY_DETACH
 	case JobTypeKeyDelete:
 		taskType = proto.TaskType_KEY_DELETE
-	case JobTypeKeyRotate:
-		taskType = proto.TaskType_KEY_ROTATE
 	default:
 		return nil, errs.Wrapf(ErrInvalidJobType, job.Type)
 	}

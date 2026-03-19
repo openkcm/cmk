@@ -17,11 +17,11 @@ const (
 	JobTypeSystemUnlink      JobType = "SYSTEM_UNLINK"
 	JobTypeSystemSwitch      JobType = "SYSTEM_SWITCH"
 	JobTypeSystemSwitchNewPK JobType = "SYSTEM_SWITCH_NEW_PK"
+	JobTypeSystemKeyRotate   JobType = "SYSTEM_KEY_ROTATE"
 	JobTypeKeyEnable         JobType = "KEY_ENABLE"
 	JobTypeKeyDisable        JobType = "KEY_DISABLE"
 	JobTypeKeyDetach         JobType = "KEY_DETACH"
 	JobTypeKeyDelete         JobType = "KEY_DELETE"
-	JobTypeKeyRotate         JobType = "KEY_ROTATE"
 )
 
 type JobHandler interface {
@@ -45,6 +45,11 @@ type SystemActionJobData struct {
 	KeyIDTo   string `json:"keyIDTo"`
 	KeyIDFrom string `json:"keyIDFrom"`
 	Trigger   string `json:"trigger,omitempty"`
+
+	// Version information (for SYSTEM_KEY_ROTATE)
+	KeyVersionIDFrom string `json:"keyVersionIDFrom,omitempty"`
+	KeyVersionIDTo   string `json:"keyVersionIDTo,omitempty"`
+	RotationTime     string `json:"rotationTime,omitempty"` // RFC3339
 }
 
 // KeyConfigActionJobData contains the data needed for a key configuration action orbital job.

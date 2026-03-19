@@ -490,3 +490,157 @@ func mergeOrbitalTaskErrors(
 
 	return message, nil
 }
+
+// SystemKeyRotateJobHandler handles SYSTEM_KEY_ROTATE events.
+// This event notifies Kernel Service about key material rotation.
+type SystemKeyRotateJobHandler struct {
+	repo           repo.Repo
+	cmkAuditor     *auditor.Auditor
+	orbitalManager *orbital.Manager
+	taskResolver   *SystemTaskInfoResolver
+}
+
+func NewSystemKeyRotateJobHandler(
+	repo repo.Repo,
+	cmkAuditor *auditor.Auditor,
+	orbitalManager *orbital.Manager,
+	taskResolver *SystemTaskInfoResolver,
+) *SystemKeyRotateJobHandler {
+	return &SystemKeyRotateJobHandler{
+		repo:           repo,
+		cmkAuditor:     cmkAuditor,
+		orbitalManager: orbitalManager,
+		taskResolver:   taskResolver,
+	}
+}
+
+func (h *SystemKeyRotateJobHandler) ResolveTasks(
+	ctx context.Context,
+	job orbital.Job,
+) ([]orbital.TaskInfo, error) {
+	return h.taskResolver.Resolve(ctx, job)
+}
+
+func (h *SystemKeyRotateJobHandler) HandleJobConfirm(
+	ctx context.Context,
+	job orbital.Job,
+) (orbital.JobConfirmerResult, error) {
+	// SYSTEM_KEY_ROTATE requires system to be in PROCESSING state
+	// Same as SYSTEM_SWITCH - both involve re-encryption in Kernel Service
+	return handleSystemJobConfirm(ctx, h.repo, job)
+}
+
+func (h *SystemKeyRotateJobHandler) HandleJobDoneEvent(ctx context.Context, job orbital.Job) error {
+	log.InjectSystemEvent(ctx, job.Type)
+
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+	system, err := getSystemByID(ctx, h.repo, data.SystemID)
+	if err != nil {
+		return err
+	}
+
+	// TODO: Add audit log when common-sdk provides CMK key rotation event
+	// err = h.cmkAuditor.SendCmkKeyRotationAuditLog(ctx, system.Identifier, data.KeyIDTo,
+	//     data.KeyVersionIDFrom, data.KeyVersionIDTo)
+	// if err != nil {
+	//     return fmt.Errorf("failed to send key rotation audit log for system %s: %w", system.ID, err)
+	// }
+
+	// Clean up event - rotation notification successfully sent to Kernel Service
+	err = cleanUpEvent(ctx, h.repo, job)
+	if err != nil {
+		return fmt.Errorf("failed to clean up event for system %s: %w", system.ID, err)
+	}
+
+	return nil
+}
+
+func (h *SystemKeyRotateJobHandler) HandleJobFailedEvent(ctx context.Context, job orbital.Job) error {
+	log.InjectSystemEvent(ctx, job.Type)
+
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+	system, err := getSystemByID(ctx, h.repo, data.SystemID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			log.Warn(ctx, "System not found when handling job termination, skipping event update",
+				slog.String("systemID", data.SystemID))
+			return nil
+		}
+		return err
+	}
+
+	// Merge task errors from Orbital to provide detailed failure context
+	errorMessage, err := mergeOrbitalTaskErrors(ctx, h.orbitalManager, job)
+	if err != nil {
+		log.Error(ctx, "Failed to merge orbital task errors", err, slog.String("jobID", job.ID.String()))
+		errorMessage = job.ErrorMessage // Fall back to the job error message
+	}
+
+	// Store error message in event for visibility
+	err = updateEventError(ctx, h.repo, job.ExternalID, errorMessage)
+	if err != nil {
+		return err
+	}
+
+	// Note: We do NOT update system status to FAILED
+	// Key rotation failure doesn't affect system connectivity - the system is still operational
+	// It just means KS wasn't notified about the rotation yet
+
+	log.Warn(ctx, "SYSTEM_KEY_ROTATE event failed - Kernel Service not notified of rotation",
+		slog.String("systemID", system.Identifier),
+		slog.String("keyID", data.KeyIDTo),
+		slog.String("versionFrom", data.KeyVersionIDFrom),
+		slog.String("versionTo", data.KeyVersionIDTo),
+		slog.String("errorMessage", errorMessage))
+
+	// TODO (future phase): Detect version mismatch errors from Kernel Service
+	// If version mismatch detected:
+	//   1. Trigger immediate version detection (don't wait for scheduled check)
+	//   2. Create new SYSTEM_KEY_ROTATE event with updated version
+	// This ensures eventual consistency even with rapid rotations
+
+	return nil
+}
+
+func (h *SystemKeyRotateJobHandler) HandleJobCanceledEvent(ctx context.Context, job orbital.Job) error {
+	log.InjectSystemEvent(ctx, job.Type)
+
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+	system, err := getSystemByID(ctx, h.repo, data.SystemID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			log.Warn(ctx, "System not found when handling job cancellation, skipping event update",
+				slog.String("systemID", data.SystemID))
+			return nil
+		}
+		return err
+	}
+
+	// Store cancellation reason in event
+	err = updateEventError(ctx, h.repo, job.ExternalID, job.ErrorMessage)
+	if err != nil {
+		return err
+	}
+
+	log.Warn(ctx, "SYSTEM_KEY_ROTATE event canceled",
+		slog.String("systemID", system.Identifier),
+		slog.String("keyID", data.KeyIDTo),
+		slog.String("errorMessage", job.ErrorMessage))
+
+	return nil
+}

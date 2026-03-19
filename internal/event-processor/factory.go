@@ -165,6 +165,32 @@ func (f *EventFactory) SystemSwitchNewPrimaryKey(
 	})
 }
 
+// SystemKeyRotate creates a job to rotate the key material for a system.
+// This triggers re-encryption on the system with the new key version/material.
+// The keyID remains the same, but the key material has changed.
+// Make sure the ctx provided has the tenant set.
+func (f *EventFactory) SystemKeyRotate(
+	ctx context.Context,
+	system *model.System,
+	keyID string,
+	versionIDFrom string,
+	versionIDTo string,
+	rotationTime string, // RFC3339 format
+) (orbital.Job, error) {
+	return f.handleSystemStatus(ctx, system, func() (orbital.Job, error) {
+		systemKeyRotateJobData := SystemActionJobData{
+			SystemID:         system.ID.String(),
+			KeyIDTo:          keyID, // Same key, new material version
+			KeyIDFrom:        keyID, // Same key, old material version
+			KeyVersionIDFrom: versionIDFrom,
+			KeyVersionIDTo:   versionIDTo,
+			RotationTime:     rotationTime,
+		}
+
+		return f.createSystemEventJob(ctx, JobTypeSystemKeyRotate, systemKeyRotateJobData)
+	})
+}
+
 // KeyEnable creates a job to enable a key make sure the ctx provided has the tenant set.
 func (f *EventFactory) KeyEnable(ctx context.Context, keyID string) (orbital.Job, error) {
 	return f.createKeyEventJob(ctx, keyID, JobTypeKeyEnable)
