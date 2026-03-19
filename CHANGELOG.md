@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/openkcm/cmk/compare/v0.6.0...v0.6.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* dockerfile copy migrations files ([#209](https://github.com/openkcm/cmk/issues/209)) ([c85c6a0](https://github.com/openkcm/cmk/commit/c85c6a02faec5720a08fad65c97c4d096d375669))
+
 ## [0.6.0](https://github.com/openkcm/cmk/compare/v0.5.0...v0.6.0) (2026-03-18)
 
 
