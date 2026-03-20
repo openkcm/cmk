@@ -61,9 +61,11 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 
 	overrideDatabase(t, asyncApp, db, testConfig)
 
+	r := sql.NewRepository(db)
+
 	// Start worker
 	go func(ctx context.Context) {
-		err := asyncApp.RunWorker(ctx)
+		err := asyncApp.RunWorker(ctx, r)
 		assert.NoError(t, err)
 	}(ctx)
 
@@ -74,10 +76,8 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 		groups     []model.Group
 	)
 
-	repository := sql.NewRepository(db)
-
 	ck := repo.NewCompositeKey().Where(repo.Name, groupName)
-	err = repository.List(ctx, model.Group{}, &groups,
+	err = r.List(ctx, model.Group{}, &groups,
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 	assert.NoError(t, err)
 
@@ -86,7 +86,7 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 			g.Name = groupName
 			g.IAMIdentifier = model.NewIAMIdentifier(groupName, tenantID)
 		})
-		err = repository.Create(ctx, adminGroup)
+		err = r.Create(ctx, adminGroup)
 		assert.NoError(t, err)
 	} else {
 		adminGroup = &groups[0]
@@ -95,7 +95,7 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 	keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 		kc.AdminGroup = *adminGroup
 	})
-	err = repository.Create(ctx, keyConfig)
+	err = r.Create(ctx, keyConfig)
 	assert.NoError(t, err)
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
@@ -105,15 +105,15 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 	})
 
 	svcRegistry, err := cmkpluginregistry.New(ctx, testConfig)
-	tenantConfigManager := manager.NewTenantConfigManager(repository, svcRegistry, nil)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	cmkAuditor := auditor.New(ctx, testConfig)
-	userManager := manager.NewUserManager(repository, cmkAuditor)
-	tagManager := manager.NewTagManager(repository)
-	keyConfigManager := manager.NewKeyConfigManager(repository, nil, userManager, tagManager, nil, testConfig)
-	keyManager := manager.NewKeyManager(repository, svcRegistry, nil, keyConfigManager, userManager, nil, nil, nil)
-	systemManager := manager.NewSystemManager(ctx, repository, nil, nil, svcRegistry, testConfig, keyConfigManager, userManager)
-	groupManager := manager.NewGroupManager(repository, svcRegistry, userManager)
-	workflowManager := manager.NewWorkflowManager(repository, keyManager, keyConfigManager, systemManager,
+	userManager := manager.NewUserManager(r, cmkAuditor)
+	tagManager := manager.NewTagManager(r)
+	keyConfigManager := manager.NewKeyConfigManager(r, nil, userManager, tagManager, nil, testConfig)
+	keyManager := manager.NewKeyManager(r, svcRegistry, nil, keyConfigManager, userManager, nil, nil, nil)
+	systemManager := manager.NewSystemManager(ctx, r, nil, nil, svcRegistry, testConfig, keyConfigManager, userManager)
+	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
+	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, asyncApp.Client(), tenantConfigManager, testConfig)
 
 	assert.NoError(t, err)
@@ -124,7 +124,7 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	ck = repo.NewCompositeKey().Where("workflow_id", workflow.ID)
-	count, err := repository.Count(ctx, &model.WorkflowApprover{},
+	count, err := r.Count(ctx, &model.WorkflowApprover{},
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 
 	assert.NoError(t, err)

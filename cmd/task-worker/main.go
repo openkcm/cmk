@@ -20,6 +20,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/async/tasks"
+	tenantTask "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
@@ -32,6 +33,7 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	notifierclient "github.com/openkcm/cmk/internal/notifier/client"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
@@ -80,12 +82,24 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return oops.In("main").Wrapf(err, "failed to create the worker")
 	}
 
-	err = registerTasks(ctx, cfg, cron)
+	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
+	if err != nil {
+		return errs.Wrap(db.ErrStartingDBCon, err)
+	}
+	sqlDB, err := dbCon.DB.DB()
+	if err != nil {
+		return err
+	}
+	defer sqlDB.Close()
+
+	r := sql.NewRepository(dbCon)
+
+	err = registerTasks(ctx, r, cfg, cron)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "failed to register tasks")
 	}
 
-	err = cron.RunWorker(ctx)
+	err = cron.RunWorker(ctx, r)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "failed to start the worker")
 	}
@@ -105,14 +119,10 @@ func run(ctx context.Context, cfg *config.Config) error {
 //nolint:funlen
 func registerTasks(
 	ctx context.Context,
+	r repo.Repo,
 	cfg *config.Config,
 	cron *async.App,
 ) error {
-	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
-	if err != nil {
-		return errs.Wrap(db.ErrStartingDBCon, err)
-	}
-
 	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	if err != nil {
 		return errs.Wrapf(err, "failed to start loading catalog")
@@ -122,8 +132,6 @@ func registerTasks(
 	if err != nil {
 		return errs.Wrapf(err, "failed to create notification client")
 	}
-
-	r := sql.NewRepository(dbCon)
 
 	sis, err := manager.NewSystemInformationManager(r, svcRegistry, &cfg.ContextModels.System)
 	if err != nil {
@@ -157,17 +165,19 @@ func registerTasks(
 	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, cron.Client(), tenantConfigManager, cfg)
 
-	cron.RegisterTasks(ctx, []async.TaskHandler{
-		tasks.NewSystemsRefresher(sis, r),
-		tasks.NewCertRotator(certManager, r),
-		tasks.NewHYOKSync(keyManager, r),
+	taskHandlers := []async.TaskHandler{
+		tenantTask.NewSystemsRefresher(sis, r),
+		tenantTask.NewCertRotator(certManager, r),
 		tasks.NewKeystorePoolFiller(keyManager, r, cfg.KeystorePool),
 		tasks.NewWorkflowProcessor(workflowManager, r),
 		tasks.NewNotificationSender(notifierClient),
-		tasks.NewWorkflowExpiryProcessor(workflowManager, r),
-		tasks.NewWorkflowCleaner(workflowManager, r),
-		tasks.NewTenantNameRefresher(r, f.Registry()),
-	})
+		tenantTask.NewWorkflowExpiryProcessor(workflowManager, r),
+		tenantTask.NewWorkflowCleaner(workflowManager, r),
+		tenantTask.NewTenantNameRefresher(r, f.Registry()),
+		tenantTask.NewHYOKSync(keyManager, r),
+	}
+
+	cron.RegisterTasks(ctx, taskHandlers)
 
 	return nil
 }

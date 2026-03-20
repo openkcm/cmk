@@ -626,9 +626,14 @@ config:
       - cronspec: "@every 24h"
         taskType: workflow:expire
         retries: 3
-      - cronspec: "@every 1h"
+      - cronspec: "*/5 * * * *" # Every 5 minutes
         taskType: key:sync
         retries: 3
+        timeOut: 5m
+        fanOutTask:
+          enabled: true
+          retries: 0
+          timeOut: 2m
       - cronspec: "@every 1h"
         taskType: keystore:fill
         retries: 3

@@ -27,9 +27,18 @@ func (p *ScheduledTaskConfigProvider) GetConfigs() ([]*asynq.PeriodicTaskConfig,
 		if !cfg.Enabled {
 			continue
 		}
+
+		taskOpts := []asynq.Option{asynq.MaxRetry(cfg.Retries)}
+		if cfg.TimeOut > 0 {
+			taskOpts = append(taskOpts, asynq.Timeout(cfg.TimeOut))
+		}
 		configs = append(configs, &asynq.PeriodicTaskConfig{
 			Cronspec: cfg.Cronspec,
-			Task:     asynq.NewTask(name, nil, asynq.MaxRetry(cfg.Retries)),
+			Task: asynq.NewTask(
+				name,
+				nil,
+				taskOpts...,
+			),
 		})
 	}
 
