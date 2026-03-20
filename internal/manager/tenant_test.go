@@ -57,7 +57,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := testutils.NewUserManager()
 	tagManager := manager.NewTagManager(r)
-	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, cfg)
+	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, eventFactory, cfg)
 
 	sys := manager.NewSystemManager(
 		ctx,

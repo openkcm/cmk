@@ -149,7 +149,7 @@ func registerTasks(
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 	keyManager := manager.NewKeyManager(
 		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
 	systemManager := manager.NewSystemManager(ctx, r, nil, eventFactory, svcRegistry, cfg, keyConfigManager, userManager)
