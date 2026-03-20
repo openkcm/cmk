@@ -358,12 +358,9 @@ config:
     certX509Trusts:
       source: embedded
       value: |
-        {
-          "crypto-1": {
-            "Subject": "FakeCert",
-            "RootCA": "https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
-          }
-        }
+        - name: crypto-1
+          subject: FakeCert
+          rootCA: "https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
 
   # This does set the logger configuration
   # +docs:property

@@ -13,6 +13,7 @@ import (
 
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
@@ -241,9 +242,17 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 
 // ClientCertificate represents the client certificates
 type ClientCertificate struct {
-	Name    string
-	RootCA  string
-	Subject string
+	Name    string `yaml:"name"`
+	RootCA  string `yaml:"rootCA"`
+	Subject string `yaml:"subject"`
+}
+
+type ClientCertificateSubject struct {
+	Locality           string
+	OrganizationalUnit []string
+	Organization       string
+	Country            string
+	CommonNamePrefix   string
 }
 
 // GetClientCertificates retrieves the client certificates
@@ -331,27 +340,14 @@ func (m *TenantConfigManager) getCryptoCertificates() ([]*ClientCertificate, err
 		return nil, errs.Wrap(ErrLoadCryptoCerts, err)
 	}
 
-	var cryptoCerts map[string]ClientCertificate
+	var cryptoCerts []*ClientCertificate
 
-	err = json.Unmarshal(bytes, &cryptoCerts)
+	err = yaml.Unmarshal(bytes, &cryptoCerts)
 	if err != nil {
 		return nil, errs.Wrap(ErrUnmarshalCryptoCerts, err)
 	}
 
-	return m.certMapToSlice(cryptoCerts), nil
-}
-
-func (m *TenantConfigManager) certMapToSlice(certs map[string]ClientCertificate) []*ClientCertificate {
-	l := make([]*ClientCertificate, 0, len(certs))
-	for k, v := range certs {
-		l = append(l, &ClientCertificate{
-			Name:    k,
-			Subject: v.Subject,
-			RootCA:  v.RootCA,
-		})
-	}
-
-	return l
+	return cryptoCerts, nil
 }
 
 // SetDefaultKeystore stores the default keystore config

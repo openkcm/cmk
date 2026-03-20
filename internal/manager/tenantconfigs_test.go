@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
@@ -44,13 +45,15 @@ func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*m
 	dbRepository := sql.NewRepository(db)
 	ps, psCfg := testutils.NewTestPlugins(plugins...)
 
-	cryptoCerts := map[string]testutils.CryptoCert{
-		"crypto-1": {
+	cryptoCerts := []manager.ClientCertificate{
+		{
+			Name:    "crypto-1",
 			Subject: cryptoSubject,
 			RootCA:  TestCertURL,
 		},
 	}
-	bytes, err := json.Marshal(cryptoCerts)
+
+	bytes, err := yaml.Marshal(cryptoCerts)
 	assert.NoError(t, err)
 
 	cfg := &config.Config{
