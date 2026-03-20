@@ -419,7 +419,7 @@ func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 
 func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 	return km.repo.Transaction(ctx, func(ctx context.Context) error {
-		key.State = string(cmkapi.KeyStateDETACHED)
+		key.State = string(cmkapi.KeyStateDETACHING)
 
 		_, err := km.repo.Patch(ctx, key, *repo.NewQuery())
 		if err != nil {
@@ -430,12 +430,6 @@ func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 		if err != nil {
 			return err
 		}
-
-		err = km.cmkAuditor.SendCmkDetachAuditLog(ctx, key.ID.String())
-		if err != nil {
-			log.Error(ctx, "Failed to send detach log for CMK key", err)
-		}
-
 		return nil
 	})
 }
