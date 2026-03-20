@@ -134,7 +134,7 @@ func createTenantManager(
 	um := manager.NewUserManager(r, cmkAuditor)
 
 	tagm := manager.NewTagManager(r)
-	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
+	kcm := manager.NewKeyConfigManager(r, um, tagm, cmkAuditor, cfg)
 
 	sys := manager.NewSystemManager(
 		ctx,
@@ -150,7 +150,7 @@ func createTenantManager(
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, cfg),
+		manager.NewTenantConfigManager(r, cm, svcRegistry, cfg),
 		kcm,
 		um,
 		cm,

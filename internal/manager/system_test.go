@@ -72,15 +72,9 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 		},
 	)
 
-	certManager := manager.NewCertificateManager(
-		t.Context(), dbRepository, svcRegistry,
-		&config.Config{
-			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
-		},
-	)
 	userManager := manager.NewUserManager(dbRepository, auditor.New(t.Context(), &cfg))
 	tagManager := manager.NewTagManager(dbRepository)
-	keyConfigManager := manager.NewKeyConfigManager(dbRepository, certManager, userManager, tagManager, nil, &cfg)
+	keyConfigManager := manager.NewKeyConfigManager(dbRepository, userManager, tagManager, nil, &cfg)
 
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), &cfg, dbRepository)
 	require.NoError(t, err)

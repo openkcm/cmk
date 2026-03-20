@@ -162,12 +162,6 @@ var allRestrictions = []Restricted{
 		APIResourceTypeName: APIResourceTypeKeyConfiguration,
 		APIAction:           APIActionUpdate,
 	},
-	{
-		APIPath:             "/keyConfigurations/{keyConfigurationID}/certificates",
-		APIMethod:           APIMethodGet,
-		APIResourceTypeName: APIResourceTypeKeyConfiguration,
-		APIAction:           APIActionRead,
-	},
 
 	// Systems endpoints
 	{
@@ -312,6 +306,12 @@ var allRestrictions = []Restricted{
 		APIPath:             "/tenantInfo",
 		APIMethod:           APIMethodGet,
 		APIResourceTypeName: APIResourceTypeTenant,
+		APIAction:           APIActionRead,
+	},
+	{
+		APIPath:             "/tenantConfigurations/certificates",
+		APIMethod:           APIMethodGet,
+		APIResourceTypeName: APIResourceTypeTenantSettings,
 		APIAction:           APIActionRead,
 	},
 }

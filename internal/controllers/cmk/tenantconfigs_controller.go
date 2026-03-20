@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/api/transform/clientcertificates"
 	"github.com/openkcm/cmk/internal/api/transform/tenantconfigs"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
@@ -50,4 +51,21 @@ func (c *APIController) UpdateTenantWorkflowConfiguration(
 
 	apiConfig := tenantconfigs.WorkflowConfigToAPI(savedConfig)
 	return cmkapi.UpdateTenantWorkflowConfiguration200JSONResponse(*apiConfig), nil
+}
+
+func (c *APIController) GetTenantCertificates(
+	ctx context.Context,
+	_ cmkapi.GetTenantCertificatesRequestObject,
+) (cmkapi.GetTenantCertificatesResponseObject, error) {
+	clientCerts, err := c.Manager.TenantConfigs.GetClientCertificates(ctx)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGetClientCertificates, err)
+	}
+
+	response, err := clientcertificates.ToAPI(clientCerts)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGetClientCertificates, err)
+	}
+
+	return cmkapi.GetTenantCertificates200JSONResponse(*response), nil
 }

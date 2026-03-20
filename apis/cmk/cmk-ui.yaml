@@ -627,19 +627,14 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
-  /keyConfigurations/{keyConfigurationID}/certificates:
+  /tenantConfigurations/certificates:
     get:
       tags:
-        - Key Configurations
+        - Tenant Configurations
       summary: Get the client certificate details
       description: |
         Retrieves the details of the client certificate for the tenant.
-      operationId: GetKeyConfigurationsCertificates
-      parameters:
-        - $ref: "#/components/parameters/keyConfigurationIDPath"
-        - $ref: "#/components/parameters/skipPath"
-        - $ref: "#/components/parameters/topPath"
-        - $ref: "#/components/parameters/countPath"
+      operationId: getTenantCertificates
       responses:
         "200":
           description: Retrieved

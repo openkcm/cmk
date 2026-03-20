@@ -2,11 +2,17 @@ package manager
 
 import (
 	"context"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"regexp"
 	"strconv"
+	"strings"
 
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
@@ -19,26 +25,38 @@ import (
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
 
-// Since the workflow expiry must be less than the retention minus a day
-const minimumRetentionPeriodDays = 2
+const (
+	DefaultCertName = "hyok-default"
+
+	// Since the workflow expiry must be less than the retention minus a day
+	minimumRetentionPeriodDays = 2
+)
+
+var (
+	ErrGetDefaultCerts = errors.New("failed to get default certificates")
+	ErrDecodingCert    = errors.New("failed to decode certificate")
+)
 
 type TenantConfigManager struct {
-	repo             repo.Repo
-	svcRegistry      *cmkpluginregistry.Registry
-	keystorePool     *Pool
-	deploymentConfig *config.Config
+	repo         repo.Repo
+	certs        *CertificateManager
+	svcRegistry  *cmkpluginregistry.Registry
+	keystorePool *Pool
+	cfg          *config.Config
 }
 
 func NewTenantConfigManager(
 	repo repo.Repo,
+	certManager *CertificateManager,
 	svcRegistry *cmkpluginregistry.Registry,
 	deploymentConfig *config.Config,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
-		repo:             repo,
-		svcRegistry:      svcRegistry,
-		keystorePool:     NewPool(repo),
-		deploymentConfig: deploymentConfig,
+		repo:         repo,
+		certs:        certManager,
+		svcRegistry:  svcRegistry,
+		keystorePool: NewPool(repo),
+		cfg:          deploymentConfig,
 	}
 }
 
@@ -221,6 +239,121 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 	return keystore, nil
 }
 
+// ClientCertificate represents the client certificates
+type ClientCertificate struct {
+	Name    string
+	RootCA  string
+	Subject string
+}
+
+// GetClientCertificates retrieves the client certificates
+func (m *TenantConfigManager) GetClientCertificates(ctx context.Context) (
+	map[model.CertificatePurpose][]*ClientCertificate, error,
+) {
+	certConfig := m.certs.cfg
+
+	tenantDefaultCert, err := m.certs.getDefaultHYOKClientCert(ctx)
+	if err != nil {
+		return nil, errs.Wrap(ErrGetDefaultCerts, err)
+	}
+
+	defaultCerts := []*model.Certificate{tenantDefaultCert}
+
+	clientCerts := make(map[model.CertificatePurpose][]*ClientCertificate)
+	clientCerts[model.CertificatePurposeTenantDefault] = make([]*ClientCertificate, len(defaultCerts))
+
+	for i, certificate := range defaultCerts {
+		configCert, err := m.transformTenantDefaultCertificate(ctx, certificate.CertPEM,
+			certConfig.Certificates.RootCertURL, ErrGetDefaultCerts)
+		if err != nil {
+			return nil, err
+		}
+
+		clientCerts[model.CertificatePurposeTenantDefault][i] = configCert
+	}
+
+	cryptoCerts, err := m.getCryptoCertificates()
+	clientCerts[model.CertificatePurposeCrypto] = cryptoCerts
+
+	if err != nil {
+		return nil, err
+	}
+
+	return clientCerts, nil
+}
+
+func (m *TenantConfigManager) transformTenantDefaultCertificate(_ context.Context,
+	certRaw, rootCertURL string, errParent error,
+) (*ClientCertificate, error) {
+	block, _ := pem.Decode([]byte(certRaw))
+	if block == nil {
+		return nil, errs.Wrap(errParent, ErrDecodingCert)
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, errs.Wrap(errParent, err)
+	}
+
+	subject := formatSubjectWithSlashSeparatedOUs(cert.Subject)
+
+	return &ClientCertificate{
+		Name:    DefaultCertName,
+		RootCA:  rootCertURL,
+		Subject: subject,
+	}, nil
+}
+
+// formatSubjectWithSlashSeparatedOUs transforms the standard X.509 subject string
+// to combine multiple OUs with / separator instead of +
+func formatSubjectWithSlashSeparatedOUs(subject pkix.Name) string {
+	if len(subject.OrganizationalUnit) <= 1 {
+		return subject.String() // Use standard format if 0 or 1 OU
+	}
+
+	// Get standard format
+	standardSubject := subject.String()
+
+	// Replace OU=X+OU=Y+OU=Z with OU=X/Y/Z
+	combinedOU := "OU=" + strings.Join(subject.OrganizationalUnit, "/")
+
+	// Build regex to match multiple OU entries
+	ouPattern := `OU=[^,+]+((\+OU=[^,+]+)+)`
+	re := regexp.MustCompile(ouPattern)
+
+	return re.ReplaceAllString(standardSubject, combinedOU)
+}
+
+// getCryptoCertificates retrieves crypto certificates from config
+func (m *TenantConfigManager) getCryptoCertificates() ([]*ClientCertificate, error) {
+	bytes, err := commoncfg.LoadValueFromSourceRef(m.cfg.CryptoLayer.CertX509Trusts)
+	if err != nil {
+		return nil, errs.Wrap(ErrLoadCryptoCerts, err)
+	}
+
+	var cryptoCerts map[string]ClientCertificate
+
+	err = json.Unmarshal(bytes, &cryptoCerts)
+	if err != nil {
+		return nil, errs.Wrap(ErrUnmarshalCryptoCerts, err)
+	}
+
+	return m.certMapToSlice(cryptoCerts), nil
+}
+
+func (m *TenantConfigManager) certMapToSlice(certs map[string]ClientCertificate) []*ClientCertificate {
+	l := make([]*ClientCertificate, 0, len(certs))
+	for k, v := range certs {
+		l = append(l, &ClientCertificate{
+			Name:    k,
+			Subject: v.Subject,
+			RootCA:  v.RootCA,
+		})
+	}
+
+	return l
+}
+
 // SetDefaultKeystore stores the default keystore config
 func (m *TenantConfigManager) setDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error {
 	ksBytes, err := json.Marshal(keystore)
@@ -302,7 +435,7 @@ func (m *TenantConfigManager) getDefaultWorkflowConfig(defaultEnabled bool) *mod
 	}
 
 	// Override with deploymentConfig values if available
-	if m.deploymentConfig == nil {
+	if m.cfg == nil {
 		return c
 	}
 
@@ -313,17 +446,17 @@ func (m *TenantConfigManager) getDefaultWorkflowConfig(defaultEnabled bool) *mod
 // applyDeploymentConfigOverrides applies deployment config values to workflow config
 // to override any default values.
 func (m *TenantConfigManager) applyDeploymentConfigOverrides(config *model.WorkflowConfig) {
-	if m.deploymentConfig.Workflow.DefaultMinimumApprovals > 0 {
-		config.MinimumApprovals = m.deploymentConfig.Workflow.DefaultMinimumApprovals
+	if m.cfg.Workflow.DefaultMinimumApprovals > 0 {
+		config.MinimumApprovals = m.cfg.Workflow.DefaultMinimumApprovals
 	}
-	if m.deploymentConfig.Workflow.DefaultRetentionPeriodDays > 0 {
-		config.RetentionPeriodDays = m.deploymentConfig.Workflow.DefaultRetentionPeriodDays
+	if m.cfg.Workflow.DefaultRetentionPeriodDays > 0 {
+		config.RetentionPeriodDays = m.cfg.Workflow.DefaultRetentionPeriodDays
 	}
-	if m.deploymentConfig.Workflow.DefaultExpiryPeriodDays > 0 {
-		config.DefaultExpiryPeriodDays = m.deploymentConfig.Workflow.DefaultExpiryPeriodDays
+	if m.cfg.Workflow.DefaultExpiryPeriodDays > 0 {
+		config.DefaultExpiryPeriodDays = m.cfg.Workflow.DefaultExpiryPeriodDays
 	}
-	if m.deploymentConfig.Workflow.DefaultMaxExpiryPeriodDays > 0 {
-		config.MaxExpiryPeriodDays = m.deploymentConfig.Workflow.DefaultMaxExpiryPeriodDays
+	if m.cfg.Workflow.DefaultMaxExpiryPeriodDays > 0 {
+		config.MaxExpiryPeriodDays = m.cfg.Workflow.DefaultMaxExpiryPeriodDays
 	}
 }
 

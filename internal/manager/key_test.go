@@ -73,14 +73,14 @@ func (s *KeyManagerSuite) setup() {
 
 	cmkAuditor := auditor.New(s.ctx, cfg)
 
-	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(s.ctx, dbRepo, svcRegistry,
 		&config.Config{
 			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 		})
+	tenantConfigManager := manager.NewTenantConfigManager(dbRepo, certManager, svcRegistry, nil)
 	userManager := manager.NewUserManager(dbRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(s.repo)
-	keyConfigManager := manager.NewKeyConfigManager(dbRepo, certManager, userManager, tagManager, cmkAuditor, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(dbRepo, userManager, tagManager, cmkAuditor, cfg)
 
 	eventFactory, err := eventprocessor.NewEventFactory(s.ctx, cfg, dbRepo)
 	s.Require().NoError(err)
