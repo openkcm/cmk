@@ -33,6 +33,18 @@ func FromDBConfig(conf config.Database) (string, error) {
 		return "", errs.Wrap(ErrLoadingDatabasePassword, err)
 	}
 
-	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
-		host, user, string(password), conf.Name, conf.Port, conf.Parameters.SSLMode), nil
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+		host, user, string(password), conf.Name, conf.Port, conf.Parameters.SSL.Mode)
+
+	if conf.Parameters.SSL.RootCert != "" {
+		dsn = fmt.Sprintf("%s sslrootcert=%s", dsn, conf.Parameters.SSL.RootCert)
+	}
+	if conf.Parameters.SSL.Cert != "" {
+		dsn = fmt.Sprintf("%s sslcert=%s", dsn, conf.Parameters.SSL.Cert)
+	}
+	if conf.Parameters.SSL.Key != "" {
+		dsn = fmt.Sprintf("%s sslkey=%s", dsn, conf.Parameters.SSL.Key)
+	}
+
+	return dsn, nil
 }
