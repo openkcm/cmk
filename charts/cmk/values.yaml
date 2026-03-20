@@ -444,8 +444,19 @@ config:
       source: embedded
       value: |
         - name: crypto-1
-          subject: FakeCert
           rootCA: "https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
+          subject: 
+            locality:
+              - eu10
+            country:
+              - DE
+            organization:
+              - SAP DE
+            organizationUnit:
+              - SAP Cloud Platform Clients
+              - Staging
+              - subaccount-X
+            commonNamePrefix: sapkms-ks_
 
   # This does set the logger configuration
   # +docs:property

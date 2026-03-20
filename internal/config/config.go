@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"gopkg.in/yaml.v3"
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
@@ -16,6 +17,7 @@ var (
 	ErrCertificateValidityOutsideRange = errors.New("certificate validity must not be outside 7 to 30 days")
 	ErrNonDefinedTaskType              = errors.New("task type is unknown")
 	ErrRepeatedTaskType                = errors.New("task type is specified more than once")
+	ErrCNPrefixLength                  = errors.New("certificate common name prefix cannot exceed 24 characters")
 
 	ErrAMQPEmptyURL      = errors.New("AMQP URL must be specified")
 	ErrAMQPEmptyTarget   = errors.New("AMQP target must be specified")
@@ -65,6 +67,11 @@ func (c *Config) Validate() error {
 		return errs.Wrap(ErrConfigurationValuesError, err)
 	}
 
+	err = c.CryptoLayer.Validate()
+	if err != nil {
+		return errs.Wrap(ErrConfigurationValuesError, err)
+	}
+
 	return nil
 }
 
@@ -83,7 +90,44 @@ type Certificates struct {
 const (
 	MinCertificateValidityDays = 7
 	MaxCertificateValidityDays = 30
+	MaxCryptoCNPrefix          = 24
 )
+
+func (c *CryptoLayer) Validate() error {
+	bytes, err := commoncfg.LoadValueFromSourceRef(c.CertX509Trusts)
+	if err != nil {
+		return err
+	}
+
+	type cryptoCertSubject struct {
+		Locality           []string `yaml:"locality"`
+		OrganizationalUnit []string `yaml:"organizationUnit"`
+		Organization       []string `yaml:"organization"`
+		Country            []string `yaml:"country"`
+		CommonNamePrefix   string   `yaml:"commonNamePrefix"`
+	}
+
+	type cryptoCerts struct {
+		Name    string            `yaml:"name"`
+		RootCA  string            `yaml:"rootCA"`
+		Subject cryptoCertSubject `yaml:"subject"`
+	}
+
+	var certs []*cryptoCerts
+
+	err = yaml.Unmarshal(bytes, &certs)
+	if err != nil {
+		return err
+	}
+
+	for _, c := range certs {
+		if len(c.Subject.CommonNamePrefix) > MaxCryptoCNPrefix {
+			return ErrCNPrefixLength
+		}
+	}
+
+	return nil
+}
 
 func (c *Certificates) Validate() error {
 	if c.ValidityDays < MinCertificateValidityDays ||

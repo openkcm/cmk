@@ -32,7 +32,13 @@ import (
 var (
 	ErrForced     = errors.New("forced")
 	TestCertURL   = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.crt"
-	cryptoSubject = "CryptoCert"
+	cryptoSubject = manager.ClientCertificateSubject{
+		Locality:           []string{},
+		OrganizationalUnit: []string{},
+		Organization:       []string{},
+		Country:            []string{},
+		CommonNamePrefix:   "test_",
+	}
 )
 
 func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*manager.TenantConfigManager,
@@ -482,14 +488,16 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
+		tenantSubjectPKIX := pkix.Name{
+			Country:            []string{"DE"},
+			Organization:       []string{"KCM"},
+			OrganizationalUnit: []string{"OpenKCM", "account", "landscape"},
+			Locality:           []string{"LOCAL/CMK"},
+			CommonName:         "MyCert",
+		}
+
 		certManager.SetCertIssuerService(CertificateIssuerMock{NewCertificateChain: func() string {
-			return testutils.CreateCertificateChain(t, pkix.Name{
-				Country:            []string{"DE"},
-				Organization:       []string{"KCM"},
-				OrganizationalUnit: []string{"OpenKCM", "account", "landscape"},
-				Locality:           []string{"LOCAL/CMK"},
-				CommonName:         "MyCert",
-			}, privateKey)
+			return testutils.CreateCertificateChain(t, tenantSubjectPKIX, privateKey)
 		}})
 
 		_, privateKey, err = certManager.RequestNewCertificate(ctx, privateKey,
@@ -501,19 +509,18 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 			})
 		assert.NoError(t, err)
 
-		tenantSubject := "CN=MyCert,OU=OpenKCM/account/landscape,O=KCM,L=LOCAL/CMK,C=DE"
-
 		certs, err := m.GetClientCertificates(ctx)
 
 		assert.NoError(t, err)
 		assert.Len(t, certs[model.CertificatePurposeTenantDefault], 1)
 		assert.Len(t, certs[model.CertificatePurposeCrypto], 1)
-		assert.Equal(t, tenantSubject,
+		assert.Equal(t, manager.NewClientCertificateSubjectFromPKIX(tenantSubjectPKIX),
 			certs[model.CertificatePurposeTenantDefault][0].Subject)
 		assert.Equal(t, TestCertURL,
 			certs[model.CertificatePurposeTenantDefault][0].RootCA)
-		assert.Equal(t, cryptoSubject,
-			certs[model.CertificatePurposeCrypto][0].Subject)
+
+		assert.Contains(t,
+			certs[model.CertificatePurposeCrypto][0].Subject.CommonName, cryptoSubject.CommonNamePrefix)
 		assert.Equal(t, TestCertURL,
 			certs[model.CertificatePurposeCrypto][0].RootCA)
 	})

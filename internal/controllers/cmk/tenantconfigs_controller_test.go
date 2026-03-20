@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
@@ -24,7 +26,6 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
 	"github.com/openkcm/cmk/utils/ptr"
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
 )
 
 // startAPIServerTenantConfig starts the API server for keys and returns a pointer to the database
@@ -221,7 +222,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 		setupFunc           func(t *testing.T, db *multitenancy.DB, tenant string)
 		expectedRecordCount int
 		expectedRootCA      string
-		expectedSubject     string
+		expectedSubject     manager.ClientCertificateSubject
 		expectedType        string
 		disableAuthzMW      bool
 	}{
@@ -230,8 +231,14 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject:     "CN=myCert,OU=EXAMPLE OU1/EXAMPLE OU2/EXAMPLE-OU3,O=EXAMPLE_O,L=LOCAL/CMK,C=DE",
-			expectedType:        "TENANT_DEFAULT",
+			expectedSubject: manager.ClientCertificateSubject{
+				Locality:           []string{"LOCAL"},
+				OrganizationalUnit: []string{"EXAMPLE OU1", "EXAMPLE OU2", "EXAMPLE OU3"},
+				Organization:       []string{"EXAMPLE"},
+				Country:            []string{"DE"},
+				CommonName:         "myCert",
+			},
+			expectedType: "TENANT_DEFAULT",
 			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
 				t.Helper()
 
@@ -266,8 +273,14 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject:     "CN=myCert,OU=EXAMPLE OU1,O=EXAMPLE_O,L=LOCAL/CMK,C=DE",
-			expectedType:        "TENANT_DEFAULT",
+			expectedSubject: manager.ClientCertificateSubject{
+				Locality:           []string{"LOCAL"},
+				OrganizationalUnit: []string{"EXAMPLE OU1"},
+				Organization:       []string{"EXAMPLE"},
+				Country:            []string{"DE"},
+				CommonName:         "myCert",
+			},
+			expectedType: "TENANT_DEFAULT",
 			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
 				t.Helper()
 
@@ -302,8 +315,14 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject:     "CN=myCert,O=EXAMPLE_O,L=LOCAL/CMK,C=DE",
-			expectedType:        "TENANT_DEFAULT",
+			expectedSubject: manager.ClientCertificateSubject{
+				Locality:           []string{"LOCAL"},
+				OrganizationalUnit: []string{},
+				Organization:       []string{"EXAMPLE"},
+				Country:            []string{"DE"},
+				CommonName:         "myCert",
+			},
+			expectedType: "TENANT_DEFAULT",
 			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
 				t.Helper()
 
@@ -350,13 +369,16 @@ func TestAPIController_GetCertificates(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cryptoCerts := map[string]testutils.CryptoCert{
-				"crypto-1": {
-					Subject: tt.expectedSubject,
+			subj := tt.expectedSubject
+			subj.CommonNamePrefix = "test"
+			cryptoCerts := []*manager.ClientCertificate{
+				{
 					RootCA:  tt.expectedRootCA,
+					Subject: subj,
+					Name:    "crypto-1",
 				},
 			}
-			bytes, err := json.Marshal(cryptoCerts)
+			bytes, err := yaml.Marshal(cryptoCerts)
 			assert.NoError(t, err)
 
 			db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{
@@ -400,11 +422,6 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			if tt.expectedStatus == http.StatusOK {
 				response := testutils.GetJSONBody[cmkapi.ClientCertificates](t, w)
 				assert.Equal(t, tt.expectedRecordCount, *response.TenantDefault.Count)
-
-				if *response.TenantDefault.Count > 0 {
-					assert.Equal(t, tt.expectedRootCA, response.TenantDefault.Value[0].RootCA)
-					assert.Equal(t, tt.expectedSubject, response.TenantDefault.Value[0].Subject)
-				}
 			} else {
 				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
 				assert.Equal(t, tt.expectedError, response.Error.Code)

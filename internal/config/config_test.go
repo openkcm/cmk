@@ -1,12 +1,15 @@
 package config_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
@@ -23,6 +26,50 @@ func TestValidateCertificate(t *testing.T) {
 
 	t.Run("Should fail validation for ValidityDays too long", func(t *testing.T) {
 		certs := config.Certificates{ValidityDays: 31, RotationThresholdDays: 3}
+		assert.Error(t, certs.Validate())
+	})
+}
+
+func TestValidateCryptoLayer(t *testing.T) {
+	t.Run("Shoud success", func(t *testing.T) {
+		cryptoCerts := []manager.ClientCertificate{
+			{
+				Name: "crypto-1",
+				Subject: manager.ClientCertificateSubject{
+					CommonNamePrefix: "test_",
+				},
+				RootCA: "test",
+			},
+		}
+
+		bytes, err := yaml.Marshal(cryptoCerts)
+		assert.NoError(t, err)
+
+		certs := config.CryptoLayer{CertX509Trusts: commoncfg.SourceRef{
+			Source: commoncfg.EmbeddedSourceValue,
+			Value:  string(bytes),
+		}}
+		assert.NoError(t, certs.Validate())
+	})
+
+	t.Run("Shoud fail on prefix bigger than limit", func(t *testing.T) {
+		cryptoCerts := []manager.ClientCertificate{
+			{
+				Name: "crypto-1",
+				Subject: manager.ClientCertificateSubject{
+					CommonNamePrefix: strings.Repeat("t", config.MaxCryptoCNPrefix+1),
+				},
+				RootCA: "test",
+			},
+		}
+
+		bytes, err := yaml.Marshal(cryptoCerts)
+		assert.NoError(t, err)
+
+		certs := config.CryptoLayer{CertX509Trusts: commoncfg.SourceRef{
+			Source: commoncfg.EmbeddedSourceValue,
+			Value:  string(bytes),
+		}}
 		assert.Error(t, certs.Validate())
 	})
 }

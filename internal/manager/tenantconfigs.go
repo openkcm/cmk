@@ -7,13 +7,12 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
-	"regexp"
 	"strconv"
-	"strings"
 
-	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"gopkg.in/yaml.v3"
+
+	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
@@ -23,6 +22,7 @@ import (
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
 
@@ -240,19 +240,29 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 	return keystore, nil
 }
 
-// ClientCertificate represents the client certificates
 type ClientCertificate struct {
-	Name    string `yaml:"name"`
-	RootCA  string `yaml:"rootCA"`
-	Subject string `yaml:"subject"`
+	Name    string                   `yaml:"name"`
+	RootCA  string                   `yaml:"rootCA"`
+	Subject ClientCertificateSubject `yaml:"subject"`
+}
+
+func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSubject {
+	return ClientCertificateSubject{
+		Locality:           subject.Locality,
+		OrganizationalUnit: subject.OrganizationalUnit,
+		Organization:       subject.Organization,
+		Country:            subject.Country,
+		CommonName:         subject.CommonName,
+	}
 }
 
 type ClientCertificateSubject struct {
-	Locality           string
-	OrganizationalUnit []string
-	Organization       string
-	Country            string
-	CommonNamePrefix   string
+	Locality           []string `yaml:"locality"`
+	OrganizationalUnit []string `yaml:"organizationUnit"`
+	Organization       []string `yaml:"organization"`
+	Country            []string `yaml:"country"`
+	CommonNamePrefix   string   `yaml:"commonNamePrefix"`
+	CommonName         string
 }
 
 // GetClientCertificates retrieves the client certificates
@@ -281,7 +291,7 @@ func (m *TenantConfigManager) GetClientCertificates(ctx context.Context) (
 		clientCerts[model.CertificatePurposeTenantDefault][i] = configCert
 	}
 
-	cryptoCerts, err := m.getCryptoCertificates()
+	cryptoCerts, err := m.getCryptoCertificates(ctx)
 	clientCerts[model.CertificatePurposeCrypto] = cryptoCerts
 
 	if err != nil {
@@ -304,37 +314,15 @@ func (m *TenantConfigManager) transformTenantDefaultCertificate(_ context.Contex
 		return nil, errs.Wrap(errParent, err)
 	}
 
-	subject := formatSubjectWithSlashSeparatedOUs(cert.Subject)
-
 	return &ClientCertificate{
 		Name:    DefaultCertName,
 		RootCA:  rootCertURL,
-		Subject: subject,
+		Subject: NewClientCertificateSubjectFromPKIX(cert.Subject),
 	}, nil
 }
 
-// formatSubjectWithSlashSeparatedOUs transforms the standard X.509 subject string
-// to combine multiple OUs with / separator instead of +
-func formatSubjectWithSlashSeparatedOUs(subject pkix.Name) string {
-	if len(subject.OrganizationalUnit) <= 1 {
-		return subject.String() // Use standard format if 0 or 1 OU
-	}
-
-	// Get standard format
-	standardSubject := subject.String()
-
-	// Replace OU=X+OU=Y+OU=Z with OU=X/Y/Z
-	combinedOU := "OU=" + strings.Join(subject.OrganizationalUnit, "/")
-
-	// Build regex to match multiple OU entries
-	ouPattern := `OU=[^,+]+((\+OU=[^,+]+)+)`
-	re := regexp.MustCompile(ouPattern)
-
-	return re.ReplaceAllString(standardSubject, combinedOU)
-}
-
 // getCryptoCertificates retrieves crypto certificates from config
-func (m *TenantConfigManager) getCryptoCertificates() ([]*ClientCertificate, error) {
+func (m *TenantConfigManager) getCryptoCertificates(ctx context.Context) ([]*ClientCertificate, error) {
 	bytes, err := commoncfg.LoadValueFromSourceRef(m.cfg.CryptoLayer.CertX509Trusts)
 	if err != nil {
 		return nil, errs.Wrap(ErrLoadCryptoCerts, err)
@@ -345,6 +333,15 @@ func (m *TenantConfigManager) getCryptoCertificates() ([]*ClientCertificate, err
 	err = yaml.Unmarshal(bytes, &cryptoCerts)
 	if err != nil {
 		return nil, errs.Wrap(ErrUnmarshalCryptoCerts, err)
+	}
+
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, cert := range cryptoCerts {
+		cert.Subject.CommonName = cert.Subject.CommonNamePrefix + tenantID
 	}
 
 	return cryptoCerts, nil
