@@ -50,6 +50,7 @@ type App struct {
 	asynqServerCfg asynq.Config
 	taskQueueCfg   asynq.RedisClientOpt
 	tasks          map[string]TaskHandler
+	middlewares    []Middleware
 	cfg            *conf.Config
 }
 
@@ -91,6 +92,7 @@ func New(cfg *conf.Config) (*App, error) {
 		taskQueueCfg: redisOpts,
 		asynqClient:  asynq.NewClient(redisOpts),
 		tasks:        make(map[string]TaskHandler),
+		middlewares:  getMiddlewares(*cfg),
 		cfg:          cfg,
 	}, nil
 }
@@ -133,10 +135,13 @@ func (a *App) RunWorker(ctx context.Context) error {
 	mux := asynq.NewServeMux()
 
 	for taskName, handler := range a.tasks {
-		h := handler // Create a local copy to avoid closure problems
+		h := handler.ProcessTask // Create a local copy to avoid closure problems
+		for _, mw := range a.middlewares {
+			h = mw(h)
+		}
 
 		mux.HandleFunc(taskName, func(ctx context.Context, task *asynq.Task) error {
-			return h.ProcessTask(ctx, task)
+			return h(ctx, task)
 		})
 	}
 
@@ -226,6 +231,14 @@ func buildMTLSRedisClientOpt(
 	}
 
 	return clientOps, nil
+}
+
+func getMiddlewares(cfg conf.Config) []Middleware {
+	middlewares := []Middleware{
+		TracingMiddleware(cfg),
+	}
+
+	return middlewares
 }
 
 func loadALCAuthFromConfig(cfg conf.Redis) ([]byte, []byte, error) {
