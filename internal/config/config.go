@@ -101,7 +101,7 @@ func (c *CryptoLayer) Validate() error {
 
 	type cryptoCertSubject struct {
 		Locality           []string `yaml:"locality"`
-		OrganizationalUnit []string `yaml:"organizationUnit"`
+		OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
 		Organization       []string `yaml:"organization"`
 		Country            []string `yaml:"country"`
 		CommonNamePrefix   string   `yaml:"commonNamePrefix"`
@@ -109,7 +109,7 @@ func (c *CryptoLayer) Validate() error {
 
 	type cryptoCerts struct {
 		Name    string            `yaml:"name"`
-		RootCA  string            `yaml:"rootCA"`
+		RootCA  string            `yaml:"rootCA"` //nolint:tagliatelle
 		Subject cryptoCertSubject `yaml:"subject"`
 	}
 

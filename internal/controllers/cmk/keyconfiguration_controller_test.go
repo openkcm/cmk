@@ -24,35 +24,33 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func startAPIKeyConfigBase(t *testing.T,
-	cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string) {
-	t.Helper()
-
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
-
-	tenant := tenants[0]
-
-	return db, testutils.NewAPIServer(t, db, cfg), tenant
-}
-
 func getContextAndRepo(t *testing.T, tenant string,
-	db *multitenancy.DB) (context.Context, *sql.ResourceRepository) {
+	db *multitenancy.DB,
+) (context.Context, *sql.ResourceRepository) {
 	t.Helper()
 	return cmkcontext.CreateTenantContext(t.Context(), tenant), sql.NewRepository(db)
 }
 
-func startAPIKeyConfig(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB,
-	cmkapi.ServeMux, string, context.Context, *sql.ResourceRepository) {
+func startAPIKeyConfig(t *testing.T) (
+	cmkapi.ServeMux,
+	string,
+	context.Context,
+	*sql.ResourceRepository,
+) {
 	t.Helper()
-	db, sv, tenant := startAPIKeyConfigBase(t, cfg)
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+
+	tenant := tenants[0]
+
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
 
 	ctx, r := getContextAndRepo(t, tenant, db)
 
-	return db, sv, tenant, ctx, r
+	return sv, tenant, ctx, r
 }
 
 func TestKeyConfigurationGetConfiguration(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -116,7 +114,7 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 }
 
 func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -151,7 +149,7 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 }
 
 func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -258,8 +256,7 @@ func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) 
 }
 
 func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
-	db, sv, tenant := startAPIKeyConfigBase(t, testutils.TestAPIServerConfig{})
-	ctx, r := getContextAndRepo(t, tenant, db)
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -412,7 +409,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 }
 
 func TestKeyConfigurationController_UpdateByID(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 	newAdminGroupID := uuid.New()
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
@@ -606,7 +603,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 }
 
 func TestKeyConfigurationController_DeleteByID(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -692,7 +689,7 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 }
 
 func TestKeyConfigurationController_GetByID(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 

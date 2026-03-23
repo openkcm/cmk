@@ -242,8 +242,17 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 
 type ClientCertificate struct {
 	Name    string                   `yaml:"name"`
-	RootCA  string                   `yaml:"rootCA"`
+	RootCA  string                   `yaml:"rootCA"` //nolint:tagliatelle
 	Subject ClientCertificateSubject `yaml:"subject"`
+}
+
+type ClientCertificateSubject struct {
+	Locality           []string `yaml:"locality"`
+	OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
+	Organization       []string `yaml:"organization"`
+	Country            []string `yaml:"country"`
+	CommonNamePrefix   string   `yaml:"commonNamePrefix"`
+	CommonName         string
 }
 
 func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSubject {
@@ -254,15 +263,6 @@ func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSub
 		Country:            subject.Country,
 		CommonName:         subject.CommonName,
 	}
-}
-
-type ClientCertificateSubject struct {
-	Locality           []string `yaml:"locality"`
-	OrganizationalUnit []string `yaml:"organizationUnit"`
-	Organization       []string `yaml:"organization"`
-	Country            []string `yaml:"country"`
-	CommonNamePrefix   string   `yaml:"commonNamePrefix"`
-	CommonName         string
 }
 
 // GetClientCertificates retrieves the client certificates
