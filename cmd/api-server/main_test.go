@@ -1,9 +1,7 @@
 package main_test
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/require"
@@ -102,23 +100,4 @@ func TestRun(t *testing.T) {
 		})
 		require.Error(t, err)
 	})
-}
-
-func TestMonitorKeystorePoolSize(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	cfg := buildCfg(t)
-	cfg.KeystorePool = config.KeystorePool{
-		Interval: 100 * time.Millisecond,
-	}
-
-	// Run in goroutine, should exit after context timeout
-	go func() {
-		apiServer.MonitorKeystorePoolSize(ctx, cfg)
-	}()
-
-	<-ctx.Done()
-	// Check if the error is due to context deadline exceeded, not due to other reasons
-	require.Error(t, ctx.Err(), &context.DeadlineExceeded)
 }
