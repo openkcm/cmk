@@ -195,6 +195,7 @@ func createHTTPServer(
 				middleware.PanicRecoveryMiddleware(),
 				middleware.InjectMultiTenancy(),
 				middleware.InjectRequestID(),
+				middleware.TracingMiddleware(cfg),
 			},
 		},
 	)

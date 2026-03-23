@@ -26,6 +26,10 @@ func (o *TenantOperator) HandleApplyTenantAuth(
 	o.handleApplyTenantAuth(ctx, req, resp)
 }
 
+func (o *TenantOperator) Trace(next orbital.HandlerFunc, name string) orbital.HandlerFunc {
+	return o.trace(next, name)
+}
+
 func CheckTenantSchemaExistenceStatus(
 	ctx context.Context,
 	db *multitenancy.DB,

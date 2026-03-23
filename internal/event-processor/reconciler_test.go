@@ -10,11 +10,14 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/orbital"
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/clients"
@@ -34,14 +37,17 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func setupReconciler(
+type TestInstance struct {
+	repo          repo.Repo
+	tenant        string
+	fakeService   *systems.FakeService
+	reconciler    *eventprocessor.CryptoReconciler
+	traceRecorder *tracetest.SpanRecorder
+}
+
+func setupTestInstance(
 	t *testing.T, targetRegions []string,
-) (
-	*eventprocessor.CryptoReconciler,
-	*systems.FakeService,
-	repo.Repo,
-	string,
-) {
+) TestInstance {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
@@ -58,7 +64,18 @@ func setupReconciler(
 		Landscape: config.Landscape{
 			Region: uuid.NewString(),
 		},
+		BaseConfig: commoncfg.BaseConfig{
+			Application: commoncfg.Application{
+				Name: "event-processor",
+			},
+			Telemetry: commoncfg.Telemetry{
+				Traces: commoncfg.Trace{
+					Enabled: true,
+				},
+			},
+		},
 	}
+
 	if len(targetRegions) > 0 {
 		rabbitMQURL := testutils.StartRabbitMQ(t)
 		cfg.EventProcessor.Targets = make([]config.Target, 0, len(targetRegions))
@@ -98,6 +115,13 @@ func setupReconciler(
 	})
 	assert.NoError(t, err)
 
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider()
+	tp.RegisterSpanProcessor(recorder)
+
+	original := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+
 	eventProcessor, err := eventprocessor.NewCryptoReconciler(
 		t.Context(), cfg, r,
 		svcRegistry, clientsFactory,
@@ -108,13 +132,22 @@ func setupReconciler(
 
 	t.Cleanup(func() {
 		eventProcessor.CloseAmqpClients(context.Background())
+		otel.SetTracerProvider(original)
+		_ = tp.Shutdown(t.Context())
 	})
 
-	return eventProcessor, systemService, r, tenants[0]
+	return TestInstance{
+		repo:          r,
+		tenant:        tenants[0],
+		fakeService:   systemService,
+		reconciler:    eventProcessor,
+		traceRecorder: recorder,
+	}
 }
 
 func TestGetHandlerByJobType(t *testing.T) {
-	reconciler, _, _, _ := setupReconciler(t, []string{"region1"}) //nolint: dogsled
+	instance := setupTestInstance(t, []string{"region1"})
+	reconciler := instance.reconciler
 
 	t.Run("returns handler for supported job type", func(t *testing.T) {
 		handler, err := reconciler.GetHandlerByJobType(string(eventprocessor.JobTypeSystemLink))
@@ -168,12 +201,15 @@ func TestResolveKeyTasks(t *testing.T) {
 
 	systemlessTarget := "target-systemless"
 
-	reconciler, _, r, tenant := setupReconciler(t, []string{
+	instance := setupTestInstance(t, []string{
 		connectedSystem.Region,
 		disconnectedSystem.Region,
 		keylessSystem.Region,
 		systemlessTarget,
 	})
+	reconciler := instance.reconciler
+	r := instance.repo
+	tenant := instance.tenant
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	for _, sys := range []*model.System{connectedSystem, disconnectedSystem, targetlessSystem, keylessSystem} {
@@ -354,7 +390,10 @@ func TestResolveKeyTasks(t *testing.T) {
 func TestResolveSystemTasks(t *testing.T) {
 	// given
 	region := "test-region"
-	reconciler, _, r, tenant := setupReconciler(t, []string{region})
+	instance := setupTestInstance(t, []string{region})
+	reconciler := instance.reconciler
+	r := instance.repo
+	tenant := instance.tenant
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 
@@ -601,10 +640,32 @@ func TestResolveSystemTasks(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("should add trace with correct attributes", func(t *testing.T) {
+		jobType := eventprocessor.JobTypeSystemLink.String()
+		j := orbital.NewJob(jobType, []byte("{}"))
+
+		instance.traceRecorder.Reset()
+		result, err := instance.reconciler.ResolveTasks()(t.Context(), j, "")
+		assert.NoError(t, err) // No error here, but the job should be canceled due to invalid JSON and trace should still record error
+		assert.IsType(t, orbital.CancelTaskResolver(""), result)
+
+		spans := instance.traceRecorder.Ended()
+		assert.Len(t, spans, 1)
+		span := spans[0]
+		assert.Equal(t, "ResolveTasks:SYSTEM_LINK", span.Name())
+		assert.Equal(t, "job.id", string(span.Attributes()[0].Key))
+		assert.Equal(t, j.ID.String(), span.Attributes()[0].Value.AsString())
+		assert.Equal(t, "job.type", string(span.Attributes()[1].Key))
+		assert.Equal(t, jobType, span.Attributes()[1].Value.AsString())
+	})
 }
 
 func TestConfirmJob(t *testing.T) {
-	reconciler, _, r, tenant := setupReconciler(t, []string{"r1"})
+	instance := setupTestInstance(t, []string{"r1"})
+	reconciler := instance.reconciler
+	r := instance.repo
+	tenant := instance.tenant
 
 	t.Run("key tasks are confirmed as done", func(t *testing.T) {
 		keyJobTypes := []string{
@@ -713,10 +774,33 @@ func TestConfirmJob(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("should add trace with correct attributes", func(t *testing.T) {
+		jobType := eventprocessor.JobTypeSystemLink.String()
+		j := orbital.NewJob(jobType, []byte("{}"))
+
+		instance.traceRecorder.Reset()
+		_, err := instance.reconciler.ConfirmJob(t.Context(), j)
+		assert.Error(t, err)
+
+		spans := instance.traceRecorder.Ended()
+		assert.Len(t, spans, 1)
+		span := spans[0]
+		assert.Equal(t, "ConfirmJob:SYSTEM_LINK", span.Name())
+		assert.Equal(t, "job.id", string(span.Attributes()[0].Key))
+		assert.Equal(t, j.ID.String(), span.Attributes()[0].Value.AsString())
+		assert.Equal(t, "job.type", string(span.Attributes()[1].Key))
+		assert.Equal(t, jobType, span.Attributes()[1].Value.AsString())
+	})
 }
 
 func TestJobTermination(t *testing.T) {
-	eventProcessor, systemService, r, tenant := setupReconciler(t, []string{})
+	instance := setupTestInstance(t, []string{})
+	eventProcessor := instance.reconciler
+	r := instance.repo
+	tenant := instance.tenant
+	systemService := instance.fakeService
+
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	system := testutils.NewSystem(func(_ *model.System) {})
@@ -888,6 +972,60 @@ func TestJobTermination(t *testing.T) {
 		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, cmkapi.SystemStatusDISCONNECTED, sysAfter.Status)
+	})
+
+	t.Run("should add trace with correct attributes for JobDone", func(t *testing.T) {
+		jobType := eventprocessor.JobTypeSystemLink.String()
+		j := orbital.NewJob(jobType, []byte("{}"))
+
+		instance.traceRecorder.Reset()
+		err := instance.reconciler.JobDoneFunc(t.Context(), j)
+		assert.Error(t, err)
+
+		spans := instance.traceRecorder.Ended()
+		assert.Len(t, spans, 1)
+		span := spans[0]
+		assert.Equal(t, "JobDone:SYSTEM_LINK", span.Name())
+		assert.Equal(t, "job.id", string(span.Attributes()[0].Key))
+		assert.Equal(t, j.ID.String(), span.Attributes()[0].Value.AsString())
+		assert.Equal(t, "job.type", string(span.Attributes()[1].Key))
+		assert.Equal(t, jobType, span.Attributes()[1].Value.AsString())
+	})
+
+	t.Run("should add trace with correct attributes for JobFailed", func(t *testing.T) {
+		jobType := eventprocessor.JobTypeSystemLink.String()
+		j := orbital.NewJob(jobType, []byte("{}"))
+
+		instance.traceRecorder.Reset()
+		err := instance.reconciler.JobFailedFunc(t.Context(), j)
+		assert.Error(t, err)
+
+		spans := instance.traceRecorder.Ended()
+		assert.Len(t, spans, 1)
+		span := spans[0]
+		assert.Equal(t, "JobFailed:SYSTEM_LINK", span.Name())
+		assert.Equal(t, "job.id", string(span.Attributes()[0].Key))
+		assert.Equal(t, j.ID.String(), span.Attributes()[0].Value.AsString())
+		assert.Equal(t, "job.type", string(span.Attributes()[1].Key))
+		assert.Equal(t, jobType, span.Attributes()[1].Value.AsString())
+	})
+
+	t.Run("should add trace with correct attributes for JobCanceled", func(t *testing.T) {
+		jobType := eventprocessor.JobTypeSystemLink.String()
+		j := orbital.NewJob(jobType, []byte("{}"))
+
+		instance.traceRecorder.Reset()
+		err := instance.reconciler.JobCanceledFunc(t.Context(), j)
+		assert.Error(t, err)
+
+		spans := instance.traceRecorder.Ended()
+		assert.Len(t, spans, 1)
+		span := spans[0]
+		assert.Equal(t, "JobCanceled:SYSTEM_LINK", span.Name())
+		assert.Equal(t, "job.id", string(span.Attributes()[0].Key))
+		assert.Equal(t, j.ID.String(), span.Attributes()[0].Value.AsString())
+		assert.Equal(t, "job.type", string(span.Attributes()[1].Key))
+		assert.Equal(t, jobType, span.Attributes()[1].Value.AsString())
 	})
 }
 
