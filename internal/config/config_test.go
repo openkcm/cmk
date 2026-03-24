@@ -31,7 +31,7 @@ func TestValidateCertificate(t *testing.T) {
 }
 
 func TestValidateCryptoLayer(t *testing.T) {
-	t.Run("Shoud success", func(t *testing.T) {
+	t.Run("Should success", func(t *testing.T) {
 		cryptoCerts := []manager.ClientCertificate{
 			{
 				Name: "crypto-1",
@@ -52,7 +52,7 @@ func TestValidateCryptoLayer(t *testing.T) {
 		assert.NoError(t, certs.Validate())
 	})
 
-	t.Run("Shoud fail on prefix bigger than limit", func(t *testing.T) {
+	t.Run("Should fail on prefix bigger than limit", func(t *testing.T) {
 		cryptoCerts := []manager.ClientCertificate{
 			{
 				Name: "crypto-1",

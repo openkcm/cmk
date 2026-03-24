@@ -366,12 +366,11 @@ config:
             country:
               - DE
             organization:
-              - SAP DE
+              - Organization
             organizationUnit:
-              - SAP Cloud Platform Clients
-              - Staging
-              - subaccount-X
-            commonNamePrefix: sapkms-ks_
+              - Organization Unit 1
+              - Organization Unit 2
+            commonNamePrefix: kms_
 
   # This does set the logger configuration
   # +docs:property

@@ -353,7 +353,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 		},
 		{
 			name: "Failed - Database error",
-			setupFunc: func(_ *testing.T, db *multitenancy.DB, _ string) {
+			setupFunc: func(t *testing.T, db *multitenancy.DB, _ string) {
 				forced := testutils.NewDBErrorForced(db, ErrForced)
 				forced.Register()
 				t.Cleanup(func() {
