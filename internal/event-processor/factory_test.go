@@ -282,6 +282,109 @@ func TestSystemEventCreation(t *testing.T) {
 	}
 }
 
+func TestSystemKeyRotateEventCreation(t *testing.T) {
+	eventProcessor, r, tenant := setupFactory(t)
+
+	tests := []struct {
+		name           string
+		systemStatus   cmkapi.SystemStatus
+		tenantID       string
+		keyID          string
+		versionIDFrom  string
+		versionIDTo    string
+		rotationTime   string
+		expErr         error
+		expType        string
+		expStatus      cmkapi.SystemStatus
+		expEventStored bool
+	}{
+		{
+			name:          "should return error on missing tenant from ctx",
+			systemStatus:  cmkapi.SystemStatusCONNECTED,
+			keyID:         "keyID",
+			versionIDFrom: "version-1",
+			versionIDTo:   "version-2",
+			rotationTime:  "2024-01-15T10:30:00Z",
+			expErr:        cmkcontext.ErrExtractTenantID,
+		},
+		{
+			name:           "should create rotation event without changing system status to PROCESSING",
+			systemStatus:   cmkapi.SystemStatusCONNECTED,
+			tenantID:       tenant,
+			keyID:          "keyID",
+			versionIDFrom:  "version-1",
+			versionIDTo:    "version-2",
+			rotationTime:   "2024-01-15T10:30:00Z",
+			expType:        eventprocessor.JobTypeSystemKeyRotate.String(),
+			expStatus:      cmkapi.SystemStatusCONNECTED, // Should NOT change to PROCESSING
+			expEventStored: true,
+		},
+		{
+			name:           "should allow rotation when system is already PROCESSING",
+			systemStatus:   cmkapi.SystemStatusPROCESSING,
+			tenantID:       tenant,
+			keyID:          "keyID",
+			versionIDFrom:  "version-1",
+			versionIDTo:    "version-2",
+			rotationTime:   "2024-01-15T10:30:00Z",
+			expType:        eventprocessor.JobTypeSystemKeyRotate.String(),
+			expStatus:      cmkapi.SystemStatusPROCESSING, // Should remain PROCESSING
+			expEventStored: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			system := testutils.NewSystem(func(s *model.System) {
+				s.Status = tt.systemStatus
+			})
+
+			ctx := testutils.CreateCtxWithTenant(tt.tenantID)
+			if tt.tenantID != "" {
+				testutils.CreateTestEntities(ctx, t, r, system)
+			}
+
+			job, err := eventProcessor.SystemKeyRotate(ctx, system, tt.keyID, tt.versionIDFrom, tt.versionIDTo, tt.rotationTime)
+
+			if tt.expErr != nil {
+				assert.ErrorIs(t, err, tt.expErr)
+				assert.Equal(t, orbital.Job{}, job)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expType, job.Type)
+			assert.Equal(t, system.ID.String(), job.ExternalID)
+
+			// Verify job data contains version information
+			var jobData eventprocessor.SystemActionJobData
+			assert.NoError(t, json.Unmarshal(job.Data, &jobData))
+
+			assert.Equal(t, tt.tenantID, jobData.TenantID)
+			assert.Equal(t, system.ID.String(), jobData.SystemID)
+			assert.Equal(t, tt.keyID, jobData.KeyIDTo)
+			assert.Equal(t, tt.keyID, jobData.KeyIDFrom) // Same key, different version
+			assert.Equal(t, tt.versionIDFrom, jobData.KeyVersionIDFrom)
+			assert.Equal(t, tt.versionIDTo, jobData.KeyVersionIDTo)
+			assert.Equal(t, tt.rotationTime, jobData.RotationTime)
+
+			// Verify system status was NOT changed to PROCESSING
+			_, err = r.First(ctx, system, *repo.NewQuery())
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expStatus, system.Status)
+
+			// Verify event was stored with PreviousItemStatus
+			if tt.expEventStored {
+				event := &model.Event{Identifier: job.ExternalID}
+				found, err := r.First(ctx, event, *repo.NewQuery())
+				assert.NoError(t, err)
+				assert.True(t, found)
+				assert.Equal(t, string(tt.systemStatus), event.PreviousItemStatus)
+			}
+		})
+	}
+}
+
 func TestJobConfirmation(t *testing.T) {
 	eventProcessor, r, tenant := setupFactory(t)
 	ctx := testutils.CreateCtxWithTenant(tenant)

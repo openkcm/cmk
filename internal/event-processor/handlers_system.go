@@ -414,6 +414,130 @@ func (h *SystemUnlinkDecommissionJobHandler) terminate(
 	return system, data.KeyIDFrom, nil
 }
 
+// SystemKeyRotateJobHandler handles SYSTEM_KEY_ROTATE events.
+// This event notifies Kernel Service about key material rotation.
+type SystemKeyRotateJobHandler struct {
+	repo           repo.Repo
+	cmkAuditor     *auditor.Auditor
+	orbitalManager *orbital.Manager
+	taskResolver   *SystemTaskInfoResolver
+}
+
+func NewSystemKeyRotateJobHandler(
+	repo repo.Repo,
+	cmkAuditor *auditor.Auditor,
+	orbitalManager *orbital.Manager,
+	taskResolver *SystemTaskInfoResolver,
+) *SystemKeyRotateJobHandler {
+	return &SystemKeyRotateJobHandler{
+		repo:           repo,
+		cmkAuditor:     cmkAuditor,
+		orbitalManager: orbitalManager,
+		taskResolver:   taskResolver,
+	}
+}
+
+func (h *SystemKeyRotateJobHandler) ResolveTasks(
+	ctx context.Context,
+	job orbital.Job,
+) ([]orbital.TaskInfo, error) {
+	return h.taskResolver.Resolve(ctx, job)
+}
+
+func (h *SystemKeyRotateJobHandler) HandleJobConfirm(
+	_ context.Context,
+	_ orbital.Job,
+) (orbital.JobConfirmerResult, error) {
+	return orbital.CompleteJobConfirmer(), nil
+}
+
+func (h *SystemKeyRotateJobHandler) HandleJobDoneEvent(ctx context.Context, job orbital.Job) error {
+	log.InjectSystemEvent(ctx, job.Type)
+
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+	system, err := getSystemByID(ctx, h.repo, data.SystemID)
+	if err != nil {
+		if !errors.Is(err, repo.ErrNotFound) {
+			return err
+		}
+		log.Warn(ctx, "System not found after successful key rotation job",
+			slog.String("systemID", data.SystemID),
+			slog.String("jobID", job.ID.String()))
+		return cleanUpEvent(ctx, h.repo, job)
+	}
+
+	//nolint:godox
+	// TODO: Add audit log when common-sdk provides CMK system key rotation event
+	// err = h.cmkAuditor.SendCmkSystemKeyRotationAuditLog(ctx, system.Identifier, data.KeyIDTo,
+	//     data.KeyVersionIDFrom, data.KeyVersionIDTo)
+	// if err != nil {
+	//     return fmt.Errorf("failed to send system key rotation audit log for system %s: %w", system.ID, err)
+	// }
+
+	// Clean up event - rotation notification successfully sent to Kernel Service
+	err = cleanUpEvent(ctx, h.repo, job)
+	if err != nil {
+		return fmt.Errorf("failed to clean up event for system %s: %w", system.ID, err)
+	}
+
+	return nil
+}
+
+func (h *SystemKeyRotateJobHandler) HandleJobFailedEvent(ctx context.Context, job orbital.Job) error {
+	log.InjectSystemEvent(ctx, job.Type)
+
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+
+	// Merge task errors from Orbital to provide detailed failure context
+	errorMessage, err := mergeOrbitalTaskErrors(ctx, h.orbitalManager, job)
+	if err != nil {
+		log.Error(ctx, "Failed to merge orbital task errors", err, slog.String("jobID", job.ID.String()))
+		errorMessage = job.ErrorMessage
+	} else if errorMessage == "" {
+		errorMessage = job.ErrorMessage // No task errors, use job error message
+	}
+
+	// Check for version mismatch from Kernel Service
+	if IsVersionMismatchError(errorMessage) {
+		log.Warn(ctx, "Key version mismatch detected - KS has newer version. Scheduled HYOK sync will update CMK.",
+			slog.String("keyID", data.KeyIDTo),
+			slog.String("systemID", data.SystemID))
+
+		//nolint:godox
+		// TODO: Implement immediate retry - fetch latest key version and recreate SYSTEM_KEY_ROTATE event
+		return cleanUpEvent(ctx, h.repo, job)
+	}
+
+	// Use standard failure handling (updates system to FAILED, stores error)
+	return terminateFailedSystemJob(ctx, h.orbitalManager, h.repo, job)
+}
+
+func (h *SystemKeyRotateJobHandler) HandleJobCanceledEvent(ctx context.Context, job orbital.Job) error {
+	log.InjectSystemEvent(ctx, job.Type)
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return err
+	}
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+	log.Warn(ctx, "SYSTEM_KEY_ROTATE job canceled - system state unchanged",
+		slog.String("systemID", data.SystemID),
+		slog.String("jobID", job.ID.String()))
+	// Don't modify system state - rotation is an external notification,
+	// not a state transition that would require rollback.
+	// Clean up the event since it won't be retried.
+	return cleanUpEvent(ctx, h.repo, job)
+}
+
 func handleSystemJobConfirm(
 	ctx context.Context,
 	r repo.Repo,
@@ -466,8 +590,10 @@ func terminateFailedSystemJob(
 
 	errorMessage, err := mergeOrbitalTaskErrors(ctx, orbitalManager, job)
 	if err != nil {
-		log.Error(ctx, "Failed to merge orbital task errors", err)
-		errorMessage = job.ErrorMessage // Fall back to the job error message if we fail to get task errors
+		log.Error(ctx, "Failed to merge orbital task errors", err, slog.String("jobID", job.ID.String()))
+		errorMessage = job.ErrorMessage
+	} else if errorMessage == "" {
+		errorMessage = job.ErrorMessage // No task errors, use job error message
 	}
 
 	err = r.Transaction(ctx, func(ctx context.Context) error {

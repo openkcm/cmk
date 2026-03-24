@@ -3,6 +3,7 @@ package eventprocessor_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -249,12 +250,6 @@ func TestResolveKeyTasks(t *testing.T) {
 				taskType:   eventProto.TaskType_KEY_DELETE.String(),
 				expTargets: allTargets,
 			},
-			{
-				name:       "KEY_ROTATE task",
-				jobType:    eventprocessor.JobTypeKeyRotate.String(),
-				taskType:   eventProto.TaskType_KEY_ROTATE.String(),
-				expTargets: allTargets,
-			},
 		}
 
 		for _, tt := range tests {
@@ -470,6 +465,44 @@ func TestResolveSystemTasks(t *testing.T) {
 					return b
 				},
 			},
+			{
+				name:     "SYSTEM_KEY_ROTATE task",
+				jobType:  eventprocessor.JobTypeSystemKeyRotate.String(),
+				taskType: eventProto.TaskType_SYSTEM_KEY_ROTATE.String(),
+				data: func() []byte {
+					d := eventprocessor.SystemActionJobData{
+						TenantID:         tenant,
+						SystemID:         system.ID.String(),
+						KeyIDTo:          keyTo.ID.String(),
+						KeyIDFrom:        keyTo.ID.String(), // Same key, different versions
+						KeyVersionIDFrom: "version-1",
+						KeyVersionIDTo:   "version-2",
+						RotationTime:     "2024-01-15T10:30:00Z",
+					}
+					b, err := json.Marshal(d)
+					assert.NoError(t, err)
+					return b
+				},
+			},
+			{
+				name:     "SYSTEM_KEY_ROTATE task with empty timestamp",
+				jobType:  eventprocessor.JobTypeSystemKeyRotate.String(),
+				taskType: eventProto.TaskType_SYSTEM_KEY_ROTATE.String(),
+				data: func() []byte {
+					d := eventprocessor.SystemActionJobData{
+						TenantID:         tenant,
+						SystemID:         system.ID.String(),
+						KeyIDTo:          keyTo.ID.String(),
+						KeyIDFrom:        keyTo.ID.String(),
+						KeyVersionIDFrom: "version-1",
+						KeyVersionIDTo:   "version-2",
+						RotationTime:     "", // Empty timestamp should result in nil
+					}
+					b, err := json.Marshal(d)
+					assert.NoError(t, err)
+					return b
+				},
+			},
 		}
 
 		for _, tt := range tests {
@@ -506,6 +539,21 @@ func TestResolveSystemTasks(t *testing.T) {
 					case eventProto.TaskType_SYSTEM_SWITCH.String():
 						assert.Equal(t, keyFrom.ID.String(), sa.GetKeyIdFrom())
 						assert.Equal(t, keyTo.ID.String(), sa.GetKeyIdTo())
+					case eventProto.TaskType_SYSTEM_KEY_ROTATE.String():
+						assert.Equal(t, keyTo.ID.String(), sa.GetKeyIdTo())
+						assert.Equal(t, keyTo.ID.String(), sa.GetKeyIdFrom()) // Same key
+						assert.Equal(t, "version-1", sa.GetKeyVersionIdFrom())
+						assert.Equal(t, "version-2", sa.GetKeyVersionIdTo())
+						// Verify rotation time based on whether it was provided
+						jobData := eventprocessor.SystemActionJobData{}
+						err := json.Unmarshal(tt.data(), &jobData)
+						assert.NoError(t, err)
+						if jobData.RotationTime != "" {
+							assert.NotNil(t, sa.GetRotationTime(), "rotation time should be set when provided")
+							assert.Equal(t, "2024-01-15T10:30:00Z", sa.GetRotationTime().AsTime().Format(time.RFC3339))
+						} else {
+							assert.Nil(t, sa.GetRotationTime(), "rotation time should be nil when empty")
+						}
 					}
 				}
 			})
@@ -619,6 +667,25 @@ func TestResolveSystemTasks(t *testing.T) {
 				},
 				errorMessage: "failed to get key by ID",
 			},
+			{
+				name:    "SYSTEM_KEY_ROTATE with invalid timestamp format",
+				jobType: eventprocessor.JobTypeSystemKeyRotate.String(),
+				data: func() []byte {
+					d := eventprocessor.SystemActionJobData{
+						TenantID:         tenant,
+						SystemID:         system.ID.String(),
+						KeyIDTo:          keyTo.ID.String(),
+						KeyIDFrom:        keyTo.ID.String(),
+						KeyVersionIDFrom: "version-1",
+						KeyVersionIDTo:   "version-2",
+						RotationTime:     "not-a-valid-timestamp",
+					}
+					b, err := json.Marshal(d)
+					assert.NoError(t, err)
+					return b
+				},
+				errorMessage: "failed to parse rotation time",
+			},
 		}
 
 		for _, tt := range tests {
@@ -669,7 +736,6 @@ func TestConfirmJob(t *testing.T) {
 	t.Run("key tasks are confirmed as done", func(t *testing.T) {
 		keyJobTypes := []string{
 			eventprocessor.JobTypeKeyDelete.String(),
-			eventprocessor.JobTypeKeyRotate.String(),
 			eventprocessor.JobTypeKeyDisable.String(),
 			eventprocessor.JobTypeKeyEnable.String(),
 		}
@@ -1291,6 +1357,169 @@ func TestJobTermination(t *testing.T) {
 		assert.Equal(t, j.ID.String(), span.Attributes()[0].Value.AsString())
 		assert.Equal(t, "job.type", string(span.Attributes()[1].Key))
 		assert.Equal(t, jobType, span.Attributes()[1].Value.AsString())
+	})
+}
+
+func TestSystemKeyRotateJobHandler(t *testing.T) {
+	instance := setupTestInstance(t, []string{})
+	r := instance.repo
+	tenant := instance.tenant
+
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	system := testutils.NewSystem(func(_ *model.System) {})
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+	})
+	testutils.CreateTestEntities(ctx, t, r, system, keyConfig, key)
+
+	// Helper to create standard job data and marshal it
+	createJobData := func() []byte {
+		jobData := eventprocessor.SystemActionJobData{
+			TenantID:         tenant,
+			SystemID:         system.ID.String(),
+			KeyIDTo:          key.ID.String(),
+			KeyIDFrom:        key.ID.String(),
+			KeyVersionIDFrom: "version-1",
+			KeyVersionIDTo:   "version-2",
+		}
+		dataBytes, err := json.Marshal(jobData)
+		assert.NoError(t, err)
+		return dataBytes
+	}
+
+	// Helper to create event and return its ID
+	createEvent := func(dataBytes []byte, previousStatus string) string {
+		eventID := uuid.NewString()
+		event := &model.Event{
+			Identifier:         eventID,
+			Type:               eventprocessor.JobTypeSystemKeyRotate.String(),
+			Data:               dataBytes,
+			PreviousItemStatus: previousStatus,
+		}
+		err := r.Set(ctx, event)
+		assert.NoError(t, err)
+		return eventID
+	}
+
+	// Helper to get handler
+	getHandler := func() eventprocessor.JobHandler {
+		handler, err := instance.reconciler.GetHandlerByJobType(eventprocessor.JobTypeSystemKeyRotate.String())
+		assert.NoError(t, err)
+		return handler
+	}
+
+	t.Run("HandleJobDoneEvent should clean up event", func(t *testing.T) {
+		dataBytes := createJobData()
+		eventID := createEvent(dataBytes, string(cmkapi.SystemStatusCONNECTED))
+
+		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).WithExternalID(eventID)
+
+		err := getHandler().HandleJobDoneEvent(ctx, job)
+		assert.NoError(t, err)
+
+		// Verify event was cleaned up (deleted from database)
+		found, err := r.First(ctx, &model.Event{Identifier: eventID}, *repo.NewQuery())
+		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+			t.Fatalf("unexpected error checking event: %v", err)
+		}
+		assert.False(t, found)
+	})
+
+	t.Run("HandleJobFailedEvent with version mismatch should not set system to FAILED", func(t *testing.T) {
+		dataBytes := createJobData()
+
+		system.Status = cmkapi.SystemStatusCONNECTED
+		_, err := r.Patch(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		eventID := uuid.NewString()
+		event := &model.Event{
+			Identifier: eventID,
+			Type:       eventprocessor.JobTypeSystemKeyRotate.String(),
+			Data:       dataBytes,
+		}
+		err = r.Set(ctx, event)
+		assert.NoError(t, err)
+
+		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
+			WithExternalID(eventID)
+		job.ErrorMessage = "KEY_VERSION_MISMATCH:Version mismatch detected"
+
+		err = getHandler().HandleJobFailedEvent(ctx, job)
+		assert.NoError(t, err)
+
+		// Verify system status is still CONNECTED (not FAILED)
+		_, err = r.First(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusCONNECTED, system.Status)
+
+		// Verify event was cleaned up (version mismatch doesn't need retry)
+		found, err := r.First(ctx, &model.Event{Identifier: eventID}, *repo.NewQuery())
+		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+			t.Fatalf("unexpected error checking event: %v", err)
+		}
+		assert.False(t, found)
+	})
+
+	t.Run("HandleJobFailedEvent with other error should set system to FAILED", func(t *testing.T) {
+		dataBytes := createJobData()
+
+		system.Status = cmkapi.SystemStatusPROCESSING
+		_, err := r.Patch(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		eventID := createEvent(dataBytes, string(cmkapi.SystemStatusCONNECTED))
+
+		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
+			WithExternalID(eventID)
+		job.ErrorMessage = "SOME_OTHER_ERROR:Something went wrong"
+
+		err = getHandler().HandleJobFailedEvent(ctx, job)
+		assert.NoError(t, err)
+
+		// Verify system status is FAILED
+		_, err = r.First(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusFAILED, system.Status)
+
+		// Verify error was stored in event
+		event := &model.Event{Identifier: eventID}
+		found, err := r.First(ctx, event, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "SOME_OTHER_ERROR", event.ErrorCode)
+		assert.Equal(t, "Something went wrong", event.ErrorMessage)
+	})
+
+	t.Run("HandleJobCanceledEvent should not change system status", func(t *testing.T) {
+		dataBytes := createJobData()
+
+		system.Status = cmkapi.SystemStatusPROCESSING
+		_, err := r.Patch(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		eventID := createEvent(dataBytes, string(cmkapi.SystemStatusCONNECTED))
+
+		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
+			WithExternalID(eventID)
+		job.ErrorMessage = "Job canceled by user"
+
+		err = getHandler().HandleJobCanceledEvent(ctx, job)
+		assert.NoError(t, err)
+
+		// Verify system status is unchanged (still PROCESSING)
+		_, err = r.First(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusPROCESSING, system.Status)
+
+		// Verify event was cleaned up (canceled job won't be retried)
+		found, err := r.First(ctx, &model.Event{Identifier: eventID}, *repo.NewQuery())
+		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+			t.Fatalf("unexpected error checking event: %v", err)
+		}
+		assert.False(t, found)
 	})
 }
 
