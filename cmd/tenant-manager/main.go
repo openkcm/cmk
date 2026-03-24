@@ -107,7 +107,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	groupManager := manager.NewGroupManager(r, svcRegistry, manager.NewUserManager(r, auditor.New(ctx, cfg)))
 
-	operator, err := operator.NewTenantOperator(dbConn, target, clients, tenantManager, groupManager)
+	operator, err := operator.NewTenantOperator(dbConn, cfg, target, clients, tenantManager, groupManager)
 	if err != nil {
 		return oops.In(logDomain).
 			Wrapf(err, errMsgRunningOperator)

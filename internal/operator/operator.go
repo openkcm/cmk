@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/orbital"
 	"github.com/openkcm/orbital/client/amqp"
 	"github.com/samber/oops"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -75,6 +76,7 @@ var (
 
 type TenantOperator struct {
 	db             *multitenancy.DB
+	cfg            *config.Config
 	operatorTarget orbital.TargetOperator
 	repo           repo.Repo
 	clientsFactory clients.Factory
@@ -84,6 +86,7 @@ type TenantOperator struct {
 
 func NewTenantOperator(
 	db *multitenancy.DB,
+	cfg *config.Config,
 	operatorTarget orbital.TargetOperator,
 	clientsFactory clients.Factory,
 	tenantManager manager.Tenant,
@@ -113,6 +116,7 @@ func NewTenantOperator(
 
 	return &TenantOperator{
 		db:             db,
+		cfg:            cfg,
 		operatorTarget: operatorTarget,
 		repo:           r,
 		clientsFactory: clientsFactory,
@@ -488,6 +492,23 @@ func (o *TenantOperator) injectSystemUser(
 	}
 }
 
+func (o *TenantOperator) trace(
+	next orbital.HandlerFunc,
+	name string,
+) orbital.HandlerFunc {
+	if !o.cfg.Telemetry.Traces.Enabled {
+		return next
+	}
+
+	return func(ctx context.Context, request orbital.HandlerRequest, response *orbital.HandlerResponse) {
+		tracer := otel.Tracer(o.cfg.Application.Name)
+		ctx, span := tracer.Start(ctx, name)
+		defer span.End()
+
+		next(ctx, request, response)
+	}
+}
+
 // registerHandlers registers all task handlers with the orbital operator
 func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
 	handlers := map[string]orbital.HandlerFunc{
@@ -500,6 +521,8 @@ func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
 
 	for action, handler := range handlers {
 		handler = o.injectSystemUser(handler)
+		handler = o.trace(handler, action)
+
 		err := operator.RegisterHandler(action, handler)
 		if err != nil {
 			return oops.In(operatorComponent).

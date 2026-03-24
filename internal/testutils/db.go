@@ -125,7 +125,9 @@ var TestDB = config.Database{
 	Name: "cmk",
 	Port: "5433",
 	Parameters: config.DBParameters{
-		SSLMode: "disable",
+		SSL: config.DBSSL{
+			Mode: "disable",
+		},
 	},
 }
 

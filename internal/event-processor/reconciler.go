@@ -10,10 +10,14 @@ import (
 	"github.com/openkcm/orbital"
 	"github.com/openkcm/orbital/client/amqp"
 	"github.com/openkcm/orbital/codec"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	_ "github.com/lib/pq" // Import PostgreSQL driver to initialize the database connection
 
 	goAmqp "github.com/Azure/go-amqp"
+	otelAttr "go.opentelemetry.io/otel/attribute"
 
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
@@ -77,6 +81,7 @@ type CryptoReconciler struct {
 	initiators    []orbital.Initiator
 	svcRegistry   *cmkpluginregistry.Registry
 	jobHandlerMap map[JobType]JobHandler
+	tracer        trace.Tracer
 }
 
 // NewCryptoReconciler creates a new CryptoReconciler instance.
@@ -109,9 +114,11 @@ func NewCryptoReconciler(
 	}
 
 	cmkAuditor := auditor.New(ctx, cfg)
+	tracer := getTracer(cfg)
 
 	reconciler := &CryptoReconciler{
 		repo:        repository,
+		tracer:      tracer,
 		targets:     targetMap,
 		initiators:  initiators,
 		svcRegistry: svcRegistry,
@@ -204,7 +211,12 @@ func (c *CryptoReconciler) resolveTasks() orbital.TaskResolveFunc {
 			return orbital.CancelTaskResolver("unsupported job type: " + job.Type), nil
 		}
 
-		tasks, err := handler.ResolveTasks(ctx, job)
+		var tasks []orbital.TaskInfo
+		err = c.trace(ctx, job, "ResolveTasks", func(ctx context.Context, job orbital.Job) error {
+			tasks, err = handler.ResolveTasks(ctx, job)
+			return err
+		})
+
 		if err != nil {
 			return orbital.CancelTaskResolver(GetOrbitalError(ctx, err)), nil
 		}
@@ -224,7 +236,13 @@ func (c *CryptoReconciler) confirmJob(ctx context.Context, job orbital.Job) (orb
 		return orbital.CancelJobConfirmer("unsupported job type: " + job.Type), err
 	}
 
-	return handler.HandleJobConfirm(ctx, job)
+	var result orbital.JobConfirmerResult
+	err = c.trace(ctx, job, "ConfirmJob", func(ctx context.Context, job orbital.Job) error {
+		result, err = handler.HandleJobConfirm(ctx, job)
+		return err
+	})
+
+	return result, err
 }
 
 // jobDoneFunc is called when a job is marked as done
@@ -234,7 +252,7 @@ func (c *CryptoReconciler) jobDoneFunc(ctx context.Context, job orbital.Job) err
 		return err
 	}
 
-	return handler.HandleJobDoneEvent(ctx, job)
+	return c.trace(ctx, job, "JobDone", handler.HandleJobDoneEvent)
 }
 
 // jobFailedFunc is called when a job is marked as failed
@@ -244,7 +262,7 @@ func (c *CryptoReconciler) jobFailedFunc(ctx context.Context, job orbital.Job) e
 		return err
 	}
 
-	return handler.HandleJobFailedEvent(ctx, job)
+	return c.trace(ctx, job, "JobFailed", handler.HandleJobFailedEvent)
 }
 
 // jobCanceledFunc is called when a job is marked as canceled
@@ -254,7 +272,34 @@ func (c *CryptoReconciler) jobCanceledFunc(ctx context.Context, job orbital.Job)
 		return err
 	}
 
-	return handler.HandleJobCanceledEvent(ctx, job)
+	return c.trace(ctx, job, "JobCanceled", handler.HandleJobCanceledEvent)
+}
+
+func (c *CryptoReconciler) trace(
+	ctx context.Context,
+	job orbital.Job,
+	actionName string,
+	f func(ctx context.Context, job orbital.Job) error,
+) error {
+	if c.tracer == nil {
+		return f(ctx, job)
+	}
+
+	ctx, span := c.tracer.Start(ctx, actionName+":"+job.Type)
+	defer span.End()
+
+	span.SetAttributes(
+		otelAttr.String("job.id", job.ID.String()),
+		otelAttr.String("job.type", job.Type),
+	)
+
+	err := f(ctx, job)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+
+	return err
 }
 
 func getMaxReconcileCount(cfg *config.EventProcessor) uint64 {
@@ -312,4 +357,14 @@ func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
 			return nil
 		},
 	}, nil
+}
+
+func getTracer(cfg *config.Config) trace.Tracer {
+	if !cfg.Telemetry.Traces.Enabled {
+		return nil
+	}
+
+	tracer := otel.Tracer(cfg.Application.Name)
+
+	return tracer
 }

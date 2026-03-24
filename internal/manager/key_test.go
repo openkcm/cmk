@@ -10,8 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
@@ -21,6 +19,8 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -194,7 +194,7 @@ func TestCreate(t *testing.T) {
 				})
 			},
 			wantErr: true,
-			errMsg:  "failed to authenticate with the keystore provider: Invalid account information",
+			errMsg:  "failed to authenticate with the keystore provider",
 		},
 		{
 			name: "HYOK key creation key not found",
@@ -471,10 +471,10 @@ func TestHYOKSync(t *testing.T) {
 
 		provider, err := km.GetOrInitProvider(ctx, hyokKey)
 		assert.NoError(t, err)
-		_, err = provider.Client.DisableKey(ctx, &keystoreopv1.DisableKeyRequest{
-			Parameters: &keystoreopv1.RequestParameters{
-				KeyId:  *hyokKey.NativeID,
-				Config: provider.Config,
+		_, err = provider.Client.DisableKey(ctx, &keymanagement.DisableKeyRequest{
+			Parameters: keymanagement.RequestParameters{
+				KeyID:  *hyokKey.NativeID,
+				Config: common.KeystoreConfig{Values: provider.Config.Values},
 			},
 		})
 		assert.NoError(t, err)
@@ -599,10 +599,10 @@ func disableKey(t *testing.T, km *manager.KeyManager, ctx context.Context, hyokK
 	t.Helper()
 	provider, err := km.GetOrInitProvider(ctx, hyokKey)
 	assert.NoError(t, err)
-	_, err = provider.Client.DisableKey(ctx, &keystoreopv1.DisableKeyRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *hyokKey.NativeID,
-			Config: provider.Config,
+	_, err = provider.Client.DisableKey(ctx, &keymanagement.DisableKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			KeyID:  *hyokKey.NativeID,
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 		},
 	})
 	assert.NoError(t, err)
@@ -612,10 +612,10 @@ func deleteKey(t *testing.T, km *manager.KeyManager, ctx context.Context, hyokKe
 	t.Helper()
 	provider, err := km.GetOrInitProvider(ctx, hyokKey)
 	assert.NoError(t, err)
-	_, err = provider.Client.DeleteKey(ctx, &keystoreopv1.DeleteKeyRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *hyokKey.NativeID,
-			Config: provider.Config,
+	_, err = provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			KeyID:  *hyokKey.NativeID,
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 		},
 	})
 	assert.NoError(t, err)
@@ -625,10 +625,10 @@ func enableKey(t *testing.T, km *manager.KeyManager, ctx context.Context, hyokKe
 	t.Helper()
 	provider, err := km.GetOrInitProvider(ctx, hyokKey)
 	assert.NoError(t, err)
-	_, err = provider.Client.EnableKey(ctx, &keystoreopv1.EnableKeyRequest{
-		Parameters: &keystoreopv1.RequestParameters{
-			KeyId:  *hyokKey.NativeID,
-			Config: provider.Config,
+	_, err = provider.Client.EnableKey(ctx, &keymanagement.EnableKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			KeyID:  *hyokKey.NativeID,
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
 		},
 	})
 	assert.NoError(t, err)
