@@ -10,12 +10,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
 	"github.com/openkcm/orbital"
 	"github.com/openkcm/orbital/client/amqp"
 	"github.com/openkcm/orbital/respondertest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
@@ -25,6 +28,7 @@ import (
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 	slogctx "github.com/veqryn/slog-context"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
@@ -128,6 +132,7 @@ func createManagers(
 func createInvalidOperatorRequest(
 	t *testing.T,
 	taskType string,
+	cfg *config.Config,
 	unusedRegistryClient tenantgrpc.ServiceClient,
 	unusedDB *multitenancy.DB,
 	clientCon *commongrpc.DynamicClientConn,
@@ -146,7 +151,7 @@ func createInvalidOperatorRequest(
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
-	op, err := operator.NewTenantOperator(unusedDB, operatorTarget, clientFactory, tenantManager, groupManager)
+	op, err := operator.NewTenantOperator(unusedDB, cfg, operatorTarget, clientFactory, tenantManager, groupManager)
 	require.NoError(t, err)
 
 	go func() {
@@ -199,7 +204,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	t.Run(
 		"nil db", func(t *testing.T) {
-			op, err := operator.NewTenantOperator(nil, operatorTarget, clientFactory, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(nil, cfg, operatorTarget, clientFactory, tenantManager, groupManager)
 			assert.Nil(t, op)
 			assert.Error(t, err)
 		},
@@ -208,7 +213,7 @@ func TestNewTenantOperator(t *testing.T) {
 	t.Run(
 		"nil amqp", func(t *testing.T) {
 			target := orbital.TargetOperator{}
-			op, err := operator.NewTenantOperator(dbConn, target, clientFactory, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory, tenantManager, groupManager)
 			assert.Nil(t, op)
 			assert.Error(t, err)
 		},
@@ -216,7 +221,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	t.Run(
 		"nil factory client", func(t *testing.T) {
-			op, err := operator.NewTenantOperator(dbConn, operatorTarget, nil, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(dbConn, cfg, operatorTarget, nil, tenantManager, groupManager)
 			assert.Nil(t, op)
 			assert.Error(t, err)
 		},
@@ -224,7 +229,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	t.Run(
 		"valid operator", func(t *testing.T) {
-			op, err := operator.NewTenantOperator(dbConn, operatorTarget, clientFactory, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(dbConn, cfg, operatorTarget, clientFactory, tenantManager, groupManager)
 			require.NoError(t, err)
 			assert.NotNil(t, op)
 		},
@@ -489,7 +494,8 @@ func TestHandleApplyAuth_InvalidData(t *testing.T) {
 				target := orbital.TargetOperator{
 					Client: responder,
 				}
-				op, err := operator.NewTenantOperator(unusedDB, target, clientFactory, nil, nil)
+				cfg := &config.Config{}
+				op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, nil, nil)
 				require.NoError(t, err)
 
 				go func() {
@@ -518,6 +524,7 @@ func TestHandleApplyAuth_IssuerUpdate(t *testing.T) {
 	taskType := authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String()
 
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	cfg := &config.Config{}
 
 	t.Run(
 		"should return failed task and not update issuer if tenant is not found", func(t *testing.T) {
@@ -534,7 +541,7 @@ func TestHandleApplyAuth_IssuerUpdate(t *testing.T) {
 				sessionmanager.NewMockService(unusedSMClient),
 			)
 
-			op, err := operator.NewTenantOperator(db, operatorTarget, clientFactory, nil, nil)
+			op, err := operator.NewTenantOperator(db, cfg, operatorTarget, clientFactory, nil, nil)
 			require.NoError(t, err)
 
 			go func() {
@@ -612,6 +619,7 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 	)
 	assert.Len(t, tenants, len(tests))
 
+	cfg := &config.Config{}
 	r := sql.NewRepository(db)
 
 	for i, tt := range tests {
@@ -629,7 +637,7 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 					registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 					sessionmanager.NewMockService(sessionManagerClient),
 				)
-				op, err := operator.NewTenantOperator(db, operatorTarget, clientFactory, nil, nil)
+				op, err := operator.NewTenantOperator(db, cfg, operatorTarget, clientFactory, nil, nil)
 				require.NoError(t, err)
 
 				go func() {
@@ -638,10 +646,16 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				}()
 
 				issuerURL := "http://issuer-url"
+				jwksURI := "http://jwks-uri"
+				audiences := "audience1"
+				clientID := "clientID1"
 				auth := authgrpc.Auth{
 					TenantId: tenants[i],
 					Properties: map[string]string{
-						"issuer": issuerURL,
+						"issuer":    issuerURL,
+						"jwks_uri":  jwksURI,
+						"audiences": audiences,
+						"client_id": clientID,
 					},
 				}
 				data, err := proto.Marshal(&auth)
@@ -659,7 +673,10 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 					req *oidcmappinggrpc.ApplyOIDCMappingRequest,
 				) (*oidcmappinggrpc.ApplyOIDCMappingResponse, error) {
 					assert.Equal(t, auth.GetTenantId(), req.GetTenantId())
-					assert.Equal(t, auth.GetProperties()["issuer"], req.GetIssuer())
+					assert.Equal(t, issuerURL, req.GetIssuer())
+					assert.Equal(t, jwksURI, req.GetJwksUri())
+					assert.Equal(t, []string{audiences}, req.GetAudiences())
+					assert.Equal(t, clientID, req.GetClientId())
 
 					noOfCalls++
 
@@ -713,7 +730,7 @@ func TestHandleBlockTenant(t *testing.T) {
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
-			t, taskType, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager)
+			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager)
 		noOfCalls := 0
 		sessionManagerClient.MockBlockOIDCMapping = func(
 			_ context.Context,
@@ -779,7 +796,7 @@ func TestHandleBlockTenant(t *testing.T) {
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
-			op, err := operator.NewTenantOperator(unusedDB, target, clientFactory, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, tenantManager, groupManager)
 			require.NoError(t, err)
 
 			go func() {
@@ -843,7 +860,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
-			t, taskType, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager)
+			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager)
 		noOfCalls := 0
 		sessionManagerClient.MockUnblockOIDCMapping = func(
 			_ context.Context,
@@ -909,7 +926,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
-			op, err := operator.NewTenantOperator(unusedDB, target, clientFactory, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, tenantManager, groupManager)
 			require.NoError(t, err)
 
 			go func() {
@@ -973,7 +990,7 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
-			t, taskType, unusedRegistryClient, unusedDB, clientCon, mockTenantManager, groupManager)
+			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, mockTenantManager, groupManager)
 		noOfCalls := 0
 		sessionManagerClient.MockRemoveOIDCMapping = func(
 			_ context.Context,
@@ -1033,7 +1050,7 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
-			op, err := operator.NewTenantOperator(unusedDB, target, clientFactory, mockTenantManager, groupManager)
+			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, mockTenantManager, groupManager)
 			require.NoError(t, err)
 
 			go func() {
@@ -1178,6 +1195,7 @@ func TestHandleTerminateTenant(t *testing.T) {
 			}
 			op, err := operator.NewTenantOperator(
 				unusedDB,
+				cfg,
 				target,
 				clientFactory,
 				&mockTenantManager,
@@ -1251,29 +1269,33 @@ func TestExtractOIDCConfig(t *testing.T) {
 			properties: map[string]string{
 				"issuer":    "https://test.issuer.com",
 				"jwks_uri":  "https://test.jwks1.com",
-				"audiences": "audience1",
+				"audiences": "audience1, audience2",
+				"client_id": "clientID1",
 			},
 			expectedConfig: operator.OIDCConfig{
 				Issuer:               "https://test.issuer.com",
 				JwksURI:              "https://test.jwks1.com",
-				Audiences:            []string{"audience1"},
+				Audiences:            []string{"audience1", "audience2"},
+				ClientID:             "clientID1",
 				AdditionalProperties: map[string]string{},
 			},
 		},
 		{
 			name: "valid properties and additional properties",
 			properties: map[string]string{
-				"issuer":    "https://test.issuer.com",
-				"jwks_uri":  "https://test.jwks1.com",
-				"audiences": "audience1",
-				"client-id": "some-client-id",
+				"issuer":        "https://test.issuer.com",
+				"jwks_uri":      "https://test.jwks1.com",
+				"audiences":     "audience1",
+				"client_id":     "clientID1",
+				"some-property": "some-property-value",
 			},
 			expectedConfig: operator.OIDCConfig{
 				Issuer:    "https://test.issuer.com",
 				JwksURI:   "https://test.jwks1.com",
 				Audiences: []string{"audience1"},
+				ClientID:  "clientID1",
 				AdditionalProperties: map[string]string{
-					"client-id": "some-client-id",
+					"some-property": "some-property-value",
 				},
 			},
 		},
@@ -1286,6 +1308,7 @@ func TestExtractOIDCConfig(t *testing.T) {
 				Issuer:               "https://test.issuer.com",
 				JwksURI:              "",
 				Audiences:            []string{},
+				ClientID:             "",
 				AdditionalProperties: map[string]string{},
 			},
 		},
@@ -1392,6 +1415,85 @@ func TestParseCommaSeparatedValues(t *testing.T) {
 	}
 }
 
+func TestTenantOperatorTracing(t *testing.T) {
+	responder := respondertest.NewResponder()
+	target := orbital.TargetOperator{
+		Client: responder,
+	}
+
+	cfg := &config.Config{
+		BaseConfig: commoncfg.BaseConfig{
+			Application: commoncfg.Application{
+				Name: "tenant-operator",
+			},
+			Telemetry: commoncfg.Telemetry{
+				Traces: commoncfg.Trace{
+					Enabled: true,
+				},
+			},
+		},
+	}
+
+	tenantID := uuid.NewString()
+	schemaName, err := tmdb.EncodeSchemaNameBase62(tenantID)
+	require.NoError(t, err)
+	dbConn, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true},
+		testutils.WithInitTenants(model.Tenant{
+			ID:   tenantID,
+			Name: "test-tenant-01",
+			TenantModel: multitenancy.TenantModel{
+				DomainURL:  schemaName + ".example.com",
+				SchemaName: schemaName,
+			},
+		}))
+	_, clientCon := testutils.NewGRPCSuite(t)
+	unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
+	sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
+	clientFactory := mockClient.NewMockFactory(
+		registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
+		sessionmanager.NewMockService(sessionManagerClient),
+	)
+
+	op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory, nil, nil)
+	require.NoError(t, err)
+
+	validData, err := createValidTenantData(tenantID, RegionUSWest1, tenants[0])
+	assert.NoError(t, err)
+
+	go func() {
+		err = op.RunOperator(t.Context())
+		assert.NoError(t, err)
+	}()
+
+	taskReq := orbital.TaskRequest{
+		TaskID: uuid.New(),
+		Type:   tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(),
+		Data:   validData,
+	}
+
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider()
+	tp.RegisterSpanProcessor(recorder)
+
+	original := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+
+	t.Cleanup(func() {
+		otel.SetTracerProvider(original)
+		_ = tp.Shutdown(t.Context())
+	})
+
+	responder.NewRequest(taskReq)
+	taskResp := responder.NewResponse()
+	assert.Equal(t, taskReq.TaskID, taskResp.TaskID)
+	assert.Equal(t, string(orbital.TaskStatusProcessing), taskResp.Status)
+
+	spans := recorder.Ended()
+	assert.Len(t, spans, 1)
+	span := spans[0]
+	assert.Equal(t, tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), span.Name())
+}
+
 type TestConfig struct {
 	TenantOperator           *operator.TenantOperator
 	DB                       *multitenancy.DB
@@ -1448,6 +1550,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 	tenantManager, groupManager := createManagers(t, multitenancyDB, cfg, svcRegistry)
 	tenantOperator, err := operator.NewTenantOperator(
 		multitenancyDB,
+		cfg,
 		operatorTarget,
 		clientFactory,
 		tenantManager,

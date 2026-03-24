@@ -703,7 +703,7 @@ func (w *WorkflowManager) getWorkflows(
 	pagination repo.Pagination,
 	query *repo.Query,
 ) ([]*model.Workflow, int, error) {
-	isGroupFiltered, err := w.userManager.NeedsGroupFiltering(ctx, authz.ActionRead, authz.ResourceTypeWorkFlow)
+	isGroupFiltered, err := w.userManager.NeedsGroupFiltering(ctx, authz.APIActionRead, authz.APIResourceTypeWorkFlow)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 	}

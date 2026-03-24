@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-	certificate_issuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
@@ -129,7 +128,7 @@ func TestCertificateManager_RequestNewCertificate(t *testing.T) {
 	tests := []struct {
 		name                string
 		commonName          string
-		validationDateUnit  certificate_issuerv1.ValidityType
+		validationDateUnit  certificateissuer.ValidityType
 		validationDateValue int
 		purpose             model.CertificatePurpose
 		request2time        bool
@@ -138,7 +137,7 @@ func TestCertificateManager_RequestNewCertificate(t *testing.T) {
 	}{
 		{
 			name:                "RequestNewCertificate Purpose Generic Success",
-			validationDateUnit:  certificate_issuerv1.ValidityType_VALIDITY_TYPE_DAYS,
+			validationDateUnit:  certificateissuer.Days,
 			validationDateValue: 6,
 			purpose:             model.CertificatePurposeGeneric,
 			request2time:        false,
@@ -147,7 +146,7 @@ func TestCertificateManager_RequestNewCertificate(t *testing.T) {
 		},
 		{
 			name:                "RequestNewCertificate Purpose Tenant Default Success",
-			validationDateUnit:  certificate_issuerv1.ValidityType_VALIDITY_TYPE_DAYS,
+			validationDateUnit:  certificateissuer.Days,
 			validationDateValue: 6,
 			purpose:             model.CertificatePurposeTenantDefault,
 			request2time:        false,
@@ -156,7 +155,7 @@ func TestCertificateManager_RequestNewCertificate(t *testing.T) {
 		},
 		{
 			name:                "RequestNewCertificate Purpose Tenant Default Error not available",
-			validationDateUnit:  certificate_issuerv1.ValidityType_VALIDITY_TYPE_DAYS,
+			validationDateUnit:  certificateissuer.Days,
 			validationDateValue: 6,
 			purpose:             model.CertificatePurposeTenantDefault,
 			request2time:        true,

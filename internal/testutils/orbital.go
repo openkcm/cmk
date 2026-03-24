@@ -1,6 +1,12 @@
 package testutils
 
-import "github.com/google/uuid"
+import (
+	"context"
+
+	"github.com/google/uuid"
+
+	"github.com/openkcm/cmk/internal/authz"
+)
 
 type OrbitalJob struct {
 	ID           uuid.UUID
@@ -19,4 +25,10 @@ func (OrbitalJob) TableName() string {
 
 func (OrbitalJob) IsSharedModel() bool {
 	return false
+}
+
+func (OrbitalJob) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return true, nil
 }

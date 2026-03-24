@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -8,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
 )
 
@@ -38,26 +40,37 @@ func NewIAMIdentifier(name string, tenantID string) string {
 	return fmt.Sprintf("%s_%s_%s", constants.KMS, name, tenantID)
 }
 
+// TableResourceType return the authz resource type
+func (m Group) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeGroup
+}
+
 // TableName returns the table name for Key
-func (Group) TableName() string {
-	return "group"
+func (m Group) TableName() string {
+	return string(m.TableResourceType())
 }
 
 func (Group) IsSharedModel() bool {
 	return false
 }
 
+func (m Group) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
+}
+
 // BeforeSave is ran before any creating/updating the group
 // but before finishing the transaction
 // If this step fails the transaction should be aborted
-func (g *Group) BeforeSave(_ *gorm.DB) error {
+func (m *Group) BeforeSave(_ *gorm.DB) error {
 	textValidator := regexp.MustCompile(ValidTextPattern)
 
-	if !textValidator.MatchString(g.IAMIdentifier) || len(g.IAMIdentifier) > MaxIAMIdentifierLength {
+	if !textValidator.MatchString(m.IAMIdentifier) || len(m.IAMIdentifier) > MaxIAMIdentifierLength {
 		return ErrInvalidIAMIdentifier
 	}
 
-	if !textValidator.MatchString(g.Name) || len(g.Name) > MaxNameLength {
+	if !textValidator.MatchString(m.Name) || len(m.Name) > MaxNameLength {
 		return ErrInvalidName
 	}
 

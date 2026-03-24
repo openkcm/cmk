@@ -12,6 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -120,16 +121,15 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyRegistration, manager.ErrGRPCHYOKAuthFailed},
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyRegistration, keymanagement.ErrProviderAuthenticationFailed},
 		ExposedError: &APIError{
 			Code:    "REGISTER_KEY_AUTHENTICATION_FAILED",
 			Message: "Failed to authenticate with the keystore provider",
 			Status:  http.StatusBadRequest,
 		},
-		ContextGetter: errs.GetGRPCErrorContext,
 	},
 	{
-		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyRegistration, manager.ErrHYOKProviderKeyNotFound},
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyRegistration, keymanagement.ErrHYOKKeyNotFound},
 		ExposedError: &APIError{
 			Code:    "REGISTER_KEY_PROVIDER_KEY_NOT_FOUND",
 			Message: "Key not found in the keystore provider",

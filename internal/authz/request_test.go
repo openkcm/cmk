@@ -15,28 +15,28 @@ func TestNewRequest_ValidCases(t *testing.T) {
 	tests := []struct {
 		name         string
 		user         authz.User
-		resourceType authz.ResourceTypeName
-		action       authz.Action
+		resourceType authz.APIResourceTypeName
+		action       authz.APIAction
 		tenantID     authz.TenantID
 	}{
 		{
 			"ValidRequest",
 			authz.User{UserName: "test_user", Groups: []string{"group1"}},
-			authz.ResourceTypeKey,
-			authz.ActionRead,
+			authz.APIResourceTypeKey,
+			authz.APIActionRead,
 			"tenant1",
 		},
 		{
-			"EmptyResourceType",
+			"EmptyAPIResourceType",
 			authz.User{UserName: "test_user", Groups: []string{"group1"}},
-			authz.ResourceTypeName(""), authz.ActionRead,
+			authz.APIResourceTypeName(""), authz.APIActionRead,
 			"tenant1",
 		},
 		{
-			"EmptyAction",
+			"EmptyAPIAction",
 			authz.User{UserName: "test_user", Groups: []string{"group1"}},
-			authz.ResourceTypeKey,
-			authz.Action(""),
+			authz.APIResourceTypeKey,
+			authz.APIAction(""),
 			"tenant1",
 		},
 	}
@@ -61,42 +61,42 @@ func TestNewRequest_InvalidCases(t *testing.T) {
 	tests := []struct {
 		name         string
 		user         authz.User
-		resourceType authz.ResourceTypeName
-		action       authz.Action
+		resourceType authz.APIResourceTypeName
+		action       authz.APIAction
 		tenantID     authz.TenantID
 	}{
 		{
 			"EmptyUser",
 			authz.User{UserName: "", Groups: []string{"group1"}},
-			authz.ResourceTypeKey,
-			authz.ActionRead,
+			authz.APIResourceTypeKey,
+			authz.APIActionRead,
 			"tenant1",
 		},
 		{
 			"EmptyUserGroups",
 			authz.User{UserName: "test_user", Groups: []string{}},
-			authz.ResourceTypeKey,
-			authz.ActionRead,
+			authz.APIResourceTypeKey,
+			authz.APIActionRead,
 			"tenant1",
 		},
 		{
-			"InvalidResourceType",
+			"InvalidAPIResourceType",
 			authz.User{UserName: "test_user", Groups: []string{"group1"}},
-			authz.ResourceTypeName("invalid"), authz.ActionRead,
+			authz.APIResourceTypeName("invalid"), authz.APIActionRead,
 			"tenant1",
 		},
 		{
-			"InvalidResourceTypeForAction",
+			"InvalidAPIResourceTypeForAPIAction",
 			authz.User{UserName: "test_user", Groups: []string{"group1"}},
-			authz.ResourceTypeKeyConfiguration,
-			authz.ActionRead,
+			authz.APIResourceTypeKeyConfiguration,
+			authz.APIActionRead,
 			"tenant1",
 		},
 		{
-			"InvalidAction",
+			"InvalidAPIAction",
 			authz.User{UserName: "test_user", Groups: []string{"group1"}},
-			authz.ResourceTypeKey,
-			authz.Action("invalid"),
+			authz.APIResourceTypeKey,
+			authz.APIAction("invalid"),
 			"tenant1",
 		},
 	}
@@ -113,113 +113,6 @@ func TestNewRequest_InvalidCases(t *testing.T) {
 
 				if req != nil {
 					t.Fatalf("expected nil request, got %v", req)
-				}
-			},
-		)
-	}
-}
-
-func TestSetUser(t *testing.T) {
-	tests := []struct {
-		name        string
-		user        authz.User
-		expectError bool
-	}{
-		{"ValidUser", authz.User{UserName: "test_user", Groups: []string{"group1"}}, false},
-		{"EmptyUser", authz.User{UserName: "", Groups: []string{"group1"}}, true},
-		{"EmptyUserGroup", authz.User{UserName: "test_user", Groups: []string{}}, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(
-			tt.name, func(t *testing.T) {
-				req := &authz.Request{}
-
-				err := req.SetUser(tt.user)
-				if tt.expectError && err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-
-				if !tt.expectError && err != nil {
-					t.Fatalf("expected no error, got %v", err)
-				}
-
-				if req.User.UserName != tt.user.UserName && !tt.expectError {
-					t.Errorf("expected UserName %v, got %v", tt.user, req.User)
-				}
-			},
-		)
-	}
-}
-
-func TestSetResourceType(t *testing.T) {
-	test := []struct {
-		name         string
-		resourceType authz.ResourceTypeName
-		action       authz.Action
-		expectError  bool
-	}{
-		{"ValidResourceType", authz.ResourceTypeKey, authz.Action(""), false},
-		{"EmptyResourceType", authz.ResourceTypeName(""), authz.Action(""), false},
-		{"InvalidResourceType", authz.ResourceTypeName("invalid"), authz.Action(""), true},
-		{"ValidResourceTypeWithInvalidAction", authz.ResourceTypeKeyConfiguration, authz.ActionKeyRotate, true},
-	}
-
-	for _, tt := range test {
-		t.Run(
-			tt.name, func(t *testing.T) {
-				req := &authz.Request{}
-				// Set the Action first
-				errAction := req.SetAction(tt.action)
-				if errAction != nil {
-					t.Fatalf("expected no error, got %v", errAction)
-				}
-
-				errResource := req.SetResourceType(tt.resourceType)
-				if tt.expectError && errResource == nil {
-					t.Fatalf("expected error, got nil")
-				}
-
-				if !tt.expectError && errResource != nil {
-					t.Fatalf("expected no error, got %v", errResource)
-				}
-
-				if req.ResourceTypeName != tt.resourceType && !tt.expectError {
-					t.Errorf("expected ResourceTypeName %v, got %v", tt.resourceType, req.ResourceTypeName)
-				}
-			},
-		)
-	}
-}
-
-func TestSetAction(t *testing.T) {
-	// Test SetAction only with Action but without resourceType
-	tests := []struct {
-		name        string
-		action      authz.Action
-		expectError bool
-	}{
-		{"ValidAction", authz.ActionRead, false},
-		{"EmptyAction", authz.Action(""), false},
-		{"InvalidAction", authz.Action("invalid"), true},
-	}
-
-	for _, tt := range tests {
-		t.Run(
-			tt.name, func(t *testing.T) {
-				req := &authz.Request{}
-
-				err := req.SetAction(tt.action)
-				if tt.expectError && err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-
-				if !tt.expectError && err != nil {
-					t.Fatalf("expected no error, got %v", err)
-				}
-
-				if req.Action != tt.action && !tt.expectError {
-					t.Errorf("expected Action %v, got %v", tt.action, req.Action)
 				}
 			},
 		)

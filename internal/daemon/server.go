@@ -16,6 +16,8 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -61,21 +63,10 @@ func NewCMKServer(
 		log.Error(ctx, "error connecting to registry service gRPC server", err)
 	}
 
-	repo := sql.NewRepository(dbCon)
-
-	migrator, err := db.NewMigrator(repo, cfg)
+	controller, err := makeController(ctx, cfg, dbCon, clientsFactory)
 	if err != nil {
-		return nil, oops.In(ServerLogDomain).Wrapf(err, "creating db migrator")
+		return nil, oops.In(ServerLogDomain).Wrapf(err, "creating controller")
 	}
-
-	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
-	if err != nil {
-		log.Error(ctx, "Failed to load plugin", err)
-	}
-
-	controller := cmk.NewAPIController(ctx, repo, cfg, clientsFactory, migrator, svcRegistry)
-
-	controller.AuthzEngine.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
 
 	memoryStorage := keyvalue.NewMemoryStorage[string, []byte]()
 
@@ -204,6 +195,7 @@ func createHTTPServer(
 				middleware.PanicRecoveryMiddleware(),
 				middleware.InjectMultiTenancy(),
 				middleware.InjectRequestID(),
+				middleware.TracingMiddleware(cfg),
 			},
 		},
 	)
@@ -216,4 +208,42 @@ func createHTTPServer(
 		WriteTimeout:      WriteTimeout,
 		IdleTimeout:       IdleTimeout,
 	}, nil
+}
+
+func makeController(
+	ctx context.Context,
+	cfg *config.Config,
+	dbCon *multitenancy.DB,
+	clientsFactory clients.Factory,
+) (*cmk.APIController, error) {
+	r := sql.NewRepository(dbCon)
+
+	migrator, err := db.NewMigrator(r, cfg)
+	if err != nil {
+		return nil, oops.In(ServerLogDomain).Wrapf(err, "creating db migrator")
+	}
+
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
+	if err != nil {
+		log.Error(ctx, "Failed to load plugin", err)
+	}
+
+	authzAPILoader := authz_loader.NewAPIAuthzLoader(ctx, r, cfg)
+	if authzAPILoader.AuthzHandler == nil {
+		return nil, oops.In(ServerLogDomain).Wrapf(err, "no authz handler")
+	}
+
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
+	if authzAPILoader.AuthzHandler == nil {
+		return nil, oops.In(ServerLogDomain).Wrapf(err, "no authz handler")
+	}
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
+	controller := cmk.NewAPIController(ctx, authzRepo, cfg, clientsFactory,
+		migrator, svcRegistry, authzAPILoader)
+
+	controller.AuthzLoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
+
+	return controller, nil
 }

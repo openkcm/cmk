@@ -2,8 +2,6 @@ package manager
 
 import (
 	"errors"
-
-	"github.com/openkcm/cmk/internal/errs"
 )
 
 var (
@@ -21,7 +19,6 @@ var (
 	ErrHYOKKeyActionNotAllowed = errors.New("HYOK key action not allowed")
 	ErrNameCannotBeEmpty       = errors.New("name field cannot be empty")
 	ErrEventSendingFailed      = errors.New("failed to send event")
-	ErrHYOKProviderKeyNotFound = errors.New("HYOK provider key not found")
 	ErrConvertAccessData       = errors.New("failed to convert access data")
 
 	ErrGetTags      = errors.New("failed getting tags")
@@ -162,8 +159,7 @@ var (
 
 	ErrLoadIdentityManagementPlugin = errors.New("failed to load identity management plugin")
 
-	ErrTenantNotExist = errors.New("tenantID does not exist")
-	ErrEmptyTenantID  = errors.New("tenantID cannot be empty")
+	ErrEmptyTenantID = errors.New("tenantID cannot be empty")
 
 	ErrPoolIsDrained               = errors.New("pool is drained")
 	ErrCouldNotSaveConfiguration   = errors.New("could not save configuration")
@@ -179,14 +175,3 @@ var (
 
 	ErrGroupRole = errors.New("unsupported role for group creation")
 )
-
-const (
-	GRPCErrorCodeHYOKAuthFailed errs.GRPCErrorCode = "HYOK_AUTH_FAILED"
-)
-
-// Predefined GRPC errors
-
-var ErrGRPCHYOKAuthFailed = errs.GRPCError{
-	Code:        GRPCErrorCodeHYOKAuthFailed,
-	BaseMessage: "failed to authenticate with the keystore provider",
-}

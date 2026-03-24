@@ -1,10 +1,12 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/google/uuid"
 
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
 )
 
@@ -17,12 +19,23 @@ type Keystore struct {
 	Config   json.RawMessage `gorm:"type:jsonb;not null;unique"`
 }
 
-func (Keystore) TableName() string {
-	return "public.keystore_pool"
+// TableResourceType return the authz resource type
+func (m Keystore) TableResourceType() authz.RepoResourceTypeName {
+	return authz.RepoResourceTypeKeystore
+}
+
+func (m Keystore) TableName() string {
+	return string(m.TableResourceType())
 }
 
 func (Keystore) IsSharedModel() bool {
 	return true
+}
+
+func (m Keystore) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	action authz.RepoAction) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
 //nolint:tagliatelle

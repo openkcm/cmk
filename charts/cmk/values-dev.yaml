@@ -586,6 +586,9 @@ config:
       tenant:
         schema: /etc/cmk/migrations/tenant/schema
         data: /etc/cmk/migrations/tenant/data
+    parameters:
+      ssl:
+        mode: "disable"
 
   tenantManager:
     amqp:

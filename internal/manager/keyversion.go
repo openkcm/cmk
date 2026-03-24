@@ -8,12 +8,12 @@ import (
 
 	"github.com/google/uuid"
 
-	keystoreopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
-
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -145,20 +145,18 @@ func (kvm *KeyVersionManager) createKeyProvider(ctx context.Context, key *model.
 	}
 
 	// create key in provider
-	keyResponse, err := provider.Client.CreateKey(ctx, &keystoreopv1.CreateKeyRequest{
-		Config: provider.Config,
-		Algorithm: keystoreopv1.KeyAlgorithm(
-			keystoreopv1.KeyAlgorithm_value[getPluginAlgorithm(key.Algorithm)],
-		),
-		Id:      ptr.PointTo(key.ID.String()),
-		Region:  key.Region,
-		KeyType: keystoreopv1.KeyType(keystoreopv1.KeyType_value[getPluginKeyType(key.KeyType)]),
+	keyResponse, err := provider.Client.CreateKey(ctx, &keymanagement.CreateKeyRequest{
+		Config:       common.KeystoreConfig{Values: provider.Config.Values},
+		KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
+		ID:           ptr.PointTo(key.ID.String()),
+		Region:       key.Region,
+		KeyType:      convertToAPIKeyType(key.KeyType),
 	})
 	if err != nil {
 		return "", errs.Wrap(ErrKeyCreationFailed, err)
 	}
 
-	nativeID := keyResponse.GetKeyId()
+	nativeID := keyResponse.KeyID
 
 	return nativeID, nil
 }

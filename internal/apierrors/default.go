@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -64,14 +67,6 @@ var defaultMapper = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{repo.ErrGetResource},
-		ExposedError: &APIError{
-			Code:    GetResource,
-			Message: "The requested resource was not found",
-			Status:  http.StatusInternalServerError,
-		},
-	},
-	{
 		InternalErrorChain: []error{ErrUnknownProperty},
 		ExposedError: &APIError{
 			Code:    "UNKNOWN_PROPERTY",
@@ -85,6 +80,26 @@ var defaultMapper = []errs.ExposedErrors[*APIError]{
 			Code:    "ACTION_REQUIRE_WORKFLOW",
 			Message: "Action requires a workflow",
 			Status:  http.StatusForbidden,
+		},
+	},
+	{
+		InternalErrorChain: []error{authz_loader.ErrTenantNotExist},
+		ExposedError:       ForbiddenErrorMessage(),
+	},
+	{
+		InternalErrorChain: []error{authz.ErrAuthorizationDenied},
+		ExposedError:       ForbiddenErrorMessage(),
+	},
+	{
+		InternalErrorChain: []error{authz_repo.ErrUnauthorized},
+		ExposedError:       ForbiddenErrorMessage(),
+	},
+	{
+		InternalErrorChain: []error{repo.ErrGetResource},
+		ExposedError: &APIError{
+			Code:    GetResource,
+			Message: "The requested resource was not found",
+			Status:  http.StatusInternalServerError,
 		},
 	},
 }

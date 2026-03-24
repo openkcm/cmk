@@ -16,4 +16,6 @@ FROM gcr.io/distroless/static-debian12:nonroot@sha256:a9329520abc449e3b14d5bc3a6
 
 COPY --from=builder /binaries/ /
 
+COPY migrations /etc/cmk/migrations
+
 USER 65532:65532

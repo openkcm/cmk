@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.6.1](https://github.com/openkcm/cmk/compare/v0.6.0...v0.6.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* dockerfile copy migrations files ([#209](https://github.com/openkcm/cmk/issues/209)) ([c85c6a0](https://github.com/openkcm/cmk/commit/c85c6a02faec5720a08fad65c97c4d096d375669))
+
+## [0.6.0](https://github.com/openkcm/cmk/compare/v0.5.0...v0.6.0) (2026-03-18)
+
+
+### Features
+
+* return default keystore support regions ([#166](https://github.com/openkcm/cmk/issues/166)) ([5b3a8bb](https://github.com/openkcm/cmk/commit/5b3a8bbc5bdc05a9d997da04233249834485f953))
+
+
+### Bug Fixes
+
+* load and use keystore operations & management plugins via new interface ([#206](https://github.com/openkcm/cmk/issues/206)) ([0bf62e4](https://github.com/openkcm/cmk/commit/0bf62e4e565d842226737bcb0cc47f347858865f))
+* Orbital Database Setup  ([#204](https://github.com/openkcm/cmk/issues/204)) ([ca4b642](https://github.com/openkcm/cmk/commit/ca4b6420ebed68d6bd241e8bb9e43a6b6ff73dc7))
+
+## [0.5.0](https://github.com/openkcm/cmk/compare/v0.4.1...v0.5.0) (2026-03-16)
+
+
+### Features
+
+* change default tenant certificate subject ([#168](https://github.com/openkcm/cmk/issues/168)) ([6f7b689](https://github.com/openkcm/cmk/commit/6f7b68928d59ea7b09b39a9cb436b2ff89805f16))
+* Forward auth client_id ([#199](https://github.com/openkcm/cmk/issues/199)) ([03eee70](https://github.com/openkcm/cmk/commit/03eee708782e1f6610b4e1e146533605897f19bd))
+
+
+### Bug Fixes
+
+* change cert issuer, IDM and notification plugins to use go interfaces ([#184](https://github.com/openkcm/cmk/issues/184)) ([6c27d4d](https://github.com/openkcm/cmk/commit/6c27d4d569b84bb185a6a62dc31e84ec4032c67f))
+* **deps:** bump github.com/getkin/kin-openapi from 0.133.0 to 0.134.0 in the gomod-group group ([#198](https://github.com/openkcm/cmk/issues/198)) ([d80ac03](https://github.com/openkcm/cmk/commit/d80ac031f50f8e5e433ad7905074abe4c16f63b0))
+* **deps:** bump the gomod-group group with 3 updates ([#194](https://github.com/openkcm/cmk/issues/194)) ([7fe3dac](https://github.com/openkcm/cmk/commit/7fe3dac22638583812fee3a838bb559fc75f7e55))
+* Fix order when listing systems ([#196](https://github.com/openkcm/cmk/issues/196)) ([662270b](https://github.com/openkcm/cmk/commit/662270b6cafe4d01b950e6693952645429dfa6e9))
+* group rename expand and db-migrator to goose provider ([#156](https://github.com/openkcm/cmk/issues/156)) ([0e11e6c](https://github.com/openkcm/cmk/commit/0e11e6c166a48025fc2aa3ced875875e92507281))
+* sql migration files required for db-migrator ([#197](https://github.com/openkcm/cmk/issues/197)) ([4b1a52d](https://github.com/openkcm/cmk/commit/4b1a52d27a85ddaeae884d5736a013a4f106266e))
+* update db-migrator command to support dynamic command configuration ([#192](https://github.com/openkcm/cmk/issues/192)) ([3368ec5](https://github.com/openkcm/cmk/commit/3368ec5b96a57b36a8bb34d250445f25777dba6e))
+* Update dependabot config ([#193](https://github.com/openkcm/cmk/issues/193)) ([0272ae6](https://github.com/openkcm/cmk/commit/0272ae6b9fbebc70d5e43a3b044423c385797ddd))
+
 ## [0.4.1](https://github.com/openkcm/cmk/compare/v0.4.0...v0.4.1) (2026-03-06)
 
 
