@@ -258,8 +258,8 @@ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJw
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/openkcm/api-sdk v0.16.0 h1:BCR+atGHDMy4yYdxJ/nnyFzoLJb0D9DQGfPauwmZ7Nw=
 github.com/openkcm/api-sdk v0.16.0/go.mod h1:oYv9C+bUTcNHHhVN91nRoTveO9XSkd/EO1mFCM+a0fA=
-github.com/openkcm/common-sdk v1.14.0 h1:WJ6L71BMwKGe11sGOiXxv+RrRqWVtgGzzAILRt2k+Ks=
-github.com/openkcm/common-sdk v1.14.0/go.mod h1:1SM26xao2uSwVOIcBpvnLR29HzZXY0DNqEUokUExMRs=
+github.com/openkcm/common-sdk v1.14.1 h1:HjZ3pDx/lAcSDFA1FBxeu+lZp/7ob4HsstCw3KYlLZc=
+github.com/openkcm/common-sdk v1.14.1/go.mod h1:ruQ1qSJ6fIE65flZvCdfnkwtAime6MzsbRu4q7cNKhY=
 github.com/openkcm/orbital v0.5.1 h1:fCFyGm059h2IkD8/u+GI7Ofqd54lFGj7zoujKI+7MQk=
 github.com/openkcm/orbital v0.5.1/go.mod h1:PqAOg75iYDrDQrL9uBQKAKfuBlNJgeG0pex1780Wo0E=
 github.com/openkcm/plugin-sdk v0.10.0 h1:YH4nzMjig/wXyPFWCnMzkAMSysWxsSmcdzhzBu2i4S4=
