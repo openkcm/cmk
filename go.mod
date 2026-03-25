@@ -30,7 +30,7 @@ require (
 	github.com/openkcm/api-sdk v0.16.0
 	github.com/openkcm/common-sdk v1.14.1
 	github.com/openkcm/orbital v0.5.1
-	github.com/openkcm/plugin-sdk v0.10.0
+	github.com/openkcm/plugin-sdk v0.10.2
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/prometheus/client_golang v1.23.2
@@ -189,7 +189,7 @@ require (
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect
