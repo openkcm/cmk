@@ -2,7 +2,8 @@ package system
 
 import (
 	"errors"
-	"fmt"
+
+	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 
 var (
@@ -19,23 +20,12 @@ var (
 	ErrOperationFailed           = errors.New("operation failed")
 )
 
-type ValidationError struct {
-	Field   string
-	Message string
-}
-
+// NewValidationError creates a new validation error.
 func NewValidationError(field, message string) error {
-	return &ValidationError{
-		Field:   field,
-		Message: message,
-	}
+	return apierrors.NewValidationError(field, message)
 }
 
-func (e *ValidationError) Error() string {
-	return fmt.Sprintf("validation error on field '%s': %s", e.Field, e.Message)
-}
-
+// IsValidationError checks if an error is a validation error.
 func IsValidationError(err error) bool {
-	var ve *ValidationError
-	return errors.As(err, &ve)
+	return apierrors.IsValidationError(err)
 }

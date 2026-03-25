@@ -1,44 +1,37 @@
 package tenant
 
-import "fmt"
+import (
+	"errors"
 
-var (
-	ErrTenantNotFound          = fmt.Errorf("tenant not found")
-	ErrTenantAlreadyExists     = fmt.Errorf("tenant already exists")
-	ErrInvalidTenantID         = fmt.Errorf("invalid tenant ID")
-	ErrInvalidRegion           = fmt.Errorf("invalid region")
-	ErrInvalidOwnerID          = fmt.Errorf("invalid owner ID")
-	ErrInvalidOwnerType        = fmt.Errorf("invalid owner type")
-	ErrInvalidTenantName       = fmt.Errorf("invalid tenant name")
-	ErrInvalidLimit            = fmt.Errorf("invalid limit: must be between 1 and 1000")
-	ErrTenantAlreadyBlocked    = fmt.Errorf("tenant is already blocked")
-	ErrTenantNotBlocked        = fmt.Errorf("tenant is not blocked")
-	ErrTenantAlreadyTerminated = fmt.Errorf("tenant is already terminated")
-	ErrInvalidTenantStatus     = fmt.Errorf("invalid tenant status for this operation")
-	ErrInvalidTenantRole       = fmt.Errorf("invalid tenant role")
-	ErrInvalidLabels           = fmt.Errorf("invalid labels")
-	ErrInvalidLabelKeys        = fmt.Errorf("invalid label keys")
-	ErrInvalidUserGroups       = fmt.Errorf("invalid user groups")
-	ErrOperationFailed         = fmt.Errorf("operation failed")
+	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 
-type ValidationError struct {
-	Field   string
-	Message string
+var (
+	ErrTenantNotFound          = errors.New("tenant not found")
+	ErrTenantAlreadyExists     = errors.New("tenant already exists")
+	ErrInvalidTenantID         = errors.New("invalid tenant ID")
+	ErrInvalidRegion           = errors.New("invalid region")
+	ErrInvalidOwnerID          = errors.New("invalid owner ID")
+	ErrInvalidOwnerType        = errors.New("invalid owner type")
+	ErrInvalidTenantName       = errors.New("invalid tenant name")
+	ErrInvalidLimit            = errors.New("invalid limit: must be between 1 and 1000")
+	ErrTenantAlreadyBlocked    = errors.New("tenant is already blocked")
+	ErrTenantNotBlocked        = errors.New("tenant is not blocked")
+	ErrTenantAlreadyTerminated = errors.New("tenant is already terminated")
+	ErrInvalidTenantStatus     = errors.New("invalid tenant status for this operation")
+	ErrInvalidTenantRole       = errors.New("invalid tenant role")
+	ErrInvalidLabels           = errors.New("invalid labels")
+	ErrInvalidLabelKeys        = errors.New("invalid label keys")
+	ErrInvalidUserGroups       = errors.New("invalid user groups")
+	ErrOperationFailed         = errors.New("operation failed")
+)
+
+// NewValidationError creates a new validation error.
+func NewValidationError(field, message string) error {
+	return apierrors.NewValidationError(field, message)
 }
 
-func (e *ValidationError) Error() string {
-	return fmt.Sprintf("validation error on field '%s': %s", e.Field, e.Message)
-}
-
-func NewValidationError(field, message string) *ValidationError {
-	return &ValidationError{
-		Field:   field,
-		Message: message,
-	}
-}
-
+// IsValidationError checks if an error is a validation error.
 func IsValidationError(err error) bool {
-	_, ok := err.(*ValidationError)
-	return ok
+	return apierrors.IsValidationError(err)
 }
