@@ -240,7 +240,7 @@ func TestReconciler_TaskResolution_SystemAction(t *testing.T) {
 			if tc.jobType == "SYSTEM_LINK" {
 				job, err = tester.eventFactory.SystemLink(ctx, tc.system, tc.keyIDTo)
 			} else {
-				job, err = tester.eventFactory.SystemUnlink(ctx, tc.system, tc.keyIDFrom, "")
+				job, err = tester.eventFactory.SystemUnlink(ctx, tc.system, tc.keyIDFrom)
 			}
 
 			require.NoError(t, err)
