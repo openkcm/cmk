@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/openkcm/orbital"
 
@@ -61,4 +62,27 @@ func unmarshalSystemJobData(job orbital.Job) (SystemActionJobData, error) {
 	}
 
 	return systemJobData, nil
+}
+
+func mergeOrbitalTaskErrors(
+	ctx context.Context,
+	orbitalManager *orbital.Manager,
+	job orbital.Job,
+) (string, error) {
+	tasks, err := orbitalManager.ListTasks(ctx, orbital.ListTasksQuery{
+		JobID:  job.ID,
+		Status: orbital.TaskStatusFailed,
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	taskErrors := make([]string, 0, len(tasks))
+	for _, t := range tasks {
+		taskErrors = append(taskErrors, t.ErrorMessage)
+	}
+	message := strings.Join(taskErrors, ":")
+
+	return message, nil
 }
