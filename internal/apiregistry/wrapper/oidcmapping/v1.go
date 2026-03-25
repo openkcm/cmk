@@ -3,10 +3,12 @@ package oidcmapping
 import (
 	"context"
 
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
-	"github.com/openkcm/cmk/internal/apiregistry/api/oidcmapping"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+
+	"github.com/openkcm/cmk/internal/apiregistry/api/oidcmapping"
 )
 
 type V1 struct {
@@ -19,7 +21,9 @@ func NewV1(client oidcmappinggrpc.ServiceClient) *V1 {
 	}
 }
 
-func (v *V1) ApplyOIDCMapping(ctx context.Context, req *oidcmapping.ApplyOIDCMappingRequest) (*oidcmapping.ApplyOIDCMappingResponse, error) {
+func (v *V1) ApplyOIDCMapping(
+	ctx context.Context, req *oidcmapping.ApplyOIDCMappingRequest,
+) (*oidcmapping.ApplyOIDCMappingResponse, error) {
 	if err := validateApplyOIDCMappingRequest(req); err != nil {
 		return nil, err
 	}
@@ -52,7 +56,9 @@ func (v *V1) ApplyOIDCMapping(ctx context.Context, req *oidcmapping.ApplyOIDCMap
 	return result, nil
 }
 
-func (v *V1) RemoveOIDCMapping(ctx context.Context, req *oidcmapping.RemoveOIDCMappingRequest) (*oidcmapping.RemoveOIDCMappingResponse, error) {
+func (v *V1) RemoveOIDCMapping(
+	ctx context.Context, req *oidcmapping.RemoveOIDCMappingRequest,
+) (*oidcmapping.RemoveOIDCMappingResponse, error) {
 	if err := validateRemoveOIDCMappingRequest(req); err != nil {
 		return nil, err
 	}
@@ -76,7 +82,9 @@ func (v *V1) RemoveOIDCMapping(ctx context.Context, req *oidcmapping.RemoveOIDCM
 	return result, nil
 }
 
-func (v *V1) BlockOIDCMapping(ctx context.Context, req *oidcmapping.BlockOIDCMappingRequest) (*oidcmapping.BlockOIDCMappingResponse, error) {
+func (v *V1) BlockOIDCMapping(
+	ctx context.Context, req *oidcmapping.BlockOIDCMappingRequest,
+) (*oidcmapping.BlockOIDCMappingResponse, error) {
 	if err := validateBlockOIDCMappingRequest(req); err != nil {
 		return nil, err
 	}
@@ -100,7 +108,9 @@ func (v *V1) BlockOIDCMapping(ctx context.Context, req *oidcmapping.BlockOIDCMap
 	return result, nil
 }
 
-func (v *V1) UnblockOIDCMapping(ctx context.Context, req *oidcmapping.UnblockOIDCMappingRequest) (*oidcmapping.UnblockOIDCMappingResponse, error) {
+func (v *V1) UnblockOIDCMapping(
+	ctx context.Context, req *oidcmapping.UnblockOIDCMappingRequest,
+) (*oidcmapping.UnblockOIDCMappingResponse, error) {
 	if err := validateUnblockOIDCMappingRequest(req); err != nil {
 		return nil, err
 	}
@@ -155,6 +165,7 @@ func validateUnblockOIDCMappingRequest(req *oidcmapping.UnblockOIDCMappingReques
 	return nil
 }
 
+//nolint:cyclop // error mapping requires multiple case statements
 func convertGRPCError(err error) error {
 	st, ok := status.FromError(err)
 	if !ok {

@@ -4,10 +4,12 @@ import (
 	"context"
 	"time"
 
-	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	"github.com/openkcm/cmk/internal/apiregistry/api/tenant"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
+
+	"github.com/openkcm/cmk/internal/apiregistry/api/tenant"
 )
 
 type V1 struct {
@@ -20,7 +22,9 @@ func NewV1(client tenantgrpc.ServiceClient) *V1 {
 	}
 }
 
-func (v *V1) RegisterTenant(ctx context.Context, req *tenant.RegisterTenantRequest) (*tenant.RegisterTenantResponse, error) {
+func (v *V1) RegisterTenant(
+	ctx context.Context, req *tenant.RegisterTenantRequest,
+) (*tenant.RegisterTenantResponse, error) {
 	if err := validateRegisterTenantRequest(req); err != nil {
 		return nil, err
 	}
@@ -115,7 +119,9 @@ func (v *V1) BlockTenant(ctx context.Context, req *tenant.BlockTenantRequest) (*
 	}, nil
 }
 
-func (v *V1) UnblockTenant(ctx context.Context, req *tenant.UnblockTenantRequest) (*tenant.UnblockTenantResponse, error) {
+func (v *V1) UnblockTenant(
+	ctx context.Context, req *tenant.UnblockTenantRequest,
+) (*tenant.UnblockTenantResponse, error) {
 	if err := validateUnblockTenantRequest(req); err != nil {
 		return nil, err
 	}
@@ -134,7 +140,9 @@ func (v *V1) UnblockTenant(ctx context.Context, req *tenant.UnblockTenantRequest
 	}, nil
 }
 
-func (v *V1) TerminateTenant(ctx context.Context, req *tenant.TerminateTenantRequest) (*tenant.TerminateTenantResponse, error) {
+func (v *V1) TerminateTenant(
+	ctx context.Context, req *tenant.TerminateTenantRequest,
+) (*tenant.TerminateTenantResponse, error) {
 	if err := validateTerminateTenantRequest(req); err != nil {
 		return nil, err
 	}
@@ -153,7 +161,9 @@ func (v *V1) TerminateTenant(ctx context.Context, req *tenant.TerminateTenantReq
 	}, nil
 }
 
-func (v *V1) SetTenantLabels(ctx context.Context, req *tenant.SetTenantLabelsRequest) (*tenant.SetTenantLabelsResponse, error) {
+func (v *V1) SetTenantLabels(
+	ctx context.Context, req *tenant.SetTenantLabelsRequest,
+) (*tenant.SetTenantLabelsResponse, error) {
 	if err := validateSetTenantLabelsRequest(req); err != nil {
 		return nil, err
 	}
@@ -173,7 +183,9 @@ func (v *V1) SetTenantLabels(ctx context.Context, req *tenant.SetTenantLabelsReq
 	}, nil
 }
 
-func (v *V1) RemoveTenantLabels(ctx context.Context, req *tenant.RemoveTenantLabelsRequest) (*tenant.RemoveTenantLabelsResponse, error) {
+func (v *V1) RemoveTenantLabels(
+	ctx context.Context, req *tenant.RemoveTenantLabelsRequest,
+) (*tenant.RemoveTenantLabelsResponse, error) {
 	if err := validateRemoveTenantLabelsRequest(req); err != nil {
 		return nil, err
 	}
@@ -193,7 +205,9 @@ func (v *V1) RemoveTenantLabels(ctx context.Context, req *tenant.RemoveTenantLab
 	}, nil
 }
 
-func (v *V1) SetTenantUserGroups(ctx context.Context, req *tenant.SetTenantUserGroupsRequest) (*tenant.SetTenantUserGroupsResponse, error) {
+func (v *V1) SetTenantUserGroups(
+	ctx context.Context, req *tenant.SetTenantUserGroupsRequest,
+) (*tenant.SetTenantUserGroupsResponse, error) {
 	if err := validateSetTenantUserGroupsRequest(req); err != nil {
 		return nil, err
 	}
@@ -312,6 +326,7 @@ func mapProtoToTenantInfo(protoTenant *tenantgrpc.Tenant) *tenant.TenantInfo {
 	}
 }
 
+//nolint:cyclop // status mapping requires multiple case statements
 func mapProtoToTenantStatus(protoStatus tenantgrpc.Status) tenant.TenantStatus {
 	switch protoStatus {
 	case tenantgrpc.Status_STATUS_REQUESTED:
@@ -380,6 +395,7 @@ func parseTime(timeStr string) time.Time {
 	return t
 }
 
+//nolint:cyclop // error mapping requires multiple case statements
 func convertGRPCError(err error) error {
 	st, ok := status.FromError(err)
 	if !ok {
@@ -413,7 +429,12 @@ func convertGRPCError(err error) error {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
+	return len(s) >= len(substr) &&
+		(s == substr ||
+			len(s) > len(substr) &&
+				(s[:len(substr)] == substr ||
+					s[len(s)-len(substr):] == substr ||
+					containsMiddle(s, substr)))
 }
 
 func containsMiddle(s, substr string) bool {

@@ -54,7 +54,9 @@ func (v1 *V1) ListSystems(ctx context.Context, req *system.ListSystemsRequest) (
 	}, nil
 }
 
-func (v1 *V1) RegisterSystem(ctx context.Context, req *system.RegisterSystemRequest) (*system.RegisterSystemResponse, error) {
+func (v1 *V1) RegisterSystem(
+	ctx context.Context, req *system.RegisterSystemRequest,
+) (*system.RegisterSystemResponse, error) {
 	if err := validateRegisterSystemRequest(req); err != nil {
 		return nil, err
 	}
@@ -76,7 +78,9 @@ func (v1 *V1) RegisterSystem(ctx context.Context, req *system.RegisterSystemRequ
 	return &system.RegisterSystemResponse{}, nil
 }
 
-func (v1 *V1) UpdateSystemL1KeyClaim(ctx context.Context, req *system.UpdateSystemL1KeyClaimRequest) (*system.UpdateSystemL1KeyClaimResponse, error) {
+func (v1 *V1) UpdateSystemL1KeyClaim(
+	ctx context.Context, req *system.UpdateSystemL1KeyClaimRequest,
+) (*system.UpdateSystemL1KeyClaimResponse, error) {
 	if err := validateUpdateSystemL1KeyClaimRequest(req); err != nil {
 		return nil, err
 	}
@@ -155,6 +159,7 @@ func mapSystemTypeToProto(sysType system.SystemType) string {
 	}
 }
 
+//nolint:cyclop,err113 // error mapping requires multiple case statements and dynamic errors
 func convertGRPCError(err error) error {
 	if err == nil {
 		return nil

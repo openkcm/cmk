@@ -3,10 +3,12 @@ package mapping
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/apiregistry/api/mapping"
-	mappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	mappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
+
+	"github.com/openkcm/cmk/internal/apiregistry/api/mapping"
 )
 
 type V1 struct {
@@ -19,7 +21,9 @@ func NewV1(client mappinggrpc.ServiceClient) *V1 {
 	}
 }
 
-func (v *V1) MapSystemToTenant(ctx context.Context, req *mapping.MapSystemToTenantRequest) (*mapping.MapSystemToTenantResponse, error) {
+func (v *V1) MapSystemToTenant(
+	ctx context.Context, req *mapping.MapSystemToTenantRequest,
+) (*mapping.MapSystemToTenantResponse, error) {
 	if err := validateMapSystemToTenantRequest(req); err != nil {
 		return nil, err
 	}
@@ -40,7 +44,9 @@ func (v *V1) MapSystemToTenant(ctx context.Context, req *mapping.MapSystemToTena
 	}, nil
 }
 
-func (v *V1) UnmapSystemFromTenant(ctx context.Context, req *mapping.UnmapSystemFromTenantRequest) (*mapping.UnmapSystemFromTenantResponse, error) {
+func (v *V1) UnmapSystemFromTenant(
+	ctx context.Context, req *mapping.UnmapSystemFromTenantRequest,
+) (*mapping.UnmapSystemFromTenantResponse, error) {
 	if err := validateUnmapSystemFromTenantRequest(req); err != nil {
 		return nil, err
 	}
@@ -117,6 +123,7 @@ func validateGetRequest(req *mapping.GetRequest) error {
 	return nil
 }
 
+//nolint:cyclop // error mapping requires multiple case statements
 func convertGRPCError(err error) error {
 	st, ok := status.FromError(err)
 	if !ok {
@@ -150,7 +157,12 @@ func convertGRPCError(err error) error {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
+	return len(s) >= len(substr) &&
+		(s == substr ||
+			len(s) > len(substr) &&
+				(s[:len(substr)] == substr ||
+					s[len(s)-len(substr):] == substr ||
+					containsMiddle(s, substr)))
 }
 
 func containsMiddle(s, substr string) bool {
