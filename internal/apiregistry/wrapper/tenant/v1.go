@@ -41,7 +41,7 @@ func (v *V1) RegisterTenant(ctx context.Context, req *tenant.RegisterTenantReque
 	}
 
 	return &tenant.RegisterTenantResponse{
-		ID: resp.Id,
+		ID: resp.GetId(),
 	}, nil
 }
 
@@ -66,14 +66,14 @@ func (v *V1) ListTenants(ctx context.Context, req *tenant.ListTenantsRequest) (*
 		return nil, convertGRPCError(err)
 	}
 
-	tenants := make([]*tenant.TenantInfo, len(resp.Tenants))
-	for i, t := range resp.Tenants {
+	tenants := make([]*tenant.TenantInfo, len(resp.GetTenants()))
+	for i, t := range resp.GetTenants() {
 		tenants[i] = mapProtoToTenantInfo(t)
 	}
 
 	return &tenant.ListTenantsResponse{
 		Tenants:       tenants,
-		NextPageToken: resp.NextPageToken,
+		NextPageToken: resp.GetNextPageToken(),
 	}, nil
 }
 
@@ -92,7 +92,7 @@ func (v *V1) GetTenant(ctx context.Context, req *tenant.GetTenantRequest) (*tena
 	}
 
 	return &tenant.GetTenantResponse{
-		Tenant: mapProtoToTenantInfo(resp.Tenant),
+		Tenant: mapProtoToTenantInfo(resp.GetTenant()),
 	}, nil
 }
 
@@ -111,7 +111,7 @@ func (v *V1) BlockTenant(ctx context.Context, req *tenant.BlockTenantRequest) (*
 	}
 
 	return &tenant.BlockTenantResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}, nil
 }
 
@@ -130,7 +130,7 @@ func (v *V1) UnblockTenant(ctx context.Context, req *tenant.UnblockTenantRequest
 	}
 
 	return &tenant.UnblockTenantResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}, nil
 }
 
@@ -149,7 +149,7 @@ func (v *V1) TerminateTenant(ctx context.Context, req *tenant.TerminateTenantReq
 	}
 
 	return &tenant.TerminateTenantResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}, nil
 }
 
@@ -169,7 +169,7 @@ func (v *V1) SetTenantLabels(ctx context.Context, req *tenant.SetTenantLabelsReq
 	}
 
 	return &tenant.SetTenantLabelsResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}, nil
 }
 
@@ -189,7 +189,7 @@ func (v *V1) RemoveTenantLabels(ctx context.Context, req *tenant.RemoveTenantLab
 	}
 
 	return &tenant.RemoveTenantLabelsResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}, nil
 }
 
@@ -209,7 +209,7 @@ func (v *V1) SetTenantUserGroups(ctx context.Context, req *tenant.SetTenantUserG
 	}
 
 	return &tenant.SetTenantUserGroupsResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}, nil
 }
 
@@ -297,18 +297,18 @@ func mapProtoToTenantInfo(protoTenant *tenantgrpc.Tenant) *tenant.TenantInfo {
 	}
 
 	return &tenant.TenantInfo{
-		ID:              protoTenant.Id,
-		Name:            protoTenant.Name,
-		Region:          protoTenant.Region,
-		OwnerID:         protoTenant.OwnerId,
-		OwnerType:       protoTenant.OwnerType,
-		Status:          mapProtoToTenantStatus(protoTenant.Status),
-		StatusUpdatedAt: parseTime(protoTenant.StatusUpdatedAt),
-		Role:            mapProtoToTenantRole(protoTenant.Role),
-		UpdatedAt:       parseTime(protoTenant.UpdatedAt),
-		CreatedAt:       parseTime(protoTenant.CreatedAt),
-		Labels:          protoTenant.Labels,
-		UserGroups:      protoTenant.UserGroups,
+		ID:              protoTenant.GetId(),
+		Name:            protoTenant.GetName(),
+		Region:          protoTenant.GetRegion(),
+		OwnerID:         protoTenant.GetOwnerId(),
+		OwnerType:       protoTenant.GetOwnerType(),
+		Status:          mapProtoToTenantStatus(protoTenant.GetStatus()),
+		StatusUpdatedAt: parseTime(protoTenant.GetStatusUpdatedAt()),
+		Role:            mapProtoToTenantRole(protoTenant.GetRole()),
+		UpdatedAt:       parseTime(protoTenant.GetUpdatedAt()),
+		CreatedAt:       parseTime(protoTenant.GetCreatedAt()),
+		Labels:          protoTenant.GetLabels(),
+		UserGroups:      protoTenant.GetUserGroups(),
 	}
 }
 

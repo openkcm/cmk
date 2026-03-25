@@ -36,7 +36,7 @@ func (v *V1) MapSystemToTenant(ctx context.Context, req *mapping.MapSystemToTena
 	}
 
 	return &mapping.MapSystemToTenantResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}, nil
 }
 
@@ -57,7 +57,7 @@ func (v *V1) UnmapSystemFromTenant(ctx context.Context, req *mapping.UnmapSystem
 	}
 
 	return &mapping.UnmapSystemFromTenantResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}, nil
 }
 
@@ -77,7 +77,7 @@ func (v *V1) Get(ctx context.Context, req *mapping.GetRequest) (*mapping.GetResp
 	}
 
 	return &mapping.GetResponse{
-		TenantID: resp.TenantId,
+		TenantID: resp.GetTenantId(),
 	}, nil
 }
 

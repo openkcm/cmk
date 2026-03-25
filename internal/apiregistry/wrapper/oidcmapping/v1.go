@@ -43,10 +43,10 @@ func (v *V1) ApplyOIDCMapping(ctx context.Context, req *oidcmapping.ApplyOIDCMap
 	}
 
 	result := &oidcmapping.ApplyOIDCMappingResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}
-	if resp.Message != nil {
-		result.Message = resp.Message
+	if msg := resp.GetMessage(); msg != "" {
+		result.Message = &msg
 	}
 
 	return result, nil
@@ -67,10 +67,10 @@ func (v *V1) RemoveOIDCMapping(ctx context.Context, req *oidcmapping.RemoveOIDCM
 	}
 
 	result := &oidcmapping.RemoveOIDCMappingResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}
-	if resp.Message != nil {
-		result.Message = resp.Message
+	if msg := resp.GetMessage(); msg != "" {
+		result.Message = &msg
 	}
 
 	return result, nil
@@ -91,10 +91,10 @@ func (v *V1) BlockOIDCMapping(ctx context.Context, req *oidcmapping.BlockOIDCMap
 	}
 
 	result := &oidcmapping.BlockOIDCMappingResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}
-	if resp.Message != nil {
-		result.Message = resp.Message
+	if msg := resp.GetMessage(); msg != "" {
+		result.Message = &msg
 	}
 
 	return result, nil
@@ -115,10 +115,10 @@ func (v *V1) UnblockOIDCMapping(ctx context.Context, req *oidcmapping.UnblockOID
 	}
 
 	result := &oidcmapping.UnblockOIDCMappingResponse{
-		Success: resp.Success,
+		Success: resp.GetSuccess(),
 	}
-	if resp.Message != nil {
-		result.Message = resp.Message
+	if msg := resp.GetMessage(); msg != "" {
+		result.Message = &msg
 	}
 
 	return result, nil
