@@ -4,7 +4,7 @@ import (
 	"context"
 
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
-	"github.com/openkcm/cmk/internal/apiregistry/service/api/oidcmapping"
+	"github.com/openkcm/cmk/internal/apiregistry/api/oidcmapping"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

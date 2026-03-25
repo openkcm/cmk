@@ -3,7 +3,7 @@ package mapping
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/apiregistry/service/api/mapping"
+	"github.com/openkcm/cmk/internal/apiregistry/api/mapping"
 	mappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

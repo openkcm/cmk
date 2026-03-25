@@ -5,7 +5,7 @@ import (
 	"time"
 
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	"github.com/openkcm/cmk/internal/apiregistry/service/api/tenant"
+	"github.com/openkcm/cmk/internal/apiregistry/api/tenant"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

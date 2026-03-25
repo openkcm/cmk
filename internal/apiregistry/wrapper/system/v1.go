@@ -10,7 +10,7 @@ import (
 
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
-	"github.com/openkcm/cmk/internal/apiregistry/service/api/system"
+	"github.com/openkcm/cmk/internal/apiregistry/api/system"
 )
 
 type V1 struct {
