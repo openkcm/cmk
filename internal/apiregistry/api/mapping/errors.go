@@ -1,24 +1,23 @@
 package mapping
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
-	ErrMappingNotFound = fmt.Errorf("mapping not found")
-	ErrMappingAlreadyExists = fmt.Errorf("mapping already exists")
-	ErrInvalidExternalID = fmt.Errorf("invalid external ID")
-	ErrInvalidType = fmt.Errorf("invalid type")
-	ErrInvalidTenantID = fmt.Errorf("invalid tenant ID")
-	ErrSystemNotMapped = fmt.Errorf("system is not mapped to tenant")
-	ErrOperationFailed = fmt.Errorf("operation failed")
+	ErrMappingNotFound      = errors.New("mapping not found")
+	ErrMappingAlreadyExists = errors.New("mapping already exists")
+	ErrInvalidExternalID    = errors.New("invalid external ID")
+	ErrInvalidType          = errors.New("invalid type")
+	ErrInvalidTenantID      = errors.New("invalid tenant ID")
+	ErrSystemNotMapped      = errors.New("system is not mapped to tenant")
+	ErrOperationFailed      = errors.New("operation failed")
 )
 
 type ValidationError struct {
 	Field   string
 	Message string
-}
-
-func (e *ValidationError) Error() string {
-	return fmt.Sprintf("validation error on field '%s': %s", e.Field, e.Message)
 }
 
 func NewValidationError(field, message string) *ValidationError {
@@ -27,8 +26,12 @@ func NewValidationError(field, message string) *ValidationError {
 		Message: message,
 	}
 }
+func (e *ValidationError) Error() string {
+	return fmt.Sprintf("validation error on field '%s': %s", e.Field, e.Message)
+}
 
 func IsValidationError(err error) bool {
-	_, ok := err.(*ValidationError)
+	validationError := &ValidationError{}
+	ok := errors.As(err, &validationError)
 	return ok
 }

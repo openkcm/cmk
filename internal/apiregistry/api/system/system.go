@@ -7,7 +7,10 @@ type System interface {
 
 	RegisterSystem(ctx context.Context, req *RegisterSystemRequest) (*RegisterSystemResponse, error)
 
-	UpdateSystemL1KeyClaim(ctx context.Context, req *UpdateSystemL1KeyClaimRequest) (*UpdateSystemL1KeyClaimResponse, error)
+	UpdateSystemL1KeyClaim(
+		ctx context.Context,
+		req *UpdateSystemL1KeyClaimRequest,
+	) (*UpdateSystemL1KeyClaimResponse, error)
 
 	DeleteSystem(ctx context.Context, req *DeleteSystemRequest) (*DeleteSystemResponse, error)
 }
