@@ -2,16 +2,13 @@ package manager_test
 
 import (
 	"context"
-	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/yaml.v3"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
@@ -25,21 +22,10 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/utils/crypto"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-var (
-	ErrForced     = errors.New("forced")
-	TestCertURL   = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.crt"
-	cryptoSubject = manager.ClientCertificateSubject{
-		Locality:           []string{},
-		OrganizationalUnit: []string{},
-		Organization:       []string{},
-		Country:            []string{},
-		CommonNamePrefix:   "test_",
-	}
-)
+var ErrForced = errors.New("forced")
 
 func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*manager.TenantConfigManager,
 	*multitenancy.DB, string,
@@ -48,19 +34,8 @@ func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*m
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
-	dbRepository := sql.NewRepository(db)
+	r := sql.NewRepository(db)
 	ps, psCfg := testutils.NewTestPlugins(plugins...)
-
-	cryptoCerts := []manager.ClientCertificate{
-		{
-			Name:    "crypto-1",
-			Subject: cryptoSubject,
-			RootCA:  TestCertURL,
-		},
-	}
-
-	bytes, err := yaml.Marshal(cryptoCerts)
-	assert.NoError(t, err)
 
 	cfg := &config.Config{
 		Plugins: psCfg,
@@ -68,18 +43,11 @@ func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*m
 			RootCertURL:  TestCertURL,
 			ValidityDays: config.MinCertificateValidityDays,
 		},
-		CryptoLayer: config.CryptoLayer{
-			CertX509Trusts: commoncfg.SourceRef{
-				Source: commoncfg.EmbeddedSourceValue,
-				Value:  string(bytes),
-			},
-		},
 	}
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 
-	certManager := manager.NewCertificateManager(t.Context(), dbRepository, svcRegistry, cfg)
-	tenantManager := manager.NewTenantConfigManager(dbRepository, certManager, svcRegistry, cfg)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg)
 
 	return tenantManager, db, tenants[0]
 }
@@ -92,13 +60,13 @@ func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []catal
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithTenantRole(model.TenantRole(role)))
 
-	dbRepository := sql.NewRepository(db)
+	r := sql.NewRepository(db)
 	ps, psCfg := testutils.NewTestPlugins(plugins...)
 	cfg := config.Config{Plugins: psCfg}
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 
-	tenantManager := manager.NewTenantConfigManager(dbRepository, nil, svcRegistry, nil)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 
 	return tenantManager, db, tenants[0]
 }
@@ -263,7 +231,7 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 			assert.NoError(t, err)
 
-			mgr := manager.NewTenantConfigManager(nil, nil, svcRegistry, nil)
+			mgr := manager.NewTenantConfigManager(nil, svcRegistry, nil)
 
 			result := mgr.GetTenantConfigsHyokKeystore()
 			assert.ElementsMatch(t, tt.expectedOutput, result.Provider)
@@ -466,62 +434,5 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			assert.True(t, result.Enabled)
 			assert.Equal(t, 3, result.MinimumApprovals)
 		})
-	})
-}
-
-func TestTenantConfigManager_GetCertificates(t *testing.T) {
-	privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
-	assert.NoError(t, err)
-
-	m, db, tenant := SetupTenantConfigManager(t, []catalog.BuiltInPlugin{})
-
-	t.Run("Should get certificates", func(t *testing.T) {
-		cfg := config.Config{}
-		svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
-		assert.NoError(t, err)
-		certManager := manager.NewCertificateManager(
-			t.Context(),
-			sql.NewRepository(db),
-			svcRegistry,
-			&cfg,
-		)
-
-		ctx := testutils.CreateCtxWithTenant(tenant)
-
-		tenantSubjectPKIX := pkix.Name{
-			Country:            []string{"DE"},
-			Organization:       []string{"KCM"},
-			OrganizationalUnit: []string{"OpenKCM", "account", "landscape"},
-			Locality:           []string{"LOCAL/CMK"},
-			CommonName:         "MyCert",
-		}
-
-		certManager.SetCertIssuerService(CertificateIssuerMock{NewCertificateChain: func() string {
-			return testutils.CreateCertificateChain(t, tenantSubjectPKIX, privateKey)
-		}})
-
-		_, privateKey, err = certManager.RequestNewCertificate(ctx, privateKey,
-			model.RequestCertArgs{
-				CertPurpose: model.CertificatePurposeTenantDefault,
-				Supersedes:  nil,
-				CommonName:  "MyCert",
-				Locality:    []string{"LOCAL/CMK"},
-			})
-		assert.NoError(t, err)
-
-		certs, err := m.GetClientCertificates(ctx)
-
-		assert.NoError(t, err)
-		assert.Len(t, certs[model.CertificatePurposeTenantDefault], 1)
-		assert.Len(t, certs[model.CertificatePurposeCrypto], 1)
-		assert.Equal(t, manager.NewClientCertificateSubjectFromPKIX(tenantSubjectPKIX),
-			certs[model.CertificatePurposeTenantDefault][0].Subject)
-		assert.Equal(t, TestCertURL,
-			certs[model.CertificatePurposeTenantDefault][0].RootCA)
-
-		assert.Contains(t,
-			certs[model.CertificatePurposeCrypto][0].Subject.CommonName, cryptoSubject.CommonNamePrefix)
-		assert.Equal(t, TestCertURL,
-			certs[model.CertificatePurposeCrypto][0].RootCA)
 	})
 }

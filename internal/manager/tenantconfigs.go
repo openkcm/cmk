@@ -2,15 +2,9 @@ package manager
 
 import (
 	"context"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"strconv"
-
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"gopkg.in/yaml.v3"
 
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
@@ -22,7 +16,6 @@ import (
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 	"github.com/openkcm/cmk/internal/repo"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
 
@@ -40,7 +33,6 @@ var (
 
 type TenantConfigManager struct {
 	repo         repo.Repo
-	certs        *CertificateManager
 	svcRegistry  *cmkpluginregistry.Registry
 	keystorePool *Pool
 	cfg          *config.Config
@@ -48,13 +40,11 @@ type TenantConfigManager struct {
 
 func NewTenantConfigManager(
 	repo repo.Repo,
-	certManager *CertificateManager,
 	svcRegistry *cmkpluginregistry.Registry,
 	deploymentConfig *config.Config,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
 		repo:         repo,
-		certs:        certManager,
 		svcRegistry:  svcRegistry,
 		keystorePool: NewPool(repo),
 		cfg:          deploymentConfig,
@@ -238,113 +228,6 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 	}
 
 	return keystore, nil
-}
-
-type ClientCertificate struct {
-	Name    string                   `yaml:"name"`
-	RootCA  string                   `yaml:"rootCA"` //nolint:tagliatelle
-	Subject ClientCertificateSubject `yaml:"subject"`
-}
-
-type ClientCertificateSubject struct {
-	Locality           []string `yaml:"locality"`
-	OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
-	Organization       []string `yaml:"organization"`
-	Country            []string `yaml:"country"`
-	CommonNamePrefix   string   `yaml:"commonNamePrefix"`
-	CommonName         string
-}
-
-func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSubject {
-	return ClientCertificateSubject{
-		Locality:           subject.Locality,
-		OrganizationalUnit: subject.OrganizationalUnit,
-		Organization:       subject.Organization,
-		Country:            subject.Country,
-		CommonName:         subject.CommonName,
-	}
-}
-
-// GetClientCertificates retrieves the client certificates
-func (m *TenantConfigManager) GetClientCertificates(ctx context.Context) (
-	map[model.CertificatePurpose][]*ClientCertificate, error,
-) {
-	certConfig := m.certs.cfg
-
-	tenantDefaultCert, err := m.certs.getDefaultHYOKClientCert(ctx)
-	if err != nil {
-		return nil, errs.Wrap(ErrGetDefaultCerts, err)
-	}
-
-	defaultCerts := []*model.Certificate{tenantDefaultCert}
-
-	clientCerts := make(map[model.CertificatePurpose][]*ClientCertificate)
-	clientCerts[model.CertificatePurposeTenantDefault] = make([]*ClientCertificate, len(defaultCerts))
-
-	for i, certificate := range defaultCerts {
-		configCert, err := m.transformTenantDefaultCertificate(ctx, certificate.CertPEM,
-			certConfig.Certificates.RootCertURL, ErrGetDefaultCerts)
-		if err != nil {
-			return nil, err
-		}
-
-		clientCerts[model.CertificatePurposeTenantDefault][i] = configCert
-	}
-
-	cryptoCerts, err := m.getCryptoCertificates(ctx)
-	clientCerts[model.CertificatePurposeCrypto] = cryptoCerts
-
-	if err != nil {
-		return nil, err
-	}
-
-	return clientCerts, nil
-}
-
-func (m *TenantConfigManager) transformTenantDefaultCertificate(_ context.Context,
-	certRaw, rootCertURL string, errParent error,
-) (*ClientCertificate, error) {
-	block, _ := pem.Decode([]byte(certRaw))
-	if block == nil {
-		return nil, errs.Wrap(errParent, ErrDecodingCert)
-	}
-
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return nil, errs.Wrap(errParent, err)
-	}
-
-	return &ClientCertificate{
-		Name:    DefaultCertName,
-		RootCA:  rootCertURL,
-		Subject: NewClientCertificateSubjectFromPKIX(cert.Subject),
-	}, nil
-}
-
-// getCryptoCertificates retrieves crypto certificates from config
-func (m *TenantConfigManager) getCryptoCertificates(ctx context.Context) ([]*ClientCertificate, error) {
-	bytes, err := commoncfg.LoadValueFromSourceRef(m.cfg.CryptoLayer.CertX509Trusts)
-	if err != nil {
-		return nil, errs.Wrap(ErrLoadCryptoCerts, err)
-	}
-
-	var cryptoCerts []*ClientCertificate
-
-	err = yaml.Unmarshal(bytes, &cryptoCerts)
-	if err != nil {
-		return nil, errs.Wrap(ErrUnmarshalCryptoCerts, err)
-	}
-
-	tenantID, err := cmkcontext.ExtractTenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, cert := range cryptoCerts {
-		cert.Subject.CommonName = cert.Subject.CommonNamePrefix + tenantID
-	}
-
-	return cryptoCerts, nil
 }
 
 // SetDefaultKeystore stores the default keystore config

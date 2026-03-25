@@ -45,10 +45,10 @@ func New(
 ) *Manager {
 	cmkAuditor := auditor.New(ctx, config)
 	certManager := NewCertificateManager(ctx, repo, svcRegistry, config)
-	tenantConfigManager := NewTenantConfigManager(repo, certManager, svcRegistry, config)
+	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config)
 	userManager := NewUserManager(repo, cmkAuditor)
 	tagManager := NewTagManager(repo)
-	keyConfigManager := NewKeyConfigManager(repo, userManager, tagManager, cmkAuditor, config)
+	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, config)
 	keyManager := NewKeyManager(
 		repo,
 		svcRegistry,

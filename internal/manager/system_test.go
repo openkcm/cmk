@@ -59,7 +59,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	require.NoError(t, err)
 
-	dbRepository := sql.NewRepository(db)
+	r := sql.NewRepository(db)
 
 	if clientsFactory == nil {
 		clientsFactory, err = clients.NewFactory(config.Services{})
@@ -72,15 +72,22 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 		},
 	)
 
-	userManager := manager.NewUserManager(dbRepository, auditor.New(t.Context(), &cfg))
-	tagManager := manager.NewTagManager(dbRepository)
-	keyConfigManager := manager.NewKeyConfigManager(dbRepository, userManager, tagManager, nil, &cfg)
+	certManager := manager.NewCertificateManager(
+		t.Context(), r, svcRegistry,
+		&config.Config{
+			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+		},
+	)
 
-	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), &cfg, dbRepository)
+	userManager := manager.NewUserManager(r, auditor.New(t.Context(), &cfg))
+	tagManager := manager.NewTagManager(r)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, nil, &cfg)
+
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), &cfg, r)
 	require.NoError(t, err)
 
 	systemManager := manager.NewSystemManager(
-		t.Context(), dbRepository,
+		t.Context(), r,
 		clientsFactory,
 		eventFactory, svcRegistry,
 		&cfg,

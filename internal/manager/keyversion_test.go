@@ -64,11 +64,11 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 		&config.Config{
 			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 		})
-	tenantConfigManager := manager.NewTenantConfigManager(s.r, certManager, svcRegistry, nil)
+	tenantConfigManager := manager.NewTenantConfigManager(s.r, svcRegistry, nil)
 	cmkAuditor := auditor.New(s.ctx, &cfg)
 	userManager := manager.NewUserManager(s.r, cmkAuditor)
 	tagManager := manager.NewTagManager(s.r)
-	keyConfigManager := manager.NewKeyConfigManager(s.r, userManager, tagManager, cmkAuditor, &cfg)
+	keyConfigManager := manager.NewKeyConfigManager(s.r, certManager, userManager, tagManager, cmkAuditor, &cfg)
 	s.km = manager.NewKeyManager(s.r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 	s.kvm = manager.NewKeyVersionManager(
 		s.r,

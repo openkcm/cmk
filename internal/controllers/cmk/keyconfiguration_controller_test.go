@@ -4,23 +4,32 @@ package cmk_test
 
 import (
 	"context"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/crypto"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -764,6 +773,224 @@ func TestKeyConfigurationController_GetByID(t *testing.T) {
 				assert.Equal(t, authClient.Group.ID, *response.AdminGroup.Id)
 				assert.Equal(t, authClient.Group.Name, response.AdminGroup.Name)
 				assert.Equal(t, string(constants.KeyAdminRole), string(response.AdminGroup.Role))
+			}
+		})
+	}
+}
+
+func TestAPIController_GetCertificates(t *testing.T) {
+	tests := []struct {
+		name                string
+		expectedStatus      int
+		expectedError       string
+		setupFunc           func(t *testing.T, db *multitenancy.DB, tenant string)
+		expectedRecordCount int
+		expectedRootCA      string
+		expectedSubject     manager.ClientCertificateSubject
+		expectedType        string
+		disableAuthzMW      bool
+	}{
+		{
+			name:                "Success - Multiple OUs Certificate",
+			expectedStatus:      http.StatusOK,
+			expectedRecordCount: 1,
+			expectedRootCA:      testutils.TestCertURL,
+			expectedSubject: manager.ClientCertificateSubject{
+				Locality:           []string{"LOCAL"},
+				OrganizationalUnit: []string{"EXAMPLE OU1", "EXAMPLE OU2", "EXAMPLE OU3"},
+				Organization:       []string{"EXAMPLE"},
+				Country:            []string{"DE"},
+				CommonName:         "myCert",
+			},
+			expectedType: "TENANT_DEFAULT",
+			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
+				t.Helper()
+
+				r := sql.NewRepository(db)
+				privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
+				assert.NoError(t, err)
+
+				ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+				certPEM := testutils.CreateCertificatePEM(t, &x509.CertificateRequest{
+					Subject: pkix.Name{
+						Country:            []string{"DE"},
+						Organization:       []string{"EXAMPLE_O"},
+						OrganizationalUnit: []string{"EXAMPLE OU1", "EXAMPLE OU2", "EXAMPLE-OU3"},
+						Locality:           []string{"LOCAL/CMK"},
+						CommonName:         "myCert",
+					},
+				}, privateKey)
+
+				cert := testutils.NewCertificate(func(c *model.Certificate) {
+					c.CommonName = "myCert"
+					c.CertPEM = string(certPEM)
+					c.Purpose = model.CertificatePurposeTenantDefault
+				})
+
+				err = r.Create(ctx, cert)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:                "Success - Single OU Certificate",
+			expectedStatus:      http.StatusOK,
+			expectedRecordCount: 1,
+			expectedRootCA:      testutils.TestCertURL,
+			expectedSubject: manager.ClientCertificateSubject{
+				Locality:           []string{"LOCAL"},
+				OrganizationalUnit: []string{"EXAMPLE OU1"},
+				Organization:       []string{"EXAMPLE"},
+				Country:            []string{"DE"},
+				CommonName:         "myCert",
+			},
+			expectedType: "TENANT_DEFAULT",
+			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
+				t.Helper()
+
+				r := sql.NewRepository(db)
+				privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
+				assert.NoError(t, err)
+
+				ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+				certPEM := testutils.CreateCertificatePEM(t, &x509.CertificateRequest{
+					Subject: pkix.Name{
+						Country:            []string{"DE"},
+						Organization:       []string{"EXAMPLE_O"},
+						OrganizationalUnit: []string{"EXAMPLE OU1"},
+						Locality:           []string{"LOCAL/CMK"},
+						CommonName:         "myCert",
+					},
+				}, privateKey)
+
+				cert := testutils.NewCertificate(func(c *model.Certificate) {
+					c.CommonName = "singleOuCert"
+					c.CertPEM = string(certPEM)
+					c.Purpose = model.CertificatePurposeTenantDefault
+				})
+
+				err = r.Create(ctx, cert)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:                "Success - No OU Certificate",
+			expectedStatus:      http.StatusOK,
+			expectedRecordCount: 1,
+			expectedRootCA:      testutils.TestCertURL,
+			expectedSubject: manager.ClientCertificateSubject{
+				Locality:           []string{"LOCAL"},
+				OrganizationalUnit: []string{},
+				Organization:       []string{"EXAMPLE"},
+				Country:            []string{"DE"},
+				CommonName:         "myCert",
+			},
+			expectedType: "TENANT_DEFAULT",
+			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
+				t.Helper()
+
+				r := sql.NewRepository(db)
+				privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
+				assert.NoError(t, err)
+
+				ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+				certPEM := testutils.CreateCertificatePEM(t, &x509.CertificateRequest{
+					Subject: pkix.Name{
+						Country:      []string{"DE"},
+						Organization: []string{"EXAMPLE_O"},
+						Locality:     []string{"LOCAL/CMK"},
+						CommonName:   "myCert",
+					},
+				}, privateKey)
+
+				cert := testutils.NewCertificate(func(c *model.Certificate) {
+					c.CommonName = "noOuCert"
+					c.CertPEM = string(certPEM)
+					c.Purpose = model.CertificatePurposeTenantDefault
+				})
+
+				err = r.Create(ctx, cert)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "Failed - Database error",
+			setupFunc: func(t *testing.T, db *multitenancy.DB, _ string) {
+				t.Helper()
+
+				forced := testutils.NewDBErrorForced(db, ErrForced)
+				forced.Register()
+				t.Cleanup(func() {
+					forced.Unregister()
+				})
+			},
+			expectedStatus:      http.StatusForbidden,
+			expectedError:       "FORBIDDEN",
+			expectedRecordCount: 0,
+			disableAuthzMW:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			subj := tt.expectedSubject
+			subj.CommonNamePrefix = "test"
+			cryptoCerts := []*manager.ClientCertificate{
+				{
+					RootCA:  tt.expectedRootCA,
+					Subject: subj,
+					Name:    "crypto-1",
+				},
+			}
+			bytes, err := yaml.Marshal(cryptoCerts)
+			assert.NoError(t, err)
+
+			db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{
+				Config: config.Config{
+					CryptoLayer: config.CryptoLayer{
+						CertX509Trusts: commoncfg.SourceRef{
+							Source: commoncfg.EmbeddedSourceValue,
+							Value:  string(bytes),
+						},
+					},
+					Certificates: config.Certificates{
+						RootCertURL: testutils.TestCertURL,
+					},
+				},
+			})
+			r := sql.NewRepository(db)
+			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+			key1 := testutils.NewKey(func(_ *model.Key) {})
+
+			authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+			keyconfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+				c.PrimaryKeyID = &key1.ID
+			}, testutils.WithAuthClientDataKC(authClient))
+
+			testutils.CreateTestEntities(ctx, t, r, key1, keyconfig)
+
+			if tt.setupFunc != nil {
+				tt.setupFunc(t, db, tenant)
+			}
+
+			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+				Method:            http.MethodGet,
+				Endpoint:          fmt.Sprintf("/keyConfigurations/%s/certificates", uuid.NewString()),
+				Tenant:            tenant,
+				AdditionalContext: authClient.GetClientMap(),
+			})
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedStatus == http.StatusOK {
+				response := testutils.GetJSONBody[cmkapi.ClientCertificates](t, w)
+				assert.Equal(t, tt.expectedRecordCount, *response.TenantDefault.Count)
+			} else {
+				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+				assert.Equal(t, tt.expectedError, response.Error.Code)
 			}
 		})
 	}

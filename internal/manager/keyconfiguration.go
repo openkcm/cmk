@@ -2,11 +2,16 @@ package manager
 
 import (
 	"context"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
@@ -16,7 +21,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	cmkContext "github.com/openkcm/cmk/utils/context"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var (
@@ -34,11 +39,13 @@ type KeyConfigurationAPI interface {
 		keyConfigID uuid.UUID,
 		patchKeyConfig cmkapi.KeyConfigurationPatch,
 	) (*model.KeyConfiguration, error)
+	GetClientCertificates(ctx context.Context) (map[model.CertificatePurpose][]*ClientCertificate, error)
 }
 
 type KeyConfigManager struct {
 	repository repo.Repo
 	user       User
+	certs      *CertificateManager
 	tagManager Tags
 	cmkAuditor *auditor.Auditor
 	cfg        *config.Config
@@ -51,6 +58,7 @@ type KeyConfigFilter struct {
 
 func NewKeyConfigManager(
 	repository repo.Repo,
+	certManager *CertificateManager,
 	user User,
 	tagManager Tags,
 	cmkAuditor *auditor.Auditor,
@@ -58,6 +66,7 @@ func NewKeyConfigManager(
 ) *KeyConfigManager {
 	return &KeyConfigManager{
 		repository: repository,
+		certs:      certManager,
 		user:       user,
 		cmkAuditor: cmkAuditor,
 		tagManager: tagManager,
@@ -221,6 +230,111 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 	return keyConfig, nil
 }
 
+type ClientCertificate struct {
+	Name    string                   `yaml:"name"`
+	RootCA  string                   `yaml:"rootCA"` //nolint:tagliatelle
+	Subject ClientCertificateSubject `yaml:"subject"`
+}
+
+type ClientCertificateSubject struct {
+	Locality           []string `yaml:"locality"`
+	OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
+	Organization       []string `yaml:"organization"`
+	Country            []string `yaml:"country"`
+	CommonNamePrefix   string   `yaml:"commonNamePrefix"`
+	CommonName         string
+}
+
+func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSubject {
+	return ClientCertificateSubject{
+		Locality:           subject.Locality,
+		OrganizationalUnit: subject.OrganizationalUnit,
+		Organization:       subject.Organization,
+		Country:            subject.Country,
+		CommonName:         subject.CommonName,
+	}
+}
+
+// GetClientCertificates retrieves the client certificates
+func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
+	map[model.CertificatePurpose][]*ClientCertificate, error,
+) {
+	tenantDefaultCert, err := m.certs.getDefaultHYOKClientCert(ctx)
+	if err != nil {
+		return nil, errs.Wrap(ErrGetDefaultCerts, err)
+	}
+
+	defaultCerts := []*model.Certificate{tenantDefaultCert}
+
+	clientCerts := make(map[model.CertificatePurpose][]*ClientCertificate)
+	clientCerts[model.CertificatePurposeTenantDefault] = make([]*ClientCertificate, len(defaultCerts))
+
+	for i, certificate := range defaultCerts {
+		configCert, err := m.transformTenantDefaultCertificate(ctx, certificate.CertPEM,
+			m.cfg.Certificates.RootCertURL, ErrGetDefaultCerts)
+		if err != nil {
+			return nil, err
+		}
+
+		clientCerts[model.CertificatePurposeTenantDefault][i] = configCert
+	}
+
+	cryptoCerts, err := m.getCryptoCertificates(ctx)
+	clientCerts[model.CertificatePurposeCrypto] = cryptoCerts
+
+	if err != nil {
+		return nil, err
+	}
+
+	return clientCerts, nil
+}
+
+func (m *KeyConfigManager) transformTenantDefaultCertificate(_ context.Context,
+	certRaw, rootCertURL string, errParent error,
+) (*ClientCertificate, error) {
+	block, _ := pem.Decode([]byte(certRaw))
+	if block == nil {
+		return nil, errs.Wrap(errParent, ErrDecodingCert)
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, errs.Wrap(errParent, err)
+	}
+
+	return &ClientCertificate{
+		Name:    DefaultCertName,
+		RootCA:  rootCertURL,
+		Subject: NewClientCertificateSubjectFromPKIX(cert.Subject),
+	}, nil
+}
+
+// getCryptoCertificates retrieves crypto certificates from config
+func (m *KeyConfigManager) getCryptoCertificates(ctx context.Context) ([]*ClientCertificate, error) {
+	bytes, err := commoncfg.LoadValueFromSourceRef(m.cfg.CryptoLayer.CertX509Trusts)
+	if err != nil {
+		return nil, errs.Wrap(ErrLoadCryptoCerts, err)
+	}
+
+	var cryptoCerts []*ClientCertificate
+
+	err = yaml.Unmarshal(bytes, &cryptoCerts)
+	if err != nil {
+		return nil, errs.Wrap(ErrUnmarshalCryptoCerts, err)
+	}
+
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, cert := range cryptoCerts {
+		cert.Subject.CommonName = cert.Subject.CommonNamePrefix + tenantID
+	}
+
+	return cryptoCerts, nil
+}
+
 func getKeyConfigWithTotalsQuery() *repo.Query {
 	return repo.NewQueryWithFieldLoading(
 		model.KeyConfiguration{},
@@ -258,7 +372,7 @@ func (m *KeyConfigManager) applyIAMGroupFilter(
 	ctx context.Context,
 	query *repo.Query,
 ) (bool, error) {
-	iamIdentifiers, err := cmkContext.ExtractClientDataGroupsString(ctx)
+	iamIdentifiers, err := cmkcontext.ExtractClientDataGroupsString(ctx)
 	if err != nil {
 		return false, err
 	}

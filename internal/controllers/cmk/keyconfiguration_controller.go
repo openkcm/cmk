@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/api/transform/clientcertificates"
 	"github.com/openkcm/cmk/internal/api/transform/keyconfiguration"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
@@ -134,4 +135,21 @@ func (c *APIController) UpdateKeyConfigurationByID(
 	}
 
 	return cmkapi.UpdateKeyConfigurationByID200JSONResponse(*response), nil
+}
+
+func (c *APIController) GetTenantCertificates(
+	ctx context.Context,
+	_ cmkapi.GetTenantCertificatesRequestObject,
+) (cmkapi.GetTenantCertificatesResponseObject, error) {
+	clientCerts, err := c.Manager.KeyConfig.GetClientCertificates(ctx)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGetClientCertificates, err)
+	}
+
+	response, err := clientcertificates.ToAPI(clientCerts)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGetClientCertificates, err)
+	}
+
+	return cmkapi.GetTenantCertificates200JSONResponse(*response), nil
 }
