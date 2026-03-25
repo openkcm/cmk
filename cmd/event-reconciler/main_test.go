@@ -1,12 +1,9 @@
 package main_test
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/stretchr/testify/assert"
 
 	eventReconciler "github.com/openkcm/cmk/cmd/event-reconciler"
 	"github.com/openkcm/cmk/internal/config"
@@ -14,10 +11,7 @@ import (
 )
 
 func TestRun(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-
-	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{WithOrbital: true})
+	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	queueURL := testutils.StartRabbitMQ(t)
 
 	cfg := &config.Config{
@@ -46,7 +40,8 @@ func TestRun(t *testing.T) {
 			},
 		},
 	}
-	err := eventReconciler.Run(ctx, cfg)
 
-	assert.NoError(t, err)
+	testutils.SetupTestBinary(t, cfg.Status.Address, func() error {
+		return eventReconciler.Run(t.Context(), cfg)
+	})
 }
