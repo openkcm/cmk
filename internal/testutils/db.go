@@ -125,7 +125,9 @@ var TestDB = config.Database{
 	Name: "cmk",
 	Port: "5433",
 	Parameters: config.DBParameters{
-		SSLMode: "disable",
+		SSL: config.DBSSL{
+			Mode: "disable",
+		},
 	},
 }
 
@@ -177,6 +179,11 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 	}
 
 	dbCon := newTestDBCon(tb, &cfg)
+
+	tb.Cleanup(func() {
+		sqlDB, _ := dbCon.DB.DB()
+		sqlDB.Close()
+	})
 
 	migrator, err := db.NewMigrator(sql.NewRepository(dbCon), &config.Config{Database: cfg.dbCon})
 	assert.NoError(tb, err)
@@ -418,11 +425,6 @@ func newTestDBCon(tb testing.TB, cfg *TestDBConfig) *multitenancy.DB {
 	)
 	assert.NoError(tb, err)
 
-	tb.Cleanup(func() {
-		sqlDB, _ := con.DB.DB()
-		sqlDB.Close()
-	})
-
 	return con
 }
 
@@ -438,6 +440,11 @@ func NewIsolatedDB(tb testing.TB, cfg config.Database) config.Database {
 		[]config.Database{},
 	)
 	assert.NoError(tb, err)
+
+	tb.Cleanup(func() {
+		sqlDB, _ := con.DB.DB()
+		sqlDB.Close()
+	})
 
 	name := processNameForDB(tb.Name())
 	assert.NoError(tb, err)

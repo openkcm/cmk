@@ -197,7 +197,14 @@ type Database struct {
 }
 
 type DBParameters struct {
-	SSLMode string `yaml:"sslMode"`
+	SSL DBSSL `yaml:"ssl"`
+}
+
+type DBSSL struct {
+	Mode     string `yaml:"mode"`
+	RootCert string `yaml:"rootCert"`
+	Cert     string `yaml:"cert"`
+	Key      string `yaml:"key"`
 }
 
 type Migrator struct {

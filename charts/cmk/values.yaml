@@ -451,12 +451,11 @@ config:
             country:
               - DE
             organization:
-              - SAP DE
+              - Organization
             organizationUnit:
-              - SAP Cloud Platform Clients
-              - Staging
-              - subaccount-X
-            commonNamePrefix: sapkms-ks_
+              - Organization Unit 1
+              - Organization Unit 2
+            commonNamePrefix: kms_
 
   # This does set the logger configuration
   # +docs:property
@@ -680,7 +679,11 @@ config:
         schema: /etc/cmk/migrations/tenant/schema
         data: /etc/cmk/migrations/tenant/data
     parameters:
-      sslMode: "require"
+      ssl:
+        mode: "verify-ca"
+        rootCert: /etc/credentials/db-root-cert.crt
+        cert: /etc/credentials/db-cert.crt
+        key: /etc/credentials/db-key.key
 
   # Scheduler configuration
   scheduler:
