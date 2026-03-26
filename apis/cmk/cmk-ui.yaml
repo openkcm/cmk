@@ -599,11 +599,11 @@ paths:
   /keyConfigurations/{keyConfigurationID}/certificates:
     get:
       tags:
-        - Tenant Configurations
+        - Key Configurations
       summary: Get the client certificate details
       description: |
-        Retrieves the details of the client certificate for the tenant.
-      operationId: getTenantCertificates
+        Retrieves the details of the client certificate for the key configuration.
+      operationId: getKeyConfigurationCertificates
       parameters:
         - $ref: "#/components/parameters/keyConfigurationIDPath"
       responses:
@@ -624,7 +624,7 @@ paths:
   /tenantConfigurations/keystores:
     get:
       tags:
-        - Key Configurations
+        - Tenant Configurations
       summary: Get tenant keystores
       operationId: getTenantKeystores
       description: |

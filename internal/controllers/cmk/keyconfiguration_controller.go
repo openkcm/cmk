@@ -137,10 +137,10 @@ func (c *APIController) UpdateKeyConfigurationByID(
 	return cmkapi.UpdateKeyConfigurationByID200JSONResponse(*response), nil
 }
 
-func (c *APIController) GetTenantCertificates(
+func (c *APIController) GetKeyConfigurationCertificates(
 	ctx context.Context,
-	_ cmkapi.GetTenantCertificatesRequestObject,
-) (cmkapi.GetTenantCertificatesResponseObject, error) {
+	_ cmkapi.GetKeyConfigurationCertificatesRequestObject,
+) (cmkapi.GetKeyConfigurationCertificatesResponseObject, error) {
 	clientCerts, err := c.Manager.KeyConfig.GetClientCertificates(ctx)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetClientCertificates, err)
@@ -151,5 +151,5 @@ func (c *APIController) GetTenantCertificates(
 		return nil, errs.Wrap(apierrors.ErrGetClientCertificates, err)
 	}
 
-	return cmkapi.GetTenantCertificates200JSONResponse(*response), nil
+	return cmkapi.GetKeyConfigurationCertificates200JSONResponse(*response), nil
 }

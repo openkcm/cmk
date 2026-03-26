@@ -370,7 +370,7 @@ config:
             organizationUnit:
               - Organization Unit 1
               - Organization Unit 2
-            commonNamePrefix: kms_
+            commonNamePrefix: kms-crypto_
 
   # This does set the logger configuration
   # +docs:property
