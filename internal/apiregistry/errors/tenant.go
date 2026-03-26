@@ -1,9 +1,7 @@
-package tenant
+package errors
 
 import (
 	"errors"
-
-	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 
 var (
@@ -23,15 +21,5 @@ var (
 	ErrInvalidLabels           = errors.New("invalid labels")
 	ErrInvalidLabelKeys        = errors.New("invalid label keys")
 	ErrInvalidUserGroups       = errors.New("invalid user groups")
-	ErrOperationFailed         = errors.New("operation failed")
+	ErrTenantOperationFailed   = errors.New("operation failed")
 )
-
-// NewValidationError creates a new validation error.
-func NewValidationError(field, message string) error {
-	return apierrors.NewValidationError(field, message)
-}
-
-// IsValidationError checks if an error is a validation error.
-func IsValidationError(err error) bool {
-	return apierrors.IsValidationError(err)
-}

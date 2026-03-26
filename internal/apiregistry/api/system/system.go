@@ -61,3 +61,36 @@ type DeleteSystemRequest struct {
 type DeleteSystemResponse struct {
 	Success bool
 }
+
+type UpdateSystemStatusRequest struct {
+	Region     string
+	ExternalID string
+	Type       SystemType
+	Status     string
+}
+
+type UpdateSystemStatusResponse struct {
+	Success bool
+}
+
+type SetSystemLabelsRequest struct {
+	Region     string
+	ExternalID string
+	Type       SystemType
+	Labels     map[string]string
+}
+
+type SetSystemLabelsResponse struct {
+	Success bool
+}
+
+type RemoveSystemLabelsRequest struct {
+	Region     string
+	ExternalID string
+	Type       SystemType
+	LabelKeys  []string
+}
+
+type RemoveSystemLabelsResponse struct {
+	Success bool
+}

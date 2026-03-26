@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -10,6 +11,7 @@ import (
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	"github.com/openkcm/cmk/internal/apiregistry/api/tenant"
+	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 
 type V1 struct {
@@ -82,7 +84,7 @@ func (v *V1) ListTenants(ctx context.Context, req *tenant.ListTenantsRequest) (*
 }
 
 func (v *V1) GetTenant(ctx context.Context, req *tenant.GetTenantRequest) (*tenant.GetTenantResponse, error) {
-	if err := validateGetTenantRequest(req); err != nil {
+	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
 
@@ -101,7 +103,7 @@ func (v *V1) GetTenant(ctx context.Context, req *tenant.GetTenantRequest) (*tena
 }
 
 func (v *V1) BlockTenant(ctx context.Context, req *tenant.BlockTenantRequest) (*tenant.BlockTenantResponse, error) {
-	if err := validateBlockTenantRequest(req); err != nil {
+	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
 
@@ -122,7 +124,7 @@ func (v *V1) BlockTenant(ctx context.Context, req *tenant.BlockTenantRequest) (*
 func (v *V1) UnblockTenant(
 	ctx context.Context, req *tenant.UnblockTenantRequest,
 ) (*tenant.UnblockTenantResponse, error) {
-	if err := validateUnblockTenantRequest(req); err != nil {
+	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
 
@@ -143,7 +145,7 @@ func (v *V1) UnblockTenant(
 func (v *V1) TerminateTenant(
 	ctx context.Context, req *tenant.TerminateTenantRequest,
 ) (*tenant.TerminateTenantResponse, error) {
-	if err := validateTerminateTenantRequest(req); err != nil {
+	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
 
@@ -164,8 +166,11 @@ func (v *V1) TerminateTenant(
 func (v *V1) SetTenantLabels(
 	ctx context.Context, req *tenant.SetTenantLabelsRequest,
 ) (*tenant.SetTenantLabelsResponse, error) {
-	if err := validateSetTenantLabelsRequest(req); err != nil {
+	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
+	}
+	if len(req.Labels) == 0 {
+		return nil, apierrors.NewValidationError("Labels", "at least one label is required")
 	}
 
 	protoReq := &tenantgrpc.SetTenantLabelsRequest{
@@ -186,8 +191,11 @@ func (v *V1) SetTenantLabels(
 func (v *V1) RemoveTenantLabels(
 	ctx context.Context, req *tenant.RemoveTenantLabelsRequest,
 ) (*tenant.RemoveTenantLabelsResponse, error) {
-	if err := validateRemoveTenantLabelsRequest(req); err != nil {
+	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
+	}
+	if len(req.LabelKeys) == 0 {
+		return nil, apierrors.NewValidationError("LabelKeys", "at least one label key is required")
 	}
 
 	protoReq := &tenantgrpc.RemoveTenantLabelsRequest{
@@ -227,80 +235,59 @@ func (v *V1) SetTenantUserGroups(
 	}, nil
 }
 
+func validateRequest(req any) error {
+	if req == nil {
+		return apierrors.NewValidationError("request", "request cannot be nil")
+	}
+	return nil
+}
+
+func validateTenantID(id string) error {
+	if id == "" {
+		return apierrors.NewValidationError("ID", "tenant ID is required")
+	}
+	return nil
+}
+
+func validateRequestWithTenantID(req any, id string) error {
+	if err := validateRequest(req); err != nil {
+		return err
+	}
+	return validateTenantID(id)
+}
+
 func validateRegisterTenantRequest(req *tenant.RegisterTenantRequest) error {
+	if err := validateRequest(req); err != nil {
+		return err
+	}
 	if req.Region == "" {
-		return tenant.NewValidationError("Region", "region is required")
+		return apierrors.NewValidationError("Region", "region is required")
 	}
 	if req.OwnerID == "" {
-		return tenant.NewValidationError("OwnerID", "owner ID is required")
+		return apierrors.NewValidationError("OwnerID", "owner ID is required")
 	}
 	if req.OwnerType == "" {
-		return tenant.NewValidationError("OwnerType", "owner type is required")
+		return apierrors.NewValidationError("OwnerType", "owner type is required")
 	}
 	return nil
 }
 
 func validateListTenantsRequest(req *tenant.ListTenantsRequest) error {
+	if err := validateRequest(req); err != nil {
+		return err
+	}
 	if req.Limit < 0 || req.Limit > 1000 {
-		return tenant.ErrInvalidLimit
-	}
-	return nil
-}
-
-func validateGetTenantRequest(req *tenant.GetTenantRequest) error {
-	if req.ID == "" {
-		return tenant.NewValidationError("ID", "tenant ID is required")
-	}
-	return nil
-}
-
-func validateBlockTenantRequest(req *tenant.BlockTenantRequest) error {
-	if req.ID == "" {
-		return tenant.NewValidationError("ID", "tenant ID is required")
-	}
-	return nil
-}
-
-func validateUnblockTenantRequest(req *tenant.UnblockTenantRequest) error {
-	if req.ID == "" {
-		return tenant.NewValidationError("ID", "tenant ID is required")
-	}
-	return nil
-}
-
-func validateTerminateTenantRequest(req *tenant.TerminateTenantRequest) error {
-	if req.ID == "" {
-		return tenant.NewValidationError("ID", "tenant ID is required")
-	}
-	return nil
-}
-
-func validateSetTenantLabelsRequest(req *tenant.SetTenantLabelsRequest) error {
-	if req.ID == "" {
-		return tenant.NewValidationError("ID", "tenant ID is required")
-	}
-	if len(req.Labels) == 0 {
-		return tenant.NewValidationError("Labels", "at least one label is required")
-	}
-	return nil
-}
-
-func validateRemoveTenantLabelsRequest(req *tenant.RemoveTenantLabelsRequest) error {
-	if req.ID == "" {
-		return tenant.NewValidationError("ID", "tenant ID is required")
-	}
-	if len(req.LabelKeys) == 0 {
-		return tenant.NewValidationError("LabelKeys", "at least one label key is required")
+		return apierrors.ErrInvalidLimit
 	}
 	return nil
 }
 
 func validateSetTenantUserGroupsRequest(req *tenant.SetTenantUserGroupsRequest) error {
-	if req.ID == "" {
-		return tenant.NewValidationError("ID", "tenant ID is required")
+	if err := validateRequestWithTenantID(req, req.ID); err != nil {
+		return err
 	}
 	if len(req.UserGroups) == 0 {
-		return tenant.NewValidationError("UserGroups", "at least one user group is required")
+		return apierrors.NewValidationError("UserGroups", "at least one user group is required")
 	}
 	return nil
 }
@@ -399,49 +386,31 @@ func parseTime(timeStr string) time.Time {
 func convertGRPCError(err error) error {
 	st, ok := status.FromError(err)
 	if !ok {
-		return tenant.ErrOperationFailed
+		return apierrors.ErrTenantOperationFailed
 	}
 
 	switch st.Code() {
 	case codes.NotFound:
-		return tenant.ErrTenantNotFound
+		return apierrors.ErrTenantNotFound
 	case codes.AlreadyExists:
-		return tenant.ErrTenantAlreadyExists
+		return apierrors.ErrTenantAlreadyExists
 	case codes.InvalidArgument:
-		return tenant.ErrInvalidTenantID
+		return apierrors.ErrInvalidTenantID
 	case codes.FailedPrecondition:
 		msg := st.Message()
 		switch {
-		case contains(msg, "already blocked"):
-			return tenant.ErrTenantAlreadyBlocked
-		case contains(msg, "not blocked"):
-			return tenant.ErrTenantNotBlocked
-		case contains(msg, "already terminated"):
-			return tenant.ErrTenantAlreadyTerminated
-		case contains(msg, "invalid status"):
-			return tenant.ErrInvalidTenantStatus
+		case strings.Contains(msg, "already blocked"):
+			return apierrors.ErrTenantAlreadyBlocked
+		case strings.Contains(msg, "not blocked"):
+			return apierrors.ErrTenantNotBlocked
+		case strings.Contains(msg, "already terminated"):
+			return apierrors.ErrTenantAlreadyTerminated
+		case strings.Contains(msg, "invalid status"):
+			return apierrors.ErrInvalidTenantStatus
 		default:
-			return tenant.ErrOperationFailed
+			return apierrors.ErrTenantOperationFailed
 		}
 	default:
-		return tenant.ErrOperationFailed
+		return apierrors.ErrTenantOperationFailed
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) &&
-		(s == substr ||
-			len(s) > len(substr) &&
-				(s[:len(substr)] == substr ||
-					s[len(s)-len(substr):] == substr ||
-					containsMiddle(s, substr)))
-}
-
-func containsMiddle(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

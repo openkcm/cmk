@@ -1,4 +1,4 @@
-package apiregistry
+package apiregistry_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 
+	"github.com/openkcm/cmk/internal/apiregistry"
 	mappingwrapper "github.com/openkcm/cmk/internal/apiregistry/wrapper/mapping"
 	oidcmappingwrapper "github.com/openkcm/cmk/internal/apiregistry/wrapper/oidcmapping"
 	systemwrapper "github.com/openkcm/cmk/internal/apiregistry/wrapper/system"
@@ -99,25 +100,25 @@ func TestNew(t *testing.T) {
 		},
 	}
 
-	registry := New(mockFactory)
+	reg := apiregistry.New(mockFactory)
 
-	if registry == nil {
+	if reg == nil {
 		t.Fatal("expected non-nil Registry instance")
 	}
 
-	if registry.Tenant() == nil {
+	if reg.Tenant() == nil {
 		t.Error("expected non-nil tenant client")
 	}
 
-	if registry.System() == nil {
+	if reg.System() == nil {
 		t.Error("expected non-nil system client")
 	}
 
-	if registry.Mapping() == nil {
+	if reg.Mapping() == nil {
 		t.Error("expected non-nil mapping client")
 	}
 
-	if registry.OIDCMapping() == nil {
+	if reg.OIDCMapping() == nil {
 		t.Error("expected non-nil OIDC mapping client")
 	}
 }
@@ -128,25 +129,25 @@ func TestNewRegistry(t *testing.T) {
 	mappingClient := mappingwrapper.NewV1(&mockMappingClient{})
 	oidcMappingClient := oidcmappingwrapper.NewV1(&mockOIDCMappingClient{})
 
-	registry := NewRegistry(tenantClient, systemClient, mappingClient, oidcMappingClient)
+	reg := apiregistry.NewRegistry(tenantClient, systemClient, mappingClient, oidcMappingClient)
 
-	if registry == nil {
+	if reg == nil {
 		t.Fatal("expected non-nil Registry instance")
 	}
 
-	if registry.Tenant() != tenantClient {
+	if reg.Tenant() != tenantClient {
 		t.Error("expected tenant client to match")
 	}
 
-	if registry.System() != systemClient {
+	if reg.System() != systemClient {
 		t.Error("expected system client to match")
 	}
 
-	if registry.Mapping() != mappingClient {
+	if reg.Mapping() != mappingClient {
 		t.Error("expected mapping client to match")
 	}
 
-	if registry.OIDCMapping() != oidcMappingClient {
+	if reg.OIDCMapping() != oidcMappingClient {
 		t.Error("expected OIDC mapping client to match")
 	}
 }
@@ -157,34 +158,32 @@ func TestRegistryGetters(t *testing.T) {
 	mappingClient := mappingwrapper.NewV1(&mockMappingClient{})
 	oidcMappingClient := oidcmappingwrapper.NewV1(&mockOIDCMappingClient{})
 
-	registry := NewRegistry(tenantClient, systemClient, mappingClient, oidcMappingClient)
+	reg := apiregistry.NewRegistry(tenantClient, systemClient, mappingClient, oidcMappingClient)
 
 	t.Run("Tenant", func(t *testing.T) {
-		if got := registry.Tenant(); got != tenantClient {
+		if got := reg.Tenant(); got != tenantClient {
 			t.Error("Tenant() returned unexpected client")
 		}
 	})
 
 	t.Run("System", func(t *testing.T) {
-		if got := registry.System(); got != systemClient {
+		if got := reg.System(); got != systemClient {
 			t.Error("System() returned unexpected client")
 		}
 	})
 
 	t.Run("Mapping", func(t *testing.T) {
-		if got := registry.Mapping(); got != mappingClient {
+		if got := reg.Mapping(); got != mappingClient {
 			t.Error("Mapping() returned unexpected client")
 		}
 	})
 
 	t.Run("OIDCMapping", func(t *testing.T) {
-		if got := registry.OIDCMapping(); got != oidcMappingClient {
+		if got := reg.OIDCMapping(); got != oidcMappingClient {
 			t.Error("OIDCMapping() returned unexpected client")
 		}
 	})
 }
-
-// Mock implementations for testing
 
 type mockTenantClient struct {
 	tenantgrpc.ServiceClient
@@ -198,7 +197,6 @@ type mockOIDCMappingClient struct {
 	oidcmappinggrpc.ServiceClient
 }
 
-// Ensure mocks implement the required interfaces
 var (
 	_ tenantgrpc.ServiceClient      = (*mockTenantClient)(nil)
 	_ mappinggrpc.ServiceClient     = (*mockMappingClient)(nil)

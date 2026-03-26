@@ -11,6 +11,7 @@ import (
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
 	"github.com/openkcm/cmk/internal/apiregistry/api/system"
+	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 
 type V1 struct {
@@ -122,6 +123,78 @@ func (v1 *V1) DeleteSystem(ctx context.Context, req *system.DeleteSystemRequest)
 	}, nil
 }
 
+func (v1 *V1) UpdateSystemStatus(
+	ctx context.Context, req *system.UpdateSystemStatusRequest,
+) (*system.UpdateSystemStatusResponse, error) {
+	if err := validateUpdateSystemStatusRequest(req); err != nil {
+		return nil, err
+	}
+
+	protoReq := &systemgrpc.UpdateSystemStatusRequest{
+		Region:     req.Region,
+		ExternalId: req.ExternalID,
+		Type:       mapSystemTypeToProto(req.Type),
+		// Note: Status field mapping may need adjustment based on proto definition
+	}
+
+	protoResp, err := v1.client.UpdateSystemStatus(ctx, protoReq)
+	if err != nil {
+		return nil, convertGRPCError(err)
+	}
+
+	return &system.UpdateSystemStatusResponse{
+		Success: protoResp.GetSuccess(),
+	}, nil
+}
+
+func (v1 *V1) SetSystemLabels(
+	ctx context.Context, req *system.SetSystemLabelsRequest,
+) (*system.SetSystemLabelsResponse, error) {
+	if err := validateSetSystemLabelsRequest(req); err != nil {
+		return nil, err
+	}
+
+	protoReq := &systemgrpc.SetSystemLabelsRequest{
+		Region:     req.Region,
+		ExternalId: req.ExternalID,
+		Type:       mapSystemTypeToProto(req.Type),
+		Labels:     req.Labels,
+	}
+
+	protoResp, err := v1.client.SetSystemLabels(ctx, protoReq)
+	if err != nil {
+		return nil, convertGRPCError(err)
+	}
+
+	return &system.SetSystemLabelsResponse{
+		Success: protoResp.GetSuccess(),
+	}, nil
+}
+
+func (v1 *V1) RemoveSystemLabels(
+	ctx context.Context, req *system.RemoveSystemLabelsRequest,
+) (*system.RemoveSystemLabelsResponse, error) {
+	if err := validateRemoveSystemLabelsRequest(req); err != nil {
+		return nil, err
+	}
+
+	protoReq := &systemgrpc.RemoveSystemLabelsRequest{
+		Region:     req.Region,
+		ExternalId: req.ExternalID,
+		Type:       mapSystemTypeToProto(req.Type),
+		LabelKeys:  req.LabelKeys,
+	}
+
+	protoResp, err := v1.client.RemoveSystemLabels(ctx, protoReq)
+	if err != nil {
+		return nil, convertGRPCError(err)
+	}
+
+	return &system.RemoveSystemLabelsResponse{
+		Success: protoResp.GetSuccess(),
+	}, nil
+}
+
 func mapProtoToSystemInfo(proto *systemgrpc.System) *system.SystemInfo {
 	if proto == nil {
 		return nil
@@ -175,37 +248,37 @@ func convertGRPCError(err error) error {
 	switch st.Code() {
 	case codes.NotFound:
 		if strings.Contains(msg, "system") || strings.Contains(msg, "not found") {
-			return system.ErrSystemNotFound
+			return apierrors.ErrSystemNotFound
 		}
 		return fmt.Errorf("not found: %s", msg)
 
 	case codes.AlreadyExists:
-		return system.ErrSystemAlreadyExists
+		return apierrors.ErrSystemAlreadyExists
 
 	case codes.FailedPrecondition:
 		if strings.Contains(msg, "key claim is already active") {
-			return system.ErrL1KeyClaimAlreadyActive
+			return apierrors.ErrL1KeyClaimAlreadyActive
 		}
 		if strings.Contains(msg, "key claim is already inactive") {
-			return system.ErrL1KeyClaimAlreadyInactive
+			return apierrors.ErrL1KeyClaimAlreadyInactive
 		}
 		if strings.Contains(msg, "not linked to the tenant") || strings.Contains(msg, "not linked to tenant") {
-			return system.ErrSystemNotLinkedToTenant
+			return apierrors.ErrSystemNotLinkedToTenant
 		}
 		return fmt.Errorf("failed precondition: %s", msg)
 
 	case codes.InvalidArgument:
 		if strings.Contains(msg, "region") {
-			return system.ErrInvalidRegion
+			return apierrors.ErrSystemInvalidRegion
 		}
 		if strings.Contains(msg, "external") {
-			return system.ErrInvalidExternalID
+			return apierrors.ErrInvalidExternalID
 		}
 		if strings.Contains(msg, "tenant") {
-			return system.ErrInvalidTenantID
+			return apierrors.ErrSystemInvalidTenantID
 		}
 		if strings.Contains(msg, "type") {
-			return system.ErrInvalidSystemType
+			return apierrors.ErrInvalidSystemType
 		}
 		return fmt.Errorf("invalid argument: %s", msg)
 
@@ -214,74 +287,120 @@ func convertGRPCError(err error) error {
 	}
 }
 
+func validateRegion(region string) error {
+	if region == "" {
+		return apierrors.NewValidationError("Region", "region is required")
+	}
+	return nil
+}
+
+func validateExternalID(externalID string) error {
+	if externalID == "" {
+		return apierrors.NewValidationError("ExternalID", "external_id is required")
+	}
+	return nil
+}
+
+func validateTenantID(tenantID string) error {
+	if tenantID == "" {
+		return apierrors.NewValidationError("TenantID", "tenant_id is required")
+	}
+	return nil
+}
+
+func validateSystemType(t system.SystemType) error {
+	if t == "" || t == system.SystemTypeUnspecified {
+		return apierrors.NewValidationError("Type", "type must be specified")
+	}
+	return nil
+}
+
+// validateSystemIdentifiers validates region and externalID together
+func validateSystemIdentifiers(region, externalID string) error {
+	if err := validateRegion(region); err != nil {
+		return err
+	}
+	return validateExternalID(externalID)
+}
+
 func validateListSystemsRequest(req *system.ListSystemsRequest) error {
 	if req == nil {
-		return system.NewValidationError("request", "request cannot be nil")
+		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
-
 	if req.Limit < 0 {
-		return system.ErrInvalidLimit
+		return apierrors.ErrSystemInvalidLimit
 	}
-
 	return nil
 }
 
 func validateRegisterSystemRequest(req *system.RegisterSystemRequest) error {
 	if req == nil {
-		return system.NewValidationError("request", "request cannot be nil")
+		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
-
-	if req.Region == "" {
-		return system.NewValidationError("Region", "region is required")
+	if err := validateSystemIdentifiers(req.Region, req.ExternalID); err != nil {
+		return err
 	}
-
-	if req.ExternalID == "" {
-		return system.NewValidationError("ExternalID", "external_id is required")
+	if err := validateTenantID(req.TenantID); err != nil {
+		return err
 	}
-
-	if req.TenantID == "" {
-		return system.NewValidationError("TenantID", "tenant_id is required")
-	}
-
-	if req.Type == "" || req.Type == system.SystemTypeUnspecified {
-		return system.NewValidationError("Type", "type must be specified")
-	}
-
-	return nil
+	return validateSystemType(req.Type)
 }
 
 func validateUpdateSystemL1KeyClaimRequest(req *system.UpdateSystemL1KeyClaimRequest) error {
 	if req == nil {
-		return system.NewValidationError("request", "request cannot be nil")
+		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
-
-	if req.Region == "" {
-		return system.NewValidationError("Region", "region is required")
+	if err := validateSystemIdentifiers(req.Region, req.ExternalID); err != nil {
+		return err
 	}
-
-	if req.ExternalID == "" {
-		return system.NewValidationError("ExternalID", "external_id is required")
-	}
-
-	if req.TenantID == "" {
-		return system.NewValidationError("TenantID", "tenant_id is required")
-	}
-
-	return nil
+	return validateTenantID(req.TenantID)
 }
 
 func validateDeleteSystemRequest(req *system.DeleteSystemRequest) error {
 	if req == nil {
-		return system.NewValidationError("request", "request cannot be nil")
+		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
+	return validateSystemIdentifiers(req.Region, req.ExternalID)
+}
 
-	if req.Region == "" {
-		return system.NewValidationError("Region", "region is required")
+func validateUpdateSystemStatusRequest(req *system.UpdateSystemStatusRequest) error {
+	if req == nil {
+		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
-
-	if req.ExternalID == "" {
-		return system.NewValidationError("ExternalID", "external_id is required")
+	if err := validateSystemIdentifiers(req.Region, req.ExternalID); err != nil {
+		return err
 	}
+	return validateSystemType(req.Type)
+}
 
+func validateSetSystemLabelsRequest(req *system.SetSystemLabelsRequest) error {
+	if req == nil {
+		return apierrors.NewValidationError("request", "request cannot be nil")
+	}
+	if err := validateSystemIdentifiers(req.Region, req.ExternalID); err != nil {
+		return err
+	}
+	if err := validateSystemType(req.Type); err != nil {
+		return err
+	}
+	if len(req.Labels) == 0 {
+		return apierrors.NewValidationError("Labels", "at least one label is required")
+	}
+	return nil
+}
+
+func validateRemoveSystemLabelsRequest(req *system.RemoveSystemLabelsRequest) error {
+	if req == nil {
+		return apierrors.NewValidationError("request", "request cannot be nil")
+	}
+	if err := validateSystemIdentifiers(req.Region, req.ExternalID); err != nil {
+		return err
+	}
+	if err := validateSystemType(req.Type); err != nil {
+		return err
+	}
+	if len(req.LabelKeys) == 0 {
+		return apierrors.NewValidationError("LabelKeys", "at least one label key is required")
+	}
 	return nil
 }

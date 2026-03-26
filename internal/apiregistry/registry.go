@@ -17,8 +17,6 @@ type Registry struct {
 	oidcMapping *oidcmappingwrapper.V1
 }
 
-// New creates a new Registry from the client factory.
-// It wraps the raw gRPC clients with our domain-specific wrappers.
 func New(clientFactory clients.Factory) *Registry {
 	registryService := clientFactory.Registry()
 	sessionManagerService := clientFactory.SessionManager()
@@ -31,8 +29,6 @@ func New(clientFactory clients.Factory) *Registry {
 	}
 }
 
-// NewRegistry creates a new Registry with the provided API clients.
-// Use this for custom initialization or testing.
 func NewRegistry(
 	tenantClient *tenantwrapper.V1,
 	systemClient *systemwrapper.V1,
@@ -47,22 +43,18 @@ func NewRegistry(
 	}
 }
 
-// Tenant returns the tenant API client.
 func (r *Registry) Tenant() *tenantwrapper.V1 {
 	return r.tenant
 }
 
-// System returns the system API client.
 func (r *Registry) System() *systemwrapper.V1 {
 	return r.system
 }
 
-// Mapping returns the mapping API client.
 func (r *Registry) Mapping() *mappingwrapper.V1 {
 	return r.mapping
 }
 
-// OIDCMapping returns the OIDC mapping API client.
 func (r *Registry) OIDCMapping() *oidcmappingwrapper.V1 {
 	return r.oidcMapping
 }

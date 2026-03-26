@@ -2,6 +2,7 @@ package mapping
 
 import (
 	"context"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -9,6 +10,7 @@ import (
 	mappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 
 	"github.com/openkcm/cmk/internal/apiregistry/api/mapping"
+	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 
 type V1 struct {
@@ -87,89 +89,91 @@ func (v *V1) Get(ctx context.Context, req *mapping.GetRequest) (*mapping.GetResp
 	}, nil
 }
 
-func validateMapSystemToTenantRequest(req *mapping.MapSystemToTenantRequest) error {
-	if req.ExternalID == "" {
-		return mapping.NewValidationError("ExternalID", "external ID is required")
-	}
-	if req.Type == "" {
-		return mapping.NewValidationError("Type", "type is required")
-	}
-	if req.TenantID == "" {
-		return mapping.NewValidationError("TenantID", "tenant ID is required")
+func validateRequest(req any) error {
+	if req == nil {
+		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
 	return nil
+}
+
+func validateExternalID(externalID string) error {
+	if externalID == "" {
+		return apierrors.NewValidationError("ExternalID", "external ID is required")
+	}
+	return nil
+}
+
+func validateType(typeStr string) error {
+	if typeStr == "" {
+		return apierrors.NewValidationError("Type", "type is required")
+	}
+	return nil
+}
+
+func validateTenantID(tenantID string) error {
+	if tenantID == "" {
+		return apierrors.NewValidationError("TenantID", "tenant ID is required")
+	}
+	return nil
+}
+
+func validateExternalIDAndType(req any, externalID, typeStr string) error {
+	if err := validateRequest(req); err != nil {
+		return err
+	}
+	if err := validateExternalID(externalID); err != nil {
+		return err
+	}
+	return validateType(typeStr)
+}
+
+func validateMapSystemToTenantRequest(req *mapping.MapSystemToTenantRequest) error {
+	if err := validateExternalIDAndType(req, req.ExternalID, req.Type); err != nil {
+		return err
+	}
+	return validateTenantID(req.TenantID)
 }
 
 func validateUnmapSystemFromTenantRequest(req *mapping.UnmapSystemFromTenantRequest) error {
-	if req.ExternalID == "" {
-		return mapping.NewValidationError("ExternalID", "external ID is required")
+	if err := validateExternalIDAndType(req, req.ExternalID, req.Type); err != nil {
+		return err
 	}
-	if req.Type == "" {
-		return mapping.NewValidationError("Type", "type is required")
-	}
-	if req.TenantID == "" {
-		return mapping.NewValidationError("TenantID", "tenant ID is required")
-	}
-	return nil
+	return validateTenantID(req.TenantID)
 }
 
 func validateGetRequest(req *mapping.GetRequest) error {
-	if req.ExternalID == "" {
-		return mapping.NewValidationError("ExternalID", "external ID is required")
-	}
-	if req.Type == "" {
-		return mapping.NewValidationError("Type", "type is required")
-	}
-	return nil
+	return validateExternalIDAndType(req, req.ExternalID, req.Type)
 }
 
 //nolint:cyclop // error mapping requires multiple case statements
 func convertGRPCError(err error) error {
 	st, ok := status.FromError(err)
 	if !ok {
-		return mapping.ErrOperationFailed
+		return apierrors.ErrMappingOperationFailed
 	}
 
 	switch st.Code() {
 	case codes.NotFound:
-		return mapping.ErrMappingNotFound
+		return apierrors.ErrMappingNotFound
 	case codes.AlreadyExists:
-		return mapping.ErrMappingAlreadyExists
+		return apierrors.ErrMappingAlreadyExists
 	case codes.InvalidArgument:
 		// Try to determine the specific error from the message
 		msg := st.Message()
 		switch {
-		case contains(msg, "external"):
-			return mapping.ErrInvalidExternalID
-		case contains(msg, "type"):
-			return mapping.ErrInvalidType
-		case contains(msg, "tenant"):
-			return mapping.ErrInvalidTenantID
+		case strings.Contains(msg, "external"):
+			return apierrors.ErrMappingInvalidExternalID
+		case strings.Contains(msg, "type"):
+			return apierrors.ErrInvalidType
+		case strings.Contains(msg, "tenant"):
+			return apierrors.ErrMappingInvalidTenantID
 		default:
-			return mapping.ErrOperationFailed
+			return apierrors.ErrMappingOperationFailed
 		}
 	case codes.FailedPrecondition:
 		// System is not mapped to tenant
-		return mapping.ErrSystemNotMapped
+		return apierrors.ErrSystemNotMapped
 	default:
-		return mapping.ErrOperationFailed
+		return apierrors.ErrMappingOperationFailed
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) &&
-		(s == substr ||
-			len(s) > len(substr) &&
-				(s[:len(substr)] == substr ||
-					s[len(s)-len(substr):] == substr ||
-					containsMiddle(s, substr)))
-}
-
-func containsMiddle(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

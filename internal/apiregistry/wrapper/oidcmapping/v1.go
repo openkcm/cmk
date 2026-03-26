@@ -2,6 +2,7 @@ package oidcmapping
 
 import (
 	"context"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -9,6 +10,7 @@ import (
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 
 	"github.com/openkcm/cmk/internal/apiregistry/api/oidcmapping"
+	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 
 type V1 struct {
@@ -134,85 +136,88 @@ func (v *V1) UnblockOIDCMapping(
 	return result, nil
 }
 
+func validateRequest(req any) error {
+	if req == nil {
+		return apierrors.NewValidationError("request", "request cannot be nil")
+	}
+	return nil
+}
+
+func validateTenantID(tenantID string) error {
+	if tenantID == "" {
+		return apierrors.NewValidationError("TenantID", "tenant ID is required")
+	}
+	return nil
+}
+
+func validateRequestWithTenantID(req any, tenantID string) error {
+	if err := validateRequest(req); err != nil {
+		return err
+	}
+	return validateTenantID(tenantID)
+}
+
 func validateApplyOIDCMappingRequest(req *oidcmapping.ApplyOIDCMappingRequest) error {
-	if req.TenantID == "" {
-		return oidcmapping.NewValidationError("TenantID", "tenant ID is required")
+	if err := validateRequestWithTenantID(req, req.TenantID); err != nil {
+		return err
 	}
 	if req.Issuer == "" {
-		return oidcmapping.NewValidationError("Issuer", "issuer is required")
+		return apierrors.NewValidationError("Issuer", "issuer is required")
 	}
 	return nil
 }
 
 func validateRemoveOIDCMappingRequest(req *oidcmapping.RemoveOIDCMappingRequest) error {
-	if req.TenantID == "" {
-		return oidcmapping.NewValidationError("TenantID", "tenant ID is required")
-	}
-	return nil
+	return validateRequestWithTenantID(req, req.TenantID)
 }
 
 func validateBlockOIDCMappingRequest(req *oidcmapping.BlockOIDCMappingRequest) error {
-	if req.TenantID == "" {
-		return oidcmapping.NewValidationError("TenantID", "tenant ID is required")
-	}
-	return nil
+	return validateRequestWithTenantID(req, req.TenantID)
 }
 
 func validateUnblockOIDCMappingRequest(req *oidcmapping.UnblockOIDCMappingRequest) error {
-	if req.TenantID == "" {
-		return oidcmapping.NewValidationError("TenantID", "tenant ID is required")
-	}
-	return nil
+	return validateRequestWithTenantID(req, req.TenantID)
 }
 
 //nolint:cyclop // error mapping requires multiple case statements
 func convertGRPCError(err error) error {
 	st, ok := status.FromError(err)
 	if !ok {
-		return oidcmapping.ErrOperationFailed
+		return apierrors.ErrOIDCOperationFailed
 	}
 
 	switch st.Code() {
 	case codes.NotFound:
-		return oidcmapping.ErrOIDCMappingNotFound
+		return apierrors.ErrOIDCMappingNotFound
 	case codes.AlreadyExists:
-		return oidcmapping.ErrOIDCMappingAlreadyExists
+		return apierrors.ErrOIDCMappingAlreadyExists
 	case codes.InvalidArgument:
 		msg := st.Message()
 		switch {
-		case contains(msg, "tenant"):
-			return oidcmapping.ErrInvalidTenantID
-		case contains(msg, "issuer"):
-			return oidcmapping.ErrInvalidIssuer
-		case contains(msg, "jwks"):
-			return oidcmapping.ErrInvalidJwksURI
-		case contains(msg, "audience"):
-			return oidcmapping.ErrInvalidAudiences
-		case contains(msg, "client"):
-			return oidcmapping.ErrInvalidClientID
+		case strings.Contains(msg, "tenant"):
+			return apierrors.ErrOIDCInvalidTenantID
+		case strings.Contains(msg, "issuer"):
+			return apierrors.ErrInvalidIssuer
+		case strings.Contains(msg, "jwks"):
+			return apierrors.ErrInvalidJwksURI
+		case strings.Contains(msg, "audience"):
+			return apierrors.ErrInvalidAudiences
+		case strings.Contains(msg, "client"):
+			return apierrors.ErrInvalidClientID
 		default:
-			return oidcmapping.ErrOperationFailed
+			return apierrors.ErrOIDCOperationFailed
 		}
 	case codes.FailedPrecondition:
 		msg := st.Message()
 		switch {
-		case contains(msg, "already blocked"):
-			return oidcmapping.ErrOIDCMappingAlreadyBlocked
-		case contains(msg, "not blocked"):
-			return oidcmapping.ErrOIDCMappingNotBlocked
+		case strings.Contains(msg, "already blocked"):
+			return apierrors.ErrOIDCMappingAlreadyBlocked
+		case strings.Contains(msg, "not blocked"):
+			return apierrors.ErrOIDCMappingNotBlocked
 		default:
-			return oidcmapping.ErrOperationFailed
+			return apierrors.ErrOIDCOperationFailed
 		}
 	default:
-		return oidcmapping.ErrOperationFailed
+		return apierrors.ErrOIDCOperationFailed
 	}
-}
-
-func contains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
