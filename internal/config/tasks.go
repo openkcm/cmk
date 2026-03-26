@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 const (
 	TypeSystemsTask        = "sys:refresh"
 	TypeCertificateTask    = "cert:rotate"
@@ -23,8 +25,14 @@ var PeriodicTasks = map[string]Task{
 	},
 	TypeHYOKSync: {
 		Enabled:  true,
-		Cronspec: "0 * * * *", // Hourly
-		Retries:  defaultRetryCount,
+		Cronspec: "*/5 * * * *", // Every 5 minutes
+		Retries:  3,
+		TimeOut:  5 * time.Minute,
+		FanOutTask: FanOutTask{
+			Enabled: true,
+			Retries: 0,
+			TimeOut: 5 * time.Minute,
+		},
 	},
 	TypeKeystorePool: {
 		Enabled:  true,
