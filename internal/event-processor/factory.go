@@ -194,6 +194,51 @@ func (f *EventFactory) SystemSwitchNewPrimaryKey(
 	})
 }
 
+// SystemKeyRotate creates a job to rotate the key material for a system.
+// This triggers re-encryption on the system with the new key version/material.
+// The keyID remains the same, but the key material has changed.
+//
+// Unlike LINK/UNLINK/SWITCH, this does NOT set the system to PROCESSING —
+// rotation is an external event and the system remains CONNECTED while in flight.
+// A model.Event row is still written (PreviousItemStatus) so that
+// retry and unlink are possible if the job fails.
+func (f *EventFactory) SystemKeyRotate(
+	ctx context.Context,
+	system *model.System,
+	keyID string,
+	versionIDFrom string,
+	versionIDTo string,
+	rotationTime string, // RFC3339 format
+) (orbital.Job, error) {
+	systemKeyRotateJobData := SystemActionJobData{
+		SystemID:         system.ID.String(),
+		KeyIDTo:          keyID, // Same key, new material version
+		KeyIDFrom:        keyID, // Same key, old material version
+		KeyVersionIDFrom: versionIDFrom,
+		KeyVersionIDTo:   versionIDTo,
+		RotationTime:     rotationTime,
+	}
+
+	job, err := f.createSystemEventJob(ctx, JobTypeSystemKeyRotate, systemKeyRotateJobData)
+	if err != nil {
+		return job, err
+	}
+
+	// Write model.Event without changing system status — enables retry/cancel on failure.
+	err = f.repo.Set(ctx, &model.Event{
+		Identifier:         job.ExternalID,
+		Type:               job.Type,
+		Data:               job.Data,
+		Status:             job.Status,
+		PreviousItemStatus: string(system.Status),
+	})
+	if err != nil {
+		log.Error(ctx, "failed to store event", err)
+	}
+
+	return job, nil
+}
+
 // KeyEnable creates a job to enable a key make sure the ctx provided has the tenant set.
 func (f *EventFactory) KeyEnable(ctx context.Context, keyID string) (orbital.Job, error) {
 	return f.createKeyEventJob(ctx, keyID, JobTypeKeyEnable)
