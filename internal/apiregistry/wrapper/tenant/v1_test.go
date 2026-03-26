@@ -12,11 +12,13 @@ import (
 
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
-	"github.com/openkcm/cmk/internal/apiregistry/api/tenant"
+	tenantapi "github.com/openkcm/cmk/internal/apiregistry/api/tenant"
 )
 
 // mockTenantClient is a mock implementation of tenantgrpc.ServiceClient
 type mockTenantClient struct {
+	tenantgrpc.ServiceClient // embed to satisfy interface
+
 	registerTenantFunc       func(ctx context.Context, req *tenantgrpc.RegisterTenantRequest) (*tenantgrpc.RegisterTenantResponse, error)
 	listTenantsFunc          func(ctx context.Context, req *tenantgrpc.ListTenantsRequest) (*tenantgrpc.ListTenantsResponse, error)
 	getTenantFunc            func(ctx context.Context, req *tenantgrpc.GetTenantRequest) (*tenantgrpc.GetTenantResponse, error)
@@ -26,28 +28,27 @@ type mockTenantClient struct {
 	setTenantLabelsFunc      func(ctx context.Context, req *tenantgrpc.SetTenantLabelsRequest) (*tenantgrpc.SetTenantLabelsResponse, error)
 	removeTenantLabelsFunc   func(ctx context.Context, req *tenantgrpc.RemoveTenantLabelsRequest) (*tenantgrpc.RemoveTenantLabelsResponse, error)
 	setTenantUserGroupsFunc  func(ctx context.Context, req *tenantgrpc.SetTenantUserGroupsRequest) (*tenantgrpc.SetTenantUserGroupsResponse, error)
-	tenantgrpc.ServiceClient // embed to satisfy interface
 }
 
 func (m *mockTenantClient) RegisterTenant(ctx context.Context, req *tenantgrpc.RegisterTenantRequest, opts ...grpc.CallOption) (*tenantgrpc.RegisterTenantResponse, error) {
 	if m.registerTenantFunc != nil {
 		return m.registerTenantFunc(ctx, req)
 	}
-	return nil, nil
+	return nil, nil //nolint:nilnil // mock implementation
 }
 
 func (m *mockTenantClient) ListTenants(ctx context.Context, req *tenantgrpc.ListTenantsRequest, opts ...grpc.CallOption) (*tenantgrpc.ListTenantsResponse, error) {
 	if m.listTenantsFunc != nil {
 		return m.listTenantsFunc(ctx, req)
 	}
-	return nil, nil
+	return nil, nil //nolint:nilnil // mock implementation
 }
 
 func (m *mockTenantClient) GetTenant(ctx context.Context, req *tenantgrpc.GetTenantRequest, opts ...grpc.CallOption) (*tenantgrpc.GetTenantResponse, error) {
 	if m.getTenantFunc != nil {
 		return m.getTenantFunc(ctx, req)
 	}
-	return nil, nil
+	return nil, nil //nolint:nilnil // mock implementation
 }
 
 func (m *mockTenantClient) BlockTenant(ctx context.Context, req *tenantgrpc.BlockTenantRequest, opts ...grpc.CallOption) (*tenantgrpc.BlockTenantResponse, error) {
@@ -107,7 +108,7 @@ func TestNewV1(t *testing.T) {
 func TestV1_RegisterTenant(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        *tenant.RegisterTenantRequest
+		request        *tenantapi.RegisterTenantRequest
 		mockResponse   *tenantgrpc.RegisterTenantResponse
 		mockError      error
 		expectedError  error
@@ -115,13 +116,13 @@ func TestV1_RegisterTenant(t *testing.T) {
 	}{
 		{
 			name: "successful registration",
-			request: &tenant.RegisterTenantRequest{
+			request: &tenantapi.RegisterTenantRequest{
 				Name:      "Test Tenant",
 				ID:        "tenant-123",
 				Region:    "us-east-1",
 				OwnerID:   "owner-456",
 				OwnerType: "user",
-				Role:      tenant.TenantRoleLive,
+				Role:      tenantapi.TenantRoleLive,
 				Labels:    map[string]string{"env": "prod"},
 			},
 			mockResponse: &tenantgrpc.RegisterTenantResponse{
@@ -131,37 +132,37 @@ func TestV1_RegisterTenant(t *testing.T) {
 		},
 		{
 			name: "missing region",
-			request: &tenant.RegisterTenantRequest{
+			request: &tenantapi.RegisterTenantRequest{
 				OwnerID:   "owner-456",
 				OwnerType: "user",
 			},
-			expectedError: tenant.NewValidationError("Region", "region is required"),
+			expectedError: tenantapi.NewValidationError("Region", "region is required"),
 		},
 		{
 			name: "missing owner ID",
-			request: &tenant.RegisterTenantRequest{
+			request: &tenantapi.RegisterTenantRequest{
 				Region:    "us-east-1",
 				OwnerType: "user",
 			},
-			expectedError: tenant.NewValidationError("OwnerID", "owner ID is required"),
+			expectedError: tenantapi.NewValidationError("OwnerID", "owner ID is required"),
 		},
 		{
 			name: "missing owner type",
-			request: &tenant.RegisterTenantRequest{
+			request: &tenantapi.RegisterTenantRequest{
 				Region:  "us-east-1",
 				OwnerID: "owner-456",
 			},
-			expectedError: tenant.NewValidationError("OwnerType", "owner type is required"),
+			expectedError: tenantapi.NewValidationError("OwnerType", "owner type is required"),
 		},
 		{
 			name: "tenant already exists",
-			request: &tenant.RegisterTenantRequest{
+			request: &tenantapi.RegisterTenantRequest{
 				Region:    "us-east-1",
 				OwnerID:   "owner-456",
 				OwnerType: "user",
 			},
 			mockError:     status.Error(codes.AlreadyExists, "tenant already exists"),
-			expectedError: tenant.ErrTenantAlreadyExists,
+			expectedError: tenantapi.ErrTenantAlreadyExists,
 		},
 	}
 
@@ -202,7 +203,7 @@ func TestV1_ListTenants(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		request        *tenant.ListTenantsRequest
+		request        *tenantapi.ListTenantsRequest
 		mockResponse   *tenantgrpc.ListTenantsResponse
 		mockError      error
 		expectedError  error
@@ -210,7 +211,7 @@ func TestV1_ListTenants(t *testing.T) {
 	}{
 		{
 			name: "successful list",
-			request: &tenant.ListTenantsRequest{
+			request: &tenantapi.ListTenantsRequest{
 				Region: "us-east-1",
 				Limit:  10,
 			},
@@ -235,25 +236,25 @@ func TestV1_ListTenants(t *testing.T) {
 		},
 		{
 			name: "invalid limit too low",
-			request: &tenant.ListTenantsRequest{
+			request: &tenantapi.ListTenantsRequest{
 				Limit: -1,
 			},
-			expectedError: tenant.ErrInvalidLimit,
+			expectedError: tenantapi.ErrInvalidLimit,
 		},
 		{
 			name: "invalid limit too high",
-			request: &tenant.ListTenantsRequest{
+			request: &tenantapi.ListTenantsRequest{
 				Limit: 1001,
 			},
-			expectedError: tenant.ErrInvalidLimit,
+			expectedError: tenantapi.ErrInvalidLimit,
 		},
 		{
 			name: "tenant not found",
-			request: &tenant.ListTenantsRequest{
+			request: &tenantapi.ListTenantsRequest{
 				ID: "non-existent",
 			},
 			mockError:     status.Error(codes.NotFound, "tenant not found"),
-			expectedError: tenant.ErrTenantNotFound,
+			expectedError: tenantapi.ErrTenantNotFound,
 		},
 	}
 
@@ -294,14 +295,14 @@ func TestV1_GetTenant(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		request        *tenant.GetTenantRequest
+		request        *tenantapi.GetTenantRequest
 		mockResponse   *tenantgrpc.GetTenantResponse
 		mockError      error
 		expectedError  error
 	}{
 		{
 			name: "successful get",
-			request: &tenant.GetTenantRequest{
+			request: &tenantapi.GetTenantRequest{
 				ID: "tenant-123",
 			},
 			mockResponse: &tenantgrpc.GetTenantResponse{
@@ -319,18 +320,18 @@ func TestV1_GetTenant(t *testing.T) {
 		},
 		{
 			name: "missing ID",
-			request: &tenant.GetTenantRequest{
+			request: &tenantapi.GetTenantRequest{
 				ID: "",
 			},
-			expectedError: tenant.NewValidationError("ID", "tenant ID is required"),
+			expectedError: tenantapi.NewValidationError("ID", "tenant ID is required"),
 		},
 		{
 			name: "tenant not found",
-			request: &tenant.GetTenantRequest{
+			request: &tenantapi.GetTenantRequest{
 				ID: "non-existent",
 			},
 			mockError:     status.Error(codes.NotFound, "tenant not found"),
-			expectedError: tenant.ErrTenantNotFound,
+			expectedError: tenantapi.ErrTenantNotFound,
 		},
 	}
 
@@ -369,7 +370,7 @@ func TestV1_GetTenant(t *testing.T) {
 func TestV1_BlockTenant(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        *tenant.BlockTenantRequest
+		request        *tenantapi.BlockTenantRequest
 		mockResponse   *tenantgrpc.BlockTenantResponse
 		mockError      error
 		expectedError  error
@@ -377,7 +378,7 @@ func TestV1_BlockTenant(t *testing.T) {
 	}{
 		{
 			name: "successful block",
-			request: &tenant.BlockTenantRequest{
+			request: &tenantapi.BlockTenantRequest{
 				ID: "tenant-123",
 			},
 			mockResponse: &tenantgrpc.BlockTenantResponse{
@@ -387,18 +388,18 @@ func TestV1_BlockTenant(t *testing.T) {
 		},
 		{
 			name: "missing ID",
-			request: &tenant.BlockTenantRequest{
+			request: &tenantapi.BlockTenantRequest{
 				ID: "",
 			},
-			expectedError: tenant.NewValidationError("ID", "tenant ID is required"),
+			expectedError: tenantapi.NewValidationError("ID", "tenant ID is required"),
 		},
 		{
 			name: "tenant already blocked",
-			request: &tenant.BlockTenantRequest{
+			request: &tenantapi.BlockTenantRequest{
 				ID: "tenant-123",
 			},
 			mockError:     status.Error(codes.FailedPrecondition, "tenant is already blocked"),
-			expectedError: tenant.ErrTenantAlreadyBlocked,
+			expectedError: tenantapi.ErrTenantAlreadyBlocked,
 		},
 	}
 
@@ -437,7 +438,7 @@ func TestV1_BlockTenant(t *testing.T) {
 func TestV1_UnblockTenant(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        *tenant.UnblockTenantRequest
+		request        *tenantapi.UnblockTenantRequest
 		mockResponse   *tenantgrpc.UnblockTenantResponse
 		mockError      error
 		expectedError  error
@@ -445,7 +446,7 @@ func TestV1_UnblockTenant(t *testing.T) {
 	}{
 		{
 			name: "successful unblock",
-			request: &tenant.UnblockTenantRequest{
+			request: &tenantapi.UnblockTenantRequest{
 				ID: "tenant-123",
 			},
 			mockResponse: &tenantgrpc.UnblockTenantResponse{
@@ -455,18 +456,18 @@ func TestV1_UnblockTenant(t *testing.T) {
 		},
 		{
 			name: "missing ID",
-			request: &tenant.UnblockTenantRequest{
+			request: &tenantapi.UnblockTenantRequest{
 				ID: "",
 			},
-			expectedError: tenant.NewValidationError("ID", "tenant ID is required"),
+			expectedError: tenantapi.NewValidationError("ID", "tenant ID is required"),
 		},
 		{
 			name: "tenant not blocked",
-			request: &tenant.UnblockTenantRequest{
+			request: &tenantapi.UnblockTenantRequest{
 				ID: "tenant-123",
 			},
 			mockError:     status.Error(codes.FailedPrecondition, "tenant is not blocked"),
-			expectedError: tenant.ErrTenantNotBlocked,
+			expectedError: tenantapi.ErrTenantNotBlocked,
 		},
 	}
 
@@ -505,7 +506,7 @@ func TestV1_UnblockTenant(t *testing.T) {
 func TestV1_TerminateTenant(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        *tenant.TerminateTenantRequest
+		request        *tenantapi.TerminateTenantRequest
 		mockResponse   *tenantgrpc.TerminateTenantResponse
 		mockError      error
 		expectedError  error
@@ -513,7 +514,7 @@ func TestV1_TerminateTenant(t *testing.T) {
 	}{
 		{
 			name: "successful termination",
-			request: &tenant.TerminateTenantRequest{
+			request: &tenantapi.TerminateTenantRequest{
 				ID: "tenant-123",
 			},
 			mockResponse: &tenantgrpc.TerminateTenantResponse{
@@ -523,18 +524,18 @@ func TestV1_TerminateTenant(t *testing.T) {
 		},
 		{
 			name: "missing ID",
-			request: &tenant.TerminateTenantRequest{
+			request: &tenantapi.TerminateTenantRequest{
 				ID: "",
 			},
-			expectedError: tenant.NewValidationError("ID", "tenant ID is required"),
+			expectedError: tenantapi.NewValidationError("ID", "tenant ID is required"),
 		},
 		{
 			name: "tenant already terminated",
-			request: &tenant.TerminateTenantRequest{
+			request: &tenantapi.TerminateTenantRequest{
 				ID: "tenant-123",
 			},
 			mockError:     status.Error(codes.FailedPrecondition, "tenant is already terminated"),
-			expectedError: tenant.ErrTenantAlreadyTerminated,
+			expectedError: tenantapi.ErrTenantAlreadyTerminated,
 		},
 	}
 
@@ -573,7 +574,7 @@ func TestV1_TerminateTenant(t *testing.T) {
 func TestV1_SetTenantLabels(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        *tenant.SetTenantLabelsRequest
+		request        *tenantapi.SetTenantLabelsRequest
 		mockResponse   *tenantgrpc.SetTenantLabelsResponse
 		mockError      error
 		expectedError  error
@@ -581,7 +582,7 @@ func TestV1_SetTenantLabels(t *testing.T) {
 	}{
 		{
 			name: "successful set labels",
-			request: &tenant.SetTenantLabelsRequest{
+			request: &tenantapi.SetTenantLabelsRequest{
 				ID:     "tenant-123",
 				Labels: map[string]string{"env": "prod", "team": "platform"},
 			},
@@ -592,19 +593,19 @@ func TestV1_SetTenantLabels(t *testing.T) {
 		},
 		{
 			name: "missing ID",
-			request: &tenant.SetTenantLabelsRequest{
+			request: &tenantapi.SetTenantLabelsRequest{
 				ID:     "",
 				Labels: map[string]string{"env": "prod"},
 			},
-			expectedError: tenant.NewValidationError("ID", "tenant ID is required"),
+			expectedError: tenantapi.NewValidationError("ID", "tenant ID is required"),
 		},
 		{
 			name: "empty labels",
-			request: &tenant.SetTenantLabelsRequest{
+			request: &tenantapi.SetTenantLabelsRequest{
 				ID:     "tenant-123",
 				Labels: map[string]string{},
 			},
-			expectedError: tenant.NewValidationError("Labels", "at least one label is required"),
+			expectedError: tenantapi.NewValidationError("Labels", "at least one label is required"),
 		},
 	}
 
@@ -643,7 +644,7 @@ func TestV1_SetTenantLabels(t *testing.T) {
 func TestV1_RemoveTenantLabels(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        *tenant.RemoveTenantLabelsRequest
+		request        *tenantapi.RemoveTenantLabelsRequest
 		mockResponse   *tenantgrpc.RemoveTenantLabelsResponse
 		mockError      error
 		expectedError  error
@@ -651,7 +652,7 @@ func TestV1_RemoveTenantLabels(t *testing.T) {
 	}{
 		{
 			name: "successful remove labels",
-			request: &tenant.RemoveTenantLabelsRequest{
+			request: &tenantapi.RemoveTenantLabelsRequest{
 				ID:        "tenant-123",
 				LabelKeys: []string{"env", "team"},
 			},
@@ -662,19 +663,19 @@ func TestV1_RemoveTenantLabels(t *testing.T) {
 		},
 		{
 			name: "missing ID",
-			request: &tenant.RemoveTenantLabelsRequest{
+			request: &tenantapi.RemoveTenantLabelsRequest{
 				ID:        "",
 				LabelKeys: []string{"env"},
 			},
-			expectedError: tenant.NewValidationError("ID", "tenant ID is required"),
+			expectedError: tenantapi.NewValidationError("ID", "tenant ID is required"),
 		},
 		{
 			name: "empty label keys",
-			request: &tenant.RemoveTenantLabelsRequest{
+			request: &tenantapi.RemoveTenantLabelsRequest{
 				ID:        "tenant-123",
 				LabelKeys: []string{},
 			},
-			expectedError: tenant.NewValidationError("LabelKeys", "at least one label key is required"),
+			expectedError: tenantapi.NewValidationError("LabelKeys", "at least one label key is required"),
 		},
 	}
 
@@ -713,7 +714,7 @@ func TestV1_RemoveTenantLabels(t *testing.T) {
 func TestV1_SetTenantUserGroups(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        *tenant.SetTenantUserGroupsRequest
+		request        *tenantapi.SetTenantUserGroupsRequest
 		mockResponse   *tenantgrpc.SetTenantUserGroupsResponse
 		mockError      error
 		expectedError  error
@@ -721,7 +722,7 @@ func TestV1_SetTenantUserGroups(t *testing.T) {
 	}{
 		{
 			name: "successful set user groups",
-			request: &tenant.SetTenantUserGroupsRequest{
+			request: &tenantapi.SetTenantUserGroupsRequest{
 				ID:         "tenant-123",
 				UserGroups: []string{"admin", "developer"},
 			},
@@ -732,19 +733,19 @@ func TestV1_SetTenantUserGroups(t *testing.T) {
 		},
 		{
 			name: "missing ID",
-			request: &tenant.SetTenantUserGroupsRequest{
+			request: &tenantapi.SetTenantUserGroupsRequest{
 				ID:         "",
 				UserGroups: []string{"admin"},
 			},
-			expectedError: tenant.NewValidationError("ID", "tenant ID is required"),
+			expectedError: tenantapi.NewValidationError("ID", "tenant ID is required"),
 		},
 		{
 			name: "empty user groups",
-			request: &tenant.SetTenantUserGroupsRequest{
+			request: &tenantapi.SetTenantUserGroupsRequest{
 				ID:         "tenant-123",
 				UserGroups: []string{},
 			},
-			expectedError: tenant.NewValidationError("UserGroups", "at least one user group is required"),
+			expectedError: tenantapi.NewValidationError("UserGroups", "at least one user group is required"),
 		},
 	}
 
@@ -784,32 +785,32 @@ func TestMapProtoToTenantStatus(t *testing.T) {
 	tests := []struct {
 		name        string
 		protoStatus tenantgrpc.Status
-		expected    tenant.TenantStatus
+		expected    tenantapi.TenantStatus
 	}{
 		{
 			name:        "active",
 			protoStatus: tenantgrpc.Status_STATUS_ACTIVE,
-			expected:    tenant.TenantStatusActive,
+			expected:    tenantapi.TenantStatusActive,
 		},
 		{
 			name:        "requested",
 			protoStatus: tenantgrpc.Status_STATUS_REQUESTED,
-			expected:    tenant.TenantStatusRequested,
+			expected:    tenantapi.TenantStatusRequested,
 		},
 		{
 			name:        "blocked",
 			protoStatus: tenantgrpc.Status_STATUS_BLOCKED,
-			expected:    tenant.TenantStatusBlocked,
+			expected:    tenantapi.TenantStatusBlocked,
 		},
 		{
 			name:        "terminated",
 			protoStatus: tenantgrpc.Status_STATUS_TERMINATED,
-			expected:    tenant.TenantStatusTerminated,
+			expected:    tenantapi.TenantStatusTerminated,
 		},
 		{
 			name:        "unspecified",
 			protoStatus: 999, // Invalid status
-			expected:    tenant.TenantStatusUnspecified,
+			expected:    tenantapi.TenantStatusUnspecified,
 		},
 	}
 
@@ -827,27 +828,27 @@ func TestMapProtoToTenantRole(t *testing.T) {
 	tests := []struct {
 		name      string
 		protoRole tenantgrpc.Role
-		expected  tenant.TenantRole
+		expected  tenantapi.TenantRole
 	}{
 		{
 			name:      "live",
 			protoRole: tenantgrpc.Role_ROLE_LIVE,
-			expected:  tenant.TenantRoleLive,
+			expected:  tenantapi.TenantRoleLive,
 		},
 		{
 			name:      "test",
 			protoRole: tenantgrpc.Role_ROLE_TEST,
-			expected:  tenant.TenantRoleTest,
+			expected:  tenantapi.TenantRoleTest,
 		},
 		{
 			name:      "trial",
 			protoRole: tenantgrpc.Role_ROLE_TRIAL,
-			expected:  tenant.TenantRoleTrial,
+			expected:  tenantapi.TenantRoleTrial,
 		},
 		{
 			name:      "unspecified",
 			protoRole: tenantgrpc.Role_ROLE_UNSPECIFIED,
-			expected:  tenant.TenantRoleUnspecified,
+			expected:  tenantapi.TenantRoleUnspecified,
 		},
 	}
 
@@ -864,27 +865,27 @@ func TestMapProtoToTenantRole(t *testing.T) {
 func TestMapTenantRoleToProto(t *testing.T) {
 	tests := []struct {
 		name     string
-		role     tenant.TenantRole
+		role     tenantapi.TenantRole
 		expected tenantgrpc.Role
 	}{
 		{
 			name:     "live",
-			role:     tenant.TenantRoleLive,
+			role:     tenantapi.TenantRoleLive,
 			expected: tenantgrpc.Role_ROLE_LIVE,
 		},
 		{
 			name:     "test",
-			role:     tenant.TenantRoleTest,
+			role:     tenantapi.TenantRoleTest,
 			expected: tenantgrpc.Role_ROLE_TEST,
 		},
 		{
 			name:     "trial",
-			role:     tenant.TenantRoleTrial,
+			role:     tenantapi.TenantRoleTrial,
 			expected: tenantgrpc.Role_ROLE_TRIAL,
 		},
 		{
 			name:     "unspecified",
-			role:     tenant.TenantRoleUnspecified,
+			role:     tenantapi.TenantRoleUnspecified,
 			expected: tenantgrpc.Role_ROLE_UNSPECIFIED,
 		},
 	}
@@ -941,54 +942,54 @@ func TestConvertGRPCError(t *testing.T) {
 		{
 			name:          "tenant not found",
 			inputError:    status.Error(codes.NotFound, "tenant not found"),
-			expectedError: tenant.ErrTenantNotFound,
+			expectedError: tenantapi.ErrTenantNotFound,
 		},
 		{
 			name:          "tenant already exists",
 			inputError:    status.Error(codes.AlreadyExists, "tenant already exists"),
-			expectedError: tenant.ErrTenantAlreadyExists,
+			expectedError: tenantapi.ErrTenantAlreadyExists,
 		},
 		{
 			name:          "invalid tenant ID",
 			inputError:    status.Error(codes.InvalidArgument, "invalid tenant ID"),
-			expectedError: tenant.ErrInvalidTenantID,
+			expectedError: tenantapi.ErrInvalidTenantID,
 		},
 		{
 			name:          "tenant already blocked",
 			inputError:    status.Error(codes.FailedPrecondition, "tenant is already blocked"),
-			expectedError: tenant.ErrTenantAlreadyBlocked,
+			expectedError: tenantapi.ErrTenantAlreadyBlocked,
 		},
 		{
 			name:          "tenant not blocked",
 			inputError:    status.Error(codes.FailedPrecondition, "tenant is not blocked"),
-			expectedError: tenant.ErrTenantNotBlocked,
+			expectedError: tenantapi.ErrTenantNotBlocked,
 		},
 		{
 			name:          "tenant already terminated",
 			inputError:    status.Error(codes.FailedPrecondition, "tenant is already terminated"),
-			expectedError: tenant.ErrTenantAlreadyTerminated,
+			expectedError: tenantapi.ErrTenantAlreadyTerminated,
 		},
 		{
 			name:          "invalid status",
 			inputError:    status.Error(codes.FailedPrecondition, "invalid status transition"),
-			expectedError: tenant.ErrInvalidTenantStatus,
+			expectedError: tenantapi.ErrInvalidTenantStatus,
 		},
 		{
 			name:          "operation failed",
 			inputError:    status.Error(codes.Internal, "internal error"),
-			expectedError: tenant.ErrOperationFailed,
+			expectedError: tenantapi.ErrOperationFailed,
 		},
 		{
 			name:          "non-grpc error",
 			inputError:    errors.New("network error"),
-			expectedError: tenant.ErrOperationFailed,
+			expectedError: tenantapi.ErrOperationFailed,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := convertGRPCError(tt.inputError)
-			if result != tt.expectedError {
+			if !errors.Is(result, tt.expectedError) && result.Error() != tt.expectedError.Error() { //nolint:errorlint // comparing error values in test
 				t.Errorf("expected error %v, got %v", tt.expectedError, result)
 			}
 		})

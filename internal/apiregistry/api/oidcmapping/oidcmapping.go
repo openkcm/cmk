@@ -1,7 +1,5 @@
 package oidcmapping
 
-import "context"
-
 type ApplyOIDCMappingRequest struct {
 	TenantID   string
 	Issuer     string
@@ -41,11 +39,4 @@ type UnblockOIDCMappingRequest struct {
 type UnblockOIDCMappingResponse struct {
 	Success bool
 	Message *string
-}
-
-type OIDCMapping interface {
-	ApplyOIDCMapping(ctx context.Context, req *ApplyOIDCMappingRequest) (*ApplyOIDCMappingResponse, error)
-	RemoveOIDCMapping(ctx context.Context, req *RemoveOIDCMappingRequest) (*RemoveOIDCMappingResponse, error)
-	BlockOIDCMapping(ctx context.Context, req *BlockOIDCMappingRequest) (*BlockOIDCMappingResponse, error)
-	UnblockOIDCMapping(ctx context.Context, req *UnblockOIDCMappingRequest) (*UnblockOIDCMappingResponse, error)
 }

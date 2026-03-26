@@ -11,7 +11,7 @@ import (
 
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 
-	"github.com/openkcm/cmk/internal/apiregistry/api/oidcmapping"
+	oidcmappingapi "github.com/openkcm/cmk/internal/apiregistry/api/oidcmapping"
 )
 
 // mockOIDCMappingClient is a mock implementation of oidcmappinggrpc.ServiceClient
@@ -50,23 +50,24 @@ func TestNewV1(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // test function with many test cases
 func TestV1_ApplyOIDCMapping(t *testing.T) {
 	jwksURI := "https://example.com/.well-known/jwks.json"
 	clientID := "client-123"
 	message := "success message"
 
 	tests := []struct {
-		name           string
-		request        *oidcmapping.ApplyOIDCMappingRequest
-		mockResponse   *oidcmappinggrpc.ApplyOIDCMappingResponse
-		mockError      error
-		expectedError  error
-		expectSuccess  bool
-		expectMessage  *string
+		name          string
+		request       *oidcmappingapi.ApplyOIDCMappingRequest
+		mockResponse  *oidcmappinggrpc.ApplyOIDCMappingResponse
+		mockError     error
+		expectedError error
+		expectSuccess bool
+		expectMessage *string
 	}{
 		{
 			name: "successful apply with all fields",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID:   "tenant-123",
 				Issuer:     "https://issuer.example.com",
 				JwksURI:    &jwksURI,
@@ -83,7 +84,7 @@ func TestV1_ApplyOIDCMapping(t *testing.T) {
 		},
 		{
 			name: "successful apply with required fields only",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID: "tenant-123",
 				Issuer:   "https://issuer.example.com",
 			},
@@ -94,82 +95,82 @@ func TestV1_ApplyOIDCMapping(t *testing.T) {
 		},
 		{
 			name: "missing tenant ID",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID: "",
 				Issuer:   "https://issuer.example.com",
 			},
-			expectedError: oidcmapping.NewValidationError("TenantID", "tenant ID is required"),
+			expectedError: oidcmappingapi.NewValidationError("TenantID", "tenant ID is required"),
 		},
 		{
 			name: "missing issuer",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID: "tenant-123",
 				Issuer:   "",
 			},
-			expectedError: oidcmapping.NewValidationError("Issuer", "issuer is required"),
+			expectedError: oidcmappingapi.NewValidationError("Issuer", "issuer is required"),
 		},
 		{
 			name: "mapping already exists",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID: "tenant-123",
 				Issuer:   "https://issuer.example.com",
 			},
 			mockError:     status.Error(codes.AlreadyExists, "mapping already exists"),
-			expectedError: oidcmapping.ErrOIDCMappingAlreadyExists,
+			expectedError: oidcmappingapi.ErrOIDCMappingAlreadyExists,
 		},
 		{
 			name: "invalid tenant ID",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID: "tenant-123",
 				Issuer:   "https://issuer.example.com",
 			},
 			mockError:     status.Error(codes.InvalidArgument, "tenant ID is invalid"),
-			expectedError: oidcmapping.ErrInvalidTenantID,
+			expectedError: oidcmappingapi.ErrInvalidTenantID,
 		},
 		{
 			name: "invalid issuer",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID: "tenant-123",
 				Issuer:   "https://issuer.example.com",
 			},
 			mockError:     status.Error(codes.InvalidArgument, "issuer is invalid"),
-			expectedError: oidcmapping.ErrInvalidIssuer,
+			expectedError: oidcmappingapi.ErrInvalidIssuer,
 		},
 		{
 			name: "invalid jwks URI",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID: "tenant-123",
 				Issuer:   "https://issuer.example.com",
 			},
 			mockError:     status.Error(codes.InvalidArgument, "jwks URI is invalid"),
-			expectedError: oidcmapping.ErrInvalidJwksURI,
+			expectedError: oidcmappingapi.ErrInvalidJwksURI,
 		},
 		{
 			name: "invalid audience",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID: "tenant-123",
 				Issuer:   "https://issuer.example.com",
 			},
 			mockError:     status.Error(codes.InvalidArgument, "audience is invalid"),
-			expectedError: oidcmapping.ErrInvalidAudiences,
+			expectedError: oidcmappingapi.ErrInvalidAudiences,
 		},
 		{
 			name: "invalid client ID",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID: "tenant-123",
 				Issuer:   "https://issuer.example.com",
 			},
 			mockError:     status.Error(codes.InvalidArgument, "client ID is invalid"),
-			expectedError: oidcmapping.ErrInvalidClientID,
+			expectedError: oidcmappingapi.ErrInvalidClientID,
 		},
 		{
 			name: "operation failed",
-			request: &oidcmapping.ApplyOIDCMappingRequest{
+			request: &oidcmappingapi.ApplyOIDCMappingRequest{
 				TenantID: "tenant-123",
 				Issuer:   "https://issuer.example.com",
 			},
 			mockError:     status.Error(codes.Internal, "internal error"),
-			expectedError: oidcmapping.ErrOperationFailed,
+			expectedError: oidcmappingapi.ErrOperationFailed,
 		},
 	}
 
@@ -217,21 +218,22 @@ func TestV1_ApplyOIDCMapping(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // test function with many test cases
 func TestV1_RemoveOIDCMapping(t *testing.T) {
 	message := "removed successfully"
 
 	tests := []struct {
-		name           string
-		request        *oidcmapping.RemoveOIDCMappingRequest
-		mockResponse   *oidcmappinggrpc.RemoveOIDCMappingResponse
-		mockError      error
-		expectedError  error
-		expectSuccess  bool
-		expectMessage  *string
+		name          string
+		request       *oidcmappingapi.RemoveOIDCMappingRequest
+		mockResponse  *oidcmappinggrpc.RemoveOIDCMappingResponse
+		mockError     error
+		expectedError error
+		expectSuccess bool
+		expectMessage *string
 	}{
 		{
 			name: "successful remove with message",
-			request: &oidcmapping.RemoveOIDCMappingRequest{
+			request: &oidcmappingapi.RemoveOIDCMappingRequest{
 				TenantID: "tenant-123",
 			},
 			mockResponse: &oidcmappinggrpc.RemoveOIDCMappingResponse{
@@ -243,7 +245,7 @@ func TestV1_RemoveOIDCMapping(t *testing.T) {
 		},
 		{
 			name: "successful remove without message",
-			request: &oidcmapping.RemoveOIDCMappingRequest{
+			request: &oidcmappingapi.RemoveOIDCMappingRequest{
 				TenantID: "tenant-123",
 			},
 			mockResponse: &oidcmappinggrpc.RemoveOIDCMappingResponse{
@@ -253,18 +255,18 @@ func TestV1_RemoveOIDCMapping(t *testing.T) {
 		},
 		{
 			name: "missing tenant ID",
-			request: &oidcmapping.RemoveOIDCMappingRequest{
+			request: &oidcmappingapi.RemoveOIDCMappingRequest{
 				TenantID: "",
 			},
-			expectedError: oidcmapping.NewValidationError("TenantID", "tenant ID is required"),
+			expectedError: oidcmappingapi.NewValidationError("TenantID", "tenant ID is required"),
 		},
 		{
 			name: "mapping not found",
-			request: &oidcmapping.RemoveOIDCMappingRequest{
+			request: &oidcmappingapi.RemoveOIDCMappingRequest{
 				TenantID: "tenant-123",
 			},
 			mockError:     status.Error(codes.NotFound, "mapping not found"),
-			expectedError: oidcmapping.ErrOIDCMappingNotFound,
+			expectedError: oidcmappingapi.ErrOIDCMappingNotFound,
 		},
 	}
 
@@ -314,16 +316,16 @@ func TestV1_RemoveOIDCMapping(t *testing.T) {
 
 func TestV1_BlockOIDCMapping(t *testing.T) {
 	tests := []struct {
-		name           string
-		request        *oidcmapping.BlockOIDCMappingRequest
-		mockResponse   *oidcmappinggrpc.BlockOIDCMappingResponse
-		mockError      error
-		expectedError  error
-		expectSuccess  bool
+		name          string
+		request       *oidcmappingapi.BlockOIDCMappingRequest
+		mockResponse  *oidcmappinggrpc.BlockOIDCMappingResponse
+		mockError     error
+		expectedError error
+		expectSuccess bool
 	}{
 		{
 			name: "successful block",
-			request: &oidcmapping.BlockOIDCMappingRequest{
+			request: &oidcmappingapi.BlockOIDCMappingRequest{
 				TenantID: "tenant-123",
 			},
 			mockResponse: &oidcmappinggrpc.BlockOIDCMappingResponse{
@@ -333,26 +335,26 @@ func TestV1_BlockOIDCMapping(t *testing.T) {
 		},
 		{
 			name: "missing tenant ID",
-			request: &oidcmapping.BlockOIDCMappingRequest{
+			request: &oidcmappingapi.BlockOIDCMappingRequest{
 				TenantID: "",
 			},
-			expectedError: oidcmapping.NewValidationError("TenantID", "tenant ID is required"),
+			expectedError: oidcmappingapi.NewValidationError("TenantID", "tenant ID is required"),
 		},
 		{
 			name: "already blocked",
-			request: &oidcmapping.BlockOIDCMappingRequest{
+			request: &oidcmappingapi.BlockOIDCMappingRequest{
 				TenantID: "tenant-123",
 			},
 			mockError:     status.Error(codes.FailedPrecondition, "mapping is already blocked"),
-			expectedError: oidcmapping.ErrOIDCMappingAlreadyBlocked,
+			expectedError: oidcmappingapi.ErrOIDCMappingAlreadyBlocked,
 		},
 		{
 			name: "mapping not found",
-			request: &oidcmapping.BlockOIDCMappingRequest{
+			request: &oidcmappingapi.BlockOIDCMappingRequest{
 				TenantID: "tenant-123",
 			},
 			mockError:     status.Error(codes.NotFound, "mapping not found"),
-			expectedError: oidcmapping.ErrOIDCMappingNotFound,
+			expectedError: oidcmappingapi.ErrOIDCMappingNotFound,
 		},
 	}
 
@@ -390,16 +392,16 @@ func TestV1_BlockOIDCMapping(t *testing.T) {
 
 func TestV1_UnblockOIDCMapping(t *testing.T) {
 	tests := []struct {
-		name           string
-		request        *oidcmapping.UnblockOIDCMappingRequest
-		mockResponse   *oidcmappinggrpc.UnblockOIDCMappingResponse
-		mockError      error
-		expectedError  error
-		expectSuccess  bool
+		name          string
+		request       *oidcmappingapi.UnblockOIDCMappingRequest
+		mockResponse  *oidcmappinggrpc.UnblockOIDCMappingResponse
+		mockError     error
+		expectedError error
+		expectSuccess bool
 	}{
 		{
 			name: "successful unblock",
-			request: &oidcmapping.UnblockOIDCMappingRequest{
+			request: &oidcmappingapi.UnblockOIDCMappingRequest{
 				TenantID: "tenant-123",
 			},
 			mockResponse: &oidcmappinggrpc.UnblockOIDCMappingResponse{
@@ -409,26 +411,26 @@ func TestV1_UnblockOIDCMapping(t *testing.T) {
 		},
 		{
 			name: "missing tenant ID",
-			request: &oidcmapping.UnblockOIDCMappingRequest{
+			request: &oidcmappingapi.UnblockOIDCMappingRequest{
 				TenantID: "",
 			},
-			expectedError: oidcmapping.NewValidationError("TenantID", "tenant ID is required"),
+			expectedError: oidcmappingapi.NewValidationError("TenantID", "tenant ID is required"),
 		},
 		{
 			name: "not blocked",
-			request: &oidcmapping.UnblockOIDCMappingRequest{
+			request: &oidcmappingapi.UnblockOIDCMappingRequest{
 				TenantID: "tenant-123",
 			},
 			mockError:     status.Error(codes.FailedPrecondition, "mapping is not blocked"),
-			expectedError: oidcmapping.ErrOIDCMappingNotBlocked,
+			expectedError: oidcmappingapi.ErrOIDCMappingNotBlocked,
 		},
 		{
 			name: "mapping not found",
-			request: &oidcmapping.UnblockOIDCMappingRequest{
+			request: &oidcmappingapi.UnblockOIDCMappingRequest{
 				TenantID: "tenant-123",
 			},
 			mockError:     status.Error(codes.NotFound, "mapping not found"),
-			expectedError: oidcmapping.ErrOIDCMappingNotFound,
+			expectedError: oidcmappingapi.ErrOIDCMappingNotFound,
 		},
 	}
 
@@ -522,64 +524,64 @@ func TestConvertGRPCError(t *testing.T) {
 		{
 			name:          "not found",
 			inputError:    status.Error(codes.NotFound, "not found"),
-			expectedError: oidcmapping.ErrOIDCMappingNotFound,
+			expectedError: oidcmappingapi.ErrOIDCMappingNotFound,
 		},
 		{
 			name:          "already exists",
 			inputError:    status.Error(codes.AlreadyExists, "already exists"),
-			expectedError: oidcmapping.ErrOIDCMappingAlreadyExists,
+			expectedError: oidcmappingapi.ErrOIDCMappingAlreadyExists,
 		},
 		{
 			name:          "invalid argument - tenant",
 			inputError:    status.Error(codes.InvalidArgument, "invalid tenant"),
-			expectedError: oidcmapping.ErrInvalidTenantID,
+			expectedError: oidcmappingapi.ErrInvalidTenantID,
 		},
 		{
 			name:          "invalid argument - issuer",
 			inputError:    status.Error(codes.InvalidArgument, "invalid issuer"),
-			expectedError: oidcmapping.ErrInvalidIssuer,
+			expectedError: oidcmappingapi.ErrInvalidIssuer,
 		},
 		{
 			name:          "invalid argument - jwks",
 			inputError:    status.Error(codes.InvalidArgument, "invalid jwks"),
-			expectedError: oidcmapping.ErrInvalidJwksURI,
+			expectedError: oidcmappingapi.ErrInvalidJwksURI,
 		},
 		{
 			name:          "invalid argument - audience",
 			inputError:    status.Error(codes.InvalidArgument, "invalid audience"),
-			expectedError: oidcmapping.ErrInvalidAudiences,
+			expectedError: oidcmappingapi.ErrInvalidAudiences,
 		},
 		{
 			name:          "invalid argument - client",
 			inputError:    status.Error(codes.InvalidArgument, "invalid client"),
-			expectedError: oidcmapping.ErrInvalidClientID,
+			expectedError: oidcmappingapi.ErrInvalidClientID,
 		},
 		{
 			name:          "failed precondition - already blocked",
 			inputError:    status.Error(codes.FailedPrecondition, "already blocked"),
-			expectedError: oidcmapping.ErrOIDCMappingAlreadyBlocked,
+			expectedError: oidcmappingapi.ErrOIDCMappingAlreadyBlocked,
 		},
 		{
 			name:          "failed precondition - not blocked",
 			inputError:    status.Error(codes.FailedPrecondition, "not blocked"),
-			expectedError: oidcmapping.ErrOIDCMappingNotBlocked,
+			expectedError: oidcmappingapi.ErrOIDCMappingNotBlocked,
 		},
 		{
 			name:          "internal error",
 			inputError:    status.Error(codes.Internal, "internal error"),
-			expectedError: oidcmapping.ErrOperationFailed,
+			expectedError: oidcmappingapi.ErrOperationFailed,
 		},
 		{
 			name:          "non-grpc error",
-			inputError:    errors.New("network error"),
-			expectedError: oidcmapping.ErrOperationFailed,
+			inputError:    errors.New("network error"), //nolint:err113 // test error
+			expectedError: oidcmappingapi.ErrOperationFailed,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := convertGRPCError(tt.inputError)
-			if result != tt.expectedError {
+			if result != tt.expectedError { //nolint:err113 // comparing error types in test
 				t.Errorf("convertGRPCError() = %v, want %v", result, tt.expectedError)
 			}
 		})

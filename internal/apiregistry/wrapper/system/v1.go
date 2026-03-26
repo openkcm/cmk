@@ -17,7 +17,7 @@ type V1 struct {
 	client systemgrpc.ServiceClient
 }
 
-var _ system.System = (*V1)(nil)
+// var _ system.System = (*V1)(nil)
 
 func NewV1(client systemgrpc.ServiceClient) *V1 {
 	return &V1{

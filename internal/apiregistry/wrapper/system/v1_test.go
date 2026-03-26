@@ -20,7 +20,7 @@ type mockSystemClient struct {
 	registerSystemFunc         func(ctx context.Context, req *systemgrpc.RegisterSystemRequest) (*systemgrpc.RegisterSystemResponse, error)
 	updateSystemL1KeyClaimFunc func(ctx context.Context, req *systemgrpc.UpdateSystemL1KeyClaimRequest) (*systemgrpc.UpdateSystemL1KeyClaimResponse, error)
 	deleteSystemFunc           func(ctx context.Context, req *systemgrpc.DeleteSystemRequest) (*systemgrpc.DeleteSystemResponse, error)
-	systemgrpc.ServiceClient // embed to satisfy interface
+	systemgrpc.ServiceClient   // embed to satisfy interface
 }
 
 func (m *mockSystemClient) ListSystems(ctx context.Context, req *systemgrpc.ListSystemsRequest, opts ...grpc.CallOption) (*systemgrpc.ListSystemsResponse, error) {
@@ -53,18 +53,18 @@ func TestNewV1(t *testing.T) {
 
 func TestV1_ListSystems(t *testing.T) {
 	tests := []struct {
-		name           string
-		request        *system.ListSystemsRequest
-		mockResponse   *systemgrpc.ListSystemsResponse
-		mockError      error
-		expectedError  error
-		expectedCount  int
+		name          string
+		request       *system.ListSystemsRequest
+		mockResponse  *systemgrpc.ListSystemsResponse
+		mockError     error
+		expectedError error
+		expectedCount int
 	}{
 		{
 			name: "successful list",
 			request: &system.ListSystemsRequest{
-				Region:  "us-east-1",
-				Limit:   10,
+				Region: "us-east-1",
+				Limit:  10,
 			},
 			mockResponse: &systemgrpc.ListSystemsResponse{
 				Systems: []*systemgrpc.System{
@@ -82,8 +82,8 @@ func TestV1_ListSystems(t *testing.T) {
 			expectedCount: 1,
 		},
 		{
-			name: "nil request",
-			request: nil,
+			name:          "nil request",
+			request:       nil,
 			expectedError: system.NewValidationError("request", "request cannot be nil"),
 		},
 		{
@@ -138,11 +138,11 @@ func TestV1_ListSystems(t *testing.T) {
 
 func TestV1_RegisterSystem(t *testing.T) {
 	tests := []struct {
-		name           string
-		request        *system.RegisterSystemRequest
-		mockResponse   *systemgrpc.RegisterSystemResponse
-		mockError      error
-		expectedError  error
+		name          string
+		request       *system.RegisterSystemRequest
+		mockResponse  *systemgrpc.RegisterSystemResponse
+		mockError     error
+		expectedError error
 	}{
 		{
 			name: "successful registration",
@@ -164,9 +164,9 @@ func TestV1_RegisterSystem(t *testing.T) {
 		{
 			name: "missing region",
 			request: &system.RegisterSystemRequest{
-				ExternalID:    "ext-123",
-				Type:          system.SystemTypeKeystore,
-				TenantID:      "tenant-456",
+				ExternalID: "ext-123",
+				Type:       system.SystemTypeKeystore,
+				TenantID:   "tenant-456",
 			},
 			expectedError: system.NewValidationError("Region", "region is required"),
 		},
@@ -241,12 +241,12 @@ func TestV1_RegisterSystem(t *testing.T) {
 
 func TestV1_UpdateSystemL1KeyClaim(t *testing.T) {
 	tests := []struct {
-		name           string
-		request        *system.UpdateSystemL1KeyClaimRequest
-		mockResponse   *systemgrpc.UpdateSystemL1KeyClaimResponse
-		mockError      error
-		expectedError  error
-		expectSuccess  bool
+		name          string
+		request       *system.UpdateSystemL1KeyClaimRequest
+		mockResponse  *systemgrpc.UpdateSystemL1KeyClaimResponse
+		mockError     error
+		expectedError error
+		expectSuccess bool
 	}{
 		{
 			name: "successful update",
@@ -358,12 +358,12 @@ func TestV1_UpdateSystemL1KeyClaim(t *testing.T) {
 
 func TestV1_DeleteSystem(t *testing.T) {
 	tests := []struct {
-		name           string
-		request        *system.DeleteSystemRequest
-		mockResponse   *systemgrpc.DeleteSystemResponse
-		mockError      error
-		expectedError  error
-		expectSuccess  bool
+		name          string
+		request       *system.DeleteSystemRequest
+		mockResponse  *systemgrpc.DeleteSystemResponse
+		mockError     error
+		expectedError error
+		expectSuccess bool
 	}{
 		{
 			name: "successful deletion",
@@ -516,9 +516,9 @@ func TestMapSystemTypeToProto(t *testing.T) {
 
 func TestConvertGRPCError(t *testing.T) {
 	tests := []struct {
-		name          string
-		inputError    error
-		expectedError error
+		name           string
+		inputError     error
+		expectedError  error
 		expectContains string
 	}{
 		{
@@ -582,9 +582,9 @@ func TestConvertGRPCError(t *testing.T) {
 			expectContains: "failed precondition",
 		},
 		{
-			name:           "non-grpc error",
-			inputError:     errors.New("network error"),
-			expectedError:  errors.New("network error"),
+			name:          "non-grpc error",
+			inputError:    errors.New("network error"),
+			expectedError: errors.New("network error"),
 		},
 	}
 
@@ -592,22 +592,25 @@ func TestConvertGRPCError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := convertGRPCError(tt.inputError)
 
-			if tt.expectedError != nil {
+			switch {
+			case tt.expectedError != nil:
 				if result == nil {
 					t.Fatalf("expected error %v, got nil", tt.expectedError)
 				}
 				if result.Error() != tt.expectedError.Error() {
 					t.Errorf("expected error %v, got %v", tt.expectedError, result)
 				}
-			} else if tt.expectContains != "" {
+			case tt.expectContains != "":
 				if result == nil {
 					t.Fatal("expected error, got nil")
 				}
 				if !contains(result.Error(), tt.expectContains) {
 					t.Errorf("expected error to contain %q, got %q", tt.expectContains, result.Error())
 				}
-			} else if result != nil {
-				t.Errorf("expected nil error, got %v", result)
+			default:
+				if result != nil {
+					t.Errorf("expected nil error, got %v", result)
+				}
 			}
 		})
 	}

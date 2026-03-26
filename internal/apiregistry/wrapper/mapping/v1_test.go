@@ -11,12 +11,12 @@ import (
 
 	mappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 
-	"github.com/openkcm/cmk/internal/apiregistry/api/mapping"
+	mappingapi "github.com/openkcm/cmk/internal/apiregistry/api/mapping"
 )
 
 // mockMappingClient is a mock implementation of mappinggrpc.ServiceClient
 type mockMappingClient struct {
-	mapSystemToTenantFunc    func(ctx context.Context, req *mappinggrpc.MapSystemToTenantRequest) (*mappinggrpc.MapSystemToTenantResponse, error)
+	mapSystemToTenantFunc     func(ctx context.Context, req *mappinggrpc.MapSystemToTenantRequest) (*mappinggrpc.MapSystemToTenantResponse, error)
 	unmapSystemFromTenantFunc func(ctx context.Context, req *mappinggrpc.UnmapSystemFromTenantRequest) (*mappinggrpc.UnmapSystemFromTenantResponse, error)
 	getFunc                   func(ctx context.Context, req *mappinggrpc.GetRequest) (*mappinggrpc.GetResponse, error)
 }
@@ -47,16 +47,16 @@ func TestNewV1(t *testing.T) {
 
 func TestV1_MapSystemToTenant(t *testing.T) {
 	tests := []struct {
-		name           string
-		request        *mapping.MapSystemToTenantRequest
-		mockResponse   *mappinggrpc.MapSystemToTenantResponse
-		mockError      error
-		expectedError  error
-		expectSuccess  bool
+		name          string
+		request       *mappingapi.MapSystemToTenantRequest
+		mockResponse  *mappinggrpc.MapSystemToTenantResponse
+		mockError     error
+		expectedError error
+		expectSuccess bool
 	}{
 		{
 			name: "successful mapping",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
@@ -68,110 +68,110 @@ func TestV1_MapSystemToTenant(t *testing.T) {
 		},
 		{
 			name: "missing external ID",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
-			expectedError: mapping.NewValidationError("ExternalID", "external ID is required"),
+			expectedError: mappingapi.NewValidationError("ExternalID", "external ID is required"),
 		},
 		{
 			name: "missing type",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "",
 				TenantID:   "tenant-456",
 			},
-			expectedError: mapping.NewValidationError("Type", "type is required"),
+			expectedError: mappingapi.NewValidationError("Type", "type is required"),
 		},
 		{
 			name: "missing tenant ID",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "",
 			},
-			expectedError: mapping.NewValidationError("TenantID", "tenant ID is required"),
+			expectedError: mappingapi.NewValidationError("TenantID", "tenant ID is required"),
 		},
 		{
 			name: "mapping already exists",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
 			mockError:     status.Error(codes.AlreadyExists, "mapping already exists"),
-			expectedError: mapping.ErrMappingAlreadyExists,
+			expectedError: mappingapi.ErrMappingAlreadyExists,
 		},
 		{
 			name: "mapping not found",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
 			mockError:     status.Error(codes.NotFound, "mapping not found"),
-			expectedError: mapping.ErrMappingNotFound,
+			expectedError: mappingapi.ErrMappingNotFound,
 		},
 		{
 			name: "invalid external ID from server",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
 			mockError:     status.Error(codes.InvalidArgument, "external ID is invalid"),
-			expectedError: mapping.ErrInvalidExternalID,
+			expectedError: mappingapi.ErrInvalidExternalID,
 		},
 		{
 			name: "invalid type from server",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
 			mockError:     status.Error(codes.InvalidArgument, "type is invalid"),
-			expectedError: mapping.ErrInvalidType,
+			expectedError: mappingapi.ErrInvalidType,
 		},
 		{
 			name: "invalid tenant ID from server",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
 			mockError:     status.Error(codes.InvalidArgument, "tenant ID is invalid"),
-			expectedError: mapping.ErrInvalidTenantID,
+			expectedError: mappingapi.ErrInvalidTenantID,
 		},
 		{
 			name: "system not mapped",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
 			mockError:     status.Error(codes.FailedPrecondition, "system not mapped"),
-			expectedError: mapping.ErrSystemNotMapped,
+			expectedError: mappingapi.ErrSystemNotMapped,
 		},
 		{
 			name: "generic operation failure",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
 			mockError:     status.Error(codes.Internal, "internal error"),
-			expectedError: mapping.ErrOperationFailed,
+			expectedError: mappingapi.ErrOperationFailed,
 		},
 		{
 			name: "non-grpc error",
-			request: &mapping.MapSystemToTenantRequest{
+			request: &mappingapi.MapSystemToTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
 			mockError:     errors.New("network error"),
-			expectedError: mapping.ErrOperationFailed,
+			expectedError: mappingapi.ErrOperationFailed,
 		},
 	}
 
@@ -209,16 +209,16 @@ func TestV1_MapSystemToTenant(t *testing.T) {
 
 func TestV1_UnmapSystemFromTenant(t *testing.T) {
 	tests := []struct {
-		name           string
-		request        *mapping.UnmapSystemFromTenantRequest
-		mockResponse   *mappinggrpc.UnmapSystemFromTenantResponse
-		mockError      error
-		expectedError  error
-		expectSuccess  bool
+		name          string
+		request       *mappingapi.UnmapSystemFromTenantRequest
+		mockResponse  *mappinggrpc.UnmapSystemFromTenantResponse
+		mockError     error
+		expectedError error
+		expectSuccess bool
 	}{
 		{
 			name: "successful unmapping",
-			request: &mapping.UnmapSystemFromTenantRequest{
+			request: &mappingapi.UnmapSystemFromTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
@@ -230,40 +230,40 @@ func TestV1_UnmapSystemFromTenant(t *testing.T) {
 		},
 		{
 			name: "missing external ID",
-			request: &mapping.UnmapSystemFromTenantRequest{
+			request: &mappingapi.UnmapSystemFromTenantRequest{
 				ExternalID: "",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
-			expectedError: mapping.NewValidationError("ExternalID", "external ID is required"),
+			expectedError: mappingapi.NewValidationError("ExternalID", "external ID is required"),
 		},
 		{
 			name: "missing type",
-			request: &mapping.UnmapSystemFromTenantRequest{
+			request: &mappingapi.UnmapSystemFromTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "",
 				TenantID:   "tenant-456",
 			},
-			expectedError: mapping.NewValidationError("Type", "type is required"),
+			expectedError: mappingapi.NewValidationError("Type", "type is required"),
 		},
 		{
 			name: "missing tenant ID",
-			request: &mapping.UnmapSystemFromTenantRequest{
+			request: &mappingapi.UnmapSystemFromTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "",
 			},
-			expectedError: mapping.NewValidationError("TenantID", "tenant ID is required"),
+			expectedError: mappingapi.NewValidationError("TenantID", "tenant ID is required"),
 		},
 		{
 			name: "mapping not found",
-			request: &mapping.UnmapSystemFromTenantRequest{
+			request: &mappingapi.UnmapSystemFromTenantRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 				TenantID:   "tenant-456",
 			},
 			mockError:     status.Error(codes.NotFound, "mapping not found"),
-			expectedError: mapping.ErrMappingNotFound,
+			expectedError: mappingapi.ErrMappingNotFound,
 		},
 	}
 
@@ -301,16 +301,16 @@ func TestV1_UnmapSystemFromTenant(t *testing.T) {
 
 func TestV1_Get(t *testing.T) {
 	tests := []struct {
-		name           string
-		request        *mapping.GetRequest
-		mockResponse   *mappinggrpc.GetResponse
-		mockError      error
-		expectedError  error
+		name             string
+		request          *mappingapi.GetRequest
+		mockResponse     *mappinggrpc.GetResponse
+		mockError        error
+		expectedError    error
 		expectedTenantID string
 	}{
 		{
 			name: "successful get",
-			request: &mapping.GetRequest{
+			request: &mappingapi.GetRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 			},
@@ -321,28 +321,28 @@ func TestV1_Get(t *testing.T) {
 		},
 		{
 			name: "missing external ID",
-			request: &mapping.GetRequest{
+			request: &mappingapi.GetRequest{
 				ExternalID: "",
 				Type:       "keystore",
 			},
-			expectedError: mapping.NewValidationError("ExternalID", "external ID is required"),
+			expectedError: mappingapi.NewValidationError("ExternalID", "external ID is required"),
 		},
 		{
 			name: "missing type",
-			request: &mapping.GetRequest{
+			request: &mappingapi.GetRequest{
 				ExternalID: "ext-123",
 				Type:       "",
 			},
-			expectedError: mapping.NewValidationError("Type", "type is required"),
+			expectedError: mappingapi.NewValidationError("Type", "type is required"),
 		},
 		{
 			name: "mapping not found",
-			request: &mapping.GetRequest{
+			request: &mappingapi.GetRequest{
 				ExternalID: "ext-123",
 				Type:       "keystore",
 			},
 			mockError:     status.Error(codes.NotFound, "mapping not found"),
-			expectedError: mapping.ErrMappingNotFound,
+			expectedError: mappingapi.ErrMappingNotFound,
 		},
 	}
 
@@ -454,54 +454,54 @@ func TestConvertGRPCError(t *testing.T) {
 		{
 			name:          "not found",
 			inputError:    status.Error(codes.NotFound, "not found"),
-			expectedError: mapping.ErrMappingNotFound,
+			expectedError: mappingapi.ErrMappingNotFound,
 		},
 		{
 			name:          "already exists",
 			inputError:    status.Error(codes.AlreadyExists, "already exists"),
-			expectedError: mapping.ErrMappingAlreadyExists,
+			expectedError: mappingapi.ErrMappingAlreadyExists,
 		},
 		{
 			name:          "invalid argument with external",
 			inputError:    status.Error(codes.InvalidArgument, "invalid external ID"),
-			expectedError: mapping.ErrInvalidExternalID,
+			expectedError: mappingapi.ErrInvalidExternalID,
 		},
 		{
 			name:          "invalid argument with type",
 			inputError:    status.Error(codes.InvalidArgument, "invalid type"),
-			expectedError: mapping.ErrInvalidType,
+			expectedError: mappingapi.ErrInvalidType,
 		},
 		{
 			name:          "invalid argument with tenant",
 			inputError:    status.Error(codes.InvalidArgument, "invalid tenant ID"),
-			expectedError: mapping.ErrInvalidTenantID,
+			expectedError: mappingapi.ErrInvalidTenantID,
 		},
 		{
 			name:          "invalid argument without keyword",
 			inputError:    status.Error(codes.InvalidArgument, "something wrong"),
-			expectedError: mapping.ErrOperationFailed,
+			expectedError: mappingapi.ErrOperationFailed,
 		},
 		{
 			name:          "failed precondition",
 			inputError:    status.Error(codes.FailedPrecondition, "system not mapped"),
-			expectedError: mapping.ErrSystemNotMapped,
+			expectedError: mappingapi.ErrSystemNotMapped,
 		},
 		{
 			name:          "internal error",
 			inputError:    status.Error(codes.Internal, "internal error"),
-			expectedError: mapping.ErrOperationFailed,
+			expectedError: mappingapi.ErrOperationFailed,
 		},
 		{
 			name:          "non-grpc error",
-			inputError:    errors.New("network error"),
-			expectedError: mapping.ErrOperationFailed,
+			inputError:    errors.New("network error"), //nolint:err113 // test error
+			expectedError: mappingapi.ErrOperationFailed,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := convertGRPCError(tt.inputError)
-			if result != tt.expectedError {
+			if result != tt.expectedError { //nolint:err113 // comparing error types in test
 				t.Errorf("convertGRPCError() = %v, want %v", result, tt.expectedError)
 			}
 		})
