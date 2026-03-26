@@ -477,15 +477,11 @@ func (h *SystemKeyRotateJobHandler) HandleJobDoneEvent(ctx context.Context, job 
 	// Log rotation completion for audit trail until formal audit log available
 	log.Info(ctx, "System key rotation completed successfully",
 		slog.String("systemID", system.Identifier),
-		slog.String("keyID", data.KeyIDTo),
-		slog.String("versionFrom", data.KeyVersionIDFrom),
-		slog.String("versionTo", data.KeyVersionIDTo),
-		slog.String("rotationTime", data.RotationTime))
+		slog.String("keyID", data.KeyIDTo))
 
 	//nolint:godox
 	// TODO: Add audit log when common-sdk provides CMK system key rotation event
-	// err = h.cmkAuditor.SendCmkSystemKeyRotationAuditLog(ctx, system.Identifier, data.KeyIDTo,
-	//     data.KeyVersionIDFrom, data.KeyVersionIDTo)
+	// err = h.cmkAuditor.SendCmkSystemKeyRotationAuditLog(ctx, system.Identifier, data.KeyIDTo)
 	// if err != nil {
 	//     log.Error(ctx, "failed to send system key rotation audit log", err)
 	// }

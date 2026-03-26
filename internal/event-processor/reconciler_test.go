@@ -471,32 +471,10 @@ func TestResolveSystemTasks(t *testing.T) {
 				taskType: eventProto.TaskType_SYSTEM_KEY_ROTATE.String(),
 				data: func() []byte {
 					d := eventprocessor.SystemActionJobData{
-						TenantID:         tenant,
-						SystemID:         system.ID.String(),
-						KeyIDTo:          keyTo.ID.String(),
-						KeyIDFrom:        keyTo.ID.String(), // Same key, different versions
-						KeyVersionIDFrom: "version-1",
-						KeyVersionIDTo:   "version-2",
-						RotationTime:     "2024-01-15T10:30:00Z",
-					}
-					b, err := json.Marshal(d)
-					assert.NoError(t, err)
-					return b
-				},
-			},
-			{
-				name:     "SYSTEM_KEY_ROTATE task with empty timestamp",
-				jobType:  eventprocessor.JobTypeSystemKeyRotate.String(),
-				taskType: eventProto.TaskType_SYSTEM_KEY_ROTATE.String(),
-				data: func() []byte {
-					d := eventprocessor.SystemActionJobData{
-						TenantID:         tenant,
-						SystemID:         system.ID.String(),
-						KeyIDTo:          keyTo.ID.String(),
-						KeyIDFrom:        keyTo.ID.String(),
-						KeyVersionIDFrom: "version-1",
-						KeyVersionIDTo:   "version-2",
-						RotationTime:     "", // Empty timestamp should result in nil
+						TenantID:  tenant,
+						SystemID:  system.ID.String(),
+						KeyIDTo:   keyTo.ID.String(),
+						KeyIDFrom: keyTo.ID.String(), // Same key, different versions
 					}
 					b, err := json.Marshal(d)
 					assert.NoError(t, err)
@@ -542,18 +520,6 @@ func TestResolveSystemTasks(t *testing.T) {
 					case eventProto.TaskType_SYSTEM_KEY_ROTATE.String():
 						assert.Equal(t, keyTo.ID.String(), sa.GetKeyIdTo())
 						assert.Equal(t, keyTo.ID.String(), sa.GetKeyIdFrom()) // Same key
-						assert.Equal(t, "version-1", sa.GetKeyVersionIdFrom())
-						assert.Equal(t, "version-2", sa.GetKeyVersionIdTo())
-						// Verify rotation time based on whether it was provided
-						jobData := eventprocessor.SystemActionJobData{}
-						err := json.Unmarshal(tt.data(), &jobData)
-						assert.NoError(t, err)
-						if jobData.RotationTime != "" {
-							assert.NotNil(t, sa.GetRotationTime(), "rotation time should be set when provided")
-							assert.Equal(t, "2024-01-15T10:30:00Z", sa.GetRotationTime().AsTime().Format(time.RFC3339))
-						} else {
-							assert.Nil(t, sa.GetRotationTime(), "rotation time should be nil when empty")
-						}
 					}
 				}
 			})
@@ -666,25 +632,6 @@ func TestResolveSystemTasks(t *testing.T) {
 					return b
 				},
 				errorMessage: "failed to get key by ID",
-			},
-			{
-				name:    "SYSTEM_KEY_ROTATE with invalid timestamp format",
-				jobType: eventprocessor.JobTypeSystemKeyRotate.String(),
-				data: func() []byte {
-					d := eventprocessor.SystemActionJobData{
-						TenantID:         tenant,
-						SystemID:         system.ID.String(),
-						KeyIDTo:          keyTo.ID.String(),
-						KeyIDFrom:        keyTo.ID.String(),
-						KeyVersionIDFrom: "version-1",
-						KeyVersionIDTo:   "version-2",
-						RotationTime:     "not-a-valid-timestamp",
-					}
-					b, err := json.Marshal(d)
-					assert.NoError(t, err)
-					return b
-				},
-				errorMessage: "failed to parse rotation time",
 			},
 		}
 
@@ -1377,12 +1324,10 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 	// Helper to create standard job data and marshal it
 	createJobData := func() []byte {
 		jobData := eventprocessor.SystemActionJobData{
-			TenantID:         tenant,
-			SystemID:         system.ID.String(),
-			KeyIDTo:          key.ID.String(),
-			KeyIDFrom:        key.ID.String(),
-			KeyVersionIDFrom: "version-1",
-			KeyVersionIDTo:   "version-2",
+			TenantID:  tenant,
+			SystemID:  system.ID.String(),
+			KeyIDTo:   key.ID.String(),
+			KeyIDFrom: key.ID.String(),
 		}
 		dataBytes, err := json.Marshal(jobData)
 		assert.NoError(t, err)

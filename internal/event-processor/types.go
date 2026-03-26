@@ -46,11 +46,6 @@ type SystemActionJobData struct {
 	KeyIDTo   string `json:"keyIDTo"`
 	KeyIDFrom string `json:"keyIDFrom"`
 	Trigger   string `json:"trigger,omitempty"`
-
-	// Version information (for SYSTEM_KEY_ROTATE)
-	KeyVersionIDFrom string `json:"keyVersionIDFrom,omitempty"`
-	KeyVersionIDTo   string `json:"keyVersionIDTo,omitempty"`
-	RotationTime     string `json:"rotationTime,omitempty"` // RFC3339
 }
 
 // KeyConfigActionJobData contains the data needed for a key configuration action orbital job.

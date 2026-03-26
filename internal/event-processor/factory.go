@@ -206,17 +206,11 @@ func (f *EventFactory) SystemKeyRotate(
 	ctx context.Context,
 	system *model.System,
 	keyID string,
-	versionIDFrom string,
-	versionIDTo string,
-	rotationTime string, // RFC3339 format
 ) (orbital.Job, error) {
 	systemKeyRotateJobData := SystemActionJobData{
-		SystemID:         system.ID.String(),
-		KeyIDTo:          keyID, // Same key, new material version
-		KeyIDFrom:        keyID, // Same key, old material version
-		KeyVersionIDFrom: versionIDFrom,
-		KeyVersionIDTo:   versionIDTo,
-		RotationTime:     rotationTime,
+		SystemID:  system.ID.String(),
+		KeyIDTo:   keyID, // Same key, new material version
+		KeyIDFrom: keyID, // Same key, old material version
 	}
 
 	job, err := f.createSystemEventJob(ctx, JobTypeSystemKeyRotate, systemKeyRotateJobData)

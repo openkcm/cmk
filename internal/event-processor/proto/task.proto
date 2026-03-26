@@ -46,9 +46,4 @@ message SystemAction {
   string tenant_owner_id = 51;
   string tenant_owner_type = 52;
   string cmk_region = 60;
-
-  // Key version information (for SYSTEM_KEY_ROTATE)
-  string key_version_id_from = 70;  // Previous key version/material ID
-  string key_version_id_to = 80;    // New key version/material ID
-  google.protobuf.Timestamp rotation_time = 90;  // Timestamp of rotation (or detection time if not available from keystore)
 }

@@ -290,31 +290,22 @@ func TestSystemKeyRotateEventCreation(t *testing.T) {
 		systemStatus   cmkapi.SystemStatus
 		tenantID       string
 		keyID          string
-		versionIDFrom  string
-		versionIDTo    string
-		rotationTime   string
 		expErr         error
 		expType        string
 		expStatus      cmkapi.SystemStatus
 		expEventStored bool
 	}{
 		{
-			name:          "should return error on missing tenant from ctx",
-			systemStatus:  cmkapi.SystemStatusCONNECTED,
-			keyID:         "keyID",
-			versionIDFrom: "version-1",
-			versionIDTo:   "version-2",
-			rotationTime:  "2024-01-15T10:30:00Z",
-			expErr:        cmkcontext.ErrExtractTenantID,
+			name:         "should return error on missing tenant from ctx",
+			systemStatus: cmkapi.SystemStatusCONNECTED,
+			keyID:        "keyID",
+			expErr:       cmkcontext.ErrExtractTenantID,
 		},
 		{
 			name:           "should create rotation event without changing system status to PROCESSING",
 			systemStatus:   cmkapi.SystemStatusCONNECTED,
 			tenantID:       tenant,
 			keyID:          "keyID",
-			versionIDFrom:  "version-1",
-			versionIDTo:    "version-2",
-			rotationTime:   "2024-01-15T10:30:00Z",
 			expType:        eventprocessor.JobTypeSystemKeyRotate.String(),
 			expStatus:      cmkapi.SystemStatusCONNECTED, // Should NOT change to PROCESSING
 			expEventStored: true,
@@ -324,9 +315,6 @@ func TestSystemKeyRotateEventCreation(t *testing.T) {
 			systemStatus:   cmkapi.SystemStatusPROCESSING,
 			tenantID:       tenant,
 			keyID:          "keyID",
-			versionIDFrom:  "version-1",
-			versionIDTo:    "version-2",
-			rotationTime:   "2024-01-15T10:30:00Z",
 			expType:        eventprocessor.JobTypeSystemKeyRotate.String(),
 			expStatus:      cmkapi.SystemStatusPROCESSING, // Should remain PROCESSING
 			expEventStored: true,
@@ -344,7 +332,7 @@ func TestSystemKeyRotateEventCreation(t *testing.T) {
 				testutils.CreateTestEntities(ctx, t, r, system)
 			}
 
-			job, err := eventProcessor.SystemKeyRotate(ctx, system, tt.keyID, tt.versionIDFrom, tt.versionIDTo, tt.rotationTime)
+			job, err := eventProcessor.SystemKeyRotate(ctx, system, tt.keyID)
 
 			if tt.expErr != nil {
 				assert.ErrorIs(t, err, tt.expErr)
@@ -364,9 +352,6 @@ func TestSystemKeyRotateEventCreation(t *testing.T) {
 			assert.Equal(t, system.ID.String(), jobData.SystemID)
 			assert.Equal(t, tt.keyID, jobData.KeyIDTo)
 			assert.Equal(t, tt.keyID, jobData.KeyIDFrom) // Same key, different version
-			assert.Equal(t, tt.versionIDFrom, jobData.KeyVersionIDFrom)
-			assert.Equal(t, tt.versionIDTo, jobData.KeyVersionIDTo)
-			assert.Equal(t, tt.rotationTime, jobData.RotationTime)
 
 			// Verify system status was NOT changed to PROCESSING
 			_, err = r.First(ctx, system, *repo.NewQuery())

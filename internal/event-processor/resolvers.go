@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/openkcm/orbital"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	protoPkg "google.golang.org/protobuf/proto"
 
@@ -84,12 +82,7 @@ func (r *SystemTaskInfoResolver) getTaskInfo(
 		return nil, err
 	}
 
-	rotationTimestamp, err := r.parseRotationTime(taskType, data.RotationTime)
-	if err != nil {
-		return nil, err
-	}
-
-	taskData := r.buildSystemActionTaskData(taskType, data, tenant, system, key, keyAccessMetadata, rotationTimestamp)
+	taskData := r.buildSystemActionTaskData(taskType, data, tenant, system, key, keyAccessMetadata)
 
 	taskDataBytes, err := protoPkg.Marshal(taskData)
 	if err != nil {
@@ -136,7 +129,6 @@ func (r *SystemTaskInfoResolver) buildSystemActionTaskData(
 	system *model.System,
 	key *model.Key,
 	keyAccessMetadata []byte,
-	rotationTimestamp *timestamppb.Timestamp,
 ) *proto.Data {
 	return &proto.Data{
 		TaskType: taskType,
@@ -153,11 +145,6 @@ func (r *SystemTaskInfoResolver) buildSystemActionTaskData(
 				TenantOwnerType:   tenant.OwnerType,
 				CmkRegion:         r.cfg.Landscape.Region,
 				KeyAccessMetaData: keyAccessMetadata,
-
-				// Version information (for SYSTEM_KEY_ROTATE)
-				KeyVersionIdFrom: data.KeyVersionIDFrom,
-				KeyVersionIdTo:   data.KeyVersionIDTo,
-				RotationTime:     rotationTimestamp,
 			},
 		},
 	}
@@ -202,23 +189,6 @@ func (r *SystemTaskInfoResolver) selectKeyForTask(
 	}
 
 	return key, nil
-}
-
-func (r *SystemTaskInfoResolver) parseRotationTime(
-	taskType proto.TaskType,
-	rotationTime string,
-) (*timestamppb.Timestamp, error) {
-	// Only parse rotation time for SYSTEM_KEY_ROTATE tasks with non-empty timestamp
-	if taskType != proto.TaskType_SYSTEM_KEY_ROTATE || rotationTime == "" {
-		return (*timestamppb.Timestamp)(nil), nil
-	}
-
-	t, err := time.Parse(time.RFC3339, rotationTime)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse rotation time: %w", err)
-	}
-
-	return timestamppb.New(t), nil
 }
 
 func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
