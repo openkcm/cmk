@@ -284,7 +284,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 
 	SystemManagedRequest := map[string]any{
 		"name":               "test-key",
-		"type":               string(cmkapi.KeyTypeSYSTEMMANAGED),
+		"type":               string(cmkapi.KeyTypeBYOK),
 		"keyConfigurationID": keyConfig.ID,
 		"provider":           providerTest,
 		"algorithm":          string(cmkapi.KeyAlgorithmAES256),
@@ -498,11 +498,11 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
-	t.Run("Should fail to create system managed key if keystore pool is drained", func(t *testing.T) {
+	t.Run("Should fail to create key if keystore pool is drained", func(t *testing.T) {
 		// Arrange
 		sysManagedKey := map[string]any{
 			"name":               "test-key",
-			"type":               string(cmkapi.KeyTypeSYSTEMMANAGED),
+			"type":               string(cmkapi.KeyTypeBYOK),
 			"keyConfigurationID": keyConfig.ID,
 			"algorithm":          string(cmkapi.KeyAlgorithmAES256),
 			"region":             "us-west-2",
@@ -1014,24 +1014,6 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 		assert.EqualValues(t, "SHA256", response.WrappingAlgorithm.HashFunction)
 	})
 
-	t.Run("GetImportParamsInvalidKeyTypeSYSTEM_MANAGED", func(t *testing.T) {
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", sysManagedKey.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
-		})
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-
-		assert.Equal(t, "INVALID_ACTION_FOR_KEY_TYPE", response.Error.Code)
-		assert.Equal(
-			t, "The action cannot be performed for the key type. Only BYOK keys can get import parameters.",
-			response.Error.Message)
-	})
-
 	t.Run("GetImportParamsInvalidKeyTypeHYOK", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:            http.MethodGet,
@@ -1215,34 +1197,6 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
 		assert.Equal(t, "IMPORT_KEY_MATERIAL", response.Error.Code)
 		assert.Equal(t, "Import parameters missing or expired. Please request new import parameters.", response.Error.Message)
-	})
-
-	t.Run("ImportKeyMaterialFailedInvalidKeyTypeSYSTEM_MANAGED", func(t *testing.T) {
-		// Prepare
-		sysManagedKey := testutils.NewKey(func(k *model.Key) {
-			k.Name = "sys-managed-key"
-		})
-		testutils.CreateTestEntities(ctx, t, r, sysManagedKey)
-
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodPost,
-			Endpoint: fmt.Sprintf("/keys/%s/importKeyMaterial", sysManagedKey.ID.String()),
-			Tenant:   tenant,
-			Body: testutils.WithJSON(t, cmkapi.KeyImport{
-				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
-			}),
-			AdditionalContext: authClient.GetClientMap(),
-		})
-
-		// Assert
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "INVALID_ACTION_FOR_KEY_TYPE", response.Error.Code)
-		assert.Equal(t,
-			"The action cannot be performed for the key type. Only BYOK keys can import key material.",
-			response.Error.Message,
-		)
 	})
 
 	t.Run("ImportKeyMaterialFailedInvalidKeyTypeHYOK", func(t *testing.T) {

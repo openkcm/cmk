@@ -77,7 +77,6 @@ paths:
       summary: Create a new Key
       description: |
         Generate and store a new Key or register a key from customer held keystore.
-        - For `SYSTEM_MANAGED` Key, key algorithm and specifications have to be specified.
         - For `Hold Your Own Key (HYOK)`, a native key identifier needs to be provided. In this case no new key
         material is generated but the key is enrolled within KMS CMK.
       requestBody:
@@ -88,8 +87,8 @@ paths:
             schema:
               $ref: "#/components/schemas/Key"
             examples:
-              SystemManagedKeyRequest:
-                $ref: "#/components/examples/SystemManagedKeyRequest"
+              KeyRequest:
+                $ref: "#/components/examples/KeyRequest"
       responses:
         "201":
           description: Created
@@ -268,36 +267,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/KeyVersionList"
-        "400":
-          $ref: "#/components/responses/400"
-        "403":
-          $ref: "#/components/responses/403"
-        "404":
-          $ref: "#/components/responses/404"
-        "429":
-          $ref: "#/components/responses/429"
-        "500":
-          $ref: "#/components/responses/500"
-    post:
-      tags:
-        - Keys
-      summary: Create a new Key Version
-      description: Generate a new key Version
-      operationId: CreateKeyVersion
-      parameters:
-        - $ref: "#/components/parameters/keyIDPath"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/KeyRotationBody"
-      responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/KeyVersion"
         "400":
           $ref: "#/components/responses/400"
         "403":
@@ -1677,8 +1646,8 @@ components:
       required:
         - hyok
       properties:
-        default:
-          $ref: "#/components/schemas/DefaultKeystore"
+        byok:
+          $ref: "#/components/schemas/BYOKKeystore"
         hyok:
           $ref: "#/components/schemas/HYOKKeystore"
     TenantWorkflowConfiguration:
@@ -1709,14 +1678,10 @@ components:
           type: integer
           minimum: 1
           example: 30
-    DefaultKeystore:
+    BYOKKeystore:
       type: object
       properties:
-        allowManaged:
-          description: Keystore supports managed keys
-          type: boolean
-          example: true
-        allowBYOK:
+        allow:
           description: Keystore supports BYOK keys
           type: boolean
           example: true
@@ -2064,7 +2029,6 @@ components:
     KeyType:
       description: |
         The type of the Key.
-        - SYSTEM_MANAGED: The Key is managed by the System.
         - BYOK: Bring Your Own Key (BYOK) is a feature that allows you to securely import cryptographic keys from your
         own managed keystore or key vault into KMS.
         - HYOK: Hold Your Own Key (HYOK) is a feature that allows you to register cryptographic keys from your own
@@ -2073,10 +2037,9 @@ components:
 
       type: string
       enum:
-        - SYSTEM_MANAGED
         - HYOK
         - BYOK
-      example: SYSTEM_MANAGED
+      example: HYOK
     KeyVersion:
       description: A Key Version
       type: object
@@ -3005,10 +2968,10 @@ components:
                   message: Requested feature is not implemented.
                   id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
   examples:
-    SystemManagedKeyRequest:
+    KeyRequest:
       value:
         name: example_key_name
-        type: SYSTEM_MANAGED
+        type: HYOK
         keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
         description: This key is used for DB key store encryption.
         enabled: true

@@ -21,9 +21,8 @@ func TestToAPI(t *testing.T) {
 		{Name: &regionName, TechnicalName: &regionTechnicalName},
 	}
 	expected := cmkapi.TenantKeystore{
-		Default: &cmkapi.DefaultKeystore{
-			AllowManaged:     ptr.PointTo(true),
-			AllowBYOK:        ptr.PointTo(false),
+		Byok: &cmkapi.BYOKKeystore{
+			Allow:            ptr.PointTo(false),
 			SupportedRegions: &supportedRegions,
 		},
 		Hyok: cmkapi.HYOKKeystore{
@@ -33,7 +32,7 @@ func TestToAPI(t *testing.T) {
 	}
 
 	keyStore := manager.TenantKeystores{
-		Default: model.KeystoreConfig{
+		BYOK: model.KeystoreConfig{
 			SupportedRegions: []config.Region{
 				{Name: regionName, TechnicalName: regionTechnicalName},
 			},

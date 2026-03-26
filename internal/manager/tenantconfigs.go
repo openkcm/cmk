@@ -61,8 +61,8 @@ type HYOKKeystore struct {
 }
 
 type TenantKeystores struct {
-	Default model.KeystoreConfig
-	HYOK    HYOKKeystore
+	BYOK model.KeystoreConfig
+	HYOK HYOKKeystore
 }
 
 func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
@@ -168,8 +168,8 @@ func (m *TenantConfigManager) GetTenantsKeystores() (TenantKeystores, error) {
 	defaultKeystore := model.KeystoreConfig{}
 
 	return TenantKeystores{
-		Default: defaultKeystore,
-		HYOK:    m.getTenantConfigsHyokKeystore(),
+		BYOK: defaultKeystore,
+		HYOK: m.getTenantConfigsHyokKeystore(),
 	}, nil
 }
 
