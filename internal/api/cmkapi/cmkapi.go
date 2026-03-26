@@ -53,9 +53,8 @@ const (
 
 // Defines values for KeyType.
 const (
-	KeyTypeBYOK          KeyType = "BYOK"
-	KeyTypeHYOK          KeyType = "HYOK"
-	KeyTypeSYSTEMMANAGED KeyType = "SYSTEM_MANAGED"
+	KeyTypeBYOK KeyType = "BYOK"
+	KeyTypeHYOK KeyType = "HYOK"
 )
 
 // Defines values for SystemStatus.
@@ -137,6 +136,15 @@ const (
 	WrappingAlgorithmNameCKMRSAPKCSOAEP   WrappingAlgorithmName = "CKM_RSA_PKCS_OAEP"
 )
 
+// BYOKKeystore defines model for BYOKKeystore.
+type BYOKKeystore struct {
+	// Allow Keystore supports BYOK keys
+	Allow *bool `json:"allow,omitempty"`
+
+	// SupportedRegions Supported regions for default keystore
+	SupportedRegions *[]SupportedRegion `json:"supportedRegions,omitempty"`
+}
+
 // ClientCertName The name of the crypto client using this Client Certificate
 type ClientCertName = string
 
@@ -178,18 +186,6 @@ type CryptoCertificateList struct {
 	// Count The total number of Crypto Certificates
 	Count *int                `json:"count,omitempty"`
 	Value []CryptoCertificate `json:"value"`
-}
-
-// DefaultKeystore defines model for DefaultKeystore.
-type DefaultKeystore struct {
-	// AllowBYOK Keystore supports BYOK keys
-	AllowBYOK *bool `json:"allowBYOK,omitempty"`
-
-	// AllowManaged Keystore supports managed keys
-	AllowManaged *bool `json:"allowManaged,omitempty"`
-
-	// SupportedRegions Supported regions for default keystore
-	SupportedRegions *[]SupportedRegion `json:"supportedRegions,omitempty"`
 }
 
 // DetailedError defines model for DetailedError.
@@ -405,7 +401,6 @@ type Key struct {
 	State *KeyState `json:"state,omitempty"`
 
 	// Type The type of the Key.
-	// - SYSTEM_MANAGED: The Key is managed by the System.
 	// - BYOK: Bring Your Own Key (BYOK) is a feature that allows you to securely import cryptographic keys from your
 	// own managed keystore or key vault into KMS.
 	// - HYOK: Hold Your Own Key (HYOK) is a feature that allows you to register cryptographic keys from your own
@@ -464,7 +459,6 @@ type KeyCommon struct {
 	State *KeyState `json:"state,omitempty"`
 
 	// Type The type of the Key.
-	// - SYSTEM_MANAGED: The Key is managed by the System.
 	// - BYOK: Bring Your Own Key (BYOK) is a feature that allows you to securely import cryptographic keys from your
 	// own managed keystore or key vault into KMS.
 	// - HYOK: Hold Your Own Key (HYOK) is a feature that allows you to register cryptographic keys from your own
@@ -604,12 +598,6 @@ type KeyProvider = string
 // KeyRegion The region where the key is stored
 type KeyRegion = string
 
-// KeyRotationBody Additional request body that is required for rotation of customer held keys. Must not be provided for non-customer held keys.
-type KeyRotationBody struct {
-	// NativeID The native identifier of the key to register. For AWS, this is either the key ID or the full key ARN.
-	NativeID *string `json:"nativeID,omitempty"`
-}
-
 // KeyState Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states, the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed. FORBIDDEN state is for when a HYOK customer key permission is not granted to the system. DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination.
 type KeyState string
 
@@ -617,7 +605,6 @@ type KeyState string
 type KeyTotalVersions = int
 
 // KeyType The type of the Key.
-// - SYSTEM_MANAGED: The Key is managed by the System.
 // - BYOK: Bring Your Own Key (BYOK) is a feature that allows you to securely import cryptographic keys from your
 // own managed keystore or key vault into KMS.
 // - HYOK: Hold Your Own Key (HYOK) is a feature that allows you to register cryptographic keys from your own
@@ -813,8 +800,8 @@ type TenantDefaultCertificateList struct {
 
 // TenantKeystore defines model for TenantKeystore.
 type TenantKeystore struct {
-	Default *DefaultKeystore `json:"default,omitempty"`
-	Hyok    HYOKKeystore     `json:"hyok"`
+	Byok *BYOKKeystore `json:"byok,omitempty"`
+	Hyok HYOKKeystore  `json:"hyok"`
 }
 
 // TenantList defines model for TenantList.
@@ -1273,9 +1260,6 @@ type UpdateKeyApplicationMergePatchPlusJSONRequestBody = KeyPatch
 // ImportKeyMaterialJSONRequestBody defines body for ImportKeyMaterial for application/json ContentType.
 type ImportKeyMaterialJSONRequestBody = KeyImport
 
-// CreateKeyVersionJSONRequestBody defines body for CreateKeyVersion for application/json ContentType.
-type CreateKeyVersionJSONRequestBody = KeyRotationBody
-
 // LinkSystemActionApplicationMergePatchPlusJSONRequestBody defines body for LinkSystemAction for application/merge-patch+json ContentType.
 type LinkSystemActionApplicationMergePatchPlusJSONRequestBody = SystemPatch
 
@@ -1371,9 +1355,6 @@ type ServerInterface interface {
 	// Get metadata of all Key Versions by Key ID
 	// (GET /keys/{keyID}/versions)
 	GetKeyVersions(w http.ResponseWriter, r *http.Request, keyID KeyIDPath, params GetKeyVersionsParams)
-	// Create a new Key Version
-	// (POST /keys/{keyID}/versions)
-	CreateKeyVersion(w http.ResponseWriter, r *http.Request, keyID KeyIDPath)
 	// Get metadata of a key Version by key ID and Version number
 	// (GET /keys/{keyID}/versions/{version})
 	GetKeyVersionByNumber(w http.ResponseWriter, r *http.Request, keyID KeyIDPath, version KeyVersionNumberPath)
@@ -2187,31 +2168,6 @@ func (siw *ServerInterfaceWrapper) GetKeyVersions(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
-// CreateKeyVersion operation middleware
-func (siw *ServerInterfaceWrapper) CreateKeyVersion(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "keyID" -------------
-	var keyID KeyIDPath
-
-	err = runtime.BindStyledParameterWithOptions("simple", "keyID", r.PathValue("keyID"), &keyID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "keyID", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateKeyVersion(w, r, keyID)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // GetKeyVersionByNumber operation middleware
 func (siw *ServerInterfaceWrapper) GetKeyVersionByNumber(w http.ResponseWriter, r *http.Request) {
 
@@ -2809,7 +2765,6 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/keys/{keyID}/importKeyMaterial", wrapper.ImportKeyMaterial)
 	m.HandleFunc("GET "+options.BaseURL+"/keys/{keyID}/importParams", wrapper.GetKeyImportParams)
 	m.HandleFunc("GET "+options.BaseURL+"/keys/{keyID}/versions", wrapper.GetKeyVersions)
-	m.HandleFunc("POST "+options.BaseURL+"/keys/{keyID}/versions", wrapper.CreateKeyVersion)
 	m.HandleFunc("GET "+options.BaseURL+"/keys/{keyID}/versions/{version}", wrapper.GetKeyVersionByNumber)
 	m.HandleFunc("GET "+options.BaseURL+"/systems", wrapper.GetAllSystems)
 	m.HandleFunc("GET "+options.BaseURL+"/systems/{systemID}", wrapper.GetSystemByID)
@@ -4369,68 +4324,6 @@ func (response GetKeyVersions500JSONResponse) VisitGetKeyVersionsResponse(w http
 	return json.NewEncoder(w).Encode(response)
 }
 
-type CreateKeyVersionRequestObject struct {
-	KeyID KeyIDPath `json:"keyID"`
-	Body  *CreateKeyVersionJSONRequestBody
-}
-
-type CreateKeyVersionResponseObject interface {
-	VisitCreateKeyVersionResponse(w http.ResponseWriter) error
-}
-
-type CreateKeyVersion201JSONResponse KeyVersion
-
-func (response CreateKeyVersion201JSONResponse) VisitCreateKeyVersionResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateKeyVersion400JSONResponse struct{ N400JSONResponse }
-
-func (response CreateKeyVersion400JSONResponse) VisitCreateKeyVersionResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateKeyVersion403JSONResponse struct{ N403JSONResponse }
-
-func (response CreateKeyVersion403JSONResponse) VisitCreateKeyVersionResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateKeyVersion404JSONResponse struct{ N404JSONResponse }
-
-func (response CreateKeyVersion404JSONResponse) VisitCreateKeyVersionResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateKeyVersion429Response = N429Response
-
-func (response CreateKeyVersion429Response) VisitCreateKeyVersionResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
-	return nil
-}
-
-type CreateKeyVersion500JSONResponse struct{ N500JSONResponse }
-
-func (response CreateKeyVersion500JSONResponse) VisitCreateKeyVersionResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
 type GetKeyVersionByNumberRequestObject struct {
 	KeyID   KeyIDPath            `json:"keyID"`
 	Version KeyVersionNumberPath `json:"version"`
@@ -5568,9 +5461,6 @@ type StrictServerInterface interface {
 	// Get metadata of all Key Versions by Key ID
 	// (GET /keys/{keyID}/versions)
 	GetKeyVersions(ctx context.Context, request GetKeyVersionsRequestObject) (GetKeyVersionsResponseObject, error)
-	// Create a new Key Version
-	// (POST /keys/{keyID}/versions)
-	CreateKeyVersion(ctx context.Context, request CreateKeyVersionRequestObject) (CreateKeyVersionResponseObject, error)
 	// Get metadata of a key Version by key ID and Version number
 	// (GET /keys/{keyID}/versions/{version})
 	GetKeyVersionByNumber(ctx context.Context, request GetKeyVersionByNumberRequestObject) (GetKeyVersionByNumberResponseObject, error)
@@ -6365,39 +6255,6 @@ func (sh *strictHandler) GetKeyVersions(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetKeyVersionsResponseObject); ok {
 		if err := validResponse.VisitGetKeyVersionsResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// CreateKeyVersion operation middleware
-func (sh *strictHandler) CreateKeyVersion(w http.ResponseWriter, r *http.Request, keyID KeyIDPath) {
-	var request CreateKeyVersionRequestObject
-
-	request.KeyID = keyID
-
-	var body CreateKeyVersionJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateKeyVersion(ctx, request.(CreateKeyVersionRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateKeyVersion")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(CreateKeyVersionResponseObject); ok {
-		if err := validResponse.VisitCreateKeyVersionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

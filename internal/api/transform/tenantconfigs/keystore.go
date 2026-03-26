@@ -3,6 +3,7 @@ package tenantconfigs
 import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -13,12 +14,8 @@ func ToAPI(keystore manager.TenantKeystores) (*cmkapi.TenantKeystore, error) {
 		return nil, err
 	}
 
-	// Hardcoded allowManaged=true and allowBYOK=false for now
-	allowManaged := true
-	allowBYOK := false
-
-	supportedRegions := make([]cmkapi.SupportedRegion, len(keystore.Default.SupportedRegions))
-	for i, r := range keystore.Default.SupportedRegions {
+	supportedRegions := make([]cmkapi.SupportedRegion, len(keystore.BYOK.SupportedRegions))
+	for i, r := range keystore.BYOK.SupportedRegions {
 		supportedRegions[i] = cmkapi.SupportedRegion{
 			Name:          &r.Name,
 			TechnicalName: &r.TechnicalName,
@@ -26,9 +23,8 @@ func ToAPI(keystore manager.TenantKeystores) (*cmkapi.TenantKeystore, error) {
 	}
 
 	apiTenant := &cmkapi.TenantKeystore{
-		Default: &cmkapi.DefaultKeystore{
-			AllowManaged:     &allowManaged,
-			AllowBYOK:        &allowBYOK,
+		Byok: &cmkapi.BYOKKeystore{
+			Allow:            ptr.PointTo(false),
 			SupportedRegions: &supportedRegions,
 		},
 		Hyok: cmkapi.HYOKKeystore{

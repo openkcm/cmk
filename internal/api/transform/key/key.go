@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/api/transform/key/byok"
 	"github.com/openkcm/cmk/internal/api/transform/key/hyokkey"
 	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk/internal/api/transform/key/sysmr"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
@@ -107,11 +107,6 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 		UpdatedAt: &k.UpdatedAt,
 	}
 
-	if k.KeyVersions != nil && k.KeyType == constants.KeyTypeSystemManaged {
-		apiKey.Metadata.TotalVersions = ptr.PointTo(len(k.KeyVersions))
-		apiKey.Metadata.PrimaryVersion = ptr.PointTo(findPrimaryVersion(k))
-	}
-
 	apiKey.KeyConfigurationID = k.KeyConfigurationID
 	apiKey.Type = cmkapi.KeyType(k.KeyType)
 
@@ -129,24 +124,14 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 	return &apiKey, nil
 }
 
-func findPrimaryVersion(k model.Key) int {
-	for _, kv := range k.KeyVersions {
-		if kv.IsPrimary {
-			return kv.Version
-		}
-	}
-
-	return -1
-}
-
 func getKeyModel(ctx context.Context, tf transformer.ProviderTransformer, apiKey cmkapi.Key) (*model.Key, error) {
 	var selectedProvider func(
 		ctx context.Context, apikey cmkapi.Key, transformer transformer.ProviderTransformer,
 	) (*model.Key, error)
 
 	switch apiKey.Type {
-	case cmkapi.KeyTypeSYSTEMMANAGED, cmkapi.KeyTypeBYOK:
-		selectedProvider = sysmr.FromCmkAPIKey
+	case cmkapi.KeyTypeBYOK:
+		selectedProvider = byok.FromCmkAPIKey
 	case cmkapi.KeyTypeHYOK:
 		selectedProvider = hyokkey.FromCmkAPIKey
 	default:

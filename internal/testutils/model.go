@@ -98,10 +98,11 @@ func NewTag(m func(*model.Tag)) *model.Tag {
 func NewKey(m func(*model.Key)) *model.Key {
 	mut := NewMutator(func() model.Key {
 		return model.Key{
-			ID:      uuid.New(),
-			KeyType: constants.KeyTypeSystemManaged,
-			Name:    uuid.NewString(),
-			State:   string(cmkapi.KeyStateENABLED),
+			ID:       uuid.New(),
+			KeyType:  constants.KeyTypeBYOK,
+			Name:     uuid.NewString(),
+			State:    string(cmkapi.KeyStateENABLED),
+			NativeID: ptr.PointTo(uuid.NewString()),
 		}
 	})
 
