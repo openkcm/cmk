@@ -114,7 +114,6 @@ func TestMapErrorToResponseWithContextGetter(t *testing.T) {
 	assert.Equal(t, expectedContext, *result.Context)
 }
 
-// CreateKey, CreateResource, CreateKeyVersion, TenantNotFound
 func TestMatchedErrorLogicWithEqualPriority(t *testing.T) {
 	errorMapper := errs.NewMapper([]errs.ExposedErrors[*TestError]{
 		{
