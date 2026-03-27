@@ -188,26 +188,24 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 
 func (km *KeyManager) GetKeys(
 	ctx context.Context,
-	keyConfigID *uuid.UUID,
+	keyConfigID uuid.UUID,
 	pagination repo.Pagination,
 ) ([]*model.Key, int, error) {
 	query := repo.NewQuery().
 		Preload(repo.Preload{"KeyVersions"})
 
-	if keyConfigID != nil {
-		_, err := km.user.HasKeyAccess(ctx, authz.APIActionRead, *keyConfigID)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		_, err = km.keyConfigManager.GetKeyConfigurationByID(ctx, *keyConfigID)
-		if err != nil {
-			return nil, 0, errs.Wrap(ErrKeyConfigurationNotFound, err)
-		}
-
-		ck := repo.NewCompositeKey().Where(fmt.Sprintf("%s.%s", model.Key{}.TableName(), repo.KeyConfigIDField), keyConfigID)
-		query = query.Where(repo.NewCompositeKeyGroup(ck))
+	_, err := km.user.HasKeyAccess(ctx, authz.APIActionRead, keyConfigID)
+	if err != nil {
+		return nil, 0, err
 	}
+
+	_, err = km.keyConfigManager.GetKeyConfigurationByID(ctx, keyConfigID)
+	if err != nil {
+		return nil, 0, errs.Wrap(ErrKeyConfigurationNotFound, err)
+	}
+
+	ck := repo.NewCompositeKey().Where(fmt.Sprintf("%s.%s", model.Key{}.TableName(), repo.KeyConfigIDField), keyConfigID)
+	query = query.Where(repo.NewCompositeKeyGroup(ck))
 
 	return repo.ListAndCount(ctx, km.repo, pagination, model.Key{}, query)
 }

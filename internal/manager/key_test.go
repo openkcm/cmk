@@ -786,7 +786,7 @@ func TestList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, total, err := km.GetKeys(ctx, nil, repo.Pagination{Skip: tt.skip, Top: tt.top, Count: true})
+			results, total, err := km.GetKeys(ctx, keyConfig.ID, repo.Pagination{Skip: tt.skip, Top: tt.top, Count: true})
 
 			if tt.wantErr {
 				assert.Error(t, err)
