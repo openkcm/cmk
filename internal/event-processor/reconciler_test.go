@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/orbital"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
@@ -37,12 +39,15 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
+const testProvider = "TEST"
+
 type TestInstance struct {
 	repo          repo.Repo
 	tenant        string
 	fakeService   *systems.FakeService
 	reconciler    *eventprocessor.CryptoReconciler
 	traceRecorder *tracetest.SpanRecorder
+	pluginOp      *testplugins.KeystoreOperator
 }
 
 func setupTestInstance(
@@ -56,7 +61,8 @@ func setupTestInstance(
 	})
 	r := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
+	pluginOp := testplugins.NewKeystoreOperatorInstance()
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperatorFromInstance(pluginOp))
 
 	cfg := &config.Config{
 		Database: dbCfg,
@@ -142,6 +148,7 @@ func setupTestInstance(
 		fakeService:   systemService,
 		reconciler:    eventProcessor,
 		traceRecorder: recorder,
+		pluginOp:      pluginOp,
 	}
 }
 
@@ -398,19 +405,23 @@ func TestResolveSystemTasks(t *testing.T) {
 
 	keyFrom := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
-		k.Provider = "TEST"
+		k.Provider = testProvider
 		k.NativeID = ptr.PointTo("key-from-native-id")
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value1"}}`)
 	})
 
 	keyTo := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
-		k.Provider = "TEST"
+		k.Provider = testProvider
 		k.NativeID = ptr.PointTo("key-to-native-id")
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value2"}}`)
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyFrom, keyTo)
+
+	// Populate test plugin with keys so GetKey works
+	instance.pluginOp.HandleKeyRecord("key-from-native-id", testplugins.EnabledKeyStatus)
+	instance.pluginOp.HandleKeyRecord("key-to-native-id", testplugins.EnabledKeyStatus)
 
 	t.Run("should return correct task info for", func(t *testing.T) {
 		tests := []struct {
@@ -671,6 +682,132 @@ func TestResolveSystemTasks(t *testing.T) {
 		assert.Equal(t, j.ID.String(), span.Attributes()[0].Value.AsString())
 		assert.Equal(t, "job.type", string(span.Attributes()[1].Key))
 		assert.Equal(t, jobType, span.Attributes()[1].Value.AsString())
+	})
+}
+
+func TestVersionInfoPropagation(t *testing.T) {
+	// Test constants
+	const (
+		testRegion       = "test-region"
+		keyWithVersionID = "key-with-version"
+		keyWithoutVerID  = "key-without-version"
+		testRoleArn      = "arn:aws:iam::123:role/test"
+		initialVersionID = "version-abc-123"
+		updatedVersionID = "version-xyz-456"
+	)
+
+	var (
+		initialRotationTime = time.Date(2024, 3, 15, 10, 30, 0, 0, time.UTC)
+		updatedRotationTime = time.Date(2024, 6, 20, 14, 0, 0, 0, time.UTC)
+	)
+
+	// given
+	instance := setupTestInstance(t, []string{testRegion})
+	reconciler := instance.reconciler
+	r := instance.repo
+	tenant := instance.tenant
+
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	system := testutils.NewSystem(func(s *model.System) {
+		s.Region = testRegion
+	})
+
+	keyWithVersion := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfiguration.ID
+		k.Provider = testProvider
+		k.NativeID = ptr.PointTo(keyWithVersionID)
+		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
+		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
+	})
+
+	keyWithoutVersion := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfiguration.ID
+		k.Provider = testProvider
+		k.NativeID = ptr.PointTo(keyWithoutVerID)
+		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
+		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyWithVersion, keyWithoutVersion)
+
+	// Setup plugin with version info for one key, not the other
+	instance.pluginOp.HandleKeyRecord(keyWithVersionID, testplugins.EnabledKeyStatus)
+	instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, initialVersionID, &initialRotationTime)
+
+	instance.pluginOp.HandleKeyRecord(keyWithoutVerID, testplugins.EnabledKeyStatus)
+	// No version info set for keyWithoutVersion
+
+	// Helper to resolve tasks and extract key access metadata
+	resolveAndExtractKeyAccessData := func(jobType string, keyID string) map[string]any {
+		jobData := eventprocessor.SystemActionJobData{
+			TenantID: tenant,
+			SystemID: system.ID.String(),
+			KeyIDTo:  keyID,
+		}
+		jobDataBytes, err := json.Marshal(jobData)
+		require.NoError(t, err)
+
+		j := orbital.NewJob(jobType, jobDataBytes)
+		handler, err := reconciler.GetHandlerByJobType(jobType)
+		require.NoError(t, err)
+
+		tasks, err := handler.ResolveTasks(ctx, j)
+		require.NoError(t, err)
+		require.Len(t, tasks, 1)
+
+		var act eventProto.Data
+		require.NoError(t, proto.Unmarshal(tasks[0].Data, &act))
+		sa := act.GetSystemAction()
+		require.NotNil(t, sa)
+
+		var keyAccessData map[string]any
+		err = json.Unmarshal(sa.GetKeyAccessMetaData(), &keyAccessData)
+		require.NoError(t, err)
+
+		return keyAccessData
+	}
+
+	t.Run("should include version info in key_access_meta_data when available", func(t *testing.T) {
+		keyAccessData := resolveAndExtractKeyAccessData(
+			eventprocessor.JobTypeSystemLink.String(),
+			keyWithVersion.ID.String(),
+		)
+
+		// Assert version info from GetKey is present
+		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
+		assert.Equal(t, initialVersionID, keyAccessData["latestKeyVersionId"])
+		assert.Equal(t, initialRotationTime.Format(time.RFC3339), keyAccessData["latestRotationTime"])
+		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
+	})
+
+	t.Run("should handle keys without version info gracefully", func(t *testing.T) {
+		keyAccessData := resolveAndExtractKeyAccessData(
+			eventprocessor.JobTypeSystemLink.String(),
+			keyWithoutVersion.ID.String(),
+		)
+
+		// Should have keyID and roleArn, but no version fields
+		assert.Equal(t, keyWithoutVerID, keyAccessData["keyID"])
+		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
+		assert.NotContains(t, keyAccessData, "latestKeyVersionId")
+		assert.NotContains(t, keyAccessData, "latestRotationTime")
+	})
+
+	t.Run("should fetch fresh version info on every event creation", func(t *testing.T) {
+		// Update version info in plugin (simulating rotation)
+		instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, updatedVersionID, &updatedRotationTime)
+
+		keyAccessData := resolveAndExtractKeyAccessData(
+			eventprocessor.JobTypeSystemSwitch.String(),
+			keyWithVersion.ID.String(),
+		)
+
+		// Assert the FRESH version info is present (not stale)
+		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
+		assert.Equal(t, updatedVersionID, keyAccessData["latestKeyVersionId"])
+		assert.Equal(t, updatedRotationTime.Format(time.RFC3339), keyAccessData["latestRotationTime"])
 	})
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
 	keyopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
@@ -38,8 +39,10 @@ var (
 const importParamsValidityHours = 24
 
 type KeyRecord struct {
-	KeyID  string `gorm:"primaryKey;column:key_id"`
-	Status string
+	KeyID        string `gorm:"primaryKey;column:key_id"`
+	Status       string
+	VersionID    string
+	RotationTime *time.Time
 }
 
 type KeystoreOperator struct {
@@ -57,6 +60,11 @@ var InitialKeys = map[string]KeyRecord{
 }
 
 func NewKeystoreOperator() catalog.BuiltInPlugin {
+	p := NewKeystoreOperatorInstance()
+	return NewKeystoreOperatorFromInstance(p)
+}
+
+func NewKeystoreOperatorInstance() *KeystoreOperator {
 	p := &KeystoreOperator{
 		KeyStore: make(map[string]*KeyRecord),
 	}
@@ -64,6 +72,10 @@ func NewKeystoreOperator() catalog.BuiltInPlugin {
 	for keyID, record := range InitialKeys {
 		p.HandleKeyRecord(keyID, record.Status)
 	}
+	return p
+}
+
+func NewKeystoreOperatorFromInstance(p *KeystoreOperator) catalog.BuiltInPlugin {
 	return catalog.MakeBuiltIn(
 		Name,
 		keyopv1.KeystoreInstanceKeyOperationPluginServer(p),
@@ -190,10 +202,20 @@ func (p *KeystoreOperator) GetKey(
 
 	status = record.Status
 
-	return &keyopv1.GetKeyResponse{
+	response := &keyopv1.GetKeyResponse{
 		Algorithm: keyopv1.KeyAlgorithm_KEY_ALGORITHM_AES256,
 		Status:    status,
-	}, nil
+	}
+
+	// Add version info if available
+	if record.VersionID != "" {
+		response.LatestKeyVersionId = record.VersionID
+	}
+	if record.RotationTime != nil {
+		response.LatestRotationTime = timestamppb.New(*record.RotationTime)
+	}
+
+	return response, nil
 }
 
 func (p *KeystoreOperator) GetImportParameters(
@@ -334,4 +356,22 @@ func (p *KeystoreOperator) HandleKeyRecord(keyID, status string) {
 	}
 
 	record.Status = status
+}
+
+func (p *KeystoreOperator) SetKeyVersionInfo(keyID, versionID string, rotationTime *time.Time) {
+	if p.KeyStore == nil {
+		p.KeyStore = make(map[string]*KeyRecord)
+	}
+
+	record, exists := p.KeyStore[keyID]
+	if !exists {
+		record = &KeyRecord{
+			KeyID:  keyID,
+			Status: EnabledKeyStatus,
+		}
+		p.KeyStore[keyID] = record
+	}
+
+	record.VersionID = versionID
+	record.RotationTime = rotationTime
 }

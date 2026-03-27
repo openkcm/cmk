@@ -2,8 +2,10 @@ package eventprocessor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openkcm/orbital"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -191,6 +194,41 @@ func (r *SystemTaskInfoResolver) selectKeyForTask(
 	return key, nil
 }
 
+// fetchAndPopulateVersionInfo fetches current key version info from the keystore provider
+// and populates it into the crypto access data for all regions
+func (r *SystemTaskInfoResolver) fetchAndPopulateVersionInfo(
+	ctx context.Context,
+	client keymanagement.KeyManagement,
+	key model.Key,
+) (map[string]map[string]any, error) {
+	// Fetch current version info from keystore provider
+	configValues := key.GetManagementAccessData()
+	freshKeyInfo, err := client.GetKey(ctx, &keymanagement.GetKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: configValues},
+			KeyID:  *key.NativeID,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current key info: %w", err)
+	}
+
+	// Merge fresh version info into crypto access data
+	cryptoData := key.GetCryptoAccessData()
+	if freshKeyInfo.LatestKeyVersionId != "" || freshKeyInfo.LatestRotationTime != nil {
+		for region := range cryptoData {
+			if freshKeyInfo.LatestKeyVersionId != "" {
+				cryptoData[region]["latestKeyVersionId"] = freshKeyInfo.LatestKeyVersionId
+			}
+			if freshKeyInfo.LatestRotationTime != nil {
+				cryptoData[region]["latestRotationTime"] = freshKeyInfo.LatestRotationTime.Format(time.RFC3339)
+			}
+		}
+	}
+
+	return cryptoData, nil
+}
+
 func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 	ctx context.Context,
 	key model.Key,
@@ -206,17 +244,30 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 		return nil, ErrPluginNotFound
 	}
 
-	cryptoAccessData, err := client.TransformCryptoAccessData(
+	// Fetch and populate version info
+	cryptoData, err := r.fetchAndPopulateVersionInfo(ctx, client, key)
+	if err != nil {
+		return nil, err
+	}
+
+	// Marshal updated crypto data
+	cryptoAccessDataBytes, err := json.Marshal(cryptoData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal crypto access data: %w", err)
+	}
+
+	// Transform with fresh version data
+	transformedData, err := client.TransformCryptoAccessData(
 		ctx,
 		&keymanagement.TransformCryptoAccessDataRequest{
 			NativeKeyID: *key.NativeID,
-			AccessData:  key.CryptoAccessData,
+			AccessData:  cryptoAccessDataBytes,
 		})
 	if err != nil {
 		return nil, err
 	}
 
-	keyAccessMetadata, ok := cryptoAccessData.TransformedAccessData[systemRegion]
+	keyAccessMetadata, ok := transformedData.TransformedAccessData[systemRegion]
 	if !ok {
 		return nil, ErrKeyAccessMetadataNotFound
 	}
