@@ -30,9 +30,7 @@ type ctxKey string
 
 const dbCtxKey ctxKey = "transactionRepo"
 
-var (
-	ErrUnsupportedOrderDirective = errors.New("unsupported order directive")
-)
+var ErrUnsupportedOrderDirective = errors.New("unsupported order directive")
 
 // ResourceRepository represents the repository for managing Resource data.
 type ResourceRepository struct {

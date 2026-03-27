@@ -33,8 +33,9 @@ type Key struct {
 	LastUsed             *time.Time
 	ManagementAccessData json.RawMessage `gorm:"type:jsonb"`
 	CryptoAccessData     json.RawMessage `gorm:"type:jsonb"`
-	IsPrimary            bool            `gorm:"type:bool"`
-	EditableRegions      map[string]bool `gorm:"-:all"`
+
+	IsPrimary       bool            `gorm:"-:all"` // Loaded on the managear/get methods
+	EditableRegions map[string]bool `gorm:"-:all"`
 }
 
 // TableResourceType return the authz resource type
@@ -53,7 +54,8 @@ func (Key) IsSharedModel() bool {
 
 func (m Key) CheckAuthz(ctx context.Context,
 	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
