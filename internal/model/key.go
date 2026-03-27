@@ -33,7 +33,9 @@ type Key struct {
 	LastUsed             *time.Time
 	ManagementAccessData json.RawMessage `gorm:"type:jsonb"`
 	CryptoAccessData     json.RawMessage `gorm:"type:jsonb"`
-	EditableRegions      map[string]bool `gorm:"-:all"`
+
+	IsPrimary       bool            `gorm:"-:all"` // Loaded on the managear/get methods
+	EditableRegions map[string]bool `gorm:"-:all"`
 }
 
 // TableResourceType return the authz resource type

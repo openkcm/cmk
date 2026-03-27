@@ -119,6 +119,8 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 		apiKey.AccessDetails = accessDetails
 	}
 
+	apiKey.IsPrimary = &k.IsPrimary
+
 	return &apiKey, nil
 }
 

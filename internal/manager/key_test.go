@@ -452,7 +452,7 @@ func TestEditableCryptoData(t *testing.T) {
 	})
 
 	t.Run("Should be editable on pkey only on failed regions", func(t *testing.T) {
-		kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
 
 		sysFailed := testutils.NewSystem(func(sys *model.System) {
 			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
@@ -754,7 +754,6 @@ func TestList(t *testing.T) {
 		name          string
 		skip          int
 		top           int
-		keyConfigID   *uuid.UUID
 		expectedCount int
 		wantErr       bool
 	}{
@@ -762,15 +761,6 @@ func TestList(t *testing.T) {
 			name:          "List all keys",
 			skip:          0,
 			top:           10,
-			keyConfigID:   nil,
-			expectedCount: 2,
-			wantErr:       false,
-		},
-		{
-			name:          "List all keys from same keyConfig",
-			skip:          0,
-			top:           10,
-			keyConfigID:   ptr.PointTo(keyConfig.ID),
 			expectedCount: 2,
 			wantErr:       false,
 		},
@@ -778,7 +768,6 @@ func TestList(t *testing.T) {
 			name:          "List with pagination",
 			skip:          0,
 			top:           1,
-			keyConfigID:   nil,
 			expectedCount: 2,
 			wantErr:       false,
 		},
@@ -1209,6 +1198,9 @@ func TestKeyRotationTime(t *testing.T) {
 	svcRegistry, err := cmkpluginregistry.New(ctx, cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	require.NoError(t, err)
 
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
+	assert.NoError(t, err)
+
 	cmkAuditor := auditor.New(ctx, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry,
@@ -1217,7 +1209,7 @@ func TestKeyRotationTime(t *testing.T) {
 		})
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 	km := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 
 	// Create test data
@@ -1413,8 +1405,11 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 		k.Region = testRegionUSEast1
 		k.NativeID = ptr.PointTo("primary-key-native-id")
 		k.ManagementAccessData = hyokInfo
-		k.IsPrimary = true
 	})
+
+	keyConfig.PrimaryKeyID = ptr.PointTo(primaryKey.ID)
+	_, err = r.Patch(ctx, keyConfig, *repo.NewQuery())
+	assert.NoError(t, err)
 
 	nonPrimaryKey := testutils.NewKey(func(k *model.Key) {
 		k.Name = "non-primary-key"
@@ -1425,7 +1420,6 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 		k.Region = testRegionUSEast1
 		k.NativeID = ptr.PointTo("non-primary-key-native-id")
 		k.ManagementAccessData = hyokInfo
-		k.IsPrimary = false
 	})
 
 	// Create systems linked to this key configuration
