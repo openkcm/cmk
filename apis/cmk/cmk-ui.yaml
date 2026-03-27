@@ -1853,6 +1853,9 @@ components:
           type: string
           maxLength: 4096
           example: This Key is used for DB key store encryption.
+        isPrimary:
+          description: Flag indicating whether this Key is the primary (default) key for its associated key configuration.
+          type: boolean
         enabled:
           description: Flag indicating whether the Key is enabled
           type: boolean

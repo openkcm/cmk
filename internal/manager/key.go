@@ -127,12 +127,16 @@ func (km *KeyManager) Create(
 	}
 
 	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
-		err := km.setPrimaryIfFirstKey(ctx, key)
+		err = km.setPrimaryIfFirstKey(ctx, key)
 		if err != nil {
 			return errs.Wrap(ErrUpdatePrimary, err)
 		}
+		err := km.repo.Create(ctx, key)
+		if err != nil {
+			return errs.Wrap(ErrCreateKeyDB, err)
+		}
 
-		return km.createKey(ctx, key)
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -154,6 +158,12 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 	if err != nil {
 		return nil, errs.Wrap(ErrGetKeyDB, err)
 	}
+
+	isPrimary, err := repo.IsPrimaryKey(ctx, km.repo, key)
+	if err != nil {
+		return nil, errs.Wrap(ErrGetKeyDB, err)
+	}
+	key.IsPrimary = isPrimary
 
 	_, err = km.user.HasKeyAccess(ctx, authz.APIActionRead, key.KeyConfigurationID)
 	if err != nil {
@@ -192,15 +202,29 @@ func (km *KeyManager) GetKeys(
 		return nil, 0, err
 	}
 
-	_, err = km.keyConfigManager.GetKeyConfigurationByID(ctx, keyConfigID)
+	primaryKeyID, err := repo.GetKeyConfigPrimaryKey(ctx, km.repo, keyConfigID)
 	if err != nil {
-		return nil, 0, errs.Wrap(ErrKeyConfigurationNotFound, err)
+		return nil, 0, err
 	}
 
 	ck := repo.NewCompositeKey().Where(fmt.Sprintf("%s.%s", model.Key{}.TableName(), repo.KeyConfigIDField), keyConfigID)
 	query = query.Where(repo.NewCompositeKeyGroup(ck))
 
-	return repo.ListAndCount(ctx, km.repo, pagination, model.Key{}, query)
+	keys, count, err := repo.ListAndCount(ctx, km.repo, pagination, model.Key{}, query)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// All are non primary
+	if primaryKeyID == nil {
+		return keys, count, nil
+	}
+
+	for _, k := range keys {
+		k.IsPrimary = *primaryKeyID == k.ID
+	}
+
+	return keys, count, nil
 }
 
 func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch cmkapi.KeyPatch) (*model.Key, error) {
@@ -255,12 +279,7 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 		return errs.Wrap(ErrGetKeyDB, err)
 	}
 
-	isPrimary, err := repo.IsPrimaryKey(ctx, km.repo, key)
-	if err != nil {
-		return err
-	}
-
-	if isPrimary {
+	if key.IsPrimary {
 		exist, err := repo.HasConnectedSystems(ctx, km.repo, key.KeyConfigurationID)
 		if err != nil {
 			return err
@@ -415,12 +434,7 @@ func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) err
 		return nil
 	}
 
-	isPrimary, err := repo.IsPrimaryKey(ctx, km.repo, key)
-	if err != nil {
-		return err
-	}
-
-	if !isPrimary {
+	if !key.IsPrimary {
 		for region := range cryptoData {
 			key.EditableRegions[region] = true
 		}
@@ -485,23 +499,6 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 	}
 
 	key.CryptoAccessData = bytes
-
-	return nil
-}
-
-func (km *KeyManager) createKey(ctx context.Context, key *model.Key) error {
-	err := km.repo.Transaction(ctx, func(ctx context.Context) error {
-		// Create Key
-		err := km.repo.Create(ctx, key)
-		if err != nil {
-			return errs.Wrap(ErrCreateKeyDB, err)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return errs.Wrap(ErrCreateKeyDB, err)
-	}
 
 	return nil
 }

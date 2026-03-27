@@ -346,7 +346,7 @@ func TestEditableCryptoData(t *testing.T) {
 	})
 
 	t.Run("Should be editable on pkey only on failed regions", func(t *testing.T) {
-		kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
 
 		sysFailed := testutils.NewSystem(func(sys *model.System) {
 			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
@@ -648,7 +648,6 @@ func TestList(t *testing.T) {
 		name          string
 		skip          int
 		top           int
-		keyConfigID   *uuid.UUID
 		expectedCount int
 		wantErr       bool
 	}{
@@ -656,15 +655,6 @@ func TestList(t *testing.T) {
 			name:          "List all keys",
 			skip:          0,
 			top:           10,
-			keyConfigID:   nil,
-			expectedCount: 2,
-			wantErr:       false,
-		},
-		{
-			name:          "List all keys from same keyConfig",
-			skip:          0,
-			top:           10,
-			keyConfigID:   ptr.PointTo(keyConfig.ID),
 			expectedCount: 2,
 			wantErr:       false,
 		},
@@ -672,7 +662,6 @@ func TestList(t *testing.T) {
 			name:          "List with pagination",
 			skip:          0,
 			top:           1,
-			keyConfigID:   nil,
 			expectedCount: 2,
 			wantErr:       false,
 		},
