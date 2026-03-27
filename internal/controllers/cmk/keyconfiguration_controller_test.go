@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +16,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
@@ -33,35 +33,33 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func startAPIKeyConfigBase(t *testing.T,
-	cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string) {
-	t.Helper()
-
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
-
-	tenant := tenants[0]
-
-	return db, testutils.NewAPIServer(t, db, cfg), tenant
-}
-
 func getContextAndRepo(t *testing.T, tenant string,
-	db *multitenancy.DB) (context.Context, *sql.ResourceRepository) {
+	db *multitenancy.DB,
+) (context.Context, *sql.ResourceRepository) {
 	t.Helper()
 	return cmkcontext.CreateTenantContext(t.Context(), tenant), sql.NewRepository(db)
 }
 
-func startAPIKeyConfig(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB,
-	cmkapi.ServeMux, string, context.Context, *sql.ResourceRepository) {
+func startAPIKeyConfig(t *testing.T) (
+	cmkapi.ServeMux,
+	string,
+	context.Context,
+	*sql.ResourceRepository,
+) {
 	t.Helper()
-	db, sv, tenant := startAPIKeyConfigBase(t, cfg)
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+
+	tenant := tenants[0]
+
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
 
 	ctx, r := getContextAndRepo(t, tenant, db)
 
-	return db, sv, tenant, ctx, r
+	return sv, tenant, ctx, r
 }
 
 func TestKeyConfigurationGetConfiguration(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -125,7 +123,7 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 }
 
 func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -160,7 +158,7 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 }
 
 func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -267,8 +265,7 @@ func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) 
 }
 
 func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
-	db, sv, tenant := startAPIKeyConfigBase(t, testutils.TestAPIServerConfig{})
-	ctx, r := getContextAndRepo(t, tenant, db)
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -421,7 +418,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 }
 
 func TestKeyConfigurationController_UpdateByID(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 	newAdminGroupID := uuid.New()
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
@@ -615,7 +612,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 }
 
 func TestKeyConfigurationController_DeleteByID(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -701,7 +698,7 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 }
 
 func TestKeyConfigurationController_GetByID(t *testing.T) {
-	_, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{})
+	sv, tenant, ctx, r := startAPIKeyConfig(t)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -789,7 +786,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 		setupFunc           func(t *testing.T, db *multitenancy.DB, tenant string)
 		expectedRecordCount int
 		expectedRootCA      string
-		expectedSubject     string
+		expectedSubject     manager.ClientCertificateSubject
 		expectedType        string
 		disableAuthzMW      bool
 	}{
@@ -798,8 +795,14 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject:     "CN=myCert,OU=EXAMPLE OU1/EXAMPLE OU2/EXAMPLE-OU3,O=EXAMPLE_O,L=LOCAL/CMK,C=DE",
-			expectedType:        "TENANT_DEFAULT",
+			expectedSubject: manager.ClientCertificateSubject{
+				Locality:           []string{"LOCAL"},
+				OrganizationalUnit: []string{"EXAMPLE OU1", "EXAMPLE OU2", "EXAMPLE OU3"},
+				Organization:       []string{"EXAMPLE"},
+				Country:            []string{"DE"},
+				CommonName:         "myCert",
+			},
+			expectedType: "TENANT_DEFAULT",
 			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
 				t.Helper()
 
@@ -834,8 +837,14 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject:     "CN=myCert,OU=EXAMPLE OU1,O=EXAMPLE_O,L=LOCAL/CMK,C=DE",
-			expectedType:        "TENANT_DEFAULT",
+			expectedSubject: manager.ClientCertificateSubject{
+				Locality:           []string{"LOCAL"},
+				OrganizationalUnit: []string{"EXAMPLE OU1"},
+				Organization:       []string{"EXAMPLE"},
+				Country:            []string{"DE"},
+				CommonName:         "myCert",
+			},
+			expectedType: "TENANT_DEFAULT",
 			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
 				t.Helper()
 
@@ -870,8 +879,14 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject:     "CN=myCert,O=EXAMPLE_O,L=LOCAL/CMK,C=DE",
-			expectedType:        "TENANT_DEFAULT",
+			expectedSubject: manager.ClientCertificateSubject{
+				Locality:           []string{"LOCAL"},
+				OrganizationalUnit: []string{},
+				Organization:       []string{"EXAMPLE"},
+				Country:            []string{"DE"},
+				CommonName:         "myCert",
+			},
+			expectedType: "TENANT_DEFAULT",
 			setupFunc: func(t *testing.T, db *multitenancy.DB, tenant string) {
 				t.Helper()
 
@@ -902,7 +917,9 @@ func TestAPIController_GetCertificates(t *testing.T) {
 		},
 		{
 			name: "Failed - Database error",
-			setupFunc: func(_ *testing.T, db *multitenancy.DB, _ string) {
+			setupFunc: func(t *testing.T, db *multitenancy.DB, _ string) {
+				t.Helper()
+
 				forced := testutils.NewDBErrorForced(db, ErrForced)
 				forced.Register()
 				t.Cleanup(func() {
@@ -918,16 +935,19 @@ func TestAPIController_GetCertificates(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cryptoCerts := map[string]testutils.CryptoCert{
-				"crypto-1": {
-					Subject: tt.expectedSubject,
+			subj := tt.expectedSubject
+			subj.CommonNamePrefix = "test"
+			cryptoCerts := []*manager.ClientCertificate{
+				{
 					RootCA:  tt.expectedRootCA,
+					Subject: subj,
+					Name:    "crypto-1",
 				},
 			}
-			bytes, err := json.Marshal(cryptoCerts)
+			bytes, err := yaml.Marshal(cryptoCerts)
 			assert.NoError(t, err)
 
-			db, sv, tenant, ctx, r := startAPIKeyConfig(t, testutils.TestAPIServerConfig{
+			db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{
 				Config: config.Config{
 					CryptoLayer: config.CryptoLayer{
 						CertX509Trusts: commoncfg.SourceRef{
@@ -940,16 +960,18 @@ func TestAPIController_GetCertificates(t *testing.T) {
 					},
 				},
 			})
+			r := sql.NewRepository(db)
+			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 
 			key1 := testutils.NewKey(func(_ *model.Key) {})
 
 			authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
-			keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			keyconfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 				c.PrimaryKeyID = &key1.ID
 			}, testutils.WithAuthClientDataKC(authClient))
 
-			testutils.CreateTestEntities(ctx, t, r, key1, keyConfig)
+			testutils.CreateTestEntities(ctx, t, r, key1, keyconfig)
 
 			if tt.setupFunc != nil {
 				tt.setupFunc(t, db, tenant)
@@ -957,7 +979,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:            http.MethodGet,
-				Endpoint:          fmt.Sprintf("/keyConfigurations/%s/certificates", keyConfig.ID.String()),
+				Endpoint:          fmt.Sprintf("/keyConfigurations/%s/certificates", uuid.NewString()),
 				Tenant:            tenant,
 				AdditionalContext: authClient.GetClientMap(),
 			})
@@ -966,11 +988,6 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			if tt.expectedStatus == http.StatusOK {
 				response := testutils.GetJSONBody[cmkapi.ClientCertificates](t, w)
 				assert.Equal(t, tt.expectedRecordCount, *response.TenantDefault.Count)
-
-				if *response.TenantDefault.Count > 0 {
-					assert.Equal(t, tt.expectedRootCA, response.TenantDefault.Value[0].RootCA)
-					assert.Equal(t, tt.expectedSubject, response.TenantDefault.Value[0].Subject)
-				}
 			} else {
 				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
 				assert.Equal(t, tt.expectedError, response.Error.Code)

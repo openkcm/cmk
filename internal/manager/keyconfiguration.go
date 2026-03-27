@@ -4,15 +4,14 @@ import (
 	"context"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
@@ -22,16 +21,10 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	cmkContext "github.com/openkcm/cmk/utils/context"
-)
-
-const (
-	DefaultCertName = "hyok-default"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var (
-	ErrGetDefaultCerts                  = errors.New("failed to get default certificates")
-	ErrDecodingCert                     = errors.New("failed to decode certificate")
 	ErrCheckKeyConfigManagedByIAMGroups = errors.New("failed to check key configurations managed by IAM groups")
 	ErrKeyConfigurationNotAllowed       = errors.New("user has no permission to access key configuration")
 )
@@ -51,8 +44,8 @@ type KeyConfigurationAPI interface {
 
 type KeyConfigManager struct {
 	repository repo.Repo
-	certs      *CertificateManager
 	user       User
+	certs      *CertificateManager
 	tagManager Tags
 	cmkAuditor *auditor.Auditor
 	cfg        *config.Config
@@ -237,12 +230,35 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 	return keyConfig, nil
 }
 
+type ClientCertificate struct {
+	Name    string                   `yaml:"name"`
+	RootCA  string                   `yaml:"rootCA"` //nolint:tagliatelle
+	Subject ClientCertificateSubject `yaml:"subject"`
+}
+
+type ClientCertificateSubject struct {
+	Locality           []string `yaml:"locality"`
+	OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
+	Organization       []string `yaml:"organization"`
+	Country            []string `yaml:"country"`
+	CommonNamePrefix   string   `yaml:"commonNamePrefix"`
+	CommonName         string
+}
+
+func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSubject {
+	return ClientCertificateSubject{
+		Locality:           subject.Locality,
+		OrganizationalUnit: subject.OrganizationalUnit,
+		Organization:       subject.Organization,
+		Country:            subject.Country,
+		CommonName:         subject.CommonName,
+	}
+}
+
 // GetClientCertificates retrieves the client certificates
 func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 	map[model.CertificatePurpose][]*ClientCertificate, error,
 ) {
-	certConfig := m.certs.cfg
-
 	tenantDefaultCert, err := m.certs.getDefaultHYOKClientCert(ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetDefaultCerts, err)
@@ -255,7 +271,7 @@ func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 
 	for i, certificate := range defaultCerts {
 		configCert, err := m.transformTenantDefaultCertificate(ctx, certificate.CertPEM,
-			certConfig.Certificates.RootCertURL, ErrGetDefaultCerts)
+			m.cfg.Certificates.RootCertURL, ErrGetDefaultCerts)
 		if err != nil {
 			return nil, err
 		}
@@ -263,7 +279,7 @@ func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 		clientCerts[model.CertificatePurposeTenantDefault][i] = configCert
 	}
 
-	cryptoCerts, err := m.getCryptoCertificates()
+	cryptoCerts, err := m.getCryptoCertificates(ctx)
 	clientCerts[model.CertificatePurposeCrypto] = cryptoCerts
 
 	if err != nil {
@@ -271,13 +287,6 @@ func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 	}
 
 	return clientCerts, nil
-}
-
-// ClientCertificate represents the client certificates
-type ClientCertificate struct {
-	Name    string
-	RootCA  string
-	Subject string
 }
 
 func (m *KeyConfigManager) transformTenantDefaultCertificate(_ context.Context,
@@ -293,63 +302,37 @@ func (m *KeyConfigManager) transformTenantDefaultCertificate(_ context.Context,
 		return nil, errs.Wrap(errParent, err)
 	}
 
-	subject := formatSubjectWithSlashSeparatedOUs(cert.Subject)
-
 	return &ClientCertificate{
 		Name:    DefaultCertName,
 		RootCA:  rootCertURL,
-		Subject: subject,
+		Subject: NewClientCertificateSubjectFromPKIX(cert.Subject),
 	}, nil
 }
 
-// formatSubjectWithSlashSeparatedOUs transforms the standard X.509 subject string
-// to combine multiple OUs with / separator instead of +
-func formatSubjectWithSlashSeparatedOUs(subject pkix.Name) string {
-	if len(subject.OrganizationalUnit) <= 1 {
-		return subject.String() // Use standard format if 0 or 1 OU
-	}
-
-	// Get standard format
-	standardSubject := subject.String()
-
-	// Replace OU=X+OU=Y+OU=Z with OU=X/Y/Z
-	combinedOU := "OU=" + strings.Join(subject.OrganizationalUnit, "/")
-
-	// Build regex to match multiple OU entries
-	ouPattern := `OU=[^,+]+((\+OU=[^,+]+)+)`
-	re := regexp.MustCompile(ouPattern)
-
-	return re.ReplaceAllString(standardSubject, combinedOU)
-}
-
 // getCryptoCertificates retrieves crypto certificates from config
-func (m *KeyConfigManager) getCryptoCertificates() ([]*ClientCertificate, error) {
+func (m *KeyConfigManager) getCryptoCertificates(ctx context.Context) ([]*ClientCertificate, error) {
 	bytes, err := commoncfg.LoadValueFromSourceRef(m.cfg.CryptoLayer.CertX509Trusts)
 	if err != nil {
 		return nil, errs.Wrap(ErrLoadCryptoCerts, err)
 	}
 
-	var cryptoCerts map[string]ClientCertificate
+	var cryptoCerts []*ClientCertificate
 
-	err = json.Unmarshal(bytes, &cryptoCerts)
+	err = yaml.Unmarshal(bytes, &cryptoCerts)
 	if err != nil {
 		return nil, errs.Wrap(ErrUnmarshalCryptoCerts, err)
 	}
 
-	return m.certMapToSlice(cryptoCerts), nil
-}
-
-func (m *KeyConfigManager) certMapToSlice(certs map[string]ClientCertificate) []*ClientCertificate {
-	l := make([]*ClientCertificate, 0, len(certs))
-	for k, v := range certs {
-		l = append(l, &ClientCertificate{
-			Name:    k,
-			Subject: v.Subject,
-			RootCA:  v.RootCA,
-		})
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	return l
+	for _, cert := range cryptoCerts {
+		cert.Subject.CommonName = cert.Subject.CommonNamePrefix + tenantID
+	}
+
+	return cryptoCerts, nil
 }
 
 func getKeyConfigWithTotalsQuery() *repo.Query {
@@ -389,7 +372,7 @@ func (m *KeyConfigManager) applyIAMGroupFilter(
 	ctx context.Context,
 	query *repo.Query,
 ) (bool, error) {
-	iamIdentifiers, err := cmkContext.ExtractClientDataGroupsString(ctx)
+	iamIdentifiers, err := cmkcontext.ExtractClientDataGroupsString(ctx)
 	if err != nil {
 		return false, err
 	}

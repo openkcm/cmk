@@ -443,12 +443,20 @@ config:
     certX509Trusts:
       source: embedded
       value: |
-        {
-          "crypto-1": {
-            "Subject": "FakeCert",
-            "RootCA": "https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
-          }
-        }
+        - name: crypto-1
+          rootCA: "https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
+          subject: 
+            locality:
+              - eu10
+            country:
+              - DE
+            organization:
+              - Organization
+            organizationUnit:
+              - Organization Unit 1
+              - Organization Unit 2
+            commonNamePrefix: kms-crypto_
+
   # This does set the logger configuration
   # +docs:property
   logger:

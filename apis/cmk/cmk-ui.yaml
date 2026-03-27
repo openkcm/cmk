@@ -602,13 +602,10 @@ paths:
         - Key Configurations
       summary: Get the client certificate details
       description: |
-        Retrieves the details of the client certificate for the tenant.
-      operationId: GetKeyConfigurationsCertificates
+        Retrieves the details of the client certificate for the key configuration.
+      operationId: getKeyConfigurationCertificates
       parameters:
         - $ref: "#/components/parameters/keyConfigurationIDPath"
-        - $ref: "#/components/parameters/skipPath"
-        - $ref: "#/components/parameters/topPath"
-        - $ref: "#/components/parameters/countPath"
       responses:
         "200":
           description: Retrieved

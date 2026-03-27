@@ -34,13 +34,20 @@ func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*m
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
-	dbRepository := sql.NewRepository(db)
+	r := sql.NewRepository(db)
 	ps, psCfg := testutils.NewTestPlugins(plugins...)
-	cfg := config.Config{Plugins: psCfg}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
+
+	cfg := &config.Config{
+		Plugins: psCfg,
+		Certificates: config.Certificates{
+			RootCertURL:  TestCertURL,
+			ValidityDays: config.MinCertificateValidityDays,
+		},
+	}
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 
-	tenantManager := manager.NewTenantConfigManager(dbRepository, svcRegistry, nil)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg)
 
 	return tenantManager, db, tenants[0]
 }
@@ -53,13 +60,13 @@ func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []catal
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithTenantRole(model.TenantRole(role)))
 
-	dbRepository := sql.NewRepository(db)
+	r := sql.NewRepository(db)
 	ps, psCfg := testutils.NewTestPlugins(plugins...)
 	cfg := config.Config{Plugins: psCfg}
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 
-	tenantManager := manager.NewTenantConfigManager(dbRepository, svcRegistry, nil)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 
 	return tenantManager, db, tenants[0]
 }
