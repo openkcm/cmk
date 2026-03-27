@@ -72,7 +72,7 @@ func (c *APIController) GetKeys(ctx context.Context,
 		Count: ptr.GetSafeDeref(request.Params.Count),
 	}
 
-	keys, total, err := c.Manager.Keys.GetKeys(ctx, ptr.PointTo(keyConfigID), pagination)
+	keys, total, err := c.Manager.Keys.GetKeys(ctx, keyConfigID, pagination)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrQueryKeyList, err)
 	}
