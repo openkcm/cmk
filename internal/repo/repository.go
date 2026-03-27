@@ -310,6 +310,32 @@ func ProcessInBatchWithOptions[T Resource](
 	return nil
 }
 
+func GetKeyConfigPrimaryKey(ctx context.Context, r Repo, keyConfigID uuid.UUID) (*uuid.UUID, error) {
+	keyConfig := &model.KeyConfiguration{
+		ID: keyConfigID,
+	}
+
+	_, err := r.First(
+		ctx,
+		keyConfig,
+		*NewQuery(),
+	)
+
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	return keyConfig.PrimaryKeyID, nil
+}
+
+func IsPrimaryKey(ctx context.Context, r Repo, key *model.Key) (bool, error) {
+	pkeyID, err := GetKeyConfigPrimaryKey(ctx, r, key.KeyConfigurationID)
+	if err != nil || pkeyID == nil {
+		return false, err
+	}
+
+	return *pkeyID == key.ID, nil
+}
+
 // ProcessInBatch retrieves and processes records in batches from the database based on the provided query parameters.
 // It iterates through all matching records using pagination to avoid loading large datasets into memory.
 // The processFunc is called on the records, allowing custom processing logic.
@@ -360,27 +386,6 @@ func ListAndCount[T Resource](
 		return nil, 0, errs.Wrap(ErrCountingItem, err)
 	}
 	return res, count, nil
-}
-
-func IsPrimaryKey(ctx context.Context, r Repo, key *model.Key) (bool, error) {
-	keyConfig := &model.KeyConfiguration{
-		ID: key.KeyConfigurationID,
-	}
-
-	exist, err := r.First(
-		ctx,
-		keyConfig,
-		*NewQuery(),
-	)
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return false, err
-	}
-
-	if !exist || keyConfig.PrimaryKeyID == nil {
-		return false, nil
-	}
-
-	return *keyConfig.PrimaryKeyID == key.ID, nil
 }
 
 func GetTenant(ctx context.Context, r Repo) (*model.Tenant, error) {
