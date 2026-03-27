@@ -696,11 +696,6 @@ func TestVersionInfoPropagation(t *testing.T) {
 		updatedVersionID = "version-xyz-456"
 	)
 
-	var (
-		initialRotationTime = time.Date(2024, 3, 15, 10, 30, 0, 0, time.UTC)
-		updatedRotationTime = time.Date(2024, 6, 20, 14, 0, 0, 0, time.UTC)
-	)
-
 	// given
 	instance := setupTestInstance(t, []string{testRegion})
 	reconciler := instance.reconciler
@@ -734,7 +729,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 
 	// Setup plugin with version info for one key, not the other
 	instance.pluginOp.HandleKeyRecord(keyWithVersionID, testplugins.EnabledKeyStatus)
-	instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, initialVersionID, &initialRotationTime)
+	instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, initialVersionID)
 
 	instance.pluginOp.HandleKeyRecord(keyWithoutVerID, testplugins.EnabledKeyStatus)
 	// No version info set for keyWithoutVersion
@@ -778,7 +773,6 @@ func TestVersionInfoPropagation(t *testing.T) {
 		// Assert version info from GetKey is present
 		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
 		assert.Equal(t, initialVersionID, keyAccessData["latestKeyVersionId"])
-		assert.Equal(t, initialRotationTime.Format(time.RFC3339), keyAccessData["latestRotationTime"])
 		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
 	})
 
@@ -792,12 +786,11 @@ func TestVersionInfoPropagation(t *testing.T) {
 		assert.Equal(t, keyWithoutVerID, keyAccessData["keyID"])
 		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
 		assert.NotContains(t, keyAccessData, "latestKeyVersionId")
-		assert.NotContains(t, keyAccessData, "latestRotationTime")
 	})
 
 	t.Run("should fetch fresh version info on every event creation", func(t *testing.T) {
 		// Update version info in plugin (simulating rotation)
-		instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, updatedVersionID, &updatedRotationTime)
+		instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, updatedVersionID)
 
 		keyAccessData := resolveAndExtractKeyAccessData(
 			eventprocessor.JobTypeSystemSwitch.String(),
@@ -807,7 +800,6 @@ func TestVersionInfoPropagation(t *testing.T) {
 		// Assert the FRESH version info is present (not stale)
 		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
 		assert.Equal(t, updatedVersionID, keyAccessData["latestKeyVersionId"])
-		assert.Equal(t, updatedRotationTime.Format(time.RFC3339), keyAccessData["latestRotationTime"])
 	})
 }
 

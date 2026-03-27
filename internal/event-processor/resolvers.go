@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/openkcm/orbital"
 
@@ -219,9 +218,6 @@ func (r *SystemTaskInfoResolver) fetchAndPopulateVersionInfo(
 		for region := range cryptoData {
 			if freshKeyInfo.LatestKeyVersionId != "" {
 				cryptoData[region]["latestKeyVersionId"] = freshKeyInfo.LatestKeyVersionId
-			}
-			if freshKeyInfo.LatestRotationTime != nil {
-				cryptoData[region]["latestRotationTime"] = freshKeyInfo.LatestRotationTime.Format(time.RFC3339)
 			}
 		}
 	}
