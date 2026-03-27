@@ -101,3 +101,49 @@ func TestGetOrbitalError(t *testing.T) {
 		})
 	}
 }
+
+func TestIsVersionMismatchError(t *testing.T) {
+	tests := []struct {
+		name         string
+		errorMessage string
+		expected     bool
+	}{
+		{
+			name:         "Should detect version mismatch error with correct code",
+			errorMessage: "KEY_VERSION_MISMATCH:Key version does not match current version",
+			expected:     true,
+		},
+		{
+			name:         "Should detect version mismatch error with different message",
+			errorMessage: "KEY_VERSION_MISMATCH:Version conflict detected",
+			expected:     true,
+		},
+		{
+			name:         "Should not detect version mismatch for different error code",
+			errorMessage: "UNSUPPORTED_REGION:Region not supported",
+			expected:     false,
+		},
+		{
+			name:         "Should not detect version mismatch for message without code",
+			errorMessage: "Some generic error message",
+			expected:     false,
+		},
+		{
+			name:         "Should not detect version mismatch for empty message",
+			errorMessage: "",
+			expected:     false,
+		},
+		{
+			name:         "Should not detect version mismatch for similar but different code",
+			errorMessage: "KEY_MISMATCH:Different error",
+			expected:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := eventprocessor.IsVersionMismatchError(tt.errorMessage)
+			assert.Equal(t, tt.expected, res)
+		})
+	}
+}

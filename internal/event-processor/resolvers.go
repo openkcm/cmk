@@ -2,6 +2,7 @@ package eventprocessor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -47,6 +49,8 @@ func (r *SystemTaskInfoResolver) Resolve(
 		taskType = proto.TaskType_SYSTEM_UNLINK
 	case JobTypeSystemSwitch, JobTypeSystemSwitchNewPK:
 		taskType = proto.TaskType_SYSTEM_SWITCH
+	case JobTypeSystemKeyRotate:
+		taskType = proto.TaskType_SYSTEM_KEY_ROTATE
 	default:
 		return nil, errs.Wrapf(ErrInvalidJobType, job.Type)
 	}
@@ -59,45 +63,76 @@ func (r *SystemTaskInfoResolver) Resolve(
 	return []orbital.TaskInfo{*taskInfo}, nil
 }
 
-//nolint:funlen
 func (r *SystemTaskInfoResolver) getTaskInfo(
 	ctx context.Context,
 	taskType proto.TaskType,
 	data SystemActionJobData,
 ) (*orbital.TaskInfo, error) {
-	tenant, err := getTenantByID(ctx, r.repo, data.TenantID)
+	tenant, system, err := r.loadTenantAndSystem(ctx, data)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
 
-	system, err := getSystemByID(ctx, r.repo, data.SystemID)
+	if err := r.validateSystemRegionTarget(system.Region); err != nil {
+		return nil, err
+	}
+
+	key, keyAccessMetadata, err := r.getKeyAndAccessMetadata(ctx, taskType, data, system.Region)
 	if err != nil {
 		return nil, err
 	}
 
-	_, ok := r.targets[system.Region]
-	if !ok {
-		return nil, errs.Wrapf(ErrTargetNotConfigured, system.Region)
-	}
+	taskData := r.buildSystemActionTaskData(taskType, data, tenant, system, key, keyAccessMetadata)
 
-	keyID := data.KeyIDTo
-	if taskType == proto.TaskType_SYSTEM_UNLINK {
-		keyID = data.KeyIDFrom
-	}
-
-	key, err := getKeyByKeyID(ctx, r.repo, keyID)
+	taskDataBytes, err := protoPkg.Marshal(taskData)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal task data: %w", err)
 	}
 
-	keyAccessMetadata, err := r.getKeyAccessMetadata(ctx, *key, system.Region)
+	return &orbital.TaskInfo{
+		Target: system.Region,
+		Data:   taskDataBytes,
+		Type:   taskType.String(),
+	}, nil
+}
+
+func (r *SystemTaskInfoResolver) validateSystemRegionTarget(region string) error {
+	if _, ok := r.targets[region]; !ok {
+		return errs.Wrapf(ErrTargetNotConfigured, region)
+	}
+	return nil
+}
+
+func (r *SystemTaskInfoResolver) getKeyAndAccessMetadata(
+	ctx context.Context,
+	taskType proto.TaskType,
+	data SystemActionJobData,
+	systemRegion string,
+) (*model.Key, []byte, error) {
+	key, err := r.selectKeyForTask(ctx, taskType, data)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	taskData := &proto.Data{
+	keyAccessMetadata, err := r.getKeyAccessMetadata(ctx, *key, systemRegion)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return key, keyAccessMetadata, nil
+}
+
+func (r *SystemTaskInfoResolver) buildSystemActionTaskData(
+	taskType proto.TaskType,
+	data SystemActionJobData,
+	tenant *model.Tenant,
+	system *model.System,
+	key *model.Key,
+	keyAccessMetadata []byte,
+) *proto.Data {
+	return &proto.Data{
 		TaskType: taskType,
 		Data: &proto.Data_SystemAction{
 			SystemAction: &proto.SystemAction{
@@ -115,17 +150,79 @@ func (r *SystemTaskInfoResolver) getTaskInfo(
 			},
 		},
 	}
+}
 
-	taskDataBytes, err := protoPkg.Marshal(taskData)
+func (r *SystemTaskInfoResolver) loadTenantAndSystem(
+	ctx context.Context,
+	data SystemActionJobData,
+) (*model.Tenant, *model.System, error) {
+	tenant, err := getTenantByID(ctx, r.repo, data.TenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal task data: %w", err)
+		return nil, nil, err
 	}
 
-	return &orbital.TaskInfo{
-		Target: system.Region,
-		Data:   taskDataBytes,
-		Type:   taskType.String(),
-	}, nil
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+
+	system, err := getSystemByID(ctx, r.repo, data.SystemID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return tenant, system, nil
+}
+
+func (r *SystemTaskInfoResolver) selectKeyForTask(
+	ctx context.Context,
+	taskType proto.TaskType,
+	data SystemActionJobData,
+) (*model.Key, error) {
+	keyID := data.KeyIDTo
+	if taskType == proto.TaskType_SYSTEM_UNLINK {
+		keyID = data.KeyIDFrom
+	}
+
+	if taskType == proto.TaskType_SYSTEM_KEY_ROTATE && data.KeyIDFrom != data.KeyIDTo {
+		return nil, fmt.Errorf("%w: got %q -> %q", ErrKeyRotateMismatchedKeyIDs, data.KeyIDFrom, data.KeyIDTo)
+	}
+
+	key, err := getKeyByKeyID(ctx, r.repo, keyID)
+	if err != nil {
+		return nil, err
+	}
+
+	return key, nil
+}
+
+// fetchAndPopulateVersionInfo fetches current key version info from the keystore provider
+// and populates it into the crypto access data for all regions
+func (r *SystemTaskInfoResolver) fetchAndPopulateVersionInfo(
+	ctx context.Context,
+	client keymanagement.KeyManagement,
+	key model.Key,
+) (map[string]map[string]any, error) {
+	// Fetch current version info from keystore provider
+	configValues := key.GetManagementAccessData()
+	freshKeyInfo, err := client.GetKey(ctx, &keymanagement.GetKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: configValues},
+			KeyID:  *key.NativeID,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current key info: %w", err)
+	}
+
+	// Merge fresh version info into crypto access data
+	cryptoData := key.GetCryptoAccessData()
+	if freshKeyInfo.LatestKeyVersionId != "" || freshKeyInfo.LatestRotationTime != nil {
+		for region := range cryptoData {
+			if freshKeyInfo.LatestKeyVersionId != "" {
+				cryptoData[region]["latestKeyVersionId"] = freshKeyInfo.LatestKeyVersionId
+			}
+		}
+	}
+
+	return cryptoData, nil
 }
 
 func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
@@ -143,17 +240,30 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 		return nil, ErrPluginNotFound
 	}
 
-	cryptoAccessData, err := client.TransformCryptoAccessData(
+	// Fetch and populate version info
+	cryptoData, err := r.fetchAndPopulateVersionInfo(ctx, client, key)
+	if err != nil {
+		return nil, err
+	}
+
+	// Marshal updated crypto data
+	cryptoAccessDataBytes, err := json.Marshal(cryptoData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal crypto access data: %w", err)
+	}
+
+	// Transform with fresh version data
+	transformedData, err := client.TransformCryptoAccessData(
 		ctx,
 		&keymanagement.TransformCryptoAccessDataRequest{
 			NativeKeyID: *key.NativeID,
-			AccessData:  key.CryptoAccessData,
+			AccessData:  cryptoAccessDataBytes,
 		})
 	if err != nil {
 		return nil, err
 	}
 
-	keyAccessMetadata, ok := cryptoAccessData.TransformedAccessData[systemRegion]
+	keyAccessMetadata, ok := transformedData.TransformedAccessData[systemRegion]
 	if !ok {
 		return nil, ErrKeyAccessMetadataNotFound
 	}
@@ -188,8 +298,6 @@ func (r *KeyTaskInfoResolver) Resolve(
 		taskType = proto.TaskType_KEY_DETACH
 	case JobTypeKeyDelete:
 		taskType = proto.TaskType_KEY_DELETE
-	case JobTypeKeyRotate:
-		taskType = proto.TaskType_KEY_ROTATE
 	default:
 		return nil, errs.Wrapf(ErrInvalidJobType, job.Type)
 	}

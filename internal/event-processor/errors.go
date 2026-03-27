@@ -63,6 +63,24 @@ func GetOrbitalError(ctx context.Context, err error) string {
 	return errMessage
 }
 
+// Placeholder error codes from Kernel Service
+const (
+	// KernelServiceVersionMismatchCode is returned by KS when the key version in the event
+	// doesn't match the current version KS has cached. This triggers CMK to resync immediately.
+	//nolint:godox
+	// TODO: Replace with actual error code once KS provides it
+	KernelServiceVersionMismatchCode = "KEY_VERSION_MISMATCH"
+)
+
+// IsVersionMismatchError checks if the error message contains a version mismatch indicator from KS.
+// This can happen when:
+// - KS detects a newer key version before CMK's scheduled detection runs
+// - Multiple rapid rotations occur and KS is ahead of CMK
+func IsVersionMismatchError(errorMessage string) bool {
+	orbErr := ParseOrbitalError(errorMessage)
+	return orbErr.Code == KernelServiceVersionMismatchCode
+}
+
 var errorMapper = errs.NewMapper(
 	[]errs.ExposedErrors[*OrbitalError]{
 		{

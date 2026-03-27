@@ -3,6 +3,8 @@ package eventprocessor_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/orbital"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
@@ -36,12 +39,15 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
+const testProvider = "TEST"
+
 type TestInstance struct {
 	repo          repo.Repo
 	tenant        string
 	fakeService   *systems.FakeService
 	reconciler    *eventprocessor.CryptoReconciler
 	traceRecorder *tracetest.SpanRecorder
+	pluginOp      *testplugins.KeystoreOperator
 }
 
 func setupTestInstance(
@@ -55,7 +61,8 @@ func setupTestInstance(
 	})
 	r := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
+	pluginOp := testplugins.NewKeystoreOperatorInstance()
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperatorFromInstance(pluginOp))
 
 	cfg := &config.Config{
 		Database: dbCfg,
@@ -141,6 +148,7 @@ func setupTestInstance(
 		fakeService:   systemService,
 		reconciler:    eventProcessor,
 		traceRecorder: recorder,
+		pluginOp:      pluginOp,
 	}
 }
 
@@ -247,12 +255,6 @@ func TestResolveKeyTasks(t *testing.T) {
 				name:       "KEY_DELETE task",
 				jobType:    eventprocessor.JobTypeKeyDelete.String(),
 				taskType:   eventProto.TaskType_KEY_DELETE.String(),
-				expTargets: allTargets,
-			},
-			{
-				name:       "KEY_ROTATE task",
-				jobType:    eventprocessor.JobTypeKeyRotate.String(),
-				taskType:   eventProto.TaskType_KEY_ROTATE.String(),
 				expTargets: allTargets,
 			},
 		}
@@ -403,19 +405,23 @@ func TestResolveSystemTasks(t *testing.T) {
 
 	keyFrom := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
-		k.Provider = "TEST"
+		k.Provider = testProvider
 		k.NativeID = ptr.PointTo("key-from-native-id")
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value1"}}`)
 	})
 
 	keyTo := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
-		k.Provider = "TEST"
+		k.Provider = testProvider
 		k.NativeID = ptr.PointTo("key-to-native-id")
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value2"}}`)
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyFrom, keyTo)
+
+	// Populate test plugin with keys so GetKey works
+	instance.pluginOp.HandleKeyRecord("key-from-native-id", testplugins.EnabledKeyStatus)
+	instance.pluginOp.HandleKeyRecord("key-to-native-id", testplugins.EnabledKeyStatus)
 
 	t.Run("should return correct task info for", func(t *testing.T) {
 		tests := []struct {
@@ -470,6 +476,22 @@ func TestResolveSystemTasks(t *testing.T) {
 					return b
 				},
 			},
+			{
+				name:     "SYSTEM_KEY_ROTATE task",
+				jobType:  eventprocessor.JobTypeSystemKeyRotate.String(),
+				taskType: eventProto.TaskType_SYSTEM_KEY_ROTATE.String(),
+				data: func() []byte {
+					d := eventprocessor.SystemActionJobData{
+						TenantID:  tenant,
+						SystemID:  system.ID.String(),
+						KeyIDTo:   keyTo.ID.String(),
+						KeyIDFrom: keyTo.ID.String(), // Same key, different versions
+					}
+					b, err := json.Marshal(d)
+					assert.NoError(t, err)
+					return b
+				},
+			},
 		}
 
 		for _, tt := range tests {
@@ -506,6 +528,9 @@ func TestResolveSystemTasks(t *testing.T) {
 					case eventProto.TaskType_SYSTEM_SWITCH.String():
 						assert.Equal(t, keyFrom.ID.String(), sa.GetKeyIdFrom())
 						assert.Equal(t, keyTo.ID.String(), sa.GetKeyIdTo())
+					case eventProto.TaskType_SYSTEM_KEY_ROTATE.String():
+						assert.Equal(t, keyTo.ID.String(), sa.GetKeyIdTo())
+						assert.Equal(t, keyTo.ID.String(), sa.GetKeyIdFrom()) // Same key
 					}
 				}
 			})
@@ -660,6 +685,124 @@ func TestResolveSystemTasks(t *testing.T) {
 	})
 }
 
+func TestVersionInfoPropagation(t *testing.T) {
+	// Test constants
+	const (
+		testRegion       = "test-region"
+		keyWithVersionID = "key-with-version"
+		keyWithoutVerID  = "key-without-version"
+		testRoleArn      = "arn:aws:iam::123:role/test"
+		initialVersionID = "version-abc-123"
+		updatedVersionID = "version-xyz-456"
+	)
+
+	// given
+	instance := setupTestInstance(t, []string{testRegion})
+	reconciler := instance.reconciler
+	r := instance.repo
+	tenant := instance.tenant
+
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	system := testutils.NewSystem(func(s *model.System) {
+		s.Region = testRegion
+	})
+
+	keyWithVersion := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfiguration.ID
+		k.Provider = testProvider
+		k.NativeID = ptr.PointTo(keyWithVersionID)
+		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
+		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
+	})
+
+	keyWithoutVersion := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfiguration.ID
+		k.Provider = testProvider
+		k.NativeID = ptr.PointTo(keyWithoutVerID)
+		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
+		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyWithVersion, keyWithoutVersion)
+
+	// Setup plugin with version info for one key, not the other
+	instance.pluginOp.HandleKeyRecord(keyWithVersionID, testplugins.EnabledKeyStatus)
+	instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, initialVersionID)
+
+	instance.pluginOp.HandleKeyRecord(keyWithoutVerID, testplugins.EnabledKeyStatus)
+	// No version info set for keyWithoutVersion
+
+	// Helper to resolve tasks and extract key access metadata
+	resolveAndExtractKeyAccessData := func(jobType string, keyID string) map[string]any {
+		jobData := eventprocessor.SystemActionJobData{
+			TenantID: tenant,
+			SystemID: system.ID.String(),
+			KeyIDTo:  keyID,
+		}
+		jobDataBytes, err := json.Marshal(jobData)
+		require.NoError(t, err)
+
+		j := orbital.NewJob(jobType, jobDataBytes)
+		handler, err := reconciler.GetHandlerByJobType(jobType)
+		require.NoError(t, err)
+
+		tasks, err := handler.ResolveTasks(ctx, j)
+		require.NoError(t, err)
+		require.Len(t, tasks, 1)
+
+		var act eventProto.Data
+		require.NoError(t, proto.Unmarshal(tasks[0].Data, &act))
+		sa := act.GetSystemAction()
+		require.NotNil(t, sa)
+
+		var keyAccessData map[string]any
+		err = json.Unmarshal(sa.GetKeyAccessMetaData(), &keyAccessData)
+		require.NoError(t, err)
+
+		return keyAccessData
+	}
+
+	t.Run("should include version info in key_access_meta_data when available", func(t *testing.T) {
+		keyAccessData := resolveAndExtractKeyAccessData(
+			eventprocessor.JobTypeSystemLink.String(),
+			keyWithVersion.ID.String(),
+		)
+
+		// Assert version info from GetKey is present
+		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
+		assert.Equal(t, initialVersionID, keyAccessData["latestKeyVersionId"])
+		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
+	})
+
+	t.Run("should handle keys without version info gracefully", func(t *testing.T) {
+		keyAccessData := resolveAndExtractKeyAccessData(
+			eventprocessor.JobTypeSystemLink.String(),
+			keyWithoutVersion.ID.String(),
+		)
+
+		// Should have keyID and roleArn, but no version fields
+		assert.Equal(t, keyWithoutVerID, keyAccessData["keyID"])
+		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
+		assert.NotContains(t, keyAccessData, "latestKeyVersionId")
+	})
+
+	t.Run("should fetch fresh version info on every event creation", func(t *testing.T) {
+		// Update version info in plugin (simulating rotation)
+		instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, updatedVersionID)
+
+		keyAccessData := resolveAndExtractKeyAccessData(
+			eventprocessor.JobTypeSystemSwitch.String(),
+			keyWithVersion.ID.String(),
+		)
+
+		// Assert the FRESH version info is present (not stale)
+		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
+		assert.Equal(t, updatedVersionID, keyAccessData["latestKeyVersionId"])
+	})
+}
+
 func TestConfirmJob(t *testing.T) {
 	instance := setupTestInstance(t, []string{"r1"})
 	reconciler := instance.reconciler
@@ -669,7 +812,6 @@ func TestConfirmJob(t *testing.T) {
 	t.Run("key tasks are confirmed as done", func(t *testing.T) {
 		keyJobTypes := []string{
 			eventprocessor.JobTypeKeyDelete.String(),
-			eventprocessor.JobTypeKeyRotate.String(),
 			eventprocessor.JobTypeKeyDisable.String(),
 			eventprocessor.JobTypeKeyEnable.String(),
 		}
@@ -1291,6 +1433,167 @@ func TestJobTermination(t *testing.T) {
 		assert.Equal(t, j.ID.String(), span.Attributes()[0].Value.AsString())
 		assert.Equal(t, "job.type", string(span.Attributes()[1].Key))
 		assert.Equal(t, jobType, span.Attributes()[1].Value.AsString())
+	})
+}
+
+func TestSystemKeyRotateJobHandler(t *testing.T) {
+	instance := setupTestInstance(t, []string{})
+	r := instance.repo
+	tenant := instance.tenant
+
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	system := testutils.NewSystem(func(_ *model.System) {})
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+	})
+	testutils.CreateTestEntities(ctx, t, r, system, keyConfig, key)
+
+	// Helper to create standard job data and marshal it
+	createJobData := func() []byte {
+		jobData := eventprocessor.SystemActionJobData{
+			TenantID:  tenant,
+			SystemID:  system.ID.String(),
+			KeyIDTo:   key.ID.String(),
+			KeyIDFrom: key.ID.String(),
+		}
+		dataBytes, err := json.Marshal(jobData)
+		assert.NoError(t, err)
+		return dataBytes
+	}
+
+	// Helper to create event and return its ID
+	createEvent := func(dataBytes []byte, previousStatus string) string {
+		eventID := uuid.NewString()
+		event := &model.Event{
+			Identifier:         eventID,
+			Type:               eventprocessor.JobTypeSystemKeyRotate.String(),
+			Data:               dataBytes,
+			PreviousItemStatus: previousStatus,
+		}
+		err := r.Set(ctx, event)
+		assert.NoError(t, err)
+		return eventID
+	}
+
+	// Helper to get handler
+	getHandler := func() eventprocessor.JobHandler {
+		handler, err := instance.reconciler.GetHandlerByJobType(eventprocessor.JobTypeSystemKeyRotate.String())
+		assert.NoError(t, err)
+		return handler
+	}
+
+	t.Run("HandleJobDoneEvent should clean up event", func(t *testing.T) {
+		dataBytes := createJobData()
+		eventID := createEvent(dataBytes, string(cmkapi.SystemStatusCONNECTED))
+
+		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).WithExternalID(eventID)
+
+		err := getHandler().HandleJobDoneEvent(ctx, job)
+		assert.NoError(t, err)
+
+		// Verify event was cleaned up (deleted from database)
+		found, err := r.First(ctx, &model.Event{Identifier: eventID}, *repo.NewQuery())
+		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+			t.Fatalf("unexpected error checking event: %v", err)
+		}
+		assert.False(t, found)
+	})
+
+	t.Run("HandleJobFailedEvent with version mismatch should not set system to FAILED", func(t *testing.T) {
+		dataBytes := createJobData()
+
+		system.Status = cmkapi.SystemStatusCONNECTED
+		_, err := r.Patch(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		eventID := uuid.NewString()
+		event := &model.Event{
+			Identifier: eventID,
+			Type:       eventprocessor.JobTypeSystemKeyRotate.String(),
+			Data:       dataBytes,
+		}
+		err = r.Set(ctx, event)
+		assert.NoError(t, err)
+
+		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
+			WithExternalID(eventID)
+		job.ErrorMessage = "KEY_VERSION_MISMATCH:Version mismatch detected"
+
+		err = getHandler().HandleJobFailedEvent(ctx, job)
+		assert.NoError(t, err)
+
+		// Verify system status is still CONNECTED (not FAILED)
+		_, err = r.First(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusCONNECTED, system.Status)
+
+		// Verify event was cleaned up (version mismatch doesn't need retry)
+		found, err := r.First(ctx, &model.Event{Identifier: eventID}, *repo.NewQuery())
+		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+			t.Fatalf("unexpected error checking event: %v", err)
+		}
+		assert.False(t, found)
+	})
+
+	t.Run("HandleJobFailedEvent with other error should set system to FAILED", func(t *testing.T) {
+		dataBytes := createJobData()
+
+		system.Status = cmkapi.SystemStatusPROCESSING
+		_, err := r.Patch(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		eventID := createEvent(dataBytes, string(cmkapi.SystemStatusCONNECTED))
+
+		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
+			WithExternalID(eventID)
+		job.ErrorMessage = "SOME_OTHER_ERROR:Something went wrong"
+
+		err = getHandler().HandleJobFailedEvent(ctx, job)
+		assert.NoError(t, err)
+
+		// Verify system status is FAILED
+		_, err = r.First(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusFAILED, system.Status)
+
+		// Verify error was stored in event
+		event := &model.Event{Identifier: eventID}
+		found, err := r.First(ctx, event, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "SOME_OTHER_ERROR", event.ErrorCode)
+		assert.Equal(t, "Something went wrong", event.ErrorMessage)
+	})
+
+	t.Run("HandleJobCanceledEvent should not change system status", func(t *testing.T) {
+		dataBytes := createJobData()
+
+		system.Status = cmkapi.SystemStatusPROCESSING
+		_, err := r.Patch(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		eventID := createEvent(dataBytes, string(cmkapi.SystemStatusCONNECTED))
+
+		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
+			WithExternalID(eventID)
+		job.ErrorMessage = "Job canceled by user"
+
+		err = getHandler().HandleJobCanceledEvent(ctx, job)
+		assert.NoError(t, err)
+
+		// Verify system status is unchanged (still PROCESSING)
+		_, err = r.First(ctx, system, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusPROCESSING, system.Status)
+
+		// Verify event was cleaned up (canceled job won't be retried)
+		found, err := r.First(ctx, &model.Event{Identifier: eventID}, *repo.NewQuery())
+		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+			t.Fatalf("unexpected error checking event: %v", err)
+		}
+		assert.False(t, found)
 	})
 }
 
