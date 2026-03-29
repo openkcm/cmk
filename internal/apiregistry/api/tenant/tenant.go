@@ -1,6 +1,21 @@
-package tenant
+package tenantapi
 
-import "time"
+import (
+	"context"
+	"time"
+)
+
+type RegistryTenant interface {
+	RegisterTenant(ctx context.Context, req *RegisterTenantRequest) (*RegisterTenantResponse, error)
+	ListTenants(ctx context.Context, req *ListTenantsRequest) (*ListTenantsResponse, error)
+	GetTenant(ctx context.Context, req *GetTenantRequest) (*GetTenantResponse, error)
+	BlockTenant(ctx context.Context, req *BlockTenantRequest) (*BlockTenantResponse, error)
+	UnblockTenant(ctx context.Context, req *UnblockTenantRequest) (*UnblockTenantResponse, error)
+	TerminateTenant(ctx context.Context, req *TerminateTenantRequest) (*TerminateTenantResponse, error)
+	SetTenantLabels(ctx context.Context, req *SetTenantLabelsRequest) (*SetTenantLabelsResponse, error)
+	RemoveTenantLabels(ctx context.Context, req *RemoveTenantLabelsRequest) (*RemoveTenantLabelsResponse, error)
+	SetTenantUserGroups(ctx context.Context, req *SetTenantUserGroupsRequest) (*SetTenantUserGroupsResponse, error)
+}
 
 type TenantInfo struct {
 	ID              string

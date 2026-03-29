@@ -17,6 +17,8 @@ type V1 struct {
 	client oidcmappinggrpc.ServiceClient
 }
 
+var _ oidcmappingapi.SessionManagerOIDCMapping = (*V1)(nil)
+
 func NewV1(client oidcmappinggrpc.ServiceClient) *V1 {
 	return &V1{
 		client: client,
@@ -24,8 +26,8 @@ func NewV1(client oidcmappinggrpc.ServiceClient) *V1 {
 }
 
 func (v *V1) ApplyOIDCMapping(
-	ctx context.Context, req *oidcmapping.ApplyOIDCMappingRequest,
-) (*oidcmapping.ApplyOIDCMappingResponse, error) {
+	ctx context.Context, req *oidcmappingapi.ApplyOIDCMappingRequest,
+) (*oidcmappingapi.ApplyOIDCMappingResponse, error) {
 	if err := validateApplyOIDCMappingRequest(req); err != nil {
 		return nil, err
 	}
@@ -39,16 +41,13 @@ func (v *V1) ApplyOIDCMapping(
 	if req.JwksURI != nil {
 		protoReq.JwksUri = req.JwksURI
 	}
-	if req.ClientID != nil {
-		protoReq.ClientId = req.ClientID
-	}
 
 	resp, err := v.client.ApplyOIDCMapping(ctx, protoReq)
 	if err != nil {
 		return nil, convertGRPCError(err)
 	}
 
-	result := &oidcmapping.ApplyOIDCMappingResponse{
+	result := &oidcmappingapi.ApplyOIDCMappingResponse{
 		Success: resp.GetSuccess(),
 	}
 	if msg := resp.GetMessage(); msg != "" {
@@ -59,8 +58,8 @@ func (v *V1) ApplyOIDCMapping(
 }
 
 func (v *V1) RemoveOIDCMapping(
-	ctx context.Context, req *oidcmapping.RemoveOIDCMappingRequest,
-) (*oidcmapping.RemoveOIDCMappingResponse, error) {
+	ctx context.Context, req *oidcmappingapi.RemoveOIDCMappingRequest,
+) (*oidcmappingapi.RemoveOIDCMappingResponse, error) {
 	if err := validateRemoveOIDCMappingRequest(req); err != nil {
 		return nil, err
 	}
@@ -74,7 +73,7 @@ func (v *V1) RemoveOIDCMapping(
 		return nil, convertGRPCError(err)
 	}
 
-	result := &oidcmapping.RemoveOIDCMappingResponse{
+	result := &oidcmappingapi.RemoveOIDCMappingResponse{
 		Success: resp.GetSuccess(),
 	}
 	if msg := resp.GetMessage(); msg != "" {
@@ -85,8 +84,8 @@ func (v *V1) RemoveOIDCMapping(
 }
 
 func (v *V1) BlockOIDCMapping(
-	ctx context.Context, req *oidcmapping.BlockOIDCMappingRequest,
-) (*oidcmapping.BlockOIDCMappingResponse, error) {
+	ctx context.Context, req *oidcmappingapi.BlockOIDCMappingRequest,
+) (*oidcmappingapi.BlockOIDCMappingResponse, error) {
 	if err := validateBlockOIDCMappingRequest(req); err != nil {
 		return nil, err
 	}
@@ -100,7 +99,7 @@ func (v *V1) BlockOIDCMapping(
 		return nil, convertGRPCError(err)
 	}
 
-	result := &oidcmapping.BlockOIDCMappingResponse{
+	result := &oidcmappingapi.BlockOIDCMappingResponse{
 		Success: resp.GetSuccess(),
 	}
 	if msg := resp.GetMessage(); msg != "" {
@@ -111,8 +110,8 @@ func (v *V1) BlockOIDCMapping(
 }
 
 func (v *V1) UnblockOIDCMapping(
-	ctx context.Context, req *oidcmapping.UnblockOIDCMappingRequest,
-) (*oidcmapping.UnblockOIDCMappingResponse, error) {
+	ctx context.Context, req *oidcmappingapi.UnblockOIDCMappingRequest,
+) (*oidcmappingapi.UnblockOIDCMappingResponse, error) {
 	if err := validateUnblockOIDCMappingRequest(req); err != nil {
 		return nil, err
 	}
@@ -126,7 +125,7 @@ func (v *V1) UnblockOIDCMapping(
 		return nil, convertGRPCError(err)
 	}
 
-	result := &oidcmapping.UnblockOIDCMappingResponse{
+	result := &oidcmappingapi.UnblockOIDCMappingResponse{
 		Success: resp.GetSuccess(),
 	}
 	if msg := resp.GetMessage(); msg != "" {
@@ -157,7 +156,7 @@ func validateRequestWithTenantID(req any, tenantID string) error {
 	return validateTenantID(tenantID)
 }
 
-func validateApplyOIDCMappingRequest(req *oidcmapping.ApplyOIDCMappingRequest) error {
+func validateApplyOIDCMappingRequest(req *oidcmappingapi.ApplyOIDCMappingRequest) error {
 	if err := validateRequestWithTenantID(req, req.TenantID); err != nil {
 		return err
 	}
@@ -167,15 +166,15 @@ func validateApplyOIDCMappingRequest(req *oidcmapping.ApplyOIDCMappingRequest) e
 	return nil
 }
 
-func validateRemoveOIDCMappingRequest(req *oidcmapping.RemoveOIDCMappingRequest) error {
+func validateRemoveOIDCMappingRequest(req *oidcmappingapi.RemoveOIDCMappingRequest) error {
 	return validateRequestWithTenantID(req, req.TenantID)
 }
 
-func validateBlockOIDCMappingRequest(req *oidcmapping.BlockOIDCMappingRequest) error {
+func validateBlockOIDCMappingRequest(req *oidcmappingapi.BlockOIDCMappingRequest) error {
 	return validateRequestWithTenantID(req, req.TenantID)
 }
 
-func validateUnblockOIDCMappingRequest(req *oidcmapping.UnblockOIDCMappingRequest) error {
+func validateUnblockOIDCMappingRequest(req *oidcmappingapi.UnblockOIDCMappingRequest) error {
 	return validateRequestWithTenantID(req, req.TenantID)
 }
 

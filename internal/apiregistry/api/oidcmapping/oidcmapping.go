@@ -1,4 +1,14 @@
-package oidcmapping
+package oidcmappingapi
+
+import "context"
+
+type SessionManagerOIDCMapping interface {
+	ApplyOIDCMapping(ctx context.Context, req *ApplyOIDCMappingRequest) (*ApplyOIDCMappingResponse, error)
+	RemoveOIDCMapping(ctx context.Context, req *RemoveOIDCMappingRequest) (*RemoveOIDCMappingResponse, error)
+	BlockOIDCMapping(ctx context.Context, req *BlockOIDCMappingRequest) (*BlockOIDCMappingResponse, error)
+	UnblockOIDCMapping(ctx context.Context, req *UnblockOIDCMappingRequest) (*UnblockOIDCMappingResponse, error)
+}
+
 
 type ApplyOIDCMappingRequest struct {
 	TenantID   string
@@ -6,7 +16,6 @@ type ApplyOIDCMappingRequest struct {
 	JwksURI    *string
 	Audiences  []string
 	Properties map[string]string
-	ClientID   *string
 }
 
 type ApplyOIDCMappingResponse struct {

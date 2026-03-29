@@ -18,6 +18,8 @@ type V1 struct {
 	client tenantgrpc.ServiceClient
 }
 
+var _ tenantapi.RegistryTenant = (*V1)(nil)
+
 func NewV1(client tenantgrpc.ServiceClient) *V1 {
 	return &V1{
 		client: client,
@@ -25,8 +27,8 @@ func NewV1(client tenantgrpc.ServiceClient) *V1 {
 }
 
 func (v *V1) RegisterTenant(
-	ctx context.Context, req *tenant.RegisterTenantRequest,
-) (*tenant.RegisterTenantResponse, error) {
+	ctx context.Context, req *tenantapi.RegisterTenantRequest,
+) (*tenantapi.RegisterTenantResponse, error) {
 	if err := validateRegisterTenantRequest(req); err != nil {
 		return nil, err
 	}
@@ -46,12 +48,12 @@ func (v *V1) RegisterTenant(
 		return nil, convertGRPCError(err)
 	}
 
-	return &tenant.RegisterTenantResponse{
+	return &tenantapi.RegisterTenantResponse{
 		ID: resp.GetId(),
 	}, nil
 }
 
-func (v *V1) ListTenants(ctx context.Context, req *tenant.ListTenantsRequest) (*tenant.ListTenantsResponse, error) {
+func (v *V1) ListTenants(ctx context.Context, req *tenantapi.ListTenantsRequest) (*tenantapi.ListTenantsResponse, error) {
 	if err := validateListTenantsRequest(req); err != nil {
 		return nil, err
 	}
@@ -72,18 +74,18 @@ func (v *V1) ListTenants(ctx context.Context, req *tenant.ListTenantsRequest) (*
 		return nil, convertGRPCError(err)
 	}
 
-	tenants := make([]*tenant.TenantInfo, len(resp.GetTenants()))
+	tenants := make([]*tenantapi.TenantInfo, len(resp.GetTenants()))
 	for i, t := range resp.GetTenants() {
 		tenants[i] = mapProtoToTenantInfo(t)
 	}
 
-	return &tenant.ListTenantsResponse{
+	return &tenantapi.ListTenantsResponse{
 		Tenants:       tenants,
 		NextPageToken: resp.GetNextPageToken(),
 	}, nil
 }
 
-func (v *V1) GetTenant(ctx context.Context, req *tenant.GetTenantRequest) (*tenant.GetTenantResponse, error) {
+func (v *V1) GetTenant(ctx context.Context, req *tenantapi.GetTenantRequest) (*tenantapi.GetTenantResponse, error) {
 	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
@@ -97,12 +99,12 @@ func (v *V1) GetTenant(ctx context.Context, req *tenant.GetTenantRequest) (*tena
 		return nil, convertGRPCError(err)
 	}
 
-	return &tenant.GetTenantResponse{
+	return &tenantapi.GetTenantResponse{
 		Tenant: mapProtoToTenantInfo(resp.GetTenant()),
 	}, nil
 }
 
-func (v *V1) BlockTenant(ctx context.Context, req *tenant.BlockTenantRequest) (*tenant.BlockTenantResponse, error) {
+func (v *V1) BlockTenant(ctx context.Context, req *tenantapi.BlockTenantRequest) (*tenantapi.BlockTenantResponse, error) {
 	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
@@ -116,14 +118,14 @@ func (v *V1) BlockTenant(ctx context.Context, req *tenant.BlockTenantRequest) (*
 		return nil, convertGRPCError(err)
 	}
 
-	return &tenant.BlockTenantResponse{
+	return &tenantapi.BlockTenantResponse{
 		Success: resp.GetSuccess(),
 	}, nil
 }
 
 func (v *V1) UnblockTenant(
-	ctx context.Context, req *tenant.UnblockTenantRequest,
-) (*tenant.UnblockTenantResponse, error) {
+	ctx context.Context, req *tenantapi.UnblockTenantRequest,
+) (*tenantapi.UnblockTenantResponse, error) {
 	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
@@ -137,14 +139,14 @@ func (v *V1) UnblockTenant(
 		return nil, convertGRPCError(err)
 	}
 
-	return &tenant.UnblockTenantResponse{
+	return &tenantapi.UnblockTenantResponse{
 		Success: resp.GetSuccess(),
 	}, nil
 }
 
 func (v *V1) TerminateTenant(
-	ctx context.Context, req *tenant.TerminateTenantRequest,
-) (*tenant.TerminateTenantResponse, error) {
+	ctx context.Context, req *tenantapi.TerminateTenantRequest,
+) (*tenantapi.TerminateTenantResponse, error) {
 	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
@@ -158,14 +160,14 @@ func (v *V1) TerminateTenant(
 		return nil, convertGRPCError(err)
 	}
 
-	return &tenant.TerminateTenantResponse{
+	return &tenantapi.TerminateTenantResponse{
 		Success: resp.GetSuccess(),
 	}, nil
 }
 
 func (v *V1) SetTenantLabels(
-	ctx context.Context, req *tenant.SetTenantLabelsRequest,
-) (*tenant.SetTenantLabelsResponse, error) {
+	ctx context.Context, req *tenantapi.SetTenantLabelsRequest,
+) (*tenantapi.SetTenantLabelsResponse, error) {
 	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
@@ -183,14 +185,14 @@ func (v *V1) SetTenantLabels(
 		return nil, convertGRPCError(err)
 	}
 
-	return &tenant.SetTenantLabelsResponse{
+	return &tenantapi.SetTenantLabelsResponse{
 		Success: resp.GetSuccess(),
 	}, nil
 }
 
 func (v *V1) RemoveTenantLabels(
-	ctx context.Context, req *tenant.RemoveTenantLabelsRequest,
-) (*tenant.RemoveTenantLabelsResponse, error) {
+	ctx context.Context, req *tenantapi.RemoveTenantLabelsRequest,
+) (*tenantapi.RemoveTenantLabelsResponse, error) {
 	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
@@ -208,14 +210,14 @@ func (v *V1) RemoveTenantLabels(
 		return nil, convertGRPCError(err)
 	}
 
-	return &tenant.RemoveTenantLabelsResponse{
+	return &tenantapi.RemoveTenantLabelsResponse{
 		Success: resp.GetSuccess(),
 	}, nil
 }
 
 func (v *V1) SetTenantUserGroups(
-	ctx context.Context, req *tenant.SetTenantUserGroupsRequest,
-) (*tenant.SetTenantUserGroupsResponse, error) {
+	ctx context.Context, req *tenantapi.SetTenantUserGroupsRequest,
+) (*tenantapi.SetTenantUserGroupsResponse, error) {
 	if err := validateSetTenantUserGroupsRequest(req); err != nil {
 		return nil, err
 	}
@@ -230,7 +232,7 @@ func (v *V1) SetTenantUserGroups(
 		return nil, convertGRPCError(err)
 	}
 
-	return &tenant.SetTenantUserGroupsResponse{
+	return &tenantapi.SetTenantUserGroupsResponse{
 		Success: resp.GetSuccess(),
 	}, nil
 }
@@ -256,7 +258,7 @@ func validateRequestWithTenantID(req any, id string) error {
 	return validateTenantID(id)
 }
 
-func validateRegisterTenantRequest(req *tenant.RegisterTenantRequest) error {
+func validateRegisterTenantRequest(req *tenantapi.RegisterTenantRequest) error {
 	if err := validateRequest(req); err != nil {
 		return err
 	}
@@ -272,7 +274,7 @@ func validateRegisterTenantRequest(req *tenant.RegisterTenantRequest) error {
 	return nil
 }
 
-func validateListTenantsRequest(req *tenant.ListTenantsRequest) error {
+func validateListTenantsRequest(req *tenantapi.ListTenantsRequest) error {
 	if err := validateRequest(req); err != nil {
 		return err
 	}
@@ -282,7 +284,7 @@ func validateListTenantsRequest(req *tenant.ListTenantsRequest) error {
 	return nil
 }
 
-func validateSetTenantUserGroupsRequest(req *tenant.SetTenantUserGroupsRequest) error {
+func validateSetTenantUserGroupsRequest(req *tenantapi.SetTenantUserGroupsRequest) error {
 	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return err
 	}
@@ -292,12 +294,12 @@ func validateSetTenantUserGroupsRequest(req *tenant.SetTenantUserGroupsRequest) 
 	return nil
 }
 
-func mapProtoToTenantInfo(protoTenant *tenantgrpc.Tenant) *tenant.TenantInfo {
+func mapProtoToTenantInfo(protoTenant *tenantgrpc.Tenant) *tenantapi.TenantInfo {
 	if protoTenant == nil {
 		return nil
 	}
 
-	return &tenant.TenantInfo{
+	return &tenantapi.TenantInfo{
 		ID:              protoTenant.GetId(),
 		Name:            protoTenant.GetName(),
 		Region:          protoTenant.GetRegion(),
@@ -314,57 +316,57 @@ func mapProtoToTenantInfo(protoTenant *tenantgrpc.Tenant) *tenant.TenantInfo {
 }
 
 //nolint:cyclop // status mapping requires multiple case statements
-func mapProtoToTenantStatus(protoStatus tenantgrpc.Status) tenant.TenantStatus {
+func mapProtoToTenantStatus(protoStatus tenantgrpc.Status) tenantapi.TenantStatus {
 	switch protoStatus {
 	case tenantgrpc.Status_STATUS_REQUESTED:
-		return tenant.TenantStatusRequested
+		return tenantapi.TenantStatusRequested
 	case tenantgrpc.Status_STATUS_PROVISIONING:
-		return tenant.TenantStatusProvisioning
+		return tenantapi.TenantStatusProvisioning
 	case tenantgrpc.Status_STATUS_PROVISIONING_ERROR:
-		return tenant.TenantStatusProvisioningError
+		return tenantapi.TenantStatusProvisioningError
 	case tenantgrpc.Status_STATUS_ACTIVE:
-		return tenant.TenantStatusActive
+		return tenantapi.TenantStatusActive
 	case tenantgrpc.Status_STATUS_BLOCKING:
-		return tenant.TenantStatusBlocking
+		return tenantapi.TenantStatusBlocking
 	case tenantgrpc.Status_STATUS_BLOCKING_ERROR:
-		return tenant.TenantStatusBlockingError
+		return tenantapi.TenantStatusBlockingError
 	case tenantgrpc.Status_STATUS_BLOCKED:
-		return tenant.TenantStatusBlocked
+		return tenantapi.TenantStatusBlocked
 	case tenantgrpc.Status_STATUS_UNBLOCKING:
-		return tenant.TenantStatusUnblocking
+		return tenantapi.TenantStatusUnblocking
 	case tenantgrpc.Status_STATUS_UNBLOCKING_ERROR:
-		return tenant.TenantStatusUnblockingError
+		return tenantapi.TenantStatusUnblockingError
 	case tenantgrpc.Status_STATUS_TERMINATING:
-		return tenant.TenantStatusTerminating
+		return tenantapi.TenantStatusTerminating
 	case tenantgrpc.Status_STATUS_TERMINATION_ERROR:
-		return tenant.TenantStatusTerminationError
+		return tenantapi.TenantStatusTerminationError
 	case tenantgrpc.Status_STATUS_TERMINATED:
-		return tenant.TenantStatusTerminated
+		return tenantapi.TenantStatusTerminated
 	default:
-		return tenant.TenantStatusUnspecified
+		return tenantapi.TenantStatusUnspecified
 	}
 }
 
-func mapProtoToTenantRole(protoRole tenantgrpc.Role) tenant.TenantRole {
+func mapProtoToTenantRole(protoRole tenantgrpc.Role) tenantapi.TenantRole {
 	switch protoRole {
 	case tenantgrpc.Role_ROLE_LIVE:
-		return tenant.TenantRoleLive
+		return tenantapi.TenantRoleLive
 	case tenantgrpc.Role_ROLE_TEST:
-		return tenant.TenantRoleTest
+		return tenantapi.TenantRoleTest
 	case tenantgrpc.Role_ROLE_TRIAL:
-		return tenant.TenantRoleTrial
+		return tenantapi.TenantRoleTrial
 	default:
-		return tenant.TenantRoleUnspecified
+		return tenantapi.TenantRoleUnspecified
 	}
 }
 
-func mapTenantRoleToProto(role tenant.TenantRole) tenantgrpc.Role {
+func mapTenantRoleToProto(role tenantapi.TenantRole) tenantgrpc.Role {
 	switch role {
-	case tenant.TenantRoleLive:
+	case tenantapi.TenantRoleLive:
 		return tenantgrpc.Role_ROLE_LIVE
-	case tenant.TenantRoleTest:
+	case tenantapi.TenantRoleTest:
 		return tenantgrpc.Role_ROLE_TEST
-	case tenant.TenantRoleTrial:
+	case tenantapi.TenantRoleTrial:
 		return tenantgrpc.Role_ROLE_TRIAL
 	default:
 		return tenantgrpc.Role_ROLE_UNSPECIFIED

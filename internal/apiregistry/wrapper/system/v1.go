@@ -18,7 +18,7 @@ type V1 struct {
 	client systemgrpc.ServiceClient
 }
 
-// var _ system.System = (*V1)(nil)
+var _ systemapi.RegistrySystem = (*V1)(nil)
 
 func NewV1(client systemgrpc.ServiceClient) *V1 {
 	return &V1{
@@ -26,7 +26,7 @@ func NewV1(client systemgrpc.ServiceClient) *V1 {
 	}
 }
 
-func (v1 *V1) ListSystems(ctx context.Context, req *system.ListSystemsRequest) (*system.ListSystemsResponse, error) {
+func (v1 *V1) ListSystems(ctx context.Context, req *systemapi.ListSystemsRequest) (*systemapi.ListSystemsResponse, error) {
 	if err := validateListSystemsRequest(req); err != nil {
 		return nil, err
 	}
@@ -44,20 +44,20 @@ func (v1 *V1) ListSystems(ctx context.Context, req *system.ListSystemsRequest) (
 		return nil, convertGRPCError(err)
 	}
 
-	systems := make([]*system.SystemInfo, len(protoResp.GetSystems()))
+	systems := make([]*systemapi.SystemInfo, len(protoResp.GetSystems()))
 	for i, protoSys := range protoResp.GetSystems() {
 		systems[i] = mapProtoToSystemInfo(protoSys)
 	}
 
-	return &system.ListSystemsResponse{
+	return &systemapi.ListSystemsResponse{
 		Systems:       systems,
 		NextPageToken: protoResp.GetNextPageToken(),
 	}, nil
 }
 
 func (v1 *V1) RegisterSystem(
-	ctx context.Context, req *system.RegisterSystemRequest,
-) (*system.RegisterSystemResponse, error) {
+	ctx context.Context, req *systemapi.RegisterSystemRequest,
+) (*systemapi.RegisterSystemResponse, error) {
 	if err := validateRegisterSystemRequest(req); err != nil {
 		return nil, err
 	}
@@ -76,12 +76,12 @@ func (v1 *V1) RegisterSystem(
 		return nil, convertGRPCError(err)
 	}
 
-	return &system.RegisterSystemResponse{}, nil
+	return &systemapi.RegisterSystemResponse{}, nil
 }
 
 func (v1 *V1) UpdateSystemL1KeyClaim(
-	ctx context.Context, req *system.UpdateSystemL1KeyClaimRequest,
-) (*system.UpdateSystemL1KeyClaimResponse, error) {
+	ctx context.Context, req *systemapi.UpdateSystemL1KeyClaimRequest,
+) (*systemapi.UpdateSystemL1KeyClaimResponse, error) {
 	if err := validateUpdateSystemL1KeyClaimRequest(req); err != nil {
 		return nil, err
 	}
@@ -98,12 +98,12 @@ func (v1 *V1) UpdateSystemL1KeyClaim(
 		return nil, convertGRPCError(err)
 	}
 
-	return &system.UpdateSystemL1KeyClaimResponse{
+	return &systemapi.UpdateSystemL1KeyClaimResponse{
 		Success: protoResp.GetSuccess(),
 	}, nil
 }
 
-func (v1 *V1) DeleteSystem(ctx context.Context, req *system.DeleteSystemRequest) (*system.DeleteSystemResponse, error) {
+func (v1 *V1) DeleteSystem(ctx context.Context, req *systemapi.DeleteSystemRequest) (*systemapi.DeleteSystemResponse, error) {
 	if err := validateDeleteSystemRequest(req); err != nil {
 		return nil, err
 	}
@@ -118,14 +118,14 @@ func (v1 *V1) DeleteSystem(ctx context.Context, req *system.DeleteSystemRequest)
 		return nil, convertGRPCError(err)
 	}
 
-	return &system.DeleteSystemResponse{
+	return &systemapi.DeleteSystemResponse{
 		Success: protoResp.GetSuccess(),
 	}, nil
 }
 
 func (v1 *V1) UpdateSystemStatus(
-	ctx context.Context, req *system.UpdateSystemStatusRequest,
-) (*system.UpdateSystemStatusResponse, error) {
+	ctx context.Context, req *systemapi.UpdateSystemStatusRequest,
+) (*systemapi.UpdateSystemStatusResponse, error) {
 	if err := validateUpdateSystemStatusRequest(req); err != nil {
 		return nil, err
 	}
@@ -142,14 +142,14 @@ func (v1 *V1) UpdateSystemStatus(
 		return nil, convertGRPCError(err)
 	}
 
-	return &system.UpdateSystemStatusResponse{
+	return &systemapi.UpdateSystemStatusResponse{
 		Success: protoResp.GetSuccess(),
 	}, nil
 }
 
 func (v1 *V1) SetSystemLabels(
-	ctx context.Context, req *system.SetSystemLabelsRequest,
-) (*system.SetSystemLabelsResponse, error) {
+	ctx context.Context, req *systemapi.SetSystemLabelsRequest,
+) (*systemapi.SetSystemLabelsResponse, error) {
 	if err := validateSetSystemLabelsRequest(req); err != nil {
 		return nil, err
 	}
@@ -166,14 +166,14 @@ func (v1 *V1) SetSystemLabels(
 		return nil, convertGRPCError(err)
 	}
 
-	return &system.SetSystemLabelsResponse{
+	return &systemapi.SetSystemLabelsResponse{
 		Success: protoResp.GetSuccess(),
 	}, nil
 }
 
 func (v1 *V1) RemoveSystemLabels(
-	ctx context.Context, req *system.RemoveSystemLabelsRequest,
-) (*system.RemoveSystemLabelsResponse, error) {
+	ctx context.Context, req *systemapi.RemoveSystemLabelsRequest,
+) (*systemapi.RemoveSystemLabelsResponse, error) {
 	if err := validateRemoveSystemLabelsRequest(req); err != nil {
 		return nil, err
 	}
@@ -190,17 +190,17 @@ func (v1 *V1) RemoveSystemLabels(
 		return nil, convertGRPCError(err)
 	}
 
-	return &system.RemoveSystemLabelsResponse{
+	return &systemapi.RemoveSystemLabelsResponse{
 		Success: protoResp.GetSuccess(),
 	}, nil
 }
 
-func mapProtoToSystemInfo(proto *systemgrpc.System) *system.SystemInfo {
+func mapProtoToSystemInfo(proto *systemgrpc.System) *systemapi.SystemInfo {
 	if proto == nil {
 		return nil
 	}
 
-	return &system.SystemInfo{
+	return &systemapi.SystemInfo{
 		Region:        proto.GetRegion(),
 		ExternalID:    proto.GetExternalId(),
 		Type:          mapProtoToSystemType(proto.GetType()),
@@ -210,22 +210,22 @@ func mapProtoToSystemInfo(proto *systemgrpc.System) *system.SystemInfo {
 	}
 }
 
-func mapProtoToSystemType(protoType string) system.SystemType {
+func mapProtoToSystemType(protoType string) systemapi.SystemType {
 	switch strings.ToUpper(protoType) {
 	case "KEYSTORE":
-		return system.SystemTypeKeystore
+		return systemapi.SystemTypeKeystore
 	case "APPLICATION":
-		return system.SystemTypeApplication
+		return systemapi.SystemTypeApplication
 	default:
-		return system.SystemTypeUnspecified
+		return systemapi.SystemTypeUnspecified
 	}
 }
 
-func mapSystemTypeToProto(sysType system.SystemType) string {
+func mapSystemTypeToProto(sysType systemapi.SystemType) string {
 	switch sysType {
-	case system.SystemTypeKeystore:
+	case systemapi.SystemTypeKeystore:
 		return "KEYSTORE"
-	case system.SystemTypeApplication:
+	case systemapi.SystemTypeApplication:
 		return "APPLICATION"
 	default:
 		return "UNSPECIFIED"
@@ -308,8 +308,8 @@ func validateTenantID(tenantID string) error {
 	return nil
 }
 
-func validateSystemType(t system.SystemType) error {
-	if t == "" || t == system.SystemTypeUnspecified {
+func validateSystemType(t systemapi.SystemType) error {
+	if t == "" || t == systemapi.SystemTypeUnspecified {
 		return apierrors.NewValidationError("Type", "type must be specified")
 	}
 	return nil
@@ -323,7 +323,7 @@ func validateSystemIdentifiers(region, externalID string) error {
 	return validateExternalID(externalID)
 }
 
-func validateListSystemsRequest(req *system.ListSystemsRequest) error {
+func validateListSystemsRequest(req *systemapi.ListSystemsRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
@@ -333,7 +333,7 @@ func validateListSystemsRequest(req *system.ListSystemsRequest) error {
 	return nil
 }
 
-func validateRegisterSystemRequest(req *system.RegisterSystemRequest) error {
+func validateRegisterSystemRequest(req *systemapi.RegisterSystemRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
@@ -346,7 +346,7 @@ func validateRegisterSystemRequest(req *system.RegisterSystemRequest) error {
 	return validateSystemType(req.Type)
 }
 
-func validateUpdateSystemL1KeyClaimRequest(req *system.UpdateSystemL1KeyClaimRequest) error {
+func validateUpdateSystemL1KeyClaimRequest(req *systemapi.UpdateSystemL1KeyClaimRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
@@ -356,14 +356,14 @@ func validateUpdateSystemL1KeyClaimRequest(req *system.UpdateSystemL1KeyClaimReq
 	return validateTenantID(req.TenantID)
 }
 
-func validateDeleteSystemRequest(req *system.DeleteSystemRequest) error {
+func validateDeleteSystemRequest(req *systemapi.DeleteSystemRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
 	return validateSystemIdentifiers(req.Region, req.ExternalID)
 }
 
-func validateUpdateSystemStatusRequest(req *system.UpdateSystemStatusRequest) error {
+func validateUpdateSystemStatusRequest(req *systemapi.UpdateSystemStatusRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
@@ -373,7 +373,7 @@ func validateUpdateSystemStatusRequest(req *system.UpdateSystemStatusRequest) er
 	return validateSystemType(req.Type)
 }
 
-func validateSetSystemLabelsRequest(req *system.SetSystemLabelsRequest) error {
+func validateSetSystemLabelsRequest(req *systemapi.SetSystemLabelsRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
@@ -389,7 +389,7 @@ func validateSetSystemLabelsRequest(req *system.SetSystemLabelsRequest) error {
 	return nil
 }
 
-func validateRemoveSystemLabelsRequest(req *system.RemoveSystemLabelsRequest) error {
+func validateRemoveSystemLabelsRequest(req *systemapi.RemoveSystemLabelsRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}

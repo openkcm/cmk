@@ -24,8 +24,8 @@ func NewV1(client authgrpc.ServiceClient) *V1 {
 }
 
 func (v1 *V1) ApplyAuth(
-	ctx context.Context, req *auth.ApplyAuthRequest,
-) (*auth.ApplyAuthResponse, error) {
+	ctx context.Context, req *authapi.ApplyAuthRequest,
+) (*authapi.ApplyAuthResponse, error) {
 	if err := validateApplyAuthRequest(req); err != nil {
 		return nil, err
 	}
@@ -42,14 +42,14 @@ func (v1 *V1) ApplyAuth(
 		return nil, convertGRPCError(err)
 	}
 
-	return &auth.ApplyAuthResponse{
+	return &authapi.ApplyAuthResponse{
 		Success: protoResp.GetSuccess(),
 	}, nil
 }
 
 func (v1 *V1) GetAuth(
-	ctx context.Context, req *auth.GetAuthRequest,
-) (*auth.GetAuthResponse, error) {
+	ctx context.Context, req *authapi.GetAuthRequest,
+) (*authapi.GetAuthResponse, error) {
 	if err := validateGetAuthRequest(req); err != nil {
 		return nil, err
 	}
@@ -63,14 +63,14 @@ func (v1 *V1) GetAuth(
 		return nil, convertGRPCError(err)
 	}
 
-	return &auth.GetAuthResponse{
+	return &authapi.GetAuthResponse{
 		Auth: mapProtoToAuthInfo(protoResp.GetAuth()),
 	}, nil
 }
 
 func (v1 *V1) ListAuths(
-	ctx context.Context, req *auth.ListAuthsRequest,
-) (*auth.ListAuthsResponse, error) {
+	ctx context.Context, req *authapi.ListAuthsRequest,
+) (*authapi.ListAuthsResponse, error) {
 	if err := validateListAuthsRequest(req); err != nil {
 		return nil, err
 	}
@@ -86,20 +86,20 @@ func (v1 *V1) ListAuths(
 		return nil, convertGRPCError(err)
 	}
 
-	auths := make([]*auth.AuthInfo, len(protoResp.GetAuth()))
+	auths := make([]*authapi.AuthInfo, len(protoResp.GetAuth()))
 	for i, protoAuth := range protoResp.GetAuth() {
 		auths[i] = mapProtoToAuthInfo(protoAuth)
 	}
 
-	return &auth.ListAuthsResponse{
+	return &authapi.ListAuthsResponse{
 		Auths:         auths,
 		NextPageToken: protoResp.GetNextPageToken(),
 	}, nil
 }
 
 func (v1 *V1) RemoveAuth(
-	ctx context.Context, req *auth.RemoveAuthRequest,
-) (*auth.RemoveAuthResponse, error) {
+	ctx context.Context, req *authapi.RemoveAuthRequest,
+) (*authapi.RemoveAuthResponse, error) {
 	if err := validateRemoveAuthRequest(req); err != nil {
 		return nil, err
 	}
@@ -113,17 +113,17 @@ func (v1 *V1) RemoveAuth(
 		return nil, convertGRPCError(err)
 	}
 
-	return &auth.RemoveAuthResponse{
+	return &authapi.RemoveAuthResponse{
 		Success: protoResp.GetSuccess(),
 	}, nil
 }
 
-func mapProtoToAuthInfo(proto *authgrpc.Auth) *auth.AuthInfo {
+func mapProtoToAuthInfo(proto *authgrpc.Auth) *authapi.AuthInfo {
 	if proto == nil {
 		return nil
 	}
 
-	return &auth.AuthInfo{
+	return &authapi.AuthInfo{
 		ExternalID:   proto.GetExternalId(),
 		TenantID:     proto.GetTenantId(),
 		Type:         proto.GetType(),
@@ -136,32 +136,32 @@ func mapProtoToAuthInfo(proto *authgrpc.Auth) *auth.AuthInfo {
 }
 
 //nolint:cyclop // status mapping requires multiple case statements
-func mapProtoToAuthStatus(protoStatus authgrpc.AuthStatus) auth.AuthStatus {
+func mapProtoToAuthStatus(protoStatus authgrpc.AuthStatus) authapi.AuthStatus {
 	switch protoStatus {
 	case authgrpc.AuthStatus_AUTH_STATUS_APPLYING:
-		return auth.AuthStatusApplying
+		return authapi.AuthStatusApplying
 	case authgrpc.AuthStatus_AUTH_STATUS_APPLYING_ERROR:
-		return auth.AuthStatusApplyingError
+		return authapi.AuthStatusApplyingError
 	case authgrpc.AuthStatus_AUTH_STATUS_APPLIED:
-		return auth.AuthStatusApplied
+		return authapi.AuthStatusApplied
 	case authgrpc.AuthStatus_AUTH_STATUS_REMOVING:
-		return auth.AuthStatusRemoving
+		return authapi.AuthStatusRemoving
 	case authgrpc.AuthStatus_AUTH_STATUS_REMOVING_ERROR:
-		return auth.AuthStatusRemovingError
+		return authapi.AuthStatusRemovingError
 	case authgrpc.AuthStatus_AUTH_STATUS_REMOVED:
-		return auth.AuthStatusRemoved
+		return authapi.AuthStatusRemoved
 	case authgrpc.AuthStatus_AUTH_STATUS_BLOCKING:
-		return auth.AuthStatusBlocking
+		return authapi.AuthStatusBlocking
 	case authgrpc.AuthStatus_AUTH_STATUS_BLOCKING_ERROR:
-		return auth.AuthStatusBlockingError
+		return authapi.AuthStatusBlockingError
 	case authgrpc.AuthStatus_AUTH_STATUS_BLOCKED:
-		return auth.AuthStatusBlocked
+		return authapi.AuthStatusBlocked
 	case authgrpc.AuthStatus_AUTH_STATUS_UNBLOCKING:
-		return auth.AuthStatusUnblocking
+		return authapi.AuthStatusUnblocking
 	case authgrpc.AuthStatus_AUTH_STATUS_UNBLOCKING_ERROR:
-		return auth.AuthStatusUnblockingError
+		return authapi.AuthStatusUnblockingError
 	default:
-		return auth.AuthStatusUnspecified
+		return authapi.AuthStatusUnspecified
 	}
 }
 
@@ -217,7 +217,7 @@ func validateType(t string) error {
 	return nil
 }
 
-func validateApplyAuthRequest(req *auth.ApplyAuthRequest) error {
+func validateApplyAuthRequest(req *authapi.ApplyAuthRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
@@ -236,14 +236,14 @@ func validateApplyAuthRequest(req *auth.ApplyAuthRequest) error {
 	return nil
 }
 
-func validateGetAuthRequest(req *auth.GetAuthRequest) error {
+func validateGetAuthRequest(req *authapi.GetAuthRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
 	return validateExternalID(req.ExternalID)
 }
 
-func validateListAuthsRequest(req *auth.ListAuthsRequest) error {
+func validateListAuthsRequest(req *authapi.ListAuthsRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}
@@ -253,7 +253,7 @@ func validateListAuthsRequest(req *auth.ListAuthsRequest) error {
 	return nil
 }
 
-func validateRemoveAuthRequest(req *auth.RemoveAuthRequest) error {
+func validateRemoveAuthRequest(req *authapi.RemoveAuthRequest) error {
 	if req == nil {
 		return apierrors.NewValidationError("request", "request cannot be nil")
 	}

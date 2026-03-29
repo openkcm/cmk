@@ -1,4 +1,16 @@
-package mapping
+package mappingapi
+
+import "context"
+
+type RegistryMapping interface {
+	MapSystemToTenant(
+		ctx context.Context, req *MapSystemToTenantRequest,
+	) (*MapSystemToTenantResponse, error)
+	UnmapSystemFromTenant(
+		ctx context.Context, req *UnmapSystemFromTenantRequest,
+	) (*UnmapSystemFromTenantResponse, error)
+	Get(ctx context.Context, req *GetRequest) (*GetResponse, error)
+}
 
 type MapSystemToTenantRequest struct {
 	ExternalID string

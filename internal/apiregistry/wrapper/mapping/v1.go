@@ -17,6 +17,8 @@ type V1 struct {
 	client mappinggrpc.ServiceClient
 }
 
+var _ mappingapi.RegistryMapping = (*V1)(nil)
+
 func NewV1(client mappinggrpc.ServiceClient) *V1 {
 	return &V1{
 		client: client,
@@ -24,8 +26,8 @@ func NewV1(client mappinggrpc.ServiceClient) *V1 {
 }
 
 func (v *V1) MapSystemToTenant(
-	ctx context.Context, req *mapping.MapSystemToTenantRequest,
-) (*mapping.MapSystemToTenantResponse, error) {
+	ctx context.Context, req *mappingapi.MapSystemToTenantRequest,
+) (*mappingapi.MapSystemToTenantResponse, error) {
 	if err := validateMapSystemToTenantRequest(req); err != nil {
 		return nil, err
 	}
@@ -41,14 +43,14 @@ func (v *V1) MapSystemToTenant(
 		return nil, convertGRPCError(err)
 	}
 
-	return &mapping.MapSystemToTenantResponse{
+	return &mappingapi.MapSystemToTenantResponse{
 		Success: resp.GetSuccess(),
 	}, nil
 }
 
 func (v *V1) UnmapSystemFromTenant(
-	ctx context.Context, req *mapping.UnmapSystemFromTenantRequest,
-) (*mapping.UnmapSystemFromTenantResponse, error) {
+	ctx context.Context, req *mappingapi.UnmapSystemFromTenantRequest,
+) (*mappingapi.UnmapSystemFromTenantResponse, error) {
 	if err := validateUnmapSystemFromTenantRequest(req); err != nil {
 		return nil, err
 	}
@@ -64,12 +66,12 @@ func (v *V1) UnmapSystemFromTenant(
 		return nil, convertGRPCError(err)
 	}
 
-	return &mapping.UnmapSystemFromTenantResponse{
+	return &mappingapi.UnmapSystemFromTenantResponse{
 		Success: resp.GetSuccess(),
 	}, nil
 }
 
-func (v *V1) Get(ctx context.Context, req *mapping.GetRequest) (*mapping.GetResponse, error) {
+func (v *V1) Get(ctx context.Context, req *mappingapi.GetRequest) (*mappingapi.GetResponse, error) {
 	if err := validateGetRequest(req); err != nil {
 		return nil, err
 	}
@@ -84,7 +86,7 @@ func (v *V1) Get(ctx context.Context, req *mapping.GetRequest) (*mapping.GetResp
 		return nil, convertGRPCError(err)
 	}
 
-	return &mapping.GetResponse{
+	return &mappingapi.GetResponse{
 		TenantID: resp.GetTenantId(),
 	}, nil
 }
@@ -127,21 +129,21 @@ func validateExternalIDAndType(req any, externalID, typeStr string) error {
 	return validateType(typeStr)
 }
 
-func validateMapSystemToTenantRequest(req *mapping.MapSystemToTenantRequest) error {
+func validateMapSystemToTenantRequest(req *mappingapi.MapSystemToTenantRequest) error {
 	if err := validateExternalIDAndType(req, req.ExternalID, req.Type); err != nil {
 		return err
 	}
 	return validateTenantID(req.TenantID)
 }
 
-func validateUnmapSystemFromTenantRequest(req *mapping.UnmapSystemFromTenantRequest) error {
+func validateUnmapSystemFromTenantRequest(req *mappingapi.UnmapSystemFromTenantRequest) error {
 	if err := validateExternalIDAndType(req, req.ExternalID, req.Type); err != nil {
 		return err
 	}
 	return validateTenantID(req.TenantID)
 }
 
-func validateGetRequest(req *mapping.GetRequest) error {
+func validateGetRequest(req *mappingapi.GetRequest) error {
 	return validateExternalIDAndType(req, req.ExternalID, req.Type)
 }
 

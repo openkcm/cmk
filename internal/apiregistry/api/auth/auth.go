@@ -1,4 +1,4 @@
-package auth
+package authapi
 
 type AuthStatus string
 
