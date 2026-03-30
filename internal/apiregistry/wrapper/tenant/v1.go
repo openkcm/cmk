@@ -5,12 +5,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/oops"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
-	"github.com/openkcm/cmk/internal/apiregistry/api/tenant"
+	tenantapi "github.com/openkcm/cmk/internal/apiregistry/api/tenant"
 	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 
@@ -413,6 +414,6 @@ func convertGRPCError(err error) error {
 			return apierrors.ErrTenantOperationFailed
 		}
 	default:
-		return apierrors.ErrTenantOperationFailed
+		return oops.In("registry-tenant-grcp-client").Wrapf(err, "%w", apierrors.ErrTenantOperationFailed)
 	}
 }

@@ -1,207 +1,162 @@
-package apiregistry_test
+package apiregistry
 
 import (
-	"context"
+	"errors"
 	"testing"
 
-	mappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
-	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
-	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 
-	"github.com/openkcm/cmk/internal/apiregistry"
-	mappingwrapper "github.com/openkcm/cmk/internal/apiregistry/wrapper/mapping"
-	oidcmappingwrapper "github.com/openkcm/cmk/internal/apiregistry/wrapper/oidcmapping"
-	systemwrapper "github.com/openkcm/cmk/internal/apiregistry/wrapper/system"
-	tenantwrapper "github.com/openkcm/cmk/internal/apiregistry/wrapper/tenant"
-	"github.com/openkcm/cmk/internal/clients"
-	"github.com/openkcm/cmk/internal/clients/registry"
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
-	sessionmanager "github.com/openkcm/cmk/internal/clients/session-manager"
-	"github.com/openkcm/cmk/internal/model"
+	tenantapi "github.com/openkcm/cmk/internal/apiregistry/api/tenant"
+	"github.com/openkcm/cmk/internal/config" //nolint:gci
 )
 
-// mockRegistryService implements registry.Service for testing
-type mockRegistryService struct {
-	tenantClient  tenantgrpc.ServiceClient
-	systemClient  systems.ServiceClient
-	mappingClient mappinggrpc.ServiceClient
-}
-
-func (m *mockRegistryService) System() systems.ServiceClient {
-	return m.systemClient
-}
-
-func (m *mockRegistryService) Tenant() tenantgrpc.ServiceClient {
-	return m.tenantClient
-}
-
-func (m *mockRegistryService) Mapping() mappinggrpc.ServiceClient {
-	return m.mappingClient
-}
-
-func (m *mockRegistryService) Close() error {
-	return nil
-}
-
-// mockSessionManagerService implements sessionmanager.Service for testing
-type mockSessionManagerService struct {
-	oidcClient oidcmappinggrpc.ServiceClient
-}
-
-func (m *mockSessionManagerService) OIDCMapping() oidcmappinggrpc.ServiceClient {
-	return m.oidcClient
-}
-
-func (m *mockSessionManagerService) Close() error {
-	return nil
-}
-
-// mockClientFactory implements clients.Factory for testing
-type mockClientFactory struct {
-	registryService       registry.Service
-	sessionManagerService sessionmanager.Service
-}
-
-func (m *mockClientFactory) Registry() registry.Service {
-	return m.registryService
-}
-
-func (m *mockClientFactory) SessionManager() sessionmanager.Service {
-	return m.sessionManagerService
-}
-
-func (m *mockClientFactory) Close() error {
-	return nil
-}
-
-// mockSystemClient implements systems.ServiceClient for testing
-type mockSystemClient struct {
-	systemgrpc.ServiceClient
-}
-
-func (m *mockSystemClient) GetSystemsWithFilter(ctx context.Context, filter systems.SystemFilter) ([]*model.System, error) {
-	return nil, nil
-}
-
-func (m *mockSystemClient) ExtendedUpdateSystemL1KeyClaim(ctx context.Context, filter systems.SystemFilter, l1KeyClaim bool) error {
-	return nil
-}
-
 func TestNew(t *testing.T) {
-	mockFactory := &mockClientFactory{
-		registryService: &mockRegistryService{
-			tenantClient:  &mockTenantClient{},
-			systemClient:  &mockSystemClient{},
-			mappingClient: &mockMappingClient{},
-		},
-		sessionManagerService: &mockSessionManagerService{
-			oidcClient: &mockOIDCMappingClient{},
-		},
-	}
+	t.Run("Successful creation with all services enabled", func(t *testing.T) {
+		services := &config.Services{
+			Registry: &commoncfg.GRPCClient{
+				Enabled: true,
+				Address: ":8080",
+			},
+			SessionManager: &commoncfg.GRPCClient{
+				Enabled: true,
+				Address: ":8081",
+			},
+		}
 
-	reg := apiregistry.New(mockFactory)
+		reg, err := New(services)
+		if err != nil {
+			t.Fatalf("New() error = %v, wantErr nil", err)
+		}
+		if reg == nil {
+			t.Fatal("New() returned nil registry")
+		}
 
-	if reg == nil {
-		t.Fatal("expected non-nil Registry instance")
-	}
+		if _, err := reg.Tenant(); err != nil {
+			t.Error("Tenant() should not return an error")
+		}
+		if _, err := reg.System(); err != nil {
+			t.Error("System() should not return an error")
+		}
+		if _, err := reg.Mapping(); err != nil {
+			t.Error("Mapping() should not return an error")
+		}
+		if _, err := reg.OIDCMapping(); err != nil {
+			t.Error("OIDCMapping() should not return an error")
+		}
+	})
 
-	if reg.Tenant() == nil {
-		t.Error("expected non-nil tenant client")
-	}
+	t.Run("Successful creation with only registry enabled", func(t *testing.T) {
+		services := &config.Services{
+			Registry: &commoncfg.GRPCClient{
+				Enabled: true,
+				Address: ":8080",
+			},
+			SessionManager: &commoncfg.GRPCClient{
+				Enabled: false,
+			},
+		}
 
-	if reg.System() == nil {
-		t.Error("expected non-nil system client")
-	}
+		reg, err := New(services)
+		if err != nil {
+			t.Fatalf("New() error = %v, wantErr nil", err)
+		}
+		if reg == nil {
+			t.Fatal("New() returned nil registry")
+		}
 
-	if reg.Mapping() == nil {
-		t.Error("expected non-nil mapping client")
-	}
+		if _, err := reg.Tenant(); err != nil {
+			t.Error("Tenant() should not return an error")
+		}
+		if _, err := reg.System(); err != nil {
+			t.Error("System() should not return an error")
+		}
+		if _, err := reg.Mapping(); err != nil {
+			t.Error("Mapping() should not return an error")
+		}
+		if _, err := reg.OIDCMapping(); err == nil {
+			t.Error("OIDCMapping() should return an error")
+		}
+	})
 
-	if reg.OIDCMapping() == nil {
-		t.Error("expected non-nil OIDC mapping client")
-	}
-}
+	t.Run("Successful creation with only session manager enabled", func(t *testing.T) {
+		services := &config.Services{
+			Registry: &commoncfg.GRPCClient{
+				Enabled: false,
+			},
+			SessionManager: &commoncfg.GRPCClient{
+				Enabled: true,
+				Address: ":8081",
+			},
+		}
 
-func TestNewRegistry(t *testing.T) {
-	tenantClient := tenantwrapper.NewV1(&mockTenantClient{})
-	systemClient := systemwrapper.NewV1(&mockSystemClient{})
-	mappingClient := mappingwrapper.NewV1(&mockMappingClient{})
-	oidcMappingClient := oidcmappingwrapper.NewV1(&mockOIDCMappingClient{})
+		reg, err := New(services)
+		if err != nil {
+			t.Fatalf("New() error = %v, wantErr nil", err)
+		}
+		if reg == nil {
+			t.Fatal("New() returned nil registry")
+		}
 
-	reg := apiregistry.NewRegistry(tenantClient, systemClient, mappingClient, oidcMappingClient)
+		if _, err := reg.Tenant(); err == nil {
+			t.Error("Tenant() should return an error")
+		}
+		if _, err := reg.System(); err == nil {
+			t.Error("System() should return an error")
+		}
+		if _, err := reg.Mapping(); err == nil {
+			t.Error("Mapping() should return an error")
+		}
+		if _, err := reg.OIDCMapping(); err != nil {
+			t.Error("OIDCMapping() should not return an error")
+		}
+	})
 
-	if reg == nil {
-		t.Fatal("expected non-nil Registry instance")
-	}
+	t.Run("Error on invalid registry endpoint", func(t *testing.T) {
+		services := &config.Services{
+			Registry: &commoncfg.GRPCClient{
+				Enabled: true,
+				Address: ":///",
+			},
+			SessionManager: &commoncfg.GRPCClient{
+				Enabled: false,
+			},
+		}
 
-	if reg.Tenant() != tenantClient {
-		t.Error("expected tenant client to match")
-	}
+		svc, err := New(services)
+		if err != nil {
+			t.Fatalf("New() error = %v, wantErr nil", err)
+		}
 
-	if reg.System() != systemClient {
-		t.Error("expected system client to match")
-	}
+		tenant, err := svc.Tenant()
+		if err != nil {
+			t.Fatalf("Tenant() should not return an error")
+		}
 
-	if reg.Mapping() != mappingClient {
-		t.Error("expected mapping client to match")
-	}
-
-	if reg.OIDCMapping() != oidcMappingClient {
-		t.Error("expected OIDC mapping client to match")
-	}
+		_, err = tenant.SetTenantLabels(t.Context(), &tenantapi.SetTenantLabelsRequest{
+			ID:     "test-tenant",
+			Labels: map[string]string{"env": "test"},
+		})
+		if err == nil {
+			t.Error("New() should have returned an error for invalid URL")
+		}
+	})
 }
 
 func TestRegistryGetters(t *testing.T) {
-	tenantClient := tenantwrapper.NewV1(&mockTenantClient{})
-	systemClient := systemwrapper.NewV1(&mockSystemClient{})
-	mappingClient := mappingwrapper.NewV1(&mockMappingClient{})
-	oidcMappingClient := oidcmappingwrapper.NewV1(&mockOIDCMappingClient{})
+	t.Run("Getters return error when services are not registered", func(t *testing.T) {
+		reg := &registryStruct{} // Empty registry
 
-	reg := apiregistry.NewRegistry(tenantClient, systemClient, mappingClient, oidcMappingClient)
-
-	t.Run("Tenant", func(t *testing.T) {
-		if got := reg.Tenant(); got != tenantClient {
-			t.Error("Tenant() returned unexpected client")
+		if _, err := reg.Tenant(); !errors.Is(err, ErrNotRegistered) {
+			t.Errorf("Tenant() error = %v, wantErr %v", err, ErrNotRegistered)
 		}
-	})
-
-	t.Run("System", func(t *testing.T) {
-		if got := reg.System(); got != systemClient {
-			t.Error("System() returned unexpected client")
+		if _, err := reg.System(); !errors.Is(err, ErrNotRegistered) {
+			t.Errorf("System() error = %v, wantErr %v", err, ErrNotRegistered)
 		}
-	})
-
-	t.Run("Mapping", func(t *testing.T) {
-		if got := reg.Mapping(); got != mappingClient {
-			t.Error("Mapping() returned unexpected client")
+		if _, err := reg.Mapping(); !errors.Is(err, ErrNotRegistered) {
+			t.Errorf("Mapping() error = %v, wantErr %v", err, ErrNotRegistered)
 		}
-	})
-
-	t.Run("OIDCMapping", func(t *testing.T) {
-		if got := reg.OIDCMapping(); got != oidcMappingClient {
-			t.Error("OIDCMapping() returned unexpected client")
+		if _, err := reg.OIDCMapping(); !errors.Is(err, ErrNotRegistered) {
+			t.Errorf("OIDCMapping() error = %v, wantErr %v", err, ErrNotRegistered)
 		}
 	})
 }
-
-type mockTenantClient struct {
-	tenantgrpc.ServiceClient
-}
-
-type mockMappingClient struct {
-	mappinggrpc.ServiceClient
-}
-
-type mockOIDCMappingClient struct {
-	oidcmappinggrpc.ServiceClient
-}
-
-var (
-	_ tenantgrpc.ServiceClient      = (*mockTenantClient)(nil)
-	_ mappinggrpc.ServiceClient     = (*mockMappingClient)(nil)
-	_ oidcmappinggrpc.ServiceClient = (*mockOIDCMappingClient)(nil)
-	_ clients.Factory               = (*mockClientFactory)(nil)
-	_ registry.Service              = (*mockRegistryService)(nil)
-	_ sessionmanager.Service        = (*mockSessionManagerService)(nil)
-)
