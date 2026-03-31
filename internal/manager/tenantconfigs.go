@@ -19,14 +19,23 @@ import (
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
 
-// Since the workflow expiry must be less than the retention minus a day
-const minimumRetentionPeriodDays = 2
+const (
+	DefaultCertName = "hyok-default"
+
+	// Since the workflow expiry must be less than the retention minus a day
+	minimumRetentionPeriodDays = 2
+)
+
+var (
+	ErrGetDefaultCerts = errors.New("failed to get default certificates")
+	ErrDecodingCert    = errors.New("failed to decode certificate")
+)
 
 type TenantConfigManager struct {
-	repo             repo.Repo
-	svcRegistry      *cmkpluginregistry.Registry
-	keystorePool     *Pool
-	deploymentConfig *config.Config
+	repo         repo.Repo
+	svcRegistry  *cmkpluginregistry.Registry
+	keystorePool *Pool
+	cfg          *config.Config
 }
 
 func NewTenantConfigManager(
@@ -35,10 +44,10 @@ func NewTenantConfigManager(
 	deploymentConfig *config.Config,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
-		repo:             repo,
-		svcRegistry:      svcRegistry,
-		keystorePool:     NewPool(repo),
-		deploymentConfig: deploymentConfig,
+		repo:         repo,
+		svcRegistry:  svcRegistry,
+		keystorePool: NewPool(repo),
+		cfg:          deploymentConfig,
 	}
 }
 
@@ -302,7 +311,7 @@ func (m *TenantConfigManager) getDefaultWorkflowConfig(defaultEnabled bool) *mod
 	}
 
 	// Override with deploymentConfig values if available
-	if m.deploymentConfig == nil {
+	if m.cfg == nil {
 		return c
 	}
 
@@ -313,17 +322,17 @@ func (m *TenantConfigManager) getDefaultWorkflowConfig(defaultEnabled bool) *mod
 // applyDeploymentConfigOverrides applies deployment config values to workflow config
 // to override any default values.
 func (m *TenantConfigManager) applyDeploymentConfigOverrides(config *model.WorkflowConfig) {
-	if m.deploymentConfig.Workflow.DefaultMinimumApprovals > 0 {
-		config.MinimumApprovals = m.deploymentConfig.Workflow.DefaultMinimumApprovals
+	if m.cfg.Workflow.DefaultMinimumApprovals > 0 {
+		config.MinimumApprovals = m.cfg.Workflow.DefaultMinimumApprovals
 	}
-	if m.deploymentConfig.Workflow.DefaultRetentionPeriodDays > 0 {
-		config.RetentionPeriodDays = m.deploymentConfig.Workflow.DefaultRetentionPeriodDays
+	if m.cfg.Workflow.DefaultRetentionPeriodDays > 0 {
+		config.RetentionPeriodDays = m.cfg.Workflow.DefaultRetentionPeriodDays
 	}
-	if m.deploymentConfig.Workflow.DefaultExpiryPeriodDays > 0 {
-		config.DefaultExpiryPeriodDays = m.deploymentConfig.Workflow.DefaultExpiryPeriodDays
+	if m.cfg.Workflow.DefaultExpiryPeriodDays > 0 {
+		config.DefaultExpiryPeriodDays = m.cfg.Workflow.DefaultExpiryPeriodDays
 	}
-	if m.deploymentConfig.Workflow.DefaultMaxExpiryPeriodDays > 0 {
-		config.MaxExpiryPeriodDays = m.deploymentConfig.Workflow.DefaultMaxExpiryPeriodDays
+	if m.cfg.Workflow.DefaultMaxExpiryPeriodDays > 0 {
+		config.MaxExpiryPeriodDays = m.cfg.Workflow.DefaultMaxExpiryPeriodDays
 	}
 }
 

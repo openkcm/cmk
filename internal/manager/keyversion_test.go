@@ -59,12 +59,12 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	svcRegistry, err := cmkpluginregistry.New(s.ctx, &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	s.Require().NoError(err)
 
-	tenantConfigManager := manager.NewTenantConfigManager(s.r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(
 		s.ctx, s.r, svcRegistry,
 		&config.Config{
 			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 		})
+	tenantConfigManager := manager.NewTenantConfigManager(s.r, svcRegistry, nil)
 	cmkAuditor := auditor.New(s.ctx, &cfg)
 	userManager := manager.NewUserManager(s.r, cmkAuditor)
 	tagManager := manager.NewTagManager(s.r)

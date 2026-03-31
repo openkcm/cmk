@@ -17,30 +17,52 @@ func TestToAPI(t *testing.T) {
 		name     string
 		input    map[model.CertificatePurpose][]*manager.ClientCertificate
 		expected *cmkapi.ClientCertificates
-	}{{
-		name: "Valid",
-		input: map[model.CertificatePurpose][]*manager.ClientCertificate{
-			model.CertificatePurposeTenantDefault: {
-				{
-					RootCA:  "TDRoot",
-					Subject: "TDSub"}},
-			model.CertificatePurposeCrypto: {
-				{
-					RootCA:  "CRoot",
-					Subject: "CSub"}},
+	}{
+		{
+			name: "Valid",
+			input: map[model.CertificatePurpose][]*manager.ClientCertificate{
+				model.CertificatePurposeTenantDefault: {
+					{
+						RootCA: "TDRoot",
+						Subject: manager.ClientCertificateSubject{
+							Locality:           []string{"L"},
+							OrganizationalUnit: []string{"OU1", "OU2"},
+							Organization:       []string{"O"},
+							Country:            []string{"C"},
+							CommonName:         "CN",
+						},
+					},
+				},
+				model.CertificatePurposeCrypto: {
+					{
+						RootCA: "CRoot",
+						Subject: manager.ClientCertificateSubject{
+							Locality:           []string{"L"},
+							OrganizationalUnit: []string{"OU1", "OU2"},
+							Organization:       []string{"O"},
+							Country:            []string{"C"},
+							CommonName:         "CN",
+						},
+					},
+				},
+			},
+			expected: &cmkapi.ClientCertificates{
+				TenantDefault: &cmkapi.TenantDefaultCertificateList{
+					Count: ptr.PointTo(1),
+					Value: []cmkapi.TenantDefaultCertificate{{
+						RootCA:  "TDRoot",
+						Subject: "CN=CN,OU=OU1/OU2,O=O,L=L,C=C",
+					}},
+				},
+				Crypto: &cmkapi.CryptoCertificateList{
+					Count: ptr.PointTo(1),
+					Value: []cmkapi.CryptoCertificate{{
+						RootCA:  "CRoot",
+						Subject: "CN=CN,OU=OU1/OU2,O=O,L=L,C=C",
+					}},
+				},
+			},
 		},
-		expected: &cmkapi.ClientCertificates{
-			TenantDefault: &cmkapi.TenantDefaultCertificateList{
-				Count: ptr.PointTo(1),
-				Value: []cmkapi.TenantDefaultCertificate{{
-					RootCA:  "TDRoot",
-					Subject: "TDSub"}}},
-			Crypto: &cmkapi.CryptoCertificateList{
-				Count: ptr.PointTo(1),
-				Value: []cmkapi.CryptoCertificate{{
-					RootCA:  "CRoot",
-					Subject: "CSub"}}},
-		}},
 	}
 
 	for _, tt := range tests {

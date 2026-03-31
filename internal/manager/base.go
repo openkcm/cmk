@@ -44,9 +44,9 @@ func New(
 	migrator db.Migrator,
 ) *Manager {
 	cmkAuditor := auditor.New(ctx, config)
+	certManager := NewCertificateManager(ctx, repo, svcRegistry, config)
 	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config)
 	userManager := NewUserManager(repo, cmkAuditor)
-	certManager := NewCertificateManager(ctx, repo, svcRegistry, config)
 	tagManager := NewTagManager(repo)
 	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, config)
 	keyManager := NewKeyManager(
