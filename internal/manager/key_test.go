@@ -848,46 +848,6 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-func TestUpdateVersion(t *testing.T) {
-	km, _, ctx, keyConfig := SetupKeyTest(t)
-	createdKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
-
-	tests := []struct {
-		name    string
-		keyID   uuid.UUID
-		version int
-		wantErr bool
-	}{
-		{
-			name:    "Update Version - SUCCESS",
-			keyID:   createdKey.ID,
-			version: 3,
-			wantErr: false,
-		},
-		{
-			name:    "Update non-existent key - ERROR",
-			keyID:   uuid.New(),
-			version: 3,
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := km.UpdateVersion(ctx, tt.keyID, tt.version)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				key, err := km.Get(ctx, tt.keyID)
-				assert.NoError(t, err)
-				assert.Equal(t, tt.version, key.Version().Version)
-			}
-		})
-	}
-}
-
 func TestUpdateKeyPrimary(t *testing.T) {
 	t.Run("Should update primary key and exiting events", func(t *testing.T) {
 		km, r, ctx, _ := SetupKeyTest(t)
@@ -1083,7 +1043,7 @@ func TestGetImportParams(t *testing.T) {
 
 	t.Run("Error_InvalidKeyType", func(t *testing.T) {
 		km, _, ctx, keyConfig := SetupKeyTest(t)
-		sysKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
+		sysKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
 		_, err := km.GetImportParams(ctx, sysKey.ID)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, manager.ErrInvalidKeyTypeForImportParams)
@@ -1194,7 +1154,7 @@ func TestImportKeyMaterial(t *testing.T) {
 
 	t.Run("InvalidKeyType", func(t *testing.T) {
 		km, _, ctx, keyConfig := SetupKeyTest(t)
-		sysKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
+		sysKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
 
 		_, err := km.ImportKeyMaterial(ctx, sysKey.ID, validMaterial)
 

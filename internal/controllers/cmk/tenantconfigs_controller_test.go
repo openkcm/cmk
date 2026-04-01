@@ -13,7 +13,6 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -23,18 +22,17 @@ import (
 )
 
 // startAPIServerTenantConfig starts the API server for keys and returns a pointer to the database
-func startAPIServerTenantConfig(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIServerTenantConfig(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	cfg.Config.Database = dbCfg
 
-	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config: config.Config{Database: dbCfg},
-	}), tenants[0]
+	return db, testutils.NewAPIServer(t, db, cfg), tenants[0]
 }
 
 func TestAPIController_GetTenantKeystores(t *testing.T) {
-	db, sv, tenant := startAPIServerTenantConfig(t)
+	db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -59,7 +57,8 @@ func TestAPIController_GetTenantKeystores(t *testing.T) {
 
 // getWorkflowConfig is a helper function to retrieve workflow configuration via API
 func getWorkflowConfig(t *testing.T, sv cmkapi.ServeMux,
-	tenant string, authClient testutils.AuthClientData) cmkapi.TenantWorkflowConfiguration {
+	tenant string, authClient testutils.AuthClientData,
+) cmkapi.TenantWorkflowConfiguration {
 	t.Helper()
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -80,7 +79,7 @@ func getWorkflowConfig(t *testing.T, sv cmkapi.ServeMux,
 
 func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 	t.Run("Should 200 getting workflow config", func(t *testing.T) {
-		db, sv, tenant := startAPIServerTenantConfig(t)
+		db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
@@ -101,7 +100,7 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 	})
 
 	t.Run("Should 200 getting default workflow config when none exists", func(t *testing.T) {
-		db, sv, tenant := startAPIServerTenantConfig(t)
+		db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
@@ -135,7 +134,7 @@ func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Co
 
 func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 	t.Run("Should 200 updating workflow configuration for tenant admin", func(t *testing.T) {
-		db, sv, tenant := startAPIServerTenantConfig(t)
+		db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
@@ -182,7 +181,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 	})
 
 	t.Run("Should 400 with invalid retention period", func(t *testing.T) {
-		db, sv, tenant := startAPIServerTenantConfig(t)
+		db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 

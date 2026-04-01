@@ -70,7 +70,7 @@ func (p ProviderTransformerTest) ValidateKeyAccessData(_ context.Context, _ *cmk
 func TestTransformKeyFromAPI(t *testing.T) {
 	description := "Test key"
 	algorithm := cmkapi.KeyAlgorithmAES256
-	keyType := cmkapi.KeyTypeSYSTEMMANAGED
+	keyType := cmkapi.KeyTypeBYOK
 	nativeID := "native-id-1234"
 	provider := "DUMMY"
 	enabled := true
@@ -80,35 +80,8 @@ func TestTransformKeyFromAPI(t *testing.T) {
 	accessAccountID := "123456789012"
 	accessUserID := "123456789012:user/test-user"
 
-	// Define the mutator for cmkapi.Key SystemManagedKeyRequest
-	ManagedKeyRequestMut := testutils.NewMutator(func() cmkapi.Key {
-		return cmkapi.Key{
-			Name:               "test-key",
-			Type:               keyType,
-			KeyConfigurationID: keyConfigID,
-			Algorithm:          &algorithm,
-			Provider:           &provider,
-			Region:             &region,
-			Enabled:            &enabled,
-			Description:        &description,
-		}
-	})
-
 	// Define the mutator for model.Key SystemManagedKeyRequest
 	ID := uuid.New()
-	modelManagedKeyRequestMut := testutils.NewMutator(func() model.Key {
-		return model.Key{
-			ID:                 ID,
-			Name:               "test-key",
-			KeyType:            string(keyType),
-			KeyConfigurationID: keyConfigID,
-			State:              string(cmkapi.KeyStateENABLED),
-			Description:        description,
-			Algorithm:          string(algorithm),
-			Provider:           provider,
-			Region:             region,
-		}
-	})
 
 	// Define the mutator for cmkapi.Key HYOKRequest
 	HYOKKeyRequestMut := testutils.NewMutator(func() cmkapi.Key {
@@ -161,38 +134,6 @@ func TestTransformKeyFromAPI(t *testing.T) {
 		expected model.Key
 		err      error
 	}{
-		{
-			name:     "KeyFromAPI - Enabled Key Success",
-			apiKey:   ManagedKeyRequestMut(),
-			expected: modelManagedKeyRequestMut(),
-			err:      nil,
-		},
-		{
-			name: "KeyFromAPI - Empty Enabled Success",
-			apiKey: ManagedKeyRequestMut(func(k *cmkapi.Key) {
-				k.Enabled = nil
-			}),
-			expected: modelManagedKeyRequestMut(func(_ *model.Key) {}),
-			err:      nil,
-		},
-		{
-			name: "T201KeyFromAPIDisabledSuccess",
-			apiKey: ManagedKeyRequestMut(func(k *cmkapi.Key) {
-				k.Enabled = &disabled
-			}),
-			expected: modelManagedKeyRequestMut(func(k *model.Key) {
-				k.State = string(cmkapi.KeyStateDISABLED)
-			}),
-			err: nil,
-		},
-		{
-			name: "T202KeyFromAPIMissingName",
-			apiKey: ManagedKeyRequestMut(func(k *cmkapi.Key) {
-				k.Name = ""
-			}),
-			expected: model.Key{},
-			err:      apierrors.ErrNameFieldMissingProperty,
-		},
 		{
 			name:     "T203KeyFromAPIEnabledKeySuccess",
 			apiKey:   HYOKKeyRequestMut(),
@@ -269,62 +210,9 @@ func TestTransformKeyFromAPI(t *testing.T) {
 
 func TestTransformKeyToAPI(t *testing.T) {
 	description := "Test key"
-	algorithm := cmkapi.KeyAlgorithmAES256
 	nativeID := "native-id-1234"
-	provider := "TEST"
-	region := regionEUWest1
 	id := uuid.New()
 	keyConfigID := uuid.New()
-
-	keyVersion := model.KeyVersion{
-		ExternalID: uuid.New().String(),
-		KeyID:      id,
-		AutoTimeModel: model.AutoTimeModel{
-			CreatedAt: time.Now(),
-		},
-		Version:   1,
-		IsPrimary: true,
-	}
-
-	modelManagedKeyRequestMut := testutils.NewMutator(func() model.Key {
-		return model.Key{
-			ID:                 id,
-			Name:               "test-key",
-			KeyType:            string(cmkapi.KeyTypeSYSTEMMANAGED),
-			KeyConfigurationID: keyConfigID,
-			Provider:           provider,
-			Region:             region,
-			Description:        description,
-			State:              string(cmkapi.KeyStateENABLED),
-			Algorithm:          "AES256",
-			KeyVersions:        []model.KeyVersion{keyVersion},
-			EditableRegions: map[string]bool{
-				"serviceA": true,
-				"serviceB": false,
-			},
-		}
-	})
-
-	ManagedKeyRequestMut := testutils.NewMutator(func() cmkapi.Key {
-		return cmkapi.Key{
-			Id:                 AnyPtr(uuid.MustParse(id.String())),
-			Name:               "test-key",
-			Type:               cmkapi.KeyTypeSYSTEMMANAGED,
-			KeyConfigurationID: keyConfigID,
-			Description:        &description,
-			Provider:           &provider,
-			Region:             &region,
-			Algorithm:          &algorithm,
-			State:              AnyPtr(cmkapi.KeyStateENABLED),
-			IsPrimary:          ptr.PointTo(false),
-			Metadata: &cmkapi.KeyMetadata{
-				CreatedAt:      AnyPtr(time.Time{}),
-				UpdatedAt:      AnyPtr(time.Time{}),
-				PrimaryVersion: AnyPtr(1),
-				TotalVersions:  AnyPtr(1),
-			},
-		}
-	})
 
 	managementAccessData := AccessDataTest{
 		AccessAccountID: "123456789012",
@@ -407,12 +295,6 @@ func TestTransformKeyToAPI(t *testing.T) {
 		expectErr bool
 		err       error
 	}{
-		{
-			name:      "T210KeyToAPISuccess",
-			key:       modelManagedKeyRequestMut(),
-			expected:  ManagedKeyRequestMut(),
-			expectErr: false,
-		},
 		{
 			name:      "T212KeyToAPISuccess",
 			key:       modelHYOKKeyRequestMut(),

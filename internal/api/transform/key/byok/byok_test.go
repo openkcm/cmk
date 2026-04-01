@@ -1,4 +1,4 @@
-package sysmr_test
+package byok_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/key/sysmr"
+	"github.com/openkcm/cmk/internal/api/transform/key/byok"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -63,13 +63,13 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Valid API Key",
 			apiKey: cmkapi.Key{
-				Type:      cmkapi.KeyTypeSYSTEMMANAGED,
+				Type:      cmkapi.KeyTypeBYOK,
 				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
 				Region:    ptr.PointTo("test-region"),
 				Provider:  ptr.PointTo("TEST"),
 			},
 			expected: &model.Key{
-				KeyType:   string(cmkapi.KeyTypeSYSTEMMANAGED),
+				KeyType:   string(cmkapi.KeyTypeBYOK),
 				Algorithm: string(cmkapi.KeyAlgorithmRSA3072),
 				Region:    "test-region",
 				Provider:  "TEST",
@@ -78,7 +78,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Missing Provider",
 			apiKey: cmkapi.Key{
-				Type:      cmkapi.KeyTypeSYSTEMMANAGED,
+				Type:      cmkapi.KeyTypeBYOK,
 				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
 				Region:    ptr.PointTo("test-region"),
 			},
@@ -87,7 +87,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Invalid Provider",
 			apiKey: cmkapi.Key{
-				Type:      cmkapi.KeyTypeSYSTEMMANAGED,
+				Type:      cmkapi.KeyTypeBYOK,
 				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
 				Region:    ptr.PointTo("test-region"),
 				Provider:  ptr.PointTo("INVALID"),
@@ -97,7 +97,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Missing Region",
 			apiKey: cmkapi.Key{
-				Type:      cmkapi.KeyTypeSYSTEMMANAGED,
+				Type:      cmkapi.KeyTypeBYOK,
 				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
 				Provider:  ptr.PointTo("TEST"),
 			},
@@ -106,7 +106,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Invalid Region",
 			apiKey: cmkapi.Key{
-				Type:      cmkapi.KeyTypeSYSTEMMANAGED,
+				Type:      cmkapi.KeyTypeBYOK,
 				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
 				Region:    ptr.PointTo("invalid-region"),
 				Provider:  ptr.PointTo("TEST"),
@@ -116,7 +116,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Missing Algorithm",
 			apiKey: cmkapi.Key{
-				Type:     cmkapi.KeyTypeSYSTEMMANAGED,
+				Type:     cmkapi.KeyTypeBYOK,
 				Region:   ptr.PointTo("test-region"),
 				Provider: ptr.PointTo("TEST"),
 			},
@@ -125,7 +125,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Invalid Algorithm",
 			apiKey: cmkapi.Key{
-				Type:      cmkapi.KeyTypeSYSTEMMANAGED,
+				Type:      cmkapi.KeyTypeBYOK,
 				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
 				Region:    ptr.PointTo("test-region"),
 				Provider:  ptr.PointTo("TEST"),
@@ -136,7 +136,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := sysmr.FromCmkAPIKey(t.Context(), tt.apiKey, tf)
+			result, err := byok.FromCmkAPIKey(t.Context(), tt.apiKey, tf)
 			if tt.errMsg != "" {
 				assert.Nil(t, result)
 				assert.EqualError(t, err, tt.errMsg)

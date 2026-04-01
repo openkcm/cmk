@@ -317,23 +317,6 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 	return nil
 }
 
-func (km *KeyManager) UpdateVersion(ctx context.Context, keyID uuid.UUID, version int) error {
-	key, err := km.Get(ctx, keyID)
-	if err != nil {
-		return fmt.Errorf("failed to get key: %w", err)
-	}
-
-	keyVersion := key.Version()
-	keyVersion.Version = version
-
-	_, err = km.repo.Patch(ctx, keyVersion, *repo.NewQuery())
-	if err != nil {
-		return fmt.Errorf("failed to update key in database: %w", err)
-	}
-
-	return nil
-}
-
 func (km *KeyManager) GetImportParams(ctx context.Context, keyID uuid.UUID) (*model.ImportParams, error) {
 	key, err := km.validateBYOKKey(ctx, keyID, BYOKActionGetImportParams)
 	if err != nil {
@@ -516,20 +499,6 @@ func (km *KeyManager) createKey(ctx context.Context, key *model.Key) error {
 		err := km.repo.Create(ctx, key)
 		if err != nil {
 			return errs.Wrap(ErrCreateKeyDB, err)
-		}
-
-		// Create KeyVersion
-		if key.KeyType == constants.KeyTypeSystemManaged {
-			err = km.repo.Create(ctx, &model.KeyVersion{
-				ExternalID: *key.NativeID,
-				NativeID:   key.NativeID,
-				KeyID:      key.ID,
-				Version:    1,
-				IsPrimary:  true,
-			})
-			if err != nil {
-				return errs.Wrap(ErrCreateKeyVersionDB, err)
-			}
 		}
 
 		if key.IsPrimary {
