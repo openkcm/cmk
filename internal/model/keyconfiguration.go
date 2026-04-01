@@ -20,7 +20,7 @@ type KeyConfiguration struct {
 	AdminGroupID uuid.UUID `gorm:"type:uuid;not null"`
 	AdminGroup   Group     `gorm:"foreignKey:AdminGroupID"`
 	CreatorID    string    `gorm:"type:varchar(255);not null"`
-	CreatorName  string    `gorm:"type:varchar(255);not null"`
+	CreatorName  string    `gorm:"-:all"`
 	PrimaryKeyID *uuid.UUID
 	TotalKeys    int `gorm:"->;-:migration"`
 	TotalSystems int `gorm:"->;-:migration"`
