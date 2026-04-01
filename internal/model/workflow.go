@@ -32,7 +32,7 @@ type Workflow struct {
 	ID                     uuid.UUID          `gorm:"type:uuid;primaryKey"`
 	State                  string             `gorm:"type:varchar(50);not null"`
 	InitiatorID            string             `gorm:"type:varchar(255);not null"`
-	InitiatorName          string             `gorm:"type:varchar(255);not null"`
+	InitiatorName          string             `gorm:"-:all"`
 	Approvers              []WorkflowApprover `gorm:"foreignKey:WorkflowID"`
 	ApproverGroupIDs       json.RawMessage    `gorm:"type:jsonb"`
 	ArtifactType           string             `gorm:"type:varchar(50);not null"`
@@ -59,7 +59,8 @@ func (Workflow) IsSharedModel() bool { return false }
 
 func (m Workflow) CheckAuthz(ctx context.Context,
 	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
@@ -165,7 +166,7 @@ func (m Workflow) buildDefaultDescription() string {
 type WorkflowApprover struct {
 	WorkflowID uuid.UUID `gorm:"type:uuid;primaryKey"`
 	UserID     string    `gorm:"type:varchar(255);primaryKey"`
-	UserName   string    `gorm:"type:varchar(255);not null"`
+	UserName   string    `gorm:"-:all"`
 
 	Workflow Workflow     `gorm:"foreignKey:WorkflowID"`
 	Approved sql.NullBool `gorm:"default:null"`
@@ -184,6 +185,7 @@ func (WorkflowApprover) IsSharedModel() bool { return false }
 
 func (m WorkflowApprover) CheckAuthz(ctx context.Context,
 	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
