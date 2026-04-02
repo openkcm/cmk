@@ -39,6 +39,7 @@ var (
 	ErrID                     = oops.In("Identity management Plugin")
 	ErrNoScimClient           = errors.New("no scim client exists")
 	ErrGetGroup               = errors.New("failed to get group")
+	ErrGetUser                = errors.New("failed to get user")
 	ErrGetAllGroups           = errors.New("failed to get allx group")
 	ErrGetGroupNonExistent    = status.New(codes.NotFound, "group does not exist").Err()
 	ErrGetGroupMultipleGroups = errors.New("more than one group")
@@ -131,6 +132,23 @@ func (p *Plugin) Configure(_ context.Context, req *configv1.ConfigureRequest) (*
 	}, nil
 }
 
+func (p *Plugin) GetUser(
+	ctx context.Context,
+	request *idmangv1.GetUserRequest,
+) (*idmangv1.GetUserResponse, error) {
+	if p.scimClient == nil {
+		return nil, ErrNoScimClient
+	}
+
+	res, err := p.GetUser(ctx, request)
+	if err != nil {
+		p.logger.Error("GetUser: error getting user", "error", err)
+		return nil, errs.Wrap(ErrGetGroup, err)
+	}
+
+	return &idmangv1.GetUserResponse{User: res.GetUser()}, nil
+}
+
 func (p *Plugin) GetGroup(
 	ctx context.Context,
 	request *idmangv1.GetGroupRequest,
@@ -176,8 +194,10 @@ func (p *Plugin) GetAllGroups(
 	responseGroups := make([]*idmangv1.Group, len(groups.Resources))
 
 	for i, group := range groups.Resources {
-		responseGroups[i] = &idmangv1.Group{Id: group.ID,
-			Name: group.DisplayName}
+		responseGroups[i] = &idmangv1.Group{
+			Id:   group.ID,
+			Name: group.DisplayName,
+		}
 	}
 
 	return &idmangv1.GetAllGroupsResponse{Groups: responseGroups}, nil
@@ -265,8 +285,10 @@ func (p *Plugin) listGroups(
 	responseGroups := make([]*idmangv1.Group, len(groups.Resources))
 
 	for i, group := range groups.Resources {
-		responseGroups[i] = &idmangv1.Group{Id: group.ID,
-			Name: group.DisplayName}
+		responseGroups[i] = &idmangv1.Group{
+			Id:   group.ID,
+			Name: group.DisplayName,
+		}
 	}
 
 	return responseGroups, nil
