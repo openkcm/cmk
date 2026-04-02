@@ -311,7 +311,6 @@ func (m *GroupManager) isSupportedRole(group *model.Group) bool {
 }
 
 // applyIAMGroupFilter adds IAM filtering to query if user is not TenantAdmin.
-// SystemUser bypass filtering completely.
 // TenantAdmins see all groups, others only see their own groups.
 func (m *GroupManager) applyIAMGroupFilter(ctx context.Context, query *repo.Query) {
 	iamIdentifiers, err := cmkcontext.ExtractClientDataGroupsString(ctx)

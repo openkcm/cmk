@@ -128,7 +128,7 @@ func TestWorkflow_FromAPI(t *testing.T) {
 			name:        "Should be valid with context",
 			apiWorkflow: apiWorkflowMutator(),
 			ctxFn: func(ctx context.Context) context.Context {
-				return cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
+				return cmkcontext.InjectBusinessClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 			},
 		},
 		{
@@ -142,7 +142,7 @@ func TestWorkflow_FromAPI(t *testing.T) {
 				w.ExpiresAt = ptr.PointTo(time.Now())
 			}),
 			ctxFn: func(ctx context.Context) context.Context {
-				return cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
+				return cmkcontext.InjectBusinessClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 			},
 		},
 		{
@@ -151,7 +151,7 @@ func TestWorkflow_FromAPI(t *testing.T) {
 				w.ExpiresAt = ptr.PointTo(time.Now().AddDate(0, 0, 31))
 			}),
 			ctxFn: func(ctx context.Context) context.Context {
-				return cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
+				return cmkcontext.InjectBusinessClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 			},
 			errorExpected: true,
 		},
@@ -243,7 +243,7 @@ func TestWorkflow_FromAPI_Expires(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			ctx = cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx = cmkcontext.InjectBusinessClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 
 			w, err := workflow.FromAPI(ctx, tt.apiWorkflow, defaultExpiry, maxExpiry)
 

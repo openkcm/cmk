@@ -9,10 +9,12 @@ import (
 	"github.com/hibiken/asynq"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type CertUpdater interface {
@@ -52,7 +54,13 @@ func (s *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
 			log.Debug(ctx, "Rotating Certificates for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
 
-			err := s.certClient.RotateExpiredCertificates(ctx)
+			ctx, err := cmkcontext.InjectInternalClientData(ctx,
+				constants.InternalTaskCertRotationRole)
+			if err != nil {
+				return s.handleErrorTenants(ctx, err)
+			}
+
+			err = s.certClient.RotateExpiredCertificates(ctx)
 			if err != nil {
 				return err
 			}

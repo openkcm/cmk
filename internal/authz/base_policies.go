@@ -1,23 +1,21 @@
 package authz
 
-import "github.com/openkcm/cmk/internal/constants"
-
 type (
 	BaseResourceType[TResourceTypeName, TAction comparable] struct {
 		ID      TResourceTypeName
 		Actions []TAction
 	}
-	BasePolicy[TResourceTypeName, TAction comparable] struct {
+	BasePolicy[TRole, TResourceTypeName, TAction comparable] struct {
 		ID            string
-		Role          constants.Role
+		Role          TRole
 		ResourceTypes []BaseResourceType[TResourceTypeName, TAction]
 	}
 )
 
-func NewPolicy[TResourceTypeName, TAction comparable](id string, role constants.Role,
+func NewPolicy[TRole, TResourceTypeName, TAction comparable](id string, role TRole,
 	resourceTypes []BaseResourceType[TResourceTypeName, TAction]) BasePolicy[
-	TResourceTypeName, TAction] {
-	return BasePolicy[TResourceTypeName, TAction]{
+	TRole, TResourceTypeName, TAction] {
+	return BasePolicy[TRole, TResourceTypeName, TAction]{
 		ID:            id,
 		Role:          role,
 		ResourceTypes: resourceTypes,

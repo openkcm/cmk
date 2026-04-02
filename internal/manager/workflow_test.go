@@ -13,6 +13,8 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -58,6 +60,11 @@ func SetupWorkflowManager(
 
 	r := sql.NewRepository(db)
 
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+		r, &config.Config{})
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
 	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
 
 	cfg.Plugins = psCfg
@@ -68,14 +75,14 @@ func SetupWorkflowManager(
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	cmkAuditor := auditor.New(t.Context(), cfg)
-	userManager := manager.NewUserManager(r, cmkAuditor)
+	userManager := manager.NewUserManager(authzRepo, authzRepoLoader, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
-	systemManager := manager.NewSystemManager(t.Context(), r, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
+	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
 
 	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 	m := manager.NewWorkflowManager(
@@ -128,18 +135,18 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	m, repo, tenant := SetupWorkflowManager(t, &config.Config{})
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
+	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user",
+		[]string{uuid.NewString()})
+
 	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
 	testutils.CreateTestEntities(ctx, t, repo, workflowConfig)
 
 	keyConfig, key := createTestObjects(t, repo, ctx)
 	createAuditorGroup(ctx, t, repo)
 
-	ctxSys := context.WithValue(
-		ctx,
-		constants.ClientData, &auth.ClientData{
-			Identifier: constants.SystemUser.String(),
-		},
-	)
+	ctxSys, err := cmkcontext.BusinessToInternalContext(ctx,
+		constants.InternalTaskWorkflowApproversRole)
+	assert.NoError(t, err)
 
 	t.Run("Should return false on canCreate and error on non existing artifacts", func(t *testing.T) {
 		status, err := m.CheckWorkflow(ctx, &model.Workflow{})
@@ -165,12 +172,12 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 
 		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.NoError(t, err)
 		assert.True(t, status.Enabled)
 		assert.True(t, status.Exists)
 		assert.True(t, status.Valid)
 		assert.False(t, status.CanCreate)
 		assert.Equal(t, manager.ErrOngoingWorkflowExist, status.ErrDetails)
-		assert.NoError(t, err)
 	})
 
 	t.Run("Should be invalid and cant create on system connect with invalid key state", func(t *testing.T) {
@@ -402,12 +409,10 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	ctxSys := context.WithValue(
-		ctx,
-		constants.ClientData, &auth.ClientData{
-			Identifier: constants.SystemUser.String(),
-		},
-	)
+	ctxSys, err := cmkcontext.BusinessToInternalContext(ctx,
+		constants.InternalTaskWorkflowApproversRole)
+	assert.NoError(t, err)
+
 	keyConfig, key := createTestObjects(t, repo, ctxSys)
 
 	t.Run("Should error on existing workflow", func(t *testing.T) {
@@ -427,13 +432,6 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 
 	t.Run("Should create workflow", func(t *testing.T) {
 		createAuditorGroup(ctx, t, repo)
-
-		ctxSys := context.WithValue(
-			ctx,
-			constants.ClientData, &auth.ClientData{
-				Identifier: constants.SystemUser.String(),
-			},
-		)
 
 		_, key := createTestObjects(t, repo, ctxSys)
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
@@ -518,7 +516,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 			)
 			assert.NoError(t, err)
 
-			ctx = cmkcontext.InjectClientData(
+			ctx = cmkcontext.InjectBusinessClientData(
 				cmkcontext.CreateTenantContext(t.Context(), tenant),
 				&auth.ClientData{
 					Identifier: wf.InitiatorID,
@@ -548,7 +546,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 				),
 			)
 			assert.NoError(t, err)
-			ctx = cmkcontext.InjectClientData(
+			ctx = cmkcontext.InjectBusinessClientData(
 				cmkcontext.CreateTenantContext(t.Context(), tenant),
 				&auth.ClientData{
 					Identifier: wf.Approvers[0].UserID,
@@ -579,7 +577,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 				),
 			)
 			assert.NoError(t, err)
-			ctx = cmkcontext.InjectClientData(
+			ctx = cmkcontext.InjectBusinessClientData(
 				cmkcontext.CreateTenantContext(t.Context(), tenant),
 				&auth.ClientData{
 					Identifier: wf.Approvers[0].UserID,
@@ -636,7 +634,7 @@ func TestWorkflowManager_GetWorkflowByID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(
 			tt.name, func(t *testing.T) {
-				ctx := cmkcontext.InjectClientData(
+				ctx := cmkcontext.InjectBusinessClientData(
 					cmkcontext.CreateTenantContext(t.Context(), tenant),
 					&auth.ClientData{
 						Identifier: userID,
@@ -879,7 +877,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(
 			tc.name, func(t *testing.T) {
-				ctx := cmkcontext.InjectClientData(
+				ctx := cmkcontext.InjectBusinessClientData(
 					cmkcontext.CreateTenantContext(t.Context(), tenant),
 					&auth.ClientData{
 						Identifier: userID,
@@ -924,7 +922,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 	}
 
 	t.Run("Should return workflows ordered by created time descending", func(t *testing.T) {
-		ctx := cmkcontext.InjectClientData(
+		ctx := cmkcontext.InjectBusinessClientData(
 			cmkcontext.CreateTenantContext(t.Context(), tenant),
 			&auth.ClientData{
 				Identifier: userID,
@@ -965,13 +963,9 @@ func TestWorkflowManager_ListApprovers(t *testing.T) {
 
 	createAuditorGroup(ctx, t, r)
 
-	ctxSys := context.WithValue(
-		ctx,
-		constants.ClientData, &auth.ClientData{
-			Identifier: constants.SystemUser.String(),
-			Groups:     []string{"auditorGroup"},
-		},
-	)
+	ctxSys, err := cmkcontext.BusinessToInternalContext(ctx,
+		constants.InternalTaskWorkflowApproversRole)
+	assert.NoError(t, err)
 
 	tests := []struct {
 		name       string
@@ -1214,21 +1208,21 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				assert.NoError(t, err)
 
 				// We need the auditor group here to allow listing approvers
-				ctxSys := context.WithValue(
+				ctx := context.WithValue(
 					ctx,
 					constants.ClientData, &auth.ClientData{
-						Identifier: constants.SystemUser.String(),
-						Groups:     []string{"auditorGroup"},
+						Identifier: "testuser",
+						Groups:     []string{auditorGroupName},
 					},
 				)
-				_, err = m.AutoAssignApprovers(ctxSys, wf.ID)
+				_, err = m.AutoAssignApprovers(ctx, wf.ID)
 				if tt.expectErr {
 					assert.Error(t, err)
 					assert.ErrorIs(t, err, tt.errMessage)
 				} else {
 					assert.NoError(t, err)
 
-					count, _, err := m.ListWorkflowApprovers(ctxSys, wf.ID, false, repo.Pagination{})
+					count, _, err := m.ListWorkflowApprovers(ctx, wf.ID, false, repo.Pagination{})
 					assert.NoError(t, err)
 					assert.Len(t, count, tt.approversCount)
 				}
@@ -1411,7 +1405,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 
 	userID := uuid.NewString()
 
-	ctx := cmkcontext.InjectClientData(
+	ctx := cmkcontext.InjectBusinessClientData(
 		cmkcontext.CreateTenantContext(t.Context(), tenantID),
 		&auth.ClientData{
 			Identifier: userID,

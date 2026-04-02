@@ -52,6 +52,7 @@ func TestGetUserInfo(t *testing.T) {
 					FamilyName: "Builder",
 					Groups:     []string{group.IAMIdentifier, "some-other-group"},
 				},
+				constants.Source: constants.BusinessSource,
 			},
 		})
 

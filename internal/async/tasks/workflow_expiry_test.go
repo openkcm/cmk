@@ -11,13 +11,17 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 	contextUtils "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -81,6 +85,10 @@ func TestWorkflowExpiresAction(t *testing.T) {
 	tenantID := tenants[0]
 	ctx := contextUtils.CreateTenantContext(t.Context(), tenantID)
 
+	ctx, err := cmkcontext.InjectInternalClientData(ctx,
+		constants.InternalTaskWorkflowExpirationRole)
+	assert.NoError(t, err)
+
 	testutils.CreateTestEntities(ctx, t, r,
 		testutils.NewWorkflow(
 			func(workflow *model.Workflow) {
@@ -102,15 +110,21 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		),
 	)
 
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+		r, &config.Config{})
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
 	t.Run("Sets Expired", func(t *testing.T) {
-		expirer := &WorkflowExpiryMock{r, nil, nil}
-		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
+		expirer := &WorkflowExpiryMock{authzRepo, nil, nil}
+		processor := tasks.NewWorkflowExpiryProcessor(expirer, authzRepo)
 
 		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
 		err := processor.ProcessTask(ctx, task)
 		assert.NoError(t, err)
 
-		wfs, _, _ := expirer.GetWorkflows(ctx, manager.WorkflowFilter{})
+		wfs, _, err := expirer.GetWorkflows(ctx, manager.WorkflowFilter{})
+		assert.NoError(t, err)
 		assert.Len(t, wfs, 3)
 
 		initStates := 0
@@ -127,8 +141,8 @@ func TestWorkflowExpiresAction(t *testing.T) {
 	})
 
 	t.Run("GetWorkflows fails", func(t *testing.T) {
-		expirer := &WorkflowExpiryMock{r, ErrMockGetWorkflows, nil}
-		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
+		expirer := &WorkflowExpiryMock{authzRepo, ErrMockGetWorkflows, nil}
+		processor := tasks.NewWorkflowExpiryProcessor(expirer, authzRepo)
 
 		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
 		err := processor.ProcessTask(ctx, task)
@@ -138,8 +152,8 @@ func TestWorkflowExpiresAction(t *testing.T) {
 
 	t.Run("Transition fails", func(t *testing.T) {
 		// Ensure there is at least one expired workflow to trigger transition.
-		expirer := &WorkflowExpiryMock{r, nil, ErrMockTransition}
-		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
+		expirer := &WorkflowExpiryMock{authzRepo, nil, ErrMockTransition}
+		processor := tasks.NewWorkflowExpiryProcessor(expirer, authzRepo)
 
 		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
 		err := processor.ProcessTask(ctx, task)

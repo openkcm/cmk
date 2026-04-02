@@ -9,10 +9,12 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type SystemUpdater interface {
@@ -39,14 +41,21 @@ func NewSystemsRefresher(
 func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting Systems Refresh Task")
 
-	err := s.processor.ProcessTenantsInBatch(
+	err := s.processor.ProcessTenantsInBatchWithOptions(
 		ctx,
 		"Systems Refresh",
 		task,
 		repo.NewQuery(),
+		repo.BatchProcessOptions{IgnoreFailMode: true},
 		func(tenantCtx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(tenantCtx, "Refreshing systems for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
+
+			ctx, err := cmkcontext.InjectInternalClientData(ctx,
+				constants.InternalTaskSystemRefreshRole)
+			if err != nil {
+				return s.handleErrorTask(ctx, err)
+			}
 
 			updateErr := s.systemClient.UpdateSystems(ctx)
 			// If network error return an error triggering
@@ -56,13 +65,12 @@ func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) er
 			}
 
 			if updateErr != nil {
-				log.Error(ctx, "Running Refresh System Task", updateErr)
+				return s.handleErrorTask(ctx, updateErr)
 			}
 			return nil
 		})
 	if err != nil {
-		log.Error(ctx, "Error during systems refresh batch processing", err)
-		return errs.Wrap(ErrRunningTask, err)
+		return s.handleErrorTenants(ctx, err)
 	}
 
 	return nil
@@ -83,4 +91,14 @@ func isConnectionError(err error) bool {
 	code := st.Code()
 
 	return code == codes.Unavailable || code == codes.DeadlineExceeded
+}
+
+func (s *SystemsRefresher) handleErrorTenants(ctx context.Context, err error) error {
+	log.Error(ctx, "Error during system refresh sync batch processing", err)
+	return errs.Wrap(ErrRunningTask, err)
+}
+
+func (s *SystemsRefresher) handleErrorTask(ctx context.Context, err error) error {
+	log.Error(ctx, "Running system refresh", err)
+	return errs.Wrap(ErrRunningTask, err)
 }

@@ -510,7 +510,8 @@ func (o *TenantOperator) injectSystemUser(
 	next orbital.HandlerFunc,
 ) orbital.HandlerFunc {
 	return func(ctx context.Context, request orbital.HandlerRequest, response *orbital.HandlerResponse) {
-		ctx = cmkcontext.InjectSystemUser(ctx)
+		ctx, _ = cmkcontext.InjectInternalClientData(ctx,
+			constants.InternalTenantProvisioningRole)
 		next(ctx, request, response)
 	}
 }
