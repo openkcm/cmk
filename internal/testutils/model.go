@@ -236,7 +236,6 @@ func NewWorkflowApprover(m func(approver *model.WorkflowApprover)) *model.Workfl
 		return model.WorkflowApprover{
 			WorkflowID: uuid.New(),
 			UserID:     uuid.NewString(),
-			UserName:   uuid.New().String(),
 			Workflow:   model.Workflow{},
 			Approved:   sql.NullBool{},
 		}
