@@ -4,6 +4,8 @@ go 1.25.6
 
 toolchain go1.26.1
 
+replace github.com/openkcm/plugin-sdk => /Users/joaoteixeira/Documents/src/plugin-sdk
+
 require (
 	buf.build/go/protovalidate v1.1.3
 	github.com/Azure/go-amqp v1.5.1

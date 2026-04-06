@@ -1,10 +1,12 @@
 package keyconfiguration_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -12,7 +14,10 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testpluginregistry"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -108,7 +113,6 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 			Description:  description,
 			AdminGroupID: adminGroupID,
 			CreatorID:    creatorID,
-			CreatorName:  creatorName,
 		}
 	})
 
@@ -159,7 +163,14 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			apiConf, err := keyconfiguration.ToAPI(tt.conf)
+			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			mockService := testpluginregistry.NewMockIDMService()
+			mockService.GetUserFn = func(ctx context.Context, gur *identitymanagement.GetUserRequest) (*identitymanagement.GetUserResponse, error) {
+				return &identitymanagement.GetUserResponse{User: identitymanagement.User{
+					Name: "test-creator",
+				}}, nil
+			}
+			apiConf, err := keyconfiguration.ToAPI(ctx, tt.conf, mockService)
 			if tt.expectErr {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, tt.err)

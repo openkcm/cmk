@@ -12,6 +12,8 @@ import (
 
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	cmkContext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -32,7 +34,7 @@ type Workflow struct {
 	ID                     uuid.UUID          `gorm:"type:uuid;primaryKey"`
 	State                  string             `gorm:"type:varchar(50);not null"`
 	InitiatorID            string             `gorm:"type:varchar(255);not null"`
-	InitiatorName          string             `gorm:"-:all"`
+	initiatorName          string             `gorm:"-:all"`
 	Approvers              []WorkflowApprover `gorm:"foreignKey:WorkflowID"`
 	ApproverGroupIDs       json.RawMessage    `gorm:"type:jsonb"`
 	ArtifactType           string             `gorm:"type:varchar(50);not null"`
@@ -77,20 +79,30 @@ func (m *Workflow) BeforeSave(tx *gorm.DB) error {
 }
 
 // Description generates a human-readable description of the workflow based on its action type
-func (m Workflow) Description() string {
+func (m Workflow) Description(
+	ctx context.Context,
+	idm identitymanagement.IdentityManagement,
+) (string, error) {
 	// Build workflow description based on artifact type first, then action type
 	var description string
+	var err error
 
 	switch m.ArtifactType {
 	case constants.WorkflowArtifactTypeSystem:
-		description = m.buildSystemDescription()
+		description, err = m.buildSystemDescription(ctx, idm)
+		if err != nil {
+			return "", err
+		}
 	default:
-		description = m.buildDefaultDescription()
+		description, err = m.buildDefaultDescription(ctx, idm)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	description += "."
 
-	return description
+	return description, nil
 }
 
 // GetArtifactName returns the artifact name or a default value if nil
@@ -101,13 +113,43 @@ func (m Workflow) GetArtifactName() string {
 	return ""
 }
 
+func (w *Workflow) GetInitiatorName(
+	ctx context.Context,
+	identityManager identitymanagement.IdentityManagement,
+) (string, error) {
+	if w.initiatorName != "" {
+		return w.initiatorName, nil
+	}
+
+	authCtx, err := cmkContext.ExtractClientDataAuthContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	user, err := identityManager.GetUser(ctx, &identitymanagement.GetUserRequest{
+		UserID:      w.InitiatorID,
+		AuthContext: identitymanagement.AuthContext{Data: authCtx},
+	})
+	if err != nil {
+		return "", err
+	}
+	return user.User.Name, nil
+}
+
 // buildSystemDescription generates a description for SYSTEM artifact workflows
-func (m Workflow) buildSystemDescription() string {
+func (m Workflow) buildSystemDescription(
+	ctx context.Context,
+	idm identitymanagement.IdentityManagement,
+) (string, error) {
 	var description string
 	artifactName := m.GetArtifactName()
 
+	initiatorName, err := m.GetInitiatorName(ctx, idm)
+	if err != nil {
+		return "", err
+	}
+
 	description = fmt.Sprintf("%s requested approval to %s %s",
-		m.InitiatorName,
+		initiatorName,
 		m.ActionType,
 		m.ArtifactType,
 	)
@@ -124,7 +166,7 @@ func (m Workflow) buildSystemDescription() string {
 		}
 	}
 
-	return description
+	return description, nil
 }
 
 // getParametersResourceType returns the parameters resource type or empty string if nil
@@ -144,10 +186,19 @@ func (m Workflow) getParametersResourceName() string {
 }
 
 // buildDefaultDescription generates a default description for workflows
-func (m Workflow) buildDefaultDescription() string {
+func (m Workflow) buildDefaultDescription(
+	ctx context.Context,
+	idm identitymanagement.IdentityManagement,
+) (string, error) {
 	artifactName := m.GetArtifactName()
+
+	initiatorName, err := m.GetInitiatorName(ctx, idm)
+	if err != nil {
+		return "", err
+	}
+
 	description := fmt.Sprintf("%s requested approval to %s %s",
-		m.InitiatorName,
+		initiatorName,
 		m.ActionType,
 		m.ArtifactType,
 	)
@@ -160,13 +211,14 @@ func (m Workflow) buildDefaultDescription() string {
 		description += " with parameters: " + m.Parameters
 	}
 
-	return description
+	return description, nil
 }
 
+//nolint:recvcheck
 type WorkflowApprover struct {
 	WorkflowID uuid.UUID `gorm:"type:uuid;primaryKey"`
 	UserID     string    `gorm:"type:varchar(255);primaryKey"`
-	UserName   string    `gorm:"-:all"`
+	userName   string    `gorm:"-:all"`
 
 	Workflow Workflow     `gorm:"foreignKey:WorkflowID"`
 	Approved sql.NullBool `gorm:"default:null"`
@@ -188,4 +240,25 @@ func (m WorkflowApprover) CheckAuthz(ctx context.Context,
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
+}
+
+func (m *WorkflowApprover) GetUserName(
+	ctx context.Context,
+	identityManager identitymanagement.IdentityManagement,
+) (string, error) {
+	if m.userName != "" {
+		return m.userName, nil
+	}
+	authCtx, err := cmkContext.ExtractClientDataAuthContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	user, err := identityManager.GetUser(ctx, &identitymanagement.GetUserRequest{
+		UserID:      m.UserID,
+		AuthContext: identitymanagement.AuthContext{Data: authCtx},
+	})
+	if err != nil {
+		return "", err
+	}
+	return user.User.Name, nil
 }

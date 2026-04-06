@@ -410,7 +410,6 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.AdminGroupID = adminGroup.ID
 			c.AdminGroup = *adminGroup
 			c.CreatorID = CreatorID
-			c.CreatorName = CreatorName
 		})
 
 		ctx := testutils.InjectClientDataIntoContext(
@@ -424,7 +423,6 @@ func TestPostKeyConfigurations(t *testing.T) {
 		assert.Equal(t, keyConfig.ID, actual.ID)
 		assert.Equal(t, keyConfig.Name, actual.Name)
 		assert.Equal(t, adminGroup.ID, actual.AdminGroupID)
-		assert.Equal(t, CreatorName, actual.CreatorName)
 		assert.Equal(t, CreatorID, actual.CreatorID)
 	})
 
@@ -433,7 +431,6 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.AdminGroupID = adminGroup.ID
 			c.AdminGroup = *adminGroup
 			c.CreatorID = CreatorID
-			c.CreatorName = CreatorName
 			c.Name = "  "
 		})
 
@@ -457,7 +454,6 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.AdminGroupID = wrongRoleGroup.ID
 			c.AdminGroup = *wrongRoleGroup
 			c.CreatorID = CreatorID
-			c.CreatorName = CreatorName
 		})
 
 		ctxWithGroups := testutils.InjectClientDataIntoContext(

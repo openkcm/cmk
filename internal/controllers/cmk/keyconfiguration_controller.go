@@ -35,10 +35,15 @@ func (c *APIController) GetKeyConfigurations(
 		return nil, errs.Wrap(apierrors.ErrGettingKeyConfig, err)
 	}
 
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+
 	values := make([]cmkapi.KeyConfiguration, len(keyConfigs))
 
 	for i, dbConfig := range keyConfigs {
-		apiConfig, err := keyconfiguration.ToAPI(*dbConfig)
+		apiConfig, err := keyconfiguration.ToAPI(ctx, *dbConfig, idm)
 		if err != nil {
 			return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationList, err)
 		}
@@ -73,14 +78,17 @@ func (c *APIController) PostKeyConfigurations(
 	}
 
 	keyConfig.CreatorID = clientData.Identifier
-	keyConfig.CreatorName = clientData.Email
 
 	keyConfig, err = c.Manager.KeyConfig.PostKeyConfigurations(ctx, keyConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	response, err := keyconfiguration.ToAPI(*keyConfig)
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGettingKeyConfig, err)
+	}
+	response, err := keyconfiguration.ToAPI(ctx, *keyConfig, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationToAPI, err)
 	}
@@ -111,7 +119,11 @@ func (c *APIController) GetKeyConfigurationByID(
 		return nil, err
 	}
 
-	response, err := keyconfiguration.ToAPI(*keyConfig)
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+	response, err := keyconfiguration.ToAPI(ctx, *keyConfig, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationToAPI, err)
 	}
@@ -129,7 +141,11 @@ func (c *APIController) UpdateKeyConfigurationByID(
 		return nil, err
 	}
 
-	response, err := keyconfiguration.ToAPI(*keyConfig)
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+	response, err := keyconfiguration.ToAPI(ctx, *keyConfig, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationToAPI, err)
 	}

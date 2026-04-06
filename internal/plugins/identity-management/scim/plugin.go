@@ -140,13 +140,21 @@ func (p *Plugin) GetUser(
 		return nil, ErrNoScimClient
 	}
 
-	res, err := p.GetUser(ctx, request)
+	host, headers := p.extractAuthContext(request.GetAuthContext().GetData())
+	user, err := p.scimClient.GetUser(ctx, request.GetUserId(), client.RequestParams{
+		Host:    host,
+		Headers: headers,
+	})
 	if err != nil {
 		p.logger.Error("GetUser: error getting user", "error", err)
 		return nil, errs.Wrap(ErrGetGroup, err)
 	}
 
-	return &idmangv1.GetUserResponse{User: res.GetUser()}, nil
+	return &idmangv1.GetUserResponse{User: &idmangv1.User{
+		Id:    user.ID,
+		Name:  user.UserName,
+		Email: getPrimaryEmailAddress(user),
+	}}, nil
 }
 
 func (p *Plugin) GetGroup(
