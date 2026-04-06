@@ -89,7 +89,10 @@ func (p *Plugin) GetUser(
 	req *idmangv1.GetUserRequest,
 ) (*idmangv1.GetUserResponse, error) {
 	return &idmangv1.GetUserResponse{
-		User: &idmangv1.User{Id: req.UserId},
+		User: &idmangv1.User{
+			Id:   req.GetUserId(),
+			Name: req.GetUserId() + "_test",
+		},
 	}, nil
 }
 

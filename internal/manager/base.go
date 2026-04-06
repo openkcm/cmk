@@ -33,6 +33,7 @@ type Manager struct {
 	Auditor      *auditor.Auditor
 }
 
+//nolint:funlen
 func New(
 	ctx context.Context,
 	repo repo.Repo,
@@ -79,8 +80,18 @@ func New(
 		KeyConfig:     keyConfigManager,
 		Tags:          NewTagManager(repo),
 		Labels:        NewLabelManager(repo),
-		Workflow: NewWorkflowManager(repo, keyManager, keyConfigManager, systemManager, groupManager, userManager,
-			asyncClient, tenantConfigManager, config),
+		Workflow: NewWorkflowManager(
+			repo,
+			svcRegistry,
+			keyManager,
+			keyConfigManager,
+			systemManager,
+			groupManager,
+			userManager,
+			asyncClient,
+			tenantConfigManager,
+			config,
+		),
 		Certificates: certManager,
 		Group:        groupManager,
 		User:         userManager,

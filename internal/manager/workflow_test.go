@@ -79,7 +79,7 @@ func SetupWorkflowManager(
 
 	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 	m := manager.NewWorkflowManager(
-		r, keym, keyConfigManager, systemManager,
+		r, svcRegistry, keym, keyConfigManager, systemManager,
 		groupManager, userManager, nil, tenantConfigManager, cfg,
 	)
 
@@ -1240,11 +1240,10 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) {
 	cfg := &config.Config{}
 	wm, _, tenantID := SetupWorkflowManager(t, cfg)
+	ctx := testutils.CreateCtxWithTenant(tenantID)
+	ctx = cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 
 	t.Run("should successfully create and enqueue notification task", func(t *testing.T) {
-		// Arrange
-		ctx := testutils.CreateCtxWithTenant(tenantID)
-
 		mockClient := &async.MockClient{}
 		wm.SetAsyncClient(mockClient)
 
@@ -1267,142 +1266,119 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 		assert.NotNil(t, mockClient.LastTask)
 	})
 
-	t.Run(
-		"should skip notification when async client is nil", func(t *testing.T) {
-			// Arrange
-			ctx := testutils.CreateCtxWithTenant(tenantID)
+	t.Run("should skip notification when async client is nil", func(t *testing.T) {
+		wf := model.Workflow{
+			ID:           uuid.New(),
+			ActionType:   "CREATE",
+			ArtifactType: "KEY",
+			ArtifactID:   uuid.New(),
+		}
 
-			wf := model.Workflow{
-				ID:           uuid.New(),
-				ActionType:   "CREATE",
-				ArtifactType: "KEY",
-				ArtifactID:   uuid.New(),
-			}
+		recipients := []string{"approver@example.com"}
 
-			recipients := []string{"approver@example.com"}
+		// Act
+		err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionCreate, recipients)
 
-			// Act
-			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionCreate, recipients)
+		// Assert
+		assert.NoError(t, err)
+	})
 
-			// Assert
+	t.Run("should skip notification when recipients list is empty", func(t *testing.T) {
+		mockClient := &async.MockClient{}
+		wm.SetAsyncClient(mockClient)
+
+		wf := model.Workflow{
+			ID:           uuid.New(),
+			ActionType:   "CREATE",
+			ArtifactType: "KEY",
+			ArtifactID:   uuid.New(),
+		}
+
+		var recipients []string
+
+		// Act
+		err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.Equal(t, 0, mockClient.EnqueueCallCount)
+	})
+
+	t.Run("should return error when GetTenant fails", func(t *testing.T) {
+		ctx := t.Context()
+
+		mockClient := &async.MockClient{}
+		wm.SetAsyncClient(mockClient)
+
+		wf := model.Workflow{
+			ID:           uuid.New(),
+			ActionType:   "CREATE",
+			ArtifactType: "KEY",
+			ArtifactID:   uuid.New(),
+		}
+
+		recipients := []string{"approver@example.com"}
+
+		// Act
+		err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionCreate, recipients)
+
+		// Assert
+		assert.Error(t, err)
+	})
+
+	t.Run("should return error when async client enqueue fails", func(t *testing.T) {
+		expectedError := ErrEnqueuingTask
+		mockClient := &async.MockClient{Error: expectedError}
+		wm.SetAsyncClient(mockClient)
+
+		wf := model.Workflow{
+			ID:           uuid.New(),
+			ActionType:   "CREATE",
+			ArtifactType: "KEY",
+			ArtifactID:   uuid.New(),
+		}
+
+		recipients := []string{"approver@example.com"}
+
+		// Act
+		err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionConfirm, recipients)
+
+		// Assert
+		assert.Error(t, err)
+		assert.Equal(t, expectedError, err)
+		assert.Equal(t, 1, mockClient.EnqueueCallCount)
+	})
+
+	t.Run("should handle different workflow transitions", func(t *testing.T) {
+		mockClient := &async.MockClient{}
+		wm.SetAsyncClient(mockClient)
+
+		wf := model.Workflow{
+			ID:           uuid.New(),
+			ActionType:   "CREATE",
+			ArtifactType: "KEY",
+			ArtifactID:   uuid.New(),
+			State:        string(workflow.StateWaitConfirmation),
+		}
+
+		recipients := []string{"user@example.com"}
+
+		transitions := []workflow.Transition{
+			workflow.TransitionCreate,
+			workflow.TransitionApprove,
+			workflow.TransitionReject,
+			workflow.TransitionConfirm,
+			workflow.TransitionRevoke,
+		}
+
+		// Act & Assert
+		for _, transition := range transitions {
+			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, transition, recipients)
 			assert.NoError(t, err)
-		},
-	)
+		}
 
-	t.Run(
-		"should skip notification when recipients list is empty", func(t *testing.T) {
-			// Arrange
-			ctx := testutils.CreateCtxWithTenant(tenantID)
-
-			mockClient := &async.MockClient{}
-			wm.SetAsyncClient(mockClient)
-
-			wf := model.Workflow{
-				ID:           uuid.New(),
-				ActionType:   "CREATE",
-				ArtifactType: "KEY",
-				ArtifactID:   uuid.New(),
-			}
-
-			var recipients []string
-
-			// Act
-			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionApprove, recipients)
-
-			// Assert
-			assert.NoError(t, err)
-			assert.Equal(t, 0, mockClient.EnqueueCallCount)
-		},
-	)
-
-	t.Run(
-		"should return error when GetTenant fails", func(t *testing.T) {
-			// Arrange
-			ctx := t.Context()
-
-			mockClient := &async.MockClient{}
-			wm.SetAsyncClient(mockClient)
-
-			wf := model.Workflow{
-				ID:           uuid.New(),
-				ActionType:   "CREATE",
-				ArtifactType: "KEY",
-				ArtifactID:   uuid.New(),
-			}
-
-			recipients := []string{"approver@example.com"}
-
-			// Act
-			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionCreate, recipients)
-
-			// Assert
-			assert.Error(t, err)
-		},
-	)
-
-	t.Run(
-		"should return error when async client enqueue fails", func(t *testing.T) {
-			// Arrange
-			ctx := testutils.CreateCtxWithTenant(tenantID)
-
-			expectedError := ErrEnqueuingTask
-			mockClient := &async.MockClient{Error: expectedError}
-			wm.SetAsyncClient(mockClient)
-
-			wf := model.Workflow{
-				ID:           uuid.New(),
-				ActionType:   "CREATE",
-				ArtifactType: "KEY",
-				ArtifactID:   uuid.New(),
-			}
-
-			recipients := []string{"approver@example.com"}
-
-			// Act
-			err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, workflow.TransitionConfirm, recipients)
-
-			// Assert
-			assert.Error(t, err)
-			assert.Equal(t, expectedError, err)
-			assert.Equal(t, 1, mockClient.EnqueueCallCount)
-		},
-	)
-
-	t.Run(
-		"should handle different workflow transitions", func(t *testing.T) {
-			// Arrange
-			ctx := testutils.CreateCtxWithTenant(tenantID)
-
-			mockClient := &async.MockClient{}
-			wm.SetAsyncClient(mockClient)
-
-			wf := model.Workflow{
-				ID:           uuid.New(),
-				ActionType:   "CREATE",
-				ArtifactType: "KEY",
-				ArtifactID:   uuid.New(),
-				State:        string(workflow.StateWaitConfirmation),
-			}
-
-			recipients := []string{"user@example.com"}
-
-			transitions := []workflow.Transition{
-				workflow.TransitionCreate,
-				workflow.TransitionApprove,
-				workflow.TransitionReject,
-				workflow.TransitionConfirm,
-				workflow.TransitionRevoke,
-			}
-
-			// Act & Assert
-			for _, transition := range transitions {
-				err := wm.CreateWorkflowTransitionNotificationTask(ctx, wf, transition, recipients)
-				assert.NoError(t, err)
-			}
-
-			assert.Equal(t, len(transitions), mockClient.EnqueueCallCount)
-		},
-	)
+		assert.Equal(t, len(transitions), mockClient.EnqueueCallCount)
+	})
 }
 
 func TestWorkflowManager_WorkflowCanExpire(t *testing.T) {

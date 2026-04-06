@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -22,6 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	cmksql "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -35,7 +37,8 @@ func startAPIWorkflows(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string)
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config: config.Config{Database: dbCfg},
+		Config:  config.Config{Database: dbCfg},
+		Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
 	})
 
 	return db, sv, tenants[0]
@@ -50,7 +53,8 @@ var (
 )
 
 func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
-	authClient testutils.AuthClientData) []*model.Workflow {
+	authClient testutils.AuthClientData,
+) []*model.Workflow {
 	tb.Helper()
 
 	groupIDsBytes, err := json.Marshal([]uuid.UUID{authClient.Group.ID})
