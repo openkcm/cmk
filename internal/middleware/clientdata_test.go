@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -57,9 +58,12 @@ type mockRoleGetter struct {
 }
 
 func (m *mockRoleGetter) GetRoleFromIAM(
-	_ context.Context,
+	ctx context.Context,
 	groups []string,
 ) (constants.Role, error) {
+	if _, err := cmkcontext.ExtractClientDataIdentifier(ctx); err != nil {
+		return "", fmt.Errorf("authz check failed: no identity in context: %w", err)
+	}
 	if m.err != nil {
 		return "", m.err
 	}
@@ -572,6 +576,16 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 			expectError:     true,
 			expectHttpCode:  http.StatusForbidden,
 			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
+		},
+		{
+			// Regression test: GetRoleFromIAM is called after the identity is injected
+			// into the context, so the authz-aware repo check has a proper identity to work with.
+			name:           "multiple_groups_single_role_succeeds_without_identity_in_context",
+			roles:          []constants.Role{constants.KeyAdminRole},
+			clientGroups:   []string{"group1", "group2"},
+			apiPath:        "/keys",
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
 		},
 	}
 
