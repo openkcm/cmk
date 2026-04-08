@@ -48,6 +48,7 @@ var (
 	ErrUnsupportedRegion         = errors.New("unsupported region")
 	ErrNoConnectedRegionsForKey  = errors.New("no connected regions found for key")
 	ErrNoTasksResolvedForJob     = errors.New("no tasks resolved for the job")
+	ErrKeyRotateMismatchedKeyIDs = errors.New("system key rotate requires identical key IDs")
 )
 
 type Option func(manager *orbital.Manager)
@@ -171,9 +172,9 @@ func NewCryptoReconciler(
 			repository, registry, cmkAuditor, manager, systemResolver),
 		JobTypeSystemSwitch:      NewSystemSwitchJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
 		JobTypeSystemSwitchNewPK: NewSystemSwitchJobHandler(repository, registry, cmkAuditor, manager, systemResolver),
+		JobTypeSystemKeyRotate:   NewSystemKeyRotateJobHandler(repository, cmkAuditor, manager, systemResolver),
 		JobTypeKeyEnable:         NewKeyJobHandler(keyResolver),
 		JobTypeKeyDisable:        NewKeyJobHandler(keyResolver),
-		JobTypeKeyRotate:         NewKeyJobHandler(keyResolver),
 		JobTypeKeyDelete:         NewKeyJobHandler(keyResolver),
 		JobTypeKeyDetach:         NewKeyDetachJobHandler(repository, cmkAuditor, manager, keyResolver),
 	}

@@ -8,7 +8,7 @@ enum TaskType {
   KEY_ENABLE = 0;
   KEY_DISABLE = 1;
   KEY_DELETE = 2;
-  KEY_ROTATE = 3;
+  SYSTEM_KEY_ROTATE = 3;
   SYSTEM_LINK = 4;
   SYSTEM_UNLINK = 5;
   SYSTEM_SWITCH = 6;
@@ -24,14 +24,14 @@ message Data {
   }
 }
 
-// TaskType KEY_ENABLE, KEY_DISABLE, KEY_DELETE, KEY_ROTATE
+// TaskType KEY_ENABLE, KEY_DISABLE, KEY_DELETE
 message KeyAction {
   string key_id = 10;
   string tenant_id = 20;
   string cmk_region = 30;
 }
 
-// TaskType SYSTEM_LINK, SYSTEM_UNLINK, SYSTEM_SWITCH
+// TaskType SYSTEM_LINK, SYSTEM_UNLINK, SYSTEM_SWITCH, SYSTEM_KEY_ROTATE
 message SystemAction {
   string system_id = 10;
   string system_region = 12;

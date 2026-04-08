@@ -71,10 +71,11 @@ func (v1 *V1) GetKey(ctx context.Context, req *keymanagement.GetKeyRequest) (*ke
 	}
 
 	return &keymanagement.GetKeyResponse{
-		KeyID:        grpcResp.GetKeyId(),
-		KeyAlgorithm: keymanagement.KeyAlgorithm(grpcResp.GetAlgorithm()),
-		Status:       grpcResp.GetStatus(),
-		Usage:        grpcResp.GetUsage(),
+		KeyID:              grpcResp.GetKeyId(),
+		KeyAlgorithm:       keymanagement.KeyAlgorithm(grpcResp.GetAlgorithm()),
+		Status:             grpcResp.GetStatus(),
+		Usage:              grpcResp.GetUsage(),
+		LatestKeyVersionId: grpcResp.GetLatestKeyVersionId(),
 	}, nil
 }
 

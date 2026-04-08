@@ -33,4 +33,5 @@ func (c *CryptoReconciler) DisableAuditLog() {
 	c.jobHandlerMap[JobTypeSystemLink].(*SystemLinkJobHandler).cmkAuditor = &auditor.Auditor{}
 	c.jobHandlerMap[JobTypeSystemUnlink].(*SystemUnlinkJobHandler).cmkAuditor = &auditor.Auditor{}
 	c.jobHandlerMap[JobTypeSystemSwitch].(*SystemSwitchJobHandler).cmkAuditor = &auditor.Auditor{}
+	c.jobHandlerMap[JobTypeSystemKeyRotate].(*SystemKeyRotateJobHandler).cmkAuditor = &auditor.Auditor{}
 }
