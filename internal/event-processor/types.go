@@ -18,11 +18,11 @@ const (
 	JobTypeSystemUnlinkDecommission JobType = "SYSTEM_UNLINK_DECOMMISSION"
 	JobTypeSystemSwitch             JobType = "SYSTEM_SWITCH"
 	JobTypeSystemSwitchNewPK        JobType = "SYSTEM_SWITCH_NEW_PK"
+	JobTypeSystemKeyRotate          JobType = "SYSTEM_KEY_ROTATE"
 	JobTypeKeyEnable                JobType = "KEY_ENABLE"
 	JobTypeKeyDisable               JobType = "KEY_DISABLE"
 	JobTypeKeyDetach                JobType = "KEY_DETACH"
 	JobTypeKeyDelete                JobType = "KEY_DELETE"
-	JobTypeKeyRotate                JobType = "KEY_ROTATE"
 )
 
 type JobHandler interface {
