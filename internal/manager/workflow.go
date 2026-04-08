@@ -459,7 +459,7 @@ func (w *WorkflowManager) GetWorkflowApprovalSummary(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (*wf.ApprovalSummary, error) {
-	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID) // Use system user for summary
+	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID) // Use system user for summary TODO remove
 	if err != nil {
 		return nil, err
 	}

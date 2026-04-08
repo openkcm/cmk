@@ -204,6 +204,7 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 			CreateDBTenant(tb, dbCon, &tenant)
 			tenantIDs = append(tenantIDs, tenant.ID)
 		}
+		runMigration(tb, cfg, migrator, db.TenantTarget)
 
 		return dbCon, tenantIDs, cfg.dbCon
 	}

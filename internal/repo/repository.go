@@ -250,7 +250,8 @@ func ListAndCountSystemWithProperties(
 type BatchProcessOptions struct {
 	// DeleteMode indicates that items are being deleted during processing.
 	// When true, the offset is not incremented to avoid skipping records.
-	DeleteMode bool
+	DeleteMode     bool
+	IgnoreFailMode bool
 }
 
 // ProcessInBatchWithOptions retrieves and processes records in batches based on the provided query parameters.
@@ -270,7 +271,7 @@ func ProcessInBatchWithOptions[T Resource](
 	processFunc func([]*T) error,
 ) error {
 	offset := 0
-
+	var lastError error
 	for {
 		var items []*T
 
@@ -283,7 +284,10 @@ func ProcessInBatchWithOptions[T Resource](
 
 		err = processFunc(items)
 		if err != nil {
-			return err
+			lastError = err
+			if !options.IgnoreFailMode {
+				return err
+			}
 		}
 
 		// No more items to process
@@ -307,7 +311,7 @@ func ProcessInBatchWithOptions[T Resource](
 		}
 	}
 
-	return nil
+	return lastError
 }
 
 // ProcessInBatch retrieves and processes records in batches from the database based on the provided query parameters.

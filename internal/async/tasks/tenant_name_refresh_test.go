@@ -4,12 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/zeebo/assert"
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
 	tenantv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -75,10 +77,16 @@ func TestTenantNameRefresher(t *testing.T) {
 		CreateDatabase: true,
 	}, testutils.WithInitTenants(*emptyNameTenant, *namedTenant))
 	r := sql.NewRepository(db)
+
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+		r, &config.Config{})
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
 
 	registry := registry.NewMockService(nil, &MockTenantRegistry{}, nil)
-	refresher := tasks.NewTenantNameRefresher(r, registry)
+	refresher := tasks.NewTenantNameRefresher(authzRepo, registry)
 
 	t.Run("Should update tenant names if empty", func(t *testing.T) {
 		err := refresher.ProcessTask(ctx, nil)

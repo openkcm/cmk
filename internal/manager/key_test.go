@@ -62,9 +62,10 @@ func SetupKeyTest(t *testing.T) (
 		&config.Config{
 			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 		})
-	userManager := manager.NewUserManager(r, cmkAuditor)
+	userManager := manager.NewUserManager(r, nil, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager,
+		tagManager, cmkAuditor, cfg)
 
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	require.NoError(t, err)

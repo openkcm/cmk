@@ -7,6 +7,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -24,14 +26,18 @@ var (
 )
 
 type SystemInformation struct {
-	repo      repo.Repo
-	systemCfg *config.System
+	repo        repo.Repo
+	systemCfg   *config.System
+	authzLoader *authz_loader.AuthzLoader[
+		authz.RepoResourceTypeName, authz.RepoAction]
 
 	svc systeminformation.SystemInformation
 }
 
 func NewSystemInformationManager(
 	repo repo.Repo,
+	authzLoader *authz_loader.AuthzLoader[
+		authz.RepoResourceTypeName, authz.RepoAction],
 	svcRegistry *cmkpluginregistry.Registry,
 	systemCfg *config.System,
 ) (*SystemInformation, error) {
@@ -101,7 +107,16 @@ func (m *SystemInformation) updateSystem(ctx context.Context, system *model.Syst
 		return errs.Wrap(err, repo.ErrSystemProperties)
 	}
 
-	updated := system.UpdateSystemProperties(metadata, m.systemCfg)
+	var authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction]
+	if m.authzLoader != nil {
+		authzHandler = m.authzLoader.AuthzHandler
+	}
+	updated, err := system.UpdateSystemProperties(ctx, authzHandler,
+		metadata, m.systemCfg)
+	if err != nil {
+		return errs.Wrap(err, repo.ErrSystemProperties)
+	}
+
 	if updated {
 		log.Debug(ctx, "Update System with SIS Information", slog.Any("sisSystem", *system))
 

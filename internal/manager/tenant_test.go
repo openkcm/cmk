@@ -83,6 +83,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	sys := manager.NewSystemManager(
 		ctx,
 		r,
+		nil,
 		clientsFactory,
 		eventFactory,
 		svcRegistry,

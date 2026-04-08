@@ -18,6 +18,8 @@ var (
 	ErrGetRequestID                 = errors.New("no requestID found in context")
 	ErrExtractClientData            = errors.New("could not extract client data from context")
 	ErrExtractClientDataAuthContext = errors.New("could not extract field from client data auth context")
+	ErrExtractSource                = errors.New("could not extract source from context")
+	ErrInvalidSource                = errors.New("invalid Source")
 )
 
 type Opt func(ctx context.Context) context.Context
@@ -77,7 +79,7 @@ func GetRequestID(ctx context.Context) (string, error) {
 	return requestID, nil
 }
 
-func InjectClientData(
+func InjectBusinessClientData(
 	ctx context.Context,
 	clientData *auth.ClientData,
 	authContextFields []string,
@@ -91,14 +93,15 @@ func InjectClientData(
 	}
 
 	clientData.AuthContext = filteredAuthCtx
+	ctx = context.WithValue(ctx, constants.Source, constants.BusinessSource)
 	ctx = context.WithValue(ctx, constants.ClientData, clientData)
 
 	return ctx
 }
 
-func WithInjectClientData(clientData *auth.ClientData, authContextFields []string) Opt {
+func WithInjectBusinessClientData(clientData *auth.ClientData, authContextFields []string) Opt {
 	return func(ctx context.Context) context.Context {
-		return InjectClientData(ctx, clientData, authContextFields)
+		return InjectBusinessClientData(ctx, clientData, authContextFields)
 	}
 }
 
@@ -168,23 +171,73 @@ func ExtractClientDataAuthContext(ctx context.Context) (map[string]string, error
 	return authContext, nil
 }
 
-func IsSystemUser(ctx context.Context) bool {
-	clientData, err := ExtractClientData(ctx)
-	if err != nil {
-		return false
+func InjectInternalClientData(
+	ctx context.Context,
+	role constants.InternalRole,
+) (context.Context, error) {
+	source, ok := ctx.Value(constants.Source).(constants.SourceValue)
+	if ok && source != constants.InternalSource {
+		// We don't want business users changing to internal
+		return ctx, ErrInvalidSource
 	}
+	ctx = InjectRequestID(ctx, uuid.NewString())
+	ctx = context.WithValue(ctx, constants.Source, constants.InternalSource)
+	ctx = context.WithValue(ctx, constants.InternalData, role)
 
-	return clientData.Identifier == constants.SystemUser.String()
+	return ctx, nil
 }
 
-func InjectSystemUser(ctx context.Context) context.Context {
-	clientData, err := ExtractClientData(ctx)
-	// Use zero values and system user
-	if err != nil {
-		clientData = &auth.ClientData{}
+func BusinessToInternalContext(
+	ctx context.Context,
+	role constants.InternalRole,
+) (context.Context, error) {
+	source, ok := ctx.Value(constants.Source).(constants.SourceValue)
+	if ok && source != constants.BusinessSource {
+		// We don't want business users changing to internal
+		return ctx, ErrInvalidSource
 	}
 
-	clientData.Identifier = uuid.Max.String()
+	tenantID, err := ExtractTenantID(ctx)
+	if err != nil {
+		return ctx, err
+	}
 
-	return context.WithValue(ctx, constants.ClientData, clientData)
+	internalCtx := CreateTenantContext(nil, tenantID)
+	internalCtx, err = InjectInternalClientData(internalCtx, role)
+	if err != nil {
+		return ctx, err
+	}
+
+	requestID, err := GetRequestID(ctx)
+	if err == nil {
+		internalCtx = InjectRequestID(internalCtx, requestID)
+	}
+
+	return internalCtx, nil
+}
+
+func ExtractInternalRole(ctx context.Context) (constants.InternalRole, error) {
+	internalRole, ok := ctx.Value(constants.InternalData).(constants.InternalRole)
+	if !ok || internalRole == "" {
+		return "", ErrExtractClientData
+	}
+
+	return internalRole, nil
+}
+
+func ExtractSource(ctx context.Context) (string, error) {
+	source, ok := ctx.Value(constants.Source).(constants.SourceValue)
+	if !ok || source == "" {
+		return "", ErrExtractSource
+	}
+
+	return string(source), nil
+}
+
+func IsInternalUser(ctx context.Context) (bool, error) {
+	source, err := ExtractSource(ctx)
+	if err != nil {
+		return false, err
+	}
+	return source == string(constants.InternalSource), nil
 }

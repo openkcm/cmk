@@ -125,7 +125,7 @@ func registerTasks(
 
 	r := sql.NewRepository(dbCon)
 
-	sis, err := manager.NewSystemInformationManager(r, svcRegistry, &cfg.ContextModels.System)
+	sis, err := manager.NewSystemInformationManager(r, nil, svcRegistry, &cfg.ContextModels.System)
 	if err != nil {
 		return errs.Wrapf(err, "failed to start system information manager")
 	}
@@ -145,14 +145,14 @@ func registerTasks(
 	}
 
 	cmkAuditor := auditor.New(ctx, cfg)
-	userManager := manager.NewUserManager(r, cmkAuditor)
+	userManager := manager.NewUserManager(r, nil, cmkAuditor)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
 	keyManager := manager.NewKeyManager(
 		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
-	systemManager := manager.NewSystemManager(ctx, r, nil, eventFactory, svcRegistry, cfg, keyConfigManager, userManager)
+	systemManager := manager.NewSystemManager(ctx, r, nil, nil, eventFactory, svcRegistry, cfg, keyConfigManager, userManager)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, cron.Client(), tenantConfigManager, cfg)
