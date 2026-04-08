@@ -458,7 +458,7 @@ func terminateFailedSystemJob(
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			log.Warn(ctx, "System not found when handling job termination, skipping system update",
-				slog.String("systemID", system.Identifier))
+				slog.String("systemID", data.SystemID))
 			return nil
 		}
 		return err
@@ -503,7 +503,7 @@ func terminateCanceledSystemJob(
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			log.Warn(ctx, "System not found when handling job termination, skipping system update",
-				slog.String("systemID", system.Identifier))
+				slog.String("systemID", data.SystemID))
 			return nil
 		}
 		return err
