@@ -12,7 +12,6 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type KeyVersion interface {
@@ -71,28 +70,6 @@ func (kvm *KeyVersionManager) GetKeyVersions(
 	)
 }
 
-// UpdateVersionRotation updates an existing version's rotation timestamp.
-// This is used when syncing with keystore to record the detected version as current.
-func (kvm *KeyVersionManager) UpdateVersionRotation(
-	ctx context.Context,
-	version *model.KeyVersion,
-	rotationTime *time.Time,
-) error {
-	// Update the version rotation time
-	if rotationTime != nil {
-		version.RotatedAt = rotationTime
-	} else {
-		version.RotatedAt = ptr.PointTo(time.Now().UTC())
-	}
-
-	_, err := kvm.repo.Patch(ctx, version, *repo.NewQuery().UpdateAll(true))
-	if err != nil {
-		return errs.Wrap(ErrUpdateKeyVersionDB, err)
-	}
-
-	return nil
-}
-
 // CreateVersion creates a new KeyVersion record
 func (kvm *KeyVersionManager) CreateVersion(
 	ctx context.Context,
@@ -100,17 +77,11 @@ func (kvm *KeyVersionManager) CreateVersion(
 	nativeID string,
 	rotationTime *time.Time,
 ) (*model.KeyVersion, error) {
-	// Use rotation time from plugin response, fallback to NOW if not provided
-	rotatedAt := time.Now().UTC()
-	if rotationTime != nil {
-		rotatedAt = *rotationTime
-	}
-
 	newVersion := model.KeyVersion{
 		ID:        uuid.New(),
 		NativeID:  nativeID,
 		KeyID:     keyID,
-		RotatedAt: ptr.PointTo(rotatedAt),
+		RotatedAt: rotationTime,
 	}
 
 	err := kvm.repo.Create(ctx, &newVersion)

@@ -1110,7 +1110,10 @@ func (km *KeyManager) syncKeyVersion(
 	keyResp *keymanagement.GetKeyResponse,
 ) error {
 	// Parse rotation time from response
-	rotationTime := km.parseRotationTime(ctx, key, keyResp)
+	rotationTime, err := km.parseRotationTime(keyResp)
+	if err != nil {
+		return err
+	}
 
 	// Get current stored version (latest RotatedAt)
 	currentVersion, err := km.getCurrentKeyVersion(ctx, key.ID)
@@ -1121,11 +1124,8 @@ func (km *KeyManager) syncKeyVersion(
 
 	// Compare with latest_key_version_id from response
 	if currentVersion != nil && currentVersion.NativeID == keyResp.LatestKeyVersionId {
-		// Same version - just update rotation time if needed
-		if rotationTime != nil && (currentVersion.RotatedAt == nil || !currentVersion.RotatedAt.Equal(*rotationTime)) {
-			return km.keyVersionManager.UpdateVersionRotation(ctx, currentVersion, rotationTime)
-		}
-		return nil // No changes needed
+		// Same version - no changes needed
+		return nil
 	}
 
 	// Different version detected - create new one
@@ -1133,36 +1133,20 @@ func (km *KeyManager) syncKeyVersion(
 }
 
 func (km *KeyManager) parseRotationTime(
-	ctx context.Context,
-	key *model.Key,
 	keyResp *keymanagement.GetKeyResponse,
-) *time.Time {
+) (*time.Time, error) {
 	if keyResp.RotationTime == nil {
-		log.Debug(ctx, "Plugin did not provide RotationTime, will use current time",
-			slog.String("keyId", key.ID.String()),
-		)
-		return nil
+		// Return current time as default when plugin doesn't provide rotation time
+		now := time.Now().UTC()
+		return &now, nil
 	}
-
-	log.Debug(ctx, "Plugin provided RotationTime",
-		slog.String("keyId", key.ID.String()),
-		slog.String("rotationTime", *keyResp.RotationTime),
-	)
 
 	parsedTime, err := time.Parse(time.RFC3339, *keyResp.RotationTime)
 	if err != nil {
-		log.Warn(ctx, "Failed to parse rotation time from plugin response, using current time",
-			slog.String("rotationTime", *keyResp.RotationTime),
-			slog.String("error", err.Error()),
-		)
-		return nil
+		return nil, errs.Wrap(ErrInvalidRotationTime, err)
 	}
 
-	log.Debug(ctx, "Using rotation time from plugin",
-		slog.String("keyId", key.ID.String()),
-		slog.Time("rotationTime", parsedTime),
-	)
-	return &parsedTime
+	return &parsedTime, nil
 }
 
 func (km *KeyManager) getCurrentKeyVersion(
