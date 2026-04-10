@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"google.golang.org/grpc/codes"
@@ -276,15 +277,23 @@ func (m *TenantManager) checkAllSystemsUnlinked(ctx context.Context) (bool, erro
 
 func (m *TenantManager) detachPrimaryKeys(ctx context.Context) error {
 	// List all primary keys that are not yet detached and trigger detach events for them.
-	query := repo.NewCompositeKey().
-		Where(repo.IsPrimaryField, true).
+	cond := repo.NewCompositeKey().
+		Where(fmt.Sprintf(`"%s".%s`, model.KeyConfiguration{}.TableName(), repo.PrimaryKeyIDField), repo.NotNull).
 		Where(repo.StateField, cmkapi.KeyStateDETACHING, repo.NotEq).
 		Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq)
+
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(cond)).Join(
+		repo.LeftJoin, repo.JoinCondition{
+			Table:     model.Key{},
+			Field:     repo.KeyConfigIDField,
+			JoinTable: model.KeyConfiguration{},
+			JoinField: repo.IDField,
+		})
 
 	return repo.ProcessInBatch(
 		ctx,
 		m.repo,
-		repo.NewQuery().Where(repo.NewCompositeKeyGroup(query)),
+		query,
 		repo.DefaultLimit,
 		func(keys []*model.Key) error {
 			for _, k := range keys {
@@ -320,7 +329,6 @@ func (m *TenantManager) unmapAllSystemsFromRegistry(ctx context.Context) Offboar
 			return nil
 		},
 	)
-
 	if err != nil {
 		log.Error(ctx, "error while processing systems in batch to unmap from registry", err)
 		return OffboardingContinueAndWait
@@ -373,15 +381,23 @@ func (m *TenantManager) escalateOffboardingStatus(current, target OffboardingSta
 }
 
 func (m *TenantManager) checkAllPrimaryKeysProcessed(ctx context.Context) (bool, error) {
-	query := repo.NewCompositeKey().
-		Where(repo.IsPrimaryField, true).
+	cond := repo.NewCompositeKey().
+		Where(fmt.Sprintf(`"%s".%s`, model.KeyConfiguration{}.TableName(), repo.PrimaryKeyIDField), repo.NotNull).
 		Where(repo.StateField, cmkapi.KeyStateDETACHING, repo.NotEq).
 		Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq)
+
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(cond)).Join(
+		repo.LeftJoin, repo.JoinCondition{
+			Table:     model.Key{},
+			Field:     repo.KeyConfigIDField,
+			JoinTable: model.KeyConfiguration{},
+			JoinField: repo.IDField,
+		})
 
 	count, err := m.repo.Count(
 		ctx,
 		&model.Key{},
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(query)),
+		*query,
 	)
 	if err != nil {
 		return false, err
@@ -391,14 +407,22 @@ func (m *TenantManager) checkAllPrimaryKeysProcessed(ctx context.Context) (bool,
 }
 
 func (m *TenantManager) checkAllPrimaryKeysDetached(ctx context.Context) (bool, error) {
-	query := repo.NewCompositeKey().
-		Where(repo.IsPrimaryField, true).
+	cond := repo.NewCompositeKey().
+		Where(fmt.Sprintf(`"%s".%s`, model.KeyConfiguration{}.TableName(), repo.PrimaryKeyIDField), repo.NotNull).
 		Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq)
+
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(cond)).Join(
+		repo.LeftJoin, repo.JoinCondition{
+			Table:     model.Key{},
+			Field:     repo.KeyConfigIDField,
+			JoinTable: model.KeyConfiguration{},
+			JoinField: repo.IDField,
+		})
 
 	count, err := m.repo.Count(
 		ctx,
 		&model.Key{},
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(query)),
+		*query,
 	)
 	if err != nil {
 		return false, err
