@@ -24,7 +24,7 @@ func (c *APIController) GetKeyVersions(ctx context.Context,
 	// Fetch the parent key to get current state for all versions
 	key, err := c.Manager.Keys.Get(ctx, request.KeyID)
 	if err != nil {
-		return nil, apierrors.ErrQueryKeyVersionList
+		return nil, err
 	}
 
 	keyVersions, count, err := c.Manager.KeyVersions.GetKeyVersions(

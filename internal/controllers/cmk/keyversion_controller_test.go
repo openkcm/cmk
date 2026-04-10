@@ -114,6 +114,11 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 			keyID:          "30",
 			expectedStatus: http.StatusBadRequest,
 		},
+		{
+			name:           "GetKeyVersions_NotFound_NonExistentKey",
+			keyID:          uuid.New().String(),
+			expectedStatus: http.StatusNotFound,
+		},
 	}
 
 	for _, tt := range tests {
