@@ -36,9 +36,9 @@ func TestSchedulerHYOKSync(t *testing.T) {
 
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
-	repository := sql.NewRepository(testDB)
+	r := sql.NewRepository(testDB)
 
-	setupDatabase(ctx, t, repository, true)
+	setupDatabase(ctx, t, r, true)
 
 	cronWorker, err := async.New(testConfig)
 	assert.NoError(t, err)
@@ -47,7 +47,7 @@ func TestSchedulerHYOKSync(t *testing.T) {
 
 	// Start worker
 	go func() {
-		err := cronWorker.RunWorker(ctx)
+		err := cronWorker.RunWorker(ctx, r)
 		assert.NoError(t, err)
 	}()
 
@@ -60,7 +60,7 @@ func TestSchedulerHYOKSync(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	// Check that new keys have been created
 	keys := []*model.Key{}
-	err = repository.List(
+	err = r.List(
 		ctx,
 		model.Key{},
 		&keys,
