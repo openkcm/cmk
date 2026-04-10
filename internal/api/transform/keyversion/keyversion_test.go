@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/keyversion"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -16,6 +15,7 @@ import (
 
 func TestTransformKeyVersion_ToAPI(t *testing.T) {
 	now := time.Now()
+	versionID := uuid.New()
 
 	key1 := model.Key{
 		ID:        uuid.New(),
@@ -27,39 +27,24 @@ func TestTransformKeyVersion_ToAPI(t *testing.T) {
 
 	modelKeyVersionMut := testutils.NewMutator(func() model.KeyVersion {
 		return model.KeyVersion{
-			ExternalID: uuid.New().String(),
-			KeyID:      key1.ID,
+			ID:    versionID,
+			KeyID: key1.ID,
 			AutoTimeModel: model.AutoTimeModel{
 				CreatedAt: now,
 			},
-			Version:   1,
-			IsPrimary: true,
-			NativeID:  ptr.PointTo("arn:aws:kms:us-west-2:111122223333:alias/<alias-name>"),
-		}
-	})
-
-	apiKeyVersionMut := testutils.NewMutator(func() cmkapi.KeyVersion {
-		return cmkapi.KeyVersion{
-			IsPrimary: ptr.PointTo(true),
-			Version:   ptr.PointTo(1),
-			Metadata: ptr.PointTo(cmkapi.KeyVersionMetadata{
-				CreatedAt: ptr.PointTo(now),
-				UpdatedAt: ptr.PointTo(now),
-			}),
-			NativeID: ptr.PointTo("arn:aws:kms:us-west-2:111122223333:alias/<alias-name>"),
+			RotatedAt: ptr.PointTo(now),
+			NativeID:  "arn:aws:kms:us-west-2:111122223333:alias/my-key-alias",
 		}
 	})
 
 	tests := []struct {
 		name            string
 		modelKeyVersion model.KeyVersion
-		expected        cmkapi.KeyVersion
 		err             error
 	}{
 		{
 			name:            "KeyVersionToAPI_Success",
 			modelKeyVersion: modelKeyVersionMut(),
-			expected:        apiKeyVersionMut(),
 			err:             nil,
 		},
 	}
@@ -72,7 +57,12 @@ func TestTransformKeyVersion_ToAPI(t *testing.T) {
 				assert.Nil(t, keyVersion)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expected.Version, keyVersion.Version)
+				assert.Equal(t, tt.modelKeyVersion.ID.String(), keyVersion.Id.String())
+				assert.Equal(t, tt.modelKeyVersion.NativeID, *keyVersion.NativeID)
+				// IsPrimary is not set by ToAPI - controller sets it
+				assert.Nil(t, keyVersion.IsPrimary)
+				// State is not set by ToAPI - controller sets it from parent Key
+				assert.Nil(t, keyVersion.State)
 			}
 		})
 	}

@@ -732,7 +732,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 
 	// Setup plugin with version info for one key, not the other
 	instance.pluginOp.HandleKeyRecord(keyWithVersionID, testplugins.EnabledKeyStatus)
-	instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, initialVersionID)
+	instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, initialVersionID, "")
 
 	instance.pluginOp.HandleKeyRecord(keyWithoutVerID, testplugins.EnabledKeyStatus)
 	// No version info set for keyWithoutVersion
@@ -793,7 +793,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 
 	t.Run("should fetch fresh version info on every event creation", func(t *testing.T) {
 		// Update version info in plugin (simulating rotation)
-		instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, updatedVersionID)
+		instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, updatedVersionID, "")
 
 		keyAccessData := resolveAndExtractKeyAccessData(
 			eventprocessor.JobTypeSystemSwitch.String(),

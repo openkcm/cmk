@@ -28,6 +28,10 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
+const (
+	testRegionUSEast1 = "us-east-1"
+)
+
 func SetupKeyTest(t *testing.T) (
 	*manager.KeyManager,
 	repo.Repo,
@@ -1192,5 +1196,221 @@ func TestImportKeyMaterial(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, manager.ErrGetKeyDB)
+	})
+}
+
+func TestKeyRotationTime(t *testing.T) {
+	// Known rotation time from keystore
+	keystoreRotationTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	keystoreRotationTimeStr := keystoreRotationTime.Format(time.RFC3339)
+
+	// Setup plugin with custom rotation time
+	pluginOps := testplugins.NewKeystoreOperatorInstance()
+	// Register the key in the plugin first
+	pluginOps.HandleKeyRecord("test-native-id", testplugins.EnabledKeyStatus)
+	pluginOps.SetKeyVersionInfo("test-native-id", "version-1", keystoreRotationTimeStr)
+
+	// Use custom setup similar to SetupKeyTest but with our plugin instance
+	db, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		WithOrbital:    true,
+	})
+	tenant := tenants[0]
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperatorFromInstance(pluginOps))
+	cfg := &config.Config{
+		Plugins:  psCfg,
+		Database: dbConf,
+	}
+	svcRegistry, err := cmkpluginregistry.New(ctx, cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
+	require.NoError(t, err)
+
+	cmkAuditor := auditor.New(ctx, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
+	certManager := manager.NewCertificateManager(ctx, r, svcRegistry,
+		&config.Config{
+			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+		})
+	userManager := manager.NewUserManager(r, cmkAuditor)
+	tagManager := manager.NewTagManager(r)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	km := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
+
+	// Create test data
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
+	keystoreDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeKeystoreDefault
+		c.CommonName = testutils.TestDefaultKeystoreCommonName
+	})
+	ksConfig := testutils.NewKeystore(func(_ *model.Keystore) {})
+
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, tenantDefaultCert, keystoreDefaultCert, ksConfig)
+
+	// Inject client data for auth
+	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+	t.Run("Register HYOK key - should use rotation time from keystore", func(t *testing.T) {
+		// Create HYOK key
+		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+		require.NoError(t, err)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.Name = "test-hyok-key"
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = constants.KeyTypeHYOK
+			k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
+			k.Provider = testplugins.Name
+			k.Region = testRegionUSEast1
+			k.NativeID = ptr.PointTo("test-native-id")
+			k.ManagementAccessData = hyokInfo
+		})
+
+		// Register key (which should create initial version with keystore rotation time)
+		createdKey, err := km.Create(ctx, key)
+		require.NoError(t, err)
+		require.NotNil(t, createdKey)
+
+		// Fetch key versions - query directly from repo
+		versions, count, err := repo.ListAndCount(
+			ctx, r, repo.Pagination{Skip: 0, Top: 10, Count: true},
+			model.KeyVersion{},
+			repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where("key_id", createdKey.ID))),
+		)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count)
+		require.Len(t, versions, 1)
+
+		// Verify rotation time matches keystore time (not current time)
+		version := versions[0]
+		assert.NotNil(t, version.RotatedAt)
+		assert.Equal(t, keystoreRotationTime.Unix(), version.RotatedAt.Unix(),
+			"RotatedAt should match keystore rotation time, not current time")
+	})
+
+	t.Run("Detect key rotation - should use rotation time from keystore", func(t *testing.T) {
+		// Create initial key with version
+		initialRotationTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+		require.NoError(t, err)
+
+		// Register the key in the plugin with initial version
+		pluginOps.HandleKeyRecord("test-native-id-rotate", testplugins.EnabledKeyStatus)
+		pluginOps.SetKeyVersionInfo("test-native-id-rotate", "version-1", initialRotationTime.Format(time.RFC3339))
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyType = constants.KeyTypeHYOK
+			k.Provider = testplugins.Name
+			k.NativeID = ptr.PointTo("test-native-id-rotate")
+			k.KeyConfigurationID = keyConfig.ID
+			k.ManagementAccessData = hyokInfo
+			k.KeyVersions = []model.KeyVersion{
+				{
+					ID:        uuid.New(),
+					NativeID:  "version-1",
+					RotatedAt: ptr.PointTo(initialRotationTime),
+				},
+			}
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		// Setup plugin to return new version with specific rotation time
+		newVersionRotationTime := time.Date(2025, 6, 20, 14, 45, 0, 0, time.UTC)
+		newVersionRotationTimeStr := newVersionRotationTime.Format(time.RFC3339)
+		pluginOps.SetKeyVersionInfo("test-native-id-rotate", "version-2", newVersionRotationTimeStr)
+
+		// Manually trigger sync for our key (use SyncHYOKKeys which syncs all)
+		err = km.SyncHYOKKeys(ctx)
+		require.NoError(t, err)
+
+		// Fetch versions again
+		versions, count, err := repo.ListAndCount(
+			ctx, r, repo.Pagination{Skip: 0, Top: 10, Count: true},
+			model.KeyVersion{},
+			repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where("key_id", key.ID))),
+		)
+		require.NoError(t, err)
+		assert.Equal(t, 2, count, "Should have 2 versions after rotation")
+		require.Len(t, versions, 2)
+
+		// Find the new version
+		var newVersion *model.KeyVersion
+		for _, v := range versions {
+			if v.NativeID == "version-2" {
+				newVersion = v
+				break
+			}
+		}
+		require.NotNil(t, newVersion, "Should find the new version")
+
+		// Verify rotation time matches keystore time for new version
+		assert.NotNil(t, newVersion.RotatedAt)
+		assert.Equal(t, newVersionRotationTime.Unix(), newVersion.RotatedAt.Unix(),
+			"New version RotatedAt should match keystore rotation time")
+
+		// Verify it's the rotation time from keystore, not current time
+		now := time.Now().UTC()
+		timeDiff := now.Sub(*newVersion.RotatedAt)
+		assert.Greater(t, timeDiff.Hours(), float64(24*30*6), // More than 6 months ago
+			"RotatedAt should be the keystore time (2025-06-20), not current time")
+	})
+
+	t.Run("Fallback to current time when keystore doesn't provide rotation time", func(t *testing.T) {
+		// Setup plugin without rotation time
+		pluginOpsNoTime := testplugins.NewKeystoreOperatorInstance()
+		// Register key but don't set rotation time (empty string)
+		pluginOpsNoTime.HandleKeyRecord("test-native-id-no-time", testplugins.EnabledKeyStatus)
+		pluginOpsNoTime.SetKeyVersionInfo("test-native-id-no-time", "version-1", "") // Empty rotation time
+
+		ps2, psCfg2 := testutils.NewTestPlugins(testplugins.NewKeystoreOperatorFromInstance(pluginOpsNoTime))
+		cfg2 := config.Config{Plugins: psCfg2}
+		svcRegistry2, err := cmkpluginregistry.New(ctx, &cfg2, cmkpluginregistry.WithBuiltInPlugins(ps2))
+		require.NoError(t, err)
+
+		km2 := manager.NewKeyManager(r, svcRegistry2, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
+
+		// Create HYOK key
+		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+		require.NoError(t, err)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.Name = "test-hyok-no-time"
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = constants.KeyTypeHYOK
+			k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
+			k.Provider = testplugins.Name
+			k.Region = testRegionUSEast1
+			k.NativeID = ptr.PointTo("test-native-id-no-time")
+			k.ManagementAccessData = hyokInfo
+		})
+
+		beforeCreate := time.Now().UTC()
+		createdKey, err := km2.Create(ctx, key)
+		afterCreate := time.Now().UTC()
+
+		require.NoError(t, err)
+		require.NotNil(t, createdKey)
+
+		// Fetch version
+		versions, _, err := repo.ListAndCount(
+			ctx, r, repo.Pagination{Skip: 0, Top: 10, Count: true},
+			model.KeyVersion{},
+			repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where("key_id", createdKey.ID))),
+		)
+		require.NoError(t, err)
+		require.Len(t, versions, 1)
+
+		// Verify rotation time is current time (between before and after)
+		version := versions[0]
+		assert.NotNil(t, version.RotatedAt)
+		assert.True(t, version.RotatedAt.After(beforeCreate) || version.RotatedAt.Equal(beforeCreate),
+			"RotatedAt should be current time when keystore doesn't provide it")
+		assert.True(t, version.RotatedAt.Before(afterCreate) || version.RotatedAt.Equal(afterCreate),
+			"RotatedAt should be current time when keystore doesn't provide it")
 	})
 }

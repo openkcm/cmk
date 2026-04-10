@@ -7,26 +7,24 @@ import (
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
-// ToAPI converts KeyVersion db model to a KeyVersion api model
+// ToAPI converts KeyVersion db model to a KeyVersion api model.
+// Note: IsPrimary and State fields are set by the caller (controller) as they require
+// context of the parent Key and all versions.
 func ToAPI(kv model.KeyVersion) (*cmkapi.KeyVersion, error) {
 	err := sanitise.Sanitize(&kv)
 	if err != nil {
 		return nil, err
 	}
 
-	var nativeID *string
-
-	if kv.NativeID != nil {
-		nativeID = kv.NativeID
-	}
-
 	return &cmkapi.KeyVersion{
-		IsPrimary: &kv.IsPrimary,
-		Version:   &kv.Version,
+		Id: &kv.ID,
+		// IsPrimary is set by the controller
+		// State is set by the controller (from parent Key)
 		Metadata: ptr.PointTo(cmkapi.KeyVersionMetadata{
 			CreatedAt: ptr.PointTo(kv.CreatedAt),
 			UpdatedAt: ptr.PointTo(kv.UpdatedAt),
+			RotatedAt: kv.RotatedAt,
 		}),
-		NativeID: nativeID,
+		NativeID: &kv.NativeID,
 	}, nil
 }

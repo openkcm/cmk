@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/orbital"
@@ -53,11 +54,12 @@ func IsUnavailableKeyState(state string) bool {
 type KeyManager struct {
 	ProviderConfigManager
 
-	repo             repo.Repo
-	keyConfigManager *KeyConfigManager
-	user             User
-	eventFactory     *eventprocessor.EventFactory
-	cmkAuditor       *auditor.Auditor
+	repo              repo.Repo
+	keyConfigManager  *KeyConfigManager
+	keyVersionManager *KeyVersionManager
+	user              User
+	eventFactory      *eventprocessor.EventFactory
+	cmkAuditor        *auditor.Auditor
 }
 
 func NewKeyManager(
@@ -70,6 +72,8 @@ func NewKeyManager(
 	eventFactory *eventprocessor.EventFactory,
 	cmkAuditor *auditor.Auditor,
 ) *KeyManager {
+	keyVersionManager := NewKeyVersionManager(repo, svcRegistry, tenantConfigs, certManager, cmkAuditor)
+
 	return &KeyManager{
 		ProviderConfigManager: *NewProviderConfigManager(
 			svcRegistry,
@@ -79,11 +83,12 @@ func NewKeyManager(
 			NewPool(repo),
 			repo,
 		),
-		repo:             repo,
-		keyConfigManager: keyConfigManager,
-		user:             user,
-		eventFactory:     eventFactory,
-		cmkAuditor:       cmkAuditor,
+		repo:              repo,
+		keyConfigManager:  keyConfigManager,
+		keyVersionManager: keyVersionManager,
+		user:              user,
+		eventFactory:      eventFactory,
+		cmkAuditor:        cmkAuditor,
 	}
 }
 
@@ -92,48 +97,37 @@ func (km *KeyManager) Create(
 	key *model.Key,
 ) (*model.Key, error) {
 	ctx = model.LogInjectKey(ctx, key)
-	_, err := km.user.HasKeyAccess(ctx, authz.APIActionCreate, key.KeyConfigurationID)
-	if err != nil {
+
+	// Validate access and load key configuration
+	if err := km.validateKeyCreation(ctx, key); err != nil {
 		return nil, err
 	}
 
-	keyConfig := &model.KeyConfiguration{ID: key.KeyConfigurationID}
-
-	_, err = km.repo.First(
-		ctx,
-		keyConfig,
-		*repo.NewQuery(),
-	)
-	if err != nil {
-		return nil, errs.Wrap(ErrGetConfiguration, err)
-	}
-
+	// Initialize provider
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
 		return nil, errs.Wrap(ErrFailedToInitProvider, err)
 	}
 
-	switch key.KeyType {
-	case constants.KeyTypeSystemManaged, constants.KeyTypeBYOK:
-		err = km.createManagedProviderKey(ctx, key, provider)
-	case constants.KeyTypeHYOK:
-		err = km.registerHYOKKey(ctx, key, provider)
-	default:
-		return nil, ErrInvalidKeystore
-	}
-
+	// Create or register key based on type
+	keyResp, err := km.createOrRegisterProviderKey(ctx, key, provider)
 	if err != nil {
 		return nil, err
 	}
 
-	err = km.setPrimaryIfFirstKey(ctx, key)
-	if err != nil {
+	// Set as primary if this is the first key
+	if err := km.setPrimaryIfFirstKey(ctx, key); err != nil {
 		return nil, errs.Wrap(ErrUpdatePrimary, err)
 	}
 
-	err = km.createKey(ctx, key)
-	if err != nil {
+	// Save key to database
+	if err := km.createKey(ctx, key); err != nil {
 		return nil, err
+	}
+
+	// For HYOK keys, create initial version from keystore response
+	if key.KeyType == constants.KeyTypeHYOK && keyResp != nil {
+		_ = km.syncKeyVersion(ctx, key, keyResp)
 	}
 
 	km.sendCreateAuditLog(ctx, key)
@@ -144,10 +138,17 @@ func (km *KeyManager) Create(
 func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, error) {
 	key := &model.Key{ID: keyID}
 
+	joinCond := repo.JoinCondition{
+		Table:     &model.Key{},
+		Field:     repo.IDField,
+		JoinTable: &model.KeyVersion{},
+		JoinField: fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField),
+	}
+
 	_, err := km.repo.First(
 		ctx,
 		key,
-		*repo.NewQuery().Preload(repo.Preload{"KeyVersions"}),
+		*repo.NewQuery().Join(repo.LeftJoin, joinCond),
 	)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetKeyDB, err)
@@ -182,8 +183,15 @@ func (km *KeyManager) GetKeys(
 	keyConfigID *uuid.UUID,
 	pagination repo.Pagination,
 ) ([]*model.Key, int, error) {
+	joinCond := repo.JoinCondition{
+		Table:     &model.Key{},
+		Field:     repo.IDField,
+		JoinTable: &model.KeyVersion{},
+		JoinField: fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField),
+	}
+
 	query := repo.NewQuery().
-		Preload(repo.Preload{"KeyVersions"})
+		Join(repo.LeftJoin, joinCond)
 
 	if keyConfigID != nil {
 		_, err := km.user.HasKeyAccess(ctx, authz.APIActionRead, *keyConfigID)
@@ -418,6 +426,38 @@ func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 	})
 }
 
+// validateKeyCreation checks user access and loads key configuration
+func (km *KeyManager) validateKeyCreation(ctx context.Context, key *model.Key) error {
+	_, err := km.user.HasKeyAccess(ctx, authz.APIActionCreate, key.KeyConfigurationID)
+	if err != nil {
+		return err
+	}
+
+	keyConfig := &model.KeyConfiguration{ID: key.KeyConfigurationID}
+	_, err = km.repo.First(ctx, keyConfig, *repo.NewQuery())
+	if err != nil {
+		return errs.Wrap(ErrGetConfiguration, err)
+	}
+
+	return nil
+}
+
+// createOrRegisterProviderKey creates a managed key or registers a HYOK key based on key type
+func (km *KeyManager) createOrRegisterProviderKey(
+	ctx context.Context,
+	key *model.Key,
+	provider *ProviderConfig,
+) (*keymanagement.GetKeyResponse, error) {
+	switch key.KeyType {
+	case constants.KeyTypeSystemManaged, constants.KeyTypeBYOK:
+		return nil, km.createManagedProviderKey(ctx, key, provider)
+	case constants.KeyTypeHYOK:
+		return km.registerHYOKKey(ctx, key, provider)
+	default:
+		return nil, ErrInvalidKeystore
+	}
+}
+
 func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) error {
 	cryptoData := key.GetCryptoAccessData()
 	if cryptoData == nil {
@@ -543,11 +583,13 @@ func (km *KeyManager) createManagedProviderKey(
 	return nil
 }
 
+// registerHYOKKey validates that the HYOK key exists in the customer's keystore
+// and returns the key information for version creation after the key is saved.
 func (km *KeyManager) registerHYOKKey(
 	ctx context.Context,
 	key *model.Key,
 	provider *ProviderConfig,
-) error {
+) (*keymanagement.GetKeyResponse, error) {
 	configValues := mergeProviderConfigValuesWithKeyAccessData(provider, key)
 
 	keyResp, err := provider.Client.GetKey(ctx, &keymanagement.GetKeyRequest{
@@ -557,11 +599,11 @@ func (km *KeyManager) registerHYOKKey(
 		},
 	})
 	if err != nil {
-		return errs.Wrap(ErrKeyRegistration, err)
+		return nil, errs.Wrap(ErrKeyRegistration, err)
 	}
 
 	if keyResp.KeyAlgorithm != keymanagement.AES256 {
-		return errs.Wrapf(
+		return nil, errs.Wrapf(
 			ErrUnsupportedKeyAlgorithm,
 			fmt.Sprintf("%v for HYOK registration", keyResp.KeyAlgorithm))
 	}
@@ -569,7 +611,7 @@ func (km *KeyManager) registerHYOKKey(
 	key.Algorithm = string(cmkapi.KeyAlgorithmAES256)
 
 	if keyResp.Status != string(cmkapi.KeyStateENABLED) {
-		return errs.Wrapf(
+		return nil, errs.Wrapf(
 			ErrInvalidKeyState,
 			keyResp.Status+" for HYOK registration",
 		)
@@ -577,16 +619,20 @@ func (km *KeyManager) registerHYOKKey(
 
 	key.State = string(cmkapi.KeyStateENABLED)
 
+	// Initial KeyVersion will be created after key is saved via syncKeyVersion
+	// This ensures proper use of RotationTime from keystore and consistent version creation logic
+
 	log.Debug(
 		ctx,
 		"Key Register",
 		slog.Group("Provider Key",
 			slog.String("id", keyResp.KeyID),
 			slog.String("status", keyResp.Status),
+			slog.String("version", keyResp.LatestKeyVersionId),
 		),
 	)
 
-	return nil
+	return keyResp, nil
 }
 
 func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) error {
@@ -607,7 +653,7 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 			_, err = provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
 				Parameters: keymanagement.RequestParameters{
 					Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
-					KeyID:  *kv.NativeID,
+					KeyID:  kv.NativeID,
 				},
 			})
 			if err != nil {
@@ -642,7 +688,7 @@ func (km *KeyManager) reenableKeyVersions(ctx context.Context, key *model.Key) e
 		_, err = provider.Client.EnableKey(ctx, &keymanagement.EnableKeyRequest{
 			Parameters: keymanagement.RequestParameters{
 				Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
-				KeyID:  *kv.NativeID,
+				KeyID:  kv.NativeID,
 			},
 		})
 		if err != nil {
@@ -730,7 +776,7 @@ func (km *KeyManager) disableKeyVersions(ctx context.Context, key *model.Key) er
 		_, err = provider.Client.DisableKey(ctx, &keymanagement.DisableKeyRequest{
 			Parameters: keymanagement.RequestParameters{
 				Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
-				KeyID:  *kv.NativeID,
+				KeyID:  kv.NativeID,
 			},
 		})
 		if err != nil {
@@ -1025,8 +1071,15 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 		key.State = km.getKeyStateOnSyncError(ctx, key, err)
 		km.sendUnavailableAuditLog(ctx, key)
 	} else if keyResp != nil {
-		// Successful case update the status in the database for the HYOK key Enabled/Disabled
+		// Successful case - update the status in the database for the HYOK key Enabled/Disabled
 		key.State = keyResp.Status
+
+		// Check if a new version was detected from the keystore
+		if keyResp.LatestKeyVersionId != "" {
+			if err := km.syncKeyVersion(ctx, key, keyResp); err != nil {
+				log.Warn(ctx, "Failed to sync key version", slog.String("error", err.Error()))
+			}
+		}
 	}
 
 	if oldKeyState == key.State {
@@ -1045,6 +1098,104 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 	if err != nil {
 		return errs.Wrap(ErrUpdateKeyDB, err)
 	}
+
+	return nil
+}
+
+// syncKeyVersion checks if the latest version from keystore matches the stored version.
+// If a new version is detected, it creates a new KeyVersion record.
+func (km *KeyManager) syncKeyVersion(
+	ctx context.Context,
+	key *model.Key,
+	keyResp *keymanagement.GetKeyResponse,
+) error {
+	// Parse rotation time from response
+	rotationTime, err := km.parseRotationTime(keyResp)
+	if err != nil {
+		return err
+	}
+
+	// Get current stored version (latest RotatedAt)
+	currentVersion, err := km.getCurrentKeyVersion(ctx, key.ID)
+	if err != nil && !errors.Is(err, ErrNoKeyVersionsFound) {
+		// Return error unless it's just "no versions found" (which is expected for first sync)
+		return err
+	}
+
+	// Compare with latest_key_version_id from response
+	if currentVersion != nil && currentVersion.NativeID == keyResp.LatestKeyVersionId {
+		// Same version - no changes needed
+		return nil
+	}
+
+	// Different version detected - create new one
+	return km.handleNewKeyVersion(ctx, key, keyResp, rotationTime)
+}
+
+func (km *KeyManager) parseRotationTime(
+	keyResp *keymanagement.GetKeyResponse,
+) (*time.Time, error) {
+	if keyResp.RotationTime == nil {
+		// Return current time as default when plugin doesn't provide rotation time
+		now := time.Now().UTC()
+		return &now, nil
+	}
+
+	parsedTime, err := time.Parse(time.RFC3339, *keyResp.RotationTime)
+	if err != nil {
+		return nil, errs.Wrap(ErrInvalidRotationTime, err)
+	}
+
+	return &parsedTime, nil
+}
+
+func (km *KeyManager) getCurrentKeyVersion(
+	ctx context.Context,
+	keyID uuid.UUID,
+) (*model.KeyVersion, error) {
+	var allVersions []model.KeyVersion
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), keyID)
+
+	err := km.repo.List(
+		ctx,
+		model.KeyVersion{},
+		&allVersions,
+		*repo.NewQuery().
+			Where(repo.NewCompositeKeyGroup(ck)).
+			Order(repo.OrderField{Field: repo.RotatedField, Direction: repo.Desc}),
+	)
+	if err != nil {
+		return nil, errs.Wrap(ErrListKeyVersionsDB, err)
+	}
+
+	if len(allVersions) > 0 {
+		return &allVersions[0], nil // Version with latest RotatedAt
+	}
+	return nil, ErrNoKeyVersionsFound
+}
+
+func (km *KeyManager) handleNewKeyVersion(
+	ctx context.Context,
+	key *model.Key,
+	keyResp *keymanagement.GetKeyResponse,
+	rotationTime *time.Time,
+) error {
+	// New version detected - create it
+	newVersion, err := km.keyVersionManager.CreateVersion(
+		ctx,
+		key.ID,
+		keyResp.LatestKeyVersionId,
+		rotationTime,
+	)
+	if err != nil {
+		return err
+	}
+
+	log.Debug(ctx, "Created new key version",
+		slog.String("keyId", key.ID.String()),
+		slog.String("nativeId", newVersion.NativeID),
+	)
 
 	return nil
 }
