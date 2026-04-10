@@ -3,6 +3,7 @@ package eventprocessor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
-	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -193,33 +193,29 @@ func (r *SystemTaskInfoResolver) selectKeyForTask(
 	return key, nil
 }
 
-// fetchAndPopulateVersionInfo fetches current key version info from the keystore provider
-// and populates it into the crypto access data for all regions
+// fetchAndPopulateVersionInfo fetches the newest key version from the DB
+// and populates its native ID into the crypto access data for all regions.
+// If no key version exists, the crypto access data is returned unchanged for backward compatibility.
 func (r *SystemTaskInfoResolver) fetchAndPopulateVersionInfo(
 	ctx context.Context,
-	client keymanagement.KeyManagement,
 	key model.Key,
 ) (map[string]map[string]any, error) {
-	// Fetch current version info from keystore provider
-	configValues := key.GetManagementAccessData()
-	freshKeyInfo, err := client.GetKey(ctx, &keymanagement.GetKeyRequest{
-		Parameters: keymanagement.RequestParameters{
-			Config: common.KeystoreConfig{Values: configValues},
-			KeyID:  *key.NativeID,
-		},
-	})
+	cryptoData := key.GetCryptoAccessData()
+
+	latestVersionID, err := getNewestKeyVersionNativeID(ctx, r.repo, key.ID.String())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current key info: %w", err)
+		if errors.Is(err, repo.ErrNotFound) {
+			return cryptoData, nil
+		}
+		return nil, fmt.Errorf("failed to get latest key version native ID: %w", err)
 	}
 
-	// Merge fresh version info into crypto access data
-	cryptoData := key.GetCryptoAccessData()
-	if freshKeyInfo.LatestKeyVersionId != "" {
-		for region := range cryptoData {
-			if freshKeyInfo.LatestKeyVersionId != "" {
-				cryptoData[region]["versionIdentifier"] = freshKeyInfo.LatestKeyVersionId
-			}
-		}
+	if latestVersionID == "" {
+		return cryptoData, nil
+	}
+
+	for region := range cryptoData {
+		cryptoData[region]["versionIdentifier"] = latestVersionID
 	}
 
 	return cryptoData, nil
@@ -241,7 +237,7 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 	}
 
 	// Fetch and populate version info
-	cryptoData, err := r.fetchAndPopulateVersionInfo(ctx, client, key)
+	cryptoData, err := r.fetchAndPopulateVersionInfo(ctx, key)
 	if err != nil {
 		return nil, err
 	}
