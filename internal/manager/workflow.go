@@ -24,6 +24,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/notifier"
 	wn "github.com/openkcm/cmk/internal/notifier/workflow"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	wf "github.com/openkcm/cmk/internal/workflow"
@@ -83,11 +84,13 @@ type WorkflowManager struct {
 	userManager             User
 	asyncClient             async.Client
 	tenantConfigManager     *TenantConfigManager
+	svcRegistry             *cmkpluginregistry.Registry
 	cfg                     *config.Config
 }
 
 func NewWorkflowManager(
 	repository repo.Repo,
+	svcRegistry *cmkpluginregistry.Registry,
 	keyManager *KeyManager,
 	keyConfigurationManager *KeyConfigManager,
 	systemManager *SystemManager,
@@ -99,6 +102,7 @@ func NewWorkflowManager(
 ) *WorkflowManager {
 	return &WorkflowManager{
 		repo:                    repository,
+		svcRegistry:             svcRegistry,
 		keyManager:              keyManager,
 		keyConfigurationManager: keyConfigurationManager,
 		systemManager:           systemManager,
@@ -415,6 +419,11 @@ func (w *WorkflowManager) AutoAssignApprovers(
 		return nil, errs.Wrap(ErrAddApproversDB, err)
 	}
 
+	idm, err := w.svcRegistry.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+
 	approverValues := make([]model.WorkflowApprover, len(approvers))
 	for i, approver := range approvers {
 		if approver != nil {
@@ -422,7 +431,10 @@ func (w *WorkflowManager) AutoAssignApprovers(
 		}
 	}
 
-	approverUserNames := wf.GetApproverUserNames(approverValues)
+	approverUserNames, err := wf.GetApproverUserNames(ctx, approverValues, idm)
+	if err != nil {
+		return nil, err
+	}
 
 	err = w.createWorkflowTransitionNotificationTask(ctx, *workflow, wf.TransitionCreate, approverUserNames)
 	if err != nil {
@@ -486,7 +498,11 @@ func (w *WorkflowManager) TransitionWorkflow(
 
 	workflow := &model.Workflow{ID: workflowID}
 
-	_, err = w.repo.First(ctx, workflow, *repo.NewQuery().Preload(repo.Preload{"Approvers"}))
+	_, err = w.repo.First(
+		ctx,
+		workflow,
+		*repo.NewQuery().Preload(repo.Preload{"Approvers"}),
+	)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetWorkflowDB, err)
 	}
@@ -501,7 +517,15 @@ func (w *WorkflowManager) TransitionWorkflow(
 		return nil, err
 	}
 
-	recipients := wf.GetNotificationRecipients(*workflow, transition)
+	idm, err := w.svcRegistry.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+
+	recipients, err := wf.GetNotificationRecipients(ctx, *workflow, transition, idm)
+	if err != nil {
+		return nil, err
+	}
 
 	err = w.createWorkflowTransitionNotificationTask(ctx, *workflow, transition, recipients)
 	if err != nil {
@@ -1122,8 +1146,7 @@ func (w *WorkflowManager) getApproversAndGroupsFromKeyConfigs(
 			}
 
 			approverMap[userID] = model.WorkflowApprover{
-				UserID:   userID,
-				UserName: user.Email,
+				UserID: userID,
 			}
 		}
 	}
@@ -1203,7 +1226,7 @@ func (w *WorkflowManager) createWorkflowTransitionNotificationTask(
 		return nil
 	}
 
-	task, err := n.Workflow().CreateTask(data, recipients)
+	task, err := n.Workflow().CreateTask(ctx, data, recipients)
 	if err != nil {
 		log.Error(ctx, "Create workflow transition task failed", err)
 		return err

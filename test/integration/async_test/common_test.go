@@ -169,7 +169,6 @@ func createTestKeyEntities() (model.Group, model.KeyConfiguration, model.Key) {
 		Description:  "This key configuration is used for HANA key store encryption.",
 		AdminGroupID: group.ID,
 		CreatorID:    uuid.NewString(),
-		CreatorName:  "testuser",
 	}
 	nativeID := "arn:aws:kms:eu-west-2:fake:key/fake-key-id"
 	key := model.Key{

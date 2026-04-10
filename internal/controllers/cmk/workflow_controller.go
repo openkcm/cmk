@@ -134,8 +134,13 @@ func (c *APIController) GetWorkflows(
 
 	values := make([]cmkapi.Workflow, len(workflows))
 
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+
 	for i, dbWorkflow := range workflows {
-		apiWorkflow, err := wfTransform.ToAPI(*dbWorkflow)
+		apiWorkflow, err := wfTransform.ToAPI(ctx, *dbWorkflow, idm)
 		if err != nil {
 			return nil, errs.Wrap(apierrors.ErrGetWorkflow, err)
 		}
@@ -173,7 +178,11 @@ func (c *APIController) CreateWorkflow(ctx context.Context,
 		return nil, errs.Wrap(apierrors.ErrCreateWorkflow, err)
 	}
 
-	returnAPIWorkflow, err := wfTransform.ToAPI(*workflow)
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+	returnAPIWorkflow, err := wfTransform.ToAPI(ctx, *workflow, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowToAPI, err)
 	}
@@ -214,7 +223,19 @@ func (c *APIController) GetWorkflowByID(ctx context.Context,
 		return nil, err
 	}
 
-	apiWorkflow, err := wfTransform.ToAPIDetailed(*workflow, approvers, approverGroups, transitions, approvalSummary)
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+	apiWorkflow, err := wfTransform.ToAPIDetailed(
+		ctx,
+		*workflow,
+		approvers,
+		approverGroups,
+		transitions,
+		approvalSummary,
+		idm,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +258,11 @@ func (c *APIController) TransitionWorkflow(
 		return nil, errs.Wrap(apierrors.ErrWorkflowCannotTransition, err)
 	}
 
-	apiWorkflow, err := wfTransform.ToAPI(*workflow)
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+	apiWorkflow, err := wfTransform.ToAPI(ctx, *workflow, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowToAPI, err)
 	}

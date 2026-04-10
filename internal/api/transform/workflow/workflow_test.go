@@ -13,7 +13,9 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/workflow"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testpluginregistry"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -85,7 +87,8 @@ func TestWorkflow_ToAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			apiWorkflow, err := workflow.ToAPI(tt.dbWorkflow)
+			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			apiWorkflow, err := workflow.ToAPI(ctx, tt.dbWorkflow, testpluginregistry.NewMockIDMService())
 
 			if tt.errorExpected {
 				assert.Error(t, err)
@@ -272,7 +275,6 @@ func TestWorkflow_ApproverToAPI(t *testing.T) {
 			name: "Approved",
 			input: model.WorkflowApprover{
 				UserID:   uuid.NewString(),
-				UserName: "User1",
 				Approved: sql.NullBool{Bool: true, Valid: true},
 			},
 			expected: cmkapi.WorkflowApproverDecisionAPPROVED,
@@ -281,7 +283,6 @@ func TestWorkflow_ApproverToAPI(t *testing.T) {
 			name: "Rejected",
 			input: model.WorkflowApprover{
 				UserID:   uuid.NewString(),
-				UserName: "User2",
 				Approved: sql.NullBool{Bool: false, Valid: true},
 			},
 			expected: cmkapi.WorkflowApproverDecisionREJECTED,
@@ -290,7 +291,6 @@ func TestWorkflow_ApproverToAPI(t *testing.T) {
 			name: "Pending",
 			input: model.WorkflowApprover{
 				UserID:   uuid.NewString(),
-				UserName: "User3",
 				Approved: sql.NullBool{Bool: false, Valid: false},
 			},
 			expected: cmkapi.WorkflowApproverDecisionPENDING,
@@ -299,10 +299,20 @@ func TestWorkflow_ApproverToAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			apiApprover, err := workflow.ApproverToAPI(tt.input)
+			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			idm := testpluginregistry.NewMockIDMService()
+			name := "test"
+			idm.GetUserFn = func(ctx context.Context, gur *identitymanagement.GetUserRequest) (*identitymanagement.GetUserResponse, error) {
+				return &identitymanagement.GetUserResponse{
+					User: identitymanagement.User{
+						Name: name,
+					},
+				}, nil
+			}
+			apiApprover, err := workflow.ApproverToAPI(ctx, tt.input, idm)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.input.UserID, apiApprover.Id)
-			assert.Equal(t, tt.input.UserName, *apiApprover.Name)
+			assert.Equal(t, name, *apiApprover.Name)
 			assert.Equal(t, tt.expected, apiApprover.Decision)
 		})
 	}

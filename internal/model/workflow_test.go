@@ -4,9 +4,12 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/testutils/testpluginregistry"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -40,7 +43,6 @@ func TestWorkflowApproversTable(t *testing.T) {
 
 func TestWorkflow_Description(t *testing.T) {
 	artifactID := uuid.New()
-	initiatorName := "initiator@example.com"
 	keyConfigID := uuid.NewString()
 	keyConfigName := "KeyConfiguration-name"
 
@@ -150,7 +152,6 @@ func TestWorkflow_Description(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			workflow := model.Workflow{
 				ID:                     uuid.New(),
-				InitiatorName:          initiatorName,
 				ActionType:             tt.actionType,
 				ArtifactType:           tt.artifactType,
 				ArtifactName:           tt.artifactName,
@@ -160,7 +161,10 @@ func TestWorkflow_Description(t *testing.T) {
 				ParametersResourceName: tt.parametersResourceName,
 			}
 
-			description := workflow.Description()
+			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+
+			description, err := workflow.Description(ctx, testpluginregistry.NewMockIDMService())
+			assert.NoError(t, err)
 
 			assert.Equal(t, tt.expectedDescription, description)
 		})

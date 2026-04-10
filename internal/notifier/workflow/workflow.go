@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,8 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	notifClient "github.com/openkcm/cmk/internal/notifier/client"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	"github.com/openkcm/cmk/internal/testutils/testpluginregistry"
 	wf "github.com/openkcm/cmk/internal/workflow"
 )
 
@@ -24,6 +27,7 @@ var workflowNotificationTemplate string
 type Creator struct {
 	cfg      *config.Config
 	template *template.Template
+	idm      identitymanagement.IdentityManagement
 }
 
 var (
@@ -68,27 +72,32 @@ func NewWorkflowCreator(config *config.Config) (*Creator, error) {
 	return &Creator{
 		template: tmpl,
 		cfg:      config,
+		idm:      testpluginregistry.NewMockIDMService(),
 	}, nil
 }
 
-func (w *Creator) CreateTask(data NotificationData, recipients []string) (*asynq.Task, error) {
+func (w *Creator) CreateTask(ctx context.Context, data NotificationData, recipients []string) (*asynq.Task, error) {
 	switch data.Transition {
 	case wf.TransitionCreate:
-		return w.createWorkflowCreatedTask(data, recipients)
+		return w.createWorkflowCreatedTask(ctx, data, recipients)
 	case wf.TransitionApprove:
-		return w.createWorkflowApprovedTask(data, recipients)
+		return w.createWorkflowApprovedTask(ctx, data, recipients)
 	case wf.TransitionReject:
-		return w.createWorkflowRejectedTask(data, recipients)
+		return w.createWorkflowRejectedTask(ctx, data, recipients)
 	case wf.TransitionConfirm:
-		return w.createWorkflowConfirmedTask(data, recipients)
+		return w.createWorkflowConfirmedTask(ctx, data, recipients)
 	case wf.TransitionRevoke:
-		return w.createWorkflowRevokedTask(data, recipients)
+		return w.createWorkflowRevokedTask(ctx, data, recipients)
 	default:
 		return nil, ErrUnsupportedWorkflowTransition
 	}
 }
 
-func (w *Creator) createWorkflowCreatedTask(data NotificationData, recipients []string) (*asynq.Task, error) {
+func (w *Creator) createWorkflowCreatedTask(
+	ctx context.Context,
+	data NotificationData,
+	recipients []string,
+) (*asynq.Task, error) {
 	subject := fmt.Sprintf(
 		"Workflow Approval Required - %s %s",
 		data.Workflow.ActionType,
@@ -100,11 +109,15 @@ func (w *Creator) createWorkflowCreatedTask(data NotificationData, recipients []
 	message := "A new workflow requires your approval."
 	actionText := "Action Required: Please review and approve or deny this workflow in the CMK portal."
 
-	return w.createNotificationTask(data, recipients, subject, message, actionText)
+	return w.createNotificationTask(ctx, data, recipients, subject, message, actionText)
 }
 
 //nolint:nilnil
-func (w *Creator) createWorkflowApprovedTask(data NotificationData, recipients []string) (*asynq.Task, error) {
+func (w *Creator) createWorkflowApprovedTask(
+	ctx context.Context,
+	data NotificationData,
+	recipients []string,
+) (*asynq.Task, error) {
 	// Only send email notification when minimum approvals threshold is met (WAIT_CONFIRMATION state)
 	// Do not send for partial approvals (WAIT_APPROVAL state)
 	if wf.State(data.Workflow.State) != wf.StateWaitConfirmation {
@@ -122,10 +135,14 @@ func (w *Creator) createWorkflowApprovedTask(data NotificationData, recipients [
 	message := "Your workflow has been fully approved."
 	actionText := "The workflow is ready for confirmation. You can track the progress in the CMK portal."
 
-	return w.createNotificationTask(data, recipients, subject, message, actionText)
+	return w.createNotificationTask(ctx, data, recipients, subject, message, actionText)
 }
 
-func (w *Creator) createWorkflowRejectedTask(data NotificationData, recipients []string) (*asynq.Task, error) {
+func (w *Creator) createWorkflowRejectedTask(
+	ctx context.Context,
+	data NotificationData,
+	recipients []string,
+) (*asynq.Task, error) {
 	subject := fmt.Sprintf(
 		"Workflow Rejected - %s %s",
 		data.Workflow.ActionType,
@@ -137,10 +154,14 @@ func (w *Creator) createWorkflowRejectedTask(data NotificationData, recipients [
 	message := "Your workflow has been rejected. Please review and resubmit if necessary."
 	actionText := "Review the rejection reason and make necessary changes in the CMK portal."
 
-	return w.createNotificationTask(data, recipients, subject, message, actionText)
+	return w.createNotificationTask(ctx, data, recipients, subject, message, actionText)
 }
 
-func (w *Creator) createWorkflowConfirmedTask(data NotificationData, recipients []string) (*asynq.Task, error) {
+func (w *Creator) createWorkflowConfirmedTask(
+	ctx context.Context,
+	data NotificationData,
+	recipients []string,
+) (*asynq.Task, error) {
 	var subject, message, actionText string
 
 	switch wf.State(data.Workflow.State) {
@@ -176,10 +197,14 @@ func (w *Creator) createWorkflowConfirmedTask(data NotificationData, recipients 
 		actionText = "Please check the CMK portal for more details."
 	}
 
-	return w.createNotificationTask(data, recipients, subject, message, actionText)
+	return w.createNotificationTask(ctx, data, recipients, subject, message, actionText)
 }
 
-func (w *Creator) createWorkflowRevokedTask(data NotificationData, recipients []string) (*asynq.Task, error) {
+func (w *Creator) createWorkflowRevokedTask(
+	ctx context.Context,
+	data NotificationData,
+	recipients []string,
+) (*asynq.Task, error) {
 	subject := fmt.Sprintf(
 		"Workflow Revoked - %s %s",
 		data.Workflow.ActionType,
@@ -191,15 +216,16 @@ func (w *Creator) createWorkflowRevokedTask(data NotificationData, recipients []
 	message := "The workflow has been revoked and is no longer active."
 	actionText := "Please contact your administrator if you have questions about this revocation."
 
-	return w.createNotificationTask(data, recipients, subject, message, actionText)
+	return w.createNotificationTask(ctx, data, recipients, subject, message, actionText)
 }
 
 func (w *Creator) createNotificationTask(
+	ctx context.Context,
 	data NotificationData,
 	recipients []string,
 	subject, message, actionText string,
 ) (*asynq.Task, error) {
-	body, err := w.createHTMLBody(data, message, actionText)
+	body, err := w.createHTMLBody(ctx, data, message, actionText)
 	if err != nil {
 		return nil, err
 	}
@@ -218,14 +244,25 @@ func (w *Creator) createNotificationTask(
 	return asynq.NewTask(config.TypeSendNotifications, payload), nil
 }
 
-func (w *Creator) createHTMLBody(data NotificationData, message, actionText string) (string, error) {
+func (w *Creator) createHTMLBody(
+	ctx context.Context,
+	data NotificationData,
+	message, actionText string,
+) (string, error) {
 	workflowURL := ""
 	baseURL := w.cfg.Landscape.UIBaseUrl
 	if baseURL != "" {
 		workflowURL = fmt.Sprintf("%s/%s/tasks/%s", baseURL, data.Tenant.ID, data.Workflow.ID)
 	}
 
-	workflowDescription := data.Workflow.Description()
+	workflowDescription, err := data.Workflow.Description(ctx, w.idm)
+	if err != nil {
+		return "", err
+	}
+	initiatorName, err := data.Workflow.GetInitiatorName(ctx, w.idm)
+	if err != nil {
+		return "", err
+	}
 
 	templateData := NotificationTemplateData{
 		HeaderTitle:         "CMK Workflow Notification",
@@ -237,13 +274,13 @@ func (w *Creator) createHTMLBody(data NotificationData, message, actionText stri
 		TenantName:          data.Tenant.Name,
 		Landscape:           w.cfg.Landscape.Name,
 		ActionText:          actionText,
-		InitiatorName:       data.Workflow.InitiatorName,
+		InitiatorName:       initiatorName,
 		WorkflowDescription: workflowDescription,
 	}
 
 	var buf bytes.Buffer
 
-	err := w.template.Execute(&buf, templateData)
+	err = w.template.Execute(&buf, templateData)
 	if err != nil {
 		return "", errs.Wrap(ErrExecutingTemplate, err)
 	}
