@@ -57,30 +57,26 @@ func (m Key) CheckAuthz(ctx context.Context,
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
-func (m Key) MaxVersion() int {
-	maxVer := 0
-	for _, kv := range m.KeyVersions {
-		if kv.Version > maxVer {
-			maxVer = kv.Version
+// LatestVersion returns the primary (current) version.
+// Determined by: Version with latest (most recent) RotatedAt timestamp.
+func (m Key) LatestVersion() *KeyVersion {
+	var latest *KeyVersion
+
+	for i := range m.KeyVersions {
+		if latest == nil {
+			latest = &m.KeyVersions[i]
+			continue
+		}
+
+		// Compare RotatedAt - most recent wins
+		if m.KeyVersions[i].RotatedAt != nil && latest.RotatedAt != nil {
+			if m.KeyVersions[i].RotatedAt.After(*latest.RotatedAt) {
+				latest = &m.KeyVersions[i]
+			}
 		}
 	}
 
-	return maxVer
-}
-
-func (m Key) Version() *KeyVersion {
-	maxVer := 0
-
-	var keyVersion KeyVersion
-
-	for _, kv := range m.KeyVersions {
-		if kv.Version > maxVer {
-			maxVer = kv.Version
-			keyVersion = kv
-		}
-	}
-
-	return &keyVersion
+	return latest
 }
 
 func (m *Key) AfterFind(tx *gorm.DB) error {

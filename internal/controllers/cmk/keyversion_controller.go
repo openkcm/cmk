@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
 	"github.com/openkcm/cmk/internal/api/transform/keyversion"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
@@ -22,6 +21,12 @@ func (c *APIController) GetKeyVersions(ctx context.Context,
 		Count: ptr.GetSafeDeref(request.Params.Count),
 	}
 
+	// Fetch the parent key to get current state for all versions
+	key, err := c.Manager.Keys.Get(ctx, request.KeyID)
+	if err != nil {
+		return nil, apierrors.ErrQueryKeyVersionList
+	}
+
 	keyVersions, count, err := c.Manager.KeyVersions.GetKeyVersions(
 		ctx,
 		request.KeyID,
@@ -31,13 +36,30 @@ func (c *APIController) GetKeyVersions(ctx context.Context,
 		return nil, apierrors.ErrQueryKeyVersionList
 	}
 
+	// Get the latest version from first element (already sorted by rotated_at DESC)
+	var latestVersionID string
+	if len(keyVersions) > 0 {
+		latestVersionID = keyVersions[0].ID.String()
+	}
+
 	// Convert each Key Version to its response format
-	response, err := transform.ToList(
-		keyVersions,
-		keyversion.ToAPI,
-	)
-	if err != nil {
-		return nil, apierrors.ErrTransformKeyVersionList
+	response := make([]cmkapi.KeyVersion, 0, len(keyVersions))
+	keyState := cmkapi.KeyState(key.State)
+
+	for _, kv := range keyVersions {
+		apiKv, err := keyversion.ToAPI(*kv)
+		if err != nil {
+			return nil, apierrors.ErrTransformKeyVersionList
+		}
+
+		// Set isPrimary by comparing with the latest version ID
+		isPrimary := kv.ID.String() == latestVersionID
+		apiKv.IsPrimary = &isPrimary
+
+		// Set state from parent key (all versions share the same state)
+		apiKv.State = &keyState
+
+		response = append(response, *apiKv)
 	}
 
 	apiresponse := cmkapi.KeyVersionList{Value: response}
@@ -47,26 +69,4 @@ func (c *APIController) GetKeyVersions(ctx context.Context,
 	}
 
 	return cmkapi.GetKeyVersions200JSONResponse(apiresponse), nil
-}
-
-// GetKeyVersionByNumber returns a key version by key version number and L1 key ID
-func (c *APIController) GetKeyVersionByNumber(
-	ctx context.Context,
-	request cmkapi.GetKeyVersionByNumberRequestObject,
-) (cmkapi.GetKeyVersionByNumberResponseObject, error) {
-	keyVersion, err := c.Manager.KeyVersions.GetByKeyIDAndByNumber(
-		ctx,
-		request.KeyID,
-		request.Version,
-	)
-	if err != nil {
-		return nil, apierrors.ErrGettingKeyVersionByNumber
-	}
-
-	response, err := keyversion.ToAPI(*keyVersion)
-	if err != nil {
-		return nil, apierrors.ErrTransformKeyVersionToAPI
-	}
-
-	return cmkapi.GetKeyVersionByNumber200JSONResponse(*response), nil
 }

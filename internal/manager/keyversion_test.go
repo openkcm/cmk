@@ -2,7 +2,6 @@ package manager_test
 
 import (
 	"context"
-	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -91,36 +90,6 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	s.keyConfigID = keyConfig.ID
 }
 
-func (s *KeyVersionManagerSuit) TestKeyVersionManager_AddKeyVersion() {
-	s.Run("Should add key version", func() {
-		keyVersion := testutils.NewKeyVersion(func(_ *model.KeyVersion) {})
-		key := testutils.NewKey(func(_ *model.Key) {})
-
-		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key, keyVersion)
-
-		resultKeyVersion, err := s.kvm.AddKeyVersion(s.ctx, *key, key.NativeID)
-
-		s.NoError(err)
-		s.NotNil(resultKeyVersion)
-		s.Equal(keyVersion.Version, resultKeyVersion.Version)
-		pagination := repo.Pagination{
-			Skip:  constants.DefaultSkip,
-			Top:   constants.DefaultTop,
-			Count: true,
-		}
-		oldKeyVersions, _, err := s.kvm.GetKeyVersions(s.ctx, key.ID, pagination)
-		s.NoError(err)
-
-		for _, keyVersion := range oldKeyVersions {
-			if keyVersion.ExternalID == resultKeyVersion.ExternalID {
-				s.True(keyVersion.IsPrimary)
-			} else {
-				s.False(keyVersion.IsPrimary)
-			}
-		}
-	})
-}
-
 func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 	s.Run("Should list key versions", func() {
 		keyID := uuid.New()
@@ -128,15 +97,14 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 			k.ID = keyID
 			k.KeyVersions = []model.KeyVersion{
 				*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-					kv.Version = 1
-					kv.IsPrimary = false
 					kv.Key.ID = keyID
 					kv.KeyID = keyID
+					kv.NativeID = "version-1"
 				}),
 				*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-					kv.Version = 2
 					kv.Key.ID = keyID
 					kv.KeyID = keyID
+					kv.NativeID = "version-2"
 				}),
 			}
 		})
@@ -153,160 +121,4 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 		s.NotNil(result)
 		s.Len(result, len(key.KeyVersions))
 	})
-}
-
-func (s *KeyVersionManagerSuit) TestKeyVersionManager_GetByKeyIDAndByNumber() {
-	tests := []struct {
-		name             string
-		key              func() *model.Key
-		keyVersions      func() []*model.KeyVersion
-		keyVersionNumber string
-		expectedErr      bool
-	}{
-		{
-			name: "KeyVersionManager_GetByKeyIDAndByNumber_Latest_SUCCESS",
-			key: func() *model.Key {
-				return testutils.NewKey(func(k *model.Key) {
-					k.KeyConfigurationID = s.keyConfigID
-				})
-			},
-			keyVersions: func() []*model.KeyVersion {
-				return []*model.KeyVersion{
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = false
-						version.Version = 1
-					}),
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = true
-						version.Version = 2
-					}),
-				}
-			},
-			keyVersionNumber: "latest",
-			expectedErr:      false,
-		},
-		{
-			name: "KeyVersionManager_GetByKeyIDAndByNumber_Latest_ERROR",
-			key: func() *model.Key {
-				return testutils.NewKey(func(k *model.Key) {
-					k.KeyConfigurationID = s.keyConfigID
-				})
-			},
-			keyVersions: func() []*model.KeyVersion {
-				return []*model.KeyVersion{}
-			},
-			keyVersionNumber: "latest",
-			expectedErr:      true,
-		},
-		{
-			name: "KeyVersionManager_GetByKeyIDAndByNumber_2_SUCCESS",
-			key: func() *model.Key {
-				return testutils.NewKey(func(k *model.Key) {
-					k.KeyConfigurationID = s.keyConfigID
-				})
-			},
-			keyVersions: func() []*model.KeyVersion {
-				return []*model.KeyVersion{
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = false
-						version.Version = 1
-					}),
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = true
-						version.Version = 2
-					}),
-				}
-			},
-			keyVersionNumber: "1",
-			expectedErr:      false,
-		},
-		{
-			name: "KeyVersionManager_GetByKeyIDAndByNumber_Invalid_ERROR",
-			key: func() *model.Key {
-				return testutils.NewKey(func(k *model.Key) {
-					k.KeyConfigurationID = s.keyConfigID
-				})
-			},
-			keyVersions: func() []*model.KeyVersion {
-				return []*model.KeyVersion{
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = false
-						version.Version = 1
-					}),
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = true
-						version.Version = 2
-					}),
-				}
-			},
-			keyVersionNumber: "invalid",
-			expectedErr:      true,
-		},
-		{
-			name: "KeyVersionManager_GetByKeyIDAndByNumber_NoKeyVersion_ERROR",
-			key: func() *model.Key {
-				return testutils.NewKey(func(k *model.Key) {
-					k.KeyConfigurationID = s.keyConfigID
-				})
-			},
-			keyVersions: func() []*model.KeyVersion {
-				return []*model.KeyVersion{
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = false
-						version.Version = 1
-					}),
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = true
-						version.Version = 2
-					}),
-				}
-			},
-			keyVersionNumber: "10",
-			expectedErr:      true,
-		},
-	}
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			key := tt.key()
-			keyVersions := tt.keyVersions()
-
-			var expectedVersion *model.KeyVersion
-
-			err := s.r.Create(s.ctx, key)
-			s.NoError(err)
-
-			for _, keyVersion := range keyVersions {
-				keyVersion.Key = *key
-				err := s.r.Create(s.ctx, keyVersion)
-				s.NoError(err)
-
-				if !tt.expectedErr {
-					if tt.keyVersionNumber == "latest" && keyVersion.IsPrimary == true {
-						expectedVersion = keyVersion
-					} else if tt.keyVersionNumber != "latest" {
-						numberVersion, err := strconv.Atoi(tt.keyVersionNumber)
-						s.NoError(err)
-
-						if numberVersion == keyVersion.Version {
-							expectedVersion = keyVersion
-						}
-					}
-				}
-			}
-
-			result, err := s.kvm.GetByKeyIDAndByNumber(s.ctx, key.ID, tt.keyVersionNumber)
-
-			if tt.expectedErr {
-				s.Error(err)
-				s.Nil(result)
-			} else {
-				s.NoError(err)
-				s.NotNil(result)
-				s.Equal(expectedVersion.IsPrimary, result.IsPrimary)
-				s.Equal(expectedVersion.Version, result.Version)
-				s.Equal(expectedVersion.ExternalID, result.ExternalID)
-			}
-		})
-	}
 }

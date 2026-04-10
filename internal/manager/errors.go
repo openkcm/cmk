@@ -94,6 +94,7 @@ var (
 	ErrUpdateKeyVersionDB      = errors.New("failed to update key version in database")
 	ErrCreateKeyVersionDB      = errors.New("failed to create key version in database")
 	ErrInvalidKeyVersionNumber = errors.New("invalid key version number")
+	ErrNoKeyVersionsFound      = errors.New("no key versions found")
 
 	ErrListTenants      = errors.New("failed to list tenants from database")
 	ErrGetTenantInfo    = errors.New("failed to get tenant info")

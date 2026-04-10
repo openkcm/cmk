@@ -3,6 +3,7 @@ package mock_test
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -10,6 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/mock"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestCreate(t *testing.T) {
@@ -99,15 +101,20 @@ func TestCreate(t *testing.T) {
 		{
 			name: "Create Key Version Success",
 			CreateModel: func() (any, repo.Resource) {
-				id := "test version 1"
-				data := model.KeyVersion{ExternalID: id}
+				id := uuid.New()
+				data := model.KeyVersion{
+					ID:        id,
+					NativeID:  "test-native-id",
+					KeyID:     uuid.New(),
+					RotatedAt: ptr.PointTo(time.Now().UTC()),
+				}
 
 				return id, data
 			},
 			AssertFunc: func(id any, retrieved any) {
 				result, ok := retrieved.(model.KeyVersion)
 				assert.True(t, ok)
-				assert.Equal(t, id, result.ExternalID)
+				assert.Equal(t, id, result.ID)
 			},
 		},
 		{
@@ -370,10 +377,26 @@ func TestGetAll(t *testing.T) {
 		{
 			name: "Get All Key Version Success",
 			CreateModel: func() (int, repo.Resource, []repo.Resource) {
+				keyID := uuid.New()
 				data := []model.KeyVersion{
-					{ExternalID: "test version 0", Version: 0},
-					{ExternalID: "test version 1", Version: 1},
-					{ExternalID: "test version 2", Version: 2},
+					{
+						ID:        uuid.New(),
+						NativeID:  "test-version-0",
+						KeyID:     keyID,
+						RotatedAt: ptr.PointTo(time.Now().UTC().Add(-2 * time.Hour)),
+					},
+					{
+						ID:        uuid.New(),
+						NativeID:  "test-version-1",
+						KeyID:     keyID,
+						RotatedAt: ptr.PointTo(time.Now().UTC().Add(-1 * time.Hour)),
+					},
+					{
+						ID:        uuid.New(),
+						NativeID:  "test-version-2",
+						KeyID:     keyID,
+						RotatedAt: ptr.PointTo(time.Now().UTC()),
+					},
 				}
 
 				result := make([]repo.Resource, len(data))
@@ -391,7 +414,7 @@ func TestGetAll(t *testing.T) {
 
 				for i := range converted {
 					for j := range convertExpected {
-						if converted[i].ExternalID == convertExpected[j].ExternalID {
+						if converted[i].ID == convertExpected[j].ID {
 							assert.Equal(t, convertExpected[j], converted[i])
 						}
 					}
@@ -774,10 +797,21 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "Update Key Version Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
-				id := "testExternalID"
-				data := model.KeyVersion{ExternalID: id, Version: 0}
-				newData := model.KeyVersion{ExternalID: id, Version: 1}
-				getData := model.KeyVersion{ExternalID: id}
+				id := uuid.New()
+				keyID := uuid.New()
+				data := model.KeyVersion{
+					ID:        id,
+					NativeID:  "test-native-id",
+					KeyID:     keyID,
+					RotatedAt: ptr.PointTo(time.Now().UTC().Add(-1 * time.Hour)),
+				}
+				newData := model.KeyVersion{
+					ID:        id,
+					NativeID:  "test-native-id",
+					KeyID:     keyID,
+					RotatedAt: ptr.PointTo(time.Now().UTC()),
+				}
+				getData := model.KeyVersion{ID: id}
 
 				return data, newData, getData
 			},
@@ -786,16 +820,26 @@ func TestUpdate(t *testing.T) {
 				assert.True(t, ok)
 				resultExpected, ok := expected.(model.KeyVersion)
 				assert.True(t, ok)
-				assert.Equal(t, resultExpected.ExternalID, resultRetrieved.ExternalID)
-				assert.Equal(t, resultExpected.Version, resultRetrieved.Version)
+				assert.Equal(t, resultExpected.ID, resultRetrieved.ID)
+				assert.Equal(t, resultExpected.NativeID, resultRetrieved.NativeID)
 			},
 		},
 		{
 			name: "Update Key Version Failure",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
-				data := model.KeyVersion{ExternalID: "testExternalID1", Version: 0}
-				newData := model.KeyVersion{ExternalID: "testExternalID2", Version: 1}
-				getData := model.KeyVersion{ExternalID: "testExternalID3"}
+				data := model.KeyVersion{
+					ID:        uuid.New(),
+					NativeID:  "test-1",
+					KeyID:     uuid.New(),
+					RotatedAt: ptr.PointTo(time.Now().UTC()),
+				}
+				newData := model.KeyVersion{
+					ID:        uuid.New(),
+					NativeID:  "test-2",
+					KeyID:     uuid.New(),
+					RotatedAt: ptr.PointTo(time.Now().UTC()),
+				}
+				getData := model.KeyVersion{ID: uuid.New()}
 
 				return data, newData, getData
 			},
@@ -1062,10 +1106,15 @@ func TestDelete(t *testing.T) {
 		{
 			name: "Delete Key Version Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
-				id := uuid.New().String()
-				data := model.KeyVersion{ExternalID: id, Version: 0}
-				dataToDelete := model.KeyVersion{ExternalID: id}
-				getData := model.KeyVersion{ExternalID: id}
+				id := uuid.New()
+				data := model.KeyVersion{
+					ID:        id,
+					NativeID:  "test-native-id",
+					KeyID:     uuid.New(),
+					RotatedAt: ptr.PointTo(time.Now().UTC()),
+				}
+				dataToDelete := model.KeyVersion{ID: id}
+				getData := model.KeyVersion{ID: id}
 
 				return data, dataToDelete, getData
 			},

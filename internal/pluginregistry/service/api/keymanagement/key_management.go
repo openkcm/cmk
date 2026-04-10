@@ -66,6 +66,7 @@ type GetKeyResponse struct {
 	Status             string
 	Usage              string
 	LatestKeyVersionId string
+	RotationTime       *string // RFC3339 timestamp of last rotation
 }
 
 // CreateKeyRequest contains parameters for key creation

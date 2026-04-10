@@ -48,28 +48,30 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 	key1 := testutils.NewKey(func(k *model.Key) {
 		k.CreatedAt = time.Now()
 		k.State = string(cmkapi.KeyStateENABLED)
+		k.KeyConfigurationID = keyConfig.ID
 	})
 
 	key2 := testutils.NewKey(func(k *model.Key) {
 		k.State = string(cmkapi.KeyStateENABLED)
+		k.KeyConfigurationID = keyConfig.ID
 	})
 
 	key1Version1 := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-		kv.Version = 1
 		kv.Key = *key1
 		kv.KeyID = key1.ID
+		kv.RotatedAt = ptr.PointTo(time.Now().UTC().Add(-2 * time.Hour))
 	})
 
 	key2Version1 := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-		kv.Version = 1
 		kv.Key = *key2
 		kv.KeyID = key2.ID
+		kv.RotatedAt = ptr.PointTo(time.Now().UTC().Add(-2 * time.Hour))
 	})
 
 	key2Version2 := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-		kv.Version = 2
 		kv.Key = *key2
 		kv.KeyID = key2.ID
+		kv.RotatedAt = ptr.PointTo(time.Now().UTC())
 	})
 
 	testutils.CreateTestEntities(ctx, t, r,
@@ -84,20 +86,23 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 	tests := []struct {
 		name                string
 		keyID               string
+		key                 *model.Key
 		expectedKeyVersions []model.KeyVersion
 		expectedStatus      int
 	}{
 		{
 			name:                "GetKeyVersions_Success_ReturnKey1Version",
 			keyID:               key1.ID.String(),
+			key:                 key1,
 			expectedStatus:      http.StatusOK,
 			expectedKeyVersions: []model.KeyVersion{*key1Version1},
 		},
 		{
 			name:                "GetKeyVersions_Success_ReturnKey2Version",
 			keyID:               key2.ID.String(),
+			key:                 key2,
 			expectedStatus:      http.StatusOK,
-			expectedKeyVersions: []model.KeyVersion{*key2Version1, *key2Version2},
+			expectedKeyVersions: []model.KeyVersion{*key2Version2, *key2Version1},
 		},
 		{
 			name:           "GetKeyVersions_Success_ReturnEmpty",
@@ -128,7 +133,27 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 				assert.Len(t, keyVersions, len(tt.expectedKeyVersions))
 
 				for i, keyVersion := range keyVersions {
-					assert.Equal(t, tt.expectedKeyVersions[i].Version, *keyVersion.Version)
+					expectedKV := tt.expectedKeyVersions[i]
+
+					// Assert NativeID
+					assert.Equal(t, expectedKV.NativeID, *keyVersion.NativeID)
+
+					// Assert State matches parent key
+					assert.NotNil(t, keyVersion.State)
+					assert.Equal(t, cmkapi.KeyState(tt.key.State), *keyVersion.State)
+
+					// Assert IsPrimary - first version should be primary (latest)
+					assert.NotNil(t, keyVersion.IsPrimary)
+					if i == 0 {
+						assert.True(t, *keyVersion.IsPrimary, "First version should be primary")
+					} else {
+						assert.False(t, *keyVersion.IsPrimary, "Non-first versions should not be primary")
+					}
+
+					// Assert RotatedAt
+					assert.NotNil(t, keyVersion.Metadata)
+					assert.NotNil(t, keyVersion.Metadata.RotatedAt)
+					assert.Equal(t, expectedKV.RotatedAt.Unix(), keyVersion.Metadata.RotatedAt.Unix())
 				}
 			}
 		})
@@ -149,10 +174,10 @@ func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
 
 	for i := range totalRecordCount {
 		keyVersion := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-			kv.Version = i
 			kv.Key = *key
 			kv.KeyID = key.ID
 			kv.CreatedAt = time.Now()
+			kv.RotatedAt = ptr.PointTo(time.Now().UTC().Add(time.Duration(i) * time.Second))
 		})
 		testutils.CreateTestEntities(ctx, t, r, keyVersion)
 	}
@@ -291,11 +316,10 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 		k.KeyConfigurationID = keyConfig.ID
 		k.KeyVersions = []model.KeyVersion{
 			*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-				kv.Version = 1
-				kv.IsPrimary = true
 				kv.KeyID = keyID
 				kv.Key.ID = keyID
-				kv.NativeID = ptr.PointTo(uuid.NewString())
+				kv.NativeID = uuid.NewString()
+				kv.RotatedAt = ptr.PointTo(time.Now().UTC())
 			}),
 		}
 		k.NativeID = ptr.PointTo(uuid.NewString())
@@ -332,8 +356,8 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		response := testutils.GetJSONBody[cmkapi.KeyVersionList](t, w)
-		// Version enablement should be as before disablement
-		assert.Equal(t, *response.Value[0].Version, key.MaxVersion())
+		// NativeID should remain the same after disablement
+		firstVersionNativeID := response.Value[0].NativeID
 
 		// Enable Key
 		w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -355,117 +379,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		response = testutils.GetJSONBody[cmkapi.KeyVersionList](t, w)
-		// Version enablement should be as before disablement
-		assert.Equal(t, *response.Value[0].Version, key.MaxVersion())
+		// NativeID should remain the same after re-enablement
+		assert.Equal(t, firstVersionNativeID, response.Value[0].NativeID)
 	})
-}
-
-func TestKeyVersionController_GetKeyVersionAndNumber(t *testing.T) {
-	db, sv, tenant := startAPIKeyVersion(t)
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	r := sql.NewRepository(db)
-
-	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
-
-	key1ID := uuid.New()
-	key1 := testutils.NewKey(func(k *model.Key) {
-		k.KeyConfigurationID = keyConfig.ID
-		k.KeyVersions = []model.KeyVersion{
-			*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-				kv.Version = 1
-				kv.IsPrimary = true
-				kv.Key.ID = key1ID
-			}),
-		}
-		k.ID = key1ID
-	})
-
-	key2ID := uuid.New()
-	key2 := testutils.NewKey(func(k *model.Key) {
-		k.KeyConfigurationID = keyConfig.ID
-		k.KeyVersions = []model.KeyVersion{
-			*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-				kv.Version = 1
-				kv.IsPrimary = false
-				kv.Key.ID = key2ID
-			}),
-			*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-				kv.Version = 2
-				kv.IsPrimary = true
-				kv.Key.ID = key2ID
-			}),
-		}
-		k.ID = key2ID
-	})
-
-	testutils.CreateTestEntities(
-		ctx,
-		t,
-		r,
-		keyConfig,
-		key1,
-		key2,
-	)
-
-	tests := []struct {
-		name               string
-		key                model.Key
-		inputValue         string
-		expectedKeyVersion model.KeyVersion
-		expectedStatus     int
-	}{
-		{
-			name:               "GetKeyVersionByNumber_Success_ReturnKey1Version1",
-			key:                *key1,
-			inputValue:         "1",
-			expectedStatus:     http.StatusOK,
-			expectedKeyVersion: key1.KeyVersions[0],
-		},
-		{
-			name:               "GetKeyVersionByNumber_Success_ReturnKey2Version1",
-			key:                *key2,
-			inputValue:         "1",
-			expectedStatus:     http.StatusOK,
-			expectedKeyVersion: key2.KeyVersions[0],
-		},
-		{
-			name:               "GetKeyVersionByNumber_Success_ReturnKey2Version2",
-			key:                *key2,
-			inputValue:         "2",
-			expectedStatus:     http.StatusOK,
-			expectedKeyVersion: key2.KeyVersions[1],
-		},
-		{
-			name:               "GetKeyVersionByNumber_Success_ReturnLatest",
-			key:                *key2,
-			inputValue:         "latest",
-			expectedStatus:     http.StatusOK,
-			expectedKeyVersion: key2.KeyVersions[1],
-		},
-		{
-			name:           "GetKeyVersionByNumber_InternalServerError",
-			expectedStatus: http.StatusNotFound,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          fmt.Sprintf("/keys/%s/versions/%s", tt.key.ID.String(), tt.inputValue),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
-			})
-
-			assert.Equal(t, tt.expectedStatus, w.Code)
-
-			if tt.expectedStatus == http.StatusOK {
-				response := testutils.GetJSONBody[cmkapi.KeyVersion](t, w)
-				assert.Equal(t, tt.expectedKeyVersion.Version, *response.Version)
-			}
-		})
-	}
 }
