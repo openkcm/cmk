@@ -165,10 +165,10 @@ func (s *Scheduler) Validate() error {
 
 // Task holds a task config
 type Task struct {
-	Enabled  bool
+	Enabled  *bool
 	Cronspec string
 	TaskType string
-	Retries  int
+	Retries  *int
 }
 
 // Redis holds Redis client config
