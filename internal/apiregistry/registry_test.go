@@ -7,7 +7,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 
 	tenantapi "github.com/openkcm/cmk/internal/apiregistry/api/tenant"
-	"github.com/openkcm/cmk/internal/config" //nolint:gci
+	"github.com/openkcm/cmk/internal/config"
 )
 
 func TestNew(t *testing.T) {

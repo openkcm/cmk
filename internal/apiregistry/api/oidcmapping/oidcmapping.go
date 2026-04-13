@@ -9,7 +9,6 @@ type SessionManagerOIDCMapping interface {
 	UnblockOIDCMapping(ctx context.Context, req *UnblockOIDCMappingRequest) (*UnblockOIDCMappingResponse, error)
 }
 
-
 type ApplyOIDCMappingRequest struct {
 	TenantID   string
 	Issuer     string

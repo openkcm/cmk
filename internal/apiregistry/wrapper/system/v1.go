@@ -10,7 +10,7 @@ import (
 
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
-	"github.com/openkcm/cmk/internal/apiregistry/api/system"
+	systemapi "github.com/openkcm/cmk/internal/apiregistry/api/system"
 	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 
@@ -26,7 +26,9 @@ func NewV1(client systemgrpc.ServiceClient) *V1 {
 	}
 }
 
-func (v1 *V1) ListSystems(ctx context.Context, req *systemapi.ListSystemsRequest) (*systemapi.ListSystemsResponse, error) {
+func (v1 *V1) ListSystems(
+	ctx context.Context,
+	req *systemapi.ListSystemsRequest) (*systemapi.ListSystemsResponse, error) {
 	if err := validateListSystemsRequest(req); err != nil {
 		return nil, err
 	}
@@ -103,7 +105,9 @@ func (v1 *V1) UpdateSystemL1KeyClaim(
 	}, nil
 }
 
-func (v1 *V1) DeleteSystem(ctx context.Context, req *systemapi.DeleteSystemRequest) (*systemapi.DeleteSystemResponse, error) {
+func (v1 *V1) DeleteSystem(
+	ctx context.Context,
+	req *systemapi.DeleteSystemRequest) (*systemapi.DeleteSystemResponse, error) {
 	if err := validateDeleteSystemRequest(req); err != nil {
 		return nil, err
 	}

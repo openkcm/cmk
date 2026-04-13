@@ -5,7 +5,8 @@ import "context"
 type RegistrySystem interface {
 	ListSystems(ctx context.Context, req *ListSystemsRequest) (*ListSystemsResponse, error)
 	RegisterSystem(ctx context.Context, req *RegisterSystemRequest) (*RegisterSystemResponse, error)
-	UpdateSystemL1KeyClaim(ctx context.Context, req *UpdateSystemL1KeyClaimRequest) (*UpdateSystemL1KeyClaimResponse, error)
+	UpdateSystemL1KeyClaim(
+		ctx context.Context, req *UpdateSystemL1KeyClaimRequest) (*UpdateSystemL1KeyClaimResponse, error)
 	DeleteSystem(ctx context.Context, req *DeleteSystemRequest) (*DeleteSystemResponse, error)
 	UpdateSystemStatus(ctx context.Context, req *UpdateSystemStatusRequest) (*UpdateSystemStatusResponse, error)
 	SetSystemLabels(ctx context.Context, req *SetSystemLabelsRequest) (*SetSystemLabelsResponse, error)

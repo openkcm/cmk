@@ -9,7 +9,7 @@ import (
 
 	mappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 
-	"github.com/openkcm/cmk/internal/apiregistry/api/mapping"
+	mappingapi "github.com/openkcm/cmk/internal/apiregistry/api/mapping"
 	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 

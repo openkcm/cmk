@@ -9,7 +9,7 @@ import (
 
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 
-	"github.com/openkcm/cmk/internal/apiregistry/api/oidcmapping"
+	oidcmappingapi "github.com/openkcm/cmk/internal/apiregistry/api/oidcmapping"
 	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 

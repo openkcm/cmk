@@ -54,7 +54,9 @@ func (v *V1) RegisterTenant(
 	}, nil
 }
 
-func (v *V1) ListTenants(ctx context.Context, req *tenantapi.ListTenantsRequest) (*tenantapi.ListTenantsResponse, error) {
+func (v *V1) ListTenants(
+	ctx context.Context,
+	req *tenantapi.ListTenantsRequest) (*tenantapi.ListTenantsResponse, error) {
 	if err := validateListTenantsRequest(req); err != nil {
 		return nil, err
 	}
@@ -105,7 +107,9 @@ func (v *V1) GetTenant(ctx context.Context, req *tenantapi.GetTenantRequest) (*t
 	}, nil
 }
 
-func (v *V1) BlockTenant(ctx context.Context, req *tenantapi.BlockTenantRequest) (*tenantapi.BlockTenantResponse, error) {
+func (v *V1) BlockTenant(
+	ctx context.Context,
+	req *tenantapi.BlockTenantRequest) (*tenantapi.BlockTenantResponse, error) {
 	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}

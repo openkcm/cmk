@@ -51,7 +51,6 @@ func TestNewV1(t *testing.T) {
 //nolint:cyclop // test function with many test cases
 func TestV1_ApplyOIDCMapping(t *testing.T) {
 	jwksURI := "https://example.com/.well-known/jwks.json"
-	clientID := "client-123"
 	message := "success message"
 
 	tests := []struct {
@@ -70,7 +69,6 @@ func TestV1_ApplyOIDCMapping(t *testing.T) {
 				Issuer:     "https://issuer.example.com",
 				JwksURI:    &jwksURI,
 				Audiences:  []string{"aud1", "aud2"},
-				ClientID:   &clientID,
 				Properties: map[string]string{"key": "value"},
 			},
 			mockResponse: &oidcmappinggrpc.ApplyOIDCMappingResponse{

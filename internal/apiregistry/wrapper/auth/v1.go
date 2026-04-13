@@ -9,7 +9,7 @@ import (
 
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 
-	"github.com/openkcm/cmk/internal/apiregistry/api/auth"
+	authapi "github.com/openkcm/cmk/internal/apiregistry/api/auth"
 	apierrors "github.com/openkcm/cmk/internal/apiregistry/errors"
 )
 
