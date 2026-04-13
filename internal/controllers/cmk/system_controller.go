@@ -13,7 +13,7 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-var getSystemsSchema odata.FilterSchema = odata.FilterSchema{
+var getSystemsSchema = odata.FilterSchema{
 	Entries: []odata.FilterSchemaEntry{
 		{
 			FilterName: "keyConfigurationID",
@@ -24,7 +24,6 @@ var getSystemsSchema odata.FilterSchema = odata.FilterSchema{
 			FilterName:     "region",
 			FilterType:     odata.String,
 			DBName:         repo.RegionField,
-			ValueModifier:  odata.ToUpper,
 			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
 		},
 		{
