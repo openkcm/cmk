@@ -7,6 +7,7 @@ toolchain go1.26.1
 require (
 	buf.build/go/protovalidate v1.1.3
 	github.com/Azure/go-amqp v1.5.1
+	github.com/XSAM/otelsql v0.41.0
 	github.com/avast/retry-go/v5 v5.0.0
 	github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8 v8.9.0
 	github.com/bartventer/gorm-multitenancy/postgres/v8 v8.9.0
@@ -64,7 +65,6 @@ require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/Dynatrace/OneAgent-SDK-for-Go v1.1.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/XSAM/otelsql v0.41.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect

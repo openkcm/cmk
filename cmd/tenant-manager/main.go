@@ -22,6 +22,7 @@ import (
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
@@ -40,7 +41,6 @@ const (
 	errMsgStatusServer    = "Failure on the status server"
 	errMsgStartApp        = "Failed to start the application"
 	errMsgRunningOperator = "Failed to run operator"
-	postgresDriverName    = "pgx"
 	logDomain             = "main"
 )
 
@@ -246,7 +246,7 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 
 	healthOptions := []health.Option{
 		health.WithDatabaseChecker(
-			postgresDriverName,
+			constants.PgxDriverName,
 			dsnFromConfig,
 		),
 	}

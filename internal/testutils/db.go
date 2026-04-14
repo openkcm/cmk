@@ -422,6 +422,7 @@ func newTestDBCon(tb testing.TB, cfg *TestDBConfig) *multitenancy.DB {
 		ctx,
 		cfg.dbCon,
 		[]config.Database{},
+		nil, // No tracing in tests
 	)
 	assert.NoError(tb, err)
 
@@ -438,6 +439,7 @@ func NewIsolatedDB(tb testing.TB, cfg config.Database) config.Database {
 		tb.Context(),
 		cfg,
 		[]config.Database{},
+		nil, // No tracing in tests
 	)
 	assert.NoError(tb, err)
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
@@ -29,10 +30,6 @@ var (
 	gracefulShutdownSec     = flag.Int64("graceful-shutdown", 1, "graceful shutdown seconds")
 	gracefulShutdownMessage = flag.String("graceful-shutdown-message", "Graceful shutdown in %d seconds",
 		"graceful shutdown message")
-)
-
-const (
-	postgresDriverName = "pgx"
 )
 
 // - Starts the status server
@@ -107,7 +104,7 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 
 	healthOptions := []health.Option{
 		health.WithDatabaseChecker(
-			postgresDriverName,
+			constants.PgxDriverName,
 			dsnFromConfig,
 		),
 	}
