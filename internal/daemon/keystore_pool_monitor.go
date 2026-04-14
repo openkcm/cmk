@@ -80,7 +80,7 @@ func (m *KeystorePoolMonitor) getPool(ctx context.Context) (*manager.Pool, error
 		return m.pool, nil
 	}
 
-	dbCon, err := db.StartDBConnection(ctx, m.cfg.Database, m.cfg.DatabaseReplicas)
+	dbCon, err := db.StartDBConnection(ctx, m.cfg.Database, m.cfg.DatabaseReplicas, &m.cfg.Telemetry)
 	if err != nil {
 		return nil, err
 	}

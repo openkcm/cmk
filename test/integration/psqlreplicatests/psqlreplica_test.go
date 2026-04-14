@@ -43,6 +43,7 @@ func (s *PSQLReplicaSuite) TestConnectToPsqlWithoutReplica() {
 		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
+		nil, // No tracing in tests
 	)
 
 	s.Require().NotNil(dbConn)
@@ -59,6 +60,7 @@ func (s *PSQLReplicaSuite) TestConnectToPsqlWithReplica() {
 		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
+		nil, // No tracing in tests
 	)
 
 	s.Require().NotNil(dbConn)
@@ -98,6 +100,7 @@ func (s *PSQLReplicaSuite) TestDatabaseConnectionError() {
 		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
+		nil, // No tracing in tests
 	)
 
 	s.Nil(dbConn)
@@ -117,6 +120,7 @@ func (s *PSQLReplicaSuite) TestReplicaConnectionError() {
 		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
+		nil, // No tracing in tests
 	)
 	s.Nil(dbCon)
 	s.Error(err)
@@ -149,6 +153,7 @@ func (s *PSQLReplicaSuite) TestMultipleReplicas() {
 		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
+		nil, // No tracing in tests
 	)
 
 	s.Require().NotNil(dbConn)
@@ -165,6 +170,7 @@ func (s *PSQLReplicaSuite) TestEmptyReplicaConfig() {
 		s.T().Context(),
 		cfg.Database,
 		cfg.DatabaseReplicas,
+		nil, // No tracing in tests
 	)
 
 	s.Require().NotNil(dbConn)
