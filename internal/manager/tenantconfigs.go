@@ -70,8 +70,9 @@ type HYOKKeystore struct {
 }
 
 type TenantKeystores struct {
-	BYOK model.KeystoreConfig
-	HYOK HYOKKeystore
+	BYOK      model.KeystoreConfig
+	AllowBYOK bool
+	HYOK      HYOKKeystore
 }
 
 func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
@@ -177,9 +178,19 @@ func (m *TenantConfigManager) GetTenantsKeystores() (TenantKeystores, error) {
 	defaultKeystore := model.KeystoreConfig{}
 
 	return TenantKeystores{
-		BYOK: defaultKeystore,
-		HYOK: m.getTenantConfigsHyokKeystore(),
+		BYOK:      defaultKeystore,
+		AllowBYOK: m.isBYOKAllowed(),
+		HYOK:      m.getTenantConfigsHyokKeystore(),
 	}, nil
+}
+
+// isBYOKAllowed checks if BYOK is allowed for the tenant
+func (m *TenantConfigManager) isBYOKAllowed() bool {
+	if m.cfg == nil {
+		return false
+	}
+
+	return m.cfg.FeatureGates.IsFeatureEnabled("allowBYOK")
 }
 
 // GetDefaultKeystoreConfig retrieves the default keystore config
