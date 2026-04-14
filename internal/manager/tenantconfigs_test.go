@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
@@ -252,6 +253,27 @@ func TestGetTenantsKeystore(t *testing.T) {
 		res, err := m.GetTenantsKeystores()
 		assert.NoError(t, err)
 		assert.Empty(t, res.HYOK)
+		assert.False(t, res.AllowBYOK)
+	})
+
+	t.Run("Should keep BYOK disabled when feature gate is missing", func(t *testing.T) {
+		m := manager.NewTenantConfigManager(nil, nil, &config.Config{})
+		res, err := m.GetTenantsKeystores()
+		assert.NoError(t, err)
+		assert.False(t, res.AllowBYOK)
+	})
+
+	t.Run("Should enable BYOK when allowBYOK feature gate is true", func(t *testing.T) {
+		m := manager.NewTenantConfigManager(nil, nil, &config.Config{
+			BaseConfig: commoncfg.BaseConfig{
+				FeatureGates: commoncfg.FeatureGates{
+					"allowBYOK": true,
+				},
+			},
+		})
+		res, err := m.GetTenantsKeystores()
+		assert.NoError(t, err)
+		assert.True(t, res.AllowBYOK)
 	})
 }
 

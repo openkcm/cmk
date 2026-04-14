@@ -37,6 +37,7 @@ func TestToAPI(t *testing.T) {
 				{Name: regionName, TechnicalName: regionTechnicalName},
 			},
 		},
+		AllowBYOK: false,
 		HYOK: manager.HYOKKeystore{
 			Provider: providers,
 			Allow:    true,
