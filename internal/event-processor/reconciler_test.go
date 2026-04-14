@@ -730,12 +730,19 @@ func TestVersionInfoPropagation(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyWithVersion, keyWithoutVersion)
 
-	// Setup plugin with version info for one key, not the other
-	instance.pluginOp.HandleKeyRecord(keyWithVersionID, testplugins.EnabledKeyStatus)
-	instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, initialVersionID)
+	// Create key versions in DB for keyWithVersion only
+	kv := &model.KeyVersion{
+		ExternalID: uuid.NewString(),
+		KeyID:      keyWithVersion.ID,
+		Version:    1,
+		NativeID:   ptr.PointTo(initialVersionID),
+	}
+	err := r.Create(ctx, kv)
+	require.NoError(t, err)
 
+	// Setup plugin handlers (required for TransformCryptoAccessData)
+	instance.pluginOp.HandleKeyRecord(keyWithVersionID, testplugins.EnabledKeyStatus)
 	instance.pluginOp.HandleKeyRecord(keyWithoutVerID, testplugins.EnabledKeyStatus)
-	// No version info set for keyWithoutVersion
 
 	// Helper to resolve tasks and extract key access metadata
 	resolveAndExtractKeyAccessData := func(jobType string, keyID string) map[string]any {
@@ -773,7 +780,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 			keyWithVersion.ID.String(),
 		)
 
-		// Assert version info from GetKey is present
+		// Assert version info from DB key version is present
 		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
 		assert.Equal(t, initialVersionID, keyAccessData["versionIdentifier"])
 		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
@@ -792,8 +799,15 @@ func TestVersionInfoPropagation(t *testing.T) {
 	})
 
 	t.Run("should fetch fresh version info on every event creation", func(t *testing.T) {
-		// Update version info in plugin (simulating rotation)
-		instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, updatedVersionID)
+		// Simulate rotation by adding a newer key version in the DB
+		kv := &model.KeyVersion{
+			ExternalID: uuid.NewString(),
+			KeyID:      keyWithVersion.ID,
+			Version:    2,
+			NativeID:   ptr.PointTo(updatedVersionID),
+		}
+		err := r.Create(ctx, kv)
+		require.NoError(t, err)
 
 		keyAccessData := resolveAndExtractKeyAccessData(
 			eventprocessor.JobTypeSystemSwitch.String(),
