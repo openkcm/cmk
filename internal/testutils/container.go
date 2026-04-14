@@ -3,7 +3,6 @@ package testutils
 import (
 	"testing"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
@@ -29,7 +28,7 @@ func StartRabbitMQ(
 
 	options := append([]testcontainers.ContainerCustomizer{
 		testcontainers.WithReuseByName(rabbitMQContainer),
-		testcontainers.WithAdditionalWaitStrategy(wait.ForListeningPort(nat.Port(rabbitmq.DefaultAMQPPort))),
+		testcontainers.WithAdditionalWaitStrategy(wait.ForListeningPort(rabbitmq.DefaultAMQPPort)),
 	}, opts...)
 
 	service, err := rabbitmq.Run(
@@ -84,7 +83,7 @@ func StartPostgresSQL(
 	assert.NoError(tb, err)
 
 	if cfg != nil {
-		p, err := service.MappedPort(tb.Context(), nat.Port("5432"))
+		p, err := service.MappedPort(tb.Context(), "5432")
 		assert.NoError(tb, err)
 
 		host, err := service.Host(tb.Context())
@@ -121,7 +120,7 @@ func StartRedis(
 	assert.NoError(tb, err)
 
 	if cfg != nil {
-		port, err := redisContainer.MappedPort(tb.Context(), nat.Port("6379"))
+		port, err := redisContainer.MappedPort(tb.Context(), "6379")
 		assert.NoError(tb, err)
 
 		cfg.TaskQueue.Port = port.Port()
