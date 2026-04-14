@@ -25,7 +25,7 @@ var (
 )
 
 // StartDBConnection opens DB connection using data from `config.DB`.
-// telemetryCfg and appName are optional - pass nil for telemetryCfg to disable tracing.
+// telemetryCfg is optional - pass nil for telemetryCfg to disable tracing.
 func StartDBConnection(
 	ctx context.Context,
 	conf config.Database,
@@ -39,7 +39,7 @@ func StartDBConnection(
 // and plugins that are passed in a form of map because GORM config stores
 // them this way.
 // It is an extension of `StartDBConnection` functionality.
-// telemetryCfg and appName are optional - pass nil for telemetryCfg to disable tracing.
+// telemetryCfg is optional - pass nil for telemetryCfg to disable tracing.
 func StartDBConnectionPlugins(
 	ctx context.Context,
 	conf config.Database,
