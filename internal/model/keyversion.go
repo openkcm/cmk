@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -12,12 +13,11 @@ import (
 type KeyVersion struct {
 	AutoTimeModel
 
-	ExternalID string    `gorm:"type:varchar(255);primaryKey"`
-	NativeID   *string   `gorm:"type:varchar(255)"`
-	KeyID      uuid.UUID `gorm:"type:uuid;not null;uniqueindex:key_version,priority:1"`
-	Key        Key       `gorm:"foreignKey:KeyID;association_foreignkey:ID"`
-	Version    int       `gorm:"not null;default:0;uniqueindex:key_version,priority:2"`
-	IsPrimary  bool      `gorm:"not null;default:false"`
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
+	NativeID  string    `gorm:"type:varchar(255);not null"`
+	KeyID     uuid.UUID `gorm:"type:uuid;not null;index"`
+	Key       Key       `gorm:"foreignKey:KeyID"`
+	RotatedAt time.Time `gorm:"type:timestamptz;not null"` // Rotation timestamp (latest = current version)
 }
 
 // TableResourceType return the authz resource type

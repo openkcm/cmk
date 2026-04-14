@@ -2,8 +2,8 @@ package manager_test
 
 import (
 	"context"
-	"strconv"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
@@ -91,36 +91,6 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	s.keyConfigID = keyConfig.ID
 }
 
-func (s *KeyVersionManagerSuit) TestKeyVersionManager_AddKeyVersion() {
-	s.Run("Should add key version", func() {
-		keyVersion := testutils.NewKeyVersion(func(_ *model.KeyVersion) {})
-		key := testutils.NewKey(func(_ *model.Key) {})
-
-		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key, keyVersion)
-
-		resultKeyVersion, err := s.kvm.AddKeyVersion(s.ctx, *key, key.NativeID)
-
-		s.NoError(err)
-		s.NotNil(resultKeyVersion)
-		s.Equal(keyVersion.Version, resultKeyVersion.Version)
-		pagination := repo.Pagination{
-			Skip:  constants.DefaultSkip,
-			Top:   constants.DefaultTop,
-			Count: true,
-		}
-		oldKeyVersions, _, err := s.kvm.GetKeyVersions(s.ctx, key.ID, pagination)
-		s.NoError(err)
-
-		for _, keyVersion := range oldKeyVersions {
-			if keyVersion.ExternalID == resultKeyVersion.ExternalID {
-				s.True(keyVersion.IsPrimary)
-			} else {
-				s.False(keyVersion.IsPrimary)
-			}
-		}
-	})
-}
-
 func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 	s.Run("Should list key versions", func() {
 		keyID := uuid.New()
@@ -128,15 +98,14 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 			k.ID = keyID
 			k.KeyVersions = []model.KeyVersion{
 				*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-					kv.Version = 1
-					kv.IsPrimary = false
 					kv.Key.ID = keyID
 					kv.KeyID = keyID
+					kv.NativeID = "version-1"
 				}),
 				*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-					kv.Version = 2
 					kv.Key.ID = keyID
 					kv.KeyID = keyID
+					kv.NativeID = "version-2"
 				}),
 			}
 		})
@@ -153,160 +122,103 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 		s.NotNil(result)
 		s.Len(result, len(key.KeyVersions))
 	})
-}
 
-func (s *KeyVersionManagerSuit) TestKeyVersionManager_GetByKeyIDAndByNumber() {
-	tests := []struct {
-		name             string
-		key              func() *model.Key
-		keyVersions      func() []*model.KeyVersion
-		keyVersionNumber string
-		expectedErr      bool
-	}{
-		{
-			name: "KeyVersionManager_GetByKeyIDAndByNumber_Latest_SUCCESS",
-			key: func() *model.Key {
-				return testutils.NewKey(func(k *model.Key) {
-					k.KeyConfigurationID = s.keyConfigID
-				})
-			},
-			keyVersions: func() []*model.KeyVersion {
-				return []*model.KeyVersion{
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = false
-						version.Version = 1
-					}),
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = true
-						version.Version = 2
-					}),
-				}
-			},
-			keyVersionNumber: "latest",
-			expectedErr:      false,
-		},
-		{
-			name: "KeyVersionManager_GetByKeyIDAndByNumber_Latest_ERROR",
-			key: func() *model.Key {
-				return testutils.NewKey(func(k *model.Key) {
-					k.KeyConfigurationID = s.keyConfigID
-				})
-			},
-			keyVersions: func() []*model.KeyVersion {
-				return []*model.KeyVersion{}
-			},
-			keyVersionNumber: "latest",
-			expectedErr:      true,
-		},
-		{
-			name: "KeyVersionManager_GetByKeyIDAndByNumber_2_SUCCESS",
-			key: func() *model.Key {
-				return testutils.NewKey(func(k *model.Key) {
-					k.KeyConfigurationID = s.keyConfigID
-				})
-			},
-			keyVersions: func() []*model.KeyVersion {
-				return []*model.KeyVersion{
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = false
-						version.Version = 1
-					}),
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = true
-						version.Version = 2
-					}),
-				}
-			},
-			keyVersionNumber: "1",
-			expectedErr:      false,
-		},
-		{
-			name: "KeyVersionManager_GetByKeyIDAndByNumber_Invalid_ERROR",
-			key: func() *model.Key {
-				return testutils.NewKey(func(k *model.Key) {
-					k.KeyConfigurationID = s.keyConfigID
-				})
-			},
-			keyVersions: func() []*model.KeyVersion {
-				return []*model.KeyVersion{
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = false
-						version.Version = 1
-					}),
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = true
-						version.Version = 2
-					}),
-				}
-			},
-			keyVersionNumber: "invalid",
-			expectedErr:      true,
-		},
-		{
-			name: "KeyVersionManager_GetByKeyIDAndByNumber_NoKeyVersion_ERROR",
-			key: func() *model.Key {
-				return testutils.NewKey(func(k *model.Key) {
-					k.KeyConfigurationID = s.keyConfigID
-				})
-			},
-			keyVersions: func() []*model.KeyVersion {
-				return []*model.KeyVersion{
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = false
-						version.Version = 1
-					}),
-					testutils.NewKeyVersion(func(version *model.KeyVersion) {
-						version.IsPrimary = true
-						version.Version = 2
-					}),
-				}
-			},
-			keyVersionNumber: "10",
-			expectedErr:      true,
-		},
-	}
+	s.Run("Should use created_at as tie-breaker when rotated_at is identical", func() {
+		// Create a key with multiple versions sharing the same rotated_at
+		keyID := uuid.New()
 
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			key := tt.key()
-			keyVersions := tt.keyVersions()
+		// All versions share the same rotation time (caller-supplied timestamp scenario)
+		sharedRotationTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
 
-			var expectedVersion *model.KeyVersion
-
-			err := s.r.Create(s.ctx, key)
-			s.NoError(err)
-
-			for _, keyVersion := range keyVersions {
-				keyVersion.Key = *key
-				err := s.r.Create(s.ctx, keyVersion)
-				s.NoError(err)
-
-				if !tt.expectedErr {
-					if tt.keyVersionNumber == "latest" && keyVersion.IsPrimary == true {
-						expectedVersion = keyVersion
-					} else if tt.keyVersionNumber != "latest" {
-						numberVersion, err := strconv.Atoi(tt.keyVersionNumber)
-						s.NoError(err)
-
-						if numberVersion == keyVersion.Version {
-							expectedVersion = keyVersion
-						}
-					}
-				}
-			}
-
-			result, err := s.kvm.GetByKeyIDAndByNumber(s.ctx, key.ID, tt.keyVersionNumber)
-
-			if tt.expectedErr {
-				s.Error(err)
-				s.Nil(result)
-			} else {
-				s.NoError(err)
-				s.NotNil(result)
-				s.Equal(expectedVersion.IsPrimary, result.IsPrimary)
-				s.Equal(expectedVersion.Version, result.Version)
-				s.Equal(expectedVersion.ExternalID, result.ExternalID)
-			}
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = s.keyConfigID
 		})
-	}
+		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key)
+
+		// Create versions with same rotated_at but different created_at
+		// CreateTestEntities inserts them sequentially, so created_at will naturally differ
+		_, err := s.kvm.CreateVersion(s.ctx, keyID, "version-1", &sharedRotationTime)
+		s.NoError(err)
+
+		_, err = s.kvm.CreateVersion(s.ctx, keyID, "version-2", &sharedRotationTime)
+		s.NoError(err)
+
+		version3, err := s.kvm.CreateVersion(s.ctx, keyID, "version-3", &sharedRotationTime)
+		s.NoError(err)
+
+		// Get latest version - should be deterministic based on created_at
+		latest, err := s.kvm.GetLatestVersion(s.ctx, keyID)
+		s.NoError(err)
+		s.NotNil(latest)
+
+		// Get all versions - should be ordered by rotated_at DESC, created_at DESC
+		pagination := repo.Pagination{
+			Skip:  0,
+			Top:   10,
+			Count: true,
+		}
+		allVersions, count, err := s.kvm.GetKeyVersions(s.ctx, keyID, pagination)
+		s.NoError(err)
+		s.Equal(3, count)
+		s.Len(allVersions, 3)
+
+		// Latest version should be the one with most recent created_at
+		// (version3 was created last)
+		s.Equal(version3.ID, latest.ID, "Latest should be version3 (most recently created)")
+		s.Equal("version-3", latest.NativeID)
+		s.Equal("version-3", allVersions[0].NativeID)
+
+		// Verify ordering is deterministic: call again and should get same result
+		latest2, err := s.kvm.GetLatestVersion(s.ctx, keyID)
+		s.NoError(err)
+		s.Equal(latest.ID, latest2.ID, "GetLatestVersion should be deterministic")
+
+		allVersions2, _, err := s.kvm.GetKeyVersions(s.ctx, keyID, pagination)
+		s.NoError(err)
+		s.Equal(allVersions[0].ID, allVersions2[0].ID, "GetKeyVersions ordering should be deterministic")
+	})
+
+	s.Run("Should handle concurrent version creation gracefully", func() {
+		// Create a key for testing concurrent version creation
+		keyID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = s.keyConfigID
+		})
+		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key)
+
+		// Same version parameters (simulating concurrent refresh detecting same version)
+		nativeID := "concurrent-test-version-1"
+		rotationTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+
+		// First creation should succeed
+		version1, err := s.kvm.CreateVersion(s.ctx, keyID, nativeID, &rotationTime)
+		s.NoError(err)
+		s.NotNil(version1)
+		s.Equal(nativeID, version1.NativeID)
+		s.Equal(keyID, version1.KeyID)
+
+		// Second creation with same (key_id, native_id) should handle unique constraint
+		// and return the existing version instead of failing
+		version2, err := s.kvm.CreateVersion(s.ctx, keyID, nativeID, &rotationTime)
+		s.NoError(err, "Concurrent creation should not fail")
+		s.NotNil(version2)
+		s.Equal(nativeID, version2.NativeID)
+		s.Equal(keyID, version2.KeyID)
+
+		// Should return the existing version (same ID)
+		s.Equal(version1.ID, version2.ID, "Should return existing version on duplicate")
+
+		// Verify only one version exists in database
+		allVersions, count, err := s.kvm.GetKeyVersions(s.ctx, keyID, repo.Pagination{
+			Skip:  0,
+			Top:   10,
+			Count: true,
+		})
+		s.NoError(err)
+		s.Equal(1, count, "Should have only one version")
+		s.Len(allVersions, 1)
+		s.Equal(version1.ID, allVersions[0].ID)
+	})
 }
