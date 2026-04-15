@@ -329,6 +329,19 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 			expectedErrorCode:   "BAD_REQUEST",
 		},
 		{
+			name:                "GetAllSystems_FilterByRegion_Success",
+			filter:              "region eq " + "'" + system1.Region + "'",
+			expectedStatus:      http.StatusOK,
+			expectedSystemCount: 1,
+		},
+		{
+			name:                "GetAllSystems_FilterByRegion_InvalidLength",
+			filter:              "region eq '" + longStr + "'",
+			expectedStatus:      http.StatusBadRequest,
+			expectedSystemCount: 0,
+			expectedErrorCode:   "BAD_REQUEST",
+		},
+		{
 			name:           "GetAllSystemsDbError",
 			expectedStatus: http.StatusInternalServerError,
 			sideEffect: func() func() {

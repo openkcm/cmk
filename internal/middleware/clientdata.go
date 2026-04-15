@@ -46,7 +46,7 @@ func ClientDataMiddleware(
 			func(w http.ResponseWriter, r *http.Request) {
 				ctx, err := prepareClientContext(r, signingKeyStorage, authContextFields, roleGetter)
 				if err != nil {
-					log.Debug(r.Context(), "Client data processing error", log.ErrorAttr(err))
+					log.Error(r.Context(), "Client data processing error", err)
 					if errors.Is(err, manager.ErrMultipleRolesInGroups) ||
 						errors.Is(err, manager.ErrZeroRolesInGroups) {
 						e := apierrors.APIErrorMapper.Transform(r.Context(), err)
@@ -76,14 +76,6 @@ func prepareClientContext(
 		return r.Context(), err
 	}
 
-	// Validate that all groups belong to only one role type
-	// either KeyAdminRole, TenantAdminRole, or TenantAuditorRole.
-	// Also reject tenant access if no groups are provided.
-	err = validateGroupRoles(r, clientData, roleGetter)
-	if err != nil {
-		return r.Context(), err
-	}
-
 	pemData, exists := signingKeyStorage.Get(clientData.KeyID)
 	if !exists {
 		return r.Context(), ErrPublicKeyNotFound
@@ -105,7 +97,18 @@ func prepareClientContext(
 		return r.Context(), err
 	}
 
+	if clientData.Identifier == constants.SystemUser.String() {
+		return r.Context(), ErrTriedToBeSystem
+	}
+
 	ctx := cmkcontext.InjectClientData(r.Context(), clientData, authContextFields)
+
+	// Validate group roles after injecting the real client identity so that
+	// GetRoleFromIAM has a proper identity in context.
+	err = validateGroupRoles(r.WithContext(ctx), clientData, roleGetter)
+	if err != nil {
+		return r.Context(), err
+	}
 
 	return ctx, nil
 }
@@ -142,10 +145,6 @@ func extractClientData(r *http.Request) (*auth.ClientData, error) {
 		r.Context(), "extracted client data:",
 		slog.String("signatureAlgorithm", string(clientData.SignatureAlgorithm)),
 	)
-
-	if clientData.Identifier == constants.SystemUser.String() {
-		return nil, ErrTriedToBeSystem
-	}
 
 	return clientData, nil
 }

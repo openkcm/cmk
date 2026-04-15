@@ -86,10 +86,12 @@ func TestGetDefaultKeystore(t *testing.T) {
 		// Add a keystore configuration to the pool
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
-		testutils.CreateTestEntities(ctx, t, r, ksConfig)
+		// Create a fresh keystore config for this test to avoid pollution from other tests
+		localKsConfig := testutils.NewKeystore(func(_ *model.Keystore) {})
+		testutils.CreateTestEntities(ctx, t, r, localKsConfig)
 
 		// Act
-		keystore, err := configManager.GetDefaultKeystoreConfig(testutils.CreateCtxWithTenant(tenant))
+		keystore, err := configManager.GetDefaultKeystoreConfig(ctx)
 
 		// Assert
 		assert.NoError(t, err)

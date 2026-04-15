@@ -61,10 +61,11 @@ type GetKeyRequest struct {
 
 type GetKeyResponse struct {
 	// V1 Fields
-	KeyID        string
-	KeyAlgorithm KeyAlgorithm
-	Status       string
-	Usage        string
+	KeyID              string
+	KeyAlgorithm       KeyAlgorithm
+	Status             string
+	Usage              string
+	LatestKeyVersionId string
 }
 
 // CreateKeyRequest contains parameters for key creation

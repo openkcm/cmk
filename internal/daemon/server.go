@@ -234,7 +234,7 @@ func makeController(
 	}
 
 	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
-	if authzAPILoader.AuthzHandler == nil {
+	if authzRepoLoader.AuthzHandler == nil {
 		return nil, oops.In(ServerLogDomain).Wrapf(err, "no authz handler")
 	}
 
@@ -243,7 +243,8 @@ func makeController(
 	controller := cmk.NewAPIController(ctx, authzRepo, cfg, clientsFactory,
 		migrator, svcRegistry, authzAPILoader)
 
-	controller.AuthzLoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
+	authzAPILoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
+	authzRepoLoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
 
 	return controller, nil
 }

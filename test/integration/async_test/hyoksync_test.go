@@ -27,7 +27,6 @@ func TestSchedulerHYOKSync(t *testing.T) {
 		Tasks: []config.Task{{
 			Cronspec: "@every 4s",
 			TaskType: config.TypeHYOKSync,
-			Retries:  0,
 		}},
 	})
 	SetupTestContainers(t, testConfig)
