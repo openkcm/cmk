@@ -65,6 +65,32 @@ func TestGetUserInfo(t *testing.T) {
 		assert.Contains(t, resp.Role, string(group.Role))
 	})
 
+	t.Run("Should 200 on get user info without group", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/userInfo",
+			Tenant:   tenant,
+			AdditionalContext: map[any]any{
+				constants.ClientData: &auth.ClientData{
+					Identifier: "user-123",
+					Email:      "bob@example.com",
+					GivenName:  "Bob",
+					FamilyName: "Builder",
+					Groups:     []string{"some-other-group"},
+				},
+			},
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		resp := testutils.GetJSONBody[cmkapi.GetUserInfo200JSONResponse](t, w)
+
+		assert.Equal(t, "user-123", resp.Identifier)
+		assert.Equal(t, "bob@example.com", resp.Email)
+		assert.Equal(t, "Bob", resp.GivenName)
+		assert.Equal(t, "Builder", resp.FamilyName)
+		assert.Contains(t, resp.Role, "")
+	})
+
 	t.Run("Should 500 on get user info with no client data", func(t *testing.T) {
 		group := testutils.NewGroup(func(_ *model.Group) {})
 		testutils.CreateTestEntities(ctx, t, r, group)

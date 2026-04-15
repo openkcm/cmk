@@ -222,7 +222,8 @@ func (u *user) GetUserInfo(ctx context.Context) (UserInfo, error) {
 		return UserInfo{}, err
 	}
 
-	role, err := u.GetRoleFromIAM(ctx, groups)
+	sysCtx := cmkcontext.InjectSystemUser(ctx)
+	role, err := u.GetRoleFromIAM(sysCtx, groups)
 	if err != nil {
 		return UserInfo{}, err
 	}
@@ -244,8 +245,9 @@ func (u *user) HasTenantAccess(ctx context.Context) (bool, error) {
 
 	ck := repo.NewCompositeKey().Where(repo.IAMIdField, iamIdentifiers)
 
+	sysCtx := cmkcontext.InjectSystemUser(ctx)
 	count, err := u.repo.Count(
-		ctx, &model.Group{},
+		sysCtx, &model.Group{},
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).SetLimit(0),
 	)
 	if err != nil {
