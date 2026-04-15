@@ -24,6 +24,8 @@ const (
 
 	// Since the workflow expiry must be less than the retention minus a day
 	minimumRetentionPeriodDays = 2
+
+	allowBYOKFeatureGateKey = "allowBYOK"
 )
 
 var (
@@ -184,13 +186,13 @@ func (m *TenantConfigManager) GetTenantsKeystores() (TenantKeystores, error) {
 	}, nil
 }
 
-// isBYOKAllowed checks if BYOK is allowed for the tenant
+// isBYOKAllowed checks whether BYOK is enabled by deployment feature-gate configuration.
 func (m *TenantConfigManager) isBYOKAllowed() bool {
 	if m.cfg == nil {
 		return false
 	}
 
-	return m.cfg.FeatureGates.IsFeatureEnabled("allowBYOK")
+	return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
 }
 
 // GetDefaultKeystoreConfig retrieves the default keystore config
