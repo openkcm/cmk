@@ -16,7 +16,6 @@ type KeyVersion struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
 	NativeID  string    `gorm:"type:varchar(255);not null"`
 	KeyID     uuid.UUID `gorm:"type:uuid;not null;index"`
-	Key       Key       `gorm:"foreignKey:KeyID"`
 	RotatedAt time.Time `gorm:"type:timestamptz;not null"` // Rotation timestamp (latest = current version)
 }
 

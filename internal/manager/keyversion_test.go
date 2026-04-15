@@ -98,12 +98,10 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 			k.ID = keyID
 			k.KeyVersions = []model.KeyVersion{
 				*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-					kv.Key.ID = keyID
 					kv.KeyID = keyID
 					kv.NativeID = "version-1"
 				}),
 				*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-					kv.Key.ID = keyID
 					kv.KeyID = keyID
 					kv.NativeID = "version-2"
 				}),

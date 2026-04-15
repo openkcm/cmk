@@ -160,8 +160,7 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 		ctx,
 		key,
 		*repo.NewQuery().
-			Join(repo.LeftJoin, joinCond).
-			Preload(repo.Preload{"KeyVersions"}),
+			Join(repo.LeftJoin, joinCond),
 	)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetKeyDB, err)

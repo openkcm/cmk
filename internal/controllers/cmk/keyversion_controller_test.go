@@ -55,19 +55,16 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 	})
 
 	key1Version1 := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-		kv.Key = *key1
 		kv.KeyID = key1.ID
 		kv.RotatedAt = time.Now().UTC().Add(-2 * time.Hour)
 	})
 
 	key2Version1 := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-		kv.Key = *key2
 		kv.KeyID = key2.ID
 		kv.RotatedAt = time.Now().UTC().Add(-2 * time.Hour)
 	})
 
 	key2Version2 := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-		kv.Key = *key2
 		kv.KeyID = key2.ID
 		kv.RotatedAt = time.Now().UTC()
 	})
@@ -177,7 +174,6 @@ func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
 
 	for i := range totalRecordCount {
 		keyVersion := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-			kv.Key = *key
 			kv.KeyID = key.ID
 			kv.CreatedAt = time.Now()
 			kv.RotatedAt = time.Now().UTC().Add(time.Duration(i) * time.Second)
@@ -320,7 +316,6 @@ func TestKeyVersionController_GetKeyVersions_IsPrimaryWithPagination(t *testing.
 	// Version indices: 0 (oldest) -> 4 (newest/primary)
 	for i := range 5 {
 		keyVersion := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
-			kv.Key = *key
 			kv.KeyID = key.ID
 			kv.RotatedAt = time.Now().UTC().Add(time.Duration(i) * time.Hour)
 		})
@@ -431,7 +426,6 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 		k.KeyVersions = []model.KeyVersion{
 			*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
 				kv.KeyID = keyID
-				kv.Key.ID = keyID
 				kv.NativeID = uuid.NewString()
 				kv.RotatedAt = time.Now().UTC()
 			}),

@@ -116,7 +116,6 @@ func NewKeyVersion(m func(*model.KeyVersion)) *model.KeyVersion {
 			ID:        uuid.New(),
 			NativeID:  uuid.NewString(),
 			KeyID:     key.ID,
-			Key:       *key,
 			RotatedAt: time.Now().UTC(),
 		}
 	})
