@@ -15,7 +15,6 @@ import (
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/openkcm/common-sdk/pkg/otlp"
 	"github.com/openkcm/common-sdk/pkg/status"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/oops"
 
 	"github.com/openkcm/cmk/internal/config"
@@ -24,8 +23,6 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/utils/cmd"
 )
 
@@ -34,11 +31,6 @@ var (
 	gracefulShutdownSec     = flag.Int64("graceful-shutdown", 1, "graceful shutdown seconds")
 	gracefulShutdownMessage = flag.String("graceful-shutdown-message", "Graceful shutdown in %d seconds",
 		"graceful shutdown message")
-)
-
-const (
-	postgresDriverName = "pgx"
-	labelKeystore      = "keystore"
 )
 
 // - Starts the status server
@@ -99,49 +91,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func monitorKeystorePoolSize(
-	ctx context.Context,
-	cfg *config.Config,
-) {
-	gauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "keystore_pool_available",
-			Help: "The number of keystore entries in the pool",
-		},
-		[]string{
-			labelKeystore,
-		},
-	)
-
-	log.Debug(ctx, "Registering keystore pool size gauge metric")
-
-	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
-	if err != nil {
-		log.Error(ctx, "failed to initialize DB Connection", err)
-	}
-
-	pool := manager.NewPool(sql.NewRepository(dbCon))
-
-	ticker := time.NewTicker(cfg.KeystorePool.Interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Info(ctx, "stopping keystore pool size monitoring")
-			return
-		case <-ticker.C:
-			count, err := pool.Count(ctx)
-			if err != nil {
-				log.Error(ctx, "failed to get keystore pool size", err)
-			} else {
-				gauge.WithLabelValues(labelKeystore).Set(float64(count))
-				log.Debug(ctx, "keystore pool size", slog.Int("size", count))
-			}
-		}
-	}
-}
-
 func startStatusServer(ctx context.Context, cfg *config.Config) {
 	dsnFromConfig, err := dsn.FromDBConfig(cfg.Database)
 	if err != nil {
@@ -150,7 +99,7 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 
 	healthOptions := []health.Option{
 		health.WithDatabaseChecker(
-			postgresDriverName,
+			constants.PgxDriverName,
 			dsnFromConfig,
 		),
 		health.WithCheck(health.Check{
@@ -171,9 +120,7 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 		}),
 	}
 
-	if cfg.Telemetry.Metrics.Prometheus.Enabled {
-		go monitorKeystorePoolSize(ctx, cfg)
-	}
+	go daemon.MonitorKeystorePoolSize(ctx, cfg)
 
 	go func() {
 		err := status.Serve(ctx, &cfg.BaseConfig, healthOptions...)

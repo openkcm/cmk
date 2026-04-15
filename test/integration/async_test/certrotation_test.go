@@ -14,6 +14,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestCertRotation(t *testing.T) {
@@ -26,7 +27,7 @@ func TestCertRotation(t *testing.T) {
 		Tasks: []config.Task{{
 			Cronspec: "@every 1s",
 			TaskType: config.TypeCertificateTask,
-			Retries:  3,
+			Retries:  ptr.PointTo(3),
 		}},
 	})
 	SetupTestContainers(t, testConfig)

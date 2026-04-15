@@ -1,6 +1,10 @@
 package config
 
-import "time"
+import (
+	"time"
+
+	"github.com/openkcm/cmk/utils/ptr"
+)
 
 const (
 	TypeSystemsTask        = "sys:refresh"
@@ -19,46 +23,46 @@ const defaultRetryCount = 3
 // PeriodicTasks defines the periodic tasks with their default configurations.
 var PeriodicTasks = map[string]Task{
 	TypeSystemsTask: {
-		Enabled:  true,
+		Enabled:  ptr.PointTo(true),
 		Cronspec: "0 * * * *", // Hourly
-		Retries:  defaultRetryCount,
+		Retries:  ptr.PointTo(defaultRetryCount),
 	},
 	TypeHYOKSync: {
-		Enabled:  true,
+		Enabled:  ptr.PointTo(true),
 		Cronspec: "*/5 * * * *", // Every 5 minutes
-		Retries:  3,
+		Retries:  ptr.PointTo(defaultRetryCount),
 		TimeOut:  5 * time.Minute,
 		FanOutTask: FanOutTask{
-			Enabled: true,
-			Retries: 0,
+			Enabled: ptr.PointTo(true),
+			Retries: ptr.PointTo(0),
 			TimeOut: 5 * time.Minute,
 		},
 	},
 	TypeKeystorePool: {
-		Enabled:  true,
+		Enabled:  ptr.PointTo(true),
 		Cronspec: "0 * * * *", // Hourly
-		Retries:  defaultRetryCount,
+		Retries:  ptr.PointTo(defaultRetryCount),
 	},
 	TypeCertificateTask: {
-		Enabled:  true,
+		Enabled:  ptr.PointTo(true),
 		Cronspec: "0 0 * * *", // At 00:00 AM daily
-		Retries:  defaultRetryCount,
+		Retries:  ptr.PointTo(defaultRetryCount),
 	},
 	TypeWorkflowExpire: {
-		Enabled:  true,
+		Enabled:  ptr.PointTo(true),
 		Cronspec: "0 1 * * *", // At 01:00 AM daily
-		Retries:  defaultRetryCount,
+		Retries:  ptr.PointTo(defaultRetryCount),
 	},
 	TypeWorkflowCleanup: {
-		Enabled:  true,
+		Enabled:  ptr.PointTo(true),
 		Cronspec: "0 2 * * *", // At 02:00 AM daily
-		Retries:  defaultRetryCount,
+		Retries:  ptr.PointTo(defaultRetryCount),
 	},
 	// The TenantRefreshName was added to sync old tenants to have a tenant name
 	// This should be deleted on next release
 	TypeTenantRefreshName: {
-		Enabled:  true,
+		Enabled:  ptr.PointTo(true),
 		Cronspec: "0 3 * * *", // At 03:00 AM daily
-		Retries:  defaultRetryCount,
+		Retries:  ptr.PointTo(defaultRetryCount),
 	},
 }

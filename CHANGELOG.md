@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.7.0](https://github.com/openkcm/cmk/compare/v0.6.1...v0.7.0) (2026-04-09)
+
+
+### Features
+
+* add traces creation ([#203](https://github.com/openkcm/cmk/issues/203)) ([5b9abf7](https://github.com/openkcm/cmk/commit/5b9abf7b833e93eccf9a736c438bc44298b7499d))
+* Configurable crypto certs ([#214](https://github.com/openkcm/cmk/issues/214)) ([1d8ecdf](https://github.com/openkcm/cmk/commit/1d8ecdff6bea6d8b34c99ebbe4a1e762cdb2f479))
+* database auth properties ([#211](https://github.com/openkcm/cmk/issues/211)) ([38ba08a](https://github.com/openkcm/cmk/commit/38ba08a0213209f48e516a73a442be0c6121e3d9))
+* refactor key rotate event ([#216](https://github.com/openkcm/cmk/issues/216)) ([f17aa7e](https://github.com/openkcm/cmk/commit/f17aa7e1a19c7aed890d24c6d0d91cc7e87ee2bc))
+
+
+### Bug Fixes
+
+* change keystore pool monitor to OTLP metric ([#220](https://github.com/openkcm/cmk/issues/220)) ([faa1596](https://github.com/openkcm/cmk/commit/faa1596d5ba33504c775ffe5c7d943b0af627e49))
+* **deps:** bump the gomod-group group across 1 directory with 7 updates ([#213](https://github.com/openkcm/cmk/issues/213)) ([488db22](https://github.com/openkcm/cmk/commit/488db22e6c2abde480d7a4d174e22635fea1e80a))
+* **deps:** bump the gomod-group group across 1 directory with 9 updates ([#225](https://github.com/openkcm/cmk/issues/225)) ([6f3072f](https://github.com/openkcm/cmk/commit/6f3072f48b85028c4333338b34d057c032df0ed0))
+* refactor tenant decommissioning ([#175](https://github.com/openkcm/cmk/issues/175)) ([ba4f90d](https://github.com/openkcm/cmk/commit/ba4f90d7ba5c4f669dd53fdd2161e62130ab65fd))
+* refresh repo authz data ([#230](https://github.com/openkcm/cmk/issues/230)) ([445ca41](https://github.com/openkcm/cmk/commit/445ca4127160f302cd176b3a367d3896c53eb468))
+* tidy go mod ([#226](https://github.com/openkcm/cmk/issues/226)) ([abe9ae0](https://github.com/openkcm/cmk/commit/abe9ae096fb1d59f499f0dd47ef9d3400bb5212d))
+* update common-sdk ([#218](https://github.com/openkcm/cmk/issues/218)) ([22cee0f](https://github.com/openkcm/cmk/commit/22cee0f3d7a60386b496009b30e76e12dbc47f24))
+* Update Go version ([#215](https://github.com/openkcm/cmk/issues/215)) ([12d6a32](https://github.com/openkcm/cmk/commit/12d6a3226f62d691e27a2bf65eb5bf7761b0cffe))
+* validate group roles when processing client data ([#227](https://github.com/openkcm/cmk/issues/227)) ([b0bcdd8](https://github.com/openkcm/cmk/commit/b0bcdd802218f32a67de77627588269c017325b2))
+
 ## [0.6.1](https://github.com/openkcm/cmk/compare/v0.6.0...v0.6.1) (2026-03-19)
 
 

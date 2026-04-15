@@ -46,9 +46,6 @@ var (
 )
 
 const AppName = "worker"
-const (
-	postgresDriverName = "pgx"
-)
 
 // - Starts the status server
 // - Starts the Asynq Worker
@@ -82,7 +79,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return oops.In("main").Wrapf(err, "failed to create the worker")
 	}
 
-	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
+	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas, &cfg.Telemetry)
 	if err != nil {
 		return errs.Wrap(db.ErrStartingDBCon, err)
 	}
@@ -190,7 +187,7 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 
 	healthOptions := []health.Option{
 		health.WithDatabaseChecker(
-			postgresDriverName,
+			constants.PgxDriverName,
 			dsnFromConfig,
 		),
 	}

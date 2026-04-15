@@ -489,11 +489,15 @@ func (m *SystemManager) retrySystemAction(ctx context.Context, systemID uuid.UUI
 			var job orbital.Job
 
 			err := m.repo.Transaction(ctx, func(ctx context.Context) error {
-				system.Status = cmkapi.SystemStatusPROCESSING
+				// Only set to PROCESSING for user-initiated actions (LINK/UNLINK/SWITCH)
+				// SYSTEM_KEY_ROTATE is an external notification and doesn't require PROCESSING state
+				if lastJob.Type != eventprocessor.JobTypeSystemKeyRotate.String() {
+					system.Status = cmkapi.SystemStatusPROCESSING
 
-				_, err := m.repo.Patch(ctx, system, *repo.NewQuery())
-				if err != nil {
-					return err
+					_, err := m.repo.Patch(ctx, system, *repo.NewQuery())
+					if err != nil {
+						return err
+					}
 				}
 
 				job, err = m.eventFactory.CreateJob(ctx, lastJob)
@@ -689,6 +693,12 @@ func (m *SystemManager) determineRecoveryPermissions(
 
 	case eventprocessor.JobTypeSystemLink.String():
 		// Retry allowed for Key Admins of the target KeyConfig (KeyIDTo)
+		canRetry = checkAuth(func(d *eventprocessor.SystemActionJobData) string { return d.KeyIDTo })
+		canCancel = true
+
+	case eventprocessor.JobTypeSystemKeyRotate.String():
+		// Retry allowed for Key Admins of the target KeyConfig (KeyIDTo)
+		// For KEY_ROTATE: KeyIDTo is the rotated key (same key, different version)
 		canRetry = checkAuth(func(d *eventprocessor.SystemActionJobData) string { return d.KeyIDTo })
 		canCancel = true
 

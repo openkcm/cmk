@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"gorm.io/gorm"
 	"gorm.io/plugin/dbresolver"
 
@@ -24,23 +25,27 @@ var (
 )
 
 // StartDBConnection opens DB connection using data from `config.DB`.
+// telemetryCfg is optional - pass nil for telemetryCfg to disable tracing.
 func StartDBConnection(
 	ctx context.Context,
 	conf config.Database,
 	replicas []config.Database,
+	telemetryCfg *commoncfg.Telemetry,
 ) (*multitenancy.DB, error) {
-	return StartDBConnectionPlugins(ctx, conf, replicas, map[string]gorm.Plugin{})
+	return StartDBConnectionPlugins(ctx, conf, replicas, map[string]gorm.Plugin{}, telemetryCfg)
 }
 
 // StartDBConnectionPlugins opens DB connection using data from `config.DB`
 // and plugins that are passed in a form of map because GORM config stores
 // them this way.
 // It is an extension of `StartDBConnection` functionality.
+// telemetryCfg is optional - pass nil for telemetryCfg to disable tracing.
 func StartDBConnectionPlugins(
 	ctx context.Context,
 	conf config.Database,
 	replicas []config.Database,
 	plugins map[string]gorm.Plugin,
+	telemetryCfg *commoncfg.Telemetry,
 ) (*multitenancy.DB, error) {
 	dsnFromConfig, err := dsn.FromDBConfig(conf)
 	if err != nil {
@@ -48,6 +53,12 @@ func StartDBConnectionPlugins(
 	}
 
 	dialector := dialect.NewFrom(dsnFromConfig)
+
+	// Wrap with OpenTelemetry tracing if enabled
+	dialector, err = WrapDialectorWithTracing(dialector, dsnFromConfig, telemetryCfg)
+	if err != nil {
+		return nil, errs.Wrap(ErrStartingDBCon, err)
+	}
 
 	db, err := multitenancy.Open(dialector, &gorm.Config{
 		Plugins:        plugins,
@@ -68,7 +79,7 @@ func StartDBConnectionPlugins(
 		return db, nil
 	}
 
-	replicaDialectorsFromReplicas, err := replicaDialectors(replicas)
+	replicaDialectorsFromReplicas, err := replicaDialectors(replicas, telemetryCfg)
 	if err != nil {
 		return nil, errs.Wrap(ErrLoadingReplicaDialectors, err)
 	}
@@ -112,7 +123,10 @@ func prepareMultitenancy(ctx context.Context, db *multitenancy.DB) error {
 	return nil
 }
 
-func replicaDialectors(replicas []config.Database) ([]gorm.Dialector, error) {
+func replicaDialectors(
+	replicas []config.Database,
+	telemetryCfg *commoncfg.Telemetry,
+) ([]gorm.Dialector, error) {
 	dialects := make([]gorm.Dialector, 0, len(replicas))
 
 	for _, r := range replicas {
@@ -121,7 +135,15 @@ func replicaDialectors(replicas []config.Database) ([]gorm.Dialector, error) {
 			return nil, errs.Wrap(ErrLoadingDsnFromDBConfig, err)
 		}
 
-		dialects = append(dialects, dialect.NewFrom(dsnFromConfig))
+		dialector := dialect.NewFrom(dsnFromConfig)
+
+		// Wrap replicas with OpenTelemetry tracing too
+		dialector, err = WrapDialectorWithTracing(dialector, dsnFromConfig, telemetryCfg)
+		if err != nil {
+			return nil, err
+		}
+
+		dialects = append(dialects, dialector)
 	}
 
 	return dialects, nil

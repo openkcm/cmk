@@ -14,6 +14,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var (
@@ -32,7 +33,7 @@ func TestSchedulerSystemRefresh(t *testing.T) {
 		Tasks: []config.Task{{
 			Cronspec: "@every 1s",
 			TaskType: config.TypeSystemsTask,
-			Retries:  3,
+			Retries:  ptr.PointTo(3),
 		}},
 	})
 
