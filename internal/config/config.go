@@ -179,7 +179,7 @@ type Task struct {
 }
 
 type FanOutTask struct {
-	Enabled *bool         `yaml:"enabled"`
+	Enabled bool          `yaml:"enabled"`
 	Retries *int          `yaml:"retries"`
 	TimeOut time.Duration `yaml:"timeOut"`
 }

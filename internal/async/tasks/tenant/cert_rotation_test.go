@@ -11,6 +11,7 @@ import (
 	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
@@ -30,9 +31,9 @@ func (s *CertUpdaterMock) RotateCertificate(_ context.Context,
 
 func TestCertificateRotatorProcessAction(t *testing.T) {
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
-	repo := sql.NewRepository(db)
+	r := sql.NewRepository(db)
 
-	rotator := tasks.NewCertRotator(&CertUpdaterMock{}, repo)
+	rotator := tasks.NewCertRotator(&CertUpdaterMock{}, r)
 
 	t.Run("Should Create", func(t *testing.T) {
 		task := asynq.NewTask(config.TypeCertificateTask, nil)
@@ -48,5 +49,13 @@ func TestCertificateRotatorProcessAction(t *testing.T) {
 		task := asynq.NewTask(config.TypeCertificateTask, payloadBytes)
 		err = rotator.ProcessTask(t.Context(), task)
 		assert.NoError(t, err)
+	})
+
+	t.Run("Should have right taskType", func(t *testing.T) {
+		assert.Equal(t, config.TypeCertificateTask, rotator.TaskType())
+	})
+
+	t.Run("Should have default tenant query", func(t *testing.T) {
+		assert.Equal(t, repo.NewQuery(), rotator.TenantQuery())
 	})
 }

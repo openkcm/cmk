@@ -126,6 +126,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 					// Create child task with tenant information in payload
 					payload := asyncUtils.NewTaskPayload(ctx, asynqTask.Payload())
 					err := FanOutTask(
+						ctx,
 						bp.asyncClient,
 						asynqTask,
 						payload,

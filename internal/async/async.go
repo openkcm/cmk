@@ -14,7 +14,6 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
@@ -142,7 +141,7 @@ func (a *App) RegisterTasks(ctx context.Context, handlers []TaskHandler) {
 
 		// Check if scheduled task has fanout enabled on config
 		taskCfg, ok := a.cfg.Scheduler.GetTasks()[handler.TaskType()]
-		if ok && ptr.GetSafeDeref(taskCfg.FanOutTask.Enabled) {
+		if ok && taskCfg.FanOutTask != nil && taskCfg.FanOutTask.Enabled {
 			// Configure fanout on tasks that support it
 			if h, ok := handler.(FanOutHandler); ok {
 				childHandler := NewFanOutHandler(h, h.FanOutFunc())
@@ -300,12 +299,13 @@ func loadALCAuthFromConfig(cfg conf.Redis) ([]byte, []byte, error) {
 // If FanOutTask is defined and not enabled skip
 func (a *App) getFanOutOpts(taskType string) (bool, []asynq.Option) {
 	taskCfg, ok := a.cfg.Scheduler.GetTasks()[taskType]
-	if !ok || (taskCfg.FanOutTask != nil && !*taskCfg.FanOutTask.Enabled) {
+	if !ok || taskCfg.FanOutTask == nil || (taskCfg.FanOutTask != nil && !taskCfg.FanOutTask.Enabled) {
 		return false, nil
 	}
 
-	opts := []asynq.Option{
-		asynq.MaxRetry(*taskCfg.FanOutTask.Retries),
+	opts := []asynq.Option{}
+	if taskCfg.FanOutTask.Retries != nil {
+		opts = append(opts, asynq.MaxRetry(*taskCfg.FanOutTask.Retries))
 	}
 	if taskCfg.FanOutTask.TimeOut > 0 {
 		opts = append(opts, asynq.Timeout(taskCfg.FanOutTask.TimeOut))

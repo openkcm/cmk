@@ -2,6 +2,7 @@ package async_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	asyncUtils "github.com/openkcm/cmk/utils/async"
 )
 
 func TestBatchProcessor(t *testing.T) {
@@ -55,5 +57,19 @@ func TestBatchProcessor(t *testing.T) {
 		})
 		assert.NoError(t, err)
 		assert.Equal(t, tenantCount, count)
+	})
+
+	t.Run("Should apply on tenants in payload", func(t *testing.T) {
+		bp := async.NewBatchProcessor(r)
+		payload, err := json.Marshal(asyncUtils.NewTenantListPayload([]string{"tenant1"}))
+		assert.NoError(t, err)
+		task := asynq.NewTask("tenant1", payload)
+		count := 0
+		err = bp.ProcessTenantsInBatch(t.Context(), task, func(ctx context.Context, _ *asynq.Task) error {
+			count++
+			return nil
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, 1, count)
 	})
 }

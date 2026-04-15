@@ -107,4 +107,9 @@ func TestTenantNameRefresher(t *testing.T) {
 		err := refresher.ProcessTask(t.Context(), task)
 		assert.Error(t, err)
 	})
+
+	t.Run("Should have default tenant query", func(t *testing.T) {
+		query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.Name, repo.Empty)))
+		assert.Equal(t, query, refresher.TenantQuery())
+	})
 }
