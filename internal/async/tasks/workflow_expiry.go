@@ -15,6 +15,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
+	"github.com/openkcm/cmk/utils/slice"
 )
 
 type WorkflowExpiryUpdater interface {
@@ -24,6 +25,7 @@ type WorkflowExpiryUpdater interface {
 		workflowID uuid.UUID,
 		transition wfMechanism.Transition,
 	) (*model.Workflow, error)
+	GetWorkflowAvailableTransitions(ctx context.Context, workflow *model.Workflow) ([]wfMechanism.Transition, error)
 }
 
 type WorkflowExpiryProcessor struct {
@@ -64,9 +66,23 @@ func (s *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 					continue
 				}
 
+				availableTransitions, err := s.updater.GetWorkflowAvailableTransitions(ctx, wf)
+				if err != nil {
+					log.Error(ctx, "Failed to get available transitions for workflow", err,
+						slog.String("workflow_id", wf.ID.String()))
+					continue
+				}
+
+				if !slice.Contains(availableTransitions, wfMechanism.TransitionExpire) {
+					log.Debug(ctx, "Workflow cannot be expired from current state, skipping",
+						slog.String("workflow_id", wf.ID.String()), slog.String("current_state", wf.State))
+					continue
+				}
+
 				expireErr := s.expireWorkflow(ctx, wf.ID)
 				if expireErr != nil {
-					return errs.Wrap(ErrRunningTask, expireErr)
+					log.Error(ctx, "Failed to expire workflow", expireErr, slog.String("workflow_id", wf.ID.String()))
+					continue
 				}
 			}
 			log.Debug(ctx, "Workflow expiry processing completed for tenant",
