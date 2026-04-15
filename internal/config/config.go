@@ -175,7 +175,7 @@ type Task struct {
 	TaskType   string        `yaml:"taskType"`
 	Retries    *int          `yaml:"retries"`
 	TimeOut    time.Duration `yaml:"timeOut"`
-	FanOutTask FanOutTask    `yaml:"fanOutTask"`
+	FanOutTask *FanOutTask   `yaml:"fanOutTask"`
 }
 
 type FanOutTask struct {

@@ -44,7 +44,7 @@ func (wc *WorkflowCleaner) TenantQuery() *repo.Query {
 	return repo.NewQuery()
 }
 
-func (wc *WorkflowCleaner) FanOutFunc() async.FunOutFunc {
+func (wc *WorkflowCleaner) FanOutFunc() async.FanOutFunc {
 	return async.TenantFanOut
 }
 

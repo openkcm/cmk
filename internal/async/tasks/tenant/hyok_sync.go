@@ -44,7 +44,7 @@ func (h *HYOKSync) TaskType() string {
 	return config.TypeHYOKSync
 }
 
-func (h *HYOKSync) FanOutFunc() async.FunOutFunc {
+func (h *HYOKSync) FanOutFunc() async.FanOutFunc {
 	return async.TenantFanOut
 }
 

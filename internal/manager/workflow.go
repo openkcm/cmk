@@ -126,8 +126,8 @@ var _ repo.QueryMapper = (*WorkflowFilter)(nil) // Assert interface impl
 
 func NewWorkflowFilterFromOData(queryMapper odata.QueryOdataMapper) (*WorkflowFilter, error) {
 	skipPtr, topPtr, countPtr := queryMapper.GetPaging()
-	skip := ptr.GetIntOrDefault(skipPtr, constants.DefaultSkip)
-	top := ptr.GetIntOrDefault(topPtr, constants.DefaultTop)
+	skip := ptr.GetPtrOrDefault(skipPtr, constants.DefaultSkip)
+	top := ptr.GetPtrOrDefault(topPtr, constants.DefaultTop)
 	count := ptr.GetSafeDeref(countPtr)
 
 	state, err := queryMapper.GetString(repo.StateField)

@@ -32,11 +32,11 @@ var PeriodicTasks = map[string]Task{
 		Cronspec: "*/5 * * * *", // Every 5 minutes
 		Retries:  ptr.PointTo(defaultRetryCount),
 		TimeOut:  5 * time.Minute,
-		FanOutTask: FanOutTask{
+		FanOutTask: ptr.PointTo(FanOutTask{
 			Enabled: ptr.PointTo(true),
 			Retries: ptr.PointTo(0),
 			TimeOut: 5 * time.Minute,
-		},
+		}),
 	},
 	TypeKeystorePool: {
 		Enabled:  ptr.PointTo(true),

@@ -64,7 +64,7 @@ func (t *TenantNameRefresher) TenantQuery() *repo.Query {
 	return repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.Name, repo.Empty)))
 }
 
-func (t *TenantNameRefresher) FanOutFunc() async.FunOutFunc {
+func (t *TenantNameRefresher) FanOutFunc() async.FanOutFunc {
 	return async.TenantFanOut
 }
 

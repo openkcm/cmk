@@ -30,6 +30,9 @@ func (p *ScheduledTaskConfigProvider) GetConfigs() ([]*asynq.PeriodicTaskConfig,
 		if cfg.Retries != nil {
 			def.Retries = cfg.Retries
 		}
+		if cfg.FanOutTask != nil {
+			def.FanOutTask = cfg.FanOutTask
+		}
 		tasks[cfg.TaskType] = def
 	}
 
@@ -39,7 +42,7 @@ func (p *ScheduledTaskConfigProvider) GetConfigs() ([]*asynq.PeriodicTaskConfig,
 			continue
 		}
 
-		taskOpts := []asynq.Option{asynq.MaxRetry(ptr.GetIntOrDefault(cfg.Retries, 0))}
+		taskOpts := []asynq.Option{asynq.MaxRetry(ptr.GetPtrOrDefault(cfg.Retries, 0))}
 		if cfg.TimeOut > 0 {
 			taskOpts = append(taskOpts, asynq.Timeout(cfg.TimeOut))
 		}

@@ -16,6 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
+	"github.com/openkcm/cmk/utils/slice"
 )
 
 type WorkflowExpiryUpdater interface {
@@ -25,6 +26,7 @@ type WorkflowExpiryUpdater interface {
 		workflowID uuid.UUID,
 		transition wfMechanism.Transition,
 	) (*model.Workflow, error)
+	GetWorkflowAvailableTransitions(ctx context.Context, workflow *model.Workflow) ([]wfMechanism.Transition, error)
 }
 
 type WorkflowExpiryProcessor struct {
@@ -58,9 +60,23 @@ func (w *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 			continue
 		}
 
-		err := w.expireWorkflow(ctx, wf.ID)
+		availableTransitions, err := w.updater.GetWorkflowAvailableTransitions(ctx, wf)
 		if err != nil {
-			return err
+			log.Error(ctx, "Failed to get available transitions for workflow", err,
+				slog.String("workflow_id", wf.ID.String()))
+			continue
+		}
+
+		if !slice.Contains(availableTransitions, wfMechanism.TransitionExpire) {
+			log.Debug(ctx, "Workflow cannot be expired from current state, skipping",
+				slog.String("workflow_id", wf.ID.String()), slog.String("current_state", wf.State))
+			continue
+		}
+
+		err = w.expireWorkflow(ctx, wf.ID)
+		if err != nil {
+			log.Error(ctx, "Failed to expire workflow", err, slog.String("workflow_id", wf.ID.String()))
+			continue
 		}
 	}
 	return nil
@@ -74,7 +90,7 @@ func (w *WorkflowExpiryProcessor) TaskType() string {
 	return config.TypeWorkflowExpire
 }
 
-func (w *WorkflowExpiryProcessor) FanOutFunc() async.FunOutFunc {
+func (w *WorkflowExpiryProcessor) FanOutFunc() async.FanOutFunc {
 	return async.TenantFanOut
 }
 

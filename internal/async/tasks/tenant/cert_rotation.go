@@ -63,7 +63,7 @@ func (c *CertRotator) TenantQuery() *repo.Query {
 	return repo.NewQuery()
 }
 
-func (c *CertRotator) FanOutFunc() async.FunOutFunc {
+func (c *CertRotator) FanOutFunc() async.FanOutFunc {
 	return async.TenantFanOut
 }
 

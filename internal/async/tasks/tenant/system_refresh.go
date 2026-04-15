@@ -57,7 +57,7 @@ func (s *SystemsRefresher) TenantQuery() *repo.Query {
 	return repo.NewQuery()
 }
 
-func (s *SystemsRefresher) FanOutFunc() async.FunOutFunc {
+func (s *SystemsRefresher) FanOutFunc() async.FanOutFunc {
 	return async.TenantFanOut
 }
 
