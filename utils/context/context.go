@@ -180,11 +180,12 @@ func IsSystemUser(ctx context.Context) bool {
 func InjectSystemUser(ctx context.Context) context.Context {
 	clientData, err := ExtractClientData(ctx)
 	// Use zero values and system user
-	if err != nil {
+	if err != nil || clientData == nil {
 		clientData = &auth.ClientData{}
 	}
 
-	clientData.Identifier = uuid.Max.String()
+	clientDataCopy := *clientData
+	clientDataCopy.Identifier = uuid.Max.String()
 
-	return context.WithValue(ctx, constants.ClientData, clientData)
+	return context.WithValue(ctx, constants.ClientData, &clientDataCopy)
 }
