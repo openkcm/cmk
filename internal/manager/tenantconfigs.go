@@ -186,15 +186,6 @@ func (m *TenantConfigManager) GetTenantsKeystores() (TenantKeystores, error) {
 	}, nil
 }
 
-// isBYOKAllowed checks whether BYOK is enabled by deployment feature-gate configuration.
-func (m *TenantConfigManager) isBYOKAllowed() bool {
-	if m.cfg == nil {
-		return false
-	}
-
-	return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
-}
-
 // GetDefaultKeystoreConfig retrieves the default keystore config
 // If the config doesn't exist, it gets the config from the pool and sets it
 func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, error) {
@@ -241,6 +232,15 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 	}
 
 	return keystore, nil
+}
+
+// isBYOKAllowed checks whether BYOK is enabled by deployment feature-gate configuration.
+func (m *TenantConfigManager) isBYOKAllowed() bool {
+	if m.cfg == nil {
+		return false
+	}
+
+	return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
 }
 
 // SetDefaultKeystore stores the default keystore config
