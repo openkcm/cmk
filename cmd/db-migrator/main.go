@@ -44,7 +44,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 			Wrapf(err, "Failed to initialise the logger")
 	}
 
-	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
+	dbCon, err := db.StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas, &cfg.Telemetry)
 	if err != nil {
 		return err
 	}

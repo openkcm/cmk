@@ -33,11 +33,6 @@ var (
 		"graceful shutdown message")
 )
 
-const (
-	postgresDriverName = "pgx"
-	labelKeystore      = "keystore"
-)
-
 // - Starts the status server
 // - Starts the CMK API Server
 func run(ctx context.Context, cfg *config.Config) error {
@@ -104,7 +99,7 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 
 	healthOptions := []health.Option{
 		health.WithDatabaseChecker(
-			postgresDriverName,
+			constants.PgxDriverName,
 			dsnFromConfig,
 		),
 		health.WithCheck(health.Check{

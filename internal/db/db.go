@@ -54,7 +54,7 @@ func StartDB(
 ) (*multitenancy.DB, error) {
 	log.Info(ctx, "Starting DB connection ")
 
-	dbCon, err := StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas)
+	dbCon, err := StartDBConnection(ctx, cfg.Database, cfg.DatabaseReplicas, &cfg.Telemetry)
 	if err != nil {
 		return nil, oops.In(DBLogDomain).Wrapf(err, "failed to initialize DB Connection")
 	}

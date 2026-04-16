@@ -35,6 +35,7 @@ func TestStartDBConnectionPlugins(t *testing.T) {
 			dbCfg,
 			[]config.Database{},
 			map[string]gorm.Plugin{"error": errorPlugin{}},
+			nil, // No tracing in tests
 		)
 
 		require.Error(t, err)
@@ -47,6 +48,7 @@ func TestStartDBConnectionPlugins(t *testing.T) {
 			dbCfg,
 			[]config.Database{dbCfg},
 			map[string]gorm.Plugin{},
+			nil, // No tracing in tests
 		)
 		require.NoError(t, err)
 		require.NotNil(t, dbConn)
@@ -58,6 +60,7 @@ func TestStartDBConnectionPlugins(t *testing.T) {
 			dbCfg,
 			[]config.Database{{}},
 			map[string]gorm.Plugin{},
+			nil, // No tracing in tests
 		)
 		require.ErrorIs(t, err, db.ErrLoadingReplicaDialectors)
 		require.Nil(t, dbConn)
@@ -72,6 +75,7 @@ func TestStartDBConnection(t *testing.T) {
 			t.Context(),
 			dbCfg,
 			[]config.Database{},
+			nil, // No tracing in tests
 		)
 
 		require.NoError(t, err)

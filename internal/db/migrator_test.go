@@ -66,7 +66,7 @@ func setupMigrator(t *testing.T) (db.Migrator, string, *multitenancy.DB) {
 	dbCfg.Migrator.Shared.Schema = createSchemaMigrationFiles(t, testTable)
 	dbCfg.Migrator.Tenant.Schema = createSchemaMigrationFiles(t, testTable)
 
-	dbCon, err := db.StartDBConnection(ctx, dbCfg, []config.Database{})
+	dbCon, err := db.StartDBConnection(ctx, dbCfg, []config.Database{}, nil)
 	assert.NoError(t, err)
 
 	err = dbCon.Migrator().CreateTable(&model.Tenant{})
