@@ -215,6 +215,10 @@ func (r *SystemTaskInfoResolver) fetchAndPopulateVersionInfo(
 	}
 
 	for region := range cryptoData {
+		if cryptoData[region] == nil {
+			// Initialize map if it doesn't exist
+			cryptoData[region] = make(map[string]any)
+		}
 		cryptoData[region]["versionIdentifier"] = latestVersionID
 	}
 

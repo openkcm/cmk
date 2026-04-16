@@ -3,11 +3,13 @@ package manager
 import (
 	"context"
 	"crypto/rsa"
+	"time"
 
 	"github.com/openkcm/cmk/internal/async"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
 	wf "github.com/openkcm/cmk/internal/workflow"
 )
@@ -94,4 +96,13 @@ func (m *TenantManager) UnmapSystemErrorCanContinue(ctx context.Context, err err
 
 func (m *TenantManager) SetSystemForTests(sys System) {
 	m.sys = sys
+}
+
+func (km *KeyManager) ExportedHandleNewKeyVersion(
+	ctx context.Context,
+	key *model.Key,
+	keyResp *keymanagement.GetKeyResponse,
+	rotationTime *time.Time,
+) error {
+	return km.handleNewKeyVersion(ctx, key, keyResp, rotationTime)
 }

@@ -113,7 +113,7 @@ func (db *InMemoryDB) Create(resource repo.Resource) error {
 			return errs.Wrap(ErrKeyVersionNotFound, err)
 		}
 
-		db.Data.KeyVersions[keyVersion.ExternalID] = *keyVersion
+		db.Data.KeyVersions[keyVersion.ID.String()] = *keyVersion
 	case KeyLabel:
 		label, err := GetModelFromInterface[model.KeyLabel](resource)
 		if err != nil {
@@ -605,7 +605,7 @@ func (db *InMemoryDB) getKeyVersion(resource repo.Resource) (repo.Resource, erro
 	}
 
 	for _, keyVersion := range db.Data.KeyVersions {
-		if keyVersion.ExternalID == resourceKeyVersion.ExternalID {
+		if keyVersion.ID == resourceKeyVersion.ID {
 			return keyVersion, nil
 		}
 	}
@@ -775,8 +775,8 @@ func (db *InMemoryDB) deleteKeyVersion(resource repo.Resource) (bool, error) {
 	}
 
 	for _, keyVersion := range db.Data.KeyVersions {
-		if keyVersion.ExternalID == resourceKey.ExternalID {
-			delete(db.Data.KeyVersions, keyVersion.ExternalID)
+		if keyVersion.ID == resourceKey.ID {
+			delete(db.Data.KeyVersions, keyVersion.ID.String())
 			return true, nil
 		}
 	}
@@ -951,8 +951,8 @@ func (db *InMemoryDB) updateKeyVersion(resource repo.Resource) error {
 	}
 
 	for _, keyVersion := range db.Data.KeyVersions {
-		if keyVersion.ExternalID == resourceKeyVersion.ExternalID {
-			db.Data.KeyVersions[keyVersion.ExternalID] = *resourceKeyVersion
+		if keyVersion.ID == resourceKeyVersion.ID {
+			db.Data.KeyVersions[keyVersion.ID.String()] = *resourceKeyVersion
 			return nil
 		}
 	}
