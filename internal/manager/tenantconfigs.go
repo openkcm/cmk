@@ -25,7 +25,7 @@ const (
 	// Since the workflow expiry must be less than the retention minus a day
 	minimumRetentionPeriodDays = 2
 
-	allowBYOKFeatureGateKey = "allowBYOK"
+	allowBYOKFeatureGateKey = "allow-byok"
 )
 
 var (
