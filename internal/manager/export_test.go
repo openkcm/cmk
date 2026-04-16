@@ -87,3 +87,11 @@ func (w *WorkflowManager) CreateWorkflowTransitionNotificationTask(
 func (w *WorkflowManager) SetAsyncClient(client async.Client) {
 	w.asyncClient = client
 }
+
+func (m *TenantManager) UnmapSystemErrorCanContinue(ctx context.Context, err error) OffboardingStatus {
+	return m.unmapSystemErrorCanContinue(ctx, err)
+}
+
+func (m *TenantManager) SetSystemForTests(sys System) {
+	m.sys = sys
+}

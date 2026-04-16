@@ -113,17 +113,46 @@ func (f *EventFactory) SystemUnlink(
 	ctx context.Context,
 	system *model.System,
 	keyID string,
-	trigger string,
 ) (orbital.Job, error) {
 	return f.handleSystemStatus(ctx, system, func() (orbital.Job, error) {
 		systemUnlinkJobData := SystemActionJobData{
 			SystemID:  system.ID.String(),
 			KeyIDFrom: keyID,
-			Trigger:   trigger,
 		}
 
 		return f.createSystemEventJob(ctx, JobTypeSystemUnlink, systemUnlinkJobData)
 	})
+}
+
+// SystemUnlinkDecommission creates a job to unlink a system, triggered by a decommission action.
+// No need to create internal tracking event model since manual retry or cancel will not be possible at this stage.
+// If event fails, the system will still be set to DISCONNECTED.
+// If event is canceled, the system will be set to FAILED and the decommission action will be retried later.
+func (f *EventFactory) SystemUnlinkDecommission(
+	ctx context.Context,
+	system *model.System,
+	keyID string,
+) (orbital.Job, error) {
+	if system.Status == cmkapi.SystemStatusPROCESSING {
+		return orbital.Job{}, ErrSystemProcessing
+	}
+
+	systemUnlinkJobData := SystemActionJobData{
+		SystemID:  system.ID.String(),
+		KeyIDFrom: keyID,
+	}
+
+	err := f.repo.Transaction(ctx, func(ctx context.Context) error {
+		system.Status = cmkapi.SystemStatusPROCESSING
+		_, err := f.repo.Patch(ctx, system, *repo.NewQuery().UpdateAll(true))
+		return err
+	})
+
+	if err != nil {
+		return orbital.Job{}, err
+	}
+
+	return f.createSystemEventJob(ctx, JobTypeSystemUnlinkDecommission, systemUnlinkJobData)
 }
 
 // SystemSwitch creates a job to switch the key of a system from keyIDFrom to keyIDTo
@@ -163,6 +192,45 @@ func (f *EventFactory) SystemSwitchNewPrimaryKey(
 
 		return f.createSystemEventJob(ctx, JobTypeSystemSwitchNewPK, systemSwitchJobData)
 	})
+}
+
+// SystemKeyRotate creates a job to rotate the key material for a system.
+// This triggers re-encryption on the system with the new key version/material.
+// The keyID remains the same, but the key material has changed.
+//
+// Unlike LINK/UNLINK/SWITCH, this does NOT set the system to PROCESSING —
+// rotation is an external event and the system remains CONNECTED while in flight.
+// A model.Event row is still written (PreviousItemStatus) so that
+// retry and unlink are possible if the job fails.
+func (f *EventFactory) SystemKeyRotate(
+	ctx context.Context,
+	system *model.System,
+	keyID string,
+) (orbital.Job, error) {
+	systemKeyRotateJobData := SystemActionJobData{
+		SystemID:  system.ID.String(),
+		KeyIDTo:   keyID, // Same key, new material version
+		KeyIDFrom: keyID, // Same key, old material version
+	}
+
+	job, err := f.createSystemEventJob(ctx, JobTypeSystemKeyRotate, systemKeyRotateJobData)
+	if err != nil {
+		return job, err
+	}
+
+	// Write model.Event without changing system status — enables retry/cancel on failure.
+	err = f.repo.Set(ctx, &model.Event{
+		Identifier:         job.ExternalID,
+		Type:               job.Type,
+		Data:               job.Data,
+		Status:             job.Status,
+		PreviousItemStatus: string(system.Status),
+	})
+	if err != nil {
+		log.Error(ctx, "failed to store event", err)
+	}
+
+	return job, nil
 }
 
 // KeyEnable creates a job to enable a key make sure the ctx provided has the tenant set.

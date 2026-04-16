@@ -63,6 +63,24 @@ func GetOrbitalError(ctx context.Context, err error) string {
 	return errMessage
 }
 
+// Placeholder error codes
+const (
+	// KeyVersionMismatchCode is returned when the key version in the event
+	// doesn't match the current version task operator has cached. This triggers CMK to resync immediately.
+	//nolint:godox
+	// TODO: Replace with actual error code once provided
+	KeyVersionMismatchCode = "KEY_VERSION_MISMATCH"
+)
+
+// IsVersionMismatchError checks if the error message contains a version mismatch indicator from task operator.
+// This can happen when:
+// - Task operator detects a newer key version before CMK's scheduled detection runs
+// - Multiple rapid rotations occur and task operator is ahead of CMK
+func IsVersionMismatchError(errorMessage string) bool {
+	orbErr := ParseOrbitalError(errorMessage)
+	return orbErr.Code == KeyVersionMismatchCode
+}
+
 var errorMapper = errs.NewMapper(
 	[]errs.ExposedErrors[*OrbitalError]{
 		{

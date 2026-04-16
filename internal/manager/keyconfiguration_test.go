@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
@@ -29,8 +30,6 @@ import (
 )
 
 var (
-	TestCertURL       = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.crt"
-	cryptoSubject     = "CryptoCert"
 	testAdminGroupIAM = "KMS_test_admin_group"
 	adminGroup        = testutils.NewGroup(func(g *model.Group) {
 		g.IAMIdentifier = testAdminGroupIAM
@@ -41,23 +40,36 @@ var (
 		kc.AdminGroupID = adminGroup.ID
 		kc.AdminGroup = *adminGroup
 	})
-	CreatorName = "bob@"
-	CreatorID   = uuid.NewString()
+	CreatorName   = "bob@"
+	CreatorID     = uuid.NewString()
+	cryptoSubject = manager.ClientCertificateSubject{
+		Locality:           []string{},
+		OrganizationalUnit: []string{},
+		Organization:       []string{},
+		Country:            []string{},
+		CommonNamePrefix:   "test_",
+	}
+	TestCertURL = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.crt"
 )
 
-func setupCfg(tb testing.TB) config.Config {
-	tb.Helper()
+func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenancy.DB, string) {
+	t.Helper()
 
-	cryptoCerts := map[string]testutils.CryptoCert{
-		"crypto-1": {
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	r := sql.NewRepository(db)
+
+	cryptoCerts := []manager.ClientCertificate{
+		{
+			Name:    "crypto-1",
 			Subject: cryptoSubject,
 			RootCA:  TestCertURL,
 		},
 	}
-	bytes, err := json.Marshal(cryptoCerts)
-	assert.NoError(tb, err)
 
-	return config.Config{
+	bytes, err := yaml.Marshal(cryptoCerts)
+	assert.NoError(t, err)
+
+	cfg := &config.Config{
 		Certificates: config.Certificates{
 			RootCertURL:  TestCertURL,
 			ValidityDays: config.MinCertificateValidityDays,
@@ -69,24 +81,16 @@ func setupCfg(tb testing.TB) config.Config {
 			},
 		},
 	}
-}
+	cmkAuditor := auditor.New(t.Context(), cfg)
 
-func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenancy.DB, string) {
-	t.Helper()
-
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
-
-	cfg := setupCfg(t)
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
-	cmkAuditor := auditor.New(t.Context(), &cfg)
+	userManager := manager.NewUserManager(r, cmkAuditor)
+	tagManager := manager.NewTagManager(r)
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 
-	dbRepository := sql.NewRepository(db)
-	certManager := manager.NewCertificateManager(t.Context(), dbRepository, svcRegistry, &cfg)
-	userManager := manager.NewUserManager(dbRepository, cmkAuditor)
-	tagManager := manager.NewTagManager(dbRepository)
-	m := manager.NewKeyConfigManager(dbRepository, certManager, userManager, tagManager, cmkAuditor, &cfg)
+	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
 
 	return m, db, tenants[0]
 }
@@ -932,7 +936,7 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 	m, db, tenant := SetupKeyConfigManager(t)
 
 	t.Run("Should get certificates", func(t *testing.T) {
-		cfg := setupCfg(t)
+		cfg := config.Config{}
 		svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg)
 		assert.NoError(t, err)
 		certManager := manager.NewCertificateManager(
@@ -944,14 +948,16 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
+		tenantSubjectPKIX := pkix.Name{
+			Country:            []string{"DE"},
+			Organization:       []string{"KCM"},
+			OrganizationalUnit: []string{"OpenKCM", "account", "landscape"},
+			Locality:           []string{"LOCAL/CMK"},
+			CommonName:         "MyCert",
+		}
+
 		certManager.SetCertIssuerService(CertificateIssuerMock{NewCertificateChain: func() string {
-			return testutils.CreateCertificateChain(t, pkix.Name{
-				Country:            []string{"DE"},
-				Organization:       []string{"KCM"},
-				OrganizationalUnit: []string{"OpenKCM", "account", "landscape"},
-				Locality:           []string{"LOCAL/CMK"},
-				CommonName:         "MyCert",
-			}, privateKey)
+			return testutils.CreateCertificateChain(t, tenantSubjectPKIX, privateKey)
 		}})
 
 		_, privateKey, err = certManager.RequestNewCertificate(ctx, privateKey,
@@ -963,19 +969,18 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 			})
 		assert.NoError(t, err)
 
-		tenantSubject := "CN=MyCert,OU=OpenKCM/account/landscape,O=KCM,L=LOCAL/CMK,C=DE"
-
 		certs, err := m.GetClientCertificates(ctx)
 
 		assert.NoError(t, err)
 		assert.Len(t, certs[model.CertificatePurposeTenantDefault], 1)
 		assert.Len(t, certs[model.CertificatePurposeCrypto], 1)
-		assert.Equal(t, tenantSubject,
+		assert.Equal(t, manager.NewClientCertificateSubjectFromPKIX(tenantSubjectPKIX),
 			certs[model.CertificatePurposeTenantDefault][0].Subject)
 		assert.Equal(t, TestCertURL,
 			certs[model.CertificatePurposeTenantDefault][0].RootCA)
-		assert.Equal(t, cryptoSubject,
-			certs[model.CertificatePurposeCrypto][0].Subject)
+
+		assert.Contains(t,
+			certs[model.CertificatePurposeCrypto][0].Subject.CommonName, cryptoSubject.CommonNamePrefix)
 		assert.Equal(t, TestCertURL,
 			certs[model.CertificatePurposeCrypto][0].RootCA)
 	})

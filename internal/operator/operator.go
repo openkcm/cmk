@@ -375,8 +375,6 @@ func (o *TenantOperator) handleUnblockTenant(
 }
 
 // handleTerminateTenant is handler for Terminate Tenant task
-//
-//nolint:cyclop
 func (o *TenantOperator) handleTerminateTenant(
 	ctx context.Context,
 	req orbital.HandlerRequest,
@@ -390,12 +388,54 @@ func (o *TenantOperator) handleTerminateTenant(
 		return
 	}
 
-	ctx = slogctx.With(ctx, "tenantId", tenantProto.GetId())
+	tenantId := tenantProto.GetId()
+	if tenantId == "" {
+		setErrorStateAndFail(ctx, resp, ErrInvalidTenantID, WorkingStateInvalidTaskData)
+		return
+	}
 
+	ctx = slogctx.With(ctx, "tenantId", tenantId)
+
+	hasErr := o.removeOIDCMapping(ctx, resp, tenantId)
+	if hasErr {
+		// Error has occurred and handled in removeOIDCMapping,
+		// we should return here and fail or retry the termination later, based on the error type
+		return
+	}
+
+	result, err := o.terminateTenant(ctx, tenantId)
+	if err != nil {
+		log.Error(ctx, "error while terminating tenant", err)
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateWaitingTenantOffboarding)
+		return
+	}
+
+	switch result.Status {
+	case manager.OffboardingFailed:
+		setErrorStateAndFail(ctx, resp, ErrTenantOffboarding, WorkingStateTenantOffboardingFailed)
+	case manager.OffboardingContinueAndWait:
+		resp.UseRawWorkingState([]byte(WorkingStateWaitingTenantOffboarding))
+		resp.ContinueAndWaitFor(reconcileAfterSecProcessing)
+	case manager.OffboardingSuccess:
+		resp.Complete()
+	default:
+		setErrorStateAndFail(ctx, resp, ErrTenantOffboarding, "unexpected error: unknown offboarding status")
+	}
+}
+
+// removeOIDCMapping removes the OIDC mapping for the tenant.
+// The boolean return value indicates whether an error occurred that should cause the handler
+// to either break from the current reconciliation attempt and either continue with a retry after
+// some time or fail the task, depending on the error type.
+func (o *TenantOperator) removeOIDCMapping(
+	ctx context.Context,
+	resp *orbital.HandlerResponse,
+	tenantID string,
+) bool {
 	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().RemoveOIDCMapping(
 		ctx,
 		&oidcmappinggrpc.RemoveOIDCMappingRequest{
-			TenantId: tenantProto.GetId(),
+			TenantId: tenantID,
 		},
 	)
 	st, ok := status.FromError(err)
@@ -408,7 +448,7 @@ func (o *TenantOperator) handleTerminateTenant(
 	if err != nil && st.Code() != codes.Internal {
 		log.Error(ctx, "error while removing OIDC mapping", err)
 		setErrorStateAndContinue(ctx, resp, err, WorkingStateOIDCMappingRemoveFailed)
-		return
+		return true
 	}
 
 	if !grpcResp.GetSuccess() {
@@ -417,27 +457,10 @@ func (o *TenantOperator) handleTerminateTenant(
 			"session manager could not remove OIDC mapping: "+grpcResp.GetMessage(),
 		)
 		setErrorStateAndFail(ctx, resp, err, WorkingStateOIDCMappingRemoveFailed)
-		return
+		return true
 	}
 
-	result, err := o.terminateTenant(ctx, tenantProto.GetId())
-	if err != nil {
-		log.Error(ctx, "error while terminating tenant", err)
-		setErrorStateAndContinue(ctx, resp, err, WorkingStateWaitingTenantOffboarding)
-		return
-	}
-
-	switch result.Status {
-	case manager.OffboardingFailed:
-		setErrorStateAndFail(ctx, resp, ErrTenantOffboarding, WorkingStateTenantOffboardingFailed)
-	case manager.OffboardingProcessing:
-		resp.UseRawWorkingState([]byte(WorkingStateWaitingTenantOffboarding))
-		resp.ContinueAndWaitFor(reconcileAfterSecProcessing)
-	case manager.OffboardingSuccess:
-		resp.Complete()
-	default:
-		setErrorStateAndFail(ctx, resp, ErrTenantOffboarding, "unexpected error: unknown offboarding status")
-	}
+	return false
 }
 
 func (o *TenantOperator) terminateTenant(ctx context.Context, tenantID string) (manager.OffboardingResult, error) {
@@ -535,8 +558,6 @@ func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
 
 // sendTenantUserGroupsToRegistry sends the user groups of a tenant to the Registry service
 func (o *TenantOperator) sendTenantUserGroupsToRegistry(ctx context.Context, tenantID string) (bool, error) {
-	//nolint:godox
-	// todo: fetch groups from database instead of building them
 	groupIAMIDs := []string{
 		model.NewIAMIdentifier(constants.TenantAdminGroup, tenantID),
 		model.NewIAMIdentifier(constants.TenantAuditorGroup, tenantID),

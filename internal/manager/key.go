@@ -71,13 +71,14 @@ func NewKeyManager(
 	cmkAuditor *auditor.Auditor,
 ) *KeyManager {
 	return &KeyManager{
-		ProviderConfigManager: ProviderConfigManager{
-			svcRegistry:   svcRegistry,
-			providers:     make(map[ProviderCachedKey]*ProviderConfig),
-			tenantConfigs: tenantConfigs,
-			certs:         certManager,
-			keystorePool:  NewPool(repo),
-		},
+		ProviderConfigManager: *NewProviderConfigManager(
+			svcRegistry,
+			make(map[ProviderCachedKey]*ProviderConfig),
+			tenantConfigs,
+			certManager,
+			NewPool(repo),
+			repo,
+		),
 		repo:             repo,
 		keyConfigManager: keyConfigManager,
 		user:             user,
@@ -316,23 +317,6 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 	return nil
 }
 
-func (km *KeyManager) UpdateVersion(ctx context.Context, keyID uuid.UUID, version int) error {
-	key, err := km.Get(ctx, keyID)
-	if err != nil {
-		return fmt.Errorf("failed to get key: %w", err)
-	}
-
-	keyVersion := key.Version()
-	keyVersion.Version = version
-
-	_, err = km.repo.Patch(ctx, keyVersion, *repo.NewQuery())
-	if err != nil {
-		return fmt.Errorf("failed to update key in database: %w", err)
-	}
-
-	return nil
-}
-
 func (km *KeyManager) GetImportParams(ctx context.Context, keyID uuid.UUID) (*model.ImportParams, error) {
 	key, err := km.validateBYOKKey(ctx, keyID, BYOKActionGetImportParams)
 	if err != nil {
@@ -419,7 +403,7 @@ func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 
 func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 	return km.repo.Transaction(ctx, func(ctx context.Context) error {
-		key.State = string(cmkapi.KeyStateDETACHED)
+		key.State = string(cmkapi.KeyStateDETACHING)
 
 		_, err := km.repo.Patch(ctx, key, *repo.NewQuery())
 		if err != nil {
@@ -430,12 +414,6 @@ func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 		if err != nil {
 			return err
 		}
-
-		err = km.cmkAuditor.SendCmkDetachAuditLog(ctx, key.ID.String())
-		if err != nil {
-			log.Error(ctx, "Failed to send detach log for CMK key", err)
-		}
-
 		return nil
 	})
 }
@@ -521,20 +499,6 @@ func (km *KeyManager) createKey(ctx context.Context, key *model.Key) error {
 		err := km.repo.Create(ctx, key)
 		if err != nil {
 			return errs.Wrap(ErrCreateKeyDB, err)
-		}
-
-		// Create KeyVersion
-		if key.KeyType == constants.KeyTypeSystemManaged {
-			err = km.repo.Create(ctx, &model.KeyVersion{
-				ExternalID: *key.NativeID,
-				NativeID:   key.NativeID,
-				KeyID:      key.ID,
-				Version:    1,
-				IsPrimary:  true,
-			})
-			if err != nil {
-				return errs.Wrap(ErrCreateKeyVersionDB, err)
-			}
 		}
 
 		if key.IsPrimary {

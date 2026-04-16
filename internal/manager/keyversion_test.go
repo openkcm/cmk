@@ -59,12 +59,12 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	svcRegistry, err := cmkpluginregistry.New(s.ctx, &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	s.Require().NoError(err)
 
-	tenantConfigManager := manager.NewTenantConfigManager(s.r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(
 		s.ctx, s.r, svcRegistry,
 		&config.Config{
 			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 		})
+	tenantConfigManager := manager.NewTenantConfigManager(s.r, svcRegistry, nil)
 	cmkAuditor := auditor.New(s.ctx, &cfg)
 	userManager := manager.NewUserManager(s.r, cmkAuditor)
 	tagManager := manager.NewTagManager(s.r)
@@ -118,42 +118,6 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_AddKeyVersion() {
 				s.False(keyVersion.IsPrimary)
 			}
 		}
-	})
-}
-
-func (s *KeyVersionManagerSuit) TestKeyVersionManager_CreateKeyVersion() {
-	s.Run("Should error on non existing key", func() {
-		key := testutils.NewKey(func(k *model.Key) { k.KeyConfigurationID = s.keyConfigID })
-		_, err := s.kvm.CreateKeyVersion(s.ctx, key.ID, key.NativeID)
-		s.ErrorIs(err, manager.ErrGetKeyDB)
-	})
-	s.Run("Should error on HYOK without nativeID", func() {
-		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = s.keyConfigID
-			k.KeyType = constants.KeyTypeHYOK
-		})
-		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key)
-		_, err := s.kvm.CreateKeyVersion(s.ctx, key.ID, key.NativeID)
-		s.ErrorIs(err, manager.ErrNoBodyForCustomerHeldDB)
-	})
-	s.Run("Should create key version", func() {
-		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = s.keyConfigID
-			k.KeyType = providerTest
-		})
-		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key)
-		_, err := s.kvm.CreateKeyVersion(s.ctx, key.ID, key.NativeID)
-		s.NoError(err)
-	})
-	s.Run("Should not create BYOK key version", func() {
-		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = s.keyConfigID
-			k.KeyType = constants.KeyTypeBYOK
-		})
-		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key)
-
-		_, err := s.kvm.CreateKeyVersion(s.ctx, key.ID, key.NativeID)
-		s.ErrorIs(err, manager.ErrRotateBYOKKey)
 	})
 }
 

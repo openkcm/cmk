@@ -73,9 +73,8 @@ func TestKeyController_ForXSS(t *testing.T) {
 
 	baseKey := map[string]any{
 		"name":               "test-key",
-		"type":               string(cmkapi.KeyTypeSYSTEMMANAGED),
+		"type":               string(cmkapi.KeyTypeBYOK),
 		"keyConfigurationID": keyConfig.ID,
-		"provider":           providerTest,
 		"algorithm":          string(cmkapi.KeyAlgorithmAES256),
 		"region":             "us-west-2",
 		"description":        "test key",

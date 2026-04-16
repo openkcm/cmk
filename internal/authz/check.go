@@ -16,6 +16,10 @@ func CheckAuthz[TResourceTypeName, TAction comparable](
 	resourceType TResourceTypeName,
 	action TAction,
 ) (bool, error) {
+	if cmkcontext.IsSystemUser(ctx) {
+		return true, nil
+	}
+
 	tenant, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
 		return false, errs.Wrap(ErrExtractTenantID, err)

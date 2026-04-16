@@ -3,16 +3,13 @@ package manager
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
@@ -23,7 +20,6 @@ import (
 
 type KeyVersion interface {
 	GetKeyVersions(ctx context.Context, keyID uuid.UUID, skip int, top int) ([]model.KeyVersion, int, error)
-	CreateKeyVersion(ctx context.Context, keyID uuid.UUID, nativeID *string) (*model.KeyVersion, error)
 	GetKeyVersionByNumber(ctx context.Context, keyID uuid.UUID, version string) (*model.KeyVersion, error)
 	UpdateKeyVersion(
 		ctx context.Context,
@@ -47,13 +43,14 @@ func NewKeyVersionManager(
 	cmkAuditor *auditor.Auditor,
 ) *KeyVersionManager {
 	return &KeyVersionManager{
-		ProviderConfigManager: ProviderConfigManager{
-			svcRegistry:   svcRegistry,
-			providers:     make(map[ProviderCachedKey]*ProviderConfig),
-			tenantConfigs: tenantConfigs,
-			repo:          repo,
-			certs:         certManager,
-		},
+		ProviderConfigManager: *NewProviderConfigManager(
+			svcRegistry,
+			make(map[ProviderCachedKey]*ProviderConfig),
+			tenantConfigs,
+			certManager,
+			nil,
+			repo,
+		),
 		cmkAuditor: cmkAuditor,
 	}
 }
@@ -73,50 +70,6 @@ func (kvm *KeyVersionManager) GetKeyVersions(
 		model.KeyVersion{},
 		repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
 	)
-}
-
-func (kvm *KeyVersionManager) CreateKeyVersion(
-	ctx context.Context,
-	keyID uuid.UUID,
-	nativeID *string,
-) (*model.KeyVersion, error) {
-	key := &model.Key{ID: keyID}
-
-	_, err := kvm.repo.First(
-		ctx,
-		key,
-		*repo.NewQuery().Preload(repo.Preload{"KeyVersions"}),
-	)
-	if err != nil {
-		return nil, errs.Wrap(ErrGetKeyDB, err)
-	}
-
-	switch key.KeyType {
-	case string(cmkapi.KeyTypeBYOK):
-		return nil, ErrRotateBYOKKey
-	case string(cmkapi.KeyTypeHYOK):
-		if nativeID == nil {
-			return nil, ErrNoBodyForCustomerHeldDB
-		}
-	default:
-		if nativeID != nil {
-			// Rotate scenario
-			return nil, ErrBodyForNoCustomerHeldDB
-		}
-	}
-
-	keyVersion, err := kvm.AddKeyVersion(
-		ctx,
-		*key,
-		nativeID,
-	)
-	if err != nil || keyVersion == nil {
-		return nil, ErrCreateKeyVersionDB
-	}
-
-	kvm.sendRotateAuditLog(ctx, key)
-
-	return keyVersion, err
 }
 
 // AddKeyVersion creates a new key version in repository and client provider.
@@ -270,13 +223,4 @@ func (kvm *KeyVersionManager) disablePrimaryVersions(ctx context.Context, key *m
 	}
 
 	return nil
-}
-
-func (kvm *KeyVersionManager) sendRotateAuditLog(ctx context.Context, key *model.Key) {
-	err := kvm.cmkAuditor.SendCmkRotateAuditLog(ctx, key.ID.String())
-	if err != nil {
-		log.Error(ctx, "Failed to send Audit log for CMK Rotate", err)
-	}
-
-	log.Info(ctx, "Audit log for CMK Rotate sent successfully", slog.String("keyId", key.ID.String()))
 }

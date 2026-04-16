@@ -13,15 +13,16 @@ func (t JobType) String() string {
 }
 
 const (
-	JobTypeSystemLink        JobType = "SYSTEM_LINK"
-	JobTypeSystemUnlink      JobType = "SYSTEM_UNLINK"
-	JobTypeSystemSwitch      JobType = "SYSTEM_SWITCH"
-	JobTypeSystemSwitchNewPK JobType = "SYSTEM_SWITCH_NEW_PK"
-	JobTypeKeyEnable         JobType = "KEY_ENABLE"
-	JobTypeKeyDisable        JobType = "KEY_DISABLE"
-	JobTypeKeyDetach         JobType = "KEY_DETACH"
-	JobTypeKeyDelete         JobType = "KEY_DELETE"
-	JobTypeKeyRotate         JobType = "KEY_ROTATE"
+	JobTypeSystemLink               JobType = "SYSTEM_LINK"
+	JobTypeSystemUnlink             JobType = "SYSTEM_UNLINK"
+	JobTypeSystemUnlinkDecommission JobType = "SYSTEM_UNLINK_DECOMMISSION"
+	JobTypeSystemSwitch             JobType = "SYSTEM_SWITCH"
+	JobTypeSystemSwitchNewPK        JobType = "SYSTEM_SWITCH_NEW_PK"
+	JobTypeSystemKeyRotate          JobType = "SYSTEM_KEY_ROTATE"
+	JobTypeKeyEnable                JobType = "KEY_ENABLE"
+	JobTypeKeyDisable               JobType = "KEY_DISABLE"
+	JobTypeKeyDetach                JobType = "KEY_DETACH"
+	JobTypeKeyDelete                JobType = "KEY_DELETE"
 )
 
 type JobHandler interface {
