@@ -523,8 +523,8 @@ func TestHandleApplyAuth_InvalidData(t *testing.T) {
 func TestHandleApplyAuth_IssuerUpdate(t *testing.T) {
 	taskType := authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String()
 
-	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
-	cfg := &config.Config{}
+	db, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	cfg := &config.Config{Database: dbCfg}
 
 	t.Run(
 		"should return failed task and not update issuer if tenant is not found", func(t *testing.T) {
@@ -612,14 +612,14 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 		},
 	}
 
-	db, tenants, _ := testutils.NewTestDB(
+	db, tenants, dbCfg := testutils.NewTestDB(
 		t,
 		testutils.TestDBConfig{},
 		testutils.WithGenerateTenants(len(tests)),
 	)
 	assert.Len(t, tenants, len(tests))
 
-	cfg := &config.Config{}
+	cfg := &config.Config{Database: dbCfg}
 	r := sql.NewRepository(db)
 
 	for i, tt := range tests {
@@ -1421,7 +1421,23 @@ func TestTenantOperatorTracing(t *testing.T) {
 		Client: responder,
 	}
 
+	tenantID := uuid.NewString()
+	schemaName, err := tmdb.EncodeSchemaNameBase62(tenantID)
+	require.NoError(t, err)
+	dbConn, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true},
+		testutils.WithInitTenants(model.Tenant{
+			ID:   tenantID,
+			Name: "test-tenant-01",
+			TenantModel: multitenancy.TenantModel{
+				DomainURL:  schemaName + ".example.com",
+				SchemaName: schemaName,
+			},
+		}))
+
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
 	cfg := &config.Config{
+		Plugins:  psCfg,
+		Database: dbCfg,
 		BaseConfig: commoncfg.BaseConfig{
 			Application: commoncfg.Application{
 				Name: "tenant-operator",
@@ -1434,18 +1450,6 @@ func TestTenantOperatorTracing(t *testing.T) {
 		},
 	}
 
-	tenantID := uuid.NewString()
-	schemaName, err := tmdb.EncodeSchemaNameBase62(tenantID)
-	require.NoError(t, err)
-	dbConn, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true},
-		testutils.WithInitTenants(model.Tenant{
-			ID:   tenantID,
-			Name: "test-tenant-01",
-			TenantModel: multitenancy.TenantModel{
-				DomainURL:  schemaName + ".example.com",
-				SchemaName: schemaName,
-			},
-		}))
 	_, clientCon := testutils.NewGRPCSuite(t)
 	unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
 	sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
@@ -1454,7 +1458,12 @@ func TestTenantOperatorTracing(t *testing.T) {
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
-	op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory, nil, nil)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
+	assert.NoError(t, err)
+
+	tenantManager, groupManager := createManagers(t, dbConn, cfg, svcRegistry)
+	op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory,
+		tenantManager, groupManager)
 	require.NoError(t, err)
 
 	validData, err := createValidTenantData(tenantID, RegionUSWest1, tenants[0])
