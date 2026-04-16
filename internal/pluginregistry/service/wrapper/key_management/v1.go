@@ -3,6 +3,7 @@ package key_management
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"buf.build/go/protovalidate"
 	"github.com/openkcm/plugin-sdk/api"
@@ -70,12 +71,22 @@ func (v1 *V1) GetKey(ctx context.Context, req *keymanagement.GetKeyRequest) (*ke
 		return nil, convertGRPCError(err)
 	}
 
+	var rotationTime *time.Time
+	if pbTime := grpcResp.GetLatestRotationTime(); pbTime != nil {
+		err := pbTime.CheckValid()
+		if err == nil {
+			t := pbTime.AsTime()
+			rotationTime = &t
+		}
+	}
+
 	return &keymanagement.GetKeyResponse{
 		KeyID:              grpcResp.GetKeyId(),
 		KeyAlgorithm:       keymanagement.KeyAlgorithm(grpcResp.GetAlgorithm()),
 		Status:             grpcResp.GetStatus(),
 		Usage:              grpcResp.GetUsage(),
 		LatestKeyVersionId: grpcResp.GetLatestKeyVersionId(),
+		RotationTime:       rotationTime,
 	}, nil
 }
 

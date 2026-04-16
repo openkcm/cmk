@@ -2,9 +2,9 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strconv"
-	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -12,21 +12,15 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
-	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
-	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type KeyVersion interface {
-	GetKeyVersions(ctx context.Context, keyID uuid.UUID, skip int, top int) ([]model.KeyVersion, int, error)
-	GetKeyVersionByNumber(ctx context.Context, keyID uuid.UUID, version string) (*model.KeyVersion, error)
-	UpdateKeyVersion(
+	GetKeyVersions(ctx context.Context, keyID uuid.UUID, pagination repo.Pagination) ([]*model.KeyVersion, int, error)
+	GetLatestVersion(ctx context.Context, keyID uuid.UUID) (*model.KeyVersion, error)
+	CreateVersion(
 		ctx context.Context,
-		keyID uuid.UUID,
-		version string,
-		enabled *bool,
-	) error
+		keyID uuid.UUID, nativeID string, rotationTime *time.Time) (*model.KeyVersion, error)
 }
 
 type KeyVersionManager struct {
@@ -68,159 +62,98 @@ func (kvm *KeyVersionManager) GetKeyVersions(
 		kvm.repo,
 		pagination,
 		model.KeyVersion{},
-		repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
+		repo.NewQuery().
+			Where(repo.NewCompositeKeyGroup(ck)).
+			Order(repo.OrderField{Field: repo.RotatedField, Direction: repo.Desc}).
+			Order(repo.OrderField{Field: repo.CreatedField, Direction: repo.Desc}),
 	)
 }
 
-// AddKeyVersion creates a new key version in repository and client provider.
-func (kvm *KeyVersionManager) AddKeyVersion(ctx context.Context,
-	key model.Key,
-	_ *string,
-) (*model.KeyVersion, error) {
-	nativeID, err := kvm.createKeyProvider(ctx, &key)
-	if err != nil {
-		return nil, err
-	}
-
-	return kvm.createDBKeyVersion(ctx, &key, nativeID)
-}
-
-func (kvm *KeyVersionManager) GetByKeyIDAndByNumber(
+// GetLatestVersion returns the latest (most recent) version for a key.
+// Returns the version with the most recent RotatedAt timestamp.
+// Uses created_at as a tie-breaker for deterministic ordering when multiple versions
+// share the same rotated_at timestamp.
+func (kvm *KeyVersionManager) GetLatestVersion(
 	ctx context.Context,
 	keyID uuid.UUID,
-	keyVersionNumber string,
 ) (*model.KeyVersion, error) {
-	keyVersion := &model.KeyVersion{}
-
-	if strings.ToLower(keyVersionNumber) == "latest" {
-		ck := repo.NewCompositeKey().
-			Where(repo.IsPrimaryField, true).
-			Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), keyID)
-
-		_, err := kvm.repo.First(
-			ctx,
-			keyVersion,
-			*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
-		)
-		if err != nil {
-			return nil, errs.Wrap(ErrGetPrimaryKeyVersionDB, err)
-		}
-
-		return keyVersion, nil
-	}
-
-	_, err := strconv.Atoi(keyVersionNumber)
-	if err != nil {
-		return nil, errs.Wrap(ErrInvalidKeyVersionNumber, err)
-	}
-
 	ck := repo.NewCompositeKey().
-		Where(repo.VersionField, keyVersionNumber).
 		Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), keyID)
 
-	_, err = kvm.repo.First(
+	var version model.KeyVersion
+	found, err := kvm.repo.First(
 		ctx,
-		keyVersion,
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
+		&version,
+		*repo.NewQuery().
+			Where(repo.NewCompositeKeyGroup(ck)).
+			Order(repo.OrderField{Field: repo.RotatedField, Direction: repo.Desc}).
+			Order(repo.OrderField{Field: repo.CreatedField, Direction: repo.Desc}),
+	)
 	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return nil, ErrNoKeyVersionsFound
+		}
 		return nil, errs.Wrap(ErrGetKeyVersionDB, err)
 	}
 
-	return keyVersion, nil
-}
-
-func (kvm *KeyVersionManager) incrementVersion(key *model.Key) int {
-	currentVersion := key.Version()
-
-	if currentVersion == nil {
-		return 0
+	if !found {
+		return nil, ErrNoKeyVersionsFound
 	}
 
-	return currentVersion.Version + 1
+	return &version, nil
 }
 
-func (kvm *KeyVersionManager) createKeyProvider(ctx context.Context, key *model.Key) (string, error) {
-	provider, err := kvm.GetOrInitProvider(ctx, key)
-	if err != nil {
-		return "", errs.Wrap(ErrFailedToInitProvider, err)
-	}
-
-	// create key in provider
-	keyResponse, err := provider.Client.CreateKey(ctx, &keymanagement.CreateKeyRequest{
-		Config:       common.KeystoreConfig{Values: provider.Config.Values},
-		KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
-		ID:           ptr.PointTo(key.ID.String()),
-		Region:       key.Region,
-		KeyType:      convertToAPIKeyType(key.KeyType),
-	})
-	if err != nil {
-		return "", errs.Wrap(ErrKeyCreationFailed, err)
-	}
-
-	nativeID := keyResponse.KeyID
-
-	return nativeID, nil
-}
-
-func (kvm *KeyVersionManager) createDBKeyVersion(
+// CreateVersion creates a new KeyVersion record.
+// If a version with the same (key_id, native_id) already exists (enforced by unique
+// constraint in schema), it returns the existing version instead of failing. This is
+// idempotent and handles concurrent refresh operations gracefully.
+func (kvm *KeyVersionManager) CreateVersion(
 	ctx context.Context,
-	key *model.Key,
+	keyID uuid.UUID,
 	nativeID string,
+	rotationTime *time.Time,
 ) (*model.KeyVersion, error) {
-	newKeyVersion := model.KeyVersion{
-		ExternalID: uuid.New().String(),
-		NativeID:   &nativeID,
-		KeyID:      key.ID,
-		Version:    kvm.incrementVersion(key),
-		IsPrimary:  true,
+	// Use provided rotation time or fallback to current time
+	rotatedAt := time.Now().UTC()
+	if rotationTime != nil {
+		rotatedAt = *rotationTime
 	}
 
-	err := kvm.repo.Transaction(ctx, func(ctx context.Context) error {
-		err := kvm.disablePrimaryVersions(ctx, key)
-		if err != nil {
-			return err
-		}
-
-		err = kvm.repo.Create(ctx, &newKeyVersion)
-		if err != nil {
-			return errs.Wrap(ErrCreateKeyVersionDB, err)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	newVersion := model.KeyVersion{
+		ID:        uuid.New(),
+		NativeID:  nativeID,
+		KeyID:     keyID,
+		RotatedAt: rotatedAt,
 	}
 
-	return &newKeyVersion, nil
-}
+	err := kvm.repo.Create(ctx, &newVersion)
+	if err == nil {
+		return &newVersion, nil
+	}
 
-func (kvm *KeyVersionManager) disablePrimaryVersions(ctx context.Context, key *model.Key) error {
-	var oldKeyVersions []model.KeyVersion
+	// Handle unique constraint violation
+	if !errors.Is(err, repo.ErrUniqueConstraint) {
+		return nil, errs.Wrap(ErrCreateKeyVersionDB, err)
+	}
 
+	// Version already exists - fetch and return it instead of failing
 	ck := repo.NewCompositeKey().
-		Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), key.ID)
+		Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), keyID).
+		Where(repo.NativeIDField, nativeID)
 
-	err := kvm.repo.List(
+	var existingVersion model.KeyVersion
+	found, fetchErr := kvm.repo.First(
 		ctx,
-		model.KeyVersion{},
-		&oldKeyVersions,
+		&existingVersion,
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
 	)
-	if err != nil {
-		return errs.Wrap(ErrListKeyVersionsDB, err)
+	if fetchErr != nil {
+		return nil, errs.Wrap(ErrGetKeyVersionDB, fetchErr)
+	}
+	if !found {
+		// This shouldn't happen - unique constraint failed but version not found
+		return nil, errs.Wrap(ErrCreateKeyVersionDB, err)
 	}
 
-	for _, oldKeyVersion := range oldKeyVersions {
-		if oldKeyVersion.IsPrimary {
-			oldKeyVersion.IsPrimary = false
-
-			_, err := kvm.repo.Patch(ctx, &oldKeyVersion, *repo.NewQuery().UpdateAll(true))
-			if err != nil {
-				return errs.Wrap(ErrUpdateKeyVersionDB, err)
-			}
-		}
-	}
-
-	return nil
+	return &existingVersion, nil
 }

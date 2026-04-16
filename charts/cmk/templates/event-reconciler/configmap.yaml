@@ -42,5 +42,8 @@ data:
     eventProcessor:
       {{- toYaml .eventProcessor | nindent 6 }}
 
+    landscape:
+      {{- toYaml .landscape | nindent 6 }}
+
     {{- end }}
 {{- end }}
