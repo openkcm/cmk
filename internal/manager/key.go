@@ -1004,6 +1004,50 @@ func (km *KeyManager) handleSystemsOnNewPrimaryKey(ctx context.Context, key *mod
 	)
 }
 
+// handleSystemsOnKeyRotation sends SYSTEM_KEY_ROTATE events to all systems
+// connected to the key's KeyConfiguration. This is triggered when a primary key's
+// key material is rotated (new version detected).
+func (km *KeyManager) handleSystemsOnKeyRotation(ctx context.Context, key *model.Key) error {
+	log.Info(ctx, "notifying systems of key rotation",
+		slog.String("keyID", key.ID.String()),
+		slog.String("keyConfigID", key.KeyConfigurationID.String()))
+
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(
+				repo.KeyConfigIDField, key.KeyConfigurationID),
+		),
+	)
+
+	return repo.ProcessInBatch(
+		ctx,
+		km.repo,
+		query,
+		repo.DefaultLimit,
+		func(systems []*model.System) error {
+			for _, s := range systems {
+				log.Debug(ctx, "sending rotation event to system",
+					slog.String("systemID", s.ID.String()),
+					slog.String("keyID", key.ID.String()))
+
+				_, err := km.eventFactory.SystemKeyRotate(
+					ctx,
+					s,
+					key.ID.String(),
+				)
+				if err != nil {
+					log.Error(ctx, "failed to create rotation event", err,
+						slog.String("systemID", s.ID.String()),
+						slog.String("keyID", key.ID.String()))
+					return err
+				}
+			}
+
+			return nil
+		},
+	)
+}
+
 // updateOldPKeySystemEvents updates keyTo for system event retries
 // This can be done as now there is a new primary key and systems
 // can only be linked to primary keys, the previous keyTo needs now
@@ -1172,6 +1216,16 @@ func (km *KeyManager) handleNewKeyVersion(
 		slog.String("keyId", key.ID.String()),
 		slog.String("nativeId", newVersion.NativeID),
 	)
+
+	// Notify systems if this is a primary key
+	if key.IsPrimary {
+		if err := km.handleSystemsOnKeyRotation(ctx, key); err != nil {
+			// Log error but don't fail the version creation
+			// Systems will get updated on next scheduled sync
+			log.Error(ctx, "failed to notify systems of key rotation", err,
+				slog.String("keyID", key.ID.String()))
+		}
+	}
 
 	return nil
 }

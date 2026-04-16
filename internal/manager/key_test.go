@@ -1414,3 +1414,146 @@ func TestKeyRotationTime(t *testing.T) {
 			"RotatedAt should be current time when keystore doesn't provide it")
 	})
 }
+
+func TestHandleSystemsOnKeyRotation(t *testing.T) {
+	km, r, ctx, keyConfig := SetupKeyTest(t)
+
+	// Setup test: Create a primary key with some systems
+	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+	require.NoError(t, err)
+
+	primaryKey := testutils.NewKey(func(k *model.Key) {
+		k.Name = "primary-key"
+		k.KeyConfigurationID = keyConfig.ID
+		k.KeyType = constants.KeyTypeHYOK
+		k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
+		k.Provider = testplugins.Name
+		k.Region = testRegionUSEast1
+		k.NativeID = ptr.PointTo("primary-key-native-id")
+		k.ManagementAccessData = hyokInfo
+		k.IsPrimary = true
+	})
+
+	nonPrimaryKey := testutils.NewKey(func(k *model.Key) {
+		k.Name = "non-primary-key"
+		k.KeyConfigurationID = keyConfig.ID
+		k.KeyType = constants.KeyTypeHYOK
+		k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
+		k.Provider = testplugins.Name
+		k.Region = testRegionUSEast1
+		k.NativeID = ptr.PointTo("non-primary-key-native-id")
+		k.ManagementAccessData = hyokInfo
+		k.IsPrimary = false
+	})
+
+	// Create systems linked to this key configuration
+	system1 := testutils.NewSystem(func(s *model.System) {
+		s.KeyConfigurationID = &keyConfig.ID
+		s.Status = cmkapi.SystemStatusCONNECTED
+	})
+	system2 := testutils.NewSystem(func(s *model.System) {
+		s.KeyConfigurationID = &keyConfig.ID
+		s.Status = cmkapi.SystemStatusCONNECTED
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, primaryKey, nonPrimaryKey, system1, system2)
+
+	t.Run("primary key rotation triggers SYSTEM_KEY_ROTATE events", func(t *testing.T) {
+		// Simulate rotation detection by calling handleNewKeyVersion
+		// First, setup plugin to return a new version
+		rotationTime := time.Now().UTC()
+
+		// Count events before
+		eventsBefore, err := countEvents(ctx, r, eventprocessor.JobTypeSystemKeyRotate.String())
+		require.NoError(t, err)
+
+		// Trigger rotation by creating a new version via the internal method
+		// We'll use the exported method from export_test.go
+		err = km.ExportedHandleNewKeyVersion(ctx, primaryKey, &keymanagement.GetKeyResponse{
+			LatestKeyVersionId: "new-version-id",
+			RotationTime:       &rotationTime,
+		}, &rotationTime)
+		require.NoError(t, err)
+
+		// Count events after
+		eventsAfter, err := countEvents(ctx, r, eventprocessor.JobTypeSystemKeyRotate.String())
+		require.NoError(t, err)
+
+		// Should have created 2 new rotation events (one per system)
+		assert.Equal(t, eventsBefore+2, eventsAfter,
+			"Should create SYSTEM_KEY_ROTATE events for both connected systems")
+	})
+
+	t.Run("non-primary key rotation does NOT trigger events", func(t *testing.T) {
+		rotationTime := time.Now().UTC()
+
+		// Count events before
+		eventsBefore, err := countEvents(ctx, r, eventprocessor.JobTypeSystemKeyRotate.String())
+		require.NoError(t, err)
+
+		// Trigger rotation for non-primary key
+		err = km.ExportedHandleNewKeyVersion(ctx, nonPrimaryKey, &keymanagement.GetKeyResponse{
+			LatestKeyVersionId: "non-primary-new-version",
+			RotationTime:       &rotationTime,
+		}, &rotationTime)
+		require.NoError(t, err)
+
+		// Count events after
+		eventsAfter, err := countEvents(ctx, r, eventprocessor.JobTypeSystemKeyRotate.String())
+		require.NoError(t, err)
+
+		// Should NOT have created any new rotation events
+		assert.Equal(t, eventsBefore, eventsAfter,
+			"Should NOT create SYSTEM_KEY_ROTATE events for non-primary keys")
+	})
+
+	t.Run("handles keys with no connected systems", func(t *testing.T) {
+		// Create a new key config with no systems
+		emptyKeyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, emptyKeyConfig)
+
+		emptyKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = emptyKeyConfig.ID
+			k.KeyType = constants.KeyTypeHYOK
+			k.Provider = testplugins.Name
+			k.Region = testRegionUSEast1
+			k.NativeID = ptr.PointTo("empty-key-native-id")
+			k.ManagementAccessData = hyokInfo
+			k.IsPrimary = true
+		})
+		testutils.CreateTestEntities(ctx, t, r, emptyKey)
+
+		rotationTime := time.Now().UTC()
+
+		eventsBefore, err := countEvents(ctx, r, eventprocessor.JobTypeSystemKeyRotate.String())
+		require.NoError(t, err)
+
+		// Should not error even with no systems
+		err = km.ExportedHandleNewKeyVersion(ctx, emptyKey, &keymanagement.GetKeyResponse{
+			LatestKeyVersionId: "empty-key-new-version",
+			RotationTime:       &rotationTime,
+		}, &rotationTime)
+		require.NoError(t, err)
+
+		eventsAfter, err := countEvents(ctx, r, eventprocessor.JobTypeSystemKeyRotate.String())
+		require.NoError(t, err)
+
+		// No new events created (no systems to notify)
+		assert.Equal(t, eventsBefore, eventsAfter)
+	})
+}
+
+// Helper function to count events of a specific type
+func countEvents(ctx context.Context, r repo.Repo, eventType string) (int, error) {
+	_, count, err := repo.ListAndCount(
+		ctx, r,
+		repo.Pagination{Skip: 0, Top: 1000, Count: true},
+		model.Event{},
+		repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where("type", eventType))),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
