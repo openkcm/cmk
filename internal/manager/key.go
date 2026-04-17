@@ -1217,6 +1217,9 @@ func (km *KeyManager) handleNewKeyVersion(
 		slog.String("nativeId", newVersion.NativeID),
 	)
 
+	// Send audit log for rotation detection
+	km.sendRotateAuditLog(ctx, key)
+
 	// Notify systems if this is a primary key
 	if key.IsPrimary {
 		if err := km.handleSystemsOnKeyRotation(ctx, key); err != nil {
@@ -1418,6 +1421,16 @@ func (km *KeyManager) sendUnavailableAuditLog(ctx context.Context, key *model.Ke
 	}
 
 	log.Info(ctx, "Audit log for CMK Unavailable sent successfully")
+}
+
+func (km *KeyManager) sendRotateAuditLog(ctx context.Context, key *model.Key) {
+	err := km.cmkAuditor.SendCmkRotateAuditLog(ctx, key.ID.String())
+	if err != nil {
+		log.Error(ctx, "Failed to send audit log for CMK Rotate", err)
+		return
+	}
+
+	log.Info(ctx, "Audit log for CMK Rotate sent successfully")
 }
 
 func (km *KeyManager) enableKey(ctx context.Context, key *model.Key) error {
