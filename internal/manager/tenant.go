@@ -275,25 +275,12 @@ func (m *TenantManager) checkAllSystemsUnlinked(ctx context.Context) (bool, erro
 	return count == 0, nil
 }
 
+// List all primary keys that are not yet detached and trigger detach events for them.
 func (m *TenantManager) detachPrimaryKeys(ctx context.Context) error {
-	// List all primary keys that are not yet detached and trigger detach events for them.
-	cond := repo.NewCompositeKey().
-		Where(fmt.Sprintf(`"%s".%s`, model.KeyConfiguration{}.TableName(), repo.PrimaryKeyIDField), repo.NotNull).
-		Where(repo.StateField, cmkapi.KeyStateDETACHING, repo.NotEq).
-		Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq)
-
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(cond)).Join(
-		repo.LeftJoin, repo.JoinCondition{
-			Table:     model.Key{},
-			Field:     repo.KeyConfigIDField,
-			JoinTable: model.KeyConfiguration{},
-			JoinField: repo.IDField,
-		})
-
 	return repo.ProcessInBatch(
 		ctx,
 		m.repo,
-		query,
+		checkKeyDetatchingQuery(),
 		repo.DefaultLimit,
 		func(keys []*model.Key) error {
 			for _, k := range keys {
@@ -381,29 +368,31 @@ func (m *TenantManager) escalateOffboardingStatus(current, target OffboardingSta
 }
 
 func (m *TenantManager) checkAllPrimaryKeysProcessed(ctx context.Context) (bool, error) {
-	cond := repo.NewCompositeKey().
-		Where(fmt.Sprintf(`"%s".%s`, model.KeyConfiguration{}.TableName(), repo.PrimaryKeyIDField), repo.NotNull).
-		Where(repo.StateField, cmkapi.KeyStateDETACHING, repo.NotEq).
-		Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq)
-
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(cond)).Join(
-		repo.LeftJoin, repo.JoinCondition{
-			Table:     model.Key{},
-			Field:     repo.KeyConfigIDField,
-			JoinTable: model.KeyConfiguration{},
-			JoinField: repo.IDField,
-		})
-
 	count, err := m.repo.Count(
 		ctx,
 		&model.Key{},
-		*query,
+		*checkKeyDetatchingQuery(),
 	)
 	if err != nil {
 		return false, err
 	}
 
 	return count == 0, nil
+}
+
+func checkKeyDetatchingQuery() *repo.Query {
+	cond := repo.NewCompositeKey().
+		Where(fmt.Sprintf(`"%s".%s`, model.KeyConfiguration{}.TableName(), repo.PrimaryKeyIDField), repo.NotNull).
+		Where(repo.StateField, cmkapi.KeyStateDETACHING, repo.NotEq).
+		Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq)
+
+	return repo.NewQuery().Where(repo.NewCompositeKeyGroup(cond)).Join(
+		repo.LeftJoin, repo.JoinCondition{
+			Table:     model.Key{},
+			Field:     repo.KeyConfigIDField,
+			JoinTable: model.KeyConfiguration{},
+			JoinField: repo.IDField,
+		})
 }
 
 func (m *TenantManager) checkAllPrimaryKeysDetached(ctx context.Context) (bool, error) {
