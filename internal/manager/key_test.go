@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
@@ -52,9 +54,31 @@ func SetupKeyTest(t *testing.T) (
 		testplugins.NewKeystoreOperator(),
 	)
 
+	cryptoCerts := []manager.ClientCertificate{
+		{
+			Name: "crypto-1",
+			Subject: manager.ClientCertificateSubject{
+				Locality:           []string{"Berlin"},
+				OrganizationalUnit: []string{"OU1", "OU2"},
+				Organization:       []string{"TestOrg"},
+				Country:            []string{"DE"},
+				CommonNamePrefix:   "test_",
+			},
+			RootCA: "https://example.com/root.crt",
+		},
+	}
+	cryptoCertsBytes, err := yaml.Marshal(cryptoCerts)
+	require.NoError(t, err)
+
 	cfg := &config.Config{
 		Plugins:  psCfg,
 		Database: dbConf,
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  string(cryptoCertsBytes),
+			},
+		},
 	}
 	svcRegistry, err := cmkpluginregistry.New(ctx, cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
@@ -290,6 +314,84 @@ func TestCreate(t *testing.T) {
 
 		_, err = km.Create(localCtx, key2)
 		assert.NoError(t, err)
+	})
+}
+
+func TestHYOKRegistrationCertificateSubject(t *testing.T) {
+	km, _, ctx, keyConfig := SetupKeyTest(t)
+
+	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+	require.NoError(t, err)
+
+	t.Run("should add certificate subject to crypto access data when cert name matches", func(t *testing.T) {
+		cryptoAccessData := model.KeyAccessData{
+			"crypto-1": {"someKey": "someValue"},
+		}
+		cryptoBytes, err := json.Marshal(cryptoAccessData)
+		require.NoError(t, err)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = constants.KeyTypeHYOK
+			k.NativeID = ptr.PointTo("mock-key/11111111")
+			k.ManagementAccessData = hyokInfo
+			k.Provider = providerTest
+			k.CryptoAccessData = cryptoBytes
+		})
+
+		createdKey, err := km.Create(ctx, key)
+		require.NoError(t, err)
+
+		resultData := createdKey.GetCryptoAccessData()
+		require.NotNil(t, resultData)
+		require.Contains(t, resultData, "crypto-1")
+		assert.Contains(t, resultData["crypto-1"], "certificateSubject")
+
+		subject, ok := resultData["crypto-1"]["certificateSubject"].(string)
+		require.True(t, ok)
+		assert.Contains(t, subject, "OU=OU1/OU2")
+		assert.Contains(t, subject, "O=TestOrg")
+		assert.Contains(t, subject, "L=Berlin")
+		assert.Contains(t, subject, "C=DE")
+	})
+
+	t.Run("should not add certificate subject when cert name does not match", func(t *testing.T) {
+		cryptoAccessData := model.KeyAccessData{
+			"non-existent-cert": {"someKey": "someValue"},
+		}
+		cryptoBytes, err := json.Marshal(cryptoAccessData)
+		require.NoError(t, err)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = constants.KeyTypeHYOK
+			k.NativeID = ptr.PointTo("mock-key/11111111")
+			k.ManagementAccessData = hyokInfo
+			k.Provider = providerTest
+			k.CryptoAccessData = cryptoBytes
+		})
+
+		createdKey, err := km.Create(ctx, key)
+		require.NoError(t, err)
+
+		resultData := createdKey.GetCryptoAccessData()
+		require.NotNil(t, resultData)
+		require.Contains(t, resultData, "non-existent-cert")
+		assert.NotContains(t, resultData["non-existent-cert"], "certificateSubject")
+	})
+
+	t.Run("should handle HYOK key with no crypto access data", func(t *testing.T) {
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = constants.KeyTypeHYOK
+			k.NativeID = ptr.PointTo("mock-key/11111111")
+			k.ManagementAccessData = hyokInfo
+			k.Provider = providerTest
+		})
+
+		createdKey, err := km.Create(ctx, key)
+		require.NoError(t, err)
+		assert.NotNil(t, createdKey)
 	})
 }
 
@@ -1220,9 +1322,27 @@ func TestKeyRotationTime(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperatorFromInstance(pluginOps))
+	cryptoCerts := []manager.ClientCertificate{
+		{
+			Name: "crypto-1",
+			Subject: manager.ClientCertificateSubject{
+				CommonNamePrefix: "test_",
+			},
+			RootCA: "https://example.com/root.crt",
+		},
+	}
+	cryptoCertsBytes, err := yaml.Marshal(cryptoCerts)
+	require.NoError(t, err)
+
 	cfg := &config.Config{
 		Plugins:  psCfg,
 		Database: dbConf,
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  string(cryptoCertsBytes),
+			},
+		},
 	}
 	svcRegistry, err := cmkpluginregistry.New(ctx, cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	require.NoError(t, err)
