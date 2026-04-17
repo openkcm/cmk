@@ -607,6 +607,11 @@ func (km *KeyManager) registerHYOKKey(
 		return nil, errs.Wrap(ErrKeyRegistration, err)
 	}
 
+	err = km.addCertificateSubjectToCryptoData(ctx, key)
+	if err != nil {
+		return nil, errs.Wrap(ErrKeyRegistration, err)
+	}
+
 	if keyResp.KeyAlgorithm != keymanagement.AES256 {
 		return nil, errs.Wrapf(
 			ErrUnsupportedKeyAlgorithm,
@@ -638,6 +643,34 @@ func (km *KeyManager) registerHYOKKey(
 	)
 
 	return keyResp, nil
+}
+
+func (km *KeyManager) addCertificateSubjectToCryptoData(ctx context.Context, key *model.Key) error {
+	cryptoCerts, err := km.keyConfigManager.getCryptoCertificates(ctx)
+	if err != nil {
+		return err
+	}
+
+	cryptoAccessData := key.GetCryptoAccessData()
+	if cryptoAccessData == nil {
+		return nil
+	}
+
+	for _, cert := range cryptoCerts {
+		accessData, exists := cryptoAccessData[cert.Name]
+		if !exists {
+			continue
+		}
+
+		accessData["certificateSubject"] = FormatSubjectWithSlashSeparatedOUs(cert.Subject)
+	}
+
+	key.CryptoAccessData, err = json.Marshal(cryptoAccessData)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) error {

@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -253,6 +254,33 @@ func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSub
 		Country:            subject.Country,
 		CommonName:         subject.CommonName,
 	}
+}
+
+// FormatSubjectWithSlashSeparatedOUs transforms the standard X.509 subject string
+// to combine multiple OUs with / separator instead of +
+func FormatSubjectWithSlashSeparatedOUs(subject ClientCertificateSubject) string {
+	s := pkix.Name{
+		Locality:           subject.Locality,
+		Country:            subject.Country,
+		Organization:       subject.Organization,
+		OrganizationalUnit: subject.OrganizationalUnit,
+		CommonName:         subject.CommonName,
+	}
+	if len(s.OrganizationalUnit) <= 1 {
+		return s.String() // Use standard format if 0 or 1 OU
+	}
+
+	// Get standard format
+	standardSubject := s.String()
+
+	// Replace OU=X+OU=Y+OU=Z with OU=X/Y/Z
+	combinedOU := "OU=" + strings.Join(s.OrganizationalUnit, "/")
+
+	// Build regex to match multiple OU entries
+	ouPattern := `OU=[^,+]+((\+OU=[^,+]+)+)`
+	re := regexp.MustCompile(ouPattern)
+
+	return re.ReplaceAllString(standardSubject, combinedOU)
 }
 
 // GetClientCertificates retrieves the client certificates
