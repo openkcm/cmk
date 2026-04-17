@@ -9,10 +9,12 @@ import (
 
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type TenantNameRefresher struct {
@@ -30,36 +32,51 @@ func NewTenantNameRefresher(r repo.Repo, registry registry.Service) *TenantNameR
 }
 
 func (t *TenantNameRefresher) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	err := t.processor.ProcessTenantsInBatch(
+	err := t.processor.ProcessTenantsInBatchWithOptions(
 		ctx,
 		"Tenant Name Refresher",
 		task,
 		repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.Name, repo.Empty))),
+		repo.BatchProcessOptions{IgnoreFailMode: true},
 		func(ctx context.Context, tenant *model.Tenant, index int) error {
+			ctx, err := cmkcontext.InjectInternalClientData(ctx,
+				constants.InternalTaskTenantRefreshRole)
+			if err != nil {
+				return t.handleErrorTask(ctx, err)
+			}
+
 			res, err := t.registry.Tenant().GetTenant(ctx, &tenantv1.GetTenantRequest{
 				Id: tenant.ID,
 			})
+			if err != nil {
+				return t.handleErrorTask(ctx, err)
+			}
 
 			tenant.Name = res.GetTenant().GetName()
-			// Log to not block other tenants if one fails
-			if err != nil {
-				log.Error(ctx, "Could not get tenant details", err)
-			}
 
 			_, err = t.r.Patch(ctx, tenant, *repo.NewQuery())
 			if err != nil {
-				return err
+				return t.handleErrorTask(ctx, err)
 			}
 			return nil
 		},
 	)
 	if err != nil {
-		log.Error(ctx, "Error during tenant name refresh batch processing", err)
-		return errs.Wrap(ErrRunningTask, err)
+		return t.handleErrorTenants(ctx, err)
 	}
 	return nil
 }
 
 func (t *TenantNameRefresher) TaskType() string {
 	return config.TypeTenantRefreshName
+}
+
+func (t *TenantNameRefresher) handleErrorTenants(ctx context.Context, err error) error {
+	log.Error(ctx, "Error during tenant refresh sync batch processing", err)
+	return errs.Wrap(ErrRunningTask, err)
+}
+
+func (t *TenantNameRefresher) handleErrorTask(ctx context.Context, err error) error {
+	log.Error(ctx, "Running tenant refresh", err)
+	return errs.Wrap(ErrRunningTask, err)
 }

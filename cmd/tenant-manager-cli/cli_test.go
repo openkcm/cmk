@@ -77,13 +77,13 @@ func (s *CLISuite) SetupSuite() {
 	s.NoError(err)
 
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	um := manager.NewUserManager(r, cmkAuditor)
+	um := manager.NewUserManager(r, nil, cmkAuditor)
 	tagm := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
 
 	sys := manager.NewSystemManager(
 		ctx,
-		r,
+		r, nil,
 		clientsFactory,
 		eventFactory,
 		svcRegistry,

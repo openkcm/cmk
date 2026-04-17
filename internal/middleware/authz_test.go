@@ -180,7 +180,7 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 	tests := []struct {
 		name           string
 		method         string
-		groupRole      constants.Role
+		groupRole      constants.BusinessRole
 		expectedStatus int
 	}{
 		// GET tests - all roles can read
@@ -267,7 +267,7 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 
 // Helper function to setup authz loader with a specific role
 func setupAuthzLoaderWithRole(t *testing.T, tenantID, groupIdentifier string,
-	role constants.Role) *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
+	role constants.BusinessRole) *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
 	t.Helper()
 
 	r := repomock.NewInMemoryRepository()
