@@ -9,6 +9,7 @@ import (
 type IdentityManagement interface {
 	ServiceInfo() api.Info
 
+	GetUser(ctx context.Context, req *GetUserRequest) (*GetUserResponse, error)
 	GetGroup(ctx context.Context, req *GetGroupRequest) (*GetGroupResponse, error)
 	ListGroups(ctx context.Context, req *ListGroupsRequest) (*ListGroupsResponse, error)
 	ListGroupUsers(ctx context.Context, req *ListGroupUsersRequest) (*ListGroupUsersResponse, error)
@@ -18,6 +19,17 @@ type IdentityManagement interface {
 type AuthContext struct {
 	// V1 Fields
 	Data map[string]string
+}
+
+type GetUserRequest struct {
+	// V1 Fields
+	UserID      string
+	AuthContext AuthContext
+}
+
+type GetUserResponse struct {
+	// V1 Fields
+	User User
 }
 
 type GetGroupRequest struct {
