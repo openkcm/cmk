@@ -57,32 +57,6 @@ func (m Key) CheckAuthz(ctx context.Context,
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
-func (m Key) MaxVersion() int {
-	maxVer := 0
-	for _, kv := range m.KeyVersions {
-		if kv.Version > maxVer {
-			maxVer = kv.Version
-		}
-	}
-
-	return maxVer
-}
-
-func (m Key) Version() *KeyVersion {
-	maxVer := 0
-
-	var keyVersion KeyVersion
-
-	for _, kv := range m.KeyVersions {
-		if kv.Version > maxVer {
-			maxVer = kv.Version
-			keyVersion = kv
-		}
-	}
-
-	return &keyVersion
-}
-
 func (m *Key) AfterFind(tx *gorm.DB) error {
 	m.EditableRegions = map[string]bool{}
 	return nil

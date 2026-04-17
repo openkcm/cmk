@@ -89,18 +89,18 @@ func getNewestKeyVersionNativeID(ctx context.Context, r repo.Repo, keyID string)
 	ck := repo.NewCompositeKey().Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), keyID)
 	query := repo.NewQuery().
 		Where(repo.NewCompositeKeyGroup(ck)).
-		Order(repo.OrderField{Field: repo.CreatedField, Direction: repo.Desc})
+		Order(repo.OrderField{Field: repo.RotatedField, Direction: repo.Desc})
 
 	_, err := r.First(ctx, &kv, *query)
 	if err != nil {
 		return "", fmt.Errorf("failed to get newest key version for key %s: %w", keyID, err)
 	}
 
-	if kv.NativeID == nil {
+	if kv.NativeID == "" {
 		return "", ErrVersionHasNoNativeID
 	}
 
-	return *kv.NativeID, nil
+	return kv.NativeID, nil
 }
 
 func updateKey(ctx context.Context, r repo.Repo, key *model.Key) error {

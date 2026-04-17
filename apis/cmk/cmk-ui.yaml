@@ -277,33 +277,6 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
-  /keys/{keyID}/versions/{version}:
-    get:
-      tags:
-        - Keys
-      summary: Get metadata of a key Version by key ID and Version number
-      description: Retrieves metadata of a specific Key Version by Key ID and Version number.
-      operationId: GetKeyVersionByNumber
-      parameters:
-        - $ref: "#/components/parameters/keyIDPath"
-        - $ref: "#/components/parameters/keyVersionNumberPath"
-      responses:
-        "200":
-          description: Retrieved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/KeyVersion"
-        "400":
-          $ref: "#/components/responses/400"
-        "403":
-          $ref: "#/components/responses/403"
-        "404":
-          $ref: "#/components/responses/404"
-        "429":
-          $ref: "#/components/responses/429"
-        "500":
-          $ref: "#/components/responses/500"
   /key/{keyID}/labels:
     get:
       tags:
@@ -1944,12 +1917,17 @@ components:
       description: The datetime of when the object was created (RFC3339 format)
       type: string
       format: date-time
-      example: "2024-09-30T21:02:00"
+      example: "2024-09-30T21:02:00Z"
     UpdatedAt:
       description: The datetime of when the object was last updated, enabled, or disabled (RFC3339 format)
       type: string
       format: date-time
-      example: "2020-09-30T21:02:00"
+      example: "2020-09-30T21:02:00Z"
+    RotatedAt:
+      description: The datetime of when the key version was rotated (became current version) (RFC3339 format)
+      type: string
+      format: date-time
+      example: "2026-04-08T10:30:00Z"
     CreatorID:
       description: The ID of the User who created the object
       type: string
@@ -2041,12 +2019,12 @@ components:
       description: A Key Version
       type: object
       properties:
-        version:
-          description: The Version number of the Key
-          type: integer
-          minimum: 0
+        id:
+          description: The generated UUID identifier of the Key Version
+          type: string
+          format: uuid
           readOnly: true
-          example: 1
+          example: 12345678-90ab-cdef-1234-567890abcdef
         metadata:
           $ref: "#/components/schemas/KeyVersionMetadata"
         isPrimary:
@@ -2055,11 +2033,12 @@ components:
           example: true
         nativeID:
           description: |
-            The native identifier of the key to register. For AWS, this is either the key ID or
-            the full key ARN.
+            The native identifier of the key material version.
           type: string
           maxLength: 255
-          example: arn:aws:kms:us-west-2:111122223333:alias/<alias-name>
+          example: ad3245fExampleVersionId
+        state:
+          $ref: "#/components/schemas/KeyState"
     KeyVersionMetadata:
       description: Key Version metadata
       type: object
@@ -2069,6 +2048,8 @@ components:
           $ref: "#/components/schemas/CreatedAt"
         updatedAt:
           $ref: "#/components/schemas/UpdatedAt"
+        rotatedAt:
+          $ref: "#/components/schemas/RotatedAt"
     KeyVersionList:
       type: object
       required:
