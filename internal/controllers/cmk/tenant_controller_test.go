@@ -91,6 +91,9 @@ func TestGetTenants(t *testing.T) {
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+		assert.Equal(t, "NO_TENANT_ACCESS", response.Error.Code)
 	})
 }
 

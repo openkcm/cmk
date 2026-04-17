@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
 	keyopv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/operations/v1"
@@ -38,9 +39,10 @@ var (
 const importParamsValidityHours = 24
 
 type KeyRecord struct {
-	KeyID     string `gorm:"primaryKey;column:key_id"`
-	Status    string
-	VersionID string
+	KeyID        string `gorm:"primaryKey;column:key_id"`
+	Status       string
+	VersionID    string
+	RotationTime string // RFC3339 format
 }
 
 type KeystoreOperator struct {
@@ -210,6 +212,19 @@ func (p *KeystoreOperator) GetKey(
 		response.LatestKeyVersionId = record.VersionID
 	}
 
+	// Add rotation time if available
+	if record.RotationTime != "" {
+		// Parse RFC3339Nano string (fallback to RFC3339) and convert to protobuf timestamp
+		rotTime, err := time.Parse(time.RFC3339Nano, record.RotationTime)
+		if err != nil {
+			// Fallback to RFC3339 if Nano parsing fails
+			rotTime, err = time.Parse(time.RFC3339, record.RotationTime)
+		}
+		if err == nil {
+			response.LatestRotationTime = timestamppb.New(rotTime)
+		}
+	}
+
 	return response, nil
 }
 
@@ -353,7 +368,7 @@ func (p *KeystoreOperator) HandleKeyRecord(keyID, status string) {
 	record.Status = status
 }
 
-func (p *KeystoreOperator) SetKeyVersionInfo(keyID, versionID string) {
+func (p *KeystoreOperator) SetKeyVersionInfo(keyID, versionID, rotationTime string) {
 	if p.KeyStore == nil {
 		p.KeyStore = make(map[string]*KeyRecord)
 	}
@@ -368,4 +383,5 @@ func (p *KeystoreOperator) SetKeyVersionInfo(keyID, versionID string) {
 	}
 
 	record.VersionID = versionID
+	record.RotationTime = rotationTime
 }

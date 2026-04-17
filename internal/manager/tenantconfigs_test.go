@@ -85,9 +85,18 @@ func TestGetDefaultKeystore(t *testing.T) {
 		// Add a keystore configuration to the pool
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
+
+		config := model.KeystoreConfig{
+			LocalityID:           "testID",
+			CommonName:           testutils.TestDefaultKeystoreCommonName,
+			ManagementAccessData: map[string]any{"key": "value"},
+		}
+		configBytes, _ := json.Marshal(config)
 		// Create a fresh keystore config for this test to avoid pollution from other tests
-		localKsConfig := testutils.NewKeystore(func(_ *model.Keystore) {})
-		testutils.CreateTestEntities(ctx, t, r, localKsConfig)
+		localKs := testutils.NewKeystore(func(c *model.Keystore) {
+			c.Config = configBytes
+		})
+		testutils.CreateTestEntities(ctx, t, r, localKs)
 
 		// Act
 		keystore, err := configManager.GetDefaultKeystoreConfig(ctx)
@@ -95,7 +104,7 @@ func TestGetDefaultKeystore(t *testing.T) {
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, keystore)
-		assert.NotEmpty(t, keystore.LocalityID)
+		assert.Equal(t, "testID", keystore.LocalityID)
 		assert.NotEmpty(t, keystore.CommonName)
 		assert.NotEmpty(t, keystore.ManagementAccessData)
 	})

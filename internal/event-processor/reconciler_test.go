@@ -732,16 +732,18 @@ func TestVersionInfoPropagation(t *testing.T) {
 
 	// Create key versions in DB for keyWithVersion only
 	kv := &model.KeyVersion{
-		ExternalID: uuid.NewString(),
-		KeyID:      keyWithVersion.ID,
-		Version:    1,
-		NativeID:   ptr.PointTo(initialVersionID),
+		ID:        uuid.New(),
+		KeyID:     keyWithVersion.ID,
+		NativeID:  initialVersionID,
+		RotatedAt: time.Now(),
 	}
 	err := r.Create(ctx, kv)
 	require.NoError(t, err)
 
 	// Setup plugin handlers (required for TransformCryptoAccessData)
 	instance.pluginOp.HandleKeyRecord(keyWithVersionID, testplugins.EnabledKeyStatus)
+	instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, initialVersionID, "")
+
 	instance.pluginOp.HandleKeyRecord(keyWithoutVerID, testplugins.EnabledKeyStatus)
 
 	// Helper to resolve tasks and extract key access metadata
@@ -801,10 +803,10 @@ func TestVersionInfoPropagation(t *testing.T) {
 	t.Run("should fetch fresh version info on every event creation", func(t *testing.T) {
 		// Simulate rotation by adding a newer key version in the DB
 		kv := &model.KeyVersion{
-			ExternalID: uuid.NewString(),
-			KeyID:      keyWithVersion.ID,
-			Version:    2,
-			NativeID:   ptr.PointTo(updatedVersionID),
+			ID:        uuid.New(),
+			KeyID:     keyWithVersion.ID,
+			NativeID:  updatedVersionID,
+			RotatedAt: time.Now().Add(time.Hour), // Later rotation
 		}
 		err := r.Create(ctx, kv)
 		require.NoError(t, err)

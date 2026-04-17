@@ -111,11 +111,12 @@ func NewKey(m func(*model.Key)) *model.Key {
 
 func NewKeyVersion(m func(*model.KeyVersion)) *model.KeyVersion {
 	mut := NewMutator(func() model.KeyVersion {
+		key := NewKey(func(_ *model.Key) {})
 		return model.KeyVersion{
-			ExternalID: uuid.NewString(),
-			Key:        *NewKey(func(_ *model.Key) {}),
-			IsPrimary:  true,
-			Version:    1,
+			ID:        uuid.New(),
+			NativeID:  uuid.NewString(),
+			KeyID:     key.ID,
+			RotatedAt: time.Now().UTC(),
 		}
 	})
 
