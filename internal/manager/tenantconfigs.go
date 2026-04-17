@@ -24,6 +24,8 @@ const (
 
 	// Since the workflow expiry must be less than the retention minus a day
 	minimumRetentionPeriodDays = 2
+
+	allowBYOKFeatureGateKey = "allow-byok"
 )
 
 var (
@@ -70,8 +72,9 @@ type HYOKKeystore struct {
 }
 
 type TenantKeystores struct {
-	BYOK model.KeystoreConfig
-	HYOK HYOKKeystore
+	BYOK      model.KeystoreConfig
+	AllowBYOK bool
+	HYOK      HYOKKeystore
 }
 
 func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
@@ -177,8 +180,9 @@ func (m *TenantConfigManager) GetTenantsKeystores() (TenantKeystores, error) {
 	defaultKeystore := model.KeystoreConfig{}
 
 	return TenantKeystores{
-		BYOK: defaultKeystore,
-		HYOK: m.getTenantConfigsHyokKeystore(),
+		BYOK:      defaultKeystore,
+		AllowBYOK: m.isBYOKAllowed(),
+		HYOK:      m.getTenantConfigsHyokKeystore(),
 	}, nil
 }
 
@@ -228,6 +232,15 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 	}
 
 	return keystore, nil
+}
+
+// isBYOKAllowed checks whether BYOK is enabled by deployment feature-gate configuration.
+func (m *TenantConfigManager) isBYOKAllowed() bool {
+	if m.cfg == nil {
+		return false
+	}
+
+	return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
 }
 
 // SetDefaultKeystore stores the default keystore config
