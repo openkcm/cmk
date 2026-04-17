@@ -43,7 +43,9 @@ func startAPIKeyConfig(t *testing.T) (
 
 	tenant := tenants[0]
 
-	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
+	})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 

@@ -350,13 +350,13 @@ func TestSchemaMigrations(t *testing.T) {
 			version:   5,
 		},
 		{
-			name:      "Should up tenant/00006_refactor_key_version_table.sql",
-			downgrade: false,
+			name:      "Should up tenant/00006_refactor_key_version.sql",
+			downgrade: true,
 			target:    db.TenantTarget,
 			version:   6,
 		},
 		{
-			name:      "Should down tenant/00006_refactor_key_version_table.sql",
+			name:      "Should down tenant/00006_refactor_key_version.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
 			version:   6,
@@ -365,25 +365,25 @@ func TestSchemaMigrations(t *testing.T) {
 			name:      "Should up tenant/00007_delete_user_names.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
-			version:   5,
+			version:   7,
 		},
 		{
 			name:      "Should down tenant/00007_delete_user_names.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
-			version:   5,
+			version:   7,
 		},
 		{
-			name:      "Should up tenant/00006_delete_user_names.sql",
-			downgrade: false,
-			target:    db.TenantTarget,
-			version:   6,
-		},
-		{
-			name:      "Should down tenant/00006_delete_user_names.sql",
+			name:      "Should up tenant/00007_delete_key_primary.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
-			version:   6,
+			version:   8,
+		},
+		{
+			name:      "Should down tenant/00007_delete_key_primary.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   8,
 		},
 	}
 	for _, tt := range tests {
