@@ -72,7 +72,7 @@ func (c *APIController) GetKeys(ctx context.Context,
 		Count: ptr.GetSafeDeref(request.Params.Count),
 	}
 
-	keys, total, err := c.Manager.Keys.GetKeys(ctx, ptr.PointTo(keyConfigID), pagination)
+	keys, total, err := c.Manager.Keys.GetKeys(ctx, keyConfigID, pagination)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrQueryKeyList, err)
 	}
@@ -134,16 +134,6 @@ func (c *APIController) GetKeysKeyID(ctx context.Context,
 func (c *APIController) UpdateKey(ctx context.Context,
 	request cmkapi.UpdateKeyRequestObject,
 ) (cmkapi.UpdateKeyResponseObject, error) {
-	if ptr.GetSafeDeref(request.Body.IsPrimary) {
-		required, err := c.Manager.Workflow.IsWorkflowRequired(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		if required {
-			return nil, apierrors.ErrActionRequireWorkflow
-		}
-	}
 	dbKey, err := c.Manager.Keys.UpdateKey(ctx, request.KeyID, *request.Body)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrUpdateKey, err)
