@@ -14,6 +14,7 @@ func InjectClientDataIntoContext(ctx context.Context, identifier string, groups 
 		Identifier: identifier,
 		Groups:     groups,
 	}
+	ctx = context.WithValue(ctx, constants.Source, constants.BusinessSource)
 	ctx = context.WithValue(ctx, constants.ClientData, clientData)
 
 	return ctx

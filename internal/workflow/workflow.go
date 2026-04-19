@@ -4,18 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/looplab/fsm"
 
+	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
-
-var SystemUserUUID = uuid.Max
-
-var SystemUserID = SystemUserUUID.String()
 
 type Lifecycle struct {
 	Workflow                *model.Workflow
@@ -279,13 +277,12 @@ func (l *Lifecycle) ValidateActor(ctx context.Context, transition Transition) er
 		} else if !valid {
 			err = NewInvalidEventActorError(l.ActorID, "approver")
 		}
-	case TransitionExecute, TransitionFail, TransitionExpire:
-		valid, err = l.validateUserIsSystem(ctx)
-		if err != nil {
-			err = errs.Wrapf(err, "failed to validate automated transition")
-		} else if !valid {
-			err = ErrAutomatedTransition
-		}
+	case TransitionExpire:
+		err = l.validateInternalTransition(ctx,
+			constants.InternalTaskWorkflowExpirationRole)
+	case TransitionExecute, TransitionFail:
+		err = l.validateInternalTransition(ctx,
+			constants.InternalTaskWorkflowApproversRole)
 	default:
 		err = ErrInvalidWorkflowState
 	}
@@ -293,11 +290,20 @@ func (l *Lifecycle) ValidateActor(ctx context.Context, transition Transition) er
 	return err
 }
 
-// validateUserIsSystem validates that the user is the SYSTEM user
-//
-//nolint:unparam
-func (l *Lifecycle) validateUserIsSystem(_ context.Context) (bool, error) {
-	return l.ActorID == SystemUserID, nil
+func (l *Lifecycle) validateInternalTransition(
+	ctx context.Context, role constants.InternalRole) error {
+	source, err := cmkcontext.ExtractSource(ctx)
+	if err != nil {
+		return errs.Wrapf(err, "failed to validate automated transition")
+	} else if source == string(constants.BusinessSource) {
+		return ErrAutomatedTransition
+	}
+
+	err = authz.CheckInternalUserRole(ctx, role)
+	if err != nil {
+		return errs.Wrapf(err, "failed to validate automated transition")
+	}
+	return nil
 }
 
 // validateUserIsInitiator validates that the user is the initiator of the workflow

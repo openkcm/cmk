@@ -21,7 +21,7 @@ func SetupUserManager(t *testing.T) (manager.User, *multitenancy.DB, string) {
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
 
 	return manager.NewUserManager(
-		sql.NewRepository(db),
+		sql.NewRepository(db), nil,
 		auditor.New(t.Context(), &config.Config{}),
 	), db, tenants[0]
 }

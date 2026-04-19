@@ -8,12 +8,14 @@ import (
 	"github.com/hibiken/asynq"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type WorkflowUpdater interface {
@@ -47,6 +49,13 @@ func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) e
 	workflowID, err := uuid.ParseBytes(payload.Data)
 	if err != nil {
 		log.Error(ctx, "Failed to parse task payload data", err)
+		return errs.Wrap(ErrRunningTask, err)
+	}
+
+	ctx, err = cmkcontext.InjectInternalClientData(ctx,
+		constants.InternalTaskWorkflowApproversRole)
+	if err != nil {
+		log.Error(ctx, "Failed to set client data", err)
 		return errs.Wrap(ErrRunningTask, err)
 	}
 

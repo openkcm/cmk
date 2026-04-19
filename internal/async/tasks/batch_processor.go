@@ -6,6 +6,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -25,14 +26,20 @@ func NewBatchProcessor(repo repo.Repo) *BatchProcessor {
 
 // ProcessTenantsInBatch iterates through tenants in batches and applies the process function
 // It tracks the total tenant count, logs batch progress, and logs task completion
-func (bp *BatchProcessor) ProcessTenantsInBatch(
+func (bp *BatchProcessor) ProcessTenantsInBatchWithOptions(
 	ctx context.Context,
 	taskName string,
 	asynqTask *asynq.Task,
 	query *repo.Query,
+	options repo.BatchProcessOptions,
 	processTenant func(ctx context.Context, tenant *model.Tenant, index int) error,
 ) error {
 	totalTenantCount := 0
+	ctx, err := cmkcontext.InjectInternalClientData(ctx,
+		constants.InternalTaskProcessingRole)
+	if err != nil {
+		return err
+	}
 
 	var tenantIDs []string
 	if asynqTask != nil && asynqTask.Payload() != nil {
@@ -50,26 +57,29 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
 	}
 
-	err := repo.ProcessInBatch(ctx, bp.repo, query, repo.DefaultLimit,
+	err = repo.ProcessInBatchWithOptions(ctx, bp.repo, query, repo.DefaultLimit, options,
 		func(tenants []*model.Tenant) error {
 			totalTenantCount += len(tenants)
 			log.Debug(ctx, "Processing batch of tenants for "+taskName,
 				slog.Int("batchSize", len(tenants)), slog.Int("totalTenantCount", totalTenantCount))
 
+			var lastError error
 			for i, tenant := range tenants {
 				ctx := cmkcontext.New(
 					ctx,
 					cmkcontext.WithTenant(tenant.ID),
-					cmkcontext.InjectSystemUser,
 					model.WithLogInjectTenant(tenant),
 				)
 
-				err := processTenant(ctx, tenant, i+1)
+				err = processTenant(ctx, tenant, i+1)
 				if err != nil {
-					return err
+					lastError = err
+					if !options.IgnoreFailMode {
+						return err
+					}
 				}
 			}
-			return nil
+			return lastError
 		})
 
 	if err == nil {
@@ -77,4 +87,15 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 	}
 
 	return err
+}
+
+func (bp *BatchProcessor) ProcessTenantsInBatch(
+	ctx context.Context,
+	taskName string,
+	asynqTask *asynq.Task,
+	query *repo.Query,
+	processTenant func(ctx context.Context, tenant *model.Tenant, index int) error,
+) error {
+	return bp.ProcessTenantsInBatchWithOptions(ctx, taskName, asynqTask,
+		query, repo.BatchProcessOptions{}, processTenant)
 }

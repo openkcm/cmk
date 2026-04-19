@@ -9,12 +9,14 @@ import (
 	"github.com/hibiken/asynq"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/slice"
 )
 
@@ -56,6 +58,13 @@ func (s *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 		func(ctx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(ctx, "Processing expired workflows for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
+
+			ctx, err := cmkcontext.InjectInternalClientData(ctx,
+				constants.InternalTaskWorkflowExpirationRole)
+			if err != nil {
+				log.Error(ctx, "Failed to set client data", err)
+				return errs.Wrap(ErrRunningTask, err)
+			}
 
 			wfs, _, getErr := s.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
 			if getErr != nil {

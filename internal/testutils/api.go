@@ -103,7 +103,7 @@ func NewAPIServer(
 	svcRegistry, err := cmkpluginregistry.New(tb.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(tb, err)
 
-	controller := cmk.NewAPIController(tb.Context(), authzRepo, &cfg, factory, migrator, svcRegistry, authzAPILoader)
+	controller := cmk.NewAPIController(tb.Context(), authzRepo, &cfg, factory, migrator, svcRegistry, authzRepoLoader, authzAPILoader)
 
 	return startAPIServer(tb, controller)
 }

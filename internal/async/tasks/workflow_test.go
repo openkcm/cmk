@@ -10,13 +10,18 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
+	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 	contextUtils "github.com/openkcm/cmk/utils/context"
 )
 
@@ -28,12 +33,47 @@ const (
 
 var ErrBadWorkflow = errors.New("bad workflow error")
 
-type WorkflowAssignMock struct{}
+var allowedWorkflowTestActions = []authz.RepoAction{
+	authz.RepoActionFirst,
+	authz.RepoActionUpdate,
+}
+
+var allowedWorkflowApproversTestActions = []authz.RepoAction{
+	authz.RepoActionCreate,
+	authz.RepoActionDelete,
+}
+
+type WorkflowAssignMock struct {
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+		authz.RepoAction]
+}
 
 func (s *WorkflowAssignMock) AutoAssignApprovers(
-	_ context.Context,
+	ctx context.Context,
 	workflowID uuid.UUID,
 ) (*model.Workflow, error) {
+	// We only test a subset of the permissions
+	for _, testAction := range allowedWorkflowTestActions {
+		isAllowed, err := authz.CheckAuthz(ctx, s.authzLoader.AuthzHandler,
+			authz.RepoResourceTypeWorkflow, testAction)
+		if err != nil {
+			return nil, err
+		}
+		if !isAllowed {
+			return nil, authz.ErrAuthzDecision
+		}
+	}
+	for _, testAction := range allowedWorkflowApproversTestActions {
+		isAllowed, err := authz.CheckAuthz(ctx, s.authzLoader.AuthzHandler,
+			authz.RepoResourceTypeWorkflowApprover, testAction)
+		if err != nil {
+			return nil, err
+		}
+		if !isAllowed {
+			return nil, authz.ErrAuthzDecision
+		}
+	}
+
 	switch workflowID.String() {
 	case PanicWorkflowID:
 		panic("simulated panic")
@@ -44,14 +84,32 @@ func (s *WorkflowAssignMock) AutoAssignApprovers(
 	return &model.Workflow{ID: workflowID}, nil
 }
 
+type WorkflowAssignMockUnauthz struct {
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+		authz.RepoAction]
+}
+
+func (s *WorkflowAssignMockUnauthz) AutoAssignApprovers(
+	ctx context.Context,
+	workflowID uuid.UUID,
+) (*model.Workflow, error) {
+	_, err := authz.CheckAuthz(ctx, s.authzLoader.AuthzHandler,
+		authz.RepoResourceTypeWorkflow, authz.RepoActionDelete)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.Workflow{ID: workflowID}, nil
+}
+
 func TestWorkflowAssignAction(t *testing.T) {
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithGenerateTenants(1))
-	r := sql.NewRepository(db)
+	rawRepo := sql.NewRepository(db)
 
 	tenantID := tenants[0]
 	ctx := contextUtils.CreateTenantContext(t.Context(), tenantID)
 
-	testutils.CreateTestEntities(ctx, t, r,
+	testutils.CreateTestEntities(ctx, t, rawRepo,
 		testutils.NewWorkflow(
 			func(workflow *model.Workflow) {
 				workflow.ID = uuid.MustParse(GoodWorkflowID)
@@ -69,7 +127,16 @@ func TestWorkflowAssignAction(t *testing.T) {
 		),
 	)
 
-	assigner := tasks.NewWorkflowProcessor(&WorkflowAssignMock{}, r)
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+		rawRepo, &config.Config{})
+
+	authzRepo := authz_repo.NewAuthzRepo(rawRepo, authzRepoLoader)
+
+	assigner := tasks.NewWorkflowProcessor(
+		&WorkflowAssignMock{authzLoader: authzRepoLoader}, authzRepo)
+
+	unauthzAssigner := tasks.NewWorkflowProcessor(
+		&WorkflowAssignMockUnauthz{authzLoader: authzRepoLoader}, authzRepo)
 
 	t.Run("No task data", func(t *testing.T) {
 		assert.Panics(t, func() {
@@ -93,6 +160,12 @@ func TestWorkflowAssignAction(t *testing.T) {
 		assert.ErrorIs(t, err, tasks.ErrRunningTask, "Failed to parse task payload data")
 	})
 
+	// We need to interact with the DB in the test. Use this role for convenience,
+	// since it includes the necessary permissions.
+	testCtx, err := cmkcontext.InjectInternalClientData(ctx,
+		constants.InternalTaskWorkflowApproversRole)
+	assert.NoError(t, err)
+
 	t.Run("Bad workflow causing error", func(t *testing.T) {
 		payload := asyncUtils.NewTaskPayload(ctx, []byte(BadWorkflowID))
 		data, err := payload.ToBytes()
@@ -105,7 +178,8 @@ func TestWorkflowAssignAction(t *testing.T) {
 		ck := repo.NewCompositeKey().Where(repo.IDField, BadWorkflowID)
 		updatedWorkflow := &model.Workflow{}
 
-		_, err = r.First(ctx, updatedWorkflow, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
+		_, err = authzRepo.First(testCtx, updatedWorkflow,
+			*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 		assert.NoError(t, err)
 
 		assert.Equal(t, wfMechanism.StateFailed.String(), updatedWorkflow.State)
@@ -127,11 +201,22 @@ func TestWorkflowAssignAction(t *testing.T) {
 		ck := repo.NewCompositeKey().Where(repo.IDField, PanicWorkflowID)
 		updatedWorkflow := &model.Workflow{}
 
-		_, err = r.First(ctx, updatedWorkflow, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
+		_, err = authzRepo.First(testCtx, updatedWorkflow,
+			*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 		assert.NoError(t, err)
 
 		assert.Equal(t, wfMechanism.StateFailed.String(), updatedWorkflow.State)
 		assert.Equal(t, "internal error when assigning approvers", updatedWorkflow.FailureReason)
+	})
+
+	t.Run("Unauthorized processing", func(t *testing.T) {
+		payload := asyncUtils.NewTaskPayload(ctx, []byte(GoodWorkflowID))
+		data, err := payload.ToBytes()
+		assert.NoError(t, err)
+
+		task := asynq.NewTask(config.TypeWorkflowAutoAssign, data)
+		err = unauthzAssigner.ProcessTask(ctx, task)
+		assert.ErrorIs(t, err, authz.ErrAuthorizationDenied)
 	})
 
 	t.Run("Successful processing", func(t *testing.T) {

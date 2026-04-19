@@ -506,11 +506,12 @@ func setErrorStateAndFail(ctx context.Context, resp *orbital.HandlerResponse, er
 	resp.Fail(err.Error())
 }
 
-func (o *TenantOperator) injectSystemUser(
+func (o *TenantOperator) injectInternalUser(
 	next orbital.HandlerFunc,
 ) orbital.HandlerFunc {
 	return func(ctx context.Context, request orbital.HandlerRequest, response *orbital.HandlerResponse) {
-		ctx = cmkcontext.InjectSystemUser(ctx)
+		ctx, _ = cmkcontext.InjectInternalClientData(ctx,
+			constants.InternalTenantProvisioningRole)
 		next(ctx, request, response)
 	}
 }
@@ -543,7 +544,7 @@ func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
 	}
 
 	for action, handler := range handlers {
-		handler = o.injectSystemUser(handler)
+		handler = o.injectInternalUser(handler)
 		handler = o.trace(handler, action)
 
 		err := operator.RegisterHandler(action, handler)

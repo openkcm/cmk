@@ -7,10 +7,12 @@ import (
 	"github.com/hibiken/asynq"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type HYOKUpdater interface {
@@ -37,19 +39,25 @@ func NewHYOKSync(
 func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Starting HYOK Sync Task")
 
-	err := h.processor.ProcessTenantsInBatch(
+	err := h.processor.ProcessTenantsInBatchWithOptions(
 		ctx,
 		"HYOK Sync",
 		task,
 		repo.NewQuery(),
+		repo.BatchProcessOptions{IgnoreFailMode: true},
 		func(ctx context.Context, tenant *model.Tenant, index int) error {
 			log.Debug(ctx, "Syncing HYOK keys for tenant",
 				slog.String("schemaName", tenant.SchemaName), slog.Int("index", index))
 
+			ctx, err := cmkcontext.InjectInternalClientData(ctx,
+				constants.InternalTaskHYOKSyncRole)
+			if err != nil {
+				return h.handleErrorTask(ctx, err)
+			}
+
 			syncErr := h.hyokClient.SyncHYOKKeys(ctx)
 			if syncErr != nil {
-				_ = h.handleErrorTask(ctx, syncErr)
-				return nil
+				return h.handleErrorTask(ctx, syncErr)
 			}
 			log.Debug(ctx, "HYOK keys for tenant synced successfully", slog.String("schemaName", tenant.SchemaName))
 			return nil
