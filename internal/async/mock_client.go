@@ -8,9 +8,9 @@ import (
 
 // MockClient implements the AsyncClient interface for testing
 type MockClient struct {
-	CallCount int
-	LastTask  *asynq.Task
-	Error     error
+	EnqueueCallCount int
+	LastTask         *asynq.Task
+	Error            error
 }
 
 func (m *MockClient) Close() error {
@@ -30,7 +30,7 @@ func (m *MockClient) Ping() error {
 }
 
 func (m *MockClient) enqueue(task *asynq.Task, _ []asynq.Option) (*asynq.TaskInfo, error) {
-	m.CallCount++
+	m.EnqueueCallCount++
 
 	m.LastTask = task
 	if m.Error != nil {

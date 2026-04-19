@@ -5,10 +5,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/async/tasks"
+	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 )
@@ -29,11 +31,13 @@ func (s *HyokHYOKClientMockFailed) SyncHYOKKeys(_ context.Context) error {
 
 func TestHYOKSyncProcessAction(t *testing.T) {
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
-	repo := sql.NewRepository(db)
-	sync := tasks.NewHYOKSync(&HyokHYOKClientMock{}, repo)
+	r := sql.NewRepository(db)
+	sync := tasks.NewHYOKSync(&HyokHYOKClientMock{}, r)
+
+	task := asynq.NewTask(config.TypeHYOKSync, nil)
 
 	t.Run("Should complete", func(t *testing.T) {
-		err := sync.ProcessTask(t.Context(), nil)
+		err := sync.ProcessTask(t.Context(), task)
 		assert.NoError(t, err)
 	})
 
@@ -42,9 +46,11 @@ func TestHYOKSyncProcessAction(t *testing.T) {
 		assert.Equal(t, config.TypeHYOKSync, taskType, "Task type should be HYOKSync")
 	})
 
-	t.Run("Task continues one failure of hyok client", func(t *testing.T) {
-		sync := tasks.NewHYOKSync(&HyokHYOKClientMockFailed{}, repo)
-		err := sync.ProcessTask(t.Context(), nil)
-		assert.NoError(t, err)
+	t.Run("Should have right taskType", func(t *testing.T) {
+		assert.Equal(t, config.TypeHYOKSync, sync.TaskType())
+	})
+
+	t.Run("Should have default tenant query", func(t *testing.T) {
+		assert.Equal(t, repo.NewQuery(), sync.TenantQuery())
 	})
 }

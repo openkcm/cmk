@@ -35,9 +35,9 @@ func TestCertRotation(t *testing.T) {
 
 	ctx := testutils.CreateCtxWithTenant(tenants[0])
 
-	repository := sql.NewRepository(db)
+	r := sql.NewRepository(db)
 
-	setupDatabase(ctx, t, repository, false)
+	setupDatabase(ctx, t, r, false)
 
 	cronWorker, err := async.New(testConfig)
 	assert.NoError(t, err)
@@ -46,7 +46,7 @@ func TestCertRotation(t *testing.T) {
 
 	// Start worker
 	go func() {
-		err := cronWorker.RunWorker(ctx)
+		err := cronWorker.RunWorker(ctx, r)
 		assert.NoError(t, err)
 	}()
 
@@ -60,7 +60,7 @@ func TestCertRotation(t *testing.T) {
 
 	// Check that new certificates have been created
 	certsAll := []*model.Certificate{}
-	err = repository.List(
+	err = r.List(
 		ctx,
 		model.Certificate{},
 		&certsAll,
@@ -78,7 +78,7 @@ func TestCertRotation(t *testing.T) {
 	// Check only the head has AutoRotate remaining
 	certsAuto := []*model.Certificate{}
 	compositeKey := repo.NewCompositeKey().Where(repo.AutoRotateField, true)
-	err = repository.List(
+	err = r.List(
 		ctx,
 		model.Certificate{},
 		&certsAuto,

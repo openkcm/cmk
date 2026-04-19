@@ -12,6 +12,16 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
+func WithLogInjectAttrs(attrs ...slog.Attr) cmkcontext.Opt {
+	return func(ctx context.Context) context.Context {
+		args := make([]any, len(attrs))
+		for i, attr := range attrs {
+			args[i] = attr
+		}
+		return slogctx.With(ctx, args...)
+	}
+}
+
 func InjectRequest(ctx context.Context, r *http.Request) context.Context {
 	requestID, _ := cmkcontext.GetRequestID(ctx)
 	tenant, _ := cmkcontext.ExtractTenantID(ctx)

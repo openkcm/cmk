@@ -67,8 +67,8 @@ func (c *APIController) GetKeys(ctx context.Context,
 ) (cmkapi.GetKeysResponseObject, error) {
 	keyConfigID := request.Params.KeyConfigurationID
 	pagination := repo.Pagination{
-		Skip:  ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip),
-		Top:   ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop),
+		Skip:  ptr.GetPtrOrDefault(request.Params.Skip, constants.DefaultSkip),
+		Top:   ptr.GetPtrOrDefault(request.Params.Top, constants.DefaultTop),
 		Count: ptr.GetSafeDeref(request.Params.Count),
 	}
 

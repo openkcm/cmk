@@ -1,6 +1,10 @@
 package config
 
-import "github.com/openkcm/cmk/utils/ptr"
+import (
+	"time"
+
+	"github.com/openkcm/cmk/utils/ptr"
+)
 
 const (
 	TypeSystemsTask        = "sys:refresh"
@@ -25,8 +29,14 @@ var PeriodicTasks = map[string]Task{
 	},
 	TypeHYOKSync: {
 		Enabled:  ptr.PointTo(true),
-		Cronspec: "0 * * * *", // Hourly
+		Cronspec: "*/5 * * * *", // Every 5 minutes
 		Retries:  ptr.PointTo(defaultRetryCount),
+		TimeOut:  5 * time.Minute,
+		FanOutTask: &FanOutTask{
+			Enabled: true,
+			Retries: ptr.PointTo(0),
+			TimeOut: 5 * time.Minute,
+		},
 	},
 	TypeKeystorePool: {
 		Enabled:  ptr.PointTo(true),

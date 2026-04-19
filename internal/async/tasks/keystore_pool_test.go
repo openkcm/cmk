@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/async/tasks"
@@ -29,9 +30,10 @@ func TestKeystorePoolFillingAction(t *testing.T) {
 			Size: 5,
 		},
 	)
+	task := asynq.NewTask(config.TypeKeystorePool, nil)
 
 	t.Run("Should Create", func(t *testing.T) {
-		err := filler.ProcessTask(t.Context(), nil)
+		err := filler.ProcessTask(t.Context(), task)
 		assert.NoError(t, err)
 	})
 }
