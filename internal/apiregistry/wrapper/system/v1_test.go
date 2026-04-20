@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -60,9 +61,7 @@ func TestNewV1(t *testing.T) {
 	mockClient := &mockSystemClient{}
 	v1 := system.NewV1(mockClient)
 
-	if v1 == nil {
-		t.Fatal("expected non-nil V1 instance")
-	}
+	assert.NotNil(t, v1)
 }
 
 func TestV1_ListSystems(t *testing.T) {
@@ -130,22 +129,13 @@ func TestV1_ListSystems(t *testing.T) {
 			resp, err := v1.ListSystems(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if len(resp.Systems) != tt.expectedCount {
-				t.Errorf("expected %d systems, got %d", tt.expectedCount, len(resp.Systems))
-			}
+			assert.NoError(t, err)
+			assert.Len(t, resp.Systems, tt.expectedCount)
 		})
 	}
 }
@@ -237,18 +227,12 @@ func TestV1_RegisterSystem(t *testing.T) {
 			_, err := v1.RegisterSystem(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assert.NoError(t, err)
 		})
 	}
 }
@@ -350,22 +334,13 @@ func TestV1_UpdateSystemL1KeyClaim(t *testing.T) {
 			resp, err := v1.UpdateSystemL1KeyClaim(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -432,22 +407,13 @@ func TestV1_DeleteSystem(t *testing.T) {
 			resp, err := v1.DeleteSystem(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -519,22 +485,13 @@ func TestV1_UpdateSystemStatus(t *testing.T) {
 			resp, err := v1.UpdateSystemStatus(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -619,22 +576,13 @@ func TestV1_SetSystemLabels(t *testing.T) {
 			resp, err := v1.SetSystemLabels(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -719,22 +667,13 @@ func TestV1_RemoveSystemLabels(t *testing.T) {
 			resp, err := v1.RemoveSystemLabels(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }

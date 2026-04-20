@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -45,9 +46,7 @@ func TestNewV1(t *testing.T) {
 	mockClient := &mockAuthClient{}
 	v1 := auth.NewV1(mockClient)
 
-	if v1 == nil {
-		t.Fatal("expected non-nil V1 instance")
-	}
+	assert.NotNil(t, v1)
 }
 
 func TestV1_ApplyAuth(t *testing.T) {
@@ -140,22 +139,13 @@ func TestV1_ApplyAuth(t *testing.T) {
 			resp, err := v1.ApplyAuth(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -222,21 +212,15 @@ func TestV1_GetAuth(t *testing.T) {
 			resp, err := v1.GetAuth(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assert.NoError(t, err)
 
-			if tt.expectAuth && resp.Auth == nil {
-				t.Error("expected auth to be non-nil")
+			if tt.expectAuth {
+				assert.NotNil(t, resp.Auth)
 			}
 		})
 	}
@@ -316,22 +300,13 @@ func TestV1_ListAuths(t *testing.T) {
 			resp, err := v1.ListAuths(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if len(resp.Auths) != tt.expectedCount {
-				t.Errorf("expected %d auths, got %d", tt.expectedCount, len(resp.Auths))
-			}
+			assert.NoError(t, err)
+			assert.Len(t, resp.Auths, tt.expectedCount)
 		})
 	}
 }
@@ -390,22 +365,13 @@ func TestV1_RemoveAuth(t *testing.T) {
 			resp, err := v1.RemoveAuth(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }

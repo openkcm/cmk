@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -38,9 +39,7 @@ func TestNewV1(t *testing.T) {
 	mockClient := &mockMappingClient{}
 	v1 := mapping.NewV1(mockClient)
 
-	if v1 == nil {
-		t.Fatal("expected non-nil V1 instance")
-	}
+	assert.NotNil(t, v1)
 }
 
 func TestV1_MapSystemToTenant(t *testing.T) {
@@ -185,22 +184,13 @@ func TestV1_MapSystemToTenant(t *testing.T) {
 			resp, err := v1.MapSystemToTenant(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -277,22 +267,13 @@ func TestV1_UnmapSystemFromTenant(t *testing.T) {
 			resp, err := v1.UnmapSystemFromTenant(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -356,22 +337,13 @@ func TestV1_Get(t *testing.T) {
 			resp, err := v1.Get(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.TenantID != tt.expectedTenantID {
-				t.Errorf("expected tenant ID %s, got %s", tt.expectedTenantID, resp.TenantID)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedTenantID, resp.TenantID)
 		})
 	}
 }

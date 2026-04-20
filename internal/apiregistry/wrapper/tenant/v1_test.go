@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -98,9 +99,7 @@ func TestNewV1(t *testing.T) {
 	mockClient := &mockTenantClient{}
 	v1 := tenant.NewV1(mockClient)
 
-	if v1 == nil {
-		t.Fatal("expected non-nil V1 instance")
-	}
+	assert.NotNil(t, v1)
 }
 
 func TestV1_RegisterTenant(t *testing.T) {
@@ -176,22 +175,13 @@ func TestV1_RegisterTenant(t *testing.T) {
 			resp, err := v1.RegisterTenant(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.ID != tt.expectedID {
-				t.Errorf("expected ID %s, got %s", tt.expectedID, resp.ID)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedID, resp.ID)
 		})
 	}
 }
@@ -268,22 +258,13 @@ func TestV1_ListTenants(t *testing.T) {
 			resp, err := v1.ListTenants(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if len(resp.Tenants) != tt.expectedCount {
-				t.Errorf("expected %d tenants, got %d", tt.expectedCount, len(resp.Tenants))
-			}
+			assert.NoError(t, err)
+			assert.Len(t, resp.Tenants, tt.expectedCount)
 		})
 	}
 }
@@ -345,22 +326,13 @@ func TestV1_GetTenant(t *testing.T) {
 			resp, err := v1.GetTenant(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Tenant == nil {
-				t.Error("expected tenant to be set")
-			}
+			assert.NoError(t, err)
+			assert.NotNil(t, resp.Tenant)
 		})
 	}
 }
@@ -413,22 +385,13 @@ func TestV1_BlockTenant(t *testing.T) {
 			resp, err := v1.BlockTenant(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -481,22 +444,13 @@ func TestV1_UnblockTenant(t *testing.T) {
 			resp, err := v1.UnblockTenant(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -549,22 +503,13 @@ func TestV1_TerminateTenant(t *testing.T) {
 			resp, err := v1.TerminateTenant(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -619,22 +564,13 @@ func TestV1_SetTenantLabels(t *testing.T) {
 			resp, err := v1.SetTenantLabels(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -689,22 +625,13 @@ func TestV1_RemoveTenantLabels(t *testing.T) {
 			resp, err := v1.RemoveTenantLabels(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -759,22 +686,13 @@ func TestV1_SetTenantUserGroups(t *testing.T) {
 			resp, err := v1.SetTenantUserGroups(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }

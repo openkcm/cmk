@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -43,12 +44,9 @@ func TestNewV1(t *testing.T) {
 	mockClient := &mockOIDCMappingClient{}
 	v1 := oidcmapping.NewV1(mockClient)
 
-	if v1 == nil {
-		t.Fatal("expected non-nil V1 instance")
-	}
+	assert.NotNil(t, v1)
 }
 
-//nolint:cyclop // test function with many test cases
 func TestV1_ApplyOIDCMapping(t *testing.T) {
 	jwksURI := "https://example.com/.well-known/jwks.json"
 	message := "success message"
@@ -182,39 +180,24 @@ func TestV1_ApplyOIDCMapping(t *testing.T) {
 			resp, err := v1.ApplyOIDCMapping(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 
 			if tt.expectMessage != nil {
-				if resp.Message == nil {
-					t.Error("expected message to be set")
-				} else if *resp.Message != *tt.expectMessage {
-					t.Errorf("expected message=%s, got %s", *tt.expectMessage, *resp.Message)
-				}
+				assert.NotNil(t, resp.Message)
+				assert.Equal(t, *tt.expectMessage, *resp.Message)
 			} else {
-				if resp.Message != nil {
-					t.Errorf("expected message to be nil, got %s", *resp.Message)
-				}
+				assert.Nil(t, resp.Message)
 			}
 		})
 	}
 }
 
-//nolint:cyclop // test function with many test cases
 func TestV1_RemoveOIDCMapping(t *testing.T) {
 	message := "removed successfully"
 
@@ -278,33 +261,19 @@ func TestV1_RemoveOIDCMapping(t *testing.T) {
 			resp, err := v1.RemoveOIDCMapping(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 
 			if tt.expectMessage != nil {
-				if resp.Message == nil {
-					t.Error("expected message to be set")
-				} else if *resp.Message != *tt.expectMessage {
-					t.Errorf("expected message=%s, got %s", *tt.expectMessage, *resp.Message)
-				}
+				assert.NotNil(t, resp.Message)
+				assert.Equal(t, *tt.expectMessage, *resp.Message)
 			} else {
-				if resp.Message != nil {
-					t.Errorf("expected message to be nil, got %s", *resp.Message)
-				}
+				assert.Nil(t, resp.Message)
 			}
 		})
 	}
@@ -366,22 +335,13 @@ func TestV1_BlockOIDCMapping(t *testing.T) {
 			resp, err := v1.BlockOIDCMapping(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
@@ -442,22 +402,13 @@ func TestV1_UnblockOIDCMapping(t *testing.T) {
 			resp, err := v1.UnblockOIDCMapping(context.Background(), tt.request)
 
 			if tt.expectedError != nil {
-				if err == nil {
-					t.Fatalf("expected error %v, got nil", tt.expectedError)
-				}
-				if err.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %v, got %v", tt.expectedError, err)
-				}
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if resp.Success != tt.expectSuccess {
-				t.Errorf("expected success=%v, got %v", tt.expectSuccess, resp.Success)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectSuccess, resp.Success)
 		})
 	}
 }
