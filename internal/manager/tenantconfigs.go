@@ -256,7 +256,10 @@ func (m *TenantConfigManager) isBYOKAllowed() bool {
 		return false
 	}
 
-	return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKLegacyFeatureGateKey) || m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
+	legacyEnabled := m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKLegacyFeatureGateKey)
+	currentEnabled := m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
+
+	return legacyEnabled || currentEnabled
 }
 
 // SetDefaultKeystore stores the default keystore config

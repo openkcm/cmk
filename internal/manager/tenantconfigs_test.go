@@ -275,7 +275,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 	})
 
 	t.Run("Should enable BYOK when allow-byok feature gate is true", func(t *testing.T) {
-		m, db, tenant := SetupTenantConfigManager(t, nil)
+		_, db, tenant := SetupTenantConfigManager(t, nil)
 		r := sql.NewRepository(db)
 		cfg := &config.Config{
 			BaseConfig: commoncfg.BaseConfig{
@@ -284,7 +284,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 				},
 			},
 		}
-		m = manager.NewTenantConfigManager(r, nil, cfg)
+		m := manager.NewTenantConfigManager(r, nil, cfg)
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.True(t, res.AllowBYOK)
