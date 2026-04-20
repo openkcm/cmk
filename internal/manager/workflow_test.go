@@ -1405,6 +1405,42 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 	)
 }
 
+func TestWorkflowManager_WorkflowCanExpire(t *testing.T) {
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
+	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+
+	tests := []struct {
+		state    string
+		expected bool
+	}{
+		{workflow.StateInitial.String(), false},
+		{workflow.StateWaitApproval.String(), true},
+		{workflow.StateWaitConfirmation.String(), true},
+		{workflow.StateExecuting.String(), true},
+		{workflow.StateRevoked.String(), false},
+		{workflow.StateRejected.String(), false},
+		{workflow.StateExpired.String(), false},
+		{workflow.StateSuccessful.String(), false},
+		{workflow.StateFailed.String(), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.state, func(t *testing.T) {
+			wf := testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = tt.state
+			})
+			testutils.CreateTestEntities(ctx, t, r, wf)
+
+			got, err := m.WorkflowCanExpire(ctx, wf)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
 func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 	cfg := &config.Config{}
 	wm, r, tenantID := SetupWorkflowManager(t, cfg)
