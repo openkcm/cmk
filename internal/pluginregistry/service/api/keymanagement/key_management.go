@@ -2,6 +2,7 @@ package keymanagement
 
 import (
 	"context"
+	"time"
 
 	"github.com/openkcm/plugin-sdk/api"
 
@@ -66,6 +67,7 @@ type GetKeyResponse struct {
 	Status             string
 	Usage              string
 	LatestKeyVersionId string
+	RotationTime       *time.Time // Timestamp of last rotation
 }
 
 // CreateKeyRequest contains parameters for key creation

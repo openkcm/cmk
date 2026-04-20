@@ -160,6 +160,10 @@ func getAccessDetailsFromModel(k model.Key) (*cmkapi.KeyAccessDetails, error) {
 
 	for region, editable := range k.EditableRegions {
 		regionValues := crypto[region]
+		if regionValues == nil {
+			// Skip regions that don't exist in crypto access data
+			continue
+		}
 		regionValues[manager.IsEditableCryptoAccess] = editable
 	}
 
