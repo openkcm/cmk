@@ -23,9 +23,9 @@ const (
 	DefaultCertName = "hyok-default"
 
 	// Since the workflow expiry must be less than the retention minus a day
-	minimumRetentionPeriodDays = 2
-
-	allowBYOKFeatureGateKey = "allow-byok"
+	minimumRetentionPeriodDays    = 2
+	allowBYOKLegacyFeatureGateKey = "allowBYOK"
+	allowBYOKFeatureGateKey       = "allow-byok"
 )
 
 var (
@@ -256,7 +256,7 @@ func (m *TenantConfigManager) isBYOKAllowed() bool {
 		return false
 	}
 
-	return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
+	return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKLegacyFeatureGateKey) || m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
 }
 
 // SetDefaultKeystore stores the default keystore config
