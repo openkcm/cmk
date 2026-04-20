@@ -408,7 +408,7 @@ func TestGetSystemByID(t *testing.T) {
 			k.AdminGroup = *testGroup
 		},
 	)
-	system := testutils.NewSystem(
+	systemFailed := testutils.NewSystem(
 		func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.KeyConfigurationName = &keyConfig.Name
@@ -420,15 +420,26 @@ func TestGetSystemByID(t *testing.T) {
 			s.ErrorMessage = "errorMessage"
 		},
 	)
+	system := testutils.NewSystem(func(s *model.System) {
+		s.KeyConfigurationID = &keyConfig.ID
+		s.KeyConfigurationName = &keyConfig.Name
+	})
 	event := testutils.NewEvent(func(e *model.Event) {
-		e.Identifier = system.Identifier
+		e.Identifier = systemFailed.ID.String()
 		e.ErrorCode = "errorCode"
 		e.ErrorMessage = "errorMessage"
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, system, keyConfig, event)
+	testutils.CreateTestEntities(ctx, t, r, systemFailed, system, keyConfig, event)
 
-	t.Run("Should get system by id and loaded fields", func(t *testing.T) {
+	t.Run("Should get system by id and loaded fields with failed status", func(t *testing.T) {
+		actualSystem, err := m.GetSystemByID(ctx, systemFailed.ID)
+
+		assert.Equal(t, systemFailed, actualSystem)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Should get system by id and loaded fields an empty error fields on non failed", func(t *testing.T) {
 		actualSystem, err := m.GetSystemByID(ctx, system.ID)
 
 		assert.Equal(t, system, actualSystem)
