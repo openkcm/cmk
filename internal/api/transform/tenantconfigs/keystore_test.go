@@ -20,31 +20,50 @@ func TestToAPI(t *testing.T) {
 	supportedRegions := []cmkapi.SupportedRegion{
 		{Name: &regionName, TechnicalName: &regionTechnicalName},
 	}
-	expected := cmkapi.TenantKeystore{
-		Byok: &cmkapi.BYOKKeystore{
-			Allow:            ptr.PointTo(false),
-			SupportedRegions: &supportedRegions,
+	testCases := []struct {
+		name      string
+		allowBYOK bool
+	}{
+		{
+			name:      "maps allowBYOK as false",
+			allowBYOK: false,
 		},
-		Hyok: cmkapi.HYOKKeystore{
-			Providers: &providers,
-			Allow:     ptr.PointTo(true),
-		},
-	}
-
-	keyStore := manager.TenantKeystores{
-		BYOK: model.KeystoreConfig{
-			SupportedRegions: []config.Region{
-				{Name: regionName, TechnicalName: regionTechnicalName},
-			},
-		},
-		HYOK: manager.HYOKKeystore{
-			Provider: providers,
-			Allow:    true,
+		{
+			name:      "maps allowBYOK as true",
+			allowBYOK: true,
 		},
 	}
 
-	res, err := tenantconfigs.ToAPI(keyStore)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			expected := cmkapi.TenantKeystore{
+				Byok: &cmkapi.BYOKKeystore{
+					Allow:            ptr.PointTo(tc.allowBYOK),
+					SupportedRegions: &supportedRegions,
+				},
+				Hyok: cmkapi.HYOKKeystore{
+					Providers: &providers,
+					Allow:     ptr.PointTo(true),
+				},
+			}
 
-	assert.NoError(t, err)
-	assert.Equal(t, expected, *res)
+			keyStore := manager.TenantKeystores{
+				BYOK: model.KeystoreConfig{
+					SupportedRegions: []config.Region{
+						{Name: regionName, TechnicalName: regionTechnicalName},
+					},
+				},
+				AllowBYOK: tc.allowBYOK,
+				HYOK: manager.HYOKKeystore{
+					Provider: providers,
+					Allow:    true,
+				},
+			}
+
+			res, err := tenantconfigs.ToAPI(keyStore)
+
+			assert.NoError(t, err)
+			assert.Equal(t, expected, *res)
+		})
+	}
 }
