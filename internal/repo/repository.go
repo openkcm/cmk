@@ -179,7 +179,7 @@ func ListAndCountSystemWithProperties(
 		JoinTable: &model.Event{},
 		JoinField: IdentifierField,
 		Table:     &model.System{},
-		Field:     IdentifierField,
+		Field:     IDField + "::text", // Safe cast to text to compare with event identifier
 	}).Select(
 		// Get All System Fields
 		NewSelectField(model.System{}.TableName(), QueryFunction{

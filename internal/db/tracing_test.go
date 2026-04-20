@@ -9,12 +9,16 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	pg "github.com/bartventer/gorm-multitenancy/postgres/v8"
+
 	"github.com/openkcm/cmk/internal/db"
+	"github.com/openkcm/cmk/internal/db/dialect"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
 func TestWrapDialectorWithTracing(t *testing.T) {
+	ctx := t.Context()
 	// Get a valid DSN from test database
 	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dsnStr, err := dsn.FromDBConfig(dbCfg)
@@ -29,6 +33,7 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 
 		// Act
 		wrappedDialector, err := db.WrapDialectorWithTracing(
+			ctx,
 			originalDialector,
 			dsnStr,
 			nil,
@@ -54,6 +59,7 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 
 		// Act
 		wrappedDialector, err := db.WrapDialectorWithTracing(
+			ctx,
 			originalDialector,
 			dsnStr,
 			telemetryCfg,
@@ -79,6 +85,7 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 
 		// Act
 		wrappedDialector, err := db.WrapDialectorWithTracing(
+			ctx,
 			originalDialector,
 			dsnStr,
 			telemetryCfg,
@@ -111,6 +118,7 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 
 		// Act
 		wrappedDialector, err := db.WrapDialectorWithTracing(
+			ctx,
 			originalDialector,
 			malformedDSN,
 			telemetryCfg,
@@ -137,6 +145,7 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 
 		// Act
 		wrappedDialector, err := db.WrapDialectorWithTracing(
+			ctx,
 			originalDialector,
 			dsnStr,
 			telemetryCfg,
@@ -151,6 +160,43 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 		assert.NotNil(t, gormDB)
 
 		// Verify we can execute a simple query
+		var result int
+		err = gormDB.Raw("SELECT 1").Scan(&result).Error
+		require.NoError(t, err)
+		assert.Equal(t, 1, result)
+	})
+
+	t.Run("should preserve multitenancy dialector type and registry when tracing is enabled", func(t *testing.T) {
+		// Arrange — gorm-multitenancy dialector
+		originalDialector := dialect.NewFrom(dsnStr)
+		_, ok := originalDialector.(*pg.Dialector)
+		require.True(t, ok, "dialect.NewFrom must return a *pg.Dialector")
+
+		telemetryCfg := &commoncfg.Telemetry{
+			Traces: commoncfg.Trace{Enabled: true},
+		}
+
+		// Act
+		wrappedDialector, err := db.WrapDialectorWithTracing(
+			ctx,
+			originalDialector,
+			dsnStr,
+			telemetryCfg,
+		)
+
+		// Assert — same pointer returned, type unchanged
+		require.NoError(t, err)
+		pgDialector, ok := wrappedDialector.(*pg.Dialector)
+		require.True(t, ok, "wrapped dialector must still be a *pg.Dialector")
+		assert.Same(t, originalDialector, pgDialector, "must be the same pointer, not a new instance")
+
+		// Assert — RegisterModels still works
+		err = pgDialector.RegisterModels()
+		assert.NoError(t, err, "RegisterModels must still be callable after wrapping")
+
+		// Assert — connection is functional
+		gormDB, err := gorm.Open(wrappedDialector, &gorm.Config{})
+		require.NoError(t, err)
 		var result int
 		err = gormDB.Raw("SELECT 1").Scan(&result).Error
 		require.NoError(t, err)
