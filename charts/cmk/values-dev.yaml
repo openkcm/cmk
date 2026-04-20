@@ -605,6 +605,9 @@ config:
       source: cmk.emea.tenants
     secretRef:
       type: insecure
+      rootCert: ""
+      cert: ""
+      key: ""
 
   scheduler:
     taskQueue:
