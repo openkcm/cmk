@@ -88,9 +88,10 @@ func TestGetDefaultKeystore(t *testing.T) {
 		r := sql.NewRepository(db)
 
 		// Create a fresh keystore config for this test to avoid pollution from other tests
+		expectedLocalityID := uuid.NewString()
 		localKsConfig := testutils.NewKeystore(func(k *model.Keystore) {
 			keystoreConfig := testutils.NewKeystoreConfig(func(cfg *model.KeystoreConfig) {
-				cfg.LocalityID = uuid.NewString()
+				cfg.LocalityID = expectedLocalityID
 			})
 			configBytes, marshalErr := json.Marshal(keystoreConfig)
 			assert.NoError(t, marshalErr)
@@ -104,7 +105,7 @@ func TestGetDefaultKeystore(t *testing.T) {
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, keystore)
-		assert.Equal(t, "testID", keystore.LocalityID)
+		assert.Equal(t, expectedLocalityID, keystore.LocalityID)
 		assert.NotEmpty(t, keystore.CommonName)
 		assert.NotEmpty(t, keystore.ManagementAccessData)
 	})
