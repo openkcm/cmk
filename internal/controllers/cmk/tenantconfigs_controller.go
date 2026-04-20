@@ -10,10 +10,10 @@ import (
 )
 
 func (c *APIController) GetTenantKeystores(
-	_ context.Context,
+	ctx context.Context,
 	_ cmkapi.GetTenantKeystoresRequestObject,
 ) (cmkapi.GetTenantKeystoresResponseObject, error) {
-	dbKeystore, err := c.Manager.TenantConfigs.GetTenantsKeystores()
+	dbKeystore, err := c.Manager.TenantConfigs.GetTenantsKeystores(ctx)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetDefaultKeystore, err)
 	}
