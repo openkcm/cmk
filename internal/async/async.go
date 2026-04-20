@@ -13,6 +13,7 @@ import (
 	conf "github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/repo"
 )
 
 const (
@@ -28,6 +29,23 @@ var (
 	ErrACLPassword         = errors.New("ACL is not load password for redis client")
 	ErrACLUsername         = errors.New("ACL is not load username for redis client")
 )
+
+type TaskOption func(TenantTaskHandler)
+
+// FanOutHandler task into child tasks per tenant
+type FanOutHandler interface {
+	TaskHandler
+
+	FanOutFunc() FanOutFunc
+}
+
+// TenantTaskHandler is a task that is run for a selection of tenants
+type TenantTaskHandler interface {
+	TaskHandler
+	FanOutHandler
+
+	TenantQuery() *repo.Query
+}
 
 // TaskHandler defines the interface for handling async
 type TaskHandler interface {
@@ -119,14 +137,22 @@ func (a *App) Enqueue(
 // RegisterTasks registers multiple task handlers
 func (a *App) RegisterTasks(ctx context.Context, handlers []TaskHandler) {
 	for _, handler := range handlers {
-		taskType := handler.TaskType()
-		a.tasks[taskType] = handler
-		log.Info(ctx, "Registered task", slog.String("name", taskType))
+		a.registerTask(ctx, handler)
+
+		// Check if scheduled task has fanout enabled on config
+		taskCfg, ok := a.cfg.Scheduler.GetTasks()[handler.TaskType()]
+		if ok && taskCfg.FanOutTask != nil && taskCfg.FanOutTask.Enabled {
+			// Configure fanout on tasks that support it
+			if h, ok := handler.(FanOutHandler); ok {
+				childHandler := NewFanOutHandler(h, h.FanOutFunc())
+				a.registerTask(ctx, childHandler)
+			}
+		}
 	}
 }
 
 // RunWorker starts the worker process to process the tasks
-func (a *App) RunWorker(ctx context.Context) error {
+func (a *App) RunWorker(ctx context.Context, r repo.Repo) error {
 	log.Info(ctx, "Starting async worker")
 
 	a.asynqServer = asynq.NewServer(a.taskQueueCfg, a.asynqServerCfg)
@@ -135,13 +161,28 @@ func (a *App) RunWorker(ctx context.Context) error {
 	mux := asynq.NewServeMux()
 
 	for taskName, handler := range a.tasks {
-		h := handler.ProcessTask // Create a local copy to avoid closure problems
+		processTask := handler.ProcessTask
 		for _, mw := range a.middlewares {
-			h = mw(h)
+			processTask = mw(processTask)
 		}
 
 		mux.HandleFunc(taskName, func(ctx context.Context, task *asynq.Task) error {
-			return h(ctx, task)
+			switch h := handler.(type) {
+			case TenantTaskHandler:
+				enabled, opts := a.getFanOutOpts(h.TaskType())
+				if enabled {
+					processor := NewBatchProcessor(
+						r,
+						WithFanOutTenants(a.Client(), opts...),
+						WithTenantQuery(h.TenantQuery()),
+					)
+					return processor.ProcessTenantsInBatch(ctx, task, h.ProcessTask)
+				}
+				processor := NewBatchProcessor(r)
+				return processor.ProcessTenantsInBatch(ctx, task, h.ProcessTask)
+			default:
+				return h.ProcessTask(ctx, task)
+			}
 		})
 	}
 
@@ -253,4 +294,34 @@ func loadALCAuthFromConfig(cfg conf.Redis) ([]byte, []byte, error) {
 	}
 
 	return username, password, nil
+}
+
+// If FanOutTask is defined and not enabled skip
+func (a *App) getFanOutOpts(taskType string) (bool, []asynq.Option) {
+	taskCfg, ok := a.cfg.Scheduler.GetTasks()[taskType]
+	if !ok || taskCfg.FanOutTask == nil || (taskCfg.FanOutTask != nil && !taskCfg.FanOutTask.Enabled) {
+		return false, nil
+	}
+
+	opts := []asynq.Option{}
+	if taskCfg.FanOutTask.Retries != nil {
+		opts = append(opts, asynq.MaxRetry(*taskCfg.FanOutTask.Retries))
+	}
+	if taskCfg.FanOutTask.TimeOut > 0 {
+		opts = append(opts, asynq.Timeout(taskCfg.FanOutTask.TimeOut))
+	}
+
+	return true, opts
+}
+
+func (a *App) registerTask(ctx context.Context, handler TaskHandler) {
+	taskType := handler.TaskType()
+
+	a.tasks[taskType] = handler
+
+	log.Info(
+		ctx,
+		"Registered task",
+		slog.String("name", taskType),
+	)
 }

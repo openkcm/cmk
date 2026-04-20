@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -28,7 +29,7 @@ type WorkflowProcessor struct {
 func NewWorkflowProcessor(
 	updater WorkflowUpdater,
 	repo repo.Repo,
-) *WorkflowProcessor {
+) async.TaskHandler {
 	return &WorkflowProcessor{
 		updater: updater,
 		repo:    repo,
