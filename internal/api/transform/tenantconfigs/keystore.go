@@ -24,7 +24,7 @@ func ToAPI(keystore manager.TenantKeystores) (*cmkapi.TenantKeystore, error) {
 
 	apiTenant := &cmkapi.TenantKeystore{
 		Byok: &cmkapi.BYOKKeystore{
-			Allow:            ptr.PointTo(false),
+			Allow:            ptr.PointTo(keystore.AllowBYOK),
 			SupportedRegions: &supportedRegions,
 		},
 		Hyok: cmkapi.HYOKKeystore{

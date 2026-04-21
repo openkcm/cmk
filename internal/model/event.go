@@ -22,7 +22,7 @@ type Event struct {
 	// Stores error content for failed events
 	// It's split from orbital error_message by ERROR_CODE:ErrorMessage
 	ErrorCode    string `gorm:"type:varchar(255)"`
-	ErrorMessage string `gorm:"type:varchar(255)"`
+	ErrorMessage string `gorm:"type:text"`
 
 	// PreviousItemStatus represents the state an item was before the event was sent
 	// This is used for cancel actions to recover an item to it's previous state
@@ -45,6 +45,7 @@ func (Event) IsSharedModel() bool {
 
 func (m Event) CheckAuthz(ctx context.Context,
 	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }

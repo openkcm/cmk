@@ -18,8 +18,8 @@ func (c *APIController) GetTenants(
 	request cmkapi.GetTenantsRequestObject,
 ) (cmkapi.GetTenantsResponseObject, error) {
 	pagination := repo.Pagination{
-		Skip:  ptr.GetIntOrDefault(request.Params.Skip, constants.DefaultSkip),
-		Top:   ptr.GetIntOrDefault(request.Params.Top, constants.DefaultTop),
+		Skip:  ptr.GetPtrOrDefault(request.Params.Skip, constants.DefaultSkip),
+		Top:   ptr.GetPtrOrDefault(request.Params.Top, constants.DefaultTop),
 		Count: ptr.GetSafeDeref(request.Params.Count),
 	}
 

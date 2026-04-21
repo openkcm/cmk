@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.8.0](https://github.com/openkcm/cmk/compare/v0.7.0...v0.8.0) (2026-04-21)
+
+
+### Features
+
+* add allowBYOK landscape feature gate ([#243](https://github.com/openkcm/cmk/issues/243)) ([7cac3c2](https://github.com/openkcm/cmk/commit/7cac3c2b61faf8108114806058ef9aad1d478be8))
+* add key rotate audit log ([#248](https://github.com/openkcm/cmk/issues/248)) ([6828a68](https://github.com/openkcm/cmk/commit/6828a681628d71ee361d44a4d2cd1dd39ecf559a))
+* add OpenTelemetry tracing support for database connections ([#238](https://github.com/openkcm/cmk/issues/238)) ([256fe37](https://github.com/openkcm/cmk/commit/256fe37e7aab3af817fe0b088d85793a86a6cfd0))
+* Asynq Fanout Mechanism and HYOK Refresh Frequency ([#191](https://github.com/openkcm/cmk/issues/191)) ([6054ef8](https://github.com/openkcm/cmk/commit/6054ef8137ff490962873c2df89d23beb6f14ddc))
+* extend system event task data with crypto certificate subject ([#245](https://github.com/openkcm/cmk/issues/245)) ([b3b7fd2](https://github.com/openkcm/cmk/commit/b3b7fd20199ff7753155745175c41d002355d615))
+* support HYOK key rotation ([#233](https://github.com/openkcm/cmk/issues/233)) ([e5b4eff](https://github.com/openkcm/cmk/commit/e5b4effd5c94a0eeabf05b116c87a967f6414200))
+
+
+### Bug Fixes
+
+* add missing landscape config to event reconciler ([#242](https://github.com/openkcm/cmk/issues/242)) ([74803f5](https://github.com/openkcm/cmk/commit/74803f52af71d477a530768a414ef40bdbdc9ffe))
+* **deps:** bump the gomod-group group across 1 directory with 10 updates ([#240](https://github.com/openkcm/cmk/issues/240)) ([598997b](https://github.com/openkcm/cmk/commit/598997b972ef13e2c403c93e7bbb361b1dab8615))
+* event error too big ([#250](https://github.com/openkcm/cmk/issues/250)) ([53b2be9](https://github.com/openkcm/cmk/commit/53b2be9786525891af18aacf0d2c0474cd17e263))
+* fix broken unit test ([#247](https://github.com/openkcm/cmk/issues/247)) ([7eabe88](https://github.com/openkcm/cmk/commit/7eabe882ac1990f08a8aef7d137757921b115b90))
+* get latest key version ID from DB for system events ([#232](https://github.com/openkcm/cmk/issues/232)) ([ccd1035](https://github.com/openkcm/cmk/commit/ccd1035fa3ea38289864d6c2811e300afc1a4856))
+* import postgres driver for tracing ([#246](https://github.com/openkcm/cmk/issues/246)) ([4de3508](https://github.com/openkcm/cmk/commit/4de350829b42378a6268007f5244ad6f191b9d84))
+* provided task config does not override Enabled flag if not specified ([#235](https://github.com/openkcm/cmk/issues/235)) ([0b7f1ce](https://github.com/openkcm/cmk/commit/0b7f1ce8f273a36ad42556d150688e8bc6aa9a05))
+* remove unused blueprints ([#237](https://github.com/openkcm/cmk/issues/237)) ([cea3bed](https://github.com/openkcm/cmk/commit/cea3bedd27069f8f1052044c830f79b7d205495d))
+* skip worklow expiry if transition is not available ([#241](https://github.com/openkcm/cmk/issues/241)) ([40a7023](https://github.com/openkcm/cmk/commit/40a702302ac6769d79c894f5738846b68bcc92f0))
+* system error metadata join with wrong field ([#253](https://github.com/openkcm/cmk/issues/253)) ([05d4462](https://github.com/openkcm/cmk/commit/05d4462f2b1c7f7c912b03624b75d91f41a64111))
+* systems filter by region ([#236](https://github.com/openkcm/cmk/issues/236)) ([b554d3f](https://github.com/openkcm/cmk/commit/b554d3f92c1440f870ee3de7652cf756f4a536f7))
+* update tracing wrapper for DB to use multitenancy postgres ([#249](https://github.com/openkcm/cmk/issues/249)) ([f6b7f58](https://github.com/openkcm/cmk/commit/f6b7f585a708816b2226b2ecd994c39583aef680))
+
 ## [0.7.0](https://github.com/openkcm/cmk/compare/v0.6.1...v0.7.0) (2026-04-09)
 
 

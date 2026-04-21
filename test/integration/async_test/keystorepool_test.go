@@ -36,7 +36,7 @@ func TestKeystorePoolFilling(t *testing.T) {
 
 	ctx := context.Background()
 
-	repository := sql.NewRepository(db)
+	r := sql.NewRepository(db)
 
 	cronWorker, err := async.New(testConfig)
 	assert.NoError(t, err)
@@ -45,7 +45,7 @@ func TestKeystorePoolFilling(t *testing.T) {
 
 	// Start worker
 	go func() {
-		err := cronWorker.RunWorker(ctx)
+		err := cronWorker.RunWorker(ctx, r)
 		assert.NoError(t, err)
 	}()
 
@@ -57,7 +57,7 @@ func TestKeystorePoolFilling(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	count, err := repository.Count(
+	count, err := r.Count(
 		ctx,
 		&model.Keystore{},
 		*repo.NewQuery(),

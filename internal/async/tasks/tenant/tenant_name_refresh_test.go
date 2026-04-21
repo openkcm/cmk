@@ -4,12 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hibiken/asynq"
 	"github.com/zeebo/assert"
 	"google.golang.org/grpc"
 
 	tenantv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
-	"github.com/openkcm/cmk/internal/async/tasks"
+	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -80,8 +81,10 @@ func TestTenantNameRefresher(t *testing.T) {
 	registry := registry.NewMockService(nil, &MockTenantRegistry{}, nil)
 	refresher := tasks.NewTenantNameRefresher(r, registry)
 
+	task := asynq.NewTask(config.TypeTenantRefreshName, nil)
+
 	t.Run("Should update tenant names if empty", func(t *testing.T) {
-		err := refresher.ProcessTask(ctx, nil)
+		err := refresher.ProcessTask(ctx, task)
 		assert.NoError(t, err)
 
 		tenant := &model.Tenant{ID: emptyNameTenant.ID}
@@ -100,8 +103,13 @@ func TestTenantNameRefresher(t *testing.T) {
 		assert.Equal(t, config.TypeTenantRefreshName, taskType)
 	})
 
-	t.Run("Should handle nil task parameter", func(t *testing.T) {
-		err := refresher.ProcessTask(t.Context(), nil)
-		assert.NoError(t, err)
+	t.Run("Should error if no tenantID", func(t *testing.T) {
+		err := refresher.ProcessTask(t.Context(), task)
+		assert.Error(t, err)
+	})
+
+	t.Run("Should have default tenant query", func(t *testing.T) {
+		query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.Name, repo.Empty)))
+		assert.Equal(t, query, refresher.TenantQuery())
 	})
 }

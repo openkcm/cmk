@@ -21,8 +21,8 @@ func (c *APIController) GetKeyConfigurations(
 	r cmkapi.GetKeyConfigurationsRequestObject,
 ) (cmkapi.GetKeyConfigurationsResponseObject, error) {
 	pagination := repo.Pagination{
-		Skip:  ptr.GetIntOrDefault(r.Params.Skip, constants.DefaultSkip),
-		Top:   ptr.GetIntOrDefault(r.Params.Top, constants.DefaultTop),
+		Skip:  ptr.GetPtrOrDefault(r.Params.Skip, constants.DefaultSkip),
+		Top:   ptr.GetPtrOrDefault(r.Params.Top, constants.DefaultTop),
 		Count: ptr.GetSafeDeref(r.Params.Count),
 	}
 

@@ -26,7 +26,7 @@ func PanicIfDifferent[T any](current, expected T) {
 	}
 }
 
-func GetIntOrDefault(ptr *int, def int) int {
+func GetPtrOrDefault[T any](ptr *T, def T) T {
 	if ptr == nil {
 		return def
 	}

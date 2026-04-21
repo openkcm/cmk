@@ -55,7 +55,7 @@ func StartDBConnectionPlugins(
 	dialector := dialect.NewFrom(dsnFromConfig)
 
 	// Wrap with OpenTelemetry tracing if enabled
-	dialector, err = WrapDialectorWithTracing(dialector, dsnFromConfig, telemetryCfg)
+	dialector, err = WrapDialectorWithTracing(ctx, dialector, dsnFromConfig, telemetryCfg)
 	if err != nil {
 		return nil, errs.Wrap(ErrStartingDBCon, err)
 	}
@@ -79,7 +79,7 @@ func StartDBConnectionPlugins(
 		return db, nil
 	}
 
-	replicaDialectorsFromReplicas, err := replicaDialectors(replicas, telemetryCfg)
+	replicaDialectorsFromReplicas, err := replicaDialectors(ctx, replicas, telemetryCfg)
 	if err != nil {
 		return nil, errs.Wrap(ErrLoadingReplicaDialectors, err)
 	}
@@ -124,6 +124,7 @@ func prepareMultitenancy(ctx context.Context, db *multitenancy.DB) error {
 }
 
 func replicaDialectors(
+	ctx context.Context,
 	replicas []config.Database,
 	telemetryCfg *commoncfg.Telemetry,
 ) ([]gorm.Dialector, error) {
@@ -138,7 +139,7 @@ func replicaDialectors(
 		dialector := dialect.NewFrom(dsnFromConfig)
 
 		// Wrap replicas with OpenTelemetry tracing too
-		dialector, err = WrapDialectorWithTracing(dialector, dsnFromConfig, telemetryCfg)
+		dialector, err = WrapDialectorWithTracing(ctx, dialector, dsnFromConfig, telemetryCfg)
 		if err != nil {
 			return nil, err
 		}

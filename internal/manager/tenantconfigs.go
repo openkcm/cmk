@@ -24,6 +24,7 @@ const (
 
 	// Since the workflow expiry must be less than the retention minus a day
 	minimumRetentionPeriodDays = 2
+	allowBYOKFeatureGateKey    = "allow-byok"
 )
 
 var (
@@ -70,8 +71,9 @@ type HYOKKeystore struct {
 }
 
 type TenantKeystores struct {
-	BYOK model.KeystoreConfig
-	HYOK HYOKKeystore
+	BYOK      model.KeystoreConfig
+	AllowBYOK bool
+	HYOK      HYOKKeystore
 }
 
 func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
@@ -173,33 +175,32 @@ func (m *TenantConfigManager) UpdateWorkflowConfig(
 	return m.SetWorkflowConfig(ctx, mergedConfig)
 }
 
-func (m *TenantConfigManager) GetTenantsKeystores() (TenantKeystores, error) {
-	defaultKeystore := model.KeystoreConfig{}
+func (m *TenantConfigManager) GetTenantsKeystores(ctx context.Context) (TenantKeystores, error) {
+	defaultKeystore, found, err := m.getStoredDefaultKeystoreConfig(ctx)
+	if err != nil {
+		return TenantKeystores{}, err
+	}
+
+	byokKeystore := model.KeystoreConfig{}
+	if found {
+		byokKeystore = *defaultKeystore
+	}
 
 	return TenantKeystores{
-		BYOK: defaultKeystore,
-		HYOK: m.getTenantConfigsHyokKeystore(),
+		BYOK:      byokKeystore,
+		AllowBYOK: m.isBYOKAllowed(),
+		HYOK:      m.getTenantConfigsHyokKeystore(),
 	}, nil
 }
 
 // GetDefaultKeystoreConfig retrieves the default keystore config
 // If the config doesn't exist, it gets the config from the pool and sets it
 func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, error) {
-	var config model.TenantConfig
-
-	ck := repo.NewCompositeKey().Where(repo.KeyField, constants.DefaultKeyStore)
-	query := repo.NewQuery().Where(
-		repo.NewCompositeKeyGroup(ck),
-	)
-
-	found, err := m.repo.First(ctx, &config, *query)
-	if err != nil && !errors.Is(err, repo.ErrNotFound) {
-		return nil, errs.Wrap(ErrGetDefaultKeystore, err)
+	keystore, found, err := m.getStoredDefaultKeystoreConfig(ctx)
+	if err != nil {
+		return nil, err
 	}
-
 	if !found {
-		var keystore *model.KeystoreConfig
-
 		err = m.repo.Transaction(ctx, func(ctx context.Context) error {
 			keystore, err = m.getKeystoreConfigFromPool(ctx)
 			if err != nil {
@@ -220,14 +221,41 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 		return keystore, nil
 	}
 
-	keystore := &model.KeystoreConfig{}
+	return keystore, nil
+}
 
-	err = json.Unmarshal(config.Value, keystore)
-	if err != nil {
-		return nil, errs.Wrap(ErrUnmarshalConfig, err)
+func (m *TenantConfigManager) getStoredDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, bool, error) {
+	var config model.TenantConfig
+
+	ck := repo.NewCompositeKey().Where(repo.KeyField, constants.DefaultKeyStore)
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(ck),
+	)
+
+	found, err := m.repo.First(ctx, &config, *query)
+	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+		return nil, false, errs.Wrap(ErrGetDefaultKeystore, err)
+	}
+	if !found {
+		return nil, false, nil
 	}
 
-	return keystore, nil
+	keystore := &model.KeystoreConfig{}
+	err = json.Unmarshal(config.Value, keystore)
+	if err != nil {
+		return nil, false, errs.Wrap(ErrUnmarshalConfig, err)
+	}
+
+	return keystore, true, nil
+}
+
+// isBYOKAllowed checks whether BYOK is enabled by deployment feature-gate configuration.
+func (m *TenantConfigManager) isBYOKAllowed() bool {
+	if m.cfg == nil {
+		return false
+	}
+
+	return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
 }
 
 // SetDefaultKeystore stores the default keystore config
