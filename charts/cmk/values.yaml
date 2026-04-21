@@ -793,13 +793,6 @@ config:
   #        key1: value1
   #        key2: value2
 
-  # Active plugins are controlled through Makefile.
-  # See k3d-apply-helm-chart target definition and ACTIVE_PLUGINS variable in the Makefile.
-  activePlugins:
-  # - plugin1
-  # - plugin2
-  # - plugin3
-
   # Event configuration
   eventProcessor:
     #secretRef:
