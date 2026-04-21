@@ -50,7 +50,8 @@ var (
 )
 
 func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
-	authClient testutils.AuthClientData) []*model.Workflow {
+	authClient testutils.AuthClientData,
+) []*model.Workflow {
 	tb.Helper()
 
 	groupIDsBytes, err := json.Marshal([]uuid.UUID{authClient.Group.ID})
@@ -667,14 +668,15 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusOK {
-				response := testutils.GetJSONBody[cmkapi.DetailedWorkflow](t, w)
+				response := testutils.GetJSONBody[cmkapi.Workflow](t, w)
 				assert.Equal(t, tt.workflowID, response.Id.String())
 				assert.Equal(t, tt.userID, response.InitiatorID)
 				assert.NotNil(t, response.ArtifactName)
 				assert.NotEmpty(t, response.AvailableTransitions)
 				assert.NotNil(t, response.ApprovalSummary)
+				approverGroups := *response.ApproverGroups
 				if tt.approverGroupName != "" {
-					assert.Equal(t, tt.approverGroupName, response.ApproverGroups[0].Name)
+					assert.Equal(t, tt.approverGroupName, approverGroups[0].Name)
 				}
 			}
 		})

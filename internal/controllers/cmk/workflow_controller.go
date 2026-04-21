@@ -214,7 +214,7 @@ func (c *APIController) GetWorkflowByID(ctx context.Context,
 		return nil, err
 	}
 
-	apiWorkflow, err := wfTransform.ToAPIDetailed(*workflow, approvers, approverGroups, transitions, approvalSummary)
+	apiWorkflow, err := wfTransform.ToAPI(*workflow, wfTransform.WithDetailed(approvers, approverGroups, transitions, approvalSummary))
 	if err != nil {
 		return nil, err
 	}

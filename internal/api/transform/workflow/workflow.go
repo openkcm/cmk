@@ -19,8 +19,57 @@ import (
 
 var ErrExpiryGreaterThanMaximum = errors.New("expiry exceeds maximum")
 
+// ToAPIOpt is a functional option for customizing the ToAPI transformation.
+type ToAPIOpt func(*cmkapi.Workflow) error
+
+// WithDetailed enriches the workflow with detailed information (approvers, groups, transitions, summary).
+func WithDetailed(
+	approvers []*model.WorkflowApprover,
+	approverGroups []*model.Group,
+	transitions []wfMechanism.Transition,
+	approvalSummary *wfMechanism.ApprovalSummary,
+) ToAPIOpt {
+	return func(w *cmkapi.Workflow) error {
+		decisions := make([]cmkapi.WorkflowApprover, 0, len(approvers))
+		for _, approver := range approvers {
+			apiApprover, err := ApproverToAPI(*approver)
+			if err != nil {
+				return err
+			}
+			decisions = append(decisions, apiApprover)
+		}
+		w.Decisions = &decisions
+
+		apiApproverGroups := make([]cmkapi.Group, 0, len(approverGroups))
+		for _, group := range approverGroups {
+			apiGroup, err := groupTransform.ToAPI(*group)
+			if err != nil {
+				return err
+			}
+			apiApproverGroups = append(apiApproverGroups, *apiGroup)
+		}
+		w.ApproverGroups = &apiApproverGroups
+
+		availableTransitions := make([]cmkapi.WorkflowTransitionValue, 0, len(transitions))
+		for _, transition := range transitions {
+			apiTransition := cmkapi.WorkflowTransitionValue(transition)
+			availableTransitions = append(availableTransitions, apiTransition)
+		}
+		w.AvailableTransitions = &availableTransitions
+
+		w.ApprovalSummary = &cmkapi.WorkflowApprovalSummary{
+			Approved:    ptr.PointTo(approvalSummary.Approvals),
+			Rejected:    ptr.PointTo(approvalSummary.Rejections),
+			Pending:     ptr.PointTo(approvalSummary.Pending),
+			TargetScore: ptr.PointTo(approvalSummary.TargetScore),
+		}
+
+		return nil
+	}
+}
+
 // ToAPI converts a workflow model to an API workflow presentation.
-func ToAPI(w model.Workflow) (*cmkapi.Workflow, error) {
+func ToAPI(w model.Workflow, opts ...ToAPIOpt) (*cmkapi.Workflow, error) {
 	err := sanitise.Sanitize(&w)
 	if err != nil {
 		return nil, err
@@ -32,7 +81,7 @@ func ToAPI(w model.Workflow) (*cmkapi.Workflow, error) {
 		parametersResourceType = &resourceType
 	}
 
-	return &cmkapi.Workflow{
+	base := &cmkapi.Workflow{
 		Id:                     ptr.PointTo(w.ID),
 		InitiatorID:            w.InitiatorID,
 		InitiatorName:          w.InitiatorName,
@@ -50,73 +99,16 @@ func ToAPI(w model.Workflow) (*cmkapi.Workflow, error) {
 			UpdatedAt: ptr.PointTo(w.UpdatedAt),
 		}),
 		ExpiresAt: w.ExpiryDate,
-	}, nil
-}
-
-//nolint:funlen
-func ToAPIDetailed(
-	w model.Workflow,
-	approvers []*model.WorkflowApprover,
-	approverGroups []*model.Group,
-	transitions []wfMechanism.Transition,
-	approvalSummary *wfMechanism.ApprovalSummary,
-) (*cmkapi.DetailedWorkflow, error) {
-	base, err := ToAPI(w)
-	if err != nil {
-		return nil, err
 	}
 
-	detailed := &cmkapi.DetailedWorkflow{
-		Id:                     base.Id,
-		InitiatorID:            base.InitiatorID,
-		InitiatorName:          base.InitiatorName,
-		State:                  base.State,
-		ActionType:             base.ActionType,
-		ArtifactType:           base.ArtifactType,
-		ArtifactName:           base.ArtifactName,
-		ArtifactID:             base.ArtifactID,
-		Parameters:             base.Parameters,
-		ParametersResourceName: base.ParametersResourceName,
-		ParametersResourceType: base.ParametersResourceType,
-		FailureReason:          base.FailureReason,
-		Metadata:               base.Metadata,
-		ExpiresAt:              base.ExpiresAt,
-		ApprovalSummary: &cmkapi.WorkflowApprovalSummary{
-			Approved:    ptr.PointTo(approvalSummary.Approvals),
-			Rejected:    ptr.PointTo(approvalSummary.Rejections),
-			Pending:     ptr.PointTo(approvalSummary.Pending),
-			TargetScore: ptr.PointTo(approvalSummary.TargetScore),
-		},
-	}
-
-	decisions := make([]cmkapi.WorkflowApprover, 0, len(approvers))
-	for _, approver := range approvers {
-		apiApprover, err := ApproverToAPI(*approver)
-		if err != nil {
+	// Apply optional transformations
+	for _, opt := range opts {
+		if err := opt(base); err != nil {
 			return nil, err
 		}
-		decisions = append(decisions, apiApprover)
 	}
-	detailed.Decisions = decisions
 
-	apiApproverGroups := make([]cmkapi.Group, 0, len(approverGroups))
-	for _, group := range approverGroups {
-		apiGroup, err := groupTransform.ToAPI(*group)
-		if err != nil {
-			return nil, err
-		}
-		apiApproverGroups = append(apiApproverGroups, *apiGroup)
-	}
-	detailed.ApproverGroups = apiApproverGroups
-
-	availableTransitions := make([]cmkapi.WorkflowTransitionValue, 0, len(transitions))
-	for _, transition := range transitions {
-		apiTransition := cmkapi.WorkflowTransitionValue(transition)
-		availableTransitions = append(availableTransitions, apiTransition)
-	}
-	detailed.AvailableTransitions = availableTransitions
-
-	return detailed, nil
+	return base, nil
 }
 
 // FromAPI converts an API workflow presentation to a workflow model.
