@@ -343,23 +343,36 @@ func createAMQPTargets(ctx context.Context, cfg *config.EventProcessor) (map[str
 }
 
 func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
-	if cfg.SecretRef.Type != commoncfg.MTLSSecretType {
-		return []amqp.ClientOption{}, nil
-	}
-
-	tlsConfig, err := commoncfg.LoadMTLSConfig(&cfg.SecretRef.MTLS)
-	if err != nil {
-		return nil, errs.Wrap(config.ErrLoadMTLSConfig, err)
-	}
-
-	return []amqp.ClientOption{
-		func(o *goAmqp.ConnOptions) error {
+	var opts []amqp.ClientOption
+	switch cfg.SecretRef.Type {
+	case commoncfg.InsecureSecretType:
+		opts = append(opts, amqp.WithNoAuth())
+	case commoncfg.MTLSSecretType:
+		tlsConfig, err := commoncfg.LoadMTLSConfig(&cfg.SecretRef.MTLS)
+		if err != nil {
+			return nil, errs.Wrap(config.ErrLoadMTLSConfig, err)
+		}
+		opts = append(opts, func(o *goAmqp.ConnOptions) error {
 			o.TLSConfig = tlsConfig
 			o.SASLType = goAmqp.SASLTypeExternal("")
 
 			return nil
-		},
-	}, nil
+		})
+	case commoncfg.BasicSecretType:
+		username, err := commoncfg.ExtractValueFromSourceRef(&cfg.SecretRef.Basic.Username)
+		if err != nil {
+			return nil, errs.Wrap(config.ErrLoadUsernameConfig, err)
+		}
+
+		pwd, err := commoncfg.ExtractValueFromSourceRef(&cfg.SecretRef.Basic.Password)
+		if err != nil {
+			return nil, errs.Wrap(config.ErrLoadPasswordConfig, err)
+		}
+
+		opts = append(opts, amqp.WithBasicAuth(string(username), string(pwd)))
+	}
+
+	return opts, nil
 }
 
 func getTracer(cfg *config.Config) trace.Tracer {
