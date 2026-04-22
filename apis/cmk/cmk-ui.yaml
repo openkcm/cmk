@@ -1453,6 +1453,7 @@ components:
             - DISCONNECTED
             - PROCESSING
             - FAILED
+            - UNDER_WORKFLOW
         keyConfigurationName:
           description: The name of the key configuration
           type: string
@@ -1467,6 +1468,9 @@ components:
       type: object
       readOnly: true
       properties:
+        worfklow:
+          $ref: "#/components/schemas/Workflow"
+          description: Workflow associated with the System if it's state is UNDER_WORKFLOW
         errorCode:
           type: string
           description: The code of an error of a failed system

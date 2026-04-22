@@ -24,6 +24,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
+	"github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -532,38 +533,104 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	authClientAuditor := testutils.NewAuthClient(ctx, t, r, testutils.WithAuditorRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthClientDataKC(authClient))
 
-	system := testutils.NewSystem(func(s *model.System) { s.KeyConfigurationID = ptr.PointTo(keyConfig.ID) })
-	systemInvalidKeyConfig := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(uuid.New())
+	system := testutils.NewSystem(func(s *model.System) {
+		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 	})
-	testutils.CreateTestEntities(ctx, t, r, system, keyConfig, systemInvalidKeyConfig)
+	systemUnderWorkflowFullDetails := testutils.NewSystem(func(s *model.System) {
+		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.Status = cmkapi.SystemStatusUNDERWORKFLOW
+	})
+	wfFullDetails := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.InitiatorID = authClient.Identifier
+		w.ArtifactType = workflow.ArtifactTypeSystem.String()
+		w.ArtifactID = systemUnderWorkflowFullDetails.ID
+		w.State = workflow.StateWaitApproval.String()
+	})
+	systemUnderWorkflowApproversDetails := testutils.NewSystem(func(s *model.System) {
+		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.Status = cmkapi.SystemStatusUNDERWORKFLOW
+	})
+	wfApproverDetails := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.ArtifactType = workflow.ArtifactTypeSystem.String()
+		w.ArtifactID = systemUnderWorkflowApproversDetails.ID
+		w.State = workflow.StateWaitApproval.String()
+	})
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		r,
+		system,
+		keyConfig,
+		systemUnderWorkflowFullDetails,
+		wfFullDetails,
+		systemUnderWorkflowApproversDetails,
+		wfApproverDetails,
+	)
 
 	tests := []struct {
 		name              string
 		id                string
 		expectedStatus    int
 		expectedErrorCode string
+		expectedSystem    *model.System
+		assertFn          func(t *testing.T, res cmkapi.System)
+		authClient        testutils.AuthClientData
 	}{
 		{
 			name:           "SystemGETByIdSuccess",
 			expectedStatus: http.StatusOK,
 			id:             system.ID.String(),
+			expectedSystem: system,
+			authClient:     authClient,
 		},
 		{
 			name:              "SystemGETByIdInvalidId",
 			expectedStatus:    http.StatusBadRequest,
 			id:                "invalid-id",
 			expectedErrorCode: apierrors.ParamsErr,
+			authClient:        authClient,
 		},
 		{
 			name:              "SystemGETByIdNotFound",
 			expectedStatus:    http.StatusNotFound,
 			id:                uuid.NewString(),
 			expectedErrorCode: "GET_SYSTEM_BY_ID",
+			authClient:        authClient,
+		},
+		{
+			name:           "Should get full detailed workflow on approver",
+			expectedStatus: http.StatusOK,
+			id:             systemUnderWorkflowFullDetails.ID.String(),
+			expectedSystem: systemUnderWorkflowFullDetails,
+			assertFn: func(t *testing.T, res cmkapi.System) {
+				t.Helper()
+
+				assert.NotNil(t, res.Metadata.Worfklow.ApproverGroups)
+				assert.NotNil(t, res.Metadata.Worfklow.ApprovalSummary)
+				assert.NotNil(t, res.Metadata.Worfklow.Decisions)
+				assert.NotNil(t, res.Metadata.Worfklow.AvailableTransitions)
+			},
+			authClient: authClient,
+		},
+		{
+			name:           "Should only have workflow user groups on non initiator/approver",
+			expectedStatus: http.StatusOK,
+			id:             systemUnderWorkflowApproversDetails.ID.String(),
+			expectedSystem: systemUnderWorkflowApproversDetails,
+			assertFn: func(t *testing.T, res cmkapi.System) {
+				t.Helper()
+
+				assert.NotNil(t, res.Metadata.Worfklow.ApproverGroups)
+				assert.Nil(t, res.Metadata.Worfklow.ApprovalSummary)
+				assert.Nil(t, res.Metadata.Worfklow.Decisions)
+				assert.Nil(t, res.Metadata.Worfklow.AvailableTransitions)
+			},
+			authClient: authClientAuditor,
 		},
 	}
 
@@ -573,7 +640,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 				Method:            http.MethodGet,
 				Endpoint:          "/systems/" + tt.id,
 				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				AdditionalContext: tt.authClient.GetClientMap(),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -581,8 +648,12 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 			if tt.expectedStatus == http.StatusOK {
 				response := testutils.GetJSONBody[cmkapi.System](t, w)
 
-				assert.Equal(t, &system.ID, response.ID)
-				assert.Equal(t, system.Identifier, *response.Identifier)
+				assert.Equal(t, &tt.expectedSystem.ID, response.ID)
+				assert.Equal(t, tt.expectedSystem.Identifier, *response.Identifier)
+
+				if tt.assertFn != nil {
+					tt.assertFn(t, response)
+				}
 			} else {
 				var response *cmkapi.ErrorMessage
 

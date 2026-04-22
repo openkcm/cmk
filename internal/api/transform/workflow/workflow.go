@@ -30,38 +30,46 @@ func WithDetailed(
 	approvalSummary *wfMechanism.ApprovalSummary,
 ) ToAPIOpt {
 	return func(w *cmkapi.Workflow) error {
-		decisions := make([]cmkapi.WorkflowApprover, 0, len(approvers))
-		for _, approver := range approvers {
-			apiApprover, err := ApproverToAPI(*approver)
-			if err != nil {
-				return err
+		if approvers != nil {
+			decisions := make([]cmkapi.WorkflowApprover, 0, len(approvers))
+			for _, approver := range approvers {
+				apiApprover, err := ApproverToAPI(*approver)
+				if err != nil {
+					return err
+				}
+				decisions = append(decisions, apiApprover)
 			}
-			decisions = append(decisions, apiApprover)
+			w.Decisions = &decisions
 		}
-		w.Decisions = &decisions
 
-		apiApproverGroups := make([]cmkapi.Group, 0, len(approverGroups))
-		for _, group := range approverGroups {
-			apiGroup, err := groupTransform.ToAPI(*group)
-			if err != nil {
-				return err
+		if approverGroups != nil {
+			apiApproverGroups := make([]cmkapi.Group, 0, len(approverGroups))
+			for _, group := range approverGroups {
+				apiGroup, err := groupTransform.ToAPI(*group)
+				if err != nil {
+					return err
+				}
+				apiApproverGroups = append(apiApproverGroups, *apiGroup)
 			}
-			apiApproverGroups = append(apiApproverGroups, *apiGroup)
+			w.ApproverGroups = &apiApproverGroups
 		}
-		w.ApproverGroups = &apiApproverGroups
 
-		availableTransitions := make([]cmkapi.WorkflowTransitionValue, 0, len(transitions))
-		for _, transition := range transitions {
-			apiTransition := cmkapi.WorkflowTransitionValue(transition)
-			availableTransitions = append(availableTransitions, apiTransition)
+		if transitions != nil {
+			availableTransitions := make([]cmkapi.WorkflowTransitionValue, 0, len(transitions))
+			for _, transition := range transitions {
+				apiTransition := cmkapi.WorkflowTransitionValue(transition)
+				availableTransitions = append(availableTransitions, apiTransition)
+			}
+			w.AvailableTransitions = &availableTransitions
 		}
-		w.AvailableTransitions = &availableTransitions
 
-		w.ApprovalSummary = &cmkapi.WorkflowApprovalSummary{
-			Approved:    ptr.PointTo(approvalSummary.Approvals),
-			Rejected:    ptr.PointTo(approvalSummary.Rejections),
-			Pending:     ptr.PointTo(approvalSummary.Pending),
-			TargetScore: ptr.PointTo(approvalSummary.TargetScore),
+		if approvalSummary != nil {
+			w.ApprovalSummary = &cmkapi.WorkflowApprovalSummary{
+				Approved:    ptr.PointTo(approvalSummary.Approvals),
+				Rejected:    ptr.PointTo(approvalSummary.Rejections),
+				Pending:     ptr.PointTo(approvalSummary.Pending),
+				TargetScore: ptr.PointTo(approvalSummary.TargetScore),
+			}
 		}
 
 		return nil
@@ -103,7 +111,8 @@ func ToAPI(w model.Workflow, opts ...ToAPIOpt) (*cmkapi.Workflow, error) {
 
 	// Apply optional transformations
 	for _, opt := range opts {
-		if err := opt(base); err != nil {
+		err := opt(base)
+		if err != nil {
 			return nil, err
 		}
 	}
