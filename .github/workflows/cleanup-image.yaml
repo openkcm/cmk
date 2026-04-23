@@ -1,0 +1,16 @@
+name: Nightly PR Image Cleanup
+
+permissions:
+  packages: write
+  contents: read
+
+on:
+  schedule:
+    # Run automatically at 2:00 AM UTC every day
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allows developers to trigger it manually via the Actions UI
+
+jobs:
+  cleanup-stale-images:
+    uses: openkcm/build/.github/workflows/cleanup-ghcr.yaml@main
+    secrets: inherit
