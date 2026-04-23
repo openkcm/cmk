@@ -370,6 +370,8 @@ func getAMQPOptions(cfg *config.EventProcessor) ([]amqp.ClientOption, error) {
 		}
 
 		opts = append(opts, amqp.WithBasicAuth(string(username), string(pwd)))
+	default:
+		// everything else is ignore intentionally
 	}
 
 	return opts, nil
