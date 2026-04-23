@@ -10,9 +10,7 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
-var (
-	ErrUnauthorized = errors.New("action on resource unauthorized")
-)
+var ErrUnauthorized = errors.New("action on resource unauthorized")
 
 type AuthzRepo struct {
 	repo        repo.Repo
@@ -21,7 +19,8 @@ type AuthzRepo struct {
 
 func NewAuthzRepo(
 	repo repo.Repo, authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
-		authz.RepoAction]) *AuthzRepo {
+		authz.RepoAction],
+) *AuthzRepo {
 	return &AuthzRepo{
 		repo:        repo,
 		authzLoader: authzLoader,
@@ -29,7 +28,8 @@ func NewAuthzRepo(
 }
 
 func (r *AuthzRepo) Create(
-	ctx context.Context, resource repo.Resource) error {
+	ctx context.Context, resource repo.Resource,
+) error {
 	err := r.checkResourceAuthZ(ctx, resource, authz.RepoActionCreate)
 	if err != nil {
 		return err
@@ -136,8 +136,26 @@ func (r *AuthzRepo) Transaction(ctx context.Context, txFunc repo.TransactionFunc
 	return r.repo.Transaction(ctx, txFunc)
 }
 
+func (r *AuthzRepo) GetFilterOptions(
+	ctx context.Context,
+	resource repo.Resource,
+	columns []repo.Filter,
+	query repo.Query,
+) error {
+	err := r.checkResourceAuthZ(ctx, resource, authz.RepoActionList)
+	if err != nil {
+		return err
+	}
+	err = r.checkQueryAuthZ(ctx, query, authz.RepoActionList)
+	if err != nil {
+		return err
+	}
+	return r.repo.GetFilterOptions(ctx, resource, columns, query)
+}
+
 func (r *AuthzRepo) checkResourceAuthZ(
-	ctx context.Context, resource repo.Resource, action authz.RepoAction) error {
+	ctx context.Context, resource repo.Resource, action authz.RepoAction,
+) error {
 	tenantID, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
 		return err
@@ -159,7 +177,8 @@ func (r *AuthzRepo) checkResourceAuthZ(
 }
 
 func (r *AuthzRepo) checkQueryAuthZ(
-	ctx context.Context, query repo.Query, action authz.RepoAction) error {
+	ctx context.Context, query repo.Query, action authz.RepoAction,
+) error {
 	tenantID, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
 		return err

@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -43,6 +44,7 @@ type System interface {
 		systemID uuid.UUID,
 		action cmkapi.SystemRecoveryActionBodyAction,
 	) error
+	GetFilters(ctx context.Context) (cmkapi.SystemFilters, error)
 }
 
 type SystemManager struct {
@@ -427,6 +429,31 @@ func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UU
 	}
 
 	return nil
+}
+
+func (m *SystemManager) GetFilters(ctx context.Context) (cmkapi.SystemFilters, error) {
+	var types []string
+	var regions []string
+	var keyConfigNames []string
+
+	query := repo.NewQuery().Join(repo.LeftJoin, repo.JoinCondition{
+		JoinTable: &model.KeyConfiguration{},
+		JoinField: repo.IDField,
+		Table:     &model.System{},
+		Field:     repo.KeyConfigIDField,
+	})
+	filters := []repo.Filter{
+		{Values: &types, Column: repo.TypeField},
+		{Values: &regions, Column: repo.RegionField},
+		{Values: &keyConfigNames, Column: fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), repo.NameField)},
+	}
+	err := m.repo.GetFilterOptions(ctx, model.System{}, filters, *query)
+
+	return cmkapi.SystemFilters{
+		KeyConfigurationName: &keyConfigNames,
+		Region:               &regions,
+		Type:                 &types,
+	}, err
 }
 
 func (m *SystemManager) UnmapSystemFromRegistry(ctx context.Context, system *model.System) error {

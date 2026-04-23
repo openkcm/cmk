@@ -32,6 +32,7 @@ const dbCtxKey ctxKey = "transactionRepo"
 
 var (
 	ErrUnsupportedOrderDirective = errors.New("unsupported order directive")
+	ErrFilterValuesEmpty         = errors.New("filter must have a values field to populate")
 )
 
 // ResourceRepository represents the repository for managing Resource data.
@@ -356,6 +357,67 @@ func (r *ResourceRepository) Set(ctx context.Context, resource repo.Resource) er
 			return nil
 		},
 	)
+}
+
+// GetFilterOptions populates the filters slice with the possible values for each column
+func (r *ResourceRepository) GetFilterOptions(
+	ctx context.Context,
+	resource repo.Resource,
+	filters []repo.Filter,
+	query repo.Query,
+) error {
+	if len(filters) == 0 {
+		return nil
+	}
+
+	return r.WithTenant(ctx, resource, func(tx *multitenancy.DB) error {
+		var joinClause strings.Builder
+		for _, join := range query.Joins {
+			joinClause.WriteString(" ")
+			joinClause.WriteString(join.JoinStatement())
+		}
+		joinStr := joinClause.String()
+
+		unionParts := make([]string, 0, len(filters))
+		columnMap := make(map[string]*[]string, len(filters))
+
+		for i := range filters {
+			if filters[i].Values == nil {
+				return ErrFilterValuesEmpty
+			}
+			columnMap[filters[i].Column] = filters[i].Values
+
+			selectPart := fmt.Sprintf(
+				"SELECT DISTINCT '%s' AS column_name, %s::text AS value FROM %s%s WHERE %s IS NOT NULL",
+				filters[i].Column,
+				filters[i].Column,
+				resource.TableName(),
+				joinStr,
+				filters[i].Column,
+			)
+			unionParts = append(unionParts, selectPart)
+		}
+
+		unionQuery := strings.Join(unionParts, " UNION ALL ")
+
+		var results []struct {
+			ColumnName string `gorm:"column:column_name"`
+			Value      string `gorm:"column:value"`
+		}
+
+		if err := tx.Raw(unionQuery).Scan(&results).Error; err != nil {
+			return errs.Wrap(repo.ErrGetResource, err)
+		}
+
+		for _, row := range results {
+			val, ok := columnMap[row.ColumnName]
+			if ok {
+				*val = append(*val, row.Value)
+			}
+		}
+
+		return nil
+	})
 }
 
 // Transaction wraps a function inside a database transaction.
