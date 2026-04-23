@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	_ "github.com/lib/pq"
+	_ "github.com/bartventer/gorm-multitenancy/postgres/v8"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	slogctx "github.com/veqryn/slog-context"
