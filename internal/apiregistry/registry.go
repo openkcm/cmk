@@ -18,7 +18,6 @@ import (
 	oidcmappingwrapper "github.com/openkcm/cmk/internal/apiregistry/wrapper/oidcmapping"
 	systemwrapper "github.com/openkcm/cmk/internal/apiregistry/wrapper/system"
 	tenantwrapper "github.com/openkcm/cmk/internal/apiregistry/wrapper/tenant"
-	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
 )
@@ -48,32 +47,6 @@ type registryStruct struct {
 }
 
 var _ Registry = (*registryStruct)(nil)
-
-func NewDeprecated(clientFactory clients.Factory) Registry {
-	registryService := clientFactory.Registry()
-	sessionManagerService := clientFactory.SessionManager()
-
-	return &registryStruct{
-		tenant:      tenantwrapper.NewV1(registryService.Tenant()),
-		system:      systemwrapper.NewV1(registryService.System()),
-		mapping:     mappingwrapper.NewV1(registryService.Mapping()),
-		oidcMapping: oidcmappingwrapper.NewV1(sessionManagerService.OIDCMapping()),
-	}
-}
-
-func NewRegistryDeprecated(
-	tenantClient tenantapi.RegistryTenant,
-	systemClient systemapi.RegistrySystem,
-	mappingClient mappingapi.RegistryMapping,
-	oidcMappingClient oidcmappingapi.SessionManagerOIDCMapping,
-) Registry {
-	return &registryStruct{
-		tenant:      tenantClient,
-		system:      systemClient,
-		mapping:     mappingClient,
-		oidcMapping: oidcMappingClient,
-	}
-}
 
 func New(svs *config.Services) (Registry, error) {
 	var tenant tenantapi.RegistryTenant
