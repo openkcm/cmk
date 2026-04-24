@@ -2,6 +2,9 @@ package testutils
 
 import (
 	"context"
+	"crypto/rsa"
+	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -171,4 +174,109 @@ func getClientData(identifier string, groupNames []string) *auth.ClientData {
 		Identifier: identifier,
 		Groups:     groupNames,
 	}
+}
+
+// NewSignedClientDataHeaders generates HTTP headers with signed client data for testing
+// This creates the x-client-data and x-client-data-signature headers that ClientDataMiddleware expects
+// Uses RS256 algorithm (RSA + SHA-256) for signing
+func NewSignedClientDataHeaders(tb testing.TB, clientData map[string]any, privateKey *rsa.PrivateKey, keyID int) http.Header {
+	tb.Helper()
+
+	// Convert map to auth.ClientData struct
+	cd := &auth.ClientData{
+		Identifier:         getString(clientData, "identifier"),
+		Type:               getString(clientData, "type"),
+		Email:              getString(clientData, "email"),
+		Region:             getString(clientData, "region"),
+		Groups:             getStringSlice(clientData, "groups"),
+		KeyID:              strconv.Itoa(keyID),
+		SignatureAlgorithm: auth.SignatureAlgorithmRS256,
+		AuthContext:        getStringMap(clientData, "authContext"),
+	}
+
+	// Generate signed headers using the auth package
+	clientDataHeader, signatureHeader, err := cd.Encode(privateKey)
+	if err != nil {
+		tb.Fatalf("Failed to encode and sign client data: %v", err)
+	}
+
+	// Create HTTP headers
+	headers := http.Header{}
+	headers.Set(auth.HeaderClientData, clientDataHeader)
+	headers.Set(auth.HeaderClientDataSignature, signatureHeader)
+
+	return headers
+}
+
+// NewSignedClientDataHeadersFromStruct generates HTTP headers from an auth.ClientData struct
+// This is a convenience function for tests that already have ClientData objects
+func NewSignedClientDataHeadersFromStruct(tb testing.TB, clientData *auth.ClientData, privateKey *rsa.PrivateKey, keyID int) http.Header {
+	tb.Helper()
+
+	// Set required fields for signing
+	clientData.KeyID = strconv.Itoa(keyID)
+	clientData.SignatureAlgorithm = auth.SignatureAlgorithmRS256
+
+	// Generate signed headers using the auth package
+	clientDataHeader, signatureHeader, err := clientData.Encode(privateKey)
+	if err != nil {
+		tb.Fatalf("Failed to encode and sign client data: %v", err)
+	}
+
+	// Create HTTP headers
+	headers := http.Header{}
+	headers.Set(auth.HeaderClientData, clientDataHeader)
+	headers.Set(auth.HeaderClientDataSignature, signatureHeader)
+
+	return headers
+}
+
+// Helper to get string from map, returns empty string if not found or wrong type
+func getString(m map[string]any, key string) string {
+	if val, ok := m[key]; ok {
+		if strVal, ok := val.(string); ok {
+			return strVal
+		}
+	}
+	return ""
+}
+
+// Helper to get string slice from map, returns empty slice if not found or wrong type
+func getStringSlice(m map[string]any, key string) []string {
+	if val, ok := m[key]; ok {
+		if sliceVal, ok := val.([]string); ok {
+			return sliceVal
+		}
+		// Handle []interface{} case
+		if ifaceSlice, ok := val.([]any); ok {
+			result := make([]string, 0, len(ifaceSlice))
+			for _, item := range ifaceSlice {
+				if strVal, ok := item.(string); ok {
+					result = append(result, strVal)
+				}
+			}
+			return result
+		}
+	}
+	return []string{}
+}
+
+// Helper to get string map from map, returns empty map if not found or wrong type
+func getStringMap(m map[string]any, key string) map[string]string {
+	if val, ok := m[key]; ok {
+		if mapVal, ok := val.(map[string]string); ok {
+			return mapVal
+		}
+		// Handle map[string]interface{} case
+		if ifaceMap, ok := val.(map[string]any); ok {
+			result := make(map[string]string)
+			for k, v := range ifaceMap {
+				if strVal, ok := v.(string); ok {
+					result[k] = strVal
+				}
+			}
+			return result
+		}
+	}
+	return map[string]string{}
 }
