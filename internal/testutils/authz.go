@@ -2,11 +2,16 @@ package testutils
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 
+	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -171,4 +176,105 @@ func getClientData(identifier string, groupNames []string) *auth.ClientData {
 		Identifier: identifier,
 		Groups:     groupNames,
 	}
+}
+
+// AuthzTestEndpoint defines an API endpoint to test for authorization failures.
+type AuthzTestEndpoint struct {
+	// Method is the HTTP method (e.g., http.MethodGet)
+	Method string
+	// Endpoint is the URL path with any required path params filled in
+	// (e.g., "/keys?keyConfigurationID=xxx")
+	Endpoint string
+	// Body is an optional JSON request body for POST/PATCH/PUT requests
+	Body string
+}
+
+// WithBody converts a JSON string to an io.Reader for use as a request body.
+// Returns nil if the body is empty.
+func WithBody(tb testing.TB, body string) io.Reader {
+	tb.Helper()
+
+	if body == "" {
+		return nil
+	}
+
+	return strings.NewReader(body)
+}
+
+// allRoles returns all defined roles.
+func allRoles() []constants.Role {
+	return []constants.Role{
+		constants.KeyAdminRole,
+		constants.TenantAdminRole,
+		constants.TenantAuditorRole,
+	}
+}
+
+// RoleAuthClientOpt maps a role to the corresponding AuthClientOpt.
+func RoleAuthClientOpt(role constants.Role) AuthClientOpt {
+	switch role {
+	case constants.KeyAdminRole:
+		return WithKeyAdminRole()
+	case constants.TenantAdminRole:
+		return WithTenantAdminRole()
+	case constants.TenantAuditorRole:
+		return WithAuditorRole()
+	default:
+		panic(fmt.Sprintf("unsupported role: %s", role))
+	}
+}
+
+// getAllowedRoles returns the set of roles that have the given
+// resource type + action based on the API policy data.
+func getAllowedRoles(
+	resourceType authz.APIResourceTypeName,
+	action authz.APIAction,
+) map[constants.Role]struct{} {
+	allowed := make(map[constants.Role]struct{})
+
+	for _, policy := range authz.PolicyData.Policies {
+		for _, rt := range policy.ResourceTypes {
+			if rt.ID != resourceType {
+				continue
+			}
+
+			if slices.Contains(rt.Actions, action) {
+				allowed[policy.Role] = struct{}{}
+			}
+		}
+	}
+
+	return allowed
+}
+
+// GetBlockedRoles returns roles that do NOT have the given
+// resource type + action.
+func GetBlockedRoles(
+	resourceType authz.APIResourceTypeName,
+	action authz.APIAction,
+) []constants.Role {
+	allowed := getAllowedRoles(resourceType, action)
+	var blocked []constants.Role
+
+	for _, role := range allRoles() {
+		if _, ok := allowed[role]; !ok {
+			blocked = append(blocked, role)
+		}
+	}
+
+	return blocked
+}
+
+// CleanPath returns a sanitized version of the path for use in test names.
+func CleanPath(path string) string {
+	path = strings.ReplaceAll(path, "/", "_")
+	path = strings.ReplaceAll(path, "?", "_")
+	path = strings.ReplaceAll(path, "&", "_")
+	path = strings.ReplaceAll(path, "=", "_")
+
+	if len(path) > 0 && path[0] == '_' {
+		path = path[1:]
+	}
+
+	return path
 }
