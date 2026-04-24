@@ -605,6 +605,9 @@ config:
       source: cmk.emea.tenants
     secretRef:
       type: insecure
+      rootCert: ""
+      cert: ""
+      key: ""
 
   scheduler:
     taskQueue:
@@ -727,8 +730,6 @@ config:
             headerFields:
               x-app_tid: app_tid
               x-client_id: client_id
-  activePlugins:
-    - identity_management
   provisioning:
     initKeystoreConfig:
       enabled: true

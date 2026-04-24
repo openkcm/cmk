@@ -17,6 +17,8 @@ var (
 )
 
 // FromDBConfig converts `config.Database` data to a DSN and returns it.
+// Note: PreferSimpleProtocol is enabled to disable prepared statement caching, which prevents
+// "cached plan must not change result type" errors https://pkg.go.dev/github.com/jackc/pgx/v5#section-readme
 func FromDBConfig(conf config.Database) (string, error) {
 	host, err := commoncfg.LoadValueFromSourceRef(conf.Host)
 	if err != nil {
@@ -33,7 +35,7 @@ func FromDBConfig(conf config.Database) (string, error) {
 		return "", errs.Wrap(ErrLoadingDatabasePassword, err)
 	}
 
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s default_query_exec_mode=simple_protocol sslmode=%s",
 		host, user, string(password), conf.Name, conf.Port, conf.Parameters.SSL.Mode)
 
 	if conf.Parameters.SSL.RootCert != "" {

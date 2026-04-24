@@ -229,21 +229,8 @@ Util function for generating the image URL based on the provided options.
 {{- end }}
 
 {{/*
-Active plugins
+Plugins
 */}}
 {{- define "cmk.plugins" -}}
-{{- $ := . }}
-{{- $plugins := list -}}
-{{- range .plugins -}}
-{{- $plugin := . -}}
-{{- range .tags -}}
-{{- if has . $.activePlugins -}}
-
-{{- $plugins = append $plugins $plugin -}}
-{{- break -}}
-
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- toYaml $plugins -}}
+{{- toYaml .plugins -}}
 {{- end -}}
