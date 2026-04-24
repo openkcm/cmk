@@ -2,20 +2,14 @@ package cmk
 
 import (
 	"context"
-	"encoding/json"
-	"log/slog"
 	"slices"
-
-	"github.com/google/uuid"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	wfTransform "github.com/openkcm/cmk/internal/api/transform/workflow"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	"github.com/openkcm/cmk/utils/odata"
@@ -56,7 +50,7 @@ func (c *APIController) CheckWorkflow(
 	return response, nil
 }
 
-var getWorkflowsSchema = odata.FilterSchema{
+var GetWorkflowsSchema = odata.FilterSchema{
 	Entries: []odata.FilterSchemaEntry{
 		{
 			FilterName: "artifactId",
@@ -113,7 +107,7 @@ func (c *APIController) GetWorkflows(
 	ctx context.Context,
 	request cmkapi.GetWorkflowsRequestObject,
 ) (cmkapi.GetWorkflowsResponseObject, error) {
-	odataQueryMapper := odata.NewQueryOdataMapper(getWorkflowsSchema)
+	odataQueryMapper := odata.NewQueryOdataMapper(GetWorkflowsSchema)
 
 	err := odataQueryMapper.ParseFilter(request.Params.Filter)
 	if err != nil {
@@ -197,7 +191,7 @@ func (c *APIController) GetWorkflowByID(ctx context.Context,
 	}
 
 	// Expand approver groups
-	approverGroups, err := c.getApproverGroups(ctx, workflow)
+	approverGroups, err := c.Manager.Workflow.GetWorkflowApproverGroups(ctx, workflow)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +208,10 @@ func (c *APIController) GetWorkflowByID(ctx context.Context,
 		return nil, err
 	}
 
-	apiWorkflow, err := wfTransform.ToAPIDetailed(*workflow, approvers, approverGroups, transitions, approvalSummary)
+	apiWorkflow, err := wfTransform.ToAPI(
+		*workflow,
+		wfTransform.WithDetailed(approvers, approverGroups, transitions, approvalSummary),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -243,40 +240,4 @@ func (c *APIController) TransitionWorkflow(
 	}
 
 	return cmkapi.TransitionWorkflow200JSONResponse(*apiWorkflow), nil
-}
-
-func (c *APIController) getApproverGroups(
-	ctx context.Context,
-	workflow *model.Workflow,
-) ([]*model.Group, error) {
-	var IDs []uuid.UUID
-
-	if workflow.ApproverGroupIDs == nil {
-		return []*model.Group{}, nil
-	}
-
-	err := json.Unmarshal(workflow.ApproverGroupIDs, &IDs)
-	if err != nil {
-		return nil, err
-	}
-
-	groups := make([]*model.Group, 0, len(IDs))
-	for _, id := range IDs {
-		group, err := c.Manager.Group.GetGroupByID(ctx, id)
-		if err != nil {
-			log.Warn(ctx, "failed to expand workflow approver group", slog.Any("error", err))
-
-			// Return a placeholder group if the group cannot be found. We can still make use of the ID.
-			groups = append(groups, &model.Group{
-				ID:   id,
-				Name: "NOT_AVAILABLE",
-				Role: constants.KeyAdminRole,
-			})
-			continue
-		}
-
-		groups = append(groups, group)
-	}
-
-	return groups, nil
 }
