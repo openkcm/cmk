@@ -135,7 +135,7 @@ func (c *APIController) GetWorkflows(
 	values := make([]cmkapi.Workflow, len(workflows))
 
 	for i, dbWorkflow := range workflows {
-		apiWorkflow, err := wfTransform.ToAPI(*dbWorkflow)
+		apiWorkflow, err := wfTransform.ToAPI(*dbWorkflow, false, nil) // No eligibility check for list view
 		if err != nil {
 			return nil, errs.Wrap(apierrors.ErrGetWorkflow, err)
 		}
@@ -173,7 +173,7 @@ func (c *APIController) CreateWorkflow(ctx context.Context,
 		return nil, errs.Wrap(apierrors.ErrCreateWorkflow, err)
 	}
 
-	returnAPIWorkflow, err := wfTransform.ToAPI(*workflow)
+	returnAPIWorkflow, err := wfTransform.ToAPI(*workflow, false, nil) // No eligibility check for create response
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowToAPI, err)
 	}
@@ -184,9 +184,22 @@ func (c *APIController) CreateWorkflow(ctx context.Context,
 func (c *APIController) GetWorkflowByID(ctx context.Context,
 	request cmkapi.GetWorkflowByIDRequestObject,
 ) (cmkapi.GetWorkflowByIDResponseObject, error) {
-	workflow, err := c.Manager.Workflow.GetWorkflowByID(ctx, request.WorkflowID)
+	workflow, insufficientApprovers, err := c.Manager.Workflow.GetWorkflowByID(ctx, request.WorkflowID)
+
+	// Handle eligibility check errors gracefully - don't fail the entire request
+	// Instead, pass the error to transform layer to show as ERROR in additionalInfo
+	var eligibilityErr error
 	if err != nil {
-		return nil, err
+		// Check if this is an eligibility check error (SCIM/IAM failure)
+		if errs.IsAnyError(err, manager.ErrCheckApproverEligibility) {
+			// SCIM/IAM failure - show error to user
+			// This includes both: plugin not configured (when workflow needs it) and real SCIM failures
+			eligibilityErr = err
+			insufficientApprovers = false // Can't determine, so assume not insufficient
+		} else {
+			// Other errors should fail the request
+			return nil, err
+		}
 	}
 
 	pagination := repo.Pagination{}
@@ -214,7 +227,10 @@ func (c *APIController) GetWorkflowByID(ctx context.Context,
 		return nil, err
 	}
 
-	apiWorkflow, err := wfTransform.ToAPIDetailed(*workflow, approvers, approverGroups, transitions, approvalSummary)
+	apiWorkflow, err := wfTransform.ToAPIDetailed(
+		*workflow,
+		approvers,
+		approverGroups, transitions, approvalSummary, insufficientApprovers, eligibilityErr)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +253,7 @@ func (c *APIController) TransitionWorkflow(
 		return nil, errs.Wrap(apierrors.ErrWorkflowCannotTransition, err)
 	}
 
-	apiWorkflow, err := wfTransform.ToAPI(*workflow)
+	apiWorkflow, err := wfTransform.ToAPI(*workflow, false, nil) // No eligibility check for transition response
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowToAPI, err)
 	}

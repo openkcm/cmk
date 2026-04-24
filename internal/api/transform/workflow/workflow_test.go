@@ -3,12 +3,14 @@ package workflow_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/workflow"
@@ -17,6 +19,8 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
+
+var errSCIMUnavailable = errors.New("SCIM service unavailable")
 
 func TestWorkflow_ToAPI(t *testing.T) {
 	workflowMutator := testutils.NewMutator(func() model.Workflow {
@@ -85,7 +89,7 @@ func TestWorkflow_ToAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			apiWorkflow, err := workflow.ToAPI(tt.dbWorkflow)
+			apiWorkflow, err := workflow.ToAPI(tt.dbWorkflow, false, nil)
 
 			if tt.errorExpected {
 				assert.Error(t, err)
@@ -304,6 +308,90 @@ func TestWorkflow_ApproverToAPI(t *testing.T) {
 			assert.Equal(t, tt.input.UserID, apiApprover.Id)
 			assert.Equal(t, tt.input.UserName, *apiApprover.Name)
 			assert.Equal(t, tt.expected, apiApprover.Decision)
+		})
+	}
+}
+
+func TestWorkflow_ToAPI_EligibilityMetadata(t *testing.T) {
+	workflowMutator := testutils.NewMutator(func() model.Workflow {
+		return model.Workflow{
+			ID:           uuid.New(),
+			InitiatorID:  uuid.NewString(),
+			State:        "WAIT_APPROVAL",
+			ActionType:   "LINK",
+			ArtifactType: "SYSTEM",
+			ArtifactID:   uuid.New(),
+			Parameters:   "ENABLED",
+		}
+	})
+
+	tests := []struct {
+		name                  string
+		dbWorkflow            model.Workflow
+		insufficientApprovers bool
+		eligibilityErr        error
+		expectAdditionalInfo  bool
+		expectedCode          *cmkapi.WorkflowAdditionalInfoCode
+		expectedSeverity      *cmkapi.WorkflowAdditionalInfoSeverity
+		expectedMessage       string
+	}{
+		{
+			name:                  "no eligibility issues",
+			dbWorkflow:            workflowMutator(),
+			insufficientApprovers: false,
+			eligibilityErr:        nil,
+			expectAdditionalInfo:  false,
+		},
+		{
+			name:                  "insufficient approvers - warning",
+			dbWorkflow:            workflowMutator(),
+			insufficientApprovers: true,
+			eligibilityErr:        nil,
+			expectAdditionalInfo:  true,
+			expectedCode:          ptr.PointTo(cmkapi.WorkflowAdditionalInfoCodeINSUFFICIENTAPPROVERS),
+			expectedSeverity:      ptr.PointTo(cmkapi.WorkflowAdditionalInfoSeverityWARNING),
+			expectedMessage:       workflow.AdditionalInfoMessageInsufficientApprovers,
+		},
+		{
+			name:                  "eligibility check failed - error",
+			dbWorkflow:            workflowMutator(),
+			insufficientApprovers: false,
+			eligibilityErr:        errSCIMUnavailable,
+			expectAdditionalInfo:  true,
+			expectedCode:          ptr.PointTo(cmkapi.WorkflowAdditionalInfoCodeAPPROVERELIGIBILITYCHECKFAILED),
+			expectedSeverity:      ptr.PointTo(cmkapi.WorkflowAdditionalInfoSeverityERROR),
+			expectedMessage:       workflow.AdditionalInfoMessageEligibilityCheckError,
+		},
+		{
+			name:                  "both error and insufficient - error takes precedence",
+			dbWorkflow:            workflowMutator(),
+			insufficientApprovers: true,
+			eligibilityErr:        errSCIMUnavailable,
+			expectAdditionalInfo:  true,
+			expectedCode:          ptr.PointTo(cmkapi.WorkflowAdditionalInfoCodeAPPROVERELIGIBILITYCHECKFAILED),
+			expectedSeverity:      ptr.PointTo(cmkapi.WorkflowAdditionalInfoSeverityERROR),
+			expectedMessage:       workflow.AdditionalInfoMessageEligibilityCheckError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			apiWorkflow, err := workflow.ToAPI(tt.dbWorkflow, tt.insufficientApprovers, tt.eligibilityErr)
+			require.NoError(t, err)
+			require.NotNil(t, apiWorkflow)
+			require.NotNil(t, apiWorkflow.Metadata)
+
+			if tt.expectAdditionalInfo {
+				require.NotNil(t, apiWorkflow.Metadata.AdditionalInfo)
+				require.Len(t, *apiWorkflow.Metadata.AdditionalInfo, 1)
+
+				additionalInfo := (*apiWorkflow.Metadata.AdditionalInfo)[0]
+				assert.Equal(t, *tt.expectedCode, additionalInfo.Code)
+				assert.Equal(t, *tt.expectedSeverity, additionalInfo.Severity)
+				assert.Equal(t, tt.expectedMessage, additionalInfo.Message)
+			} else {
+				assert.Nil(t, apiWorkflow.Metadata.AdditionalInfo)
+			}
 		})
 	}
 }

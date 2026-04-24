@@ -55,7 +55,7 @@ type Workflow interface {
 	CheckWorkflow(ctx context.Context, workflow *model.Workflow) (WorkflowStatus, error)
 	GetWorkflows(ctx context.Context, params repo.QueryMapper) ([]*model.Workflow, int, error)
 	CreateWorkflow(ctx context.Context, workflow *model.Workflow) (*model.Workflow, error)
-	GetWorkflowByID(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, error)
+	GetWorkflowByID(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, bool, error)
 	ListWorkflowApprovers(
 		ctx context.Context,
 		id uuid.UUID,
@@ -347,7 +347,7 @@ func (w *WorkflowManager) CreateWorkflow(
 	return workflow, nil
 }
 
-func (w *WorkflowManager) GetWorkflowByID(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, error) {
+func (w *WorkflowManager) GetWorkflowByID(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, bool, error) {
 	query := repo.NewQuery()
 	ck := repo.NewCompositeKey()
 	ck = ck.Where(repo.IDField, workflowID)
@@ -355,14 +355,23 @@ func (w *WorkflowManager) GetWorkflowByID(ctx context.Context, workflowID uuid.U
 
 	workflows, _, err := w.getWorkflows(ctx, repo.Pagination{}, query)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if len(workflows) == 0 {
-		return nil, errs.Wrap(ErrWorkflowNotAllowed, err)
+		return nil, false, errs.Wrap(ErrWorkflowNotAllowed, err)
 	}
 
-	return workflows[0], nil
+	workflow := workflows[0]
+
+	// Check if insufficient approvers (queries SCIM)
+	insufficientApprovers, err := w.hasInsufficientApprovers(ctx, workflow)
+	if err != nil {
+		// Return error so caller can decide how to handle SCIM failures
+		return workflow, false, err
+	}
+
+	return workflow, insufficientApprovers, nil
 }
 
 // ListWorkflowApprovers retrieves a paginated list of approvers for a given workflow ID.
@@ -373,7 +382,7 @@ func (w *WorkflowManager) ListWorkflowApprovers(
 	decisionMade bool,
 	pagination repo.Pagination,
 ) ([]*model.WorkflowApprover, int, error) {
-	_, err := w.GetWorkflowByID(ctx, id)
+	_, _, err := w.GetWorkflowByID(ctx, id)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -576,6 +585,40 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// hasInsufficientApprovers checks if workflow has insufficient eligible approvers.
+// Returns true if there are not enough eligible approvers to meet the threshold.
+// Returns an error if eligibility checks fail (e.g., SCIM unavailable).
+func (w *WorkflowManager) hasInsufficientApprovers(
+	ctx context.Context,
+	workflow *model.Workflow,
+) (bool, error) {
+	// Only check for workflows in active states
+	if workflow.State != wf.StateWaitApproval.String() {
+		return false, nil
+	}
+
+	// Create lifecycle to access business logic (empty userID since we're just checking eligibility)
+	lifecycle, err := w.getWorkflowLifecycle(ctx, workflow, "")
+	if err != nil {
+		return false, errs.Wrap(ErrCheckApproverEligibility, err)
+	}
+
+	// Get all approvers from DB
+	allApprovers, err := lifecycle.GetAllApprovers(ctx)
+	if err != nil {
+		return false, errs.Wrap(ErrCheckApproverEligibility, err)
+	}
+
+	// Query SCIM for eligible approvers
+	eligibleApprovers, err := w.getEligibleApproversFromIAM(ctx, workflow, allApprovers)
+	if err != nil {
+		return false, errs.Wrap(ErrCheckApproverEligibility, err)
+	}
+
+	// Check insufficient approvers (business logic)
+	return lifecycle.CheckInsufficientApprovers(eligibleApprovers), nil
 }
 
 func isInvalidAction(err error) bool {
@@ -870,6 +913,8 @@ func (w *WorkflowManager) checkOngoingWorkflowForArtifact(
 // decision and applies the transition to the wf.
 // This is wrapped in a transaction to ensure that DB state is
 // consistent in case of errors.
+//
+//nolint:cyclop
 func (w *WorkflowManager) applyTransition(
 	ctx context.Context,
 	userID string,
@@ -885,6 +930,14 @@ func (w *WorkflowManager) applyTransition(
 		validateErr := workflowLifecycle.ValidateActor(ctx, transition)
 		if validateErr != nil {
 			return errs.Wrap(ErrValidateActor, validateErr)
+		}
+
+		// For approve/reject transitions, check if approver is still eligible
+		if transition == wf.TransitionApprove || transition == wf.TransitionReject {
+			eligibilityErr := w.checkApproverEligibility(ctx, workflow, userID)
+			if eligibilityErr != nil {
+				return eligibilityErr
+			}
 		}
 
 		var txErr error
@@ -1152,6 +1205,168 @@ func (w *WorkflowManager) getApproversAndGroupsFromKeyConfigs(
 	}
 
 	return approvers, groups, nil
+}
+
+// getEligibleApproversFromIAM queries identity management to get current group members
+// and filters the approver list to only those still in admin groups.
+// Returns ErrNotConfigured if identity management plugin is not available.
+func (w *WorkflowManager) getEligibleApproversFromIAM(
+	ctx context.Context,
+	workflow *model.Workflow,
+	allApprovers []*model.WorkflowApprover,
+) ([]*model.WorkflowApprover, error) {
+	// If no group IDs stored, return all approvers (no filtering)
+	if workflow.ApproverGroupIDs == nil {
+		return allApprovers, nil
+	}
+
+	// Parse ApproverGroupIDs from workflow
+	var groupIDs []uuid.UUID
+	if err := json.Unmarshal(workflow.ApproverGroupIDs, &groupIDs); err != nil {
+		return nil, errs.Wrap(ErrCheckApproverEligibility, err)
+	}
+
+	// Get identity management plugin and auth context
+	idm, err := w.groupManager.GetIdentityManagementPlugin()
+	if err != nil {
+		// Return the error so caller can decide how to handle plugin unavailability
+		return nil, err
+	}
+
+	authCtx, err := cmkContext.ExtractClientDataAuthContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build set of current eligible user IDs by querying all groups
+	eligibleUserIDs, err := w.queryGroupMembersFromIAM(ctx, idm, authCtx, groupIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter approvers to only those still in groups
+	eligible := make([]*model.WorkflowApprover, 0, len(allApprovers))
+	for _, approver := range allApprovers {
+		if eligibleUserIDs[approver.UserID] {
+			eligible = append(eligible, approver)
+		}
+	}
+
+	return eligible, nil
+}
+
+// queryGroupMembersFromIAM queries IAM to get all current members across multiple groups.
+// Returns a set of user IDs currently in any of the groups. Deleted/non-existent groups
+// are skipped (treated as having zero members). Returns error only if IAM queries fail.
+func (w *WorkflowManager) queryGroupMembersFromIAM(
+	ctx context.Context,
+	idm identitymanagement.IdentityManagement,
+	authCtx map[string]string,
+	groupIDs []uuid.UUID,
+) (map[string]bool, error) {
+	eligibleUserIDs := make(map[string]bool)
+
+	for _, groupID := range groupIDs {
+		// Get group from DB
+		group, err := w.groupManager.GetGroupByID(ctx, groupID)
+		if err != nil {
+			// If group doesn't exist in DB (deleted), skip it - treat as having zero members
+			// This allows workflows to continue even when admin groups are deleted
+			if errs.IsAnyError(err, repo.ErrNotFound, ErrGetGroups) {
+				log.Warn(ctx, "skipping deleted/non-existent group in eligibility check",
+					slog.String("groupID", groupID.String()))
+				continue
+			}
+			return nil, errs.Wrap(ErrCheckApproverEligibility, err)
+		}
+
+		// Get group from IAM
+		idmGroup, err := idm.GetGroup(ctx, &identitymanagement.GetGroupRequest{
+			GroupName:   group.IAMIdentifier,
+			AuthContext: identitymanagement.AuthContext{Data: authCtx},
+		})
+		if err != nil {
+			return nil, errs.Wrap(ErrCheckApproverEligibility, err)
+		}
+
+		// List users in group
+		groupUsers, err := idm.ListGroupUsers(ctx, &identitymanagement.ListGroupUsersRequest{
+			GroupID:     idmGroup.Group.ID,
+			AuthContext: identitymanagement.AuthContext{Data: authCtx},
+		})
+		if err != nil {
+			return nil, errs.Wrap(ErrCheckApproverEligibility, err)
+		}
+
+		// Add all user IDs to eligible set
+		for _, user := range groupUsers.Users {
+			eligibleUserIDs[user.ID] = true
+		}
+	}
+
+	return eligibleUserIDs, nil
+}
+
+// checkApproverEligibility verifies that an approver is still eligible to vote.
+// Returns ErrApproverNoLongerEligible if the approver has been removed from their
+// admin group and has not yet voted.
+func (w *WorkflowManager) checkApproverEligibility(
+	ctx context.Context,
+	workflow *model.Workflow,
+	userID string,
+) error {
+	// First check if approver already voted
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.UserField, repo.IDField), userID).
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), workflow.ID)
+
+	var approver model.WorkflowApprover
+	_, err := w.repo.First(ctx, &approver, *repo.NewQuery().
+		Where(repo.NewCompositeKeyGroup(ck)))
+	if err != nil {
+		return errs.Wrap(ErrCheckApproverEligibility, err)
+	}
+
+	// If already voted, their vote counts regardless of current group membership
+	if approver.Approved.Valid {
+		return nil
+	}
+
+	// Parse approver group IDs
+	if workflow.ApproverGroupIDs == nil {
+		return nil // No group restrictions
+	}
+
+	var groupIDs []uuid.UUID
+	err = json.Unmarshal(workflow.ApproverGroupIDs, &groupIDs)
+	if err != nil {
+		return errs.Wrap(ErrCheckApproverEligibility, err)
+	}
+
+	// Get identity management plugin
+	idm, err := w.groupManager.GetIdentityManagementPlugin()
+	if err != nil {
+		return errs.Wrap(ErrCheckApproverEligibility, err)
+	}
+
+	// Get auth context
+	authCtx, err := cmkContext.ExtractClientDataAuthContext(ctx)
+	if err != nil {
+		return errs.Wrap(ErrCheckApproverEligibility, err)
+	}
+
+	// Check if user is still in any of the groups
+	eligibleUserIDs, err := w.queryGroupMembersFromIAM(ctx, idm, authCtx, groupIDs)
+	if err != nil {
+		return err
+	}
+
+	// If user is not in eligible set, they can't vote
+	if !eligibleUserIDs[userID] {
+		return wf.NewApproverNoLongerEligibleError(userID)
+	}
+
+	return nil
 }
 
 func (w *WorkflowManager) createAutoAssignApproversAsyncTask(

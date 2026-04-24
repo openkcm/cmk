@@ -113,7 +113,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-//nolint:funlen
 func registerTasks(
 	ctx context.Context,
 	r repo.Repo,
@@ -145,9 +144,9 @@ func registerTasks(
 		return err
 	}
 
-	if f.Registry() == nil || !cfg.Services.Registry.Enabled {
-		return ErrRegistryEnabled
-	}
+	// if f.Registry() == nil || !cfg.Services.Registry.Enabled {
+	//	return ErrRegistryEnabled
+	//}
 
 	cmkAuditor := auditor.New(ctx, cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)

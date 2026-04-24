@@ -19,8 +19,18 @@ import (
 
 var ErrExpiryGreaterThanMaximum = errors.New("expiry exceeds maximum")
 
+const (
+	// AdditionalInfoMessageInsufficientApprovers is the message for the insufficient approvers warning
+	AdditionalInfoMessageInsufficientApprovers = "The number of eligible approvers is currently" +
+		" insufficient to meet the minimum approval criteria."
+	// AdditionalInfoMessageEligibilityCheckError is the message when eligibility verification fails
+	AdditionalInfoMessageEligibilityCheckError = "Unable to verify approver eligibility. " +
+		"The approval system may be temporarily unavailable. Please try again later or contact support."
+)
+
 // ToAPI converts a workflow model to an API workflow presentation.
-func ToAPI(w model.Workflow) (*cmkapi.Workflow, error) {
+// eligibilityErr should be passed if there was an error checking approver eligibility.
+func ToAPI(w model.Workflow, insufficientApprovers bool, eligibilityErr error) (*cmkapi.Workflow, error) {
 	err := sanitise.Sanitize(&w)
 	if err != nil {
 		return nil, err
@@ -30,6 +40,35 @@ func ToAPI(w model.Workflow) (*cmkapi.Workflow, error) {
 	if w.ParametersResourceType != nil {
 		resourceType := cmkapi.WorkflowParametersResourceType(strings.ToUpper(*w.ParametersResourceType))
 		parametersResourceType = &resourceType
+	}
+
+	// Build metadata with additional info
+	metadata := &cmkapi.WorkflowMetadata{
+		CreatedAt: ptr.PointTo(w.CreatedAt),
+		UpdatedAt: ptr.PointTo(w.UpdatedAt),
+	}
+
+	// Generate additional info from eligibility status (Transform layer responsibility)
+	var apiInfoItems []cmkapi.WorkflowAdditionalInfo
+
+	// If eligibility check failed, show error (takes precedence over warning)
+	if eligibilityErr != nil {
+		apiInfoItems = append(apiInfoItems, cmkapi.WorkflowAdditionalInfo{
+			Code:     cmkapi.WorkflowAdditionalInfoCodeAPPROVERELIGIBILITYCHECKFAILED,
+			Severity: cmkapi.WorkflowAdditionalInfoSeverityERROR,
+			Message:  AdditionalInfoMessageEligibilityCheckError,
+		})
+	} else if insufficientApprovers {
+		// Otherwise show warning if insufficient approvers
+		apiInfoItems = append(apiInfoItems, cmkapi.WorkflowAdditionalInfo{
+			Code:     cmkapi.WorkflowAdditionalInfoCodeINSUFFICIENTAPPROVERS,
+			Severity: cmkapi.WorkflowAdditionalInfoSeverityWARNING,
+			Message:  AdditionalInfoMessageInsufficientApprovers,
+		})
+	}
+
+	if len(apiInfoItems) > 0 {
+		metadata.AdditionalInfo = &apiInfoItems
 	}
 
 	return &cmkapi.Workflow{
@@ -45,11 +84,8 @@ func ToAPI(w model.Workflow) (*cmkapi.Workflow, error) {
 		ArtifactID:             w.ArtifactID,
 		Parameters:             ptr.PointTo(w.Parameters),
 		FailureReason:          ptr.PointTo(w.FailureReason),
-		Metadata: ptr.PointTo(cmkapi.WorkflowMetadata{
-			CreatedAt: ptr.PointTo(w.CreatedAt),
-			UpdatedAt: ptr.PointTo(w.UpdatedAt),
-		}),
-		ExpiresAt: w.ExpiryDate,
+		Metadata:               metadata,
+		ExpiresAt:              w.ExpiryDate,
 	}, nil
 }
 
@@ -60,8 +96,10 @@ func ToAPIDetailed(
 	approverGroups []*model.Group,
 	transitions []wfMechanism.Transition,
 	approvalSummary *wfMechanism.ApprovalSummary,
+	insufficientApprovers bool,
+	eligibilityErr error,
 ) (*cmkapi.DetailedWorkflow, error) {
-	base, err := ToAPI(w)
+	base, err := ToAPI(w, insufficientApprovers, eligibilityErr)
 	if err != nil {
 		return nil, err
 	}
