@@ -33,7 +33,7 @@ func StartRabbitMQ(
 
 	service, err := rabbitmq.Run(
 		tb.Context(),
-		"rabbitmq:4-alpine",
+		"rabbitmq:4.2-alpine",
 		options...,
 	)
 	assert.NoError(tb, err)
