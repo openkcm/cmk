@@ -23,6 +23,11 @@ func (m *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.httpServeMux.ServeHTTP(w, r)
 }
 
+// Handler returns the handler and registered pattern that matches the request.
+func (m *ServeMux) Handler(r *http.Request) (http.Handler, string) {
+	return m.httpServeMux.Handler(r)
+}
+
 func (m *ServeMux) HandleFunc(
 	pattern string,
 	handler func(http.ResponseWriter, *http.Request),
