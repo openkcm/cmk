@@ -30,11 +30,11 @@ func GenerateTestKeyPair() (*rsa.PrivateKey, *rsa.PublicKey, error) {
 
 // TestSigningKeyStorage holds test signing keys in memory
 type TestSigningKeyStorage struct {
-	storage        keyvalue.ReadOnlyStringToBytesStorage
-	loader         *loader.Loader
-	tempDir        string
-	privateKeys    map[int]*rsa.PrivateKey
-	cleanupFunc    func()
+	storage     keyvalue.ReadOnlyStringToBytesStorage
+	loader      *loader.Loader
+	tempDir     string
+	privateKeys map[int]*rsa.PrivateKey
+	cleanupFunc func()
 }
 
 // Get retrieves a public key by ID
@@ -66,9 +66,11 @@ func (t *TestSigningKeyStorage) Cleanup() {
 	}
 }
 
-// NewTestSigningKeyStorage creates a signing key storage with pre-generated test keys
+// NewTestSigningKeyStorage creates a signing key storage with pre-generated test keys.
 // Generates 3 key pairs (keyID 0, 1, 2) to simulate key rotation scenarios
 // Returns storage that implements keyvalue.ReadOnlyStringToBytesStorage interface
+//
+//nolint:funcorder
 func NewTestSigningKeyStorage(tb testing.TB) *TestSigningKeyStorage {
 	tb.Helper()
 
@@ -134,10 +136,11 @@ func (t *TestRoleGetter) GetRoleFromIAM(ctx context.Context, iamIdentifiers []st
 	return constants.TenantAdminRole, nil
 }
 
-// NewTestRoleGetter creates a TestRoleGetter with the default role set to TenantAdminRole
+// NewTestRoleGetter creates a TestRoleGetter with the default role set to TenantAdminRole.
+//
+//nolint:funcorder
 func NewTestRoleGetter() *TestRoleGetter {
 	return &TestRoleGetter{
 		DefaultRole: constants.TenantAdminRole,
 	}
 }
-

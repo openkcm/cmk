@@ -110,6 +110,7 @@ func NewAPIServer(
 	return startAPIServer(tb, controller, testCfg)
 }
 
+//nolint:funlen
 func startAPIServer(
 	tb testing.TB,
 	controller *cmk.APIController,
@@ -252,6 +253,8 @@ func GetJSONBody[t any](tb testing.TB, w *httptest.ResponseRecorder) t {
 }
 
 // NewHTTPRequest builds an HTTP Request it sets default content-types for certain Methods
+//
+//nolint:cyclop
 func NewHTTPRequest(tb testing.TB, opt RequestOptions) *http.Request {
 	tb.Helper()
 

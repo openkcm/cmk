@@ -179,7 +179,12 @@ func getClientData(identifier string, groupNames []string) *auth.ClientData {
 // NewSignedClientDataHeaders generates HTTP headers with signed client data for testing
 // This creates the x-client-data and x-client-data-signature headers that ClientDataMiddleware expects
 // Uses RS256 algorithm (RSA + SHA-256) for signing
-func NewSignedClientDataHeaders(tb testing.TB, clientData map[string]any, privateKey *rsa.PrivateKey, keyID int) http.Header {
+func NewSignedClientDataHeaders(
+	tb testing.TB,
+	clientData map[string]any,
+	privateKey *rsa.PrivateKey,
+	keyID int,
+) http.Header {
 	tb.Helper()
 
 	// Convert map to auth.ClientData struct
@@ -210,7 +215,12 @@ func NewSignedClientDataHeaders(tb testing.TB, clientData map[string]any, privat
 
 // NewSignedClientDataHeadersFromStruct generates HTTP headers from an auth.ClientData struct
 // This is a convenience function for tests that already have ClientData objects
-func NewSignedClientDataHeadersFromStruct(tb testing.TB, clientData *auth.ClientData, privateKey *rsa.PrivateKey, keyID int) http.Header {
+func NewSignedClientDataHeadersFromStruct(
+	tb testing.TB,
+	clientData *auth.ClientData,
+	privateKey *rsa.PrivateKey,
+	keyID int,
+) http.Header {
 	tb.Helper()
 
 	// Set required fields for signing

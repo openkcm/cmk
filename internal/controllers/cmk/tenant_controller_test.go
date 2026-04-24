@@ -99,7 +99,6 @@ func TestGetTenants(t *testing.T) {
 	})
 
 	t.Run("Should 403 on list tenants without permission", func(t *testing.T) {
-
 		notAllowedClientData := &auth.ClientData{
 			Identifier: "user-123",
 			Email:      "bob@example.com",
@@ -185,7 +184,6 @@ func TestGetTenantInfo(t *testing.T) {
 	assert.NotEmpty(t, headersInvalidGroup)
 
 	t.Run("Should 403 on get tenant info that does not exist", func(t *testing.T) {
-
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/tenantInfo",
@@ -197,7 +195,6 @@ func TestGetTenantInfo(t *testing.T) {
 	})
 
 	t.Run("Should 200 on get tenant by valid ID and client data", func(t *testing.T) {
-
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/tenantInfo",
