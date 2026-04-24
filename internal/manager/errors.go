@@ -159,6 +159,7 @@ var (
 	ErrGetKeyConfigFromArtifact   = errors.New("failed to get key configuration from artifact")
 	ErrAutoAssignApprover         = errors.New("failed to auto assign approver")
 	ErrCreateApproverAssignTask   = errors.New("failed to create auto approver assignment task")
+	ErrCheckApproverEligibility   = errors.New("failed to check approver eligibility")
 
 	ErrLoadIdentityManagementPlugin = errors.New("failed to load identity management plugin")
 
