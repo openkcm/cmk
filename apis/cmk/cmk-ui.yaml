@@ -1894,9 +1894,6 @@ components:
         enabled:
           description: Flag indicating whether the Key is enabled
           type: boolean
-        isPrimary:
-          description: Flag indicating whether this Key is the primary (default) key for its associated key configuration.
-          type: boolean
         accessDetails:
           $ref: "#/components/schemas/KeyAccessDetails"
       additionalProperties: false
@@ -2239,6 +2236,11 @@ components:
           type: string
           maxLength: 4096
           example: This Key Configuration is used for connecting with Systems in Europe.
+        primaryKeyID:
+          description: The ID of the primary key of the configuration
+          type: string
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
       additionalProperties: false
     KeyConfigurationKeyAdd:
       type: object
