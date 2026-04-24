@@ -698,6 +698,30 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
+  /systems/filterOptions:
+    get:
+      tags:
+        - Systems
+      summary: Get System Filter Values
+      description: Get system possible values for filters
+      operationId: getFilters
+      responses:
+        "200":
+          description: System retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemFilters"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
   /systems/{systemID}:
     get:
       tags:
@@ -1507,6 +1531,25 @@ components:
           enum:
             - RETRY
             - CANCEL
+    SystemFilters:
+      description: System Filters
+      type: object
+      properties:
+        region:
+          type: array
+          items:
+            type: string
+          description: List of existing system regions
+        type:
+          type: array
+          items:
+            type: string
+          description: List of existing system types
+        keyConfigurationName:
+          type: array
+          items:
+            type: string
+          description: List of existing system key configurations
     ClientCertificates:
       type: object
       properties:

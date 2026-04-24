@@ -32,6 +32,7 @@ const dbCtxKey ctxKey = "transactionRepo"
 
 var (
 	ErrUnsupportedOrderDirective = errors.New("unsupported order directive")
+	ErrFilterValuesEmpty         = errors.New("filter must have a values field to populate")
 )
 
 // ResourceRepository represents the repository for managing Resource data.
@@ -356,6 +357,67 @@ func (r *ResourceRepository) Set(ctx context.Context, resource repo.Resource) er
 			return nil
 		},
 	)
+}
+
+// GetFilterOptions populates the filters slice with the possible values for each column
+func (r *ResourceRepository) GetFilterOptions(
+	ctx context.Context,
+	resource repo.Resource,
+	filters []repo.Filter,
+	query repo.Query,
+) error {
+	if len(filters) == 0 {
+		return nil
+	}
+
+	return r.WithTenant(ctx, resource, func(tx *multitenancy.DB) error {
+		parts := make([]interface{}, 0, len(filters))
+		placeholders := make([]string, 0, len(filters))
+		columnMap := make(map[string]*[]string, len(filters))
+
+		db, err := applyQuery(tx.DB, resource, query)
+		if err != nil {
+			return err
+		}
+
+		for i := range filters {
+			if filters[i].Values == nil {
+				return ErrFilterValuesEmpty
+			}
+
+			col := filters[i].Column
+			columnMap[col] = filters[i].Values
+
+			q := db.Session(&gorm.Session{}).
+				Table(resource.TableName()).
+				Select("? AS column_name, "+col+"::text AS value", col).
+				Where(col + " IS NOT NULL").
+				Distinct()
+
+			parts = append(parts, q)
+			placeholders = append(placeholders, "?")
+		}
+
+		unionSQL := strings.Join(placeholders, " UNION ALL ")
+
+		var results []struct {
+			ColumnName string `gorm:"column:column_name"`
+			Value      string `gorm:"column:value"`
+		}
+
+		tx = tx.Debug()
+		if err := tx.Raw(unionSQL, parts...).Scan(&results).Error; err != nil {
+			return errs.Wrap(repo.ErrGetResource, err)
+		}
+
+		for _, row := range results {
+			if val, ok := columnMap[row.ColumnName]; ok {
+				*val = append(*val, row.Value)
+			}
+		}
+
+		return nil
+	})
 }
 
 // Transaction wraps a function inside a database transaction.
