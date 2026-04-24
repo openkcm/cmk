@@ -2595,6 +2595,12 @@ components:
           $ref: "#/components/schemas/CreatedAt"
         updatedAt:
           $ref: "#/components/schemas/UpdatedAt"
+        additionalInfo:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowAdditionalInfo"
+          description: Optional informational messages or warnings about the workflow
+          readOnly: true
     WorkflowTransition:
       type: object
       required:
@@ -2655,6 +2661,34 @@ components:
           description: The target score required for approval.
           type: integer
           example: 2
+    WorkflowAdditionalInfo:
+      type: object
+      description: Additional informational message or warning about a workflow
+      readOnly: true
+      required:
+        - code
+        - severity
+        - message
+      properties:
+        code:
+          type: string
+          description: Machine-readable code identifying the type of information
+          enum:
+            - INSUFFICIENT_APPROVERS
+            - APPROVER_ELIGIBILITY_CHECK_FAILED
+          example: "INSUFFICIENT_APPROVERS"
+        severity:
+          type: string
+          description: Severity level of the information
+          enum:
+            - WARNING
+            - INFO
+            - ERROR
+          example: "WARNING"
+        message:
+          type: string
+          description: Human-readable message explaining the information
+          example: "The number of eligible approvers is currently insufficient to meet the minimum approval criteria."
     #
     # Labels
     #
