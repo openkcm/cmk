@@ -64,6 +64,7 @@ type Workflow interface {
 	) ([]*model.WorkflowApprover, int, error)
 	GetWorkflowAvailableTransitions(ctx context.Context, workflow *model.Workflow) ([]wf.Transition, error)
 	GetWorkflowApprovalSummary(ctx context.Context, workflow *model.Workflow) (*wf.ApprovalSummary, error)
+	WorkflowCanExpire(ctx context.Context, workflow *model.Workflow) (bool, error)
 	TransitionWorkflow(
 		ctx context.Context,
 		workflowID uuid.UUID,
@@ -126,8 +127,8 @@ var _ repo.QueryMapper = (*WorkflowFilter)(nil) // Assert interface impl
 
 func NewWorkflowFilterFromOData(queryMapper odata.QueryOdataMapper) (*WorkflowFilter, error) {
 	skipPtr, topPtr, countPtr := queryMapper.GetPaging()
-	skip := ptr.GetIntOrDefault(skipPtr, constants.DefaultSkip)
-	top := ptr.GetIntOrDefault(topPtr, constants.DefaultTop)
+	skip := ptr.GetPtrOrDefault(skipPtr, constants.DefaultSkip)
+	top := ptr.GetPtrOrDefault(topPtr, constants.DefaultTop)
 	count := ptr.GetSafeDeref(countPtr)
 
 	state, err := queryMapper.GetString(repo.StateField)
@@ -453,6 +454,18 @@ func (w *WorkflowManager) GetWorkflowAvailableTransitions(
 	transitions := workflowLifecycle.AvailableBusinessUserTransitions(ctx)
 
 	return transitions, nil
+}
+
+func (w *WorkflowManager) WorkflowCanExpire(
+	ctx context.Context,
+	workflow *model.Workflow,
+) (bool, error) {
+	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID)
+	if err != nil {
+		return false, err
+	}
+
+	return workflowLifecycle.CanExpire(), nil
 }
 
 func (w *WorkflowManager) GetWorkflowApprovalSummary(

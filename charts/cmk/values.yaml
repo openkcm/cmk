@@ -417,6 +417,7 @@ config:
     enrich-header-with-client-region: true
     disable-client-certificate-computation: false
     disable-jwt-token-computation: false
+    allow-byok: false
 
   http:
     port: 8081
@@ -719,6 +720,10 @@ config:
   #      - cronspec: "@every 3h"
   #        taskType: taskType3
   #        retries: 3
+  #        timeOut: 5s
+  #        fanOutTask:
+  #          enabled: true
+  #          retries: 0
 
   # Services that CMK depends on configuration
   services:
@@ -787,13 +792,6 @@ config:
   #      yamlConfiguration: |
   #        key1: value1
   #        key2: value2
-
-  # Active plugins are controlled through Makefile.
-  # See k3d-apply-helm-chart target definition and ACTIVE_PLUGINS variable in the Makefile.
-  activePlugins:
-  # - plugin1
-  # - plugin2
-  # - plugin3
 
   # Event configuration
   eventProcessor:

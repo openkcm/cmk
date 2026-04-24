@@ -63,8 +63,8 @@ func (mf *QueryOdataMapper) GetQuery(_ context.Context) *repo.Query {
 
 func (mf *QueryOdataMapper) GetPagination() repo.Pagination {
 	return repo.Pagination{
-		Skip:  ptr.GetIntOrDefault(mf.skip, constants.DefaultSkip),
-		Top:   ptr.GetIntOrDefault(mf.top, constants.DefaultTop),
+		Skip:  ptr.GetPtrOrDefault(mf.skip, constants.DefaultSkip),
+		Top:   ptr.GetPtrOrDefault(mf.top, constants.DefaultTop),
 		Count: ptr.GetSafeDeref(mf.count),
 	}
 }

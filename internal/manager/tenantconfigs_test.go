@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
@@ -86,17 +87,17 @@ func TestGetDefaultKeystore(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
-		config := model.KeystoreConfig{
-			LocalityID:           "testID",
-			CommonName:           testutils.TestDefaultKeystoreCommonName,
-			ManagementAccessData: map[string]any{"key": "value"},
-		}
-		configBytes, _ := json.Marshal(config)
 		// Create a fresh keystore config for this test to avoid pollution from other tests
-		localKs := testutils.NewKeystore(func(c *model.Keystore) {
-			c.Config = configBytes
+		expectedLocalityID := uuid.NewString()
+		localKsConfig := testutils.NewKeystore(func(k *model.Keystore) {
+			keystoreConfig := testutils.NewKeystoreConfig(func(cfg *model.KeystoreConfig) {
+				cfg.LocalityID = expectedLocalityID
+			})
+			configBytes, marshalErr := json.Marshal(keystoreConfig)
+			assert.NoError(t, marshalErr)
+			k.Config = configBytes
 		})
-		testutils.CreateTestEntities(ctx, t, r, localKs)
+		testutils.CreateTestEntities(ctx, t, r, localKsConfig)
 
 		// Act
 		keystore, err := configManager.GetDefaultKeystoreConfig(ctx)
@@ -104,7 +105,7 @@ func TestGetDefaultKeystore(t *testing.T) {
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, keystore)
-		assert.Equal(t, "testID", keystore.LocalityID)
+		assert.Equal(t, expectedLocalityID, keystore.LocalityID)
 		assert.NotEmpty(t, keystore.CommonName)
 		assert.NotEmpty(t, keystore.ManagementAccessData)
 	})
@@ -252,17 +253,41 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 
 func TestGetTenantsKeystore(t *testing.T) {
 	t.Run("Should get tenant keystores with hyok", func(t *testing.T) {
-		m, _, _ := SetupTenantConfigManager(t, []catalog.BuiltInPlugin{testplugins.NewKeystoreOperator()})
-		res, err := m.GetTenantsKeystores()
+		m, _, tenant := SetupTenantConfigManager(t, []catalog.BuiltInPlugin{testplugins.NewKeystoreOperator()})
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.NotEmpty(t, res.HYOK)
 	})
 
 	t.Run("Should get tenant keystores with no hyok providers", func(t *testing.T) {
-		m, _, _ := SetupTenantConfigManager(t, nil)
-		res, err := m.GetTenantsKeystores()
+		m, _, tenant := SetupTenantConfigManager(t, nil)
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Empty(t, res.HYOK)
+		assert.False(t, res.AllowBYOK)
+	})
+
+	t.Run("Should keep BYOK disabled when feature gate is missing", func(t *testing.T) {
+		m, _, tenant := SetupTenantConfigManager(t, nil)
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.False(t, res.AllowBYOK)
+	})
+
+	t.Run("Should enable BYOK when allow-byok feature gate is true", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t, nil)
+		r := sql.NewRepository(db)
+		cfg := &config.Config{
+			BaseConfig: commoncfg.BaseConfig{
+				FeatureGates: commoncfg.FeatureGates{
+					"allow-byok": true,
+				},
+			},
+		}
+		m := manager.NewTenantConfigManager(r, nil, cfg)
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.True(t, res.AllowBYOK)
 	})
 }
 

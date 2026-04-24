@@ -158,12 +158,12 @@ func assertTenantExistsInRegistry(
 	var tenant *tenantgrpc.Tenant
 
 	require.Eventuallyf(t, func() bool {
-		result, err := client.ListTenants(ctx, &tenantgrpc.ListTenantsRequest{Id: tenantID})
-		if err != nil || len(result.GetTenants()) != 1 {
+		result, err := client.GetTenant(ctx, &tenantgrpc.GetTenantRequest{Id: tenantID})
+		if err != nil {
 			return false
 		}
 
-		tenant = result.GetTenants()[0]
+		tenant = result.GetTenant()
 		t.Logf("Check tenant status: %s", tenant.GetStatus().String())
 
 		return tenant.GetStatus() == tenantgrpc.Status_STATUS_ACTIVE

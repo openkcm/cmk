@@ -52,5 +52,11 @@ func LoadConfig(opts ...commoncfg.Option) (*Config, error) {
 		return nil, oops.Wrapf(err, "failed to validate config")
 	}
 
+	// load taskMap
+	cfg.Scheduler.taskMap = make(map[string]Task, len(cfg.Scheduler.Tasks))
+	for _, task := range cfg.Scheduler.Tasks {
+		cfg.Scheduler.taskMap[task.TaskType] = task
+	}
+
 	return cfg, nil
 }

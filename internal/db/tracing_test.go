@@ -27,8 +27,7 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 	t.Run("should return original dialector when telemetryCfg is nil", func(t *testing.T) {
 		// Arrange
 		originalDialector := postgres.New(postgres.Config{
-			DSN:                  dsnStr,
-			PreferSimpleProtocol: true,
+			DSN: dsnStr,
 		})
 
 		// Act
@@ -47,8 +46,7 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 	t.Run("should return original dialector when tracing is disabled", func(t *testing.T) {
 		// Arrange
 		originalDialector := postgres.New(postgres.Config{
-			DSN:                  dsnStr,
-			PreferSimpleProtocol: true,
+			DSN: dsnStr,
 		})
 
 		telemetryCfg := &commoncfg.Telemetry{
@@ -73,8 +71,7 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 	t.Run("should wrap dialector when tracing is enabled", func(t *testing.T) {
 		// Arrange
 		originalDialector := postgres.New(postgres.Config{
-			DSN:                  dsnStr,
-			PreferSimpleProtocol: true,
+			DSN: dsnStr,
 		})
 
 		telemetryCfg := &commoncfg.Telemetry{
@@ -106,8 +103,7 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 		// Actual connection validation happens when GORM tries to connect
 		malformedDSN := "host=nonexistent user=test password=test dbname=test port=99999 sslmode=disable"
 		originalDialector := postgres.New(postgres.Config{
-			DSN:                  malformedDSN,
-			PreferSimpleProtocol: true,
+			DSN: malformedDSN,
 		})
 
 		telemetryCfg := &commoncfg.Telemetry{
@@ -133,8 +129,7 @@ func TestWrapDialectorWithTracing(t *testing.T) {
 	t.Run("should create working database connection with tracing enabled", func(t *testing.T) {
 		// Arrange
 		originalDialector := postgres.New(postgres.Config{
-			DSN:                  dsnStr,
-			PreferSimpleProtocol: true,
+			DSN: dsnStr,
 		})
 
 		telemetryCfg := &commoncfg.Telemetry{

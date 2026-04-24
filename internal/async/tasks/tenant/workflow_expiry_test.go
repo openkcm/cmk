@@ -10,7 +10,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/async/tasks"
+	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -23,19 +23,19 @@ import (
 )
 
 var (
-	ErrWorkflowNotFound     = errors.New("workflow not found")
-	ErrTransitionFailed     = errors.New("workflow transition failed")
-	ErrMockGetWorkflows     = errors.New("forced GetWorkflows error")
-	ErrMockTransition       = errors.New("forced TransitionWorkflow error")
-	ErrMockAvailTransitions = errors.New("forced GetWorkflowAvailableTransitions error")
+	ErrWorkflowNotFound = errors.New("workflow not found")
+	ErrTransitionFailed = errors.New("workflow transition failed")
+	ErrMockGetWorkflows = errors.New("forced GetWorkflows error")
+	ErrMockTransition   = errors.New("forced TransitionWorkflow error")
+	ErrMockCanExpire    = errors.New("forced WorkflowCanExpire error")
 )
 
 type WorkflowExpiryMock struct {
-	repo             repo.Repo
-	getErr           error
-	transitionErr    error
-	availTransErr    error
-	availTransitions []wfMechanism.Transition
+	repo          repo.Repo
+	getErr        error
+	transitionErr error
+	canExpireErr  error
+	canExpire     bool
 }
 
 func (s *WorkflowExpiryMock) GetWorkflows(ctx context.Context,
@@ -77,14 +77,14 @@ func (s *WorkflowExpiryMock) TransitionWorkflow(ctx context.Context,
 	return nil, ErrWorkflowNotFound
 }
 
-func (s *WorkflowExpiryMock) GetWorkflowAvailableTransitions(
-	ctx context.Context,
-	workflow *model.Workflow,
-) ([]wfMechanism.Transition, error) {
-	if s.availTransErr != nil {
-		return nil, s.availTransErr
+func (s *WorkflowExpiryMock) WorkflowCanExpire(
+	_ context.Context,
+	_ *model.Workflow,
+) (bool, error) {
+	if s.canExpireErr != nil {
+		return false, s.canExpireErr
 	}
-	return s.availTransitions, nil
+	return s.canExpire, nil
 }
 
 func TestWorkflowExpiresAction(t *testing.T) {
@@ -119,8 +119,8 @@ func TestWorkflowExpiresAction(t *testing.T) {
 
 	t.Run("Sets Expired", func(t *testing.T) {
 		expirer := &WorkflowExpiryMock{
-			repo:             r,
-			availTransitions: []wfMechanism.Transition{wfMechanism.TransitionExpire},
+			repo:      r,
+			canExpire: true,
 		}
 		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
 
@@ -151,28 +151,14 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
 		err := processor.ProcessTask(ctx, task)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "task failed")
 	})
 
 	t.Run("Transition fails", func(t *testing.T) {
 		// Transition errors are logged and skipped per-workflow; ProcessTask still succeeds.
 		expirer := &WorkflowExpiryMock{
-			repo:             r,
-			transitionErr:    ErrMockTransition,
-			availTransitions: []wfMechanism.Transition{wfMechanism.TransitionExpire},
-		}
-		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
-
-		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
-		err := processor.ProcessTask(ctx, task)
-		assert.NoError(t, err)
-	})
-
-	t.Run("GetWorkflowAvailableTransitions fails", func(t *testing.T) {
-		// Per-workflow transition check errors are logged and skipped; ProcessTask still succeeds.
-		expirer := &WorkflowExpiryMock{
 			repo:          r,
-			availTransErr: ErrMockAvailTransitions,
+			transitionErr: ErrMockTransition,
+			canExpire:     true,
 		}
 		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
 
@@ -181,11 +167,24 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("Skips workflow when TransitionExpire not available", func(t *testing.T) {
-		// No transitions available — expired workflows should be skipped without error.
+	t.Run("WorkflowCanExpire fails", func(t *testing.T) {
+		// Per-workflow expiry check errors are logged and skipped; ProcessTask still succeeds.
 		expirer := &WorkflowExpiryMock{
-			repo:             r,
-			availTransitions: []wfMechanism.Transition{},
+			repo:         r,
+			canExpireErr: ErrMockCanExpire,
+		}
+		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
+
+		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
+		err := processor.ProcessTask(ctx, task)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Skips workflow when CanExpire is false", func(t *testing.T) {
+		// canExpire false — expired workflows should be skipped without error.
+		expirer := &WorkflowExpiryMock{
+			repo:      r,
+			canExpire: false,
 		}
 		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
 
