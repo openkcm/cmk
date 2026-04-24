@@ -371,47 +371,47 @@ func (r *ResourceRepository) GetFilterOptions(
 	}
 
 	return r.WithTenant(ctx, resource, func(tx *multitenancy.DB) error {
-		var joinClause strings.Builder
-		for _, join := range query.Joins {
-			joinClause.WriteString(" ")
-			joinClause.WriteString(join.JoinStatement())
-		}
-		joinStr := joinClause.String()
-
-		unionParts := make([]string, 0, len(filters))
+		parts := make([]any, 0, len(filters))
+		placeholders := make([]string, 0, len(filters))
 		columnMap := make(map[string]*[]string, len(filters))
+
+		db, err := applyQuery(tx.DB, resource, query)
+		if err != nil {
+			return err
+		}
 
 		for i := range filters {
 			if filters[i].Values == nil {
 				return ErrFilterValuesEmpty
 			}
-			columnMap[filters[i].Column] = filters[i].Values
 
-			selectPart := fmt.Sprintf(
-				"SELECT DISTINCT '%s' AS column_name, %s::text AS value FROM %s%s WHERE %s IS NOT NULL",
-				filters[i].Column,
-				filters[i].Column,
-				resource.TableName(),
-				joinStr,
-				filters[i].Column,
-			)
-			unionParts = append(unionParts, selectPart)
+			col := filters[i].Column
+			columnMap[col] = filters[i].Values
+
+			q := db.Session(&gorm.Session{}).
+				Table(resource.TableName()).
+				Select("? AS column_name, "+col+"::text AS value", col).
+				Where(col + " IS NOT NULL").
+				Distinct()
+
+			parts = append(parts, q)
+			placeholders = append(placeholders, "?")
 		}
 
-		unionQuery := strings.Join(unionParts, " UNION ALL ")
+		unionSQL := strings.Join(placeholders, " UNION ALL ")
 
 		var results []struct {
 			ColumnName string `gorm:"column:column_name"`
 			Value      string `gorm:"column:value"`
 		}
 
-		if err := tx.Raw(unionQuery).Scan(&results).Error; err != nil {
+		tx = tx.Debug()
+		if err := tx.Raw(unionSQL, parts...).Scan(&results).Error; err != nil {
 			return errs.Wrap(repo.ErrGetResource, err)
 		}
 
 		for _, row := range results {
-			val, ok := columnMap[row.ColumnName]
-			if ok {
+			if val, ok := columnMap[row.ColumnName]; ok {
 				*val = append(*val, row.Value)
 			}
 		}
