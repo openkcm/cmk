@@ -5,8 +5,8 @@ go 1.25.6
 toolchain go1.26.1
 
 require (
-	buf.build/go/protovalidate v1.1.3
-	github.com/Azure/go-amqp v1.5.1
+	buf.build/go/protovalidate v1.2.0
+	github.com/Azure/go-amqp v1.6.0
 	github.com/XSAM/otelsql v0.42.0
 	github.com/avast/retry-go/v5 v5.0.0
 	github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8 v8.9.0
@@ -19,7 +19,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hibiken/asynq v0.26.0
-	github.com/jackc/pgx/v5 v5.9.1
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/jxskiss/base62 v1.1.0
 	github.com/looplab/fsm v1.0.3
 	github.com/magodo/slog2hclog v0.0.0-20240614031327-090ebd72a033
@@ -29,7 +29,7 @@ require (
 	github.com/openkcm/api-sdk v0.17.0
 	github.com/openkcm/common-sdk v1.15.2
 	github.com/openkcm/orbital v0.5.1
-	github.com/openkcm/plugin-sdk v0.10.2
+	github.com/openkcm/plugin-sdk v0.11.0
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/samber/oops v1.21.0
@@ -57,7 +57,7 @@ require (
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260209202127-80ab13bee0bf.1 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1 // indirect
 	cel.dev/expr v0.25.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -93,7 +93,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/cel-go v0.27.0 // indirect
+	github.com/google/cel-go v0.28.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
