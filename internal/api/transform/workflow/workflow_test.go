@@ -85,7 +85,7 @@ func TestWorkflow_ToAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			apiWorkflow, err := workflow.ToAPI(tt.dbWorkflow)
+			apiWorkflow, err := workflow.ToAPI(tt.dbWorkflow, false, nil)
 
 			if tt.errorExpected {
 				assert.Error(t, err)
