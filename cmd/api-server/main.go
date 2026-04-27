@@ -99,7 +99,7 @@ func startStatusServer(ctx context.Context, cfg *config.Config) {
 
 	healthOptions := []health.Option{
 		health.WithDatabaseChecker(
-			constants.PgxDriverName,
+			constants.DBDriver,
 			dsnFromConfig,
 		),
 		health.WithCheck(health.Check{

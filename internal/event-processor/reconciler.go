@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	_ "github.com/lib/pq" // Import PostgreSQL driver to initialize the database connection
+	_ "github.com/bartventer/gorm-multitenancy/postgres/v8"
 
 	goAmqp "github.com/Azure/go-amqp"
 	otelAttr "go.opentelemetry.io/otel/attribute"
@@ -219,7 +219,6 @@ func (c *CryptoReconciler) resolveTasks() orbital.TaskResolveFunc {
 			tasks, err = handler.ResolveTasks(ctx, job)
 			return err
 		})
-
 		if err != nil {
 			return orbital.CancelTaskResolver(GetOrbitalError(ctx, err)), nil
 		}
