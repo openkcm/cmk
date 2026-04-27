@@ -37,9 +37,10 @@ func NewTestPlugins(plugins ...plugincatalog.BuiltInPlugin) (
 	pluginCfgs := make([]plugincatalog.PluginConfig, 0, len(plugins))
 	for _, p := range plugins {
 		pluginCfg := plugincatalog.PluginConfig{
-			Name: p.Name(),
-			Type: p.Type(),
-			Tags: p.Tags(),
+			Name:              p.Name(),
+			Type:              p.Type(),
+			Tags:              p.Tags(),
+			YamlConfiguration: "",
 		}
 
 		values, ok := pluginTags[p.Type()]
