@@ -597,6 +597,9 @@ config:
     parameters:
       ssl:
         mode: "disable"
+        rootCert: ""
+        cert: ""
+        key: ""
 
   tenantManager:
     amqp:
@@ -605,9 +608,6 @@ config:
       source: cmk.emea.tenants
     secretRef:
       type: insecure
-      rootCert: ""
-      cert: ""
-      key: ""
 
   scheduler:
     taskQueue:
