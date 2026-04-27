@@ -34,7 +34,7 @@ func TestFromDBConfig(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(
 			t,
-			"host= user= password= dbname= port= sslmode=",
+			"host= user= password= dbname= port= default_query_exec_mode=simple_protocol sslmode=",
 			res,
 		)
 	})
@@ -65,7 +65,7 @@ func TestFromDBConfig(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(
 			t,
-			"host= user= password= dbname= port= sslmode= sslrootcert=test sslcert=test sslkey=test",
+			"host= user= password= dbname= port= default_query_exec_mode=simple_protocol sslmode= sslrootcert=test sslcert=test sslkey=test",
 			res,
 		)
 	})

@@ -293,6 +293,10 @@ func (l *Lifecycle) ValidateActor(ctx context.Context, transition Transition) er
 	return err
 }
 
+func (l *Lifecycle) CanExpire() bool {
+	return l.StateMachine.Can(TransitionExpire.String())
+}
+
 // validateUserIsSystem validates that the user is the SYSTEM user
 //
 //nolint:unparam

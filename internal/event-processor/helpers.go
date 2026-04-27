@@ -12,6 +12,7 @@ import (
 	orbsql "github.com/openkcm/orbital/store/sql"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
@@ -25,7 +26,7 @@ func createOrbitalRepository(ctx context.Context, cfg config.Database) (*orbital
 
 	dsn := baseDSN + " search_path=orbital,public"
 
-	con, err := sql.Open("postgres", dsn)
+	con, err := sql.Open(constants.DBDriver, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("orbit pool: %w", err)
 	}
@@ -73,7 +74,6 @@ func mergeOrbitalTaskErrors(
 		JobID:  job.ID,
 		Status: orbital.TaskStatusFailed,
 	})
-
 	if err != nil {
 		return "", err
 	}

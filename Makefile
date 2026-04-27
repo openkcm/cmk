@@ -13,7 +13,6 @@ GIT_CREDENTIAL_HELPER=$(shell git config credential.helper)
 GIT_USERNAME=$(shell echo "" | git credential-$(GIT_CREDENTIAL_HELPER) get | awk -F= '$$1=="username"{print $$2}')
 GIT_PASSWORD=$(shell echo "" | git credential-$(GIT_CREDENTIAL_HELPER) get | awk -F= '$$1=="password"{print $$2}')
 SIS_PLUGIN ?= "uli"
-ACTIVE_PLUGINS := "{hyok,default_keystore,keystore_provider,$(SIS_PLUGIN),cert_issuer,identity_management,notification}"
 
 # get git values
 squash: HEAD := $(shell git rev-parse HEAD)
@@ -375,7 +374,6 @@ k3d-apply-helm-chart:
 	@echo "Applying Helm chart."
 	helm upgrade --install $(CHART_NAME) $(CHART_DIR) --namespace $(APPLY_NAMESPACE) \
 		--set volumePath=$(PATH_TO_INIT_VOLUME) \
-		--set config.activePlugins=$(ACTIVE_PLUGINS) \
 		-f $(VALUE_DIR)/values-dev.yaml
 
 k3d-apply-cmk-helm-chart:
