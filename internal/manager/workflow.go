@@ -24,7 +24,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/notifier"
 	wn "github.com/openkcm/cmk/internal/notifier/workflow"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	wf "github.com/openkcm/cmk/internal/workflow"
@@ -85,13 +85,13 @@ type WorkflowManager struct {
 	userManager             User
 	asyncClient             async.Client
 	tenantConfigManager     *TenantConfigManager
-	svcRegistry             *cmkpluginregistry.Registry
+	svcRegistry             serviceapi.Registry
 	cfg                     *config.Config
 }
 
 func NewWorkflowManager(
 	repository repo.Repo,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	keyManager *KeyManager,
 	keyConfigurationManager *KeyConfigManager,
 	systemManager *SystemManager,

@@ -19,11 +19,9 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -58,12 +56,9 @@ func SetupWorkflowManager(
 
 	r := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
+	svcRegistry := testutils.NewTestPlugins()
 
-	cfg.Plugins = psCfg
-
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	cfg.Plugins = nil
 
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)

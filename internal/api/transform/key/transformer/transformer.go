@@ -11,7 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
 	"github.com/openkcm/cmk/internal/errs"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 )
 
@@ -53,7 +53,7 @@ type PluginProviderTransformer struct {
 }
 
 func NewPluginProviderTransformer(
-	pluginCatalog *cmkpluginregistry.Registry,
+	pluginCatalog serviceapi.Registry,
 	provider string,
 ) (*PluginProviderTransformer, error) {
 	keyManagements, err := pluginCatalog.KeyManagements()

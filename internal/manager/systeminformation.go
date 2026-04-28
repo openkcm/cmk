@@ -11,7 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -32,7 +32,7 @@ type SystemInformation struct {
 
 func NewSystemInformationManager(
 	repo repo.Repo,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	systemCfg *config.System,
 ) (*SystemInformation, error) {
 	svc, err := svcRegistry.SystemInformation()

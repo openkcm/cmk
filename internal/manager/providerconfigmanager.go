@@ -16,11 +16,10 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
-	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
@@ -67,7 +66,7 @@ func (c ProviderConfig) IsExpired() bool {
 }
 
 type ProviderConfigManager struct {
-	svcRegistry   *cmkpluginregistry.Registry
+	svcRegistry   serviceapi.Registry
 	providers     map[ProviderCachedKey]*ProviderConfig
 	mu            sync.RWMutex
 	tenantConfigs *TenantConfigManager
@@ -77,7 +76,7 @@ type ProviderConfigManager struct {
 }
 
 func NewProviderConfigManager(
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	providers map[ProviderCachedKey]*ProviderConfig,
 	tenantConfigs *TenantConfigManager,
 	certs *CertificateManager,
@@ -269,16 +268,16 @@ func (pmc *ProviderConfigManager) GetDefaultKeystoreFromCatalog() (string, error
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no plugin catalog available")
 	}
 
-	plugins := pmc.svcRegistry.LookupByType(servicewrapper.KeyManagementType)
-	if len(plugins) == 0 {
+	plugins, err := pmc.svcRegistry.KeyManagementList()
+	if err != nil || len(plugins) == 0 {
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no keystore plugins found in catalog")
 	}
 
 	providers := make([]string, 0)
 
 	for _, plugin := range plugins {
-		if pluginHelpers.HasTag(plugin.Info().Tags(), constants.DefaultKeyStore) {
-			providers = append(providers, plugin.Info().Name())
+		if pluginHelpers.HasTag(plugin.ServiceInfo().Tags(), constants.DefaultKeyStore) {
+			providers = append(providers, plugin.ServiceInfo().Name())
 		}
 	}
 

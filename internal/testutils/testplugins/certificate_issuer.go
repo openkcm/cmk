@@ -2,40 +2,30 @@ package testplugins
 
 import (
 	"context"
-	"log/slog"
 
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
+	"github.com/openkcm/plugin-sdk/api"
 
-	certificateissuerv1 "github.com/openkcm/plugin-sdk/proto/plugin/certificate_issuer/v1"
-	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
+	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 )
 
-type CertificateIssuer struct {
-	certificateissuerv1.UnsafeCertificateIssuerServiceServer
-	configv1.UnsafeConfigServer
+type TestCertificateIssuer struct{}
+
+var _ certificateissuer.CertificateIssuer = (*TestCertificateIssuer)(nil)
+
+func NewTestCertificateIssuer() *TestCertificateIssuer {
+	return &TestCertificateIssuer{}
 }
 
-func NewCertificateIssuer() catalog.BuiltInPlugin {
-	p := &CertificateIssuer{}
-	return catalog.MakeBuiltIn(
-		Name,
-		certificateissuerv1.CertificateIssuerServicePluginServer(p),
-		configv1.ConfigServiceServer(p),
-	)
+func (s *TestCertificateIssuer) ServiceInfo() api.Info {
+	return testInfo{
+		configuredType: servicewrapper.CertificateIssuerServiceType,
+	}
 }
 
-func (p *CertificateIssuer) Configure(
+func (s *TestCertificateIssuer) IssueCertificate(
 	_ context.Context,
-	req *configv1.ConfigureRequest,
-) (*configv1.ConfigureResponse, error) {
-	slog.Info("Configuring plugin")
-
-	return &configv1.ConfigureResponse{}, nil
-}
-
-func (p *CertificateIssuer) GetCertificate(
-	_ context.Context,
-	_ *certificateissuerv1.GetCertificateRequest,
-) (*certificateissuerv1.GetCertificateResponse, error) {
-	return &certificateissuerv1.GetCertificateResponse{}, nil
+	_ *certificateissuer.IssueCertificateRequest,
+) (*certificateissuer.IssueCertificateResponse, error) {
+	return &certificateissuer.IssueCertificateResponse{}, nil
 }

@@ -25,11 +25,9 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -42,12 +40,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
-	ps, psCfg := testutils.NewTestPlugins(
-		testplugins.NewSystemInformation(),
-	)
-
 	cfg := config.Config{
-		Plugins: psCfg,
 		BaseConfig: commoncfg.BaseConfig{
 			Audit: commoncfg.Audit{
 				Endpoint: "http://localhost:4318/v1/logs",
@@ -56,8 +49,8 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 		Database: dbCfg,
 	}
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	require.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
+	var err error
 
 	r := sql.NewRepository(db)
 
