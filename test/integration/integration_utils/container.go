@@ -3,13 +3,12 @@ package integrationutils
 import (
 	"bytes"
 	"io"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
 	"testing"
 
-	"github.com/moby/moby/api/types/build"
-	"github.com/moby/moby/client"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -38,12 +37,6 @@ const (
 func RunCMKService(t *testing.T, service Service, cfg *config.Config) testcontainers.Container {
 	t.Helper()
 
-	_, filename, _, _ := runtime.Caller(0)
-
-	baseDir := filepath.Dir(filename)
-	projectRoot, err := filepath.Abs(baseDir + "../../../../")
-	require.NoError(t, err)
-
 	statusPort, err := testutils.GetFreePortString()
 	require.NoError(t, err)
 
@@ -58,16 +51,7 @@ func RunCMKService(t *testing.T, service Service, cfg *config.Config) testcontai
 	ctx := t.Context()
 
 	req := testcontainers.ContainerRequest{
-		FromDockerfile: testcontainers.FromDockerfile{
-			Context:    projectRoot,
-			Dockerfile: "Dockerfile.integration",
-			KeepImage:  true,
-			Repo:       "cmk-test",
-			Tag:        "latest",
-			BuildOptionsModifier: func(ibo *client.ImageBuildOptions) {
-				ibo.Version = build.BuilderBuildKit
-			},
-		},
+		Image:      BuildCMKImage(t),
 		Entrypoint: []string{string(service)},
 		Files: []testcontainers.ContainerFile{
 			{
@@ -103,4 +87,25 @@ func RunCMKService(t *testing.T, service Service, cfg *config.Config) testcontai
 	}
 
 	return container
+}
+
+// BuildCMKImage runs makefile step docker-dev-build to build the image
+// This is only needed as there is a bug with testcontainers and docker buildkit
+func BuildCMKImage(t *testing.T) string {
+	t.Helper()
+
+	_, filename, _, _ := runtime.Caller(0)
+
+	baseDir := filepath.Dir(filename)
+	projectRoot, err := filepath.Abs(baseDir + "../../../../")
+	require.NoError(t, err)
+
+	cmd := exec.Command("make", "docker-dev-build")
+	cmd.Dir = projectRoot
+	_, err = cmd.CombinedOutput()
+	if err != nil {
+		require.NoError(t, err, "failed to build docker image")
+	}
+
+	return "cmk-api-server-dev:latest"
 }

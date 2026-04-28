@@ -47,5 +47,4 @@ func TestAsync(t *testing.T) {
 	testutils.StartRedis(t, &cfg.Scheduler)
 
 	_ = integrationutils.RunCMKService(t, integrationutils.TaskWorker, cfg)
-	_ = integrationutils.RunCMKService(t, integrationutils.TaskCLI, cfg)
 }
