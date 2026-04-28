@@ -306,6 +306,12 @@ type OrderField struct {
 	Direction OrderDirection
 }
 
+// Filter maps a struct field to a DB column for GetFilterOptions
+type Filter struct {
+	Values *[]string
+	Column string
+}
+
 // NewQuery creates and returns a new empty query.
 func NewQuery() *Query {
 	return &Query{

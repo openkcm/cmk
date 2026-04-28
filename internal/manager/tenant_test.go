@@ -392,6 +392,7 @@ func (s *mockSystemManager) UnlinkSystemAction(context.Context, uuid.UUID, strin
 func (s *mockSystemManager) GetAllSystems(context.Context, repo.QueryMapper) ([]*model.System, int, error) {
 	panic("not implemented")
 }
+
 func (s *mockSystemManager) GetSystemByID(context.Context, uuid.UUID) (*model.System, error) {
 	panic("not implemented")
 }
@@ -400,14 +401,20 @@ func (s *mockSystemManager) RefreshSystemsData(context.Context) bool { return tr
 func (s *mockSystemManager) LinkSystemAction(context.Context, uuid.UUID, cmkapi.SystemPatch) (*model.System, error) {
 	panic("not implemented")
 }
+
 func (s *mockSystemManager) GetRecoveryActions(context.Context, uuid.UUID) (cmkapi.SystemRecoveryAction, error) {
 	panic("not implemented")
 }
+
 func (s *mockSystemManager) SendRecoveryActions(
 	context.Context,
 	uuid.UUID,
 	cmkapi.SystemRecoveryActionBodyAction,
 ) error {
+	panic("not implemented")
+}
+
+func (s *mockSystemManager) GetFilters(context.Context) (cmkapi.SystemFilters, error) {
 	panic("not implemented")
 }
 
