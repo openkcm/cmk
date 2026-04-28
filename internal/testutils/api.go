@@ -50,7 +50,7 @@ func NewAPIServer(
 	tb testing.TB,
 	dbCon *multitenancy.DB,
 	testCfg TestAPIServerConfig,
-) cmkapi.ServeMux {
+) *daemon.ServeMux {
 	tb.Helper()
 
 	cfg := testCfg.Config
@@ -111,7 +111,7 @@ func NewAPIServer(
 func startAPIServer(
 	tb testing.TB,
 	controller *cmk.APIController,
-) cmkapi.ServeMux {
+) *daemon.ServeMux {
 	tb.Helper()
 
 	strictController := cmkapi.NewStrictHandlerWithOptions(
