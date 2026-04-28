@@ -25,11 +25,9 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	sqlPkg "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -55,7 +53,7 @@ func setupTest(t *testing.T) tester {
 		},
 	)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
+	svcRegistry := testutils.NewTestPlugins()
 
 	cfg := config.Config{
 		EventProcessor: config.EventProcessor{
@@ -81,12 +79,8 @@ func setupTest(t *testing.T) tester {
 				},
 			},
 		},
-		Plugins:  psCfg,
 		Database: dbConf,
 	}
-
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	require.NoError(t, err)
 
 	r := sqlPkg.NewRepository(db)
 

@@ -18,7 +18,6 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -408,7 +407,7 @@ func TestKeyVersionController_GetKeyVersions_IsPrimaryWithPagination(t *testing.
 }
 
 func TestKeyVersionRefreshAndDisable(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
+	db, sv, tenant := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 

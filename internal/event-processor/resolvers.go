@@ -17,7 +17,7 @@ import (
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -28,7 +28,7 @@ import (
 type SystemTaskInfoResolver struct {
 	repo        repo.Repo
 	targets     map[string]struct{}
-	svcRegistry *cmkpluginregistry.Registry
+	svcRegistry serviceapi.Registry
 	cfg         *config.Config
 }
 

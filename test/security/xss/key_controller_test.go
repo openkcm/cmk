@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -16,7 +15,6 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -41,8 +39,7 @@ func startAPIAndDBForKey(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, strin
 	dbConfig := testutils.TestDBConfig{}
 	db, tenants, _ := testutils.NewTestDB(t, dbConfig)
 
-	sv := testutils.NewAPIServer(t, db,
-		testutils.TestAPIServerConfig{Plugins: []catalog.BuiltInPlugin{testplugins.NewKeystoreOperator()}})
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
 
 	return db, sv, tenants[0]
 }

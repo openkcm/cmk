@@ -24,7 +24,7 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -135,7 +135,7 @@ func NewSystemManager(
 	repository repo.Repo,
 	clientsFactory clients.Factory,
 	eventFactory *eventprocessor.EventFactory,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	cfg *config.Config,
 	keyConfigManager *KeyConfigManager,
 	user User,

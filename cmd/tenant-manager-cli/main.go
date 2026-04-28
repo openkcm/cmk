@@ -19,6 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/log"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 )
 
 func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {
@@ -93,7 +94,7 @@ func setupCommands(
 	ctx context.Context,
 	cfg *config.Config,
 	dbCon *multitenancy.DB,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 ) (*cobra.Command, error) {
 	factory, err := commands.NewCommandFactory(ctx, cfg, dbCon, svcRegistry)
 	if err != nil {

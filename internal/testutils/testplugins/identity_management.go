@@ -2,14 +2,13 @@ package testplugins
 
 import (
 	"context"
-	"log/slog"
 
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
+	"github.com/openkcm/plugin-sdk/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	idmangv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
-	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 )
 
 type IdentityManagementUserRef struct {
@@ -33,85 +32,71 @@ var IdentityManagementGroupMembership = map[string][]IdentityManagementUserRef{
 	},
 }
 
-type IdentityManagement struct {
-	configv1.UnsafeConfigServer
-	idmangv1.UnsafeIdentityManagementServiceServer
+type TestIdentityManagement struct{}
+
+var _ identitymanagement.IdentityManagement = (*TestIdentityManagement)(nil)
+
+func NewTestIdentityManagement() *TestIdentityManagement {
+	return &TestIdentityManagement{}
 }
 
-func NewIdentityManagement() catalog.BuiltInPlugin {
-	p := &IdentityManagement{}
-	return catalog.MakeBuiltIn(
-		Name,
-		idmangv1.IdentityManagementServicePluginServer(p),
-		configv1.ConfigServiceServer(p),
-	)
-}
-
-func (p *IdentityManagement) GetUser(
-	_ context.Context,
-	_ *idmangv1.GetUserRequest,
-) (*idmangv1.GetUserResponse, error) {
-	return &idmangv1.GetUserResponse{}, nil
-}
-
-func (p *IdentityManagement) Configure(
-	_ context.Context,
-	_ *configv1.ConfigureRequest,
-) (*configv1.ConfigureResponse, error) {
-	slog.Info("Configuring plugin")
-
-	return &configv1.ConfigureResponse{}, nil
-}
-
-func (p *IdentityManagement) GetUsersForGroup(
-	_ context.Context,
-	req *idmangv1.GetUsersForGroupRequest,
-) (*idmangv1.GetUsersForGroupResponse, error) {
-	users, ok := IdentityManagementGroupMembership[req.GetGroupId()]
-	respUsers := make([]*idmangv1.User, 0, len(users))
-
-	if ok {
-		for _, u := range users {
-			respUsers = append(respUsers, &idmangv1.User{
-				Id:    u.ID,
-				Email: u.Email,
-			})
-		}
-
-		return &idmangv1.GetUsersForGroupResponse{
-			Users: respUsers,
-		}, nil
+func (s *TestIdentityManagement) ServiceInfo() api.Info {
+	return testInfo{
+		configuredType: servicewrapper.IdentityManagementServiceType,
 	}
-
-	return &idmangv1.GetUsersForGroupResponse{}, nil
 }
 
-func (p *IdentityManagement) GetGroupsForUser(
+func (s *TestIdentityManagement) GetGroup(
 	_ context.Context,
-	_ *idmangv1.GetGroupsForUserRequest,
-) (*idmangv1.GetGroupsForUserResponse, error) {
-	return &idmangv1.GetGroupsForUserResponse{}, nil
-}
-
-func (p *IdentityManagement) GetAllGroups(
-	_ context.Context,
-	_ *idmangv1.GetAllGroupsRequest,
-) (*idmangv1.GetAllGroupsResponse, error) {
-	return &idmangv1.GetAllGroupsResponse{}, nil
-}
-
-func (p *IdentityManagement) GetGroup(
-	_ context.Context,
-	req *idmangv1.GetGroupRequest,
-) (*idmangv1.GetGroupResponse, error) {
-	if g, ok := IdentityManagementGroups[req.GetGroupName()]; ok {
-		return &idmangv1.GetGroupResponse{
-			Group: &idmangv1.Group{
-				Id:   g,
-				Name: req.GetGroupName(),
+	req *identitymanagement.GetGroupRequest,
+) (*identitymanagement.GetGroupResponse, error) {
+	if g, ok := IdentityManagementGroups[req.GroupName]; ok {
+		return &identitymanagement.GetGroupResponse{
+			Group: identitymanagement.Group{
+				ID:   g,
+				Name: req.GroupName,
 			},
 		}, nil
 	}
-
 	return nil, status.New(codes.NotFound, "group does not exist").Err()
+}
+
+func (s *TestIdentityManagement) GetUser(
+	_ context.Context,
+	_ *identitymanagement.GetUserRequest,
+) (*identitymanagement.GetUserResponse, error) {
+	return &identitymanagement.GetUserResponse{}, nil
+}
+
+func (s *TestIdentityManagement) ListGroups(
+	_ context.Context,
+	_ *identitymanagement.ListGroupsRequest,
+) (*identitymanagement.ListGroupsResponse, error) {
+	return &identitymanagement.ListGroupsResponse{}, nil
+}
+
+func (s *TestIdentityManagement) ListGroupUsers(
+	_ context.Context,
+	req *identitymanagement.ListGroupUsersRequest,
+) (*identitymanagement.ListGroupUsersResponse, error) {
+	members, ok := IdentityManagementGroupMembership[req.GroupID]
+	if !ok {
+		return &identitymanagement.ListGroupUsersResponse{}, nil
+	}
+
+	users := make([]identitymanagement.User, 0, len(members))
+	for _, u := range members {
+		users = append(users, identitymanagement.User{
+			ID:    u.ID,
+			Email: u.Email,
+		})
+	}
+	return &identitymanagement.ListGroupUsersResponse{Users: users}, nil
+}
+
+func (s *TestIdentityManagement) ListUserGroups(
+	_ context.Context,
+	_ *identitymanagement.ListUserGroupsRequest,
+) (*identitymanagement.ListUserGroupsResponse, error) {
+	return &identitymanagement.ListUserGroupsResponse{}, nil
 }

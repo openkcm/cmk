@@ -14,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -29,7 +28,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -46,9 +44,7 @@ func startAPIKeyConfig(t *testing.T) (
 
 	tenant := tenants[0]
 
-	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
-	})
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)

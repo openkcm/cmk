@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -19,7 +18,6 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
@@ -28,7 +26,7 @@ import (
 
 var ErrForced = errors.New("forced")
 
-func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*manager.TenantConfigManager,
+func SetupTenantConfigManager(t *testing.T, opts ...testplugins.RegistryOption) (*manager.TenantConfigManager,
 	*multitenancy.DB, string,
 ) {
 	t.Helper()
@@ -36,25 +34,21 @@ func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*m
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	r := sql.NewRepository(db)
-	ps, psCfg := testutils.NewTestPlugins(plugins...)
+	svcRegistry := testutils.NewTestPlugins(opts...)
 
 	cfg := &config.Config{
-		Plugins: psCfg,
 		Certificates: config.Certificates{
 			RootCertURL:  TestCertURL,
 			ValidityDays: config.MinCertificateValidityDays,
 		},
 	}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
-
 	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg)
 
 	return tenantManager, db, tenants[0]
 }
 
 // SetupTenantConfigManagerWithRole creates a test tenant with a specific role
-func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []catalog.BuiltInPlugin) (*manager.TenantConfigManager,
+func SetupTenantConfigManagerWithRole(t *testing.T, role string, opts ...testplugins.RegistryOption) (*manager.TenantConfigManager,
 	*multitenancy.DB, string,
 ) {
 	t.Helper()
@@ -62,18 +56,14 @@ func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []catal
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithTenantRole(model.TenantRole(role)))
 
 	r := sql.NewRepository(db)
-	ps, psCfg := testutils.NewTestPlugins(plugins...)
-	cfg := config.Config{Plugins: psCfg}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
-
+	svcRegistry := testutils.NewTestPlugins(opts...)
 	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 
 	return tenantManager, db, tenants[0]
 }
 
 func TestNewTenantConfigManager(t *testing.T) {
-	m, _, _ := SetupTenantConfigManager(t, nil)
+	m, _, _ := SetupTenantConfigManager(t)
 
 	assert.NotNil(t, m)
 }
@@ -82,7 +72,7 @@ func TestNewTenantConfigManager(t *testing.T) {
 func TestGetDefaultKeystore(t *testing.T) {
 	t.Run("DefaultKeystore tenant config not exists, get from pool", func(t *testing.T) {
 		// Arrange
-		configManager, db, tenant := SetupTenantConfigManager(t, nil)
+		configManager, db, tenant := SetupTenantConfigManager(t)
 		// Add a keystore configuration to the pool
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
@@ -112,7 +102,7 @@ func TestGetDefaultKeystore(t *testing.T) {
 
 	t.Run("Config Exists", func(t *testing.T) {
 		// Arrange
-		configManager, db, tenant := SetupTenantConfigManager(t, nil)
+		configManager, db, tenant := SetupTenantConfigManager(t)
 
 		tenantConfigRepo := sql.NewRepository(db)
 		ksConfigJSON, err := json.Marshal(&model.KeystoreConfig{
@@ -150,7 +140,7 @@ func TestGetDefaultKeystore(t *testing.T) {
 func TestSetDefaultKeystore(t *testing.T) {
 	t.Run("DefaultKeystore tenant config not exists, set default keystore", func(t *testing.T) {
 		// Arrange
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
 		// Act
@@ -173,7 +163,7 @@ func TestSetDefaultKeystore(t *testing.T) {
 
 	t.Run("Update existing default keystore config", func(t *testing.T) {
 		// Arrange
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		err := configManager.SetDefaultKeystore(
 			ctx,
@@ -231,17 +221,12 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := config.Config{}
-			var ps []catalog.BuiltInPlugin
-			var psCfg []catalog.PluginConfig
-			if tt.enabledPlugins {
-				ps, psCfg = testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
-			}
-
-			cfg.Plugins = psCfg
-
-			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-			assert.NoError(t, err)
+			svcRegistry := testutils.NewTestPlugins(
+				testplugins.WithKeyManagement(
+					testplugins.Name,
+					testplugins.NewTestKeyManagement(tt.enabledPlugins, false),
+				),
+			)
 
 			mgr := manager.NewTenantConfigManager(nil, svcRegistry, nil)
 
@@ -253,14 +238,16 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 
 func TestGetTenantsKeystore(t *testing.T) {
 	t.Run("Should get tenant keystores with hyok", func(t *testing.T) {
-		m, _, tenant := SetupTenantConfigManager(t, []catalog.BuiltInPlugin{testplugins.NewKeystoreOperator()})
+		m, _, tenant := SetupTenantConfigManager(t,
+			testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, false)))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.NotEmpty(t, res.HYOK)
 	})
 
 	t.Run("Should get tenant keystores with no hyok providers", func(t *testing.T) {
-		m, _, tenant := SetupTenantConfigManager(t, nil)
+		m, _, tenant := SetupTenantConfigManager(t,
+			testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(false, true)))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Empty(t, res.HYOK)
@@ -268,14 +255,14 @@ func TestGetTenantsKeystore(t *testing.T) {
 	})
 
 	t.Run("Should keep BYOK disabled when feature gate is missing", func(t *testing.T) {
-		m, _, tenant := SetupTenantConfigManager(t, nil)
+		m, _, tenant := SetupTenantConfigManager(t)
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.False(t, res.AllowBYOK)
 	})
 
 	t.Run("Should enable BYOK when allow-byok feature gate is true", func(t *testing.T) {
-		_, db, tenant := SetupTenantConfigManager(t, nil)
+		_, db, tenant := SetupTenantConfigManager(t)
 		r := sql.NewRepository(db)
 		cfg := &config.Config{
 			BaseConfig: commoncfg.BaseConfig{
@@ -302,7 +289,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 	}
 
 	t.Run("Should update workflow config with partial update", func(t *testing.T) {
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
@@ -318,7 +305,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 	})
 
 	t.Run("Should update multiple fields at once", func(t *testing.T) {
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
@@ -336,7 +323,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 	})
 
 	t.Run("Should fail when retention period is less than minimum", func(t *testing.T) {
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
@@ -350,7 +337,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 	})
 
 	t.Run("Should create default config when updating non-existent config", func(t *testing.T) {
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
@@ -363,7 +350,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 	})
 
 	t.Run("Should handle nil update gracefully", func(t *testing.T) {
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
@@ -395,9 +382,9 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 				var tenant string
 
 				if tt.role == tenantpb.Role_ROLE_TEST.String() {
-					configManager, _, tenant = SetupTenantConfigManagerWithRole(t, tt.role, nil)
+					configManager, _, tenant = SetupTenantConfigManagerWithRole(t, tt.role)
 				} else {
-					configManager, _, tenant = SetupTenantConfigManager(t, nil)
+					configManager, _, tenant = SetupTenantConfigManager(t)
 				}
 
 				ctx := testutils.CreateCtxWithTenant(tenant)
@@ -420,7 +407,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		}
 
 		t.Run("ROLE_LIVE can update other fields without changing Enabled", func(t *testing.T) {
-			configManager, _, tenant := SetupTenantConfigManager(t, nil)
+			configManager, _, tenant := SetupTenantConfigManager(t)
 			ctx := testutils.CreateCtxWithTenant(tenant)
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
@@ -438,7 +425,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 
 		t.Run("ROLE_TEST can update Enabled with other fields simultaneously", func(t *testing.T) {
 			configManager, _, tenant := SetupTenantConfigManagerWithRole(t,
-				tenantpb.Role_ROLE_TEST.String(), nil)
+				tenantpb.Role_ROLE_TEST.String())
 			ctx := testutils.CreateCtxWithTenant(tenant)
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(false))
 
@@ -456,7 +443,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		})
 
 		t.Run("Setting same Enabled value does not trigger role validation", func(t *testing.T) {
-			configManager, _, tenant := SetupTenantConfigManager(t, nil)
+			configManager, _, tenant := SetupTenantConfigManager(t)
 			ctx := testutils.CreateCtxWithTenant(tenant)
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 

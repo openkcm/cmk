@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/openkcm/plugin-sdk/api"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -14,7 +13,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/wrapper/system_information"
 	"github.com/openkcm/cmk/internal/repo"
@@ -39,12 +37,7 @@ func SetupSystemInfoManager(t *testing.T) (
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepository := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(
-		testplugins.NewSystemInformation(),
-	)
-
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &config.Config{Plugins: psCfg}, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 	systemManager, err := manager.NewSystemInformationManager(
 		dbRepository,
 		svcRegistry,
@@ -136,42 +129,33 @@ func createSystemForTests() *model.System {
 func TestNewSystemInformationManager(t *testing.T) {
 	tests := []struct {
 		name          string
-		plugins       []catalog.BuiltInPlugin
+		opts          []testplugins.RegistryOption
 		expectedError error
 	}{
 		{
 			name:          "NoPluginInCatalog",
-			plugins:       []catalog.BuiltInPlugin{},
+			opts:          []testplugins.RegistryOption{testplugins.WithNoSystemInformation()},
 			expectedError: system_information.ErrNotConfigured,
 		},
 		{
 			name:          "ValidPluginInCatalog",
-			plugins:       []catalog.BuiltInPlugin{testplugins.NewSystemInformation()},
+			opts:          nil,
 			expectedError: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ps, psCfg := testutils.NewTestPlugins(
-				tt.plugins...,
-			)
-			cfg := config.Config{
-				Plugins: psCfg,
-				ContextModels: config.ContextModels{
-					System: config.System{
-						OptionalProperties: map[string]config.SystemProperty{
-							SystemRole:   {},
-							SystemRoleID: {},
-							SystemName:   {},
-						},
-					},
+			svcRegistry := testutils.NewTestPlugins(tt.opts...)
+			cfg := config.System{
+				OptionalProperties: map[string]config.SystemProperty{
+					SystemRole:   {},
+					SystemRoleID: {},
+					SystemName:   {},
 				},
 			}
-			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-			assert.NoError(t, err)
 
-			_, err = manager.NewSystemInformationManager(nil, svcRegistry, &cfg.ContextModels.System)
+			_, err := manager.NewSystemInformationManager(nil, svcRegistry, &cfg)
 			if tt.expectedError != nil {
 				assert.ErrorIs(t, err, tt.expectedError)
 			} else {

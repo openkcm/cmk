@@ -14,7 +14,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -31,7 +30,7 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/handlers"
 	"github.com/openkcm/cmk/internal/middleware"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
@@ -40,9 +39,9 @@ const TestCertURL = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.cr
 const TestHostPrefix = "https://kms.test/cmk/v1/"
 
 type TestAPIServerConfig struct {
-	Plugins []catalog.BuiltInPlugin       // Plugins only set if needed
-	GRPCCon *commongrpc.DynamicClientConn // GRPCClient only set if needed
-	Config  config.Config
+	Registry serviceapi.Registry           // Registry is optional; defaults to testplugins.NewRegistry()
+	GRPCCon  *commongrpc.DynamicClientConn // GRPCClient only set if needed
+	Config   config.Config
 }
 
 // NewAPIServer creates a new API server with the given database connection
@@ -55,8 +54,10 @@ func NewAPIServer(
 
 	cfg := testCfg.Config
 
-	ps, psCfg := NewTestPlugins(testCfg.Plugins...)
-	cfg.Plugins = psCfg
+	svcRegistry := testCfg.Registry
+	if svcRegistry == nil {
+		svcRegistry = NewTestPlugins()
+	}
 
 	cfg.Certificates.RootCertURL = TestCertURL
 	if cfg.Database == (config.Database{}) {
@@ -99,9 +100,6 @@ func NewAPIServer(
 	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, &cfg)
 
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
-
-	svcRegistry, err := cmkpluginregistry.New(tb.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(tb, err)
 
 	controller := cmk.NewAPIController(tb.Context(), authzRepo, &cfg, factory, migrator, svcRegistry, authzAPILoader)
 
