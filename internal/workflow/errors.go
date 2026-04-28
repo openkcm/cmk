@@ -10,6 +10,7 @@ import (
 var (
 	ErrInvalidEventActor         = errors.New("invalid event actor")
 	ErrInsufficientApproverCount = errors.New("insufficient approvers to transition to next state")
+	ErrApproverNoLongerEligible  = errors.New("approver is no longer in the admin group and has not voted yet")
 	ErrTransitionExecution       = errors.New("failed to execute transition")
 	ErrWorkflowExecution         = errors.New("failed to execute workflow action")
 	ErrUpdateWorkflowState       = errors.New("fialed to update workflow state")
@@ -40,4 +41,11 @@ func NewInsufficientApproverCountError(currentCount, requiredCount int) error {
 // NewTransitionError creates an error when a transition fails.
 func NewTransitionError(transition Transition) error {
 	return fmt.Errorf("%w %s", ErrTransitionExecution, transition)
+}
+
+// NewApproverNoLongerEligibleError creates an error when an approver is no longer
+// in the admin group and has not voted yet.
+func NewApproverNoLongerEligibleError(userID string) error {
+	msg := fmt.Sprintf("approver %s has been removed from the admin group and cannot vote", userID)
+	return errs.Wrapf(ErrApproverNoLongerEligible, msg)
 }

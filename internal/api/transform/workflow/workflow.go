@@ -20,10 +20,65 @@ import (
 
 var ErrExpiryGreaterThanMaximum = errors.New("expiry exceeds maximum")
 
+const (
+	// AdditionalInfoMessageInsufficientApprovers is the message for the insufficient approvers warning
+	AdditionalInfoMessageInsufficientApprovers = "The number of eligible approvers is currently" +
+		" insufficient to meet the minimum approval criteria."
+	// AdditionalInfoMessageEligibilityCheckError is the message when eligibility verification fails
+	AdditionalInfoMessageEligibilityCheckError = "Unable to verify workflow eligibility. " +
+		"The approval system may be temporarily unavailable. Please try again later or contact support."
+	// AdditionalInfoMessageInitiatorIneligible is the message when initiator is no longer eligible to confirm
+	AdditionalInfoMessageInitiatorIneligible = "The workflow initiator is no longer eligible to confirm this workflow."
+)
+
+// buildEligibilityAdditionalInfo creates additional info items based on eligibility status
+func buildEligibilityAdditionalInfo(
+	insufficientApprovers bool,
+	initiatorIneligible bool,
+	eligibilityErr error,
+) *[]cmkapi.WorkflowAdditionalInfo {
+	var apiInfoItems []cmkapi.WorkflowAdditionalInfo
+
+	// If eligibility check failed, show only the error (takes precedence over warnings)
+	if eligibilityErr != nil {
+		apiInfoItems = append(apiInfoItems, cmkapi.WorkflowAdditionalInfo{
+			Code:     cmkapi.WorkflowAdditionalInfoCodeWORKFLOWELIGIBILITYCHECKFAILED,
+			Severity: cmkapi.WorkflowAdditionalInfoSeverityERROR,
+			Message:  AdditionalInfoMessageEligibilityCheckError,
+		})
+	} else {
+		// No error - show all applicable warnings
+		if initiatorIneligible {
+			apiInfoItems = append(apiInfoItems, cmkapi.WorkflowAdditionalInfo{
+				Code:     cmkapi.WorkflowAdditionalInfoCodeINITIATORINELIGIBLE,
+				Severity: cmkapi.WorkflowAdditionalInfoSeverityWARNING,
+				Message:  AdditionalInfoMessageInitiatorIneligible,
+			})
+		}
+		if insufficientApprovers {
+			apiInfoItems = append(apiInfoItems, cmkapi.WorkflowAdditionalInfo{
+				Code:     cmkapi.WorkflowAdditionalInfoCodeINSUFFICIENTAPPROVERS,
+				Severity: cmkapi.WorkflowAdditionalInfoSeverityWARNING,
+				Message:  AdditionalInfoMessageInsufficientApprovers,
+			})
+		}
+	}
+
+	if len(apiInfoItems) > 0 {
+		return &apiInfoItems
+	}
+	return nil
+}
+
 // ToAPI converts a workflow model to an API workflow presentation.
+// eligibilityErr should be passed if there was an error checking approver eligibility.
+// initiatorIneligible should be true if the initiator is no longer eligible to confirm the workflow.
 func ToAPI(
 	ctx context.Context,
 	w model.Workflow,
+	insufficientApprovers bool,
+	initiatorIneligible bool,
+	eligibilityErr error,
 	identityManager identitymanagement.IdentityManagement,
 ) (*cmkapi.Workflow, error) {
 	err := sanitise.Sanitize(&w)
@@ -42,6 +97,13 @@ func ToAPI(
 		return nil, err
 	}
 
+	// Build metadata with additional info
+	metadata := &cmkapi.WorkflowMetadata{
+		CreatedAt:      ptr.PointTo(w.CreatedAt),
+		UpdatedAt:      ptr.PointTo(w.UpdatedAt),
+		AdditionalInfo: buildEligibilityAdditionalInfo(insufficientApprovers, initiatorIneligible, eligibilityErr),
+	}
+
 	return &cmkapi.Workflow{
 		Id:                     ptr.PointTo(w.ID),
 		InitiatorID:            w.InitiatorID,
@@ -55,11 +117,8 @@ func ToAPI(
 		ArtifactID:             w.ArtifactID,
 		Parameters:             ptr.PointTo(w.Parameters),
 		FailureReason:          ptr.PointTo(w.FailureReason),
-		Metadata: ptr.PointTo(cmkapi.WorkflowMetadata{
-			CreatedAt: ptr.PointTo(w.CreatedAt),
-			UpdatedAt: ptr.PointTo(w.UpdatedAt),
-		}),
-		ExpiresAt: w.ExpiryDate,
+		Metadata:               metadata,
+		ExpiresAt:              w.ExpiryDate,
 	}, nil
 }
 
@@ -71,9 +130,12 @@ func ToAPIDetailed(
 	approverGroups []*model.Group,
 	transitions []wfMechanism.Transition,
 	approvalSummary *wfMechanism.ApprovalSummary,
+	insufficientApprovers bool,
+	initiatorIneligible bool,
+	eligibilityErr error,
 	identityManager identitymanagement.IdentityManagement,
 ) (*cmkapi.DetailedWorkflow, error) {
-	base, err := ToAPI(ctx, w, identityManager)
+	base, err := ToAPI(ctx, w, insufficientApprovers, initiatorIneligible, eligibilityErr, identityManager)
 	if err != nil {
 		return nil, err
 	}

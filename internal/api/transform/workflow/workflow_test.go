@@ -3,12 +3,14 @@ package workflow_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/workflow"
@@ -19,6 +21,10 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
+
+const testStateWaitConfirmation = "WAIT_CONFIRMATION"
+
+var errSCIMUnavailable = errors.New("SCIM service unavailable")
 
 func TestWorkflow_ToAPI(t *testing.T) {
 	workflowMutator := testutils.NewMutator(func() model.Workflow {
@@ -88,7 +94,9 @@ func TestWorkflow_ToAPI(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
-			apiWorkflow, err := workflow.ToAPI(ctx, tt.dbWorkflow, testpluginregistry.NewMockIDMService())
+			apiWorkflow, err := workflow.ToAPI(ctx,
+				tt.dbWorkflow, false, false, nil,
+				testpluginregistry.NewMockIDMService())
 
 			if tt.errorExpected {
 				assert.Error(t, err)
@@ -314,6 +322,167 @@ func TestWorkflow_ApproverToAPI(t *testing.T) {
 			assert.Equal(t, tt.input.UserID, apiApprover.Id)
 			assert.Equal(t, name, *apiApprover.Name)
 			assert.Equal(t, tt.expected, apiApprover.Decision)
+		})
+	}
+}
+
+func TestWorkflow_ToAPI_EligibilityMetadata(t *testing.T) {
+	workflowMutator := testutils.NewMutator(func() model.Workflow {
+		return model.Workflow{
+			ID:           uuid.New(),
+			InitiatorID:  uuid.NewString(),
+			State:        "WAIT_APPROVAL",
+			ActionType:   "LINK",
+			ArtifactType: "SYSTEM",
+			ArtifactID:   uuid.New(),
+			Parameters:   "ENABLED",
+		}
+	})
+
+	tests := []struct {
+		name                  string
+		dbWorkflow            model.Workflow
+		insufficientApprovers bool
+		initiatorIneligible   bool
+		eligibilityErr        error
+		expectedInfoCount     int
+		expectedInfos         []cmkapi.WorkflowAdditionalInfo
+	}{
+		{
+			name:                  "no eligibility issues",
+			dbWorkflow:            workflowMutator(),
+			insufficientApprovers: false,
+			initiatorIneligible:   false,
+			eligibilityErr:        nil,
+			expectedInfoCount:     0,
+			expectedInfos:         nil,
+		},
+		{
+			name:                  "insufficient approvers - warning",
+			dbWorkflow:            workflowMutator(),
+			insufficientApprovers: true,
+			initiatorIneligible:   false,
+			eligibilityErr:        nil,
+			expectedInfoCount:     1,
+			expectedInfos: []cmkapi.WorkflowAdditionalInfo{
+				{
+					Code:     cmkapi.WorkflowAdditionalInfoCodeINSUFFICIENTAPPROVERS,
+					Severity: cmkapi.WorkflowAdditionalInfoSeverityWARNING,
+					Message:  workflow.AdditionalInfoMessageInsufficientApprovers,
+				},
+			},
+		},
+		{
+			name:                  "eligibility check failed - error",
+			dbWorkflow:            workflowMutator(),
+			insufficientApprovers: false,
+			initiatorIneligible:   false,
+			eligibilityErr:        errSCIMUnavailable,
+			expectedInfoCount:     1,
+			expectedInfos: []cmkapi.WorkflowAdditionalInfo{
+				{
+					Code:     cmkapi.WorkflowAdditionalInfoCodeWORKFLOWELIGIBILITYCHECKFAILED,
+					Severity: cmkapi.WorkflowAdditionalInfoSeverityERROR,
+					Message:  workflow.AdditionalInfoMessageEligibilityCheckError,
+				},
+			},
+		},
+		{
+			name:                  "both error and insufficient - error takes precedence, warnings suppressed",
+			dbWorkflow:            workflowMutator(),
+			insufficientApprovers: true,
+			initiatorIneligible:   false,
+			eligibilityErr:        errSCIMUnavailable,
+			expectedInfoCount:     1,
+			expectedInfos: []cmkapi.WorkflowAdditionalInfo{
+				{
+					Code:     cmkapi.WorkflowAdditionalInfoCodeWORKFLOWELIGIBILITYCHECKFAILED,
+					Severity: cmkapi.WorkflowAdditionalInfoSeverityERROR,
+					Message:  workflow.AdditionalInfoMessageEligibilityCheckError,
+				},
+			},
+		},
+		{
+			name: "initiator ineligible - warning",
+			dbWorkflow: workflowMutator(func(w *model.Workflow) {
+				w.State = testStateWaitConfirmation
+			}),
+			insufficientApprovers: false,
+			initiatorIneligible:   true,
+			eligibilityErr:        nil,
+			expectedInfoCount:     1,
+			expectedInfos: []cmkapi.WorkflowAdditionalInfo{
+				{
+					Code:     cmkapi.WorkflowAdditionalInfoCodeINITIATORINELIGIBLE,
+					Severity: cmkapi.WorkflowAdditionalInfoSeverityWARNING,
+					Message:  workflow.AdditionalInfoMessageInitiatorIneligible,
+				},
+			},
+		},
+		{
+			name: "both initiator ineligible and insufficient approvers - both warnings shown",
+			dbWorkflow: workflowMutator(func(w *model.Workflow) {
+				w.State = testStateWaitConfirmation
+			}),
+			insufficientApprovers: true,
+			initiatorIneligible:   true,
+			eligibilityErr:        nil,
+			expectedInfoCount:     2,
+			expectedInfos: []cmkapi.WorkflowAdditionalInfo{
+				{
+					Code:     cmkapi.WorkflowAdditionalInfoCodeINITIATORINELIGIBLE,
+					Severity: cmkapi.WorkflowAdditionalInfoSeverityWARNING,
+					Message:  workflow.AdditionalInfoMessageInitiatorIneligible,
+				},
+				{
+					Code:     cmkapi.WorkflowAdditionalInfoCodeINSUFFICIENTAPPROVERS,
+					Severity: cmkapi.WorkflowAdditionalInfoSeverityWARNING,
+					Message:  workflow.AdditionalInfoMessageInsufficientApprovers,
+				},
+			},
+		},
+		{
+			name: "eligibility error takes precedence over all warnings",
+			dbWorkflow: workflowMutator(func(w *model.Workflow) {
+				w.State = testStateWaitConfirmation
+			}),
+			insufficientApprovers: true,
+			initiatorIneligible:   true,
+			eligibilityErr:        errSCIMUnavailable,
+			expectedInfoCount:     1,
+			expectedInfos: []cmkapi.WorkflowAdditionalInfo{
+				{
+					Code:     cmkapi.WorkflowAdditionalInfoCodeWORKFLOWELIGIBILITYCHECKFAILED,
+					Severity: cmkapi.WorkflowAdditionalInfoSeverityERROR,
+					Message:  workflow.AdditionalInfoMessageEligibilityCheckError,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			apiWorkflow, err := workflow.ToAPI(ctx, tt.dbWorkflow,
+				tt.insufficientApprovers, tt.initiatorIneligible, tt.eligibilityErr,
+				testpluginregistry.NewMockIDMService())
+			require.NoError(t, err)
+			require.NotNil(t, apiWorkflow)
+			require.NotNil(t, apiWorkflow.Metadata)
+
+			if tt.expectedInfoCount == 0 {
+				assert.Nil(t, apiWorkflow.Metadata.AdditionalInfo)
+			} else {
+				require.NotNil(t, apiWorkflow.Metadata.AdditionalInfo)
+				require.Len(t, *apiWorkflow.Metadata.AdditionalInfo, tt.expectedInfoCount)
+
+				actualInfos := *apiWorkflow.Metadata.AdditionalInfo
+				for i, expectedInfo := range tt.expectedInfos {
+					assert.Equal(t, expectedInfo.Code, actualInfos[i].Code, "Code mismatch at index %d", i)
+					assert.Equal(t, expectedInfo.Severity, actualInfos[i].Severity, "Severity mismatch at index %d", i)
+					assert.Equal(t, expectedInfo.Message, actualInfos[i].Message, "Message mismatch at index %d", i)
+				}
+			}
 		})
 	}
 }
