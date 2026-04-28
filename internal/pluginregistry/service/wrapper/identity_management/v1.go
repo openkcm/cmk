@@ -30,6 +30,27 @@ func (v1 *V1) ServiceInfo() api.Info {
 	return v1.Info
 }
 
+func (v1 *V1) GetUser(
+	ctx context.Context,
+	req *identitymanagement.GetUserRequest,
+) (*identitymanagement.GetUserResponse, error) {
+	in := &grpcidentitymanagementv1.GetUserRequest{
+		UserId:      req.UserID,
+		AuthContext: AuthContextToGRPC(&req.AuthContext),
+	}
+	if err := protovalidate.Validate(in); err != nil {
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
+	}
+
+	grpcResp, err := v1.IdentityManagementServicePluginClient.GetUser(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return &identitymanagement.GetUserResponse{
+		User: FromGRPCUser(grpcResp.GetUser()),
+	}, nil
+}
+
 func (v1 *V1) GetGroup(
 	ctx context.Context,
 	req *identitymanagement.GetGroupRequest,

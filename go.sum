@@ -157,8 +157,8 @@ github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsI
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761/go.mod h1:5TJZWKEWniPve33vlWYSoGYefn3gLQRzjfDlhSJ9ZKM=
-github.com/jackc/pgx/v5 v5.9.1 h1:uwrxJXBnx76nyISkhr33kQLlUqjv7et7b9FjCen/tdc=
-github.com/jackc/pgx/v5 v5.9.1/go.mod h1:mal1tBGAFfLHvZzaYh77YS/eC6IX9OWbRV1QIIM0Jn4=
+github.com/jackc/pgx/v5 v5.9.2 h1:3ZhOzMWnR4yJ+RW1XImIPsD1aNSz4T4fyP7zlQb56hw=
+github.com/jackc/pgx/v5 v5.9.2/go.mod h1:mal1tBGAFfLHvZzaYh77YS/eC6IX9OWbRV1QIIM0Jn4=
 github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo=
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jhump/protoreflect v1.17.0 h1:qOEr613fac2lOuTgWN4tPAtLL7fUSbuJL5X5XumQh94=
@@ -264,8 +264,8 @@ github.com/openkcm/common-sdk v1.15.2 h1:bvY/wYTxreuqEiMaJtHIgffOPL8oqADIt34yixS
 github.com/openkcm/common-sdk v1.15.2/go.mod h1:K/7chyp7s9w8VZO7edy3+FI+lJ6ii0u7qfm8xD68ap0=
 github.com/openkcm/orbital v0.5.1 h1:fCFyGm059h2IkD8/u+GI7Ofqd54lFGj7zoujKI+7MQk=
 github.com/openkcm/orbital v0.5.1/go.mod h1:PqAOg75iYDrDQrL9uBQKAKfuBlNJgeG0pex1780Wo0E=
-github.com/openkcm/plugin-sdk v0.10.2 h1:Fw8JJrJDS+QfWBy2ETYKFpqai8q0i648Vrtad35pcs4=
-github.com/openkcm/plugin-sdk v0.10.2/go.mod h1:4vYRAD9vgtYpx815jS8QoWhfKqqoZ9Io1a4dMm4vSIM=
+github.com/openkcm/plugin-sdk v0.11.0 h1:+lU28sL/Y6vrdxS1ksVKjgJ2eFs2bBA8FvtAtO8Yq68=
+github.com/openkcm/plugin-sdk v0.11.0/go.mod h1:4vYRAD9vgtYpx815jS8QoWhfKqqoZ9Io1a4dMm4vSIM=
 github.com/pborman/getopt v0.0.0-20170112200414-7148bc3a4c30/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=
 github.com/pelletier/go-toml/v2 v2.2.4 h1:mye9XuhQ6gvn5h28+VilKrrPoQVanw5PMw/TB0t5Ec4=
 github.com/pelletier/go-toml/v2 v2.2.4/go.mod h1:2gIqNv+qfxSVS7cM2xJQKtLSTLUE9V8t9Stt+h56mCY=
