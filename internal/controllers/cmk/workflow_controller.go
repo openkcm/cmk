@@ -181,7 +181,9 @@ func (c *APIController) CreateWorkflow(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	returnAPIWorkflow, err := wfTransform.ToAPI(ctx, *workflow, false, false, nil, idm) // No eligibility check for create response
+	returnAPIWorkflow, err := wfTransform.ToAPI(ctx, *workflow,
+		false, false,
+		nil, idm) // No eligibility check for create response
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowToAPI, err)
 	}
@@ -279,7 +281,9 @@ func (c *APIController) TransitionWorkflow(
 	if err != nil {
 		return nil, err
 	}
-	apiWorkflow, err := wfTransform.ToAPI(ctx, *workflow, false, false, nil, idm) // No eligibility check for transition response
+	apiWorkflow, err := wfTransform.ToAPI(ctx,
+		*workflow, false, false, nil,
+		idm) // No eligibility check for transition response
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowToAPI, err)
 	}
