@@ -10,10 +10,8 @@ import (
 	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/common-sdk/pkg/health"
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/openkcm/common-sdk/pkg/otlp"
-	"github.com/openkcm/common-sdk/pkg/status"
 	"github.com/openkcm/orbital"
 	"github.com/openkcm/orbital/client/amqp"
 	"github.com/openkcm/orbital/codec"
@@ -22,9 +20,7 @@ import (
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/db/dsn"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
@@ -32,6 +28,7 @@ import (
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
+	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
 const (
@@ -70,7 +67,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	startStatusServer(ctx, cfg)
+	statusserver.StartStatusServer(ctx, cfg)
 
 	dbConn, err := db.StartDB(ctx, cfg)
 	if err != nil {
@@ -236,29 +233,6 @@ func validateAndGetClients(cfg *config.Config) (
 	}
 
 	return clientsFactory, nil
-}
-
-func startStatusServer(ctx context.Context, cfg *config.Config) {
-	dsnFromConfig, err := dsn.FromDBConfig(cfg.Database)
-	if err != nil {
-		log.Error(ctx, "Could not load DSN from database config", err)
-	}
-
-	healthOptions := []health.Option{
-		health.WithDatabaseChecker(
-			constants.DBDriver,
-			dsnFromConfig,
-		),
-	}
-
-	go func() {
-		err := status.Serve(ctx, &cfg.BaseConfig, healthOptions...)
-		if err != nil {
-			log.Error(ctx, errMsgStatusServer, err)
-
-			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
-		}
-	}()
 }
 
 func loadConfig() (*config.Config, error) {

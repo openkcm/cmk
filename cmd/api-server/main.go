@@ -7,23 +7,21 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"syscall"
 	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/health"
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/openkcm/common-sdk/pkg/otlp"
-	"github.com/openkcm/common-sdk/pkg/status"
 	"github.com/samber/oops"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/daemon"
 	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/utils/cmd"
+	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
 var (
@@ -60,7 +58,24 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	// Start status server
-	startStatusServer(ctx, cfg)
+	statusserver.StartStatusServer(ctx, cfg, health.WithCheck(health.Check{
+		Name: "HTTP Server",
+		Check: func(ctx context.Context) error {
+			dialer := &net.Dialer{
+				Timeout: time.Second * 1,
+			}
+
+			conn, err := dialer.DialContext(ctx, "tcp", cfg.HTTP.Address)
+			if err != nil {
+				return fmt.Errorf("health check: cannot connect to %s: %w", cfg.HTTP.Address, err)
+			}
+			defer func() { _ = conn.Close() }()
+
+			return nil
+		},
+	}))
+
+	go daemon.MonitorKeystorePoolSize(ctx, cfg)
 
 	// Database initialisation
 	dbCon, err := db.StartDB(ctx, cfg)
@@ -89,47 +104,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	return nil
-}
-
-func startStatusServer(ctx context.Context, cfg *config.Config) {
-	dsnFromConfig, err := dsn.FromDBConfig(cfg.Database)
-	if err != nil {
-		log.Error(ctx, "Could not load DSN from database config", err)
-	}
-
-	healthOptions := []health.Option{
-		health.WithDatabaseChecker(
-			constants.DBDriver,
-			dsnFromConfig,
-		),
-		health.WithCheck(health.Check{
-			Name: "HTTP Server",
-			Check: func(ctx context.Context) error {
-				dialer := &net.Dialer{
-					Timeout: time.Second * 1,
-				}
-
-				conn, err := dialer.DialContext(ctx, "tcp", cfg.HTTP.Address)
-				if err != nil {
-					return fmt.Errorf("health check: cannot connect to %s: %w", cfg.HTTP.Address, err)
-				}
-				defer func() { _ = conn.Close() }()
-
-				return nil
-			},
-		}),
-	}
-
-	go daemon.MonitorKeystorePoolSize(ctx, cfg)
-
-	go func() {
-		err := status.Serve(ctx, &cfg.BaseConfig, healthOptions...)
-		if err != nil {
-			log.Error(ctx, "Failure on the status server", err)
-
-			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
-		}
-	}()
 }
 
 // main is the entry point for the application. It is intentionally kept small
