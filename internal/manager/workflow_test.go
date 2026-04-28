@@ -2,6 +2,7 @@ package manager_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -1655,4 +1656,243 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 			}
 		},
 	)
+}
+
+func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
+
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
+	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+
+	groupIAM := "KMS_001"
+	groupIAM2 := "KMS_002"
+
+	adminGroup := testutils.NewGroup(func(g *model.Group) {
+		g.IAMIdentifier = groupIAM
+		g.Role = constants.KeyAdminRole
+	})
+	adminGroup2 := testutils.NewGroup(func(g *model.Group) {
+		g.IAMIdentifier = groupIAM2
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(ctx, t, r, adminGroup, adminGroup2)
+
+	initiatorID := "initiator-user-id"
+	approverID := "approver-user-id"
+	approverID2 := "approver-user-id-2"
+
+	// Helper to create a workflow with approver groups set
+	createWorkflowWithApproverGroups := func(t *testing.T, state string, groups ...*model.Group) *model.Workflow {
+		t.Helper()
+
+		groupIDs := make([]uuid.UUID, len(groups))
+		for i, g := range groups {
+			groupIDs[i] = g.ID
+		}
+		groupIDsJSON, err := json.Marshal(groupIDs)
+		assert.NoError(t, err)
+
+		wf := testutils.NewWorkflow(func(w *model.Workflow) {
+			w.State = state
+			w.ActionType = workflow.ActionTypeDelete.String()
+			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.InitiatorID = initiatorID
+			w.ApproverGroupIDs = groupIDsJSON
+			w.Approvers = []model.WorkflowApprover{
+				{UserID: approverID},
+				{UserID: approverID2},
+			}
+		})
+		_, err = createTestWorkflow(testutils.CreateCtxWithTenant(tenant), r, wf)
+		assert.NoError(t, err)
+		return wf
+	}
+
+	t.Run("Initiator removed from group cannot see workflow in list", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		// Initiator with NO matching groups (removed from group)
+		ctxNoGroup := cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: initiatorID,
+				Groups:     []string{"some-other-group"}, // Not in approver group
+			},
+			nil,
+		)
+
+		workflows, count, err := m.GetWorkflows(ctxNoGroup, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Equal(t, 0, count)
+		for _, w := range workflows {
+			assert.NotEqual(t, wf.ID, w.ID, "Removed initiator should not see the workflow")
+		}
+	})
+
+	t.Run("Initiator removed from group cannot revoke workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		ctxNoGroup := cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: initiatorID,
+				Groups:     []string{"some-other-group"},
+			},
+			nil,
+		)
+
+		_, err := m.TransitionWorkflow(ctxNoGroup, wf.ID, workflow.TransitionRevoke)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, manager.ErrWorkflowUserRemovedFromGroup)
+	})
+
+	t.Run("Initiator removed from group cannot confirm workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitConfirmation.String(), adminGroup)
+
+		ctxNoGroup := cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: initiatorID,
+				Groups:     []string{"some-other-group"},
+			},
+			nil,
+		)
+
+		_, err := m.TransitionWorkflow(ctxNoGroup, wf.ID, workflow.TransitionConfirm)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, manager.ErrWorkflowUserRemovedFromGroup)
+	})
+
+	t.Run("Approver removed from group cannot see workflow in list", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		// Approver with NO matching groups (removed from group)
+		ctxNoGroup := cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: approverID,
+				Groups:     []string{"some-other-group"},
+			},
+			nil,
+		)
+
+		workflows, count, err := m.GetWorkflows(ctxNoGroup, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Equal(t, 0, count)
+		for _, w := range workflows {
+			assert.NotEqual(t, wf.ID, w.ID, "Removed approver should not see the workflow")
+		}
+	})
+
+	t.Run("Approver removed from group cannot approve workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		ctxNoGroup := cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: approverID,
+				Groups:     []string{"some-other-group"},
+			},
+			nil,
+		)
+
+		_, err := m.TransitionWorkflow(ctxNoGroup, wf.ID, workflow.TransitionApprove)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, manager.ErrWorkflowUserRemovedFromGroup)
+	})
+
+	t.Run("Approver removed from group cannot reject workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		ctxNoGroup := cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: approverID,
+				Groups:     []string{"some-other-group"},
+			},
+			nil,
+		)
+
+		_, err := m.TransitionWorkflow(ctxNoGroup, wf.ID, workflow.TransitionReject)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, manager.ErrWorkflowUserRemovedFromGroup)
+	})
+
+	t.Run("Initiator still in group can see and act on workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		// Initiator still in the approver group
+		ctxInGroup := cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: initiatorID,
+				Groups:     []string{groupIAM},
+			},
+			nil,
+		)
+
+		workflows, count, err := m.GetWorkflows(ctxInGroup, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, count, 1)
+		found := false
+		for _, w := range workflows {
+			if w.ID == wf.ID {
+				found = true
+			}
+		}
+		assert.True(t, found, "Initiator still in group should see the workflow")
+
+		// Initiator can revoke
+		_, err = m.TransitionWorkflow(ctxInGroup, wf.ID, workflow.TransitionRevoke)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Approver still in group can see and act on workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		// Approver still in the approver group
+		ctxInGroup := cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: approverID,
+				Groups:     []string{groupIAM},
+			},
+			nil,
+		)
+
+		workflows, count, err := m.GetWorkflows(ctxInGroup, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, count, 1)
+		found := false
+		for _, w := range workflows {
+			if w.ID == wf.ID {
+				found = true
+			}
+		}
+		assert.True(t, found, "Approver still in group should see the workflow")
+	})
+
+	t.Run("New user added to group after workflow creation does not gain access", func(t *testing.T) {
+		_ = createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+		newUserID := "new-user-not-in-approvers"
+
+		// User that is in the IAM group but was NOT an approver at workflow creation time
+		ctxNewUser := cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: newUserID,
+				Groups:     []string{groupIAM},
+			},
+			nil,
+		)
+
+		// The new user is in the group but not in the approvers list,
+		// so the SQL join filter excludes them (not initiator, not approver).
+		// Workflow access requires being explicitly assigned as initiator or approver at creation time.
+		workflows, _, err := m.GetWorkflows(ctxNewUser, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		// New user should not see workflows they weren't assigned to
+		assert.Empty(t, workflows)
+	})
 }

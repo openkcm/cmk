@@ -39,9 +39,10 @@ const (
 )
 
 var (
-	ErrWorkflowApproverDecision   = errors.New("workflow approver decision")
-	ErrWorkflowNotAllowed         = errors.New("user has no permission to access workflow")
-	ErrWorkflowCreationNotAllowed = errors.New("user has no permission to create workflow")
+	ErrWorkflowApproverDecision     = errors.New("workflow approver decision")
+	ErrWorkflowNotAllowed           = errors.New("user has no permission to access workflow")
+	ErrWorkflowCreationNotAllowed   = errors.New("user has no permission to create workflow")
+	ErrWorkflowUserRemovedFromGroup = errors.New("user is no longer a member of the workflow approver groups")
 )
 
 type WorkflowStatus struct {
@@ -735,6 +736,8 @@ func (w *WorkflowManager) isSystemConnect(workflow *model.Workflow) bool {
 // getWorkflows retrieves workflows based on the provided query,
 // applying access control checks.
 // This must not be used in conjunction with preloading approvers.
+//
+//nolint:funlen
 func (w *WorkflowManager) getWorkflows(
 	ctx context.Context,
 	pagination repo.Pagination,
@@ -792,7 +795,94 @@ func (w *WorkflowManager) getWorkflows(
 		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 	}
 
+	if isGroupFiltered {
+		workflows, count, err = w.filterWorkflowsByCurrentGroupMembership(ctx, workflows)
+		if err != nil {
+			return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
+		}
+	}
+
 	return workflows, count, nil
+}
+
+// isUserInWorkflowApproverGroups checks if the user's current IAM groups
+// intersect with the workflow's approver groups. This ensures that users
+// removed from groups after workflow creation can no longer access the workflow.
+func (w *WorkflowManager) isUserInWorkflowApproverGroups(
+	ctx context.Context,
+	workflow *model.Workflow,
+	userIAMGroups []string,
+) (bool, error) {
+	// If no approver groups are set (e.g., workflow in INITIAL state before approvers assigned),
+	// skip the check — the workflow is not yet fully initialized
+	if len(workflow.ApproverGroupIDs) == 0 {
+		return true, nil
+	}
+
+	var groupIDs []uuid.UUID
+	if err := json.Unmarshal(workflow.ApproverGroupIDs, &groupIDs); err != nil {
+		return false, err
+	}
+
+	if len(groupIDs) == 0 {
+		return true, nil
+	}
+
+	userGroupSet := make(map[string]struct{}, len(userIAMGroups))
+	for _, g := range userIAMGroups {
+		userGroupSet[g] = struct{}{}
+	}
+
+	foundAnyGroup := false
+
+	for _, groupID := range groupIDs {
+		group := &model.Group{ID: groupID}
+		if _, err := w.repo.First(ctx, group, *repo.NewQuery()); err != nil {
+			continue // Group may have been deleted
+		}
+
+		foundAnyGroup = true
+
+		if _, ok := userGroupSet[group.IAMIdentifier]; ok {
+			return true, nil
+		}
+	}
+
+	// If all groups have been deleted, we cannot verify membership — allow access
+	if !foundAnyGroup {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// filterWorkflowsByCurrentGroupMembership removes workflows from the result set
+// where the caller is no longer a member of any of the workflow's approver groups.
+// Both initiators and approvers who have been removed from all relevant groups
+// will have the workflow excluded from their result set.
+func (w *WorkflowManager) filterWorkflowsByCurrentGroupMembership(
+	ctx context.Context,
+	workflows []*model.Workflow,
+) ([]*model.Workflow, int, error) {
+	userIAMGroups, err := cmkContext.ExtractClientDataGroupsString(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	filtered := make([]*model.Workflow, 0, len(workflows))
+	for _, wflow := range workflows {
+		inGroup, err := w.isUserInWorkflowApproverGroups(ctx, wflow, userIAMGroups)
+		if err != nil {
+			log.Error(ctx, "failed to check user group membership for workflow", err)
+			continue
+		}
+
+		if inGroup {
+			filtered = append(filtered, wflow)
+		}
+	}
+
+	return filtered, len(filtered), nil
 }
 
 // addApprovers adds the specified approvers to the workflow
@@ -894,13 +984,21 @@ func (w *WorkflowManager) checkOngoingWorkflowForArtifact(
 // decision and applies the transition to the wf.
 // This is wrapped in a transaction to ensure that DB state is
 // consistent in case of errors.
+//
+//nolint:cyclop
 func (w *WorkflowManager) applyTransition(
 	ctx context.Context,
 	userID string,
 	workflow *model.Workflow,
 	transition wf.Transition,
 ) error {
-	err := w.repo.Transaction(ctx, func(ctx context.Context) error {
+	// Check that the user is still a member of the workflow's approver groups
+	err := w.checkCurrentGroupMembership(ctx, workflow, userID, transition)
+	if err != nil {
+		return err
+	}
+
+	err = w.repo.Transaction(ctx, func(ctx context.Context) error {
 		workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, userID)
 		if err != nil {
 			return err
@@ -938,6 +1036,45 @@ func (w *WorkflowManager) applyTransition(
 	})
 	if err != nil {
 		return errs.Wrap(ErrInDBTransaction, err)
+	}
+
+	return nil
+}
+
+// checkCurrentGroupMembership validates that the user is still a member of
+// the workflow's approver groups before allowing a transition.
+// This prevents users removed from groups from performing actions on workflows.
+func (w *WorkflowManager) checkCurrentGroupMembership(
+	ctx context.Context,
+	workflow *model.Workflow,
+	userID string,
+	transition wf.Transition,
+) error {
+	// System user bypasses group membership checks
+	if userID == wf.SystemUserID {
+		return nil
+	}
+
+	// Only check for user-facing transitions
+	switch transition {
+	case wf.TransitionApprove, wf.TransitionReject, wf.TransitionRevoke, wf.TransitionConfirm:
+		// Continue with the check
+	default:
+		return nil
+	}
+
+	userIAMGroups, err := cmkContext.ExtractClientDataGroupsString(ctx)
+	if err != nil {
+		return errs.Wrap(ErrWorkflowUserRemovedFromGroup, err)
+	}
+
+	inGroup, err := w.isUserInWorkflowApproverGroups(ctx, workflow, userIAMGroups)
+	if err != nil {
+		return errs.Wrap(ErrWorkflowUserRemovedFromGroup, err)
+	}
+
+	if !inGroup {
+		return ErrWorkflowUserRemovedFromGroup
 	}
 
 	return nil
