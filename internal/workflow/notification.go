@@ -1,34 +1,56 @@
 package workflow
 
-import "github.com/openkcm/cmk/internal/model"
+import (
+	"context"
 
-func GetApproverUserNames(approvers []model.WorkflowApprover) []string {
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+)
+
+func GetApproverUserNames(
+	ctx context.Context,
+	approvers []model.WorkflowApprover,
+	idm identitymanagement.IdentityManagement,
+) ([]string, error) {
 	if len(approvers) == 0 {
-		return []string{}
+		return []string{}, nil
 	}
 
 	userNames := make([]string, 0, len(approvers))
 	for _, approver := range approvers {
-		if approver.UserName != "" {
-			userNames = append(userNames, approver.UserName)
+		userName, err := approver.GetUserName(ctx, idm)
+		if err != nil {
+			return nil, err
+		}
+		if userName != "" {
+			userNames = append(userNames, userName)
 		}
 	}
 
-	return userNames
+	return userNames, nil
 }
 
 // GetNotificationRecipients returns the usernames to notify for a workflow transition.
-func GetNotificationRecipients(workflow model.Workflow, transition Transition) []string {
+func GetNotificationRecipients(
+	ctx context.Context,
+	workflow model.Workflow,
+	transition Transition,
+	idm identitymanagement.IdentityManagement,
+) ([]string, error) {
 	switch transition {
 	case TransitionCreate:
-		return GetApproverUserNames(workflow.Approvers)
+		return GetApproverUserNames(ctx, workflow.Approvers, idm)
 
 	case TransitionApprove, TransitionReject:
-		if workflow.InitiatorName != "" {
-			return []string{workflow.InitiatorName}
+		initiatorName, err := workflow.GetInitiatorName(ctx, idm)
+		if err != nil {
+			return nil, err
+		}
+		if initiatorName != "" {
+			return []string{initiatorName}, nil
 		}
 
-		return []string{}
+		return []string{}, nil
 
 	case TransitionConfirm, TransitionRevoke:
 		decidedApprovers := make([]model.WorkflowApprover, 0)
@@ -39,9 +61,9 @@ func GetNotificationRecipients(workflow model.Workflow, transition Transition) [
 			}
 		}
 
-		return GetApproverUserNames(decidedApprovers)
+		return GetApproverUserNames(ctx, decidedApprovers, idm)
 
 	default:
-		return []string{}
+		return []string{}, nil
 	}
 }
