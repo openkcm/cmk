@@ -14,6 +14,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
+	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
@@ -44,7 +45,7 @@ type TestAPIServerConfig struct {
 	GRPCCon            *commongrpc.DynamicClientConn // GRPCClient only set if needed
 	Config             config.Config
 	EnableClientDataMW bool                   // Enable ClientDataMiddleware (default: false for backward compatibility)
-	SigningKeyStorage  *TestSigningKeyStorage // Optional: provide custom signing key storage
+	SigningKeyStorage  keyvalue.ReadOnlyStringToBytesStorage // Optional: provide custom signing key storage
 }
 
 // NewAPIServer creates a new API server with the given database connection

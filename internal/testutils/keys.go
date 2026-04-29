@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commonfs/loader"
@@ -67,7 +66,7 @@ func (t *TestSigningKeyStorage) Cleanup() {
 }
 
 // NewTestSigningKeyStorage creates a signing key storage with pre-generated test keys.
-// Generates 3 key pairs (keyID 0, 1, 2) to simulate key rotation scenarios
+// Generates 1 key pair (keyID 0). Tests can opt into rotation scenarios elsewhere if needed.
 // Returns storage that implements keyvalue.ReadOnlyStringToBytesStorage interface
 //
 //nolint:funcorder
@@ -77,23 +76,20 @@ func NewTestSigningKeyStorage(tb testing.TB) *TestSigningKeyStorage {
 	tmpDir := tb.TempDir()
 	privateKeys := make(map[int]*rsa.PrivateKey)
 
-	// Generate 3 key pairs for testing key rotation scenarios
-	for keyID := range 3 {
-		privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-		require.NoError(tb, err, "failed to generate private key")
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(tb, err, "failed to generate private key")
 
-		privateKeys[keyID] = privateKey
+	privateKeys[0] = privateKey
 
-		// Write public key to PEM file
-		pubASN1, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
-		require.NoError(tb, err, "failed to marshal public key")
+	// Write public key to PEM file
+	pubASN1, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	require.NoError(tb, err, "failed to marshal public key")
 
-		pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubASN1})
-		keyFile := filepath.Join(tmpDir, strconv.Itoa(keyID)+".pem")
+	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubASN1})
+	keyFile := filepath.Join(tmpDir, "0.pem")
 
-		err = os.WriteFile(keyFile, pubPEM, 0o600)
-		require.NoError(tb, err, "failed to write public key file")
-	}
+	err = os.WriteFile(keyFile, pubPEM, 0o600)
+	require.NoError(tb, err, "failed to write public key file")
 
 	// Create memory storage and loader for public keys
 	memoryStorage := keyvalue.NewMemoryStorage[string, []byte]()
