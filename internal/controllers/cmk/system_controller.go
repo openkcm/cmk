@@ -182,6 +182,7 @@ func (c *APIController) UnlinkSystemAction(
 	return cmkapi.UnlinkSystemAction204Response(struct{}{}), nil
 }
 
+//nolint:cyclop,funlen
 func (c *APIController) handleSystemUnderWorkflow(
 	ctx context.Context,
 	sys *model.System,
@@ -213,11 +214,21 @@ func (c *APIController) handleSystemUnderWorkflow(
 		return e.UserID == user.Identifier
 	})
 
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+
 	if user.Identifier != wf.InitiatorID && !isApprover {
 		return system.ToAPI(
 			*sys,
 			&c.config.ContextModels.System,
-			system.WithWorkflow(wf, wfWorkflow.WithDetailed(nil, approverGroups, nil, nil)),
+			system.WithWorkflow(
+				ctx,
+				wf,
+				idm,
+				wfWorkflow.WithDetailed(ctx, nil, idm, approverGroups, nil, nil),
+			),
 		)
 	}
 
@@ -234,6 +245,11 @@ func (c *APIController) handleSystemUnderWorkflow(
 	return system.ToAPI(
 		*sys,
 		&c.config.ContextModels.System,
-		system.WithWorkflow(wf, wfWorkflow.WithDetailed(approvers, approverGroups, transitions, approvalSummary)),
+		system.WithWorkflow(
+			ctx,
+			wf,
+			idm,
+			wfWorkflow.WithDetailed(ctx, approvers, idm, approverGroups, transitions, approvalSummary),
+		),
 	)
 }

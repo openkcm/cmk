@@ -528,7 +528,9 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 
 // TestAPIController_GetSystemByID tests the GetSystemByID function of SystemController
 func TestAPIController_GetSystemByID(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
+		Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
+	})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 

@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	groupTransform "github.com/openkcm/cmk/internal/api/transform/group"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -24,7 +25,9 @@ type ToAPIOpt func(*cmkapi.Workflow) error
 
 // WithDetailed enriches the workflow with detailed information (approvers, groups, transitions, summary).
 func WithDetailed(
+	ctx context.Context,
 	approvers []*model.WorkflowApprover,
+	idm identitymanagement.IdentityManagement,
 	approverGroups []*model.Group,
 	transitions []wfMechanism.Transition,
 	approvalSummary *wfMechanism.ApprovalSummary,
@@ -33,7 +36,7 @@ func WithDetailed(
 		if approvers != nil {
 			decisions := make([]cmkapi.WorkflowApprover, 0, len(approvers))
 			for _, approver := range approvers {
-				apiApprover, err := ApproverToAPI(*approver)
+				apiApprover, err := ApproverToAPI(ctx, *approver, idm)
 				if err != nil {
 					return err
 				}
@@ -77,7 +80,12 @@ func WithDetailed(
 }
 
 // ToAPI converts a workflow model to an API workflow presentation.
-func ToAPI(w model.Workflow, opts ...ToAPIOpt) (*cmkapi.Workflow, error) {
+func ToAPI(
+	ctx context.Context,
+	w model.Workflow,
+	identityManager identitymanagement.IdentityManagement,
+	opts ...ToAPIOpt,
+) (*cmkapi.Workflow, error) {
 	err := sanitise.Sanitize(&w)
 	if err != nil {
 		return nil, err
@@ -89,10 +97,15 @@ func ToAPI(w model.Workflow, opts ...ToAPIOpt) (*cmkapi.Workflow, error) {
 		parametersResourceType = &resourceType
 	}
 
+	initiatorName, err := w.GetInitiatorName(ctx, identityManager)
+	if err != nil {
+		return nil, err
+	}
+
 	base := &cmkapi.Workflow{
 		Id:                     ptr.PointTo(w.ID),
 		InitiatorID:            w.InitiatorID,
-		InitiatorName:          w.InitiatorName,
+		InitiatorName:          initiatorName,
 		State:                  cmkapi.WorkflowState(strings.ToUpper(w.State)),
 		ActionType:             cmkapi.WorkflowActionType(strings.ToUpper(w.ActionType)),
 		ArtifactType:           cmkapi.WorkflowArtifactType(strings.ToUpper(w.ArtifactType)),
@@ -144,13 +157,12 @@ func FromAPI(
 	}
 
 	wf := &model.Workflow{
-		ID:            uuid.New(),
-		ActionType:    strings.ToUpper(string(apiWorkflow.ActionType)),
-		ArtifactType:  strings.ToUpper(string(apiWorkflow.ArtifactType)),
-		ArtifactID:    apiWorkflow.ArtifactID,
-		InitiatorID:   clientData.Identifier,
-		InitiatorName: clientData.Email,
-		ExpiryDate:    &expiryDate,
+		ID:           uuid.New(),
+		ActionType:   strings.ToUpper(string(apiWorkflow.ActionType)),
+		ArtifactType: strings.ToUpper(string(apiWorkflow.ArtifactType)),
+		ArtifactID:   apiWorkflow.ArtifactID,
+		InitiatorID:  clientData.Identifier,
+		ExpiryDate:   &expiryDate,
 	}
 
 	if apiWorkflow.Parameters != nil {
@@ -161,15 +173,24 @@ func FromAPI(
 }
 
 // ApproverToAPI converts a workflow approver model to an API workflow approver presentation.
-func ApproverToAPI(approver model.WorkflowApprover) (cmkapi.WorkflowApprover, error) {
+func ApproverToAPI(
+	ctx context.Context,
+	approver model.WorkflowApprover,
+	iam identitymanagement.IdentityManagement,
+) (cmkapi.WorkflowApprover, error) {
 	err := sanitise.Sanitize(&approver)
+	if err != nil {
+		return cmkapi.WorkflowApprover{}, err
+	}
+
+	name, err := approver.GetUserName(ctx, iam)
 	if err != nil {
 		return cmkapi.WorkflowApprover{}, err
 	}
 
 	return cmkapi.WorkflowApprover{
 		Id:   approver.UserID,
-		Name: ptr.PointTo(approver.UserName),
+		Name: ptr.PointTo(name),
 		Decision: func() cmkapi.WorkflowApproverDecision {
 			if approver.Approved.Valid {
 				if approver.Approved.Bool {

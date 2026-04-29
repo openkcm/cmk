@@ -10,17 +10,15 @@ import (
 	"github.com/openkcm/cmk/internal/notifier/workflow"
 )
 
-var (
-	testConfig = &config.Config{
-		Landscape: config.Landscape{
-			Name:      "Staging",
-			UIBaseUrl: "https://cmk-staging.example.com",
-		},
-	}
-)
+var testConfig = &config.Config{
+	Landscape: config.Landscape{
+		Name:      "Staging",
+		UIBaseUrl: "https://cmk-staging.example.com",
+	},
+}
 
 func TestNewNotifier(t *testing.T) {
-	n, err := notifier.New(testConfig)
+	n, err := notifier.New(testConfig, nil)
 	assert.NoError(t, err)
 
 	assert.NotNil(t, n, "Notifier should not be nil")
@@ -28,7 +26,7 @@ func TestNewNotifier(t *testing.T) {
 }
 
 func TestNotifier_Workflow(t *testing.T) {
-	n, err := notifier.New(testConfig)
+	n, err := notifier.New(testConfig, nil)
 	assert.NoError(t, err)
 
 	workflowCreator := n.Workflow()

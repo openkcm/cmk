@@ -1,6 +1,7 @@
 package system
 
 import (
+	"context"
 	"errors"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -8,6 +9,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -17,9 +19,14 @@ var ErrFromAPI = errors.New("failed to transform system from API")
 type ToAPIOpt func(*cmkapi.System) error
 
 // WithWorkflow sets the workflow field on the API system metadata.
-func WithWorkflow(wf *model.Workflow, opts ...workflow.ToAPIOpt) ToAPIOpt {
+func WithWorkflow(
+	ctx context.Context,
+	wf *model.Workflow,
+	idm identitymanagement.IdentityManagement,
+	opts ...workflow.ToAPIOpt,
+) ToAPIOpt {
 	return func(s *cmkapi.System) error {
-		apiWorkflow, err := workflow.ToAPI(*wf, opts...)
+		apiWorkflow, err := workflow.ToAPI(ctx, *wf, idm, opts...)
 		if s.Metadata == nil {
 			s.Metadata = &cmkapi.SystemMetadata{
 				Worfklow: apiWorkflow,

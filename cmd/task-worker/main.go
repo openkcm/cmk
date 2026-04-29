@@ -159,7 +159,7 @@ func registerTasks(
 		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
 	systemManager := manager.NewSystemManager(ctx, r, nil, eventFactory, svcRegistry, cfg, keyConfigManager, userManager)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
-	workflowManager := manager.NewWorkflowManager(r, keyManager, keyConfigManager, systemManager,
+	workflowManager := manager.NewWorkflowManager(r, svcRegistry, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, cron.Client(), tenantConfigManager, cfg)
 
 	taskHandlers := []async.TaskHandler{
