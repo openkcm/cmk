@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -28,17 +29,11 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
 	"github.com/openkcm/cmk/utils/ptr"
 )
-
-func getContextAndRepo(t *testing.T, tenant string,
-	db *multitenancy.DB,
-) (context.Context, *sql.ResourceRepository) {
-	t.Helper()
-	return cmkcontext.CreateTenantContext(t.Context(), tenant), sql.NewRepository(db)
-}
 
 func startAPIKeyConfig(t *testing.T) (
 	cmkapi.ServeMux,
@@ -51,9 +46,12 @@ func startAPIKeyConfig(t *testing.T) (
 
 	tenant := tenants[0]
 
-	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
+	})
 
-	ctx, r := getContextAndRepo(t, tenant, db)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
 
 	return sv, tenant, ctx, r
 }
@@ -406,7 +404,6 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 
 			if w.Code == http.StatusCreated {
 				assert.Contains(t, body, expectedIdenfier)
-				assert.Contains(t, body, expectedEmail)
 			}
 
 			if tt.expectedCode != "" {

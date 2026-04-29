@@ -84,6 +84,18 @@ func (p *Plugin) Configure(_ context.Context, req *configv1.ConfigureRequest) (*
 	}, nil
 }
 
+func (p *Plugin) GetUser(
+	_ context.Context,
+	req *idmangv1.GetUserRequest,
+) (*idmangv1.GetUserResponse, error) {
+	return &idmangv1.GetUserResponse{
+		User: &idmangv1.User{
+			Id:   req.GetUserId(),
+			Name: req.GetUserId() + "_test",
+		},
+	}, nil
+}
+
 func (p *Plugin) GetGroup(
 	_ context.Context,
 	req *idmangv1.GetGroupRequest,

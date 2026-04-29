@@ -47,6 +47,13 @@ func NewIdentityManagement() catalog.BuiltInPlugin {
 	)
 }
 
+func (p *IdentityManagement) GetUser(
+	_ context.Context,
+	_ *idmangv1.GetUserRequest,
+) (*idmangv1.GetUserResponse, error) {
+	return &idmangv1.GetUserResponse{}, nil
+}
+
 func (p *IdentityManagement) Configure(
 	_ context.Context,
 	_ *configv1.ConfigureRequest,

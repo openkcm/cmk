@@ -1,6 +1,7 @@
 package keyconfiguration
 
 import (
+	"context"
 	"errors"
 	"reflect"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/utils/sanitise"
 	"github.com/openkcm/cmk/utils/validator"
 )
@@ -47,7 +49,11 @@ func FromAPI(apiConfig cmkapi.KeyConfiguration) (*model.KeyConfiguration, error)
 }
 
 // ToAPI converts KeyConfiguration db model to a KeyConfiguration api model
-func ToAPI(k model.KeyConfiguration) (*cmkapi.KeyConfiguration, error) {
+func ToAPI(
+	ctx context.Context,
+	k model.KeyConfiguration,
+	identityManager identitymanagement.IdentityManagement,
+) (*cmkapi.KeyConfiguration, error) {
 	err := sanitise.Sanitize(&k)
 	if err != nil {
 		return nil, err
@@ -73,11 +79,16 @@ func ToAPI(k model.KeyConfiguration) (*cmkapi.KeyConfiguration, error) {
 		apiConfig.Description = &k.Description
 	}
 
+	name, err := k.GetCreatorName(ctx, identityManager)
+	if err != nil {
+		return nil, err
+	}
+
 	apiConfig.Metadata = &cmkapi.KeyConfigurationMetadata{
 		CreatedAt:    &k.CreatedAt,
 		UpdatedAt:    &k.UpdatedAt,
 		CreatorID:    &k.CreatorID,
-		CreatorName:  &k.CreatorName,
+		CreatorName:  &name,
 		TotalKeys:    &k.TotalKeys,
 		TotalSystems: &k.TotalSystems,
 	}

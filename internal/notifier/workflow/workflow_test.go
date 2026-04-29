@@ -6,13 +6,16 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/notifier/client"
 	"github.com/openkcm/cmk/internal/notifier/workflow"
+	"github.com/openkcm/cmk/internal/testutils/testpluginregistry"
 	wf "github.com/openkcm/cmk/internal/workflow"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -63,7 +66,7 @@ func TestNotificationData_GetType(t *testing.T) {
 }
 
 func TestNewWorkflowCreator(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig)
+	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
 	assert.NoError(t, err)
 
 	assert.NotNil(t, creator)
@@ -71,7 +74,7 @@ func TestNewWorkflowCreator(t *testing.T) {
 }
 
 func TestCreator_CreateTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig)
+	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -166,7 +169,8 @@ func TestCreator_CreateTask(t *testing.T) {
 				Transition: tt.transition,
 			}
 
-			task, err := creator.CreateTask(data, tt.recipients)
+			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			task, err := creator.CreateTask(ctx, data, tt.recipients)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -197,7 +201,7 @@ func TestCreator_CreateTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowCreatedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig)
+	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
 	assert.NoError(t, err)
 
 	artifactID := uuid.New()
@@ -254,20 +258,20 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 					ID: "test-tenant",
 				},
 				Workflow: model.Workflow{
-					ID:            workflowID,
-					InitiatorName: "initiator@example.com",
-					ActionType:    tt.actionType,
-					ArtifactType:  tt.artifactType,
-					ArtifactName:  tt.artifactName,
-					ArtifactID:    artifactID,
-					Parameters:    tt.parameters,
+					ID:           workflowID,
+					ActionType:   tt.actionType,
+					ArtifactType: tt.artifactType,
+					ArtifactName: tt.artifactName,
+					ArtifactID:   artifactID,
+					Parameters:   tt.parameters,
 				},
 				Transition: wf.TransitionCreate,
 			}
 
 			recipients := []string{"approver@example.com"}
 
-			task, err := creator.CreateWorkflowCreatedTask(data, recipients)
+			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			task, err := creator.CreateWorkflowCreatedTask(ctx, data, recipients)
 
 			assert.NoError(t, err)
 			assert.NotNil(t, task)
@@ -288,7 +292,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowApprovedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig)
+	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -338,7 +342,8 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 
 			recipients := []string{"initiator@example.com"}
 
-			task, err := creator.CreateWorkflowApprovedTask(data, recipients)
+			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			task, err := creator.CreateWorkflowApprovedTask(ctx, data, recipients)
 
 			assert.NoError(t, err)
 
@@ -371,7 +376,7 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowRejectedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig)
+	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -392,7 +397,8 @@ func TestCreator_createWorkflowRejectedTask(t *testing.T) {
 
 	recipients := []string{"initiator@example.com"}
 
-	task, err := creator.CreateWorkflowRejectedTask(data, recipients)
+	ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	task, err := creator.CreateWorkflowRejectedTask(ctx, data, recipients)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, task)
@@ -415,7 +421,7 @@ func TestCreator_createWorkflowRejectedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig)
+	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -469,7 +475,8 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 
 			recipients := []string{"approver@example.com"}
 
-			task, err := creator.CreateWorkflowConfirmedTask(data, recipients)
+			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			task, err := creator.CreateWorkflowConfirmedTask(ctx, data, recipients)
 
 			assert.NoError(t, err)
 			assert.NotNil(t, task)
@@ -488,7 +495,7 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowRevokedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig)
+	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -509,7 +516,8 @@ func TestCreator_createWorkflowRevokedTask(t *testing.T) {
 
 	recipients := []string{"approver@example.com"}
 
-	task, err := creator.CreateWorkflowRevokedTask(data, recipients)
+	ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	task, err := creator.CreateWorkflowRevokedTask(ctx, data, recipients)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, task)
@@ -532,7 +540,7 @@ func TestCreator_createWorkflowRevokedTask(t *testing.T) {
 }
 
 func TestCreator_createHTMLBody(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig)
+	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -544,17 +552,17 @@ func TestCreator_createHTMLBody(t *testing.T) {
 			Name: "test-tenant-name",
 		},
 		Workflow: model.Workflow{
-			ID:            workflowID,
-			ActionType:    "DELETE",
-			ArtifactType:  "KEY",
-			ArtifactID:    artifactID,
-			ArtifactName:  ptr.PointTo("Test Key"),
-			InitiatorName: "initiator@example.com",
+			ID:           workflowID,
+			ActionType:   "DELETE",
+			ArtifactType: "KEY",
+			ArtifactID:   artifactID,
+			ArtifactName: ptr.PointTo("Test Key"),
 		},
 		Transition: wf.TransitionCreate,
 	}
 
-	body, err := creator.CreateHTMLBody(data, testMessage, testActionText)
+	ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	body, err := creator.CreateHTMLBody(ctx, data, testMessage, testActionText)
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, body)
@@ -572,7 +580,7 @@ func TestCreator_createHTMLBody(t *testing.T) {
 }
 
 func TestCreator_createNotificationTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig)
+	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -593,7 +601,8 @@ func TestCreator_createNotificationTask(t *testing.T) {
 
 	recipients := []string{"test@example.com", "test2@example.com"}
 
-	task, err := creator.CreateNotificationTask(data, recipients, testSubject, testMessage, testActionText)
+	ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	task, err := creator.CreateNotificationTask(ctx, data, recipients, testSubject, testMessage, testActionText)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, task)
@@ -612,7 +621,7 @@ func TestCreator_createNotificationTask(t *testing.T) {
 }
 
 func TestCreator_createNotificationTask_EmptyRecipients(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig)
+	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -633,7 +642,8 @@ func TestCreator_createNotificationTask_EmptyRecipients(t *testing.T) {
 
 	var recipients []string
 
-	task, err := creator.CreateNotificationTask(data, recipients, testSubject, testMessage, testActionText)
+	ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	task, err := creator.CreateNotificationTask(ctx, data, recipients, testSubject, testMessage, testActionText)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, task)
