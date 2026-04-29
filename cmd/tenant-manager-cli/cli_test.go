@@ -111,7 +111,7 @@ func (s *CLISuite) SetupSuite() {
 
 	factory, err := commands.NewCommandFactory(ctx, cfg, s.db, svcRegistry)
 	s.NoError(err)
-	s.rootCmd = factory.NewRootCmd(s.T().Context())
+	s.rootCmd = factory.NewRootCmd(s.T().Context(), cfg)
 
 	s.createGroupsCmd = factory.NewCreateGroupsCmd(s.T().Context())
 	s.rootCmd.AddCommand(s.createGroupsCmd)

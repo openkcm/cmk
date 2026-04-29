@@ -11,18 +11,19 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/cmd/task-cli/commands"
+	"github.com/openkcm/cmk/internal/config"
 )
 
 func TestRootCmdProvidesSleepFlag(t *testing.T) {
 	ctx := context.Background()
-	cmd := commands.NewRootCmd(ctx)
+	cmd := commands.NewRootCmd(ctx, &config.Config{})
 
 	assert.NotNil(t, cmd.PersistentFlags().Lookup("sleep"))
 }
 
 func TestRootCmdSleepModePrintsStartAndShutdown(t *testing.T) {
 	ctx := context.Background()
-	cmd := commands.NewRootCmd(ctx)
+	cmd := commands.NewRootCmd(ctx, &config.Config{})
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
