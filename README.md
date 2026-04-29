@@ -546,7 +546,7 @@ KMS dev team 2
 <a name="license"></a>
 
 ## License
-
+ 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details
 
 <p align="center"><img alt="Bundesministerium für Wirtschaft und Klimaschutz (BMWK)-EU funding logo" src="https://apeirora.eu/assets/img/BMWK-EU.png" width="400"/></p>
