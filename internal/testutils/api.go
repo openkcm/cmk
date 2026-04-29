@@ -14,6 +14,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
+	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
@@ -40,9 +41,11 @@ const TestCertURL = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.cr
 const TestHostPrefix = "https://kms.test/cmk/v1/"
 
 type TestAPIServerConfig struct {
-	Plugins []catalog.BuiltInPlugin       // Plugins only set if needed
-	GRPCCon *commongrpc.DynamicClientConn // GRPCClient only set if needed
-	Config  config.Config
+	Plugins            []catalog.BuiltInPlugin       // Plugins only set if needed
+	GRPCCon            *commongrpc.DynamicClientConn // GRPCClient only set if needed
+	Config             config.Config
+	EnableClientDataMW bool                   // Enable ClientDataMiddleware (default: false for backward compatibility)
+	SigningKeyStorage  keyvalue.ReadOnlyStringToBytesStorage // Optional: provide custom signing key storage
 }
 
 // NewAPIServer creates a new API server with the given database connection
@@ -105,12 +108,14 @@ func NewAPIServer(
 
 	controller := cmk.NewAPIController(tb.Context(), authzRepo, &cfg, factory, migrator, svcRegistry, authzAPILoader)
 
-	return startAPIServer(tb, controller)
+	return startAPIServer(tb, controller, testCfg)
 }
 
+//nolint:funlen
 func startAPIServer(
 	tb testing.TB,
 	controller *cmk.APIController,
+	testCfg TestAPIServerConfig,
 ) cmkapi.ServeMux {
 	tb.Helper()
 
@@ -141,11 +146,38 @@ func startAPIServer(
 				IncludeResponseStatus: true,
 			},
 		}),
+	}
+
+	// Middlewares are applied from last to first.
+	// Keep Authz before ClientData in the slice so ClientData runs first at request time.
+	mws = append(mws,
 		middleware.AuthzMiddleware(controller),
 		middleware.LoggingMiddleware(),
 		middleware.PanicRecoveryMiddleware(),
 		middleware.InjectMultiTenancy(),
 		middleware.InjectRequestID(),
+	)
+
+	// Add ClientDataMiddleware if enabled.
+	// It must be appended after Authz in the slice so it runs before Authz.
+	if testCfg.EnableClientDataMW {
+		signingKeyStorage := testCfg.SigningKeyStorage
+		if signingKeyStorage == nil {
+			// Create default test signing key storage if not provided
+			signingKeyStorage = NewTestSigningKeyStorage(tb)
+		}
+
+		// Default auth context fields for testing
+		authContextFields := []string{"client_id", "issuer", "multitenancy_ref"}
+
+		// Use test role getter
+		roleGetter := NewTestRoleGetter()
+
+		mws = append(mws, middleware.ClientDataMiddleware(
+			signingKeyStorage,
+			authContextFields,
+			roleGetter,
+		))
 	}
 
 	cmkapi.HandlerWithOptions(strictController,
@@ -180,8 +212,8 @@ type RequestOptions struct {
 	Endpoint          string
 	Tenant            string    // TenantID
 	Body              io.Reader // Only need to be set for POST/PATCH. Used with the WithString and WithJSON
-	Headers           map[string]string
-	AdditionalContext map[any]any
+	Headers           http.Header
+	AdditionalContext map[any]any // Deprecated: Use Headers with signed client data instead
 }
 
 // WithString is a helper function that converts a string to an io.Reader.
@@ -222,14 +254,20 @@ func GetJSONBody[t any](tb testing.TB, w *httptest.ResponseRecorder) t {
 }
 
 // NewHTTPRequest builds an HTTP Request it sets default content-types for certain Methods
+//
+//nolint:cyclop
 func NewHTTPRequest(tb testing.TB, opt RequestOptions) *http.Request {
 	tb.Helper()
 
 	ctx := tb.Context()
 
-	//nolint: fatcontext
-	for k, v := range opt.AdditionalContext {
-		ctx = context.WithValue(ctx, k, v)
+	// Legacy support: inject AdditionalContext if provided and ClientDataMiddleware is not enabled
+	// When ClientDataMiddleware is enabled, AdditionalContext is ignored in favor of Headers
+	if len(opt.AdditionalContext) > 0 && opt.Headers == nil {
+		//nolint: fatcontext
+		for k, v := range opt.AdditionalContext {
+			ctx = context.WithValue(ctx, k, v)
+		}
 	}
 
 	r, err := http.NewRequestWithContext(
@@ -253,8 +291,13 @@ func NewHTTPRequest(tb testing.TB, opt RequestOptions) *http.Request {
 		assert.Fail(tb, "HTTP Method not supported!")
 	}
 
-	for k, v := range opt.Headers {
-		r.Header.Add(k, v)
+	// Apply provided headers
+	if opt.Headers != nil {
+		for key, values := range opt.Headers {
+			for _, value := range values {
+				r.Header.Add(key, value)
+			}
+		}
 	}
 
 	return r

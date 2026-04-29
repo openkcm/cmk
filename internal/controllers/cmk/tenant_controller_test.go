@@ -5,13 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -19,23 +20,27 @@ import (
 	cmkContext "github.com/openkcm/cmk/utils/context"
 )
 
-func startAPITenant(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux) {
+func startAPITenant(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, *testutils.TestSigningKeyStorage) {
 	t.Helper()
 
 	db, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
 	}, testutils.WithGenerateTenants(10))
 
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config: config.Config{Database: dbCfg},
-	})
+		Config:             config.Config{Database: dbCfg},
+		EnableClientDataMW: true,
+		SigningKeyStorage:  keyStorage,
+	}), keyStorage
 }
 
 func TestGetTenants(t *testing.T) {
-	db, sv := startAPITenant(t)
+	db, sv, keyStorage := startAPITenant(t)
 	r := sql.NewRepository(db)
 
 	var tenants []model.Tenant
+	var headers http.Header
 
 	err := r.List(t.Context(), model.Tenant{}, &tenants, *repo.NewQuery())
 	assert.NoError(t, err)
@@ -55,13 +60,26 @@ func TestGetTenants(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
+	clientData := &auth.ClientData{
+		Identifier: "user-123",
+		Email:      "bob@example.com",
+		GivenName:  "Bob",
+		FamilyName: "Builder",
+		Groups:     []string{"sysadmin", "some-other-group"},
+	}
+	// Get private key for signing test requests
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+
+	headers = testutils.NewSignedClientDataHeadersFromStruct(t, clientData, privateKey, 0)
+	assert.NotEmpty(t, headers)
+
 	t.Run("Should 200 on list tenants", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/tenants",
 			Tenant:   tenants[0].ID,
-			AdditionalContext: testutils.GetClientMap("test",
-				[]string{"sysadmin", "othergroup"}),
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -74,20 +92,31 @@ func TestGetTenants(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/tenants",
 			Tenant:   "non-existing-tenant-id",
-			AdditionalContext: testutils.GetClientMap("test",
-				[]string{"sysadmin", "othergroup"}),
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 
 	t.Run("Should 403 on list tenants without permission", func(t *testing.T) {
+		notAllowedClientData := &auth.ClientData{
+			Identifier: "user-123",
+			Email:      "bob@example.com",
+			GivenName:  "Bob",
+			FamilyName: "Builder",
+			Groups:     []string{"test", "some-other-test-group"},
+		}
+		// Get private key for signing test requests
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+
+		headersNotAllowed := testutils.NewSignedClientDataHeadersFromStruct(t, notAllowedClientData, privateKey, 0)
+
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/tenants",
 			Tenant:   tenants[0].ID,
-			AdditionalContext: testutils.GetClientMap("test",
-				[]string{"othergroup"}),
+			Headers:  headersNotAllowed,
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
@@ -98,42 +127,68 @@ func TestGetTenants(t *testing.T) {
 }
 
 func TestGetTenantInfo(t *testing.T) {
-	db, sv := startAPITenant(t)
+	db, sv, keyStorage := startAPITenant(t)
 	r := sql.NewRepository(db)
 
 	var tenant model.Tenant
+	var headers http.Header
 
 	_, err := r.First(t.Context(), &tenant, *repo.NewQuery())
 	assert.NoError(t, err)
 
 	tenantCtx := cmkContext.CreateTenantContext(t.Context(), tenant.ID)
 
-	authClient := testutils.NewAuthClient(tenantCtx, t, r, testutils.WithTenantAdminRole())
+	tenant.IssuerURL = "https://testissuer.example.com"
+	_, err = r.Patch(tenantCtx, &tenant, *repo.NewQuery())
+	assert.NoError(t, err)
 
 	group := testutils.NewGroup(func(group *model.Group) {
 		group.IAMIdentifier = "sysadmin"
+		group.Role = constants.TenantAdminRole
 	})
 
 	err = r.Create(tenantCtx, group)
 	assert.NoError(t, err)
+
+	clientData := &auth.ClientData{
+		Identifier: "user-123",
+		Email:      "bob@example.com",
+		GivenName:  "Bob",
+		FamilyName: "Builder",
+		Groups:     []string{group.IAMIdentifier, "some-other-test-group"},
+	}
+	// Get private key for signing test requests
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers = testutils.NewSignedClientDataHeadersFromStruct(t, clientData, privateKey, 0)
+	assert.NotEmpty(t, headers)
+
+	clientDataNoGroups := &auth.ClientData{
+		Identifier: "user-123",
+		Email:      "bob@example.com",
+		GivenName:  "Bob",
+		FamilyName: "Builder",
+		Groups:     []string{},
+	}
+	headersNoGroups := testutils.NewSignedClientDataHeadersFromStruct(t, clientDataNoGroups, privateKey, 0)
+	assert.NotEmpty(t, headersNoGroups)
+
+	clientDataInvalidGroup := &auth.ClientData{
+		Identifier: "user-123",
+		Email:      "bob@example.com",
+		GivenName:  "Bob",
+		FamilyName: "Builder",
+		Groups:     []string{"not-existing-group"},
+	}
+	headersInvalidGroup := testutils.NewSignedClientDataHeadersFromStruct(t, clientDataInvalidGroup, privateKey, 0)
+	assert.NotEmpty(t, headersInvalidGroup)
 
 	t.Run("Should 403 on get tenant info that does not exist", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/tenantInfo",
 			Tenant:   "nonexistent-tenant-id",
-			AdditionalContext: authClient.GetClientMap(
-				testutils.WithAdditionalGroup(uuid.NewString())),
-		})
-
-		assert.Equal(t, http.StatusForbidden, w.Code)
-	})
-
-	t.Run("Should 403 on get tenant info without a user group", func(t *testing.T) {
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: "/tenantInfo",
-			Tenant:   "nonexistent-tenant-id",
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
@@ -144,12 +199,12 @@ func TestGetTenantInfo(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/tenantInfo",
 			Tenant:   tenant.ID,
-			AdditionalContext: authClient.GetClientMap(
-				testutils.WithAdditionalGroup(uuid.NewString())),
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		resp := testutils.GetJSONBody[cmkapi.Tenant](t, w)
+		assert.NotNil(t, resp.Id)
 		assert.Equal(t, tenant.ID, *resp.Id)
 		assert.NotNil(t, resp.Role)
 		expectedRole := strings.TrimPrefix(string(tenant.Role), "ROLE_")
@@ -157,22 +212,33 @@ func TestGetTenantInfo(t *testing.T) {
 		assert.Equal(t, tenant.Name, resp.Name)
 	})
 
-	t.Run("Should 403 on get tenant by valid ID and no client data", func(t *testing.T) {
+	t.Run("Should 403 on get tenant info without a user group", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/tenantInfo",
+			Tenant:   tenant.ID,
+			Headers:  headersNoGroups,
+		})
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("Should 500 on get tenant by valid ID and no client data", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/tenantInfo",
 			Tenant:   tenant.ID,
 		})
 
-		assert.Equal(t, http.StatusForbidden, w.Code)
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
 	t.Run("Should 403 on get tenant by valid ID and no valid group", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          "/tenantInfo",
-			Tenant:            tenant.ID,
-			AdditionalContext: authClient.GetClientMap(testutils.WithOverriddenGroup(1)),
+			Method:   http.MethodGet,
+			Endpoint: "/tenantInfo",
+			Tenant:   tenant.ID,
+			Headers:  headersInvalidGroup,
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
