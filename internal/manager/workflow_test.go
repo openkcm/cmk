@@ -386,7 +386,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 }
 
 func TestWorkflowManager_CreateWorkflow(t *testing.T) {
-	m, repo, tenant := SetupWorkflowManager(t, &config.Config{
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{
 		ContextModels: config.ContextModels{
 			System: config.System{
 				OptionalProperties: map[string]config.SystemProperty{
@@ -408,7 +408,7 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 			Identifier: constants.SystemUser.String(),
 		},
 	)
-	keyConfig, key := createTestObjects(t, repo, ctxSys)
+	keyConfig, key := createTestObjects(t, r, ctxSys)
 
 	t.Run("Should error on existing workflow", func(t *testing.T) {
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
@@ -417,7 +417,7 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 			w.ArtifactType = workflow.ArtifactTypeKey.String()
 			w.ArtifactID = key.ID
 		})
-		err := repo.Create(ctx, wf)
+		err := r.Create(ctx, wf)
 		assert.NoError(t, err)
 
 		_, err = m.CreateWorkflow(ctxSys, wf)
@@ -426,7 +426,7 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 	)
 
 	t.Run("Should create workflow", func(t *testing.T) {
-		createAuditorGroup(ctx, t, repo)
+		createAuditorGroup(ctx, t, r)
 
 		ctxSys := context.WithValue(
 			ctx,
@@ -435,7 +435,7 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 			},
 		)
 
-		_, key := createTestObjects(t, repo, ctxSys)
+		_, key := createTestObjects(t, r, ctxSys)
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
 			w.State = workflow.StateInitial.String()
 			w.ActionType = workflow.ActionTypeDelete.String()
@@ -454,7 +454,7 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 				"NameOfTheSystem": "MySystem",
 			}
 		})
-		testutils.CreateTestEntities(ctxSys, t, repo, system)
+		testutils.CreateTestEntities(ctxSys, t, r, system)
 
 		expected := &model.Workflow{
 			ID:           uuid.New(),
@@ -470,12 +470,29 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "MySystem", *res.ArtifactName)
 		assert.Equal(t, keyConfig.Name, *res.ParametersResourceName)
-	},
-	)
+	})
+
+	t.Run("Should put system state under_workflow on workflow creation", func(t *testing.T) {
+		system := testutils.NewSystem(func(s *model.System) {})
+		testutils.CreateTestEntities(ctxSys, t, r, system)
+
+		wf := testutils.NewWorkflow(func(w *model.Workflow) {
+			w.ArtifactType = workflow.ArtifactTypeSystem.String()
+			w.ArtifactID = system.ID
+		})
+
+		_, err := m.CreateWorkflow(ctxSys, wf)
+		assert.NoError(t, err)
+
+		_, err = r.First(ctxSys, system, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		assert.Equal(t, cmkapi.SystemStatusUNDERWORKFLOW, system.Status)
+	})
 
 	t.Run("Should create system workflow with artifact name from identifier", func(t *testing.T) {
 		system := testutils.NewSystem(func(s *model.System) {})
-		testutils.CreateTestEntities(ctxSys, t, repo, system)
+		testutils.CreateTestEntities(ctxSys, t, r, system)
 
 		expected := &model.Workflow{
 			ID:           uuid.New(),

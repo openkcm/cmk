@@ -960,7 +960,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DetailedWorkflow"
+                $ref: "#/components/schemas/Workflow"
         "400":
           $ref: "#/components/responses/400"
         "403":
@@ -1453,6 +1453,7 @@ components:
             - DISCONNECTED
             - PROCESSING
             - FAILED
+            - UNDER_WORKFLOW
         keyConfigurationName:
           description: The name of the key configuration
           type: string
@@ -1467,6 +1468,9 @@ components:
       type: object
       readOnly: true
       properties:
+        worfklow:
+          $ref: "#/components/schemas/Workflow"
+          description: Workflow associated with the System if it's state is UNDER_WORKFLOW
         errorCode:
           type: string
           description: The code of an error of a failed system
@@ -2558,35 +2562,24 @@ components:
           example: example_key_configuration_name
         parametersResourceType:
           $ref: "#/components/schemas/WorkflowParametersResourceType"
-    DetailedWorkflow:
-      allOf:
-        - $ref: "#/components/schemas/Workflow"
-        - type: object
-          readOnly: true
-          required:
-            - approverGroups
-            - decisions
-            - availableTransitions
-            - approvalSummary
-          description: Detailed Workflow including system metadata
-          properties:
-            approverGroups:
-              description: The list of Groups responsible for approving the Workflow
-              type: array
-              items:
-                $ref: "#/components/schemas/Group"
-            decisions:
-              description: The list of decisions made by the approvers
-              type: array
-              items:
-                $ref: "#/components/schemas/WorkflowApprover"
-            availableTransitions:
-              description: The list of available transitions for the Workflow
-              type: array
-              items:
-                $ref: "#/components/schemas/WorkflowTransitionValue"
-            approvalSummary:
-              $ref: "#/components/schemas/WorkflowApprovalSummary"
+        approverGroups:
+          description: The list of Groups responsible for approving the Workflow (only populated in detailed responses)
+          type: array
+          items:
+            $ref: "#/components/schemas/Group"
+        decisions:
+          description: The list of decisions made by the approvers (only populated in detailed responses)
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowApprover"
+        availableTransitions:
+          description: The list of available transitions for the Workflow (only populated in detailed responses)
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowTransitionValue"
+        approvalSummary:
+          description: Summary of the approval decisions (only populated in detailed responses)
+          $ref: "#/components/schemas/WorkflowApprovalSummary"
     WorkflowMetadata:
       readOnly: true
       type: object

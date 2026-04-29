@@ -65,6 +65,7 @@ type Workflow interface {
 	) ([]*model.WorkflowApprover, int, error)
 	GetWorkflowAvailableTransitions(ctx context.Context, workflow *model.Workflow) ([]wf.Transition, error)
 	GetWorkflowApprovalSummary(ctx context.Context, workflow *model.Workflow) (*wf.ApprovalSummary, error)
+	GetWorkflowApproverGroups(ctx context.Context, workflow *model.Workflow) ([]*model.Group, error)
 	WorkflowCanExpire(ctx context.Context, workflow *model.Workflow) (bool, error)
 	TransitionWorkflow(
 		ctx context.Context,
@@ -337,6 +338,11 @@ func (w *WorkflowManager) CreateWorkflow(
 			return errs.Wrap(ErrCreateWorkflowDB, err)
 		}
 
+		err = w.handleNewWorkflow(ctx, workflow)
+		if err != nil {
+			return errs.Wrap(ErrCreateWorkflowDB, err)
+		}
+
 		err = w.createAutoAssignApproversAsyncTask(ctx, *workflow)
 		if err != nil {
 			return err
@@ -497,6 +503,42 @@ func (w *WorkflowManager) GetWorkflowApprovalSummary(
 	return summary, nil
 }
 
+func (w *WorkflowManager) GetWorkflowApproverGroups(
+	ctx context.Context,
+	workflow *model.Workflow,
+) ([]*model.Group, error) {
+	var IDs []uuid.UUID
+
+	if workflow.ApproverGroupIDs == nil {
+		return []*model.Group{}, nil
+	}
+
+	err := json.Unmarshal(workflow.ApproverGroupIDs, &IDs)
+	if err != nil {
+		return nil, err
+	}
+
+	groups := make([]*model.Group, 0, len(IDs))
+	for _, id := range IDs {
+		group, err := w.groupManager.GetGroupByID(ctx, id)
+		if err != nil {
+			log.Warn(ctx, "failed to expand workflow approver group", slog.Any("error", err))
+
+			// Return a placeholder group if the group cannot be found. We can still make use of the ID.
+			groups = append(groups, &model.Group{
+				ID:   id,
+				Name: "NOT_AVAILABLE",
+				Role: constants.KeyAdminRole,
+			})
+			continue
+		}
+
+		groups = append(groups, group)
+	}
+
+	return groups, nil
+}
+
 func (w *WorkflowManager) TransitionWorkflow(
 	ctx context.Context,
 	workflowID uuid.UUID,
@@ -598,6 +640,23 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 	)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+func (w *WorkflowManager) handleNewWorkflow(ctx context.Context, workflow *model.Workflow) error {
+	switch workflow.ArtifactType {
+	case wf.ArtifactTypeSystem.String():
+		system := &model.System{
+			ID:     workflow.ArtifactID,
+			Status: cmkapi.SystemStatusUNDERWORKFLOW,
+		}
+		_, err := w.repo.Patch(ctx, system, *repo.NewQuery())
+		if err != nil {
+			return err
+		}
+	default:
+		// empty
 	}
 	return nil
 }
