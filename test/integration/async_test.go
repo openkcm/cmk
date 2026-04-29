@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
@@ -50,13 +52,24 @@ func TestAsync(t *testing.T) {
 
 	testutils.StartRedis(t, &cfg.Scheduler)
 
-	_ = integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
-		Service: integrationutils.TaskWorker,
-	}, cfg)
-	taskCli := integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
-		Service: integrationutils.TaskCLI,
-		Args:    []string{"--sleep"},
-	}, cfg)
+	var wg sync.WaitGroup
+	var taskCli testcontainers.Container
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
+			Service: integrationutils.TaskWorker,
+		}, cfg)
+	}()
+	go func() {
+		defer wg.Done()
+		taskCli = integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
+			Service: integrationutils.TaskCLI,
+			Args:    []string{"--sleep"},
+		}, cfg)
+	}()
+	wg.Wait()
 
 	exitCode, _, err := taskCli.Exec(t.Context(), []string{string(integrationutils.TaskCLI), "invoke", "--task", config.TypeHYOKSync, "--tenants", tenant})
 	require.NoError(t, err)
@@ -136,16 +149,30 @@ func TestAsyncFanout(t *testing.T) {
 
 	testutils.StartRedis(t, &cfg.Scheduler)
 
-	_ = integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
-		Service: integrationutils.TaskWorker,
-	}, cfg)
-	_ = integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
-		Service: integrationutils.TaskScheduler,
-	}, cfg)
-	taskCli := integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
-		Service: integrationutils.TaskCLI,
-		Args:    []string{"--sleep"},
-	}, cfg)
+	var wg sync.WaitGroup
+	var taskCli testcontainers.Container
+
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
+			Service: integrationutils.TaskWorker,
+		}, cfg)
+	}()
+	go func() {
+		defer wg.Done()
+		integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
+			Service: integrationutils.TaskScheduler,
+		}, cfg)
+	}()
+	go func() {
+		defer wg.Done()
+		taskCli = integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
+			Service: integrationutils.TaskCLI,
+			Args:    []string{"--sleep"},
+		}, cfg)
+	}()
+	wg.Wait()
 
 	var stdout, stderr bytes.Buffer
 	assert.Eventually(t, func() bool {

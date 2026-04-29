@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
@@ -34,6 +35,8 @@ const (
 	DBMigrator       Service = "/bin/db-migrator"
 )
 
+var buildOnce sync.Once
+
 type ServiceConfig struct {
 	Service Service
 	Name    string
@@ -49,12 +52,15 @@ func RunCMKService(t *testing.T, svcCfg ServiceConfig, cfg *config.Config) testc
 	statusPort, err := testutils.GetFreePortString()
 	require.NoError(t, err)
 
-	cfg.Status = commoncfg.Status{
+	// Create copy so that if this is run in parallel there is no race condition
+	// as the cfg is changed
+	cfgCopy := *cfg
+	cfgCopy.Status = commoncfg.Status{
 		Enabled: true,
 		Address: ":" + statusPort,
 	}
 
-	cfgBytes, err := yaml.Marshal(cfg)
+	cfgBytes, err := yaml.Marshal(&cfgCopy)
 	require.NoError(t, err)
 
 	ctx := t.Context()
@@ -82,7 +88,7 @@ func RunCMKService(t *testing.T, svcCfg ServiceConfig, cfg *config.Config) testc
 	})
 	require.NoError(t, err)
 
-	testutils.WaitForServer(t, cfg.Status.Address)
+	testutils.WaitForServer(t, cfgCopy.Status.Address)
 
 	state, err := container.State(ctx)
 	require.NoError(t, err)
@@ -105,19 +111,18 @@ func RunCMKService(t *testing.T, svcCfg ServiceConfig, cfg *config.Config) testc
 func BuildCMKImage(t *testing.T) string {
 	t.Helper()
 
-	//nolint:dogsled
-	_, filename, _, _ := runtime.Caller(0)
+	buildOnce.Do(func() {
+		_, filename, _, _ := runtime.Caller(0)
 
-	baseDir := filepath.Dir(filename)
-	projectRoot, err := filepath.Abs(baseDir + "../../../../")
-	require.NoError(t, err)
+		baseDir := filepath.Dir(filename)
+		projectRoot, err := filepath.Abs(baseDir + "../../../../")
+		require.NoError(t, err)
 
-	cmd := exec.Command("make", "docker-dev-build")
-	cmd.Dir = projectRoot
-	_, err = cmd.Output()
-	if err != nil {
-		require.NoError(t, err, "failed to build docker image")
-	}
+		cmd := exec.Command("make", "docker-dev-build")
+		cmd.Dir = projectRoot
+		_, err = cmd.Output()
+		require.NoError(t, err)
+	})
 
 	return "cmk-api-server-dev:latest"
 }
