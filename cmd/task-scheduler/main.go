@@ -19,7 +19,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/log"
-	cmklog "github.com/openkcm/cmk/internal/log"
 	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
@@ -59,7 +58,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return oops.In("main").Wrapf(err, "failed to shutdown the scheduler")
 	}
 
-	cmklog.Info(ctx, "shutting down scheduler")
+	log.Info(ctx, "shutting down scheduler")
 
 	return nil
 }

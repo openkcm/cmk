@@ -28,8 +28,6 @@ type Plugin struct {
 
 	logger    *slog.Logger
 	buildInfo string
-
-	staticConfiguration *StaticIdentityManagement
 }
 
 var (

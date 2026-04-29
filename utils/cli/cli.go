@@ -6,9 +6,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/spf13/cobra"
+
 	"github.com/openkcm/cmk/internal/config"
 	statusserver "github.com/openkcm/cmk/utils/status_server"
-	"github.com/spf13/cobra"
 )
 
 // NewRootCmdWithInfinitySleep creates a new root cobra command with infinite sleep option.

@@ -9,9 +9,10 @@ import (
 
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -66,7 +67,7 @@ func TestAsync(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 
-	// TODO: Why is the info in stderr?
+	// The output seems to be written in stderr instead of stdout
 	var stdout, stderr bytes.Buffer
 	_, err = stdcopy.StdCopy(&stdout, &stderr, reader)
 	require.NoError(t, err)
@@ -87,7 +88,7 @@ func TestAsync(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond)
 }
 
-// This test checks that children tasks are created for the ammount of tenants
+// This test checks that children tasks are created for the amount of tenants
 // If tenant count is 10, for 1 task there should be at least 11 tasks (original + one per tenant)
 func TestAsyncFanout(t *testing.T) {
 	nTenants := 10
@@ -161,7 +162,7 @@ func TestAsyncFanout(t *testing.T) {
 
 		// Extract the Processed value
 		var stats struct {
-			Processed int `json:"Processed"`
+			Processed int `json:"Processed"` //nolint:tagliatelle
 		}
 		if err := json.Unmarshal(stderr.Bytes(), &stats); err != nil {
 			return false

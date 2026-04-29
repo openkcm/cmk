@@ -4,12 +4,13 @@ import (
 	"context"
 	"syscall"
 
+	"github.com/openkcm/common-sdk/pkg/health"
+	"github.com/openkcm/common-sdk/pkg/status"
+
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/log"
-	"github.com/openkcm/common-sdk/pkg/health"
-	"github.com/openkcm/common-sdk/pkg/status"
 )
 
 func StartStatusServer(ctx context.Context, cfg *config.Config, opts ...health.Option) {

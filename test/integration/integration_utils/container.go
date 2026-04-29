@@ -11,13 +11,14 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"gopkg.in/yaml.v3"
+
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/testutils"
 )
 
 type Service string
@@ -39,7 +40,7 @@ type ServiceConfig struct {
 	Args    []string
 }
 
-// Builds image and starts a testcontainer with the provided service
+// RunCMKService builds image and starts a testcontainer with the provided service
 // This might take some time if there isn't an image built, but it has caching mechanisms
 // Returns the container so you can execute commands or interact with it
 func RunCMKService(t *testing.T, svcCfg ServiceConfig, cfg *config.Config) testcontainers.Container {
@@ -104,6 +105,7 @@ func RunCMKService(t *testing.T, svcCfg ServiceConfig, cfg *config.Config) testc
 func BuildCMKImage(t *testing.T) string {
 	t.Helper()
 
+	//nolint:dogsled
 	_, filename, _, _ := runtime.Caller(0)
 
 	baseDir := filepath.Dir(filename)

@@ -140,6 +140,7 @@ func StartRedis(
 		assert.NoError(tb, err)
 
 		host, err := redisContainer.Host(tb.Context())
+		assert.NoError(tb, err)
 
 		cfg.TaskQueue.Port = port.Port()
 		cfg.TaskQueue.Host = commoncfg.SourceRef{

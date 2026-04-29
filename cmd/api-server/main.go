@@ -33,6 +33,8 @@ var (
 
 // - Starts the status server
 // - Starts the CMK API Server
+//
+//nolint:funlen
 func run(ctx context.Context, cfg *config.Config) error {
 	// Update Version
 	err := commoncfg.UpdateConfigVersion(&cfg.BaseConfig, BuildInfo)
@@ -64,7 +66,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 			dialer := &net.Dialer{
 				Timeout: time.Second * 1,
 			}
-
 			conn, err := dialer.DialContext(ctx, "tcp", cfg.HTTP.Address)
 			if err != nil {
 				return fmt.Errorf("health check: cannot connect to %s: %w", cfg.HTTP.Address, err)
