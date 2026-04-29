@@ -12,6 +12,7 @@ require (
 	github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8 v8.9.0
 	github.com/bartventer/gorm-multitenancy/postgres/v8 v8.9.0
 	github.com/bartventer/gorm-multitenancy/v8 v8.9.0
+	github.com/docker/docker v28.5.2+incompatible
 	github.com/fullsailor/pkcs7 v0.0.0-20190404230743-d7302db945fa
 	github.com/getkin/kin-openapi v0.137.0
 	github.com/gogo/protobuf v1.3.2
@@ -24,6 +25,7 @@ require (
 	github.com/looplab/fsm v1.0.3
 	github.com/magodo/slog2hclog v0.0.0-20240614031327-090ebd72a033
 	github.com/microcosm-cc/bluemonday v1.0.27
+	github.com/moby/moby/api v1.54.1
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/openkcm/api-sdk v0.17.0
@@ -119,8 +121,7 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
-	github.com/moby/moby/api v1.54.2 // indirect
-	github.com/moby/moby/client v0.4.1 // indirect
+	github.com/moby/moby/client v0.4.0 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect

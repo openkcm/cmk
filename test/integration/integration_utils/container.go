@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -31,10 +33,16 @@ const (
 	DBMigrator       Service = "/bin/db-migrator"
 )
 
+type ServiceConfig struct {
+	Service Service
+	Name    string
+	Args    []string
+}
+
 // Builds image and starts a testcontainer with the provided service
 // This might take some time if there isn't an image built, but it has caching mechanisms
 // Returns the container so you can execute commands or interact with it
-func RunCMKService(t *testing.T, service Service, cfg *config.Config) testcontainers.Container {
+func RunCMKService(t *testing.T, svcCfg ServiceConfig, cfg *config.Config) testcontainers.Container {
 	t.Helper()
 
 	statusPort, err := testutils.GetFreePortString()
@@ -51,8 +59,10 @@ func RunCMKService(t *testing.T, service Service, cfg *config.Config) testcontai
 	ctx := t.Context()
 
 	req := testcontainers.ContainerRequest{
+		Name:       svcCfg.Name,
 		Image:      BuildCMKImage(t),
-		Entrypoint: []string{string(service)},
+		Entrypoint: []string{string(svcCfg.Service)},
+		Cmd:        svcCfg.Args,
 		Files: []testcontainers.ContainerFile{
 			{
 				ContainerFilePath: path.Join(constants.DefaultConfigPath1, "/config.yaml"),
@@ -60,7 +70,9 @@ func RunCMKService(t *testing.T, service Service, cfg *config.Config) testcontai
 				FileMode:          0o644,
 			},
 		},
-		NetworkMode: "host",
+		HostConfigModifier: func(hc *container.HostConfig) {
+			hc.NetworkMode = network.NetworkHost
+		},
 	}
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -71,11 +83,9 @@ func RunCMKService(t *testing.T, service Service, cfg *config.Config) testcontai
 
 	testutils.WaitForServer(t, cfg.Status.Address)
 
-	// Check container state
 	state, err := container.State(ctx)
 	require.NoError(t, err)
 
-	// If container is not running, print logs before failing
 	if !state.Running {
 		logs, err := container.Logs(ctx)
 		if err == nil {
@@ -102,7 +112,7 @@ func BuildCMKImage(t *testing.T) string {
 
 	cmd := exec.Command("make", "docker-dev-build")
 	cmd.Dir = projectRoot
-	_, err = cmd.CombinedOutput()
+	_, err = cmd.Output()
 	if err != nil {
 		require.NoError(t, err, "failed to build docker image")
 	}
