@@ -109,7 +109,7 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 	cmkAuditor := auditor.New(ctx, testConfig)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, nil, userManager, tagManager, nil, testConfig)
+	keyConfigManager := manager.NewKeyConfigManager(r, nil, userManager, tagManager, nil, nil, testConfig)
 	keyManager := manager.NewKeyManager(r, svcRegistry, nil, keyConfigManager, userManager, nil, nil, nil)
 	systemManager := manager.NewSystemManager(ctx, r, nil, nil, svcRegistry, testConfig, keyConfigManager, userManager)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)

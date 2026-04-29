@@ -49,7 +49,7 @@ func New(
 	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config)
 	userManager := NewUserManager(repo, cmkAuditor)
 	tagManager := NewTagManager(repo)
-	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, config)
+	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, eventFactory, config)
 	keyManager := NewKeyManager(
 		repo,
 		svcRegistry,

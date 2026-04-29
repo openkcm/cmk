@@ -40,7 +40,6 @@ var (
 	ErrGetImportParamsFromProvider  = errors.New("failed to get import parameters from provider")
 	ErrImportKeyMaterialsToProvider = errors.New("failed to import key materials to provider")
 	ErrKeyIsNotEnabled              = errors.New("key is not enabled")
-	ErrPrimaryKeyUnmark             = errors.New("primary key cannot be unmarked primary")
 
 	ErrGetKeyDB                         = errors.New("failed to get key from database")
 	ErrGettingKeyByID                   = errors.New("failed to get key by ID")

@@ -70,7 +70,7 @@ func SetupWorkflowManager(
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, nil, cfg)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)
@@ -280,11 +280,13 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	})
 
 	t.Run("should not be valid on primary key change with unconnected system", func(t *testing.T) {
-		key := testutils.NewKey(func(k *model.Key) {
-			k.IsPrimary = true
-		})
+		keyID := uuid.New()
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-			kc.PrimaryKeyID = &key.ID
+			kc.PrimaryKeyID = ptr.PointTo(keyID)
+		})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = keyConfig.ID
 		})
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
@@ -311,12 +313,11 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	})
 
 	t.Run("should not be valid on change primary key to primary key", func(t *testing.T) {
-		key := testutils.NewKey(func(k *model.Key) {
-			k.IsPrimary = true
-		})
+		key := testutils.NewKey(func(k *model.Key) {})
 
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 			kc.PrimaryKeyID = &key.ID
+			kc.PrimaryKeyID = ptr.PointTo(key.ID)
 		})
 
 		testutils.CreateTestEntities(ctxSys, t, repo, key, keyConfig)
