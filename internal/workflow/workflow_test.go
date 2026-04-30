@@ -112,13 +112,14 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 	})
 
 	tests := []struct {
-		name          string
-		workflow      model.Workflow
-		actorID       string
-		transition    workflow.Transition
-		expectErr     bool
-		errMessage    string         // If expectErr is true, this is the expected error message
-		expectedState workflow.State // If expectErr is false, this is the expected state after the transition
+		name            string
+		workflow        model.Workflow
+		actorID         string
+		transition      workflow.Transition
+		expectErr       bool
+		expectCreateErr bool           // If true, the workflow creation is expected to fail (e.g. CHECK constraint)
+		errMessage      string         // If expectErr is true, this is the expected error message
+		expectedState   workflow.State // If expectErr is false, this is the expected state after the transition
 	}{
 		{
 			name: "create from initial",
@@ -709,10 +710,9 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 				wf.State = workflow.StateWaitConfirmation.String()
 				wf.ArtifactType = "SOMETHING"
 			}),
-			actorID:       userID01,
-			transition:    workflow.TransitionConfirm,
-			expectErr:     false,
-			expectedState: workflow.StateFailed,
+			actorID:         userID01,
+			transition:      workflow.TransitionConfirm,
+			expectCreateErr: true,
 		},
 		{
 			name: "confirm from wait confirmation wrong action type",
@@ -720,10 +720,9 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 				wf.State = workflow.StateWaitConfirmation.String()
 				wf.ActionType = "DOSTUFF"
 			}),
-			actorID:       userID01,
-			transition:    workflow.TransitionConfirm,
-			expectErr:     false,
-			expectedState: workflow.StateFailed,
+			actorID:         userID01,
+			transition:      workflow.TransitionConfirm,
+			expectCreateErr: true,
 		},
 		{
 			name: "confirm from wait confirmation wrong parameters",
@@ -1035,6 +1034,10 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Prepare
 			err := r.Create(ctx, &tt.workflow)
+			if tt.expectCreateErr {
+				assert.Error(t, err)
+				return
+			}
 			assert.NoError(t, err)
 
 			// Act
