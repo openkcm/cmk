@@ -14,7 +14,6 @@ import (
 	otlpaudit "github.com/openkcm/common-sdk/pkg/otlp/audit"
 
 	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/constants"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
@@ -91,7 +90,7 @@ func testCmkAuditMethod(
 					assert.Equal(t, eventType, attrs[otlpaudit.EventTypeKey])
 					assert.Equal(t, tt.tenantID, attrs[otlpaudit.TenantIDKey])
 					assert.Equal(t, tt.cmkID, attrs[otlpaudit.ObjectIDKey])
-					assert.Equal(t, constants.SystemUser.String(), attrs[otlpaudit.UserInitiatorIDKey])
+					assert.Equal(t, uuid.Max.String(), attrs[otlpaudit.UserInitiatorIDKey])
 
 					w.WriteHeader(tt.statusCode)
 				}))

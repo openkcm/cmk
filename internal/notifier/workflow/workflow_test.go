@@ -169,7 +169,7 @@ func TestCreator_CreateTask(t *testing.T) {
 				Transition: tt.transition,
 			}
 
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 			task, err := creator.CreateTask(ctx, data, tt.recipients)
 
 			if tt.expectError {
@@ -270,7 +270,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 
 			recipients := []string{"approver@example.com"}
 
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 			task, err := creator.CreateWorkflowCreatedTask(ctx, data, recipients)
 
 			assert.NoError(t, err)
@@ -342,7 +342,7 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 
 			recipients := []string{"initiator@example.com"}
 
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 			task, err := creator.CreateWorkflowApprovedTask(ctx, data, recipients)
 
 			assert.NoError(t, err)
@@ -397,7 +397,7 @@ func TestCreator_createWorkflowRejectedTask(t *testing.T) {
 
 	recipients := []string{"initiator@example.com"}
 
-	ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 	task, err := creator.CreateWorkflowRejectedTask(ctx, data, recipients)
 
 	assert.NoError(t, err)
@@ -475,7 +475,7 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 
 			recipients := []string{"approver@example.com"}
 
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 			task, err := creator.CreateWorkflowConfirmedTask(ctx, data, recipients)
 
 			assert.NoError(t, err)
@@ -516,7 +516,7 @@ func TestCreator_createWorkflowRevokedTask(t *testing.T) {
 
 	recipients := []string{"approver@example.com"}
 
-	ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 	task, err := creator.CreateWorkflowRevokedTask(ctx, data, recipients)
 
 	assert.NoError(t, err)
@@ -561,7 +561,7 @@ func TestCreator_createHTMLBody(t *testing.T) {
 		Transition: wf.TransitionCreate,
 	}
 
-	ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 	body, err := creator.CreateHTMLBody(ctx, data, testMessage, testActionText)
 
 	assert.NoError(t, err)
@@ -601,7 +601,7 @@ func TestCreator_createNotificationTask(t *testing.T) {
 
 	recipients := []string{"test@example.com", "test2@example.com"}
 
-	ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 	task, err := creator.CreateNotificationTask(ctx, data, recipients, testSubject, testMessage, testActionText)
 
 	assert.NoError(t, err)
@@ -642,7 +642,7 @@ func TestCreator_createNotificationTask_EmptyRecipients(t *testing.T) {
 
 	var recipients []string
 
-	ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 	task, err := creator.CreateNotificationTask(ctx, data, recipients, testSubject, testMessage, testActionText)
 
 	assert.NoError(t, err)

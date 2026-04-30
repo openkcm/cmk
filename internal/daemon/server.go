@@ -228,20 +228,20 @@ func makeController(
 		log.Error(ctx, "Failed to load plugin", err)
 	}
 
-	authzAPILoader := authz_loader.NewAPIAuthzLoader(ctx, r, cfg)
-	if authzAPILoader.AuthzHandler == nil {
-		return nil, oops.In(ServerLogDomain).Wrapf(err, "no authz handler")
-	}
-
 	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
 	if authzRepoLoader.AuthzHandler == nil {
-		return nil, oops.In(ServerLogDomain).Wrapf(err, "no authz handler")
+		return nil, oops.In(ServerLogDomain).Wrapf(err, "no repo authz handler")
 	}
 
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
+	authzAPILoader := authz_loader.NewAPIAuthzLoader(ctx, r, cfg)
+	if authzAPILoader.AuthzHandler == nil {
+		return nil, oops.In(ServerLogDomain).Wrapf(err, "no api authz handler")
+	}
+
 	controller := cmk.NewAPIController(ctx, authzRepo, cfg, clientsFactory,
-		migrator, svcRegistry, authzAPILoader)
+		migrator, svcRegistry, authzRepoLoader, authzAPILoader)
 
 	authzAPILoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
 	authzRepoLoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)

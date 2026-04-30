@@ -53,14 +53,14 @@ type testScenario struct {
 // mockRoleGetter is a minimal mock implementation of manager.GroupManager for testing
 // It can be configured to return specific roles for role validation testing
 type mockRoleGetter struct {
-	roles []constants.Role
+	roles []constants.BusinessRole
 	err   error
 }
 
 func (m *mockRoleGetter) GetRoleFromIAM(
 	ctx context.Context,
 	groups []string,
-) (constants.Role, error) {
+) (constants.BusinessRole, error) {
 	if _, err := cmkcontext.ExtractClientDataIdentifier(ctx); err != nil {
 		return "", fmt.Errorf("authz check failed: no identity in context: %w", err)
 	}
@@ -340,27 +340,6 @@ func getTestScenarios() []testScenario {
 			expectHttpCode: http.StatusInternalServerError,
 		},
 		{
-			name: "try_to_be_system",
-			setupFunc: func(t *testing.T, td *testData) (string, string) {
-				t.Helper()
-
-				clientData := auth.ClientData{
-					Identifier:         constants.SystemUser.String(),
-					Type:               "test-type",
-					Email:              "test@example.com",
-					Region:             "test-region",
-					AuthContext:        map[string]string{"issuer": "test-issuer"},
-					Groups:             []string{"group1", "group2"},
-					KeyID:              "0",
-					SignatureAlgorithm: auth.SignatureAlgorithmRS256,
-				}
-
-				return td.createCustomClientData(t, clientData)
-			},
-			expectError:    true,
-			expectHttpCode: http.StatusInternalServerError,
-		},
-		{
 			name: "missing_keyid",
 			setupFunc: func(t *testing.T, td *testData) (string, string) {
 				t.Helper()
@@ -476,7 +455,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 
 	testCases := []struct {
 		name            string
-		roles           []constants.Role
+		roles           []constants.BusinessRole
 		clientGroups    []string
 		apiPath         string
 		expectError     bool
@@ -485,7 +464,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 	}{
 		{
 			name:           "single_role_key_admin",
-			roles:          []constants.Role{constants.KeyAdminRole},
+			roles:          []constants.BusinessRole{constants.KeyAdminRole},
 			clientGroups:   []string{"group1", "group2"},
 			apiPath:        "/keys",
 			expectError:    false,
@@ -493,7 +472,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		},
 		{
 			name:           "single_role_tenant_admin",
-			roles:          []constants.Role{constants.TenantAdminRole},
+			roles:          []constants.BusinessRole{constants.TenantAdminRole},
 			clientGroups:   []string{"group1", "group2"},
 			apiPath:        "/keys",
 			expectError:    false,
@@ -501,7 +480,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		},
 		{
 			name:           "single_role_tenant_auditor",
-			roles:          []constants.Role{constants.TenantAuditorRole},
+			roles:          []constants.BusinessRole{constants.TenantAuditorRole},
 			clientGroups:   []string{"group1", "group2"},
 			apiPath:        "/keys",
 			expectError:    false,
@@ -509,7 +488,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		},
 		{
 			name:            "mixed_roles_key_admin_and_tenant_admin",
-			roles:           []constants.Role{constants.KeyAdminRole, constants.TenantAdminRole},
+			roles:           []constants.BusinessRole{constants.KeyAdminRole, constants.TenantAdminRole},
 			clientGroups:    []string{"group1", "group2"},
 			apiPath:         "/keys",
 			expectError:     true,
@@ -518,7 +497,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		},
 		{
 			name:            "mixed_roles_key_admin_and_tenant_auditor",
-			roles:           []constants.Role{constants.KeyAdminRole, constants.TenantAuditorRole},
+			roles:           []constants.BusinessRole{constants.KeyAdminRole, constants.TenantAuditorRole},
 			clientGroups:    []string{"group1", "group2"},
 			apiPath:         "/keys",
 			expectError:     true,
@@ -527,7 +506,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		},
 		{
 			name:            "mixed_roles_tenant_admin_and_tenant_auditor",
-			roles:           []constants.Role{constants.TenantAdminRole, constants.TenantAuditorRole},
+			roles:           []constants.BusinessRole{constants.TenantAdminRole, constants.TenantAuditorRole},
 			clientGroups:    []string{"group1", "group2"},
 			apiPath:         "/keys",
 			expectError:     true,
@@ -536,7 +515,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		},
 		{
 			name:           "single_group_no_validation_needed",
-			roles:          []constants.Role{},
+			roles:          []constants.BusinessRole{},
 			clientGroups:   []string{"group1"},
 			apiPath:        "/keys",
 			expectError:    false,
@@ -544,7 +523,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		},
 		{
 			name:           "no_groups_access_denied",
-			roles:          []constants.Role{},
+			roles:          []constants.BusinessRole{},
 			clientGroups:   []string{},
 			apiPath:        "/keys",
 			expectError:    false,
@@ -553,7 +532,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		// Allowed API test cases
 		{
 			name:           "allowed_api_succeeds_with_mixed_roles",
-			roles:          []constants.Role{constants.KeyAdminRole, constants.TenantAdminRole},
+			roles:          []constants.BusinessRole{constants.KeyAdminRole, constants.TenantAdminRole},
 			clientGroups:   []string{"group1", "group2"},
 			apiPath:        "/userInfo",
 			expectError:    false,
@@ -561,7 +540,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		},
 		{
 			name:            "allowed_api_fails_with_no_groups",
-			roles:           []constants.Role{},
+			roles:           []constants.BusinessRole{},
 			clientGroups:    []string{},
 			apiPath:         "/userInfo",
 			expectError:     false,
@@ -570,7 +549,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 		},
 		{
 			name:            "non_allowed_api_fails_with_mixed_roles",
-			roles:           []constants.Role{constants.KeyAdminRole, constants.TenantAdminRole},
+			roles:           []constants.BusinessRole{constants.KeyAdminRole, constants.TenantAdminRole},
 			clientGroups:    []string{"group1", "group2"},
 			apiPath:         "/keys",
 			expectError:     true,
@@ -581,7 +560,7 @@ func TestClientDataMiddleware_RoleValidation(t *testing.T) {
 			// Regression test: GetRoleFromIAM is called after the identity is injected
 			// into the context, so the authz-aware repo check has a proper identity to work with.
 			name:           "multiple_groups_single_role_succeeds_without_identity_in_context",
-			roles:          []constants.Role{constants.KeyAdminRole},
+			roles:          []constants.BusinessRole{constants.KeyAdminRole},
 			clientGroups:   []string{"group1", "group2"},
 			apiPath:        "/keys",
 			expectError:    false,

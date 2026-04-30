@@ -5,6 +5,8 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
@@ -37,6 +39,8 @@ type Manager struct {
 func New(
 	ctx context.Context,
 	repo repo.Repo,
+	authzLoader *authz_loader.AuthzLoader[
+		authz.RepoResourceTypeName, authz.RepoAction],
 	config *config.Config,
 	clientsFactory clients.Factory,
 	svcRegistry *cmkpluginregistry.Registry,
@@ -47,9 +51,10 @@ func New(
 	cmkAuditor := auditor.New(ctx, config)
 	certManager := NewCertificateManager(ctx, repo, svcRegistry, config)
 	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config)
-	userManager := NewUserManager(repo, cmkAuditor)
+	userManager := NewUserManager(repo, authzLoader, cmkAuditor)
 	tagManager := NewTagManager(repo)
-	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, config)
+	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager,
+		tagManager, cmkAuditor, config)
 	keyManager := NewKeyManager(
 		repo,
 		svcRegistry,
@@ -63,6 +68,7 @@ func New(
 	systemManager := NewSystemManager(
 		ctx,
 		repo,
+		authzLoader,
 		clientsFactory,
 		eventFactory,
 		svcRegistry,

@@ -8,6 +8,7 @@ import (
 
 	slogctx "github.com/veqryn/slog-context"
 
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -63,6 +64,12 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 	asynqTask *asynq.Task,
 	processTenant func(ctx context.Context, task *asynq.Task) error,
 ) error {
+	ctx, err := cmkcontext.InjectInternalClientData(ctx,
+		constants.InternalTaskProcessingRole)
+	if err != nil {
+		return err
+	}
+
 	totalTenantCount := 0
 
 	if asynqTask == nil {
@@ -99,7 +106,7 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
 	}
 
-	err := repo.ProcessInBatch(ctx, bp.repo, query, repo.DefaultLimit,
+	err = repo.ProcessInBatch(ctx, bp.repo, query, repo.DefaultLimit,
 		func(tenants []*model.Tenant) error {
 			totalTenantCount += len(tenants)
 
@@ -112,7 +119,6 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 				ctx := cmkcontext.New(
 					ctx,
 					cmkcontext.WithTenant(tenant.ID),
-					cmkcontext.InjectSystemUser,
 					model.WithLogInjectTenant(tenant),
 					log.WithLogInjectAttrs(slog.Int("index", i)),
 				)

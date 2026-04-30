@@ -15,6 +15,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var (
@@ -25,6 +26,7 @@ var (
 
 type AuthzLoader[TResourceTypeName, TAction comparable] struct {
 	repo         repo.Repo
+	TenantIDs    map[authz.TenantID]struct{}
 	AuthzHandler *authz.Handler[TResourceTypeName, TAction]
 	mu           sync.Mutex // protects AuthzHandler.Entities and AuthorizationData
 	Auditor      *auditor.Auditor
@@ -34,16 +36,16 @@ func NewAuthzLoader[TResourceTypeName, TAction comparable](
 	ctx context.Context,
 	repo repo.Repo,
 	config *config.Config,
-	rolePolicies map[constants.Role][]authz.BasePolicy[TResourceTypeName, TAction],
+	internalRolePolicies map[constants.InternalRole][]authz.BasePolicy[constants.InternalRole,
+		TResourceTypeName, TAction],
+	businessRolePolicies map[constants.BusinessRole][]authz.BasePolicy[constants.BusinessRole,
+		TResourceTypeName, TAction],
 	resourceTypeActions map[TResourceTypeName][]TAction,
 ) *AuthzLoader[TResourceTypeName, TAction] {
-	// start with an empty list of entities
-	entities := &[]authz.Entity{}
-
 	audit := auditor.New(ctx, config)
 
-	authzHandler, err := authz.NewAuthorizationHandler(entities, audit,
-		rolePolicies, resourceTypeActions)
+	authzHandler, err := authz.NewAuthorizationHandler(audit,
+		internalRolePolicies, businessRolePolicies, resourceTypeActions)
 	if err != nil {
 		log.Error(ctx, "failed to create authorization handler", err)
 		return nil
@@ -51,6 +53,7 @@ func NewAuthzLoader[TResourceTypeName, TAction comparable](
 
 	return &AuthzLoader[TResourceTypeName, TAction]{
 		repo:         repo,
+		TenantIDs:    make(map[authz.TenantID]struct{}),
 		AuthzHandler: authzHandler,
 		Auditor:      audit,
 	}
@@ -61,8 +64,10 @@ func NewAPIAuthzLoader(
 	repo repo.Repo,
 	config *config.Config,
 ) *AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
-	return NewAuthzLoader(ctx, repo, config,
-		authz.APIRolePolicies, authz.APIResourceTypeActions)
+	// No internal user access allowed to api
+	APIInternalPolicies := make(map[constants.InternalRole][]authz.BasePolicy[constants.InternalRole,
+		authz.APIResourceTypeName, authz.APIAction])
+	return NewAuthzLoader(ctx, repo, config, APIInternalPolicies, authz.APIBusinessPolicies, authz.APIResourceTypeActions)
 }
 
 func NewRepoAuthzLoader(
@@ -71,11 +76,17 @@ func NewRepoAuthzLoader(
 	config *config.Config,
 ) *AuthzLoader[authz.RepoResourceTypeName, authz.RepoAction] {
 	return NewAuthzLoader(ctx, repo, config,
-		authz.RepoRolePolicies, authz.RepoResourceTypeActions)
+		authz.RepoInternalPolicies, authz.RepoBusinessPolicies, authz.RepoResourceTypeActions)
 }
 
-func (am *AuthzLoader[TResourceTypeName, TAction]) LoadAllowList(
-	ctx context.Context, tenantID string) error {
+func (am *AuthzLoader[TResourceTypeName, TAction]) LoadAllowList(ctx context.Context) error {
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		// This could be internal user (for example). If we can't extract we assume not
+		// relevant, otherwise will get tenant error on the assertion
+		return nil
+	}
+
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
@@ -87,19 +98,11 @@ func (am *AuthzLoader[TResourceTypeName, TAction]) ReloadAllowList(
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
-	// Collect all tenants which were previously loaded
-	tenantList := make([]authz.TenantID, 0, len(am.AuthzHandler.Entities))
-	for _, entity := range am.AuthzHandler.Entities {
-		tenantList = append(tenantList, entity.TenantID)
-	}
+	// Take a copy of tenants IDs to update before resetting
+	tenantIDs := am.TenantIDs
+	am.ResetBusinessUserData()
 
-	am.AuthzHandler.Entities = []authz.Entity{}
-	am.AuthzHandler.AuthorizationData = authz.AllowList[TResourceTypeName, TAction]{
-		AuthzKeys: make(map[authz.AuthorizationKey[TResourceTypeName, TAction]]struct{}),
-		TenantIDs: make(map[authz.TenantID]struct{}),
-	}
-
-	for _, tenantID := range tenantList {
+	for tenantID, _ := range tenantIDs {
 		err := am.loadAllowListInternal(ctx, string(tenantID))
 		if err != nil {
 			return errs.Wrap(ErrLoadAuthzAllowList, err)
@@ -107,6 +110,11 @@ func (am *AuthzLoader[TResourceTypeName, TAction]) ReloadAllowList(
 	}
 
 	return nil
+}
+
+func (am *AuthzLoader[TResourceTypeName, TAction]) ResetBusinessUserData() {
+	am.TenantIDs = make(map[authz.TenantID]struct{})
+	am.AuthzHandler.ResetBusinessUserData()
 }
 
 // StartAuthzDataRefresh starts a background goroutine that refreshes the authorization data periodically
@@ -154,7 +162,7 @@ func (am *AuthzLoader[TResourceTypeName, TAction]) loadAllowListInternal(
 		return errs.Wrap(ErrTenantNotExist, ErrTenantNotExist)
 	}
 
-	if am.AuthzHandler.AuthorizationData.ContainsTenant(authz.TenantID(tenantID)) {
+	if _, exists := am.TenantIDs[authz.TenantID(tenantID)]; exists {
 		slog.Debug(
 			"tenantId", "tenantId", tenantID, "message", "tenantId already exists in AuthzHandler, skipping load",
 		)
@@ -169,39 +177,43 @@ func (am *AuthzLoader[TResourceTypeName, TAction]) loadAllowListInternal(
 		return err
 	}
 
-	roleToEntity := make(map[constants.Role]*authz.Entity)
+	roleToEntity := make(map[constants.BusinessRole]*authz.Entity[
+		constants.BusinessRole, authz.BusinessUserEntity])
 
 	for _, group := range groups {
 		role := group.Role
 		if entity, exists := roleToEntity[role]; exists {
-			entity.UserGroups = append(entity.UserGroups, group.IAMIdentifier)
+			entity.User.Groups = append(entity.User.Groups, group.IAMIdentifier)
 		} else {
-			roleToEntity[role] = &authz.Entity{
-				TenantID:   authz.TenantID(tenantID),
-				Role:       role,
-				UserGroups: []string{group.IAMIdentifier},
+			roleToEntity[role] = &authz.Entity[
+				constants.BusinessRole, authz.BusinessUserEntity]{
+				User: authz.BusinessUserEntity{
+					TenantID: authz.TenantID(tenantID),
+					Groups:   []string{group.IAMIdentifier},
+				},
+				Role: role,
 			}
 		}
 	}
 
 	slog.Debug("tenantId", "tenantId", tenantID, "roleToEntity", len(roleToEntity))
 
-	entities := make([]authz.Entity, 0, len(roleToEntity))
+	entities := make([]authz.Entity[
+		constants.BusinessRole, authz.BusinessUserEntity], 0, len(roleToEntity))
 	for _, entity := range roleToEntity {
 		entities = append(entities, *entity)
 	}
 
 	if len(entities) > 0 {
-		am.AuthzHandler.Entities = append(am.AuthzHandler.Entities, entities...)
-
-		authzData, err := authz.NewAuthorizationData(am.AuthzHandler.Entities,
-			am.AuthzHandler.RolePolicies)
+		err = am.AuthzHandler.UpdateBusinessUserData(entities)
 		if err != nil {
 			return errs.Wrap(ErrLoadAuthzAllowList, err)
 		}
+	}
 
-		slog.Debug("tenantId", "tenantId", tenantID, "authzData", authzData)
-		am.AuthzHandler.AuthorizationData = *authzData
+	// Add tenant ID to the list of tenant IDs in case it is not already present
+	if _, exists := am.TenantIDs[authz.TenantID(tenantID)]; !exists {
+		am.TenantIDs[authz.TenantID(tenantID)] = struct{}{}
 	}
 
 	return nil

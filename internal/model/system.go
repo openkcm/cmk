@@ -54,9 +54,19 @@ func (m System) CheckAuthz(ctx context.Context,
 // UpdateSystemProperties if they are set
 // and returns a bool if any field was updated
 func (m *System) UpdateSystemProperties(
+	ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
 	props map[string]string,
 	cfg *config.System,
-) bool {
+) (bool, error) {
+	if authzHandler != nil {
+		isAllowed, err := authz.CheckAuthz(ctx, authzHandler,
+			authz.RepoResourceTypeSystemProperty, authz.RepoActionUpdate)
+		if err != nil || !isAllowed {
+			return false, err
+		}
+	}
+
 	updated := false
 
 	for k, v := range props {
@@ -71,7 +81,7 @@ func (m *System) UpdateSystemProperties(
 		}
 	}
 
-	return updated
+	return updated, nil
 }
 
 // AfterSave is ran before any creating/updating the system

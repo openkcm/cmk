@@ -45,7 +45,7 @@ func (u *user) HasKeyConfigAccess(
 	return false, nil
 }
 
-func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.Role, error) {
+func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.BusinessRole, error) {
 	return constants.KeyAdminRole, nil
 }
 
