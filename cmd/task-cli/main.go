@@ -65,7 +65,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	asyncClient := asyncApp.Client()
 	asyncInspector := asyncApp.Inspector()
 
-	rootCmd := commands.NewRootCmd(ctx)
+	rootCmd := commands.NewRootCmd(ctx, cfg)
 	rootCmd.AddCommand(commands.NewStatsCmd(ctx, asyncInspector))
 	rootCmd.AddCommand(commands.NewQueuesCmd(ctx, asyncInspector))
 	rootCmd.AddCommand(commands.NewInvokeCmd(ctx, asyncClient))

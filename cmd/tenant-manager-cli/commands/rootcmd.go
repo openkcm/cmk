@@ -5,12 +5,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/openkcm/cmk/internal/config"
 	cliUtils "github.com/openkcm/cmk/utils/cli"
 )
 
-func (f *CommandFactory) NewRootCmd(ctx context.Context) *cobra.Command {
+func (f *CommandFactory) NewRootCmd(ctx context.Context, cfg *config.Config) *cobra.Command {
 	return cliUtils.NewRootCmdWithInfinitySleep(
 		ctx,
+		cfg,
 		"tm",
 		"Tenant Manager CLI Application",
 		"Tenant Manager is a simple CLI tool to manage tenants, supporting: creating tenant, "+
