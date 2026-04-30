@@ -265,7 +265,8 @@ func (v1 *V1) ImportKeyMaterial(
 			},
 			KeyId: req.Parameters.KeyID,
 		},
-		ImportParameters: importParams,
+		EncryptedKeyMaterial: req.EncryptedKeyMaterial,
+		ImportParameters:     importParams,
 	}
 	if err := protovalidate.Validate(in); err != nil {
 		return nil, fmt.Errorf(errFailedValidationMsg, err)
