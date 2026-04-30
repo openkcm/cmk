@@ -161,7 +161,7 @@ func TestWorkflow_Description(t *testing.T) {
 				ParametersResourceName: tt.parametersResourceName,
 			}
 
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 
 			description, err := workflow.Description(ctx, testpluginregistry.NewMockIDMService())
 			assert.NoError(t, err)

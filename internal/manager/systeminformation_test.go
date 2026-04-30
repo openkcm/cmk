@@ -46,7 +46,7 @@ func SetupSystemInfoManager(t *testing.T) (
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), &config.Config{Plugins: psCfg}, cmkpluginregistry.WithBuiltInPlugins(ps))
 	assert.NoError(t, err)
 	systemManager, err := manager.NewSystemInformationManager(
-		dbRepository,
+		dbRepository, nil,
 		svcRegistry,
 		&config.System{
 			OptionalProperties: map[string]config.SystemProperty{
@@ -171,7 +171,7 @@ func TestNewSystemInformationManager(t *testing.T) {
 			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
 			assert.NoError(t, err)
 
-			_, err = manager.NewSystemInformationManager(nil, svcRegistry, &cfg.ContextModels.System)
+			_, err = manager.NewSystemInformationManager(nil, nil, svcRegistry, &cfg.ContextModels.System)
 			if tt.expectedError != nil {
 				assert.ErrorIs(t, err, tt.expectedError)
 			} else {

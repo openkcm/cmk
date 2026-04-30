@@ -31,7 +31,7 @@ func TestNewManager(t *testing.T) {
 	factory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
 
-	m := manager.New(t.Context(), dbRepo, cfg, factory, svcRegistry, nil, nil, nil)
+	m := manager.New(t.Context(), dbRepo, nil, cfg, factory, svcRegistry, nil, nil, nil)
 
 	assert.NotNil(t, m)
 	assert.NotNil(t, m.Keys)

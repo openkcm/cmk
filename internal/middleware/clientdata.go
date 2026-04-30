@@ -32,7 +32,7 @@ var (
 
 // RoleGetter defines the interface for getting roles from group IAM identifiers for better unit testing
 type RoleGetter interface {
-	GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.Role, error)
+	GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.BusinessRole, error)
 }
 
 // ClientDataMiddleware extracts client data from headers, verifies, and adds to context
@@ -97,11 +97,7 @@ func prepareClientContext(
 		return r.Context(), err
 	}
 
-	if clientData.Identifier == constants.SystemUser.String() {
-		return r.Context(), ErrTriedToBeSystem
-	}
-
-	ctx := cmkcontext.InjectClientData(r.Context(), clientData, authContextFields)
+	ctx := cmkcontext.InjectBusinessClientData(r.Context(), clientData, authContextFields)
 
 	// Validate group roles after injecting the real client identity so that
 	// GetRoleFromIAM has a proper identity in context.

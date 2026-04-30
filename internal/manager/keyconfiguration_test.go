@@ -16,6 +16,8 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
@@ -86,11 +88,17 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
-	userManager := manager.NewUserManager(r, cmkAuditor)
-	tagManager := manager.NewTagManager(r)
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 
-	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+		r, &config.Config{})
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
+	userManager := manager.NewUserManager(authzRepo, authzRepoLoader, cmkAuditor)
+	tagManager := manager.NewTagManager(authzRepo)
+	m := manager.NewKeyConfigManager(r, certManager, userManager,
+		tagManager, cmkAuditor, cfg)
 
 	return m, db, tenants[0]
 }
@@ -129,6 +137,9 @@ func TestGetKeyConfigurations(t *testing.T) {
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
 		)
+
+		ctxWithGroups = cmkcontext.InjectRequestID(ctxWithGroups, uuid.NewString())
+
 		pagination := repo.Pagination{
 			Skip:  constants.DefaultSkip,
 			Top:   constants.DefaultTop,
@@ -160,6 +171,9 @@ func TestGetKeyConfigurations(t *testing.T) {
 			"example-user",
 			[]string{testAuditorGroupIAM, "some_other_group"},
 		)
+
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
+
 		testutils.CreateTestEntities(ctx, t, r, auditorGroup)
 		pagination := repo.Pagination{
 			Skip:  constants.DefaultSkip,
@@ -178,6 +192,9 @@ func TestGetKeyConfigurations(t *testing.T) {
 			"example-user",
 			[]string{"group-no-access", "some_other_group"},
 		)
+
+		ctxWithGroups = cmkcontext.InjectRequestID(ctxWithGroups, uuid.NewString())
+
 		pagination := repo.Pagination{
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
@@ -246,8 +263,13 @@ func TestGetKeyConfigurations(t *testing.T) {
 
 	t.Run("Should get user keyconfig count", func(t *testing.T) {
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
-		groupA := testutils.NewGroup(func(_ *model.Group) {})
+		testKeyAdminGroupIAM := "KMS_test_auditor_group2"
+		groupA := testutils.NewGroup(func(g *model.Group) {
+			g.IAMIdentifier = testKeyAdminGroupIAM
+			g.Role = constants.KeyAdminRole
+		})
 		groupB := testutils.NewGroup(func(_ *model.Group) {})
 		testutils.CreateTestEntities(ctx, t, r, groupA, groupB)
 		kcCount := 10
@@ -296,6 +318,7 @@ func TestTotalSystemAndKey(t *testing.T) {
 
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 		sys := &model.System{
 			ID:                 uuid.New(),
@@ -344,6 +367,7 @@ func TestTotalSystemAndKey(t *testing.T) {
 
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, sys)
 
@@ -372,6 +396,7 @@ func TestKeyConfigurationsWithGroupID(t *testing.T) {
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -581,14 +606,12 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 		assert.Equal(t, expected.Name, actual.Name)
 	})
 
-	t.Run("Should allow access when system is system user", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
-			ctx,
-			constants.SystemUser.String(),
-			[]string{},
-		)
+	t.Run("Should allow access when internal user", func(t *testing.T) {
+		ctxSys, err := cmkcontext.BusinessToInternalContext(ctx,
+			constants.InternalTaskWorkflowApproversRole)
+		assert.NoError(t, err)
 
-		actual, err := m.GetKeyConfigurationByID(ctxWithGroups, keyConfigWithAdminGroup.ID)
+		actual, err := m.GetKeyConfigurationByID(ctxSys, keyConfigWithAdminGroup.ID)
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfigWithAdminGroup.ID, actual.ID)
 		assert.Equal(t, keyConfigWithAdminGroup.Name, actual.Name)
@@ -836,6 +859,7 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
+	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 	bytes, err := json.Marshal(&[]string{"tag1"})
 	assert.NoError(t, err)

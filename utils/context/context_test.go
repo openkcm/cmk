@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
@@ -113,7 +112,7 @@ func TestExtractClientDataIdentifier(t *testing.T) {
 				Region:     "region",
 				Type:       "type",
 			}
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectClientData(clientData, nil))
+			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectBusinessClientData(clientData, nil))
 			identifier, err := cmkcontext.ExtractClientDataIdentifier(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, expected, identifier)
@@ -140,7 +139,7 @@ func TestExtractClientDataGroups(t *testing.T) {
 				Region:     "region",
 				Type:       "type",
 			}
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectClientData(clientData, nil))
+			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectBusinessClientData(clientData, nil))
 			groups, err := cmkcontext.ExtractClientDataGroups(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, expected, groups)
@@ -167,7 +166,7 @@ func TestExtractClientDataIssuer(t *testing.T) {
 				Type:        "type",
 				AuthContext: map[string]string{"issuer": expected},
 			}
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectClientData(clientData, []string{"issuer"}))
+			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectBusinessClientData(clientData, []string{"issuer"}))
 			issuer, err := cmkcontext.ExtractClientDataIssuer(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, expected, issuer)
@@ -193,7 +192,7 @@ func TestExtractClientDataAuthContextField(t *testing.T) {
 				Type:        "type",
 				AuthContext: map[string]string{"foo": "bar"},
 			}
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectClientData(clientData, []string{"issuer"}))
+			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectBusinessClientData(clientData, []string{"issuer"}))
 			_, err := cmkcontext.ExtractClientDataAuthContextField(ctx, "issuer")
 			assert.ErrorIs(t, err, cmkcontext.ErrExtractClientDataAuthContext)
 		},
@@ -209,7 +208,7 @@ func TestExtractClientDataAuthContextField(t *testing.T) {
 				Type:        "type",
 				AuthContext: map[string]string{"issuer": ""},
 			}
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectClientData(clientData, nil))
+			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectBusinessClientData(clientData, nil))
 			_, err := cmkcontext.ExtractClientDataAuthContextField(ctx, "issuer")
 			assert.ErrorIs(t, err, cmkcontext.ErrExtractClientDataAuthContext)
 		},
@@ -232,7 +231,7 @@ func TestExtractClientDataAuthContextField(t *testing.T) {
 				},
 			}
 			ctx := cmkcontext.New(context.TODO(),
-				cmkcontext.WithInjectClientData(clientData, []string{"issuer", "audience"}))
+				cmkcontext.WithInjectBusinessClientData(clientData, []string{"issuer", "audience"}))
 
 			issuer, err := cmkcontext.ExtractClientDataAuthContextField(ctx, "issuer")
 			assert.NoError(t, err)
@@ -265,21 +264,10 @@ func TestExtractClientDataAuthContext(t *testing.T) {
 				AuthContext: expected,
 			}
 			ctx := cmkcontext.New(context.TODO(),
-				cmkcontext.WithInjectClientData(clientData, []string{"issuer", "foo"}))
+				cmkcontext.WithInjectBusinessClientData(clientData, []string{"issuer", "foo"}))
 			authContext, err := cmkcontext.ExtractClientDataAuthContext(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, expected, authContext)
-		},
-	)
-}
-
-func TestInjectSystemUser(t *testing.T) {
-	t.Run(
-		"Should inject system user client data into context", func(t *testing.T) {
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.InjectSystemUser)
-			clientData, err := cmkcontext.ExtractClientData(ctx)
-			assert.NoError(t, err)
-			assert.Equal(t, uuid.Max.String(), clientData.Identifier)
 		},
 	)
 }

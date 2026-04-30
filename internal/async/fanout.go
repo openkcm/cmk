@@ -5,6 +5,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
@@ -49,10 +50,16 @@ func TenantFanOut(ctx context.Context, task *asynq.Task, f ProcessFunc) error {
 		return err
 	}
 
+	ctx, err = cmkcontext.InjectInternalClientData(ctx,
+		constants.InternalTaskProcessingRole)
+	if err != nil {
+		log.Error(ctx, "Failed to inject internal role", err)
+		return err
+	}
+
 	ctx = cmkcontext.New(
 		ctx,
 		cmkcontext.WithTenant(payload.TenantID),
-		cmkcontext.InjectSystemUser,
 	)
 
 	return f(ctx, task)

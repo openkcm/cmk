@@ -7,64 +7,109 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 )
 
-type AuthorizationKey[TResourceTypeName, TAction comparable] struct {
-	TenantID         TenantID
-	UserGroup        string
+type BusinessUserAuthzKey struct {
+	TenantID TenantID
+	Group    string
+}
+
+type InternalUserAuthzKey struct {
+	Role constants.InternalRole
+}
+
+type AuthorizationKey[TUser, TResourceTypeName, TAction comparable] struct {
+	User             TUser
 	ResourceTypeName TResourceTypeName
 	Action           TAction
 }
 
 var ErrInvalidRole = errors.New("invalid role")
 
-type AllowList[TResourceTypeName, TAction comparable] struct {
-	AuthzKeys map[AuthorizationKey[TResourceTypeName, TAction]]struct{}
-	TenantIDs map[TenantID]struct{}
+type AuthzData[TRole, TAuthzKey, TResourceTypeName, TAction comparable] struct {
+	RolePolicies map[TRole][]BasePolicy[TRole, TResourceTypeName, TAction]
+	AuthzKeys    map[AuthorizationKey[TAuthzKey, TResourceTypeName, TAction]]struct{}
 }
 
-func NewAuthorizationData[TResourceTypeName, TAction comparable](
-	entities []Entity,
-	rolePolicies map[constants.Role][]BasePolicy[TResourceTypeName, TAction]) (
-	*AllowList[TResourceTypeName, TAction], error) {
-	// hold only authzKeys actions
-	authzKeys := make(map[AuthorizationKey[TResourceTypeName, TAction]]struct{})
-	// hold tenant IDs
-	tenantIDs := make(map[TenantID]struct{})
+type BusinessUserAuthzData[TResourceTypeName, TAction comparable] AuthzData[
+	constants.BusinessRole, BusinessUserAuthzKey, TResourceTypeName, TAction]
+
+// NewBusinessUserAuthzData creates and return a BusinessUserAuthzData. We have separate functions to add
+// the entities, since these are dynamic
+func NewBusinessUserAuthzData[TResourceTypeName, TAction comparable](
+	rolePolicies map[constants.BusinessRole][]BasePolicy[constants.BusinessRole, TResourceTypeName, TAction]) (
+	*BusinessUserAuthzData[TResourceTypeName, TAction], error) {
+	authzData := &BusinessUserAuthzData[TResourceTypeName, TAction]{
+		RolePolicies: rolePolicies,
+		// The loader will add the authzkeys later
+		AuthzKeys: make(map[AuthorizationKey[BusinessUserAuthzKey, TResourceTypeName, TAction]]struct{}),
+	}
+	return authzData, nil
+}
+
+func (l BusinessUserAuthzData[TResourceTypeName, TAction]) InitialiseAuthzKeys() {
+	l.AuthzKeys = make(map[AuthorizationKey[BusinessUserAuthzKey, TResourceTypeName, TAction]]struct{})
+}
+
+func (l BusinessUserAuthzData[TResourceTypeName, TAction]) AddEntities(
+	entities []Entity[constants.BusinessRole, BusinessUserEntity]) error {
 
 	for _, entity := range entities {
 		// entities with unknown roles are not authzKeys
-		policies, ok := rolePolicies[entity.Role]
+		policies, ok := l.RolePolicies[entity.Role]
 		if !ok {
-			return nil, errs.Wrap(ErrValidation, ErrInvalidRole)
+			return errs.Wrap(ErrValidation, ErrInvalidRole)
 		}
 
-		for _, group := range entity.UserGroups {
+		for _, group := range entity.User.Groups {
 			for _, policy := range policies {
 				for _, resourceType := range policy.ResourceTypes {
 					for _, action := range resourceType.Actions {
-						key := AuthorizationKey[TResourceTypeName, TAction]{
-							TenantID:         entity.TenantID,
-							UserGroup:        group,
+						key := AuthorizationKey[BusinessUserAuthzKey, TResourceTypeName, TAction]{
+							User: BusinessUserAuthzKey{
+								TenantID: entity.User.TenantID,
+								Group:    group,
+							},
 							ResourceTypeName: resourceType.ID,
 							Action:           action,
 						}
-						authzKeys[key] = struct{}{}
-						// Add tenant ID to the list of tenant IDs in case it is not already present
-						if _, exists := tenantIDs[entity.TenantID]; !exists {
-							tenantIDs[entity.TenantID] = struct{}{}
-						}
+						l.AuthzKeys[key] = struct{}{}
 					}
 				}
 			}
 		}
 	}
-
-	return &AllowList[TResourceTypeName, TAction]{AuthzKeys: authzKeys, TenantIDs: tenantIDs}, nil
+	return nil
 }
 
-func (l AllowList[TResourceTypeName, TAction]) ContainsTenant(id TenantID) bool {
-	if _, ok := l.TenantIDs[id]; ok {
-		return true
+type InternalUserAuthzData[TResourceTypeName, TAction comparable] AuthzData[
+	constants.InternalRole, InternalUserAuthzKey, TResourceTypeName, TAction]
+
+// NewInternalUserAuthzData creates and return a BusinessUserAuthzData. There are no separate functions to add
+// the entities, they are created on construction, since the policies and roles are all static
+func NewInternalUserAuthzData[TResourceTypeName, TAction comparable](
+	rolePolicies map[constants.InternalRole][]BasePolicy[constants.InternalRole, TResourceTypeName, TAction]) (
+	*InternalUserAuthzData[TResourceTypeName, TAction], error) {
+	// hold only authzKeys actions
+	authzKeys := make(map[AuthorizationKey[InternalUserAuthzKey, TResourceTypeName, TAction]]struct{})
+
+	for role, policies := range rolePolicies {
+		for _, policy := range policies {
+			for _, resourceType := range policy.ResourceTypes {
+				for _, action := range resourceType.Actions {
+					key := AuthorizationKey[InternalUserAuthzKey, TResourceTypeName, TAction]{
+						User: InternalUserAuthzKey{
+							Role: role,
+						},
+						ResourceTypeName: resourceType.ID,
+						Action:           action,
+					}
+					authzKeys[key] = struct{}{}
+				}
+			}
+		}
 	}
 
-	return false
+	return &InternalUserAuthzData[TResourceTypeName, TAction]{
+			AuthzKeys: authzKeys, RolePolicies: rolePolicies,
+		},
+		nil
 }

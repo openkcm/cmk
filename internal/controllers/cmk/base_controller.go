@@ -34,7 +34,8 @@ func NewAPIController(
 	clientsFactory clients.Factory,
 	migrator db.Migrator,
 	svcRegistry *cmkpluginregistry.Registry,
-	authzLoader *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction],
+	authzRepoLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName, authz.RepoAction],
+	authzAPILoader *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction],
 ) *APIController {
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, config, r)
 	if err != nil {
@@ -51,10 +52,10 @@ func NewAPIController(
 	}
 
 	return &APIController{
-		Manager: manager.New(ctx, r, config, clientsFactory, svcRegistry,
-			eventFactory, asyncClient, migrator),
+		Manager: manager.New(ctx, r, authzRepoLoader, config, clientsFactory,
+			svcRegistry, eventFactory, asyncClient, migrator),
 		config:        config,
 		pluginCatalog: svcRegistry,
-		AuthzLoader:   authzLoader,
+		AuthzLoader:   authzAPILoader,
 	}
 }

@@ -163,7 +163,7 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx := cmkcontext.InjectBusinessClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 			mockService := testpluginregistry.NewMockIDMService()
 			mockService.GetUserFn = func(ctx context.Context, gur *identitymanagement.GetUserRequest) (*identitymanagement.GetUserResponse, error) {
 				return &identitymanagement.GetUserResponse{User: identitymanagement.User{

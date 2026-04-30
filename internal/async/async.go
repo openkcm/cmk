@@ -176,10 +176,12 @@ func (a *App) RunWorker(ctx context.Context, r repo.Repo) error {
 						WithFanOutTenants(a.Client(), opts...),
 						WithTenantQuery(h.TenantQuery()),
 					)
-					return processor.ProcessTenantsInBatch(ctx, task, h.ProcessTask)
+					return processor.ProcessTenantsInBatch(ctx,
+						task, h.ProcessTask)
 				}
 				processor := NewBatchProcessor(r)
-				return processor.ProcessTenantsInBatch(ctx, task, h.ProcessTask)
+				return processor.ProcessTenantsInBatch(ctx, task,
+					h.ProcessTask)
 			default:
 				return h.ProcessTask(ctx, task)
 			}

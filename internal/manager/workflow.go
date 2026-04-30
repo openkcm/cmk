@@ -472,7 +472,14 @@ func (w *WorkflowManager) WorkflowCanExpire(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (bool, error) {
-	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID)
+	clientData, err := cmkContext.ExtractClientData(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	userID := clientData.Identifier
+
+	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, userID)
 	if err != nil {
 		return false, err
 	}
@@ -484,7 +491,14 @@ func (w *WorkflowManager) GetWorkflowApprovalSummary(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (*wf.ApprovalSummary, error) {
-	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID) // Use system user for summary
+	clientData, err := cmkContext.ExtractClientData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	userID := clientData.Identifier
+
+	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, userID)
 	if err != nil {
 		return nil, err
 	}

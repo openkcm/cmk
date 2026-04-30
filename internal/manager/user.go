@@ -9,6 +9,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -26,7 +27,9 @@ type UserInfo struct {
 }
 
 type user struct {
-	repo       repo.Repo
+	repo        repo.Repo
+	authzLoader *authz_loader.AuthzLoader[
+		authz.RepoResourceTypeName, authz.RepoAction]
 	cmkAuditor *auditor.Auditor
 }
 
@@ -39,7 +42,7 @@ type User interface {
 		action authz.APIAction,
 		keyConfig *model.KeyConfiguration,
 	) (bool, error)
-	GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.Role, error)
+	GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.BusinessRole, error)
 	GetUserInfo(ctx context.Context) (UserInfo, error)
 	NeedsGroupFiltering(
 		ctx context.Context,
@@ -48,8 +51,16 @@ type User interface {
 	) (bool, error)
 }
 
-func NewUserManager(r repo.Repo, cmkAuditor *auditor.Auditor) User {
-	return &user{repo: r, cmkAuditor: cmkAuditor}
+func NewUserManager(
+	r repo.Repo,
+	authzLoader *authz_loader.AuthzLoader[
+		authz.RepoResourceTypeName, authz.RepoAction],
+	cmkAuditor *auditor.Auditor) User {
+	return &user{
+		repo:        r,
+		authzLoader: authzLoader,
+		cmkAuditor:  cmkAuditor,
+	}
 }
 
 // NeedsGroupFiltering is used to restrict resource visibility based on user roles, actions and resources.
@@ -59,9 +70,8 @@ func (u *user) NeedsGroupFiltering(
 	action authz.APIAction,
 	resource authz.APIResourceTypeName,
 ) (bool, error) {
-	// System User has access to everything
-	isSystemUser := cmkcontext.IsSystemUser(ctx)
-	if isSystemUser {
+	bypass := u.checkInternalUserAuthz(ctx, authz.RepoResourceTypeGroup)
+	if bypass {
 		return false, nil
 	}
 
@@ -97,9 +107,8 @@ func (u *user) HasKeyAccess(
 	action authz.APIAction,
 	keyConfigID uuid.UUID,
 ) (bool, error) {
-	// System User has access to everything
-	isSystemUser := cmkcontext.IsSystemUser(ctx)
-	if isSystemUser {
+	bypass := u.checkInternalUserAuthz(ctx, authz.RepoResourceTypeKeyconfiguration)
+	if bypass {
 		return false, nil
 	}
 
@@ -133,13 +142,13 @@ func (u *user) HasKeyConfigAccess(
 	action authz.APIAction,
 	keyConfig *model.KeyConfiguration,
 ) (bool, error) {
-	// System User has access to everything
-	isSystemUser := cmkcontext.IsSystemUser(ctx)
-	if isSystemUser {
+	bypass := u.checkInternalUserAuthz(ctx, authz.RepoResourceTypeKeyconfiguration)
+	if bypass {
 		return false, nil
 	}
 
-	isGroupFiltered, err := u.NeedsGroupFiltering(ctx, action, authz.APIResourceTypeKeyConfiguration)
+	isGroupFiltered, err := u.NeedsGroupFiltering(ctx, action,
+		authz.APIResourceTypeKeyConfiguration)
 	if err != nil {
 		return isGroupFiltered, err
 	}
@@ -177,9 +186,8 @@ func (u *user) HasSystemAccess(
 	action authz.APIAction,
 	system *model.System,
 ) (bool, error) {
-	// System User has access to everything
-	isSystemUser := cmkcontext.IsSystemUser(ctx)
-	if isSystemUser {
+	bypass := u.checkInternalUserAuthz(ctx, authz.RepoResourceTypeKeyconfiguration)
+	if bypass {
 		return false, nil
 	}
 
@@ -212,6 +220,11 @@ func (u *user) HasSystemAccess(
 }
 
 func (u *user) GetUserInfo(ctx context.Context) (UserInfo, error) {
+	bypass := u.checkInternalUserAuthz(ctx, authz.RepoResourceTypeGroup)
+	if bypass {
+		return UserInfo{}, nil
+	}
+
 	clientData, err := cmkcontext.ExtractClientData(ctx)
 	if err != nil {
 		return UserInfo{}, err
@@ -222,8 +235,7 @@ func (u *user) GetUserInfo(ctx context.Context) (UserInfo, error) {
 		return UserInfo{}, err
 	}
 
-	sysCtx := cmkcontext.InjectSystemUser(ctx)
-	role, err := u.GetRoleFromIAM(sysCtx, groups)
+	role, err := u.GetRoleFromIAM(ctx, groups)
 	if err != nil {
 		return UserInfo{}, err
 	}
@@ -245,9 +257,14 @@ func (u *user) HasTenantAccess(ctx context.Context) (bool, error) {
 
 	ck := repo.NewCompositeKey().Where(repo.IAMIdField, iamIdentifiers)
 
-	sysCtx := cmkcontext.InjectSystemUser(ctx)
+	authCtx, err := cmkcontext.BusinessToInternalContext(ctx,
+		constants.InternalBusinessAuthzRole)
+	if err != nil {
+		return false, err
+	}
+
 	count, err := u.repo.Count(
-		sysCtx, &model.Group{},
+		authCtx, &model.Group{},
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).SetLimit(0),
 	)
 	if err != nil {
@@ -257,13 +274,19 @@ func (u *user) HasTenantAccess(ctx context.Context) (bool, error) {
 	return count > 0, nil
 }
 
-func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.Role, error) {
+func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.BusinessRole, error) {
 	ck := repo.NewCompositeKey().Where(repo.IAMIdField, iamIdentifiers)
+
+	authCtx, err := cmkcontext.BusinessToInternalContext(ctx,
+		constants.InternalBusinessAuthzRole)
+	if err != nil {
+		return "", err
+	}
 
 	var groups []model.Group
 
-	err := u.repo.List(
-		ctx, &model.Group{}, &groups,
+	err = u.repo.List(
+		authCtx, &model.Group{}, &groups,
 		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
 	)
 	if err != nil {
@@ -274,7 +297,7 @@ func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (con
 		return "", nil
 	}
 
-	roleMap := map[constants.Role]bool{}
+	roleMap := map[constants.BusinessRole]bool{}
 	for _, group := range groups {
 		roleMap[group.Role] = true
 	}
@@ -352,7 +375,13 @@ func (u *user) hasKeyConfigAccess(
 		Where(repo.NewCompositeKeyGroup(ck)).
 		SetLimit(0)
 
-	count, err := u.repo.Count(ctx, &model.KeyConfiguration{}, query)
+	authCtx, err := cmkcontext.BusinessToInternalContext(ctx,
+		constants.InternalBusinessAuthzRole)
+	if err != nil {
+		return false, err
+	}
+
+	count, err := u.repo.Count(authCtx, &model.KeyConfiguration{}, query)
 	if err != nil {
 		return false, errs.Wrap(ErrCheckKeyConfigManagedByIAMGroups, err)
 	}
@@ -371,4 +400,26 @@ func (u *user) sendUnauthorizedAccessAuditLog(
 	}
 
 	log.Info(ctx, "Sent unauthorized access audit log")
+}
+
+func (u *user) checkInternalUserAuthz(
+	ctx context.Context,
+	resource authz.RepoResourceTypeName,
+) bool {
+	if u.authzLoader == nil {
+		return false
+	}
+	err := u.authzLoader.LoadAllowList(ctx)
+	if err != nil {
+		return false
+	}
+
+	allowed, err := authz.CheckAuthz(ctx, u.authzLoader.AuthzHandler,
+		resource, authz.RepoActionDynamic)
+
+	if !allowed || err != nil {
+		return false
+	}
+
+	return true
 }

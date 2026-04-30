@@ -304,6 +304,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 					Identifier: expectedIdenfier,
 					Email:      expectedEmail,
 				},
+				constants.Source: constants.BusinessSource,
 			},
 			expectedStatus: http.StatusCreated,
 			expectedBody:   "test-config-2",

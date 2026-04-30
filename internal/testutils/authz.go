@@ -40,7 +40,8 @@ func (cd AuthClientData) GetClientMap(opts ...ClientMapOpt) map[any]any {
 		o(clientData)
 	}
 
-	return map[any]any{constants.ClientData: clientData}
+	return map[any]any{constants.Source: constants.BusinessSource,
+		constants.ClientData: clientData}
 }
 
 // WithAdditionalGroup provides an option for getting a ClientMap from an AuthClient.
@@ -129,20 +130,23 @@ func WithIdentifier(identifier string) AuthClientOpt {
 // GetClientMap returns a client map created with the provided identifier and group names
 // It does not create anything in the database
 func GetClientMap(identifier string, groupNames []string) map[any]any {
-	return map[any]any{constants.ClientData: getClientData(identifier, groupNames)}
+	return map[any]any{constants.Source: constants.BusinessSource,
+		constants.ClientData: getClientData(identifier, groupNames)}
 }
 
 // GetGrouplessClientMap returns a client map with a random identifier and no groupnames
 // It does not create anything in the database
 func GetGrouplessClientMap() map[any]any {
-	return map[any]any{constants.ClientData: getClientData(uuid.NewString(), []string{})}
+	return map[any]any{constants.Source: constants.BusinessSource,
+		constants.ClientData: getClientData(uuid.NewString(), []string{})}
 }
 
 // GetInvalidClientMap returns a client map with random identifier and random groupnames
 // It does not create anything in the database
 func GetInvalidClientMap(opts ...ClientMapOpt) map[any]any {
 	clientData := getClientData(uuid.NewString(), []string{uuid.NewString(), uuid.NewString()})
-	return map[any]any{constants.ClientData: clientData}
+	return map[any]any{constants.Source: constants.BusinessSource,
+		constants.ClientData: clientData}
 }
 
 func newAuthClient(opts ...AuthClientOpt) AuthClientData {

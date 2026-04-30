@@ -7,8 +7,10 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type KeystorePoolFiller interface {
@@ -36,11 +38,20 @@ func NewKeystorePoolFiller(
 func (k *keystorePoolFiller) ProcessTask(ctx context.Context, _ *asynq.Task) error {
 	log.Info(ctx, "Starting Keystore Pool Filler Task")
 
-	err := k.updater.FillKeystorePool(ctx, k.size)
+	ctx, err := cmkcontext.InjectInternalClientData(ctx,
+		constants.InternalTaskKeystorePoolRole)
 	if err != nil {
 		log.Error(ctx, "failed to fill keystore pool", err)
 		return err
 	}
+
+	err = k.updater.FillKeystorePool(ctx, k.size)
+	if err != nil {
+		log.Error(ctx, "failed to fill keystore pool", err)
+		return err
+	}
+
+	log.Info(ctx, "Keystore Pool successfully filled")
 
 	return nil
 }
