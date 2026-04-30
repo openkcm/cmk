@@ -46,6 +46,7 @@ type Workflow struct {
 	ParametersResourceType *string            `gorm:"type:varchar(50)"`
 	FailureReason          string             `gorm:"type:text"`
 	ExpiryDate             *time.Time
+	MinimumApprovalCount   int `gorm:"type:integer;default:2"` // Snapshot of minimum approvals at creation time
 }
 
 // TableResourceType return the authz resource type

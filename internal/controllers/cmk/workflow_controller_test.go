@@ -157,6 +157,21 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceR
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key, key2, system)
+
+	// Set up IDM plugin group membership for approver validation
+	const testGroupSCIMID = "scim-workflow-test-group-id"
+	testplugins.IdentityManagementGroups[authClient.Group.IAMIdentifier] = testGroupSCIMID
+	testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
+		{ID: authClient.Identifier, Email: authClient.Identifier + "@example.com"},
+		{ID: "test-user-1", Email: "user1@example.com"},
+		{ID: "test-user-2", Email: "user2@example.com"},
+	}
+
+	// Clean up after test
+	t.Cleanup(func() {
+		delete(testplugins.IdentityManagementGroups, authClient.Group.IAMIdentifier)
+		delete(testplugins.IdentityManagementGroupMembership, testGroupSCIMID)
+	})
 }
 
 func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux, authClient testutils.AuthClientData) {

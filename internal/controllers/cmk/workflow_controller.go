@@ -3,6 +3,7 @@ package cmk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"slices"
 
@@ -50,7 +51,12 @@ func (c *APIController) CheckWorkflow(
 	}
 
 	if status.ErrDetails != nil {
-		response.Details = ptr.PointTo(status.ErrDetails.Error())
+		// Extract error code for the details field
+		if errors.Is(status.ErrDetails, manager.ErrWorkflowGroupNotSufficientMembers) {
+			response.Details = ptr.PointTo("WORKFLOW_GROUP_NOT_SUFFICIENT_MEMBERS")
+		} else {
+			response.Details = ptr.PointTo(status.ErrDetails.Error())
+		}
 	}
 
 	return response, nil

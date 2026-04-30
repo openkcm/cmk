@@ -2433,7 +2433,6 @@ components:
         - exists
         - valid
         - canCreate
-        - details
       properties:
         required:
           readOnly: true

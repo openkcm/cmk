@@ -39,10 +39,17 @@ const (
 )
 
 var (
-	ErrWorkflowApproverDecision   = errors.New("workflow approver decision")
-	ErrWorkflowNotAllowed         = errors.New("user has no permission to access workflow")
-	ErrWorkflowCreationNotAllowed = errors.New("user has no permission to create workflow")
+	ErrWorkflowApproverDecision          = errors.New("workflow approver decision")
+	ErrWorkflowNotAllowed                = errors.New("user has no permission to access workflow")
+	ErrWorkflowCreationNotAllowed        = errors.New("user has no permission to create workflow")
+	ErrWorkflowGroupNotSufficientMembers = errors.New("insufficient eligible approvers in admin group")
 )
+
+// NewInsufficientApproversError creates a contextual error with approver counts
+func NewInsufficientApproversError(required, actual int) error {
+	return errs.Wrapf(ErrWorkflowGroupNotSufficientMembers,
+		fmt.Sprintf("required: %d, actual: %d", required, actual))
+}
 
 type WorkflowStatus struct {
 	Enabled    bool
@@ -310,6 +317,10 @@ func (w *WorkflowManager) CreateWorkflow(
 ) (*model.Workflow, error) {
 	workflow.State = wf.StateInitial.String()
 
+	// Capture minimum approvals from current tenant configuration as a snapshot
+	minimumApprovals := w.getMinimumApprovals(ctx)
+	workflow.MinimumApprovalCount = minimumApprovals
+
 	status, err := w.CheckWorkflow(ctx, workflow)
 	if err != nil {
 		return nil, err
@@ -317,8 +328,9 @@ func (w *WorkflowManager) CreateWorkflow(
 	if status.Exists {
 		return nil, ErrOngoingWorkflowExist
 	}
+	// Return validation errors (including insufficient approvers)
 	if status.ErrDetails != nil {
-		return nil, err
+		return nil, status.ErrDetails
 	}
 
 	err = w.populateArtifact(ctx, workflow)
@@ -614,6 +626,39 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 	return nil
 }
 
+// ValidateApproverCount checks if sufficient eligible approvers are available
+// for the workflow based on key configurations and minimum approval requirements.
+// Excludes the initiator from the eligible approver count.
+//
+// Returns:
+//   - eligibleCount: number of eligible approvers (excluding initiator)
+//   - err: ErrWorkflowGroupNotSufficientMembers if insufficient, nil if valid
+func (w *WorkflowManager) ValidateApproverCount(
+	ctx context.Context,
+	workflow *model.Workflow,
+	minimumApprovals int,
+) (int, error) {
+	// Get key configurations from the workflow artifact
+	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
+	if err != nil {
+		return 0, errs.Wrap(ErrCheckWorkflow, err)
+	}
+
+	approvers, _, err := w.getApproversAndGroupsFromKeyConfigs(ctx, workflow, keyConfigs)
+	if err != nil {
+		return 0, errs.Wrap(ErrCheckWorkflow, err)
+	}
+
+	eligibleCount := len(approvers)
+
+	// Validate sufficient approvers exist
+	if eligibleCount < minimumApprovals {
+		return eligibleCount, NewInsufficientApproversError(minimumApprovals, eligibleCount)
+	}
+
+	return eligibleCount, nil
+}
+
 // checkWorkflowEligibility performs eligibility checks for both approvers and initiator with a single SCIM call.
 // These checks run regardless of workflow state to provide factual eligibility information to API consumers.
 // Returns (insufficientApprovers, initiatorIneligible, error)
@@ -782,11 +827,38 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 			CanCreate: false,
 		}, err
 	}
+
+	// NEW: Validate approver count if workflow is required
+	canCreate := !exists && isValid
+	var errDetails error
+
+	if canCreate {
+		minimumApprovals := w.getMinimumApprovals(ctx)
+		_, err := w.ValidateApproverCount(ctx, workflow, minimumApprovals)
+		if err != nil {
+			// Check if it's an insufficient approvers error
+			if errors.Is(err, ErrWorkflowGroupNotSufficientMembers) {
+				canCreate = false
+				errDetails = err
+				// Don't return error - populate status with error details
+			} else {
+				// Other errors (e.g., IDM service failures) should be returned
+				return WorkflowStatus{
+					Enabled:   enabled,
+					Exists:    exists,
+					Valid:     isValid,
+					CanCreate: false,
+				}, err
+			}
+		}
+	}
+
 	return WorkflowStatus{
-		Enabled:   enabled,
-		Exists:    exists,
-		Valid:     isValid,
-		CanCreate: !exists && isValid,
+		Enabled:    enabled,
+		Exists:     exists,
+		Valid:      isValid,
+		CanCreate:  canCreate,
+		ErrDetails: errDetails,
 	}, nil
 }
 
@@ -937,14 +1009,21 @@ func (w *WorkflowManager) getWorkflowLifecycleWithEligibility(
 	userID string,
 	eligibleApproverIDs map[string]bool,
 ) (*wf.Lifecycle, error) {
-	workflowConfig, err := w.WorkflowConfig(ctx)
-	if err != nil {
-		return nil, oops.Join(ErrGetWorkflowConfig, err)
+	// Use workflow's persisted MinimumApprovalCount if set (snapshot at creation time)
+	// Otherwise fallback to current tenant config for backward compatibility with old workflows
+	minimumApprovals := workflow.MinimumApprovalCount
+	if minimumApprovals == 0 {
+		// Fallback for workflows created before this field existed
+		workflowConfig, err := w.WorkflowConfig(ctx)
+		if err != nil {
+			return nil, oops.Join(ErrGetWorkflowConfig, err)
+		}
+		minimumApprovals = workflowConfig.MinimumApprovals
 	}
 
 	workflowLifecycle := wf.NewLifecycle(
 		workflow, w.keyManager, w.keyConfigurationManager, w.systemManager, w.repo, userID,
-		workflowConfig.MinimumApprovals,
+		minimumApprovals,
 	)
 
 	// Set eligible approver IDs if provided (for accurate vote counting)
@@ -1409,6 +1488,18 @@ func (w *WorkflowManager) getApproversAndGroupsFromKeyConfigs(
 	}
 
 	return approvers, groups, nil
+}
+
+// getMinimumApprovals retrieves the minimum approval count from tenant config
+func (w *WorkflowManager) getMinimumApprovals(ctx context.Context) int {
+	config, err := w.tenantConfigManager.GetWorkflowConfig(ctx)
+	if err != nil || config == nil {
+		return constants.DefaultMinimumApprovalCount // 2
+	}
+	if config.MinimumApprovals > 0 {
+		return config.MinimumApprovals
+	}
+	return constants.DefaultMinimumApprovalCount
 }
 
 // queryGroupMembersFromIAM queries IAM to get all current members across multiple groups.

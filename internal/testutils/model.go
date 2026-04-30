@@ -205,13 +205,14 @@ func NewImportParams(m func(*model.ImportParams)) *model.ImportParams {
 func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 	mut := NewMutator(func() model.Workflow {
 		return model.Workflow{
-			ID:           uuid.New(),
-			State:        wfMechanism.StateInitial.String(),
-			InitiatorID:  uuid.NewString(),
-			ArtifactType: wfMechanism.ArtifactTypeKey.String(),
-			ArtifactID:   uuid.New(),
-			ActionType:   wfMechanism.ActionTypeDelete.String(),
-			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+			ID:                   uuid.New(),
+			State:                wfMechanism.StateInitial.String(),
+			InitiatorID:          uuid.NewString(),
+			ArtifactType:         wfMechanism.ArtifactTypeKey.String(),
+			ArtifactID:           uuid.New(),
+			ActionType:           wfMechanism.ActionTypeDelete.String(),
+			Approvers:            []model.WorkflowApprover{{UserID: uuid.NewString()}},
+			MinimumApprovalCount: 1, // Default to 1 to match single approver
 		}
 	})
 

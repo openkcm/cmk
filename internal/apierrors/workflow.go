@@ -3,6 +3,8 @@ package apierrors
 import (
 	"errors"
 	"net/http"
+	"regexp"
+	"strconv"
 
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
@@ -18,6 +20,24 @@ var (
 	ErrAddApprovers             = errors.New("failed to add approvers to workflow")
 	ErrWorkflowCannotTransition = errors.New("workflow cannot transition to specified state")
 )
+
+// getInsufficientApproversContext extracts required and actual approver counts from error message
+func getInsufficientApproversContext(err error) map[string]any {
+	// Error message format: "required: <N>, actual: <M>"
+	re := regexp.MustCompile(`required:\s*(\d+),\s*actual:\s*(\d+)`)
+	matches := re.FindStringSubmatch(err.Error())
+
+	if len(matches) == 3 {
+		required, _ := strconv.Atoi(matches[1])
+		actual, _ := strconv.Atoi(matches[2])
+		return map[string]any{
+			"requiredApprovers":       required,
+			"actualEligibleApprovers": actual,
+		}
+	}
+
+	return nil
+}
 
 var workflow = []errs.ExposedErrors[*APIError]{
 	{
@@ -299,5 +319,14 @@ var workflow = []errs.ExposedErrors[*APIError]{
 			Message: "failed to get approvers",
 			Status:  http.StatusNotFound,
 		},
+	},
+	{
+		InternalErrorChain: []error{manager.ErrWorkflowGroupNotSufficientMembers},
+		ExposedError: &APIError{
+			Code:    "WORKFLOW_GROUP_NOT_SUFFICIENT_MEMBERS",
+			Message: "The responsible user group does not have enough members to meet the minimum approval criteria",
+			Status:  http.StatusBadRequest,
+		},
+		ContextGetter: getInsufficientApproversContext,
 	},
 }

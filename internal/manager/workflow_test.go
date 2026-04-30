@@ -23,6 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
+	repoPackage "github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
@@ -101,18 +102,86 @@ func createTestWorkflow(
 	return wf, nil
 }
 
+// createTestKeyConfigWithAdminGroup creates a KeyConfiguration with a properly configured
+// admin group that has sufficient members in the IDM plugin for approver validation.
+// Use this helper for tests that need to pass workflow validation.
+func createTestKeyConfigWithAdminGroup(
+	t *testing.T,
+	repo repo.Repo,
+	ctx context.Context,
+	userID string,
+) *model.KeyConfiguration {
+	t.Helper()
+
+	const (
+		adminGroupName   = "test-key-admin-group"
+		adminGroupSCIMID = "scim-key-admin-group-id"
+	)
+
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.Name = adminGroupName + "-" + uuid.NewString()[:8] // Make unique
+		g.IAMIdentifier = adminGroupName + "-" + uuid.NewString()[:8]
+		g.Role = constants.KeyAdminRole
+	})
+
+	// Set up plugin group membership with sufficient approvers
+	members := []testplugins.IdentityManagementUserRef{
+		{ID: constants.SystemUser.String(), Email: "system@example.com"},
+		{ID: "test-user-1", Email: "user1@example.com"},
+		{ID: "test-user-2", Email: "user2@example.com"},
+	}
+
+	if userID != "" && userID != constants.SystemUser.String() {
+		members = append(members, testplugins.IdentityManagementUserRef{
+			ID:    userID,
+			Email: userID + "@example.com",
+		})
+	}
+
+	scimID := adminGroupSCIMID + "-" + uuid.NewString()[:8]
+	testplugins.IdentityManagementGroups[group.IAMIdentifier] = scimID
+	testplugins.IdentityManagementGroupMembership[scimID] = members
+
+	// Clean up plugin state after test
+	t.Cleanup(func() {
+		delete(testplugins.IdentityManagementGroups, group.IAMIdentifier)
+		delete(testplugins.IdentityManagementGroupMembership, scimID)
+	})
+
+	creatorID := userID
+	if creatorID == "" {
+		creatorID = "test-creator"
+	}
+
+	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+		c.AdminGroupID = group.ID
+		c.AdminGroup = *group
+		c.CreatorID = creatorID
+	})
+
+	testutils.CreateTestEntities(ctx, t, repo, group, keyConfig)
+
+	return keyConfig
+}
+
 func createTestObjects(t *testing.T, repo repo.Repo, ctx context.Context) (*model.KeyConfiguration,
 	*model.Key,
 ) {
 	t.Helper()
 
+	// Extract user from context
+	var userID string
+	if clientData, ok := ctx.Value(constants.ClientData).(*auth.ClientData); ok {
+		userID = clientData.Identifier
+	}
+
+	// Create key configuration with proper admin group setup
+	keyConfig := createTestKeyConfigWithAdminGroup(t, repo, ctx, userID)
+
 	key := testutils.NewKey(func(k *model.Key) {
 		k.ID = uuid.New()
-	})
-
-	// Create test key configuration once for all tests
-	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
-		c.PrimaryKeyID = &key.ID
+		k.KeyConfigurationID = keyConfig.ID
+		k.State = string(cmkapi.KeyStateENABLED) // Set key to enabled state
 	})
 
 	testutils.CreateTestEntities(
@@ -120,8 +189,14 @@ func createTestObjects(t *testing.T, repo repo.Repo, ctx context.Context) (*mode
 		t,
 		repo,
 		key,
-		keyConfig,
 	)
+
+	// Update keyConfig with primary key ID
+	keyConfig.PrimaryKeyID = &key.ID
+	_, err := repo.Patch(ctx, keyConfig, *repoPackage.NewQuery())
+	if err != nil {
+		t.Fatalf("failed to update key config with primary key: %v", err)
+	}
 
 	return keyConfig, key
 }
@@ -343,12 +418,12 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	})
 
 	t.Run("should have canCreate on primary key change without unconnected system", func(t *testing.T) {
-		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+		keyConfig := createTestKeyConfigWithAdminGroup(t, repo, ctxSys, constants.SystemUser.String())
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.Status = cmkapi.SystemStatusCONNECTED
 		})
-		testutils.CreateTestEntities(ctxSys, t, repo, keyConfig, system)
+		testutils.CreateTestEntities(ctxSys, t, repo, system)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = workflow.StateInitial.String()
@@ -1734,6 +1809,7 @@ func setupEligibilityTest(
 		w.ParametersResourceType = &paramsResourceType
 		w.ApproverGroupIDs = groupIDsJSON
 		w.InitiatorID = approver1ID
+		w.MinimumApprovalCount = approverCount // Set minimum approval count to match test requirement
 	})
 	testutils.CreateTestEntities(ctx, t, r, wf)
 
@@ -2257,4 +2333,424 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 		// Restore group for cleanup
 		testplugins.IdentityManagementGroups[testGroupName] = testGroupSCIMID
 	})
+}
+
+func TestValidateApproverCount(t *testing.T) {
+	// Note: Not parallel - tests modify global testplugins state
+
+	const (
+		initiatorID     = "initiator-user"
+		initiatorEmail  = "initiator@example.com"
+		approver1ID     = "approver1-user"
+		approver1Email  = "approver1@example.com"
+		approver2ID     = "approver2-user"
+		approver2Email  = "approver2@example.com"
+		approver3ID     = "approver3-user"
+		approver3Email  = "approver3@example.com"
+		testGroupName   = "test-validation-group"
+		testGroupSCIMID = "scim-validation-group-id"
+	)
+
+	tests := []struct {
+		name             string
+		groupMembers     []testplugins.IdentityManagementUserRef
+		minimumApprovals int
+		expectEligible   int
+		expectError      bool
+		errorContains    string
+	}{
+		{
+			name: "single member group - initiator only",
+			groupMembers: []testplugins.IdentityManagementUserRef{
+				{ID: initiatorID, Email: initiatorEmail},
+			},
+			minimumApprovals: 2,
+			expectEligible:   0, // initiator excluded
+			expectError:      true,
+			errorContains:    "insufficient eligible approvers",
+		},
+		{
+			name: "two members with min=2 - insufficient",
+			groupMembers: []testplugins.IdentityManagementUserRef{
+				{ID: initiatorID, Email: initiatorEmail},
+				{ID: approver1ID, Email: approver1Email},
+			},
+			minimumApprovals: 2,
+			expectEligible:   1, // only approver1, initiator excluded
+			expectError:      true,
+			errorContains:    "required: 2, actual: 1",
+		},
+		{
+			name: "three members with min=2 - exact threshold",
+			groupMembers: []testplugins.IdentityManagementUserRef{
+				{ID: initiatorID, Email: initiatorEmail},
+				{ID: approver1ID, Email: approver1Email},
+				{ID: approver2ID, Email: approver2Email},
+			},
+			minimumApprovals: 2,
+			expectEligible:   2, // approver1, approver2
+			expectError:      false,
+		},
+		{
+			name: "four members with min=2 - sufficient",
+			groupMembers: []testplugins.IdentityManagementUserRef{
+				{ID: initiatorID, Email: initiatorEmail},
+				{ID: approver1ID, Email: approver1Email},
+				{ID: approver2ID, Email: approver2Email},
+				{ID: approver3ID, Email: approver3Email},
+			},
+			minimumApprovals: 2,
+			expectEligible:   3, // approver1, approver2, approver3
+			expectError:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Note: Not parallel - tests modify global testplugins state
+
+			cfg := &config.Config{}
+			wm, r, tenantID := SetupWorkflowManager(t, cfg)
+
+			ctx := testutils.CreateCtxWithTenant(tenantID)
+			ctx = testutils.InjectClientDataIntoContext(ctx, initiatorID, []string{testGroupName})
+
+			// Create test group
+			group := testutils.NewGroup(func(g *model.Group) {
+				g.Name = testGroupName
+				g.IAMIdentifier = testGroupName
+				g.Role = constants.KeyAdminRole
+			})
+			testutils.CreateTestEntities(ctx, t, r, group)
+
+			// Configure IDM plugin with test users
+			testplugins.IdentityManagementGroups[testGroupName] = testGroupSCIMID
+			testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = tt.groupMembers
+
+			// Create test key configuration with admin group
+			keyConfig := &model.KeyConfiguration{
+				ID:           uuid.New(),
+				Name:         "test-kc-validation",
+				AdminGroupID: group.ID,
+				AdminGroup:   *group,
+			}
+			testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+			// Create workflow
+			wf := &model.Workflow{
+				InitiatorID:  initiatorID,
+				ArtifactType: workflow.ArtifactTypeKeyConfiguration.String(),
+				ArtifactID:   keyConfig.ID,
+				ActionType:   workflow.ActionTypeDelete.String(),
+				State:        workflow.StateInitial.String(),
+			}
+
+			// Call ValidateApproverCount
+			eligibleCount, err := wm.ValidateApproverCount(ctx, wf, tt.minimumApprovals)
+
+			// Assertions
+			assert.Equal(t, tt.expectEligible, eligibleCount)
+
+			if tt.expectError {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, manager.ErrWorkflowGroupNotSufficientMembers,
+					"expected ErrWorkflowGroupNotSufficientMembers")
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				require.NoError(t, err)
+			}
+
+			// Cleanup
+			delete(testplugins.IdentityManagementGroups, testGroupName)
+			delete(testplugins.IdentityManagementGroupMembership, testGroupSCIMID)
+		})
+	}
+}
+
+func TestCheckWorkflow_InsufficientApprovers(t *testing.T) {
+	// Note: Not parallel - tests modify global testplugins state
+
+	const (
+		initiatorID     = "initiator-user"
+		initiatorEmail  = "initiator@example.com"
+		testGroupName   = "test-check-group"
+		testGroupSCIMID = "scim-check-group-id"
+	)
+
+	cfg := &config.Config{}
+	wm, r, tenantID := SetupWorkflowManager(t, cfg)
+
+	ctx := testutils.CreateCtxWithTenant(tenantID)
+	ctx = testutils.InjectClientDataIntoContext(ctx, initiatorID, []string{testGroupName})
+
+	// Create test group with only initiator (insufficient approvers)
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.Name = testGroupName
+		g.IAMIdentifier = testGroupName
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(ctx, t, r, group)
+
+	// Configure IDM with only initiator in group
+	testplugins.IdentityManagementGroups[testGroupName] = testGroupSCIMID
+	testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
+		{ID: initiatorID, Email: initiatorEmail},
+	}
+
+	// Create key configuration
+	keyConfig := &model.KeyConfiguration{
+		ID:           uuid.New(),
+		Name:         "test-kc-check",
+		AdminGroupID: group.ID,
+		AdminGroup:   *group,
+	}
+	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+	// Create workflow
+	wf := &model.Workflow{
+		InitiatorID:  initiatorID,
+		ArtifactType: workflow.ArtifactTypeKeyConfiguration.String(),
+		ArtifactID:   keyConfig.ID,
+		ActionType:   workflow.ActionTypeDelete.String(),
+		State:        workflow.StateInitial.String(),
+	}
+
+	// Call CheckWorkflow
+	status, err := wm.CheckWorkflow(ctx, wf)
+
+	// Should not error, but should set CanCreate=false with details
+	require.NoError(t, err, "CheckWorkflow should not return error for insufficient approvers")
+	assert.True(t, status.Enabled, "workflow should be enabled")
+	assert.False(t, status.Exists, "workflow should not exist yet")
+	assert.True(t, status.Valid, "workflow should be valid")
+	assert.False(t, status.CanCreate, "workflow should not be creatable with insufficient approvers")
+	assert.Error(t, status.ErrDetails, "ErrDetails should be populated")
+	assert.ErrorIs(t, status.ErrDetails, manager.ErrWorkflowGroupNotSufficientMembers,
+		"ErrDetails should be ErrWorkflowGroupNotSufficientMembers")
+
+	// Cleanup
+	delete(testplugins.IdentityManagementGroups, testGroupName)
+	delete(testplugins.IdentityManagementGroupMembership, testGroupSCIMID)
+}
+
+func TestCreateWorkflow_InsufficientApprovers(t *testing.T) {
+	// Note: Not parallel - tests modify global testplugins state
+
+	const (
+		initiatorID     = "initiator-user"
+		initiatorEmail  = "initiator@example.com"
+		testGroupName   = "test-create-group"
+		testGroupSCIMID = "scim-create-group-id"
+	)
+
+	cfg := &config.Config{}
+	wm, r, tenantID := SetupWorkflowManager(t, cfg)
+
+	ctx := testutils.CreateCtxWithTenant(tenantID)
+	ctx = testutils.InjectClientDataIntoContext(ctx, initiatorID, []string{testGroupName})
+
+	// Create test group with only initiator
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.Name = testGroupName
+		g.IAMIdentifier = testGroupName
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(ctx, t, r, group)
+
+	// Configure IDM with only initiator in group
+	testplugins.IdentityManagementGroups[testGroupName] = testGroupSCIMID
+	testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
+		{ID: initiatorID, Email: initiatorEmail},
+	}
+
+	// Create key configuration
+	keyConfig := &model.KeyConfiguration{
+		ID:           uuid.New(),
+		Name:         "test-kc-create",
+		AdminGroupID: group.ID,
+		AdminGroup:   *group,
+	}
+	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+	// Attempt to create workflow
+	wf := &model.Workflow{
+		InitiatorID:  initiatorID,
+		ArtifactType: workflow.ArtifactTypeKeyConfiguration.String(),
+		ArtifactID:   keyConfig.ID,
+		ActionType:   workflow.ActionTypeDelete.String(),
+		State:        workflow.StateInitial.String(),
+	}
+
+	// Call CreateWorkflow
+	_, err := wm.CreateWorkflow(ctx, wf)
+
+	// Should return validation error
+	require.Error(t, err, "CreateWorkflow should return error for insufficient approvers")
+	assert.ErrorIs(t, err, manager.ErrWorkflowGroupNotSufficientMembers,
+		"error should be ErrWorkflowGroupNotSufficientMembers")
+	assert.Contains(t, err.Error(), "required: 2", "error should contain required count")
+	assert.Contains(t, err.Error(), "actual: 0", "error should contain actual count")
+
+	// Cleanup
+	delete(testplugins.IdentityManagementGroups, testGroupName)
+	delete(testplugins.IdentityManagementGroupMembership, testGroupSCIMID)
+}
+
+func TestCheckWorkflow_SufficientApprovers(t *testing.T) {
+	// Note: Not parallel - tests modify global testplugins state
+
+	const (
+		initiatorID     = "initiator-user"
+		initiatorEmail  = "initiator@example.com"
+		approver1ID     = "approver1-user"
+		approver1Email  = "approver1@example.com"
+		approver2ID     = "approver2-user"
+		approver2Email  = "approver2@example.com"
+		testGroupName   = "test-sufficient-group"
+		testGroupSCIMID = "scim-sufficient-group-id"
+	)
+
+	cfg := &config.Config{}
+	wm, r, tenantID := SetupWorkflowManager(t, cfg)
+
+	ctx := testutils.CreateCtxWithTenant(tenantID)
+	ctx = testutils.InjectClientDataIntoContext(ctx, initiatorID, []string{testGroupName})
+
+	// Create test group
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.Name = testGroupName
+		g.IAMIdentifier = testGroupName
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(ctx, t, r, group)
+
+	// Configure IDM with sufficient approvers
+	testplugins.IdentityManagementGroups[testGroupName] = testGroupSCIMID
+	testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
+		{ID: initiatorID, Email: initiatorEmail},
+		{ID: approver1ID, Email: approver1Email},
+		{ID: approver2ID, Email: approver2Email},
+	}
+
+	// Create key configuration
+	keyConfig := &model.KeyConfiguration{
+		ID:           uuid.New(),
+		Name:         "test-kc-sufficient",
+		AdminGroupID: group.ID,
+		AdminGroup:   *group,
+	}
+	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+	// Create workflow
+	wf := &model.Workflow{
+		InitiatorID:  initiatorID,
+		ArtifactType: workflow.ArtifactTypeKeyConfiguration.String(),
+		ArtifactID:   keyConfig.ID,
+		ActionType:   workflow.ActionTypeDelete.String(),
+		State:        workflow.StateInitial.String(),
+	}
+
+	// Call CheckWorkflow
+	status, err := wm.CheckWorkflow(ctx, wf)
+
+	// Should succeed with CanCreate=true
+	require.NoError(t, err)
+	assert.True(t, status.Enabled, "workflow should be enabled")
+	assert.False(t, status.Exists, "workflow should not exist yet")
+	assert.True(t, status.Valid, "workflow should be valid")
+	assert.True(t, status.CanCreate, "workflow should be creatable with sufficient approvers")
+	assert.NoError(t, status.ErrDetails, "ErrDetails should be nil")
+
+	// Cleanup
+	delete(testplugins.IdentityManagementGroups, testGroupName)
+	delete(testplugins.IdentityManagementGroupMembership, testGroupSCIMID)
+}
+
+func TestCreateWorkflow_PersistsMinimumApprovalCount(t *testing.T) {
+	// Note: Not parallel - tests modify global testplugins state
+
+	const (
+		initiatorID     = "user1"
+		initiatorEmail  = "user1@example.com"
+		testGroupName   = "test-persist-group"
+		testGroupSCIMID = "scim-persist-group-id"
+	)
+
+	cfg := &config.Config{}
+	wm, r, tenantID := SetupWorkflowManager(t, cfg)
+
+	ctx := testutils.CreateCtxWithTenant(tenantID)
+	ctx = testutils.InjectClientDataIntoContext(ctx, initiatorID, []string{testGroupName})
+
+	// Set workflow config with minimum approvals = 3
+	workflowConfig := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
+		var wc model.WorkflowConfig
+		_ = json.Unmarshal(tc.Value, &wc)
+		wc.MinimumApprovals = 3
+		tc.Value, _ = json.Marshal(wc)
+	})
+	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+
+	// Create group and key configuration with sufficient approvers (4 members including initiator)
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.Name = testGroupName
+		g.IAMIdentifier = testGroupName
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(ctx, t, r, group)
+
+	testplugins.IdentityManagementGroups[testGroupName] = testGroupSCIMID
+	testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
+		{ID: initiatorID, Email: initiatorEmail},
+		{ID: "user2", Email: "user2@example.com"},
+		{ID: "user3", Email: "user3@example.com"},
+		{ID: "user4", Email: "user4@example.com"},
+	}
+
+	keyConfig := &model.KeyConfiguration{
+		ID:           uuid.New(),
+		Name:         "test-kc-persist",
+		AdminGroupID: group.ID,
+		AdminGroup:   *group,
+	}
+	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+	// Create workflow
+	wf := &model.Workflow{
+		InitiatorID:  initiatorID,
+		ArtifactType: workflow.ArtifactTypeKeyConfiguration.String(),
+		ArtifactID:   keyConfig.ID,
+		ActionType:   workflow.ActionTypeDelete.String(),
+		State:        workflow.StateInitial.String(),
+	}
+
+	created, err := wm.CreateWorkflow(ctx, wf)
+	require.NoError(t, err)
+
+	// Assert: Workflow has MinimumApprovalCount = 3 persisted
+	assert.Equal(t, 3, created.MinimumApprovalCount,
+		"workflow should persist minimum approval count from tenant config at creation time")
+
+	// Change tenant config to 5
+	var updatedConfig model.WorkflowConfig
+	err = json.Unmarshal(workflowConfig.Value, &updatedConfig)
+	require.NoError(t, err)
+	updatedConfig.MinimumApprovals = 5 // Changed!
+	workflowConfig.Value, err = json.Marshal(updatedConfig)
+	require.NoError(t, err)
+	_, err = r.Patch(ctx, workflowConfig, *repo.NewQuery())
+	require.NoError(t, err)
+
+	// Reload workflow from DB
+	reloaded := &model.Workflow{ID: created.ID}
+	_, err = r.First(ctx, reloaded, *repo.NewQuery())
+	require.NoError(t, err)
+
+	// Assert: Workflow STILL has MinimumApprovalCount = 3
+	assert.Equal(t, 3, reloaded.MinimumApprovalCount,
+		"workflow minimum approval count should not change when tenant config changes")
+
+	// Cleanup
+	delete(testplugins.IdentityManagementGroups, testGroupName)
+	delete(testplugins.IdentityManagementGroupMembership, testGroupSCIMID)
 }
