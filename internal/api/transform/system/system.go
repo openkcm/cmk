@@ -1,19 +1,45 @@
 package system
 
 import (
+	"context"
 	"errors"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/api/transform/workflow"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
 var ErrFromAPI = errors.New("failed to transform system from API")
 
+// ToAPIOpt is a functional option for customizing the ToAPI transformation.
+type ToAPIOpt func(*cmkapi.System) error
+
+// WithWorkflow sets the workflow field on the API system metadata.
+func WithWorkflow(
+	ctx context.Context,
+	wf *model.Workflow,
+	idm identitymanagement.IdentityManagement,
+	opts ...workflow.ToAPIOpt,
+) ToAPIOpt {
+	return func(s *cmkapi.System) error {
+		apiWorkflow, err := workflow.ToAPI(ctx, *wf, idm, opts...)
+		if s.Metadata == nil {
+			s.Metadata = &cmkapi.SystemMetadata{
+				Worfklow: apiWorkflow,
+			}
+		} else {
+			s.Metadata.Worfklow = apiWorkflow
+		}
+		return err
+	}
+}
+
 // ToAPI transforms a system model to an API system.
-func ToAPI(system model.System, systemCfg *config.System) (*cmkapi.System, error) {
+func ToAPI(system model.System, systemCfg *config.System, opts ...ToAPIOpt) (*cmkapi.System, error) {
 	err := sanitise.Sanitize(&system)
 	if err != nil {
 		return nil, err
@@ -55,6 +81,14 @@ func ToAPI(system model.System, systemCfg *config.System) (*cmkapi.System, error
 		apiSystem.Metadata = &cmkapi.SystemMetadata{
 			ErrorCode:    &system.ErrorCode,
 			ErrorMessage: &system.ErrorMessage,
+		}
+	}
+
+	// Apply optional transformations
+	for _, opt := range opts {
+		err := opt(apiSystem)
+		if err != nil {
+			return nil, err
 		}
 	}
 
