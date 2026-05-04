@@ -961,3 +961,44 @@ func TestUnlinkSystemAction(t *testing.T) {
 		})
 	}
 }
+
+func TestGetFilters(t *testing.T) {
+	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig1 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.Name = "kcName1"
+	}, testutils.WithAuthClientDataKC(authClient))
+	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.Name = "kcName2"
+	}, testutils.WithAuthClientDataKC(authClient))
+
+	system1 := testutils.NewSystem(func(s *model.System) {
+		s.Type = "type1"
+		s.Region = "region1"
+		s.KeyConfigurationID = &keyConfig1.ID
+	})
+
+	system2 := testutils.NewSystem(func(s *model.System) {
+		s.Type = "type2"
+		s.Region = "region2"
+		s.KeyConfigurationID = &keyConfig2.ID
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, keyConfig1, keyConfig2, system1, system2)
+
+	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+		Method:            http.MethodGet,
+		Endpoint:          "/systems/filterOptions",
+		Tenant:            tenant,
+		AdditionalContext: authClient.GetClientMap(),
+	})
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	response := testutils.GetJSONBody[cmkapi.SystemFilters](t, w)
+	assert.NotNil(t, response)
+}

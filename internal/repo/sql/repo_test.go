@@ -380,3 +380,25 @@ func TestRepo_Transaction(t *testing.T) {
 		assert.True(t, ok)
 	})
 }
+
+func TestRepo_GetFilterOptions(t *testing.T) {
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	r := sql.NewRepository(db)
+
+	ctx := testutils.CreateCtxWithTenant(tenants[0])
+	item1 := &testutils.TestModel{ID: uuid.New(), Name: "item1"}
+	item2 := &testutils.TestModel{ID: uuid.New(), Name: "item2"}
+
+	testutils.CreateTestEntities(ctx, t, r, item1, item2)
+
+	var names []string
+	err := r.GetFilterOptions(ctx, testutils.TestModel{}, []repo.Filter{
+		{
+			Values: &names,
+			Column: "name",
+		},
+	}, *repo.NewQuery())
+	assert.NoError(t, err)
+	assert.Contains(t, names, "item1")
+	assert.Contains(t, names, "item2")
+}

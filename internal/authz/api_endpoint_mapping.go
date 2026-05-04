@@ -177,6 +177,12 @@ var allRestrictions = []Restricted{
 		APIAction:           APIActionRead,
 	},
 	{
+		APIPath:             "/systems/filterOptions",
+		APIMethod:           APIMethodGet,
+		APIResourceTypeName: APIResourceTypeSystem,
+		APIAction:           APIActionRead,
+	},
+	{
 		APIPath:             "/systems/{systemID}",
 		APIMethod:           APIMethodGet,
 		APIResourceTypeName: APIResourceTypeSystem,
