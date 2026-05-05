@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -36,9 +35,12 @@ func startAPIWorkflows(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string)
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
+	// Set up identity management plugin for eligibility checks
+	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
+
 	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:  config.Config{Database: dbCfg},
-		Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
+		Config:  config.Config{Database: dbCfg, Plugins: psCfg},
+		Plugins: ps,
 	})
 
 	return db, sv, tenants[0]
@@ -582,6 +584,18 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole(),
 		testutils.WithIdentifier(userID))
+
+	// Register the authClient's group with the test identity management plugin
+	// so eligibility checks can query group membership
+	testGroupSCIMID := authClient.Group.IAMIdentifier + "-SCIM"
+	testplugins.IdentityManagementGroups[authClient.Group.IAMIdentifier] = testGroupSCIMID
+	testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
+		{ID: authClient.Identifier, Email: authClient.Identifier + "@example.com"},
+	}
+	defer func() {
+		delete(testplugins.IdentityManagementGroups, authClient.Group.IAMIdentifier)
+		delete(testplugins.IdentityManagementGroupMembership, testGroupSCIMID)
+	}()
 
 	workflows := createTestWorkflows(ctx, t, r, authClient)
 

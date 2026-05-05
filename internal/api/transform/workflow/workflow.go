@@ -10,6 +10,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	groupTransform "github.com/openkcm/cmk/internal/api/transform/group"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
@@ -19,6 +20,55 @@ import (
 )
 
 var ErrExpiryGreaterThanMaximum = errors.New("expiry exceeds maximum")
+
+const (
+	// AdditionalInfoMessageInsufficientApprovers is the message for the insufficient approvers warning
+	AdditionalInfoMessageInsufficientApprovers = "The number of eligible approvers is currently" +
+		" insufficient to meet the minimum approval criteria."
+	// AdditionalInfoMessageEligibilityCheckError is the message when eligibility verification fails
+	AdditionalInfoMessageEligibilityCheckError = "Unable to verify workflow eligibility. " +
+		"The approval system may be temporarily unavailable. Please try again later or contact support."
+	// AdditionalInfoMessageInitiatorIneligible is the message when initiator is no longer eligible to confirm
+	AdditionalInfoMessageInitiatorIneligible = "The workflow initiator is no longer eligible to confirm this workflow."
+)
+
+// buildEligibilityAdditionalInfo creates additional info items based on eligibility status
+func buildEligibilityAdditionalInfo(
+	eligibility *manager.WorkflowEligibility,
+	eligibilityErr error,
+) *[]cmkapi.WorkflowAdditionalInfo {
+	var apiInfoItems []cmkapi.WorkflowAdditionalInfo
+
+	// If eligibility check failed, show only the error (takes precedence over warnings)
+	if eligibilityErr != nil {
+		apiInfoItems = append(apiInfoItems, cmkapi.WorkflowAdditionalInfo{
+			Code:     cmkapi.WorkflowAdditionalInfoCodeWORKFLOWELIGIBILITYCHECKFAILED,
+			Severity: cmkapi.WorkflowAdditionalInfoSeverityERROR,
+			Message:  AdditionalInfoMessageEligibilityCheckError,
+		})
+	} else if eligibility != nil {
+		// No error - show all applicable warnings
+		if eligibility.InitiatorIneligible {
+			apiInfoItems = append(apiInfoItems, cmkapi.WorkflowAdditionalInfo{
+				Code:     cmkapi.WorkflowAdditionalInfoCodeINITIATORINELIGIBLE,
+				Severity: cmkapi.WorkflowAdditionalInfoSeverityWARNING,
+				Message:  AdditionalInfoMessageInitiatorIneligible,
+			})
+		}
+		if eligibility.InsufficientApprovers {
+			apiInfoItems = append(apiInfoItems, cmkapi.WorkflowAdditionalInfo{
+				Code:     cmkapi.WorkflowAdditionalInfoCodeINSUFFICIENTAPPROVERS,
+				Severity: cmkapi.WorkflowAdditionalInfoSeverityWARNING,
+				Message:  AdditionalInfoMessageInsufficientApprovers,
+			})
+		}
+	}
+
+	if len(apiInfoItems) > 0 {
+		return &apiInfoItems
+	}
+	return nil
+}
 
 // ToAPIOpt is a functional option for customizing the ToAPI transformation.
 type ToAPIOpt func(*cmkapi.Workflow) error
@@ -80,9 +130,13 @@ func WithDetailed(
 }
 
 // ToAPI converts a workflow model to an API workflow presentation.
+// eligibility contains eligibility check results (insufficient approvers, initiator ineligible).
+// eligibilityErr should be passed if there was an error checking approver eligibility.
 func ToAPI(
 	ctx context.Context,
 	w model.Workflow,
+	eligibility *manager.WorkflowEligibility,
+	eligibilityErr error,
 	identityManager identitymanagement.IdentityManagement,
 	opts ...ToAPIOpt,
 ) (*cmkapi.Workflow, error) {
@@ -102,6 +156,13 @@ func ToAPI(
 		return nil, err
 	}
 
+	// Build metadata with additional info
+	metadata := &cmkapi.WorkflowMetadata{
+		CreatedAt:      ptr.PointTo(w.CreatedAt),
+		UpdatedAt:      ptr.PointTo(w.UpdatedAt),
+		AdditionalInfo: buildEligibilityAdditionalInfo(eligibility, eligibilityErr),
+	}
+
 	base := &cmkapi.Workflow{
 		Id:                     ptr.PointTo(w.ID),
 		InitiatorID:            w.InitiatorID,
@@ -115,11 +176,8 @@ func ToAPI(
 		ArtifactID:             w.ArtifactID,
 		Parameters:             ptr.PointTo(w.Parameters),
 		FailureReason:          ptr.PointTo(w.FailureReason),
-		Metadata: ptr.PointTo(cmkapi.WorkflowMetadata{
-			CreatedAt: ptr.PointTo(w.CreatedAt),
-			UpdatedAt: ptr.PointTo(w.UpdatedAt),
-		}),
-		ExpiresAt: w.ExpiryDate,
+		Metadata:               metadata,
+		ExpiresAt:              w.ExpiryDate,
 	}
 
 	// Apply optional transformations

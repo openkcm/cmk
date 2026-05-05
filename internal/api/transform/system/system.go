@@ -26,7 +26,8 @@ func WithWorkflow(
 	opts ...workflow.ToAPIOpt,
 ) ToAPIOpt {
 	return func(s *cmkapi.System) error {
-		apiWorkflow, err := workflow.ToAPI(ctx, *wf, idm, opts...)
+		// System workflows don't need eligibility checks
+		apiWorkflow, err := workflow.ToAPI(ctx, *wf, nil, nil, idm, opts...)
 		if s.Metadata == nil {
 			s.Metadata = &cmkapi.SystemMetadata{
 				Worfklow: apiWorkflow,
