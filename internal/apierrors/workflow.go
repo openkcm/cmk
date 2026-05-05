@@ -45,6 +45,14 @@ var workflow = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{manager.ErrCheckWorkflowEligibility},
+		ExposedError: &APIError{
+			Code:    "CHECK_WORKFLOW_ELIGIBILITY",
+			Message: "failed to check workflow eligibility from identity management",
+			Status:  http.StatusInternalServerError,
+		},
+	},
+	{
 		InternalErrorChain: []error{manager.ErrWorkflowNotAllowed},
 		ExposedError: &APIError{
 			Code:    "WORKFLOW_NOT_FOUND",
@@ -186,6 +194,14 @@ var workflow = []errs.ExposedErrors[*APIError]{
 			Code:    "INSUFFICIENT_APPROVER_COUNT",
 			Message: "insufficient approvers to transition to next state",
 			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		InternalErrorChain: []error{workflowpkg.ErrApproverNoLongerEligible},
+		ExposedError: &APIError{
+			Code:    "APPROVER_NO_LONGER_ELIGIBLE",
+			Message: "approver has been removed from the admin group and cannot vote",
+			Status:  http.StatusForbidden,
 		},
 	},
 	{

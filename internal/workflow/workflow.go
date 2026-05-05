@@ -26,6 +26,7 @@ type Lifecycle struct {
 	KeyConfigurationActions KeyConfigurationActions
 	SystemActions           SystemActions
 	MinimumApproverCount    int
+	EligibleApproverIDs     map[string]bool // Optional: if set, only these approvers count for voting
 }
 
 // convertEvent converts Transition and State types to string
@@ -233,7 +234,7 @@ func (l *Lifecycle) AvailableBusinessUserTransitions(ctx context.Context) []Tran
 }
 
 func (l *Lifecycle) GetApprovalSummary(ctx context.Context) (*ApprovalSummary, error) {
-	allApprovers, err := l.getAllApprovers(ctx)
+	allApprovers, err := l.GetAllApprovers(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -273,11 +274,19 @@ func (l *Lifecycle) ValidateActor(ctx context.Context, transition Transition) er
 			err = NewInvalidEventActorError(l.ActorID, "initiator")
 		}
 	case TransitionApprove, TransitionReject:
-		valid, err = l.validateUserIsApprover(ctx)
-		if err != nil {
-			err = errs.Wrapf(err, "failed to validate approver")
-		} else if !valid {
-			err = NewInvalidEventActorError(l.ActorID, "approver")
+		// Check if system user (automated rejection)
+		isSystem, _ := l.validateUserIsSystem(ctx)
+		if isSystem && transition == TransitionReject {
+			// Allow system user for automated early rejection
+			// valid is already false from initialization, no assignment needed
+		} else {
+			// Regular approve/reject requires being an approver
+			valid, err = l.validateUserIsApprover(ctx)
+			if err != nil {
+				err = errs.Wrapf(err, "failed to validate approver")
+			} else if !valid {
+				err = NewInvalidEventActorError(l.ActorID, "approver")
+			}
 		}
 	case TransitionExecute, TransitionFail, TransitionExpire:
 		valid, err = l.validateUserIsSystem(ctx)
@@ -295,6 +304,46 @@ func (l *Lifecycle) ValidateActor(ctx context.Context, transition Transition) er
 
 func (l *Lifecycle) CanExpire() bool {
 	return l.StateMachine.Can(TransitionExpire.String())
+}
+
+func (l *Lifecycle) GetAllApprovers(ctx context.Context) ([]*model.WorkflowApprover, error) {
+	var allApprovers []*model.WorkflowApprover
+
+	ck := repo.NewCompositeKey().Where(
+		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID)
+
+	err := l.Repository.List(
+		ctx,
+		model.WorkflowApprover{},
+		&allApprovers,
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
+	)
+	if err != nil {
+		return nil, errs.Wrap(ErrCheckApproverDecision, err)
+	}
+
+	return allApprovers, nil
+}
+
+// CheckInsufficientApprovers determines if eligible approvers can meet threshold.
+// Takes pre-fetched eligible list (no external calls) - pure business logic.
+func (l *Lifecycle) CheckInsufficientApprovers(
+	eligibleApprovers []*model.WorkflowApprover,
+) bool {
+	// Count current approvals and pending eligible approvers
+	currentApprovals := 0
+	eligiblePending := 0
+	for _, approver := range eligibleApprovers {
+		if !approver.Approved.Valid {
+			eligiblePending++
+		} else if approver.Approved.Bool {
+			currentApprovals++
+		}
+	}
+
+	// Insufficient if we cannot reach threshold even if all pending approve
+	maxPossibleApprovals := currentApprovals + eligiblePending
+	return maxPossibleApprovals < l.MinimumApproverCount
 }
 
 // validateUserIsSystem validates that the user is the SYSTEM user
@@ -400,12 +449,18 @@ func (l *Lifecycle) checkVotingScore(ctx context.Context, transition Transition)
 		return false, errs.Wrap(NewTransitionError(transition), fsmErr)
 	}
 
-	allApprovers, err := l.getAllApprovers(ctx)
+	allApprovers, err := l.GetAllApprovers(ctx)
 	if err != nil {
 		return false, err
 	}
 
-	counts, err := l.calculateVoteCounts(allApprovers, transition)
+	// Filter by eligible approvers if eligibility list is provided
+	approversToCount := allApprovers
+	if l.EligibleApproverIDs != nil {
+		approversToCount = l.filterEligibleApprovers(allApprovers)
+	}
+
+	counts, err := l.calculateVoteCounts(approversToCount, transition)
 	if err != nil {
 		return false, err
 	}
@@ -413,23 +468,22 @@ func (l *Lifecycle) checkVotingScore(ctx context.Context, transition Transition)
 	return l.shouldTransition(counts, transition)
 }
 
-func (l *Lifecycle) getAllApprovers(ctx context.Context) ([]*model.WorkflowApprover, error) {
-	var allApprovers []*model.WorkflowApprover
-
-	ck := repo.NewCompositeKey().Where(
-		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID)
-
-	err := l.Repository.List(
-		ctx,
-		model.WorkflowApprover{},
-		&allApprovers,
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
-	)
-	if err != nil {
-		return nil, errs.Wrap(ErrCheckApproverDecision, err)
+// filterEligibleApprovers filters approvers to only those who are:
+// 1. Currently eligible (in IAM groups), OR
+// 2. Already voted (their vote counts regardless of current eligibility)
+func (l *Lifecycle) filterEligibleApprovers(approvers []*model.WorkflowApprover) []*model.WorkflowApprover {
+	if l.EligibleApproverIDs == nil {
+		return approvers
 	}
 
-	return allApprovers, nil
+	filtered := make([]*model.WorkflowApprover, 0, len(approvers))
+	for _, approver := range approvers {
+		// Include if: currently eligible OR already voted
+		if l.EligibleApproverIDs[approver.UserID] || approver.Approved.Valid {
+			filtered = append(filtered, approver)
+		}
+	}
+	return filtered
 }
 
 type voteCounts struct {
@@ -594,7 +648,7 @@ func (l *Lifecycle) getApproverAvailableActions(ctx context.Context) []Transitio
 		return transitions
 	}
 
-	approvers, err := l.getAllApprovers(ctx)
+	approvers, err := l.GetAllApprovers(ctx)
 	if err != nil {
 		log.Error(ctx, "failed to get approver available actions while getting available transitions", err)
 		return transitions
