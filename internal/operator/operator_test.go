@@ -38,14 +38,13 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/operator"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	mockClient "github.com/openkcm/cmk/internal/testutils/clients"
 	"github.com/openkcm/cmk/internal/testutils/clients/registry"
 	sessionmanager "github.com/openkcm/cmk/internal/testutils/clients/session-manager"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 	tmdb "github.com/openkcm/cmk/utils/base62"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -84,7 +83,7 @@ func createManagers(
 	t *testing.T,
 	dbCon *multitenancy.DB,
 	cfg *config.Config,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 ) (*manager.TenantManager, *manager.GroupManager) {
 	t.Helper()
 
@@ -174,10 +173,7 @@ func TestNewTenantOperator(t *testing.T) {
 	dbConn := &multitenancy.DB{}
 	fts := tenants.NewFakeTenantService()
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
-
 	cfg := &config.Config{
-		Plugins:  psCfg,
 		Database: testutils.TestDB,
 	}
 
@@ -197,8 +193,7 @@ func TestNewTenantOperator(t *testing.T) {
 		sessionmanager.NewMockService(sessionmanager.NewFakeSessionManagerClient()),
 	)
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 
 	tenantManager, groupManager := createManagers(t, dbConn, cfg, svcRegistry)
 
@@ -717,14 +712,11 @@ func TestHandleBlockTenant(t *testing.T) {
 
 	taskType := tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String()
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
 	cfg := &config.Config{
-		Plugins:  psCfg,
 		Database: testutils.TestDB,
 	}
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 
 	tenantManager, groupManager := createManagers(t, unusedDB, cfg, svcRegistry)
 
@@ -847,14 +839,11 @@ func TestHandleUnblockTenant(t *testing.T) {
 
 	taskType := tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String()
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
 	cfg := &config.Config{
-		Plugins:  psCfg,
 		Database: testutils.TestDB,
 	}
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 
 	tenantManager, groupManager := createManagers(t, unusedDB, cfg, svcRegistry)
 
@@ -974,14 +963,11 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 	unusedDB := &multitenancy.DB{}
 	_, clientCon := testutils.NewGRPCSuite(t)
 	unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
 	cfg := &config.Config{
-		Plugins:  psCfg,
 		Database: testutils.TestDB,
 	}
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 
 	_, groupManager := createManagers(t, unusedDB, cfg, svcRegistry)
 	mockTenantManager := &MockTenantManager{}
@@ -1102,14 +1088,11 @@ func TestHandleTerminateTenant(t *testing.T) {
 	unusedDB := &multitenancy.DB{}
 	_, clientCon := testutils.NewGRPCSuite(t)
 	unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
 	cfg := &config.Config{
-		Plugins:  psCfg,
 		Database: testutils.TestDB,
 	}
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 
 	sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
 	sessionManagerClient.MockRemoveOIDCMapping = func(
@@ -1434,9 +1417,7 @@ func TestTenantOperatorTracing(t *testing.T) {
 			},
 		}))
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
 	cfg := &config.Config{
-		Plugins:  psCfg,
 		Database: dbCfg,
 		BaseConfig: commoncfg.BaseConfig{
 			Application: commoncfg.Application{
@@ -1458,8 +1439,7 @@ func TestTenantOperatorTracing(t *testing.T) {
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 
 	tenantManager, groupManager := createManagers(t, dbConn, cfg, svcRegistry)
 	op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory,
@@ -1536,9 +1516,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 		},
 	)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
 	cfg := &config.Config{
-		Plugins:  psCfg,
 		Database: cfgDB,
 	}
 
@@ -1553,8 +1531,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 
 	tenantManager, groupManager := createManagers(t, multitenancyDB, cfg, svcRegistry)
 	tenantOperator, err := operator.NewTenantOperator(

@@ -19,6 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmksql "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -30,17 +31,17 @@ import (
 
 var errMockInternalError = errors.New("internal error")
 
-func startAPIWorkflows(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIWorkflows(
+	t *testing.T,
+	idmPlugin identitymanagement.IdentityManagement,
+) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
-	// Set up identity management plugin for eligibility checks
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
-
 	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:  config.Config{Database: dbCfg, Plugins: psCfg},
-		Plugins: ps,
+		Config:   config.Config{Database: dbCfg},
+		Registry: testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
 	})
 
 	return db, sv, tenants[0]
@@ -55,7 +56,7 @@ var (
 )
 
 func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
-	authClient testutils.AuthClientData,
+	authClient testutils.AuthClientData, idmPlugin *testplugins.TestIdentityManagement,
 ) []*model.Workflow {
 	tb.Helper()
 
@@ -82,6 +83,7 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 		w.ArtifactID = key.ID
 		w.ArtifactName = &key.Name
 	})
+	idmPlugin.PutUser(identitymanagement.User{ID: workflow.InitiatorID})
 
 	workflow2 := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.State = wfMechanism.StateRevoked.String()
@@ -93,6 +95,7 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 		w.ApproverGroupIDs = groupIDsBytes
 		w.Parameters = "DISABLED"
 	})
+	idmPlugin.PutUser(identitymanagement.User{ID: workflow2.InitiatorID})
 
 	wfID := uuid.New()
 	workflow3 := testutils.NewWorkflow(func(w *model.Workflow) {
@@ -124,17 +127,25 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 		w.ParametersResourceName = &keyConfig.Name
 		w.ParametersResourceType = ptr.PointTo(wfMechanism.ParametersResourceTypeKeyConfiguration.String())
 	})
+	idmPlugin.PutUser(identitymanagement.User{ID: workflow3.InitiatorID})
 
 	testutils.CreateTestEntities(ctx, tb, r, key, key2, system, keyConfig, workflow, workflow2, workflow3)
+
+	// Register all approver IDs so GetUser lookups succeed in detailed workflow responses
+	for _, wf := range []*model.Workflow{workflow, workflow2, workflow3} {
+		for _, approver := range wf.Approvers {
+			idmPlugin.PutUser(identitymanagement.User{ID: approver.UserID})
+		}
+	}
 
 	return []*model.Workflow{workflow, workflow2, workflow3}
 }
 
 func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceRepository,
-	ctx context.Context, authClient testutils.AuthClientData,
+	ctx context.Context, authClient testutils.AuthClientData, idmPlugin *testplugins.TestIdentityManagement,
 ) {
 	t.Helper()
-	createTestWorkflows(ctx, t, r, authClient)
+	createTestWorkflows(ctx, t, r, authClient, idmPlugin)
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.ID = uuid.MustParse(key1ID)
@@ -184,12 +195,13 @@ func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux, authClient tes
 
 func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 	t.Run("should 200 with valid and canCreate as true", func(t *testing.T) {
-		db, sv, tenant := startAPIWorkflows(t)
+		idmPlugin := testplugins.NewTestIdentityManagement()
+		db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		r := cmksql.NewRepository(db)
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient)
+		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
 		wf := cmkapi.Workflow{
 			ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
@@ -216,12 +228,13 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 	})
 
 	t.Run("Should 200 with valid and canCreate as false on wf system connect invalid key state", func(t *testing.T) {
-		db, sv, tenant := startAPIWorkflows(t)
+		idmPlugin := testplugins.NewTestIdentityManagement()
+		db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		r := cmksql.NewRepository(db)
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient)
+		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
 		key := testutils.NewKey(func(k *model.Key) {
 			k.State = string(cmkapi.KeyStateUNKNOWN)
@@ -358,12 +371,14 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db, sv, tenant := startAPIWorkflows(t)
+			idmPlugin := testplugins.NewTestIdentityManagement()
+			db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 			r := cmksql.NewRepository(db)
 
 			authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient)
+			idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
+			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
 			if tt.sideEffect != nil {
 				forceConfig(t, tenant, sv, authClient)
@@ -408,12 +423,13 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 	// Test allowed scenarios
 	for _, request := range requests {
 		t.Run("TestWorkflowControllerCheckCreateWorkflowAuthz_InKAGroup", func(t *testing.T) {
-			db, sv, tenant := startAPIWorkflows(t)
+			idmPlugin := testplugins.NewTestIdentityManagement()
+			db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 			r := cmksql.NewRepository(db)
 
 			keyAdminAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient)
+			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient, idmPlugin)
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:            http.MethodPost,
@@ -436,12 +452,13 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 	}
 
 	// Test forbidden scenarios
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
 	keyAdminAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-	setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient)
+	setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient, idmPlugin)
 
 	keyAdmin2AuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 	tenantAdminAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
@@ -547,12 +564,14 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 
 	for _, tt := range tests2 {
 		t.Run(tt.name, func(t *testing.T) {
-			db, sv, tenant := startAPIWorkflows(t)
+			idmPlugin := testplugins.NewTestIdentityManagement()
+			db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 			r := cmksql.NewRepository(db)
 
 			authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient)
+			idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
+			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
 			testutils.CreateTestEntities(ctx, t, r, keyConfigWithoutUser)
 
@@ -578,26 +597,31 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 }
 
 func TestWorkflowControllerGetByID(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement(
+		testplugins.WithGroups(map[string]string{}),
+		testplugins.WithGroupMembership(map[string][]string{}),
+	)
+
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Config:   config.Config{Database: dbCfg},
+		Registry: testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
+	})
+	tenant := tenants[0]
+
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
-	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole(),
-		testutils.WithIdentifier(userID))
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole(), testutils.WithIdentifier(userID))
 
 	// Register the authClient's group with the test identity management plugin
 	// so eligibility checks can query group membership
 	testGroupSCIMID := authClient.Group.IAMIdentifier + "-SCIM"
-	testplugins.IdentityManagementGroups[authClient.Group.IAMIdentifier] = testGroupSCIMID
-	testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-		{ID: authClient.Identifier, Email: authClient.Identifier + "@example.com"},
-	}
-	defer func() {
-		delete(testplugins.IdentityManagementGroups, authClient.Group.IAMIdentifier)
-		delete(testplugins.IdentityManagementGroupMembership, testGroupSCIMID)
-	}()
+	idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
+	idmPlugin.PutGroup(authClient.Group.IAMIdentifier, testGroupSCIMID)
+	idmPlugin.PutGroupMembers(testGroupSCIMID, []string{authClient.Identifier})
 
-	workflows := createTestWorkflows(ctx, t, r, authClient)
+	workflows := createTestWorkflows(ctx, t, r, authClient, idmPlugin)
 
 	groupIDsBytes, err := json.Marshal([]uuid.UUID{uuid.New()})
 	assert.NoError(t, err)
@@ -612,6 +636,7 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 		w.ApproverGroupIDs = groupIDsBytes
 		w.Parameters = "DISABLED"
 	})
+	idmPlugin.PutUser(identitymanagement.User{ID: workflowWithDeletedGroup.InitiatorID})
 	testutils.CreateTestEntities(ctx, t, r, workflowWithDeletedGroup)
 
 	tests := []struct {
@@ -701,12 +726,13 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 }
 
 func TestWorkflowControllerListWorkflows(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
 	keyAdminAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-	workflows := createTestWorkflows(ctx, t, r, keyAdminAuthClient)
+	workflows := createTestWorkflows(ctx, t, r, keyAdminAuthClient, idmPlugin)
 
 	auditorAuthClient := testutils.NewAuthClient(ctx, t, r,
 		testutils.WithAuditorRole(), testutils.WithIdentifier(keyAdminAuthClient.Identifier))
@@ -813,7 +839,8 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 }
 
 func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -824,6 +851,9 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 
 	user1ID := uuid.NewString()
 	user2ID := uuid.NewString()
+
+	idmPlugin.PutUser(identitymanagement.User{ID: user1ID})
+	idmPlugin.PutUser(identitymanagement.User{ID: userID})
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
@@ -902,7 +932,8 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 }
 
 func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -910,6 +941,7 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 
 	for range totalRecordCount {
 		workflow := testutils.NewWorkflow(func(_ *model.Workflow) {})
+		idmPlugin.PutUser(identitymanagement.User{ID: workflow.InitiatorID})
 		testutils.CreateTestEntities(ctx, t, r, workflow)
 	}
 
@@ -1014,17 +1046,20 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 }
 
 func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-	createTestWorkflows(ctx, t, r, authClient)
+	createTestWorkflows(ctx, t, r, authClient, idmPlugin)
 
 	workflowID := uuid.New()
 	initiatorID := uuid.NewString()
 	approverID01 := uuid.NewString()
 	approverID02 := uuid.NewString()
+
+	idmPlugin.PutUser(identitymanagement.User{ID: initiatorID})
 
 	wfMutator := testutils.NewMutator(func() model.Workflow {
 		return model.Workflow{
@@ -1254,12 +1289,13 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 }
 
 func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithAuditorRole())
-	workflows := createTestWorkflows(ctx, t, r, authClient)
+	workflows := createTestWorkflows(ctx, t, r, authClient, idmPlugin)
 
 	tests := []struct {
 		name           string

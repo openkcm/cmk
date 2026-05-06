@@ -13,11 +13,9 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 )
 
 var (
@@ -51,13 +49,9 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	s.ctx = testutils.CreateCtxWithTenant(s.tenant)
 	s.r = sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(
-		testplugins.NewKeystoreOperator(),
-	)
+	svcRegistry := testutils.NewTestPlugins()
 
-	cfg := config.Config{Plugins: psCfg}
-	svcRegistry, err := cmkpluginregistry.New(s.ctx, &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	s.Require().NoError(err)
+	cfg := config.Config{}
 
 	certManager := manager.NewCertificateManager(
 		s.ctx, s.r, svcRegistry,

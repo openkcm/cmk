@@ -21,7 +21,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -49,7 +49,7 @@ func createAuditorGroup(ctx context.Context, tb testing.TB, r repo.Repo) {
 func SetupWorkflowManager(
 	t *testing.T,
 	cfg *config.Config,
-	opts ...testutils.TestDBConfigOpt,
+	opts ...testplugins.RegistryOption,
 ) (
 	*manager.WorkflowManager,
 	repo.Repo, string,
@@ -60,12 +60,7 @@ func SetupWorkflowManager(
 
 	r := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
-
-	cfg.Plugins = psCfg
-
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins(opts...)
 
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
@@ -515,7 +510,8 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 }
 
 func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
-	m, repo, tenant := SetupWorkflowManager(t, &config.Config{})
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	m, repo, tenant := SetupWorkflowManager(t, &config.Config{}, testplugins.WithIdentityManagement(idmPlugin))
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
@@ -536,6 +532,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 				),
 			)
 			assert.NoError(t, err)
+			idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
 
 			ctx = cmkcontext.InjectClientData(
 				cmkcontext.CreateTenantContext(t.Context(), tenant),
@@ -567,6 +564,8 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 				),
 			)
 			assert.NoError(t, err)
+			idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
+
 			ctx = cmkcontext.InjectClientData(
 				cmkcontext.CreateTenantContext(t.Context(), tenant),
 				&auth.ClientData{
@@ -598,6 +597,8 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 				),
 			)
 			assert.NoError(t, err)
+			idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
+
 			ctx = cmkcontext.InjectClientData(
 				cmkcontext.CreateTenantContext(t.Context(), tenant),
 				&auth.ClientData{
@@ -1258,7 +1259,11 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 
 func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) {
 	cfg := &config.Config{}
-	wm, _, tenantID := SetupWorkflowManager(t, cfg)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	initatorID := uuid.NewString()
+	idmPlugin.PutUser(identitymanagement.User{ID: initatorID})
+
+	wm, _, tenantID := SetupWorkflowManager(t, cfg, testplugins.WithIdentityManagement(idmPlugin))
 	ctx := testutils.CreateCtxWithTenant(tenantID)
 	ctx = cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 
@@ -1268,6 +1273,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 
 		wf := model.Workflow{
 			ID:           uuid.New(),
+			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
 			ArtifactType: "KEY",
 			ArtifactID:   uuid.New(),
@@ -1288,6 +1294,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 	t.Run("should skip notification when async client is nil", func(t *testing.T) {
 		wf := model.Workflow{
 			ID:           uuid.New(),
+			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
 			ArtifactType: "KEY",
 			ArtifactID:   uuid.New(),
@@ -1308,6 +1315,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 
 		wf := model.Workflow{
 			ID:           uuid.New(),
+			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
 			ArtifactType: "KEY",
 			ArtifactID:   uuid.New(),
@@ -1331,6 +1339,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 
 		wf := model.Workflow{
 			ID:           uuid.New(),
+			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
 			ArtifactType: "KEY",
 			ArtifactID:   uuid.New(),
@@ -1352,6 +1361,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 
 		wf := model.Workflow{
 			ID:           uuid.New(),
+			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
 			ArtifactType: "KEY",
 			ArtifactID:   uuid.New(),
@@ -1374,6 +1384,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 
 		wf := model.Workflow{
 			ID:           uuid.New(),
+			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
 			ArtifactType: "KEY",
 			ArtifactID:   uuid.New(),
@@ -1689,16 +1700,31 @@ const (
 	approver2Email  = "user2@example.com"
 )
 
-// setupEligibilityTest creates a workflow with approvers and returns the necessary test data
+// newEligibilityTestPlugin creates a blank TestIdentityManagement for eligibility tests.
+// Call PutGroup / PutGroupMembers on the returned instance to control IAM state per test.
+func newEligibilityTestPlugin() *testplugins.TestIdentityManagement {
+	return testplugins.NewTestIdentityManagement(
+		testplugins.WithGroups(map[string]string{}),
+		testplugins.WithGroupMembership(map[string][]string{}),
+		testplugins.WithUsers([]identitymanagement.User{
+			{ID: approver1ID, Name: approver1Email},
+			{ID: approver2ID, Name: approver2Email},
+		}),
+	)
+}
+
+// setupEligibilityTest creates a workflow with approvers and returns the necessary test data.
+// Pass the idmPlugin returned by newEligibilityTestPlugin so the caller retains a handle for IAM mutations.
 func setupEligibilityTest(
 	t *testing.T,
 	approverCount int,
+	idmPlugin *testplugins.TestIdentityManagement,
 ) (*manager.WorkflowManager, repo.Repo, context.Context, *model.Workflow, string) {
 	t.Helper()
 
 	cfg := &config.Config{}
 
-	wm, r, tenantID := SetupWorkflowManager(t, cfg)
+	wm, r, tenantID := SetupWorkflowManager(t, cfg, testplugins.WithIdentityManagement(idmPlugin))
 	ctx := testutils.CreateCtxWithTenant(tenantID)
 
 	// Create tenant workflow config with minimum approvals matching approver count
@@ -1759,7 +1785,7 @@ func setupEligibilityTest(
 	approverEmails := []string{approver1Email, approver2Email}
 
 	// Initialize SCIM group membership with all approvers
-	var scimMembers []testplugins.IdentityManagementUserRef
+	var scimMembers []string
 	for i := 0; i < approverCount && i < len(approverIDs); i++ {
 		approver := &model.WorkflowApprover{
 			WorkflowID: wf.ID,
@@ -1768,15 +1794,13 @@ func setupEligibilityTest(
 		testutils.CreateTestEntities(ctx, t, r, approver)
 
 		// Add to SCIM membership
-		scimMembers = append(scimMembers, testplugins.IdentityManagementUserRef{
-			ID:    approverIDs[i],
-			Email: approverEmails[i],
-		})
+		scimMembers = append(scimMembers, approverIDs[i])
 	}
+	_ = approverEmails // emails are in users map; not needed for group membership
 
-	// Register group in SCIM
-	testplugins.IdentityManagementGroups[testGroupName] = testGroupSCIMID
-	testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = scimMembers
+	// Register group in SCIM on the instance
+	idmPlugin.PutGroup(testGroupName, testGroupSCIMID)
+	idmPlugin.PutGroupMembers(testGroupSCIMID, scimMembers)
 
 	return wm, r, ctx, wf, tenantID
 }
@@ -1789,11 +1813,12 @@ func setAuthContext(ctx context.Context, userID, _ string) context.Context {
 //nolint:cyclop
 func TestWorkflowApproverEligibility(t *testing.T) {
 	t.Run("all eligible approvers removed before voting - workflow expires", func(t *testing.T) {
-		wm, r, ctx, wf, tenantID := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, r, ctx, wf, tenantID := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers from IAM group
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, nil)
 
 		// Get workflow - should show insufficient approvers warning
 		gotWf, eligibility, err := wm.GetWorkflowByID(ctx, wf.ID)
@@ -1840,11 +1865,12 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 	})
 
 	t.Run("all eligible approvers removed - initiator revokes", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers from IAM group
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, nil)
 
 		// Get workflow - should show insufficient approvers warning
 		gotWf, eligibility, err := wm.GetWorkflowByID(ctx, wf.ID)
@@ -1864,11 +1890,12 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 	})
 
 	t.Run("eligible approvers removed then re-added - warning cleared", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers from IAM group
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, nil)
 
 		// Get workflow - should show warning
 		_, eligibility, err := wm.GetWorkflowByID(ctx, wf.ID)
@@ -1877,10 +1904,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		assert.True(t, insufficientApprovers)
 
 		// Re-add approvers to IAM group
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-			{ID: approver1ID, Email: approver1Email},
-			{ID: approver2ID, Email: approver2Email},
-		}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver1ID, approver2ID})
 
 		// Get workflow again - warning should be cleared
 		_, eligibility, err = wm.GetWorkflowByID(ctx, wf.ID)
@@ -1912,22 +1936,21 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 	})
 
 	t.Run("partial votes cast, remaining approver removed - cannot continue", func(t *testing.T) {
-		wm, r, ctx, wf, _ := setupEligibilityTest(t, 3)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, r, ctx, wf, _ := setupEligibilityTest(t, 3, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Create a third approver
+		approver3ID := "00000000-0000-0000-0000-100000000004"
 		approver3 := &model.WorkflowApprover{
 			WorkflowID: wf.ID,
-			UserID:     "00000000-0000-0000-0000-100000000004",
+			UserID:     approver3ID,
 		}
 		testutils.CreateTestEntities(ctx, t, r, approver3)
 
 		// Update group membership to include all three
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-			{ID: approver1ID, Email: approver1Email},
-			{ID: approver2ID, Email: approver2Email},
-			{ID: "00000000-0000-0000-0000-100000000004", Email: "user4@example.com"},
-		}
+		idmPlugin.PutUser(identitymanagement.User{ID: approver3ID, Name: "user4@example.com", Email: "user4@example.com"})
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver1ID, approver2ID, approver3ID})
 
 		// Approver 1 votes (while still in group)
 		ctx1 := setAuthContext(ctx, approver1ID, approver1Email)
@@ -1945,9 +1968,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		}
 
 		// Remove approvers 2 and 3 from IAM group (only approver 1 remains)
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-			{ID: approver1ID, Email: approver1Email},
-		}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver1ID})
 
 		// Workflow should still be in WAIT_APPROVAL (vote happened when all 3 were eligible)
 		// Auto-reject only happens AT VOTE TIME, not retroactively
@@ -1964,7 +1985,8 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 	})
 
 	t.Run("approver who already voted can still be counted after removal", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Approver 1 votes while in group
 		ctx1 := setAuthContext(ctx, approver1ID, approver1Email)
@@ -1972,9 +1994,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		require.NoError(t, err)
 
 		// Remove approver 1 from IAM group
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-			{ID: approver2ID, Email: approver2Email},
-		}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver2ID})
 
 		// Approver 1 tries to change vote (reject) - should fail (no longer eligible)
 		_, err = wm.TransitionWorkflow(ctx1, wf.ID, workflow.TransitionReject)
@@ -1994,15 +2014,14 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 	})
 
 	t.Run("new user added to group not in original snapshot - cannot vote", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 1)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 1, idmPlugin)
 
 		// Add new user to IAM group (not in workflow approvers snapshot)
 		newUserID := "00000000-0000-0000-0000-100000000099"
 		newUserEmail := "newuser@example.com"
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-			{ID: approver1ID, Email: approver1Email},
-			{ID: newUserID, Email: newUserEmail},
-		}
+		idmPlugin.PutUser(identitymanagement.User{ID: newUserID, Name: newUserEmail, Email: newUserEmail})
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver1ID, newUserID})
 
 		// Get workflow - should NOT show insufficient approvers (still has approver 1)
 		_, eligibility, err := wm.GetWorkflowByID(
@@ -2029,7 +2048,8 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 	})
 
 	t.Run("rejected vote from removed approver still counts", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Approver 1 rejects while in group
 		ctx1 := setAuthContext(ctx, approver1ID, approver1Email)
@@ -2056,9 +2076,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		initialState := gotWfAfterReject.State
 
 		// Remove approver 1 from IAM group
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-			{ID: approver2ID, Email: approver2Email},
-		}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver2ID})
 
 		// Workflow state should remain the same (rejection still counts even after removal)
 		gotWf, _, err := wm.GetWorkflowByID(setAuthContext(ctx, approver2ID, approver2Email), wf.ID)
@@ -2068,10 +2086,11 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 	})
 
 	t.Run("insufficientApprovers flag updates dynamically with IAM changes", func(t *testing.T) {
-		wm, r, ctx, wf, _ := setupEligibilityTest(t, 0)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, r, ctx, wf, _ := setupEligibilityTest(t, 0, idmPlugin)
 
 		// Remove all approvers from IAM before checking
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, nil)
 
 		// Manually create workflow approvers (simulating they were added before removal)
 		approver := &model.WorkflowApprover{
@@ -2088,10 +2107,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		assert.True(t, insufficientApprovers, "Should detect no eligible approvers")
 
 		// Re-add approvers to group
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-			{ID: approver1ID, Email: approver1Email},
-			{ID: approver2ID, Email: approver2Email},
-		}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver1ID, approver2ID})
 
 		// Get workflow again - should still show insufficient (only 1 assigned approver, threshold=2)
 		_, eligibility, err = wm.GetWorkflowByID(
@@ -2104,7 +2120,8 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 	t.Run("returns correct insufficientApprovers flag", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Initially sufficient approvers
@@ -2114,9 +2131,7 @@ func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 		assert.False(t, insufficientApprovers)
 
 		// Remove one approver
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-			{ID: approver1ID, Email: approver1Email},
-		}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver1ID})
 
 		// Should detect insufficient when below threshold (1 eligible < 2 required)
 		_, eligibility, err = wm.GetWorkflowByID(ctx, wf.ID)
@@ -2125,7 +2140,7 @@ func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 		assert.True(t, insufficientApprovers, "One eligible approver is insufficient for threshold of 2")
 
 		// Remove all approvers
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, nil)
 
 		// Should detect insufficient when no eligible approvers
 		_, eligibility, err = wm.GetWorkflowByID(ctx, wf.ID)
@@ -2135,11 +2150,12 @@ func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 	})
 
 	t.Run("checks eligibility regardless of workflow state", func(t *testing.T) {
-		wm, r, ctx, wf, _ := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, r, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, nil)
 
 		// Transition to REVOKED state
 		_, err := wm.TransitionWorkflow(ctx, wf.ID, workflow.TransitionRevoke)
@@ -2169,48 +2185,43 @@ func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 
 func TestWorkflowApproverEligibilityErrorHandling(t *testing.T) {
 	t.Run("SCIM failure during eligibility check prevents voting", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 1)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 1, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Simulate SCIM failure by removing group mapping
-		delete(testplugins.IdentityManagementGroups, testGroupName)
+		idmPlugin.DeleteGroup(testGroupName)
 
 		// Attempt to vote - should fail due to SCIM error
 		_, err := wm.TransitionWorkflow(ctx, wf.ID, workflow.TransitionApprove)
 		assert.Error(t, err, "SCIM failure should prevent voting")
-
-		// Restore group for cleanup
-		testplugins.IdentityManagementGroups[testGroupName] = testGroupSCIMID
 	})
 
 	t.Run("SCIM failure during GET returns error in insufficientApprovers check", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 1)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 1, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Simulate SCIM failure
-		delete(testplugins.IdentityManagementGroups, testGroupName)
+		idmPlugin.DeleteGroup(testGroupName)
 
 		// GetWorkflowByID should now return error when eligibility check fails
 		_, _, err := wm.GetWorkflowByID(ctx, wf.ID)
 		require.Error(t, err, "GET should return error when eligibility check fails")
 		assert.True(t, errs.IsAnyError(err, manager.ErrCheckWorkflowEligibility), "Error should be ErrCheckWorkflowEligibility")
-
-		// Restore group
-		testplugins.IdentityManagementGroups[testGroupName] = testGroupSCIMID
 	})
 }
 
 func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 	t.Run("auto-rejects after vote when insufficient eligible approvers", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Initially 2 eligible approvers, threshold = 2
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove one approver from group - only 1 eligible left
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-			{ID: approver1ID, Email: approver1Email},
-		}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver1ID})
 
 		// Verify workflow is still WAIT_APPROVAL (not auto-rejected before vote)
 		workflowBefore, _, err := wm.GetWorkflowByID(ctx, wf.ID)
@@ -2227,7 +2238,8 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 	})
 
 	t.Run("does not auto-reject when sufficient eligible approvers remain", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// 2 eligible approvers, threshold = 2
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
@@ -2249,15 +2261,14 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 	})
 
 	t.Run("auto-rejects even when user votes REJECT", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Initially 2 eligible approvers, threshold = 2
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove one approver from group - only 1 eligible left
-		testplugins.IdentityManagementGroupMembership[testGroupSCIMID] = []testplugins.IdentityManagementUserRef{
-			{ID: approver1ID, Email: approver1Email},
-		}
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver1ID})
 
 		// Remaining approver votes REJECT
 		workflowAfter, err := wm.TransitionWorkflow(ctx, wf.ID, workflow.TransitionReject)
@@ -2268,7 +2279,8 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 	})
 
 	t.Run("handles SCIM failure gracefully during auto-reject check", func(t *testing.T) {
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2)
+		idmPlugin := newEligibilityTestPlugin()
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// First vote succeeds
@@ -2277,14 +2289,11 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 		assert.Equal(t, workflow.StateWaitApproval.String(), workflowAfter1.State)
 
 		// Simulate SCIM failure by removing group mapping (after first vote)
-		delete(testplugins.IdentityManagementGroups, testGroupName)
+		idmPlugin.DeleteGroup(testGroupName)
 
 		// Second vote should fail with eligibility error (user can't vote when SCIM unavailable)
 		ctx = setAuthContext(ctx, approver2ID, approver2Email)
 		_, err = wm.TransitionWorkflow(ctx, wf.ID, workflow.TransitionApprove)
 		assert.Error(t, err)
-
-		// Restore group for cleanup
-		testplugins.IdentityManagementGroups[testGroupName] = testGroupSCIMID
 	})
 }

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -16,7 +15,6 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -26,9 +24,7 @@ func startAPIGroups(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	r := testutils.NewAPIServer(
-		t, db, testutils.TestAPIServerConfig{
-			Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
-		},
+		t, db, testutils.TestAPIServerConfig{},
 	)
 
 	return db, r, tenants[0]

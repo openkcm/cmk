@@ -1,7 +1,6 @@
 package keyconfiguration_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testpluginregistry"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -102,7 +101,10 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 	id := uuid.New()
 	adminGroupID := uuid.New()
 	creatorID := uuid.New().String()
-	creatorName := "test-creator"
+	creatorName := uuid.NewString() + "@example.com"
+
+	idm := testplugins.NewTestIdentityManagement()
+	idm.PutUser(identitymanagement.User{ID: creatorID, Name: creatorName})
 
 	primaryKeyID := uuid.New()
 
@@ -164,13 +166,7 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
-			mockService := testpluginregistry.NewMockIDMService()
-			mockService.GetUserFn = func(ctx context.Context, gur *identitymanagement.GetUserRequest) (*identitymanagement.GetUserResponse, error) {
-				return &identitymanagement.GetUserResponse{User: identitymanagement.User{
-					Name: "test-creator",
-				}}, nil
-			}
-			apiConf, err := keyconfiguration.ToAPI(ctx, tt.conf, mockService)
+			apiConf, err := keyconfiguration.ToAPI(ctx, tt.conf, idm)
 			if tt.expectErr {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, tt.err)

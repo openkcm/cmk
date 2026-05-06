@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -528,14 +528,16 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 
 // TestAPIController_GetSystemByID tests the GetSystemByID function of SystemController
 func TestAPIController_GetSystemByID(t *testing.T) {
+	idmPlugin := testplugins.NewTestIdentityManagement()
 	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
-		Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
+		Registry: testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
 	})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 	authClientAuditor := testutils.NewAuthClient(ctx, t, r, testutils.WithAuditorRole())
+	idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthClientDataKC(authClient))
@@ -562,6 +564,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 		w.ArtifactID = systemUnderWorkflowApproversDetails.ID
 		w.State = workflow.StateWaitApproval.String()
 	})
+	idmPlugin.PutUser(identitymanagement.User{ID: wfApproverDetails.InitiatorID})
 	testutils.CreateTestEntities(
 		ctx,
 		t,
@@ -792,7 +795,6 @@ func TestLinkSystemAction(t *testing.T) {
 	)
 
 	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
-		Plugins: []catalog.BuiltInPlugin{testplugins.NewSystemInformation()},
 		GRPCCon: grpcCon,
 	})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -954,9 +956,7 @@ func TestLinkSystemAction(t *testing.T) {
 }
 
 func TestUnlinkSystemAction(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
-		Plugins: []catalog.BuiltInPlugin{testplugins.NewSystemInformation()},
-	})
+	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 

@@ -20,7 +20,6 @@ import (
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
@@ -50,10 +49,7 @@ func SetupKeyTest(t *testing.T) (
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	r := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(
-		testplugins.NewKeystoreOperator(),
-	)
-
+	svcRegistry := testutils.NewTestPlugins()
 	cryptoCerts := []manager.ClientCertificate{
 		{
 			Name: "crypto-1",
@@ -71,7 +67,6 @@ func SetupKeyTest(t *testing.T) (
 	require.NoError(t, err)
 
 	cfg := &config.Config{
-		Plugins:  psCfg,
 		Database: dbConf,
 		CryptoLayer: config.CryptoLayer{
 			CertX509Trusts: commoncfg.SourceRef{
@@ -80,8 +75,6 @@ func SetupKeyTest(t *testing.T) (
 			},
 		},
 	}
-	svcRegistry, err := cmkpluginregistry.New(ctx, cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(ctx, cfg)
 
@@ -1307,7 +1300,7 @@ func TestKeyRotationTime(t *testing.T) {
 	keystoreRotationTimeStr := keystoreRotationTime.Format(time.RFC3339)
 
 	// Setup plugin with custom rotation time
-	pluginOps := testplugins.NewKeystoreOperatorInstance()
+	pluginOps := testplugins.NewTestKeyManagement(true, true)
 	// Register the key in the plugin first
 	pluginOps.HandleKeyRecord("test-native-id", testplugins.EnabledKeyStatus)
 	pluginOps.SetKeyVersionInfo("test-native-id", "version-1", keystoreRotationTimeStr)
@@ -1321,7 +1314,7 @@ func TestKeyRotationTime(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	r := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperatorFromInstance(pluginOps))
+	svcRegistry := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOps))
 	cryptoCerts := []manager.ClientCertificate{
 		{
 			Name: "crypto-1",
@@ -1335,7 +1328,6 @@ func TestKeyRotationTime(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := &config.Config{
-		Plugins:  psCfg,
 		Database: dbConf,
 		CryptoLayer: config.CryptoLayer{
 			CertX509Trusts: commoncfg.SourceRef{
@@ -1344,8 +1336,6 @@ func TestKeyRotationTime(t *testing.T) {
 			},
 		},
 	}
-	svcRegistry, err := cmkpluginregistry.New(ctx, cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	require.NoError(t, err)
 
 	cmkAuditor := auditor.New(ctx, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
@@ -1481,15 +1471,12 @@ func TestKeyRotationTime(t *testing.T) {
 
 	t.Run("Fallback to current time when keystore doesn't provide rotation time", func(t *testing.T) {
 		// Setup plugin without rotation time
-		pluginOpsNoTime := testplugins.NewKeystoreOperatorInstance()
+		pluginOpsNoTime := testplugins.NewTestKeyManagement(true, true)
 		// Register key but don't set rotation time (empty string)
 		pluginOpsNoTime.HandleKeyRecord("test-native-id-no-time", testplugins.EnabledKeyStatus)
 		pluginOpsNoTime.SetKeyVersionInfo("test-native-id-no-time", "version-1", "") // Empty rotation time
 
-		ps2, psCfg2 := testutils.NewTestPlugins(testplugins.NewKeystoreOperatorFromInstance(pluginOpsNoTime))
-		cfg2 := config.Config{Plugins: psCfg2}
-		svcRegistry2, err := cmkpluginregistry.New(ctx, &cfg2, cmkpluginregistry.WithBuiltInPlugins(ps2))
-		require.NoError(t, err)
+		svcRegistry2 := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOpsNoTime))
 
 		km2 := manager.NewKeyManager(r, svcRegistry2, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 

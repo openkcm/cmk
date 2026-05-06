@@ -12,9 +12,7 @@ import (
 
 	tmCLI "github.com/openkcm/cmk/cmd/tenant-manager-cli"
 	"github.com/openkcm/cmk/internal/config"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 )
 
 var errTest = errors.New("test error")
@@ -37,15 +35,11 @@ func TestSetupCommands(t *testing.T) {
 			CreateDatabase: true,
 		})
 
-		ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
+		svcRegistry := testutils.NewTestPlugins()
 
 		cfg := &config.Config{
-			Plugins:  psCfg,
 			Database: dbCfg,
 		}
-
-		svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-		assert.NoError(t, err, "Failed to create catalog")
 
 		rootCmd, err := tmCLI.SetupCommands(ctx, cfg, nil, svcRegistry)
 		assert.NoError(t, err)
