@@ -172,6 +172,13 @@ func createHTTPServer(
 		return nil, oops.In(ServerLogDomain).Wrapf(err, "setup swagger")
 	}
 
+	var baseRouter *ServeMux
+	if cfg.HTTP.SwaggerEnabled {
+		baseRouter = NewServeMux(constants.BasePath, WithSwaggerUI(swagger))
+	} else {
+		baseRouter = NewServeMux(constants.BasePath)
+	}
+
 	// Middlewares run in a FILO. Last middleware on the slice is the first one ran
 	// First middleware to run should be the InjectRequestID
 	httpHandler := cmkapi.HandlerWithOptions(
@@ -185,7 +192,7 @@ func createHTTPServer(
 		),
 		cmkapi.StdHTTPServerOptions{
 			BaseURL:          constants.BasePath,
-			BaseRouter:       NewServeMux(constants.BasePath),
+			BaseRouter:       baseRouter,
 			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
 			Middlewares: []cmkapi.MiddlewareFunc{ // Middlewares are applied from last to first
 				middleware.AuthzMiddleware(ctr),

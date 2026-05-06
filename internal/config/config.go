@@ -254,6 +254,7 @@ type Services struct {
 type HTTPServer struct {
 	Address         string        `yaml:"address" default:":8080"`
 	ShutdownTimeout time.Duration `yaml:"shutdownTimeout" default:"5s"`
+	SwaggerEnabled  bool          `yaml:"swaggerEnabled" default:"false"`
 }
 
 type TenantManager struct {

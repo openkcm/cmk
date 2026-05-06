@@ -1,6 +1,7 @@
 package daemon_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,25 @@ import (
 	ctr "github.com/openkcm/cmk/internal/controllers/cmk"
 	"github.com/openkcm/cmk/internal/daemon"
 )
+
+var ErrWrite = errors.New("failed to write")
+
+// failingResponseWriter is a response writer that fails on Write
+type failingResponseWriter struct {
+	http.ResponseWriter
+
+	headerWritten bool
+}
+
+func (f *failingResponseWriter) Write([]byte) (int, error) {
+	return 0, ErrWrite
+}
+
+func (f *failingResponseWriter) WriteHeader(statusCode int) {
+	if !f.headerWritten {
+		f.ResponseWriter.WriteHeader(statusCode)
+	}
+}
 
 func TestServeMux_HandleFunc(t *testing.T) {
 	mux := daemon.NewServeMux("/cmk/v1")
@@ -58,4 +78,30 @@ func TestCmkapiHandler(t *testing.T) {
 			},
 		)
 	}, "some API patterns are not registered in authz")
+}
+
+func TestMuxWithSwagger(t *testing.T) {
+	swagger, err := daemon.SetupSwagger()
+	assert.NoError(t, err)
+
+	t.Run("Should return ok", func(t *testing.T) {
+		mux := daemon.NewServeMux("/cmk/v1", daemon.WithSwaggerUI(swagger))
+
+		req := httptest.NewRequest(http.MethodGet, "/cmk/v1/swagger", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("Should handle write error gracefully", func(t *testing.T) {
+		mux := daemon.NewServeMux("/cmk/v1", daemon.WithSwaggerUI(swagger))
+
+		req := httptest.NewRequest(http.MethodGet, "/cmk/v1/swagger", nil)
+		recorder := httptest.NewRecorder()
+		w := &failingResponseWriter{ResponseWriter: recorder}
+
+		mux.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, recorder.Code)
+	})
 }

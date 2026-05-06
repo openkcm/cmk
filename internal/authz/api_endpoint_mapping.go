@@ -28,6 +28,10 @@ var allowList = []Allowed{
 		APIPath:   "/userInfo",
 		APIMethod: APIMethodGet,
 	},
+	{
+		APIPath:   "/swagger",
+		APIMethod: APIMethodGet,
+	},
 }
 
 type Restricted struct {
