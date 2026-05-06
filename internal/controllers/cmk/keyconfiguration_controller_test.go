@@ -1,5 +1,3 @@
-//go:build !unit
-
 package cmk_test
 
 import (
@@ -14,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -26,6 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -35,19 +33,20 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func startAPIKeyConfig(t *testing.T) (
+func startAPIKeyConfig(t *testing.T, idmPlugin identitymanagement.IdentityManagement) (
 	cmkapi.ServeMux,
 	string,
 	context.Context,
 	*sql.ResourceRepository,
 ) {
 	t.Helper()
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	tenant := tenants[0]
 
 	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
+		Config:   config.Config{Database: dbCfg},
+		Registry: testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
 	})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -57,22 +56,23 @@ func startAPIKeyConfig(t *testing.T) (
 }
 
 func TestKeyConfigurationGetConfiguration(t *testing.T) {
-	sv, tenant, ctx, r := startAPIKeyConfig(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	sv, tenant, ctx, r := startAPIKeyConfig(t, idmPlugin)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	}, testutils.WithAuthClientDataKC(authClient))
+	}, testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	authClient2 := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	}, testutils.WithAuthClientDataKC(authClient2))
+	}, testutils.WithAuthClientDataKC(authClient2), testutils.WithIDMPluginKC(idmPlugin))
 
 	keyConfig3 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyConfig2, keyConfig3)
 
@@ -121,13 +121,14 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 }
 
 func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
-	sv, tenant, ctx, r := startAPIKeyConfig(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	sv, tenant, ctx, r := startAPIKeyConfig(t, idmPlugin)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	}, testutils.WithAuthClientDataKC(authClient))
+	}, testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	t.Run("Should get keyConfig", func(t *testing.T) {
@@ -156,14 +157,15 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 }
 
 func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) {
-	sv, tenant, ctx, r := startAPIKeyConfig(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	sv, tenant, ctx, r := startAPIKeyConfig(t, idmPlugin)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	groups := make([]string, totalRecordCount)
 	for i := range totalRecordCount {
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {},
-			testutils.WithAuthClientDataKC(authClient))
+			testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
 		groups[i] = keyConfig.AdminGroup.IAMIdentifier
 	}
@@ -263,13 +265,16 @@ func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) 
 }
 
 func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
-	sv, tenant, ctx, r := startAPIKeyConfig(t)
-
-	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-
-	expectedIdenfier := uuid.NewString()
+	expectedIdentifier := uuid.NewString()
 	expectedEmail := "bob@"
 
+	sv, tenant, ctx, r := startAPIKeyConfig(t, testplugins.NewTestIdentityManagement(
+		testplugins.WithUsers([]identitymanagement.User{
+			{ID: expectedIdentifier, Email: expectedEmail},
+		}),
+	))
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 	type testCase struct {
 		name              string
 		input             cmkapi.KeyConfiguration
@@ -278,7 +283,6 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 		expectedBody      string
 		additionalContext map[any]any
 	}
-
 	tests := []testCase{
 		{
 			name: "KeyConfigPOST_Failed_WithoutClientDataIdentifier",
@@ -301,7 +305,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			additionalContext: map[any]any{
 				constants.ClientData: &auth.ClientData{
 					Groups:     []string{"some-group", authClient.Group.IAMIdentifier},
-					Identifier: expectedIdenfier,
+					Identifier: expectedIdentifier,
 					Email:      expectedEmail,
 				},
 			},
@@ -403,7 +407,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			assert.Contains(t, body, tt.expectedBody)
 
 			if w.Code == http.StatusCreated {
-				assert.Contains(t, body, expectedIdenfier)
+				assert.Contains(t, body, expectedIdentifier)
 			}
 
 			if tt.expectedCode != "" {
@@ -415,16 +419,17 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 }
 
 func TestKeyConfigurationController_UpdateByID(t *testing.T) {
-	sv, tenant, ctx, r := startAPIKeyConfig(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	sv, tenant, ctx, r := startAPIKeyConfig(t, idmPlugin)
 	newAdminGroupID := uuid.New()
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 	existingKeyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.Name = "existing-config"
-	}, testutils.WithAuthClientDataKC(authClient))
+	}, testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, existingKeyConfig)
 
@@ -609,7 +614,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 }
 
 func TestKeyConfigurationController_DeleteByID(t *testing.T) {
-	sv, tenant, ctx, r := startAPIKeyConfig(t)
+	sv, tenant, ctx, r := startAPIKeyConfig(t, testplugins.NewTestIdentityManagement())
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -695,12 +700,13 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 }
 
 func TestKeyConfigurationController_GetByID(t *testing.T) {
-	sv, tenant, ctx, r := startAPIKeyConfig(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	sv, tenant, ctx, r := startAPIKeyConfig(t, idmPlugin)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 

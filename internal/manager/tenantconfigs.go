@@ -13,8 +13,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
-	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
@@ -34,14 +33,14 @@ var (
 
 type TenantConfigManager struct {
 	repo         repo.Repo
-	svcRegistry  *cmkpluginregistry.Registry
+	svcRegistry  serviceapi.Registry
 	keystorePool *Pool
 	cfg          *config.Config
 }
 
 func NewTenantConfigManager(
 	repo repo.Repo,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	deploymentConfig *config.Config,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
@@ -283,20 +282,24 @@ func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
 		return HYOKKeystore{}
 	}
 
-	plugins := m.svcRegistry.LookupByType(servicewrapper.KeyManagementType)
-	if len(plugins) == 0 {
+	plugins, err := m.svcRegistry.KeyManagementList()
+	if err != nil || len(plugins) == 0 {
 		return HYOKKeystore{}
 	}
 
 	providers := make([]string, 0)
 
 	for _, plugin := range plugins {
-		if pluginHelpers.HasTag(plugin.Info().Tags(), constants.KeyTypeHYOK) {
-			providers = append(providers, plugin.Info().Name())
+		if pluginHelpers.HasTag(plugin.ServiceInfo().Tags(), constants.KeyTypeHYOK) {
+			providers = append(providers, plugin.ServiceInfo().Name())
 		}
 	}
 
-	return HYOKKeystore{Provider: providers, Allow: len(providers) > 0}
+	if len(providers) == 0 {
+		return HYOKKeystore{}
+	}
+
+	return HYOKKeystore{Provider: providers, Allow: true}
 }
 
 func (m *TenantConfigManager) getKeystoreConfigFromPool(ctx context.Context) (*model.KeystoreConfig, error) {

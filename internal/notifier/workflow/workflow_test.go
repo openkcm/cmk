@@ -13,7 +13,8 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/notifier/client"
 	"github.com/openkcm/cmk/internal/notifier/workflow"
-	"github.com/openkcm/cmk/internal/testutils/testpluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	wf "github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -23,6 +24,7 @@ const (
 	testMessage    = "Test message"
 	testActionText = "Test action text"
 	testSubject    = "Test Identifier"
+	initiatorID    = "test-initiator-id"
 )
 
 var testConfig = &config.Config{
@@ -30,6 +32,13 @@ var testConfig = &config.Config{
 		Name:      "Staging",
 		UIBaseUrl: "https://cmk-staging.example.com/#",
 	},
+}
+
+// newTestIDM returns a TestIdentityManagement
+func newTestIDM() *testplugins.TestIdentityManagement {
+	idm := testplugins.NewTestIdentityManagement()
+	idm.PutUser(identitymanagement.User{ID: initiatorID})
+	return idm
 }
 
 func TestNotificationData_GetType(t *testing.T) {
@@ -66,7 +75,7 @@ func TestNotificationData_GetType(t *testing.T) {
 }
 
 func TestNewWorkflowCreator(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
+	creator, err := workflow.NewWorkflowCreator(testConfig, newTestIDM())
 	assert.NoError(t, err)
 
 	assert.NotNil(t, creator)
@@ -74,7 +83,7 @@ func TestNewWorkflowCreator(t *testing.T) {
 }
 
 func TestCreator_CreateTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
+	creator, err := workflow.NewWorkflowCreator(testConfig, newTestIDM())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -82,6 +91,7 @@ func TestCreator_CreateTask(t *testing.T) {
 
 	testWorkflow := model.Workflow{
 		ID:           workflowID,
+		InitiatorID:  initiatorID,
 		ActionType:   "DELETE",
 		ArtifactType: "KEY",
 		ArtifactID:   artifactID,
@@ -201,7 +211,7 @@ func TestCreator_CreateTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowCreatedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
+	creator, err := workflow.NewWorkflowCreator(testConfig, newTestIDM())
 	assert.NoError(t, err)
 
 	artifactID := uuid.New()
@@ -259,6 +269,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 				},
 				Workflow: model.Workflow{
 					ID:           workflowID,
+					InitiatorID:  initiatorID,
 					ActionType:   tt.actionType,
 					ArtifactType: tt.artifactType,
 					ArtifactName: tt.artifactName,
@@ -292,7 +303,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowApprovedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
+	creator, err := workflow.NewWorkflowCreator(testConfig, newTestIDM())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -332,6 +343,7 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 				},
 				Workflow: model.Workflow{
 					ID:           workflowID,
+					InitiatorID:  initiatorID,
 					ActionType:   "DELETE",
 					ArtifactType: "KEY",
 					ArtifactID:   artifactID,
@@ -376,7 +388,7 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowRejectedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
+	creator, err := workflow.NewWorkflowCreator(testConfig, newTestIDM())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -388,6 +400,7 @@ func TestCreator_createWorkflowRejectedTask(t *testing.T) {
 		},
 		Workflow: model.Workflow{
 			ID:           workflowID,
+			InitiatorID:  initiatorID,
 			ActionType:   "DELETE",
 			ArtifactType: "KEY",
 			ArtifactID:   artifactID,
@@ -421,7 +434,7 @@ func TestCreator_createWorkflowRejectedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
+	creator, err := workflow.NewWorkflowCreator(testConfig, newTestIDM())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -465,6 +478,7 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 				},
 				Workflow: model.Workflow{
 					ID:           workflowID,
+					InitiatorID:  initiatorID,
 					ActionType:   "DELETE",
 					ArtifactType: "KEY",
 					ArtifactID:   artifactID,
@@ -495,7 +509,7 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 }
 
 func TestCreator_createWorkflowRevokedTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
+	creator, err := workflow.NewWorkflowCreator(testConfig, newTestIDM())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -507,6 +521,7 @@ func TestCreator_createWorkflowRevokedTask(t *testing.T) {
 		},
 		Workflow: model.Workflow{
 			ID:           workflowID,
+			InitiatorID:  initiatorID,
 			ActionType:   "DELETE",
 			ArtifactType: "KEY",
 			ArtifactID:   artifactID,
@@ -540,7 +555,7 @@ func TestCreator_createWorkflowRevokedTask(t *testing.T) {
 }
 
 func TestCreator_createHTMLBody(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
+	creator, err := workflow.NewWorkflowCreator(testConfig, newTestIDM())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -553,6 +568,7 @@ func TestCreator_createHTMLBody(t *testing.T) {
 		},
 		Workflow: model.Workflow{
 			ID:           workflowID,
+			InitiatorID:  initiatorID,
 			ActionType:   "DELETE",
 			ArtifactType: "KEY",
 			ArtifactID:   artifactID,
@@ -580,7 +596,7 @@ func TestCreator_createHTMLBody(t *testing.T) {
 }
 
 func TestCreator_createNotificationTask(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
+	creator, err := workflow.NewWorkflowCreator(testConfig, newTestIDM())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -592,6 +608,7 @@ func TestCreator_createNotificationTask(t *testing.T) {
 		},
 		Workflow: model.Workflow{
 			ID:           workflowID,
+			InitiatorID:  initiatorID,
 			ActionType:   "DELETE",
 			ArtifactType: "KEY",
 			ArtifactID:   artifactID,
@@ -621,7 +638,7 @@ func TestCreator_createNotificationTask(t *testing.T) {
 }
 
 func TestCreator_createNotificationTask_EmptyRecipients(t *testing.T) {
-	creator, err := workflow.NewWorkflowCreator(testConfig, testpluginregistry.NewMockIDMService())
+	creator, err := workflow.NewWorkflowCreator(testConfig, newTestIDM())
 	assert.NoError(t, err)
 
 	workflowID := uuid.New()
@@ -633,6 +650,7 @@ func TestCreator_createNotificationTask_EmptyRecipients(t *testing.T) {
 		},
 		Workflow: model.Workflow{
 			ID:           workflowID,
+			InitiatorID:  initiatorID,
 			ActionType:   "DELETE",
 			ArtifactType: "KEY",
 			ArtifactID:   artifactID,

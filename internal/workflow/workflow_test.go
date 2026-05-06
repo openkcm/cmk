@@ -12,6 +12,7 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
+<<<<<<< HEAD
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
@@ -25,6 +26,19 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/internal/workflow"
+=======
+	"github.com/openkcm/cmk/internal/clients"
+	"github.com/openkcm/cmk/internal/clients/registry/systems"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/db"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/workflow"
+>>>>>>> 2b065807 (chore: convert test plugins to go native (#648))
 )
 
 var (
@@ -42,21 +56,16 @@ var (
 func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, string) {
 	t.Helper()
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
-
 	dbCon, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
 	cfg := config.Config{
-		Plugins:  psCfg,
 		Database: dbConf,
 	}
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	svcRegistry, err := cmkpluginregistry.New(ctx, &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 
 	logger := testutils.SetupLoggerWithBuffer()
-
 	systemService := systems.NewFakeService(logger)
 	_, grpcClient := testutils.NewGRPCSuite(t,
 		func(s *grpc.Server) {

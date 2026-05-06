@@ -11,27 +11,17 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 func SetupProviderManager(t *testing.T) (*manager.ProviderConfigManager, string, *multitenancy.DB) {
 	t.Helper()
 
-	ps, psCfg := testutils.NewTestPlugins(
-		testplugins.NewKeystoreOperator(),
-		testplugins.NewKeystoreManagement(),
-	)
-
-	cfg := &config.Config{
-		Plugins: psCfg,
-	}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
+	cfg := &config.Config{}
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)

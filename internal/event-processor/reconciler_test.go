@@ -30,7 +30,6 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -49,7 +48,7 @@ type TestInstance struct {
 	fakeService   *systems.FakeService
 	reconciler    *eventprocessor.CryptoReconciler
 	traceRecorder *tracetest.SpanRecorder
-	pluginOp      *testplugins.KeystoreOperator
+	pluginOp      *testplugins.TestKeyManagement
 }
 
 func setupTestInstance(
@@ -63,12 +62,11 @@ func setupTestInstance(
 	})
 	r := sql.NewRepository(db)
 
-	pluginOp := testplugins.NewKeystoreOperatorInstance()
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperatorFromInstance(pluginOp))
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	svcRegistry := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp))
 
 	cfg := &config.Config{
 		Database: dbCfg,
-		Plugins:  psCfg,
 		Landscape: config.Landscape{
 			Region: uuid.NewString(),
 		},
@@ -98,9 +96,6 @@ func setupTestInstance(
 			})
 		}
 	}
-
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
 
 	logger := testutils.SetupLoggerWithBuffer()
 	systemService := systems.NewFakeService(logger)

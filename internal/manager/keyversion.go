@@ -11,7 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -31,7 +31,7 @@ type KeyVersionManager struct {
 
 func NewKeyVersionManager(
 	repo repo.Repo,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	tenantConfigs *TenantConfigManager,
 	certManager *CertificateManager,
 	cmkAuditor *auditor.Auditor,

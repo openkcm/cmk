@@ -19,12 +19,10 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -58,20 +56,13 @@ func SetupCertificateManager(
 
 	dbRepository := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewCertificateIssuer())
-	cfg := &config.Config{Plugins: psCfg}
-
-	catalog, err := cmkpluginregistry.New(
-		t.Context(),
-		cfg,
-		cmkpluginregistry.WithBuiltInPlugins(ps),
-	)
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
+	cfg := &config.Config{}
 
 	m := manager.NewCertificateManager(
 		t.Context(),
 		dbRepository,
-		catalog,
+		svcRegistry,
 		cfg,
 	)
 

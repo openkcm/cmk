@@ -7,12 +7,9 @@ import (
 	"github.com/openkcm/plugin-sdk/api"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/notifier/client"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/notification"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 )
 
 type NotificationMock struct {
@@ -44,27 +41,18 @@ func TestCreateNotificationManager(t *testing.T) {
 		Body:       "Test Notification",
 	}
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewNotification())
-	cfg := config.Config{Plugins: psCfg}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
-
+	svcRegistry := testutils.NewTestPlugins()
 	defer svcRegistry.Close()
 
 	t.Run("Success", func(t *testing.T) {
-		// Setup
-
 		c, err := client.New(t.Context(), svcRegistry)
 		assert.NoError(t, err)
 		c.SetService(NotificationMock{})
-		// Act
 		err = c.CreateNotification(t.Context(), msg)
-		// Verify
 		assert.NoError(t, err)
 	})
 
 	t.Run("Failure", func(t *testing.T) {
-		// Setup
 		c, err := client.New(t.Context(), svcRegistry)
 		assert.NoError(t, err)
 		c.SetService(NotificationMock{
@@ -75,10 +63,7 @@ func TestCreateNotificationManager(t *testing.T) {
 				return nil, assert.AnError
 			},
 		})
-		// Act
 		err = c.CreateNotification(t.Context(), msg)
-
-		// Verify
 		assert.Error(t, err)
 	})
 }

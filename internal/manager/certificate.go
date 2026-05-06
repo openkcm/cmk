@@ -17,7 +17,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -52,7 +52,7 @@ type CertificateManager struct {
 func NewCertificateManager(
 	ctx context.Context,
 	repo repo.Repo,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	cfg *config.Config,
 ) *CertificateManager {
 	certIssuer, err := svcRegistry.CertificateIssuer()

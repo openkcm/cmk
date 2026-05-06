@@ -7,21 +7,14 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
-	"github.com/openkcm/cmk/internal/config"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func getPluginProviderTransformer(t *testing.T) *transformer.PluginProviderTransformer {
 	t.Helper()
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
-
-	cfg := &config.Config{Plugins: psCfg}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 
 	tf, err := transformer.NewPluginProviderTransformer(svcRegistry, "TEST")
 	assert.NoError(t, err)

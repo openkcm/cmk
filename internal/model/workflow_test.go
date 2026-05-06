@@ -8,7 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/testutils/testpluginregistry"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -148,10 +149,13 @@ func TestWorkflow_Description(t *testing.T) {
 		},
 	}
 
+	initiatorID := uuid.NewString()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			workflow := model.Workflow{
 				ID:                     uuid.New(),
+				InitiatorID:            initiatorID,
 				ActionType:             tt.actionType,
 				ArtifactType:           tt.artifactType,
 				ArtifactName:           tt.artifactName,
@@ -161,9 +165,12 @@ func TestWorkflow_Description(t *testing.T) {
 				ParametersResourceName: tt.parametersResourceName,
 			}
 
+			idm := testplugins.NewTestIdentityManagement()
+			idm.PutUser(identitymanagement.User{ID: initiatorID, Name: "initiator@example.com"})
+
 			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 
-			description, err := workflow.Description(ctx, testpluginregistry.NewMockIDMService())
+			description, err := workflow.Description(ctx, idm)
 			assert.NoError(t, err)
 
 			assert.Equal(t, tt.expectedDescription, description)

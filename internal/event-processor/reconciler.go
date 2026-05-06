@@ -25,7 +25,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -80,7 +80,7 @@ type CryptoReconciler struct {
 	manager       *orbital.Manager
 	targets       map[string]struct{}
 	initiators    []orbital.Initiator
-	svcRegistry   *cmkpluginregistry.Registry
+	svcRegistry   serviceapi.Registry
 	jobHandlerMap map[JobType]JobHandler
 	tracer        trace.Tracer
 }
@@ -92,7 +92,7 @@ func NewCryptoReconciler(
 	ctx context.Context,
 	cfg *config.Config,
 	repository repo.Repo,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	clientsFactory clients.Factory,
 	opts ...Option,
 ) (*CryptoReconciler, error) {

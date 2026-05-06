@@ -18,7 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testpluginregistry"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -94,10 +94,11 @@ func TestWorkflow_ToAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			idm := testplugins.NewTestIdentityManagement()
+			idm.PutUser(identitymanagement.User{ID: tt.dbWorkflow.InitiatorID})
+
 			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
-			apiWorkflow, err := workflow.ToAPI(ctx,
-				tt.dbWorkflow, nil, nil,
-				testpluginregistry.NewMockIDMService())
+			apiWorkflow, err := workflow.ToAPI(ctx, tt.dbWorkflow, nil, nil, idm)
 
 			if tt.errorExpected {
 				assert.Error(t, err)
@@ -308,20 +309,16 @@ func TestWorkflow_ApproverToAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			approverName := uuid.NewString() + "@example.com"
+
 			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
-			idm := testpluginregistry.NewMockIDMService()
-			name := "test"
-			idm.GetUserFn = func(ctx context.Context, gur *identitymanagement.GetUserRequest) (*identitymanagement.GetUserResponse, error) {
-				return &identitymanagement.GetUserResponse{
-					User: identitymanagement.User{
-						Name: name,
-					},
-				}, nil
-			}
+			idm := testplugins.NewTestIdentityManagement()
+			idm.PutUser(identitymanagement.User{ID: tt.input.UserID, Name: approverName})
+
 			apiApprover, err := workflow.ApproverToAPI(ctx, tt.input, idm)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.input.UserID, apiApprover.Id)
-			assert.Equal(t, name, *apiApprover.Name)
+			assert.Equal(t, approverName, *apiApprover.Name)
 			assert.Equal(t, tt.expected, apiApprover.Decision)
 		})
 	}
@@ -465,6 +462,9 @@ func TestWorkflow_ToAPI_EligibilityMetadata(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 
+			idm := testplugins.NewTestIdentityManagement()
+			idm.PutUser(identitymanagement.User{ID: tt.dbWorkflow.InitiatorID})
+
 			// Construct eligibility struct from test fields
 			var eligibility *manager.WorkflowEligibility
 			if tt.insufficientApprovers || tt.initiatorIneligible {
@@ -476,7 +476,7 @@ func TestWorkflow_ToAPI_EligibilityMetadata(t *testing.T) {
 
 			apiWorkflow, err := workflow.ToAPI(ctx, tt.dbWorkflow,
 				eligibility, tt.eligibilityErr,
-				testpluginregistry.NewMockIDMService())
+				idm)
 			require.NoError(t, err)
 			require.NotNil(t, apiWorkflow)
 			require.NotNil(t, apiWorkflow.Metadata)

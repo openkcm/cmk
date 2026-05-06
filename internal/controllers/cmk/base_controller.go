@@ -12,13 +12,13 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
 // APIController handles API requests related to CMK (Customer Managed Keys).
 type APIController struct {
-	pluginCatalog *cmkpluginregistry.Registry
+	pluginCatalog serviceapi.Registry
 	Repository    repo.Repo
 	Manager       *manager.Manager
 	config        *config.Config
@@ -33,7 +33,7 @@ func NewAPIController(
 	config *config.Config,
 	clientsFactory clients.Factory,
 	migrator db.Migrator,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	authzLoader *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction],
 ) *APIController {
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, config, r)
