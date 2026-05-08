@@ -4,11 +4,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
-	"github.com/magodo/slog2hclog"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/plugin-sdk/pkg/hclog2slog"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/plugins/identity-management/scim/client"
@@ -97,9 +96,7 @@ var (
 )
 
 func getLogger() *slog.Logger {
-	logLevelPlugin := new(slog.LevelVar)
-	logLevelPlugin.Set(slog.LevelError)
-	return hclog2slog.New(slog2hclog.New(slog.Default(), logLevelPlugin))
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
 func getServer(t *testing.T, responseStatus int, responseBody string) *httptest.Server {
