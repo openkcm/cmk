@@ -23,5 +23,5 @@ func GetUserName(
 	if err != nil {
 		return "", err
 	}
-	return user.User.Name, nil
+	return user.User.Email, nil
 }
