@@ -14,7 +14,6 @@ require (
 	github.com/bartventer/gorm-multitenancy/v8 v8.9.0
 	github.com/fullsailor/pkcs7 v0.0.0-20190404230743-d7302db945fa
 	github.com/getkin/kin-openapi v0.137.0
-	github.com/gogo/protobuf v1.3.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
