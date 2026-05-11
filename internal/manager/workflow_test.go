@@ -1509,6 +1509,61 @@ func TestWorkflowManager_WorkflowCanExpire(t *testing.T) {
 	}
 }
 
+func TestWorkflowManager_ExpireWorkflow(t *testing.T) {
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
+	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+
+	expirableStates := []workflow.State{
+		workflow.StateWaitApproval,
+		workflow.StateWaitConfirmation,
+		workflow.StateExecuting,
+	}
+
+	for _, state := range expirableStates {
+		t.Run("transitions "+state.String()+" to EXPIRED", func(t *testing.T) {
+			wf := testutils.NewWorkflow(func(w *model.Workflow) { w.State = state.String() })
+			testutils.CreateTestEntities(ctx, t, r, wf)
+
+			result, err := m.ExpireWorkflow(ctx, wf.ID)
+			assert.NoError(t, err)
+			assert.Equal(t, workflow.StateExpired.String(), result.State)
+
+			// Verify state persisted in DB.
+			persisted := testutils.NewWorkflow(func(w *model.Workflow) { w.ID = wf.ID })
+			_, err = r.First(ctx, persisted, *repo.NewQuery())
+			assert.NoError(t, err)
+			assert.Equal(t, workflow.StateExpired.String(), persisted.State)
+		})
+	}
+
+	nonExpirableStates := []workflow.State{
+		workflow.StateInitial,
+		workflow.StateRevoked,
+		workflow.StateRejected,
+		workflow.StateExpired,
+		workflow.StateSuccessful,
+		workflow.StateFailed,
+	}
+
+	for _, state := range nonExpirableStates {
+		t.Run("errors on non-expirable state "+state.String(), func(t *testing.T) {
+			wf := testutils.NewWorkflow(func(w *model.Workflow) { w.State = state.String() })
+			testutils.CreateTestEntities(ctx, t, r, wf)
+
+			_, err := m.ExpireWorkflow(ctx, wf.ID)
+			assert.Error(t, err)
+		})
+	}
+
+	t.Run("errors when workflow does not exist", func(t *testing.T) {
+		_, err := m.ExpireWorkflow(ctx, uuid.New())
+		assert.ErrorIs(t, err, manager.ErrGetWorkflowDB)
+	})
+}
+
 func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 	cfg := &config.Config{}
 	wm, r, tenantID := SetupWorkflowManager(t, cfg)
