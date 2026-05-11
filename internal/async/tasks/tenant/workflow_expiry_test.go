@@ -1,16 +1,15 @@
 package tasks_test
 
 import (
-	"context"
-	"errors"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
 	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
+	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -18,178 +17,270 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
-	contextUtils "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-var (
-	ErrWorkflowNotFound = errors.New("workflow not found")
-	ErrTransitionFailed = errors.New("workflow transition failed")
-	ErrMockGetWorkflows = errors.New("forced GetWorkflows error")
-	ErrMockTransition   = errors.New("forced TransitionWorkflow error")
-	ErrMockCanExpire    = errors.New("forced WorkflowCanExpire error")
-)
+func setupWorkflowExpiry(t *testing.T) (*manager.WorkflowManager, repo.Repo, string) {
+	t.Helper()
 
-type WorkflowExpiryMock struct {
-	repo          repo.Repo
-	getErr        error
-	transitionErr error
-	canExpireErr  error
-	canExpire     bool
-}
-
-func (s *WorkflowExpiryMock) GetWorkflows(ctx context.Context,
-	params repo.QueryMapper,
-) ([]*model.Workflow, int, error) {
-	if s.getErr != nil {
-		return nil, 0, s.getErr
-	}
-
-	query := params.GetQuery(ctx)
-	return repo.ListAndCount(ctx, s.repo, params.GetPagination(), model.Workflow{}, query)
-}
-
-func (s *WorkflowExpiryMock) TransitionWorkflow(ctx context.Context,
-	workflowID uuid.UUID,
-	transition wfMechanism.Transition,
-) (*model.Workflow, error) {
-	if s.transitionErr != nil {
-		return nil, s.transitionErr
-	}
-
-	workflows, _, _ := s.GetWorkflows(ctx, manager.WorkflowFilter{})
-	for _, wf := range workflows {
-		if wf.ID == workflowID {
-			if transition != wfMechanism.TransitionExpire {
-				return nil, ErrTransitionFailed
-			}
-
-			wf.State = string(wfMechanism.StateExpired)
-
-			_, err := s.repo.Patch(ctx, wf, *repo.NewQuery())
-			if err != nil {
-				return nil, err
-			}
-
-			return wf, nil
-		}
-	}
-	return nil, ErrWorkflowNotFound
-}
-
-func (s *WorkflowExpiryMock) WorkflowCanExpire(
-	_ context.Context,
-	_ *model.Workflow,
-) (bool, error) {
-	if s.canExpireErr != nil {
-		return false, s.canExpireErr
-	}
-	return s.canExpire, nil
-}
-
-func TestWorkflowExpiresAction(t *testing.T) {
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithGenerateTenants(1))
 	r := sql.NewRepository(db)
 
-	tenantID := tenants[0]
-	ctx := contextUtils.CreateTenantContext(t.Context(), tenantID)
+	cfg := &config.Config{}
+	svcRegistry := testutils.NewTestPlugins()
 
-	// Two workflows not yet expired (future expiry date), one past expiry date in an expirable state.
-	testutils.CreateTestEntities(ctx, t, r,
-		testutils.NewWorkflow(
-			func(workflow *model.Workflow) {
-				workflow.ID = uuid.New()
-				workflow.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, 1))
-			},
-		),
-		testutils.NewWorkflow(
-			func(workflow *model.Workflow) {
-				workflow.ID = uuid.New()
-				workflow.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, 1))
-			},
-		),
-		testutils.NewWorkflow(
-			func(workflow *model.Workflow) {
-				workflow.ID = uuid.New()
-				workflow.State = wfMechanism.StateWaitApproval.String()
-				workflow.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
-			},
-		),
-	)
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
+	cmkAuditor := auditor.New(t.Context(), cfg)
+	userManager := manager.NewUserManager(r, cmkAuditor)
+	tagManager := manager.NewTagManager(r)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 
-	t.Run("Sets Expired", func(t *testing.T) {
-		expirer := &WorkflowExpiryMock{
-			repo:      r,
-			canExpire: true,
-		}
-		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
+	clientsFactory, err := clients.NewFactory(cfg.Services)
+	assert.NoError(t, err)
+	systemManager := manager.NewSystemManager(
+		t.Context(), r, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
 
-		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
-		err := processor.ProcessTask(ctx, task)
+	keyManager := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager,
+		userManager, certManager, nil, cmkAuditor)
+	wm := manager.NewWorkflowManager(r, svcRegistry, keyManager, keyConfigManager, systemManager,
+		groupManager, userManager, nil, tenantConfigManager, cfg)
+
+	return wm, r, tenants[0]
+}
+
+func TestWorkflowExpiresAction(t *testing.T) {
+	t.Run("expires workflow in WaitApproval state", func(t *testing.T) {
+		wm, r, tenantID := setupWorkflowExpiry(t)
+		ctx := testutils.InjectClientDataIntoContext(
+			testutils.CreateCtxWithTenant(tenantID),
+			wfMechanism.SystemUserID,
+			nil,
+		)
+
+		testutils.CreateTestEntities(ctx, t, r,
+			testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = wfMechanism.StateWaitApproval.String()
+				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
+			}),
+		)
+
+		processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+		err := processor.ProcessTask(ctx, asynq.NewTask(config.TypeWorkflowExpire, nil))
 		assert.NoError(t, err)
 
-		wfs, _, _ := expirer.GetWorkflows(ctx, manager.WorkflowFilter{})
+		wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Len(t, wfs, 1)
+		assert.Equal(t, wfMechanism.StateExpired.String(), wfs[0].State)
+	})
+
+	t.Run("expires workflow in WaitConfirmation state", func(t *testing.T) {
+		wm, r, tenantID := setupWorkflowExpiry(t)
+		ctx := testutils.InjectClientDataIntoContext(
+			testutils.CreateCtxWithTenant(tenantID),
+			wfMechanism.SystemUserID,
+			nil,
+		)
+
+		testutils.CreateTestEntities(ctx, t, r,
+			testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = wfMechanism.StateWaitConfirmation.String()
+				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
+			}),
+		)
+
+		processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+		err := processor.ProcessTask(ctx, asynq.NewTask(config.TypeWorkflowExpire, nil))
+		assert.NoError(t, err)
+
+		wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Len(t, wfs, 1)
+		assert.Equal(t, wfMechanism.StateExpired.String(), wfs[0].State)
+	})
+
+	t.Run("expires workflow in Executing state", func(t *testing.T) {
+		wm, r, tenantID := setupWorkflowExpiry(t)
+		ctx := testutils.InjectClientDataIntoContext(
+			testutils.CreateCtxWithTenant(tenantID),
+			wfMechanism.SystemUserID,
+			nil,
+		)
+
+		testutils.CreateTestEntities(ctx, t, r,
+			testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = wfMechanism.StateExecuting.String()
+				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
+			}),
+		)
+
+		processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+		err := processor.ProcessTask(ctx, asynq.NewTask(config.TypeWorkflowExpire, nil))
+		assert.NoError(t, err)
+
+		wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Len(t, wfs, 1)
+		assert.Equal(t, wfMechanism.StateExpired.String(), wfs[0].State)
+	})
+
+	t.Run("skips workflows with future expiry date", func(t *testing.T) {
+		wm, r, tenantID := setupWorkflowExpiry(t)
+		ctx := testutils.InjectClientDataIntoContext(
+			testutils.CreateCtxWithTenant(tenantID),
+			wfMechanism.SystemUserID,
+			nil,
+		)
+
+		testutils.CreateTestEntities(ctx, t, r,
+			testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = wfMechanism.StateWaitApproval.String()
+				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, 1))
+			}),
+		)
+
+		processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+		err := processor.ProcessTask(ctx, asynq.NewTask(config.TypeWorkflowExpire, nil))
+		assert.NoError(t, err)
+
+		wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Len(t, wfs, 1)
+		assert.Equal(t, wfMechanism.StateWaitApproval.String(), wfs[0].State)
+	})
+
+	t.Run("skips workflows with no expiry date", func(t *testing.T) {
+		wm, r, tenantID := setupWorkflowExpiry(t)
+		ctx := testutils.InjectClientDataIntoContext(
+			testutils.CreateCtxWithTenant(tenantID),
+			wfMechanism.SystemUserID,
+			nil,
+		)
+
+		testutils.CreateTestEntities(ctx, t, r,
+			testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = wfMechanism.StateWaitApproval.String()
+				w.ExpiryDate = nil
+			}),
+		)
+
+		processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+		err := processor.ProcessTask(ctx, asynq.NewTask(config.TypeWorkflowExpire, nil))
+		assert.NoError(t, err)
+
+		wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Len(t, wfs, 1)
+		assert.Equal(t, wfMechanism.StateWaitApproval.String(), wfs[0].State)
+	})
+
+	t.Run("skips terminal state workflows with past expiry date", func(t *testing.T) {
+		terminalStates := []wfMechanism.State{
+			wfMechanism.StateExpired,
+			wfMechanism.StateRevoked,
+			wfMechanism.StateRejected,
+			wfMechanism.StateSuccessful,
+			wfMechanism.StateFailed,
+		}
+
+		for _, state := range terminalStates {
+			t.Run(state.String(), func(t *testing.T) {
+				wm, r, tenantID := setupWorkflowExpiry(t)
+				ctx := testutils.InjectClientDataIntoContext(
+					testutils.CreateCtxWithTenant(tenantID),
+					wfMechanism.SystemUserID,
+					nil,
+				)
+
+				testutils.CreateTestEntities(ctx, t, r,
+					testutils.NewWorkflow(func(w *model.Workflow) {
+						w.State = state.String()
+						w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
+					}),
+				)
+
+				processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+				err := processor.ProcessTask(ctx, asynq.NewTask(config.TypeWorkflowExpire, nil))
+				assert.NoError(t, err)
+
+				wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
+				assert.NoError(t, err)
+				assert.Len(t, wfs, 1)
+				assert.Equal(t, state.String(), wfs[0].State, "terminal workflow state should not change")
+			})
+		}
+	})
+
+	t.Run("only expires past-due workflows when mixed with future ones", func(t *testing.T) {
+		wm, r, tenantID := setupWorkflowExpiry(t)
+		ctx := testutils.InjectClientDataIntoContext(
+			testutils.CreateCtxWithTenant(tenantID),
+			wfMechanism.SystemUserID,
+			nil,
+		)
+
+		testutils.CreateTestEntities(ctx, t, r,
+			testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = wfMechanism.StateWaitApproval.String()
+				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
+			}),
+			testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = wfMechanism.StateWaitApproval.String()
+				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, 1))
+			}),
+			testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = wfMechanism.StateInitial.String()
+				w.ExpiryDate = nil
+			}),
+		)
+
+		processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+		err := processor.ProcessTask(ctx, asynq.NewTask(config.TypeWorkflowExpire, nil))
+		assert.NoError(t, err)
+
+		wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
+		assert.NoError(t, err)
 		assert.Len(t, wfs, 3)
 
-		initStates := 0
-		expStates := 0
+		stateCounts := map[string]int{}
 		for _, wf := range wfs {
-			if wf.State == string(wfMechanism.StateInitial) {
-				initStates++
-			} else if wf.State == string(wfMechanism.StateExpired) {
-				expStates++
-			}
+			stateCounts[wf.State]++
 		}
-		assert.Equal(t, 2, initStates)
-		assert.Equal(t, 1, expStates)
+		assert.Equal(t, 1, stateCounts[wfMechanism.StateExpired.String()])
+		assert.Equal(t, 1, stateCounts[wfMechanism.StateWaitApproval.String()])
+		assert.Equal(t, 1, stateCounts[wfMechanism.StateInitial.String()])
 	})
 
-	t.Run("GetWorkflows fails", func(t *testing.T) {
-		expirer := &WorkflowExpiryMock{repo: r, getErr: ErrMockGetWorkflows}
-		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
+	t.Run("no-op when there are no workflows", func(t *testing.T) {
+		wm, r, tenantID := setupWorkflowExpiry(t)
+		ctx := testutils.InjectClientDataIntoContext(
+			testutils.CreateCtxWithTenant(tenantID),
+			wfMechanism.SystemUserID,
+			nil,
+		)
 
-		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
-		err := processor.ProcessTask(ctx, task)
-		assert.Error(t, err)
-	})
-
-	t.Run("Transition fails", func(t *testing.T) {
-		// Transition errors are logged and skipped per-workflow; ProcessTask still succeeds.
-		expirer := &WorkflowExpiryMock{
-			repo:          r,
-			transitionErr: ErrMockTransition,
-			canExpire:     true,
-		}
-		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
-
-		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
-		err := processor.ProcessTask(ctx, task)
+		processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+		err := processor.ProcessTask(ctx, asynq.NewTask(config.TypeWorkflowExpire, nil))
 		assert.NoError(t, err)
 	})
 
-	t.Run("WorkflowCanExpire fails", func(t *testing.T) {
-		// Per-workflow expiry check errors are logged and skipped; ProcessTask still succeeds.
-		expirer := &WorkflowExpiryMock{
-			repo:         r,
-			canExpireErr: ErrMockCanExpire,
-		}
-		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
-
-		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
-		err := processor.ProcessTask(ctx, task)
-		assert.NoError(t, err)
+	t.Run("task type is correct", func(t *testing.T) {
+		wm, r, _ := setupWorkflowExpiry(t)
+		processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+		assert.Equal(t, config.TypeWorkflowExpire, processor.TaskType())
 	})
 
-	t.Run("Skips workflow when CanExpire is false", func(t *testing.T) {
-		// canExpire false — expired workflows should be skipped without error.
-		expirer := &WorkflowExpiryMock{
-			repo:      r,
-			canExpire: false,
-		}
-		processor := tasks.NewWorkflowExpiryProcessor(expirer, r)
+	t.Run("fan out func is set", func(t *testing.T) {
+		wm, r, _ := setupWorkflowExpiry(t)
+		processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+		assert.NotNil(t, processor.FanOutFunc())
+	})
 
-		task := asynq.NewTask(config.TypeWorkflowExpire, nil)
-		err := processor.ProcessTask(ctx, task)
-		assert.NoError(t, err)
+	t.Run("tenant query is empty", func(t *testing.T) {
+		wm, r, _ := setupWorkflowExpiry(t)
+		processor := tasks.NewWorkflowExpiryProcessor(wm, r)
+		assert.Equal(t, repo.NewQuery(), processor.TenantQuery())
 	})
 }

@@ -511,6 +511,29 @@ func (w *WorkflowManager) WorkflowCanExpire(
 	return workflowLifecycle.CanExpire(), nil
 }
 
+func (w *WorkflowManager) ExpireWorkflow(
+	ctx context.Context,
+	workflowID uuid.UUID,
+) (*model.Workflow, error) {
+	workflow := &model.Workflow{ID: workflowID}
+
+	_, err := w.repo.First(ctx, workflow, *repo.NewQuery())
+	if err != nil {
+		return nil, errs.Wrap(ErrGetWorkflowDB, err)
+	}
+
+	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = workflowLifecycle.Expire(ctx); err != nil {
+		return nil, err
+	}
+
+	return workflow, nil
+}
+
 func (w *WorkflowManager) GetWorkflowApprovalSummary(
 	ctx context.Context,
 	workflow *model.Workflow,

@@ -15,16 +15,11 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 )
 
 type WorkflowExpiryUpdater interface {
 	GetWorkflows(ctx context.Context, params repo.QueryMapper) ([]*model.Workflow, int, error)
-	TransitionWorkflow(
-		ctx context.Context,
-		workflowID uuid.UUID,
-		transition wfMechanism.Transition,
-	) (*model.Workflow, error)
+	ExpireWorkflow(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, error)
 	WorkflowCanExpire(ctx context.Context, workflow *model.Workflow) (bool, error)
 }
 
@@ -94,7 +89,7 @@ func (w *WorkflowExpiryProcessor) FanOutFunc() async.FanOutFunc {
 }
 
 func (w *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID uuid.UUID) error {
-	workflow, err := w.updater.TransitionWorkflow(ctx, workflowID, wfMechanism.TransitionExpire)
+	workflow, err := w.updater.ExpireWorkflow(ctx, workflowID)
 	if err != nil {
 		return errs.Wrapf(err, "Failed to expire workflow")
 	}
