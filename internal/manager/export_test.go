@@ -90,6 +90,14 @@ func (w *WorkflowManager) SetAsyncClient(client async.Client) {
 	w.asyncClient = client
 }
 
+func (w *WorkflowManager) ValidateApproverCount(
+	ctx context.Context,
+	workflow *model.Workflow,
+	minimumApprovals int,
+) (bool, error) {
+	return w.validateApproverCount(ctx, workflow, minimumApprovals)
+}
+
 func (m *TenantManager) UnmapSystemErrorCanContinue(ctx context.Context, err error) OffboardingStatus {
 	return m.unmapSystemErrorCanContinue(ctx, err)
 }

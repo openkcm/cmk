@@ -2,6 +2,7 @@ package cmk
 
 import (
 	"context"
+	"errors"
 	"slices"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -44,7 +45,12 @@ func (c *APIController) CheckWorkflow(
 	}
 
 	if status.ErrDetails != nil {
-		response.Details = ptr.PointTo(status.ErrDetails.Error())
+		// Extract error code for the details field
+		if errors.Is(status.ErrDetails, wfMechanism.ErrWorkflowGroupNotSufficientMembers) {
+			response.Details = ptr.PointTo(apierrors.WorkflowGroupNotSufficientMembers)
+		} else {
+			response.Details = ptr.PointTo(status.ErrDetails.Error())
+		}
 	}
 
 	return response, nil
@@ -169,7 +175,7 @@ func (c *APIController) CreateWorkflow(ctx context.Context,
 
 	workflow, err = c.Manager.Workflow.CreateWorkflow(ctx, workflow)
 	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrCreateWorkflow, err)
+		return nil, err
 	}
 	idm, err := c.pluginCatalog.IdentityManagement()
 	if err != nil {

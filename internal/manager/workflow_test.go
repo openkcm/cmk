@@ -96,40 +96,53 @@ func createTestWorkflow(
 	return wf, nil
 }
 
-func createTestObjects(t *testing.T, repo repo.Repo, ctx context.Context) (*model.KeyConfiguration,
-	*model.Key,
-) {
-	t.Helper()
-
-	key := testutils.NewKey(func(k *model.Key) {
-		k.ID = uuid.New()
-	})
-
-	// Create test key configuration once for all tests
-	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
-		c.PrimaryKeyID = &key.ID
-	})
-
-	testutils.CreateTestEntities(
-		ctx,
-		t,
-		repo,
-		key,
-		keyConfig,
-	)
-
-	return keyConfig, key
-}
-
 func TestWorkflowManager_CheckWorkflow(t *testing.T) {
-	m, repo, tenant := SetupWorkflowManager(t, &config.Config{})
+	// Setup identity management plugin with auditor group and a test key admin group
+	const testKeyAdminGroup = "test-key-admins"
+	const testKeyAdminGroupSCIM = "scim-key-admins-id"
+	const testUser1 = "user1-id"
+	const testUser2 = "user2-id"
+
+	idmPlugin := testplugins.NewTestIdentityManagement(
+		testplugins.WithGroups(map[string]string{
+			auditorGroupName:  "scim-auditors-id",
+			testKeyAdminGroup: testKeyAdminGroupSCIM,
+		}),
+		testplugins.WithGroupMembership(map[string][]string{
+			"scim-auditors-id":    {},
+			testKeyAdminGroupSCIM: {testUser1, testUser2},
+		}),
+		testplugins.WithUsers([]identitymanagement.User{
+			{ID: testUser1, Name: "user1@example.com"},
+			{ID: testUser2, Name: "user2@example.com"},
+		}),
+	)
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{}, testplugins.WithIdentityManagement(idmPlugin))
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
-	testutils.CreateTestEntities(ctx, t, repo, workflowConfig)
+	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
-	keyConfig, key := createTestObjects(t, repo, ctx)
-	createAuditorGroup(ctx, t, repo)
+	// Create test group that's registered in SCIM
+	testGroup := testutils.NewGroup(func(g *model.Group) {
+		g.Name = testKeyAdminGroup
+		g.IAMIdentifier = testKeyAdminGroup
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(ctx, t, r, testGroup)
+
+	// Create key config with the test group
+	key := testutils.NewKey(func(k *model.Key) {
+		k.ID = uuid.New()
+	})
+	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+		c.PrimaryKeyID = &key.ID
+		c.AdminGroup = *testGroup
+		c.AdminGroupID = testGroup.ID
+	})
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
+
+	createAuditorGroup(ctx, t, r)
 
 	ctxSys := context.WithValue(
 		ctx,
@@ -150,7 +163,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 
 	t.Run("Should return be valid and cant create on existing active workflow", func(t *testing.T) {
 		wf, err := createTestWorkflow(
-			ctxSys, repo, testutils.NewWorkflow(
+			ctxSys, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
 					w.State = workflow.StateInitial.String()
 					w.ActionType = workflow.ActionTypeDelete.String()
@@ -191,10 +204,10 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 		})
-		testutils.CreateTestEntities(ctx, t, repo, key, testGroup, keyConfig, system)
+		testutils.CreateTestEntities(ctx, t, r, key, testGroup, keyConfig, system)
 
 		wf, err := createTestWorkflow(
-			ctx, repo, testutils.NewWorkflow(
+			ctx, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
 					w.State = workflow.StateInitial.String()
 					w.ActionType = workflow.ActionTypeLink.String()
@@ -230,10 +243,10 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 		})
-		testutils.CreateTestEntities(ctx, t, repo, testGroup, keyConfig, system)
+		testutils.CreateTestEntities(ctx, t, r, testGroup, keyConfig, system)
 
 		wf, err := createTestWorkflow(
-			ctx, repo, testutils.NewWorkflow(
+			ctx, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
 					w.State = workflow.StateInitial.String()
 					w.ActionType = workflow.ActionTypeLink.String()
@@ -256,7 +269,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 
 	t.Run("Should be creatable on rejected previous workflow", func(t *testing.T) {
 		wf, err := createTestWorkflow(
-			ctxSys, repo, testutils.NewWorkflow(
+			ctxSys, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
 					w.State = workflow.StateInitial.String()
 					w.State = workflow.StateRejected.String()
@@ -269,11 +282,11 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 
 		status, err := m.CheckWorkflow(ctxSys, wf)
-		assert.True(t, status.Enabled)
-		assert.False(t, status.Exists)
-		assert.True(t, status.Valid)
-		assert.True(t, status.CanCreate)
 		assert.NoError(t, err)
+		assert.True(t, status.Enabled, "status.Enabled should be true")
+		assert.False(t, status.Exists, "status.Exists should be false")
+		assert.True(t, status.Valid, "status.Valid should be true")
+		assert.True(t, status.CanCreate, "status.CanCreate should be true, but got error: %v", status.ErrDetails)
 	})
 
 	t.Run("should not be valid on primary key change with unconnected system", func(t *testing.T) {
@@ -287,7 +300,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.Status = cmkapi.SystemStatusDISCONNECTED
 		})
-		testutils.CreateTestEntities(ctxSys, t, repo, keyConfig, key, system)
+		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, key, system)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = workflow.StateInitial.String()
@@ -316,7 +329,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 			kc.PrimaryKeyID = &key.ID
 		})
 
-		testutils.CreateTestEntities(ctxSys, t, repo, key, keyConfig)
+		testutils.CreateTestEntities(ctxSys, t, r, key, keyConfig)
 
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
@@ -338,12 +351,15 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	})
 
 	t.Run("should have canCreate on primary key change without unconnected system", func(t *testing.T) {
-		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.AdminGroup = *testGroup
+			kc.AdminGroupID = testGroup.ID
+		})
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.Status = cmkapi.SystemStatusCONNECTED
 		})
-		testutils.CreateTestEntities(ctxSys, t, repo, keyConfig, system)
+		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, system)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = workflow.StateInitial.String()
@@ -364,7 +380,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 
 	t.Run("Should return authorization error on non active artifact", func(t *testing.T) {
 		wf, err := createTestWorkflow(
-			ctxSys, repo, testutils.NewWorkflow(
+			ctxSys, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
 					w.State = workflow.StateRejected.String()
 					w.ActionType = workflow.ActionTypeDelete.String()
@@ -383,6 +399,26 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 }
 
 func TestWorkflowManager_CreateWorkflow(t *testing.T) {
+	// Setup identity management plugin with auditor group and a test key admin group
+	const testKeyAdminGroup = "test-key-admins"
+	const testKeyAdminGroupSCIM = "scim-key-admins-id"
+	const testUser1 = "user1-id"
+	const testUser2 = "user2-id"
+
+	idmPlugin := testplugins.NewTestIdentityManagement(
+		testplugins.WithGroups(map[string]string{
+			auditorGroupName:  "scim-auditors-id",
+			testKeyAdminGroup: testKeyAdminGroupSCIM,
+		}),
+		testplugins.WithGroupMembership(map[string][]string{
+			"scim-auditors-id":    {},
+			testKeyAdminGroupSCIM: {testUser1, testUser2},
+		}),
+		testplugins.WithUsers([]identitymanagement.User{
+			{ID: testUser1, Name: "user1@example.com"},
+			{ID: testUser2, Name: "user2@example.com"},
+		}),
+	)
 	m, r, tenant := SetupWorkflowManager(t, &config.Config{
 		ContextModels: config.ContextModels{
 			System: config.System{
@@ -395,9 +431,13 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 				},
 			},
 		},
-	})
+	}, testplugins.WithIdentityManagement(idmPlugin))
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	// Create workflow config once for all tests
+	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
+	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
 	ctxSys := context.WithValue(
 		ctx,
@@ -405,7 +445,25 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 			Identifier: constants.SystemUser.String(),
 		},
 	)
-	keyConfig, key := createTestObjects(t, r, ctxSys)
+
+	// Create test group that's registered in SCIM
+	testGroup := testutils.NewGroup(func(g *model.Group) {
+		g.Name = testKeyAdminGroup
+		g.IAMIdentifier = testKeyAdminGroup
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(ctxSys, t, r, testGroup)
+
+	// Create key config with the test group
+	key := testutils.NewKey(func(k *model.Key) {
+		k.ID = uuid.New()
+	})
+	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+		c.PrimaryKeyID = &key.ID
+		c.AdminGroup = *testGroup
+		c.AdminGroupID = testGroup.ID
+	})
+	testutils.CreateTestEntities(ctxSys, t, r, key, keyConfig)
 
 	t.Run("Should error on existing workflow", func(t *testing.T) {
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
@@ -432,7 +490,10 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 			},
 		)
 
-		_, key := createTestObjects(t, r, ctxSys)
+		// Create key using the same test group
+		key := testutils.NewKey(func(k *model.Key) {})
+		testutils.CreateTestEntities(ctxSys, t, r, key)
+
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
 			w.State = workflow.StateInitial.String()
 			w.ActionType = workflow.ActionTypeDelete.String()
@@ -470,12 +531,16 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 	})
 
 	t.Run("Should put system state under_workflow on workflow creation", func(t *testing.T) {
-		system := testutils.NewSystem(func(s *model.System) {})
+		// Create system with key config that uses registered test group
+		system := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfig.ID
+		})
 		testutils.CreateTestEntities(ctxSys, t, r, system)
 
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
 			w.ArtifactType = workflow.ArtifactTypeSystem.String()
 			w.ArtifactID = system.ID
+			w.ActionType = workflow.ActionTypeUnlink.String() // Need an action type
 		})
 
 		_, err := m.CreateWorkflow(ctxSys, wf)
@@ -518,102 +583,99 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, repo, workflowConfig)
 
-	t.Run(
-		"Should error on invalid event actor", func(t *testing.T) {
-			wf, err := createTestWorkflow(
-				testutils.CreateCtxWithTenant(tenant),
-				repo,
-				testutils.NewWorkflow(
-					func(w *model.Workflow) {
-						w.State = workflow.StateInitial.String()
-						w.ActionType = workflow.ActionTypeDelete.String()
-						w.ArtifactType = workflow.ArtifactTypeKey.String()
-					},
-				),
-			)
-			assert.NoError(t, err)
-			idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
-
-			ctx = cmkcontext.InjectClientData(
-				cmkcontext.CreateTenantContext(t.Context(), tenant),
-				&auth.ClientData{
-					Identifier: wf.InitiatorID,
+	t.Run("Should error on invalid event actor", func(t *testing.T) {
+		wf, err := createTestWorkflow(
+			testutils.CreateCtxWithTenant(tenant),
+			repo,
+			testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateInitial.String()
+					w.ActionType = workflow.ActionTypeDelete.String()
+					w.ArtifactType = workflow.ArtifactTypeKey.String()
 				},
-				nil,
-			)
-			_, err = m.TransitionWorkflow(
-				ctx,
-				wf.ID,
-				workflow.TransitionApprove,
-			)
-			assert.ErrorIs(t, err, workflow.ErrInvalidEventActor)
-		},
+			),
+		)
+		assert.NoError(t, err)
+		idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
+
+		ctx = cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: wf.InitiatorID,
+			},
+			nil,
+		)
+		_, err = m.TransitionWorkflow(
+			ctx,
+			wf.ID,
+			workflow.TransitionApprove,
+		)
+		assert.ErrorIs(t, err, workflow.ErrInvalidEventActor)
+	},
 	)
 
-	t.Run(
-		"Should transit to wait confirmation on approve", func(t *testing.T) {
-			wf, err := createTestWorkflow(
-				testutils.CreateCtxWithTenant(tenant),
-				repo,
-				testutils.NewWorkflow(
-					func(w *model.Workflow) {
-						w.State = workflow.StateWaitApproval.String()
-						w.ActionType = workflow.ActionTypeDelete.String()
-						w.ArtifactType = workflow.ArtifactTypeKey.String()
-					},
-				),
-			)
-			assert.NoError(t, err)
-			idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
-
-			ctx = cmkcontext.InjectClientData(
-				cmkcontext.CreateTenantContext(t.Context(), tenant),
-				&auth.ClientData{
-					Identifier: wf.Approvers[0].UserID,
+	t.Run("Should transit to wait confirmation on approve", func(t *testing.T) {
+		wf, err := createTestWorkflow(
+			testutils.CreateCtxWithTenant(tenant),
+			repo,
+			testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateWaitApproval.String()
+					w.ActionType = workflow.ActionTypeDelete.String()
+					w.ArtifactType = workflow.ArtifactTypeKey.String()
 				},
-				nil,
-			)
-			res, err := m.TransitionWorkflow(
-				ctx,
-				wf.ID,
-				workflow.TransitionApprove,
-			)
-			assert.NoError(t, err)
-			assert.EqualValues(t, workflow.StateWaitConfirmation, res.State)
-		},
+			),
+		)
+		assert.NoError(t, err)
+		idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
+
+		ctx = cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: wf.Approvers[0].UserID,
+			},
+			nil,
+		)
+		res, err := m.TransitionWorkflow(
+			ctx,
+			wf.ID,
+			workflow.TransitionApprove,
+		)
+		assert.NoError(t, err)
+		assert.EqualValues(t, workflow.StateWaitConfirmation, res.State)
+	},
 	)
 
-	t.Run(
-		"Should transit to reject on reject", func(t *testing.T) {
-			wf, err := createTestWorkflow(
-				testutils.CreateCtxWithTenant(tenant),
-				repo,
-				testutils.NewWorkflow(
-					func(w *model.Workflow) {
-						w.State = workflow.StateWaitApproval.String()
-						w.ActionType = workflow.ActionTypeDelete.String()
-						w.ArtifactType = workflow.ArtifactTypeKey.String()
-					},
-				),
-			)
-			assert.NoError(t, err)
-			idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
-
-			ctx = cmkcontext.InjectClientData(
-				cmkcontext.CreateTenantContext(t.Context(), tenant),
-				&auth.ClientData{
-					Identifier: wf.Approvers[0].UserID,
+	t.Run("Should transit to reject on reject", func(t *testing.T) {
+		wf, err := createTestWorkflow(
+			testutils.CreateCtxWithTenant(tenant),
+			repo,
+			testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = workflow.StateWaitApproval.String()
+					w.ActionType = workflow.ActionTypeDelete.String()
+					w.ArtifactType = workflow.ArtifactTypeKey.String()
 				},
-				nil,
-			)
-			res, err := m.TransitionWorkflow(
-				ctx,
-				wf.ID,
-				workflow.TransitionReject,
-			)
-			assert.NoError(t, err)
-			assert.EqualValues(t, workflow.StateRejected, res.State)
-		},
+			),
+		)
+		assert.NoError(t, err)
+		idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
+
+		ctx = cmkcontext.InjectClientData(
+			cmkcontext.CreateTenantContext(t.Context(), tenant),
+			&auth.ClientData{
+				Identifier: wf.Approvers[0].UserID,
+			},
+			nil,
+		)
+		res, err := m.TransitionWorkflow(
+			ctx,
+			wf.ID,
+			workflow.TransitionReject,
+		)
+		assert.NoError(t, err)
+		assert.EqualValues(t, workflow.StateRejected, res.State)
+	},
 	)
 }
 
@@ -1777,6 +1839,7 @@ func setupEligibilityTest(
 		w.ParametersResourceType = &paramsResourceType
 		w.ApproverGroupIDs = groupIDsJSON
 		w.InitiatorID = approver1ID
+		w.MinimumApprovalCount = approverCount // Set to match the test's expected approval count
 	})
 	testutils.CreateTestEntities(ctx, t, r, wf)
 
@@ -2296,4 +2359,139 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 		_, err = wm.TransitionWorkflow(ctx, wf.ID, workflow.TransitionApprove)
 		assert.Error(t, err)
 	})
+}
+
+func TestWorkflowManager_ValidateApproverCount(t *testing.T) {
+	const (
+		testUser1 = "user1-id"
+		testUser2 = "user2-id"
+		testUser3 = "user3-id"
+		testUser4 = "user4-id"
+	)
+
+	tests := []struct {
+		name              string
+		minimumApprovals  int
+		groupMembers      []string // Members in the IAM group
+		expectCanCreate   bool
+		expectError       bool
+		expectedErrorType error
+	}{
+		{
+			name:              "single member group - initiator only",
+			minimumApprovals:  2,
+			groupMembers:      []string{testUser1},
+			expectCanCreate:   false,
+			expectError:       true,
+			expectedErrorType: workflow.ErrWorkflowGroupNotSufficientMembers,
+		},
+		{
+			name:              "two members with min=2 - insufficient",
+			minimumApprovals:  2,
+			groupMembers:      []string{testUser1, testUser2},
+			expectCanCreate:   false,
+			expectError:       true,
+			expectedErrorType: workflow.ErrWorkflowGroupNotSufficientMembers,
+		},
+		{
+			name:             "three members with min=2 - exact threshold",
+			minimumApprovals: 2,
+			groupMembers:     []string{testUser1, testUser2, testUser3},
+			expectCanCreate:  true,
+			expectError:      false,
+		},
+		{
+			name:             "four members with min=2 - sufficient",
+			minimumApprovals: 2,
+			groupMembers:     []string{testUser1, testUser2, testUser3, testUser4},
+			expectCanCreate:  true,
+			expectError:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup IDM plugin with the specified group members
+			testGroupSCIM := uuid.NewString()
+
+			// Build user list with all potential users
+			allUsers := []identitymanagement.User{
+				{ID: testUser1, Name: "user1@example.com"},
+				{ID: testUser2, Name: "user2@example.com"},
+				{ID: testUser3, Name: "user3@example.com"},
+				{ID: testUser4, Name: "user4@example.com"},
+			}
+
+			idmPlugin := testplugins.NewTestIdentityManagement(
+				testplugins.WithGroups(map[string]string{
+					auditorGroupName: "scim-auditors-id",
+					testGroupName:    testGroupSCIM,
+				}),
+				testplugins.WithGroupMembership(map[string][]string{
+					"scim-auditors-id": {},
+					testGroupSCIM:      tt.groupMembers,
+				}),
+				testplugins.WithUsers(allUsers),
+			)
+
+			// Setup workflow manager with custom config
+			cfg := &config.Config{}
+			m, r, tenant := SetupWorkflowManager(t, cfg, testplugins.WithIdentityManagement(idmPlugin))
+			ctx := testutils.CreateCtxWithTenant(tenant)
+
+			// Create workflow config
+			workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
+			testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+			createAuditorGroup(ctx, t, r)
+
+			// Create test group with the IAM identifier that matches IDM
+			testGroup := testutils.NewGroup(func(g *model.Group) {
+				g.Name = testGroupName
+				g.IAMIdentifier = testGroupName
+				g.Role = constants.KeyAdminRole
+			})
+
+			// Create key and key config with this group
+			key := testutils.NewKey(func(k *model.Key) {
+				k.ID = uuid.New()
+			})
+			keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+				c.PrimaryKeyID = &key.ID
+				c.AdminGroup = *testGroup
+				c.AdminGroupID = testGroup.ID
+			})
+			testutils.CreateTestEntities(ctx, t, r, testGroup, key, keyConfig)
+
+			ctxSys := context.WithValue(
+				ctx,
+				constants.ClientData, &auth.ClientData{
+					Identifier: constants.SystemUser.String(),
+				},
+			)
+
+			// Create workflow for key deletion
+			wf := testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = workflow.StateInitial.String()
+				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactID = key.ID
+				w.ArtifactType = workflow.ArtifactTypeKey.String()
+				w.InitiatorID = testUser1
+			})
+
+			// Act - call ValidateApproverCount with system context
+			canCreate, err := m.ValidateApproverCount(ctxSys, wf, tt.minimumApprovals)
+
+			// Assert
+			assert.Equal(t, tt.expectCanCreate, canCreate,
+				"Expected canCreate=%v, got canCreate=%v", tt.expectCanCreate, canCreate)
+
+			if tt.expectError {
+				require.Error(t, err, "Expected an error but got none")
+				assert.ErrorIs(t, err, tt.expectedErrorType,
+					"Expected error type %v, got %v", tt.expectedErrorType, err)
+			} else {
+				assert.NoError(t, err, "Expected no error but got: %v", err)
+			}
+		})
+	}
 }
