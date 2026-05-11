@@ -16,6 +16,7 @@ import (
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -201,6 +202,16 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 		r := cmksql.NewRepository(db)
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+		// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
+		groupSCIMID := uuid.NewString()
+		idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
+		// Add test users to the group (at least 2 required for minimum approval count)
+		idmPlugin.PutGroupMembers(groupSCIMID, []string{
+			"00000000-0000-0000-0000-100000000001", // user1 from default IDM users
+			"00000000-0000-0000-0000-100000000002", // user2 from default IDM users
+		})
+
 		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
 		wf := cmkapi.Workflow{
@@ -273,6 +284,58 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 		assert.False(t, *res.CanCreate)
 		assert.True(t, *res.Required)
 		assert.Equal(t, manager.ErrConnectSystemNoPrimaryKey.Error(), *res.Details)
+	})
+
+	t.Run("Should 200 with insufficient approvers error", func(t *testing.T) {
+		idmPlugin := testplugins.NewTestIdentityManagement()
+		db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := cmksql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+		// Register the authClient's group in the IDM plugin with only 1 member (insufficient)
+		groupSCIMID := uuid.NewString()
+		idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
+		// Add only 1 user to the group (insufficient for minimum approval count of 2)
+		idmPlugin.PutGroupMembers(groupSCIMID, []string{
+			"00000000-0000-0000-0000-100000000001", // only one user
+		})
+
+		// Create a system to unlink via workflow
+		key := testutils.NewKey(func(k *model.Key) {})
+		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.PrimaryKeyID = &key.ID
+		}, testutils.WithAuthClientDataKC(authClient))
+		system := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfig.ID
+			s.Status = cmkapi.SystemStatusCONNECTED
+		})
+		testutils.CreateTestEntities(ctx, t, r, key, keyConfig, system)
+
+		wf := cmkapi.Workflow{
+			ActionType:   cmkapi.WorkflowActionTypeEnumUNLINK,
+			ArtifactID:   system.ID,
+			ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeSystem),
+		}
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:            http.MethodPost,
+			Endpoint:          "/workflows/check",
+			Tenant:            tenant,
+			Body:              testutils.WithJSON(t, wf),
+			AdditionalContext: authClient.GetClientMap(),
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		res := testutils.GetJSONBody[cmkapi.CheckWorkflow200JSONResponse](t, w)
+		assert.False(t, *res.Exists)
+		assert.True(t, *res.Valid)
+		assert.False(t, *res.CanCreate) // Cannot create due to insufficient approvers
+		assert.True(t, *res.Required)
+		assert.NotNil(t, res.Details)
+		assert.Equal(t, apierrors.WorkflowGroupNotSufficientMembers, *res.Details)
 	})
 }
 
@@ -377,6 +440,16 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 			r := cmksql.NewRepository(db)
 
 			authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+			// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
+			groupSCIMID := uuid.NewString()
+			idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
+			// Add test users to the group (at least 2 required for minimum approval count)
+			idmPlugin.PutGroupMembers(groupSCIMID, []string{
+				"00000000-0000-0000-0000-100000000001", // user1 from default IDM users
+				"00000000-0000-0000-0000-100000000002", // user2 from default IDM users
+			})
+
 			idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
 			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
@@ -397,6 +470,56 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code, w.Body.String())
 		})
 	}
+}
+
+func TestWorkflowControllerCreateWorkflow_InsufficientApprovers(t *testing.T) {
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := cmksql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	// Register user first
+	idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
+
+	// Register the authClient's group in the IDM plugin with only 1 member (insufficient)
+	groupSCIMID := uuid.NewString()
+	idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
+	// Add only 1 member (initiator) - insufficient for minimumApprovals=2
+	idmPlugin.PutGroupMembers(groupSCIMID, []string{
+		authClient.Identifier,
+	})
+
+	setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
+
+	requestBody := `{
+		"actionType":"UNLINK",
+		"artifactID":"` + systemID + `",
+		"artifactType":"SYSTEM"
+	}`
+
+	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+		Method:            http.MethodPost,
+		Endpoint:          "/workflows",
+		Tenant:            tenant,
+		Body:              testutils.WithString(t, requestBody),
+		AdditionalContext: authClient.GetClientMap(),
+	})
+
+	// Verify HTTP 400 error response
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	// Parse error response
+	var errResponse cmkapi.ErrorMessage
+	err := json.Unmarshal(w.Body.Bytes(), &errResponse)
+	assert.NoError(t, err)
+
+	// Verify error code
+	assert.Equal(t, apierrors.WorkflowGroupNotSufficientMembers, errResponse.Error.Code)
+
+	// Verify context fields are present
+	assert.NotNil(t, errResponse.Error.Context, "error context should be present")
 }
 
 func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
@@ -429,6 +552,16 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 			r := cmksql.NewRepository(db)
 
 			keyAdminAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+			// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
+			groupSCIMID := uuid.NewString()
+			idmPlugin.PutGroup(keyAdminAuthClient.Group.IAMIdentifier, groupSCIMID)
+			// Add test users to the group (at least 2 required for minimum approval count)
+			idmPlugin.PutGroupMembers(groupSCIMID, []string{
+				"00000000-0000-0000-0000-100000000001", // user1 from default IDM users
+				"00000000-0000-0000-0000-100000000002", // user2 from default IDM users
+			})
+
 			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient, idmPlugin)
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -458,6 +591,16 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 	r := cmksql.NewRepository(db)
 
 	keyAdminAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
+	groupSCIMID := uuid.NewString()
+	idmPlugin.PutGroup(keyAdminAuthClient.Group.IAMIdentifier, groupSCIMID)
+	// Add test users to the group (at least 2 required for minimum approval count)
+	idmPlugin.PutGroupMembers(groupSCIMID, []string{
+		"00000000-0000-0000-0000-100000000001", // user1 from default IDM users
+		"00000000-0000-0000-0000-100000000002", // user2 from default IDM users
+	})
+
 	setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient, idmPlugin)
 
 	keyAdmin2AuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
@@ -570,6 +713,16 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 			r := cmksql.NewRepository(db)
 
 			authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+			// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
+			groupSCIMID := uuid.NewString()
+			idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
+			// Add test users to the group (at least 2 required for minimum approval count)
+			idmPlugin.PutGroupMembers(groupSCIMID, []string{
+				"00000000-0000-0000-0000-100000000001", // user1 from default IDM users
+				"00000000-0000-0000-0000-100000000002", // user2 from default IDM users
+			})
+
 			idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
 			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 

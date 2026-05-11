@@ -18,11 +18,12 @@ var (
 	ErrAutomatedTransition       = errors.New(
 		"automated transition cannot be triggered by user input",
 	)
-	ErrInvalidWorkflowState    = errors.New("invalid workflow state")
-	ErrInvalidWorkflowType     = errors.New("invalid workflow type")
-	ErrCheckApproverDecision   = errors.New("failed to check approver decision")
-	ErrListApprovers           = errors.New("failed to list approvers")
-	ErrInvalidVotingTransition = errors.New("invalid voting transition")
+	ErrInvalidWorkflowState              = errors.New("invalid workflow state")
+	ErrInvalidWorkflowType               = errors.New("invalid workflow type")
+	ErrCheckApproverDecision             = errors.New("failed to check approver decision")
+	ErrListApprovers                     = errors.New("failed to list approvers")
+	ErrInvalidVotingTransition           = errors.New("invalid voting transition")
+	ErrWorkflowGroupNotSufficientMembers = errors.New("insufficient eligible approvers in admin group")
 )
 
 // NewInvalidEventActorError creates an error when the user is not the expected actor of the event.
@@ -48,4 +49,27 @@ func NewTransitionError(transition Transition) error {
 func NewApproverNoLongerEligibleError(userID string) error {
 	msg := fmt.Sprintf("approver %s has been removed from the admin group and cannot vote", userID)
 	return errs.Wrapf(ErrApproverNoLongerEligible, msg)
+}
+
+// InsufficientApproversError is a structured error that carries approver count context
+type InsufficientApproversError struct {
+	Required int
+	Actual   int
+}
+
+func (e *InsufficientApproversError) Error() string {
+	return fmt.Sprintf("insufficient eligible approvers in admin group: required: %d, actual: %d",
+		e.Required, e.Actual)
+}
+
+func (e *InsufficientApproversError) Unwrap() error {
+	return ErrWorkflowGroupNotSufficientMembers
+}
+
+// NewInsufficientApproversError creates a structured error with approver counts
+func NewInsufficientApproversError(required, actual int) error {
+	return &InsufficientApproversError{
+		Required: required,
+		Actual:   actual,
+	}
 }

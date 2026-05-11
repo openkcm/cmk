@@ -10,6 +10,8 @@ import (
 	workflowpkg "github.com/openkcm/cmk/internal/workflow"
 )
 
+const WorkflowGroupNotSufficientMembers = "WORKFLOW_GROUP_NOT_SUFFICIENT_MEMBERS"
+
 var (
 	ErrTransformWorkflowFromAPI = errors.New("failed to transform workflow from API")
 	ErrTransformWorkflowToAPI   = errors.New("failed to transform workflow to API")
@@ -18,6 +20,19 @@ var (
 	ErrAddApprovers             = errors.New("failed to add approvers to workflow")
 	ErrWorkflowCannotTransition = errors.New("workflow cannot transition to specified state")
 )
+
+// getInsufficientApproversContext extracts required and actual approver counts from structured error
+func getInsufficientApproversContext(err error) map[string]any {
+	var insufficientErr *workflowpkg.InsufficientApproversError
+	if errors.As(err, &insufficientErr) {
+		return map[string]any{
+			"requiredApprovers":       insufficientErr.Required,
+			"actualEligibleApprovers": insufficientErr.Actual,
+		}
+	}
+
+	return nil
+}
 
 var workflow = []errs.ExposedErrors[*APIError]{
 	{
@@ -109,7 +124,7 @@ var workflow = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{ErrCreateWorkflow, manager.ErrOngoingWorkflowExist},
+		InternalErrorChain: []error{manager.ErrOngoingWorkflowExist},
 		ExposedError: &APIError{
 			Code:    "ONGOING_WORKFLOW",
 			Message: "ongoing workflow for artifact already exists",
@@ -299,5 +314,14 @@ var workflow = []errs.ExposedErrors[*APIError]{
 			Message: "failed to get approvers",
 			Status:  http.StatusNotFound,
 		},
+	},
+	{
+		InternalErrorChain: []error{workflowpkg.ErrWorkflowGroupNotSufficientMembers},
+		ExposedError: &APIError{
+			Code:    WorkflowGroupNotSufficientMembers,
+			Message: "The responsible user group does not have enough members to meet the minimum approval criteria",
+			Status:  http.StatusBadRequest,
+		},
+		ContextGetter: getInsufficientApproversContext,
 	},
 }
