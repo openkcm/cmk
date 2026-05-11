@@ -85,6 +85,11 @@ func (u *user) NeedsGroupFiltering(
 		if role == constants.TenantAdminRole && resource == authz.APIResourceTypeUserGroup {
 			return false, nil
 		}
+
+		// Key admin has access to all systems
+		if role == constants.KeyAdminRole && resource == authz.APIResourceTypeSystem {
+			return false, nil
+		}
 	}
 
 	return true, nil

@@ -741,6 +741,20 @@ func TestSendRecoveryAction(t *testing.T) {
 	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group4"})
 	r := sql.NewRepository(db)
 
+	t.Run("Should error if user not in groups", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusFAILED
+			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		},
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{uuid.NewString()})
+		testutils.CreateTestEntities(ctx, t, r, sys)
+		err := m.SendRecoveryActions(ctx, sys.ID, cmkapi.SystemRecoveryActionBodyActionCANCEL)
+		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
+	})
+
 	t.Run("Should cancel action", func(t *testing.T) {
 		sys := testutils.NewSystem(
 			func(s *model.System) {
@@ -835,8 +849,7 @@ func TestSendRecoveryAction(t *testing.T) {
 
 		err := m.SendRecoveryActions(ctx, system.ID, cmkapi.SystemRecoveryActionBodyActionRETRY)
 		assert.ErrorIs(t, err, eventprocessor.ErrNoPreviousEvent)
-	},
-	)
+	})
 
 	sucessRetry := func(t *testing.T, ctx context.Context, system *model.System) {
 		t.Helper()
@@ -1514,17 +1527,17 @@ func TestGetFilters(t *testing.T) {
 		g.IAMIdentifier = groupID
 	})
 
+	testGroup1 := testutils.NewGroup(func(g *model.Group) {
+		g.IAMIdentifier = uuid.NewString()
+	})
+
 	keyConfig1 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.Name = "kcName1"
 		k.AdminGroup = *testGroup
 	})
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.Name = "kcName2"
-		k.AdminGroup = *testGroup
-	})
-
-	keyConfig3 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.Name = "kcName3"
+		k.AdminGroup = *testGroup1
 	})
 
 	system1 := testutils.NewSystem(func(s *model.System) {
@@ -1539,9 +1552,9 @@ func TestGetFilters(t *testing.T) {
 		s.KeyConfigurationID = &keyConfig2.ID
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig1, keyConfig2, system1, system2, keyConfig3)
+	testutils.CreateTestEntities(ctx, t, r, keyConfig1, keyConfig2, system1, system2)
 
-	t.Run("Should get filters for system for only user key configs", func(t *testing.T) {
+	t.Run("Should get filters", func(t *testing.T) {
 		filters, err := m.GetFilters(ctx)
 		assert.NoError(t, err)
 
