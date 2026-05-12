@@ -10,7 +10,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/fullsailor/pkcs7"
 	"github.com/google/uuid"
 
 	"github.com/openkcm/cmk/internal/config"
@@ -25,7 +24,6 @@ import (
 )
 
 var (
-	ErrInvalidP7CertNoParse  = errors.New("returned invalid p7 cert: could not parse pkcs7")
 	ErrInvalidCertEmptyChain = errors.New("empty certificate chain")
 
 	ErrCertificateManager   = errors.New("certificate manager error")
@@ -259,31 +257,36 @@ func verifyCertificateWithPrivateKey(cert *x509.Certificate, privateKey *rsa.Pri
 	}
 }
 
-func decodeCertificateChain(certificationChain []byte) ([]*x509.Certificate, []byte, error) {
-	// we expect 1 PEM block to be returned
-	p7DER, _ := pem.Decode(certificationChain)
-	if p7DER == nil || len(p7DER.Bytes) == 0 {
-		return nil, nil, ErrInvalidP7CertNoParse
+func decodeCertificateChain(chainPEM []byte) ([]*x509.Certificate, []byte, error) {
+	var certs []*x509.Certificate
+
+	rest := chainPEM
+
+	for {
+		var block *pem.Block
+
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, nil, errs.Wrap(ErrCertificateManager, err)
+		}
+
+		certs = append(certs, cert)
 	}
 
-	// convert pkcs7 to pem certs
-	p7, parseErr := pkcs7.Parse(p7DER.Bytes)
-	if parseErr != nil {
-		return nil, nil, errs.Wrap(ErrCertificateManager, parseErr)
-	}
-
-	if len(p7.Certificates) == 0 {
+	if len(certs) == 0 {
 		return nil, nil, ErrInvalidCertEmptyChain
 	}
 
-	var clientCertChain []byte
-
-	for _, cert := range p7.Certificates {
-		pemCert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
-		clientCertChain = append(clientCertChain, pemCert...)
-	}
-
-	return p7.Certificates, clientCertChain, nil
+	return certs, chainPEM, nil
 }
 
 func (m *CertificateManager) isTenantDefaultCertExist(ctx context.Context) (bool, error) {
