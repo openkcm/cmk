@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -22,17 +23,21 @@ import (
 )
 
 // startAPIServerTenantConfig starts the API server for keys and returns a pointer to the database
-func startAPIServerTenantConfig(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIServerTenantConfig(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	cfg.Config.Database = dbCfg
+	cfg.EnableClientDataMW = true
 
-	return db, testutils.NewAPIServer(t, db, cfg), tenants[0]
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+	cfg.SigningKeyStorage = keyStorage
+
+	return db, testutils.NewAPIServer(t, db, cfg), tenants[0], keyStorage
 }
 
 func TestAPIController_GetTenantKeystores(t *testing.T) {
-	db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+	db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -43,12 +48,21 @@ func TestAPIController_GetTenantKeystores(t *testing.T) {
 	}, testutils.WithAuthClientDataKC(authClient))
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 	t.Run("Should 200 on get keystores", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          "/tenantConfigurations/keystores",
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: "/tenantConfigurations/keystores",
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -57,15 +71,15 @@ func TestAPIController_GetTenantKeystores(t *testing.T) {
 
 // getWorkflowConfig is a helper function to retrieve workflow configuration via API
 func getWorkflowConfig(t *testing.T, sv cmkapi.ServeMux,
-	tenant string, authClient testutils.AuthClientData,
+	tenant string, headers http.Header,
 ) cmkapi.TenantWorkflowConfiguration {
 	t.Helper()
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:            http.MethodGet,
-		Endpoint:          "/tenantConfigurations/workflow",
-		Tenant:            tenant,
-		AdditionalContext: authClient.GetClientMap(),
+		Method:   http.MethodGet,
+		Endpoint: "/tenantConfigurations/workflow",
+		Tenant:   tenant,
+		Headers:  headers,
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -79,7 +93,7 @@ func getWorkflowConfig(t *testing.T, sv cmkapi.ServeMux,
 
 func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 	t.Run("Should 200 getting workflow config", func(t *testing.T) {
-		db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
@@ -88,8 +102,17 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 		// Setup: Create a workflow config
 		setupWorkflowConfig(t, r, ctx)
 
+		clientData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 		// Test
-		response := getWorkflowConfig(t, sv, tenant, authClient)
+		response := getWorkflowConfig(t, sv, tenant, headers)
 
 		assert.NotNil(t, response.Enabled)
 		assert.True(t, *response.Enabled)
@@ -100,13 +123,22 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 	})
 
 	t.Run("Should 200 getting default workflow config when none exists", func(t *testing.T) {
-		db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
-		response := getWorkflowConfig(t, sv, tenant, authClient)
+		clientData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
+		response := getWorkflowConfig(t, sv, tenant, headers)
 
 		assert.NotNil(t, response.Enabled)
 		assert.NotNil(t, response.MinimumApprovals)
@@ -134,7 +166,7 @@ func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Co
 
 func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 	t.Run("Should 200 updating workflow configuration for tenant admin", func(t *testing.T) {
-		db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
@@ -152,6 +184,15 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		err = r.Set(ctx, tenantConfig)
 		require.NoError(t, err)
 
+		clientData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 		// Test: Update config
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
 			MinimumApprovals:    ptr.PointTo(5),
@@ -159,11 +200,11 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPatch,
-			Endpoint:          "/tenantConfigurations/workflow",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, updateRequest),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPatch,
+			Endpoint: "/tenantConfigurations/workflow",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, updateRequest),
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -181,7 +222,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 	})
 
 	t.Run("Should 400 with invalid retention period", func(t *testing.T) {
-		db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
@@ -190,17 +231,26 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		// Setup: Create initial workflow config
 		setupDefaultWorkflowConfig(t, r, ctx)
 
+		clientData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 		// Test: Update with invalid retention period
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
 			RetentionPeriodDays: ptr.PointTo(1), // Less than minimum of 2
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPatch,
-			Endpoint:          "/tenantConfigurations/workflow",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, updateRequest),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPatch,
+			Endpoint: "/tenantConfigurations/workflow",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, updateRequest),
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
@@ -35,21 +36,25 @@ var (
 	})
 )
 
-func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
 	})
 
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Registry: testutils.NewTestPlugins(),
-		Config:   config.Config{Database: dbCfg},
-	}), tenants[0]
+		Registry:           testutils.NewTestPlugins(),
+		Config:             config.Config{Database: dbCfg},
+		EnableClientDataMW: true,
+		SigningKeyStorage:  keyStorage,
+	}), tenants[0], keyStorage
 }
 
 func TestKeyControllerGetKeys(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage := startAPIKeys(t)
 	nativeID := "arn:aws:kms:us-west-2:111122223333:alias/<alias-name>"
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
@@ -73,6 +78,15 @@ func TestKeyControllerGetKeys(t *testing.T) {
 		key2,
 		key3,
 	)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name           string
@@ -111,10 +125,10 @@ func TestKeyControllerGetKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          tt.query,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: tt.query,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -135,7 +149,7 @@ func TestKeyControllerGetKeys(t *testing.T) {
 }
 
 func TestKeyControllerGetKeysPagination(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -152,6 +166,15 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 		})
 		testutils.CreateTestEntities(ctx, t, r, key)
 	}
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -237,10 +260,10 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          tt.query,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: tt.query,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -259,7 +282,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 }
 
 func TestKeyControllerPostKeys(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage := startAPIKeys(t)
 	r := sql.NewRepository(db)
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -341,6 +364,15 @@ func TestKeyControllerPostKeys(t *testing.T) {
 
 		return baseMap
 	})
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name            string
@@ -464,11 +496,11 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "keys",
-				Tenant:            tenant,
-				Body:              testutils.WithJSON(t, tt.inputMap),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "keys",
+				Tenant:   tenant,
+				Body:     testutils.WithJSON(t, tt.inputMap),
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -485,7 +517,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 }
 
 func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -495,6 +527,15 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 		testutils.WithAuthClientDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("Should fail to create key if keystore pool is drained", func(t *testing.T) {
 		// Arrange
@@ -509,11 +550,11 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 		}
 		// Act
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPost,
-			Endpoint:          "keys",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, sysManagedKey),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPost,
+			Endpoint: "keys",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, sysManagedKey),
+			Headers:  headers,
 		})
 		// Assert
 		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
@@ -534,11 +575,11 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 		}
 		// Act
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPost,
-			Endpoint:          "keys",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, byokKey),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPost,
+			Endpoint: "keys",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, byokKey),
+			Headers:  headers,
 		})
 		// Assert
 		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
@@ -548,7 +589,7 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 }
 
 func TestKeyControllerGetKeysKeyID(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage := startAPIKeys(t)
 	r := sql.NewRepository(db)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 
@@ -562,6 +603,15 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name           string
@@ -592,10 +642,10 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/keys/" + tt.keyID,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: "/keys/" + tt.keyID,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -607,11 +657,17 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 	}
 
 	t.Run("Should fail to get when no group permission", func(t *testing.T) {
+		notAllowedClientData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{uuid.NewString()},
+		}
+		headersNotAllowed := testutils.NewSignedClientDataHeaders(t, notAllowedClientData, privateKey, 0)
+
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          "/keys/" + key.ID.String(),
-			Tenant:            tenant,
-			AdditionalContext: testutils.GetInvalidClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: "/keys/" + key.ID.String(),
+			Tenant:   tenant,
+			Headers:  headersNotAllowed,
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
@@ -621,7 +677,7 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -657,6 +713,15 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		sys,
 	)
 
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 	tests := []struct {
 		name           string
 		keyID          uuid.UUID
@@ -682,10 +747,10 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodDelete,
-				Endpoint:          "/keys/" + tt.keyID.String(),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodDelete,
+				Endpoint: "/keys/" + tt.keyID.String(),
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -714,10 +779,10 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		)
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodDelete,
-			Endpoint:          "/keys/" + key2.ID.String(),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodDelete,
+			Endpoint: "/keys/" + key2.ID.String(),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
@@ -727,7 +792,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerUpdateKey(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -776,6 +841,15 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		sysFailed,
 		sys,
 	)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name           string
@@ -917,11 +991,11 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPatch,
-				Endpoint:          "/keys/" + tt.keyID,
-				Tenant:            tenant,
-				Body:              testutils.WithJSON(t, tt.input),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPatch,
+				Endpoint: "/keys/" + tt.keyID,
+				Tenant:   tenant,
+				Body:     testutils.WithJSON(t, tt.input),
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -935,12 +1009,18 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	}
 
 	t.Run("should not update when no group permission", func(t *testing.T) {
+		notAllowedClientData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{uuid.NewString()},
+		}
+		headersNotAllowed := testutils.NewSignedClientDataHeaders(t, notAllowedClientData, privateKey, 0)
+
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPatch,
-			Endpoint:          "/keys/" + key.ID.String(),
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, cmkapi.KeyPatch{Name: ptr.PointTo("new-name")}),
-			AdditionalContext: testutils.GetInvalidClientMap(),
+			Method:   http.MethodPatch,
+			Endpoint: "/keys/" + key.ID.String(),
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, cmkapi.KeyPatch{Name: ptr.PointTo("new-name")}),
+			Headers:  headersNotAllowed,
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
@@ -950,7 +1030,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 }
 
 func TestKeyControllerGetImportParams(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -995,12 +1075,21 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 		keystoreDefaultCert,
 	)
 
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 	t.Run("GetImportParamsSuccess", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", key.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/importParams", key.ID.String()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -1014,10 +1103,10 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	t.Run("GetImportParamsInvalidKeyTypeHYOK", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", hyokKey.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/importParams", hyokKey.ID.String()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -1031,10 +1120,10 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	t.Run("GetImportParamsInvalidKeyState", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", byokEnabled.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/importParams", byokEnabled.ID.String()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1048,10 +1137,10 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	t.Run("GetImportParamsInvalidId", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          "/keys/a/importParams",
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: "/keys/a/importParams",
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1059,10 +1148,10 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	t.Run("GetImportParamsNotFound", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", uuid.New()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/importParams", uuid.New()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
@@ -1074,17 +1163,17 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 		defer forced.Unregister()
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", key.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/importParams", key.ID.String()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
 
 func TestKeyControllerImportKeyMaterial(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -1121,6 +1210,15 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		keystoreDefaultCert,
 	)
 
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 	t.Run("ImportKeyMaterialSuccess", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodPost,
@@ -1129,7 +1227,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusCreated, w.Code)
@@ -1143,7 +1241,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: "",
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -1161,7 +1259,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: "non-base64-key-material",
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1187,7 +1285,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1220,7 +1318,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		// Assert
@@ -1251,7 +1349,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		// Assert
@@ -1270,7 +1368,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1288,7 +1386,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
@@ -1311,7 +1409,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
