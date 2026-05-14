@@ -2,7 +2,7 @@ module github.com/openkcm/cmk
 
 go 1.25.7
 
-toolchain go1.26.2
+toolchain go1.26.3
 
 require (
 	buf.build/go/protovalidate v1.2.0
@@ -12,7 +12,7 @@ require (
 	github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8 v8.9.0
 	github.com/bartventer/gorm-multitenancy/postgres/v8 v8.9.0
 	github.com/bartventer/gorm-multitenancy/v8 v8.9.0
-	github.com/getkin/kin-openapi v0.137.0
+	github.com/getkin/kin-openapi v0.138.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
@@ -38,7 +38,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.42.0
 	github.com/veqryn/slog-context v0.9.0
 	github.com/zeebo/assert v1.3.1
-	go.opentelemetry.io/collector/pdata v1.57.0
+	go.opentelemetry.io/collector/pdata v1.58.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/metric v1.43.0
@@ -166,7 +166,7 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/errs/v2 v2.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/featuregate v1.57.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.58.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.68.0 // indirect
