@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -522,12 +523,24 @@ func (w *WorkflowManager) ExpireWorkflow(
 		return nil, errs.Wrap(ErrGetWorkflowDB, err)
 	}
 
-	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID)
-	if err != nil {
-		return nil, err
-	}
+	err = w.repo.Transaction(ctx, func(ctx context.Context) error {
+		workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID)
+		if err != nil {
+			return err
+		}
 
-	if err = workflowLifecycle.Expire(ctx); err != nil {
+		if err = workflowLifecycle.Expire(ctx); err != nil {
+			return err
+		}
+
+		err = w.handleTerminalWorkflow(ctx, workflow)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -727,10 +740,32 @@ func (w *WorkflowManager) handleNewWorkflow(ctx context.Context, workflow *model
 	switch workflow.ArtifactType {
 	case wf.ArtifactTypeSystem.String():
 		system := &model.System{
-			ID:     workflow.ArtifactID,
-			Status: cmkapi.SystemStatusUNDERWORKFLOW,
+			ID:            workflow.ArtifactID,
+			UnderWorkflow: true,
 		}
 		_, err := w.repo.Patch(ctx, system, *repo.NewQuery())
+		if err != nil {
+			return err
+		}
+	default:
+		// empty
+	}
+	return nil
+}
+
+// handleTerminalWorkflow clears the UnderWorkflow flag when a workflow reaches a terminal state
+func (w *WorkflowManager) handleTerminalWorkflow(ctx context.Context, workflow *model.Workflow) error {
+	if !slices.Contains(wf.TerminalStates, workflow.State) {
+		return nil
+	}
+
+	switch workflow.ArtifactType {
+	case wf.ArtifactTypeSystem.String():
+		system := &model.System{
+			ID:            workflow.ArtifactID,
+			UnderWorkflow: false,
+		}
+		_, err := w.repo.Patch(ctx, system, *repo.NewQuery().Update(repo.UnderWorkflowField))
 		if err != nil {
 			return err
 		}
@@ -1231,6 +1266,11 @@ func (w *WorkflowManager) applyTransition(
 		transitionErr := workflowLifecycle.ApplyTransition(ctx, transition)
 		if transitionErr != nil {
 			return errs.Wrap(ErrApplyTransition, transitionErr)
+		}
+
+		err = w.handleTerminalWorkflow(ctx, workflow)
+		if err != nil {
+			return err
 		}
 
 		// After vote, check if we should auto-reject due to mathematical impossibility

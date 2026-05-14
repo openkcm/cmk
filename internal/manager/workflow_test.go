@@ -530,7 +530,7 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 		assert.Equal(t, keyConfig.Name, *res.ParametersResourceName)
 	})
 
-	t.Run("Should put system state under_workflow on workflow creation", func(t *testing.T) {
+	t.Run("Should put system under_workflow as true on workflow creation", func(t *testing.T) {
 		// Create system with key config that uses registered test group
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
@@ -549,7 +549,7 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 		_, err = r.First(ctxSys, system, *repo.NewQuery())
 		assert.NoError(t, err)
 
-		assert.Equal(t, cmkapi.SystemStatusUNDERWORKFLOW, system.Status)
+		assert.True(t, system.UnderWorkflow)
 	})
 
 	t.Run("Should create system workflow with artifact name from identifier", func(t *testing.T) {

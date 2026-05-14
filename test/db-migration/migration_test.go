@@ -363,27 +363,39 @@ func TestSchemaMigrations(t *testing.T) {
 		},
 		{
 			name:      "Should up tenant/00007_delete_user_names.sql",
-			downgrade: true,
+			downgrade: false,
 			target:    db.TenantTarget,
-			version:   5,
+			version:   7,
 		},
 		{
 			name:      "Should down tenant/00007_delete_user_names.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
-			version:   5,
+			version:   7,
 		},
 		{
-			name:      "Should up tenant/00006_delete_user_names.sql",
+			name:      "Should up tenant/00008_add_minimum_approval_count_to_workflows.sql",
 			downgrade: false,
 			target:    db.TenantTarget,
-			version:   6,
+			version:   8,
 		},
 		{
-			name:      "Should down tenant/00006_delete_user_names.sql",
+			name:      "Should down tenant/00008_add_minimum_approval_count_to_workflows.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
-			version:   6,
+			version:   8,
+		},
+		{
+			name:      "Should up tenant/00009_add_under_workflow_column_to_system.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   9,
+		},
+		{
+			name:      "Should down tenant/00009_add_under_workflow_column_to_system.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   9,
 		},
 	}
 	for _, tt := range tests {
