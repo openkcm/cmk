@@ -22,7 +22,8 @@ data:
       {{- toYaml .featureGates | nindent 6 }}
 
     http:
-      {{- toYaml .http | nindent 6 }}
+      address: :{{ .http.port }}
+      swaggerEnabled: {{ .http.swaggerEnabled | default false }}
 
     logger:
       {{- toYaml .logger | nindent 6 }}
