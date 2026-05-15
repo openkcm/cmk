@@ -106,6 +106,13 @@ func (m *TenantManager) SetSystemForTests(sys System) {
 	m.sys = sys
 }
 
+func (w *WorkflowManager) GetApproverGroupsFromLegacyField(
+	ctx context.Context,
+	workflow *model.Workflow,
+) ([]*model.Group, error) {
+	return w.getApproverGroupsFromLegacyField(ctx, workflow)
+}
+
 func (km *KeyManager) ExportedHandleNewKeyVersion(
 	ctx context.Context,
 	key *model.Key,

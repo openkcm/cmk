@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
@@ -85,9 +84,6 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 ) []*model.Workflow {
 	tb.Helper()
 
-	groupIDsBytes, err := json.Marshal([]uuid.UUID{authClient.Group.ID})
-	assert.NoError(tb, err)
-
 	system := testutils.NewSystem(func(w *model.System) {})
 	keyConfig := testutils.NewKeyConfig(func(w *model.KeyConfiguration) {
 	}, testutils.WithAuthClientDataKC(authClient))
@@ -101,12 +97,15 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.Approvers = []model.WorkflowApprover{{UserID: authClient.Identifier}}
-		w.ApproverGroupIDs = groupIDsBytes
 		w.State = wfMechanism.StateWaitApproval.String()
 		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
 		w.ActionType = wfMechanism.ActionTypeDelete.String()
 		w.ArtifactID = key.ID
 		w.ArtifactName = &key.Name
+	})
+	workflowApproverGroups := testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+		wag.WorkflowID = workflow.ID
+		wag.GroupID = authClient.Group.ID
 	})
 	idmPlugin.PutUser(identitymanagement.User{ID: workflow.InitiatorID})
 
@@ -117,8 +116,11 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 		w.ArtifactID = key2.ID
 		w.ArtifactName = &key2.Name
 		w.Approvers = []model.WorkflowApprover{{UserID: uuid.NewString()}}
-		w.ApproverGroupIDs = groupIDsBytes
 		w.Parameters = "DISABLED"
+	})
+	workflow2ApproverGroups := testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+		wag.WorkflowID = workflow2.ID
+		wag.GroupID = authClient.Group.ID
 	})
 	idmPlugin.PutUser(identitymanagement.User{ID: workflow2.InitiatorID})
 
@@ -142,7 +144,6 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 			},
 		}
 		w.ID = wfID
-		w.ApproverGroupIDs = groupIDsBytes
 		w.State = wfMechanism.StateWaitApproval.String()
 		w.ActionType = wfMechanism.ActionTypeLink.String()
 		w.ArtifactType = wfMechanism.ArtifactTypeSystem.String()
@@ -152,9 +153,27 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 		w.ParametersResourceName = &keyConfig.Name
 		w.ParametersResourceType = ptr.PointTo(wfMechanism.ParametersResourceTypeKeyConfiguration.String())
 	})
+	workflow3ApproverGroups := testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+		wag.WorkflowID = workflow3.ID
+		wag.GroupID = authClient.Group.ID
+	})
 	idmPlugin.PutUser(identitymanagement.User{ID: workflow3.InitiatorID})
 
-	testutils.CreateTestEntities(ctx, tb, r, key, key2, system, keyConfig, workflow, workflow2, workflow3)
+	testutils.CreateTestEntities(
+		ctx,
+		tb,
+		r,
+		key,
+		key2,
+		system,
+		keyConfig,
+		workflow,
+		workflowApproverGroups,
+		workflow2,
+		workflow2ApproverGroups,
+		workflow3,
+		workflow3ApproverGroups,
+	)
 
 	// Register all approver IDs so GetUser lookups succeed in detailed workflow responses
 	for _, wf := range []*model.Workflow{workflow, workflow2, workflow3} {
@@ -835,22 +854,6 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 
 	workflows := createTestWorkflows(ctx, t, r, authClient, idmPlugin)
 
-	groupIDsBytes, err := json.Marshal([]uuid.UUID{uuid.New()})
-	assert.NoError(t, err)
-
-	workflowWithDeletedGroup := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.ActionType = wfMechanism.ActionTypeUpdateState.String()
-		w.State = wfMechanism.StateWaitApproval.String()
-		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
-		w.ArtifactID = workflows[1].ArtifactID
-		w.ArtifactName = workflows[1].ArtifactName
-		w.Approvers = []model.WorkflowApprover{{UserID: userID}}
-		w.ApproverGroupIDs = groupIDsBytes
-		w.Parameters = "DISABLED"
-	})
-	idmPlugin.PutUser(identitymanagement.User{ID: workflowWithDeletedGroup.InitiatorID})
-	testutils.CreateTestEntities(ctx, t, r, workflowWithDeletedGroup)
-
 	tests := []struct {
 		name              string
 		workflowID        string
@@ -882,13 +885,6 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 			workflowID:     uuid.NewString(),
 			userID:         userID,
 			expectedStatus: http.StatusNotFound,
-		},
-		{
-			name:              "TestWorkflowControllerGetByID_DeletedGroup",
-			workflowID:        workflowWithDeletedGroup.ID.String(),
-			userID:            workflowWithDeletedGroup.InitiatorID,
-			expectedStatus:    http.StatusOK,
-			approverGroupName: "NOT_AVAILABLE",
 		},
 		{
 			name: "TestWorkflowControllerGetByID_InternalError",
@@ -928,10 +924,6 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 				assert.NotNil(t, response.ArtifactName)
 				assert.NotEmpty(t, response.AvailableTransitions)
 				assert.NotNil(t, response.ApprovalSummary)
-				if tt.approverGroupName != "" {
-					require.NotNil(t, response.ApproverGroups)
-					assert.Equal(t, tt.approverGroupName, (*response.ApproverGroups)[0].Name)
-				}
 			}
 		})
 	}
