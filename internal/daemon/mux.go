@@ -19,12 +19,15 @@ type ServeMux struct {
 
 type ServeMuxOption func(*ServeMux)
 
-// WithSwaggerUI adds an endpoint to serve Swagger UI with JS CDN at baseURL/swagger
+// WithSwaggerUI adds an endpoint to serve Swagger UI at /cmk/v1/swagger
 // The Swagger UI will load the OpenAPI spec inline without requiring a separate endpoint
+// Note: The {tenant} parameter is removed from the base URL for this endpoint
 func WithSwaggerUI(swagger *openapi3.T) ServeMuxOption {
 	return func(m *ServeMux) {
-		pattern := "GET " + m.BaseURL + "/swagger"
-		m.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		// Remove {tenant} parameter from base URL for swagger endpoint
+		swaggerBaseURL := strings.Replace(m.BaseURL, "/{tenant}", "", 1)
+		pattern := "GET " + swaggerBaseURL + "/swagger"
+		m.httpServeMux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			html, err := cmkapi.SwaggerUI(swagger)
 			if err != nil {
 				e := apierrors.APIErrorMapper.Transform(r.Context(), err)

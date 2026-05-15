@@ -93,6 +93,15 @@ func TestMuxWithSwagger(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 	})
 
+	t.Run("Should be available at /cmk/v1 if base url has tenant placeholder", func(t *testing.T) {
+		mux := daemon.NewServeMux("/cmk/v1/{tenant}", daemon.WithSwaggerUI(swagger))
+
+		req := httptest.NewRequest(http.MethodGet, "/cmk/v1/swagger", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
 	t.Run("Should handle write error gracefully", func(t *testing.T) {
 		mux := daemon.NewServeMux("/cmk/v1", daemon.WithSwaggerUI(swagger))
 
