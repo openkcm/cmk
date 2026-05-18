@@ -79,18 +79,21 @@ func ToAPI(
 		apiConfig.Description = &k.Description
 	}
 
-	name, err := k.GetCreatorName(ctx, identityManager)
-	if err != nil {
-		return nil, err
-	}
-
 	apiConfig.Metadata = &cmkapi.KeyConfigurationMetadata{
 		CreatedAt:    &k.CreatedAt,
 		UpdatedAt:    &k.UpdatedAt,
-		CreatorID:    &k.CreatorID,
-		CreatorName:  &name,
 		TotalKeys:    &k.TotalKeys,
 		TotalSystems: &k.TotalSystems,
+	}
+
+	if k.CreatorID != uuid.Nil.String() && k.CreatorID != "" {
+		name, err := k.GetCreatorName(ctx, identityManager)
+		if err != nil {
+			return nil, err
+		}
+
+		apiConfig.Metadata.CreatorID = &k.CreatorID
+		apiConfig.Metadata.CreatorName = &name
 	}
 
 	systemConnect := k.PrimaryKeyID != nil
