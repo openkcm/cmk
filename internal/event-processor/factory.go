@@ -89,8 +89,11 @@ func (f *EventFactory) GetLastEvent(
 			repo.NewCompositeKey().Where(repo.IdentifierField, cmkItemID)))
 
 	found, err := f.repo.First(ctx, job, query)
-	if err != nil || !found {
-		return nil, errs.Wrap(ErrNoPreviousEvent, err)
+	if !found {
+		return nil, ErrNoPreviousEvent
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return job, nil
