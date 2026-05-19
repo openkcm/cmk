@@ -68,6 +68,7 @@ func (s *DBSuite) SetupSuite() {
 	sys := manager.NewSystemManager(
 		ctx,
 		r,
+		nil,
 		f,
 		eventFactory,
 		svcRegistry,

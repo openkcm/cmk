@@ -11,9 +11,11 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 
 	conf "github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 const (
@@ -51,6 +53,7 @@ type TenantTaskHandler interface {
 type TaskHandler interface {
 	ProcessTask(ctx context.Context, task *asynq.Task) error
 	TaskType() string
+	Role() constants.InternalRole
 }
 
 type Client interface {
@@ -162,8 +165,18 @@ func (a *App) RunWorker(ctx context.Context, r repo.Repo) error {
 
 	for taskName, handler := range a.tasks {
 		processTask := handler.ProcessTask
+
+		// Wrap process task to inject the handler's internal role before execution
+		wrappedProcessTask := func(ctx context.Context, task *asynq.Task) error {
+			ctx, err := cmkcontext.InjectInternalUserData(ctx, handler.Role())
+			if err != nil {
+				return err
+			}
+			return processTask(ctx, task)
+		}
+
 		for _, mw := range a.middlewares {
-			processTask = mw(processTask)
+			wrappedProcessTask = mw(wrappedProcessTask)
 		}
 
 		mux.HandleFunc(taskName, func(ctx context.Context, task *asynq.Task) error {
@@ -176,12 +189,12 @@ func (a *App) RunWorker(ctx context.Context, r repo.Repo) error {
 						WithFanOutTenants(a.Client(), opts...),
 						WithTenantQuery(h.TenantQuery()),
 					)
-					return processor.ProcessTenantsInBatch(ctx, task, h.ProcessTask)
+					return processor.ProcessTenantsInBatch(ctx, task, wrappedProcessTask)
 				}
 				processor := NewBatchProcessor(r)
-				return processor.ProcessTenantsInBatch(ctx, task, h.ProcessTask)
+				return processor.ProcessTenantsInBatch(ctx, task, wrappedProcessTask)
 			default:
-				return h.ProcessTask(ctx, task)
+				return wrappedProcessTask(ctx, task)
 			}
 		})
 	}

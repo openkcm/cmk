@@ -62,7 +62,7 @@ func (s *SystemInformationSuite) TestUpdateSystems() {
 
 	assert.NoError(t, err)
 
-	si, err := manager.NewSystemInformationManager(repository, clg, &config.System{
+	si, err := manager.NewSystemInformationManager(repository, nil, clg, &config.System{
 		OptionalProperties: map[string]config.SystemProperty{
 			SystemRole:   {},
 			SystemRoleID: {},
@@ -138,7 +138,7 @@ func (s *SystemInformationSuite) TestUpdateSystemByExternalID() {
 
 	assert.NoError(t, err)
 
-	si, err := manager.NewSystemInformationManager(repository, clg, &config.System{
+	si, err := manager.NewSystemInformationManager(repository, nil, clg, &config.System{
 		OptionalProperties: map[string]config.SystemProperty{
 			SystemRole:   {},
 			SystemRoleID: {},

@@ -62,7 +62,7 @@ func AuthzMiddleware(
 
 				// If authorization fails, attempt to load the allow list for the tenant and check again
 				if !allowed {
-					tenantID, extractErr := cmkcontext.ExtractTenantID(ctx)
+					_, extractErr := cmkcontext.ExtractTenantID(ctx)
 					if extractErr != nil {
 						log.Debug(ctx, "ExtractTenantID error", log.ErrorAttr(extractErr))
 						write.ErrorResponse(
@@ -72,7 +72,7 @@ func AuthzMiddleware(
 						return
 					}
 
-					loadErr := ctr.AuthzLoader.LoadAllowList(ctx, tenantID)
+					loadErr := ctr.AuthzLoader.LoadAllowList(ctx)
 					if loadErr != nil {
 						log.Debug(ctx, "LoadAllowList error", log.ErrorAttr(loadErr))
 						write.ErrorResponse(

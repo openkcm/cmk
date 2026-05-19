@@ -408,7 +408,7 @@ func TestAuthzAllowed(t *testing.T) {
 
 	// Pre-create auth clients for all roles so that the authz loader
 	// picks them up on first tenant load (it caches per tenant).
-	authClients := map[constants.Role]testutils.AuthClientData{
+	authClients := map[constants.BusinessRole]testutils.AuthBusinessUserData{
 		constants.KeyAdminRole:      testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole()),
 		constants.TenantAdminRole:   testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole()),
 		constants.TenantAuditorRole: testutils.NewAuthClient(ctx, t, r, testutils.WithAuditorRole()),
@@ -424,7 +424,7 @@ func runAuthzAllowedTests(
 	sv *daemon.ServeMux,
 	tenant string,
 	endpoints []testutils.AuthzTestEndpoint,
-	authClients map[constants.Role]testutils.AuthClientData,
+	authClients map[constants.BusinessRole]testutils.AuthBusinessUserData,
 ) {
 	t.Helper()
 

@@ -31,9 +31,12 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/tenants"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -79,30 +82,44 @@ func (m *MockTenantManager) DeleteTenant(ctx context.Context) error {
 	return m.mockDeleteTenant(ctx)
 }
 
+func createContext(t *testing.T) context.Context {
+	t.Helper()
+
+	ctx := t.Context()
+	ctx, _ = cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantProvisioningRole)
+	return ctx
+}
+
 func createManagers(
 	t *testing.T,
 	dbCon *multitenancy.DB,
 	cfg *config.Config,
 	svcRegistry serviceapi.Registry,
-) (*manager.TenantManager, *manager.GroupManager) {
+) (*manager.TenantManager, *manager.GroupManager, repo.Repo) {
 	t.Helper()
 
 	r := sql.NewRepository(dbCon)
-	ctx := t.Context()
+
+	ctx := createContext(t)
+
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
+	assert.NotNil(t, authzRepoLoader.AuthzHandler)
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
 	cmkAuditor := auditor.New(ctx, cfg)
 
 	f, err := clients.NewFactory(config.Services{})
 	assert.NoError(t, err)
 
-	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	um := manager.NewUserManager(r, cmkAuditor)
-	tagm := manager.NewTagManager(r)
-	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
+	cm := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
+	um := manager.NewUserManager(authzRepo, cmkAuditor)
+	tagm := manager.NewTagManager(authzRepo)
+	kcm := manager.NewKeyConfigManager(authzRepo, cm, um, tagm, cmkAuditor, cfg)
 
 	sys := manager.NewSystemManager(
 		ctx,
-		r,
+		authzRepo, nil,
 		f,
 		nil,
 		svcRegistry,
@@ -112,7 +129,7 @@ func createManagers(
 	)
 
 	km := manager.NewKeyManager(
-		r,
+		authzRepo,
 		svcRegistry,
 		manager.NewTenantConfigManager(r, svcRegistry, nil),
 		kcm,
@@ -125,7 +142,9 @@ func createManagers(
 	migrator, err := db.NewMigrator(r, cfg)
 	assert.NoError(t, err)
 
-	return manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator), manager.NewGroupManager(r, svcRegistry, um)
+	return manager.NewTenantManager(authzRepo, sys, km, um, cmkAuditor, migrator),
+		manager.NewGroupManager(authzRepo, svcRegistry, um),
+		authzRepo
 }
 
 func createInvalidOperatorRequest(
@@ -137,6 +156,7 @@ func createInvalidOperatorRequest(
 	clientCon *commongrpc.DynamicClientConn,
 	tenantManager manager.Tenant,
 	groupManager *manager.GroupManager,
+	authzRepo repo.Repo,
 ) (*sessionmanager.FakeSessionManagerClient, orbital.TaskRequest, *respondertest.Responder) {
 	t.Helper()
 
@@ -150,11 +170,11 @@ func createInvalidOperatorRequest(
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
-	op, err := operator.NewTenantOperator(unusedDB, cfg, operatorTarget, clientFactory, tenantManager, groupManager)
+	op, err := operator.NewTenantOperator(unusedDB, cfg, operatorTarget, clientFactory, tenantManager, groupManager, authzRepo)
 	require.NoError(t, err)
 
 	go func() {
-		err = op.RunOperator(t.Context())
+		err = op.RunOperator(createContext(t))
 		assert.NoError(t, err)
 	}()
 
@@ -195,11 +215,11 @@ func TestNewTenantOperator(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager := createManagers(t, dbConn, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo := createManagers(t, dbConn, cfg, svcRegistry)
 
 	t.Run(
 		"nil db", func(t *testing.T) {
-			op, err := operator.NewTenantOperator(nil, cfg, operatorTarget, clientFactory, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(nil, cfg, operatorTarget, clientFactory, tenantManager, groupManager, authzRepo)
 			assert.Nil(t, op)
 			assert.Error(t, err)
 		},
@@ -208,7 +228,7 @@ func TestNewTenantOperator(t *testing.T) {
 	t.Run(
 		"nil amqp", func(t *testing.T) {
 			target := orbital.TargetOperator{}
-			op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory, tenantManager, groupManager, authzRepo)
 			assert.Nil(t, op)
 			assert.Error(t, err)
 		},
@@ -216,7 +236,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	t.Run(
 		"nil factory client", func(t *testing.T) {
-			op, err := operator.NewTenantOperator(dbConn, cfg, operatorTarget, nil, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(dbConn, cfg, operatorTarget, nil, tenantManager, groupManager, authzRepo)
 			assert.Nil(t, op)
 			assert.Error(t, err)
 		},
@@ -224,7 +244,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	t.Run(
 		"valid operator", func(t *testing.T) {
-			op, err := operator.NewTenantOperator(dbConn, cfg, operatorTarget, clientFactory, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(dbConn, cfg, operatorTarget, clientFactory, tenantManager, groupManager, authzRepo)
 			require.NoError(t, err)
 			assert.NotNil(t, op)
 		},
@@ -234,7 +254,7 @@ func TestNewTenantOperator(t *testing.T) {
 func TestRunOperator(t *testing.T) {
 	testConfig := newTestOperator(t)
 
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(createContext(t))
 	defer cancel()
 
 	done := make(chan error, 1)
@@ -257,7 +277,7 @@ func TestRunOperator(t *testing.T) {
 
 func TestHandleCreateTenant(t *testing.T) {
 	// Initialize TenantOperator
-	ctx := t.Context()
+	ctx := createContext(t)
 	testConfig := newTestOperator(t)
 
 	validTenantID := uuid.NewString()
@@ -363,7 +383,7 @@ func TestHandleCreateTenant(t *testing.T) {
 }
 
 func TestHandleCreateTenantConcurrent(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
 	handler := slogctx.NewHandler(
 		slog.NewTextHandler(
 			os.Stdout, &slog.HandlerOptions{
@@ -490,11 +510,11 @@ func TestHandleApplyAuth_InvalidData(t *testing.T) {
 					Client: responder,
 				}
 				cfg := &config.Config{}
-				op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, nil, nil)
+				op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, nil, nil, nil)
 				require.NoError(t, err)
 
 				go func() {
-					err = op.RunOperator(t.Context())
+					err = op.RunOperator(createContext(t))
 					assert.NoError(t, err)
 				}()
 
@@ -536,11 +556,11 @@ func TestHandleApplyAuth_IssuerUpdate(t *testing.T) {
 				sessionmanager.NewMockService(unusedSMClient),
 			)
 
-			op, err := operator.NewTenantOperator(db, cfg, operatorTarget, clientFactory, nil, nil)
+			op, err := operator.NewTenantOperator(db, cfg, operatorTarget, clientFactory, nil, nil, sql.NewRepository(db))
 			require.NoError(t, err)
 
 			go func() {
-				err = op.RunOperator(t.Context())
+				err = op.RunOperator(createContext(t))
 				assert.NoError(t, err)
 			}()
 
@@ -632,11 +652,11 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 					registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 					sessionmanager.NewMockService(sessionManagerClient),
 				)
-				op, err := operator.NewTenantOperator(db, cfg, operatorTarget, clientFactory, nil, nil)
+				op, err := operator.NewTenantOperator(db, cfg, operatorTarget, clientFactory, nil, nil, r)
 				require.NoError(t, err)
 
 				go func() {
-					err = op.RunOperator(t.Context())
+					err = op.RunOperator(createContext(t))
 					assert.NoError(t, err)
 				}()
 
@@ -690,7 +710,7 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				tenant := &model.Tenant{
 					ID: auth.GetTenantId(),
 				}
-				success, err := r.First(t.Context(), tenant, *repo.NewQuery())
+				success, err := r.First(createContext(t), tenant, *repo.NewQuery())
 				assert.NoError(t, err)
 				assert.True(t, success)
 
@@ -718,11 +738,11 @@ func TestHandleBlockTenant(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager := createManagers(t, unusedDB, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
-			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager)
+			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager, authzRepo)
 		noOfCalls := 0
 		sessionManagerClient.MockBlockOIDCMapping = func(
 			_ context.Context,
@@ -788,11 +808,11 @@ func TestHandleBlockTenant(t *testing.T) {
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
-			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, tenantManager, groupManager, authzRepo)
 			require.NoError(t, err)
 
 			go func() {
-				err = op.RunOperator(t.Context())
+				err = op.RunOperator(createContext(t))
 				assert.NoError(t, err)
 			}()
 
@@ -845,11 +865,11 @@ func TestHandleUnblockTenant(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager := createManagers(t, unusedDB, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
-			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager)
+			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager, authzRepo)
 		noOfCalls := 0
 		sessionManagerClient.MockUnblockOIDCMapping = func(
 			_ context.Context,
@@ -915,11 +935,11 @@ func TestHandleUnblockTenant(t *testing.T) {
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
-			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, tenantManager, groupManager)
+			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, tenantManager, groupManager, authzRepo)
 			require.NoError(t, err)
 
 			go func() {
-				err = op.RunOperator(t.Context())
+				err = op.RunOperator(createContext(t))
 				assert.NoError(t, err)
 			}()
 
@@ -969,14 +989,14 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	_, groupManager := createManagers(t, unusedDB, cfg, svcRegistry)
+	_, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
 	mockTenantManager := &MockTenantManager{}
 
 	taskType := tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String()
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
-			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, mockTenantManager, groupManager)
+			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, mockTenantManager, groupManager, authzRepo)
 		noOfCalls := 0
 		sessionManagerClient.MockRemoveOIDCMapping = func(
 			_ context.Context,
@@ -1036,11 +1056,11 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
-			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, mockTenantManager, groupManager)
+			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, mockTenantManager, groupManager, authzRepo)
 			require.NoError(t, err)
 
 			go func() {
-				err = op.RunOperator(t.Context())
+				err = op.RunOperator(createContext(t))
 				assert.NoError(t, err)
 			}()
 
@@ -1108,7 +1128,7 @@ func TestHandleTerminateTenant(t *testing.T) {
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
-	_, groupManager := createManagers(t, unusedDB, cfg, svcRegistry)
+	_, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
 	mockTenantManager := MockTenantManager{}
 
 	taskType := tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String()
@@ -1183,11 +1203,12 @@ func TestHandleTerminateTenant(t *testing.T) {
 				clientFactory,
 				&mockTenantManager,
 				groupManager,
+				authzRepo,
 			)
 			require.NoError(t, err)
 
 			go func() {
-				err = op.RunOperator(t.Context())
+				err = op.RunOperator(createContext(t))
 				assert.NoError(t, err)
 			}()
 
@@ -1441,9 +1462,9 @@ func TestTenantOperatorTracing(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager := createManagers(t, dbConn, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo := createManagers(t, dbConn, cfg, svcRegistry)
 	op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory,
-		tenantManager, groupManager)
+		tenantManager, groupManager, authzRepo)
 	require.NoError(t, err)
 
 	validData, err := createValidTenantData(tenantID, RegionUSWest1, tenants[0])
@@ -1533,7 +1554,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager := createManagers(t, multitenancyDB, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo := createManagers(t, multitenancyDB, cfg, svcRegistry)
 	tenantOperator, err := operator.NewTenantOperator(
 		multitenancyDB,
 		cfg,
@@ -1541,6 +1562,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 		clientFactory,
 		tenantManager,
 		groupManager,
+		authzRepo,
 	)
 	require.NoError(t, err, "Failed to create TenantOperator")
 	require.NotNil(t, tenantOperator, "TenantOperator should not be nil")

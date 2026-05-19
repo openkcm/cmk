@@ -76,7 +76,8 @@ func overrideDatabase(t *testing.T, a *async.App, db *multitenancy.DB, cfg *conf
 
 	val := reflect.ValueOf(a).Elem()
 
-	sis, err := manager.NewSystemInformationManager(tenancyRepo, svcRegistry, &cfg.ContextModels.System)
+	sis, err := manager.NewSystemInformationManager(tenancyRepo, nil,
+		svcRegistry, &cfg.ContextModels.System)
 	assert.NoError(t, err)
 
 	sysCl := val.FieldByName("systemClient")

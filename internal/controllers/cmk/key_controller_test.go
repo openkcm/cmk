@@ -46,10 +46,10 @@ func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *tes
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Registry:           testutils.NewTestPlugins(),
-		Config:             config.Config{Database: dbCfg},
-		EnableClientDataMW: true,
-		SigningKeyStorage:  keyStorage,
+		Registry:                 testutils.NewTestPlugins(),
+		Config:                   config.Config{Database: dbCfg},
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
 	}), tenants[0], keyStorage
 }
 
@@ -62,7 +62,7 @@ func TestKeyControllerGetKeys(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 	key1 := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
 	})
@@ -86,7 +86,7 @@ func TestKeyControllerGetKeys(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name           string
@@ -156,7 +156,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -174,7 +174,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -290,7 +290,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 
 	testutils.CreateTestEntities(
@@ -372,7 +372,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name            string
@@ -524,7 +524,7 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -535,7 +535,7 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("Should fail to create key if keystore pool is drained", func(t *testing.T) {
 		// Arrange
@@ -596,7 +596,7 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 	// Create a key in the database
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
@@ -611,7 +611,7 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name           string
@@ -661,7 +661,7 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 			Identifier: authClient.Identifier,
 			Groups:     []string{uuid.NewString()},
 		}
-		headersNotAllowed := testutils.NewSignedClientDataHeaders(t, notAllowedClientData, privateKey, 0)
+		headersNotAllowed := testutils.NewSignedBusinessUserDataHeaders(t, notAllowedClientData, privateKey, 0)
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
@@ -684,14 +684,14 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
 	})
 
 	keyConfigWSys := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 	sys := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfigWSys.ID)
 	})
@@ -720,7 +720,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name           string
@@ -808,7 +808,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	sysFailed := testutils.NewSystem(func(sys *model.System) {
 		sys.KeyConfigurationID = ptr.PointTo(kc.ID)
@@ -849,7 +849,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name           string
@@ -1013,7 +1013,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			Identifier: authClient.Identifier,
 			Groups:     []string{uuid.NewString()},
 		}
-		headersNotAllowed := testutils.NewSignedClientDataHeaders(t, notAllowedClientData, privateKey, 0)
+		headersNotAllowed := testutils.NewSignedBusinessUserDataHeaders(t, notAllowedClientData, privateKey, 0)
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodPatch,
@@ -1059,7 +1059,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(
 		ctx,
@@ -1082,7 +1082,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("GetImportParamsSuccess", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -1180,7 +1180,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
@@ -1217,7 +1217,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("ImportKeyMaterialSuccess", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{

@@ -83,6 +83,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	sys := manager.NewSystemManager(
 		ctx,
 		r,
+		nil,
 		clientsFactory,
 		eventFactory,
 		svcRegistry,
@@ -179,7 +180,7 @@ func TestOffboardTenant(t *testing.T) {
 	)
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
 	t.Run("Should return success", func(t *testing.T) {

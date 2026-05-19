@@ -3,47 +3,106 @@ package tasks_test
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
 	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
+	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var errMockSyncHYOKClient = errors.New("error syncing hyok client")
 
-type HyokHYOKClientMock struct{}
+var allowedHYOKTestActions = []authz.RepoAction{
+	authz.RepoActionList,
+	authz.RepoActionCount,
+	authz.RepoActionUpdate,
+}
 
-func (s *HyokHYOKClientMock) SyncHYOKKeys(_ context.Context) error {
+type HYOKClientMock struct {
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+		authz.RepoAction]
+}
+
+func (s *HYOKClientMock) SyncHYOKKeys(ctx context.Context) error {
+	err := s.authzLoader.LoadAllowList(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, testAction := range allowedHYOKTestActions {
+		isAllowed, err := authz.CheckAuthz(ctx, s.authzLoader.AuthzHandler,
+			authz.RepoResourceTypeKey, testAction)
+		if err != nil {
+			return err
+		}
+		if !isAllowed {
+			return authz.ErrAuthzDecision
+		}
+	}
 	return nil
 }
 
-type HyokHYOKClientMockFailed struct{}
+type HYOKClientMockFailed struct {
+}
 
-func (s *HyokHYOKClientMockFailed) SyncHYOKKeys(_ context.Context) error {
+func (s *HYOKClientMockFailed) SyncHYOKKeys(_ context.Context) error {
 	return errMockSyncHYOKClient
+}
+
+type HYOKClientMockUnauthz struct {
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+		authz.RepoAction]
+}
+
+func (s *HYOKClientMockUnauthz) SyncHYOKKeys(ctx context.Context) error {
+	err := s.authzLoader.LoadAllowList(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = authz.CheckAuthz(ctx, s.authzLoader.AuthzHandler,
+		authz.RepoResourceTypeKey, authz.RepoActionDelete)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func TestHYOKSyncProcessAction(t *testing.T) {
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
-	sync := tasks.NewHYOKSync(&HyokHYOKClientMock{}, r)
+
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+		r, &config.Config{})
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
+	mock := &HYOKClientMock{authzLoader: authzRepoLoader}
+	sync := tasks.NewHYOKSync(mock, authzRepo)
 
 	task := asynq.NewTask(config.TypeHYOKSync, nil)
 
-	t.Run("Should complete", func(t *testing.T) {
-		err := sync.ProcessTask(t.Context(), task)
-		assert.NoError(t, err)
-	})
+	t.Run("Should process without error", func(t *testing.T) {
+		logger, buf := testutils.NewLogBuffer()
+		slog.SetDefault(logger)
 
-	t.Run("Task type is right", func(t *testing.T) {
-		taskType := sync.TaskType()
-		assert.Equal(t, config.TypeHYOKSync, taskType, "Task type should be HYOKSync")
+		ctx, err := cmkcontext.InjectInternalUserData(t.Context(), constants.InternalTaskHYOKSyncRole)
+		assert.NoError(t, err)
+		err = sync.ProcessTask(ctx, task)
+		assert.NoError(t, err)
+		assert.NotContains(t, strings.ToLower(buf.String()), "error")
 	})
 
 	t.Run("Should have right taskType", func(t *testing.T) {
@@ -52,5 +111,32 @@ func TestHYOKSyncProcessAction(t *testing.T) {
 
 	t.Run("Should have default tenant query", func(t *testing.T) {
 		assert.Equal(t, repo.NewQuery(), sync.TenantQuery())
+	})
+
+	t.Run("Should log error on task failure", func(t *testing.T) {
+		logger, buf := testutils.NewLogBuffer()
+		slog.SetDefault(logger)
+
+		failSync := tasks.NewHYOKSync(&HYOKClientMockFailed{}, r)
+		ctx, err := cmkcontext.InjectInternalUserData(t.Context(), constants.InternalTaskHYOKSyncRole)
+		assert.NoError(t, err)
+		err = failSync.ProcessTask(ctx, task)
+		assert.NoError(t, err)
+		assert.Contains(t, buf.String(), "Error during hyok sync batch processing")
+		assert.Contains(t, buf.String(), "error syncing hyok client")
+	})
+
+	t.Run("Should log on unauthorized processing", func(t *testing.T) {
+		logger, buf := testutils.NewLogBuffer()
+		slog.SetDefault(logger)
+
+		mock := &HYOKClientMockUnauthz{authzLoader: authzRepoLoader}
+		sync := tasks.NewHYOKSync(mock, authzRepo)
+		ctx, err := cmkcontext.InjectInternalUserData(t.Context(), constants.InternalTaskHYOKSyncRole)
+		assert.NoError(t, err)
+		err = sync.ProcessTask(ctx, task)
+		assert.NoError(t, err)
+		assert.Contains(t, buf.String(), "Error during hyok sync batch processing")
+		assert.Contains(t, buf.String(), "authorization decision error")
 	})
 }

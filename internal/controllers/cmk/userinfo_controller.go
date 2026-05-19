@@ -10,7 +10,7 @@ func (c *APIController) GetUserInfo(
 	ctx context.Context,
 	_ cmkapi.GetUserInfoRequestObject,
 ) (cmkapi.GetUserInfoResponseObject, error) {
-	userInfo, err := c.Manager.User.GetUserInfo(ctx)
+	userInfo, err := c.Manager.User.GetBusinessUserInfo(ctx)
 	if err != nil {
 		return nil, err
 	}

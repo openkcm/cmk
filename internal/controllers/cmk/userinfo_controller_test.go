@@ -11,6 +11,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -27,9 +28,9 @@ func startAPIUserInfo(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, 
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:             config.Config{Database: dbCfg},
-		EnableClientDataMW: true,
-		SigningKeyStorage:  keyStorage,
+		Config:                   config.Config{Database: dbCfg},
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
 	}), tenants[0], keyStorage
 }
 
@@ -54,13 +55,23 @@ func TestGetUserInfo(t *testing.T) {
 			FamilyName: "Builder",
 			Groups:     []string{group.IAMIdentifier, "some-other-group"},
 		}
-		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/userInfo",
 			Tenant:   tenant,
 			Headers:  headers,
+			AdditionalContext: map[any]any{
+				constants.UserType: constants.BusinessUser,
+				constants.BusinessUserData: &auth.ClientData{
+					Identifier: "user-123",
+					Email:      "bob@example.com",
+					GivenName:  "Bob",
+					FamilyName: "Builder",
+					Groups:     []string{group.IAMIdentifier, "some-other-group"},
+				},
+			},
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -81,13 +92,23 @@ func TestGetUserInfo(t *testing.T) {
 			FamilyName: "Builder",
 			Groups:     []string{"some-other-group"},
 		}
-		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/userInfo",
 			Tenant:   tenant,
 			Headers:  headers,
+			AdditionalContext: map[any]any{
+				constants.UserType: constants.BusinessUser,
+				constants.BusinessUserData: &auth.ClientData{
+					Identifier: "user-123",
+					Email:      "bob@example.com",
+					GivenName:  "Bob",
+					FamilyName: "Builder",
+					Groups:     []string{"some-other-group"},
+				},
+			},
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)

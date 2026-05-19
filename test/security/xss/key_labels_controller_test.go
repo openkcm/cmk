@@ -51,7 +51,7 @@ func TestLabelsController_Labels_ForXSS(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key := testutils.NewKey(func(k *model.Key) { k.KeyConfigurationID = keyConfig.ID })
 	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)

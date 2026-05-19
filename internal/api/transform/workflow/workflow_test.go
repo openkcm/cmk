@@ -97,7 +97,7 @@ func TestWorkflow_ToAPI(t *testing.T) {
 			idm := testplugins.NewTestIdentityManagement()
 			idm.PutUser(identitymanagement.User{ID: tt.dbWorkflow.InitiatorID})
 
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx := cmkcontext.InjectBusinessUserData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 			apiWorkflow, err := workflow.ToAPI(ctx, tt.dbWorkflow, nil, nil, idm)
 
 			if tt.errorExpected {
@@ -141,7 +141,7 @@ func TestWorkflow_FromAPI(t *testing.T) {
 			name:        "Should be valid with context",
 			apiWorkflow: apiWorkflowMutator(),
 			ctxFn: func(ctx context.Context) context.Context {
-				return cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
+				return cmkcontext.InjectBusinessUserData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 			},
 		},
 		{
@@ -155,7 +155,7 @@ func TestWorkflow_FromAPI(t *testing.T) {
 				w.ExpiresAt = ptr.PointTo(time.Now())
 			}),
 			ctxFn: func(ctx context.Context) context.Context {
-				return cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
+				return cmkcontext.InjectBusinessUserData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 			},
 		},
 		{
@@ -164,7 +164,7 @@ func TestWorkflow_FromAPI(t *testing.T) {
 				w.ExpiresAt = ptr.PointTo(time.Now().AddDate(0, 0, 31))
 			}),
 			ctxFn: func(ctx context.Context) context.Context {
-				return cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
+				return cmkcontext.InjectBusinessUserData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 			},
 			errorExpected: true,
 		},
@@ -256,7 +256,7 @@ func TestWorkflow_FromAPI_Expires(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			ctx = cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx = cmkcontext.InjectBusinessUserData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 
 			w, err := workflow.FromAPI(ctx, tt.apiWorkflow, defaultExpiry, maxExpiry)
 
@@ -311,10 +311,9 @@ func TestWorkflow_ApproverToAPI(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			approverName := uuid.NewString() + "@example.com"
 
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx := cmkcontext.InjectBusinessUserData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 			idm := testplugins.NewTestIdentityManagement()
 			idm.PutUser(identitymanagement.User{ID: tt.input.UserID, Name: approverName})
-
 			apiApprover, err := workflow.ApproverToAPI(ctx, tt.input, idm)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.input.UserID, apiApprover.Id)
@@ -460,8 +459,7 @@ func TestWorkflow_ToAPI_EligibilityMetadata(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
-
+			ctx := cmkcontext.InjectBusinessUserData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 			idm := testplugins.NewTestIdentityManagement()
 			idm.PutUser(identitymanagement.User{ID: tt.dbWorkflow.InitiatorID})
 

@@ -74,7 +74,7 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 			err := r.Create(ctx, keyConfig)
 			assert.NoError(t, err)
 
-			ctx := testutils.InjectClientDataIntoContext(
+			ctx := testutils.InjectBusinessUserDataIntoContext(
 				ctx,
 				uuid.NewString(),
 				[]string{keyConfig.AdminGroup.IAMIdentifier},
@@ -92,7 +92,7 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 			assert.NoError(t, err)
 
 			lifecycle := workflow.NewLifecycle(wf, mgr.Keys, mgr.KeyConfig, mgr.System, r, wf.InitiatorID, 2)
-			err = lifecycle.ApplyTransition(ctx, tt.transition)
+			err = lifecycle.ValidateAndApplyTransition(ctx, tt.transition)
 			assert.NoError(t, err)
 
 			wf = &model.Workflow{ID: wf.ID}

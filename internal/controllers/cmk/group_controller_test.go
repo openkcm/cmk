@@ -27,8 +27,8 @@ func startAPIGroups(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *t
 
 	r := testutils.NewAPIServer(
 		t, db, testutils.TestAPIServerConfig{
-			EnableClientDataMW: true,
-			SigningKeyStorage:  keyStorage,
+			EnableBusinessUserDataMW: true,
+			SigningKeyStorage:        keyStorage,
 		},
 	)
 
@@ -41,7 +41,7 @@ func TestGetGroups(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, repo, testutils.WithTenantAdminRole())
-	headers := testutils.WithClientData(t, keyStorage, authClient)
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run("Should code 200 on successful groups get", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(
@@ -99,7 +99,7 @@ func TestPostGroups(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, rep, testutils.WithTenantAdminRole())
-	headers := testutils.WithClientData(t, keyStorage, authClient)
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run(
 		"Should code 201 on successful group creation", func(t *testing.T) {
@@ -207,7 +207,7 @@ func TestDeleteGroup(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, repo, testutils.WithTenantAdminRole())
-	headers := testutils.WithClientData(t, keyStorage, authClient)
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run(
 		"Should code 204 on successful group delete", func(t *testing.T) {
@@ -279,7 +279,7 @@ func TestGetGroupID(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, rep, testutils.WithAuditorRole())
-	headers := testutils.WithClientData(t, keyStorage, authClient)
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run("Should code 200 successful get", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(
@@ -344,7 +344,7 @@ func TestUpdateGroup(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, repo, testutils.WithTenantAdminRole())
-	headers := testutils.WithClientData(t, keyStorage, authClient)
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run("Should code 200 on successful group rename", func(t *testing.T) {
 		updateGroup := cmkapi.GroupPatch{
@@ -455,7 +455,7 @@ func TestCheckGroupsIAM(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithAuditorRole())
-	headers := testutils.WithClientData(t, keyStorage, authClient)
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run(
 		"returns correct response on success", func(t *testing.T) {

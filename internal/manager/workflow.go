@@ -481,12 +481,10 @@ func (w *WorkflowManager) GetWorkflowAvailableTransitions(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) ([]wf.Transition, error) {
-	clientData, err := cmkContext.ExtractClientData(ctx)
+	userID, err := cmkContext.ExtractUserIdentifier(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	userID := clientData.Identifier
 
 	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, userID)
 	if err != nil {
@@ -504,7 +502,12 @@ func (w *WorkflowManager) WorkflowCanExpire(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (bool, error) {
-	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID)
+	userID, err := cmkContext.ExtractUserIdentifier(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, userID)
 	if err != nil {
 		return false, err
 	}
@@ -524,7 +527,12 @@ func (w *WorkflowManager) ExpireWorkflow(
 	}
 
 	err = w.repo.Transaction(ctx, func(ctx context.Context) error {
-		workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID)
+		userID, err := cmkContext.ExtractUserIdentifier(ctx)
+		if err != nil {
+			return err
+		}
+
+		workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, userID)
 		if err != nil {
 			return err
 		}
@@ -551,7 +559,12 @@ func (w *WorkflowManager) GetWorkflowApprovalSummary(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (*wf.ApprovalSummary, error) {
-	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, wf.SystemUserID) // Use system user for summary
+	userID, err := cmkContext.ExtractUserIdentifier(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -605,12 +618,10 @@ func (w *WorkflowManager) TransitionWorkflow(
 	workflowID uuid.UUID,
 	transition wf.Transition,
 ) (*model.Workflow, error) {
-	clientData, err := cmkContext.ExtractClientData(ctx)
+	userID, err := cmkContext.ExtractUserIdentifier(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	userID := clientData.Identifier
 
 	workflow := &model.Workflow{ID: workflowID}
 
@@ -865,9 +876,9 @@ func (w *WorkflowManager) getEligibleUserIDsForWorkflow(
 	}
 
 	// Get auth context
-	authCtx, err := cmkContext.ExtractClientDataAuthContext(ctx)
-	if err != nil {
-		return nil, errs.Wrap(ErrCheckWorkflowEligibility, err)
+	authCtx, _ := cmkContext.ExtractBusinessUserDataAuthContext(ctx)
+	if authCtx == nil {
+		authCtx = map[string]string{}
 	}
 
 	// Single SCIM call - get all eligible users from groups
@@ -1086,7 +1097,7 @@ func (w *WorkflowManager) getWorkflows(
 	}
 
 	if isGroupFiltered {
-		iamIdentifier, err := cmkContext.ExtractClientDataIdentifier(ctx)
+		iamIdentifier, err := cmkContext.ExtractBusinessUserDataIdentifier(ctx)
 		if err != nil {
 			return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 		}
@@ -1214,7 +1225,7 @@ func (w *WorkflowManager) addApproversAndGroupAssociations(
 		}
 
 		// Then, apply the transition to next state
-		err = workflowLifecycle.ApplyTransition(ctx, wf.TransitionCreate)
+		err = workflowLifecycle.ValidateAndApplyTransition(ctx, wf.TransitionCreate)
 		if err != nil {
 			return errs.Wrap(ErrApplyTransition, err)
 		}
@@ -1255,9 +1266,12 @@ func (w *WorkflowManager) applyTransition(
 	workflow *model.Workflow,
 	transition wf.Transition,
 ) error {
+	var capturedEligibleApproverIDs map[string]bool
+
 	err := w.repo.Transaction(ctx, func(ctx context.Context) error {
 		// For approve/reject transitions, fetch eligible approvers BEFORE creating lifecycle
 		eligibleApproverIDs := w.fetchEligibilityForVote(ctx, workflow, transition)
+		capturedEligibleApproverIDs = eligibleApproverIDs
 
 		// Create lifecycle with eligibility filtering (if available)
 		workflowLifecycle, err := w.getWorkflowLifecycleWithEligibility(ctx, workflow, userID, eligibleApproverIDs)
@@ -1287,7 +1301,7 @@ func (w *WorkflowManager) applyTransition(
 		}
 
 		// Apply the transition - the state machine now uses eligibility-filtered approvers
-		transitionErr := workflowLifecycle.ApplyTransition(ctx, transition)
+		transitionErr := workflowLifecycle.ValidateAndApplyTransition(ctx, transition)
 		if transitionErr != nil {
 			return errs.Wrap(ErrApplyTransition, transitionErr)
 		}
@@ -1298,7 +1312,7 @@ func (w *WorkflowManager) applyTransition(
 		}
 
 		// After vote, check if we should auto-reject due to mathematical impossibility
-		w.attemptAutoReject(ctx, workflow, transition, eligibleApproverIDs)
+		w.attemptAutoReject(ctx, workflow, transition, capturedEligibleApproverIDs)
 
 		return nil
 	})
@@ -1372,14 +1386,15 @@ func (w *WorkflowManager) attemptAutoReject(
 		return
 	}
 
-	// Try to apply REJECT transition with system user (automated action)
-	systemLifecycle, err := w.getWorkflowLifecycleWithEligibility(ctx, workflow, wf.SystemUserID, eligibleApproverIDs)
+	internalLifecycle, err := w.getWorkflowLifecycleWithEligibility(ctx, workflow,
+		"", eligibleApproverIDs)
 	if err != nil {
 		return
 	}
 
-	// ApplyTransition will skip if rejection criteria aren't met (via transitionPrecheck)
-	rejectErr := systemLifecycle.ApplyTransition(ctx, wf.TransitionReject)
+	// ApplyTransition skips actor validation — authority is implicit
+	// because this is called only after a vote has already been validated.
+	rejectErr := internalLifecycle.ApplyTransition(ctx, wf.TransitionReject)
 	if rejectErr != nil {
 		log.Warn(ctx, "Failed to auto-reject workflow after vote",
 			slog.Any("error", rejectErr), slog.String("workflowID", workflow.ID.String()))
@@ -1450,7 +1465,7 @@ func (w *WorkflowManager) checkPermissionToCreateWorkflow(
 			return false, err
 		}
 
-		userinfo, err := w.userManager.GetUserInfo(ctx)
+		userinfo, err := w.userManager.GetBusinessUserInfo(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -1586,9 +1601,9 @@ func (w *WorkflowManager) getApproversAndGroupsFromKeyConfigs(
 
 		groupMap[group.IAMIdentifier] = group
 
-		authCtx, err := cmkContext.ExtractClientDataAuthContext(ctx)
-		if err != nil {
-			return nil, nil, errs.Wrap(ErrAutoAssignApprover, err)
+		authCtx, _ := cmkContext.ExtractBusinessUserDataAuthContext(ctx)
+		if authCtx == nil {
+			authCtx = map[string]string{}
 		}
 
 		idmGroup, err := idm.GetGroup(ctx, &identitymanagement.GetGroupRequest{
@@ -1719,9 +1734,9 @@ func (w *WorkflowManager) checkApproverEligibility(
 	}
 
 	// Get auth context
-	authCtx, err := cmkContext.ExtractClientDataAuthContext(ctx)
-	if err != nil {
-		return errs.Wrap(ErrCheckWorkflowEligibility, err)
+	authCtx, _ := cmkContext.ExtractBusinessUserDataAuthContext(ctx)
+	if authCtx == nil {
+		authCtx = map[string]string{}
 	}
 
 	// Check if user is still in any of the groups

@@ -168,7 +168,7 @@ func TestWorkflow_Description(t *testing.T) {
 			idm := testplugins.NewTestIdentityManagement()
 			idm.PutUser(identitymanagement.User{ID: initiatorID, Name: "initiator@example.com"})
 
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx := cmkcontext.InjectBusinessUserData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 
 			description, err := workflow.Description(ctx, idm)
 			assert.NoError(t, err)

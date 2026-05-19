@@ -100,7 +100,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	migrator, err := db.NewMigrator(r, &cfg)
 	assert.NoError(t, err)
 
-	return manager.New(ctx, r, &cfg, clientsFactory, svcRegistry, eventFactory, nil, migrator), dbCon, tenants[0]
+	return manager.New(ctx, r, nil, &cfg, clientsFactory, svcRegistry, eventFactory, nil, migrator), dbCon, tenants[0]
 }
 
 func TestWorkflowLifecycleTransitions(t *testing.T) {
@@ -1028,7 +1028,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 	}
 	err := r.Create(ctx, keyConf)
 	assert.NoError(t, err)
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConf.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConf.AdminGroup.IAMIdentifier})
 
 	testutils.CreateTestEntities(
 		ctx,
@@ -1048,7 +1048,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 
 			// Act
 			lifecycle := workflow.NewLifecycle(&tt.workflow, mgr.Keys, mgr.KeyConfig, mgr.System, r, tt.actorID, 2)
-			transitionErr := lifecycle.ApplyTransition(ctx, tt.transition)
+			transitionErr := lifecycle.ValidateAndApplyTransition(ctx, tt.transition)
 
 			// Verify
 			// Retrieve workflow from database again to get most up-to-date representation

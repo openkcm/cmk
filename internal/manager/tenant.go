@@ -214,7 +214,6 @@ func (m *TenantManager) CreateTenant(ctx context.Context, tenant *model.Tenant) 
 			if errors.Is(err, repo.ErrUniqueConstraint) {
 				err = errs.Wrap(ErrOnboardingInProgress, err)
 			}
-
 			return errs.Wrap(ErrCreatingTenant, err)
 		}
 

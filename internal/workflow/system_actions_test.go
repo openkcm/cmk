@@ -112,7 +112,7 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 				c.PrimaryKeyID = &key3.ID
 			})
 
-			ctx = testutils.InjectClientDataIntoContext(
+			ctx = testutils.InjectBusinessUserDataIntoContext(
 				ctx,
 				uuid.NewString(),
 				[]string{
@@ -129,7 +129,7 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 
 			// Act
 			lifecycle := workflow.NewLifecycle(&tt.workflow, mgr.Keys, mgr.KeyConfig, mgr.System, r, tt.actorID, 2)
-			transitionErr := lifecycle.ApplyTransition(ctx, tt.transition)
+			transitionErr := lifecycle.ValidateAndApplyTransition(ctx, tt.transition)
 
 			// Verify
 			// Retrieve workflow and other resources from database again to get most up-to-date representation

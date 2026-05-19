@@ -1,0 +1,82 @@
+package authz_policy_test
+
+import (
+	"log/slog"
+	"strings"
+	"testing"
+
+	"github.com/hibiken/asynq"
+	"github.com/stretchr/testify/assert"
+
+	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
+	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
+)
+
+// TestHYOKSync_AuthzPolicy verifies that the InternalTaskHYOKSyncRole policy
+// grants exactly the repo access that KeyManager.SyncHYOKKeys requires, without
+// the manager being mocked out.
+//
+// No HYOK keys are seeded, so SyncHYOKKeys exits after the Count+List authz
+// checks with an empty batch — confirming those operations are permitted.
+func TestHYOKSync_AuthzPolicy(t *testing.T) {
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+	})
+	tenant := tenants[0]
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	ctx, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTaskHYOKSyncRole)
+	assert.NoError(t, err)
+
+	r := sql.NewRepository(db)
+
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(), r, &config.Config{})
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
+	ps := testutils.NewTestPlugins(testplugins.WithCertificateIssuer(testplugins.NewTestCertificateIssuer()))
+	cfg := &config.Config{
+		Database: dbCfg,
+	}
+
+	cmkAuditor := auditor.New(t.Context(), cfg)
+	certManager := manager.NewCertificateManager(t.Context(), authzRepo, ps, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg)
+	tagManager := manager.NewTagManager(authzRepo)
+	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
+	keyConfigManager := manager.NewKeyConfigManager(authzRepo, certManager, userManager, tagManager, cmkAuditor, cfg)
+
+	keyManager := manager.NewKeyManager(
+		authzRepo,
+		ps,
+		tenantConfigManager,
+		keyConfigManager,
+		userManager,
+		certManager,
+		nil, // eventFactory
+		cmkAuditor,
+	)
+
+	hyokSync := tasks.NewHYOKSync(keyManager, authzRepo)
+	task := asynq.NewTask(config.TypeHYOKSync, nil)
+
+	// No HYOK keys are seeded — SyncHYOKKeys calls ProcessInBatch → Count+List on
+	// Key → empty batch → clean exit. This is sufficient to prove the policy
+	// permits those operations.
+	t.Run("InternalTaskHYOKSyncRole allows Count and List on Key", func(t *testing.T) {
+		logger, buf := testutils.NewLogBuffer()
+		slog.SetDefault(logger)
+
+		err := hyokSync.ProcessTask(ctx, task)
+		assert.NoError(t, err)
+		assert.NotContains(t, strings.ToLower(buf.String()), "error",
+			"unexpected error log: %s", buf.String())
+	})
+}

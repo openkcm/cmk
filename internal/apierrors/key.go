@@ -28,7 +28,7 @@ var (
 	ErrTransformKeyFromAPI                  = errors.New("failed to transform key from API")
 	ErrSetPrimaryKey                        = errors.New("failed to set primary key")
 	ErrDefaultKeystoreNotFound              = errors.New("default keystore not found")
-	ErrClientDataInvalid                    = errors.New("client data invalid")
+	ErrBusinessUserDataInvalid              = errors.New("client data invalid")
 )
 
 var key = []errs.ExposedErrors[*APIError]{
@@ -374,7 +374,7 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{ErrClientDataInvalid},
+		InternalErrorChain: []error{ErrBusinessUserDataInvalid},
 		ExposedError: &APIError{
 			Code:    "INVALID_CLIENT_DATA",
 			Message: "The client data is invalid",

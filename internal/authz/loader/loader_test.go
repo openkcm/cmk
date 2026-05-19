@@ -8,7 +8,6 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/authz"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -75,43 +74,23 @@ func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {
 	cfg := &config.Config{}
 	am := authz_loader.NewAPIAuthzLoader(t.Context(), r, cfg)
 
-	expectedRoles := []constants.Role{constants.TenantAdminRole, constants.TenantAuditorRole, constants.KeyAdminRole}
-
-	// Helper to check roles for a tenantID
-	checkRoles := func(entities []authz.Entity, tenant string, expectedRoles []constants.Role) {
-		roles := map[constants.Role]bool{}
-
-		for _, e := range entities {
-			if string(e.TenantID) == tenant {
-				roles[e.Role] = true
-			}
-		}
-
-		for _, role := range expectedRoles {
-			assert.Truef(t, roles[role], "Role %s missing for tenantID %s", role, tenant)
-		}
-	}
+	numKeysPerTenant := 24
 
 	// Load and check for each tenantID
-	for _, ts := range tenants {
+	for tIndex, ts := range tenants {
 		ctx := testutils.CreateCtxWithTenant(ts.tenantID)
-		err := am.LoadAllowList(ctx, ts.tenantID)
+		err := am.LoadAllowList(ctx)
 		assert.NoError(t, err)
-		checkRoles(am.AuthzHandler.Entities, ts.tenantID, expectedRoles)
-	}
-
-	// Check that both tenants' roles are present in the entities
-	entities := am.AuthzHandler.Entities
-	for _, ts := range tenants {
-		checkRoles(entities, ts.tenantID, expectedRoles)
+		assert.Len(t, am.AuthzHandler.BusinessUserAuthzData.AuthzKeys, (tIndex+1)*numKeysPerTenant)
 	}
 
 	// Reload for tenant1 and check again
 	ctx1 := testutils.CreateCtxWithTenant(tenants[0].tenantID)
 	err := am.ReloadAllowList(ctx1)
 	assert.NoError(t, err)
-	checkRoles(am.AuthzHandler.Entities, tenants[0].tenantID, expectedRoles)
+	assert.Len(t, am.AuthzHandler.BusinessUserAuthzData.AuthzKeys, len(tenants)*numKeysPerTenant)
 
-	err = am.LoadAllowList(ctx1, tenants[0].tenantID)
+	err = am.LoadAllowList(ctx1)
 	assert.NoError(t, err)
+	assert.Len(t, am.AuthzHandler.BusinessUserAuthzData.AuthzKeys, len(tenants)*numKeysPerTenant)
 }

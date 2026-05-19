@@ -16,9 +16,9 @@ var ErrParsingPayload = errors.New("could not parse task payload")
 
 // TaskPayload represents the payload for an async task, including tenant context.
 type TaskPayload struct {
-	TenantID   string
-	ClientData auth.ClientData
-	Data       []byte
+	TenantID     string
+	BusinessData auth.ClientData
+	Data         []byte
 }
 
 func NewTaskPayload(ctx context.Context, data []byte) TaskPayload {
@@ -27,15 +27,15 @@ func NewTaskPayload(ctx context.Context, data []byte) TaskPayload {
 		tenantID = ""
 	}
 
-	clientData, err := ctxUtils.ExtractClientData(ctx)
+	businessUserData, err := ctxUtils.ExtractBusinessUserData(ctx)
 	if err != nil {
-		clientData = &auth.ClientData{}
+		businessUserData = &auth.ClientData{}
 	}
 
 	return TaskPayload{
-		TenantID:   tenantID,
-		ClientData: *clientData,
-		Data:       data,
+		TenantID:     tenantID,
+		BusinessData: *businessUserData,
+		Data:         data,
 	}
 }
 
@@ -55,7 +55,8 @@ func (p *TaskPayload) InjectContext(ctx context.Context) context.Context {
 		ctx = ctxUtils.CreateTenantContext(ctx, p.TenantID)
 	}
 
-	return context.WithValue(ctx, constants.ClientData, &p.ClientData)
+	ctx = context.WithValue(ctx, constants.UserType, constants.InternalUser)
+	return context.WithValue(ctx, constants.BusinessUserData, &p.BusinessData)
 }
 
 func (p *TaskPayload) ToBytes() ([]byte, error) {

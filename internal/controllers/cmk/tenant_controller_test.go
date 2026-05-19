@@ -29,9 +29,9 @@ func startAPITenant(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, *testutils
 
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:             config.Config{Database: dbCfg},
-		EnableClientDataMW: true,
-		SigningKeyStorage:  keyStorage,
+		Config:                   config.Config{Database: dbCfg},
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
 	}), keyStorage
 }
 
@@ -71,7 +71,7 @@ func TestGetTenants(t *testing.T) {
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
 
-	headers = testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers = testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 	assert.NotEmpty(t, headers)
 
 	t.Run("Should 200 on list tenants", func(t *testing.T) {
@@ -110,7 +110,7 @@ func TestGetTenants(t *testing.T) {
 		privateKey, ok := keyStorage.GetPrivateKey(0)
 		assert.True(t, ok, "test key should exist")
 
-		headersNotAllowed := testutils.NewSignedClientDataHeaders(t, notAllowedClientData, privateKey, 0)
+		headersNotAllowed := testutils.NewSignedBusinessUserDataHeaders(t, notAllowedClientData, privateKey, 0)
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
@@ -160,7 +160,7 @@ func TestGetTenantInfo(t *testing.T) {
 	// Get private key for signing test requests
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers = testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers = testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 	assert.NotEmpty(t, headers)
 
 	clientDataNoGroups := &auth.ClientData{
@@ -170,7 +170,7 @@ func TestGetTenantInfo(t *testing.T) {
 		FamilyName: "Builder",
 		Groups:     []string{},
 	}
-	headersNoGroups := testutils.NewSignedClientDataHeaders(t, clientDataNoGroups, privateKey, 0)
+	headersNoGroups := testutils.NewSignedBusinessUserDataHeaders(t, clientDataNoGroups, privateKey, 0)
 	assert.NotEmpty(t, headersNoGroups)
 
 	clientDataInvalidGroup := &auth.ClientData{
@@ -180,7 +180,7 @@ func TestGetTenantInfo(t *testing.T) {
 		FamilyName: "Builder",
 		Groups:     []string{"not-existing-group"},
 	}
-	headersInvalidGroup := testutils.NewSignedClientDataHeaders(t, clientDataInvalidGroup, privateKey, 0)
+	headersInvalidGroup := testutils.NewSignedBusinessUserDataHeaders(t, clientDataInvalidGroup, privateKey, 0)
 	assert.NotEmpty(t, headersInvalidGroup)
 
 	t.Run("Should 403 on get tenant info that does not exist", func(t *testing.T) {

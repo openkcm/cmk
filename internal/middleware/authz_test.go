@@ -57,10 +57,10 @@ func TestAuthzMiddleware_NoRestriction(t *testing.T) {
 
 func TestAuthzMiddleware_RestrictionExists(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant("tenant1")
-	// Inject clientData2: identifier and groups
+	// Inject businessUserData2: identifier and groups
 	identifier := "group1a" // must match a group in allowlist
 	groups := []string{"group1a", "group1b"}
-	ctx = testutils.InjectClientDataIntoContext(ctx, identifier, groups)
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, identifier, groups)
 	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 	loader := SetupAuthzLoaderWithAllowList(t)
@@ -84,7 +84,7 @@ func TestAuthzMiddleware_RestrictionExists(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/cmk/v1/{tenant}/keys", nil)
 	req.Pattern = "GET /cmk/v1/{tenant}/keys"
-	// Attach context with tenant ID and clientData
+	// Attach context with tenant ID and businessUserData
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
@@ -180,7 +180,7 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 	tests := []struct {
 		name           string
 		method         string
-		groupRole      constants.Role
+		groupRole      constants.BusinessRole
 		expectedStatus int
 	}{
 		// GET tests - all roles can read
@@ -229,7 +229,7 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 			groupIdentifier := "test-group-" + string(tt.groupRole)
 
 			ctx := testutils.CreateCtxWithTenant(tenantID)
-			ctx = testutils.InjectClientDataIntoContext(ctx, groupIdentifier, []string{groupIdentifier})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, groupIdentifier, []string{groupIdentifier})
 			ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 			loader := setupAuthzLoaderWithRole(t, tenantID, groupIdentifier, tt.groupRole)
@@ -267,7 +267,7 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 
 // Helper function to setup authz loader with a specific role
 func setupAuthzLoaderWithRole(t *testing.T, tenantID, groupIdentifier string,
-	role constants.Role) *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
+	role constants.BusinessRole) *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
 	t.Helper()
 
 	r := repomock.NewInMemoryRepository()

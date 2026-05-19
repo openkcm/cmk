@@ -28,7 +28,7 @@ func ToAPI(group model.Group) (*cmkapi.Group, error) {
 func FromAPI(apiGroup cmkapi.Group, tenantID string) *model.Group {
 	group := model.Group{
 		Name:          apiGroup.Name,
-		Role:          constants.Role(apiGroup.Role),
+		Role:          constants.BusinessRole(apiGroup.Role),
 		Description:   ptr.GetSafeDeref(apiGroup.Description),
 		ID:            uuid.New(),
 		IAMIdentifier: model.NewIAMIdentifier(apiGroup.Name, tenantID),

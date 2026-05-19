@@ -72,12 +72,12 @@ func (c *APIController) PostKeyConfigurations(
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationFromAPI, err)
 	}
 
-	clientData, err := cmkcontext.ExtractClientData(ctx)
+	businessUserData, err := cmkcontext.ExtractBusinessUserData(ctx)
 	if err != nil {
-		return nil, errs.Wrap(err, apierrors.ErrClientDataInvalid)
+		return nil, errs.Wrap(err, apierrors.ErrBusinessUserDataInvalid)
 	}
 
-	keyConfig.CreatorID = clientData.Identifier
+	keyConfig.CreatorID = businessUserData.Identifier
 
 	keyConfig, err = c.Manager.KeyConfig.PostKeyConfigurations(ctx, keyConfig)
 	if err != nil {

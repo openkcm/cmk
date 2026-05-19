@@ -165,7 +165,7 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := cmkcontext.InjectClientData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+			ctx := cmkcontext.InjectBusinessUserData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
 			apiConf, err := keyconfiguration.ToAPI(ctx, tt.conf, idm)
 			if tt.expectErr {
 				assert.Error(t, err)

@@ -7,7 +7,6 @@ import (
 	"github.com/openkcm/cmk/internal/authz"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/repo"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var ErrUnauthorized = errors.New("action on resource unauthorized")
@@ -156,12 +155,7 @@ func (r *AuthzRepo) GetFilterOptions(
 func (r *AuthzRepo) checkResourceAuthZ(
 	ctx context.Context, resource repo.Resource, action authz.RepoAction,
 ) error {
-	tenantID, err := cmkcontext.ExtractTenantID(ctx)
-	if err != nil {
-		return err
-	}
-
-	err = r.authzLoader.LoadAllowList(ctx, tenantID)
+	err := r.authzLoader.LoadAllowList(ctx)
 	if err != nil {
 		return err
 	}
@@ -179,12 +173,7 @@ func (r *AuthzRepo) checkResourceAuthZ(
 func (r *AuthzRepo) checkQueryAuthZ(
 	ctx context.Context, query repo.Query, action authz.RepoAction,
 ) error {
-	tenantID, err := cmkcontext.ExtractTenantID(ctx)
-	if err != nil {
-		return err
-	}
-
-	err = r.authzLoader.LoadAllowList(ctx, tenantID)
+	err := r.authzLoader.LoadAllowList(ctx)
 	if err != nil {
 		return err
 	}

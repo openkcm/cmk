@@ -22,21 +22,21 @@ import (
 )
 
 var (
-	ErrNoClientDataHeader     = errors.New("no client data header found")
-	ErrMissingSignatureHeader = errors.New("missing client data signature header")
-	ErrPublicKeyNotFound      = errors.New("public key not found or invalid")
-	ErrVerifySignatureFailed  = errors.New("failed to verify client data signature")
-	ErrDecodeClientData       = errors.New("failed to decode client data from header")
-	ErrTriedToBeSystem        = errors.New("attempted to be system")
+	ErrNoBusinessUserDataHeader = errors.New("no client data header found")
+	ErrMissingSignatureHeader   = errors.New("missing client data signature header")
+	ErrPublicKeyNotFound        = errors.New("public key not found or invalid")
+	ErrVerifySignatureFailed    = errors.New("failed to verify client data signature")
+	ErrDecodeBusinessUserData   = errors.New("failed to decode business data from header")
+	ErrTriedToBeSystem          = errors.New("attempted to be system")
 )
 
 // RoleGetter defines the interface for getting roles from group IAM identifiers for better unit testing
 type RoleGetter interface {
-	GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.Role, error)
+	GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.BusinessRole, error)
 }
 
-// ClientDataMiddleware extracts client data from headers, verifies, and adds to context
-func ClientDataMiddleware(
+// BusinessUserDataMiddleware extracts client data from headers, verifies, and adds to context
+func BusinessUserDataMiddleware(
 	signingKeyStorage keyvalue.ReadOnlyStringToBytesStorage,
 	authContextFields []string,
 	roleGetter RoleGetter,
@@ -44,12 +44,12 @@ func ClientDataMiddleware(
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
-				if canBypassClientData(r) {
+				if canBypassBusinessUserData(r) {
 					next.ServeHTTP(w, r)
 					return
 				}
 
-				ctx, err := prepareClientContext(r, signingKeyStorage, authContextFields, roleGetter)
+				ctx, err := prepareContext(r, signingKeyStorage, authContextFields, roleGetter)
 				if err != nil {
 					log.Error(r.Context(), "Client data processing error", err)
 					if errors.Is(err, manager.ErrMultipleRolesInGroups) ||
@@ -57,7 +57,7 @@ func ClientDataMiddleware(
 						e := apierrors.APIErrorMapper.Transform(r.Context(), err)
 						write.ErrorResponse(r.Context(), w, e)
 					} else {
-						write.ErrorResponse(r.Context(), w, apierrors.ErrNoClientData)
+						write.ErrorResponse(r.Context(), w, apierrors.ErrNoBusinessUserData)
 					}
 
 					return
@@ -69,31 +69,31 @@ func ClientDataMiddleware(
 	}
 }
 
-func canBypassClientData(r *http.Request) bool {
+func canBypassBusinessUserData(r *http.Request) bool {
 	pattern := strings.Replace(r.Pattern, constants.BasePath, "", 1)
 	return pattern == "GET /swagger"
 }
 
-// prepareClientContext extracts, validates, and verifies client data from request
-func prepareClientContext(
+// prepareContext extracts, validates, and verifies client data from request
+func prepareContext(
 	r *http.Request,
 	signingKeyStorage keyvalue.ReadOnlyStringToBytesStorage,
 	authContextFields []string,
 	roleGetter RoleGetter,
 ) (context.Context, error) {
-	clientData, err := extractClientData(r)
-	if err != nil || clientData == nil {
+	businessUserData, err := extractBusinessUserData(r)
+	if err != nil || businessUserData == nil {
 		return r.Context(), err
 	}
 
-	pemData, exists := signingKeyStorage.Get(clientData.KeyID)
+	pemData, exists := signingKeyStorage.Get(businessUserData.KeyID)
 	if !exists {
 		return r.Context(), ErrPublicKeyNotFound
 	}
 
-	if clientData.SignatureAlgorithm != auth.SignatureAlgorithmRS256 {
+	if businessUserData.SignatureAlgorithm != auth.SignatureAlgorithmRS256 {
 		return r.Context(), fmt.Errorf(
-			"%w: unsupported signature algorithm '%s'", ErrPublicKeyNotFound, clientData.SignatureAlgorithm,
+			"%w: unsupported signature algorithm '%s'", ErrPublicKeyNotFound, businessUserData.SignatureAlgorithm,
 		)
 	}
 
@@ -102,20 +102,16 @@ func prepareClientContext(
 		return r.Context(), ErrPublicKeyNotFound
 	}
 
-	err = verifyClientDataSignature(r, clientData, publicKey)
+	err = verifyBusinessUserDataSignature(r, businessUserData, publicKey)
 	if err != nil {
 		return r.Context(), err
 	}
 
-	if clientData.Identifier == constants.SystemUser.String() {
-		return r.Context(), ErrTriedToBeSystem
-	}
-
-	ctx := cmkcontext.InjectClientData(r.Context(), clientData, authContextFields)
+	ctx := cmkcontext.InjectBusinessUserData(r.Context(), businessUserData, authContextFields)
 
 	// Validate group roles after injecting the real client identity so that
 	// GetRoleFromIAM has a proper identity in context.
-	err = validateGroupRoles(r.WithContext(ctx), clientData, roleGetter)
+	err = validateGroupRoles(r.WithContext(ctx), businessUserData, roleGetter)
 	if err != nil {
 		return r.Context(), err
 	}
@@ -123,50 +119,50 @@ func prepareClientContext(
 	return ctx, nil
 }
 
-// extractClientData retrieves and decodes client data from request headers
-func extractClientData(r *http.Request) (*auth.ClientData, error) {
-	clientDataHeader := r.Header.Get(auth.HeaderClientData)
-	if clientDataHeader == "" {
-		return nil, ErrNoClientDataHeader
+// extractBusinessUserData retrieves and decodes client data from request headers
+func extractBusinessUserData(r *http.Request) (*auth.ClientData, error) {
+	businessUserDataHeader := r.Header.Get(auth.HeaderClientData)
+	if businessUserDataHeader == "" {
+		return nil, ErrNoBusinessUserDataHeader
 	}
 
-	clientData, err := auth.DecodeFrom(clientDataHeader)
+	businessUserData, err := auth.DecodeFrom(businessUserDataHeader)
 	if err != nil {
-		return nil, fmt.Errorf("%w: '%s': %w", ErrDecodeClientData, clientDataHeader, err)
+		return nil, fmt.Errorf("%w: '%s': %w", ErrDecodeBusinessUserData, businessUserDataHeader, err)
 	}
 
-	if clientData == nil {
-		return nil, fmt.Errorf("%w: '%s'", ErrMissingSignatureHeader, clientDataHeader)
+	if businessUserData == nil {
+		return nil, fmt.Errorf("%w: '%s'", ErrMissingSignatureHeader, businessUserDataHeader)
 	}
 
-	for _, group := range clientData.Groups {
+	for _, group := range businessUserData.Groups {
 		log.Debug(r.Context(), "extracted client data group:", slog.String("group", group))
 	}
 
-	log.Debug(r.Context(), "extracted client data:", slog.String("type", clientData.Type))
-	log.Debug(r.Context(), "extracted client data:", slog.String("region", clientData.Region))
+	log.Debug(r.Context(), "extracted client data:", slog.String("type", businessUserData.Type))
+	log.Debug(r.Context(), "extracted client data:", slog.String("region", businessUserData.Region))
 
-	for k, v := range clientData.AuthContext {
+	for k, v := range businessUserData.AuthContext {
 		log.Debug(r.Context(), "extracted client data auth context:", slog.String(k, v))
 	}
 
-	log.Debug(r.Context(), "extracted client data:", slog.String("keyId", clientData.KeyID))
+	log.Debug(r.Context(), "extracted client data:", slog.String("keyId", businessUserData.KeyID))
 	log.Debug(
 		r.Context(), "extracted client data:",
-		slog.String("signatureAlgorithm", string(clientData.SignatureAlgorithm)),
+		slog.String("signatureAlgorithm", string(businessUserData.SignatureAlgorithm)),
 	)
 
-	return clientData, nil
+	return businessUserData, nil
 }
 
-// verifyClientDataSignature checks the signature of client data
-func verifyClientDataSignature(r *http.Request, clientData *auth.ClientData, publicKey any) error {
-	clientDataSignatureHeader := r.Header.Get(auth.HeaderClientDataSignature)
-	if clientDataSignatureHeader == "" {
+// verifyBusinessUserDataSignature checks the signature of client data
+func verifyBusinessUserDataSignature(r *http.Request, businessUserData *auth.ClientData, publicKey any) error {
+	businessUserDataSignatureHeader := r.Header.Get(auth.HeaderClientDataSignature)
+	if businessUserDataSignatureHeader == "" {
 		return ErrMissingSignatureHeader
 	}
 
-	err := clientData.Verify(publicKey, clientDataSignatureHeader)
+	err := businessUserData.Verify(publicKey, businessUserDataSignatureHeader)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrVerifySignatureFailed, err)
 	}
@@ -177,13 +173,13 @@ func verifyClientDataSignature(r *http.Request, clientData *auth.ClientData, pub
 // validateGroupRoles ensures that all groups in client data belong to only one role type
 func validateGroupRoles(
 	r *http.Request,
-	clientData *auth.ClientData,
+	businessUserData *auth.ClientData,
 	roleGetter RoleGetter,
 ) error {
 	ctx := r.Context()
 
 	// Always check that groups are provided - reject tenant access if no groups
-	if len(clientData.Groups) == 0 {
+	if len(businessUserData.Groups) == 0 {
 		log.Debug(ctx, "No groups provided in client data for tenant access")
 		return manager.ErrZeroRolesInGroups
 	}
@@ -202,12 +198,12 @@ func validateGroupRoles(
 	}
 
 	// For non-allowed APIs, if there is only one group, no need to validate for mixed roles
-	if len(clientData.Groups) == 1 {
+	if len(businessUserData.Groups) == 1 {
 		return nil
 	}
 
 	// Get all roles associated with the groups using existing GroupManager method
-	roles, err := roleGetter.GetRoleFromIAM(ctx, clientData.Groups)
+	roles, err := roleGetter.GetRoleFromIAM(ctx, businessUserData.Groups)
 	if errors.Is(err, manager.ErrMultipleRolesInGroups) {
 		log.Debug(
 			ctx, "Segregation of roles not fulfilled in client data groups",

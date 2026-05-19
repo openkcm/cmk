@@ -217,7 +217,7 @@ func (c *APIController) handleSystemUnderWorkflow(
 		return nil, err
 	}
 
-	user, err := c.Manager.User.GetUserInfo(ctx)
+	user, err := c.Manager.User.GetBusinessUserInfo(ctx)
 	if err != nil {
 		return nil, err
 	}

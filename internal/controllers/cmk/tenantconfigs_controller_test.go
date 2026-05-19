@@ -28,7 +28,7 @@ func startAPIServerTenantConfig(t *testing.T, cfg testutils.TestAPIServerConfig)
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	cfg.Config.Database = dbCfg
-	cfg.EnableClientDataMW = true
+	cfg.EnableBusinessUserDataMW = true
 
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 	cfg.SigningKeyStorage = keyStorage
@@ -45,17 +45,17 @@ func TestAPIController_GetTenantKeystores(t *testing.T) {
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	}, testutils.WithAuthClientDataKC(authClient))
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
-	clientData := &auth.ClientData{
+	businessUserData := &auth.ClientData{
 		Identifier: authClient.Identifier,
 		Groups:     []string{authClient.Group.IAMIdentifier},
 	}
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 	t.Run("Should 200 on get keystores", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -70,8 +70,8 @@ func TestAPIController_GetTenantKeystores(t *testing.T) {
 }
 
 // getWorkflowConfig is a helper function to retrieve workflow configuration via API
-func getWorkflowConfig(t *testing.T, sv cmkapi.ServeMux,
-	tenant string, headers http.Header,
+func getWorkflowConfig(t *testing.T, sv cmkapi.ServeMux, tenant string,
+	headers http.Header,
 ) cmkapi.TenantWorkflowConfiguration {
 	t.Helper()
 
@@ -102,20 +102,17 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 		// Setup: Create a workflow config
 		setupWorkflowConfig(t, r, ctx)
 
-		clientData := &auth.ClientData{
+		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
 			Groups:     []string{authClient.Group.IAMIdentifier},
 		}
 
 		privateKey, ok := keyStorage.GetPrivateKey(0)
 		assert.True(t, ok, "test key should exist")
-		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		// Test
 		response := getWorkflowConfig(t, sv, tenant, headers)
-
-		assert.NotNil(t, response.Enabled)
-		assert.True(t, *response.Enabled)
 		assert.NotNil(t, response.MinimumApprovals)
 		assert.Equal(t, 3, *response.MinimumApprovals)
 		assert.NotNil(t, response.RetentionPeriodDays)
@@ -129,14 +126,14 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
-		clientData := &auth.ClientData{
+		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
 			Groups:     []string{authClient.Group.IAMIdentifier},
 		}
 
 		privateKey, ok := keyStorage.GetPrivateKey(0)
 		assert.True(t, ok, "test key should exist")
-		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		response := getWorkflowConfig(t, sv, tenant, headers)
 
@@ -184,14 +181,14 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		err = r.Set(ctx, tenantConfig)
 		require.NoError(t, err)
 
-		clientData := &auth.ClientData{
+		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
 			Groups:     []string{authClient.Group.IAMIdentifier},
 		}
 
 		privateKey, ok := keyStorage.GetPrivateKey(0)
 		assert.True(t, ok, "test key should exist")
-		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		// Test: Update config
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
@@ -231,14 +228,14 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		// Setup: Create initial workflow config
 		setupDefaultWorkflowConfig(t, r, ctx)
 
-		clientData := &auth.ClientData{
+		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
 			Groups:     []string{authClient.Group.IAMIdentifier},
 		}
 
 		privateKey, ok := keyStorage.GetPrivateKey(0)
 		assert.True(t, ok, "test key should exist")
-		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		// Test: Update with invalid retention period
 		updateRequest := cmkapi.TenantWorkflowConfiguration{

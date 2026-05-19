@@ -31,9 +31,9 @@ func startAPIKeyVersion(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:             config.Config{Database: dbCfg},
-		EnableClientDataMW: true,
-		SigningKeyStorage:  keyStorage,
+		Config:                   config.Config{Database: dbCfg},
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
 	}), tenants[0], keyStorage
 }
 
@@ -45,7 +45,7 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key1 := testutils.NewKey(func(k *model.Key) {
 		k.CreatedAt = time.Now()
@@ -89,7 +89,7 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name                string
@@ -181,7 +181,7 @@ func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 	key := testutils.NewKey(func(k *model.Key) { k.KeyConfigurationID = keyConfig.ID })
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
@@ -201,7 +201,7 @@ func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -327,7 +327,7 @@ func TestKeyVersionController_GetKeyVersions_IsPrimaryWithPagination(t *testing.
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
 		k.State = string(cmkapi.KeyStateENABLED)
@@ -351,7 +351,7 @@ func TestKeyVersionController_GetKeyVersions_IsPrimaryWithPagination(t *testing.
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -446,7 +446,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	keyID := uuid.New()
 	key := testutils.NewKey(func(k *model.Key) {
@@ -481,7 +481,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("Re-enabling key should restore enabling and previous state", func(t *testing.T) {
 		// Disable Key
@@ -540,7 +540,7 @@ func TestKeyVersionController_GetKeyVersions_EmptyList(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	// Create a key with NO versions
 	keyWithNoVersions := testutils.NewKey(func(k *model.Key) {
@@ -557,7 +557,7 @@ func TestKeyVersionController_GetKeyVersions_EmptyList(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("Should return empty list when key has no versions", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{

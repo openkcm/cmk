@@ -41,13 +41,13 @@ func SetupProbeTest(t *testing.T) (*manager.GroupManager, *manager.TenantManager
 
 	var svcRegistry = testutils.NewTestPlugins()
 
-	tm, gm := createManagers(t, db, cfg, svcRegistry)
+	tm, gm, _ := createManagers(t, db, cfg, svcRegistry)
 
 	return gm, tm, db, dbRepository
 }
 
 func TestTenantProbe_Check(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
 	gm, tm, multitenancyDB, _ := SetupProbeTest(t)
 
 	tenantID1 := uuid.NewString()
@@ -156,7 +156,7 @@ func TestTenantProbe_Check(t *testing.T) {
 }
 
 func TestCheckTenantSchemaExistenceStatus(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
 	_, tm, multitenancyDB, _ := SetupProbeTest(t)
 
 	tenantID := uuid.NewString()
@@ -215,7 +215,10 @@ func TestCheckTenantSchemaExistenceStatus(t *testing.T) {
 }
 
 func TestCheckTenantGroupsExistenceStatus(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
+	ctx, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantProvisioningRole)
+	require.NoError(t, err, "Failed to inject client data for test")
+
 	gm, tm, _, repository := SetupProbeTest(t)
 	tenantID1 := uuid.NewString()
 	tenantID2 := uuid.NewString()
@@ -233,7 +236,7 @@ func TestCheckTenantGroupsExistenceStatus(t *testing.T) {
 		l.ID = tenantID2
 	})
 
-	err := tm.CreateTenant(ctx, tenantWithBothGroups)
+	err = tm.CreateTenant(ctx, tenantWithBothGroups)
 	require.NoError(t, err, "Failed to create tenant schema for test")
 
 	err = tm.CreateTenant(ctx, tenantWithNoGroups)
@@ -285,7 +288,7 @@ func TestCheckTenantGroupsExistenceStatus(t *testing.T) {
 }
 
 func TestSchemaExists(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
 	_, tm, multitenancyDB, _ := SetupProbeTest(t)
 
 	tenantID := uuid.NewString()
@@ -350,7 +353,10 @@ func TestSchemaExists(t *testing.T) {
 }
 
 func TestGroupExists(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
+	ctx, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantProvisioningRole)
+	require.NoError(t, err, "Failed to inject client data for test")
+
 	gm, tm, _, repository := SetupProbeTest(t)
 
 	tenantID1 := uuid.NewString()
@@ -368,7 +374,7 @@ func TestGroupExists(t *testing.T) {
 		l.ID = tenantID2
 	})
 
-	err := tm.CreateTenant(ctx, tenantWithGroups)
+	err = tm.CreateTenant(ctx, tenantWithGroups)
 	require.NoError(t, err, "Failed to create tenant schema for test")
 
 	err = tm.CreateTenant(ctx, tenantWithoutGroups)

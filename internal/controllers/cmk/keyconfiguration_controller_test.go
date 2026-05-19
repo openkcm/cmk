@@ -55,10 +55,10 @@ func startAPIKeyConfig(t *testing.T, idmPlugin identitymanagement.IdentityManage
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
 	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:             config.Config{Database: dbCfg},
-		Registry:           testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
-		EnableClientDataMW: true,
-		SigningKeyStorage:  keyStorage,
+		Config:                   config.Config{Database: dbCfg},
+		Registry:                 testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
 	})
 
 	ctx, r := getContextAndRepo(t, tenant, db)
@@ -72,11 +72,11 @@ func signedHeadersFromClientMap(
 	clientMap map[any]any,
 ) http.Header {
 	t.Helper()
-	clientData, ok := clientMap[constants.ClientData].(*auth.ClientData)
+	clientData, ok := clientMap[constants.BusinessUserData].(*auth.ClientData)
 	require.True(t, ok, "client data should be present in client map")
 	privateKey, keyOK := keyStorage.GetPrivateKey(0)
 	require.True(t, keyOK, "test key should exist")
-	return testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	return testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 }
 
 func TestKeyConfigurationGetConfiguration(t *testing.T) {
@@ -87,16 +87,16 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	}, testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
+	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	authClient2 := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	}, testutils.WithAuthClientDataKC(authClient2), testutils.WithIDMPluginKC(idmPlugin))
+	}, testutils.WithAuthBusinessUserDataKC(authClient2), testutils.WithIDMPluginKC(idmPlugin))
 
 	keyConfig3 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
+		testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyConfig2, keyConfig3)
 	clientData := &auth.ClientData{
@@ -105,13 +105,13 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 	}
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	grouplessClientData := &auth.ClientData{
 		Identifier: uuid.NewString(),
 		Groups:     []string{},
 	}
-	headersWithoutGroups := testutils.NewSignedClientDataHeaders(t, grouplessClientData, privateKey, 0)
+	headersWithoutGroups := testutils.NewSignedBusinessUserDataHeaders(t, grouplessClientData, privateKey, 0)
 
 	t.Run("Should get keyConfig", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -165,7 +165,7 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	}, testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
+	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 	t.Run("Should get keyConfig", func(t *testing.T) {
@@ -202,7 +202,7 @@ func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) 
 	groups := make([]string, totalRecordCount)
 	for i := range totalRecordCount {
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {},
-			testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
+			testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
 		groups[i] = keyConfig.AdminGroup.IAMIdentifier
 	}
@@ -322,35 +322,35 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 	}
 	tests := []testCase{
 		{
-			name: "KeyConfigPOST_Failed_WithoutClientDataIdentifier",
+			name: "KeyConfigPOST_Failed_WithoutBusinessUserDataIdentifier",
 			input: cmkapi.KeyConfiguration{
 				Name:         "test-config",
 				Description:  ptr.PointTo("test-config"),
 				AdminGroupID: authClient.Group.ID,
 			},
 			expectedStatus: http.StatusInternalServerError,
-			expectedCode:   "NO_CLIENT_DATA",
-			expectedBody:   "Missing client data",
+			expectedCode:   "NO_BUSINESS_DATA",
 		},
 		{
-			name: "KeyConfigPOST_Success_WithClientDataUserGroups",
+			name: "KeyConfigPOST_Success_WithBusinessUserDataUserGroups",
 			input: cmkapi.KeyConfiguration{
 				Name:         "test-config-2",
 				Description:  ptr.PointTo("test-config"),
 				AdminGroupID: authClient.Group.ID,
 			},
 			additionalContext: map[any]any{
-				constants.ClientData: &auth.ClientData{
+				constants.BusinessUserData: &auth.ClientData{
 					Groups:     []string{"some-group", authClient.Group.IAMIdentifier},
 					Identifier: expectedIdentifier,
 					Email:      expectedEmail,
 				},
+				constants.UserType: constants.BusinessUser,
 			},
 			expectedStatus: http.StatusCreated,
 			expectedBody:   "test-config-2",
 		},
 		{
-			name: "KeyConfigPOST_Unauthorised_WithWrongClientDataUserGroups",
+			name: "KeyConfigPOST_Unauthorised_WithWrongBusinessUserDataUserGroups",
 			input: cmkapi.KeyConfiguration{
 				Name:         "test-config-2",
 				Description:  ptr.PointTo("test-config"),
@@ -362,7 +362,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			expectedBody:      "error",
 		},
 		{
-			name: "KeyConfigPOST_Unauthorised_WithEmptyClientDataUserGroups",
+			name: "KeyConfigPOST_Unauthorised_WithEmptyBusinessUserDataUserGroups",
 			input: cmkapi.KeyConfiguration{
 				Name:         "test-config-2",
 				Description:  ptr.PointTo("test-config"),
@@ -468,10 +468,10 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
+		testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 	existingKeyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.Name = "existing-config"
-	}, testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
+	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, existingKeyConfig)
 
@@ -488,7 +488,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 
 	tests := []testCase{
 		{
-			name:     "KeyConfigPATCH_Success_WithoutClientDataUserGroups (backward compatibility)",
+			name:     "KeyConfigPATCH_Success_WithoutBusinessUserDataUserGroups (backward compatibility)",
 			configID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-config",
@@ -516,7 +516,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			additionalContext: authClient.GetClientMap(),
 		},
 		{
-			name:     "KeyConfigPATCH_WithClientDataUserGroups",
+			name:     "KeyConfigPATCH_WithBusinessUserDataUserGroups",
 			configID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-name-only-client-data"
@@ -527,7 +527,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 				testutils.WithAdditionalGroup(uuid.NewString())),
 		},
 		{
-			name:     "KeyConfigPATCH_Unauthorised_WithWrongClientDataUserGroups",
+			name:     "KeyConfigPATCH_Unauthorised_WithWrongBusinessUserDataUserGroups",
 			configID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-name-only-client-data"
@@ -538,7 +538,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			additionalContext: authClient.GetClientMap(testutils.WithOverriddenGroup(2)),
 		},
 		{
-			name:     "KeyConfigPATCH_Unauthorised_WithEmptyClientDataUserGroups",
+			name:     "KeyConfigPATCH_Unauthorised_WithEmptyBusinessUserDataUserGroups",
 			configID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-name-only-client-data"
@@ -667,13 +667,13 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	keyConfigWithSystems := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 	sys := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfigWithSystems.ID)
 	})
@@ -690,27 +690,27 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 
 	tests := []testCase{
 		{
-			name:           "DeleteKeyConfig_Deny_WithoutClientDataUserGroups",
+			name:           "DeleteKeyConfig_Deny_WithoutBusinessUserDataUserGroups",
 			configID:       keyConfig.ID.String(),
 			expectedStatus: http.StatusInternalServerError,
-			expectedCode:   "NO_CLIENT_DATA",
+			expectedCode:   "NO_BUSINESS_DATA",
 		},
 		{
-			name:              "DeleteKeyConfig_Unauthorised_WithEmptyClientDataUserGroups",
+			name:              "DeleteKeyConfig_Unauthorised_WithEmptyBusinessUserDataUserGroups",
 			configID:          keyConfig2.ID.String(),
 			expectedStatus:    http.StatusForbidden,
 			expectedCode:      "ZERO_ROLES_NOT_ALLOWED",
 			additionalContext: testutils.GetGrouplessClientMap(),
 		},
 		{
-			name:              "DeleteKeyConfig_Unauthorised_WithWrongClientDataUserGroups",
+			name:              "DeleteKeyConfig_Unauthorised_WithWrongBusinessUserDataUserGroups",
 			configID:          keyConfig2.ID.String(),
 			expectedStatus:    http.StatusForbidden,
 			expectedCode:      "FORBIDDEN",
 			additionalContext: authClient.GetClientMap(testutils.WithOverriddenGroup(2)),
 		},
 		{
-			name:           "DeleteKeyConfig_Authorised_WithClientDataUserGroups",
+			name:           "DeleteKeyConfig_Authorised_WithBusinessUserDataUserGroups",
 			configID:       keyConfig2.ID.String(),
 			expectedStatus: http.StatusNoContent,
 			additionalContext: authClient.GetClientMap(
@@ -760,7 +760,7 @@ func TestKeyConfigurationController_GetByID(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
+		testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -785,21 +785,21 @@ func TestKeyConfigurationController_GetByID(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "GetKeyConfig_Authorised_WithClientDataUserGroups",
+			name:           "GetKeyConfig_Authorised_WithBusinessUserDataUserGroups",
 			configID:       keyConfig.ID.String(),
 			expectedStatus: http.StatusOK,
 			additionalContext: authClient.GetClientMap(
 				testutils.WithAdditionalGroup(uuid.NewString())),
 		},
 		{
-			name:              "GetKeyConfig_Unauthorised_WithEmptyClientDataUserGroups",
+			name:              "GetKeyConfig_Unauthorised_WithEmptyBusinessUserDataUserGroups",
 			configID:          keyConfig.ID.String(),
 			expectedStatus:    http.StatusForbidden,
 			expectedCode:      "ZERO_ROLES_NOT_ALLOWED",
 			additionalContext: testutils.GetGrouplessClientMap(),
 		},
 		{
-			name:              "GetKeyConfig_Unauthorised_WithWrongClientDataUserGroups",
+			name:              "GetKeyConfig_Unauthorised_WithWrongBusinessUserDataUserGroups",
 			configID:          keyConfig.ID.String(),
 			expectedStatus:    http.StatusForbidden,
 			expectedCode:      "FORBIDDEN",
@@ -1032,7 +1032,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 
 			keyconfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 				c.PrimaryKeyID = &key1.ID
-			}, testutils.WithAuthClientDataKC(authClient))
+			}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 			testutils.CreateTestEntities(ctx, t, r, key1, keyconfig)
 

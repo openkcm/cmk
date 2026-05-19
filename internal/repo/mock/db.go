@@ -1043,7 +1043,7 @@ func (db *InMemoryDB) updateCertificate(resource repo.Resource) error {
 func getType(val any) string {
 	t := reflect.TypeOf(val)
 
-	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		t = t.Elem()
 	}
 

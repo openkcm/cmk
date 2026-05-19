@@ -60,15 +60,15 @@ func startAPIKeyLabels(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string,
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		EnableClientDataMW: true,
-		SigningKeyStorage:  keyStorage,
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
 	}), tenants[0], keyStorage
 }
 
 func signedHeadersForAuthClient(
 	t *testing.T,
 	keyStorage *testutils.TestSigningKeyStorage,
-	authClient testutils.AuthClientData,
+	authClient testutils.AuthBusinessUserData,
 ) http.Header {
 	t.Helper()
 	clientData := &auth.ClientData{
@@ -77,7 +77,7 @@ func signedHeadersForAuthClient(
 	}
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	return testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	return testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 }
 
 func TestLabelsController_GetKeyLabels(t *testing.T) {
@@ -90,7 +90,7 @@ func TestLabelsController_GetKeyLabels(t *testing.T) {
 		headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-			testutils.WithAuthClientDataKC(authClient))
+			testutils.WithAuthBusinessUserDataKC(authClient))
 
 		expected := []cmkapi.Label{
 			{
@@ -143,7 +143,7 @@ func TestLabelsController_GetKeyLabels(t *testing.T) {
 		headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-			testutils.WithAuthClientDataKC(authClient))
+			testutils.WithAuthBusinessUserDataKC(authClient))
 
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
@@ -180,7 +180,7 @@ func TestLabelsController_GetKeyLabelsPagination(t *testing.T) {
 	headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
@@ -395,7 +395,7 @@ func TestLabelsController_CreateOrUpdateLabels(t *testing.T) {
 	headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -498,7 +498,7 @@ func TestLabelsController_DeleteLabel(t *testing.T) {
 	headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -573,7 +573,7 @@ func TestLabelsController_DeleteInvalidLabel(t *testing.T) {
 	headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 

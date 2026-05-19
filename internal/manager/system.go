@@ -17,6 +17,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
@@ -136,6 +137,8 @@ func (s SystemFilter) GetString(field repo.QueryField) (string, error) {
 func NewSystemManager(
 	ctx context.Context,
 	repository repo.Repo,
+	authzLoader *authz_loader.AuthzLoader[
+		authz.RepoResourceTypeName, authz.RepoAction],
 	clientsFactory clients.Factory,
 	eventFactory *eventprocessor.EventFactory,
 	svcRegistry serviceapi.Registry,
@@ -158,7 +161,8 @@ func NewSystemManager(
 
 	manager.ContextModelsCfg = cfg.ContextModels.System
 
-	sisClient, err := NewSystemInformationManager(repository, svcRegistry, &cfg.ContextModels.System)
+	sisClient, err := NewSystemInformationManager(repository, authzLoader,
+		svcRegistry, &cfg.ContextModels.System)
 	if err != nil {
 		log.Warn(ctx, "Failed to create sis client", slog.String(slogctx.ErrKey, err.Error()))
 	}

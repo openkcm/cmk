@@ -244,7 +244,7 @@ func (m *GroupManager) CheckIAMExistenceOfGroups(
 	ctx context.Context,
 	iamIdentifiers []string,
 ) ([]GroupIAMExistence, error) {
-	authCtx, err := cmkcontext.ExtractClientDataAuthContext(ctx)
+	authCtx, err := cmkcontext.ExtractBusinessUserDataAuthContext(ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrAutoAssignApprover, err)
 	}
@@ -311,10 +311,9 @@ func (m *GroupManager) isSupportedRole(group *model.Group) bool {
 }
 
 // applyIAMGroupFilter adds IAM filtering to query if user is not TenantAdmin.
-// SystemUser bypass filtering completely.
 // TenantAdmins see all groups, others only see their own groups.
 func (m *GroupManager) applyIAMGroupFilter(ctx context.Context, query *repo.Query) {
-	iamIdentifiers, err := cmkcontext.ExtractClientDataGroupsString(ctx)
+	iamIdentifiers, err := cmkcontext.ExtractBusinessUserDataGroupsString(ctx)
 	if err != nil {
 		log.Error(ctx, "failed to extract client data groups: %v", err)
 	}

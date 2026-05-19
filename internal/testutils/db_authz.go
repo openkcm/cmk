@@ -12,10 +12,10 @@ import (
 
 const (
 	RepoResourceTypeTest authz.RepoResourceTypeName = "test"
-	TestAdminRole        constants.Role             = "TEST_ADMIN"
-	TestReadAllowedRole  constants.Role             = "TEST_READ_ALLOWED"
-	TestWriteAllowedRole constants.Role             = "TEST_WRITE_ALLOWED"
-	TestBlockedRole      constants.Role             = "TEST_BLOCKED"
+	TestAdminRole        constants.BusinessRole     = "TEST_ADMIN"
+	TestReadAllowedRole  constants.BusinessRole     = "TEST_READ_ALLOWED"
+	TestWriteAllowedRole constants.BusinessRole     = "TEST_WRITE_ALLOWED"
+	TestBlockedRole      constants.BusinessRole     = "TEST_BLOCKED"
 )
 
 var RepoResourceTypeActions = map[authz.RepoResourceTypeName][]authz.RepoAction{
@@ -31,19 +31,19 @@ var RepoResourceTypeActions = map[authz.RepoResourceTypeName][]authz.RepoAction{
 
 var RepoActionResourceTypes map[authz.RepoAction]authz.RepoResourceTypeName
 
-var RepoRolePolicies = make(map[constants.Role][]authz.BasePolicy[authz.RepoResourceTypeName,
-	authz.RepoAction])
+var RepoBusinessPolicies = make(map[constants.BusinessRole][]authz.BasePolicy[constants.BusinessRole,
+	authz.RepoResourceTypeName, authz.RepoAction])
 
 type repoPolicies struct {
-	Roles    []constants.Role
-	Policies []authz.BasePolicy[authz.RepoResourceTypeName, authz.RepoAction]
+	Roles    []constants.BusinessRole
+	Policies []authz.BasePolicy[constants.BusinessRole, authz.RepoResourceTypeName, authz.RepoAction]
 }
 
 var RepoPolicyData = repoPolicies{
-	Roles: []constants.Role{
+	Roles: []constants.BusinessRole{
 		constants.KeyAdminRole, constants.TenantAdminRole, constants.TenantAuditorRole,
 	},
-	Policies: []authz.BasePolicy[authz.RepoResourceTypeName, authz.RepoAction]{
+	Policies: []authz.BasePolicy[constants.BusinessRole, authz.RepoResourceTypeName, authz.RepoAction]{
 		authz.NewPolicy(
 			"ReadAdminPolicy",
 			TestAdminRole,
@@ -107,15 +107,17 @@ func NewRepoAuthzLoader(
 	r repo.Repo,
 	config *config.Config,
 ) *authz_loader.AuthzLoader[authz.RepoResourceTypeName, authz.RepoAction] {
+	repoInternalPolicies := make(map[constants.InternalRole][]authz.BasePolicy[constants.InternalRole,
+		authz.RepoResourceTypeName, authz.RepoAction])
 	return authz_loader.NewAuthzLoader(ctx, r, config,
-		RepoRolePolicies, RepoResourceTypeActions)
+		repoInternalPolicies, RepoBusinessPolicies, RepoResourceTypeActions)
 }
 
 func init() {
 	// Index policies by role for fast lookup
-	RepoRolePolicies = make(map[constants.Role][]authz.BasePolicy[authz.RepoResourceTypeName,
-		authz.RepoAction])
+	RepoBusinessPolicies = make(map[constants.BusinessRole][]authz.BasePolicy[constants.BusinessRole,
+		authz.RepoResourceTypeName, authz.RepoAction])
 	for _, policy := range RepoPolicyData.Policies {
-		RepoRolePolicies[policy.Role] = append(RepoRolePolicies[policy.Role], policy)
+		RepoBusinessPolicies[policy.Role] = append(RepoBusinessPolicies[policy.Role], policy)
 	}
 }

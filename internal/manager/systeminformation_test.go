@@ -39,7 +39,7 @@ func SetupSystemInfoManager(t *testing.T) (
 
 	svcRegistry := testutils.NewTestPlugins()
 	systemManager, err := manager.NewSystemInformationManager(
-		dbRepository,
+		dbRepository, nil,
 		svcRegistry,
 		&config.System{
 			OptionalProperties: map[string]config.SystemProperty{
@@ -155,7 +155,7 @@ func TestNewSystemInformationManager(t *testing.T) {
 				},
 			}
 
-			_, err := manager.NewSystemInformationManager(nil, svcRegistry, &cfg)
+			_, err := manager.NewSystemInformationManager(nil, nil, svcRegistry, &cfg)
 			if tt.expectedError != nil {
 				assert.ErrorIs(t, err, tt.expectedError)
 			} else {

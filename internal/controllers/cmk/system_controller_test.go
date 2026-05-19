@@ -38,7 +38,7 @@ func startAPISystems(t *testing.T, cfg testutils.TestAPIServerConfig) (*multiten
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	cfg.Config.Database = dbCfg
-	cfg.EnableClientDataMW = true
+	cfg.EnableBusinessUserDataMW = true
 
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 	cfg.SigningKeyStorage = keyStorage
@@ -55,7 +55,7 @@ func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(
 		ctx,
@@ -71,7 +71,7 @@ func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -128,7 +128,7 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	systemWithProps := testutils.NewSystem(func(s *model.System) {
 		s.Properties = map[string]string{
@@ -153,7 +153,7 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("Should not show properties field on system without properties", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -196,9 +196,9 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 	authClient2 := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient1))
+		testutils.WithAuthBusinessUserDataKC(authClient1))
 	keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient2))
+		testutils.WithAuthBusinessUserDataKC(authClient2))
 	systems1 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig1.ID)
 	})
@@ -225,7 +225,7 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name                 string
@@ -315,7 +315,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
@@ -339,7 +339,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	longStr := "001234567890123456789012345678901234567890123456789"
 
@@ -439,7 +439,7 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -461,7 +461,7 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -589,7 +589,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	system := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
@@ -633,7 +633,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 		expectedErrorCode string
 		expectedSystem    *model.System
 		assertFn          func(t *testing.T, res cmkapi.System)
-		authClient        testutils.AuthClientData
+		authClient        testutils.AuthBusinessUserData
 	}{
 		{
 			name:           "SystemGETByIdSuccess",
@@ -694,7 +694,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: "/systems/" + tt.id,
 				Tenant:   tenant,
-				Headers:  testutils.WithClientData(t, keyStorage, tt.authClient),
+				Headers:  testutils.WithBusinessUserData(t, keyStorage, tt.authClient),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -726,7 +726,7 @@ func TestAPIController_GetSystemByIDWithDBError(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	system := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
@@ -740,7 +740,7 @@ func TestAPIController_GetSystemByIDWithDBError(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	forced := testutils.NewDBErrorForced(db, ErrForced)
 
@@ -786,7 +786,7 @@ func TestSendRecoveryActions(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -797,7 +797,7 @@ func TestSendRecoveryActions(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("Should 400 on cancel without previous state", func(t *testing.T) {
 		sys := testutils.NewSystem(func(_ *model.System) {})
@@ -872,14 +872,14 @@ func TestLinkSystemAction(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig1 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	authClient2 := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	key := testutils.NewKey(func(_ *model.Key) {})
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(key.ID)
-	}, testutils.WithAuthClientDataKC(authClient2))
+	}, testutils.WithAuthBusinessUserDataKC(authClient2))
 
 	system := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig1.ID)
@@ -908,7 +908,7 @@ func TestLinkSystemAction(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -1041,7 +1041,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = ptr.PointTo(uuid.New())
-	}, testutils.WithAuthClientDataKC(authClient))
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 	system := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 	})
@@ -1056,7 +1056,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name              string
