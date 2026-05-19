@@ -44,8 +44,8 @@ type TestAPIServerConfig struct {
 	GRPCCon  *commongrpc.DynamicClientConn // GRPCClient only set if needed
 	Config   config.Config
 	// Enable ClientDataMiddleware (default: false for backward compatibility).
-	EnableClientDataMW bool
-	SigningKeyStorage  keyvalue.ReadOnlyStringToBytesStorage // Optional: provide custom signing key storage
+	EnableBusinessUserDataMW bool
+	SigningKeyStorage        keyvalue.ReadOnlyStringToBytesStorage // Optional: provide custom signing key storage
 }
 
 // NewAPIServer creates a new API server with the given database connection
@@ -105,7 +105,8 @@ func NewAPIServer(
 
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
-	controller := cmk.NewAPIController(tb.Context(), authzRepo, &cfg, factory, migrator, svcRegistry, authzAPILoader)
+	controller := cmk.NewAPIController(tb.Context(), authzRepo, &cfg, factory,
+		migrator, svcRegistry, authzRepoLoader, authzAPILoader)
 
 	return startAPIServer(tb, controller, testCfg)
 }
@@ -157,8 +158,8 @@ func startAPIServer(
 	)
 
 	// Append after Authz in the slice so ClientData runs before Authz.
-	if testCfg.EnableClientDataMW {
-		mws = append(mws, newTestClientDataMiddleware(tb, testCfg))
+	if testCfg.EnableBusinessUserDataMW {
+		mws = append(mws, newTestBusinessUserDataMiddleware(tb, testCfg))
 	}
 
 	cmkapi.HandlerWithOptions(strictController,
@@ -172,7 +173,7 @@ func startAPIServer(
 	return r
 }
 
-func newTestClientDataMiddleware(tb testing.TB, testCfg TestAPIServerConfig) cmkapi.MiddlewareFunc {
+func newTestBusinessUserDataMiddleware(tb testing.TB, testCfg TestAPIServerConfig) cmkapi.MiddlewareFunc {
 	tb.Helper()
 
 	signingKeyStorage := testCfg.SigningKeyStorage
@@ -180,7 +181,7 @@ func newTestClientDataMiddleware(tb testing.TB, testCfg TestAPIServerConfig) cmk
 		signingKeyStorage = NewTestSigningKeyStorage(tb)
 	}
 
-	return middleware.ClientDataMiddleware(
+	return middleware.BusinessUserDataMiddleware(
 		signingKeyStorage,
 		[]string{"client_id", "issuer", "multitenancy_ref"},
 		NewTestRoleGetter(),

@@ -9,6 +9,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
@@ -88,6 +89,10 @@ func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) e
 
 func (s *WorkflowProcessor) TaskType() string {
 	return config.TypeWorkflowAutoAssign
+}
+
+func (s *WorkflowProcessor) Role() constants.InternalRole {
+	return constants.InternalTaskWorkflowApproversRole
 }
 
 func (s *WorkflowProcessor) putWorkflowInFailedState(

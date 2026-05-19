@@ -121,11 +121,12 @@ func NewTestSigningKeyStorage(tb testing.TB) *TestSigningKeyStorage {
 
 // TestRoleGetter is a mock RoleGetter for testing that always returns a default role
 type TestRoleGetter struct {
-	DefaultRole constants.Role
+	DefaultRole constants.BusinessRole
 }
 
 // GetRoleFromIAM returns the configured default role (or TenantAdminRole if not set)
-func (t *TestRoleGetter) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.Role, error) {
+func (t *TestRoleGetter) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (
+	constants.BusinessRole, error) {
 	if t.DefaultRole != "" {
 		return t.DefaultRole, nil
 	}

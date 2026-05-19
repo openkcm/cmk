@@ -15,6 +15,8 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -60,19 +62,24 @@ func SetupWorkflowManager(
 
 	r := sql.NewRepository(db)
 
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+		r, &config.Config{})
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
 	svcRegistry := testutils.NewTestPlugins(opts...)
 
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	cmkAuditor := auditor.New(t.Context(), cfg)
-	userManager := manager.NewUserManager(r, cmkAuditor)
+	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
-	systemManager := manager.NewSystemManager(t.Context(), r, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
+	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
 
 	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 	m := manager.NewWorkflowManager(
@@ -120,6 +127,9 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	m, r, tenant := SetupWorkflowManager(t, &config.Config{}, testplugins.WithIdentityManagement(idmPlugin))
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user",
+		[]string{uuid.NewString()})
+
 	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
 	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
@@ -144,12 +154,9 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 
 	createAuditorGroup(ctx, t, r)
 
-	ctxSys := context.WithValue(
-		ctx,
-		constants.ClientData, &auth.ClientData{
-			Identifier: constants.SystemUser.String(),
-		},
-	)
+	ctxSys, err := cmkcontext.BusinessToInternalContext(ctx,
+		constants.InternalTaskWorkflowApproversRole)
+	assert.NoError(t, err)
 
 	t.Run("Should return false on canCreate and error on non existing artifacts", func(t *testing.T) {
 		status, err := m.CheckWorkflow(ctx, &model.Workflow{})
@@ -175,17 +182,17 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 
 		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.NoError(t, err)
 		assert.True(t, status.Enabled)
 		assert.True(t, status.Exists)
 		assert.True(t, status.Valid)
 		assert.False(t, status.CanCreate)
 		assert.Equal(t, manager.ErrOngoingWorkflowExist, status.ErrDetails)
-		assert.NoError(t, err)
 	})
 
 	t.Run("Should be invalid and cant create on system connect with invalid key state", func(t *testing.T) {
 		groupIAM := uuid.NewString()
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{groupIAM})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{groupIAM})
 		key := testutils.NewKey(func(k *model.Key) {
 			k.State = string(cmkapi.KeyStateFORBIDDEN)
 		})
@@ -230,7 +237,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 
 	t.Run("Should be invalid and cant create on system connect without pkey", func(t *testing.T) {
 		groupIAM := uuid.NewString()
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{groupIAM})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{groupIAM})
 		testGroup := testutils.NewGroup(
 			func(g *model.Group) {
 				g.IAMIdentifier = groupIAM
@@ -439,12 +446,9 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
 	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
-	ctxSys := context.WithValue(
-		ctx,
-		constants.ClientData, &auth.ClientData{
-			Identifier: constants.SystemUser.String(),
-		},
-	)
+	ctxSys, err := cmkcontext.BusinessToInternalContext(ctx,
+		constants.InternalTaskWorkflowApproversRole)
+	assert.NoError(t, err)
 
 	// Create test group that's registered in SCIM
 	testGroup := testutils.NewGroup(func(g *model.Group) {
@@ -482,13 +486,6 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 
 	t.Run("Should create workflow", func(t *testing.T) {
 		createAuditorGroup(ctx, t, r)
-
-		ctxSys := context.WithValue(
-			ctx,
-			constants.ClientData, &auth.ClientData{
-				Identifier: constants.SystemUser.String(),
-			},
-		)
 
 		// Create key using the same test group
 		key := testutils.NewKey(func(k *model.Key) {})
@@ -598,7 +595,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 		idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
 
-		ctx = cmkcontext.InjectClientData(
+		ctx = cmkcontext.InjectBusinessUserData(
 			cmkcontext.CreateTenantContext(t.Context(), tenant),
 			&auth.ClientData{
 				Identifier: wf.InitiatorID,
@@ -611,8 +608,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 			workflow.TransitionApprove,
 		)
 		assert.ErrorIs(t, err, workflow.ErrInvalidEventActor)
-	},
-	)
+	})
 
 	t.Run("Should transit to wait confirmation on approve", func(t *testing.T) {
 		wf, err := createTestWorkflow(
@@ -628,8 +624,8 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
-
-		ctx = cmkcontext.InjectClientData(
+		idmPlugin.PutUser(identitymanagement.User{ID: wf.Approvers[0].UserID})
+		ctx = cmkcontext.InjectBusinessUserData(
 			cmkcontext.CreateTenantContext(t.Context(), tenant),
 			&auth.ClientData{
 				Identifier: wf.Approvers[0].UserID,
@@ -643,8 +639,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		assert.EqualValues(t, workflow.StateWaitConfirmation, res.State)
-	},
-	)
+	})
 
 	t.Run("Should transit to reject on reject", func(t *testing.T) {
 		wf, err := createTestWorkflow(
@@ -660,8 +655,8 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
-
-		ctx = cmkcontext.InjectClientData(
+		idmPlugin.PutUser(identitymanagement.User{ID: wf.Approvers[0].UserID})
+		ctx = cmkcontext.InjectBusinessUserData(
 			cmkcontext.CreateTenantContext(t.Context(), tenant),
 			&auth.ClientData{
 				Identifier: wf.Approvers[0].UserID,
@@ -675,8 +670,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		assert.EqualValues(t, workflow.StateRejected, res.State)
-	},
-	)
+	})
 }
 
 func TestWorkflowManager_GetWorkflowByID(t *testing.T) {
@@ -718,7 +712,7 @@ func TestWorkflowManager_GetWorkflowByID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(
 			tt.name, func(t *testing.T) {
-				ctx := cmkcontext.InjectClientData(
+				ctx := cmkcontext.InjectBusinessUserData(
 					cmkcontext.CreateTenantContext(t.Context(), tenant),
 					&auth.ClientData{
 						Identifier: userID,
@@ -961,7 +955,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(
 			tc.name, func(t *testing.T) {
-				ctx := cmkcontext.InjectClientData(
+				ctx := cmkcontext.InjectBusinessUserData(
 					cmkcontext.CreateTenantContext(t.Context(), tenant),
 					&auth.ClientData{
 						Identifier: userID,
@@ -1006,7 +1000,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 	}
 
 	t.Run("Should return workflows ordered by created time descending", func(t *testing.T) {
-		ctx := cmkcontext.InjectClientData(
+		ctx := cmkcontext.InjectBusinessUserData(
 			cmkcontext.CreateTenantContext(t.Context(), tenant),
 			&auth.ClientData{
 				Identifier: userID,
@@ -1079,13 +1073,9 @@ func TestWorkflowManager_ListApprovers(t *testing.T) {
 
 	createAuditorGroup(ctx, t, r)
 
-	ctxSys := context.WithValue(
-		ctx,
-		constants.ClientData, &auth.ClientData{
-			Identifier: constants.SystemUser.String(),
-			Groups:     []string{"auditorGroup"},
-		},
-	)
+	ctxSys, err := cmkcontext.BusinessToInternalContext(ctx,
+		constants.InternalTaskWorkflowApproversRole)
+	assert.NoError(t, err)
 
 	tests := []struct {
 		name       string
@@ -1140,7 +1130,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 		t, &config.Config{},
 	)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"KMS_001", "KMS_002"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"KMS_001", "KMS_002"})
 
 	createAuditorGroup(ctx, t, r)
 
@@ -1328,21 +1318,21 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				assert.NoError(t, err)
 
 				// We need the auditor group here to allow listing approvers
-				ctxSys := context.WithValue(
+				ctx := context.WithValue(
 					ctx,
-					constants.ClientData, &auth.ClientData{
-						Identifier: constants.SystemUser.String(),
-						Groups:     []string{"auditorGroup"},
+					constants.BusinessUserData, &auth.ClientData{
+						Identifier: "testuser",
+						Groups:     []string{auditorGroupName},
 					},
 				)
-				_, err = m.AutoAssignApprovers(ctxSys, wf.ID)
+				_, err = m.AutoAssignApprovers(ctx, wf.ID)
 				if tt.expectErr {
 					assert.Error(t, err)
 					assert.ErrorIs(t, err, tt.errMessage)
 				} else {
 					assert.NoError(t, err)
 
-					count, _, err := m.ListWorkflowApprovers(ctxSys, wf.ID, false, repo.Pagination{})
+					count, _, err := m.ListWorkflowApprovers(ctx, wf.ID, false, repo.Pagination{})
 					assert.NoError(t, err)
 					assert.Len(t, count, tt.approversCount)
 				}
@@ -1359,7 +1349,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 
 	wm, _, tenantID := SetupWorkflowManager(t, cfg, testplugins.WithIdentityManagement(idmPlugin))
 	ctx := testutils.CreateCtxWithTenant(tenantID)
-	ctx = cmkcontext.InjectClientData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
+	ctx = cmkcontext.InjectBusinessUserData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 
 	t.Run("should successfully create and enqueue notification task", func(t *testing.T) {
 		mockClient := &async.MockClient{}
@@ -1508,6 +1498,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 func TestWorkflowManager_WorkflowCanExpire(t *testing.T) {
 	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
 	ctx := testutils.CreateCtxWithTenant(tenant)
+	ctx = cmkcontext.InjectBusinessUserData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 
 	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
 	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
@@ -1544,9 +1535,13 @@ func TestWorkflowManager_WorkflowCanExpire(t *testing.T) {
 func TestWorkflowManager_ExpireWorkflow(t *testing.T) {
 	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
 	ctx := testutils.CreateCtxWithTenant(tenant)
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{uuid.NewString()})
 
 	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
 	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+
+	ctxSys, err := cmkcontext.BusinessToInternalContext(ctx, constants.InternalTaskWorkflowExpirationRole)
+	assert.NoError(t, err)
 
 	expirableStates := []workflow.State{
 		workflow.StateWaitApproval,
@@ -1559,7 +1554,7 @@ func TestWorkflowManager_ExpireWorkflow(t *testing.T) {
 			wf := testutils.NewWorkflow(func(w *model.Workflow) { w.State = state.String() })
 			testutils.CreateTestEntities(ctx, t, r, wf)
 
-			result, err := m.ExpireWorkflow(ctx, wf.ID)
+			result, err := m.ExpireWorkflow(ctxSys, wf.ID)
 			assert.NoError(t, err)
 			assert.Equal(t, workflow.StateExpired.String(), result.State)
 
@@ -1585,13 +1580,13 @@ func TestWorkflowManager_ExpireWorkflow(t *testing.T) {
 			wf := testutils.NewWorkflow(func(w *model.Workflow) { w.State = state.String() })
 			testutils.CreateTestEntities(ctx, t, r, wf)
 
-			_, err := m.ExpireWorkflow(ctx, wf.ID)
+			_, err := m.ExpireWorkflow(ctxSys, wf.ID)
 			assert.Error(t, err)
 		})
 	}
 
 	t.Run("errors when workflow does not exist", func(t *testing.T) {
-		_, err := m.ExpireWorkflow(ctx, uuid.New())
+		_, err := m.ExpireWorkflow(ctxSys, uuid.New())
 		assert.ErrorIs(t, err, manager.ErrGetWorkflowDB)
 	})
 }
@@ -1602,7 +1597,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 
 	userID := uuid.NewString()
 
-	ctx := cmkcontext.InjectClientData(
+	ctx := cmkcontext.InjectBusinessUserData(
 		cmkcontext.CreateTenantContext(t.Context(), tenantID),
 		&auth.ClientData{
 			Identifier: userID,
@@ -1868,7 +1863,7 @@ func setupEligibilityTest(
 	t *testing.T,
 	approverCount int,
 	idmPlugin *testplugins.TestIdentityManagement,
-) (*manager.WorkflowManager, repo.Repo, context.Context, *model.Workflow, string) {
+) (*manager.WorkflowManager, repo.Repo, context.Context, *model.Workflow) {
 	t.Helper()
 
 	cfg := &config.Config{}
@@ -1951,19 +1946,19 @@ func setupEligibilityTest(
 	idmPlugin.PutGroup(testGroupName, testGroupSCIMID)
 	idmPlugin.PutGroupMembers(testGroupSCIMID, scimMembers)
 
-	return wm, r, ctx, wf, tenantID
+	return wm, r, ctx, wf
 }
 
 // setAuthContext adds client data to context for SCIM queries
 func setAuthContext(ctx context.Context, userID, _ string) context.Context {
-	return testutils.InjectClientDataIntoContext(ctx, userID, []string{testGroupName})
+	return testutils.InjectBusinessUserDataIntoContext(ctx, userID, []string{testGroupName})
 }
 
 //nolint:cyclop
 func TestWorkflowApproverEligibility(t *testing.T) {
 	t.Run("all eligible approvers removed before voting - workflow expires", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, r, ctx, wf, tenantID := setupEligibilityTest(t, 2, idmPlugin)
+		wm, r, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers from IAM group
@@ -1994,13 +1989,15 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		}, *repo.NewQuery())
 		require.NoError(t, patchErr)
 
-		// Transition to expired state (must use proper system context)
-		systemCtx := testutils.InjectClientDataIntoContext(
-			testutils.CreateCtxWithTenant(tenantID),
-			workflow.SystemUserID,
-			[]string{testGroupName},
+		// Transition to expired state (must use proper internal role)
+		systemCtx, err := cmkcontext.BusinessToInternalContext(
+			ctx,
+			constants.InternalTaskWorkflowApproversRole,
 		)
+		require.NoError(t, err)
+
 		_, err = wm.TransitionWorkflow(systemCtx, wf.ID, workflow.TransitionExpire)
+
 		// FSM might not allow EXPIRE transition from current state - that's okay for this test
 		if err != nil {
 			t.Logf("Could not transition to EXPIRED (FSM restriction): %v", err)
@@ -2015,7 +2012,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("all eligible approvers removed - initiator revokes", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers from IAM group
@@ -2040,7 +2037,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("eligible approvers removed then re-added - warning cleared", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers from IAM group
@@ -2086,7 +2083,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("partial votes cast, remaining approver removed - cannot continue", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, r, ctx, wf, _ := setupEligibilityTest(t, 3, idmPlugin)
+		wm, r, ctx, wf := setupEligibilityTest(t, 3, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Create a third approver
@@ -2135,7 +2132,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("approver who already voted can still be counted after removal", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Approver 1 votes while in group
 		ctx1 := setAuthContext(ctx, approver1ID, approver1Email)
@@ -2164,7 +2161,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("new user added to group not in original snapshot - cannot vote", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 1, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 1, idmPlugin)
 
 		// Add new user to IAM group (not in workflow approvers snapshot)
 		newUserID := "00000000-0000-0000-0000-100000000099"
@@ -2198,7 +2195,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("rejected vote from removed approver still counts", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Approver 1 rejects while in group
 		ctx1 := setAuthContext(ctx, approver1ID, approver1Email)
@@ -2236,7 +2233,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("insufficientApprovers flag updates dynamically with IAM changes", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, r, ctx, wf, _ := setupEligibilityTest(t, 0, idmPlugin)
+		wm, r, ctx, wf := setupEligibilityTest(t, 0, idmPlugin)
 
 		// Remove all approvers from IAM before checking
 		idmPlugin.PutGroupMembers(testGroupSCIMID, nil)
@@ -2270,7 +2267,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 	t.Run("returns correct insufficientApprovers flag", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Initially sufficient approvers
@@ -2300,7 +2297,7 @@ func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 
 	t.Run("checks eligibility regardless of workflow state", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, r, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
+		wm, r, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers
@@ -2333,7 +2330,7 @@ func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 func TestWorkflowApproverEligibilityErrorHandling(t *testing.T) {
 	t.Run("SCIM failure during eligibility check prevents voting", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 1, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 1, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Simulate SCIM failure by removing group mapping
@@ -2346,7 +2343,7 @@ func TestWorkflowApproverEligibilityErrorHandling(t *testing.T) {
 
 	t.Run("SCIM failure during GET returns error in insufficientApprovers check", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 1, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 1, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Simulate SCIM failure
@@ -2362,7 +2359,7 @@ func TestWorkflowApproverEligibilityErrorHandling(t *testing.T) {
 func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 	t.Run("auto-rejects after vote when insufficient eligible approvers", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Initially 2 eligible approvers, threshold = 2
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
@@ -2386,7 +2383,7 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 
 	t.Run("does not auto-reject when sufficient eligible approvers remain", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 
 		// 2 eligible approvers, threshold = 2
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
@@ -2409,7 +2406,7 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 
 	t.Run("auto-rejects even when user votes REJECT", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Initially 2 eligible approvers, threshold = 2
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
@@ -2427,7 +2424,7 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 
 	t.Run("handles SCIM failure gracefully during auto-reject check", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// First vote succeeds
@@ -2546,12 +2543,8 @@ func TestWorkflowManager_ValidateApproverCount(t *testing.T) {
 			})
 			testutils.CreateTestEntities(ctx, t, r, testGroup, key, keyConfig)
 
-			ctxSys := context.WithValue(
-				ctx,
-				constants.ClientData, &auth.ClientData{
-					Identifier: constants.SystemUser.String(),
-				},
-			)
+			ctxSys, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTaskWorkflowApproversRole)
+			assert.NoError(t, err)
 
 			// Create workflow for key deletion
 			wf := testutils.NewWorkflow(func(w *model.Workflow) {

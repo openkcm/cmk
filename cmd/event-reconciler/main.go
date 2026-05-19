@@ -13,6 +13,8 @@ import (
 	"github.com/openkcm/common-sdk/pkg/status"
 	"github.com/samber/oops"
 
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -23,6 +25,7 @@ import (
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/utils/cmd"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var (
@@ -34,6 +37,8 @@ var (
 
 // - Starts the status server
 // - Starts the event reconciler (orbital manager)
+//
+//nolint:cyclop,funlen
 func run(ctx context.Context, cfg *config.Config) error {
 	// Update Version
 	err := commoncfg.UpdateConfigVersion(&cfg.BaseConfig, BuildInfo)
@@ -67,6 +72,13 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	repo := sql.NewRepository(dbCon)
 
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, repo, cfg)
+	if authzRepoLoader.AuthzHandler == nil {
+		return oops.In("main").Wrapf(err, "Failed to initialise authz loader")
+	}
+
+	authzRepo := authz_repo.NewAuthzRepo(repo, authzRepoLoader)
+
 	// GRPC clients factory initialisation
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	if err != nil {
@@ -78,7 +90,12 @@ func run(ctx context.Context, cfg *config.Config) error {
 		log.Error(ctx, "Failed to load plugin", err)
 	}
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, repo, svcRegistry, clientsFactory)
+	ctx, err = cmkcontext.InjectInternalUserData(ctx, constants.InternalEventReconcilerRole)
+	if err != nil {
+		return oops.In("main").Wrapf(err, "Failed injecting authz role")
+	}
+
+	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, authzRepo, svcRegistry, clientsFactory)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "Failed to create crypto reconciler")
 	}

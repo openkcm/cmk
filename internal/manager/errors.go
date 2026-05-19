@@ -178,4 +178,6 @@ var (
 	ErrInvalidSchema    = errors.New("invalid schema name pattern")
 
 	ErrGroupRole = errors.New("unsupported role for group creation")
+
+	ErrInternalRoleNotSupported = errors.New("operation not supported for this internal role")
 )

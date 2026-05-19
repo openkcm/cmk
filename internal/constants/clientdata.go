@@ -1,18 +1,16 @@
 package constants
 
-import "github.com/google/uuid"
-
 // needed for using own type to avoid collisions
-type clientDataKey string
-
-type ContextClientData struct {
-	Identifier string
-	Groups     []string
-}
+type internalUserDataKey string
+type businessUserDataKey string
+type userTypeKey string
+type UserTypeValue string
 
 const (
-	ClientData clientDataKey = "ClientData"
-)
+	UserType     userTypeKey   = "UserType"
+	BusinessUser UserTypeValue = "Business"
+	InternalUser UserTypeValue = "Internal"
 
-// SystemUser Do not add further internal users without blocklisting in the clientdata
-var SystemUser uuid.UUID = uuid.Max
+	InternalUserData internalUserDataKey = "InternalData"
+	BusinessUserData businessUserDataKey = "ClientData"
+)

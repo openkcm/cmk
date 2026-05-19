@@ -17,8 +17,11 @@ import (
 
 	"github.com/openkcm/cmk/cmd/tenant-manager-cli/commands"
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
@@ -27,6 +30,7 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 	"github.com/openkcm/cmk/utils/base62"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type CLISuite struct {
@@ -63,22 +67,26 @@ func (s *CLISuite) SetupSuite() {
 	r := sql.NewRepository(s.db)
 	svcRegistry := testutils.NewTestPlugins()
 
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
 	cmkAuditor := auditor.New(ctx, cfg)
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	s.NoError(err)
 
-	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, authzRepo)
 	s.NoError(err)
 
-	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	um := manager.NewUserManager(r, cmkAuditor)
-	tagm := manager.NewTagManager(r)
-	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
+	cm := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
+	um := manager.NewUserManager(authzRepo, cmkAuditor)
+	tagm := manager.NewTagManager(authzRepo)
+	kcm := manager.NewKeyConfigManager(authzRepo, cm, um, tagm, cmkAuditor, cfg)
 
 	sys := manager.NewSystemManager(
 		ctx,
-		r,
+		authzRepo,
+		authzRepoLoader,
 		clientsFactory,
 		eventFactory,
 		svcRegistry,
@@ -88,9 +96,9 @@ func (s *CLISuite) SetupSuite() {
 	)
 
 	km := manager.NewKeyManager(
-		r,
+		authzRepo,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, nil),
+		manager.NewTenantConfigManager(authzRepo, svcRegistry, nil),
 		kcm,
 		um,
 		cm,
@@ -101,29 +109,34 @@ func (s *CLISuite) SetupSuite() {
 	migrator, err := db.NewMigrator(r, cfg)
 	s.NoError(err)
 
-	s.gm = manager.NewGroupManager(r, svcRegistry, um)
-	s.tm = manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator)
+	s.gm = manager.NewGroupManager(authzRepo, svcRegistry, um)
+	s.tm = manager.NewTenantManager(authzRepo, sys, km, um, cmkAuditor, migrator)
 
 	factory, err := commands.NewCommandFactory(ctx, cfg, s.db, svcRegistry)
 	s.NoError(err)
-	s.rootCmd = factory.NewRootCmd(s.T().Context())
 
-	s.createGroupsCmd = factory.NewCreateGroupsCmd(s.T().Context())
+	cmdCtx, err := cmkcontext.InjectInternalUserData(ctx,
+		constants.InternalTenantCLIRole)
+	s.NoError(err)
+
+	s.rootCmd = factory.NewRootCmd(cmdCtx)
+
+	s.createGroupsCmd = factory.NewCreateGroupsCmd(cmdCtx)
 	s.rootCmd.AddCommand(s.createGroupsCmd)
 
-	s.createCmd = factory.NewCreateTenantCmd(s.T().Context())
+	s.createCmd = factory.NewCreateTenantCmd(cmdCtx)
 	s.rootCmd.AddCommand(s.createCmd)
 
-	s.deleteTenantCmd = factory.NewDeleteTenantCmd(s.T().Context())
+	s.deleteTenantCmd = factory.NewDeleteTenantCmd(cmdCtx)
 	s.rootCmd.AddCommand(s.deleteTenantCmd)
 
-	s.getTenantCmd = factory.NewGetTenantCmd(s.T().Context())
+	s.getTenantCmd = factory.NewGetTenantCmd(cmdCtx)
 	s.rootCmd.AddCommand(s.getTenantCmd)
 
-	s.listTenantsCmd = factory.NewListTenantsCmd(s.T().Context())
+	s.listTenantsCmd = factory.NewListTenantsCmd(cmdCtx)
 	s.rootCmd.AddCommand(s.listTenantsCmd)
 
-	s.updateTenantCmd = factory.NewUpdateTenantCmd(s.T().Context())
+	s.updateTenantCmd = factory.NewUpdateTenantCmd(cmdCtx)
 	s.rootCmd.AddCommand(s.updateTenantCmd)
 }
 
@@ -164,7 +177,11 @@ func (s *CLISuite) TestListTenantsCmd() {
 	tenant, err := s.createTenant()
 	s.Require().NoError(err)
 
-	err = s.tm.CreateTenant(s.T().Context(), tenant)
+	ctx, err := cmkcontext.InjectInternalUserData(s.T().Context(),
+		constants.InternalTenantCLIRole)
+	s.Require().NoError(err)
+
+	err = s.tm.CreateTenant(ctx, tenant)
 	s.Require().NoError(err)
 
 	s.rootCmd.SetArgs([]string{"list"})
@@ -354,6 +371,12 @@ func (s *CLISuite) createTenant() (*model.Tenant, error) {
 }
 
 func (s *CLISuite) createTestTenant(ctx context.Context) (*model.Tenant, error) {
+	// Just use this role for test setup, since it has the required permissions
+	ctx, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantCLIRole)
+	if err != nil {
+		return nil, err
+	}
+
 	tenant, err := s.createTenant()
 	if err != nil {
 		return nil, err

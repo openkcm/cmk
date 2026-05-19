@@ -16,10 +16,12 @@ import (
 
 	"github.com/openkcm/cmk/cmd/tenant-manager-cli/commands"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/log"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {
@@ -97,6 +99,11 @@ func setupCommands(
 	svcRegistry serviceapi.Registry,
 ) (*cobra.Command, error) {
 	factory, err := commands.NewCommandFactory(ctx, cfg, dbCon, svcRegistry)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, err = cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantCLIRole)
 	if err != nil {
 		return nil, err
 	}

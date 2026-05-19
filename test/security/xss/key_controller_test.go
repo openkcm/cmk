@@ -54,7 +54,7 @@ func TestKeyController_ForXSS(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 
@@ -224,7 +224,7 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.IsPrimary = true

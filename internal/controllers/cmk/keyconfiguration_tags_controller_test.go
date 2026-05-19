@@ -28,8 +28,8 @@ func startAPIKeyConfigTags(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, str
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		EnableClientDataMW: true,
-		SigningKeyStorage:  keyStorage,
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
 	}), tenants[0], keyStorage
 }
 
@@ -46,7 +46,7 @@ func TestGetTagsForKeyConfiguration(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(*model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	tag := testutils.NewTag(func(t *model.Tag) {
 		t.ID = keyConfig.ID
@@ -61,7 +61,7 @@ func TestGetTagsForKeyConfiguration(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name              string
@@ -136,7 +136,7 @@ func TestAddTagsToKeyConfiguration(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -147,7 +147,7 @@ func TestAddTagsToKeyConfiguration(t *testing.T) {
 
 	privateKey, ok := keyStorage.GetPrivateKey(0)
 	assert.True(t, ok, "test key should exist")
-	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name              string

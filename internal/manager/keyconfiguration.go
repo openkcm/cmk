@@ -400,7 +400,7 @@ func (m *KeyConfigManager) applyIAMGroupFilter(
 	ctx context.Context,
 	query *repo.Query,
 ) (bool, error) {
-	iamIdentifiers, err := cmkcontext.ExtractClientDataGroupsString(ctx)
+	iamIdentifiers, err := cmkcontext.ExtractBusinessUserDataGroupsString(ctx)
 	if err != nil {
 		return false, err
 	}

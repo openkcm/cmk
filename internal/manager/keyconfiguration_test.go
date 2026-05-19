@@ -16,6 +16,8 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
@@ -86,11 +88,17 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
-	userManager := manager.NewUserManager(r, cmkAuditor)
-	tagManager := manager.NewTagManager(r)
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 
-	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+		r, &config.Config{})
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
+	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
+	tagManager := manager.NewTagManager(authzRepo)
+	m := manager.NewKeyConfigManager(r, certManager, userManager,
+		tagManager, cmkAuditor, cfg)
 
 	return m, db, tenants[0]
 }
@@ -124,11 +132,14 @@ func TestGetKeyConfigurations(t *testing.T) {
 	}
 
 	t.Run("Should get key configuration - IAM filter", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
 		)
+
+		ctxWithGroups = cmkcontext.InjectRequestID(ctxWithGroups, uuid.NewString())
+
 		pagination := repo.Pagination{
 			Skip:  constants.DefaultSkip,
 			Top:   constants.DefaultTop,
@@ -155,11 +166,14 @@ func TestGetKeyConfigurations(t *testing.T) {
 			g.Role = constants.TenantAuditorRole
 		})
 
-		ctx := testutils.InjectClientDataIntoContext(
+		ctx := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAuditorGroupIAM, "some_other_group"},
 		)
+
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
+
 		testutils.CreateTestEntities(ctx, t, r, auditorGroup)
 		pagination := repo.Pagination{
 			Skip:  constants.DefaultSkip,
@@ -173,11 +187,14 @@ func TestGetKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should get 0 key configuration - no access", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{"group-no-access", "some_other_group"},
 		)
+
+		ctxWithGroups = cmkcontext.InjectRequestID(ctxWithGroups, uuid.NewString())
+
 		pagination := repo.Pagination{
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
@@ -188,7 +205,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should get 0 key configuration - empty IAMGroups", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{},
@@ -215,7 +232,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, adminGroup2, keyConfig2)
 
 		// Create context with user's IAM groups including only adminGroup2
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{adminGroupName2, "some_other_group"},
@@ -246,8 +263,13 @@ func TestGetKeyConfigurations(t *testing.T) {
 
 	t.Run("Should get user keyconfig count", func(t *testing.T) {
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
-		groupA := testutils.NewGroup(func(_ *model.Group) {})
+		testKeyAdminGroupIAM := "KMS_test_auditor_group2"
+		groupA := testutils.NewGroup(func(g *model.Group) {
+			g.IAMIdentifier = testKeyAdminGroupIAM
+			g.Role = constants.KeyAdminRole
+		})
 		groupB := testutils.NewGroup(func(_ *model.Group) {})
 		testutils.CreateTestEntities(ctx, t, r, groupA, groupB)
 		kcCount := 10
@@ -274,7 +296,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			}
 		}
 
-		ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{groupA.IAMIdentifier})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{groupA.IAMIdentifier})
 		_, count, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Pagination: repo.Pagination{Count: true}})
 		assert.NoError(t, err)
 		assert.Equal(t, kcCount, count)
@@ -295,7 +317,8 @@ func TestTotalSystemAndKey(t *testing.T) {
 		})
 
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 		sys := &model.System{
 			ID:                 uuid.New(),
@@ -343,7 +366,8 @@ func TestTotalSystemAndKey(t *testing.T) {
 		}
 
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, sys)
 
@@ -371,7 +395,8 @@ func TestKeyConfigurationsWithGroupID(t *testing.T) {
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -412,7 +437,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.CreatorID = CreatorID
 		})
 
-		ctx := testutils.InjectClientDataIntoContext(
+		ctx := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, keyConfig.AdminGroup.IAMIdentifier},
@@ -434,7 +459,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.Name = "  "
 		})
 
-		ctx := testutils.InjectClientDataIntoContext(
+		ctx := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, keyConfig.AdminGroup.IAMIdentifier},
@@ -456,7 +481,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.CreatorID = CreatorID
 		})
 
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{wrongRoleGroup.IAMIdentifier},
@@ -477,7 +502,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.AdminGroup = *wrongRoleGroup
 		})
 
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{wrongRoleGroup.IAMIdentifier},
@@ -488,7 +513,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should allow creation when user belongs to admin group", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
@@ -506,7 +531,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should deny creation when user does not belong to admin group", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{"KMS_different_group", "some_other_group"},
@@ -530,11 +555,11 @@ func TestPostKeyConfigurations(t *testing.T) {
 		})
 
 		_, err := m.PostKeyConfigurations(ctxWithoutGroups, keyConfig)
-		assert.ErrorIs(t, err, cmkcontext.ErrExtractClientData)
+		assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 	})
 
 	t.Run("Should deny creation when empty groups in context", func(t *testing.T) {
-		ctxWithEmptyGroups := testutils.InjectClientDataIntoContext(
+		ctxWithEmptyGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{},
@@ -566,7 +591,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 	expected := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
 
 	testutils.CreateTestEntities(ctx, t, r, expected)
 
@@ -581,14 +606,12 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 		assert.Equal(t, expected.Name, actual.Name)
 	})
 
-	t.Run("Should allow access when system is system user", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
-			ctx,
-			constants.SystemUser.String(),
-			[]string{},
-		)
+	t.Run("Should allow access when internal user", func(t *testing.T) {
+		ctxSys, err := cmkcontext.BusinessToInternalContext(ctx,
+			constants.InternalTaskWorkflowApproversRole)
+		assert.NoError(t, err)
 
-		actual, err := m.GetKeyConfigurationByID(ctxWithGroups, keyConfigWithAdminGroup.ID)
+		actual, err := m.GetKeyConfigurationByID(ctxSys, keyConfigWithAdminGroup.ID)
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfigWithAdminGroup.ID, actual.ID)
 		assert.Equal(t, keyConfigWithAdminGroup.Name, actual.Name)
@@ -596,7 +619,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 
 	t.Run("Should allow access when user belongs to admin group", func(t *testing.T) {
 		// Create context with user's IAM groups including the admin group
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
@@ -616,7 +639,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 		})
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
 
-		ctx := testutils.InjectClientDataIntoContext(
+		ctx := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAuditorGroupIAM, "some_other_group"},
@@ -630,7 +653,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 
 	t.Run("Should deny access when user does not belong to admin group", func(t *testing.T) {
 		// Create context with user's IAM groups NOT including the admin group
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{"KMS_different_group", "some_other_group"},
@@ -645,11 +668,11 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 		ctxWithoutGroups := testutils.CreateCtxWithTenant(tenant)
 
 		_, err := m.GetKeyConfigurationByID(ctxWithoutGroups, expected.ID)
-		assert.ErrorIs(t, err, cmkcontext.ErrExtractClientData)
+		assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 	})
 	t.Run("Should deny access when empty groups in context", func(t *testing.T) {
 		// Test with empty groups slice - should work as before
-		ctxWithEmptyGroups := testutils.InjectClientDataIntoContext(
+		ctxWithEmptyGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{},
@@ -675,7 +698,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 	})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
 
 	testutils.CreateTestEntities(ctx, t, r, key, expected, adminGroup, keyConfigWithAdminGroup)
 
@@ -753,7 +776,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 
 	t.Run("Should allow update when user belongs to admin group", func(t *testing.T) {
 		// Create context with proper client data including user's IAM groups
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
@@ -775,7 +798,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 
 	t.Run("Should deny update when user does not belongs to admin group", func(t *testing.T) {
 		// Create context with proper client data with user's IAM groups NOT including the admin group
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{"KMS_different_group", "some_other_group"},
@@ -803,12 +826,12 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 				Description: ptr.PointTo("backward-compat-description"),
 			},
 		)
-		assert.ErrorIs(t, err, cmkcontext.ErrExtractClientData)
+		assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 	})
 
 	t.Run("Should deny update when empty groups in context", func(t *testing.T) {
 		// Test with empty groups slice - should work as before
-		ctxWithEmptyGroups := testutils.InjectClientDataIntoContext(
+		ctxWithEmptyGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{},
@@ -835,7 +858,8 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 	})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
+	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 	bytes, err := json.Marshal(&[]string{"tag1"})
 	assert.NoError(t, err)
@@ -873,7 +897,7 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 		sys := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 		})
-		ctx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 		testutils.CreateTestEntities(ctx, t, r, keyConfig, sys)
 		err := m.DeleteKeyConfigurationByID(ctx, keyConfig.ID)
@@ -882,7 +906,7 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 
 	t.Run("Should allow access when user belongs to admin group", func(t *testing.T) {
 		// Create context with proper client data including user's IAM groups
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
@@ -898,7 +922,7 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, keyConfigForDelete)
 
 		// Create context with proper client data with user's IAM groups NOT including the admin group
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{"KMS_different_group", "some_other_group"},
@@ -914,7 +938,7 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, keyConfigForDelete)
 
 		// Test with empty groups slice - should work as before
-		ctxWithEmptyGroups := testutils.InjectClientDataIntoContext(
+		ctxWithEmptyGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{},

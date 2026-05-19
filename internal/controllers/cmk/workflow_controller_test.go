@@ -38,7 +38,7 @@ func signedHeadersFromClientMapWorkflow(
 	clientMap map[any]any,
 ) http.Header {
 	t.Helper()
-	clientData, ok := clientMap[constants.ClientData].(*auth.ClientData)
+	businessUserData, ok := clientMap[constants.BusinessUserData].(*auth.ClientData)
 	if !ok {
 		t.Fatalf("client data should be present in client map")
 	}
@@ -46,7 +46,7 @@ func signedHeadersFromClientMapWorkflow(
 	if !keyOK {
 		t.Fatalf("test key should exist")
 	}
-	return testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+	return testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 }
 
 var errMockInternalError = errors.New("internal error")
@@ -62,10 +62,10 @@ func startAPIWorkflows(
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
 	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:             config.Config{Database: dbCfg},
-		Registry:           testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
-		EnableClientDataMW: true,
-		SigningKeyStorage:  keyStorage,
+		Config:                   config.Config{Database: dbCfg},
+		Registry:                 testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
 	})
 
 	return db, sv, tenants[0], keyStorage
@@ -80,13 +80,13 @@ var (
 )
 
 func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
-	authClient testutils.AuthClientData, idmPlugin *testplugins.TestIdentityManagement,
+	authClient testutils.AuthBusinessUserData, idmPlugin *testplugins.TestIdentityManagement,
 ) []*model.Workflow {
 	tb.Helper()
 
 	system := testutils.NewSystem(func(w *model.System) {})
 	keyConfig := testutils.NewKeyConfig(func(w *model.KeyConfiguration) {
-	}, testutils.WithAuthClientDataKC(authClient))
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
@@ -186,7 +186,7 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 }
 
 func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceRepository,
-	ctx context.Context, authClient testutils.AuthClientData, idmPlugin *testplugins.TestIdentityManagement,
+	ctx context.Context, authClient testutils.AuthBusinessUserData, idmPlugin *testplugins.TestIdentityManagement,
 ) {
 	t.Helper()
 	createTestWorkflows(ctx, t, r, authClient, idmPlugin)
@@ -199,7 +199,7 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceR
 	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 		c.ID = uuid.MustParse(keyConfigID)
 		c.PrimaryKeyID = &key.ID
-	}, testutils.WithAuthClientDataKC(authClient))
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key2 := testutils.NewKey(func(k *model.Key) {
 		k.ID = uuid.MustParse(key2ID)
@@ -214,7 +214,8 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceR
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key, key2, system)
 }
 
-func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux, headers http.Header) {
+func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux,
+	headers http.Header) {
 	// Do a dummy check to ensure that the config is created. We need this for any
 	// tests simulating a DB failure, otherwise the config creation will hit the
 	// simulated error.
@@ -257,14 +258,14 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 
 		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
-		clientData := &auth.ClientData{
+		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
 			Groups:     []string{authClient.Group.IAMIdentifier},
 		}
 
 		privateKey, ok := keyStorage.GetPrivateKey(0)
 		assert.True(t, ok, "test key should exist")
-		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		wf := cmkapi.Workflow{
 			ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
@@ -305,7 +306,7 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 
 		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 			c.PrimaryKeyID = &key.ID
-		}, testutils.WithAuthClientDataKC(authClient))
+		}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 		system := testutils.NewSystem(func(w *model.System) {
 			w.KeyConfigurationID = &keyConfig.ID
@@ -313,14 +314,14 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 
 		testutils.CreateTestEntities(ctx, t, r, key, keyConfig, system)
 
-		clientData := &auth.ClientData{
+		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
 			Groups:     []string{authClient.Group.IAMIdentifier},
 		}
 
 		privateKey, ok := keyStorage.GetPrivateKey(0)
 		assert.True(t, ok, "test key should exist")
-		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		wf := cmkapi.Workflow{
 			ActionType:   cmkapi.WorkflowActionTypeEnumLINK,
@@ -367,7 +368,7 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {})
 		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 			c.PrimaryKeyID = &key.ID
-		}, testutils.WithAuthClientDataKC(authClient))
+		}, testutils.WithAuthBusinessUserDataKC(authClient))
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.Status = cmkapi.SystemStatusCONNECTED
@@ -514,14 +515,14 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 			idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
 			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
-			clientData := &auth.ClientData{
+			businessUserData := &auth.ClientData{
 				Identifier: authClient.Identifier,
 				Groups:     []string{authClient.Group.IAMIdentifier},
 			}
 
 			privateKey, ok := keyStorage.GetPrivateKey(0)
 			assert.True(t, ok, "test key should exist")
-			headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+			headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 			if tt.sideEffect != nil {
 				forceConfig(t, tenant, sv, headers)
@@ -634,14 +635,14 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 
 			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient, idmPlugin)
 
-			clientData := &auth.ClientData{
+			businessUserData := &auth.ClientData{
 				Identifier: keyAdminAuthClient.Identifier,
 				Groups:     []string{keyAdminAuthClient.Group.IAMIdentifier},
 			}
 
 			privateKey, ok := keyStorage.GetPrivateKey(0)
 			assert.True(t, ok, "test key should exist")
-			headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+			headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodPost,
@@ -803,13 +804,13 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 
 			idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
 			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
-			clientData := &auth.ClientData{
+			businessUserData := &auth.ClientData{
 				Identifier: authClient.Identifier,
 				Groups:     []string{authClient.Group.IAMIdentifier},
 			}
 			privateKey, ok := keyStorage.GetPrivateKey(0)
 			assert.True(t, ok, "test key should exist")
-			headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+			headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 			testutils.CreateTestEntities(ctx, t, r, keyConfigWithoutUser)
 
@@ -1085,7 +1086,7 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		authClient       testutils.AuthClientData
+		authClient       testutils.AuthBusinessUserData
 		allowedWorkflows []*model.Workflow
 	}{
 		{

@@ -31,7 +31,6 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/utils/base62"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -91,6 +90,7 @@ func NewTenantOperator(
 	clientsFactory clients.Factory,
 	tenantManager manager.Tenant,
 	groupManager *manager.GroupManager,
+	r repo.Repo,
 ) (*TenantOperator, error) {
 	if db == nil {
 		return nil, oops.Errorf("db is nil")
@@ -111,8 +111,6 @@ func NewTenantOperator(
 	if clientsFactory.SessionManager().OIDCMapping() == nil {
 		return nil, oops.Errorf("sessionManagerClient is nil")
 	}
-
-	r := sql.NewRepository(db)
 
 	return &TenantOperator{
 		db:             db,
@@ -506,11 +504,12 @@ func setErrorStateAndFail(ctx context.Context, resp *orbital.HandlerResponse, er
 	resp.Fail(err.Error())
 }
 
-func (o *TenantOperator) injectSystemUser(
+func (o *TenantOperator) injectInternalUser(
 	next orbital.HandlerFunc,
 ) orbital.HandlerFunc {
 	return func(ctx context.Context, request orbital.HandlerRequest, response *orbital.HandlerResponse) {
-		ctx = cmkcontext.InjectSystemUser(ctx)
+		ctx, _ = cmkcontext.InjectInternalUserData(ctx,
+			constants.InternalTenantProvisioningRole)
 		next(ctx, request, response)
 	}
 }
@@ -543,7 +542,7 @@ func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
 	}
 
 	for action, handler := range handlers {
-		handler = o.injectSystemUser(handler)
+		handler = o.injectInternalUser(handler)
 		handler = o.trace(handler, action)
 
 		err := operator.RegisterHandler(action, handler)

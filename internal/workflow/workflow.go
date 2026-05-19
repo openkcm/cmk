@@ -4,18 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/looplab/fsm"
 
+	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
-
-var SystemUserUUID = uuid.Max
-
-var SystemUserID = SystemUserUUID.String()
 
 type Lifecycle struct {
 	Workflow                *model.Workflow
@@ -129,15 +127,20 @@ func (l *Lifecycle) CanTransition(transition Transition) bool {
 	return l.StateMachine.Can(transition.String())
 }
 
-// ApplyTransition wraps the execution of a transition in the state machine
+// ValidateAndApplyTransition wraps the execution of a transition in the state machine
 // triggered by user input
-func (l *Lifecycle) ApplyTransition(ctx context.Context, transition Transition) error {
-	// Validate the actor of the event
-	err := l.ValidateActor(ctx, transition)
-	if err != nil {
+func (l *Lifecycle) ValidateAndApplyTransition(ctx context.Context, transition Transition) error {
+	if err := l.ValidateActor(ctx, transition); err != nil {
 		return err
 	}
 
+	return l.ApplyTransition(ctx, transition)
+}
+
+// ApplyTransition applies a transition without actor validation.
+// Use only when the caller has already established authority through other
+// means and actor validation must be skipped (e.g. auto-reject after vote).
+func (l *Lifecycle) ApplyTransition(ctx context.Context, transition Transition) error {
 	// Perform pre-checks on the transition
 	skip, err := l.transitionPrecheck(ctx, transition)
 	if err != nil {
@@ -257,8 +260,6 @@ func (l *Lifecycle) GetApprovalSummary(ctx context.Context) (*ApprovalSummary, e
 }
 
 // ValidateActor validates the actor of the event
-//
-//nolint:cyclop
 func (l *Lifecycle) ValidateActor(ctx context.Context, transition Transition) error {
 	var (
 		valid bool
@@ -274,27 +275,18 @@ func (l *Lifecycle) ValidateActor(ctx context.Context, transition Transition) er
 			err = NewInvalidEventActorError(l.ActorID, "initiator")
 		}
 	case TransitionApprove, TransitionReject:
-		// Check if system user (automated rejection)
-		isSystem, _ := l.validateUserIsSystem(ctx)
-		if isSystem && transition == TransitionReject {
-			// Allow system user for automated early rejection
-			// valid is already false from initialization, no assignment needed
-		} else {
-			// Regular approve/reject requires being an approver
-			valid, err = l.validateUserIsApprover(ctx)
-			if err != nil {
-				err = errs.Wrapf(err, "failed to validate approver")
-			} else if !valid {
-				err = NewInvalidEventActorError(l.ActorID, "approver")
-			}
-		}
-	case TransitionExecute, TransitionFail, TransitionExpire:
-		valid, err = l.validateUserIsSystem(ctx)
+		valid, err = l.validateUserIsApprover(ctx)
 		if err != nil {
-			err = errs.Wrapf(err, "failed to validate automated transition")
+			err = errs.Wrapf(err, "failed to validate approver")
 		} else if !valid {
-			err = ErrAutomatedTransition
+			err = NewInvalidEventActorError(l.ActorID, "approver")
 		}
+	case TransitionExpire:
+		err = l.validateInternalTransition(ctx,
+			constants.InternalTaskWorkflowExpirationRole)
+	case TransitionExecute, TransitionFail:
+		err = l.validateInternalTransition(ctx,
+			constants.InternalTaskWorkflowApproversRole)
 	default:
 		err = ErrInvalidWorkflowState
 	}
@@ -346,11 +338,20 @@ func (l *Lifecycle) CheckInsufficientApprovers(
 	return maxPossibleApprovals < l.MinimumApproverCount
 }
 
-// validateUserIsSystem validates that the user is the SYSTEM user
-//
-//nolint:unparam
-func (l *Lifecycle) validateUserIsSystem(_ context.Context) (bool, error) {
-	return l.ActorID == SystemUserID, nil
+func (l *Lifecycle) validateInternalTransition(
+	ctx context.Context, role constants.InternalRole) error {
+	source, err := cmkcontext.ExtractUserType(ctx)
+	if err != nil {
+		return errs.Wrapf(err, "failed to validate automated transition")
+	} else if source == string(constants.BusinessUser) {
+		return ErrAutomatedTransition
+	}
+
+	err = authz.CheckInternalUserRole(ctx, role)
+	if err != nil {
+		return errs.Wrapf(err, "failed to validate automated transition")
+	}
+	return nil
 }
 
 // validateUserIsInitiator validates that the user is the initiator of the workflow

@@ -14,8 +14,8 @@ type Reason string
 // It logs the request ID, tenant ID, resource type, action, decision, and reason.
 // The decision is logged as an Info log if it is "Allow", otherwise as a Warn log.
 // Additionally, it sends an audit log for unauthorized requests using the provided auditor.
-func LogDecision[TResourceTypeName, TAction comparable](
-	ctx context.Context, request Request[TResourceTypeName, TAction],
+func LogDecision[TUser UserRequest, TResourceTypeName, TAction comparable](
+	ctx context.Context, request Request[TUser, TResourceTypeName, TAction],
 	auditor *auditor.Auditor, isAllowed bool, reason Reason) {
 	logFn := log.Warn
 

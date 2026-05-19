@@ -7,6 +7,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -42,9 +43,15 @@ func (k *keystorePoolFiller) ProcessTask(ctx context.Context, _ *asynq.Task) err
 		return err
 	}
 
+	log.Info(ctx, "Keystore Pool successfully filled")
+
 	return nil
 }
 
 func (k *keystorePoolFiller) TaskType() string {
 	return config.TypeKeystorePool
+}
+
+func (k *keystorePoolFiller) Role() constants.InternalRole {
+	return constants.InternalTaskKeystorePoolRole
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
@@ -47,8 +48,10 @@ func NewWorkflowExpiryProcessor(
 func (w *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	wfs, _, err := w.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
 	if err != nil {
-		return err
+		w.logError(ctx, err)
+		return nil
 	}
+
 	for _, wf := range wfs {
 		if wf.ExpiryDate == nil || time.Now().Before(*wf.ExpiryDate) {
 			continue
@@ -80,6 +83,10 @@ func (w *WorkflowExpiryProcessor) TenantQuery() *repo.Query {
 	return repo.NewQuery()
 }
 
+func (w *WorkflowExpiryProcessor) Role() constants.InternalRole {
+	return constants.InternalTaskWorkflowExpirationRole
+}
+
 func (w *WorkflowExpiryProcessor) TaskType() string {
 	return config.TypeWorkflowExpire
 }
@@ -96,4 +103,10 @@ func (w *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID
 	log.Info(ctx, "Expired workflow", slog.String("workflow_id", workflow.ID.String()))
 
 	return nil
+}
+
+func (w *WorkflowExpiryProcessor) logError(ctx context.Context, err error) {
+	// Returned errors are retries in batch processor
+	// If we don't want a retry we just log here and return nil
+	log.Error(ctx, "Error during workflow expiry batch processing", err)
 }

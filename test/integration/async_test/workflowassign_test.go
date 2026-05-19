@@ -111,7 +111,7 @@ func TestWorkflowApproversAssignment(t *testing.T) {
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, nil, userManager, tagManager, nil, testConfig)
 	keyManager := manager.NewKeyManager(r, svcRegistry, nil, keyConfigManager, userManager, nil, nil, nil)
-	systemManager := manager.NewSystemManager(ctx, r, nil, nil, svcRegistry, testConfig, keyConfigManager, userManager)
+	systemManager := manager.NewSystemManager(ctx, r, nil, nil, nil, svcRegistry, testConfig, keyConfigManager, userManager)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 	workflowManager := manager.NewWorkflowManager(r, svcRegistry, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, asyncApp.Client(), tenantConfigManager, testConfig)

@@ -22,6 +22,8 @@ import (
 	"github.com/openkcm/cmk/internal/async/tasks"
 	tenantTask "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -42,6 +44,7 @@ var (
 	gracefulShutdownSec     = flag.Int64("graceful-shutdown", 1, "graceful shutdown seconds")
 	gracefulShutdownMessage = flag.String("graceful-shutdown-message", "Graceful shutdown in %d seconds",
 		"graceful shutdown message")
+	ErrAuthzLoader     = errors.New("failed to create authz loader")
 	ErrRegistryEnabled = errors.New("failed to create registry client")
 )
 
@@ -120,6 +123,13 @@ func registerTasks(
 	cfg *config.Config,
 	cron *async.App,
 ) error {
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
+	if authzRepoLoader.AuthzHandler == nil {
+		return ErrAuthzLoader
+	}
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
 	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	if err != nil {
 		return errs.Wrapf(err, "failed to start loading catalog")
@@ -130,12 +140,12 @@ func registerTasks(
 		return errs.Wrapf(err, "failed to create notification client")
 	}
 
-	sis, err := manager.NewSystemInformationManager(r, svcRegistry, &cfg.ContextModels.System)
+	sis, err := manager.NewSystemInformationManager(authzRepo, authzRepoLoader, svcRegistry, &cfg.ContextModels.System)
 	if err != nil {
 		return errs.Wrapf(err, "failed to start system information manager")
 	}
 
-	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, authzRepo)
 	if err != nil {
 		return errs.Wrapf(err, "failed to create event factory")
 	}
@@ -150,28 +160,29 @@ func registerTasks(
 	}
 
 	cmkAuditor := auditor.New(ctx, cfg)
-	userManager := manager.NewUserManager(r, cmkAuditor)
-	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg)
-	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
+	certManager := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg)
+	tagManager := manager.NewTagManager(authzRepo)
+	keyConfigManager := manager.NewKeyConfigManager(authzRepo, certManager, userManager, tagManager, cmkAuditor, cfg)
 	keyManager := manager.NewKeyManager(
-		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
-	systemManager := manager.NewSystemManager(ctx, r, nil, eventFactory, svcRegistry, cfg, keyConfigManager, userManager)
-	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
-	workflowManager := manager.NewWorkflowManager(r, svcRegistry, keyManager, keyConfigManager, systemManager,
+		authzRepo, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
+	systemManager := manager.NewSystemManager(ctx, authzRepo, authzRepoLoader, nil, eventFactory,
+		svcRegistry, cfg, keyConfigManager, userManager)
+	groupManager := manager.NewGroupManager(authzRepo, svcRegistry, userManager)
+	workflowManager := manager.NewWorkflowManager(authzRepo, svcRegistry, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, cron.Client(), tenantConfigManager, cfg)
 
 	taskHandlers := []async.TaskHandler{
-		tenantTask.NewSystemsRefresher(sis, r),
-		tenantTask.NewCertRotator(certManager, r),
-		tasks.NewKeystorePoolFiller(keyManager, r, cfg.KeystorePool),
-		tasks.NewWorkflowProcessor(workflowManager, r),
+		tenantTask.NewSystemsRefresher(sis, authzRepo),
+		tenantTask.NewCertRotator(certManager, authzRepo),
+		tasks.NewKeystorePoolFiller(keyManager, authzRepo, cfg.KeystorePool),
+		tasks.NewWorkflowProcessor(workflowManager, authzRepo),
 		tasks.NewNotificationSender(notifierClient),
-		tenantTask.NewWorkflowExpiryProcessor(workflowManager, r),
-		tenantTask.NewWorkflowCleaner(workflowManager, r),
-		tenantTask.NewTenantNameRefresher(r, f.Registry()),
-		tenantTask.NewHYOKSync(keyManager, r),
+		tenantTask.NewWorkflowExpiryProcessor(workflowManager, authzRepo),
+		tenantTask.NewWorkflowCleaner(workflowManager, authzRepo),
+		tenantTask.NewTenantNameRefresher(authzRepo, f.Registry()),
+		tenantTask.NewHYOKSync(keyManager, authzRepo),
 	}
 
 	cron.RegisterTasks(ctx, taskHandlers)

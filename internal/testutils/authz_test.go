@@ -17,7 +17,7 @@ func TestAuthClientData_GetClientMapAppliesOptions(t *testing.T) {
 	group := NewGroup(func(g *model.Group) {
 		g.IAMIdentifier = "group-a"
 	})
-	authClient := AuthClientData{
+	authClient := AuthBusinessUserData{
 		Group:      group,
 		GroupID:    group.ID.String(),
 		Identifier: "user-a",
@@ -28,7 +28,7 @@ func TestAuthClientData_GetClientMapAppliesOptions(t *testing.T) {
 		WithOverriddenIdentifier("user-b"),
 	)
 
-	clientData, ok := clientMap[constants.ClientData].(*auth.ClientData)
+	clientData, ok := clientMap[constants.BusinessUserData].(*auth.ClientData)
 	require.True(t, ok)
 	require.NotNil(t, clientData)
 	assert.Equal(t, "user-b", clientData.Identifier)
@@ -36,7 +36,7 @@ func TestAuthClientData_GetClientMapAppliesOptions(t *testing.T) {
 }
 
 func TestWithOverriddenGroupGeneratesRequestedCount(t *testing.T) {
-	authClient := AuthClientData{
+	authClient := AuthBusinessUserData{
 		Group: NewGroup(func(g *model.Group) {
 			g.IAMIdentifier = "seed-group"
 		}),
@@ -44,7 +44,7 @@ func TestWithOverriddenGroupGeneratesRequestedCount(t *testing.T) {
 	}
 
 	clientMap := authClient.GetClientMap(WithOverriddenGroup(3))
-	clientData, ok := clientMap[constants.ClientData].(*auth.ClientData)
+	clientData, ok := clientMap[constants.BusinessUserData].(*auth.ClientData)
 	require.True(t, ok)
 	require.NotNil(t, clientData)
 	require.Len(t, clientData.Groups, 3)
@@ -76,7 +76,7 @@ func TestWithAuthClientDataKC(t *testing.T) {
 	authClient := newAuthClient(WithTenantAdminRole())
 	kc := &model.KeyConfiguration{}
 
-	WithAuthClientDataKC(authClient)(kc)
+	WithAuthBusinessUserDataKC(authClient)(kc)
 
 	assert.Equal(t, authClient.Group.ID, kc.AdminGroupID)
 	assert.Equal(t, authClient.Group.ID, kc.AdminGroup.ID)
@@ -85,28 +85,28 @@ func TestWithAuthClientDataKC(t *testing.T) {
 
 func TestClientMapHelpers(t *testing.T) {
 	clientMap := GetClientMap("id-a", []string{"g1", "g2"})
-	clientData, ok := clientMap[constants.ClientData].(*auth.ClientData)
+	clientData, ok := clientMap[constants.BusinessUserData].(*auth.ClientData)
 	require.True(t, ok)
 	require.NotNil(t, clientData)
 	assert.Equal(t, "id-a", clientData.Identifier)
 	assert.Equal(t, []string{"g1", "g2"}, clientData.Groups)
 
 	groupless := GetGrouplessClientMap()
-	grouplessData, ok := groupless[constants.ClientData].(*auth.ClientData)
+	grouplessData, ok := groupless[constants.BusinessUserData].(*auth.ClientData)
 	require.True(t, ok)
 	require.NotNil(t, grouplessData)
 	assert.Empty(t, grouplessData.Groups)
 	assert.NotEmpty(t, grouplessData.Identifier)
 
 	invalid := GetInvalidClientMap()
-	invalidData, ok := invalid[constants.ClientData].(*auth.ClientData)
+	invalidData, ok := invalid[constants.BusinessUserData].(*auth.ClientData)
 	require.True(t, ok)
 	require.NotNil(t, invalidData)
 	assert.NotEmpty(t, invalidData.Identifier)
 	assert.Len(t, invalidData.Groups, 2)
 }
 
-func TestNewSignedClientDataHeadersMutatesAndSigns(t *testing.T) {
+func TestNewSignedBusinessUserDataHeadersMutatesAndSigns(t *testing.T) {
 	privateKey, _, err := GenerateTestKeyPair()
 	require.NoError(t, err)
 
@@ -115,7 +115,7 @@ func TestNewSignedClientDataHeadersMutatesAndSigns(t *testing.T) {
 		Groups:     []string{"g1"},
 	}
 
-	headers := NewSignedClientDataHeaders(t, clientData, privateKey, 2)
+	headers := NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 2)
 	require.NotEmpty(t, headers.Get(auth.HeaderClientData))
 	require.NotEmpty(t, headers.Get(auth.HeaderClientDataSignature))
 	assert.Equal(t, strconv.Itoa(2), clientData.KeyID)

@@ -2,16 +2,22 @@ package tasks_test
 
 import (
 	"context"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/hibiken/asynq"
-	"github.com/zeebo/assert"
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
 	tenantv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
+	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -24,6 +30,9 @@ const RefreshedName = "refreshed-name"
 
 type MockTenantRegistry struct {
 	tenantv1.UnimplementedServiceServer
+
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+		authz.RepoAction]
 }
 
 func (m *MockTenantRegistry) RegisterTenant(ctx context.Context, in *tenantv1.RegisterTenantRequest, opts ...grpc.CallOption) (*tenantv1.RegisterTenantResponse, error) {
@@ -35,6 +44,16 @@ func (m *MockTenantRegistry) ListTenants(ctx context.Context, in *tenantv1.ListT
 }
 
 func (m *MockTenantRegistry) GetTenant(ctx context.Context, in *tenantv1.GetTenantRequest, opts ...grpc.CallOption) (*tenantv1.GetTenantResponse, error) {
+	if m.authzLoader != nil {
+		// We test for unauthz in this case
+		err := m.authzLoader.LoadAllowList(ctx)
+		if err != nil {
+			return nil, err
+		}
+		_, err = authz.CheckAuthz(ctx, m.authzLoader.AuthzHandler,
+			authz.RepoResourceTypeCertificate, authz.RepoActionDelete)
+		return nil, err
+	}
 	return &tenantv1.GetTenantResponse{
 		Tenant: &tenantv1.Tenant{
 			Name: RefreshedName,
@@ -76,16 +95,28 @@ func TestTenantNameRefresher(t *testing.T) {
 		CreateDatabase: true,
 	}, testutils.WithInitTenants(*emptyNameTenant, *namedTenant))
 	r := sql.NewRepository(db)
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
 
-	registry := registry.NewMockService(nil, &MockTenantRegistry{}, nil)
-	refresher := tasks.NewTenantNameRefresher(r, registry)
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+		r, &config.Config{})
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
+	ctx, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTaskTenantRefreshRole)
+	assert.NoError(t, err)
+
+	reg := registry.NewMockService(nil, &MockTenantRegistry{}, nil)
+	refresher := tasks.NewTenantNameRefresher(authzRepo, reg)
 
 	task := asynq.NewTask(config.TypeTenantRefreshName, nil)
 
 	t.Run("Should update tenant names if empty", func(t *testing.T) {
+		logger, buf := testutils.NewLogBuffer()
+		slog.SetDefault(logger)
+
 		err := refresher.ProcessTask(ctx, task)
 		assert.NoError(t, err)
+		assert.NotContains(t, strings.ToLower(buf.String()), "error")
 
 		tenant := &model.Tenant{ID: emptyNameTenant.ID}
 		_, err = r.First(ctx, tenant, *repo.NewQuery())
@@ -103,13 +134,30 @@ func TestTenantNameRefresher(t *testing.T) {
 		assert.Equal(t, config.TypeTenantRefreshName, taskType)
 	})
 
-	t.Run("Should error if no tenantID", func(t *testing.T) {
-		err := refresher.ProcessTask(t.Context(), task)
-		assert.Error(t, err)
-	})
-
 	t.Run("Should have default tenant query", func(t *testing.T) {
 		query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.Name, repo.Empty)))
 		assert.Equal(t, query, refresher.TenantQuery())
+	})
+
+	t.Run("Should error if no tenantID", func(t *testing.T) {
+		logger, buf := testutils.NewLogBuffer()
+		slog.SetDefault(logger)
+
+		err := refresher.ProcessTask(t.Context(), task)
+		assert.NoError(t, err)
+		assert.Contains(t, buf.String(), "Error during tenant name refresh batch processing")
+	})
+
+	t.Run("Should log on unauthorized processing", func(t *testing.T) {
+		logger, buf := testutils.NewLogBuffer()
+		slog.SetDefault(logger)
+
+		mock := &MockTenantRegistry{authzLoader: authzRepoLoader}
+		authzReg := registry.NewMockService(nil, mock, nil)
+		authzRefresher := tasks.NewTenantNameRefresher(authzRepo, authzReg)
+		err := authzRefresher.ProcessTask(ctx, task)
+		assert.NoError(t, err)
+		assert.Contains(t, buf.String(), "Error during tenant name refresh batch processing")
+		assert.Contains(t, buf.String(), "authorization decision error")
 	})
 }

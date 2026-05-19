@@ -74,13 +74,14 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 
 	userManager := manager.NewUserManager(r, auditor.New(t.Context(), &cfg))
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, nil, &cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager,
+		tagManager, nil, &cfg)
 
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), &cfg, r)
 	require.NoError(t, err)
 
 	systemManager := manager.NewSystemManager(
-		t.Context(), r,
+		t.Context(), r, nil,
 		clientsFactory,
 		eventFactory, svcRegistry,
 		&cfg,
@@ -128,7 +129,8 @@ func TestGetAllSystems(t *testing.T) {
 
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{groupID})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user",
+		[]string{"test-group1"})
 	r := sql.NewRepository(db)
 
 	testGroup := testutils.NewGroup(func(g *model.Group) {
@@ -238,7 +240,7 @@ func TestGetAllSystems(t *testing.T) {
 func TestGetAllSystemsFiltered(t *testing.T) {
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
 	r := sql.NewRepository(db)
 
 	system1 := testutils.NewSystem(
@@ -318,7 +320,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 func TestGetAllSystemsOrderByIdentifier(t *testing.T) {
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
 	r := sql.NewRepository(db)
 
 	// Create systems with identifiers in non-alphabetical order
@@ -388,7 +390,7 @@ func TestGetAllSystemsOrderByIdentifier(t *testing.T) {
 func TestGetSystemByID(t *testing.T) {
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group2"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group2"})
 	r := sql.NewRepository(db)
 
 	testGroup := testutils.NewGroup(
@@ -553,10 +555,10 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 	})
 
 	adminCtx := testutils.CreateCtxWithTenant(tenant)
-	adminCtx = testutils.InjectClientDataIntoContext(adminCtx, "admin-user", []string{"admin-group"})
+	adminCtx = testutils.InjectBusinessUserDataIntoContext(adminCtx, "admin-user", []string{"admin-group"})
 
 	nonAdminCtx := testutils.CreateCtxWithTenant(tenant)
-	nonAdminCtx = testutils.InjectClientDataIntoContext(nonAdminCtx, "non-admin-user", []string{"non-admin-group"})
+	nonAdminCtx = testutils.InjectBusinessUserDataIntoContext(nonAdminCtx, "non-admin-user", []string{"non-admin-group"})
 
 	testutils.CreateTestEntities(adminCtx, t, r, keyConfig1, keyConfig2, key1, key2)
 
@@ -762,7 +764,7 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 func TestSendRecoveryAction(t *testing.T) {
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group4"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group4"})
 	r := sql.NewRepository(db)
 
 	t.Run("Should error if user not in groups", func(t *testing.T) {
@@ -773,7 +775,7 @@ func TestSendRecoveryAction(t *testing.T) {
 		},
 		)
 		ctx := testutils.CreateCtxWithTenant(tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{uuid.NewString()})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{uuid.NewString()})
 		testutils.CreateTestEntities(ctx, t, r, sys)
 		err := m.SendRecoveryActions(ctx, sys.ID, cmkapi.SystemRecoveryActionBodyActionCANCEL)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
@@ -830,7 +832,7 @@ func TestSendRecoveryAction(t *testing.T) {
 
 	t.Run("Should error on retry with system status not failed", func(t *testing.T) {
 		groupIdentifier := uuid.NewString()
-		ctx := testutils.InjectClientDataIntoContext(ctx, "test-user", []string{groupIdentifier})
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{groupIdentifier})
 		key := testutils.NewKey(func(k *model.Key) {
 			k.State = string(cmkapi.KeyStateENABLED)
 		})
@@ -958,7 +960,7 @@ func TestSendRecoveryAction(t *testing.T) {
 func TestSelectEvent(t *testing.T) {
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
 	r := sql.NewRepository(db)
 
 	t.Run("Should LINK if new system", func(t *testing.T) {
@@ -1030,7 +1032,7 @@ func TestSelectEvent(t *testing.T) {
 func TestLinkSystemAction(t *testing.T) {
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
 	r := sql.NewRepository(db)
 
 	key := testutils.NewKey(func(_ *model.Key) {})
@@ -1209,7 +1211,7 @@ func TestLinkSystemAction(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m, db, tenant := SetupSystemManager(t, nil)
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
 			r := sql.NewRepository(db)
 			testGroup := testutils.NewGroup(
 				func(g *model.Group) {
@@ -1267,7 +1269,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 
 	m, db, tenant := SetupSystemManager(t, clientsFactory)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group2"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group2"})
 	r := sql.NewRepository(db)
 
 	testGroup := testutils.NewGroup(
@@ -1375,7 +1377,7 @@ func TestRefreshSystems(t *testing.T) {
 
 	m, db, tenant := SetupSystemManager(t, clientsFactory)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
 	r := sql.NewRepository(db)
 
 	existingSystem := &model.System{
@@ -1544,7 +1546,8 @@ func TestGetFilters(t *testing.T) {
 	groupID := uuid.NewString()
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{groupID})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user",
+		[]string{groupID})
 	r := sql.NewRepository(db)
 
 	testGroup := testutils.NewGroup(func(g *model.Group) {

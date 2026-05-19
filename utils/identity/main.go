@@ -12,7 +12,7 @@ func GetUserName(
 	identityManager identitymanagement.IdentityManagement,
 	id string,
 ) (string, error) {
-	authCtx, err := cmkContext.ExtractClientDataAuthContext(ctx)
+	authCtx, err := cmkContext.ExtractBusinessUserDataAuthContext(ctx)
 	if err != nil {
 		return "", err
 	}

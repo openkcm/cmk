@@ -210,7 +210,7 @@ func (r *InMemoryRepository) GetFilterOptions(
 
 func assignList(result any, list []repo.Resource) error {
 	resultVal := reflect.ValueOf(result)
-	if resultVal.Kind() != reflect.Ptr {
+	if resultVal.Kind() != reflect.Pointer {
 		return ErrMustPointerToSlice
 	}
 

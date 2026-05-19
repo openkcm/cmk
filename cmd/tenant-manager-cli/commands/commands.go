@@ -2,10 +2,13 @@ package commands
 
 import (
 	"context"
+	"errors"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
@@ -16,6 +19,8 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
+var ErrAuthzLoader = errors.New("error creating authz repo loader")
+
 type CommandFactory struct {
 	dbCon *multitenancy.DB
 	r     repo.Repo
@@ -23,6 +28,7 @@ type CommandFactory struct {
 	tm    *manager.TenantManager
 }
 
+//nolint:funlen
 func NewCommandFactory(
 	ctx context.Context,
 	cfg *config.Config,
@@ -31,6 +37,13 @@ func NewCommandFactory(
 ) (*CommandFactory, error) {
 	r := sql.NewRepository(dbCon)
 
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
+	if authzRepoLoader.AuthzHandler == nil {
+		return nil, ErrAuthzLoader
+	}
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
 	cmkAuditor := auditor.New(ctx, cfg)
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)
@@ -38,19 +51,20 @@ func NewCommandFactory(
 		return nil, err
 	}
 
-	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, authzRepo)
 	if err != nil {
 		return nil, err
 	}
 
-	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	um := manager.NewUserManager(r, cmkAuditor)
-	tagm := manager.NewTagManager(r)
-	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
+	cm := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
+	um := manager.NewUserManager(authzRepo, cmkAuditor)
+	tagm := manager.NewTagManager(authzRepo)
+	kcm := manager.NewKeyConfigManager(authzRepo, cm, um, tagm, cmkAuditor, cfg)
 
 	sys := manager.NewSystemManager(
 		ctx,
-		r,
+		authzRepo,
+		authzRepoLoader,
 		clientsFactory,
 		eventFactory,
 		svcRegistry,
@@ -60,9 +74,9 @@ func NewCommandFactory(
 	)
 
 	km := manager.NewKeyManager(
-		r,
+		authzRepo,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, cfg),
+		manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg),
 		kcm,
 		um,
 		cm,
@@ -77,8 +91,8 @@ func NewCommandFactory(
 
 	return &CommandFactory{
 		dbCon: dbCon,
-		r:     r,
-		gm:    manager.NewGroupManager(r, svcRegistry, um),
-		tm:    manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator),
+		r:     authzRepo,
+		gm:    manager.NewGroupManager(authzRepo, svcRegistry, um),
+		tm:    manager.NewTenantManager(authzRepo, sys, km, um, cmkAuditor, migrator),
 	}, nil
 }

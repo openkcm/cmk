@@ -47,7 +47,7 @@ func TestGetSystems_ForXSS(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	systemWithProps := testutils.NewSystem(func(s *model.System) {
 		s.Properties = map[string]string{

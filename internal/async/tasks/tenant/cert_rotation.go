@@ -9,6 +9,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -45,18 +46,19 @@ func NewCertRotator(
 var ErrRotatingCert = errors.New("error rotating certificate")
 
 func (c *CertRotator) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.Info(ctx, "Starting Certificate Rotation Task")
-
 	err := c.certClient.RotateExpiredCertificates(ctx)
 	if err != nil {
-		return c.handleErrorTenants(ctx, err)
+		c.logError(ctx, err)
 	}
-
 	return nil
 }
 
 func (c *CertRotator) TaskType() string {
 	return config.TypeCertificateTask
+}
+
+func (c *CertRotator) Role() constants.InternalRole {
+	return constants.InternalTaskCertRotationRole
 }
 
 func (c *CertRotator) TenantQuery() *repo.Query {
@@ -67,7 +69,8 @@ func (c *CertRotator) FanOutFunc() async.FanOutFunc {
 	return async.TenantFanOut
 }
 
-func (c *CertRotator) handleErrorTenants(ctx context.Context, err error) error {
+func (c *CertRotator) logError(ctx context.Context, err error) {
+	// Returned errors are retries in batch processor
+	// If we don't want a retry we just log here and return nil
 	log.Error(ctx, "Error during certificate rotation batch processing", err)
-	return err
 }

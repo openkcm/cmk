@@ -20,20 +20,20 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 )
 
-// AuthClientData contains a group and an identifier associated with an AuthClient
-type AuthClientData struct {
+// AuthBusinessUserData contains a group and an identifier associated with an AuthClient
+type AuthBusinessUserData struct {
 	Group      *model.Group
 	GroupID    string // For convenience. Just a string version of the Group.ID
 	Identifier string
 }
 
 // ClientMapOpt are options which can be used, for example, when retrieving the
-// ClientData from an AuthClient
+// BusinessUserData from an AuthClient
 type ClientMapOpt func(*auth.ClientData)
 
 // NewAuthClient creates an AuthClient using random strings for values and creates
 // the group in the database
-func NewAuthClient(ctx context.Context, tb testing.TB, r repo.Repo, opts ...AuthClientOpt) AuthClientData {
+func NewAuthClient(ctx context.Context, tb testing.TB, r repo.Repo, opts ...AuthClientOpt) AuthBusinessUserData {
 	tb.Helper()
 	authClient := newAuthClient(opts...)
 	CreateTestEntities(ctx, tb, r, authClient.Group)
@@ -41,26 +41,27 @@ func NewAuthClient(ctx context.Context, tb testing.TB, r repo.Repo, opts ...Auth
 }
 
 // GetClientMap gets the ClientMap from the AuthClient. This can be used to authenticate
-func (cd AuthClientData) GetClientMap(opts ...ClientMapOpt) map[any]any {
-	clientData := getClientData(cd.Identifier, []string{cd.Group.IAMIdentifier})
+func (cd AuthBusinessUserData) GetClientMap(opts ...ClientMapOpt) map[any]any {
+	businessUserData := getBusinessUserData(cd.Identifier, []string{cd.Group.IAMIdentifier})
 
 	for _, o := range opts {
-		o(clientData)
+		o(businessUserData)
 	}
 
-	return map[any]any{constants.ClientData: clientData}
+	return map[any]any{constants.UserType: constants.BusinessUser,
+		constants.BusinessUserData: businessUserData}
 }
 
-// WithClientData builds signed client-data headers for the given auth client.
-func WithClientData(
+// WithBusinessUserData builds signed client-data headers for the given auth client.
+func WithBusinessUserData(
 	tb testing.TB,
 	keyStorage *TestSigningKeyStorage,
-	authClient AuthClientData,
+	authClient AuthBusinessUserData,
 	opts ...ClientMapOpt,
 ) http.Header {
 	tb.Helper()
 
-	clientData := getClientData(authClient.Identifier, []string{authClient.Group.IAMIdentifier})
+	clientData := getBusinessUserData(authClient.Identifier, []string{authClient.Group.IAMIdentifier})
 	for _, o := range opts {
 		o(clientData)
 	}
@@ -70,11 +71,11 @@ func WithClientData(
 		tb.Fatalf("test key should exist")
 	}
 
-	return NewSignedClientDataHeaders(tb, clientData, privateKey, 0)
+	return NewSignedBusinessUserDataHeaders(tb, clientData, privateKey, 0)
 }
 
 // WithAdditionalGroup provides an option for getting a ClientMap from an AuthClient.
-// It adds an additional group to the ClientData Groups
+// It adds an additional group to the BusinessUserData Groups
 func WithAdditionalGroup(groupName string) ClientMapOpt {
 	return func(cd *auth.ClientData) {
 		cd.Groups = append(cd.Groups, groupName)
@@ -102,9 +103,9 @@ func WithOverriddenGroup(numGroups int) ClientMapOpt {
 	}
 }
 
-// WithAuthClientDataKC provides an option for the NewKeyConfig function
+// WithAuthBusinessUserDataKC provides an option for the NewKeyConfig function
 // This option will initialise the KeyConfig with the AuthClient Group
-func WithAuthClientDataKC(authClient AuthClientData) KeyConfigOpt {
+func WithAuthBusinessUserDataKC(authClient AuthBusinessUserData) KeyConfigOpt {
 	return func(kc *model.KeyConfiguration) {
 		kc.AdminGroup = *authClient.Group
 		kc.AdminGroupID = authClient.Group.ID
@@ -112,7 +113,7 @@ func WithAuthClientDataKC(authClient AuthClientData) KeyConfigOpt {
 }
 
 // AuthClientOpt are options which can be used with NewAuthClient
-type AuthClientOpt func(*AuthClientData)
+type AuthClientOpt func(*AuthBusinessUserData)
 
 // GetAuthClientMap does the same as the NewAuthClient, except it returns the ClientMap directly.
 // It can be used for simple tests when a separate AuthClient is not required
@@ -126,7 +127,7 @@ func GetAuthClientMap(ctx context.Context, tb testing.TB, r repo.Repo, opts ...A
 // WithAuditorRole provides an option for getting an AuthClient with NewAuthClient, or the
 // ClientMap with GetAuthClientMap. It specifies TenantAuditorRole for the group
 func WithAuditorRole() AuthClientOpt {
-	return func(acd *AuthClientData) {
+	return func(acd *AuthBusinessUserData) {
 		acd.Group.Role = constants.TenantAuditorRole
 	}
 }
@@ -134,7 +135,7 @@ func WithAuditorRole() AuthClientOpt {
 // WithKeyAdminRole provides an option for getting an AuthClient with NewAuthClient, or the
 // ClientMap with GetAuthClientMap. It specifies KeyAdminRole for the group
 func WithKeyAdminRole() AuthClientOpt {
-	return func(acd *AuthClientData) {
+	return func(acd *AuthBusinessUserData) {
 		acd.Group.Role = constants.KeyAdminRole
 	}
 }
@@ -142,7 +143,7 @@ func WithKeyAdminRole() AuthClientOpt {
 // WithTenantAdminRole provides an option for getting an AuthClient with NewAuthClient, or the
 // ClientMap with GetAuthClientMap. It specifies TenantAdminRole for the group
 func WithTenantAdminRole() AuthClientOpt {
-	return func(acd *AuthClientData) {
+	return func(acd *AuthBusinessUserData) {
 		acd.Group.Role = constants.TenantAdminRole
 	}
 }
@@ -151,7 +152,7 @@ func WithTenantAdminRole() AuthClientOpt {
 // ClientMap with GetAuthClientMap. It allows the default random value for the AuthClient
 // Identifier to be overridden with the provided value
 func WithIdentifier(identifier string) AuthClientOpt {
-	return func(acd *AuthClientData) {
+	return func(acd *AuthBusinessUserData) {
 		acd.Identifier = identifier
 	}
 }
@@ -159,23 +160,26 @@ func WithIdentifier(identifier string) AuthClientOpt {
 // GetClientMap returns a client map created with the provided identifier and group names
 // It does not create anything in the database
 func GetClientMap(identifier string, groupNames []string) map[any]any {
-	return map[any]any{constants.ClientData: getClientData(identifier, groupNames)}
+	return map[any]any{constants.UserType: constants.BusinessUser,
+		constants.BusinessUserData: getBusinessUserData(identifier, groupNames)}
 }
 
 // GetGrouplessClientMap returns a client map with a random identifier and no groupnames
 // It does not create anything in the database
 func GetGrouplessClientMap() map[any]any {
-	return map[any]any{constants.ClientData: getClientData(uuid.NewString(), []string{})}
+	return map[any]any{constants.UserType: constants.BusinessUser,
+		constants.BusinessUserData: getBusinessUserData(uuid.NewString(), []string{})}
 }
 
 // GetInvalidClientMap returns a client map with random identifier and random groupnames
 // It does not create anything in the database
 func GetInvalidClientMap(opts ...ClientMapOpt) map[any]any {
-	clientData := getClientData(uuid.NewString(), []string{uuid.NewString(), uuid.NewString()})
-	return map[any]any{constants.ClientData: clientData}
+	businessUserData := getBusinessUserData(uuid.NewString(), []string{uuid.NewString(), uuid.NewString()})
+	return map[any]any{constants.UserType: constants.BusinessUser,
+		constants.BusinessUserData: businessUserData}
 }
 
-func newAuthClient(opts ...AuthClientOpt) AuthClientData {
+func newAuthClient(opts ...AuthClientOpt) AuthBusinessUserData {
 	group := NewGroup(func(g *model.Group) {
 		g.ID = uuid.New()
 		g.Name = uuid.NewString()
@@ -183,28 +187,28 @@ func newAuthClient(opts ...AuthClientOpt) AuthClientData {
 		g.Role = constants.TenantAuditorRole
 	})
 
-	authClientData := AuthClientData{
+	authBusinessUserData := AuthBusinessUserData{
 		Group:      group,
 		GroupID:    group.ID.String(),
 		Identifier: uuid.NewString(),
 	}
 
 	for _, o := range opts {
-		o(&authClientData)
+		o(&authBusinessUserData)
 	}
 
-	return authClientData
+	return authBusinessUserData
 }
 
-func getClientData(identifier string, groupNames []string) *auth.ClientData {
+func getBusinessUserData(identifier string, groupNames []string) *auth.ClientData {
 	return &auth.ClientData{
 		Identifier: identifier,
 		Groups:     groupNames,
 	}
 }
 
-// NewSignedClientDataHeaders generates HTTP headers from an auth.ClientData struct.
-func NewSignedClientDataHeaders(
+// NewSignedBusinessUserDataHeaders generates HTTP headers from an auth.ClientData struct.
+func NewSignedBusinessUserDataHeaders(
 	tb testing.TB,
 	clientData *auth.ClientData,
 	privateKey *rsa.PrivateKey,
@@ -254,8 +258,8 @@ func WithBody(tb testing.TB, body string) io.Reader {
 }
 
 // allRoles returns all defined roles.
-func allRoles() []constants.Role {
-	return []constants.Role{
+func allRoles() []constants.BusinessRole {
+	return []constants.BusinessRole{
 		constants.KeyAdminRole,
 		constants.TenantAdminRole,
 		constants.TenantAuditorRole,
@@ -263,7 +267,7 @@ func allRoles() []constants.Role {
 }
 
 // RoleAuthClientOpt maps a role to the corresponding AuthClientOpt.
-func RoleAuthClientOpt(role constants.Role) AuthClientOpt {
+func RoleAuthClientOpt(role constants.BusinessRole) AuthClientOpt {
 	switch role {
 	case constants.KeyAdminRole:
 		return WithKeyAdminRole()
@@ -281,8 +285,8 @@ func RoleAuthClientOpt(role constants.Role) AuthClientOpt {
 func GetAllowedRoles(
 	resourceType authz.APIResourceTypeName,
 	action authz.APIAction,
-) []constants.Role {
-	allowed := make(map[constants.Role]struct{})
+) []constants.BusinessRole {
+	allowed := make(map[constants.BusinessRole]struct{})
 
 	for _, policy := range authz.PolicyData.Policies {
 		for _, rt := range policy.ResourceTypes {
@@ -296,7 +300,7 @@ func GetAllowedRoles(
 		}
 	}
 
-	var roles []constants.Role
+	var roles []constants.BusinessRole
 	for _, role := range allRoles() {
 		if _, ok := allowed[role]; ok {
 			roles = append(roles, role)
@@ -311,14 +315,14 @@ func GetAllowedRoles(
 func GetBlockedRoles(
 	resourceType authz.APIResourceTypeName,
 	action authz.APIAction,
-) []constants.Role {
+) []constants.BusinessRole {
 	allowed := GetAllowedRoles(resourceType, action)
-	allowedSet := make(map[constants.Role]struct{}, len(allowed))
+	allowedSet := make(map[constants.BusinessRole]struct{}, len(allowed))
 	for _, role := range allowed {
 		allowedSet[role] = struct{}{}
 	}
 
-	var blocked []constants.Role
+	var blocked []constants.BusinessRole
 	for _, role := range allRoles() {
 		if _, ok := allowedSet[role]; !ok {
 			blocked = append(blocked, role)

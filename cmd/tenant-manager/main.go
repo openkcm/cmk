@@ -20,6 +20,9 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -58,6 +61,7 @@ var (
 //   - Start the business logic and eventually return the error from it
 //
 
+//nolint:funlen
 func run(ctx context.Context, cfg *config.Config) error {
 	// Validate configuration
 	err := validateConfig(cfg)
@@ -94,9 +98,17 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	r := sql.NewRepository(dbConn)
 
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
+	if authzRepoLoader.AuthzHandler == nil {
+		return err
+	}
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
 	tenantManager, err := createTenantManager(
 		ctx,
-		r,
+		authzRepoLoader,
+		authzRepo,
 		clients,
 		svcRegistry,
 		cfg,
@@ -105,9 +117,11 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	groupManager := manager.NewGroupManager(r, svcRegistry, manager.NewUserManager(r, auditor.New(ctx, cfg)))
+	groupManager := manager.NewGroupManager(authzRepo, svcRegistry,
+		manager.NewUserManager(authzRepo, auditor.New(ctx, cfg)))
 
-	operator, err := operator.NewTenantOperator(dbConn, cfg, target, clients, tenantManager, groupManager)
+	operator, err := operator.NewTenantOperator(dbConn, cfg, target,
+		clients, tenantManager, groupManager, authzRepo)
 	if err != nil {
 		return oops.In(logDomain).
 			Wrapf(err, errMsgRunningOperator)
@@ -118,6 +132,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 func createTenantManager(
 	ctx context.Context,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName, authz.RepoAction],
 	r repo.Repo,
 	clients clients.Factory,
 	svcRegistry *cmkpluginregistry.Registry,
@@ -139,6 +154,7 @@ func createTenantManager(
 	sys := manager.NewSystemManager(
 		ctx,
 		r,
+		authzLoader,
 		clients,
 		eventFactory,
 		svcRegistry,

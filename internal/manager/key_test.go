@@ -85,7 +85,8 @@ func SetupKeyTest(t *testing.T) (
 		})
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager,
+		tagManager, cmkAuditor, cfg)
 
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	require.NoError(t, err)
@@ -106,7 +107,7 @@ func SetupKeyTest(t *testing.T) (
 		ksConfig,
 	)
 
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 	return km, r, ctx, keyConfig
 }
@@ -296,7 +297,7 @@ func TestCreate(t *testing.T) {
 		})
 
 		testutils.CreateTestEntities(ctx, t, r, keyConfig1, keyConfig2)
-		localCtx := testutils.InjectClientDataIntoContext(
+		localCtx := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			uuid.NewString(),
 			[]string{keyConfig1.AdminGroup.IAMIdentifier, keyConfig2.AdminGroup.IAMIdentifier, keyConfig.AdminGroup.IAMIdentifier},
@@ -439,7 +440,7 @@ func TestEditableCryptoData(t *testing.T) {
 		})
 
 		testutils.CreateTestEntities(ctx, t, r, kc, sysFailed, sysConnected, key)
-		localCtx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{kc.AdminGroup.IAMIdentifier})
+		localCtx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{kc.AdminGroup.IAMIdentifier})
 
 		key, err = km.Get(localCtx, key.ID)
 		assert.NoError(t, err)
@@ -470,7 +471,7 @@ func TestEditableCryptoData(t *testing.T) {
 			k.CryptoAccessData = cryptoData
 			k.KeyConfigurationID = kc.ID
 		})
-		localCtx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{kc.AdminGroup.IAMIdentifier})
+		localCtx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{kc.AdminGroup.IAMIdentifier})
 
 		key, err = km.Create(localCtx, key)
 		require.NoError(t, err)
@@ -980,7 +981,7 @@ func TestUpdateKeyPrimary(t *testing.T) {
 		}
 
 		testutils.CreateTestEntities(ctx, t, r, keyConfig, oldPrimaryKey, key, sys, event)
-		localCtx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		localCtx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 		key, err = km.UpdateKey(localCtx, key.ID, cmkapi.KeyPatch{
 			IsPrimary: ptr.PointTo(true),
@@ -1025,7 +1026,7 @@ func TestUpdateKeyPrimary(t *testing.T) {
 		})
 
 		testutils.CreateTestEntities(ctx, t, r, keyConfig, oldPrimaryKey, key, sys)
-		localCtx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		localCtx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 		k, err := km.UpdateKey(localCtx, key.ID, cmkapi.KeyPatch{
 			IsPrimary: ptr.PointTo(true),
@@ -1360,7 +1361,7 @@ func TestKeyRotationTime(t *testing.T) {
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, tenantDefaultCert, keystoreDefaultCert, ksConfig)
 
 	// Inject client data for auth
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 	t.Run("Register HYOK key - should use rotation time from keystore", func(t *testing.T) {
 		// Create HYOK key

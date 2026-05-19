@@ -6,13 +6,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/plog"
 
 	otlpaudit "github.com/openkcm/common-sdk/pkg/otlp/audit"
 
 	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/utils/context"
 )
 
@@ -73,7 +73,7 @@ func TestSendTenantAuditLog(t *testing.T) {
 					assert.Equal(t, otlpaudit.CmkTenantDeleteEvent, attrs[otlpaudit.EventTypeKey])
 					assert.Equal(t, tt.tenantID, attrs[otlpaudit.TenantIDKey])
 					assert.Equal(t, tt.tenantID, attrs[otlpaudit.ObjectIDKey])
-					assert.Equal(t, constants.SystemUser.String(), attrs[otlpaudit.UserInitiatorIDKey])
+					assert.Equal(t, uuid.Max.String(), attrs[otlpaudit.UserInitiatorIDKey])
 
 					w.WriteHeader(tt.statusCode)
 				}),

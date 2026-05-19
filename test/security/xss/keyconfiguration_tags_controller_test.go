@@ -36,7 +36,7 @@ func TestAddTagsToKeyConfiguration_ForXSS(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 

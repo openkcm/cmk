@@ -209,7 +209,7 @@ func FromAPI(
 		return nil, ErrExpiryGreaterThanMaximum
 	}
 
-	clientData, err := cmkcontext.ExtractClientData(ctx)
+	businessUserData, err := cmkcontext.ExtractBusinessUserData(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +219,7 @@ func FromAPI(
 		ActionType:   strings.ToUpper(string(apiWorkflow.ActionType)),
 		ArtifactType: strings.ToUpper(string(apiWorkflow.ArtifactType)),
 		ArtifactID:   apiWorkflow.ArtifactID,
-		InitiatorID:  clientData.Identifier,
+		InitiatorID:  businessUserData.Identifier,
 		ExpiryDate:   &expiryDate,
 	}
 
