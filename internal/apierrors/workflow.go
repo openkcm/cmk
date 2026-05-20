@@ -324,4 +324,12 @@ var workflow = []errs.ExposedErrors[*APIError]{
 		},
 		ContextGetter: getInsufficientApproversContext,
 	},
+	{
+		InternalErrorChain: []error{workflowpkg.ErrUserRemovedFromApproverGroup},
+		ExposedError: &APIError{
+			Code:    "WORKFLOW_USER_REMOVED_FROM_GROUP",
+			Message: "User is no longer a member of the workflow approver groups",
+			Status:  http.StatusForbidden,
+		},
+	},
 }

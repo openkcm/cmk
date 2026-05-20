@@ -2572,3 +2572,226 @@ func TestWorkflowManager_ValidateApproverCount(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
+	groupIAM := "KMS_001"
+	groupIAM2 := "KMS_002"
+	groupSCIMID := "SCIM-GROUP-001"
+	groupSCIMID2 := "SCIM-GROUP-002"
+	initiatorID := "initiator-user-id"
+	approverID := "approver-user-id"
+	approverID2 := "approver-user-id-2"
+
+	idmPlugin := testplugins.NewTestIdentityManagement(
+		testplugins.WithGroups(map[string]string{
+			groupIAM:  groupSCIMID,
+			groupIAM2: groupSCIMID2,
+		}),
+		testplugins.WithGroupMembership(map[string][]string{
+			groupSCIMID:  {approverID, approverID2},
+			groupSCIMID2: {approverID, approverID2},
+		}),
+		testplugins.WithUsers([]identitymanagement.User{
+			{ID: initiatorID, Name: "initiator@example.com"},
+			{ID: approverID, Name: "approver@example.com"},
+			{ID: approverID2, Name: "approver2@example.com"},
+		}),
+	)
+
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{}, testplugins.WithIdentityManagement(idmPlugin))
+
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
+	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+
+	adminGroup := testutils.NewGroup(func(g *model.Group) {
+		g.IAMIdentifier = groupIAM
+		g.Role = constants.KeyAdminRole
+	})
+	adminGroup2 := testutils.NewGroup(func(g *model.Group) {
+		g.IAMIdentifier = groupIAM2
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(ctx, t, r, adminGroup, adminGroup2)
+
+	// Helper to create a workflow with approver groups via junction table
+	createWorkflowWithApproverGroups := func(t *testing.T, state string, groups ...*model.Group) *model.Workflow {
+		t.Helper()
+
+		wf := testutils.NewWorkflow(func(w *model.Workflow) {
+			w.State = state
+			w.ActionType = workflow.ActionTypeDelete.String()
+			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.InitiatorID = initiatorID
+			w.Approvers = []model.WorkflowApprover{
+				{UserID: approverID},
+				{UserID: approverID2},
+			}
+		})
+		_, err := createTestWorkflow(testutils.CreateCtxWithTenant(tenant), r, wf)
+		require.NoError(t, err)
+
+		for _, g := range groups {
+			wag := testutils.NewWorkflowApproverGroup(func(w *model.WorkflowApproverGroup) {
+				w.WorkflowID = wf.ID
+				w.GroupID = g.ID
+			})
+			testutils.CreateTestEntities(ctx, t, r, wag)
+		}
+
+		return wf
+	}
+
+	t.Run("Initiator removed from group cannot see workflow in list", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			initiatorID,
+			[]string{"some-other-group"},
+		)
+
+		workflows, count, err := m.GetWorkflows(ctxNoGroup, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Equal(t, 0, count)
+		for _, w := range workflows {
+			assert.NotEqual(t, wf.ID, w.ID, "Removed initiator should not see the workflow")
+		}
+	})
+
+	t.Run("Initiator removed from group cannot revoke workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			initiatorID,
+			[]string{"some-other-group"},
+		)
+
+		_, err := m.TransitionWorkflow(ctxNoGroup, wf.ID, workflow.TransitionRevoke)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, workflow.ErrUserRemovedFromApproverGroup)
+	})
+
+	t.Run("Initiator removed from group cannot confirm workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitConfirmation.String(), adminGroup)
+
+		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			initiatorID,
+			[]string{"some-other-group"},
+		)
+
+		_, err := m.TransitionWorkflow(ctxNoGroup, wf.ID, workflow.TransitionConfirm)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, workflow.ErrUserRemovedFromApproverGroup)
+	})
+
+	t.Run("Approver removed from group cannot see workflow in list", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			approverID,
+			[]string{"some-other-group"},
+		)
+
+		workflows, count, err := m.GetWorkflows(ctxNoGroup, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Equal(t, 0, count)
+		for _, w := range workflows {
+			assert.NotEqual(t, wf.ID, w.ID, "Removed approver should not see the workflow")
+		}
+	})
+
+	t.Run("Approver removed from group cannot approve workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			approverID,
+			[]string{"some-other-group"},
+		)
+
+		_, err := m.TransitionWorkflow(ctxNoGroup, wf.ID, workflow.TransitionApprove)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, workflow.ErrUserRemovedFromApproverGroup)
+	})
+
+	t.Run("Approver removed from group cannot reject workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			approverID,
+			[]string{"some-other-group"},
+		)
+
+		_, err := m.TransitionWorkflow(ctxNoGroup, wf.ID, workflow.TransitionReject)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, workflow.ErrUserRemovedFromApproverGroup)
+	})
+
+	t.Run("Initiator still in group can see and act on workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		ctxInGroup := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			initiatorID,
+			[]string{groupIAM},
+		)
+
+		workflows, count, err := m.GetWorkflows(ctxInGroup, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, count, 1)
+		found := false
+		for _, w := range workflows {
+			if w.ID == wf.ID {
+				found = true
+			}
+		}
+		assert.True(t, found, "Initiator still in group should see the workflow")
+
+		// Initiator can revoke
+		_, err = m.TransitionWorkflow(ctxInGroup, wf.ID, workflow.TransitionRevoke)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Approver still in group can see workflow", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+
+		ctxInGroup := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			approverID,
+			[]string{groupIAM},
+		)
+
+		workflows, count, err := m.GetWorkflows(ctxInGroup, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, count, 1)
+		found := false
+		for _, w := range workflows {
+			if w.ID == wf.ID {
+				found = true
+			}
+		}
+		assert.True(t, found, "Approver still in group should see the workflow")
+	})
+
+	t.Run("New user added to group after workflow creation does not gain access", func(t *testing.T) {
+		_ = createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+		newUserID := "new-user-not-in-approvers"
+
+		ctxNewUser := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			newUserID,
+			[]string{groupIAM},
+		)
+
+		// The new user is in the group but not in the approvers list,
+		// so the SQL join filter excludes them (not initiator, not approver).
+		workflows, _, err := m.GetWorkflows(ctxNewUser, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Empty(t, workflows)
+	})
+}

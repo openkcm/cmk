@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/looplab/fsm"
 
 	"github.com/openkcm/cmk/internal/authz"
@@ -25,6 +26,7 @@ type Lifecycle struct {
 	SystemActions           SystemActions
 	MinimumApproverCount    int
 	EligibleApproverIDs     map[string]bool // Optional: if set, only these approvers count for voting
+	ActorApproverGroupIDs   []uuid.UUID     // Optional: if set, validates actor is still in approver groups
 }
 
 // convertEvent converts Transition and State types to string
@@ -260,7 +262,14 @@ func (l *Lifecycle) GetApprovalSummary(ctx context.Context) (*ApprovalSummary, e
 }
 
 // ValidateActor validates the actor of the event
+//
+//nolint:cyclop
 func (l *Lifecycle) ValidateActor(ctx context.Context, transition Transition) error {
+	// Check group membership for business user transitions
+	if err := l.validateActorGroupMembership(transition); err != nil {
+		return err
+	}
+
 	var (
 		valid bool
 		err   error
@@ -359,6 +368,26 @@ func (l *Lifecycle) validateInternalTransition(
 //nolint:unparam
 func (l *Lifecycle) validateUserIsInitiator(_ context.Context) (bool, error) {
 	return l.ActorID == l.Workflow.InitiatorID, nil
+}
+
+// validateActorGroupMembership checks if the actor is still a member of the workflow's approver groups.
+// Only applies to business user transitions (confirm, revoke, approve, reject).
+// If ActorApproverGroupIDs is nil, the check is skipped (no approver groups configured).
+func (l *Lifecycle) validateActorGroupMembership(transition Transition) error {
+	if l.ActorApproverGroupIDs == nil {
+		return nil
+	}
+
+	switch transition {
+	case TransitionConfirm, TransitionRevoke, TransitionApprove, TransitionReject:
+		if len(l.ActorApproverGroupIDs) == 0 {
+			return ErrUserRemovedFromApproverGroup
+		}
+	default:
+		// No group membership check for other transitions
+	}
+
+	return nil
 }
 
 // validateUserIsApprover validates that the user is an approver of the workflow

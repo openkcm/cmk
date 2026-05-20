@@ -1086,6 +1086,8 @@ func (w *WorkflowManager) isSystemConnect(workflow *model.Workflow) bool {
 // getWorkflows retrieves workflows based on the provided query,
 // applying access control checks.
 // This must not be used in conjunction with preloading approvers.
+//
+//nolint:funlen
 func (w *WorkflowManager) getWorkflows(
 	ctx context.Context,
 	pagination repo.Pagination,
@@ -1120,13 +1122,49 @@ func (w *WorkflowManager) getWorkflows(
 		orCK.IsStrict = false
 
 		query = query.Where(repo.NewCompositeKeyGroup(orCK))
+
+		// Filter by group membership: include workflows where the user belongs
+		// to at least one approver group, or no approver groups are assigned.
+		userGroupIDs, err := w.resolveUserGroupIDs(ctx)
+		if err != nil {
+			return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
+		}
+
+		query = query.Join(repo.LeftJoin, repo.JoinCondition{
+			Table:     &model.Workflow{},
+			Field:     repo.IDField,
+			JoinTable: model.WorkflowApproverGroup{},
+			JoinField: repo.WorkflowIDField,
+		})
+
+		groupCK := repo.NewCompositeKey().
+			Where(
+				fmt.Sprintf("%s.%s", model.WorkflowApproverGroup{}.TableName(), repo.GroupIDField),
+				repo.Null,
+			)
+		groupCK.IsStrict = false
+
+		if len(userGroupIDs) > 0 {
+			groupIDs := make([]uuid.UUID, 0, len(userGroupIDs))
+			for id := range userGroupIDs {
+				groupIDs = append(groupIDs, id)
+			}
+			groupCK = groupCK.Where(
+				fmt.Sprintf("%s.%s", model.WorkflowApproverGroup{}.TableName(), repo.GroupIDField),
+				groupIDs,
+			)
+		}
+
+		query = query.Where(repo.NewCompositeKeyGroup(groupCK))
 	}
 
 	query = query.SetLimit(pagination.Top).SetOffset(pagination.Skip)
 
 	workflows := []*model.Workflow{}
 
-	err = w.repo.List(ctx, model.Workflow{}, &workflows, *query.GroupBy(repo.IDField))
+	err = w.repo.List(ctx, model.Workflow{}, &workflows, *query.GroupBy(
+		fmt.Sprintf("%s.%s", model.Workflow{}.TableName(), repo.IDField),
+	))
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 	}
@@ -1134,16 +1172,81 @@ func (w *WorkflowManager) getWorkflows(
 	count, err := w.repo.Count(
 		ctx,
 		&model.Workflow{},
-		*query.Select(repo.NewSelectField(repo.IDField, repo.QueryFunction{
-			Function: repo.CountFunc,
-			Distinct: true,
-		})),
+		*query.Select(repo.NewSelectField(
+			fmt.Sprintf("%s.%s", model.Workflow{}.TableName(), repo.IDField),
+			repo.QueryFunction{
+				Function: repo.CountFunc,
+				Distinct: true,
+			})),
 	)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 	}
 
 	return workflows, count, nil
+}
+
+// resolveActorApproverGroupIDs resolves the actor's current group membership against
+// the workflow's approver groups. Returns nil if no approver groups are configured,
+// or a slice of matching group IDs (empty slice = actor not in any approver group).
+func (w *WorkflowManager) resolveActorApproverGroupIDs(
+	ctx context.Context,
+	workflow *model.Workflow,
+) ([]uuid.UUID, error) {
+	groups, err := w.GetWorkflowApproverGroups(ctx, workflow)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(groups) == 0 {
+		return nil, nil
+	}
+
+	userGroupIDs, err := w.resolveUserGroupIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var matching []uuid.UUID
+	for _, g := range groups {
+		if _, ok := userGroupIDs[g.ID]; ok {
+			matching = append(matching, g.ID)
+		}
+	}
+
+	if matching == nil {
+		matching = []uuid.UUID{}
+	}
+
+	return matching, nil
+}
+
+// resolveUserGroupIDs resolves the caller's current IAM groups to internal group UUIDs.
+func (w *WorkflowManager) resolveUserGroupIDs(ctx context.Context) (map[uuid.UUID]struct{}, error) {
+	userIAMGroups, err := cmkContext.ExtractBusinessUserDataGroupsString(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(userIAMGroups) == 0 {
+		return make(map[uuid.UUID]struct{}), nil
+	}
+
+	ck := repo.NewCompositeKey().Where(repo.IAMIdField, userIAMGroups)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)).SetLimit(len(userIAMGroups))
+
+	var groups []*model.Group
+	err = w.repo.List(ctx, model.Group{}, &groups, *query)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[uuid.UUID]struct{}, len(groups))
+	for _, g := range groups {
+		result[g.ID] = struct{}{}
+	}
+
+	return result, nil
 }
 
 // addApprovers adds the specified approvers to the workflow
@@ -1260,6 +1363,8 @@ func (w *WorkflowManager) checkOngoingWorkflowForArtifact(
 // decision and applies the transition to the wf.
 // This is wrapped in a transaction to ensure that DB state is
 // consistent in case of errors.
+//
+//nolint:cyclop
 func (w *WorkflowManager) applyTransition(
 	ctx context.Context,
 	userID string,
@@ -1275,6 +1380,12 @@ func (w *WorkflowManager) applyTransition(
 
 		// Create lifecycle with eligibility filtering (if available)
 		workflowLifecycle, err := w.getWorkflowLifecycleWithEligibility(ctx, workflow, userID, eligibleApproverIDs)
+		if err != nil {
+			return err
+		}
+
+		// Resolve actor's approver group membership for the lifecycle guard
+		workflowLifecycle.ActorApproverGroupIDs, err = w.resolveActorApproverGroupIDs(ctx, workflow)
 		if err != nil {
 			return err
 		}

@@ -78,6 +78,7 @@ const (
 	KeyconfigTotalKeys    QueryField = "total_keys"
 	SystemKeyconfigName   QueryField = "key_configuration_name"
 
+	Null      QueryFieldValue = "null"
 	NotNull   QueryFieldValue = "not_null"
 	NotEmpty  QueryFieldValue = "not_empty"
 	Empty     QueryFieldValue = "empty"
