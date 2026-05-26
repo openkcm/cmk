@@ -21,7 +21,7 @@ func transformIntToString(i int) (*string, error) {
 		return nil, ErrForced
 	}
 
-	s := string(rune(i + '0'))
+	s := string(rune(i + '0')) //nolint:gosec // i is bounded 0-9, no overflow possible
 
 	return &s, nil
 }

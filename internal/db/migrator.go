@@ -210,6 +210,7 @@ func (m *migrator) runMigration(
 			return nil, err
 		}
 
+		//nolint:gosec // DDL cannot be parameterized; schema is validated and quoted above
 		query := "CREATE SCHEMA IF NOT EXISTS " + quoteSchema(schema)
 
 		// NOSONAR is required here because DDL statements cannot be parameterized.
