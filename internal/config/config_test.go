@@ -106,7 +106,7 @@ func TestValidateTenantManager(t *testing.T) {
 			SecretRef: commoncfg.SecretRef{
 				Type: commoncfg.MTLSSecretType,
 			},
-			AMQP: config.AMQP{
+			AMQP: config.AMQP{ //nolint:gosec // well-known RabbitMQ default credentials used only in tests
 				URL:    "amqp://guest:guest@localhost:5672",
 				Target: "target",
 				Source: "source",
