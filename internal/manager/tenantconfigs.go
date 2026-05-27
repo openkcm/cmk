@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strconv"
 
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
@@ -298,6 +299,8 @@ func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
 	if len(providers) == 0 {
 		return HYOKKeystore{}
 	}
+
+	sort.Strings(providers)
 
 	return HYOKKeystore{Provider: providers, Allow: true}
 }
