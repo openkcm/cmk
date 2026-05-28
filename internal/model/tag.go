@@ -29,6 +29,7 @@ func (Tag) IsSharedModel() bool {
 
 func (m Tag) CheckAuthz(ctx context.Context,
 	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }

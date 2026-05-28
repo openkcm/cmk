@@ -347,7 +347,8 @@ func runAuthzBlockedTests(
 	t.Helper()
 
 	for _, ep := range endpoints {
-		req := testutils.NewHTTPRequest(t, testutils.RequestOptions{ //nolint:contextcheck
+		//nolint:contextcheck // context is handled internally via t.Context()
+		req := testutils.NewHTTPRequest(t, testutils.RequestOptions{
 			Method:   ep.Method,
 			Endpoint: ep.Endpoint,
 			Tenant:   tenant,
@@ -382,7 +383,8 @@ func runAuthzBlockedTests(
 			t.Run(testName, func(t *testing.T) {
 				authClient := testutils.NewAuthClient(ctx, t, r, testutils.RoleAuthClientOpt(role))
 
-				w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{ //nolint:contextcheck
+				//nolint:contextcheck // context is handled internally via t.Context()
+				w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 					Method:            ep.Method,
 					Endpoint:          ep.Endpoint,
 					Tenant:            tenant,

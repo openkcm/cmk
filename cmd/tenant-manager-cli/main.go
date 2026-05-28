@@ -41,6 +41,8 @@ func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) in
 
 	cfg, err := config.LoadConfig(
 		commoncfg.WithPaths(
+			constants.DefaultConfigPath1,
+			constants.DefaultConfigPath2,
 			".",
 			"/etc/tenant-manager-cli",
 		),
@@ -109,9 +111,6 @@ func setupCommands(
 	}
 
 	rootCmd := factory.NewRootCmd(ctx)
-
-	createGroupsCmd := factory.NewCreateGroupsCmd(ctx)
-	rootCmd.AddCommand(createGroupsCmd)
 
 	createCmd := factory.NewCreateTenantCmd(ctx)
 	rootCmd.AddCommand(createCmd)
