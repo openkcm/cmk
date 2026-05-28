@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/openkcm/common-sdk/pkg/commonfs/loader"
@@ -157,6 +158,7 @@ func (td *testData) createValidBusinessUserData(t *testing.T, keyID int) (string
 		Groups:             []string{"group1", "group2"},
 		KeyID:              strconv.Itoa(keyID),
 		SignatureAlgorithm: auth.SignatureAlgorithmRS256, // Explicitly RS256
+		CreatedAt:          time.Now(),
 		AuthContext: map[string]string{
 			"client_id":        "test-client-id",
 			"issuer":           "https://example-issuer.com",
@@ -583,6 +585,7 @@ func TestBusinessUserDataMiddleware_RoleValidation(t *testing.T) {
 					Groups:             tc.clientGroups,
 					KeyID:              "0",
 					SignatureAlgorithm: auth.SignatureAlgorithmRS256,
+					CreatedAt:          time.Now(),
 					AuthContext: map[string]string{
 						"client_id":        "test-client-id",
 						"issuer":           "https://example-issuer.com",
