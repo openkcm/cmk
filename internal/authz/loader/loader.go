@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	cmkcontext "github.com/openkcm/cmk/utils/context"
-
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
@@ -17,6 +15,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var (

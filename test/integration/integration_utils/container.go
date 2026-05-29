@@ -118,7 +118,7 @@ func BuildCMKImage(t *testing.T) string {
 		projectRoot, err := filepath.Abs(baseDir + "../../../../")
 		require.NoError(t, err)
 
-		cmd := exec.Command("make", "docker-dev-build")
+		cmd := exec.CommandContext(t.Context(), "make", "docker-dev-build") // NOSONAR
 		cmd.Dir = projectRoot
 		_, err = cmd.Output()
 		require.NoError(t, err)
