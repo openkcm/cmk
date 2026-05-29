@@ -232,6 +232,7 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 
 			result := mgr.GetTenantConfigsHyokKeystore()
 			assert.ElementsMatch(t, tt.expectedOutput, result.Provider)
+			assert.IsNonDecreasing(t, result.Provider)
 		})
 	}
 }
