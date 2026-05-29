@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -254,10 +255,15 @@ func (m *SystemManager) GetRecoveryActions(
 		}, nil
 	}
 
-	// If there are no entries on last event for this system
-	// cancel and retry are not possible
+	// If there are no entries on last event for this
+	// system cancel and retry are not possible
 	lastEvent, err := m.eventFactory.GetLastEvent(ctx, systemID.String())
-	if err != nil {
+	if errors.Is(err, eventprocessor.ErrNoPreviousEvent) {
+		return cmkapi.SystemRecoveryAction{
+			CanRetry:  false,
+			CanCancel: false,
+		}, nil
+	} else if err != nil {
 		return cmkapi.SystemRecoveryAction{
 			CanRetry:  false,
 			CanCancel: false,

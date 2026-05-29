@@ -33,7 +33,7 @@ var system = []errs.ExposedErrors[*APIError]{
 		InternalErrorChain: []error{eventprocessor.ErrNoPreviousEvent},
 		ExposedError: &APIError{
 			Code:    "NO_PREVIOUS_SYSTEM_STATE",
-			Message: "failed to cancel action",
+			Message: "no previous state for selected system",
 			Status:  http.StatusBadRequest,
 		},
 	},

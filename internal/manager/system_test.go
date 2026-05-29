@@ -453,7 +453,7 @@ func TestGetRecoveryAction(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	r := sql.NewRepository(db)
 
-	t.Run("Should error on system that has not triggered actions", func(t *testing.T) {
+	t.Run("Should set all false on system that has not triggered actions", func(t *testing.T) {
 		sys := testutils.NewSystem(
 			func(s *model.System) {
 				s.Status = cmkapi.SystemStatusFAILED
@@ -461,11 +461,35 @@ func TestGetRecoveryAction(t *testing.T) {
 		)
 		testutils.CreateTestEntities(ctx, t, r, sys)
 		res, err := m.GetRecoveryActions(ctx, sys.ID)
-		assert.ErrorIs(t, err, eventprocessor.ErrNoPreviousEvent)
 		assert.Equal(t, cmkapi.SystemRecoveryAction{
 			CanRetry:  false,
 			CanCancel: false,
 		}, res)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Should error on db failure", func(t *testing.T) {
+		sys := testutils.NewSystem(
+			func(s *model.System) {
+				s.Status = cmkapi.SystemStatusFAILED
+			},
+		)
+		testutils.CreateTestEntities(ctx, t, r, sys)
+
+		forced := testutils.NewDBErrorForced(db, ErrForced)
+		forced.Register()
+		t.Cleanup(
+			func() {
+				forced.Unregister()
+			},
+		)
+
+		res, err := m.GetRecoveryActions(ctx, sys.ID)
+		assert.Equal(t, cmkapi.SystemRecoveryAction{
+			CanRetry:  false,
+			CanCancel: false,
+		}, res)
+		assert.Error(t, err)
 	})
 
 	t.Run("Should have cancel and retry as false if system status is not failed", func(t *testing.T) {
