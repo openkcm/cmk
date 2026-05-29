@@ -11,13 +11,16 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
@@ -30,22 +33,43 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
+func signedHeadersFromClientMapWorkflow(
+	t *testing.T,
+	keyStorage *testutils.TestSigningKeyStorage,
+	clientMap map[any]any,
+) http.Header {
+	t.Helper()
+	clientData, ok := clientMap[constants.ClientData].(*auth.ClientData)
+	if !ok {
+		t.Fatalf("client data should be present in client map")
+	}
+	privateKey, keyOK := keyStorage.GetPrivateKey(0)
+	if !keyOK {
+		t.Fatalf("test key should exist")
+	}
+	return testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+}
+
 var errMockInternalError = errors.New("internal error")
 
 func startAPIWorkflows(
 	t *testing.T,
 	idmPlugin identitymanagement.IdentityManagement,
-) (*multitenancy.DB, cmkapi.ServeMux, string) {
+) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+
 	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:   config.Config{Database: dbCfg},
-		Registry: testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
+		Config:             config.Config{Database: dbCfg},
+		Registry:           testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
+		EnableClientDataMW: true,
+		SigningKeyStorage:  keyStorage,
 	})
 
-	return db, sv, tenants[0]
+	return db, sv, tenants[0], keyStorage
 }
 
 var (
@@ -171,7 +195,7 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceR
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key, key2, system)
 }
 
-func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux, authClient testutils.AuthClientData) {
+func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux, headers http.Header) {
 	// Do a dummy check to ensure that the config is created. We need this for any
 	// tests simulating a DB failure, otherwise the config creation will hit the
 	// simulated error.
@@ -184,11 +208,11 @@ func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux, authClient tes
 	}
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:            http.MethodPost,
-		Endpoint:          "/workflows/check",
-		Tenant:            tenant,
-		Body:              testutils.WithJSON(t, wf),
-		AdditionalContext: authClient.GetClientMap(),
+		Method:   http.MethodPost,
+		Endpoint: "/workflows/check",
+		Tenant:   tenant,
+		Body:     testutils.WithJSON(t, wf),
+		Headers:  headers,
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
@@ -197,7 +221,7 @@ func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux, authClient tes
 func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 	t.Run("should 200 with valid and canCreate as true", func(t *testing.T) {
 		idmPlugin := testplugins.NewTestIdentityManagement()
-		db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+		db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		r := cmksql.NewRepository(db)
 
@@ -214,6 +238,15 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 
 		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
+		clientData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 		wf := cmkapi.Workflow{
 			ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
 			ArtifactID:   uuid.MustParse(systemID),
@@ -221,11 +254,11 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPost,
-			Endpoint:          "/workflows/check",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, wf),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPost,
+			Endpoint: "/workflows/check",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, wf),
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -240,7 +273,7 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 
 	t.Run("Should 200 with valid and canCreate as false on wf system connect invalid key state", func(t *testing.T) {
 		idmPlugin := testplugins.NewTestIdentityManagement()
-		db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+		db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		r := cmksql.NewRepository(db)
 
@@ -261,6 +294,15 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 
 		testutils.CreateTestEntities(ctx, t, r, key, keyConfig, system)
 
+		clientData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 		wf := cmkapi.Workflow{
 			ActionType:   cmkapi.WorkflowActionTypeEnumLINK,
 			ArtifactID:   system.ID,
@@ -269,11 +311,11 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPost,
-			Endpoint:          "/workflows/check",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, wf),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPost,
+			Endpoint: "/workflows/check",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, wf),
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -288,7 +330,7 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 
 	t.Run("Should 200 with insufficient approvers error", func(t *testing.T) {
 		idmPlugin := testplugins.NewTestIdentityManagement()
-		db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+		db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		r := cmksql.NewRepository(db)
 
@@ -320,11 +362,11 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPost,
-			Endpoint:          "/workflows/check",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, wf),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPost,
+			Endpoint: "/workflows/check",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, wf),
+			Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap()),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -435,7 +477,7 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			idmPlugin := testplugins.NewTestIdentityManagement()
-			db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+			db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 			r := cmksql.NewRepository(db)
 
@@ -453,19 +495,28 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 			idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
 			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
+			clientData := &auth.ClientData{
+				Identifier: authClient.Identifier,
+				Groups:     []string{authClient.Group.IAMIdentifier},
+			}
+
+			privateKey, ok := keyStorage.GetPrivateKey(0)
+			assert.True(t, ok, "test key should exist")
+			headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 			if tt.sideEffect != nil {
-				forceConfig(t, tenant, sv, authClient)
+				forceConfig(t, tenant, sv, headers)
 				teardown := tt.sideEffect(db)
 				defer teardown()
 			}
 
 			testutils.CreateTestEntities(ctx, t, cmksql.NewRepository(db), tt.extraResource...)
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/workflows",
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, tt.request),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "/workflows",
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, tt.request),
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code, w.Body.String())
 		})
@@ -474,7 +525,7 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 
 func TestWorkflowControllerCreateWorkflow_InsufficientApprovers(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -500,11 +551,11 @@ func TestWorkflowControllerCreateWorkflow_InsufficientApprovers(t *testing.T) {
 	}`
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:            http.MethodPost,
-		Endpoint:          "/workflows",
-		Tenant:            tenant,
-		Body:              testutils.WithString(t, requestBody),
-		AdditionalContext: authClient.GetClientMap(),
+		Method:   http.MethodPost,
+		Endpoint: "/workflows",
+		Tenant:   tenant,
+		Body:     testutils.WithString(t, requestBody),
+		Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap()),
 	})
 
 	// Verify HTTP 400 error response
@@ -547,7 +598,7 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 	for _, request := range requests {
 		t.Run("TestWorkflowControllerCheckCreateWorkflowAuthz_InKAGroup", func(t *testing.T) {
 			idmPlugin := testplugins.NewTestIdentityManagement()
-			db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+			db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 			r := cmksql.NewRepository(db)
 
@@ -564,21 +615,30 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 
 			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient, idmPlugin)
 
+			clientData := &auth.ClientData{
+				Identifier: keyAdminAuthClient.Identifier,
+				Groups:     []string{keyAdminAuthClient.Group.IAMIdentifier},
+			}
+
+			privateKey, ok := keyStorage.GetPrivateKey(0)
+			assert.True(t, ok, "test key should exist")
+			headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/workflows/check",
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, request),
-				AdditionalContext: keyAdminAuthClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "/workflows/check",
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, request),
+				Headers:  headers,
 			})
 			assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 			w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/workflows",
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, request),
-				AdditionalContext: keyAdminAuthClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "/workflows",
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, request),
+				Headers:  headers,
 			})
 			assert.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 		})
@@ -586,7 +646,7 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 
 	// Test forbidden scenarios
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -631,20 +691,20 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 		for _, request := range requests {
 			t.Run(tt.name, func(t *testing.T) {
 				w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          "/workflows/check",
-					Tenant:            tenant,
-					Body:              testutils.WithString(t, request),
-					AdditionalContext: tt.clientMap,
+					Method:   http.MethodPost,
+					Endpoint: "/workflows/check",
+					Tenant:   tenant,
+					Body:     testutils.WithString(t, request),
+					Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, tt.clientMap),
 				})
 				assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
 
 				w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          "/workflows",
-					Tenant:            tenant,
-					Body:              testutils.WithString(t, request),
-					AdditionalContext: tt.clientMap,
+					Method:   http.MethodPost,
+					Endpoint: "/workflows",
+					Tenant:   tenant,
+					Body:     testutils.WithString(t, request),
+					Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, tt.clientMap),
 				})
 				assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
 			})
@@ -708,12 +768,11 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 	for _, tt := range tests2 {
 		t.Run(tt.name, func(t *testing.T) {
 			idmPlugin := testplugins.NewTestIdentityManagement()
-			db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+			db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 			r := cmksql.NewRepository(db)
 
 			authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-
 			// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
 			groupSCIMID := uuid.NewString()
 			idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
@@ -725,24 +784,31 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 
 			idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
 			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
+			clientData := &auth.ClientData{
+				Identifier: authClient.Identifier,
+				Groups:     []string{authClient.Group.IAMIdentifier},
+			}
+			privateKey, ok := keyStorage.GetPrivateKey(0)
+			assert.True(t, ok, "test key should exist")
+			headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 			testutils.CreateTestEntities(ctx, t, r, keyConfigWithoutUser)
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/workflows/check",
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, tt.request),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "/workflows/check",
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, tt.request),
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedCheckStatus, w.Code, w.Body.String())
 
 			w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/workflows",
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, tt.request),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "/workflows",
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, tt.request),
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedCreateStatus, w.Code, w.Body.String())
 		})
@@ -754,14 +820,7 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 		testplugins.WithGroups(map[string]string{}),
 		testplugins.WithGroupMembership(map[string][]string{}),
 	)
-
-	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
-	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:   config.Config{Database: dbCfg},
-		Registry: testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
-	})
-	tenant := tenants[0]
-
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -856,8 +915,8 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: "/workflows/" + tt.workflowID,
 				Tenant:   tenant,
-				AdditionalContext: authClient.GetClientMap(
-					testutils.WithOverriddenIdentifier(tt.userID)),
+				Headers: signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap(
+					testutils.WithOverriddenIdentifier(tt.userID))),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -869,9 +928,9 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 				assert.NotNil(t, response.ArtifactName)
 				assert.NotEmpty(t, response.AvailableTransitions)
 				assert.NotNil(t, response.ApprovalSummary)
-				approverGroups := *response.ApproverGroups
 				if tt.approverGroupName != "" {
-					assert.Equal(t, tt.approverGroupName, approverGroups[0].Name)
+					require.NotNil(t, response.ApproverGroups)
+					assert.Equal(t, tt.approverGroupName, (*response.ApproverGroups)[0].Name)
 				}
 			}
 		})
@@ -880,7 +939,7 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 
 func TestWorkflowControllerListWorkflows(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -968,10 +1027,10 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          path,
-				Tenant:            tenant,
-				AdditionalContext: tt.clientMap,
+				Method:   http.MethodGet,
+				Endpoint: path,
+				Tenant:   tenant,
+				Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, tt.clientMap),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -993,7 +1052,7 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 
 func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -1052,10 +1111,10 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/workflows?$count=true",
-				Tenant:            tenant,
-				AdditionalContext: tt.authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: "/workflows?$count=true",
+				Tenant:   tenant,
+				Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, tt.authClient.GetClientMap()),
 			})
 
 			assert.Equal(t, http.StatusOK, w.Code)
@@ -1064,10 +1123,10 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 
 			for _, wf := range allWorkflows {
 				w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-					Method:            http.MethodGet,
-					Endpoint:          "/workflows/" + wf.ID.String(),
-					Tenant:            tenant,
-					AdditionalContext: tt.authClient.GetClientMap(),
+					Method:   http.MethodGet,
+					Endpoint: "/workflows/" + wf.ID.String(),
+					Tenant:   tenant,
+					Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, tt.authClient.GetClientMap()),
 				})
 
 				containsFunc := func(allowedWf *model.Workflow) bool {
@@ -1086,7 +1145,7 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 
 func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -1176,10 +1235,10 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          tt.query,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: tt.query,
+				Tenant:   tenant,
+				Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap()),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -1200,7 +1259,7 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 
 func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -1421,8 +1480,8 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 				Endpoint: fmt.Sprintf("/workflows/%s/state", tt.workflowID),
 				Tenant:   tenant,
 				Body:     testutils.WithString(t, tt.request),
-				AdditionalContext: authClient.GetClientMap(
-					testutils.WithOverriddenIdentifier(tt.actorID)),
+				Headers: signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap(
+					testutils.WithOverriddenIdentifier(tt.actorID))),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -1443,7 +1502,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 
 func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	db, sv, tenant := startAPIWorkflows(t, idmPlugin)
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -1519,8 +1578,8 @@ func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: tt.query,
 				Tenant:   tenant,
-				AdditionalContext: authClient.GetClientMap(
-					testutils.WithOverriddenIdentifier(userID)),
+				Headers: signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap(
+					testutils.WithOverriddenIdentifier(userID))),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)

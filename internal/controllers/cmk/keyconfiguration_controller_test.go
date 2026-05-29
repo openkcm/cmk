@@ -33,31 +33,55 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
+func getContextAndRepo(t *testing.T, tenant string,
+	db *multitenancy.DB,
+) (context.Context, *sql.ResourceRepository) {
+	t.Helper()
+	return cmkcontext.CreateTenantContext(t.Context(), tenant), sql.NewRepository(db)
+}
+
 func startAPIKeyConfig(t *testing.T, idmPlugin identitymanagement.IdentityManagement) (
 	cmkapi.ServeMux,
 	string,
 	context.Context,
 	*sql.ResourceRepository,
+	*testutils.TestSigningKeyStorage,
 ) {
 	t.Helper()
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	tenant := tenants[0]
 
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+
 	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:   config.Config{Database: dbCfg},
-		Registry: testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
+		Config:             config.Config{Database: dbCfg},
+		Registry:           testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
+		EnableClientDataMW: true,
+		SigningKeyStorage:  keyStorage,
 	})
 
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	r := sql.NewRepository(db)
+	ctx, r := getContextAndRepo(t, tenant, db)
 
-	return sv, tenant, ctx, r
+	return sv, tenant, ctx, r, keyStorage
+}
+
+func signedHeadersFromClientMap(
+	t *testing.T,
+	keyStorage *testutils.TestSigningKeyStorage,
+	clientMap map[any]any,
+) http.Header {
+	t.Helper()
+	clientData, ok := clientMap[constants.ClientData].(*auth.ClientData)
+	require.True(t, ok, "client data should be present in client map")
+	privateKey, keyOK := keyStorage.GetPrivateKey(0)
+	require.True(t, keyOK, "test key should exist")
+	return testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 }
 
 func TestKeyConfigurationGetConfiguration(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	sv, tenant, ctx, r := startAPIKeyConfig(t, idmPlugin)
+	sv, tenant, ctx, r, keyStorage := startAPIKeyConfig(t, idmPlugin)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -75,13 +99,26 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 		testutils.WithAuthClientDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyConfig2, keyConfig3)
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
+	grouplessClientData := &auth.ClientData{
+		Identifier: uuid.NewString(),
+		Groups:     []string{},
+	}
+	headersWithoutGroups := testutils.NewSignedClientDataHeaders(t, grouplessClientData, privateKey, 0)
 
 	t.Run("Should get keyConfig", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          "/keyConfigurations/" + keyConfig.ID.String(),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: "/keyConfigurations/" + keyConfig.ID.String(),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -97,8 +134,8 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/keyConfigurations?$skip=0&$top=10&$count=true",
 			Tenant:   tenant,
-			AdditionalContext: authClient.GetClientMap(
-				testutils.WithAdditionalGroup(uuid.NewString())),
+			Headers: signedHeadersFromClientMap(t, keyStorage, authClient.GetClientMap(
+				testutils.WithAdditionalGroup(uuid.NewString()))),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -110,10 +147,10 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 
 	t.Run("Should not get keyConfig without permissions", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          "/keyConfigurations?$skip=0&$top=10&$count=true",
-			Tenant:            tenant,
-			AdditionalContext: testutils.GetGrouplessClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: "/keyConfigurations?$skip=0&$top=10&$count=true",
+			Tenant:   tenant,
+			Headers:  headersWithoutGroups,
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
@@ -122,7 +159,7 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 
 func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	sv, tenant, ctx, r := startAPIKeyConfig(t, idmPlugin)
+	sv, tenant, ctx, r, keyStorage := startAPIKeyConfig(t, idmPlugin)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -136,8 +173,8 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 			Method:   http.MethodGet,
 			Endpoint: "/keyConfigurations?expandGroup=true",
 			Tenant:   tenant,
-			AdditionalContext: authClient.GetClientMap(
-				testutils.WithAdditionalGroup(uuid.NewString())),
+			Headers: signedHeadersFromClientMap(t, keyStorage, authClient.GetClientMap(
+				testutils.WithAdditionalGroup(uuid.NewString()))),
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -158,7 +195,7 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 
 func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	sv, tenant, ctx, r := startAPIKeyConfig(t, idmPlugin)
+	sv, tenant, ctx, r, keyStorage := startAPIKeyConfig(t, idmPlugin)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -243,8 +280,8 @@ func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) 
 				Method:   http.MethodGet,
 				Endpoint: tt.query,
 				Tenant:   tenant,
-				AdditionalContext: authClient.GetClientMap(
-					testutils.WithAdditionalGroup(uuid.NewString())),
+				Headers: signedHeadersFromClientMap(t, keyStorage, authClient.GetClientMap(
+					testutils.WithAdditionalGroup(uuid.NewString()))),
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -267,12 +304,12 @@ func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) 
 func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 	expectedIdentifier := uuid.NewString()
 	expectedEmail := "bob@"
-
-	sv, tenant, ctx, r := startAPIKeyConfig(t, testplugins.NewTestIdentityManagement(
+	idmPlugin := testplugins.NewTestIdentityManagement(
 		testplugins.WithUsers([]identitymanagement.User{
 			{ID: expectedIdentifier, Email: expectedEmail},
 		}),
-	))
+	)
+	sv, tenant, ctx, r, keyStorage := startAPIKeyConfig(t, idmPlugin)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 	type testCase struct {
@@ -291,9 +328,9 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 				Description:  ptr.PointTo("test-config"),
 				AdminGroupID: authClient.Group.ID,
 			},
-			expectedStatus: http.StatusForbidden,
-			expectedCode:   "FORBIDDEN",
-			expectedBody:   "Forbidden",
+			expectedStatus: http.StatusInternalServerError,
+			expectedCode:   "NO_CLIENT_DATA",
+			expectedBody:   "Missing client data",
 		},
 		{
 			name: "KeyConfigPOST_Success_WithClientDataUserGroups",
@@ -333,7 +370,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			},
 			additionalContext: testutils.GetGrouplessClientMap(),
 			expectedStatus:    http.StatusForbidden,
-			expectedCode:      "FORBIDDEN",
+			expectedCode:      "ZERO_ROLES_NOT_ALLOWED",
 			expectedBody:      "error",
 		},
 		{
@@ -395,12 +432,17 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var headers http.Header
+			if tt.additionalContext != nil {
+				headers = signedHeadersFromClientMap(t, keyStorage, tt.additionalContext)
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/keyConfigurations",
-				Tenant:            tenant,
-				Body:              testutils.WithJSON(t, tt.input),
-				AdditionalContext: tt.additionalContext,
+				Method:   http.MethodPost,
+				Endpoint: "/keyConfigurations",
+				Tenant:   tenant,
+				Body:     testutils.WithJSON(t, tt.input),
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 			body := w.Body.String()
@@ -420,7 +462,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 
 func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	sv, tenant, ctx, r := startAPIKeyConfig(t, idmPlugin)
+	sv, tenant, ctx, r, keyStorage := startAPIKeyConfig(t, idmPlugin)
 	newAdminGroupID := uuid.New()
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
@@ -503,7 +545,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
             }`,
 			expectedStatus:    http.StatusForbidden,
 			expectedBody:      "error",
-			expectedCode:      "FORBIDDEN",
+			expectedCode:      "ZERO_ROLES_NOT_ALLOWED",
 			additionalContext: testutils.GetGrouplessClientMap(),
 		},
 		{
@@ -590,12 +632,17 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var headers http.Header
+			if tt.additionalContext != nil {
+				headers = signedHeadersFromClientMap(t, keyStorage, tt.additionalContext)
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPatch,
-				Endpoint:          "/keyConfigurations/" + tt.configID,
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, tt.inputJSON),
-				AdditionalContext: tt.additionalContext,
+				Method:   http.MethodPatch,
+				Endpoint: "/keyConfigurations/" + tt.configID,
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, tt.inputJSON),
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -614,7 +661,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 }
 
 func TestKeyConfigurationController_DeleteByID(t *testing.T) {
-	sv, tenant, ctx, r := startAPIKeyConfig(t, testplugins.NewTestIdentityManagement())
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	sv, tenant, ctx, r, keyStorage := startAPIKeyConfig(t, idmPlugin)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -644,13 +692,14 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 		{
 			name:           "DeleteKeyConfig_Deny_WithoutClientDataUserGroups",
 			configID:       keyConfig.ID.String(),
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusInternalServerError,
+			expectedCode:   "NO_CLIENT_DATA",
 		},
 		{
 			name:              "DeleteKeyConfig_Unauthorised_WithEmptyClientDataUserGroups",
 			configID:          keyConfig2.ID.String(),
 			expectedStatus:    http.StatusForbidden,
-			expectedCode:      "FORBIDDEN",
+			expectedCode:      "ZERO_ROLES_NOT_ALLOWED",
 			additionalContext: testutils.GetGrouplessClientMap(),
 		},
 		{
@@ -682,11 +731,16 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var headers http.Header
+			if tt.additionalContext != nil {
+				headers = signedHeadersFromClientMap(t, keyStorage, tt.additionalContext)
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodDelete,
-				Endpoint:          "/keyConfigurations/" + tt.configID,
-				Tenant:            tenant,
-				AdditionalContext: tt.additionalContext,
+				Method:   http.MethodDelete,
+				Endpoint: "/keyConfigurations/" + tt.configID,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -701,7 +755,7 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 
 func TestKeyConfigurationController_GetByID(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	sv, tenant, ctx, r := startAPIKeyConfig(t, idmPlugin)
+	sv, tenant, ctx, r, keyStorage := startAPIKeyConfig(t, idmPlugin)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -741,7 +795,7 @@ func TestKeyConfigurationController_GetByID(t *testing.T) {
 			name:              "GetKeyConfig_Unauthorised_WithEmptyClientDataUserGroups",
 			configID:          keyConfig.ID.String(),
 			expectedStatus:    http.StatusForbidden,
-			expectedCode:      "FORBIDDEN",
+			expectedCode:      "ZERO_ROLES_NOT_ALLOWED",
 			additionalContext: testutils.GetGrouplessClientMap(),
 		},
 		{
@@ -755,11 +809,16 @@ func TestKeyConfigurationController_GetByID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var headers http.Header
+			if tt.additionalContext != nil {
+				headers = signedHeadersFromClientMap(t, keyStorage, tt.additionalContext)
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/keyConfigurations/" + tt.configID,
-				Tenant:            tenant,
-				AdditionalContext: tt.additionalContext,
+				Method:   http.MethodGet,
+				Endpoint: "/keyConfigurations/" + tt.configID,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -950,7 +1009,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			bytes, err := yaml.Marshal(cryptoCerts)
 			assert.NoError(t, err)
 
-			db, sv, tenant := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{
+			db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{
 				Config: config.Config{
 					CryptoLayer: config.CryptoLayer{
 						CertX509Trusts: commoncfg.SourceRef{
@@ -969,6 +1028,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			key1 := testutils.NewKey(func(_ *model.Key) {})
 
 			authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+			headers := signedHeadersFromClientMap(t, keyStorage, authClient.GetClientMap())
 
 			keyconfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 				c.PrimaryKeyID = &key1.ID
@@ -981,10 +1041,10 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          fmt.Sprintf("/keyConfigurations/%s/certificates", uuid.NewString()),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: fmt.Sprintf("/keyConfigurations/%s/certificates", uuid.NewString()),
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 

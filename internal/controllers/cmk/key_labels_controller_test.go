@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -51,21 +52,42 @@ var errorLabel = []cmkapi.Label{
 }
 
 // startAPIKeyLabels starts the API server for key labels and returns a pointer to the database
-func startAPIKeyLabels(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIKeyLabels(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
 	t.Helper()
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
-	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{}), tenants[0]
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+
+	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		EnableClientDataMW: true,
+		SigningKeyStorage:  keyStorage,
+	}), tenants[0], keyStorage
+}
+
+func signedHeadersForAuthClient(
+	t *testing.T,
+	keyStorage *testutils.TestSigningKeyStorage,
+	authClient testutils.AuthClientData,
+) http.Header {
+	t.Helper()
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	return testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 }
 
 func TestLabelsController_GetKeyLabels(t *testing.T) {
 	t.Run("Should get existing labels", func(t *testing.T) {
-		db, sv, tenant := startAPIKeyLabels(t)
+		db, sv, tenant, keyStorage := startAPIKeyLabels(t)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		r := sql.NewRepository(db)
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+		headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 			testutils.WithAuthClientDataKC(authClient))
@@ -101,10 +123,10 @@ func TestLabelsController_GetKeyLabels(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf(apiGetKeyLabelsFmt, key.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf(apiGetKeyLabelsFmt, key.ID.String()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -113,11 +135,12 @@ func TestLabelsController_GetKeyLabels(t *testing.T) {
 	})
 
 	t.Run("Should get no labels on empty key", func(t *testing.T) {
-		db, sv, tenant := startAPIKeyLabels(t)
+		db, sv, tenant, keyStorage := startAPIKeyLabels(t)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		r := sql.NewRepository(db)
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+		headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 			testutils.WithAuthClientDataKC(authClient))
@@ -128,10 +151,10 @@ func TestLabelsController_GetKeyLabels(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf(apiGetKeyLabelsFmt, key.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf(apiGetKeyLabelsFmt, key.ID.String()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -141,7 +164,7 @@ func TestLabelsController_GetKeyLabels(t *testing.T) {
 }
 
 func TestLabelsController_GetKeyLabelsPagination(t *testing.T) {
-	db, sv, tenant := startAPIKeyLabels(t)
+	db, sv, tenant, keyStorage := startAPIKeyLabels(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -154,6 +177,7 @@ func TestLabelsController_GetKeyLabelsPagination(t *testing.T) {
 	}
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthClientDataKC(authClient))
@@ -242,10 +266,10 @@ func TestLabelsController_GetKeyLabelsPagination(t *testing.T) {
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          fmt.Sprintf(tc.query, key.ID.String()),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: fmt.Sprintf(tc.query, key.ID.String()),
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tc.expectedStatus, w.Code)
@@ -363,11 +387,12 @@ func TestLabelsController_CreateOrUpdateLabels(t *testing.T) {
 		},
 	}
 
-	db, sv, tenant := startAPIKeyLabels(t)
+	db, sv, tenant, keyStorage := startAPIKeyLabels(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthClientDataKC(authClient))
@@ -385,20 +410,20 @@ func TestLabelsController_CreateOrUpdateLabels(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          fmt.Sprintf(apiCreateOrUpdateLabelsFmt, key.ID.String()),
-				Tenant:            tenant,
-				Body:              testutils.WithJSON(t, tc.inputLabels),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: fmt.Sprintf(apiCreateOrUpdateLabelsFmt, key.ID.String()),
+				Tenant:   tenant,
+				Body:     testutils.WithJSON(t, tc.inputLabels),
+				Headers:  headers,
 			})
 
 			if !slices.Equal(tc.updatedLabels, []cmkapi.Label{}) {
 				w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          fmt.Sprintf(apiCreateOrUpdateLabelsFmt, key.ID.String()),
-					Tenant:            tenant,
-					Body:              testutils.WithJSON(t, tc.updatedLabels),
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPost,
+					Endpoint: fmt.Sprintf(apiCreateOrUpdateLabelsFmt, key.ID.String()),
+					Tenant:   tenant,
+					Body:     testutils.WithJSON(t, tc.updatedLabels),
+					Headers:  headers,
 				})
 			}
 
@@ -465,11 +490,12 @@ func TestLabelsController_DeleteLabel(t *testing.T) {
 		},
 	}
 
-	db, sv, tenant := startAPIKeyLabels(t)
+	db, sv, tenant, keyStorage := startAPIKeyLabels(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthClientDataKC(authClient))
@@ -503,10 +529,10 @@ func TestLabelsController_DeleteLabel(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodDelete,
-				Endpoint:          fmt.Sprintf("/key/%s/label/%s", key.ID.String(), tc.labelToBeDeleted),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodDelete,
+				Endpoint: fmt.Sprintf("/key/%s/label/%s", key.ID.String(), tc.labelToBeDeleted),
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 			assert.Equal(t, tc.expectedStatus, w.Code)
 
@@ -534,7 +560,7 @@ func TestLabelsController_DeleteLabel(t *testing.T) {
 }
 
 func TestLabelsController_DeleteInvalidLabel(t *testing.T) {
-	db, sv, tenant := startAPIKeyLabels(t)
+	db, sv, tenant, keyStorage := startAPIKeyLabels(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -544,6 +570,7 @@ func TestLabelsController_DeleteInvalidLabel(t *testing.T) {
 	key := testutils.NewKey(func(_ *model.Key) {})
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	headers := signedHeadersForAuthClient(t, keyStorage, authClient)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthClientDataKC(authClient))
@@ -599,11 +626,11 @@ func TestLabelsController_DeleteInvalidLabel(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          fmt.Sprintf(apiCreateOrUpdateLabelsFmt, key.ID.String()),
-				Tenant:            tenant,
-				Body:              testutils.WithJSON(t, label),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: fmt.Sprintf(apiCreateOrUpdateLabelsFmt, key.ID.String()),
+				Tenant:   tenant,
+				Body:     testutils.WithJSON(t, label),
+				Headers:  headers,
 			})
 			assert.Equal(t, tc.expectedAddStatus, w.Code)
 
@@ -612,10 +639,10 @@ func TestLabelsController_DeleteInvalidLabel(t *testing.T) {
 			}
 
 			w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodDelete,
-				Endpoint:          fmt.Sprintf("/key/%s/label/%s", key.ID.String(), tc.key),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodDelete,
+				Endpoint: fmt.Sprintf("/key/%s/label/%s", key.ID.String(), tc.key),
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 			assert.Equal(t, tc.expectedDeleteStatus, w.Code)
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
@@ -22,18 +23,22 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func startAPIKeyVersion(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIKeyVersion(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config: config.Config{Database: dbCfg},
-	}), tenants[0]
+		Config:             config.Config{Database: dbCfg},
+		EnableClientDataMW: true,
+		SigningKeyStorage:  keyStorage,
+	}), tenants[0], keyStorage
 }
 
 func TestKeyVersionController_GetKeyVersions(t *testing.T) {
-	db, sv, tenant := startAPIKeyVersion(t)
+	db, sv, tenant, keyStorage := startAPIKeyVersion(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -77,6 +82,15 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 		key2Version2,
 	)
 
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 	tests := []struct {
 		name                string
 		keyID               string
@@ -118,10 +132,10 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          fmt.Sprintf("/keys/%s/versions", tt.keyID),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: fmt.Sprintf("/keys/%s/versions", tt.keyID),
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -160,7 +174,7 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 }
 
 func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
-	db, sv, tenant := startAPIKeyVersion(t)
+	db, sv, tenant, keyStorage := startAPIKeyVersion(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -179,6 +193,15 @@ func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
 		})
 		testutils.CreateTestEntities(ctx, t, r, keyVersion)
 	}
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -272,10 +295,10 @@ func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          fmt.Sprintf(tt.query, tt.keyID),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: fmt.Sprintf(tt.query, tt.keyID),
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -297,7 +320,7 @@ func TestKeyVersionController_GetKeyVersionsPagination(t *testing.T) {
 }
 
 func TestKeyVersionController_GetKeyVersions_IsPrimaryWithPagination(t *testing.T) {
-	db, sv, tenant := startAPIKeyVersion(t)
+	db, sv, tenant, keyStorage := startAPIKeyVersion(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -320,6 +343,15 @@ func TestKeyVersionController_GetKeyVersions_IsPrimaryWithPagination(t *testing.
 		})
 		testutils.CreateTestEntities(ctx, t, r, keyVersion)
 	}
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -361,10 +393,10 @@ func TestKeyVersionController_GetKeyVersions_IsPrimaryWithPagination(t *testing.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          fmt.Sprintf(tt.query, key.ID.String()),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: fmt.Sprintf(tt.query, key.ID.String()),
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, http.StatusOK, w.Code, tt.description)
@@ -407,7 +439,7 @@ func TestKeyVersionController_GetKeyVersions_IsPrimaryWithPagination(t *testing.
 }
 
 func TestKeyVersionRefreshAndDisable(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -442,23 +474,32 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 		keystoreDefaultCert,
 	)
 
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 	t.Run("Re-enabling key should restore enabling and previous state", func(t *testing.T) {
 		// Disable Key
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPatch,
-			Endpoint:          fmt.Sprintf("/keys/%s", key.ID),
-			Tenant:            tenant,
-			Body:              testutils.WithString(t, `{"enabled": false}`),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPatch,
+			Endpoint: fmt.Sprintf("/keys/%s", key.ID),
+			Tenant:   tenant,
+			Body:     testutils.WithString(t, `{"enabled": false}`),
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		// Get key versions
 		w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/versions", key.ID),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/versions", key.ID),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -468,20 +509,20 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 
 		// Enable Key
 		w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPatch,
-			Endpoint:          fmt.Sprintf("/keys/%s", key.ID),
-			Tenant:            tenant,
-			Body:              testutils.WithString(t, `{"enabled": true}`),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPatch,
+			Endpoint: fmt.Sprintf("/keys/%s", key.ID),
+			Tenant:   tenant,
+			Body:     testutils.WithString(t, `{"enabled": true}`),
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		// Get key versions
 		w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/versions", key.ID),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/versions", key.ID),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -492,7 +533,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 }
 
 func TestKeyVersionController_GetKeyVersions_EmptyList(t *testing.T) {
-	db, sv, tenant := startAPIKeyVersion(t)
+	db, sv, tenant, keyStorage := startAPIKeyVersion(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -509,12 +550,21 @@ func TestKeyVersionController_GetKeyVersions_EmptyList(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyWithNoVersions)
 
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 	t.Run("Should return empty list when key has no versions", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/versions", keyWithNoVersions.ID),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/versions", keyWithNoVersions.ID),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -526,10 +576,10 @@ func TestKeyVersionController_GetKeyVersions_EmptyList(t *testing.T) {
 
 	t.Run("Should return count=0 when key has no versions and count is requested", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/versions?$count=true", keyWithNoVersions.ID),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/versions?$count=true", keyWithNoVersions.ID),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)

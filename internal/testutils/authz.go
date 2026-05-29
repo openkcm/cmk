@@ -2,9 +2,12 @@ package testutils
 
 import (
 	"context"
+	"crypto/rsa"
 	"fmt"
 	"io"
+	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -46,6 +49,28 @@ func (cd AuthClientData) GetClientMap(opts ...ClientMapOpt) map[any]any {
 	}
 
 	return map[any]any{constants.ClientData: clientData}
+}
+
+// WithClientData builds signed client-data headers for the given auth client.
+func WithClientData(
+	tb testing.TB,
+	keyStorage *TestSigningKeyStorage,
+	authClient AuthClientData,
+	opts ...ClientMapOpt,
+) http.Header {
+	tb.Helper()
+
+	clientData := getClientData(authClient.Identifier, []string{authClient.Group.IAMIdentifier})
+	for _, o := range opts {
+		o(clientData)
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	if !ok {
+		tb.Fatalf("test key should exist")
+	}
+
+	return NewSignedClientDataHeaders(tb, clientData, privateKey, 0)
 }
 
 // WithAdditionalGroup provides an option for getting a ClientMap from an AuthClient.
@@ -176,6 +201,33 @@ func getClientData(identifier string, groupNames []string) *auth.ClientData {
 		Identifier: identifier,
 		Groups:     groupNames,
 	}
+}
+
+// NewSignedClientDataHeaders generates HTTP headers from an auth.ClientData struct.
+func NewSignedClientDataHeaders(
+	tb testing.TB,
+	clientData *auth.ClientData,
+	privateKey *rsa.PrivateKey,
+	keyID int,
+) http.Header {
+	tb.Helper()
+
+	// Set required fields for signing
+	clientData.KeyID = strconv.Itoa(keyID)
+	clientData.SignatureAlgorithm = auth.SignatureAlgorithmRS256
+
+	// Generate signed headers using the auth package
+	clientDataHeader, signatureHeader, err := clientData.Encode(privateKey)
+	if err != nil {
+		tb.Fatalf("Failed to encode and sign client data: %v", err)
+	}
+
+	// Create HTTP headers
+	headers := http.Header{}
+	headers.Set(auth.HeaderClientData, clientDataHeader)
+	headers.Set(auth.HeaderClientDataSignature, signatureHeader)
+
+	return headers
 }
 
 // AuthzTestEndpoint defines an API endpoint to test for authorization failures.

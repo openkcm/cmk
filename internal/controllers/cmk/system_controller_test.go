@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
@@ -31,19 +32,23 @@ import (
 
 var ErrForced = errors.New("forced")
 
-func startAPISystems(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPISystems(t *testing.T, cfg testutils.TestAPIServerConfig) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	cfg.Config.Database = dbCfg
+	cfg.EnableClientDataMW = true
+
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+	cfg.SigningKeyStorage = keyStorage
 
 	sv := testutils.NewAPIServer(t, db, cfg)
-	return db, sv, tenants[0]
+	return db, sv, tenants[0], keyStorage
 }
 
 func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -58,6 +63,15 @@ func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
 		r,
 		keyConfig,
 	)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -85,10 +99,10 @@ func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/systems?$filter=keyConfigurationID eq '" + tt.keyConfigurationID + "'",
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: "/systems?$filter=keyConfigurationID eq '" + tt.keyConfigurationID + "'",
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -97,7 +111,7 @@ func TestGetSystems_WithInvalidKeyConfigurationID(t *testing.T) {
 }
 
 func TestGetSystems_AdditionalProperties(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{
 		Config: config.Config{
 			ContextModels: config.ContextModels{
 				System: config.System{
@@ -132,12 +146,21 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 		systemWithoutProps,
 	)
 
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
+
 	t.Run("Should not show properties field on system without properties", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/systems/%s", systemWithoutProps.ID),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/systems/%s", systemWithoutProps.ID),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -149,10 +172,10 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 	t.Run("Should show properties field on system with properties", func(t *testing.T) {
 		expected := &map[string]any{"test": "test"}
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/systems/%s", systemWithProps.ID),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/systems/%s", systemWithProps.ID),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -163,7 +186,7 @@ func TestGetSystems_AdditionalProperties(t *testing.T) {
 }
 
 func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -194,6 +217,15 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 		systems2,
 		systems3,
 	)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient1.Identifier,
+		Groups:     []string{authClient1.Group.IAMIdentifier, authClient2.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name                 string
@@ -239,8 +271,7 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: url,
 				Tenant:   tenant,
-				AdditionalContext: authClient1.GetClientMap(
-					testutils.WithAdditionalGroup(authClient2.Group.IAMIdentifier)),
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -277,7 +308,7 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 
 // TestAPIController_GetAllSystems tests the GetAllSystems function of SystemController
 func TestAPIController_GetAllSystems(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -300,6 +331,15 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 		system1,
 		system2,
 	)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	longStr := "001234567890123456789012345678901234567890123456789"
 
@@ -369,10 +409,10 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          endpoint,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: endpoint,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -392,7 +432,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 }
 
 func TestAPIController_GetAllSystemsPagination(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -413,6 +453,15 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 		})
 		testutils.CreateTestEntities(ctx, t, r, system)
 	}
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -502,10 +551,10 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          tt.query,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: tt.query,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -529,7 +578,7 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 // TestAPIController_GetSystemByID tests the GetSystemByID function of SystemController
 func TestAPIController_GetSystemByID(t *testing.T) {
 	idmPlugin := testplugins.NewTestIdentityManagement()
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{
 		Registry: testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
 	})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -642,10 +691,10 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/systems/" + tt.id,
-				Tenant:            tenant,
-				AdditionalContext: tt.authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: "/systems/" + tt.id,
+				Tenant:   tenant,
+				Headers:  testutils.WithClientData(t, keyStorage, tt.authClient),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -655,7 +704,6 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 
 				assert.Equal(t, &tt.expectedSystem.ID, response.ID)
 				assert.Equal(t, tt.expectedSystem.Identifier, *response.Identifier)
-
 				if tt.assertFn != nil {
 					tt.assertFn(t, response)
 				}
@@ -671,7 +719,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 }
 
 func TestAPIController_GetSystemByIDWithDBError(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -684,6 +732,15 @@ func TestAPIController_GetSystemByIDWithDBError(t *testing.T) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 	})
 	testutils.CreateTestEntities(ctx, t, r, system, keyConfig)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	forced := testutils.NewDBErrorForced(db, ErrForced)
 
@@ -707,10 +764,10 @@ func TestAPIController_GetSystemByIDWithDBError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/systems/" + tt.id,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: "/systems/" + tt.id,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -722,7 +779,7 @@ func TestAPIController_GetSystemByIDWithDBError(t *testing.T) {
 }
 
 func TestSendRecoveryActions(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -732,6 +789,15 @@ func TestSendRecoveryActions(t *testing.T) {
 		testutils.WithAuthClientDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("Should 400 on cancel without previous state", func(t *testing.T) {
 		sys := testutils.NewSystem(func(_ *model.System) {})
@@ -745,8 +811,8 @@ func TestSendRecoveryActions(t *testing.T) {
 					Action: cmkapi.SystemRecoveryActionBodyActionCANCEL,
 				},
 			),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Tenant:  tenant,
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -772,8 +838,8 @@ func TestSendRecoveryActions(t *testing.T) {
 					Action: cmkapi.SystemRecoveryActionBodyActionCANCEL,
 				},
 			),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Tenant:  tenant,
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -794,7 +860,7 @@ func TestLinkSystemAction(t *testing.T) {
 		},
 	)
 
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{
 		GRPCCon: grpcCon,
 	})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -834,6 +900,15 @@ func TestLinkSystemAction(t *testing.T) {
 		systemNoConfig,
 		systemWithKey,
 	)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier, authClient2.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -928,8 +1003,7 @@ func TestLinkSystemAction(t *testing.T) {
 				Endpoint: fmt.Sprintf("/systems/%s/link", tt.ID),
 				Tenant:   tenant,
 				Body:     testutils.WithString(t, tt.inputJSON),
-				AdditionalContext: authClient.GetClientMap(
-					testutils.WithAdditionalGroup(authClient2.Group.IAMIdentifier)),
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -956,7 +1030,7 @@ func TestLinkSystemAction(t *testing.T) {
 }
 
 func TestUnlinkSystemAction(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{})
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -974,6 +1048,15 @@ func TestUnlinkSystemAction(t *testing.T) {
 	systemWithoutKey := testutils.NewSystem(func(_ *model.System) {})
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, system, systemWithoutKey)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedClientDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name              string
@@ -1015,10 +1098,10 @@ func TestUnlinkSystemAction(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodDelete,
-				Endpoint:          fmt.Sprintf("/systems/%s/link", tt.id),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodDelete,
+				Endpoint: fmt.Sprintf("/systems/%s/link", tt.id),
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -1033,45 +1116,4 @@ func TestUnlinkSystemAction(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestGetFilters(t *testing.T) {
-	db, sv, tenant := startAPISystems(t, testutils.TestAPIServerConfig{})
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	r := sql.NewRepository(db)
-
-	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-
-	keyConfig1 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.Name = "kcName1"
-	}, testutils.WithAuthClientDataKC(authClient))
-	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.Name = "kcName2"
-	}, testutils.WithAuthClientDataKC(authClient))
-
-	system1 := testutils.NewSystem(func(s *model.System) {
-		s.Type = "type1"
-		s.Region = "region1"
-		s.KeyConfigurationID = &keyConfig1.ID
-	})
-
-	system2 := testutils.NewSystem(func(s *model.System) {
-		s.Type = "type2"
-		s.Region = "region2"
-		s.KeyConfigurationID = &keyConfig2.ID
-	})
-
-	testutils.CreateTestEntities(ctx, t, r, keyConfig1, keyConfig2, system1, system2)
-
-	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:            http.MethodGet,
-		Endpoint:          "/systems/filterOptions",
-		Tenant:            tenant,
-		AdditionalContext: authClient.GetClientMap(),
-	})
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	response := testutils.GetJSONBody[cmkapi.SystemFilters](t, w)
-	assert.NotNil(t, response)
 }
