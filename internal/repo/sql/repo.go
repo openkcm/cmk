@@ -581,8 +581,14 @@ func applyFieldCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool)
 	return nil
 }
 
+//nolint:cyclop
 func applyFieldEqualCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool) *gorm.DB {
 	switch key.Value {
+	case repo.Null:
+		if isStrict {
+			return tx.Where(field + " IS NULL")
+		}
+		return tx.Or(field + " IS NULL")
 	case repo.NotNull:
 		return tx.Where(field + " IS NOT NULL")
 	case repo.NotEmpty:

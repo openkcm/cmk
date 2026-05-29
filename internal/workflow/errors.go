@@ -24,6 +24,7 @@ var (
 	ErrListApprovers                     = errors.New("failed to list approvers")
 	ErrInvalidVotingTransition           = errors.New("invalid voting transition")
 	ErrWorkflowGroupNotSufficientMembers = errors.New("insufficient eligible approvers in admin group")
+	ErrUserRemovedFromApproverGroup      = errors.New("user is no longer a member of the workflow approver groups")
 )
 
 // NewInvalidEventActorError creates an error when the user is not the expected actor of the event.
