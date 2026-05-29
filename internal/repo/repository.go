@@ -28,6 +28,7 @@ type Repo interface {
 	Transaction(ctx context.Context, txFunc TransactionFunc) error
 	Count(ctx context.Context, resource Resource, query Query) (int, error)
 	OffboardTenant(ctx context.Context, tenantID string) error
+	GetFilterOptions(ctx context.Context, resource Resource, columns []Filter, query Query) error
 }
 
 // Resource defines the interface for Resource operations.

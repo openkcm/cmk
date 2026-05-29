@@ -131,16 +131,17 @@ func TestNewSystemManager(t *testing.T) {
 }
 
 func TestGetAllSystems(t *testing.T) {
+	groupID := uuid.NewString()
+
 	m, db, tenant := SetupSystemManager(t, nil)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group1"})
+	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{groupID})
 	r := sql.NewRepository(db)
 
-	testGroup := testutils.NewGroup(
-		func(g *model.Group) {
-			g.IAMIdentifier = "test-group1"
-		},
-	)
+	testGroup := testutils.NewGroup(func(g *model.Group) {
+		g.IAMIdentifier = groupID
+	})
+
 	keyConfig := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
 			k.AdminGroupID = testGroup.ID
@@ -1507,4 +1508,60 @@ func TestRefreshSystems(t *testing.T) {
 		}
 	},
 	)
+}
+
+func TestGetFilters(t *testing.T) {
+	groupID := uuid.NewString()
+	m, db, tenant := SetupSystemManager(t, nil)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{groupID})
+	r := sql.NewRepository(db)
+
+	testGroup := testutils.NewGroup(func(g *model.Group) {
+		g.IAMIdentifier = groupID
+	})
+
+	keyConfig1 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.Name = "kcName1"
+		k.AdminGroup = *testGroup
+	})
+	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.Name = "kcName2"
+		k.AdminGroup = *testGroup
+	})
+
+	keyConfig3 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.Name = "kcName3"
+	})
+
+	system1 := testutils.NewSystem(func(s *model.System) {
+		s.Type = "type1"
+		s.Region = "region1"
+		s.KeyConfigurationID = &keyConfig1.ID
+	})
+
+	system2 := testutils.NewSystem(func(s *model.System) {
+		s.Type = "type2"
+		s.Region = "region2"
+		s.KeyConfigurationID = &keyConfig2.ID
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, keyConfig1, keyConfig2, system1, system2, keyConfig3)
+
+	t.Run("Should get filters for system for only user key configs", func(t *testing.T) {
+		filters, err := m.GetFilters(ctx)
+		assert.NoError(t, err)
+
+		assert.Len(t, *filters.Type, 2)
+		assert.Contains(t, *filters.Type, system1.Type)
+		assert.Contains(t, *filters.Type, system2.Type)
+
+		assert.Len(t, *filters.Region, 2)
+		assert.Contains(t, *filters.Region, system1.Region)
+		assert.Contains(t, *filters.Region, system2.Region)
+
+		assert.Len(t, *filters.KeyConfigurationName, 2)
+		assert.Contains(t, *filters.KeyConfigurationName, keyConfig1.Name)
+		assert.Contains(t, *filters.KeyConfigurationName, keyConfig2.Name)
+	})
 }

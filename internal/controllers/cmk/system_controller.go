@@ -170,3 +170,15 @@ func (c *APIController) UnlinkSystemAction(
 
 	return cmkapi.UnlinkSystemAction204Response(struct{}{}), nil
 }
+
+func (c *APIController) GetFilters(
+	ctx context.Context,
+	_ cmkapi.GetFiltersRequestObject,
+) (cmkapi.GetFiltersResponseObject, error) {
+	filters, err := c.Manager.System.GetFilters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cmkapi.GetFilters200JSONResponse(filters), nil
+}

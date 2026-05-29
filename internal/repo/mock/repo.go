@@ -199,6 +199,15 @@ func (r *InMemoryRepository) OffboardTenant(_ context.Context, schemaName string
 	return nil
 }
 
+func (r *InMemoryRepository) GetFilterOptions(
+	ctx context.Context,
+	resource repo.Resource,
+	columns []repo.Filter,
+	query repo.Query,
+) error {
+	return nil
+}
+
 func assignList(result any, list []repo.Resource) error {
 	resultVal := reflect.ValueOf(result)
 	if resultVal.Kind() != reflect.Ptr {
