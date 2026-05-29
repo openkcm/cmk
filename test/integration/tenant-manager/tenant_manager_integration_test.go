@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/orbital"
 	"github.com/openkcm/orbital/client/amqp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
