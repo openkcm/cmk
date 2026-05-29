@@ -3,5 +3,11 @@ package tenantdatamigrations
 import "github.com/pressly/goose/v3"
 
 func GetMigrations() []*goose.Migration {
-	return []*goose.Migration{}
+	return []*goose.Migration{
+		goose.NewGoMigration(
+			1,
+			&goose.GoFunc{RunTx: upWorkflowApproverGroupTable},
+			&goose.GoFunc{RunTx: downWorkflowApproverGroupTable},
+		),
+	}
 }

@@ -568,33 +568,33 @@ func (w *WorkflowManager) GetWorkflowApproverGroups(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) ([]*model.Group, error) {
-	var IDs []uuid.UUID
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(fmt.Sprintf(
+				"%s.%s", model.WorkflowApproverGroup{}.TableName(), repo.WorkflowIDField,
+			), workflow.ID),
+		),
+	).Join(repo.LeftJoin, repo.JoinCondition{
+		Table:     model.Group{},
+		Field:     repo.IDField,
+		JoinTable: model.WorkflowApproverGroup{},
+		JoinField: repo.GroupIDField,
+	})
 
-	if workflow.ApproverGroupIDs == nil {
-		return []*model.Group{}, nil
-	}
-
-	err := json.Unmarshal(workflow.ApproverGroupIDs, &IDs)
+	var groups []*model.Group
+	err := w.repo.List(ctx, model.Group{}, &groups, *query)
 	if err != nil {
-		return nil, err
+		return []*model.Group{}, err
 	}
 
-	groups := make([]*model.Group, 0, len(IDs))
-	for _, id := range IDs {
-		group, err := w.groupManager.GetGroupByID(ctx, id)
+	// Fallback: if no groups found in junction table, try reading from legacy JSONB field
+	// This handles the case where async data migration hasn't run yet
+	// This should be deleted in future release as well as deleting the column from the table
+	if len(groups) == 0 {
+		groups, err = w.getApproverGroupsFromLegacyField(ctx, workflow)
 		if err != nil {
-			log.Warn(ctx, "failed to expand workflow approver group", slog.Any("error", err))
-
-			// Return a placeholder group if the group cannot be found. We can still make use of the ID.
-			groups = append(groups, &model.Group{
-				ID:   id,
-				Name: "NOT_AVAILABLE",
-				Role: constants.KeyAdminRole,
-			})
-			continue
+			return []*model.Group{}, err
 		}
-
-		groups = append(groups, group)
 	}
 
 	return groups, nil
@@ -705,6 +705,42 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 	return nil
 }
 
+func (w *WorkflowManager) getApproverGroupsFromLegacyField(
+	ctx context.Context,
+	workflow *model.Workflow,
+) ([]*model.Group, error) {
+	var IDs []uuid.UUID
+
+	if workflow.ApproverGroupIDs == nil {
+		return []*model.Group{}, nil
+	}
+
+	err := json.Unmarshal(workflow.ApproverGroupIDs, &IDs)
+	if err != nil {
+		return nil, err
+	}
+
+	groups := make([]*model.Group, 0, len(IDs))
+	for _, id := range IDs {
+		group, err := w.groupManager.GetGroupByID(ctx, id)
+		if err != nil {
+			log.Warn(ctx, "failed to expand workflow approver group", slog.Any("error", err))
+
+			// Return a placeholder group if the group cannot be found. We can still make use of the ID.
+			groups = append(groups, &model.Group{
+				ID:   id,
+				Name: "NOT_AVAILABLE",
+				Role: constants.KeyAdminRole,
+			})
+			continue
+		}
+
+		groups = append(groups, group)
+	}
+
+	return groups, nil
+}
+
 // validateApproverCount checks if sufficient eligible approvers are available
 //
 // Returns:
@@ -813,19 +849,12 @@ func (w *WorkflowManager) getEligibleUserIDsForWorkflow(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (map[string]bool, error) {
-	// Parse approver group IDs
-	if workflow.ApproverGroupIDs == nil {
-		return nil, nil //nolint:nilnil // nil map means no restrictions, nil error means success
-	}
-
-	var groupIDs []uuid.UUID
-	err := json.Unmarshal(workflow.ApproverGroupIDs, &groupIDs)
+	groups, err := w.GetWorkflowApproverGroups(ctx, workflow)
 	if err != nil {
 		return nil, errs.Wrap(ErrCheckWorkflowEligibility, err)
 	}
 
-	// If no groups configured, no restrictions on eligibility
-	if len(groupIDs) == 0 {
+	if len(groups) == 0 {
 		return nil, nil //nolint:nilnil // nil map means no restrictions, nil error means success
 	}
 
@@ -842,7 +871,7 @@ func (w *WorkflowManager) getEligibleUserIDsForWorkflow(
 	}
 
 	// Single SCIM call - get all eligible users from groups
-	eligibleUserIDs, err := w.queryGroupMembersFromIAM(ctx, idm, authCtx, groupIDs)
+	eligibleUserIDs, err := w.queryGroupMembersFromIAM(ctx, idm, authCtx, groups)
 	if err != nil {
 		return nil, err
 	}
@@ -1173,20 +1202,15 @@ func (w *WorkflowManager) addApproversAndGroupAssociations(
 			}
 		}
 
-		// Associate approver groups with the workflow
-		groupIDs := make([]uuid.UUID, len(groups))
-		for i, group := range groups {
-			groupIDs[i] = group.ID
-		}
-		bytes, err := json.Marshal(groupIDs)
-		if err != nil {
-			return errs.Wrap(ErrAddApproverGroupsDB, err)
-		}
-
-		workflow.ApproverGroupIDs = bytes
-		_, err = w.repo.Patch(ctx, workflow, *repo.NewQuery())
-		if err != nil {
-			return errs.Wrap(ErrAddApproverGroupsDB, err)
+		for _, g := range groups {
+			err := w.repo.Set(ctx, model.WorkflowApproverGroup{
+				ID:         uuid.New(),
+				WorkflowID: workflow.ID,
+				GroupID:    g.ID,
+			})
+			if err != nil {
+				return err
+			}
 		}
 
 		// Then, apply the transition to next state
@@ -1628,11 +1652,12 @@ func (w *WorkflowManager) queryGroupMembersFromIAM(
 	ctx context.Context,
 	idm identitymanagement.IdentityManagement,
 	authCtx map[string]string,
-	groupIDs []uuid.UUID,
+	groups []*model.Group,
 ) (map[string]bool, error) {
 	eligibleUserIDs := make(map[string]bool)
 
-	for _, groupID := range groupIDs {
+	for _, group := range groups {
+		groupID := group.ID
 		// Get group from DB
 		group, err := w.groupManager.GetGroupByID(ctx, groupID)
 		if err != nil {
@@ -1678,15 +1703,13 @@ func (w *WorkflowManager) checkApproverEligibility(
 	userID string,
 	approver *model.WorkflowApprover,
 ) error {
-	// Parse approver group IDs
-	if workflow.ApproverGroupIDs == nil {
-		return nil // No group restrictions
-	}
-
-	var groupIDs []uuid.UUID
-	err := json.Unmarshal(workflow.ApproverGroupIDs, &groupIDs)
+	groups, err := w.GetWorkflowApproverGroups(ctx, workflow)
 	if err != nil {
 		return errs.Wrap(ErrCheckWorkflowEligibility, err)
+	}
+
+	if len(groups) == 0 {
+		return nil // No group restrictions
 	}
 
 	// Get identity management plugin
@@ -1702,7 +1725,7 @@ func (w *WorkflowManager) checkApproverEligibility(
 	}
 
 	// Check if user is still in any of the groups
-	eligibleUserIDs, err := w.queryGroupMembersFromIAM(ctx, idm, authCtx, groupIDs)
+	eligibleUserIDs, err := w.queryGroupMembersFromIAM(ctx, idm, authCtx, groups)
 	if err != nil {
 		return err
 	}

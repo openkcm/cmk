@@ -1028,6 +1028,38 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 	})
 }
 
+func TestWorkflowManager_GetApproversGroupsFromLegacyField(t *testing.T) {
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.Name = testGroupName
+		g.IAMIdentifier = testGroupName
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(ctx, t, r, group)
+	groupIDsJSON, err := json.Marshal([]uuid.UUID{group.ID})
+	require.NoError(t, err)
+
+	wf, err := createTestWorkflow(
+		testutils.CreateCtxWithTenant(tenant),
+		r,
+		testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateInitial.String()
+				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactType = workflow.ArtifactTypeKey.String()
+				w.ApproverGroupIDs = groupIDsJSON
+			},
+		),
+	)
+	assert.NoError(t, err)
+
+	groups, err := m.GetApproverGroupsFromLegacyField(ctx, wf)
+	assert.Len(t, groups, 1)
+	assert.NoError(t, err)
+}
+
 func TestWorkflowManager_ListApprovers(t *testing.T) {
 	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
 	wf, err := createTestWorkflow(
@@ -1875,10 +1907,6 @@ func setupEligibilityTest(
 	})
 	testutils.CreateTestEntities(ctx, t, r, system)
 
-	// Create workflow
-	groupIDsJSON, err := json.Marshal([]uuid.UUID{group.ID})
-	require.NoError(t, err)
-
 	artifactName := system.Identifier
 	paramsResourceName := keyConfig.Name
 	paramsResourceType := "KEY_CONFIGURATION"
@@ -1892,11 +1920,14 @@ func setupEligibilityTest(
 		w.Parameters = keyConfig.ID.String()
 		w.ParametersResourceName = &paramsResourceName
 		w.ParametersResourceType = &paramsResourceType
-		w.ApproverGroupIDs = groupIDsJSON
 		w.InitiatorID = approver1ID
 		w.MinimumApprovalCount = approverCount // Set to match the test's expected approval count
 	})
-	testutils.CreateTestEntities(ctx, t, r, wf)
+	wfApproverGroups := testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+		wag.WorkflowID = wf.ID
+		wag.GroupID = group.ID
+	})
+	testutils.CreateTestEntities(ctx, t, r, wf, wfApproverGroups)
 
 	// Create approvers based on count
 	approverIDs := []string{approver1ID, approver2ID}
@@ -2286,10 +2317,8 @@ func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 		assert.True(t, insufficientApprovers, "Should check eligibility even in terminal states")
 
 		// Create workflow in SUCCESSFUL state
-		groupIDsJSON, _ := json.Marshal([]uuid.UUID{})
 		successfulWf := testutils.NewWorkflow(func(w *model.Workflow) {
 			w.State = workflow.StateSuccessful.String()
-			w.ApproverGroupIDs = groupIDsJSON
 			w.InitiatorID = approver1ID
 		})
 		testutils.CreateTestEntities(ctx, t, r, successfulWf)

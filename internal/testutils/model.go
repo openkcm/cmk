@@ -219,6 +219,18 @@ func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 	return ptr.PointTo(mut(m))
 }
 
+func NewWorkflowApproverGroup(m func(*model.WorkflowApproverGroup)) *model.WorkflowApproverGroup {
+	mut := NewMutator(func() model.WorkflowApproverGroup {
+		return model.WorkflowApproverGroup{
+			ID:         uuid.New(),
+			WorkflowID: uuid.New(),
+			GroupID:    uuid.New(),
+		}
+	})
+
+	return ptr.PointTo(mut(m))
+}
+
 func NewEvent(m func(*model.Event)) *model.Event {
 	mut := NewMutator(func() model.Event {
 		return model.Event{

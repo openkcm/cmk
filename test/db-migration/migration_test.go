@@ -1,6 +1,7 @@
 package dbmigration_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -374,13 +375,13 @@ func TestSchemaMigrations(t *testing.T) {
 			version:   7,
 		},
 		{
-			name:      "Should up tenant/00008_add_minimum_approval_count_to_workflows.sql",
+			name:      "Should up tenant/00008_add_minimum_approval_count.sql",
 			downgrade: false,
 			target:    db.TenantTarget,
 			version:   8,
 		},
 		{
-			name:      "Should down tenant/00008_add_minimum_approval_count_to_workflows.sql",
+			name:      "Should down tenant/00008_add_minimum_approval_count.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
 			version:   8,
@@ -396,6 +397,18 @@ func TestSchemaMigrations(t *testing.T) {
 			downgrade: true,
 			target:    db.TenantTarget,
 			version:   9,
+		},
+		{
+			name:      "Should up tenant/00010_add_wf_approver_groups_table.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   10,
+		},
+		{
+			name:      "Should down tenant/00010_add_wf_approver_groups_table.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   10,
 		},
 	}
 	for _, tt := range tests {
@@ -445,7 +458,96 @@ func TestDataMigrations(t *testing.T) {
 		schemaVersion   *int64
 		assertMigration func(t *testing.T) func(db *multitenancy.DB) error
 		setupData       func(t *testing.T) func(db *multitenancy.DB) error
-	}{}
+	}{
+		{
+			name:    "Should migrate workflow approvers to workflow_approver_groups table",
+			target:  db.TenantTarget,
+			version: 1,
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var count int
+
+					err := db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups`).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 3, count)
+
+					var workflow1ID string
+					err = db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-1'`).Scan(&workflow1ID).Error
+					assert.NoError(t, err)
+
+					err = db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow1ID).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 2, count)
+
+					var workflow2ID string
+					err = db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-2'`).Scan(&workflow2ID).Error
+					assert.NoError(t, err)
+
+					err = db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow2ID).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 1, count)
+
+					var workflow3ID string
+					err = db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-3'`).Scan(&workflow3ID).Error
+					assert.NoError(t, err)
+
+					err = db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow3ID).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 0, count)
+
+					return nil
+				}
+			},
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					groupID1 := uuid.New()
+					groupID2 := uuid.New()
+					groupID3 := uuid.New()
+					groups := []*model.Group{
+						testutils.NewGroup(func(g *model.Group) {
+							g.ID = groupID1
+						}),
+						testutils.NewGroup(func(g *model.Group) {
+							g.ID = groupID2
+						}),
+						testutils.NewGroup(func(g *model.Group) {
+							g.ID = groupID3
+						}),
+					}
+
+					for _, g := range groups {
+						err := db.Create(g).Error
+						assert.NoError(t, err)
+					}
+
+					wfs := []*model.Workflow{
+						testutils.NewWorkflow(func(w *model.Workflow) {
+							w.ApproverGroupIDs = json.RawMessage(fmt.Sprintf(`["%s", "%s"]`, groupID1, groupID2))
+							w.InitiatorID = "user-1"
+						}),
+						testutils.NewWorkflow(func(w *model.Workflow) {
+							w.ApproverGroupIDs = json.RawMessage(fmt.Sprintf(`["%s"]`, groupID3))
+							w.InitiatorID = "user-2"
+						}),
+						testutils.NewWorkflow(func(w *model.Workflow) {
+							w.InitiatorID = "user-3"
+						}),
+					}
+
+					for _, w := range wfs {
+						err := db.Create(w).Error
+						assert.NoError(t, err)
+					}
+
+					return nil
+				}
+			},
+		},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			migration := db.Migration{

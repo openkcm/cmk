@@ -147,7 +147,6 @@ func (f *EventFactory) SystemUnlinkDecommission(
 		_, err := f.repo.Patch(ctx, system, *repo.NewQuery().UpdateAll(true))
 		return err
 	})
-
 	if err != nil {
 		return orbital.Job{}, err
 	}
