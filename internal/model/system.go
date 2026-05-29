@@ -24,7 +24,8 @@ type System struct {
 	Properties           map[string]string `gorm:"-:all"`
 
 	// Status can be 'CONNECTED', 'DISCONNECTED', 'FAILED', or 'PROCESSING'
-	Status cmkapi.SystemStatus `gorm:"type:varchar(50);default:'DISCONNECTED'"`
+	Status        cmkapi.SystemStatus `gorm:"type:varchar(50);default:'DISCONNECTED'"`
+	UnderWorkflow bool                `gorm:"type:bool"`
 
 	// Only set for failed systems by the event table
 	ErrorCode    string `gorm:"->;-:migration;column:error_code"`
@@ -47,7 +48,8 @@ func (System) IsSharedModel() bool {
 
 func (m System) CheckAuthz(ctx context.Context,
 	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
@@ -124,7 +126,8 @@ func (SystemProperty) IsSharedModel() bool {
 
 func (m SystemProperty) CheckAuthz(ctx context.Context,
 	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 

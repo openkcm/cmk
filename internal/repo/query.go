@@ -63,6 +63,7 @@ const (
 	RotatedField        QueryField = "rotated_at"
 	IssuerURLField      QueryField = "issuer_url"
 	IAMIdField          QueryField = "iam_identifier"
+	UnderWorkflowField  QueryField = "under_workflow"
 	DataField           QueryField = "data"
 	Name                QueryField = "name"
 

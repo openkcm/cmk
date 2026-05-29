@@ -40,6 +40,8 @@ func WithWorkflow(
 }
 
 // ToAPI transforms a system model to an API system.
+//
+//nolint:cyclop
 func ToAPI(system model.System, systemCfg *config.System, opts ...ToAPIOpt) (*cmkapi.System, error) {
 	err := sanitise.Sanitize(&system)
 	if err != nil {
@@ -69,6 +71,10 @@ func ToAPI(system model.System, systemCfg *config.System, opts ...ToAPIOpt) (*cm
 		KeyConfigurationID:   system.KeyConfigurationID,
 		KeyConfigurationName: system.KeyConfigurationName,
 		Status:               system.Status,
+	}
+
+	if system.UnderWorkflow {
+		apiSystem.Status = cmkapi.SystemStatusUNDERWORKFLOW
 	}
 
 	if system.Status == cmkapi.SystemStatusFAILED {
