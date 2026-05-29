@@ -121,7 +121,12 @@ func (w *Workflow) GetInitiatorName(
 		return w.initiatorName, nil
 	}
 
-	return identity.GetUserName(ctx, identityManager, w.InitiatorID)
+	name, err := identity.GetUserName(ctx, identityManager, w.InitiatorID)
+	if err != nil {
+		return "", err
+	}
+	w.initiatorName = name
+	return name, nil
 }
 
 // buildSystemDescription generates a description for SYSTEM artifact workflows
@@ -239,5 +244,10 @@ func (m *WorkflowApprover) GetUserName(
 		return m.userName, nil
 	}
 
-	return identity.GetUserName(ctx, identityManager, m.UserID)
+	name, err := identity.GetUserName(ctx, identityManager, m.UserID)
+	if err != nil {
+		return "", err
+	}
+	m.userName = name
+	return name, nil
 }

@@ -62,5 +62,10 @@ func (kc *KeyConfiguration) GetCreatorName(
 		return kc.creatorName, nil
 	}
 
-	return identity.GetUserName(ctx, identityManager, kc.CreatorID)
+	name, err := identity.GetUserName(ctx, identityManager, kc.CreatorID)
+	if err != nil {
+		return "", err
+	}
+	kc.creatorName = name
+	return name, nil
 }
