@@ -177,4 +177,13 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Should have nil creator id and name on invalid creator id", func(t *testing.T) {
+		apiConf, err := keyconfiguration.ToAPI(t.Context(), *testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.CreatorID = uuid.Nil.String()
+		}), nil)
+		assert.NoError(t, err)
+		assert.Nil(t, apiConf.Metadata.CreatorID)
+		assert.Nil(t, apiConf.Metadata.CreatorName)
+	})
 }
