@@ -40,7 +40,6 @@ type CLISuite struct {
 
 	db              *multitenancy.DB
 	rootCmd         *cobra.Command
-	createGroupsCmd *cobra.Command
 	createCmd       *cobra.Command
 	deleteTenantCmd *cobra.Command
 	getTenantCmd    *cobra.Command
@@ -120,9 +119,6 @@ func (s *CLISuite) SetupSuite() {
 	s.NoError(err)
 
 	s.rootCmd = factory.NewRootCmd(cmdCtx, cfg)
-
-	s.createGroupsCmd = factory.NewCreateGroupsCmd(cmdCtx)
-	s.rootCmd.AddCommand(s.createGroupsCmd)
 
 	s.createCmd = factory.NewCreateTenantCmd(cmdCtx)
 	s.rootCmd.AddCommand(s.createCmd)
@@ -225,7 +221,7 @@ func (s *CLISuite) TestCreateTenantCmd() {
 	schemaName, err := base62.EncodeSchemaNameBase62(cliTenantID)
 
 	result := strings.TrimSpace(out.String())
-	s.Equal("Tenant schema created: "+schemaName, result)
+	s.Equal(fmt.Sprintf("Tenant: %v, created with schema: %v", cliTenantID, schemaName), result)
 	s.NoError(err, "Encoding schema name failed")
 	integrationutils.TenantExists(s.T(), s.db, schemaName, model.Group{}.TableName())
 }
@@ -300,27 +296,6 @@ func (s *CLISuite) TestGetTenant() {
 	expected, err := json.MarshalIndent(tenant, "", "  ")
 	s.Require().NoError(err)
 	s.Require().Equal(string(expected), result)
-}
-
-func (s *CLISuite) TestCreateDefaultGroups() {
-	ctx := s.T().Context()
-	tenant, err := s.createTestTenant(s.T().Context())
-	s.Require().NoError(err)
-
-	id := tenant.ID
-
-	s.rootCmd.SetArgs([]string{"add-default-groups"})
-
-	err = s.createGroupsCmd.Flags().Set("id", id)
-	s.Require().NoError(err)
-
-	out := new(bytes.Buffer)
-	s.rootCmd.SetOut(out)
-
-	err = s.rootCmd.Execute()
-	s.Require().NoError(err)
-
-	integrationutils.GroupsExists(ctx, s.T(), id, s.db)
 }
 
 func (s *CLISuite) TestDeleteTenant() {

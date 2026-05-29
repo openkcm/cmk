@@ -1,9 +1,11 @@
 package main
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -11,54 +13,64 @@ import (
 	"github.com/openkcm/common-sdk/pkg/auth"
 )
 
-var osExit = os.Exit
-
 const (
-	filePermissions = 0600
+	filePermissions = 0o600
 	privateKeyPath  = "../../env/secret/signing-keys/private_key01.pem"
 )
 
+var (
+	clientDataFile = flag.String("clientData", "", "Path to the client data JSON file")
+	privateKey     = flag.String("key", privateKeyPath, "Path to the private key PEM file (use '-' for stdin)")
+)
+
 func main() {
-	clientDataFile, outputFile := parseArguments()
-	clientData := loadClientData(clientDataFile)
-	privateKey := loadPrivateKey()
-
-	clientDataHeader, signatureHeader := generateHeaders(clientData, privateKey)
-	outputHeaders(clientDataHeader, signatureHeader, outputFile)
-}
-
-func parseArguments() (string, string) {
-	var clientDataFile, outputFile string
-	flag.StringVar(&clientDataFile, "json", "", "Path to the client data JSON file")
-	flag.StringVar(&outputFile, "out", "", "Path to output file (optional)")
 	flag.Parse()
-
-	if clientDataFile == "" {
-		log.Println("Usage: go run generate_client_headers.go -json <path-to-clientData.json> [-out <output-file>]")
-		log.Println("Example: go run generate_client_headers.go -json tenantAdmin_clientData.json -out headers.txt")
-		osExit(1)
+	err := run()
+	if err != nil {
+		log.Fatal(err)
 	}
-
-	return clientDataFile, outputFile
 }
 
-func loadClientData(clientDataFile string) *auth.ClientData {
-	clientDataBytes, err := os.ReadFile(clientDataFile)
+func run() error {
+	clientData, err := loadClientData(*clientDataFile)
 	if err != nil {
-		log.Fatalf("Failed to read %s: %v", clientDataFile, err)
+		return err
 	}
 
-	var clientDataMap map[string]any
-
-	err = json.Unmarshal(clientDataBytes, &clientDataMap)
+	privateKey, err := loadPrivateKey(*privateKey)
 	if err != nil {
-		log.Fatalf("Failed to parse %s: %v", clientDataFile, err)
+		return err
+	}
+
+	clientDataHeader, signatureHeader, err := generateHeaders(clientData, privateKey)
+	if err != nil {
+		return err
+	}
+	//nolint:forbidigo // CLI tool outputs to stdout
+	fmt.Printf("x-client-data: %s\n", clientDataHeader)
+	//nolint:forbidigo // CLI tool outputs to stdout
+	fmt.Printf("x-client-data-signature: %s\n", signatureHeader)
+
+	return nil
+}
+
+func loadClientData(file string) (*auth.ClientData, error) {
+	clientDataBytes, err := os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", file, err)
+	}
+
+	var clientData map[string]any
+
+	err = json.Unmarshal(clientDataBytes, &clientData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse %s: %w", file, err)
 	}
 
 	// Build AuthContext map from nested AuthContext object in JSON
 	authContext := make(map[string]string)
 
-	if authContextRaw, ok := clientDataMap["AuthContext"]; ok {
+	if authContextRaw, ok := clientData["AuthContext"]; ok {
 		if authContextMap, ok := authContextRaw.(map[string]any); ok {
 			for k, v := range authContextMap {
 				if strVal, ok := v.(string); ok {
@@ -69,60 +81,48 @@ func loadClientData(clientDataFile string) *auth.ClientData {
 	}
 
 	return &auth.ClientData{
-		Identifier:         getString(clientDataMap, "identifier"),
-		Type:               getString(clientDataMap, "type"),
-		Email:              getString(clientDataMap, "mail"),
-		Region:             getString(clientDataMap, "reg"),
-		Groups:             getStringArray(clientDataMap, "groups"),
-		KeyID:              getString(clientDataMap, "kid"),
-		SignatureAlgorithm: auth.SignatureAlgorithm(getString(clientDataMap, "alg")),
+		Identifier:         getString(clientData, "identifier"),
+		Type:               getString(clientData, "type"),
+		Email:              getString(clientData, "mail"),
+		Region:             getString(clientData, "reg"),
+		Groups:             getStringArray(clientData, "groups"),
+		KeyID:              getString(clientData, "kid"),
+		SignatureAlgorithm: auth.SignatureAlgorithm(getString(clientData, "alg")),
 		AuthContext:        authContext,
-	}
+	}, nil
 }
 
-func loadPrivateKey() any {
-	privateKeyBytes, err := os.ReadFile(privateKeyPath)
-	if err != nil {
-		log.Fatalf("Failed to read private key file %s: %v", privateKeyPath, err)
+func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
+	var privateKeyBytes []byte
+	var err error
+
+	if path == "-" {
+		privateKeyBytes, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read private key from stdin: %w", err)
+		}
+	} else {
+		privateKeyBytes, err = os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read private key file %s: %w", path, err)
+		}
 	}
 
 	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(privateKeyBytes)
 	if err != nil {
-		log.Fatalf("Failed to parse RSA private key: %v", err)
+		return nil, fmt.Errorf("failed to parse RSA private key: %w", err)
 	}
 
-	return privateKey
+	return privateKey, nil
 }
 
-func generateHeaders(clientData *auth.ClientData, privateKey any) (string, string) {
+func generateHeaders(clientData *auth.ClientData, privateKey any) (string, string, error) {
 	clientDataHeader, signatureHeader, err := clientData.Encode(privateKey)
 	if err != nil {
-		log.Fatalf("Failed to encode and sign client data: %v", err)
+		return "", "", fmt.Errorf("failed to encode and sign client data: %w", err)
 	}
 
-	return clientDataHeader, signatureHeader
-}
-
-func outputHeaders(clientDataHeader, signatureHeader, outputFile string) {
-	if outputFile != "" {
-		headerOutput := fmt.Sprintf(
-			"x-client-data: %s\nx-client-data-signature: %s\n", clientDataHeader, signatureHeader,
-		)
-
-		err := os.WriteFile(outputFile, []byte(headerOutput), filePermissions)
-		if err != nil {
-			log.Fatalf("Failed to write to output file %s: %v", outputFile, err)
-		}
-
-		log.Printf("Headers written to %s", outputFile)
-	}
-
-	//nolint:forbidigo
-	fmt.Println("Headers for testing:")
-	//nolint:forbidigo
-	fmt.Printf("x-client-data: %s\n", clientDataHeader)
-	//nolint:forbidigo
-	fmt.Printf("x-client-data-signature: %s\n", signatureHeader)
+	return clientDataHeader, signatureHeader, nil
 }
 
 // Helper function to get string from map

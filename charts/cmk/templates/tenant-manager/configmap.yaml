@@ -38,5 +38,8 @@ data:
     tenantManager:
       {{- toYaml .tenantManager | nindent 6 }}
 
+    plugins:
+    {{ include "cmk.plugins" . | nindent 6 }}
+
     {{- end }}
 {{- end }}

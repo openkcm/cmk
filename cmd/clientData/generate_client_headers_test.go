@@ -3,8 +3,9 @@ package main
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
-	"flag"
+	"encoding/pem"
 	"os"
 	"testing"
 
@@ -31,21 +32,10 @@ func TestGenerateHeaders(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	assert.NoError(t, err)
 
-	hdr, sig := generateHeaders(clientData, privateKey)
+	hdr, sig, err := generateHeaders(clientData, privateKey)
+	assert.NoError(t, err)
 	assert.NotEmpty(t, hdr)
 	assert.NotEmpty(t, sig)
-}
-
-func TestOutputHeaders(t *testing.T) {
-	outputFile := "test_headers.txt"
-	defer os.Remove(outputFile)
-
-	outputHeaders("header-data", "header-signature", outputFile)
-
-	b, err := os.ReadFile(outputFile)
-	assert.NoError(t, err)
-	assert.Contains(t, string(b), "x-client-data: header-data")
-	assert.Contains(t, string(b), "x-client-data-signature: header-signature")
 }
 
 func TestLoadClientData(t *testing.T) {
@@ -74,7 +64,8 @@ func TestLoadClientData(t *testing.T) {
 	assert.NoError(t, err)
 	tmpFile.Close()
 
-	clientData := loadClientData(tmpFile.Name())
+	clientData, err := loadClientData(tmpFile.Name())
+	assert.NoError(t, err)
 	assert.Equal(t, "identifier", clientData.Identifier)
 	assert.Equal(t, "admin", clientData.Type)
 	assert.Equal(t, "test@example.com", clientData.Email)
@@ -88,38 +79,119 @@ func TestLoadClientData(t *testing.T) {
 	}, clientData.AuthContext)
 }
 
-func TestParseArguments(t *testing.T) {
-	// Save and restore os.Args and flag.CommandLine
-	origArgs := os.Args
-	origFlag := flag.CommandLine
+func TestLoadPrivateKey(t *testing.T) {
+	// Generate a valid RSA private key
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	assert.NoError(t, err)
 
-	defer func() {
-		os.Args = origArgs
-		flag.CommandLine = origFlag
+	// Marshal to PEM format
+	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: privateKeyBytes,
+	})
+
+	// Write to temp file
+	tmpFile, err := os.CreateTemp(t.TempDir(), "private_key_*.pem")
+	assert.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+
+	_, err = tmpFile.Write(pemBytes)
+	assert.NoError(t, err)
+	tmpFile.Close()
+
+	// Test loading from file
+	loadedKey, err := loadPrivateKey(tmpFile.Name())
+	assert.NoError(t, err)
+	assert.NotNil(t, loadedKey)
+	assert.Equal(t, privateKey.N, loadedKey.N)
+}
+
+func TestLoadPrivateKeyFromStdin(t *testing.T) {
+	// Generate a valid RSA private key
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	assert.NoError(t, err)
+
+	// Marshal to PEM format
+	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: privateKeyBytes,
+	})
+
+	// Create a pipe to simulate stdin
+	r, w, err := os.Pipe()
+	assert.NoError(t, err)
+
+	// Save original stdin and restore after test
+	originalStdin := os.Stdin
+	defer func() { os.Stdin = originalStdin }()
+
+	// Replace stdin with our pipe
+	os.Stdin = r
+
+	// Write PEM data to pipe in goroutine
+	go func() {
+		defer w.Close()
+		_, _ = w.Write(pemBytes)
 	}()
 
-	// Valid case
-	os.Args = []string{"cmd", "-json", "client.json", "-out", "out.txt"}
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	jsonPath, outPath := parseArguments()
-	//nolint:testifylint
-	assert.Equal(t, "client.json", jsonPath)
-	assert.Equal(t, "out.txt", outPath)
+	// Test loading from stdin (using "-" as path)
+	loadedKey, err := loadPrivateKey("-")
+	assert.NoError(t, err)
+	assert.NotNil(t, loadedKey)
+	assert.Equal(t, privateKey.N, loadedKey.N)
+}
 
-	// Error case: missing -json, should call os.Exit(1)
-	os.Args = []string{"cmd"}
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	calledExit := false
-	// Patch os.Exit
-	origExit := osExit
-	osExit = func(_ int) { calledExit = true; panic("exit") }
+func TestRun(t *testing.T) {
+	// Generate a valid RSA private key
+	pkey, err := rsa.GenerateKey(rand.Reader, 2048)
+	assert.NoError(t, err)
 
-	defer func() { osExit = origExit }()
-	defer func() {
-		if r := recover(); r != nil {
-			assert.True(t, calledExit, "os.Exit should be called when -json is missing")
-		}
-	}()
+	// Create client data JSON file
+	clientDataMap := map[string]any{
+		"identifier": "test-identifier",
+		"type":       "admin",
+		"mail":       "test@example.com",
+		"reg":        "us-east",
+		"groups":     []any{"admin", "users"},
+		"kid":        "key-123",
+		"alg":        "RS256",
+		"AuthContext": map[string]any{
+			"issuer":    "https://sso.company.com",
+			"client_id": "client-12345",
+		},
+	}
+	jsonBytes, err := json.Marshal(clientDataMap)
+	assert.NoError(t, err)
 
-	parseArguments()
+	tmpClientData, err := os.CreateTemp(t.TempDir(), "clientData_*.json")
+	assert.NoError(t, err)
+	defer os.Remove(tmpClientData.Name())
+
+	_, err = tmpClientData.Write(jsonBytes)
+	assert.NoError(t, err)
+	tmpClientData.Close()
+
+	// Create private key PEM file
+	privateKeyBytes := x509.MarshalPKCS1PrivateKey(pkey)
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: privateKeyBytes,
+	})
+	tmpKey, err := os.CreateTemp(t.TempDir(), "private_key_*.pem")
+	assert.NoError(t, err)
+	defer os.Remove(tmpKey.Name())
+
+	_, err = tmpKey.Write(pemBytes)
+	assert.NoError(t, err)
+	tmpKey.Close()
+
+	// Set flags
+	*clientDataFile = tmpClientData.Name()
+	*privateKey = tmpKey.Name()
+
+	// Run the function
+	err = run()
+	assert.NoError(t, err)
 }

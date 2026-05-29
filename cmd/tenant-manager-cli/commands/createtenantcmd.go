@@ -8,9 +8,16 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
+	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/base62"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
+)
+
+var (
+	ErrCreateTenant = errors.New("failed to create tenant schema")
+	ErrCreateGroups = errors.New("failed to create gropus")
 )
 
 // NewCreateTenantCmd creates a Cobra command that creates tenant.
@@ -24,7 +31,6 @@ func (f *CommandFactory) NewCreateTenantCmd(ctx context.Context) *cobra.Command 
 			" -status [tenant status] -role [tenant role]",
 		Args: cobra.ExactArgs(0),
 
-		//nolint:contextcheck
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			id, _ := cmd.Flags().GetString("id")
 			status, _ := cmd.Flags().GetString("status")
@@ -46,16 +52,27 @@ func (f *CommandFactory) NewCreateTenantCmd(ctx context.Context) *cobra.Command 
 				},
 			}
 
-			err = f.tm.CreateTenant(cmd.Context(), tenant)
+			err = f.tm.CreateTenant(ctx, tenant)
+			if errors.Is(err, manager.ErrOnboardingInProgress) {
+				cmd.Printf("Tenant with ID: %s already exists\n", tenant.ID)
+			} else if err != nil {
+				cmd.Printf("Failed to create Tenant: %v\n", err)
+				return errs.Wrap(ErrCreateTenant, err)
+			}
+
+			ctx := cmkcontext.CreateTenantContext(ctx, tenant.ID)
+
+			err = f.gm.CreateDefaultGroups(ctx)
 			if err != nil {
 				if errors.Is(err, manager.ErrOnboardingInProgress) {
-					cmd.Printf("Tenant with ID: %s already exists", tenant.ID)
-				} else {
-					cmd.Printf("Failed to create tenant schema: %v\n", err)
+					cmd.Printf("Default groups for tenant already exists\n")
+				} else if err != nil {
+					cmd.Printf("Failed to create Default Gruops: %v\n", err)
+					return errs.Wrap(ErrCreateGroups, err)
 				}
 			}
 
-			cmd.Printf("Tenant schema created: %s\n", encodedSchemaName)
+			cmd.Printf("Tenant: %s, created with schema: %s\n", id, encodedSchemaName)
 
 			return nil
 		},
