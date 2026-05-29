@@ -421,6 +421,7 @@ config:
 
   http:
     port: 8081
+    swaggerEnabled: false
 
   # Expose the status port
   status:
