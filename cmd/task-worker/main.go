@@ -4,18 +4,11 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
-	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/common-sdk/pkg/health"
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/openkcm/common-sdk/pkg/otlp"
-	"github.com/openkcm/common-sdk/pkg/status"
 	"github.com/samber/oops"
 
 	"github.com/openkcm/cmk/internal/async"
@@ -28,7 +21,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/log"
@@ -37,6 +29,8 @@ import (
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
+	"github.com/openkcm/cmk/utils/cmd"
+	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
 var (
@@ -75,7 +69,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	// Start status server
-	startStatusServer(ctx, cfg)
+	statusserver.StartStatusServer(ctx, cfg)
 
 	cron, err := async.New(cfg)
 	if err != nil {
@@ -190,68 +184,13 @@ func registerTasks(
 	return nil
 }
 
-func startStatusServer(ctx context.Context, cfg *config.Config) {
-	dsnFromConfig, err := dsn.FromDBConfig(cfg.Database)
-	if err != nil {
-		log.Error(ctx, "Could not load DSN from database config", err)
-	}
-
-	healthOptions := []health.Option{
-		health.WithDatabaseChecker(
-			constants.DBDriver,
-			dsnFromConfig,
-		),
-	}
-
-	go func() {
-		err := status.Serve(ctx, &cfg.BaseConfig, healthOptions...)
-		if err != nil {
-			log.Error(ctx, "Failure on the status server", err)
-
-			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
-		}
-	}()
-}
-
-// runFuncWithSignalHandling runs the given function with signal handling. When
-// a CTRL-C is received, the context will be cancelled on which the function can
-// act upon.
-// It returns the exitCode
-func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {
-	ctx, cancelOnSignal := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt, syscall.SIGTERM,
-	)
-	defer cancelOnSignal()
-
-	cfg, err := config.LoadConfig(commoncfg.WithEnvOverride(constants.APIName + "_task_worker"))
-	if err != nil {
-		log.Error(ctx, "Failed to load the configuration", err)
-		_, _ = fmt.Fprintln(os.Stderr, err)
-
-		return 1
-	}
-
-	log.Debug(ctx, "Starting the application", slog.Any("config", *cfg))
-
-	err = f(ctx, cfg)
-	if err != nil {
-		log.Error(ctx, "Failed to start the application", err)
-		_, _ = fmt.Fprintln(os.Stderr, err)
-
-		return 1
-	}
-
-	// graceful shutdown so running goroutines may finish
-	_, _ = fmt.Fprintln(os.Stderr, fmt.Sprintf(*gracefulShutdownMessage, *gracefulShutdownSec))
-	time.Sleep(time.Duration(*gracefulShutdownSec) * time.Second)
-
-	return 0
-}
-
 func main() {
 	flag.Parse()
 
-	exitCode := runFuncWithSignalHandling(run)
+	exitCode := cmd.RunFuncWithSignalHandling(run, cmd.RunFlags{
+		GracefulShutdownSec:     *gracefulShutdownSec,
+		GracefulShutdownMessage: *gracefulShutdownMessage,
+		Env:                     constants.APIName + "_task_worker",
+	})
 	os.Exit(exitCode)
 }

@@ -119,7 +119,7 @@ func (s *CLISuite) SetupSuite() {
 		constants.InternalTenantCLIRole)
 	s.NoError(err)
 
-	s.rootCmd = factory.NewRootCmd(cmdCtx)
+	s.rootCmd = factory.NewRootCmd(cmdCtx, cfg)
 
 	s.createGroupsCmd = factory.NewCreateGroupsCmd(cmdCtx)
 	s.rootCmd.AddCommand(s.createGroupsCmd)

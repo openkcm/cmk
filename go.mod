@@ -12,7 +12,8 @@ require (
 	github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8 v8.9.0
 	github.com/bartventer/gorm-multitenancy/postgres/v8 v8.9.0
 	github.com/bartventer/gorm-multitenancy/v8 v8.9.0
-	github.com/getkin/kin-openapi v0.138.0
+	github.com/docker/docker v28.5.2+incompatible
+	github.com/getkin/kin-openapi v0.137.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
@@ -21,6 +22,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/looplab/fsm v1.0.3
 	github.com/microcosm-cc/bluemonday v1.0.27
+	github.com/moby/moby/api v1.54.2
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/openkcm/api-sdk v0.17.0
@@ -117,7 +119,6 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
-	github.com/moby/moby/api v1.54.2 // indirect
 	github.com/moby/moby/client v0.4.1 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect

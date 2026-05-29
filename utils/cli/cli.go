@@ -7,6 +7,9 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/openkcm/cmk/internal/config"
+	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
 // NewRootCmdWithInfinitySleep creates a new root cobra command with infinite sleep option.
@@ -14,6 +17,7 @@ import (
 // This is useful for containers so the CLI can be invoked by exec commands while keeping the container running.
 func NewRootCmdWithInfinitySleep(
 	ctx context.Context,
+	cfg *config.Config,
 	use string,
 	shortDesc string,
 	longDesc string,
@@ -31,6 +35,7 @@ func NewRootCmdWithInfinitySleep(
 
 		Run: func(cmd *cobra.Command, _ []string) {
 			if sleep {
+				statusserver.StartStatusServer(ctx, cfg)
 				infiniteRun(cmd)
 			}
 		},

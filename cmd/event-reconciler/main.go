@@ -4,13 +4,10 @@ import (
 	"context"
 	"flag"
 	"os"
-	"syscall"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/common-sdk/pkg/health"
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/openkcm/common-sdk/pkg/otlp"
-	"github.com/openkcm/common-sdk/pkg/status"
 	"github.com/samber/oops"
 
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
@@ -19,13 +16,13 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/db/dsn"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/log"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/utils/cmd"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
+	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
 var (
@@ -62,7 +59,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	// Start status server
-	startStatusServer(ctx, cfg)
+	statusserver.StartStatusServer(ctx, cfg)
 
 	// Database initialisation
 	dbCon, err := db.StartDB(ctx, cfg)
@@ -111,29 +108,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 	reconciler.CloseAmqpClients(ctx)
 
 	return nil
-}
-
-func startStatusServer(ctx context.Context, cfg *config.Config) {
-	dsnFromConfig, err := dsn.FromDBConfig(cfg.Database)
-	if err != nil {
-		log.Error(ctx, "Could not load DSN from database config", err)
-	}
-
-	healthOptions := []health.Option{
-		health.WithDatabaseChecker(
-			constants.DBDriver,
-			dsnFromConfig,
-		),
-	}
-
-	go func() {
-		err := status.Serve(ctx, &cfg.BaseConfig, healthOptions...)
-		if err != nil {
-			log.Error(ctx, "Failure on the status server", err)
-
-			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
-		}
-	}()
 }
 
 func main() {

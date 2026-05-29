@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -73,6 +74,8 @@ func TestServerRunningAndShutdown(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
+	statusPort, err := testutils.GetFreePortString()
+	assert.NoError(t, err)
 	t.Run("Should error on not possible database connection", func(t *testing.T) {
 		err := apiServer.Run(t.Context(), &config.Config{
 			HTTP: config.HTTPServer{
@@ -95,6 +98,10 @@ func TestRun(t *testing.T) {
 				Logger: commoncfg.Logger{
 					Format: "json",
 					Level:  "info",
+				},
+				Status: commoncfg.Status{
+					Enabled: true,
+					Address: ":" + statusPort,
 				},
 			},
 		})

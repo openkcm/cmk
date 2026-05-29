@@ -108,7 +108,7 @@ func setupCommands(
 		return nil, err
 	}
 
-	rootCmd := factory.NewRootCmd(ctx)
+	rootCmd := factory.NewRootCmd(ctx, cfg)
 
 	createGroupsCmd := factory.NewCreateGroupsCmd(ctx)
 	rootCmd.AddCommand(createGroupsCmd)

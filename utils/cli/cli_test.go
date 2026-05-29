@@ -9,12 +9,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/utils/cli"
 )
 
 func TestRootCmdWithSleepFlagEnabledSleepsIndefinitely(t *testing.T) {
 	ctx := context.Background()
-	cmd := cli.NewRootCmdWithInfinitySleep(ctx, "test", "short description", "long description")
+	cmd := cli.NewRootCmdWithInfinitySleep(ctx, &config.Config{}, "test", "short description", "long description")
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -37,7 +38,7 @@ func TestRootCmdWithSleepFlagEnabledSleepsIndefinitely(t *testing.T) {
 
 func TestRootCmdWithoutSleepFlagExecutesWithoutSleeping(t *testing.T) {
 	ctx := context.Background()
-	cmd := cli.NewRootCmdWithInfinitySleep(ctx, "test", "short description", "long description")
+	cmd := cli.NewRootCmdWithInfinitySleep(ctx, &config.Config{}, "test", "short description", "long description")
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -52,7 +53,7 @@ func TestRootCmdWithoutSleepFlagExecutesWithoutSleeping(t *testing.T) {
 
 func TestRootCmdHandlesSignalGracefully(t *testing.T) {
 	ctx := context.Background()
-	cmd := cli.NewRootCmdWithInfinitySleep(ctx, "test", "short description", "long description")
+	cmd := cli.NewRootCmdWithInfinitySleep(ctx, &config.Config{}, "test", "short description", "long description")
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)

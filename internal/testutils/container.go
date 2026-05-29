@@ -107,6 +107,21 @@ func StartRedis(
 ) {
 	tb.Helper()
 
+	if cfg != nil && cfg.TaskQueue.SecretRef.Type == "" {
+		cfg.TaskQueue.SecretRef.Type = commoncfg.InsecureSecretType
+		cfg.TaskQueue.ACL = config.RedisACL{
+			Enabled: false,
+			Username: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  "default",
+			},
+			Password: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  "secret",
+			},
+		}
+	}
+
 	// Do it like this so the user specified override the defaults
 	options := append([]testcontainers.ContainerCustomizer{
 		testcontainers.WithReuseByName(redisContainer),
@@ -116,6 +131,7 @@ func StartRedis(
 		"redis:7",
 		options...,
 	)
+	redisContainer.TLSConfig()
 
 	assert.NoError(tb, err)
 
@@ -123,6 +139,13 @@ func StartRedis(
 		port, err := redisContainer.MappedPort(tb.Context(), "6379")
 		assert.NoError(tb, err)
 
+		host, err := redisContainer.Host(tb.Context())
+		assert.NoError(tb, err)
+
 		cfg.TaskQueue.Port = port.Port()
+		cfg.TaskQueue.Host = commoncfg.SourceRef{
+			Source: commoncfg.EmbeddedSourceValue,
+			Value:  host,
+		}
 	}
 }
