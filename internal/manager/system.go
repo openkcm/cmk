@@ -278,11 +278,21 @@ func (m *SystemManager) SendRecoveryActions(
 	systemID uuid.UUID,
 	action cmkapi.SystemRecoveryActionBodyAction,
 ) error {
+	system, err := m.GetSystemByID(ctx, systemID)
+	if err != nil {
+		return err
+	}
+
+	_, err = m.user.HasSystemAccess(ctx, authz.APIActionSystemModifyLink, system)
+	if err != nil {
+		return err
+	}
+
 	switch action {
 	case cmkapi.SystemRecoveryActionBodyActionCANCEL:
 		return m.cancelSystemAction(ctx, systemID)
 	case cmkapi.SystemRecoveryActionBodyActionRETRY:
-		return m.retrySystemAction(ctx, systemID)
+		return m.retrySystemAction(ctx, system)
 	default:
 		return ErrUnsupportedSystemAction
 	}
@@ -292,13 +302,6 @@ func (m *SystemManager) GetSystemByID(ctx context.Context, systemID uuid.UUID) (
 	system, err := repo.GetSystemByIDWithProperties(ctx, m.repo, systemID, repo.NewQuery())
 	if err != nil {
 		return nil, errs.Wrap(ErrGettingSystemByID, err)
-	}
-
-	// Check authorization for the system's key configuration (if exists)
-	// Note: If the system is not linked to any key configuration, it is accessible to all users
-	_, err = m.user.HasSystemAccess(ctx, authz.APIActionRead, system)
-	if err != nil {
-		return nil, err
 	}
 
 	return system, nil
@@ -313,8 +316,6 @@ func (m *SystemManager) LinkSystemAction(
 	var updatedSystem *model.System
 
 	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
-		// First, get the system to check its current state
-		// Note: GetSystemByID checks authorization for the SOURCE key configuration (if exists)
 		system, err := m.GetSystemByID(ctx, systemID)
 		if err != nil {
 			return err
@@ -324,7 +325,6 @@ func (m *SystemManager) LinkSystemAction(
 		keyConfig := &model.KeyConfiguration{ID: patchSystem.KeyConfigurationID}
 
 		// Check authorization for the TARGET key configuration
-		// User must have access to BOTH source (checked above) and target to perform the link
 		if patchSystem.KeyConfigurationID != uuid.Nil {
 			_, err = m.user.HasSystemAccess(ctx, authz.APIActionSystemModifyLink, system)
 			if err != nil {
@@ -447,39 +447,8 @@ func (m *SystemManager) GetFilters(ctx context.Context) (cmkapi.SystemFilters, e
 		{Values: &regions, Column: repo.RegionField},
 		{Values: &keyConfigNames, Column: fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), repo.NameField)},
 	}
-	isGroupFiltered, err := m.user.NeedsGroupFiltering(ctx, authz.APIActionRead, authz.APIResourceTypeWorkFlow)
-	if err != nil {
-		return cmkapi.SystemFilters{}, err
-	}
 
-	if isGroupFiltered {
-		// Only show systems linked to key configurations where the user has admin access
-		iamIdentifiers, err := cmkcontext.ExtractClientDataGroupsString(ctx)
-		if err != nil {
-			return cmkapi.SystemFilters{}, err
-		}
-
-		// If IAM identifiers list is empty, user has no access to any key configurations
-		if len(iamIdentifiers) == 0 {
-			return cmkapi.SystemFilters{
-				KeyConfigurationName: &keyConfigNames,
-				Region:               &regions,
-				Type:                 &types,
-			}, nil
-		}
-
-		query = query.Join(repo.LeftJoin, repo.JoinCondition{
-			Table:     &model.KeyConfiguration{},
-			Field:     repo.AdminGroupIDField,
-			JoinField: repo.IDField,
-			JoinTable: &model.Group{},
-		})
-
-		ck := repo.NewCompositeKey().
-			Where(fmt.Sprintf(`"%s".%s`, model.Group{}.TableName(), repo.IAMIdField), iamIdentifiers)
-		query = query.Where(repo.NewCompositeKeyGroup(ck))
-	}
-	err = m.repo.GetFilterOptions(ctx, model.System{}, filters, *query)
+	err := m.repo.GetFilterOptions(ctx, model.System{}, filters, *query)
 
 	return cmkapi.SystemFilters{
 		KeyConfigurationName: &keyConfigNames,
@@ -527,17 +496,12 @@ func (m *SystemManager) cancelSystemAction(ctx context.Context, systemID uuid.UU
 	return err
 }
 
-func (m *SystemManager) retrySystemAction(ctx context.Context, systemID uuid.UUID) error {
-	system, err := m.GetSystemByID(ctx, systemID)
-	if err != nil {
-		return err
-	}
-
+func (m *SystemManager) retrySystemAction(ctx context.Context, system *model.System) error {
 	if system.Status != cmkapi.SystemStatusFAILED {
 		return ErrRetryNonFailedSystem
 	}
 
-	lastJob, err := m.eventFactory.GetLastEvent(ctx, systemID.String())
+	lastJob, err := m.eventFactory.GetLastEvent(ctx, system.ID.String())
 	if err != nil {
 		return err
 	}
