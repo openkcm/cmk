@@ -44,6 +44,11 @@ func ClientDataMiddleware(
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
+				if canBypassClientData(r) {
+					next.ServeHTTP(w, r)
+					return
+				}
+
 				ctx, err := prepareClientContext(r, signingKeyStorage, authContextFields, roleGetter)
 				if err != nil {
 					log.Error(r.Context(), "Client data processing error", err)
@@ -62,6 +67,11 @@ func ClientDataMiddleware(
 			},
 		)
 	}
+}
+
+func canBypassClientData(r *http.Request) bool {
+	pattern := strings.Replace(r.Pattern, constants.BasePath, "", 1)
+	return pattern == "GET /swagger"
 }
 
 // prepareClientContext extracts, validates, and verifies client data from request
