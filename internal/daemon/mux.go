@@ -38,3 +38,8 @@ func (m *ServeMux) HandleFunc(
 
 	m.httpServeMux.HandleFunc(pattern, handler)
 }
+
+// Handler returns the handler and registered pattern that matches the request.
+func (m *ServeMux) Handler(r *http.Request) (http.Handler, string) {
+	return m.httpServeMux.Handler(r)
+}
