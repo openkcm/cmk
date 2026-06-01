@@ -469,10 +469,12 @@ func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) err
 		return nil
 	}
 
+	for region := range cryptoData {
+		key.EditableRegions[region] = true
+	}
+
+	// All regions for non primary keys are editable
 	if !key.IsPrimary {
-		for region := range cryptoData {
-			key.EditableRegions[region] = true
-		}
 		return nil
 	}
 
