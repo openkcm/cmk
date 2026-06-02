@@ -129,6 +129,15 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{keymanagement.ErrGenericGetKeyError},
+		ExposedError: &APIError{
+			Code:    "REGISTER_KEY_INVALID_PROVIDER_KEY",
+			Message: "Failed to get key from the keystore provider",
+			Status:  http.StatusBadRequest,
+		},
+		ContextGetter: errs.GetGRPCErrorContext,
+	},
+	{
 		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyRegistration, keymanagement.ErrHYOKKeyNotFound},
 		ExposedError: &APIError{
 			Code:    "REGISTER_KEY_PROVIDER_KEY_NOT_FOUND",

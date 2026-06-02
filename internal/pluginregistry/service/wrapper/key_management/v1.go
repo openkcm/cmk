@@ -47,6 +47,8 @@ func convertGRPCError(err error) error {
 		return keymanagement.ErrProviderAuthenticationFailed
 	case keystoreErrs.IsStatus(err, keystoreErrs.StatusKeyNotFound):
 		return keymanagement.ErrHYOKKeyNotFound
+	case keystoreErrs.IsStatus(err, keystoreErrs.StatusKeyGenericErr):
+		return keymanagement.ErrGenericGetKeyError
 	default:
 		return err
 	}
