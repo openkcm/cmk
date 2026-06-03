@@ -371,6 +371,7 @@ func (r *ResourceRepository) GetFilterOptions(
 	}
 
 	return r.WithTenant(ctx, resource, func(tx *multitenancy.DB) error {
+		tx = tx.Debug()
 		parts := make([]any, 0, len(filters))
 		placeholders := make([]string, 0, len(filters))
 		columnMap := make(map[string]*[]string, len(filters))
@@ -398,7 +399,7 @@ func (r *ResourceRepository) GetFilterOptions(
 			placeholders = append(placeholders, "?")
 		}
 
-		unionSQL := strings.Join(placeholders, " UNION ALL ")
+		unionSQL := strings.Join(placeholders, " UNION ")
 
 		var results []struct {
 			ColumnName string `gorm:"column:column_name"`

@@ -1579,7 +1579,14 @@ func TestGetFilters(t *testing.T) {
 		s.KeyConfigurationID = &keyConfig2.ID
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig1, keyConfig2, system1, system2)
+	// Repeated type and region, should not create new entries
+	system3 := testutils.NewSystem(func(s *model.System) {
+		s.Type = "type1"
+		s.Region = "region1"
+		s.KeyConfigurationID = &keyConfig1.ID
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, keyConfig1, keyConfig2, system1, system2, system3)
 
 	t.Run("Should get filters", func(t *testing.T) {
 		filters, err := m.GetFilters(ctx)
