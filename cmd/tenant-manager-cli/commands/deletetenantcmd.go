@@ -47,7 +47,7 @@ func (f *CommandFactory) NewDeleteTenantCmd(ctx context.Context) *cobra.Command 
 
 			cmd.Printf("Deleting tenant. Id: %s, SchemaName: %s\n", tenant.ID, tenant.SchemaName)
 
-			err = DropSchema(f.dbCon, tenant.SchemaName)
+			err = dropSchema(f.dbCon, tenant.SchemaName)
 			if err != nil {
 				cmd.PrintErrf("%v %v\n", ErrDeleteTenant, err)
 				return err
@@ -80,7 +80,7 @@ func (f *CommandFactory) NewDeleteTenantCmd(ctx context.Context) *cobra.Command 
 	return cmd
 }
 
-func DropSchema(db *multitenancy.DB, schemaName string) error {
+func dropSchema(db *multitenancy.DB, schemaName string) error {
 	sql := fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schemaName)
 	return db.Exec(sql).Error
 }
