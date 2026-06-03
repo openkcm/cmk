@@ -1034,10 +1034,16 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthBusinessUserDataKC(authClient))
+
 	// Create a BYOK key and import params in the database
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
 		k.State = string(cmkapi.KeyStatePENDINGIMPORT)
+		k.KeyConfigurationID = kc.ID
 	})
 
 	importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
@@ -1048,30 +1054,27 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 	byokEnabled := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
 		k.State = string(cmkapi.KeyStateENABLED)
+		k.KeyConfigurationID = kc.ID
 	})
 
 	sysManagedKey := testutils.NewKey(func(_ *model.Key) {})
 
 	hyokKey := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyConfigurationID = kc.ID
 	})
-
-	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-
-	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(
 		ctx,
 		t,
 		r,
+		kc,
 		key,
 		byokEnabled,
 		sysManagedKey,
 		hyokKey,
 		importParams,
 		keystore,
-		kc,
 		keystoreDefaultCert,
 	)
 
@@ -1186,6 +1189,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
 		k.State = string(cmkapi.KeyStatePENDINGIMPORT)
 		k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-1234-567890abcdef")
+		k.KeyConfigurationID = keyConfig.ID
 	})
 
 	paramsJSON, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
@@ -1275,6 +1279,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			k.KeyType = string(cmkapi.KeyTypeBYOK)
 			k.State = string(cmkapi.KeyStatePENDINGIMPORT)
 			k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-6789-567890abcdef")
+			k.KeyConfigurationID = keyConfig.ID
 		})
 		testutils.CreateTestEntities(ctx, t, r, byokNoImportParams)
 
@@ -1299,6 +1304,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		hyokKey := testutils.NewKey(func(k *model.Key) {
 			k.Name = "hyok-key"
 			k.KeyType = string(cmkapi.KeyTypeHYOK)
+			k.KeyConfigurationID = keyConfig.ID
 		})
 
 		params := model.ImportParams{
@@ -1338,6 +1344,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		byokEnabled := testutils.NewKey(func(k *model.Key) {
 			k.KeyType = string(cmkapi.KeyTypeBYOK)
 			k.State = string(cmkapi.KeyStateENABLED)
+			k.KeyConfigurationID = keyConfig.ID
 		})
 
 		testutils.CreateTestEntities(ctx, t, r, byokEnabled)

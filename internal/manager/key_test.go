@@ -1171,6 +1171,15 @@ func TestGetImportParams(t *testing.T) {
 		_, err := km.GetImportParams(ctx, uuid.New())
 		assert.Error(t, err)
 	})
+
+	t.Run("Error_Unauthorized_WrongGroup", func(t *testing.T) {
+		km, r, ctx, keyConfig := SetupKeyTest(t)
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+
+		ctxWrongGroup := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{"different_group"})
+		_, err := km.GetImportParams(ctxWrongGroup, byokKey.ID)
+		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
+	})
 }
 
 func TestImportKeyMaterial(t *testing.T) {
@@ -1292,6 +1301,20 @@ func TestImportKeyMaterial(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, manager.ErrGetKeyDB)
+	})
+
+	t.Run("Error_Unauthorized_WrongGroup", func(t *testing.T) {
+		km, r, ctx, keyConfig := SetupKeyTest(t)
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
+			ip.KeyID = byokKey.ID
+			ip.Expires = ptr.PointTo(time.Now().Add(24 * time.Hour))
+		})
+		testutils.CreateTestEntities(ctx, t, r, importParams)
+
+		ctxWrongGroup := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{"different_group"})
+		_, err := km.ImportKeyMaterial(ctxWrongGroup, byokKey.ID, validMaterial)
+		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
 	})
 }
 

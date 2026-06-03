@@ -885,29 +885,35 @@ func (km *KeyManager) validateBYOKKey(ctx context.Context, keyID uuid.UUID, acti
 		return nil, errs.Wrap(ErrGetKeyDB, err)
 	}
 
+	var authzAction authz.APIAction
 	switch action {
 	case BYOKActionGetImportParams:
+		authzAction = authz.APIActionRead
 		if key.KeyType != constants.KeyTypeBYOK {
 			return nil, errs.Wrapf(ErrInvalidKeyTypeForImportParams,
 				fmt.Sprintf("key type %s is not supported", key.KeyType))
 		}
-
 		if key.State != string(cmkapi.KeyStatePENDINGIMPORT) {
 			return nil, errs.Wrapf(ErrInvalidKeyStateForImportParams,
 				fmt.Sprintf("key state %s is not supported", key.State))
 		}
 	case BYOKActionImportKeyMaterial:
+		authzAction = authz.APIActionUpdate
 		if key.KeyType != constants.KeyTypeBYOK {
 			return nil, errs.Wrapf(ErrInvalidKeyTypeForImportKeyMaterial,
 				fmt.Sprintf("key type %s is not supported", key.KeyType))
 		}
-
 		if key.State != string(cmkapi.KeyStatePENDINGIMPORT) {
 			return nil, errs.Wrapf(ErrInvalidKeyStateForImportKeyMaterial,
 				fmt.Sprintf("key state %s is not supported", key.State))
 		}
 	default:
 		return nil, ErrInvalidBYOKAction
+	}
+
+	_, err = km.user.HasKeyAccess(ctx, authzAction, key.KeyConfigurationID)
+	if err != nil {
+		return nil, err
 	}
 
 	return key, nil
