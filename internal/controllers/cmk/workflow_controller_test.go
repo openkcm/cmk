@@ -215,7 +215,8 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceR
 }
 
 func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux,
-	headers http.Header) {
+	headers http.Header,
+) {
 	// Do a dummy check to ensure that the config is created. We need this for any
 	// tests simulating a DB failure, otherwise the config creation will hit the
 	// simulated error.
@@ -1059,6 +1060,7 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 
 	idmPlugin.PutUser(identitymanagement.User{ID: user1ID})
 	idmPlugin.PutUser(identitymanagement.User{ID: userID})
+	idmPlugin.PutGroup(keyAdminAuthClient.Group.IAMIdentifier, keyAdminAuthClient.Group.IAMIdentifier)
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
@@ -1082,7 +1084,31 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 
 	allWorkflows := []*model.Workflow{workflow, workflow2, workflow3, workflow4}
 
-	testutils.CreateTestEntities(ctx, t, r, workflow, workflow2, workflow3, workflow4)
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		r,
+		workflow,
+		workflow2,
+		workflow3,
+		workflow4,
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.WorkflowID = workflow.ID
+			wag.GroupID = keyAdminAuthClient.Group.ID
+		}),
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.WorkflowID = workflow2.ID
+			wag.GroupID = keyAdminAuthClient.Group.ID
+		}),
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.WorkflowID = workflow3.ID
+			wag.GroupID = keyAdminAuthClient.Group.ID
+		}),
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.WorkflowID = workflow4.ID
+			wag.GroupID = keyAdminAuthClient.Group.ID
+		}),
+	)
 
 	tests := []struct {
 		name             string

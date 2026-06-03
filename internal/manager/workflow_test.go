@@ -674,21 +674,39 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 }
 
 func TestWorkflowManager_GetWorkflowByID(t *testing.T) {
-	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
+	group := testutils.NewGroup(func(g *model.Group) {})
 	userID := uuid.NewString()
-	wf, err := createTestWorkflow(
-		testutils.CreateCtxWithTenant(tenant),
-		r,
-		testutils.NewWorkflow(
-			func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-				w.InitiatorID = userID
-			},
-		),
+	idmPlugin := testplugins.NewTestIdentityManagement(testplugins.WithGroups(map[string]string{
+		group.IAMIdentifier: group.IAMIdentifier,
+	}), testplugins.WithGroupMembership(map[string][]string{
+		group.IAMIdentifier: {userID},
+	}), testplugins.WithUsers([]identitymanagement.User{
+		{ID: userID, Name: "test"},
+	}))
+
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{}, testplugins.WithIdentityManagement(idmPlugin))
+
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	wf := testutils.NewWorkflow(
+		func(w *model.Workflow) {
+			w.State = workflow.StateInitial.String()
+			w.ActionType = workflow.ActionTypeDelete.String()
+			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.InitiatorID = userID
+		},
 	)
-	assert.NoError(t, err)
+
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		r,
+		wf,
+		group,
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.GroupID = group.ID
+			wag.WorkflowID = wf.ID
+		}),
+	)
 
 	tests := []struct {
 		name       string
@@ -712,12 +730,10 @@ func TestWorkflowManager_GetWorkflowByID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(
 			tt.name, func(t *testing.T) {
-				ctx := cmkcontext.InjectBusinessUserData(
-					cmkcontext.CreateTenantContext(t.Context(), tenant),
-					&auth.ClientData{
-						Identifier: userID,
-					},
-					nil,
+				ctx := testutils.InjectBusinessUserDataIntoContext(
+					ctx,
+					userID,
+					[]string{group.IAMIdentifier},
 				)
 				retrievedWf, _, err := m.GetWorkflowByID(
 					ctx, tt.workflowID,
@@ -798,81 +814,98 @@ func TestWorkflowFilter_GetString(t *testing.T) {
 }
 
 func TestWorkfowManager_GetWorkflows(t *testing.T) {
-	m, r, tenant := SetupWorkflowManager(t, &config.Config{})
+	group := testutils.NewGroup(func(g *model.Group) {})
 	userID := uuid.NewString()
 	allWorkflowUserID := uuid.NewString()
-	artifactID := uuid.New()
+	idmPlugin := testplugins.NewTestIdentityManagement(testplugins.WithGroups(map[string]string{
+		group.IAMIdentifier: group.IAMIdentifier,
+	}), testplugins.WithGroupMembership(map[string][]string{
+		group.IAMIdentifier: {userID, allWorkflowUserID},
+	}), testplugins.WithUsers([]identitymanagement.User{
+		{ID: userID, Name: userID},
+		{ID: allWorkflowUserID, Name: allWorkflowUserID},
+	}))
+
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{}, testplugins.WithIdentityManagement(idmPlugin))
+	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	baseTime := time.Now()
 
-	workflow1, err := createTestWorkflow(
-		testutils.CreateCtxWithTenant(tenant),
-		r,
-		testutils.NewWorkflow(
-			func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-				w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
-				w.InitiatorID = userID
-				w.CreatedAt = baseTime.Add(-3 * time.Hour)
-				w.UpdatedAt = baseTime.Add(-3 * time.Hour)
-			},
-		),
+	workflow1 := testutils.NewWorkflow(
+		func(w *model.Workflow) {
+			w.State = workflow.StateInitial.String()
+			w.ActionType = workflow.ActionTypeDelete.String()
+			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
+			w.InitiatorID = userID
+			w.CreatedAt = baseTime.Add(-3 * time.Hour)
+			w.UpdatedAt = baseTime.Add(-3 * time.Hour)
+		},
 	)
-	assert.NoError(t, err)
 
-	workflow2, err := createTestWorkflow(
-		testutils.CreateCtxWithTenant(tenant),
-		r,
-		testutils.NewWorkflow(
-			func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-				w.ArtifactID = artifactID
-				w.Approvers = []model.WorkflowApprover{{UserID: userID}}
-				w.InitiatorID = allWorkflowUserID
-				w.CreatedAt = baseTime.Add(-2 * time.Hour)
-				w.UpdatedAt = baseTime.Add(-2 * time.Hour)
-			},
-		),
+	workflow2 := testutils.NewWorkflow(
+		func(w *model.Workflow) {
+			w.State = workflow.StateInitial.String()
+			w.ActionType = workflow.ActionTypeDelete.String()
+			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.ArtifactID = uuid.New()
+			w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+			w.InitiatorID = allWorkflowUserID
+			w.CreatedAt = baseTime.Add(-2 * time.Hour)
+			w.UpdatedAt = baseTime.Add(-2 * time.Hour)
+		},
 	)
-	assert.NoError(t, err)
 
-	workflow3, err := createTestWorkflow(
-		testutils.CreateCtxWithTenant(tenant),
-		r,
-		testutils.NewWorkflow(
-			func(w *model.Workflow) {
-				w.State = workflow.StateRejected.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-				w.Approvers = []model.WorkflowApprover{{UserID: userID}}
-				w.InitiatorID = allWorkflowUserID
-				w.CreatedAt = baseTime.Add(-1 * time.Hour)
-				w.UpdatedAt = baseTime.Add(-1 * time.Hour)
-			},
-		),
+	workflow3 := testutils.NewWorkflow(
+		func(w *model.Workflow) {
+			w.State = workflow.StateRejected.String()
+			w.ActionType = workflow.ActionTypeDelete.String()
+			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+			w.InitiatorID = allWorkflowUserID
+			w.CreatedAt = baseTime.Add(-1 * time.Hour)
+			w.UpdatedAt = baseTime.Add(-1 * time.Hour)
+		},
 	)
-	assert.NoError(t, err)
 
-	workflow4, err := createTestWorkflow(
-		testutils.CreateCtxWithTenant(tenant),
-		r,
-		testutils.NewWorkflow(
-			func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeUpdateState.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-				w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
-				w.InitiatorID = userID
-				w.CreatedAt = baseTime
-				w.UpdatedAt = baseTime
-			},
-		),
+	workflow4 := testutils.NewWorkflow(
+		func(w *model.Workflow) {
+			w.State = workflow.StateInitial.String()
+			w.ActionType = workflow.ActionTypeUpdateState.String()
+			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
+			w.InitiatorID = userID
+			w.CreatedAt = baseTime
+			w.UpdatedAt = baseTime
+		},
 	)
-	assert.NoError(t, err)
+
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		r,
+		group,
+		workflow1,
+		workflow2,
+		workflow3,
+		workflow4,
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.GroupID = group.ID
+			wag.WorkflowID = workflow1.ID
+		}),
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.GroupID = group.ID
+			wag.WorkflowID = workflow2.ID
+		}),
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.GroupID = group.ID
+			wag.WorkflowID = workflow3.ID
+		}),
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.GroupID = group.ID
+			wag.WorkflowID = workflow4.ID
+		}),
+	)
 
 	tests := []struct {
 		name                string
@@ -940,7 +973,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 		{
 			name: "Get workflows by artifact id",
 			filter: newGetWorkflowsFilter(
-				artifactID,
+				workflow2.ArtifactID,
 				"",
 				"",
 				workflow.ArtifactTypeKey.String(),
@@ -955,12 +988,10 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(
 			tc.name, func(t *testing.T) {
-				ctx := cmkcontext.InjectBusinessUserData(
-					cmkcontext.CreateTenantContext(t.Context(), tenant),
-					&auth.ClientData{
-						Identifier: userID,
-					},
-					nil,
+				ctx := testutils.InjectBusinessUserDataIntoContext(
+					ctx,
+					userID,
+					[]string{group.IAMIdentifier},
 				)
 				workflows, count, err := m.GetWorkflows(ctx, tc.filter)
 				assert.NoError(t, err)
@@ -1000,12 +1031,10 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 	}
 
 	t.Run("Should return workflows ordered by created time descending", func(t *testing.T) {
-		ctx := cmkcontext.InjectBusinessUserData(
-			cmkcontext.CreateTenantContext(t.Context(), tenant),
-			&auth.ClientData{
-				Identifier: userID,
-			},
-			nil,
+		ctx := testutils.InjectBusinessUserDataIntoContext(
+			ctx,
+			userID,
+			[]string{group.IAMIdentifier},
 		)
 
 		workflows, count, err := m.GetWorkflows(ctx, manager.WorkflowFilter{})
@@ -1592,243 +1621,307 @@ func TestWorkflowManager_ExpireWorkflow(t *testing.T) {
 }
 
 func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
-	cfg := &config.Config{}
-	wm, r, tenantID := SetupWorkflowManager(t, cfg)
-
 	userID := uuid.NewString()
+	group := testutils.NewGroup(func(g *model.Group) {})
 
-	ctx := cmkcontext.InjectBusinessUserData(
-		cmkcontext.CreateTenantContext(t.Context(), tenantID),
-		&auth.ClientData{
-			Identifier: userID,
-		},
-		nil,
+	idmPlugin := testplugins.NewTestIdentityManagement(testplugins.WithGroups(map[string]string{
+		group.IAMIdentifier: group.IAMIdentifier,
+	}), testplugins.WithGroupMembership(map[string][]string{
+		group.IAMIdentifier: {userID},
+	}), testplugins.WithUsers([]identitymanagement.User{
+		{ID: userID, Name: userID},
+	}))
+
+	cfg := &config.Config{}
+	wm, r, tenantID := SetupWorkflowManager(t, cfg, testplugins.WithIdentityManagement(idmPlugin))
+
+	ctx := testutils.CreateCtxWithTenant(tenantID)
+	ctx = testutils.InjectBusinessUserDataIntoContext(
+		ctx,
+		userID,
+		[]string{group.IAMIdentifier},
 	)
 
 	// Create workflow config
 	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
-	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+	testutils.CreateTestEntities(ctx, t, r, group, workflowConfig)
 
-	t.Run(
-		"should delete expired terminal workflow", func(t *testing.T) {
-			// Create old terminal workflow (should be deleted)
-			oldTerminalWf := testutils.NewWorkflow(
+	t.Run("should delete expired terminal workflow", func(t *testing.T) {
+		// Create old terminal workflow (should be deleted)
+		oldTerminalWf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateSuccessful.String()
+				w.CreatedAt = time.Now().AddDate(0, 0, -31) // 31 days ago
+				w.InitiatorID = userID
+			},
+		)
+
+		testutils.CreateTestEntities(
+			ctx,
+			t,
+			r,
+			oldTerminalWf,
+			testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+				wag.GroupID = group.ID
+				wag.WorkflowID = oldTerminalWf.ID
+			}),
+		)
+
+		err := wm.CleanupTerminalWorkflows(ctx)
+		assert.NoError(t, err)
+
+		// Verify old terminal workflow was deleted
+		_, _, err = wm.GetWorkflowByID(ctx, oldTerminalWf.ID)
+		assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed)
+
+		// Verify workflow approvers were also deleted
+		approverQuery := repo.NewQuery().Where(
+			repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where(model.WorkflowID, oldTerminalWf.ID),
+			),
+		)
+		countAfter, err := r.Count(ctx, &model.WorkflowApprover{}, *approverQuery)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, countAfter, "Approvers should be deleted with workflow")
+	})
+
+	t.Run("should not delete recent terminal workflow", func(t *testing.T) {
+		// Create recent terminal workflow (should NOT be deleted)
+		recentTerminalWf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateRejected.String()
+				w.CreatedAt = time.Now().AddDate(0, 0, -15) // 15 days ago
+				w.InitiatorID = userID
+			},
+		)
+
+		testutils.CreateTestEntities(
+			ctx,
+			t,
+			r,
+			recentTerminalWf,
+			testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+				wag.GroupID = group.ID
+				wag.WorkflowID = recentTerminalWf.ID
+			}),
+		)
+
+		err := wm.CleanupTerminalWorkflows(ctx)
+		assert.NoError(t, err)
+
+		// Verify recent terminal workflow still exists
+		_, _, err = wm.GetWorkflowByID(ctx, recentTerminalWf.ID)
+		assert.NoError(t, err)
+
+		// Verify workflow approvers still exist
+		approverQuery := repo.NewQuery().Where(
+			repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where(model.WorkflowID, recentTerminalWf.ID),
+			),
+		)
+		count, err := r.Count(ctx, &model.WorkflowApprover{}, *approverQuery)
+		assert.NoError(t, err)
+		assert.Positive(t, count, "Approvers should still exist for recent workflow")
+	})
+
+	t.Run("should not delete old non-terminal workflow", func(t *testing.T) {
+		// Create old non-terminal workflow (should NOT be deleted)
+		oldActiveWf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateWaitApproval.String()
+				w.CreatedAt = time.Now().AddDate(0, 0, -31) // 31 days ago
+				w.InitiatorID = userID
+			},
+		)
+
+		testutils.CreateTestEntities(
+			ctx,
+			t,
+			r,
+			oldActiveWf,
+			testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+				wag.GroupID = group.ID
+				wag.WorkflowID = oldActiveWf.ID
+			}),
+		)
+
+		err := wm.CleanupTerminalWorkflows(ctx)
+		assert.NoError(t, err)
+
+		// Verify old active workflow still exists
+		_, _, err = wm.GetWorkflowByID(ctx, oldActiveWf.ID)
+		assert.NoError(t, err)
+	})
+
+	t.Run("should delete all terminal state types", func(t *testing.T) {
+		// Create workflows in all terminal states (all old enough to be deleted)
+		terminalStates := workflow.TerminalStates
+
+		workflowIDs := make([]uuid.UUID, len(terminalStates))
+		for i, state := range terminalStates {
+			wf := testutils.NewWorkflow(
 				func(w *model.Workflow) {
-					w.State = workflow.StateSuccessful.String()
-					w.CreatedAt = time.Now().AddDate(0, 0, -31) // 31 days ago
+					w.State = state
+					w.CreatedAt = time.Now().AddDate(0, 0, -31)
 					w.InitiatorID = userID
 				},
 			)
-
-			testutils.CreateTestEntities(ctx, t, r, oldTerminalWf)
-
-			err := wm.CleanupTerminalWorkflows(ctx)
-			assert.NoError(t, err)
-
-			// Verify old terminal workflow was deleted
-			_, _, err = wm.GetWorkflowByID(ctx, oldTerminalWf.ID)
-			assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed)
-
-			// Verify workflow approvers were also deleted
-			approverQuery := repo.NewQuery().Where(
-				repo.NewCompositeKeyGroup(
-					repo.NewCompositeKey().Where(model.WorkflowID, oldTerminalWf.ID),
-				),
+			testutils.CreateTestEntities(
+				ctx,
+				t,
+				r,
+				wf,
+				testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+					wag.GroupID = group.ID
+					wag.WorkflowID = wf.ID
+				}),
 			)
-			countAfter, err := r.Count(ctx, &model.WorkflowApprover{}, *approverQuery)
-			assert.NoError(t, err)
-			assert.Equal(t, 0, countAfter, "Approvers should be deleted with workflow")
-		},
-	)
+			workflowIDs[i] = wf.ID
+		}
 
-	t.Run(
-		"should not delete recent terminal workflow", func(t *testing.T) {
-			// Create recent terminal workflow (should NOT be deleted)
-			recentTerminalWf := testutils.NewWorkflow(
-				func(w *model.Workflow) {
-					w.State = workflow.StateRejected.String()
-					w.CreatedAt = time.Now().AddDate(0, 0, -15) // 15 days ago
-					w.InitiatorID = userID
-				},
+		err := wm.CleanupTerminalWorkflows(ctx)
+		assert.NoError(t, err)
+
+		// Verify all terminal workflows were deleted
+		for i, wfID := range workflowIDs {
+			_, _, err = wm.GetWorkflowByID(ctx, wfID)
+			assert.ErrorIs(
+				t, err, manager.ErrWorkflowNotAllowed,
+				"Terminal workflow in state %s should be deleted", terminalStates[i],
 			)
+		}
+	})
 
-			testutils.CreateTestEntities(ctx, t, r, recentTerminalWf)
+	t.Run("should handle batch processing for large number of workflows", func(t *testing.T) {
+		// Create more workflows than batch size to test batch processing
+		total := 101 // More than repo.DefaultLimit (100)
+		workflowIDs := make([]uuid.UUID, total)
 
-			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
-			assert.NoError(t, err)
-
-			// Verify recent terminal workflow still exists
-			_, _, err = wm.GetWorkflowByID(ctx, recentTerminalWf.ID)
-			assert.NoError(t, err)
-
-			// Verify workflow approvers still exist
-			approverQuery := repo.NewQuery().Where(
-				repo.NewCompositeKeyGroup(
-					repo.NewCompositeKey().Where(model.WorkflowID, recentTerminalWf.ID),
-				),
-			)
-			count, err := r.Count(ctx, &model.WorkflowApprover{}, *approverQuery)
-			assert.NoError(t, err)
-			assert.Positive(t, count, "Approvers should still exist for recent workflow")
-		},
-	)
-
-	t.Run(
-		"should not delete old non-terminal workflow", func(t *testing.T) {
-			// Create old non-terminal workflow (should NOT be deleted)
-			oldActiveWf := testutils.NewWorkflow(
-				func(w *model.Workflow) {
-					w.State = workflow.StateWaitApproval.String()
-					w.CreatedAt = time.Now().AddDate(0, 0, -31) // 31 days ago
-					w.InitiatorID = userID
-				},
-			)
-
-			testutils.CreateTestEntities(ctx, t, r, oldActiveWf)
-
-			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
-			assert.NoError(t, err)
-
-			// Verify old active workflow still exists
-			_, _, err = wm.GetWorkflowByID(ctx, oldActiveWf.ID)
-			assert.NoError(t, err)
-		},
-	)
-
-	t.Run(
-		"should delete all terminal state types", func(t *testing.T) {
-			// Create workflows in all terminal states (all old enough to be deleted)
-			terminalStates := workflow.TerminalStates
-
-			workflowIDs := make([]uuid.UUID, len(terminalStates))
-			for i, state := range terminalStates {
-				wf := testutils.NewWorkflow(
-					func(w *model.Workflow) {
-						w.State = state
-						w.CreatedAt = time.Now().AddDate(0, 0, -31)
-						w.InitiatorID = userID
-					},
-				)
-				testutils.CreateTestEntities(ctx, t, r, wf)
-				workflowIDs[i] = wf.ID
-			}
-
-			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
-			assert.NoError(t, err)
-
-			// Verify all terminal workflows were deleted
-			for i, wfID := range workflowIDs {
-				_, _, err = wm.GetWorkflowByID(ctx, wfID)
-				assert.ErrorIs(
-					t, err, manager.ErrWorkflowNotAllowed,
-					"Terminal workflow in state %s should be deleted", terminalStates[i],
-				)
-			}
-		},
-	)
-
-	t.Run(
-		"should handle batch processing for large number of workflows", func(t *testing.T) {
-			// Create more workflows than batch size to test batch processing
-			total := 101 // More than repo.DefaultLimit (100)
-			workflowIDs := make([]uuid.UUID, total)
-
-			for i := range total {
-				wf := testutils.NewWorkflow(
-					func(w *model.Workflow) {
-						w.State = workflow.StateSuccessful.String()
-						w.CreatedAt = time.Now().AddDate(0, 0, -31)
-						w.InitiatorID = userID
-					},
-				)
-				testutils.CreateTestEntities(ctx, t, r, wf)
-				workflowIDs[i] = wf.ID
-			}
-
-			err := wm.CleanupTerminalWorkflows(ctx)
-			assert.NoError(t, err)
-
-			// Verify all workflows were deleted across multiple batches
-			for _, wfID := range workflowIDs {
-				_, _, err = wm.GetWorkflowByID(ctx, wfID)
-				assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed,
-					"All workflows should be deleted even with batch processing")
-			}
-		},
-	)
-
-	t.Run(
-		"should handle empty result when no expired workflows exist", func(t *testing.T) {
-			// Create only recent terminal workflows
-			recentWf := testutils.NewWorkflow(
-				func(w *model.Workflow) {
-					w.State = workflow.StateSuccessful.String()
-					w.CreatedAt = time.Now().AddDate(0, 0, -5)
-					w.InitiatorID = userID
-				},
-			)
-			testutils.CreateTestEntities(ctx, t, r, recentWf)
-
-			// Should not error when no workflows to delete
-			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
-			assert.NoError(t, err)
-
-			// Recent workflow should still exist
-			_, _, err = wm.GetWorkflowByID(ctx, recentWf.ID)
-			assert.NoError(t, err)
-		},
-	)
-
-	t.Run(
-		"should handle workflows without approvers", func(t *testing.T) {
-			// Create workflow without approvers
-			oldWf := testutils.NewWorkflow(
+		for i := range total {
+			wf := testutils.NewWorkflow(
 				func(w *model.Workflow) {
 					w.State = workflow.StateSuccessful.String()
 					w.CreatedAt = time.Now().AddDate(0, 0, -31)
-					w.Approvers = nil // No approvers
 					w.InitiatorID = userID
 				},
 			)
-			testutils.CreateTestEntities(ctx, t, r, oldWf)
+			testutils.CreateTestEntities(
+				ctx,
+				t,
+				r,
+				wf,
+				testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+					wag.GroupID = group.ID
+					wag.WorkflowID = wf.ID
+				}),
+			)
+			workflowIDs[i] = wf.ID
+		}
 
-			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
-			assert.NoError(t, err)
+		err := wm.CleanupTerminalWorkflows(ctx)
+		assert.NoError(t, err)
 
-			// Workflow should still be deleted even without approvers
-			_, _, err = wm.GetWorkflowByID(ctx, oldWf.ID)
-			assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed)
-		},
-	)
+		// Verify all workflows were deleted across multiple batches
+		for _, wfID := range workflowIDs {
+			_, _, err = wm.GetWorkflowByID(ctx, wfID)
+			assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed,
+				"All workflows should be deleted even with batch processing")
+		}
+	})
 
-	t.Run(
-		"should preserve non-terminal workflow states", func(t *testing.T) {
-			// Create workflows in all non-terminal states (all old)
-			nonTerminalStates := workflow.NonTerminalStates
+	t.Run("should handle empty result when no expired workflows exist", func(t *testing.T) {
+		// Create only recent terminal workflows
+		recentWf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateSuccessful.String()
+				w.CreatedAt = time.Now().AddDate(0, 0, -5)
+				w.InitiatorID = userID
+			},
+		)
+		testutils.CreateTestEntities(
+			ctx,
+			t,
+			r,
+			recentWf,
+			testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+				wag.GroupID = group.ID
+				wag.WorkflowID = recentWf.ID
+			}),
+		)
 
-			workflowIDs := make([]uuid.UUID, len(nonTerminalStates))
-			for i, state := range nonTerminalStates {
-				wf := testutils.NewWorkflow(
-					func(w *model.Workflow) {
-						w.State = state
-						w.CreatedAt = time.Now().AddDate(0, 0, -60) // Very old
-						w.InitiatorID = userID
-					},
-				)
-				testutils.CreateTestEntities(ctx, t, r, wf)
-				workflowIDs[i] = wf.ID
-			}
+		// Should not error when no workflows to delete
+		err := wm.CleanupTerminalWorkflows(ctx)
+		assert.NoError(t, err)
 
-			err := wm.CleanupTerminalWorkflows(testutils.CreateCtxWithTenant(tenantID))
-			assert.NoError(t, err)
+		// Recent workflow should still exist
+		_, _, err = wm.GetWorkflowByID(ctx, recentWf.ID)
+		assert.NoError(t, err)
+	})
 
-			// Verify all non-terminal workflows still exist
-			for i, wfID := range workflowIDs {
-				_, _, err = wm.GetWorkflowByID(ctx, wfID)
-				assert.NoError(t, err, "Non-terminal workflow in state %s should not be deleted", nonTerminalStates[i])
-			}
-		},
-	)
+	t.Run("should handle workflows without approvers", func(t *testing.T) {
+		// Create workflow without approvers
+		oldWf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = workflow.StateSuccessful.String()
+				w.CreatedAt = time.Now().AddDate(0, 0, -31)
+				w.Approvers = nil // No approvers
+				w.InitiatorID = userID
+			},
+		)
+		testutils.CreateTestEntities(
+			ctx,
+			t,
+			r,
+			oldWf,
+			testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+				wag.GroupID = group.ID
+				wag.WorkflowID = oldWf.ID
+			}),
+		)
+
+		err := wm.CleanupTerminalWorkflows(ctx)
+		assert.NoError(t, err)
+
+		// Workflow should still be deleted even without approvers
+		_, _, err = wm.GetWorkflowByID(ctx, oldWf.ID)
+		assert.ErrorIs(t, err, manager.ErrWorkflowNotAllowed)
+	})
+
+	t.Run("should preserve non-terminal workflow states", func(t *testing.T) {
+		// Create workflows in all non-terminal states (all old)
+		nonTerminalStates := workflow.NonTerminalStates
+
+		workflowIDs := make([]uuid.UUID, len(nonTerminalStates))
+		for i, state := range nonTerminalStates {
+			wf := testutils.NewWorkflow(
+				func(w *model.Workflow) {
+					w.State = state
+					w.CreatedAt = time.Now().AddDate(0, 0, -60) // Very old
+					w.InitiatorID = userID
+				},
+			)
+			testutils.CreateTestEntities(
+				ctx,
+				t,
+				r,
+				wf,
+				testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+					wag.GroupID = group.ID
+					wag.WorkflowID = wf.ID
+				}),
+			)
+			workflowIDs[i] = wf.ID
+		}
+
+		err := wm.CleanupTerminalWorkflows(ctx)
+		assert.NoError(t, err)
+
+		// Verify all non-terminal workflows still exist
+		for i, wfID := range workflowIDs {
+			_, _, err = wm.GetWorkflowByID(ctx, wfID)
+			assert.NoError(t, err, "Non-terminal workflow in state %s should not be deleted", nonTerminalStates[i])
+		}
+	})
 }
 
 // ============================================================================
@@ -1863,7 +1956,7 @@ func setupEligibilityTest(
 	t *testing.T,
 	approverCount int,
 	idmPlugin *testplugins.TestIdentityManagement,
-) (*manager.WorkflowManager, repo.Repo, context.Context, *model.Workflow) {
+) (*manager.WorkflowManager, repo.Repo, context.Context, *model.Workflow, *model.Group) {
 	t.Helper()
 
 	cfg := &config.Config{}
@@ -1946,7 +2039,7 @@ func setupEligibilityTest(
 	idmPlugin.PutGroup(testGroupName, testGroupSCIMID)
 	idmPlugin.PutGroupMembers(testGroupSCIMID, scimMembers)
 
-	return wm, r, ctx, wf
+	return wm, r, ctx, wf, group
 }
 
 // setAuthContext adds client data to context for SCIM queries
@@ -1958,7 +2051,7 @@ func setAuthContext(ctx context.Context, userID, _ string) context.Context {
 func TestWorkflowApproverEligibility(t *testing.T) {
 	t.Run("all eligible approvers removed before voting - workflow expires", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, r, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, r, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers from IAM group
@@ -1997,7 +2090,6 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = wm.TransitionWorkflow(systemCtx, wf.ID, workflow.TransitionExpire)
-
 		// FSM might not allow EXPIRE transition from current state - that's okay for this test
 		if err != nil {
 			t.Logf("Could not transition to EXPIRED (FSM restriction): %v", err)
@@ -2012,7 +2104,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("all eligible approvers removed - initiator revokes", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers from IAM group
@@ -2037,7 +2129,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("eligible approvers removed then re-added - warning cleared", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers from IAM group
@@ -2083,7 +2175,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("partial votes cast, remaining approver removed - cannot continue", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, r, ctx, wf := setupEligibilityTest(t, 3, idmPlugin)
+		wm, r, ctx, wf, _ := setupEligibilityTest(t, 3, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Create a third approver
@@ -2132,7 +2224,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("approver who already voted can still be counted after removal", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Approver 1 votes while in group
 		ctx1 := setAuthContext(ctx, approver1ID, approver1Email)
@@ -2161,15 +2253,15 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("new user added to group not in original snapshot - cannot vote", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 1, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Add new user to IAM group (not in workflow approvers snapshot)
 		newUserID := "00000000-0000-0000-0000-100000000099"
 		newUserEmail := "newuser@example.com"
 		idmPlugin.PutUser(identitymanagement.User{ID: newUserID, Name: newUserEmail, Email: newUserEmail})
-		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver1ID, newUserID})
+		idmPlugin.PutGroupMembers(testGroupSCIMID, []string{approver1ID, approver2ID, newUserID})
 
-		// Get workflow - should NOT show insufficient approvers (still has approver 1)
+		// Get workflow - should NOT show insufficient approvers (still has approver 1 and 2)
 		_, eligibility, err := wm.GetWorkflowByID(
 			setAuthContext(ctx, approver1ID, approver1Email), wf.ID)
 		insufficientApprovers := eligibility != nil && eligibility.InsufficientApprovers
@@ -2181,9 +2273,13 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		_, err = wm.TransitionWorkflow(newUserCtx, wf.ID, workflow.TransitionApprove)
 		assert.Error(t, err, "New user not in snapshot should not be able to vote")
 
-		// Original approver can still vote
+		// Original approvers can still vote
 		ctx1 := setAuthContext(ctx, approver1ID, approver1Email)
 		_, err = wm.TransitionWorkflow(ctx1, wf.ID, workflow.TransitionApprove)
+		require.NoError(t, err)
+
+		ctx2 := setAuthContext(ctx, approver2ID, approver2Email)
+		_, err = wm.TransitionWorkflow(ctx2, wf.ID, workflow.TransitionApprove)
 		require.NoError(t, err)
 
 		// Verify workflow transitioned (may be WAIT_CONFIRMATION or SUCCESSFUL)
@@ -2195,7 +2291,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("rejected vote from removed approver still counts", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Approver 1 rejects while in group
 		ctx1 := setAuthContext(ctx, approver1ID, approver1Email)
@@ -2233,7 +2329,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 	t.Run("insufficientApprovers flag updates dynamically with IAM changes", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, r, ctx, wf := setupEligibilityTest(t, 0, idmPlugin)
+		wm, r, ctx, wf, _ := setupEligibilityTest(t, 0, idmPlugin)
 
 		// Remove all approvers from IAM before checking
 		idmPlugin.PutGroupMembers(testGroupSCIMID, nil)
@@ -2267,7 +2363,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 	t.Run("returns correct insufficientApprovers flag", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Initially sufficient approvers
@@ -2297,7 +2393,7 @@ func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 
 	t.Run("checks eligibility regardless of workflow state", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, r, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, r, ctx, wf, group := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Remove all approvers
@@ -2311,26 +2407,35 @@ func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 		_, eligibility, err := wm.GetWorkflowByID(ctx, wf.ID)
 		insufficientApprovers := eligibility != nil && eligibility.InsufficientApprovers
 		require.NoError(t, err)
-		assert.True(t, insufficientApprovers, "Should check eligibility even in terminal states")
+		assert.True(t, insufficientApprovers)
 
 		// Create workflow in SUCCESSFUL state
 		successfulWf := testutils.NewWorkflow(func(w *model.Workflow) {
 			w.State = workflow.StateSuccessful.String()
 			w.InitiatorID = approver1ID
 		})
-		testutils.CreateTestEntities(ctx, t, r, successfulWf)
+		testutils.CreateTestEntities(
+			ctx,
+			t,
+			r,
+			successfulWf,
+			testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+				wag.GroupID = group.ID
+				wag.WorkflowID = successfulWf.ID
+			}),
+		)
 
 		_, eligibility, err = wm.GetWorkflowByID(ctx, successfulWf.ID)
 		insufficientApprovers = eligibility != nil && eligibility.InsufficientApprovers
 		require.NoError(t, err)
-		assert.False(t, insufficientApprovers, "Empty approver group list means no restrictions")
+		assert.True(t, insufficientApprovers)
 	})
 }
 
 func TestWorkflowApproverEligibilityErrorHandling(t *testing.T) {
 	t.Run("SCIM failure during eligibility check prevents voting", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 1, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Simulate SCIM failure by removing group mapping
@@ -2343,7 +2448,7 @@ func TestWorkflowApproverEligibilityErrorHandling(t *testing.T) {
 
 	t.Run("SCIM failure during GET returns error in insufficientApprovers check", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 1, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 1, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// Simulate SCIM failure
@@ -2359,7 +2464,7 @@ func TestWorkflowApproverEligibilityErrorHandling(t *testing.T) {
 func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 	t.Run("auto-rejects after vote when insufficient eligible approvers", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Initially 2 eligible approvers, threshold = 2
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
@@ -2383,7 +2488,7 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 
 	t.Run("does not auto-reject when sufficient eligible approvers remain", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// 2 eligible approvers, threshold = 2
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
@@ -2406,7 +2511,7 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 
 	t.Run("auto-rejects even when user votes REJECT", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 
 		// Initially 2 eligible approvers, threshold = 2
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
@@ -2424,7 +2529,7 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 
 	t.Run("handles SCIM failure gracefully during auto-reject check", func(t *testing.T) {
 		idmPlugin := newEligibilityTestPlugin()
-		wm, _, ctx, wf := setupEligibilityTest(t, 2, idmPlugin)
+		wm, _, ctx, wf, _ := setupEligibilityTest(t, 2, idmPlugin)
 		ctx = setAuthContext(ctx, approver1ID, approver1Email)
 
 		// First vote succeeds

@@ -587,6 +587,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 	authClientAuditor := testutils.NewAuthClient(ctx, t, r, testutils.WithAuditorRole())
 	idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
+	idmPlugin.PutGroup(authClient.Group.IAMIdentifier, authClient.Group.IAMIdentifier)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient))
@@ -613,6 +614,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 		w.ArtifactID = systemUnderWorkflowApproversDetails.ID
 		w.State = workflow.StateWaitApproval.String()
 	})
+
 	idmPlugin.PutUser(identitymanagement.User{ID: wfApproverDetails.InitiatorID})
 	testutils.CreateTestEntities(
 		ctx,
@@ -622,6 +624,10 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 		keyConfig,
 		systemUnderWorkflowFullDetails,
 		wfFullDetails,
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.GroupID = authClient.Group.ID
+			wag.WorkflowID = wfFullDetails.ID
+		}),
 		systemUnderWorkflowApproversDetails,
 		wfApproverDetails,
 	)
