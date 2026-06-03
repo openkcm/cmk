@@ -716,7 +716,7 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 	return nil
 }
 
-func (km *KeyManager) reenableKeyVersions(ctx context.Context, key *model.Key) error {
+func (km *KeyManager) reenableProviderKey(ctx context.Context, key *model.Key) error {
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
 		return errs.Wrap(ErrFailedToInitProvider, err)
@@ -724,16 +724,14 @@ func (km *KeyManager) reenableKeyVersions(ctx context.Context, key *model.Key) e
 
 	wasProviderError := false
 
-	for _, kv := range key.KeyVersions {
-		_, err = provider.Client.EnableKey(ctx, &keymanagement.EnableKeyRequest{
-			Parameters: keymanagement.RequestParameters{
-				Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
-				KeyID:  kv.NativeID,
-			},
-		})
-		if err != nil {
-			wasProviderError = true
-		}
+	_, err = provider.Client.EnableKey(ctx, &keymanagement.EnableKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
+			KeyID:  *key.NativeID,
+		},
+	})
+	if err != nil {
+		wasProviderError = true
 	}
 
 	if wasProviderError {
@@ -804,7 +802,7 @@ func (km *KeyManager) removePrimaryKeyState(ctx context.Context, keyConfigID *uu
 	return nil
 }
 
-func (km *KeyManager) disableKeyVersions(ctx context.Context, key *model.Key) error {
+func (km *KeyManager) disableProviderKey(ctx context.Context, key *model.Key) error {
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
 		return errs.Wrap(ErrFailedToInitProvider, err)
@@ -812,16 +810,14 @@ func (km *KeyManager) disableKeyVersions(ctx context.Context, key *model.Key) er
 
 	wasProviderError := false
 
-	for _, kv := range key.KeyVersions {
-		_, err = provider.Client.DisableKey(ctx, &keymanagement.DisableKeyRequest{
-			Parameters: keymanagement.RequestParameters{
-				Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
-				KeyID:  kv.NativeID,
-			},
-		})
-		if err != nil {
-			wasProviderError = true
-		}
+	_, err = provider.Client.DisableKey(ctx, &keymanagement.DisableKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
+			KeyID:  *key.NativeID,
+		},
+	})
+	if err != nil {
+		wasProviderError = true
 	}
 
 	if wasProviderError {
@@ -1475,7 +1471,7 @@ func (km *KeyManager) sendRotateAuditLog(ctx context.Context, key *model.Key) {
 }
 
 func (km *KeyManager) enableKey(ctx context.Context, key *model.Key) error {
-	err := km.reenableKeyVersions(ctx, key)
+	err := km.reenableProviderKey(ctx, key)
 	if err != nil {
 		return err
 	}
@@ -1486,7 +1482,7 @@ func (km *KeyManager) enableKey(ctx context.Context, key *model.Key) error {
 }
 
 func (km *KeyManager) disableKey(ctx context.Context, key *model.Key) error {
-	err := km.disableKeyVersions(ctx, key)
+	err := km.disableProviderKey(ctx, key)
 	if err != nil {
 		return err
 	}
