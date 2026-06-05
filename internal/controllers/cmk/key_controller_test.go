@@ -690,14 +690,20 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		k.KeyConfigurationID = keyConfig.ID
 	})
 
-	keyConfigWSys := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthBusinessUserDataKC(authClient))
+	pKeyID := uuid.New()
+	keyConfigWSys := testutils.NewKeyConfig(
+		func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = ptr.PointTo(pKeyID)
+		},
+		testutils.WithAuthBusinessUserDataKC(authClient),
+	)
 	sys := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfigWSys.ID)
+		s.Status = cmkapi.SystemStatusCONNECTED
 	})
 	pkey := testutils.NewKey(func(k *model.Key) {
-		k.IsPrimary = true
 		k.KeyConfigurationID = keyConfigWSys.ID
+		k.ID = pKeyID
 	})
 
 	testutils.CreateTestEntities(
@@ -807,8 +813,10 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
-	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthBusinessUserDataKC(authClient))
+	keyID := uuid.New()
+	kc := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.PrimaryKeyID = ptr.PointTo(keyID)
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	sysFailed := testutils.NewSystem(func(sys *model.System) {
 		sys.KeyConfigurationID = ptr.PointTo(kc.ID)
@@ -823,7 +831,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	})
 
 	key := testutils.NewKey(func(k *model.Key) {
-		k.IsPrimary = true
+		k.ID = keyID
 		k.CryptoAccessData = cryptoData
 		k.ManagementAccessData = json.RawMessage("{\"test\":\"test\"}")
 		k.KeyConfigurationID = kc.ID
@@ -920,20 +928,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			expectedDesc:   "",
 		},
 		{
-			name:  "Should error on unmark primary key",
-			keyID: key.ID.String(),
-			input: cmkapi.KeyPatch{
-				IsPrimary: ptr.PointTo(false),
-			},
-			expectedStatus: http.StatusForbidden,
-			expectedName:   "",
-			expectedDesc:   "",
-		},
-		{
 			name:  "Should code 403 on management role update",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				IsPrimary: ptr.PointTo(false),
 				AccessDetails: &cmkapi.KeyAccessDetails{
 					Management: &map[string]any{
 						"a": "b",
@@ -977,14 +974,6 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedName:   "updated-key",
 			expectedDesc:   "updated description",
-		},
-		{
-			name:  "Should 403 when update primary key and workflow is required",
-			keyID: key.ID.String(),
-			input: cmkapi.KeyPatch{
-				IsPrimary: ptr.PointTo(true),
-			},
-			expectedStatus: http.StatusForbidden,
 		},
 	}
 

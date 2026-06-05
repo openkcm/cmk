@@ -2,7 +2,9 @@ openapi: "3.0.3"
 info:
   version: 1.0.0
   title: KMS
-  description: Key Management Service (KMS) API for managing Customer Managed Keys (CMKs). This API is designed for internal use only and is intended to be utilized by the UI.
+  description: Key Management Service (KMS) API for managing Customer Managed Keys
+    (CMKs). This API is designed for internal use only and is intended to be
+    utilized by the UI.
 servers:
   - url: "{scheme}://{host}/cmk/v1/{tenant}"
     description: KMS API server
@@ -167,9 +169,8 @@ paths:
       tags:
         - Keys
       summary: Delete an Key by its ID
-      description:
-        Delete a specific Key by its ID. This operation will delete all Key Versions of this
-        Key and their corresponding key materials.
+      description: Delete a specific Key by its ID. This operation will delete all Key
+        Versions of this Key and their corresponding key materials.
       parameters:
         - $ref: "#/components/parameters/keyIDPath"
       responses:
@@ -325,7 +326,8 @@ paths:
               $ref: "#/components/schemas/LabelsPostOrPatch"
       responses:
         "204":
-          description: New Labels are attached or the values of the Labels are updated if they already exist.
+          description: New Labels are attached or the values of the Labels are updated if
+            they already exist.
         "400":
           $ref: "#/components/responses/400"
         "403":
@@ -406,9 +408,10 @@ paths:
         - Key Configurations
       summary: Create a new Key Configuration
       description: >-
-        Create a new Key Configuration. Key Configurations contain information such as name, ID, creator, creation
-        datetime, responsible Users Group, and Tags. Additionally, they include information about Keys, including
-        a list of Keys and the primary Key.
+        Create a new Key Configuration. Key Configurations contain information
+        such as name, ID, creator, creation datetime, responsible Users Group,
+        and Tags. Additionally, they include information about Keys, including a
+        list of Keys and the primary Key.
       requestBody:
         description: Key Configuration request body
         required: true
@@ -1032,7 +1035,8 @@ paths:
       tags:
         - Tenants
       summary: Get tenants with same issuer
-      description: Retrieves details of the tenants with the same issuer as the specified tenant.
+      description: Retrieves details of the tenants with the same issuer as the
+        specified tenant.
       parameters:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/topPath"
@@ -1298,7 +1302,9 @@ components:
       name: version
       in: path
       required: true
-      description: The Version of a Key. This can be the Version number, or if "latest" is specified, the action will be performed on the primary Key Version
+      description: The Version of a Key. This can be the Version number, or if
+        "latest" is specified, the action will be performed on the primary Key
+        Version
       schema:
         type: string
         maxLength: 6
@@ -1386,7 +1392,7 @@ components:
       name: "$filter"
       in: query
       description: |
-
+        
         Filter(s) to apply to the results.
 
         The following operators are supported:
@@ -1718,7 +1724,8 @@ components:
         technicalName:
           type: string
           maxLength: 50
-          description: The technical region name used for API calls, if different from the display name
+          description: The technical region name used for API calls, if different from the
+            display name
           example: eu-central-1
     HYOKKeystore:
       type: object
@@ -1770,7 +1777,8 @@ components:
           maxLength: 4096
           example: This group represents a Tenant Administrator
     GroupIAMIdentifier:
-      description: Reference of the Group in the customer's Identity & Access Management (IAM) provider
+      description: Reference of the Group in the customer's Identity & Access
+        Management (IAM) provider
       type: string
       maxLength: 128
       example: KMS_Tenant1Administrator_tenant1-id
@@ -1874,7 +1882,8 @@ components:
           maxLength: 4096
           example: This Key is used for DB key store encryption.
         isPrimary:
-          description: Flag indicating whether this Key is the primary (default) key for its associated key configuration.
+          description: Flag indicating whether this Key is the primary (default) key for
+            its associated key configuration.
           type: boolean
         enabled:
           description: Flag indicating whether the Key is enabled
@@ -1942,7 +1951,8 @@ components:
           description: Flag indicating whether the Key is enabled
           type: boolean
         isPrimary:
-          description: Flag indicating whether this Key is the primary (default) key for its associated key configuration.
+          description: Flag indicating whether this Key is the primary (default) key for
+            its associated key configuration.
           type: boolean
         accessDetails:
           $ref: "#/components/schemas/KeyAccessDetails"
@@ -1966,12 +1976,14 @@ components:
       format: date-time
       example: "2024-09-30T21:02:00Z"
     UpdatedAt:
-      description: The datetime of when the object was last updated, enabled, or disabled (RFC3339 format)
+      description: The datetime of when the object was last updated, enabled, or
+        disabled (RFC3339 format)
       type: string
       format: date-time
       example: "2020-09-30T21:02:00Z"
     RotatedAt:
-      description: The datetime of when the key version was rotated (became current version) (RFC3339 format)
+      description: The datetime of when the key version was rotated (became current
+        version) (RFC3339 format)
       type: string
       format: date-time
       example: "2026-04-08T10:30:00Z"
@@ -2010,12 +2022,14 @@ components:
       minimum: 0
       example: 1
     KeyState:
-      description:
-        Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states,
-        the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions
-        are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed.
-        FORBIDDEN state is for when a HYOK customer key permission is not granted to the system.
-        DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination.
+      description: Indicates the current state of the Key/Key Version. In addition to
+        ENABLED and DISABLED states, the states PENDING_DELETION, DELETED,
+        FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys
+        and Versions are in UNKNOWN state if the authentication to the customer
+        key fails due to any reason or when key detach has previously failed.
+        FORBIDDEN state is for when a HYOK customer key permission is not
+        granted to the system. DETACHING/DETACHED state is applicable for keys
+        that have been marked with a detach call on tenant termination.
       type: string
       readOnly: true
       enum:
@@ -2121,13 +2135,12 @@ components:
       additionalProperties: false
     KeyRotationBody:
       type: object
-      description:
-        Additional request body that is required for rotation of customer held keys.
-        Must not be provided for non-customer held keys.
+      description: Additional request body that is required for rotation of customer
+        held keys. Must not be provided for non-customer held keys.
       properties:
         nativeID:
-          description: The native identifier of the key to register.
-            For AWS, this is either the key ID or the full key ARN.
+          description: The native identifier of the key to register. For AWS, this is
+            either the key ID or the full key ARN.
           type: string
           maxLength: 255
           example: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
@@ -2241,7 +2254,8 @@ components:
           maxLength: 4096
           example: This Key Configuration is used for connecting with Systems in Europe.
         adminGroupID:
-          description: The ID of the Group of Users responsible for managing the Key Configuration
+          description: The ID of the Group of Users responsible for managing the Key
+            Configuration
           type: string
           format: uuid
           example: 12345678-90ab-cdef-1234-567890abcdef
@@ -2286,6 +2300,11 @@ components:
           type: string
           maxLength: 4096
           example: This Key Configuration is used for connecting with Systems in Europe.
+        primaryKeyID:
+          description: The ID of the primary key of the configuration
+          type: string
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
       additionalProperties: false
     KeyConfigurationKeyAdd:
       type: object
@@ -2447,6 +2466,8 @@ components:
       type: string
       enum:
         - SYSTEM
+        - KEY
+        - KEY_CONFIGURATION
       example: SYSTEM
     WorkflowParametersResourceTypeEnum:
       type: string
@@ -2459,6 +2480,7 @@ components:
         - LINK
         - UNLINK
         - SWITCH
+        - UPDATE_PRIMARY
       example: LINK
     WorkflowState:
       $ref: "#/components/schemas/WorkflowStateEnum"
@@ -2606,22 +2628,26 @@ components:
         parametersResourceType:
           $ref: "#/components/schemas/WorkflowParametersResourceType"
         approverGroups:
-          description: The list of Groups responsible for approving the Workflow (only populated in detailed responses)
+          description: The list of Groups responsible for approving the Workflow (only
+            populated in detailed responses)
           type: array
           items:
             $ref: "#/components/schemas/Group"
         decisions:
-          description: The list of decisions made by the approvers (only populated in detailed responses)
+          description: The list of decisions made by the approvers (only populated in
+            detailed responses)
           type: array
           items:
             $ref: "#/components/schemas/WorkflowApprover"
         availableTransitions:
-          description: The list of available transitions for the Workflow (only populated in detailed responses)
+          description: The list of available transitions for the Workflow (only populated
+            in detailed responses)
           type: array
           items:
             $ref: "#/components/schemas/WorkflowTransitionValue"
         approvalSummary:
-          description: Summary of the approval decisions (only populated in detailed responses)
+          description: Summary of the approval decisions (only populated in detailed
+            responses)
           $ref: "#/components/schemas/WorkflowApprovalSummary"
     WorkflowMetadata:
       readOnly: true
@@ -2725,7 +2751,8 @@ components:
         message:
           type: string
           description: Human-readable message explaining the information
-          example: "The number of eligible approvers is currently insufficient to meet the minimum approval criteria."
+          example: "The number of eligible approvers is currently insufficient to meet the
+            minimum approval criteria."
     #
     # Labels
     #
@@ -2751,7 +2778,8 @@ components:
       required:
         - count
         - value
-      description: A complete list of the Labels associated with a Key along with the count of Labels.
+      description: A complete list of the Labels associated with a Key along with the
+        count of Labels.
       example:
         count: 5
         value:
@@ -2819,16 +2847,16 @@ components:
         - message
       properties:
         code:
-          description:
-            Technical code of the api_errors, used to identify the api_errors condition. This value is stable and
-            can be used to handle specific api_errors cases.
+          description: Technical code of the api_errors, used to identify the api_errors
+            condition. This value is stable and can be used to handle specific
+            api_errors cases.
           type: string
           example: UNKNOWN_ERROR
         message:
-          description:
-            Human readable message describing the reason and context of the api_errors, as well as possible
-            instructions to resolve it. This value is subject to changes over time and must not be used to handle code
-            logic decisions.
+          description: Human readable message describing the reason and context of the
+            api_errors, as well as possible instructions to resolve it. This
+            value is subject to changes over time and must not be used to handle
+            code logic decisions.
           type: string
           example: The request cannot be processed
         context:
@@ -2844,10 +2872,10 @@ components:
   responses:
     "400":
       description: >-
-        The 400 (Bad Request) status code indicates that the server cannot
-        or will not process the request due to something that is perceived
-        to be a client error (e.g., malformed request syntax, invalid request
-        message framing, or deceptive request routing).
+        The 400 (Bad Request) status code indicates that the server cannot or
+        will not process the request due to something that is perceived to be a
+        client error (e.g., malformed request syntax, invalid request message
+        framing, or deceptive request routing).
       content:
         application/json:
           schema:
@@ -2912,7 +2940,7 @@ components:
                   id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
     "406":
       description: |
-
+        
         406 (Not Acceptable) HTTP status code.
 
         "Not Acceptable" indicates that the requested representation (content
@@ -2974,7 +3002,8 @@ components:
         Retry-After:
           schema:
             type: integer
-          description: Indicates how long (in seconds) the client should wait before retrying the request.
+          description: Indicates how long (in seconds) the client should wait before
+            retrying the request.
 
     #
     # Server Errors

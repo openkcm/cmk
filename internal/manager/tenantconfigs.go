@@ -20,7 +20,6 @@ import (
 )
 
 const (
-	DefaultCertName = "hyok-default"
 
 	// Since the workflow expiry must be less than the retention minus a day
 	minimumRetentionPeriodDays = 2

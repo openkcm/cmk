@@ -19,6 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -105,18 +106,23 @@ func (s *WorkflowExpiryMock) WorkflowCanExpire(
 func setupWorkflowExpiry(t *testing.T) (*manager.WorkflowManager, repo.Repo, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithGenerateTenants(1))
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithGenerateTenants(1))
 	r := sql.NewRepository(db)
 
-	cfg := &config.Config{}
+	cfg := &config.Config{
+		Database: dbCfg,
+	}
 	svcRegistry := testutils.NewTestPlugins()
+
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
+	assert.NoError(t, err)
 
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)

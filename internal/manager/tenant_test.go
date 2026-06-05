@@ -60,7 +60,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := testutils.NewUserManager()
 	tagManager := manager.NewTagManager(r)
-	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, cfg)
+	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, eventFactory, cfg)
 
 	mappingService := mapping.NewFakeService()
 	_, grpcClient := testutils.NewGRPCSuite(t,
@@ -184,6 +184,24 @@ func TestOffboardTenant(t *testing.T) {
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
 	t.Run("Should return success", func(t *testing.T) {
+		m, r, tenants := SetupTenantManager(t)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
+
+		keyID := uuid.New()
+		keyConfig := testutils.NewKeyConfig(
+			func(k *model.KeyConfiguration) {
+				k.PrimaryKeyID = ptr.PointTo(keyID)
+			},
+		)
+		key := testutils.NewKey(
+			func(k *model.Key) {
+				k.KeyConfigurationID = keyConfig.ID
+				k.State = string(cmkapi.KeyStateDETACHED)
+				k.ID = keyID
+			},
+		)
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
 		testutils.CreateTestEntities(
 			ctx, t, r,
 			testutils.NewSystem(
@@ -192,13 +210,8 @@ func TestOffboardTenant(t *testing.T) {
 					s.KeyConfigurationID = nil
 				},
 			),
-			testutils.NewKey(
-				func(k *model.Key) {
-					k.KeyConfigurationID = keyConfig.ID
-					k.IsPrimary = true
-					k.State = string(cmkapi.KeyStateDETACHED)
-				},
-			),
+			key,
+			keyConfig,
 		)
 		result, err := m.OffboardTenant(ctx)
 		assert.NoError(t, err)
@@ -240,14 +253,20 @@ func TestOffboardTenant(t *testing.T) {
 
 	t.Run("Should return in processing on keys that havent been processed", func(t *testing.T) {
 		disconnectAllExistingSystems(t, ctx, r)
+		keyID := uuid.New()
+		keyConfig := testutils.NewKeyConfig(
+			func(k *model.KeyConfiguration) {
+				k.PrimaryKeyID = ptr.PointTo(key.ID)
+			},
+		)
 		key := testutils.NewKey(
 			func(k *model.Key) {
 				k.KeyConfigurationID = keyConfig.ID
-				k.IsPrimary = true
 				k.State = string(cmkapi.KeyStateENABLED)
+				k.ID = keyID
 			},
 		)
-		testutils.CreateTestEntities(ctx, t, r, key)
+		testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
 		result, err := m.OffboardTenant(ctx)
 		assert.NoError(t, err)

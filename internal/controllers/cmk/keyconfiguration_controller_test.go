@@ -33,13 +33,6 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func getContextAndRepo(t *testing.T, tenant string,
-	db *multitenancy.DB,
-) (context.Context, *sql.ResourceRepository) {
-	t.Helper()
-	return cmkcontext.CreateTenantContext(t.Context(), tenant), sql.NewRepository(db)
-}
-
 func startAPIKeyConfig(t *testing.T, idmPlugin identitymanagement.IdentityManagement) (
 	cmkapi.ServeMux,
 	string,
@@ -60,8 +53,8 @@ func startAPIKeyConfig(t *testing.T, idmPlugin identitymanagement.IdentityManage
 		EnableBusinessUserDataMW: true,
 		SigningKeyStorage:        keyStorage,
 	})
-
-	ctx, r := getContextAndRepo(t, tenant, db)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
 
 	return sv, tenant, ctx, r, keyStorage
 }
@@ -467,17 +460,20 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
-	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {},
-		testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
+	key := testutils.NewKey(func(_ *model.Key) {})
+
+	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.PrimaryKeyID = ptr.PointTo(key.ID)
+	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 	existingKeyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.Name = "existing-config"
 	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, existingKeyConfig)
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig, existingKeyConfig)
 
 	type testCase struct {
 		name              string
-		configID          string
+		keyConfigID       string
 		inputJSON         string
 		expectedStatus    int
 		expectedBody      string
@@ -488,8 +484,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 
 	tests := []testCase{
 		{
-			name:     "KeyConfigPATCH_Success_WithoutBusinessUserDataUserGroups (backward compatibility)",
-			configID: keyConfig.ID.String(),
+			name:        "KeyConfigPATCH_Success_WithoutBusinessUserDataUserGroups (backward compatibility)",
+			keyConfigID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-config",
                 "description": "updated description"
@@ -506,8 +502,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			},
 		},
 		{
-			name:     "KeyConfigPATCH_NameOnly",
-			configID: keyConfig.ID.String(),
+			name:        "KeyConfigPATCH_NameOnly",
+			keyConfigID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-name-only"
             }`,
@@ -516,8 +512,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			additionalContext: authClient.GetClientMap(),
 		},
 		{
-			name:     "KeyConfigPATCH_WithBusinessUserDataUserGroups",
-			configID: keyConfig.ID.String(),
+			name:        "KeyConfigPATCH_WithBusinessUserDataUserGroups",
+			keyConfigID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-name-only-client-data"
             }`,
@@ -527,8 +523,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 				testutils.WithAdditionalGroup(uuid.NewString())),
 		},
 		{
-			name:     "KeyConfigPATCH_Unauthorised_WithWrongBusinessUserDataUserGroups",
-			configID: keyConfig.ID.String(),
+			name:        "KeyConfigPATCH_Unauthorised_WithWrongBusinessUserDataUserGroups",
+			keyConfigID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-name-only-client-data"
             }`,
@@ -538,8 +534,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			additionalContext: authClient.GetClientMap(testutils.WithOverriddenGroup(2)),
 		},
 		{
-			name:     "KeyConfigPATCH_Unauthorised_WithEmptyBusinessUserDataUserGroups",
-			configID: keyConfig.ID.String(),
+			name:        "KeyConfigPATCH_Unauthorised_WithEmptyBusinessUserDataUserGroups",
+			keyConfigID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-name-only-client-data"
             }`,
@@ -549,8 +545,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			additionalContext: testutils.GetGrouplessClientMap(),
 		},
 		{
-			name:     "KeyConfigPATCH_DescriptionOnly",
-			configID: keyConfig.ID.String(),
+			name:        "KeyConfigPATCH_DescriptionOnly",
+			keyConfigID: keyConfig.ID.String(),
 			inputJSON: `{
                 "description": "updated description only"
             }`,
@@ -559,8 +555,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			additionalContext: authClient.GetClientMap(),
 		},
 		{
-			name:     "KeyConfigPATCH_EmptyName",
-			configID: keyConfig.ID.String(),
+			name:        "KeyConfigPATCH_EmptyName",
+			keyConfigID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": ""
             }`,
@@ -569,8 +565,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			additionalContext: authClient.GetClientMap(),
 		},
 		{
-			name:     "KeyConfigPATCH_AdminGroupIDNotAllowed",
-			configID: keyConfig.ID.String(),
+			name:        "KeyConfigPATCH_AdminGroupIDNotAllowed",
+			keyConfigID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-config",
                 "adminGroupID": "` + newAdminGroupID.String() + `"
@@ -587,8 +583,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			additionalContext: authClient.GetClientMap(),
 		},
 		{
-			name:     "KeyConfigPATCH_NameConflict",
-			configID: keyConfig.ID.String(),
+			name:        "KeyConfigPATCH_NameConflict",
+			keyConfigID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "existing-config"
             }`,
@@ -598,8 +594,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			additionalContext: authClient.GetClientMap(),
 		},
 		{
-			name:     "KeyConfigPATCH_InvalidID",
-			configID: "invalid-uuid",
+			name:        "KeyConfigPATCH_InvalidID",
+			keyConfigID: "invalid-uuid",
 			inputJSON: `{
                 "name": "updated-config"
 				"adminGroupID": "invalid-id"
@@ -608,8 +604,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			expectedBody:   "error",
 		},
 		{
-			name:     "KeyConfigPATCH_NotFound",
-			configID: uuid.New().String(),
+			name:        "KeyConfigPATCH_NotFound",
+			keyConfigID: uuid.New().String(),
 			inputJSON: `{
                 "name": "updated-config"
             }`,
@@ -618,14 +614,23 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			additionalContext: authClient.GetClientMap(),
 		},
 		{
-			name:     "KeyConfigPATCH_InvalidJSON",
-			configID: keyConfig.ID.String(),
+			name:        "KeyConfigPATCH_InvalidJSON",
+			keyConfigID: keyConfig.ID.String(),
 			inputJSON: `{
                 "name": "updated-config",
                 invalid json
             }`,
 			expectedStatus:    http.StatusBadRequest,
 			expectedBody:      "error",
+			additionalContext: authClient.GetClientMap(),
+		},
+		{
+			name:        "Should 403 when update primary key and workflow is required",
+			keyConfigID: keyConfig.ID.String(),
+			inputJSON: fmt.Sprintf(`{
+                "primaryKeyID": "%s"
+            }`, uuid.New()),
+			expectedStatus:    http.StatusForbidden,
 			additionalContext: authClient.GetClientMap(),
 		},
 	}
@@ -639,7 +644,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodPatch,
-				Endpoint: "/keyConfigurations/" + tt.configID,
+				Endpoint: "/keyConfigurations/" + tt.keyConfigID,
 				Tenant:   tenant,
 				Body:     testutils.WithString(t, tt.inputJSON),
 				Headers:  headers,

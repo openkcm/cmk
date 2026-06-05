@@ -38,7 +38,10 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 ) {
 	t.Helper()
 
-	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		WithOrbital:    true,
+		CreateDatabase: true,
+	})
 
 	cfg := config.Config{
 		BaseConfig: commoncfg.BaseConfig{
@@ -71,11 +74,9 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 		},
 	)
-
 	userManager := manager.NewUserManager(r, auditor.New(t.Context(), &cfg))
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager,
-		tagManager, nil, &cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, nil, nil, &cfg)
 
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), &cfg, r)
 	require.NoError(t, err)
@@ -1158,7 +1159,7 @@ func TestLinkSystemAction(t *testing.T) {
 		setupKeyConfig func(group *model.Group) (*model.KeyConfiguration, *model.Key)
 	}{
 		{
-			name: "Should fail on link to keyConfig without pkey",
+			name: "Should fail link without pkey",
 			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 					kc.PrimaryKeyID = nil
@@ -1168,7 +1169,7 @@ func TestLinkSystemAction(t *testing.T) {
 			},
 		},
 		{
-			name: "Should fail on link to keyConfig with pkey disabled",
+			name: "Should fail link pkey disabled",
 			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
 				key := testutils.NewKey(func(k *model.Key) {
 					k.State = string(cmkapi.KeyStateDISABLED)
@@ -1181,7 +1182,7 @@ func TestLinkSystemAction(t *testing.T) {
 			},
 		},
 		{
-			name: "Should fail on link to keyConfig with pkey forbidden",
+			name: "Should fail link pkey forbidden",
 			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
 				key := testutils.NewKey(func(k *model.Key) {
 					k.State = string(cmkapi.KeyStateFORBIDDEN)
@@ -1194,7 +1195,7 @@ func TestLinkSystemAction(t *testing.T) {
 			},
 		},
 		{
-			name: "Should fail on link to keyConfig with pkey unknown",
+			name: "Should fail link pkey unknown",
 			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
 				key := testutils.NewKey(func(k *model.Key) {
 					k.State = string(cmkapi.KeyStateUNKNOWN)
@@ -1212,6 +1213,7 @@ func TestLinkSystemAction(t *testing.T) {
 			m, db, tenant := SetupSystemManager(t, nil)
 			ctx := testutils.CreateCtxWithTenant(tenant)
 			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
+
 			r := sql.NewRepository(db)
 			testGroup := testutils.NewGroup(
 				func(g *model.Group) {

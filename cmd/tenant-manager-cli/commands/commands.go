@@ -59,7 +59,7 @@ func NewCommandFactory(
 	cm := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
 	um := manager.NewUserManager(authzRepo, cmkAuditor)
 	tagm := manager.NewTagManager(authzRepo)
-	kcm := manager.NewKeyConfigManager(authzRepo, cm, um, tagm, cmkAuditor, cfg)
+	kcm := manager.NewKeyConfigManager(authzRepo, cm, um, tagm, cmkAuditor, eventFactory, cfg)
 
 	sys := manager.NewSystemManager(
 		ctx,

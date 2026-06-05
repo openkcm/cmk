@@ -15,6 +15,7 @@ import (
 	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -50,12 +51,15 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 		Database: dbCfg,
 	}
 
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
+	assert.NoError(t, err)
+
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	certManager := manager.NewCertificateManager(t.Context(), authzRepo, ps, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg)
 	tagManager := manager.NewTagManager(authzRepo)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
-	keyConfigManager := manager.NewKeyConfigManager(authzRepo, certManager, userManager, tagManager, cmkAuditor, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(authzRepo, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 
 	keyManager := manager.NewKeyManager(
 		authzRepo,

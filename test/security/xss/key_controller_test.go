@@ -227,7 +227,6 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key := testutils.NewKey(func(k *model.Key) {
-		k.IsPrimary = true
 		k.KeyType = constants.KeyTypeHYOK
 		k.ManagementAccessData = json.RawMessage("{\"<>\":\"><\"}")
 		k.CryptoAccessData = json.RawMessage("{\"<>\":{\"test\":\"test\"}}")
