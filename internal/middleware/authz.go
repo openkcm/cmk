@@ -15,6 +15,21 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
+// extractPattern removes the base path from a pattern using TrimPrefix to prevent bypass attacks.
+// Pattern format: "METHOD /path" or "/path"
+func extractPattern(pattern, basePath string) string {
+	if method, path, found := strings.Cut(pattern, " "); found {
+		trimmedPath := strings.TrimPrefix(path, basePath)
+		return method + " " + trimmedPath
+	}
+	return strings.TrimPrefix(pattern, basePath)
+}
+
+// ExtractPatternForTest is a test helper that exposes extractPattern for unit testing
+func ExtractPatternForTest(pattern, basePath string) string {
+	return extractPattern(pattern, basePath)
+}
+
 // AuthzMiddleware is a middleware that checks authorization for incoming requests
 
 //nolint:funlen
@@ -27,7 +42,7 @@ func AuthzMiddleware(
 				ctx := r.Context()
 
 				log.Debug(ctx, "request pattern", slog.String("pattern", r.Pattern))
-				pattern := strings.Replace(r.Pattern, constants.BasePath, "", 1)
+				pattern := extractPattern(r.Pattern, constants.BasePath)
 
 				// Check if the API is on the allow list
 				_, exists := authz.AllowListByAPI[pattern]

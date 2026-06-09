@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
@@ -11,7 +10,7 @@ import (
 )
 
 func spanNameFormatter(operation string, r *http.Request) string {
-	return operation + ":" + strings.Replace(r.Pattern, constants.BasePath, "", 1)
+	return operation + ":" + extractPattern(r.Pattern, constants.BasePath)
 }
 
 func TracingMiddleware(cfg *config.Config) func(http.Handler) http.Handler {

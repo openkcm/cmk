@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/openkcm/common-sdk/pkg/auth"
@@ -70,7 +69,7 @@ func BusinessUserDataMiddleware(
 }
 
 func canBypassBusinessUserData(r *http.Request) bool {
-	pattern := strings.Replace(r.Pattern, constants.BasePath, "", 1)
+	pattern := extractPattern(r.Pattern, constants.BasePath)
 	return pattern == "GET /swagger"
 }
 
@@ -185,7 +184,7 @@ func validateGroupRoles(
 	}
 
 	// Check if the API is on the allow list
-	pattern := strings.Replace(r.Pattern, constants.BasePath, "", 1)
+	pattern := extractPattern(r.Pattern, constants.BasePath)
 	_, isAllowedAPI := authz.AllowListByAPI[pattern]
 
 	// If API is allowed, skip mixed role validation

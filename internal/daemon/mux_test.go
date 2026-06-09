@@ -65,6 +65,20 @@ func TestServeMux_HandleFunc(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestServeMux_HandleFunc_PreventsBypassWithDuplicateBaseURL(t *testing.T) {
+	mux := daemon.NewServeMux("/cmk/v1")
+
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	// Should panic when pattern contains duplicate base URL
+	// This tests that TrimPrefix (not Replace) is used, preventing bypass
+	assert.Panics(t, func() {
+		mux.HandleFunc("GET /cmk/v1/cmk/v1/keys", handler)
+	}, "pattern with duplicate base URL should panic as it won't match authz registry")
+}
+
 func TestCmkapiHandler(t *testing.T) {
 	assert.NotPanics(t, func() {
 		cmkapi.HandlerWithOptions(

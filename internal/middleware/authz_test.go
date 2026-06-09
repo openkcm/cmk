@@ -346,3 +346,70 @@ func SetupAuthzLoaderWithAllowList(t *testing.T) *authz_loader.AuthzLoader[authz
 
 	return loader
 }
+
+func TestExtractPattern(t *testing.T) {
+	basePath := constants.BasePath
+
+	tests := []struct {
+		name     string
+		pattern  string
+		expected string
+	}{
+		{
+			name:     "Standard pattern with method",
+			pattern:  "GET /cmk/v1/{tenant}/keys",
+			expected: "GET /keys",
+		},
+		{
+			name:     "Pattern without method",
+			pattern:  "/cmk/v1/{tenant}/keys",
+			expected: "/keys",
+		},
+		{
+			name:     "Pattern with duplicate base path (bypass attempt)",
+			pattern:  "GET /cmk/v1/{tenant}/cmk/v1/{tenant}/keys",
+			expected: "GET /cmk/v1/{tenant}/keys",
+		},
+		{
+			name:     "Pattern with swagger endpoint",
+			pattern:  "GET /cmk/v1/{tenant}/swagger",
+			expected: "GET /swagger",
+		},
+		{
+			name:     "POST method",
+			pattern:  "POST /cmk/v1/{tenant}/keys",
+			expected: "POST /keys",
+		},
+		{
+			name:     "DELETE method with path parameter",
+			pattern:  "DELETE /cmk/v1/{tenant}/keys/{keyID}",
+			expected: "DELETE /keys/{keyID}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := middleware.ExtractPatternForTest(tt.pattern, basePath)
+			if result != tt.expected {
+				t.Errorf("extractPattern(%q, %q) = %q, want %q", tt.pattern, basePath, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractPattern_PreventsBypass(t *testing.T) {
+	basePath := constants.BasePath
+
+	// Test that duplicate base paths don't bypass the extraction
+	maliciousPattern := "GET /cmk/v1/{tenant}/cmk/v1/{tenant}/keys"
+	result := middleware.ExtractPatternForTest(maliciousPattern, basePath)
+
+	// The result should still contain the second base path, not matching any authz entry
+	if result != "GET /cmk/v1/{tenant}/keys" {
+		t.Errorf("extractPattern should prevent bypass, got %q", result)
+	}
+
+	if result == "GET /keys" {
+		t.Error("Should not bypass by removing multiple base paths")
+	}
+}
