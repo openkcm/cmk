@@ -20,6 +20,7 @@ import (
 
 type WorkflowUpdater interface {
 	AutoAssignApprovers(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, error)
+	HandleTerminalWorkflow(ctx context.Context, workflow *model.Workflow) error
 }
 
 type WorkflowProcessor struct {
@@ -38,6 +39,7 @@ func NewWorkflowProcessor(
 }
 
 func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	log.InjectTask(ctx, task)
 	log.Info(ctx, "Started processing workflow auto assign task")
 
 	payload, err := asyncUtils.ParseTaskPayload(task.Payload())
@@ -79,7 +81,6 @@ func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) e
 		return errs.Wrap(ErrRunningTask, err)
 	}
 
-	log.InjectTask(ctx, task)
 	log.Info(ctx, "Auto assigned approvers to workflow",
 		slog.String("workflowId", workflow.ID.String()),
 		slog.String("status", workflow.State))
@@ -101,12 +102,22 @@ func (s *WorkflowProcessor) putWorkflowInFailedState(
 	failureReason string,
 ) error {
 	workflow := &model.Workflow{
-		ID:            workflowID,
-		State:         wfMechanism.StateFailed.String(),
-		FailureReason: failureReason,
+		ID: workflowID,
 	}
 
-	_, err := s.repo.Patch(ctx, workflow, *repo.NewQuery())
+	_, err := s.repo.First(ctx, workflow, *repo.NewQuery())
+	if err != nil {
+		return err
+	}
+	workflow.State = wfMechanism.StateFailed.String()
+	workflow.FailureReason = failureReason
 
-	return err
+	return s.repo.Transaction(ctx, func(ctx context.Context) error {
+		_, err := s.repo.Patch(ctx, workflow, *repo.NewQuery())
+		if err != nil {
+			return err
+		}
+
+		return s.updater.HandleTerminalWorkflow(ctx, workflow)
+	})
 }

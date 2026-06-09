@@ -81,6 +81,7 @@ type Workflow interface {
 	WorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error)
 	IsWorkflowRequired(ctx context.Context) (bool, error)
 	CleanupTerminalWorkflows(ctx context.Context) error
+	HandleTerminalWorkflow(ctx context.Context, workflow *model.Workflow) error
 }
 
 type WorkflowManager struct {
@@ -541,7 +542,7 @@ func (w *WorkflowManager) ExpireWorkflow(
 			return err
 		}
 
-		err = w.handleTerminalWorkflow(ctx, workflow)
+		err = w.HandleTerminalWorkflow(ctx, workflow)
 		if err != nil {
 			return err
 		}
@@ -716,6 +717,28 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 	return nil
 }
 
+// HandleTerminalWorkflow clears the UnderWorkflow flag when a workflow reaches a terminal state
+func (w *WorkflowManager) HandleTerminalWorkflow(ctx context.Context, workflow *model.Workflow) error {
+	if !slices.Contains(wf.TerminalStates, workflow.State) {
+		return nil
+	}
+
+	switch workflow.ArtifactType {
+	case wf.ArtifactTypeSystem.String():
+		system := &model.System{
+			ID:            workflow.ArtifactID,
+			UnderWorkflow: false,
+		}
+		_, err := w.repo.Patch(ctx, system, *repo.NewQuery().Update(repo.UnderWorkflowField))
+		if err != nil {
+			return err
+		}
+	default:
+		// empty
+	}
+	return nil
+}
+
 func (w *WorkflowManager) getApproverGroupsFromLegacyField(
 	ctx context.Context,
 	workflow *model.Workflow,
@@ -791,28 +814,6 @@ func (w *WorkflowManager) handleNewWorkflow(ctx context.Context, workflow *model
 			UnderWorkflow: true,
 		}
 		_, err := w.repo.Patch(ctx, system, *repo.NewQuery())
-		if err != nil {
-			return err
-		}
-	default:
-		// empty
-	}
-	return nil
-}
-
-// handleTerminalWorkflow clears the UnderWorkflow flag when a workflow reaches a terminal state
-func (w *WorkflowManager) handleTerminalWorkflow(ctx context.Context, workflow *model.Workflow) error {
-	if !slices.Contains(wf.TerminalStates, workflow.State) {
-		return nil
-	}
-
-	switch workflow.ArtifactType {
-	case wf.ArtifactTypeSystem.String():
-		system := &model.System{
-			ID:            workflow.ArtifactID,
-			UnderWorkflow: false,
-		}
-		_, err := w.repo.Patch(ctx, system, *repo.NewQuery().Update(repo.UnderWorkflowField))
 		if err != nil {
 			return err
 		}
@@ -1420,7 +1421,7 @@ func (w *WorkflowManager) applyTransition(
 			return errs.Wrap(ErrApplyTransition, transitionErr)
 		}
 
-		err = w.handleTerminalWorkflow(ctx, workflow)
+		err = w.HandleTerminalWorkflow(ctx, workflow)
 		if err != nil {
 			return err
 		}
