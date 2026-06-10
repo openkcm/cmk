@@ -170,6 +170,9 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					Actions: []RepoAction{
 						RepoActionUpdate,
 						RepoActionFirst,
+						// Delete+Create required by Set(WorkflowApproverGroup), which resolves its resource type to workflows
+						RepoActionDelete,
+						RepoActionCreate,
 					},
 				},
 				{
@@ -216,6 +219,8 @@ var InternalRepoPolicyData = internalRepoPolicies{
 						RepoActionCount,
 						RepoActionList,
 						RepoActionFirst,
+						// Update required by HandleTerminalWorkflow to clear system.UnderWorkflow on failure
+						RepoActionUpdate,
 					},
 				},
 				{

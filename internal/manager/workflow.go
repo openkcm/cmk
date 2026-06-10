@@ -1105,12 +1105,18 @@ func (w *WorkflowManager) getWorkflows(
 			return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)
 		}
 
-		err = w.filterByInitiatorOrApprover(ctx, query)
+		query, err = w.filterByInitiatorOrApprover(ctx, query)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		// Only show workflows if the user exists currently in the group
+		// Only show workflows if the user is currently in an approver group,
+		// or if no approver groups have been assigned yet (INITIAL/FAILED states).
+		groupFilterCK := repo.NewCompositeKey().
+			Where(fmt.Sprintf("%s.%s", model.Group{}.TableName(), repo.IAMIdField), userIAMGroups).
+			Where(fmt.Sprintf("%s.%s", model.WorkflowApproverGroup{}.TableName(), repo.WorkflowIDField), repo.Null)
+		groupFilterCK.IsStrict = false
+
 		query = query.Join(
 			repo.LeftJoin,
 			repo.JoinCondition{
@@ -1127,9 +1133,7 @@ func (w *WorkflowManager) getWorkflows(
 				JoinTable: &model.Group{},
 				JoinField: repo.IDField,
 			},
-		).Where(repo.NewCompositeKeyGroup(
-			repo.NewCompositeKey().Where(fmt.Sprintf("%s.%s", model.Group{}.TableName(), repo.IAMIdField), userIAMGroups)),
-		)
+		).Where(repo.NewCompositeKeyGroup(groupFilterCK))
 	}
 
 	query = query.SetLimit(pagination.Top).SetOffset(pagination.Skip)
@@ -1160,12 +1164,16 @@ func (w *WorkflowManager) getWorkflows(
 	return workflows, count, nil
 }
 
-//nolint:staticcheck,wastedassign
-func (w *WorkflowManager) filterByInitiatorOrApprover(ctx context.Context, query *repo.Query) error {
+func (w *WorkflowManager) filterByInitiatorOrApprover(ctx context.Context, query *repo.Query) (*repo.Query, error) {
 	iamIdentifier, err := cmkContext.ExtractBusinessUserDataIdentifier(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	orCK := repo.NewCompositeKey().
+		Where(repo.InitiatorIDField, iamIdentifier).
+		Where(fmt.Sprintf("%s.%s", model.WorkflowApprover{}.TableName(), repo.UserIDField), iamIdentifier)
+	orCK.IsStrict = false
 
 	query = query.Join(
 		repo.LeftJoin,
@@ -1175,19 +1183,9 @@ func (w *WorkflowManager) filterByInitiatorOrApprover(ctx context.Context, query
 			JoinField: fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField),
 			JoinTable: &model.WorkflowApprover{},
 		},
-	)
+	).Where(repo.NewCompositeKeyGroup(orCK))
 
-	orCK := repo.NewCompositeKey().
-		Where(repo.InitiatorIDField, iamIdentifier).
-		Where(
-			fmt.Sprintf("%s.%s", model.WorkflowApprover{}.TableName(), repo.UserIDField),
-			iamIdentifier,
-		)
-	orCK.IsStrict = false
-
-	query = query.Where(repo.NewCompositeKeyGroup(orCK))
-
-	return nil
+	return query, nil
 }
 
 // resolveActorApproverGroupIDs resolves the actor's current group membership against

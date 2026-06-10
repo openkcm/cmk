@@ -114,7 +114,7 @@ func (s *WorkflowAssignMockUnauthz) AutoAssignApprovers(
 	workflowID uuid.UUID,
 ) (*model.Workflow, error) {
 	_, err := authz.CheckAuthz(ctx, s.authzLoader.AuthzHandler,
-		authz.RepoResourceTypeWorkflow, authz.RepoActionDelete)
+		authz.RepoResourceTypeWorkflow, authz.RepoActionList)
 	if err != nil {
 		return nil, err
 	}

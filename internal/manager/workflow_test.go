@@ -2679,6 +2679,7 @@ func TestWorkflowManager_ValidateApproverCount(t *testing.T) {
 	}
 }
 
+//nolint:cyclop
 func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	groupIAM := "KMS_001"
 	groupIAM2 := "KMS_002"
@@ -2899,5 +2900,61 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 		workflows, _, err := m.GetWorkflows(ctxNewUser, manager.WorkflowFilter{})
 		assert.NoError(t, err)
 		assert.Empty(t, workflows)
+	})
+
+	t.Run("Initiator can see INITIAL workflow with no approver groups assigned", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateInitial.String()) // no groups
+
+		ctxInitiator := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			initiatorID,
+			[]string{"some-other-group"},
+		)
+
+		workflows, _, err := m.GetWorkflows(ctxInitiator, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		found := false
+		for _, w := range workflows {
+			if w.ID == wf.ID {
+				found = true
+			}
+		}
+		assert.True(t, found, "Initiator should see INITIAL workflow before approver groups are assigned")
+	})
+
+	t.Run("Initiator can see FAILED workflow with no approver groups assigned", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateFailed.String()) // no groups
+
+		ctxInitiator := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			initiatorID,
+			[]string{"some-other-group"},
+		)
+
+		workflows, _, err := m.GetWorkflows(ctxInitiator, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		found := false
+		for _, w := range workflows {
+			if w.ID == wf.ID {
+				found = true
+			}
+		}
+		assert.True(t, found, "Initiator should see FAILED workflow with no approver groups assigned")
+	})
+
+	t.Run("Non-initiator cannot see INITIAL workflow with no approver groups assigned", func(t *testing.T) {
+		wf := createWorkflowWithApproverGroups(t, workflow.StateInitial.String()) // no groups
+
+		ctxOther := testutils.InjectBusinessUserDataIntoContext(
+			testutils.CreateCtxWithTenant(tenant),
+			"unrelated-user",
+			[]string{groupIAM},
+		)
+
+		workflows, _, err := m.GetWorkflows(ctxOther, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		for _, w := range workflows {
+			assert.NotEqual(t, wf.ID, w.ID, "Unrelated user should not see INITIAL workflow")
+		}
 	})
 }

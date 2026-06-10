@@ -37,6 +37,11 @@ import (
 // The test asserts ProcessTask returns an error (propagated, not swallowed) and that
 // the error is NOT an authz error — confirming the policy covered all repo access up
 // to that point.
+//
+// Note: addApproversAndGroupAssociations calls Set(WorkflowApproverGroup) which checks
+// Delete+Create on "workflows" (WorkflowApproverGroup.TableResourceType returns Workflow).
+// HandleTerminalWorkflow calls Patch on System to clear UnderWorkflow, requiring Update
+// on "systems". All three permissions are granted to InternalTaskWorkflowApproversRole.
 func TestWorkflowAutoAssign_AuthzPolicy(t *testing.T) {
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
