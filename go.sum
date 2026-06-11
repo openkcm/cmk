@@ -98,8 +98,6 @@ github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHk
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
 github.com/fsnotify/fsnotify v1.10.1 h1:b0/UzAf9yR5rhf3RPm9gf3ehBPpf0oZKIjtpKrx59Ho=
 github.com/fsnotify/fsnotify v1.10.1/go.mod h1:TLheqan6HD6GBK6PrDWyDPBaEV8LspOxvPSjC+bVfgo=
-github.com/fullsailor/pkcs7 v0.0.0-20190404230743-d7302db945fa h1:RDBNVkRviHZtvDvId8XSGPu3rmpmSe+wKRcEWNgsfWU=
-github.com/fullsailor/pkcs7 v0.0.0-20190404230743-d7302db945fa/go.mod h1:KnogPXtdwXqoenmZCw6S+25EAm2MkxbG0deNDu4cbSA=
 github.com/getkin/kin-openapi v0.140.0 h1:JFn675aXRFjyiZKa/BFWploGldQlI0gobp4J5k0EZ2g=
 github.com/getkin/kin-openapi v0.140.0/go.mod h1:lISrB64F0CPcuDJ3LdtPTMJBY8VENjR9wJBdrcT6J3g=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
@@ -250,8 +248,6 @@ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJw
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/openkcm/api-sdk v0.17.0 h1:AwDrJvaEj6f35JAohwzILU3nMTeD19J3ycebq0weOMw=
 github.com/openkcm/api-sdk v0.17.0/go.mod h1:ffjao8Qr0k9FbtYWmPWWHf52tfBec2CRN4IBgj+ncqo=
-github.com/openkcm/cmk v0.8.0 h1:GuGjFQ/utcjibwGbYV/EugOgEz44jtc5xpYxGSpAXQA=
-github.com/openkcm/cmk v0.8.0/go.mod h1:RRjERiQm7BlQA7Sn5zxOI0nKlMlvR7kQhrLzgTt0T6w=
 github.com/openkcm/common-sdk v1.16.1 h1:0GIFrEDR7qXj/ghSvwWVHnWCAzBGD7iFbdRN4WWv9tM=
 github.com/openkcm/common-sdk v1.16.1/go.mod h1:2UuIjhOuee6gQKJt3EnenhB8mXWriGHEXdxCGPWfRxw=
 github.com/openkcm/orbital v0.5.1 h1:fCFyGm059h2IkD8/u+GI7Ofqd54lFGj7zoujKI+7MQk=
