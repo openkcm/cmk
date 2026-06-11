@@ -16,12 +16,12 @@ point (`cmd/`) that injects each role at runtime.
 | [cmd/task-worker and cmd/task-scheduler](#cmdtask-worker-and-cmdtask-scheduler) | Complete |
 | [cmd/tenant-manager and cmd/operator](#cmdtenant-manager-and-cmdoperator) | Complete |
 | [cmd/tenant-manager-cli](#cmdtenant-manager-cli) | Complete |
-| [cmd/event-reconciler](#cmdevent-reconciler) | Not written ² |
-| [cmd/api-server](#cmdapi-server) | Partial ³ |
+| [cmd/event-reconciler](#cmdevent-reconciler) | Partial ³ |
+| [cmd/api-server](#cmdapi-server) | Partial ² |
 
-¹ Some permissions within each role are not exercised — tests use empty batches or early exits to avoid plugin dependencies. See the Tested column in each role table for details.  
-² The role is injected into `eventprocessor.NewCryptoReconciler`, which requires a live AMQP connection. An isolated test would need full orbital event-processor wiring or a dedicated integration test.  
-³ Count on KeyConfiguration (`UserManager.CheckKeyConfigManagedByIAMGroups`) is not exercised — the test only drives the `NeedsGroupFiltering`/`GetRoleFromIAM` path. See the Tested column.
+¹ Some permissions within each role are not exercised — tests use empty batches or early exits to avoid plugin dependencies. See the Tested column in each role table for details.
+² Count on KeyConfiguration (`UserManager.CheckKeyConfigManagedByIAMGroups`) is not exercised — the test only drives the `NeedsGroupFiltering`/`GetRoleFromIAM` path. See the Tested column.
+³ Only the `KeyTaskInfoResolver.ResolveTasks` path is tested (Key:First, System:Count+List, Tenant:First). Key:List, Key:Update, System:First, and System:Update are exercised by system-action and key-detach handlers which require live plugin targets and are not covered by the current unit test.
 
 ## Design
 
@@ -70,12 +70,12 @@ permitted at the entry point without requiring a real cert-issuer call.
 |---|---|---|---|
 | Count, List | Key | `KeyManager.SyncHYOKKeys` | ✓ |
 | Update | Key | `KeyManager.SyncHYOKKeys` | – |
+| First, Count, Create, Update | Certificate | `KeyManager.SyncHYOKKeys` → `GetOrInitProvider` → `getDefaultHYOKClientCert` | ✓ |
 
 **Test:** `internal/authz/policy_tests/hyok_sync_test.go`
-`TestHYOKSync_AuthzPolicy/InternalTaskHYOKSyncRole_allows_Count_and_List_on_Key`
+`TestHYOKSync_AuthzPolicy/InternalTaskHYOKSyncRole_allows_full_HYOK_sync_path_including_Certificate_access`
 
-No HYOK keys are seeded. `SyncHYOKKeys` calls `ProcessInBatch` → Count+List on
-Key → empty batch → clean exit.
+A HYOK key and a tenant-default certificate are seeded. `SyncHYOKKeys` calls `ProcessInBatch` → Count+List on Key → finds the HYOK key → calls `GetOrInitProvider` → `getDefaultHYOKClientCert` which exercises First, Count, and Create on Certificate. `Update` on Key is not reached because the mock plugin does not return a new native ID that would trigger a key state change.
 
 ---
 
@@ -292,15 +292,16 @@ covering every permission in the policy.
 
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
-| First | Tenant | event reconciler handlers | – |
-| First, Update | Key | event reconciler handlers | – |
-| First, Update | System | event reconciler handlers | – |
+| First | Tenant | `KeyTaskInfoResolver.getTaskInfo`, `SystemTaskInfoResolver.loadTenantAndSystem` | ✓ |
+| First, List | Key | `KeyTaskInfoResolver.getRegionsByKeyID`, `KeyDetachJobHandler`, system handlers | ✓ / – |
+| Update | Key | `KeyDetachJobHandler.terminate` → `updateKey` | – |
+| First, Count, List | System | `KeyTaskInfoResolver.getRegionsByKeyID`, `SystemTaskInfoResolver.loadTenantAndSystem` | ✓ / – |
+| Update | System | system event handlers → `updateSystem` | – |
 
-**Test:** not written. The role is injected once in `cmd/event-reconciler/main.go`
-and the context is passed into `eventprocessor.NewCryptoReconciler`, which requires
-a live AMQP connection to exercise. An isolated unit test would need the full orbital
-event-processor wiring or a dedicated integration test. This is left out of scope
-for now.
+**Test:** `internal/authz/policy_tests/event_reconciler_test.go`
+`TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_deriving_connected_regions_for_key`
+
+A key configuration, a HYOK key, and a CONNECTED system sharing the same `KeyConfigurationID` are seeded. `ResolveTasks` for `JobTypeKeyEnable` calls `getTenantByID` (Tenant:First), then `getRegionsByKeyID` which performs Key:First then `ProcessInBatch` → Count+List on System. Because no target region is configured for the seeded system's region, the test exits with `ErrNoConnectedRegionsForKey` — confirming authz passes through the entire resolver path. Key:List (used by system-action resolvers), Key:Update, System:First, and System:Update (used by system and key-detach job handlers) require live plugin targets and are not covered.
 
 ---
 

@@ -70,6 +70,7 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					ID: RepoResourceTypeKey,
 					Actions: []RepoAction{
 						RepoActionFirst,
+						RepoActionList,
 						RepoActionUpdate,
 					},
 				},
@@ -77,6 +78,8 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					ID: RepoResourceTypeSystem,
 					Actions: []RepoAction{
 						RepoActionFirst,
+						RepoActionCount,
+						RepoActionList,
 						RepoActionUpdate,
 					},
 				},
@@ -241,6 +244,15 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
+						RepoActionUpdate,
+					},
+				},
+				{
+					ID: RepoResourceTypeCertificate,
+					Actions: []RepoAction{
+						RepoActionFirst,
+						RepoActionCount,
+						RepoActionCreate,
 						RepoActionUpdate,
 					},
 				},

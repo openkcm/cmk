@@ -1154,6 +1154,7 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 
 	keyResp, err := km.getHYOKKeySync(ctx, key)
 	if err != nil {
+		log.Error(ctx, "Failed to sync HYOK key state with provider", err, slog.String("keyID", key.ID.String()))
 		key.State = km.getKeyStateOnSyncError(ctx, key, err)
 		km.sendUnavailableAuditLog(ctx, key)
 	} else if keyResp != nil {
@@ -1163,7 +1164,7 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 		// Check if a new version was detected from the keystore
 		if keyResp.LatestKeyVersionId != "" {
 			if err := km.syncKeyVersion(ctx, key, keyResp); err != nil {
-				log.Warn(ctx, "Failed to sync key version", slog.String("error", err.Error()))
+				log.Warn(ctx, "Failed to sync key version", log.ErrorAttr(err))
 			}
 		}
 	}
@@ -1392,7 +1393,9 @@ func (km *KeyManager) getKeyStateOnSyncError(ctx context.Context, key *model.Key
 	case errs.IsAnyError(err, ErrFailedToInitProvider, ErrGetProviderKey):
 		newState = string(cmkapi.KeyStateUNKNOWN)
 	default:
-		log.Debug(ctx, "Failed to sync HYOK key", log.ErrorAttr(err))
+		log.Warn(ctx, "Failed to sync HYOK key due to unhandled error, keeping existing state",
+			log.ErrorAttr(err),
+		)
 
 		newState = key.State // Keep old state for now, as we cannot decide yet
 	}

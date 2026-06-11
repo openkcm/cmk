@@ -1,6 +1,7 @@
 package authz_policy_test
 
 import (
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"testing"
@@ -15,18 +16,21 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // TestHYOKSync_AuthzPolicy verifies that the InternalTaskHYOKSyncRole policy
 // grants exactly the repo access that KeyManager.SyncHYOKKeys requires, without
 // the manager being mocked out.
 //
-// No HYOK keys are seeded, so SyncHYOKKeys exits after the Count+List authz
-// checks with an empty batch — confirming those operations are permitted.
+// A HYOK key and a tenant-default certificate are seeded so that SyncHYOKKeys
+// exercises the full path through GetOrInitProvider → getDefaultHYOKClientCert,
+// which requires Certificate permissions beyond just Key Count+List.
 func TestHYOKSync_AuthzPolicy(t *testing.T) {
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
@@ -64,13 +68,25 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 		cmkAuditor,
 	)
 
+	// Create a tenant-default certificate and a HYOK key
+	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+	assert.NoError(t, err)
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	cert := testutils.NewCertificate(func(_ *model.Certificate) {})
+	hyokKey := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+		k.KeyType = constants.KeyTypeHYOK
+		k.NativeID = ptr.PointTo("mock-key/11111111")
+		k.ManagementAccessData = hyokInfo
+		k.Provider = testplugins.Name
+	})
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, cert, hyokKey)
+
 	hyokSync := tasks.NewHYOKSync(keyManager, authzRepo)
 	task := asynq.NewTask(config.TypeHYOKSync, nil)
 
-	// No HYOK keys are seeded — SyncHYOKKeys calls ProcessInBatch → Count+List on
-	// Key → empty batch → clean exit. This is sufficient to prove the policy
-	// permits those operations.
-	t.Run("InternalTaskHYOKSyncRole allows Count and List on Key", func(t *testing.T) {
+	t.Run("InternalTaskHYOKSyncRole allows full HYOK sync path including Certificate access", func(t *testing.T) {
 		logger, buf := testutils.NewLogBuffer()
 		slog.SetDefault(logger)
 
