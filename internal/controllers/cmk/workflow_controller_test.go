@@ -1336,7 +1336,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 				"transition": "APPROVE"
 			}`,
 			actorID:        initiatorID,
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Approve_As_First_Approver",
@@ -1388,7 +1388,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 				"transition": "REJECT"
 			}`,
 			actorID:        initiatorID,
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Revoke",
@@ -1438,7 +1438,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 				"transition": "CONFIRM"
 			}`,
 			actorID:        approverID01,
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Confirm_From_Wait_Approval",

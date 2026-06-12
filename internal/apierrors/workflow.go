@@ -200,7 +200,7 @@ var workflow = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "INVALID_EVENT_ACTOR",
 			Message: "invalid event actor",
-			Status:  http.StatusForbidden,
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{
@@ -216,7 +216,7 @@ var workflow = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "APPROVER_NO_LONGER_ELIGIBLE",
 			Message: "approver has been removed from the admin group and cannot vote",
-			Status:  http.StatusForbidden,
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{
@@ -329,7 +329,7 @@ var workflow = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "WORKFLOW_USER_REMOVED_FROM_GROUP",
 			Message: "User is no longer a member of the workflow approver groups",
-			Status:  http.StatusForbidden,
+			Status:  http.StatusBadRequest,
 		},
 	},
 }

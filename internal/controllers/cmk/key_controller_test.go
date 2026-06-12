@@ -937,7 +937,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 					},
 				},
 			},
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:  "Should code 403 on non editable crypto region",
@@ -951,7 +951,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 					},
 				},
 			},
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:  "Should 200 on valid crypto access data update",

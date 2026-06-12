@@ -35,9 +35,9 @@ var key = []errs.ExposedErrors[*APIError]{
 	{
 		InternalErrorChain: []error{manager.ErrNonEditableCryptoRegionUpdate},
 		ExposedError: &APIError{
-			Code:    "FORBIDDEN_KEY_ACCESS_UPDATE",
+			Code:    "KEY_ACCESS_UPDATE_NOT_ALLOWED",
 			Message: "Crypto region is not editable",
-			Status:  http.StatusForbidden,
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{
@@ -51,17 +51,17 @@ var key = []errs.ExposedErrors[*APIError]{
 	{
 		InternalErrorChain: []error{manager.ErrCryptoRegionNotExists},
 		ExposedError: &APIError{
-			Code:    "FORBIDDEN_KEY_UPDATE",
+			Code:    "KEY_UPDATE_NOT_ALLOWED",
 			Message: "Crypto region does not exist",
-			Status:  http.StatusForbidden,
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{
 		InternalErrorChain: []error{manager.ErrManagementDetailsUpdate},
 		ExposedError: &APIError{
-			Code:    "FORBIDDEN_KEY_ACCESS_UPDATE",
+			Code:    "KEY_ACCESS_UPDATE_NOT_ALLOWED",
 			Message: "Management details cannot be updated",
-			Status:  http.StatusForbidden,
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{

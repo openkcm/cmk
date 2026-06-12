@@ -630,7 +630,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			inputJSON: fmt.Sprintf(`{
                 "primaryKeyID": "%s"
             }`, uuid.New()),
-			expectedStatus:    http.StatusForbidden,
+			expectedStatus:    http.StatusBadRequest,
 			additionalContext: authClient.GetClientMap(),
 		},
 	}
