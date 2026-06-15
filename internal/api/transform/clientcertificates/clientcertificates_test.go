@@ -7,7 +7,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/clientcertificates"
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -15,16 +14,16 @@ import (
 func TestToAPI(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    map[model.CertificatePurpose][]*manager.ClientCertificate
+		input    map[model.CertificatePurpose][]*model.ClientCertificate
 		expected *cmkapi.ClientCertificates
 	}{
 		{
 			name: "Valid",
-			input: map[model.CertificatePurpose][]*manager.ClientCertificate{
-				model.CertificatePurposeTenantDefault: {
+			input: map[model.CertificatePurpose][]*model.ClientCertificate{
+				model.CertificatePurposeHYOKManagement: {
 					{
 						RootCA: "TDRoot",
-						Subject: manager.ClientCertificateSubject{
+						Subject: model.ClientCertificateSubject{
 							Locality:           []string{"L"},
 							OrganizationalUnit: []string{"OU1", "OU2"},
 							Organization:       []string{"O"},
@@ -36,7 +35,7 @@ func TestToAPI(t *testing.T) {
 				model.CertificatePurposeCrypto: {
 					{
 						RootCA: "CRoot",
-						Subject: manager.ClientCertificateSubject{
+						Subject: model.ClientCertificateSubject{
 							Locality:           []string{"L"},
 							OrganizationalUnit: []string{"OU1", "OU2"},
 							Organization:       []string{"O"},

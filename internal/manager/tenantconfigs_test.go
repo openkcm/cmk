@@ -81,7 +81,7 @@ func TestGetDefaultKeystore(t *testing.T) {
 		expectedLocalityID := uuid.NewString()
 		localKsConfig := testutils.NewKeystore(func(k *model.Keystore) {
 			keystoreConfig := testutils.NewKeystoreConfig(func(cfg *model.KeystoreConfig) {
-				cfg.LocalityID = expectedLocalityID
+				cfg.RoleManagementConfig.LocalityID = expectedLocalityID
 			})
 			configBytes, marshalErr := json.Marshal(keystoreConfig)
 			assert.NoError(t, marshalErr)
@@ -95,9 +95,9 @@ func TestGetDefaultKeystore(t *testing.T) {
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, keystore)
-		assert.Equal(t, expectedLocalityID, keystore.LocalityID)
-		assert.NotEmpty(t, keystore.CommonName)
-		assert.NotEmpty(t, keystore.ManagementAccessData)
+		assert.Equal(t, expectedLocalityID, keystore.RoleManagementConfig.LocalityID)
+		assert.NotEmpty(t, keystore.RoleManagementConfig.CommonName)
+		assert.NotEmpty(t, keystore.RoleManagementConfig.AccessData)
 	})
 
 	t.Run("Config Exists", func(t *testing.T) {
@@ -106,12 +106,14 @@ func TestGetDefaultKeystore(t *testing.T) {
 
 		tenantConfigRepo := sql.NewRepository(db)
 		ksConfigJSON, err := json.Marshal(&model.KeystoreConfig{
-			LocalityID: testutils.TestLocalityID,
-			CommonName: testutils.TestDefaultKeystoreCommonName,
-			ManagementAccessData: map[string]any{
-				"roleArn":        testutils.TestRoleArn,
-				"trustAnchorArn": testutils.TestTrustAnchorArn,
-				"profileArn":     testutils.TestProfileArn,
+			RoleManagementConfig: model.ManagementConfig{
+				LocalityID: testutils.TestLocalityID,
+				CommonName: testutils.TestDefaultKeystoreCommonName,
+				AccessData: model.KeystoreAccessData{
+					"roleArn":        testutils.TestRoleArn,
+					"trustAnchorArn": testutils.TestTrustAnchorArn,
+					"profileArn":     testutils.TestProfileArn,
+				},
 			},
 		})
 		assert.NoError(t, err)
@@ -129,11 +131,11 @@ func TestGetDefaultKeystore(t *testing.T) {
 
 		// Assert
 		assert.NoError(t, err)
-		assert.Equal(t, testutils.TestLocalityID, keystore.LocalityID)
-		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.CommonName)
-		assert.Equal(t, testutils.TestRoleArn, keystore.ManagementAccessData["roleArn"])
-		assert.Equal(t, testutils.TestTrustAnchorArn, keystore.ManagementAccessData["trustAnchorArn"])
-		assert.Equal(t, testutils.TestProfileArn, keystore.ManagementAccessData["profileArn"])
+		assert.Equal(t, testutils.TestLocalityID, keystore.RoleManagementConfig.LocalityID)
+		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.RoleManagementConfig.CommonName)
+		assert.Equal(t, testutils.TestRoleArn, keystore.RoleManagementConfig.AccessData["roleArn"])
+		assert.Equal(t, testutils.TestTrustAnchorArn, keystore.RoleManagementConfig.AccessData["trustAnchorArn"])
+		assert.Equal(t, testutils.TestProfileArn, keystore.RoleManagementConfig.AccessData["profileArn"])
 	})
 }
 
@@ -154,11 +156,11 @@ func TestSetDefaultKeystore(t *testing.T) {
 		keystore, err := configManager.GetDefaultKeystoreConfig(ctx)
 		assert.NoError(t, err)
 
-		assert.Equal(t, testutils.TestLocalityID, keystore.LocalityID)
-		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.CommonName)
-		assert.Equal(t, testutils.TestRoleArn, keystore.ManagementAccessData["roleArn"])
-		assert.Equal(t, testutils.TestTrustAnchorArn, keystore.ManagementAccessData["trustAnchorArn"])
-		assert.Equal(t, testutils.TestProfileArn, keystore.ManagementAccessData["profileArn"])
+		assert.Equal(t, testutils.TestLocalityID, keystore.RoleManagementConfig.LocalityID)
+		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.RoleManagementConfig.CommonName)
+		assert.Equal(t, testutils.TestRoleArn, keystore.RoleManagementConfig.AccessData["roleArn"])
+		assert.Equal(t, testutils.TestTrustAnchorArn, keystore.RoleManagementConfig.AccessData["trustAnchorArn"])
+		assert.Equal(t, testutils.TestProfileArn, keystore.RoleManagementConfig.AccessData["profileArn"])
 	})
 
 	t.Run("Update existing default keystore config", func(t *testing.T) {
@@ -178,9 +180,9 @@ func TestSetDefaultKeystore(t *testing.T) {
 
 		// Act
 		err = configManager.SetDefaultKeystore(ctx, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
-			kc.LocalityID = newLocalityID
-			kc.CommonName = testutils.TestDefaultKeystoreCommonName
-			kc.ManagementAccessData = map[string]any{
+			kc.RoleManagementConfig.LocalityID = newLocalityID
+			kc.RoleManagementConfig.CommonName = testutils.TestDefaultKeystoreCommonName
+			kc.RoleManagementConfig.AccessData = map[string]any{
 				"roleArn":        newRoleArn,
 				"trustAnchorArn": newTrustAnchorID,
 				"profileArn":     newProfileArn,
@@ -193,11 +195,11 @@ func TestSetDefaultKeystore(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, keystore)
 
-		assert.Equal(t, newLocalityID, keystore.LocalityID)
-		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.CommonName)
-		assert.Equal(t, newRoleArn, keystore.ManagementAccessData["roleArn"])
-		assert.Equal(t, newTrustAnchorID, keystore.ManagementAccessData["trustAnchorArn"])
-		assert.Equal(t, newProfileArn, keystore.ManagementAccessData["profileArn"])
+		assert.Equal(t, newLocalityID, keystore.RoleManagementConfig.LocalityID)
+		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.RoleManagementConfig.CommonName)
+		assert.Equal(t, newRoleArn, keystore.RoleManagementConfig.AccessData["roleArn"])
+		assert.Equal(t, newTrustAnchorID, keystore.RoleManagementConfig.AccessData["trustAnchorArn"])
+		assert.Equal(t, newProfileArn, keystore.RoleManagementConfig.AccessData["profileArn"])
 	})
 }
 

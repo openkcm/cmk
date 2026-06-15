@@ -252,8 +252,8 @@ github.com/openkcm/common-sdk v1.16.1 h1:0GIFrEDR7qXj/ghSvwWVHnWCAzBGD7iFbdRN4WW
 github.com/openkcm/common-sdk v1.16.1/go.mod h1:2UuIjhOuee6gQKJt3EnenhB8mXWriGHEXdxCGPWfRxw=
 github.com/openkcm/orbital v0.5.1 h1:fCFyGm059h2IkD8/u+GI7Ofqd54lFGj7zoujKI+7MQk=
 github.com/openkcm/orbital v0.5.1/go.mod h1:PqAOg75iYDrDQrL9uBQKAKfuBlNJgeG0pex1780Wo0E=
-github.com/openkcm/plugin-sdk v0.12.0 h1:KrzZjYeeXTvC9jr7SJvEbChAKJbhCNK0iTntOUWJC2o=
-github.com/openkcm/plugin-sdk v0.12.0/go.mod h1:aFNhp3F/3tPqU9Ioh6C2QOUtP3MZWUiBTlDw5jPoGrM=
+github.com/openkcm/plugin-sdk v0.13.0 h1:NRqreAEiKC4VEeTDnGAKaOvXbfZE5km9fc970I995DQ=
+github.com/openkcm/plugin-sdk v0.13.0/go.mod h1:OE+TPB7I29w1+GB911abC4sPdGD86yuXn4DfjzpD5hE=
 github.com/pborman/getopt v0.0.0-20170112200414-7148bc3a4c30/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=
 github.com/pelletier/go-toml/v2 v2.2.4 h1:mye9XuhQ6gvn5h28+VilKrrPoQVanw5PMw/TB0t5Ec4=
 github.com/pelletier/go-toml/v2 v2.2.4/go.mod h1:2gIqNv+qfxSVS7cM2xJQKtLSTLUE9V8t9Stt+h56mCY=

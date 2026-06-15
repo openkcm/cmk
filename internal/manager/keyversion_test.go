@@ -21,8 +21,12 @@ import (
 var (
 	ksConfig            = testutils.NewKeystore(func(_ *model.Keystore) {})
 	keystoreDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeystoreDefault
+		c.Purpose = model.CertificatePurposeRoleManagement
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
+	})
+	keystoreKeyMgmtCert = testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeKeyManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
 	})
 )
 
@@ -81,6 +85,7 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 		keyConfig,
 		ksConfig,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 	)
 	s.keyConfigID = keyConfig.ID
 }

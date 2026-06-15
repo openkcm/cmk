@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
@@ -20,6 +21,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -31,8 +33,12 @@ import (
 var (
 	keystore            = testutils.NewKeystore(func(_ *model.Keystore) {})
 	keystoreDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeystoreDefault
+		c.Purpose = model.CertificatePurposeRoleManagement
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
+	})
+	keystoreKeyMgmtCert = testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeKeyManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
 	})
 )
 
@@ -46,8 +52,16 @@ func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *tes
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Registry:                 testutils.NewTestPlugins(),
-		Config:                   config.Config{Database: dbCfg},
+		Registry: testutils.NewTestPlugins(),
+		Config: config.Config{
+			Database: dbCfg,
+			CryptoLayer: config.CryptoLayer{
+				CertX509Trusts: commoncfg.SourceRef{
+					Source: commoncfg.EmbeddedSourceValue,
+					Value:  "[]",
+				},
+			},
+		},
 		EnableBusinessUserDataMW: true,
 		SigningKeyStorage:        keyStorage,
 	}), tenants[0], keyStorage
@@ -301,6 +315,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 		keyConfig,
 		keystore,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 	)
 
 	SystemManagedRequest := map[string]any{
@@ -714,6 +729,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		keyConfig,
 		keystore,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 		keyConfigWSys,
 		pkey,
 		sys,
@@ -838,14 +854,26 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		k.Provider = providerTest
 	})
 
+	hyokKey := testutils.NewKey(func(k *model.Key) {
+		k.IsPrimary = true
+		k.KeyType = constants.KeyTypeHYOK
+		k.CryptoAccessData = cryptoData
+		k.ManagementAccessData = json.RawMessage("{\"test\":\"test\"}")
+		k.KeyConfigurationID = kc.ID
+		k.Provider = providerTest
+	})
+
 	testutils.CreateTestEntities(
 		ctx,
 		t,
 		r,
-		key,
 		kc,
+		key,
+		hyokKey,
 		keystore,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
+		testutils.NewCertificate(func(_ *model.Certificate) {}),
 		sysFailed,
 		sys,
 	)
@@ -955,11 +983,10 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		},
 		{
 			name:  "Should 200 on valid crypto access data update",
-			keyID: key.ID.String(),
+			keyID: hyokKey.ID.String(),
 			input: cmkapi.KeyPatch{
 				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Name:        ptr.PointTo("updated-hyok-key"),
 				AccessDetails: &cmkapi.KeyAccessDetails{
 					Crypto: &map[string]map[string]any{
 						regionEditable: {
@@ -972,7 +999,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 				},
 			},
 			expectedStatus: http.StatusOK,
-			expectedName:   "updated-key",
+			expectedName:   "updated-hyok-key",
 			expectedDesc:   "updated description",
 		},
 	}
@@ -1065,6 +1092,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 		importParams,
 		keystore,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 	)
 
 	clientData := &auth.ClientData{
@@ -1201,6 +1229,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		&importParams,
 		keystore,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 	)
 
 	clientData := &auth.ClientData{

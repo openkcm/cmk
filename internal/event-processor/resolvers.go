@@ -26,10 +26,11 @@ import (
 // SystemTaskInfoResolver is responsible for resolving the necessary information to create a TaskInfo
 // for system-related tasks such as linking and unlinking systems.
 type SystemTaskInfoResolver struct {
-	repo        repo.Repo
-	targets     map[string]struct{}
-	svcRegistry serviceapi.Registry
-	cfg         *config.Config
+	repo         repo.Repo
+	targets      map[string]struct{}
+	svcRegistry  serviceapi.Registry
+	cfg          *config.Config
+	cryptoSyncer *CryptoAccessDataSyncer
 }
 
 func (r *SystemTaskInfoResolver) Resolve(
@@ -240,8 +241,15 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 		return nil, ErrPluginNotFound
 	}
 
-	// Fetch and populate version info
-	cryptoData, err := r.fetchAndPopulateVersionInfo(ctx, key)
+	var cryptoData model.KeyAccessData
+	// For HYOK keys, we need to fetch the latest version info and populate it into the crypto access data
+	// to support key rotation.
+	// For BYOK/managed keys, we need to sync crypto access data instead
+	if key.KeyType == string(cmkapi.KeyTypeHYOK) {
+		cryptoData, err = r.fetchAndPopulateVersionInfo(ctx, key)
+	} else {
+		cryptoData, err = r.cryptoSyncer.SyncAndGetCryptoAccessData(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}

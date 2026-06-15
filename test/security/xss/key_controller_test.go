@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -24,11 +26,15 @@ const providerTest = "TEST"
 var (
 	ksConfig            = testutils.NewKeystore(func(_ *model.Keystore) {})
 	keystoreDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeystoreDefault
+		c.Purpose = model.CertificatePurposeRoleManagement
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
 	})
+	keystoreKeyMgmtCert = testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeKeyManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+	})
 	tenantDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeTenantDefault
+		c.Purpose = model.CertificatePurposeHYOKManagement
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
 	})
 )
@@ -39,7 +45,16 @@ func startAPIAndDBForKey(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, strin
 	dbConfig := testutils.TestDBConfig{}
 	db, tenants, _ := testutils.NewTestDB(t, dbConfig)
 
-	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{})
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Config: config.Config{
+			CryptoLayer: config.CryptoLayer{
+				CertX509Trusts: commoncfg.SourceRef{
+					Source: commoncfg.EmbeddedSourceValue,
+					Value:  "[]",
+				},
+			},
+		},
+	})
 
 	return db, sv, tenants[0]
 }
@@ -66,6 +81,7 @@ func TestKeyController_ForXSS(t *testing.T) {
 		keyConfig,
 		ksConfig,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 	)
 
 	baseKey := map[string]any{

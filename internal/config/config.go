@@ -93,27 +93,27 @@ const (
 	MaxCryptoCNPrefix          = 24
 )
 
+type CryptoCertSubject struct {
+	Locality           []string `yaml:"locality"`
+	OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
+	Organization       []string `yaml:"organization"`
+	Country            []string `yaml:"country"`
+	CommonNamePrefix   string   `yaml:"commonNamePrefix"`
+}
+
+type CryptoCert struct {
+	Name    string            `yaml:"name"`
+	RootCA  string            `yaml:"rootCA"` //nolint:tagliatelle
+	Subject CryptoCertSubject `yaml:"subject"`
+}
+
 func (c *CryptoLayer) Validate() error {
 	bytes, err := commoncfg.LoadValueFromSourceRef(c.CertX509Trusts)
 	if err != nil {
 		return err
 	}
 
-	type cryptoCertSubject struct {
-		Locality           []string `yaml:"locality"`
-		OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
-		Organization       []string `yaml:"organization"`
-		Country            []string `yaml:"country"`
-		CommonNamePrefix   string   `yaml:"commonNamePrefix"`
-	}
-
-	type cryptoCerts struct {
-		Name    string            `yaml:"name"`
-		RootCA  string            `yaml:"rootCA"` //nolint:tagliatelle
-		Subject cryptoCertSubject `yaml:"subject"`
-	}
-
-	var certs []*cryptoCerts
+	var certs []*CryptoCert
 
 	err = yaml.Unmarshal(bytes, &certs)
 	if err != nil {

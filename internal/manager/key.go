@@ -469,12 +469,14 @@ func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) err
 		return nil
 	}
 
+	// By default HYOK keys can be editable
 	for region := range cryptoData {
-		key.EditableRegions[region] = true
+		key.EditableRegions[region] = key.KeyType == constants.KeyTypeHYOK
 	}
 
 	// All regions for non primary keys are editable
-	if !key.IsPrimary {
+	// Non-HYOK will not be editable, so we also end here
+	if !key.IsPrimary || key.KeyType != constants.KeyTypeHYOK {
 		return nil
 	}
 
@@ -620,7 +622,7 @@ func (km *KeyManager) registerHYOKKey(
 }
 
 func (km *KeyManager) addCertificateSubjectToCryptoData(ctx context.Context, key *model.Key) error {
-	cryptoCerts, err := km.keyConfigManager.getCryptoCertificates(ctx)
+	cryptoCerts, err := km.certs.getCryptoCertificates(ctx)
 	if err != nil {
 		return err
 	}
@@ -636,7 +638,7 @@ func (km *KeyManager) addCertificateSubjectToCryptoData(ctx context.Context, key
 			continue
 		}
 
-		accessData["certificateSubject"] = FormatSubjectWithSlashSeparatedOUs(cert.Subject)
+		accessData[model.CertificateSubjectKey] = cert.Subject.FormatSubjectWithSlashSeparatedOUs()
 	}
 
 	key.CryptoAccessData, err = json.Marshal(cryptoAccessData)

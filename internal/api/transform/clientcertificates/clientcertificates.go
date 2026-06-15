@@ -3,29 +3,28 @@ package clientcertificates
 import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
-func transformTenantDefault(cc manager.ClientCertificate) (*cmkapi.TenantDefaultCertificate, error) {
+func transformTenantDefault(cc model.ClientCertificate) (*cmkapi.TenantDefaultCertificate, error) {
 	return &cmkapi.TenantDefaultCertificate{
 		Name:    cc.Name,
 		RootCA:  cc.RootCA,
-		Subject: manager.FormatSubjectWithSlashSeparatedOUs(cc.Subject),
+		Subject: cc.Subject.FormatSubjectWithSlashSeparatedOUs(),
 	}, nil
 }
 
-func transformCrypto(cc manager.ClientCertificate) (*cmkapi.CryptoCertificate, error) {
+func transformCrypto(cc model.ClientCertificate) (*cmkapi.CryptoCertificate, error) {
 	return &cmkapi.CryptoCertificate{
 		Name:    cc.Name,
 		RootCA:  cc.RootCA,
-		Subject: manager.FormatSubjectWithSlashSeparatedOUs(cc.Subject),
+		Subject: cc.Subject.FormatSubjectWithSlashSeparatedOUs(),
 	}, nil
 }
 
-func ToAPI(cc map[model.CertificatePurpose][]*manager.ClientCertificate) (*cmkapi.ClientCertificates, error) {
+func ToAPI(cc map[model.CertificatePurpose][]*model.ClientCertificate) (*cmkapi.ClientCertificates, error) {
 	for _, v := range cc {
 		err := sanitise.Sanitize(&v)
 		if err != nil {
@@ -34,7 +33,7 @@ func ToAPI(cc map[model.CertificatePurpose][]*manager.ClientCertificate) (*cmkap
 	}
 
 	tenantDefaultCertList, err := transform.ToList(
-		cc[model.CertificatePurposeTenantDefault],
+		cc[model.CertificatePurposeHYOKManagement],
 		transformTenantDefault,
 	)
 	if err != nil {

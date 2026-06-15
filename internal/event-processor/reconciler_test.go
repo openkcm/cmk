@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"gopkg.in/yaml.v3"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
@@ -27,6 +28,7 @@ import (
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/model"
@@ -404,6 +406,7 @@ func TestResolveSystemTasks(t *testing.T) {
 	keyFrom := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
+		k.KeyType = string(cmkapi.KeyTypeHYOK)
 		k.NativeID = ptr.PointTo("key-from-native-id")
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value1"}}`)
 	})
@@ -411,6 +414,7 @@ func TestResolveSystemTasks(t *testing.T) {
 	keyTo := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
+		k.KeyType = string(cmkapi.KeyTypeHYOK)
 		k.NativeID = ptr.PointTo("key-to-native-id")
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value2"}}`)
 	})
@@ -710,6 +714,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 	keyWithVersion := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
+		k.KeyType = string(cmkapi.KeyTypeHYOK)
 		k.NativeID = ptr.PointTo(keyWithVersionID)
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
@@ -718,6 +723,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 	keyWithoutVersion := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
+		k.KeyType = string(cmkapi.KeyTypeHYOK)
 		k.NativeID = ptr.PointTo(keyWithoutVerID)
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
@@ -1658,8 +1664,7 @@ func TestWithOptions(t *testing.T) {
 	})
 }
 
-func terminateNewJob(
-	t *testing.T,
+func terminateNewJob(t *testing.T,
 	eventProcessor *eventprocessor.CryptoReconciler,
 	e *model.Event,
 	jobDone bool,
@@ -1685,5 +1690,321 @@ func terminateNewJob(
 	// Ignored as this test is not testing the system/key update capabilities
 	if err != nil {
 		t.Logf("Job termination returned error: %v", err)
+	}
+}
+
+func TestResolveSystemTasks_BYOK(t *testing.T) {
+	region := "byok-region"
+	certCfg := config.CryptoCert{
+		Name:    region,
+		Subject: config.CryptoCertSubject{CommonNamePrefix: "byok", OrganizationalUnit: []string{"abc"}},
+	}
+	certsYAML, err := yaml.Marshal([]config.CryptoCert{certCfg})
+	require.NoError(t, err)
+
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		WithOrbital:    true,
+	})
+	r := sql.NewRepository(db)
+	tenant := tenants[0]
+
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	svcRegistry := testutils.NewTestPlugins(
+		testplugins.WithKeyManagement(testplugins.Name, pluginOp),
+		testplugins.WithKeystoreManagement(testplugins.Name, testplugins.NewTestKeystoreManagement()),
+	)
+
+	rabbitMQURL := testutils.StartRabbitMQ(t)
+	cfg := &config.Config{
+		Database: dbCfg,
+		Landscape: config.Landscape{
+			Region: uuid.NewString(),
+		},
+		BaseConfig: commoncfg.BaseConfig{
+			Application: commoncfg.Application{Name: "event-processor"},
+		},
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  string(certsYAML),
+			},
+		},
+	}
+	cfg.EventProcessor.Targets = []config.Target{{
+		Region: region,
+		AMQP:   config.AMQP{URL: rabbitMQURL, Target: region, Source: region},
+	}}
+
+	logger := testutils.SetupLoggerWithBuffer()
+	systemService := systems.NewFakeService(logger)
+	mappingService := mapping.NewFakeService()
+	_, grpcClient := testutils.NewGRPCSuite(t, func(s *grpc.Server) {
+		systemgrpc.RegisterServiceServer(s, systemService)
+		mappingv1.RegisterServiceServer(s, mappingService)
+	})
+
+	clientsFactory, err := clients.NewFactory(config.Services{
+		Registry: &commoncfg.GRPCClient{
+			Enabled: true,
+			Address: grpcClient.Target(),
+			SecretRef: &commoncfg.SecretRef{
+				Type: commoncfg.InsecureSecretType,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory)
+	require.NoError(t, err)
+	rec.DisableAuditLog()
+	t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
+
+	// Pre-seed DEFAULT_KEYSTORE with the cert already trusted so SyncAndGetCryptoAccessData
+	// skips GrantTrust (no role-management cert needed).
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	clientCert := model.NewClientCertificateFromConfig(certCfg, tenant)
+	ksConfig := model.KeystoreConfig{
+		CryptoAccessData: map[string]model.CryptoConfig{
+			region: {
+				Subject: clientCert.Subject.FormatSubjectWithSlashSeparatedOUs(),
+				AccessData: model.KeystoreAccessData{
+					"key1": "value1",
+					"key2": "value2",
+				},
+			},
+		},
+	}
+	ksBytes, err := json.Marshal(ksConfig)
+	require.NoError(t, err)
+	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}))
+
+	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	system := testutils.NewSystem(func(s *model.System) {
+		s.Region = region
+	})
+	keyFrom := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfiguration.ID
+		k.Provider = testProvider
+		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.NativeID = ptr.PointTo("byok-key-from")
+	})
+	keyTo := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfiguration.ID
+		k.Provider = testProvider
+		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.NativeID = ptr.PointTo("byok-key-to")
+	})
+	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyFrom, keyTo)
+
+	tests := []struct {
+		name     string
+		jobType  string
+		taskType string
+		data     func() []byte
+	}{
+		{
+			name:     "SYSTEM_LINK task",
+			jobType:  eventprocessor.JobTypeSystemLink.String(),
+			taskType: eventProto.TaskType_SYSTEM_LINK.String(),
+			data: func() []byte {
+				b, err := json.Marshal(eventprocessor.SystemActionJobData{
+					TenantID: tenant,
+					SystemID: system.ID.String(),
+					KeyIDTo:  keyTo.ID.String(),
+				})
+				require.NoError(t, err)
+				return b
+			},
+		},
+		{
+			name:     "SYSTEM_UNLINK task",
+			jobType:  eventprocessor.JobTypeSystemUnlink.String(),
+			taskType: eventProto.TaskType_SYSTEM_UNLINK.String(),
+			data: func() []byte {
+				b, err := json.Marshal(eventprocessor.SystemActionJobData{
+					TenantID:  tenant,
+					SystemID:  system.ID.String(),
+					KeyIDFrom: keyFrom.ID.String(),
+				})
+				require.NoError(t, err)
+				return b
+			},
+		},
+		{
+			name:     "SYSTEM_SWITCH task",
+			jobType:  eventprocessor.JobTypeSystemSwitch.String(),
+			taskType: eventProto.TaskType_SYSTEM_SWITCH.String(),
+			data: func() []byte {
+				b, err := json.Marshal(eventprocessor.SystemActionJobData{
+					TenantID:  tenant,
+					SystemID:  system.ID.String(),
+					KeyIDFrom: keyFrom.ID.String(),
+					KeyIDTo:   keyTo.ID.String(),
+				})
+				require.NoError(t, err)
+				return b
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			j := orbital.NewJob(tt.jobType, tt.data())
+			handler, err := rec.GetHandlerByJobType(tt.jobType)
+			require.NoError(t, err)
+
+			tasks, err := handler.ResolveTasks(ctx, j)
+
+			assert.NoError(t, err)
+			if assert.Len(t, tasks, 1) {
+				ti := tasks[0]
+				assert.Equal(t, tt.taskType, ti.Type)
+				assert.Equal(t, region, ti.Target)
+
+				var act eventProto.Data
+				assert.NoError(t, proto.Unmarshal(ti.Data, &act))
+				sa := act.GetSystemAction()
+				assert.NotNil(t, sa)
+				assert.Equal(t, system.Identifier, sa.GetSystemId())
+				assert.Equal(t, region, sa.GetSystemRegion())
+				assert.Equal(t, tenant, sa.GetTenantId())
+
+				// key_access_meta_data must be present and contain the syncer's output.
+				assert.NotEmpty(t, sa.GetKeyAccessMetaData())
+				var keyAccessData map[string]any
+				assert.NoError(t, json.Unmarshal(sa.GetKeyAccessMetaData(), &keyAccessData))
+				assert.Equal(t, "CN=byoktenant0,OU=abc", keyAccessData["certificateSubject"])
+				assert.Equal(t, "value1", keyAccessData["key1"])
+				assert.Equal(t, "value2", keyAccessData["key2"])
+			}
+		})
+	}
+}
+
+// TestResolveSystemTasks_BYOK_GrantTrust verifies that when a BYOK system-link
+// is resolved and the crypto cert has not yet been trusted (no entry in
+// DEFAULT_KEYSTORE CryptoAccessData), the syncer calls GrantTrust on the
+// keystore-management plugin and the resulting access data reaches the task payload.
+func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
+	region := "byok-grant-region"
+
+	certCfg := config.CryptoCert{
+		Name:    region,
+		Subject: config.CryptoCertSubject{CommonNamePrefix: "byok-grant", OrganizationalUnit: []string{"abc"}},
+	}
+	certsYAML, err := yaml.Marshal([]config.CryptoCert{certCfg})
+	require.NoError(t, err)
+
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		WithOrbital:    true,
+	})
+	r := sql.NewRepository(db)
+	tenant := tenants[0]
+
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	svcRegistry := testutils.NewTestPlugins(
+		testplugins.WithKeyManagement(testplugins.Name, pluginOp),
+		testplugins.WithKeystoreManagement(testplugins.Name, testplugins.NewTestKeystoreManagement()),
+	)
+
+	rabbitMQURL := testutils.StartRabbitMQ(t)
+	cfg := &config.Config{
+		Database:  dbCfg,
+		Landscape: config.Landscape{Region: uuid.NewString()},
+		BaseConfig: commoncfg.BaseConfig{
+			Application: commoncfg.Application{Name: "event-processor"},
+		},
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  string(certsYAML),
+			},
+		},
+	}
+	cfg.EventProcessor.Targets = []config.Target{{
+		Region: region,
+		AMQP:   config.AMQP{URL: rabbitMQURL, Target: region, Source: region},
+	}}
+
+	logger := testutils.SetupLoggerWithBuffer()
+	systemService := systems.NewFakeService(logger)
+	mappingService := mapping.NewFakeService()
+	_, grpcClient := testutils.NewGRPCSuite(t, func(s *grpc.Server) {
+		systemgrpc.RegisterServiceServer(s, systemService)
+		mappingv1.RegisterServiceServer(s, mappingService)
+	})
+	clientsFactory, err := clients.NewFactory(config.Services{
+		Registry: &commoncfg.GRPCClient{
+			Enabled:   true,
+			Address:   grpcClient.Target(),
+			SecretRef: &commoncfg.SecretRef{Type: commoncfg.InsecureSecretType},
+		},
+	})
+	require.NoError(t, err)
+
+	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory)
+	require.NoError(t, err)
+	rec.DisableAuditLog()
+	t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
+
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+	// DEFAULT_KEYSTORE exists but has no CryptoAccessData entry for this cert —
+	// the syncer will call GrantTrust.
+	emptyKS, err := json.Marshal(model.KeystoreConfig{})
+	require.NoError(t, err)
+	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: emptyKS}))
+
+	// Role-management cert required by GrantTrust path.
+	roleManagementCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeRoleManagement
+	})
+	require.NoError(t, r.Create(ctx, roleManagementCert))
+
+	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	system := testutils.NewSystem(func(s *model.System) { s.Region = region })
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfiguration.ID
+		k.Provider = testProvider
+		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.NativeID = ptr.PointTo("byok-grant-key")
+	})
+	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, key)
+
+	jobData, err := json.Marshal(eventprocessor.SystemActionJobData{
+		TenantID: tenant,
+		SystemID: system.ID.String(),
+		KeyIDTo:  key.ID.String(),
+	})
+	require.NoError(t, err)
+
+	j := orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), jobData)
+	handler, err := rec.GetHandlerByJobType(eventprocessor.JobTypeSystemLink.String())
+	require.NoError(t, err)
+
+	tasks, err := handler.ResolveTasks(ctx, j)
+
+	// GrantTrust (TestKeystoreManagement) returns an empty AccessData map.
+	// TransformCryptoAccessData adds keyID, so key_access_meta_data must be present.
+	assert.NoError(t, err)
+	if assert.Len(t, tasks, 1) {
+		assert.Equal(t, region, tasks[0].Target)
+
+		var act eventProto.Data
+		assert.NoError(t, proto.Unmarshal(tasks[0].Data, &act))
+		sa := act.GetSystemAction()
+		assert.NotNil(t, sa)
+		assert.NotEmpty(t, sa.GetKeyAccessMetaData())
+
+		var keyAccessData map[string]any
+		assert.NoError(t, json.Unmarshal(sa.GetKeyAccessMetaData(), &keyAccessData))
+		// TransformCryptoAccessData injects the native key ID.
+		assert.Equal(t, "byok-grant-key", keyAccessData["keyID"])
+		// Validate access data from GrantTrust
+		assert.Equal(t, "CN=byok-granttenant0,OU=abc", keyAccessData["certificateSubject"])
+		assert.Equal(t, "CN=byok-granttenant0,OU=abc", keyAccessData["trustedSubject"])
+		assert.Equal(t, "byok-grant-region", keyAccessData["trustedRegion"])
 	}
 }

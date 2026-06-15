@@ -49,10 +49,10 @@ func SetupKeyTest(t *testing.T) (
 	r := sql.NewRepository(db)
 
 	svcRegistry := testutils.NewTestPlugins()
-	cryptoCerts := []manager.ClientCertificate{
+	cryptoCerts := []config.CryptoCert{
 		{
 			Name: "crypto-1",
-			Subject: manager.ClientCertificateSubject{
+			Subject: config.CryptoCertSubject{
 				Locality:           []string{"Berlin"},
 				OrganizationalUnit: []string{"OU1", "OU2"},
 				Organization:       []string{"TestOrg"},
@@ -67,6 +67,9 @@ func SetupKeyTest(t *testing.T) (
 
 	cfg := &config.Config{
 		Database: dbConf,
+		Certificates: config.Certificates{
+			ValidityDays: config.MinCertificateValidityDays,
+		},
 		CryptoLayer: config.CryptoLayer{
 			CertX509Trusts: commoncfg.SourceRef{
 				Source: commoncfg.EmbeddedSourceValue,
@@ -81,10 +84,7 @@ func SetupKeyTest(t *testing.T) (
 	assert.NoError(t, err)
 
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
-	certManager := manager.NewCertificateManager(ctx, r, svcRegistry,
-		&config.Config{
-			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
-		})
+	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
@@ -102,6 +102,7 @@ func SetupKeyTest(t *testing.T) (
 		keyConfig,
 		tenantDefaultCert,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 		ksConfig,
 	)
 
@@ -430,6 +431,7 @@ func TestEditableCryptoData(t *testing.T) {
 		})
 
 		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyType = constants.KeyTypeHYOK
 			k.CryptoAccessData = cryptoData
 			k.KeyConfigurationID = kc.ID
 		})
@@ -445,7 +447,10 @@ func TestEditableCryptoData(t *testing.T) {
 	})
 
 	t.Run("Should be editable on pkey only on failed regions", func(t *testing.T) {
-		kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
+		keyID := uuid.New()
+		kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.PrimaryKeyID = &keyID
+		})
 
 		sysFailed := testutils.NewSystem(func(sys *model.System) {
 			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
@@ -462,13 +467,14 @@ func TestEditableCryptoData(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, kc, sysFailed, sysConnected)
 
 		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyType = constants.KeyTypeHYOK
 			k.CryptoAccessData = cryptoData
 			k.KeyConfigurationID = kc.ID
 		})
 		localCtx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{kc.AdminGroup.IAMIdentifier})
 
-		key, err = km.Create(localCtx, key)
-		require.NoError(t, err)
+		testutils.CreateTestEntities(ctx, t, r, key)
 
 		key, err = km.Get(localCtx, key.ID)
 		assert.NoError(t, err)
@@ -1189,10 +1195,10 @@ func TestKeyRotationTime(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	svcRegistry := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOps))
-	cryptoCerts := []manager.ClientCertificate{
+	cryptoCerts := []config.CryptoCert{
 		{
 			Name: "crypto-1",
-			Subject: manager.ClientCertificateSubject{
+			Subject: config.CryptoCertSubject{
 				CommonNamePrefix: "test_",
 			},
 			RootCA: "https://example.com/root.crt",
@@ -1203,6 +1209,9 @@ func TestKeyRotationTime(t *testing.T) {
 
 	cfg := &config.Config{
 		Database: dbConf,
+		Certificates: config.Certificates{
+			ValidityDays: config.MinCertificateValidityDays,
+		},
 		CryptoLayer: config.CryptoLayer{
 			CertX509Trusts: commoncfg.SourceRef{
 				Source: commoncfg.EmbeddedSourceValue,
@@ -1216,10 +1225,7 @@ func TestKeyRotationTime(t *testing.T) {
 
 	cmkAuditor := auditor.New(ctx, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
-	certManager := manager.NewCertificateManager(ctx, r, svcRegistry,
-		&config.Config{
-			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
-		})
+	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
@@ -1229,7 +1235,7 @@ func TestKeyRotationTime(t *testing.T) {
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 	keystoreDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeystoreDefault
+		c.Purpose = model.CertificatePurposeRoleManagement
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
 	})
 	ksConfig := testutils.NewKeystore(func(_ *model.Keystore) {})

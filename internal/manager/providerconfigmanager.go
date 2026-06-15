@@ -26,17 +26,20 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-const DefaultProviderConfigCacheExpiration = 24 * time.Hour
+const (
+	DefaultProviderConfigCacheExpiration = 24 * time.Hour
+)
 
 var (
 	ErrCreateKeystore                = errors.New("failed to create keystore")
 	ErrInvalidKeystore               = errors.New("invalid keystore")
-	ErrCreateProtobufStruct          = errors.New("failed to create protobuf struct")
 	ErrGetTenantFromCtx              = errors.New("failed to get tenant from context")
 	ErrGetDefaultTenantCertificate   = errors.New("failed to get default tenant HYOK certificate")
 	ErrGetDefaultKeystoreCertificate = errors.New("failed to get default keystore certificate")
 	ErrAddConfigToPool               = errors.New("failed to add keystore configuration to pool")
 	ErrCountKeystorePool             = errors.New("failed to get keystore pool size")
+	ErrGrantTrustFailed              = errors.New("failed to grant trust to certificate")
+	ErrRemoveTrustFailed             = errors.New("failed to remove trust from certificate")
 )
 
 type ProviderConfig struct {
@@ -96,7 +99,6 @@ func NewProviderConfigManager(
 
 const (
 	pluginAlgorithmPrefix = "KEY_ALGORITHM_"
-	pluginKeyTypePrefix   = "KEY_TYPE_"
 )
 
 // getPluginAlgorithm returns the plugin algorithm for the key
@@ -238,7 +240,7 @@ func (pmc *ProviderConfigManager) CreateKeystore(ctx context.Context) (string, m
 		return "", nil, errs.Wrapf(ErrCreateKeystore, fmt.Sprintf("provider: %s, error: %v", provider, err))
 	}
 
-	return provider, resp.Config.Values, nil
+	return provider, resp.ToKeystoreConfig().Values, nil
 }
 
 func (pmc *ProviderConfigManager) AddKeystoreToPool(
@@ -315,10 +317,11 @@ func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 		return nil, nil, err
 	}
 
-	cert, err := pmc.certs.getDefaultKeystoreClientCert(
+	keyManagementCert, err := pmc.certs.getDefaultKeystoreClientCert(
 		ctx,
-		ksConfig.LocalityID,
-		ksConfig.CommonName,
+		ksConfig.KeyManagementConfig.LocalityID,
+		ksConfig.KeyManagementConfig.CommonName,
+		model.CertificatePurposeKeyManagement,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -326,13 +329,13 @@ func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 
 	configMap := map[string]any{
 		"authType":   constants.AuthTypeCertificate,
-		"clientCert": cert.CertPEM,
-		"privateKey": cert.PrivateKeyPEM,
+		"clientCert": keyManagementCert.CertPEM,
+		"privateKey": keyManagementCert.PrivateKeyPEM,
 	}
 
-	maps.Copy(configMap, ksConfig.ManagementAccessData)
+	maps.Copy(configMap, ksConfig.KeyManagementConfig.AccessData)
 
-	return &common.KeystoreConfig{Values: configMap}, &cert.ExpirationDate, nil
+	return &common.KeystoreConfig{Values: configMap}, &keyManagementCert.ExpirationDate, nil
 }
 
 func (pmc *ProviderConfigManager) getHYOKKeystoreConfig(

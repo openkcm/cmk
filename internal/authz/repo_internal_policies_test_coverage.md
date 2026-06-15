@@ -16,12 +16,12 @@ point (`cmd/`) that injects each role at runtime.
 | [cmd/task-worker and cmd/task-scheduler](#cmdtask-worker-and-cmdtask-scheduler) | Complete |
 | [cmd/tenant-manager and cmd/operator](#cmdtenant-manager-and-cmdoperator) | Complete |
 | [cmd/tenant-manager-cli](#cmdtenant-manager-cli) | Complete |
-| [cmd/event-reconciler](#cmdevent-reconciler) | Partial ³ |
+| [cmd/event-reconciler](#cmdevent-reconciler) | Partial ³ ⁴ |
 | [cmd/api-server](#cmdapi-server) | Partial ² |
 
 ¹ Some permissions within each role are not exercised — tests use empty batches or early exits to avoid plugin dependencies. See the Tested column in each role table for details.
 ² Count on KeyConfiguration (`UserManager.CheckKeyConfigManagedByIAMGroups`) is not exercised — the test only drives the `NeedsGroupFiltering`/`GetRoleFromIAM` path. See the Tested column.
-³ Only the `KeyTaskInfoResolver.ResolveTasks` path is tested (Key:First, System:Count+List, Tenant:First). Key:List, Key:Update, System:First, and System:Update are exercised by system-action and key-detach handlers which require live plugin targets and are not covered by the current unit test.
+³ Only the `KeyTaskInfoResolver.ResolveTasks` path is tested (Key:First, System:Count+List, Tenant:First). Key:List, Key:Update, System:First, and System:Update are exercised by system-action and key-detach handlers which require live plugin targets and are not covered by the current unit test. Event:Update and Event:Delete (used by `updateEventError` and `cleanUpEvent`) are covered by a dedicated sub-test.
 
 ## Design
 
@@ -297,11 +297,25 @@ covering every permission in the policy.
 | Update | Key | `KeyDetachJobHandler.terminate` → `updateKey` | – |
 | First, Count, List | System | `KeyTaskInfoResolver.getRegionsByKeyID`, `SystemTaskInfoResolver.loadTenantAndSystem` | ✓ / – |
 | Update | System | system event handlers → `updateSystem` | – |
+| First | Certificate | `CryptoAccessDataSyncer.getRoleManagementCert` | ✓ |
+| First | TenantConfig | `CryptoAccessDataSyncer.getDefaultKeystoreConfig` | ✓ |
+| Delete, Create | TenantConfig | `CryptoAccessDataSyncer.setDefaultKeystoreConfig` (via `repo.Set`) | ✓ |
+| Update | Event | `updateEventError` → `r.Patch` on Event | ✓ |
+| Delete | Event | `cleanUpEvent` → `r.Delete` on Event | ✓ |
 
 **Test:** `internal/authz/policy_tests/event_reconciler_test.go`
 `TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_deriving_connected_regions_for_key`
+`TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_CryptoAccessDataSyncer_to_read_TenantConfig_and_Certificate`
+`TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_CryptoAccessDataSyncer_Certificate:First_and_TenantConfig:Set`
+`TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_Event:Update_and_Event:Delete`
 
 A key configuration, a HYOK key, and a CONNECTED system sharing the same `KeyConfigurationID` are seeded. `ResolveTasks` for `JobTypeKeyEnable` calls `getTenantByID` (Tenant:First), then `getRegionsByKeyID` which performs Key:First then `ProcessInBatch` → Count+List on System. Because no target region is configured for the seeded system's region, the test exits with `ErrNoConnectedRegionsForKey` — confirming authz passes through the entire resolver path. Key:List (used by system-action resolvers), Key:Update, System:First, and System:Update (used by system and key-detach job handlers) require live plugin targets and are not covered.
+
+Two additional sub-tests cover `CryptoAccessDataSyncer`:
+
+- **TenantConfig:First (read path):** A DEFAULT_KEYSTORE `TenantConfig` is seeded with a crypto cert entry whose subject already matches what the syncer computes for the test tenant. `SyncAndGetCryptoAccessData` under `InternalEventReconcilerRole` reads the config (TenantConfig:First), finds the cert is up-to-date, and returns without invoking the plugin or writing back. Confirms First on TenantConfig is permitted.
+
+- **Certificate:First and TenantConfig:Set (grant-trust path):** A DEFAULT_KEYSTORE `TenantConfig` with no existing crypto entries and a role-management `Certificate` are seeded. `SyncAndGetCryptoAccessData` reads the config (TenantConfig:First), fetches the role-management cert (Certificate:First), calls `GrantTrust` on the `TestKeystoreManagement` plugin, then writes the updated config back (TenantConfig:Set = Delete+Create). Confirms all three operations are permitted by the policy.
 
 ---
 

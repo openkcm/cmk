@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
@@ -37,7 +39,7 @@ var (
 )
 
 const (
-	DefaultKeyBitSize = 3076
+	DefaultKeyBitSize = 3072
 )
 
 type CertificateManager struct {
@@ -84,8 +86,10 @@ func (m *CertificateManager) GetCertificate(
 
 func (m *CertificateManager) RotateExpiredCertificates(ctx context.Context) error {
 	rotateDate := time.Now().AddDate(0, 0, m.cfg.Certificates.RotationThresholdDays)
-	compositeKey := repo.NewCompositeKey().Where(
-		repo.AutoRotateField, true).Where(repo.ExpirationDateField, rotateDate, repo.Lt)
+	compositeKey := repo.NewCompositeKey().
+		Where(repo.AutoRotateField, true).
+		Where(repo.PurposeField, model.SingletonCertificatePurposes).
+		Where(repo.ExpirationDateField, rotateDate, repo.Lt)
 	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey))
 
 	return repo.ProcessInBatch(ctx, m.repo, query, repo.DefaultLimit, func(certs []*model.Certificate) error {
@@ -104,7 +108,9 @@ func (m *CertificateManager) RotateExpiredCertificates(ctx context.Context) erro
 	})
 }
 
-func (m *CertificateManager) UpdateCertificate(ctx context.Context, certificateID *uuid.UUID,
+func (m *CertificateManager) UpdateCertificate(
+	ctx context.Context,
+	certificateID *uuid.UUID,
 	autoRotate bool,
 ) (*model.Certificate, error) {
 	cert, err := m.GetCertificate(ctx, certificateID)
@@ -112,17 +118,12 @@ func (m *CertificateManager) UpdateCertificate(ctx context.Context, certificateI
 		return nil, errs.Wrap(ErrCertificateManager, err)
 	}
 
-	// Get the latest Tenant/Keystore default cert
-	// And prevent turning on auto rotate for expired certificates
+	// Get the latest default certificate of the same purpose,
+	// and prevent turning on auto rotate for expired certificates
 	if autoRotate {
 		var defaultCert *model.Certificate
 
-		if cert.Purpose == model.CertificatePurposeTenantDefault {
-			defaultCert, _, err = m.getDefaultTenantCertificate(ctx)
-		} else {
-			defaultCert, _, err = m.getDefaultKeystoreCertificate(ctx)
-		}
-
+		defaultCert, _, err = m.getCertificateByPurpose(ctx, cert.Purpose)
 		if err != nil {
 			return nil, errs.Wrap(ErrCertificateManager, err)
 		}
@@ -148,15 +149,13 @@ func (m *CertificateManager) RequestNewCertificate(
 	privateKey *rsa.PrivateKey,
 	args model.RequestCertArgs,
 ) (*model.Certificate, *rsa.PrivateKey, error) {
-	if args.CertPurpose == model.CertificatePurposeTenantDefault {
-		exist, err := m.isTenantDefaultCertExist(ctx)
-		if err != nil {
-			return nil, nil, errs.Wrap(ErrCertificateManager, err)
-		}
+	exist, err := m.isCertWithPurposeExist(ctx, args.CertPurpose)
+	if err != nil {
+		return nil, nil, errs.Wrap(ErrCertificateManager, err)
+	}
 
-		if exist {
-			return nil, nil, ErrDefaultTenantCertificateAlreadyExists
-		}
+	if exist {
+		return nil, nil, ErrDefaultTenantCertificateAlreadyExists
 	}
 
 	return m.getNewCertificate(ctx, privateKey, args)
@@ -217,7 +216,10 @@ func buildCertificateModel(
 	}
 }
 
-func extractPublicKeyFromChain(certificateChainPEM []byte, privateKey *rsa.PrivateKey) (*x509.Certificate, error) {
+func extractPublicKeyFromChain(
+	certificateChainPEM []byte,
+	privateKey *rsa.PrivateKey,
+) (*x509.Certificate, error) {
 	var certs []*x509.Certificate
 
 	for {
@@ -289,9 +291,11 @@ func decodeCertificateChain(chainPEM []byte) ([]*x509.Certificate, []byte, error
 	return certs, chainPEM, nil
 }
 
-func (m *CertificateManager) isTenantDefaultCertExist(ctx context.Context) (bool, error) {
-	compositeKey := repo.NewCompositeKey().Where(repo.PurposeField,
-		model.CertificatePurposeTenantDefault)
+func (m *CertificateManager) isCertWithPurposeExist(
+	ctx context.Context,
+	purpose model.CertificatePurpose,
+) (bool, error) {
+	compositeKey := repo.NewCompositeKey().Where(repo.PurposeField, purpose)
 
 	count, err := m.repo.Count(
 		ctx,
@@ -302,14 +306,6 @@ func (m *CertificateManager) isTenantDefaultCertExist(ctx context.Context) (bool
 	}
 
 	return count > 0, nil
-}
-
-func (m *CertificateManager) getDefaultTenantCertificate(ctx context.Context) (*model.Certificate, bool, error) {
-	return m.getCertificateByPurpose(ctx, model.CertificatePurposeTenantDefault)
-}
-
-func (m *CertificateManager) getDefaultKeystoreCertificate(ctx context.Context) (*model.Certificate, bool, error) {
-	return m.getCertificateByPurpose(ctx, model.CertificatePurposeKeystoreDefault)
 }
 
 func (m *CertificateManager) getCertificateByPurpose(
@@ -392,7 +388,7 @@ func (m *CertificateManager) getNewCertificate(
 func (m *CertificateManager) getDefaultHYOKClientCert(
 	ctx context.Context,
 ) (*model.Certificate, error) {
-	cert, exists, err := m.getDefaultTenantCertificate(ctx)
+	cert, exists, err := m.getCertificateByPurpose(ctx, model.CertificatePurposeHYOKManagement)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetDefaultTenantCertificate, err)
 	}
@@ -406,7 +402,7 @@ func (m *CertificateManager) getDefaultHYOKClientCert(
 		commonName := m.cfg.Certificates.DefaultTenantCertPrefix + tenantID
 		cert, _, err = m.RequestNewCertificate(ctx, nil,
 			model.RequestCertArgs{
-				CertPurpose: model.CertificatePurposeTenantDefault,
+				CertPurpose: model.CertificatePurposeHYOKManagement,
 				Supersedes:  nil,
 				CommonName:  commonName,
 				Locality:    []string{m.cfg.Landscape.Region},
@@ -433,6 +429,44 @@ func (m *CertificateManager) getDefaultHYOKClientCert(
 	return cert, nil
 }
 
+// getDefaultKeystoreClientCert returns role management or key management certificate depending on the provided purpose
+func (m *CertificateManager) getDefaultKeystoreClientCert(
+	ctx context.Context,
+	localityID string,
+	commonName string,
+	purpose model.CertificatePurpose,
+) (*model.Certificate, error) {
+	var (
+		cert   *model.Certificate
+		err    error
+		exists bool
+	)
+
+	if purpose != model.CertificatePurposeRoleManagement && purpose != model.CertificatePurposeKeyManagement {
+		return nil, errs.Wrapf(ErrGetDefaultKeystoreCertificate, "unsupported certificate purpose")
+	}
+
+	cert, exists, err = m.getCertificateByPurpose(ctx, purpose)
+	if err != nil {
+		return nil, errs.Wrap(ErrGetDefaultKeystoreCertificate, err)
+	}
+
+	if !exists {
+		cert, _, err = m.RequestNewCertificate(ctx, nil,
+			model.RequestCertArgs{
+				CertPurpose: purpose,
+				Supersedes:  nil,
+				CommonName:  commonName,
+				Locality:    []string{localityID},
+			})
+		if err != nil {
+			return nil, errs.Wrap(ErrGetDefaultKeystoreCertificate, err)
+		}
+	}
+
+	return cert, nil
+}
+
 // resolveRotationLocality returns the locality that should be used when rotating a certificate.
 // It reads the locality directly from the existing cert's PEM so the rotated cert is always
 // issued with the same locality as the one it supersedes — preserving backward compatibility
@@ -452,34 +486,32 @@ func (m *CertificateManager) resolveRotationLocality(certPEM string) []string {
 	return parsed.Subject.Locality
 }
 
-func (m *CertificateManager) getDefaultKeystoreClientCert(
-	ctx context.Context,
-	localityID string,
-	commonName string,
-) (*model.Certificate, error) {
+// getCryptoCertificates retrieves crypto certificates from config
+func (m *CertificateManager) getCryptoCertificates(ctx context.Context) ([]*model.ClientCertificate, error) {
+	bytes, err := commoncfg.LoadValueFromSourceRef(m.cfg.CryptoLayer.CertX509Trusts)
+	if err != nil {
+		return nil, errs.Wrap(ErrLoadCryptoCerts, err)
+	}
+
 	var (
-		cert   *model.Certificate
-		err    error
-		exists bool
+		certConfigurations []*config.CryptoCert
+		certs              []*model.ClientCertificate
 	)
 
-	cert, exists, err = m.getDefaultKeystoreCertificate(ctx)
+	err = yaml.Unmarshal(bytes, &certConfigurations)
 	if err != nil {
-		return nil, errs.Wrap(ErrGetDefaultKeystoreCertificate, err)
+		return nil, errs.Wrap(ErrUnmarshalCryptoCerts, err)
 	}
 
-	if !exists {
-		cert, _, err = m.RequestNewCertificate(ctx, nil,
-			model.RequestCertArgs{
-				CertPurpose: model.CertificatePurposeKeystoreDefault,
-				Supersedes:  nil,
-				CommonName:  commonName,
-				Locality:    []string{localityID},
-			})
-		if err != nil {
-			return nil, errs.Wrap(ErrGetDefaultKeystoreCertificate, err)
-		}
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	return cert, nil
+	for _, certCfg := range certConfigurations {
+		cert := model.NewClientCertificateFromConfig(*certCfg, tenantID)
+		certs = append(certs, &cert)
+	}
+
+	return certs, nil
 }

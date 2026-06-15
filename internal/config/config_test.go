@@ -9,7 +9,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
@@ -32,10 +31,10 @@ func TestValidateCertificate(t *testing.T) {
 
 func TestValidateCryptoLayer(t *testing.T) {
 	t.Run("Should success", func(t *testing.T) {
-		cryptoCerts := []manager.ClientCertificate{
+		cryptoCerts := []config.CryptoCert{
 			{
 				Name: "crypto-1",
-				Subject: manager.ClientCertificateSubject{
+				Subject: config.CryptoCertSubject{
 					CommonNamePrefix: "test_",
 				},
 				RootCA: "test",
@@ -53,10 +52,10 @@ func TestValidateCryptoLayer(t *testing.T) {
 	})
 
 	t.Run("Should fail on prefix bigger than limit", func(t *testing.T) {
-		cryptoCerts := []manager.ClientCertificate{
+		cryptoCerts := []config.CryptoCert{
 			{
 				Name: "crypto-1",
-				Subject: manager.ClientCertificateSubject{
+				Subject: config.CryptoCertSubject{
 					CommonNamePrefix: strings.Repeat("t", config.MaxCryptoCNPrefix+1),
 				},
 				RootCA: "test",

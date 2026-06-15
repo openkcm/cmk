@@ -223,15 +223,17 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 	return keystore, nil
 }
 
-func (m *TenantConfigManager) getStoredDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, bool, error) {
-	var config model.TenantConfig
+func (m *TenantConfigManager) getStoredDefaultKeystoreConfig(
+	ctx context.Context,
+) (*model.KeystoreConfig, bool, error) {
+	var cfg model.TenantConfig
 
 	ck := repo.NewCompositeKey().Where(repo.KeyField, constants.DefaultKeyStore)
 	query := repo.NewQuery().Where(
 		repo.NewCompositeKeyGroup(ck),
 	)
 
-	found, err := m.repo.First(ctx, &config, *query)
+	found, err := m.repo.First(ctx, &cfg, *query)
 	if err != nil && !errors.Is(err, repo.ErrNotFound) {
 		return nil, false, errs.Wrap(ErrGetDefaultKeystore, err)
 	}
@@ -240,7 +242,7 @@ func (m *TenantConfigManager) getStoredDefaultKeystoreConfig(ctx context.Context
 	}
 
 	keystore := &model.KeystoreConfig{}
-	err = json.Unmarshal(config.Value, keystore)
+	err = json.Unmarshal(cfg.Value, keystore)
 	if err != nil {
 		return nil, false, errs.Wrap(ErrUnmarshalConfig, err)
 	}

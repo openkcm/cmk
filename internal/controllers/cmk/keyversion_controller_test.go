@@ -472,6 +472,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 		keyConfig,
 		keystore,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 	)
 
 	clientData := &auth.ClientData{

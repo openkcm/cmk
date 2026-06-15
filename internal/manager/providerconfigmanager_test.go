@@ -68,8 +68,11 @@ func TestCreateKeystore(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, ks)
 	assert.Equal(t, providerTest, provider)
-	assert.Equal(t, "test-uuid", ks["locality"])
-	assert.Equal(t, "default.kms.test", ks["commonName"])
+
+	roleManagementCfg, ok := ks["roleManagementConfig"].(map[string]any)
+	assert.True(t, ok)
+	assert.Equal(t, "test-uuid", roleManagementCfg["localityID"])
+	assert.Equal(t, "default.kms.test", roleManagementCfg["commonName"])
 }
 
 func TestFillKeystorePool(t *testing.T) {
@@ -94,7 +97,7 @@ func TestGetOrInitProvider(t *testing.T) {
 	r := sql.NewRepository(db)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	cert := testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeTenantDefault
+		c.Purpose = model.CertificatePurposeHYOKManagement
 	})
 	testutils.CreateTestEntities(ctx, t, r, cert)
 	tests := []struct {

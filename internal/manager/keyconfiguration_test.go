@@ -46,7 +46,7 @@ var (
 	})
 	CreatorName   = "bob@"
 	CreatorID     = uuid.NewString()
-	cryptoSubject = manager.ClientCertificateSubject{
+	cryptoSubject = config.CryptoCertSubject{
 		Locality:           []string{},
 		OrganizationalUnit: []string{},
 		Organization:       []string{},
@@ -64,7 +64,7 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 	})
 	r := sql.NewRepository(db)
 
-	cryptoCerts := []manager.ClientCertificate{
+	cryptoCerts := []config.CryptoCert{
 		{
 			Name:    "crypto-1",
 			Subject: cryptoSubject,
@@ -1108,7 +1108,7 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 
 		_, privateKey, err = certManager.RequestNewCertificate(ctx, privateKey,
 			model.RequestCertArgs{
-				CertPurpose: model.CertificatePurposeTenantDefault,
+				CertPurpose: model.CertificatePurposeHYOKManagement,
 				Supersedes:  nil,
 				CommonName:  "MyCert",
 				Locality:    []string{"LOCAL/CMK"},
@@ -1118,12 +1118,12 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 		certs, err := m.GetClientCertificates(ctx)
 
 		assert.NoError(t, err)
-		assert.Len(t, certs[model.CertificatePurposeTenantDefault], 1)
+		assert.Len(t, certs[model.CertificatePurposeHYOKManagement], 1)
 		assert.Len(t, certs[model.CertificatePurposeCrypto], 1)
-		assert.Equal(t, manager.NewClientCertificateSubjectFromPKIX(tenantSubjectPKIX),
-			certs[model.CertificatePurposeTenantDefault][0].Subject)
+		assert.Equal(t, model.NewClientCertificateSubjectFromPKIX(tenantSubjectPKIX),
+			certs[model.CertificatePurposeHYOKManagement][0].Subject)
 		assert.Equal(t, TestCertURL,
-			certs[model.CertificatePurposeTenantDefault][0].RootCA)
+			certs[model.CertificatePurposeHYOKManagement][0].RootCA)
 
 		assert.Contains(t,
 			certs[model.CertificatePurposeCrypto][0].Subject.CommonName, cryptoSubject.CommonNamePrefix)

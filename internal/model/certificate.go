@@ -2,11 +2,15 @@ package model
 
 import (
 	"context"
+	"crypto/x509/pkix"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/config"
 )
 
 type CertificateState string
@@ -14,16 +18,27 @@ type CertificateState string
 const (
 	CertificateStateActive  CertificateState = "ACTIVE"
 	CertificateStateExpired CertificateState = "EXPIRED"
+
+	CertificateSubjectKey string = "certificateSubject"
 )
 
 type CertificatePurpose string
 
 const (
-	CertificatePurposeGeneric         CertificatePurpose = "GENERIC"
-	CertificatePurposeTenantDefault   CertificatePurpose = "TENANT_DEFAULT"
-	CertificatePurposeKeystoreDefault CertificatePurpose = "KEYSTORE_DEFAULT"
-	CertificatePurposeCrypto          CertificatePurpose = "CRYPTO"
+	CertificatePurposeGeneric        CertificatePurpose = "GENERIC"         // Fallback default purpose
+	CertificatePurposeHYOKManagement CertificatePurpose = "HYOK_MANAGEMENT" // Managing HYOK keys
+	CertificatePurposeRoleManagement CertificatePurpose = "ROLE_MANAGEMENT" // Managing other keystore roles
+	CertificatePurposeKeyManagement  CertificatePurpose = "KEY_MANAGEMENT"  // Managing BYOK/Managed key lifecycle
+	CertificatePurposeCrypto         CertificatePurpose = "CRYPTO"          // Only for displaying purposes, not creation
 )
+
+// SingletonCertificatePurposes defines the certificate purposes
+// for which only one active certificate can exist at a time.
+var SingletonCertificatePurposes = []CertificatePurpose{
+	CertificatePurposeHYOKManagement,
+	CertificatePurposeRoleManagement,
+	CertificatePurposeKeyManagement,
+}
 
 type Certificate struct {
 	ID             uuid.UUID          `gorm:"type:uuid;primaryKey"`
@@ -65,4 +80,64 @@ type RequestCertArgs struct {
 	Supersedes  *uuid.UUID
 	CommonName  string
 	Locality    []string
+}
+
+// ClientCertificate represents a client certificate used for HYOK key management.
+type ClientCertificate struct {
+	Name    string                   `yaml:"name"`
+	RootCA  string                   `yaml:"rootCA"` //nolint:tagliatelle
+	Subject ClientCertificateSubject `yaml:"subject"`
+}
+
+// ClientCertificateSubject holds the subject fields of a client certificate.
+type ClientCertificateSubject struct {
+	Locality           []string `yaml:"locality"`
+	OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
+	Organization       []string `yaml:"organization"`
+	Country            []string `yaml:"country"`
+	CommonName         string
+}
+
+func NewClientCertificateFromConfig(value config.CryptoCert, tenant string) ClientCertificate {
+	return ClientCertificate{
+		Name:   value.Name,
+		RootCA: value.RootCA,
+		Subject: ClientCertificateSubject{
+			CommonName:         value.Subject.CommonNamePrefix + tenant,
+			Country:            value.Subject.Country,
+			Organization:       value.Subject.Organization,
+			OrganizationalUnit: value.Subject.OrganizationalUnit,
+			Locality:           value.Subject.Locality,
+		},
+	}
+}
+
+func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSubject {
+	return ClientCertificateSubject{
+		Locality:           subject.Locality,
+		OrganizationalUnit: subject.OrganizationalUnit,
+		Organization:       subject.Organization,
+		Country:            subject.Country,
+		CommonName:         subject.CommonName,
+	}
+}
+
+func (subject ClientCertificateSubject) FormatSubjectWithSlashSeparatedOUs() string {
+	s := pkix.Name{
+		Locality:           subject.Locality,
+		Country:            subject.Country,
+		Organization:       subject.Organization,
+		OrganizationalUnit: subject.OrganizationalUnit,
+		CommonName:         subject.CommonName,
+	}
+	if len(s.OrganizationalUnit) <= 1 {
+		return s.String()
+	}
+
+	standardSubject := s.String()
+	combinedOU := "OU=" + strings.Join(s.OrganizationalUnit, "/")
+	ouPattern := `OU=[^,+]+((\+OU=[^,+]+)+)`
+	re := regexp.MustCompile(ouPattern)
+
+	return re.ReplaceAllString(standardSubject, combinedOU)
 }

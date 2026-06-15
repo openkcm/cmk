@@ -139,14 +139,24 @@ func NewGroup(m func(*model.Group)) *model.Group {
 func NewKeystoreConfig(m func(*model.KeystoreConfig)) *model.KeystoreConfig {
 	mut := NewMutator(func() model.KeystoreConfig {
 		return model.KeystoreConfig{
-			LocalityID: TestLocalityID,
-			CommonName: TestDefaultKeystoreCommonName,
-			ManagementAccessData: map[string]any{
-				"roleArn":        TestRoleArn,
-				"trustAnchorArn": TestTrustAnchorArn,
-				"profileArn":     TestProfileArn,
-				"AccountID":      ValidKeystoreAccountInfo["AccountID"],
-				"UserID":         ValidKeystoreAccountInfo["UserID"],
+			RoleManagementConfig: model.ManagementConfig{
+				LocalityID: TestLocalityID,
+				CommonName: TestDefaultKeystoreCommonName,
+				AccessData: model.KeystoreAccessData{
+					"roleArn":        TestRoleArn,
+					"trustAnchorArn": TestTrustAnchorArn,
+					"profileArn":     TestProfileArn,
+					"AccountID":      ValidKeystoreAccountInfo["AccountID"],
+					"UserID":         ValidKeystoreAccountInfo["UserID"],
+				},
+			},
+			KeyManagementConfig: model.ManagementConfig{
+				LocalityID: TestLocalityID,
+				CommonName: TestDefaultKeystoreCommonName + "-key-mgmt",
+				AccessData: model.KeystoreAccessData{
+					"AccountID": ValidKeystoreAccountInfo["AccountID"],
+					"UserID":    ValidKeystoreAccountInfo["UserID"],
+				},
 			},
 			SupportedRegions: SupportedRegions,
 		}
@@ -175,7 +185,7 @@ func NewCertificate(m func(*model.Certificate)) *model.Certificate {
 	mut := NewMutator(func() model.Certificate {
 		return model.Certificate{
 			ID:             uuid.New(),
-			Purpose:        model.CertificatePurposeTenantDefault,
+			Purpose:        model.CertificatePurposeHYOKManagement,
 			CommonName:     TestTenantCertCommonName,
 			State:          model.CertificateStateActive,
 			CreationDate:   now,

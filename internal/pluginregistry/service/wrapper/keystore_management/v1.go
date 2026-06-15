@@ -12,6 +12,7 @@ import (
 	grpccommonv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/common/v1"
 	grpckeystoremanagementv1 "github.com/openkcm/plugin-sdk/proto/plugin/keystore/management/v1"
 
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
 )
@@ -54,13 +55,35 @@ func (v1 *V1) CreateKeystore(
 	if err != nil {
 		return nil, err
 	}
-	resp := &keystoremanagement.CreateKeystoreResponse{
-		Config: common.KeystoreConfig{
-			Values: nil,
-		},
+
+	resp := &keystoremanagement.CreateKeystoreResponse{}
+	if mc := grpcResp.GetRoleManagementConfig(); mc != nil {
+		resp.RoleManagementConfig = keystoremanagement.ManagementConfig{
+			LocalityID: mc.GetLocalityId(),
+			CommonName: mc.GetCommonName(),
+		}
+		if mc.GetAccessData() != nil {
+			resp.RoleManagementConfig.AccessData = common.KeystoreConfig{
+				Values: mc.GetAccessData().GetValues().AsMap(),
+			}
+		}
 	}
-	if grpcResp.GetConfig() != nil || grpcResp.GetConfig().GetValues() != nil {
-		resp.Config.Values = grpcResp.GetConfig().GetValues().AsMap()
+	if mc := grpcResp.GetKeyManagementConfig(); mc != nil {
+		resp.KeyManagementConfig = keystoremanagement.ManagementConfig{
+			LocalityID: mc.GetLocalityId(),
+			CommonName: mc.GetCommonName(),
+		}
+		if mc.GetAccessData() != nil {
+			resp.KeyManagementConfig.AccessData = common.KeystoreConfig{
+				Values: mc.GetAccessData().GetValues().AsMap(),
+			}
+		}
+	}
+	for _, r := range grpcResp.GetSupportedRegions() {
+		resp.SupportedRegions = append(resp.SupportedRegions, config.Region{
+			Name:          r.GetName(),
+			TechnicalName: r.GetTechnicalName(),
+		})
 	}
 	return resp, nil
 }
@@ -87,4 +110,60 @@ func (v1 *V1) DeleteKeystore(
 		return nil, err
 	}
 	return &keystoremanagement.DeleteKeystoreResponse{}, nil
+}
+
+func (v1 *V1) GrantTrust(
+	ctx context.Context,
+	req *keystoremanagement.GrantTrustRequest,
+) (*keystoremanagement.GrantTrustResponse, error) {
+	value, err := structpb.NewStruct(req.Config.Values)
+	if err != nil {
+		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+	}
+	in := &grpckeystoremanagementv1.GrantTrustRequest{
+		Config:  &grpccommonv1.KeystoreInstanceConfig{Values: value},
+		Subject: req.Subject,
+		Region:  req.Region,
+	}
+	if err := protovalidate.Validate(in); err != nil {
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
+	}
+
+	grpcResp, err := v1.KeystoreProviderPluginClient.GrantTrust(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &keystoremanagement.GrantTrustResponse{}
+	if grpcResp.GetAccessData() != nil {
+		resp.AccessData = common.KeystoreConfig{Values: grpcResp.GetAccessData().AsMap()}
+	}
+	return resp, nil
+}
+
+func (v1 *V1) RemoveTrust(
+	ctx context.Context,
+	req *keystoremanagement.RemoveTrustRequest,
+) (*keystoremanagement.RemoveTrustResponse, error) {
+	cfgValue, err := structpb.NewStruct(req.Config.Values)
+	if err != nil {
+		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+	}
+	accessDataValue, err := structpb.NewStruct(req.AccessData.Values)
+	if err != nil {
+		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+	}
+	in := &grpckeystoremanagementv1.RemoveTrustRequest{
+		Config:     &grpccommonv1.KeystoreInstanceConfig{Values: cfgValue},
+		AccessData: accessDataValue,
+	}
+	if err := protovalidate.Validate(in); err != nil {
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
+	}
+
+	_, err = v1.KeystoreProviderPluginClient.RemoveTrust(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return &keystoremanagement.RemoveTrustResponse{}, nil
 }

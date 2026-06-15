@@ -853,7 +853,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 		setupFunc           func(t *testing.T, db *multitenancy.DB, tenant string)
 		expectedRecordCount int
 		expectedRootCA      string
-		expectedSubject     manager.ClientCertificateSubject
+		expectedSubject     model.ClientCertificateSubject
 		expectedType        string
 		disableAuthzMW      bool
 	}{
@@ -862,7 +862,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject: manager.ClientCertificateSubject{
+			expectedSubject: model.ClientCertificateSubject{
 				Locality:           []string{"LOCAL"},
 				OrganizationalUnit: []string{"EXAMPLE OU1", "EXAMPLE OU2", "EXAMPLE OU3"},
 				Organization:       []string{"EXAMPLE"},
@@ -892,7 +892,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 				cert := testutils.NewCertificate(func(c *model.Certificate) {
 					c.CommonName = "myCert"
 					c.CertPEM = string(certPEM)
-					c.Purpose = model.CertificatePurposeTenantDefault
+					c.Purpose = model.CertificatePurposeHYOKManagement
 				})
 
 				err = r.Create(ctx, cert)
@@ -904,7 +904,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject: manager.ClientCertificateSubject{
+			expectedSubject: model.ClientCertificateSubject{
 				Locality:           []string{"LOCAL"},
 				OrganizationalUnit: []string{"EXAMPLE OU1"},
 				Organization:       []string{"EXAMPLE"},
@@ -934,7 +934,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 				cert := testutils.NewCertificate(func(c *model.Certificate) {
 					c.CommonName = "singleOuCert"
 					c.CertPEM = string(certPEM)
-					c.Purpose = model.CertificatePurposeTenantDefault
+					c.Purpose = model.CertificatePurposeHYOKManagement
 				})
 
 				err = r.Create(ctx, cert)
@@ -946,7 +946,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject: manager.ClientCertificateSubject{
+			expectedSubject: model.ClientCertificateSubject{
 				Locality:           []string{"LOCAL"},
 				OrganizationalUnit: []string{},
 				Organization:       []string{"EXAMPLE"},
@@ -975,7 +975,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 				cert := testutils.NewCertificate(func(c *model.Certificate) {
 					c.CommonName = "noOuCert"
 					c.CertPEM = string(certPEM)
-					c.Purpose = model.CertificatePurposeTenantDefault
+					c.Purpose = model.CertificatePurposeHYOKManagement
 				})
 
 				err = r.Create(ctx, cert)
@@ -1003,8 +1003,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			subj := tt.expectedSubject
-			subj.CommonNamePrefix = "test"
-			cryptoCerts := []*manager.ClientCertificate{
+			cryptoCerts := []*model.ClientCertificate{
 				{
 					RootCA:  tt.expectedRootCA,
 					Subject: subj,

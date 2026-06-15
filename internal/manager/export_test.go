@@ -52,8 +52,9 @@ func (m *CertificateManager) GetDefaultKeystoreClientCert(
 	ctx context.Context,
 	localityID string,
 	commonName string,
+	purpose model.CertificatePurpose,
 ) (*model.Certificate, error) {
-	return m.getDefaultKeystoreClientCert(ctx, localityID, commonName)
+	return m.getDefaultKeystoreClientCert(ctx, localityID, commonName, purpose)
 }
 
 func (m *CertificateManager) GetDefaultHYOKClientCert(

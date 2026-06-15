@@ -83,6 +83,30 @@ var InternalRepoPolicyData = internalRepoPolicies{
 						RepoActionUpdate,
 					},
 				},
+				{
+					// To get role-management client cert
+					ID: RepoResourceTypeCertificate,
+					Actions: []RepoAction{
+						RepoActionFirst,
+					},
+				},
+				{
+					// To sync default keystore configuration
+					ID: RepoResourceTypeTenantconfig,
+					Actions: []RepoAction{
+						RepoActionFirst,
+						RepoActionDelete,
+						RepoActionCreate,
+					},
+				},
+				{
+					// To update event error state and clean up completed events
+					ID: RepoResourceTypeEvent,
+					Actions: []RepoAction{
+						RepoActionUpdate,
+						RepoActionDelete,
+					},
+				},
 			},
 		),
 		NewPolicy(

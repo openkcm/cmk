@@ -30,11 +30,11 @@ func (s *TestKeystoreManagement) CreateKeystore(
 	_ *keystoremanagement.CreateKeystoreRequest,
 ) (*keystoremanagement.CreateKeystoreResponse, error) {
 	return &keystoremanagement.CreateKeystoreResponse{
-		Config: common.KeystoreConfig{
-			Values: map[string]any{
-				"locality":   "test-uuid",
-				"commonName": "default.kms.test",
-				"managementAccessData": map[string]any{
+		RoleManagementConfig: keystoremanagement.ManagementConfig{
+			LocalityID: "test-uuid",
+			CommonName: "default.kms.test",
+			AccessData: common.KeystoreConfig{
+				Values: map[string]any{
 					"accountId": "mock-account",
 					"userId":    "mock-user",
 					"random":    uuid.NewString(),
@@ -49,4 +49,27 @@ func (s *TestKeystoreManagement) DeleteKeystore(
 	_ *keystoremanagement.DeleteKeystoreRequest,
 ) (*keystoremanagement.DeleteKeystoreResponse, error) {
 	return &keystoremanagement.DeleteKeystoreResponse{}, nil
+}
+
+func (s *TestKeystoreManagement) GrantTrust(
+	_ context.Context,
+	req *keystoremanagement.GrantTrustRequest,
+) (*keystoremanagement.GrantTrustResponse, error) {
+	return &keystoremanagement.GrantTrustResponse{
+		AccessData: common.KeystoreConfig{
+			Values: map[string]any{
+				"accountId":      "mock-account",
+				"trustedSubject": req.Subject,
+				"trustedRegion":  req.Region,
+				"random":         uuid.NewString(),
+			},
+		},
+	}, nil
+}
+
+func (s *TestKeystoreManagement) RemoveTrust(
+	_ context.Context,
+	_ *keystoremanagement.RemoveTrustRequest,
+) (*keystoremanagement.RemoveTrustResponse, error) {
+	return &keystoremanagement.RemoveTrustResponse{}, nil
 }

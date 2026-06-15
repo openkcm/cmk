@@ -76,10 +76,14 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 
 	ksConfig := testutils.NewKeystore(func(_ *model.Keystore) {})
 	keystoreDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeystoreDefault
+		c.Purpose = model.CertificatePurposeRoleManagement
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
 	})
-	testutils.CreateTestEntities(ctx, t, r, ksConfig, keystoreDefaultCert)
+	keystoreKeyMgmtCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeKeyManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+	})
+	testutils.CreateTestEntities(ctx, t, r, ksConfig, keystoreDefaultCert, keystoreKeyMgmtCert)
 
 	migrator, err := db.NewMigrator(r, &cfg)
 	assert.NoError(t, err)
