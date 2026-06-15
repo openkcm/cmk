@@ -2,6 +2,7 @@ package authz_policy_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -191,6 +192,23 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Contains(t, result, certName)
+	})
+
+	t.Run("InternalEventReconcilerRole allows KeyVersion:First", func(t *testing.T) {
+		kv := testutils.NewKeyVersion(func(k *model.KeyVersion) {
+			k.KeyID = key.ID
+		})
+		require.NoError(t, r.Create(ctx, kv))
+
+		var got model.KeyVersion
+		ck := repo.NewCompositeKey().Where(
+			fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), key.ID.String(),
+		)
+		query := repo.NewQuery().
+			Where(repo.NewCompositeKeyGroup(ck)).
+			Order(repo.OrderField{Field: repo.RotatedField, Direction: repo.Desc})
+		_, err = authzRepo.First(ctx, &got, *query)
+		assert.NoError(t, err)
 	})
 
 	t.Run("InternalEventReconcilerRole allows Event:Update and Event:Delete", func(t *testing.T) {

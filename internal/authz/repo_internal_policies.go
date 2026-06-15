@@ -107,6 +107,13 @@ var InternalRepoPolicyData = internalRepoPolicies{
 						RepoActionDelete,
 					},
 				},
+				{
+					// To get the latest key version native ID
+					ID: RepoResourceTypeKeyversion,
+					Actions: []RepoAction{
+						RepoActionFirst,
+					},
+				},
 			},
 		),
 		NewPolicy(
