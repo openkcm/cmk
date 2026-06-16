@@ -252,8 +252,8 @@ github.com/openkcm/api-sdk v0.18.0 h1:bLURye5GkxSM9SqT3ji94A9HgI9/KgHKFTNgnIeSRW
 github.com/openkcm/api-sdk v0.18.0/go.mod h1:3CQUZVNl/Nu5K71M1arSiTsJhyLloO3pJpqwBL1oE1o=
 github.com/openkcm/cmk v0.8.0 h1:GuGjFQ/utcjibwGbYV/EugOgEz44jtc5xpYxGSpAXQA=
 github.com/openkcm/cmk v0.8.0/go.mod h1:RRjERiQm7BlQA7Sn5zxOI0nKlMlvR7kQhrLzgTt0T6w=
-github.com/openkcm/common-sdk v1.16.1 h1:0GIFrEDR7qXj/ghSvwWVHnWCAzBGD7iFbdRN4WWv9tM=
-github.com/openkcm/common-sdk v1.16.1/go.mod h1:2UuIjhOuee6gQKJt3EnenhB8mXWriGHEXdxCGPWfRxw=
+github.com/openkcm/common-sdk v1.17.0 h1:BWfuYwyST3VBHAfH2oB3Lhnq8w78GGnytUcDHO8kYhc=
+github.com/openkcm/common-sdk v1.17.0/go.mod h1:bvzWwxEYUCEHHWMAtPdWcnUerRLQz8cAbjdjIYhqJlA=
 github.com/openkcm/orbital v0.5.1 h1:fCFyGm059h2IkD8/u+GI7Ofqd54lFGj7zoujKI+7MQk=
 github.com/openkcm/orbital v0.5.1/go.mod h1:PqAOg75iYDrDQrL9uBQKAKfuBlNJgeG0pex1780Wo0E=
 github.com/openkcm/plugin-sdk v0.13.0 h1:NRqreAEiKC4VEeTDnGAKaOvXbfZE5km9fc970I995DQ=

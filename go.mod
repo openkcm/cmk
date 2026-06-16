@@ -27,7 +27,7 @@ require (
 	github.com/oapi-codegen/runtime v1.4.1
 	github.com/openkcm/api-sdk v0.18.0
 	github.com/openkcm/cmk v0.8.0
-	github.com/openkcm/common-sdk v1.16.1
+	github.com/openkcm/common-sdk v1.17.0
 	github.com/openkcm/orbital v0.5.1
 	github.com/openkcm/plugin-sdk v0.13.0
 	github.com/pkg/errors v0.9.1

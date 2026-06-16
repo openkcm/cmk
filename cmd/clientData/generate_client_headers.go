@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/openkcm/common-sdk/pkg/auth"
@@ -21,6 +22,7 @@ const (
 var (
 	clientDataFile = flag.String("clientData", "", "Path to the client data JSON file")
 	privateKey     = flag.String("key", privateKeyPath, "Path to the private key PEM file (use '-' for stdin)")
+	ttl            = flag.Duration("ttl", 365*24*time.Hour, "Time duration for the header to be valid")
 )
 
 func main() {
@@ -117,7 +119,7 @@ func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
 }
 
 func generateHeaders(clientData *auth.ClientData, privateKey any) (string, string, error) {
-	clientDataHeader, signatureHeader, err := clientData.Encode(privateKey)
+	clientDataHeader, signatureHeader, err := clientData.Encode(privateKey, auth.WithTTL(*ttl))
 	if err != nil {
 		return "", "", fmt.Errorf("failed to encode and sign client data: %w", err)
 	}

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -101,7 +102,7 @@ func prepareContext(
 		return r.Context(), ErrPublicKeyNotFound
 	}
 
-	err = verifyBusinessUserDataSignature(r, businessUserData, publicKey)
+	err = verifyBusinessUserDataSignature(r, businessUserData, *publicKey)
 	if err != nil {
 		return r.Context(), err
 	}
@@ -155,7 +156,11 @@ func extractBusinessUserData(r *http.Request) (*auth.ClientData, error) {
 }
 
 // verifyBusinessUserDataSignature checks the signature of client data
-func verifyBusinessUserDataSignature(r *http.Request, businessUserData *auth.ClientData, publicKey any) error {
+func verifyBusinessUserDataSignature(
+	r *http.Request,
+	businessUserData *auth.ClientData,
+	publicKey rsa.PublicKey,
+) error {
 	businessUserDataSignatureHeader := r.Header.Get(auth.HeaderClientDataSignature)
 	if businessUserDataSignatureHeader == "" {
 		return ErrMissingSignatureHeader

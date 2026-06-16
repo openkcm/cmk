@@ -166,6 +166,7 @@ func (td *testData) createValidBusinessUserData(t *testing.T, keyID int) (string
 			"other_field":      "other-value",
 			"irrelevant":       "should-be-ignored",
 		},
+		TTL: 1 * time.Minute,
 	}
 
 	jsonBytes, err := json.Marshal(businessUserData)
@@ -591,6 +592,7 @@ func TestBusinessUserDataMiddleware_RoleValidation(t *testing.T) {
 						"issuer":           "https://example-issuer.com",
 						"multitenancy_ref": "some-ref",
 					},
+					TTL: 1 * time.Minute,
 				}
 
 				businessUserDataStr, signature := td.createCustomBusinessUserData(t, businessUserData)
