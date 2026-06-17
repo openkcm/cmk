@@ -128,7 +128,8 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 			Endpoint: "/keyConfigurations?$skip=0&$top=10&$count=true",
 			Tenant:   tenant,
 			Headers: signedHeadersFromClientMap(t, keyStorage, authClient.GetClientMap(
-				testutils.WithAdditionalGroup(uuid.NewString()))),
+				testutils.WithAdditionalGroup(uuid.NewString()),
+			)),
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -167,7 +168,8 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 			Endpoint: "/keyConfigurations?expandGroup=true",
 			Tenant:   tenant,
 			Headers: signedHeadersFromClientMap(t, keyStorage, authClient.GetClientMap(
-				testutils.WithAdditionalGroup(uuid.NewString()))),
+				testutils.WithAdditionalGroup(uuid.NewString()),
+			)),
 		})
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -274,7 +276,8 @@ func TestKeyconfigurationControllerGetKeyconfigurationsPagination(t *testing.T) 
 				Endpoint: tt.query,
 				Tenant:   tenant,
 				Headers: signedHeadersFromClientMap(t, keyStorage, authClient.GetClientMap(
-					testutils.WithAdditionalGroup(uuid.NewString()))),
+					testutils.WithAdditionalGroup(uuid.NewString()),
+				)),
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -416,7 +419,8 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 				AdminGroupID: authClient.Group.ID,
 			},
 			additionalContext: authClient.GetClientMap(
-				testutils.WithAdditionalGroup(uuid.NewString())),
+				testutils.WithAdditionalGroup(uuid.NewString()),
+			),
 			expectedStatus: http.StatusConflict,
 			expectedCode:   "UNIQUE_ERROR",
 			expectedBody:   "error",
@@ -520,7 +524,8 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedBody:   "updated-name-only-client-data",
 			additionalContext: authClient.GetClientMap(
-				testutils.WithAdditionalGroup(uuid.NewString())),
+				testutils.WithAdditionalGroup(uuid.NewString()),
+			),
 		},
 		{
 			name:        "KeyConfigPATCH_Unauthorised_WithWrongBusinessUserDataUserGroups",
@@ -719,7 +724,8 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 			configID:       keyConfig2.ID.String(),
 			expectedStatus: http.StatusNoContent,
 			additionalContext: authClient.GetClientMap(
-				testutils.WithAdditionalGroup(uuid.NewString())),
+				testutils.WithAdditionalGroup(uuid.NewString()),
+			),
 		},
 		{
 			name:           "DeleteKeyConfig_InvalidID",
@@ -794,7 +800,8 @@ func TestKeyConfigurationController_GetByID(t *testing.T) {
 			configID:       keyConfig.ID.String(),
 			expectedStatus: http.StatusOK,
 			additionalContext: authClient.GetClientMap(
-				testutils.WithAdditionalGroup(uuid.NewString())),
+				testutils.WithAdditionalGroup(uuid.NewString()),
+			),
 		},
 		{
 			name:              "GetKeyConfig_Unauthorised_WithEmptyBusinessUserDataUserGroups",
@@ -853,7 +860,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 		setupFunc           func(t *testing.T, db *multitenancy.DB, tenant string)
 		expectedRecordCount int
 		expectedRootCA      string
-		expectedSubject     model.ClientCertificateSubject
+		expectedSubject     model.CertificateSubject
 		expectedType        string
 		disableAuthzMW      bool
 	}{
@@ -862,7 +869,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject: model.ClientCertificateSubject{
+			expectedSubject: model.CertificateSubject{
 				Locality:           []string{"LOCAL"},
 				OrganizationalUnit: []string{"EXAMPLE OU1", "EXAMPLE OU2", "EXAMPLE OU3"},
 				Organization:       []string{"EXAMPLE"},
@@ -904,7 +911,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject: model.ClientCertificateSubject{
+			expectedSubject: model.CertificateSubject{
 				Locality:           []string{"LOCAL"},
 				OrganizationalUnit: []string{"EXAMPLE OU1"},
 				Organization:       []string{"EXAMPLE"},
@@ -946,7 +953,7 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedRecordCount: 1,
 			expectedRootCA:      testutils.TestCertURL,
-			expectedSubject: model.ClientCertificateSubject{
+			expectedSubject: model.CertificateSubject{
 				Locality:           []string{"LOCAL"},
 				OrganizationalUnit: []string{},
 				Organization:       []string{"EXAMPLE"},

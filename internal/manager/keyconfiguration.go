@@ -43,7 +43,7 @@ type KeyConfigurationAPI interface {
 		keyConfigID uuid.UUID,
 		patchKeyConfig cmkapi.KeyConfigurationPatch,
 	) (*model.KeyConfiguration, error)
-	GetClientCertificates(ctx context.Context) (map[model.CertificatePurpose][]*model.ClientCertificate, error)
+	GetClientCertificates(ctx context.Context) (model.ClientCertificates, error)
 }
 
 type KeyConfigManager struct {
@@ -114,7 +114,8 @@ func (m *KeyConfigManager) PostKeyConfigurations(
 		&group,
 		*repo.NewQuery().
 			Where(repo.NewCompositeKeyGroup(
-				repo.NewCompositeKey().Where(repo.IDField, keyConfiguration.AdminGroupID))),
+				repo.NewCompositeKey().Where(repo.IDField, keyConfiguration.AdminGroupID),
+			)),
 	)
 	keyConfiguration.AdminGroup = group
 	if err != nil || !exist {
@@ -257,7 +258,7 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 
 // GetClientCertificates retrieves the client certificates
 func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
-	map[model.CertificatePurpose][]*model.ClientCertificate, error,
+	model.ClientCertificates, error,
 ) {
 	tenantDefaultCert, err := m.certs.getDefaultHYOKClientCert(ctx)
 	if err != nil {
@@ -266,12 +267,15 @@ func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 
 	defaultCerts := []*model.Certificate{tenantDefaultCert}
 
-	clientCerts := make(map[model.CertificatePurpose][]*model.ClientCertificate)
+	clientCerts := make(model.ClientCertificates)
 	clientCerts[model.CertificatePurposeHYOKManagement] = make([]*model.ClientCertificate, len(defaultCerts))
 
-	for i, certificate := range defaultCerts {
-		configCert, err := m.transformTenantDefaultCertificate(ctx, certificate.CertPEM,
-			m.cfg.Certificates.RootCertURL, ErrGetDefaultCerts)
+	for i := range defaultCerts {
+		configCert, err := m.transformTenantDefaultCertificate(
+			defaultCerts[i].CertPEM,
+			m.cfg.Certificates.RootCertURL,
+			ErrGetDefaultCerts,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -289,7 +293,7 @@ func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 	return clientCerts, nil
 }
 
-func (m *KeyConfigManager) transformTenantDefaultCertificate(_ context.Context,
+func (m *KeyConfigManager) transformTenantDefaultCertificate(
 	certRaw, rootCertURL string, errParent error,
 ) (*model.ClientCertificate, error) {
 	block, _ := pem.Decode([]byte(certRaw))
@@ -305,7 +309,7 @@ func (m *KeyConfigManager) transformTenantDefaultCertificate(_ context.Context,
 	return &model.ClientCertificate{
 		Name:    DefaultCertName,
 		RootCA:  rootCertURL,
-		Subject: model.NewClientCertificateSubjectFromPKIX(cert.Subject),
+		Subject: model.ToCertificateSubjectFromPKIX(cert.Subject),
 	}, nil
 }
 
@@ -418,7 +422,8 @@ func (m *KeyConfigManager) handleUpdatePrimaryKey(
 	query := repo.NewQuery().Where(
 		repo.NewCompositeKeyGroup(
 			repo.NewCompositeKey().Where(
-				repo.KeyConfigIDField, keyConfig.ID),
+				repo.KeyConfigIDField, keyConfig.ID,
+			),
 		),
 	)
 	return repo.ProcessInBatch(
@@ -452,7 +457,8 @@ func (m *KeyConfigManager) updatePrimaryKeySystemEvents(ctx context.Context, old
 	query := repo.NewQuery().Where(
 		repo.NewCompositeKeyGroup(
 			repo.NewCompositeKey().Where(
-				repo.JSONBField(repo.DataField, "keyIDTo"), oldPkey),
+				repo.JSONBField(repo.DataField, "keyIDTo"), oldPkey,
+			),
 		),
 	)
 	return repo.ProcessInBatch(ctx, m.r, query, repo.DefaultLimit, func(events []*model.Event) error {

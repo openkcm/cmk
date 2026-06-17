@@ -76,7 +76,8 @@ func (m *CertificateManager) GetCertificate(
 	_, err := m.repo.First(
 		ctx,
 		cert,
-		*repo.NewQuery())
+		*repo.NewQuery(),
+	)
 	if err != nil {
 		return nil, errs.Wrap(ErrCertificateManager, err)
 	}
@@ -317,7 +318,8 @@ func (m *CertificateManager) getCertificateByPurpose(
 	cert := &model.Certificate{}
 
 	found, err := m.repo.First(ctx, cert, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(
-		compositeKey)).Order(repo.OrderField{
+		compositeKey,
+	)).Order(repo.OrderField{
 		Field:     repo.CreationDateField,
 		Direction: repo.Desc,
 	}))
@@ -509,7 +511,7 @@ func (m *CertificateManager) getCryptoCertificates(ctx context.Context) ([]*mode
 	}
 
 	for _, certCfg := range certConfigurations {
-		cert := model.NewClientCertificateFromConfig(*certCfg, tenantID)
+		cert := model.NewClientCertificate(*certCfg, tenantID)
 		certs = append(certs, &cert)
 	}
 

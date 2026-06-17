@@ -27,12 +27,12 @@ func TestCertificateTable(t *testing.T) {
 func TestFormatSubjectWithSlashSeparatedOUs(t *testing.T) {
 	tests := []struct {
 		name     string
-		subject  model.ClientCertificateSubject
+		subject  model.CertificateSubject
 		expected string
 	}{
 		{
 			name: "single OU uses standard format",
-			subject: model.ClientCertificateSubject{
+			subject: model.CertificateSubject{
 				CommonName:         "test-tenant",
 				Country:            []string{"DE"},
 				Organization:       []string{"TestOrg"},
@@ -43,7 +43,7 @@ func TestFormatSubjectWithSlashSeparatedOUs(t *testing.T) {
 		},
 		{
 			name: "multiple OUs joined with slash",
-			subject: model.ClientCertificateSubject{
+			subject: model.CertificateSubject{
 				CommonName:         "test-tenant",
 				Country:            []string{"DE"},
 				Organization:       []string{"TestOrg"},
@@ -54,7 +54,7 @@ func TestFormatSubjectWithSlashSeparatedOUs(t *testing.T) {
 		},
 		{
 			name: "no OU",
-			subject: model.ClientCertificateSubject{
+			subject: model.CertificateSubject{
 				CommonName:   "test-tenant",
 				Country:      []string{"DE"},
 				Organization: []string{"TestOrg"},
@@ -65,7 +65,7 @@ func TestFormatSubjectWithSlashSeparatedOUs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expected, tc.subject.FormatSubjectWithSlashSeparatedOUs())
+			assert.Equal(t, tc.expected, tc.subject.String())
 		})
 	}
 }
@@ -83,7 +83,7 @@ func TestNewClientCertificateFromConfig(t *testing.T) {
 		},
 	}
 
-	cert := model.NewClientCertificateFromConfig(cfg, "tenant-123")
+	cert := model.NewClientCertificate(cfg, "tenant-123")
 
 	assert.Equal(t, "test-cert", cert.Name)
 	assert.Equal(t, "https://example.com/root.crt", cert.RootCA)
@@ -103,7 +103,7 @@ func TestNewClientCertificateSubjectFromPKIX(t *testing.T) {
 		Locality:           []string{"NYC"},
 	}
 
-	subject := model.NewClientCertificateSubjectFromPKIX(pkixName)
+	subject := model.ToCertificateSubjectFromPKIX(pkixName)
 
 	assert.Equal(t, "tenant-cn", subject.CommonName)
 	assert.Equal(t, []string{"US"}, subject.Country)
