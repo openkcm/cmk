@@ -33,9 +33,7 @@ const (
 
 // Defines values for KeyAlgorithm.
 const (
-	KeyAlgorithmAES256  KeyAlgorithm = "AES256"
-	KeyAlgorithmRSA3072 KeyAlgorithm = "RSA3072"
-	KeyAlgorithmRSA4096 KeyAlgorithm = "RSA4096"
+	KeyAlgorithmAES256 KeyAlgorithm = "AES256"
 )
 
 // Defines values for KeyState.

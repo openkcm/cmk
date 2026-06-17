@@ -17,7 +17,7 @@ import (
 var (
 	ErrProvider  = errors.New("provider must be 'TEST'")
 	ErrRegion    = errors.New("region must be 'test-region'")
-	ErrAlgorithm = errors.New("algorithm must be RSA3072")
+	ErrAlgorithm = errors.New("algorithm must be AES256")
 )
 
 type MockSysMrProviderTransformer struct{}
@@ -31,7 +31,7 @@ func (f MockSysMrProviderTransformer) ValidateAPI(_ context.Context, key cmkapi.
 		return ErrRegion
 	}
 
-	if *key.Algorithm != cmkapi.KeyAlgorithmRSA3072 {
+	if *key.Algorithm != cmkapi.KeyAlgorithmAES256 {
 		return ErrAlgorithm
 	}
 
@@ -64,13 +64,13 @@ func TestFromCmkAPIKey(t *testing.T) {
 			name: "Valid API Key",
 			apiKey: cmkapi.Key{
 				Type:      cmkapi.KeyTypeBYOK,
-				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
+				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
 				Region:    ptr.PointTo("test-region"),
 				Provider:  ptr.PointTo("TEST"),
 			},
 			expected: &model.Key{
 				KeyType:   string(cmkapi.KeyTypeBYOK),
-				Algorithm: string(cmkapi.KeyAlgorithmRSA3072),
+				Algorithm: string(cmkapi.KeyAlgorithmAES256),
 				Region:    "test-region",
 				Provider:  "TEST",
 			},
@@ -79,7 +79,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 			name: "Missing Provider",
 			apiKey: cmkapi.Key{
 				Type:      cmkapi.KeyTypeBYOK,
-				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
+				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
 				Region:    ptr.PointTo("test-region"),
 			},
 			errMsg: "provider is required",
@@ -88,7 +88,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 			name: "Invalid Provider",
 			apiKey: cmkapi.Key{
 				Type:      cmkapi.KeyTypeBYOK,
-				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
+				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
 				Region:    ptr.PointTo("test-region"),
 				Provider:  ptr.PointTo("INVALID"),
 			},
@@ -98,7 +98,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 			name: "Missing Region",
 			apiKey: cmkapi.Key{
 				Type:      cmkapi.KeyTypeBYOK,
-				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
+				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
 				Provider:  ptr.PointTo("TEST"),
 			},
 			errMsg: "region is required",
@@ -107,7 +107,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 			name: "Invalid Region",
 			apiKey: cmkapi.Key{
 				Type:      cmkapi.KeyTypeBYOK,
-				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
+				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
 				Region:    ptr.PointTo("invalid-region"),
 				Provider:  ptr.PointTo("TEST"),
 			},
@@ -126,11 +126,11 @@ func TestFromCmkAPIKey(t *testing.T) {
 			name: "Invalid Algorithm",
 			apiKey: cmkapi.Key{
 				Type:      cmkapi.KeyTypeBYOK,
-				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
+				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithm("INVALID_ALG")),
 				Region:    ptr.PointTo("test-region"),
 				Provider:  ptr.PointTo("TEST"),
 			},
-			errMsg: "algorithm must be RSA3072",
+			errMsg: "algorithm must be AES256",
 		},
 	}
 

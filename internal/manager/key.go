@@ -1336,16 +1336,11 @@ func (km *KeyManager) disableKey(ctx context.Context, key *model.Key) error {
 }
 
 func convertToAPIKeyAlgorithm(alg string) keymanagement.KeyAlgorithm {
-	switch alg {
-	case string(cmkapi.KeyAlgorithmAES256):
+	if alg == string(cmkapi.KeyAlgorithmAES256) {
 		return keymanagement.AES256
-	case string(cmkapi.KeyAlgorithmRSA3072):
-		return keymanagement.RSA3072
-	case string(cmkapi.KeyAlgorithmRSA4096):
-		return keymanagement.RSA4096
-	default:
-		return keymanagement.UnspecifiedKeyAlgorithm
 	}
+
+	return keymanagement.UnspecifiedKeyAlgorithm
 }
 
 func convertToAPIKeyType(keyType string) keymanagement.KeyType {

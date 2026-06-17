@@ -45,11 +45,6 @@ func TestGetPluginAlgorithm(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "RSA3072 Algorithm",
-			input:    "RSA3072",
-			expected: "KEY_ALGORITHM_RSA3072",
-		},
-		{
 			name:     "AES256 Algorithm",
 			input:    "AES256",
 			expected: "KEY_ALGORITHM_AES256",

@@ -2047,8 +2047,6 @@ components:
       type: string
       enum:
         - AES256
-        - RSA3072
-        - RSA4096
       example: AES256
     KeyProvider:
       description: |

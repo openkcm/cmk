@@ -27,7 +27,7 @@ func TestValidatesAPIKey(t *testing.T) {
 
 	key := cmkapi.Key{
 		Type:      cmkapi.KeyTypeBYOK,
-		Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
+		Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
 		Region:    ptr.PointTo("us-east-1"),
 		NativeID:  ptr.PointTo("native-key-id"),
 	}

@@ -103,7 +103,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 			apiKey: cmkapi.Key{
 				NativeID:  ptr.PointTo("native-id"),
 				Provider:  ptr.PointTo("test-provider"),
-				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmRSA3072),
+				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
 			},
 			expected: nil,
 			errMsg:   "unexpected field: algorithm",

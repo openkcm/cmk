@@ -189,13 +189,8 @@ func convertKeyType(keyType cmkapi.KeyType) keymanagement.KeyType {
 }
 
 func convertKeyAlgorithm(algorithm cmkapi.KeyAlgorithm) keymanagement.KeyAlgorithm {
-	switch algorithm {
-	case cmkapi.KeyAlgorithmAES256:
+	if algorithm == cmkapi.KeyAlgorithmAES256 {
 		return keymanagement.AES256
-	case cmkapi.KeyAlgorithmRSA3072:
-		return keymanagement.RSA3072
-	case cmkapi.KeyAlgorithmRSA4096:
-		return keymanagement.RSA4096
 	}
 
 	return keymanagement.UnspecifiedKeyAlgorithm
