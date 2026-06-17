@@ -24,12 +24,18 @@ const (
 
 type CertificatePurpose string
 
+// - Generic purpose is used as a fallback default purpose when no specific purpose is provided.
+// - HYOKManagement purpose is used for managing tenant default HYOK certificates.
+// The name is kept for backward compatibility.
+// - RoleManagement purpose is used for managing other keystore roles.
+// - KeyManagement purpose is used for managing BYOK/Managed key lifecycle.
+// - Crypto purpose is used only for displaying purposes, not for creation.
 const (
-	CertificatePurposeGeneric        CertificatePurpose = "GENERIC"         // Fallback default purpose
-	CertificatePurposeHYOKManagement CertificatePurpose = "HYOK_MANAGEMENT" // Managing HYOK keys
-	CertificatePurposeRoleManagement CertificatePurpose = "ROLE_MANAGEMENT" // Managing other keystore roles
-	CertificatePurposeKeyManagement  CertificatePurpose = "KEY_MANAGEMENT"  // Managing BYOK/Managed key lifecycle
-	CertificatePurposeCrypto         CertificatePurpose = "CRYPTO"          // Only for displaying purposes, not creation
+	CertificatePurposeGeneric        CertificatePurpose = "GENERIC"
+	CertificatePurposeHYOKManagement CertificatePurpose = "TENANT_DEFAULT"
+	CertificatePurposeRoleManagement CertificatePurpose = "ROLE_MANAGEMENT"
+	CertificatePurposeKeyManagement  CertificatePurpose = "KEY_MANAGEMENT"
+	CertificatePurposeCrypto         CertificatePurpose = "CRYPTO"
 )
 
 // SingletonCertificatePurposes defines the certificate purposes
