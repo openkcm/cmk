@@ -11,6 +11,7 @@ import (
 
 	retry "github.com/avast/retry-go/v5"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
+	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
@@ -56,6 +57,7 @@ type ServiceClient interface {
 
 	GetSystemsWithFilter(ctx context.Context, filter SystemFilter) ([]*model.System, error)
 	ExtendedUpdateSystemL1KeyClaim(ctx context.Context, filter SystemFilter, l1KeyClaim bool) error
+	ExtendedUpdateSystemStatus(ctx context.Context, filter SystemFilter, systemType string, st typesv1.Status) error
 }
 
 // Client of registry service systems API.
@@ -190,6 +192,49 @@ func (c *client) ExtendedUpdateSystemL1KeyClaim(
 
 	if !resp.GetSuccess() {
 		return ErrSystemsServerFailedUpdatingKeyClaim
+	}
+
+	return nil
+}
+
+// ExtendedUpdateSystemStatus updates a system's status in the registry.
+func (c *client) ExtendedUpdateSystemStatus(
+	ctx context.Context,
+	filter SystemFilter,
+	systemType string,
+	st typesv1.Status,
+) error {
+	var (
+		resp *systemgrpc.UpdateSystemStatusResponse
+		err  error
+	)
+
+	retrier := c.getRetrier()
+
+	err = retrier.Do(
+		func() error {
+			resp, err = c.UpdateSystemStatus(ctx,
+				&systemgrpc.UpdateSystemStatusRequest{
+					Region:     filter.Region,
+					ExternalId: filter.ExternalID,
+					Type:       systemType,
+					Status:     st,
+				})
+			if status.Code(err) == codes.Internal {
+				return errs.Wrap(ErrClientInternalError, err)
+			} else if err != nil {
+				return errs.Wrap(ErrSystemsClientFailedUpdatingStatus, err)
+			}
+
+			return nil
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	if !resp.GetSuccess() {
+		return ErrSystemsServerFailedUpdatingStatus
 	}
 
 	return nil

@@ -45,6 +45,7 @@ var (
 	ErrKeyAccessMetadataNotFound = errors.New("key access metadata not found for system region")
 	ErrPluginNotFound            = errors.New("plugin not found for key provider")
 	ErrSettingKeyClaim           = errors.New("error setting key claim for system")
+	ErrSettingSystemLockedStatus = errors.New("error setting system status to locked")
 	ErrUnsupportedRegion         = errors.New("unsupported region")
 	ErrNoConnectedRegionsForKey  = errors.New("no connected regions found for key")
 	ErrNoTasksResolvedForJob     = errors.New("no tasks resolved for the job")

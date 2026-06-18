@@ -1,6 +1,7 @@
 package systems_test
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -9,8 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
+	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -167,4 +171,99 @@ func TestRegistryService_SystemsClient(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	})
+	t.Run("ExtendedUpdateSystemStatus", func(t *testing.T) {
+		baseSystemClient := systemgrpc.NewServiceClient(grpcClient)
+
+		t.Run("Should update status to LOCKED", func(t *testing.T) {
+			sysReq := &systemgrpc.RegisterSystemRequest{
+				ExternalId: randExternalID(),
+				Region:     "eu",
+				Type:       "system",
+			}
+			_, err := baseSystemClient.RegisterSystem(ctx, sysReq)
+			assert.NoError(t, err)
+
+			filter := systems.SystemFilter{
+				Region:     sysReq.GetRegion(),
+				ExternalID: sysReq.GetExternalId(),
+			}
+
+			// First call applies the status; second call must succeed too — the
+			// registry's UpdateSystemStatus is naturally idempotent.
+			assert.NoError(t,
+				systemsClient.ExtendedUpdateSystemStatus(ctx, filter, sysReq.GetType(), typesv1.Status_STATUS_LOCKED))
+			assert.NoError(t,
+				systemsClient.ExtendedUpdateSystemStatus(ctx, filter, sysReq.GetType(), typesv1.Status_STATUS_LOCKED))
+
+			resp, err := baseSystemClient.ListSystems(ctx, &systemgrpc.ListSystemsRequest{
+				Region:     sysReq.GetRegion(),
+				ExternalId: sysReq.GetExternalId(),
+			})
+			assert.NoError(t, err)
+			assert.Equal(t, typesv1.Status_STATUS_LOCKED, resp.GetSystems()[0].GetStatus())
+		})
+	})
+}
+
+// failingUpdateStatusServer returns the configured error from UpdateSystemStatus.
+type failingUpdateStatusServer struct {
+	systemgrpc.UnimplementedServiceServer
+
+	err error
+}
+
+func (s *failingUpdateStatusServer) UpdateSystemStatus(
+	_ context.Context,
+	_ *systemgrpc.UpdateSystemStatusRequest,
+) (*systemgrpc.UpdateSystemStatusResponse, error) {
+	return nil, s.err
+}
+
+func TestExtendedUpdateSystemStatus_PropagatesErrors(t *testing.T) {
+	tests := []struct {
+		name        string
+		serverErr   error
+		expectedErr error
+	}{
+		{
+			name:        "Internal is wrapped with ErrClientInternalError",
+			serverErr:   status.Error(codes.Internal, "boom"),
+			expectedErr: systems.ErrClientInternalError,
+		},
+		{
+			name:        "NotFound is wrapped with ErrSystemsClientFailedUpdatingStatus",
+			serverErr:   status.Error(codes.NotFound, "system not found"),
+			expectedErr: systems.ErrSystemsClientFailedUpdatingStatus,
+		},
+		{
+			name:        "InvalidArgument is wrapped with ErrSystemsClientFailedUpdatingStatus",
+			serverErr:   status.Error(codes.InvalidArgument, "bad status"),
+			expectedErr: systems.ErrSystemsClientFailedUpdatingStatus,
+		},
+		{
+			name:        "FailedPrecondition is wrapped with ErrSystemsClientFailedUpdatingStatus",
+			serverErr:   status.Error(codes.FailedPrecondition, "precondition"),
+			expectedErr: systems.ErrSystemsClientFailedUpdatingStatus,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, grpcClient := testutils.NewGRPCSuite(t,
+				func(s *grpc.Server) {
+					systemgrpc.RegisterServiceServer(s, &failingUpdateStatusServer{err: tt.serverErr})
+				},
+			)
+
+			c, err := systems.NewSystemsClient(grpcClient)
+			require.NoError(t, err)
+
+			err = c.ExtendedUpdateSystemStatus(t.Context(),
+				systems.SystemFilter{Region: "eu", ExternalID: "ext", TenantID: existingTenantID},
+				"system",
+				typesv1.Status_STATUS_LOCKED,
+			)
+			assert.ErrorIs(t, err, tt.expectedErr)
+		})
+	}
 }

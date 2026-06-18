@@ -8,4 +8,6 @@ var (
 	ErrSystemsClientFailedMappingSystems   = errors.New("systems client failed to map systems")
 	ErrSystemsClientFailedUpdatingKeyClaim = errors.New("systems client failed to update keyclaim")
 	ErrSystemsServerFailedUpdatingKeyClaim = errors.New("systems server failed to update systems key claim")
+	ErrSystemsClientFailedUpdatingStatus   = errors.New("systems client failed to update system status")
+	ErrSystemsServerFailedUpdatingStatus   = errors.New("systems server failed to update system status")
 )

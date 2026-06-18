@@ -16,12 +16,15 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
+	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -1264,6 +1267,15 @@ func TestJobTermination(t *testing.T) {
 		})
 		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
 
+		// Register the system in the fake registry so we can verify the lock call.
+		_, err := systemService.RegisterSystem(ctx, &systemgrpc.RegisterSystemRequest{
+			ExternalId: sys.Identifier,
+			Region:     sys.Region,
+			Type:       sys.Type,
+			TenantId:   tenant,
+		})
+		assert.NoError(t, err)
+
 		data := eventprocessor.SystemActionJobData{
 			TenantID:  tenant,
 			SystemID:  sys.ID.String(),
@@ -1282,6 +1294,46 @@ func TestJobTermination(t *testing.T) {
 		sysAfter := &model.System{
 			ID: sys.ID,
 		}
+		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusDISCONNECTED, sysAfter.Status)
+
+		// Verify the system was set to STATUS_LOCKED in the registry.
+		resp, err := systemService.ListSystems(ctx, &systemgrpc.ListSystemsRequest{
+			ExternalId: sys.Identifier,
+			Region:     sys.Region,
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, typesv1.Status_STATUS_LOCKED, resp.GetSystems()[0].GetStatus())
+	})
+
+	t.Run("Termination still runs when registry lock fails on SYSTEM_UNLINK_DECOMMISSION", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusPROCESSING
+		})
+		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
+
+		// Force the registry's UpdateSystemStatus call to fail with a non-retryable error.
+		systemService.UpdateSystemStatusErr = status.Error(codes.Internal, "registry boom")
+		t.Cleanup(func() { systemService.UpdateSystemStatusErr = nil })
+
+		data := eventprocessor.SystemActionJobData{
+			TenantID:  tenant,
+			SystemID:  sys.ID.String(),
+			KeyIDFrom: key.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventprocessor.JobTypeSystemUnlinkDecommission.String(),
+			Data:       dataBytes,
+		}, false)
+
+		// Termination must continue despite the lock failure: the system ends DISCONNECTED.
+		sysAfter := &model.System{ID: sys.ID}
 		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, cmkapi.SystemStatusDISCONNECTED, sysAfter.Status)
