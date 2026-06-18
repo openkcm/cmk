@@ -17,6 +17,10 @@ type FakeService struct {
 
 	log     *slog.Logger
 	systems []*systemv1.System
+
+	// UpdateSystemStatusErr, when non-nil, makes UpdateSystemStatus return this
+	// error instead of applying the status. Test-only hook.
+	UpdateSystemStatusErr error
 }
 
 type FakeServiceOption func(*FakeService)
@@ -105,6 +109,23 @@ func (fs *FakeService) UpdateSystemL1KeyClaim(
 	}
 
 	return &systemv1.UpdateSystemL1KeyClaimResponse{Success: true}, nil
+}
+
+func (fs *FakeService) UpdateSystemStatus(
+	_ context.Context,
+	in *systemv1.UpdateSystemStatusRequest,
+) (*systemv1.UpdateSystemStatusResponse, error) {
+	if fs.UpdateSystemStatusErr != nil {
+		return nil, fs.UpdateSystemStatusErr
+	}
+
+	for _, system := range fs.systems {
+		if system.GetExternalId() == in.GetExternalId() && system.GetRegion() == in.GetRegion() {
+			system.Status = in.GetStatus()
+		}
+	}
+
+	return &systemv1.UpdateSystemStatusResponse{Success: true}, nil
 }
 
 func (fs *FakeService) mustEmbedUnimplementedServiceServer() {}
