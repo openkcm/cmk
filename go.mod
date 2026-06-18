@@ -25,7 +25,7 @@ require (
 	github.com/moby/moby/api v1.54.2
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/runtime v1.4.1
-	github.com/openkcm/api-sdk v0.18.0
+	github.com/openkcm/api-sdk v0.18.1
 	github.com/openkcm/common-sdk v1.17.0
 	github.com/openkcm/orbital v0.5.1
 	github.com/openkcm/plugin-sdk v0.13.0
