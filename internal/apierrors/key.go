@@ -113,6 +113,14 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrInvalidKeyState},
+		ExposedError: &APIError{
+			Code:    "REGISTER_KEY_INVALID_STATE",
+			Message: "Key must be in ENABLED state to be registered as HYOK",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyRegistration, keymanagement.ErrProviderAuthenticationFailed},
 		ExposedError: &APIError{
 			Code:    "REGISTER_KEY_AUTHENTICATION_FAILED",
@@ -121,7 +129,7 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{keymanagement.ErrGenericGetKeyError},
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyRegistration, keymanagement.ErrGenericGetKeyError},
 		ExposedError: &APIError{
 			Code:    "REGISTER_KEY_INVALID_PROVIDER_KEY",
 			Message: "Failed to get key from the keystore provider",
