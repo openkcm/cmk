@@ -47,9 +47,11 @@ func TestGetTenants(t *testing.T) {
 
 	// Set issuerURL for first 3 tenants
 	for i := range 3 {
-		tenants[i].IssuerURL = "https://testissuer.example.com"
-		_, err = r.Patch(t.Context(), &tenants[i], *repo.NewQuery())
-		assert.NoError(t, err)
+		if i%2 == 0 {
+			tenants[i].IssuerURL = "test"
+			_, err = r.Patch(t.Context(), &tenants[i], *repo.NewQuery())
+			assert.NoError(t, err)
+		}
 
 		tenantCtx := cmkContext.CreateTenantContext(t.Context(), tenants[i].ID)
 		group := testutils.NewGroup(func(group *model.Group) {
@@ -66,6 +68,9 @@ func TestGetTenants(t *testing.T) {
 		GivenName:  "Bob",
 		FamilyName: "Builder",
 		Groups:     []string{"sysadmin", "some-other-group"},
+		AuthContext: map[string]string{
+			"issuer": "test",
+		},
 	}
 	// Get private key for signing test requests
 	privateKey, ok := keyStorage.GetPrivateKey(0)
@@ -74,7 +79,7 @@ func TestGetTenants(t *testing.T) {
 	headers = testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 	assert.NotEmpty(t, headers)
 
-	t.Run("Should 200 on list tenants", func(t *testing.T) {
+	t.Run("Should fetch only tenants with issuer", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
 			Endpoint: "/tenants",
@@ -84,7 +89,7 @@ func TestGetTenants(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		resp := testutils.GetJSONBody[cmkapi.TenantList](t, w)
-		assert.Len(t, resp.Value, 3)
+		assert.Len(t, resp.Value, 2)
 	})
 
 	t.Run("Should 403 on list tenants with non-existing tenant", func(t *testing.T) {
@@ -105,7 +110,11 @@ func TestGetTenants(t *testing.T) {
 			GivenName:  "Bob",
 			FamilyName: "Builder",
 			Groups:     []string{"test", "some-other-test-group"},
+			AuthContext: map[string]string{
+				"issuer": "non-existing",
+			},
 		}
+
 		// Get private key for signing test requests
 		privateKey, ok := keyStorage.GetPrivateKey(0)
 		assert.True(t, ok, "test key should exist")
