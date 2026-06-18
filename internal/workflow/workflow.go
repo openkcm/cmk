@@ -29,12 +29,12 @@ type Lifecycle struct {
 	ActorApproverGroupIDs   []uuid.UUID     // Optional: if set, validates actor is still in approver groups
 }
 
-// convertEvent converts Transition and State types to string
+// convertEvent converts Transition and model.WorkflowState types to string
 // and creates an EventDesc object for the state machine.
 func convertEvent(
 	transition Transition,
-	sourceStates []State,
-	destinationState State,
+	sourceStates []model.WorkflowState,
+	destinationState model.WorkflowState,
 ) fsm.EventDesc {
 	src := make([]string, len(sourceStates))
 	for i, state := range sourceStates {
@@ -61,47 +61,51 @@ func NewLifecycle(workflow *model.Workflow,
 	minimumApproverCount int,
 ) *Lifecycle {
 	stateMachine := fsm.NewFSM(
-		workflow.State,
+		workflow.State.String(),
 		fsm.Events{
 			convertEvent(
 				TransitionCreate,
-				[]State{StateInitial},
-				StateWaitApproval,
+				[]model.WorkflowState{model.WorkflowStateInitial},
+				model.WorkflowStateWaitApproval,
 			),
 			convertEvent(
 				TransitionApprove,
-				[]State{StateWaitApproval},
-				StateWaitConfirmation,
+				[]model.WorkflowState{model.WorkflowStateWaitApproval},
+				model.WorkflowStateWaitConfirmation,
 			),
 			convertEvent(
 				TransitionReject,
-				[]State{StateWaitApproval},
-				StateRejected,
+				[]model.WorkflowState{model.WorkflowStateWaitApproval},
+				model.WorkflowStateRejected,
 			),
 			convertEvent(
 				TransitionRevoke,
-				[]State{StateWaitApproval, StateWaitConfirmation},
-				StateRevoked,
+				[]model.WorkflowState{model.WorkflowStateWaitApproval, model.WorkflowStateWaitConfirmation},
+				model.WorkflowStateRevoked,
 			),
 			convertEvent(
 				TransitionConfirm,
-				[]State{StateWaitConfirmation},
-				StateExecuting,
+				[]model.WorkflowState{model.WorkflowStateWaitConfirmation},
+				model.WorkflowStateExecuting,
 			),
 			convertEvent(
 				TransitionExpire,
-				[]State{StateWaitApproval, StateWaitConfirmation, StateExecuting},
-				StateExpired,
+				[]model.WorkflowState{
+					model.WorkflowStateWaitApproval,
+					model.WorkflowStateWaitConfirmation,
+					model.WorkflowStateExecuting,
+				},
+				model.WorkflowStateExpired,
 			),
 			convertEvent(
 				TransitionFail,
-				[]State{StateExecuting},
-				StateFailed,
+				[]model.WorkflowState{model.WorkflowStateExecuting},
+				model.WorkflowStateFailed,
 			),
 			convertEvent(
 				TransitionExecute,
-				[]State{StateExecuting},
-				StateSuccessful,
+				[]model.WorkflowState{model.WorkflowStateExecuting},
+				model.WorkflowStateSuccessful,
 			),
 		},
 		fsm.Callbacks{},
@@ -159,7 +163,7 @@ func (l *Lifecycle) ApplyTransition(ctx context.Context, transition Transition) 
 
 	// If the workflow is now in the EXECUTING state, execute the action
 	// and transition to next state based on the result
-	if l.StateMachine.Current() == StateExecuting.String() {
+	if l.StateMachine.Current() == model.WorkflowStateExecuting.String() {
 		// Transitioning to either SUCCESSFUL or FAILED does not require any validation
 		// because EXECUTING -> SUCCESSFUL and EXECUTING -> FAILED are
 		// guaranteed to be valid transitions.
@@ -172,7 +176,7 @@ func (l *Lifecycle) ApplyTransition(ctx context.Context, transition Transition) 
 	}
 
 	// Update the workflow state in the database
-	l.Workflow.State = l.StateMachine.Current()
+	l.Workflow.State = model.WorkflowState(l.StateMachine.Current())
 
 	_, err = l.Repository.Patch(ctx, l.Workflow, *repo.NewQuery())
 	if err != nil {
@@ -189,7 +193,7 @@ func (l *Lifecycle) Expire(ctx context.Context) error {
 		return errs.Wrap(NewTransitionError(TransitionExpire), err)
 	}
 
-	l.Workflow.State = l.StateMachine.Current()
+	l.Workflow.State = model.WorkflowState(l.StateMachine.Current())
 
 	_, err = l.Repository.Patch(ctx, l.Workflow, *repo.NewQuery())
 	if err != nil {
@@ -475,7 +479,7 @@ func (l *Lifecycle) transitionExecute(ctx context.Context) error {
 
 func (l *Lifecycle) checkVotingScore(ctx context.Context, transition Transition) (bool, error) {
 	if l.StateMachine.Cannot(transition.String()) {
-		fsmErr := fsm.InvalidEventError{Event: transition.String(), State: l.Workflow.State}
+		fsmErr := fsm.InvalidEventError{Event: transition.String(), State: l.Workflow.State.String()}
 		return false, errs.Wrap(NewTransitionError(transition), fsmErr)
 	}
 
@@ -622,19 +626,19 @@ func (l *Lifecycle) getNumberOfApprovers(ctx context.Context) (int, error) {
 type workflowHandlerFunc func(context.Context) error
 
 func (l *Lifecycle) executeWorkflowAction(ctx context.Context) error {
-	handlers := map[string]map[string]workflowHandlerFunc{
-		ArtifactTypeKey.String(): {
-			ActionTypeUpdateState.String(): l.updateKeyState,
-			ActionTypeDelete.String():      l.deleteKey,
+	handlers := map[model.WorkflowArtifactType]map[model.WorkflowActionType]workflowHandlerFunc{
+		model.WorkflowArtifactTypeKey: {
+			model.WorkflowActionTypeUpdateState: l.updateKeyState,
+			model.WorkflowActionTypeDelete:      l.deleteKey,
 		},
-		ArtifactTypeKeyConfiguration.String(): {
-			ActionTypeDelete.String():        l.deleteKeyConfiguration,
-			ActionTypeUpdatePrimary.String(): l.updatePrimaryKey,
+		model.WorkflowArtifactTypeKeyConfiguration: {
+			model.WorkflowActionTypeDelete:        l.deleteKeyConfiguration,
+			model.WorkflowActionTypeUpdatePrimary: l.updatePrimaryKey,
 		},
-		ArtifactTypeSystem.String(): {
-			ActionTypeLink.String():   l.systemLinkOrSwitch,
-			ActionTypeUnlink.String(): l.systemUnlink,
-			ActionTypeSwitch.String(): l.systemLinkOrSwitch,
+		model.WorkflowArtifactTypeSystem: {
+			model.WorkflowActionTypeLink:   l.systemLinkOrSwitch,
+			model.WorkflowActionTypeUnlink: l.systemUnlink,
+			model.WorkflowActionTypeSwitch: l.systemLinkOrSwitch,
 		},
 	}
 
@@ -642,7 +646,7 @@ func (l *Lifecycle) executeWorkflowAction(ctx context.Context) error {
 	if !ok {
 		return errs.Wrapf(
 			ErrWorkflowExecution,
-			"unknown artifact type "+l.Workflow.ArtifactType,
+			"unknown artifact type "+l.Workflow.ArtifactType.String(),
 		)
 	}
 
@@ -650,7 +654,7 @@ func (l *Lifecycle) executeWorkflowAction(ctx context.Context) error {
 	if !ok {
 		return errs.Wrapf(
 			ErrWorkflowExecution,
-			"unknown action type "+l.Workflow.ActionType,
+			"unknown action type "+l.Workflow.ActionType.String(),
 		)
 	}
 
@@ -661,10 +665,12 @@ func (l *Lifecycle) getInitiatorAvailableActions(_ context.Context) []Transition
 	var transitions []Transition
 
 	switch l.Workflow.State {
-	case StateWaitApproval.String():
+	case model.WorkflowStateWaitApproval:
 		transitions = append(transitions, TransitionRevoke)
-	case StateWaitConfirmation.String():
+	case model.WorkflowStateWaitConfirmation:
 		transitions = append(transitions, TransitionRevoke, TransitionConfirm)
+	default:
+		// initiator has no actions available in other states
 	}
 
 	return transitions
@@ -674,7 +680,7 @@ func (l *Lifecycle) getApproverAvailableActions(ctx context.Context) []Transitio
 	var transitions []Transition
 
 	// Approvers can only take actions in the WAIT_APPROVAL state
-	if l.Workflow.State != StateWaitApproval.String() {
+	if l.Workflow.State != model.WorkflowStateWaitApproval {
 		return transitions
 	}
 

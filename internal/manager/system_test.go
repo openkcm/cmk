@@ -835,7 +835,7 @@ func TestSendRecoveryAction(t *testing.T) {
 		groupIdentifier := uuid.NewString()
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{groupIdentifier})
 		key := testutils.NewKey(func(k *model.Key) {
-			k.State = string(cmkapi.KeyStateENABLED)
+			k.State = cmkapi.KeyStateENABLED
 		})
 
 		testGroup := testutils.NewGroup(
@@ -1172,7 +1172,7 @@ func TestLinkSystemAction(t *testing.T) {
 			name: "Should fail link pkey disabled",
 			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
 				key := testutils.NewKey(func(k *model.Key) {
-					k.State = string(cmkapi.KeyStateDISABLED)
+					k.State = cmkapi.KeyStateDISABLED
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 					kc.PrimaryKeyID = ptr.PointTo(key.ID)
@@ -1185,7 +1185,7 @@ func TestLinkSystemAction(t *testing.T) {
 			name: "Should fail link pkey forbidden",
 			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
 				key := testutils.NewKey(func(k *model.Key) {
-					k.State = string(cmkapi.KeyStateFORBIDDEN)
+					k.State = cmkapi.KeyStateFORBIDDEN
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 					kc.PrimaryKeyID = ptr.PointTo(key.ID)
@@ -1198,7 +1198,7 @@ func TestLinkSystemAction(t *testing.T) {
 			name: "Should fail link pkey unknown",
 			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
 				key := testutils.NewKey(func(k *model.Key) {
-					k.State = string(cmkapi.KeyStateUNKNOWN)
+					k.State = cmkapi.KeyStateUNKNOWN
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 					kc.PrimaryKeyID = ptr.PointTo(key.ID)

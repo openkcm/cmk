@@ -4,10 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
@@ -422,6 +427,58 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   11,
 		},
+		{
+			name:      "Should up tenant/00012_add_enum_check_constraints.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   12,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					cases := []struct {
+						name string
+						sql  string
+					}{
+						{
+							name: "workflows.state",
+							sql:  `INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type) VALUES (now(), now(), gen_random_uuid(), 'BOGUS', 'u', 'KEY', gen_random_uuid(), 'DELETE')`,
+						},
+						{
+							name: "workflows.action_type",
+							sql:  `INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type) VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'KEY', gen_random_uuid(), 'BOGUS')`,
+						},
+						{
+							name: "workflows.artifact_type",
+							sql:  `INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type) VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'BOGUS', gen_random_uuid(), 'DELETE')`,
+						},
+						{
+							name: "keys.state",
+							sql:  `INSERT INTO keys (created_at, updated_at, id, key_configuration_id, name, key_type, algorithm, provider, region, state) VALUES (now(), now(), gen_random_uuid(), '00000000-0000-0000-0000-000000000001'::uuid, 'n', 't', 'a', 'p', 'r', 'BOGUS')`,
+						},
+						{
+							name: "systems.status",
+							sql:  `INSERT INTO systems (id, identifier, region, type, status) VALUES (gen_random_uuid(), 'i', 'r', 't', 'BOGUS')`,
+						},
+					}
+					for _, c := range cases {
+						// Wrap each insert in its own transaction so a CHECK
+						// violation rolls back without aborting the others.
+						err := con.Transaction(func(tx *multitenancy.DB) error {
+							return tx.Exec(c.sql).Error
+						})
+						assert.ErrorContains(t, err, "violates check constraint",
+							"%s: insert with invalid value should be rejected by CHECK", c.name)
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00012_add_enum_check_constraints.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   12,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -592,4 +649,75 @@ func TestDataMigrations(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestEnumCheckConstraintDrift asserts the IN(...) lists in migration 00012
+// match the Go enum slices for workflow types. KeyState and SystemStatus are
+// generated from the OpenAPI spec via oapi-codegen and not duplicated here.
+func TestEnumCheckConstraintDrift(t *testing.T) {
+	const migrationFile = "../../migrations/tenant/schema/00012_add_enum_check_constraints.sql"
+
+	abs, err := filepath.Abs(migrationFile)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(abs)
+	require.NoError(t, err, "failed to read migration file %s", abs)
+	sql := string(data)
+
+	cases := []struct {
+		name       string
+		constraint string
+		want       []string
+	}{
+		{
+			name:       "workflows.state",
+			constraint: "chk_workflows_state",
+			want:       toStrings(model.WorkflowStates),
+		},
+		{
+			name:       "workflows.action_type",
+			constraint: "chk_workflows_action_type",
+			want:       toStrings(model.WorkflowActionTypes),
+		},
+		{
+			name:       "workflows.artifact_type",
+			constraint: "chk_workflows_artifact_type",
+			want:       toStrings(model.WorkflowArtifactTypes),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractCheckValues(t, sql, tc.constraint)
+			assert.ElementsMatch(t, tc.want, got,
+				"CHECK constraint %s drifted from Go enum slice", tc.constraint)
+		})
+	}
+}
+
+// extractCheckValues pulls the string literals out of
+// `ADD CONSTRAINT <name> CHECK (... IN (...))`.
+func extractCheckValues(t *testing.T, sql, constraint string) []string {
+	t.Helper()
+	pattern := `ADD CONSTRAINT ` + regexp.QuoteMeta(constraint) + `\s+CHECK\s*\([^)]*IN\s*\(([^)]+)\)`
+	re := regexp.MustCompile(pattern)
+	m := re.FindStringSubmatch(sql)
+	require.NotNil(t, m, "constraint %s not found in migration SQL", constraint)
+
+	literal := regexp.MustCompile(`'([^']*)'`)
+	matches := literal.FindAllStringSubmatch(m[1], -1)
+
+	values := make([]string, 0, len(matches))
+	for _, lm := range matches {
+		values = append(values, strings.TrimSpace(lm[1]))
+	}
+	return values
+}
+
+func toStrings[T ~string](in []T) []string {
+	out := make([]string, len(in))
+	for i, v := range in {
+		out[i] = string(v)
+	}
+	return out
 }

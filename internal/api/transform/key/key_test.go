@@ -109,7 +109,7 @@ func TestTransformKeyFromAPI(t *testing.T) {
 			Name:               "test-key",
 			KeyType:            string(cmkapi.KeyTypeHYOK),
 			KeyConfigurationID: keyConfigID,
-			State:              string(cmkapi.KeyStateENABLED),
+			State:              cmkapi.KeyStateENABLED,
 			Description:        description,
 			NativeID:           &nativeID,
 		}
@@ -154,7 +154,7 @@ func TestTransformKeyFromAPI(t *testing.T) {
 				k.Enabled = &disabled
 			}),
 			expected: modelHYOKKeyRequestMut(func(k *model.Key) {
-				k.State = string(cmkapi.KeyStateDISABLED)
+				k.State = cmkapi.KeyStateDISABLED
 			}),
 			err: nil,
 		},
@@ -242,7 +242,7 @@ func TestTransformKeyToAPI(t *testing.T) {
 			KeyConfigurationID:   keyConfigID,
 			Description:          description,
 			NativeID:             &nativeID,
-			State:                string(cmkapi.KeyStateENABLED),
+			State:                cmkapi.KeyStateENABLED,
 			IsPrimary:            false,
 			ManagementAccessData: managementAccessJSON,
 			CryptoAccessData:     cryptoAccessJSON,

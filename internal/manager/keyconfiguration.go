@@ -400,7 +400,7 @@ func (m *KeyConfigManager) handleUpdatePrimaryKey(
 	if err != nil {
 		return err
 	}
-	if key.State == string(cmkapi.KeyStateDISABLED) {
+	if key.State == cmkapi.KeyStateDISABLED {
 		return ErrKeyIsNotEnabled
 	}
 

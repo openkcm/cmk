@@ -196,7 +196,7 @@ func TestOffboardTenant(t *testing.T) {
 		key := testutils.NewKey(
 			func(k *model.Key) {
 				k.KeyConfigurationID = keyConfig.ID
-				k.State = string(cmkapi.KeyStateDETACHED)
+				k.State = cmkapi.KeyStateDETACHED
 				k.ID = keyID
 			},
 		)
@@ -262,7 +262,7 @@ func TestOffboardTenant(t *testing.T) {
 		key := testutils.NewKey(
 			func(k *model.Key) {
 				k.KeyConfigurationID = keyConfig.ID
-				k.State = string(cmkapi.KeyStateENABLED)
+				k.State = cmkapi.KeyStateENABLED
 				k.ID = keyID
 			},
 		)
@@ -274,7 +274,7 @@ func TestOffboardTenant(t *testing.T) {
 
 		_, err = r.First(ctx, key, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateDETACHING), key.State)
+		assert.Equal(t, cmkapi.KeyStateDETACHING, key.State)
 	})
 
 	t.Run("returns error when unlinking connected systems fails", func(t *testing.T) {

@@ -92,10 +92,10 @@ func TestCreator_CreateTask(t *testing.T) {
 	testWorkflow := model.Workflow{
 		ID:           workflowID,
 		InitiatorID:  initiatorID,
-		ActionType:   "DELETE",
-		ArtifactType: "KEY",
+		ActionType:   model.WorkflowActionTypeDelete,
+		ArtifactType: model.WorkflowArtifactTypeKey,
 		ArtifactID:   artifactID,
-		State:        string(wf.StateSuccessful),
+		State:        model.WorkflowStateSuccessful,
 	}
 
 	testTenant := model.Tenant{
@@ -107,7 +107,7 @@ func TestCreator_CreateTask(t *testing.T) {
 		transition    wf.Transition
 		recipients    []string
 		expectError   bool
-		wfState       string
+		wfState       model.WorkflowState
 		expectNilTask bool
 	}{
 		{
@@ -115,7 +115,7 @@ func TestCreator_CreateTask(t *testing.T) {
 			transition:    wf.TransitionCreate,
 			recipients:    []string{"approver@example.com"},
 			expectError:   false,
-			wfState:       string(wf.StateWaitApproval),
+			wfState:       model.WorkflowStateWaitApproval,
 			expectNilTask: false,
 		},
 		{
@@ -123,7 +123,7 @@ func TestCreator_CreateTask(t *testing.T) {
 			transition:    wf.TransitionApprove,
 			recipients:    []string{"initiator@example.com"},
 			expectError:   false,
-			wfState:       string(wf.StateWaitConfirmation),
+			wfState:       model.WorkflowStateWaitConfirmation,
 			expectNilTask: false,
 		},
 		{
@@ -131,7 +131,7 @@ func TestCreator_CreateTask(t *testing.T) {
 			transition:    wf.TransitionApprove,
 			recipients:    []string{"initiator@example.com"},
 			expectError:   false,
-			wfState:       string(wf.StateWaitApproval),
+			wfState:       model.WorkflowStateWaitApproval,
 			expectNilTask: true,
 		},
 		{
@@ -139,7 +139,7 @@ func TestCreator_CreateTask(t *testing.T) {
 			transition:    wf.TransitionReject,
 			recipients:    []string{"initiator@example.com"},
 			expectError:   false,
-			wfState:       string(wf.StateRejected),
+			wfState:       model.WorkflowStateRejected,
 			expectNilTask: false,
 		},
 		{
@@ -147,7 +147,7 @@ func TestCreator_CreateTask(t *testing.T) {
 			transition:    wf.TransitionConfirm,
 			recipients:    []string{"approver@example.com"},
 			expectError:   false,
-			wfState:       string(wf.StateSuccessful),
+			wfState:       model.WorkflowStateSuccessful,
 			expectNilTask: false,
 		},
 		{
@@ -155,7 +155,7 @@ func TestCreator_CreateTask(t *testing.T) {
 			transition:    wf.TransitionRevoke,
 			recipients:    []string{"approver@example.com"},
 			expectError:   false,
-			wfState:       string(wf.StateRevoked),
+			wfState:       model.WorkflowStateRevoked,
 			expectNilTask: false,
 		},
 		{
@@ -163,7 +163,7 @@ func TestCreator_CreateTask(t *testing.T) {
 			transition:    wf.Transition("unsupported"),
 			recipients:    []string{"test@example.com"},
 			expectError:   true,
-			wfState:       string(wf.StateWaitApproval),
+			wfState:       model.WorkflowStateWaitApproval,
 			expectNilTask: false,
 		},
 	}
@@ -219,40 +219,40 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 
 	tests := []struct {
 		name              string
-		actionType        string
-		artifactType      string
+		actionType        model.WorkflowActionType
+		artifactType      model.WorkflowArtifactType
 		artifactName      *string
 		parameters        string
 		expectedInSubject string
 	}{
 		{
 			name:              "DELETE action with artifact name",
-			actionType:        "DELETE",
-			artifactType:      "KEY",
+			actionType:        model.WorkflowActionTypeDelete,
+			artifactType:      model.WorkflowArtifactTypeKey,
 			artifactName:      ptr.PointTo("Test Key"),
 			parameters:        "",
 			expectedInSubject: "DELETE KEY: 'Test Key'",
 		},
 		{
 			name:              "LINK SYSTEM with artifact name to key configuration",
-			actionType:        "LINK",
-			artifactType:      "SYSTEM",
+			actionType:        model.WorkflowActionTypeLink,
+			artifactType:      model.WorkflowArtifactTypeSystem,
 			artifactName:      ptr.PointTo("Production System"),
 			parameters:        keyConfigID,
 			expectedInSubject: "LINK SYSTEM: 'Production System'",
 		},
 		{
 			name:              "UNLINK SYSTEM",
-			actionType:        "UNLINK",
-			artifactType:      "SYSTEM",
+			actionType:        model.WorkflowActionTypeUnlink,
+			artifactType:      model.WorkflowArtifactTypeSystem,
 			artifactName:      nil,
 			parameters:        "",
 			expectedInSubject: "UNLINK SYSTEM",
 		},
 		{
 			name:              "SWITCH SYSTEM with artifact name to key configuration",
-			actionType:        "SWITCH",
-			artifactType:      "SYSTEM",
+			actionType:        model.WorkflowActionTypeSwitch,
+			artifactType:      model.WorkflowArtifactTypeSystem,
 			artifactName:      ptr.PointTo("Staging System"),
 			parameters:        keyConfigID,
 			expectedInSubject: "SWITCH SYSTEM: 'Staging System'",
@@ -311,26 +311,26 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 
 	tests := []struct {
 		name                string
-		workflowState       string
+		workflowState       model.WorkflowState
 		shouldSendEmail     bool
 		expectedMessagePart string
 		expectedActionPart  string
 	}{
 		{
 			name:            "StateWaitApproval - no email sent for partial approval",
-			workflowState:   string(wf.StateWaitApproval),
+			workflowState:   model.WorkflowStateWaitApproval,
 			shouldSendEmail: false,
 		},
 		{
 			name:                "StateWaitConfirmation - email sent when threshold met",
-			workflowState:       string(wf.StateWaitConfirmation),
+			workflowState:       model.WorkflowStateWaitConfirmation,
 			shouldSendEmail:     true,
 			expectedMessagePart: "Your workflow has been fully approved.",
 			expectedActionPart:  "ready for confirmation",
 		},
 		{
 			name:            "StateExecuting - no email sent",
-			workflowState:   string(wf.StateExecuting),
+			workflowState:   model.WorkflowStateExecuting,
 			shouldSendEmail: false,
 		},
 	}
@@ -344,8 +344,8 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 				Workflow: model.Workflow{
 					ID:           workflowID,
 					InitiatorID:  initiatorID,
-					ActionType:   "DELETE",
-					ArtifactType: "KEY",
+					ActionType:   model.WorkflowActionTypeDelete,
+					ArtifactType: model.WorkflowArtifactTypeKey,
 					ArtifactID:   artifactID,
 					State:        tt.workflowState,
 				},
@@ -401,8 +401,8 @@ func TestCreator_createWorkflowRejectedTask(t *testing.T) {
 		Workflow: model.Workflow{
 			ID:           workflowID,
 			InitiatorID:  initiatorID,
-			ActionType:   "DELETE",
-			ArtifactType: "KEY",
+			ActionType:   model.WorkflowActionTypeDelete,
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID,
 		},
 		Transition: wf.TransitionReject,
@@ -442,21 +442,21 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		workflowState   string
+		workflowState   model.WorkflowState
 		expectedSubject string
 		expectedMessage string
 		expectedAction  string
 	}{
 		{
 			name:            "successful workflow",
-			workflowState:   string(wf.StateSuccessful),
+			workflowState:   model.WorkflowStateSuccessful,
 			expectedSubject: "Workflow Successful - DELETE KEY",
 			expectedMessage: "confirmed and completed successfully",
 			expectedAction:  "No further action required",
 		},
 		{
 			name:            "failed workflow",
-			workflowState:   string(wf.StateFailed),
+			workflowState:   model.WorkflowStateFailed,
 			expectedSubject: "Workflow Failed - DELETE KEY",
 			expectedMessage: "confirmed but failed during execution",
 			expectedAction:  "Review the failure reason and contact support",
@@ -479,8 +479,8 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 				Workflow: model.Workflow{
 					ID:           workflowID,
 					InitiatorID:  initiatorID,
-					ActionType:   "DELETE",
-					ArtifactType: "KEY",
+					ActionType:   model.WorkflowActionTypeDelete,
+					ArtifactType: model.WorkflowArtifactTypeKey,
 					ArtifactID:   artifactID,
 					State:        tt.workflowState,
 				},
@@ -522,8 +522,8 @@ func TestCreator_createWorkflowRevokedTask(t *testing.T) {
 		Workflow: model.Workflow{
 			ID:           workflowID,
 			InitiatorID:  initiatorID,
-			ActionType:   "DELETE",
-			ArtifactType: "KEY",
+			ActionType:   model.WorkflowActionTypeDelete,
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID,
 		},
 		Transition: wf.TransitionRevoke,
@@ -569,8 +569,8 @@ func TestCreator_createHTMLBody(t *testing.T) {
 		Workflow: model.Workflow{
 			ID:           workflowID,
 			InitiatorID:  initiatorID,
-			ActionType:   "DELETE",
-			ArtifactType: "KEY",
+			ActionType:   model.WorkflowActionTypeDelete,
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID,
 			ArtifactName: ptr.PointTo("Test Key"),
 		},
@@ -609,8 +609,8 @@ func TestCreator_createNotificationTask(t *testing.T) {
 		Workflow: model.Workflow{
 			ID:           workflowID,
 			InitiatorID:  initiatorID,
-			ActionType:   "DELETE",
-			ArtifactType: "KEY",
+			ActionType:   model.WorkflowActionTypeDelete,
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID,
 		},
 		Transition: wf.TransitionCreate,
@@ -651,8 +651,8 @@ func TestCreator_createNotificationTask_EmptyRecipients(t *testing.T) {
 		Workflow: model.Workflow{
 			ID:           workflowID,
 			InitiatorID:  initiatorID,
-			ActionType:   "DELETE",
-			ArtifactType: "KEY",
+			ActionType:   model.WorkflowActionTypeDelete,
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID,
 		},
 		Transition: wf.TransitionCreate,

@@ -3,8 +3,11 @@ package model
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,6 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	"github.com/openkcm/cmk/utils/enums"
 	"github.com/openkcm/cmk/utils/identity"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -31,20 +35,20 @@ const WorkflowID = "workflow_id"
 type Workflow struct {
 	AutoTimeModel
 
-	ID                     uuid.UUID          `gorm:"type:uuid;primaryKey"`
-	State                  string             `gorm:"type:varchar(50);not null"`
-	InitiatorID            string             `gorm:"type:varchar(255);not null"`
-	initiatorName          string             `gorm:"-:all"`
-	Approvers              []WorkflowApprover `gorm:"foreignKey:WorkflowID"`
-	ApproverGroupIDs       json.RawMessage    `gorm:"type:jsonb"`
-	ArtifactType           string             `gorm:"type:varchar(50);not null"`
-	ArtifactID             uuid.UUID          `gorm:"type:uuid;not null"`
-	ArtifactName           *string            `gorm:"type:varchar(255)"` // Currently a snapshot at time of creation
-	ActionType             string             `gorm:"type:varchar(50);not null"`
-	Parameters             string             `gorm:"type:text"`
-	ParametersResourceName *string            `gorm:"type:varchar(255)"`
-	ParametersResourceType *string            `gorm:"type:varchar(50)"`
-	FailureReason          string             `gorm:"type:text"`
+	ID                     uuid.UUID            `gorm:"type:uuid;primaryKey"`
+	State                  WorkflowState        `gorm:"type:varchar(50);not null"`
+	InitiatorID            string               `gorm:"type:varchar(255);not null"`
+	initiatorName          string               `gorm:"-:all"`
+	Approvers              []WorkflowApprover   `gorm:"foreignKey:WorkflowID"`
+	ApproverGroupIDs       json.RawMessage      `gorm:"type:jsonb"`
+	ArtifactType           WorkflowArtifactType `gorm:"type:varchar(50);not null"`
+	ArtifactID             uuid.UUID            `gorm:"type:uuid;not null"`
+	ArtifactName           *string              `gorm:"type:varchar(255)"` // Currently a snapshot at time of creation
+	ActionType             WorkflowActionType   `gorm:"type:varchar(50);not null"`
+	Parameters             string               `gorm:"type:text"`
+	ParametersResourceName *string              `gorm:"type:varchar(255)"`
+	ParametersResourceType *string              `gorm:"type:varchar(50)"`
+	FailureReason          string               `gorm:"type:text"`
 	ExpiryDate             *time.Time
 	MinimumApprovalCount   int `gorm:"type:integer;default:2"` // Snapshot of minimum approvals at creation time
 }
@@ -89,7 +93,7 @@ func (m Workflow) Description(
 	var err error
 
 	switch m.ArtifactType {
-	case constants.WorkflowArtifactTypeSystem:
+	case WorkflowArtifactTypeSystem:
 		description, err = m.buildSystemDescription(ctx, idm)
 		if err != nil {
 			return "", err
@@ -251,4 +255,103 @@ func (m *WorkflowApprover) GetUserName(
 	}
 	m.userName = name
 	return name, nil
+}
+
+var (
+	ErrInvalidWorkflowState        = errors.New("invalid workflow state")
+	ErrInvalidWorkflowArtifactType = errors.New("invalid workflow artifact type")
+	ErrInvalidWorkflowActionType   = errors.New("invalid workflow action type")
+)
+
+//nolint:recvcheck
+type WorkflowState string
+
+//nolint:recvcheck
+type WorkflowArtifactType string
+
+//nolint:recvcheck
+type WorkflowActionType string
+
+const (
+	WorkflowStateInitial          WorkflowState = "INITIAL"
+	WorkflowStateRevoked          WorkflowState = "REVOKED"
+	WorkflowStateRejected         WorkflowState = "REJECTED"
+	WorkflowStateExpired          WorkflowState = "EXPIRED"
+	WorkflowStateWaitApproval     WorkflowState = "WAIT_APPROVAL"
+	WorkflowStateWaitConfirmation WorkflowState = "WAIT_CONFIRMATION"
+	WorkflowStateExecuting        WorkflowState = "EXECUTING"
+	WorkflowStateSuccessful       WorkflowState = "SUCCESSFUL"
+	WorkflowStateFailed           WorkflowState = "FAILED"
+
+	WorkflowArtifactTypeKey              WorkflowArtifactType = "KEY"
+	WorkflowArtifactTypeKeyConfiguration WorkflowArtifactType = "KEY_CONFIGURATION"
+	WorkflowArtifactTypeSystem           WorkflowArtifactType = "SYSTEM"
+
+	WorkflowActionTypeUpdateState   WorkflowActionType = "UPDATE_STATE"
+	WorkflowActionTypeUpdatePrimary WorkflowActionType = "UPDATE_PRIMARY"
+	WorkflowActionTypeLink          WorkflowActionType = "LINK"
+	WorkflowActionTypeUnlink        WorkflowActionType = "UNLINK"
+	WorkflowActionTypeSwitch        WorkflowActionType = "SWITCH"
+	WorkflowActionTypeDelete        WorkflowActionType = "DELETE"
+)
+
+var WorkflowStates = []WorkflowState{
+	WorkflowStateInitial, WorkflowStateRevoked, WorkflowStateRejected, WorkflowStateExpired,
+	WorkflowStateWaitApproval, WorkflowStateWaitConfirmation, WorkflowStateExecuting,
+	WorkflowStateSuccessful, WorkflowStateFailed,
+}
+
+var WorkflowArtifactTypes = []WorkflowArtifactType{
+	WorkflowArtifactTypeKey, WorkflowArtifactTypeKeyConfiguration, WorkflowArtifactTypeSystem,
+}
+
+var WorkflowActionTypes = []WorkflowActionType{
+	WorkflowActionTypeUpdateState, WorkflowActionTypeUpdatePrimary,
+	WorkflowActionTypeLink, WorkflowActionTypeUnlink, WorkflowActionTypeSwitch, WorkflowActionTypeDelete,
+}
+
+var WorkflowNonTerminalStates = []WorkflowState{
+	WorkflowStateInitial, WorkflowStateWaitApproval, WorkflowStateWaitConfirmation, WorkflowStateExecuting,
+}
+
+var WorkflowTerminalStates = []WorkflowState{
+	WorkflowStateRevoked, WorkflowStateRejected, WorkflowStateExpired, WorkflowStateSuccessful, WorkflowStateFailed,
+}
+
+func (s WorkflowState) String() string        { return string(s) }
+func (t WorkflowArtifactType) String() string { return string(t) }
+func (t WorkflowActionType) String() string   { return string(t) }
+
+func (s WorkflowState) Valid() bool { return slices.Contains(WorkflowStates, s) }
+
+func (s WorkflowState) Value() (driver.Value, error) {
+	return enums.Value(s, ErrInvalidWorkflowState)
+}
+
+func (s *WorkflowState) Scan(src any) error {
+	return enums.Scan(src, s, ErrInvalidWorkflowState)
+}
+
+func (t WorkflowArtifactType) Valid() bool {
+	return slices.Contains(WorkflowArtifactTypes, t)
+}
+
+func (t WorkflowArtifactType) Value() (driver.Value, error) {
+	return enums.Value(t, ErrInvalidWorkflowArtifactType)
+}
+
+func (t *WorkflowArtifactType) Scan(src any) error {
+	return enums.Scan(src, t, ErrInvalidWorkflowArtifactType)
+}
+
+func (t WorkflowActionType) Valid() bool {
+	return slices.Contains(WorkflowActionTypes, t)
+}
+
+func (t WorkflowActionType) Value() (driver.Value, error) {
+	return enums.Value(t, ErrInvalidWorkflowActionType)
+}
+
+func (t *WorkflowActionType) Scan(src any) error {
+	return enums.Scan(src, t, ErrInvalidWorkflowActionType)
 }

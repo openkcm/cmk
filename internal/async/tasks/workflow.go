@@ -14,7 +14,6 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
 )
 
@@ -83,7 +82,7 @@ func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) e
 
 	log.Info(ctx, "Auto assigned approvers to workflow",
 		slog.String("workflowId", workflow.ID.String()),
-		slog.String("status", workflow.State))
+		slog.String("status", workflow.State.String()))
 
 	return nil
 }
@@ -109,7 +108,7 @@ func (s *WorkflowProcessor) putWorkflowInFailedState(
 	if err != nil {
 		return err
 	}
-	workflow.State = wfMechanism.StateFailed.String()
+	workflow.State = model.WorkflowStateFailed
 	workflow.FailureReason = failureReason
 
 	return s.repo.Transaction(ctx, func(ctx context.Context) error {

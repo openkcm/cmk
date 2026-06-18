@@ -25,15 +25,15 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 	wfMutator := testutils.NewMutator(func() model.Workflow {
 		return model.Workflow{
 			ID:          systemID01,
-			State:       workflow.StateInitial.String(),
+			State:       model.WorkflowStateInitial,
 			InitiatorID: userID01,
 			Approvers: []model.WorkflowApprover{
 				{UserID: userID02, Approved: sqlNullBoolNull},
 				{UserID: userID03, Approved: sqlNullBoolNull},
 			},
-			ArtifactType: workflow.ArtifactTypeSystem.String(),
+			ArtifactType: model.WorkflowArtifactTypeSystem,
 			ArtifactID:   systemID01,
-			ActionType:   workflow.ActionTypeLink.String(),
+			ActionType:   model.WorkflowActionTypeLink,
 			Parameters:   keyConfigID03.String(),
 		}
 	})
@@ -44,41 +44,41 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 		transition    workflow.Transition
 		expectErr     bool
 		errMessage    string
-		expectedState workflow.State
+		expectedState model.WorkflowState
 	}{
 		{
 			name: "workflow system link",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
 			expectErr:     false,
-			expectedState: workflow.StateSuccessful,
+			expectedState: model.WorkflowStateSuccessful,
 		},
 		{
 			name: "workflow system switch",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
-				wf.ActionType = workflow.ActionTypeSwitch.String()
+				wf.State = model.WorkflowStateWaitConfirmation
+				wf.ActionType = model.WorkflowActionTypeSwitch
 				wf.Parameters = keyConfigID04.String()
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
 			expectErr:     false,
-			expectedState: workflow.StateSuccessful,
+			expectedState: model.WorkflowStateSuccessful,
 		},
 		{
 			name: "workflow system unlink",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
-				wf.ActionType = workflow.ActionTypeUnlink.String()
+				wf.State = model.WorkflowStateWaitConfirmation
+				wf.ActionType = model.WorkflowActionTypeUnlink
 				wf.Parameters = ""
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
 			expectErr:     false,
-			expectedState: workflow.StateSuccessful,
+			expectedState: model.WorkflowStateSuccessful,
 		},
 	}
 
@@ -144,7 +144,7 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 			assert.True(t, ok)
 
 			assert.NoError(t, transitionErr)
-			assert.Equal(t, tt.expectedState.String(), wf.State)
+			assert.Equal(t, tt.expectedState, wf.State)
 		})
 	}
 }

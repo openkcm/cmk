@@ -167,9 +167,9 @@ func ToAPI(
 		Id:                     ptr.PointTo(w.ID),
 		InitiatorID:            w.InitiatorID,
 		InitiatorName:          initiatorName,
-		State:                  cmkapi.WorkflowState(strings.ToUpper(w.State)),
-		ActionType:             cmkapi.WorkflowActionType(strings.ToUpper(w.ActionType)),
-		ArtifactType:           cmkapi.WorkflowArtifactType(strings.ToUpper(w.ArtifactType)),
+		State:                  cmkapi.WorkflowState(strings.ToUpper(w.State.String())),
+		ActionType:             cmkapi.WorkflowActionType(strings.ToUpper(w.ActionType.String())),
+		ArtifactType:           cmkapi.WorkflowArtifactType(strings.ToUpper(w.ArtifactType.String())),
 		ArtifactName:           w.ArtifactName,
 		ParametersResourceName: w.ParametersResourceName,
 		ParametersResourceType: parametersResourceType,
@@ -216,8 +216,8 @@ func FromAPI(
 
 	wf := &model.Workflow{
 		ID:           uuid.New(),
-		ActionType:   strings.ToUpper(string(apiWorkflow.ActionType)),
-		ArtifactType: strings.ToUpper(string(apiWorkflow.ArtifactType)),
+		ActionType:   model.WorkflowActionType(strings.ToUpper(string(apiWorkflow.ActionType))),
+		ArtifactType: model.WorkflowArtifactType(strings.ToUpper(string(apiWorkflow.ArtifactType))),
 		ArtifactID:   apiWorkflow.ArtifactID,
 		InitiatorID:  businessUserData.Identifier,
 		ExpiryDate:   &expiryDate,

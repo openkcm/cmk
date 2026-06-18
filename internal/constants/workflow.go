@@ -9,10 +9,4 @@ const (
 	DefaultExpiryPeriodDays = 7
 
 	DefaultMaxExpiryPeriodDays = 30
-
-	WorkflowArtifactTypeSystem = "SYSTEM"
-
-	WorkflowActionTypeLink   = "LINK"
-	WorkflowActionTypeUnlink = "UNLINK"
-	WorkflowActionTypeSwitch = "SWITCH"
 )

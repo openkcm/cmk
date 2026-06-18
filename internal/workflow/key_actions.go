@@ -30,7 +30,7 @@ func (l *Lifecycle) updateKeyState(ctx context.Context) error {
 
 	switch l.Workflow.Parameters {
 	case "ENABLED", "DISABLED":
-		dbKey.State = l.Workflow.Parameters
+		dbKey.State = cmkapi.KeyState(l.Workflow.Parameters)
 	default:
 		return errs.Wrapf(ErrWorkflowExecution,
 			"invalid key state "+l.Workflow.Parameters)

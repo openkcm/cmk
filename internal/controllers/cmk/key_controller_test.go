@@ -1058,7 +1058,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 	// Create a BYOK key and import params in the database
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.State = string(cmkapi.KeyStatePENDINGIMPORT)
+		k.State = cmkapi.KeyStatePENDINGIMPORT
 		k.KeyConfigurationID = kc.ID
 	})
 
@@ -1069,7 +1069,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	byokEnabled := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.State = string(cmkapi.KeyStateENABLED)
+		k.State = cmkapi.KeyStateENABLED
 		k.KeyConfigurationID = kc.ID
 	})
 
@@ -1204,7 +1204,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.State = string(cmkapi.KeyStatePENDINGIMPORT)
+		k.State = cmkapi.KeyStatePENDINGIMPORT
 		k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-1234-567890abcdef")
 		k.KeyConfigurationID = keyConfig.ID
 	})
@@ -1295,7 +1295,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		byokNoImportParams := testutils.NewKey(func(k *model.Key) {
 			k.Name = "byok-no-import-params"
 			k.KeyType = string(cmkapi.KeyTypeBYOK)
-			k.State = string(cmkapi.KeyStatePENDINGIMPORT)
+			k.State = cmkapi.KeyStatePENDINGIMPORT
 			k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-6789-567890abcdef")
 			k.KeyConfigurationID = keyConfig.ID
 		})
@@ -1361,7 +1361,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		// Prepare
 		byokEnabled := testutils.NewKey(func(k *model.Key) {
 			k.KeyType = string(cmkapi.KeyTypeBYOK)
-			k.State = string(cmkapi.KeyStateENABLED)
+			k.State = cmkapi.KeyStateENABLED
 			k.KeyConfigurationID = keyConfig.ID
 		})
 
