@@ -331,12 +331,71 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			RetentionPeriodDays: ptr.PointTo(1),
+			RetentionPeriodDays: ptr.PointTo(29),
 		})
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.ErrorIs(t, err, manager.ErrRetentionLessThanMinimum)
+	})
+
+	t.Run("Should fail when defaultExpiryPeriodDays exceeds maxExpiryPeriodDays", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			DefaultExpiryPeriodDays: ptr.PointTo(15),
+			MaxExpiryPeriodDays:     ptr.PointTo(10),
+		})
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrDefaultExpiryExceedsMax)
+	})
+
+	t.Run("Should succeed when defaultExpiryPeriodDays equals maxExpiryPeriodDays", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			DefaultExpiryPeriodDays: ptr.PointTo(10),
+			MaxExpiryPeriodDays:     ptr.PointTo(10),
+		})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, 10, result.DefaultExpiryPeriodDays)
+		assert.Equal(t, 10, result.MaxExpiryPeriodDays)
+	})
+
+	t.Run("Should fail when minimumApprovals is less than 2", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			MinimumApprovals: ptr.PointTo(1),
+		})
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrMinimumApprovalsTooLow)
+	})
+
+	t.Run("Should succeed when minimumApprovals equals 2", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			MinimumApprovals: ptr.PointTo(2),
+		})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, 2, result.MinimumApprovals)
 	})
 
 	t.Run("Should create default config when updating non-existent config", func(t *testing.T) {

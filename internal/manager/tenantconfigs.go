@@ -22,7 +22,7 @@ import (
 const (
 
 	// Since the workflow expiry must be less than the retention minus a day
-	minimumRetentionPeriodDays = 2
+	minimumRetentionPeriodDays = 30
 	allowBYOKFeatureGateKey    = "allow-byok"
 )
 
@@ -62,6 +62,9 @@ var (
 	ErrRetentionLessThanMinimum = errors.New("retention is less than the minimum allowed (" +
 		strconv.Itoa(minimumRetentionPeriodDays) + " day)")
 	ErrWorkflowEnableDisableNotAllowed = errors.New("workflow enable/disable is only allowed for ROLE_TEST tenants")
+	ErrDefaultExpiryExceedsMax         = errors.New("defaultExpiryPeriodDays must be" +
+		" less than or equal to maxExpiryPeriodDays")
+	ErrMinimumApprovalsTooLow = errors.New("minimumApprovals must be at least 2")
 )
 
 type HYOKKeystore struct {
@@ -123,6 +126,14 @@ func (m *TenantConfigManager) SetWorkflowConfig(
 
 	if workflowConfig.RetentionPeriodDays < minimumRetentionPeriodDays {
 		return nil, errs.Wrap(ErrSetWorkflowConfig, ErrRetentionLessThanMinimum)
+	}
+
+	if workflowConfig.DefaultExpiryPeriodDays > workflowConfig.MaxExpiryPeriodDays {
+		return nil, errs.Wrap(ErrSetWorkflowConfig, ErrDefaultExpiryExceedsMax)
+	}
+
+	if workflowConfig.MinimumApprovals < 2 {
+		return nil, errs.Wrap(ErrSetWorkflowConfig, ErrMinimumApprovalsTooLow)
 	}
 
 	configValue, err := json.Marshal(workflowConfig)

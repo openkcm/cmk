@@ -239,7 +239,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 
 		// Test: Update with invalid retention period
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			RetentionPeriodDays: ptr.PointTo(1), // Less than minimum of 2
+			RetentionPeriodDays: ptr.PointTo(29), // Less than minimum of 30
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -251,6 +251,165 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("Should 400 INVALID_SETTING when defaultExpiryPeriodDays exceeds maxExpiryPeriodDays", func(t *testing.T) {
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+		setupDefaultWorkflowConfig(t, r, ctx)
+
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+		updateRequest := cmkapi.TenantWorkflowConfiguration{
+			DefaultExpiryPeriodDays: ptr.PointTo(20),
+			MaxExpiryPeriodDays:     ptr.PointTo(10),
+		}
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPatch,
+			Endpoint: "/tenantConfigurations/workflow",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, updateRequest),
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+
+		var errResp cmkapi.ErrorMessage
+		err := json.Unmarshal(w.Body.Bytes(), &errResp)
+		require.NoError(t, err)
+		assert.Equal(t, "INVALID_SETTING", errResp.Error.Code)
+		assert.NotNil(t, errResp.Error.Context)
+		assert.Equal(t, "defaultExpiryPeriodDays", (*errResp.Error.Context)["setting"])
+	})
+
+	t.Run("Should 400 INVALID_SETTING when minimumApprovals is less than 2", func(t *testing.T) {
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+		setupDefaultWorkflowConfig(t, r, ctx)
+
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+		updateRequest := cmkapi.TenantWorkflowConfiguration{
+			MinimumApprovals: ptr.PointTo(1),
+		}
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPatch,
+			Endpoint: "/tenantConfigurations/workflow",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, updateRequest),
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+
+		var errResp cmkapi.ErrorMessage
+		err := json.Unmarshal(w.Body.Bytes(), &errResp)
+		require.NoError(t, err)
+		assert.Equal(t, "INVALID_SETTING", errResp.Error.Code)
+		assert.NotNil(t, errResp.Error.Context)
+		assert.Equal(t, "minimumApprovals", (*errResp.Error.Context)["setting"])
+	})
+
+	t.Run("Should 400 INVALID_SETTING when retentionPeriodDays is less than 30", func(t *testing.T) {
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+		setupDefaultWorkflowConfig(t, r, ctx)
+
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+		updateRequest := cmkapi.TenantWorkflowConfiguration{
+			RetentionPeriodDays: ptr.PointTo(29),
+		}
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPatch,
+			Endpoint: "/tenantConfigurations/workflow",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, updateRequest),
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+
+		var errResp cmkapi.ErrorMessage
+		err := json.Unmarshal(w.Body.Bytes(), &errResp)
+		require.NoError(t, err)
+		assert.Equal(t, "INVALID_SETTING", errResp.Error.Code)
+		assert.NotNil(t, errResp.Error.Context)
+		assert.Equal(t, "retentionPeriodDays", (*errResp.Error.Context)["setting"])
+	})
+
+	t.Run("Should 400 INVALID_SETTING when non-TEST tenant tries to disable workflow", func(t *testing.T) {
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+
+		// Store config with enabled=true so changing to false triggers role validation
+		enabledConfig := testutils.NewDefaultWorkflowConfig(true)
+		configJSON, err := json.Marshal(enabledConfig)
+		require.NoError(t, err)
+		err = r.Set(ctx, &model.TenantConfig{Key: constants.WorkflowConfigKey, Value: configJSON})
+		require.NoError(t, err)
+
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+		updateRequest := cmkapi.TenantWorkflowConfiguration{
+			Enabled: ptr.PointTo(false),
+		}
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPatch,
+			Endpoint: "/tenantConfigurations/workflow",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, updateRequest),
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+
+		var errResp cmkapi.ErrorMessage
+		err = json.Unmarshal(w.Body.Bytes(), &errResp)
+		require.NoError(t, err)
+		assert.Equal(t, "INVALID_SETTING", errResp.Error.Code)
+		assert.NotNil(t, errResp.Error.Context)
+		assert.Equal(t, "enabled", (*errResp.Error.Context)["setting"])
 	})
 }
 
