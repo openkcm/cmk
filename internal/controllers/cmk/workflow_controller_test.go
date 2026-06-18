@@ -97,9 +97,9 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.Approvers = []model.WorkflowApprover{{UserID: authClient.Identifier}}
-		w.State = wfMechanism.StateWaitApproval.String()
-		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
-		w.ActionType = wfMechanism.ActionTypeDelete.String()
+		w.State = model.WorkflowStateWaitApproval
+		w.ArtifactType = model.WorkflowArtifactTypeKey
+		w.ActionType = model.WorkflowActionTypeDelete
 		w.ArtifactID = key.ID
 		w.ArtifactName = &key.Name
 	})
@@ -110,9 +110,9 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 	idmPlugin.PutUser(identitymanagement.User{ID: workflow.InitiatorID})
 
 	workflow2 := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.State = wfMechanism.StateRevoked.String()
-		w.ActionType = wfMechanism.ActionTypeUpdateState.String()
-		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
+		w.State = model.WorkflowStateRevoked
+		w.ActionType = model.WorkflowActionTypeUpdateState
+		w.ArtifactType = model.WorkflowArtifactTypeKey
 		w.ArtifactID = key2.ID
 		w.ArtifactName = &key2.Name
 		w.Approvers = []model.WorkflowApprover{{UserID: uuid.NewString()}}
@@ -144,9 +144,9 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 			},
 		}
 		w.ID = wfID
-		w.State = wfMechanism.StateWaitApproval.String()
-		w.ActionType = wfMechanism.ActionTypeLink.String()
-		w.ArtifactType = wfMechanism.ArtifactTypeSystem.String()
+		w.State = model.WorkflowStateWaitApproval
+		w.ActionType = model.WorkflowActionTypeLink
+		w.ArtifactType = model.WorkflowArtifactTypeSystem
 		w.ArtifactID = system.ID
 		w.ArtifactName = &system.Identifier
 		w.Parameters = keyConfig.ID.String()
@@ -223,9 +223,9 @@ func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux,
 	t.Helper()
 
 	wf := cmkapi.Workflow{
-		ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
+		ActionType:   cmkapi.WorkflowActionType(model.WorkflowActionTypeUnlink),
 		ArtifactID:   uuid.MustParse(systemID),
-		ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeSystem),
+		ArtifactType: cmkapi.WorkflowArtifactType(model.WorkflowArtifactTypeSystem),
 	}
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -269,9 +269,9 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		wf := cmkapi.Workflow{
-			ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
+			ActionType:   cmkapi.WorkflowActionType(model.WorkflowActionTypeUnlink),
 			ArtifactID:   uuid.MustParse(systemID),
-			ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeSystem),
+			ArtifactType: cmkapi.WorkflowArtifactType(model.WorkflowArtifactTypeSystem),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -302,7 +302,7 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
 		key := testutils.NewKey(func(k *model.Key) {
-			k.State = string(cmkapi.KeyStateUNKNOWN)
+			k.State = cmkapi.KeyStateUNKNOWN
 		})
 
 		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
@@ -379,7 +379,7 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 		wf := cmkapi.Workflow{
 			ActionType:   cmkapi.WorkflowActionTypeEnumUNLINK,
 			ArtifactID:   system.ID,
-			ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeSystem),
+			ArtifactType: cmkapi.WorkflowArtifactType(model.WorkflowArtifactTypeSystem),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -454,9 +454,9 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 			extraResource: []repo.Resource{
 				testutils.NewWorkflow(func(w *model.Workflow) {
 					w.ArtifactID = uuid.MustParse(systemID)
-					w.ArtifactType = wfMechanism.ArtifactTypeSystem.String()
-					w.ActionType = wfMechanism.ActionTypeUnlink.String()
-					w.State = wfMechanism.StateExecuting.String()
+					w.ArtifactType = model.WorkflowArtifactTypeSystem
+					w.ActionType = model.WorkflowActionTypeUnlink
+					w.State = model.WorkflowStateExecuting
 					w.Parameters = keyConfigID
 				}),
 			},
@@ -1295,7 +1295,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 	wfMutator := testutils.NewMutator(func() model.Workflow {
 		return model.Workflow{
 			ID:           workflowID,
-			State:        wfMechanism.StateInitial.String(),
+			State:        model.WorkflowStateInitial,
 			InitiatorID:  initiatorID,
 			ArtifactType: "KEY",
 			ArtifactID:   uuid.New(),
@@ -1314,7 +1314,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		actorID        string
 		request        string
 		expectedStatus int
-		expectedState  string
+		expectedState  model.WorkflowState
 	}{
 		{
 			name:       "TestWorkflowControllerTransitionWorkflow_Approve_From_Initial",
@@ -1329,7 +1329,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Approve_As_Initiator",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1341,7 +1341,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Approve_As_First_Approver",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1349,12 +1349,12 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			}`,
 			actorID:        approverID01,
 			expectedStatus: http.StatusOK,
-			expectedState:  wfMechanism.StateWaitApproval.String(),
+			expectedState:  model.WorkflowStateWaitApproval,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Approve_As_Second_Approver",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 				w.Approvers = []model.WorkflowApprover{
 					{UserID: approverID01, Approved: sql.NullBool{Bool: true, Valid: true}, WorkflowID: workflowID},
 					{UserID: approverID02, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
@@ -1366,7 +1366,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			}`,
 			actorID:        approverID02,
 			expectedStatus: http.StatusOK,
-			expectedState:  wfMechanism.StateWaitConfirmation.String(),
+			expectedState:  model.WorkflowStateWaitConfirmation,
 		},
 		{
 			name:       "TestWorkflowControllerTransitionWorkflow_Reject_From_Initial",
@@ -1381,7 +1381,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Reject_As_Initiator",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1393,7 +1393,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Revoke",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1401,12 +1401,12 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			}`,
 			actorID:        initiatorID,
 			expectedStatus: http.StatusOK,
-			expectedState:  wfMechanism.StateRevoked.String(),
+			expectedState:  model.WorkflowStateRevoked,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Revoke_From_Revoked",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateRevoked.String()
+				w.State = model.WorkflowStateRevoked
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1418,7 +1418,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Confirm",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitConfirmation.String()
+				w.State = model.WorkflowStateWaitConfirmation
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1426,12 +1426,12 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			}`,
 			actorID:        initiatorID,
 			expectedStatus: http.StatusOK,
-			expectedState:  wfMechanism.StateFailed.String(),
+			expectedState:  model.WorkflowStateFailed,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Confirm_As_Approver",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitConfirmation.String()
+				w.State = model.WorkflowStateWaitConfirmation
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1443,7 +1443,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Confirm_From_Wait_Approval",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 			}),
 			workflowID: workflowID.String(),
 			request: `{

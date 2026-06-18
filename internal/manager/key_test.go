@@ -142,7 +142,7 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 	return createdKey
 }
 
-func createTestBYOKKey(t *testing.T, r repo.Repo, ctx context.Context, keyConfigID uuid.UUID, state string) *model.Key {
+func createTestBYOKKey(t *testing.T, r repo.Repo, ctx context.Context, keyConfigID uuid.UUID, state cmkapi.KeyState) *model.Key {
 	t.Helper()
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
@@ -237,7 +237,7 @@ func TestCreate(t *testing.T) {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
 					k.KeyType = constants.KeyTypeBYOK
-					k.State = string(cmkapi.KeyStatePENDINGIMPORT)
+					k.State = cmkapi.KeyStatePENDINGIMPORT
 				})
 			},
 			wantErr: false,
@@ -489,7 +489,7 @@ func TestGet(t *testing.T) {
 
 	createdKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
 	hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
-	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 	tests := []struct {
 		name    string
@@ -541,7 +541,7 @@ func TestHYOKSync(t *testing.T) {
 
 		gotKey, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), gotKey.State)
+		assert.Equal(t, cmkapi.KeyStateENABLED, gotKey.State)
 	})
 
 	t.Run("HYOK key state syncs after provider disable", func(t *testing.T) {
@@ -550,13 +550,13 @@ func TestHYOKSync(t *testing.T) {
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), key.State)
+		assert.Equal(t, cmkapi.KeyStateENABLED, key.State)
 
 		disableKey(t, km, ctx, hyokKey)
 
 		key, err = km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateDISABLED), key.State)
+		assert.Equal(t, cmkapi.KeyStateDISABLED, key.State)
 		err = enableKey(t, km, ctx, hyokKey)
 		assert.NoError(t, err)
 	})
@@ -567,7 +567,7 @@ func TestHYOKSync(t *testing.T) {
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), key.State)
+		assert.Equal(t, cmkapi.KeyStateENABLED, key.State)
 
 		provider, err := km.GetOrInitProvider(ctx, hyokKey)
 		assert.NoError(t, err)
@@ -582,7 +582,7 @@ func TestHYOKSync(t *testing.T) {
 		assert.NoError(t, err)
 		key, err = km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateDISABLED), key.State)
+		assert.Equal(t, cmkapi.KeyStateDISABLED, key.State)
 		err = enableKey(t, km, ctx, hyokKey)
 		assert.NoError(t, err)
 	})
@@ -593,14 +593,14 @@ func TestHYOKSync(t *testing.T) {
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), key.State)
+		assert.Equal(t, cmkapi.KeyStateENABLED, key.State)
 
 		deleteKey(t, km, ctx, hyokKey)
 		err = km.SyncHYOKKeys(ctx)
 		assert.NoError(t, err)
 		key, err = km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStatePENDINGDELETION), key.State)
+		assert.Equal(t, cmkapi.KeyStatePENDINGDELETION, key.State)
 	})
 
 	t.Run("hyok sync delete/enable", func(t *testing.T) {
@@ -609,14 +609,14 @@ func TestHYOKSync(t *testing.T) {
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), key.State)
+		assert.Equal(t, cmkapi.KeyStateENABLED, key.State)
 
 		deleteKey(t, km, ctx, hyokKey)
-		syncAndVerifyState(t, km, ctx, hyokKey, string(cmkapi.KeyStatePENDINGDELETION))
+		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStatePENDINGDELETION)
 
 		err = enableKey(t, km, ctx, hyokKey)
 		assert.NoError(t, err)
-		syncAndVerifyState(t, km, ctx, hyokKey, string(cmkapi.KeyStateENABLED))
+		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStateENABLED)
 	})
 
 	t.Run("hyok sync delete/disable", func(t *testing.T) {
@@ -625,13 +625,13 @@ func TestHYOKSync(t *testing.T) {
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), key.State)
+		assert.Equal(t, cmkapi.KeyStateENABLED, key.State)
 
 		deleteKey(t, km, ctx, hyokKey)
-		syncAndVerifyState(t, km, ctx, hyokKey, string(cmkapi.KeyStatePENDINGDELETION))
+		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStatePENDINGDELETION)
 
 		disableKey(t, km, ctx, hyokKey)
-		syncAndVerifyState(t, km, ctx, hyokKey, string(cmkapi.KeyStateDISABLED))
+		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStateDISABLED)
 	})
 
 	t.Run("hyok state syncs on key deleted", func(t *testing.T) {
@@ -640,12 +640,12 @@ func TestHYOKSync(t *testing.T) {
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), key.State)
+		assert.Equal(t, cmkapi.KeyStateENABLED, key.State)
 
 		key.NativeID = ptr.PointTo("invalid-key-id")
 		_, err = r.Patch(ctx, key, *repo.NewQuery())
 		assert.NoError(t, err)
-		syncAndVerifyState(t, km, ctx, hyokKey, string(cmkapi.KeyStateDELETED))
+		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStateDELETED)
 	})
 
 	t.Run("hyok state syncs on auth change", func(t *testing.T) {
@@ -654,12 +654,12 @@ func TestHYOKSync(t *testing.T) {
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), key.State)
+		assert.Equal(t, cmkapi.KeyStateENABLED, key.State)
 
 		key.ManagementAccessData = []byte("{\"invalid\": \"data\"}")
 		_, err = r.Patch(ctx, key, *repo.NewQuery())
 		assert.NoError(t, err)
-		syncAndVerifyState(t, km, ctx, hyokKey, string(cmkapi.KeyStateFORBIDDEN))
+		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStateFORBIDDEN)
 	})
 
 	t.Run("hyok state disable twice then enable twice", func(t *testing.T) {
@@ -668,25 +668,25 @@ func TestHYOKSync(t *testing.T) {
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateENABLED), key.State)
+		assert.Equal(t, cmkapi.KeyStateENABLED, key.State)
 
 		disableKey(t, km, ctx, hyokKey)
-		syncAndVerifyState(t, km, ctx, hyokKey, string(cmkapi.KeyStateDISABLED))
+		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStateDISABLED)
 
 		disableKey(t, km, ctx, hyokKey)
-		syncAndVerifyState(t, km, ctx, hyokKey, string(cmkapi.KeyStateDISABLED))
+		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStateDISABLED)
 
 		err = enableKey(t, km, ctx, hyokKey)
 		assert.NoError(t, err)
-		syncAndVerifyState(t, km, ctx, hyokKey, string(cmkapi.KeyStateENABLED))
+		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStateENABLED)
 
 		err = enableKey(t, km, ctx, hyokKey)
 		assert.NoError(t, err)
-		syncAndVerifyState(t, km, ctx, hyokKey, string(cmkapi.KeyStateENABLED))
+		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStateENABLED)
 	})
 }
 
-func syncAndVerifyState(t *testing.T, km *manager.KeyManager, ctx context.Context, hyokKey *model.Key, expectedState string) {
+func syncAndVerifyState(t *testing.T, km *manager.KeyManager, ctx context.Context, hyokKey *model.Key, expectedState cmkapi.KeyState) {
 	t.Helper()
 	err := km.SyncHYOKKeys(ctx)
 	assert.NoError(t, err)
@@ -855,12 +855,12 @@ func TestUpdate(t *testing.T) {
 				}
 
 				if tt.keyPatch.Enabled != nil {
-					assert.Equal(t, *tt.keyPatch.Enabled, updatedKey.State == string(cmkapi.KeyStateENABLED))
+					assert.Equal(t, *tt.keyPatch.Enabled, updatedKey.State == cmkapi.KeyStateENABLED)
 
 					if *tt.keyPatch.Enabled {
-						assert.Equal(t, string(cmkapi.KeyStateENABLED), updatedKey.State)
+						assert.Equal(t, cmkapi.KeyStateENABLED, updatedKey.State)
 					} else {
-						assert.Equal(t, string(cmkapi.KeyStateDISABLED), updatedKey.State)
+						assert.Equal(t, cmkapi.KeyStateDISABLED, updatedKey.State)
 					}
 				}
 			}
@@ -876,7 +876,7 @@ func TestDelete(t *testing.T) {
 		k.KeyConfigurationID = keyConfig.ID
 	}))
 	require.NoError(t, err)
-	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 	keyID := uuid.New()
 	keyConfigWSystems := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
@@ -945,7 +945,7 @@ func TestGetImportParams(t *testing.T) {
 
 	t.Run("Success_NilImportParams", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 		got, err := km.GetImportParams(ctx, byokKey.ID)
 		assert.NoError(t, err)
@@ -954,7 +954,7 @@ func TestGetImportParams(t *testing.T) {
 
 	t.Run("Success_ImportParamsNotExpired", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
@@ -969,7 +969,7 @@ func TestGetImportParams(t *testing.T) {
 
 	t.Run("Success_NilExpires", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
@@ -984,7 +984,7 @@ func TestGetImportParams(t *testing.T) {
 
 	t.Run("Success_ImportParamsExpired", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
@@ -1011,7 +1011,7 @@ func TestGetImportParams(t *testing.T) {
 
 		byokEnabledKey := testutils.NewKey(func(k *model.Key) {
 			k.KeyType = string(cmkapi.KeyTypeBYOK)
-			k.State = string(cmkapi.KeyStateENABLED)
+			k.State = cmkapi.KeyStateENABLED
 			k.KeyConfigurationID = keyConfig.ID
 		})
 		testutils.CreateTestEntities(ctx, t, r, byokEnabledKey)
@@ -1030,7 +1030,7 @@ func TestGetImportParams(t *testing.T) {
 
 	t.Run("Error_Unauthorized_WrongGroup", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 		ctxWrongGroup := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{"different_group"})
 		_, err := km.GetImportParams(ctxWrongGroup, byokKey.ID)
@@ -1043,7 +1043,7 @@ func TestImportKeyMaterial(t *testing.T) {
 
 	t.Run("ImportParamsMissing", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 		_, err := km.ImportKeyMaterial(ctx, byokKey.ID, validMaterial)
 
@@ -1054,7 +1054,7 @@ func TestImportKeyMaterial(t *testing.T) {
 
 	t.Run("ImportParamsExpired", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 		paramsJSON, err := json.Marshal(map[string]any{
 			"providerParams": "test-provider-params",
@@ -1077,7 +1077,7 @@ func TestImportKeyMaterial(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 		paramsJSON, err := json.Marshal(map[string]any{
 			"providerParams": "test-provider-params",
@@ -1097,7 +1097,7 @@ func TestImportKeyMaterial(t *testing.T) {
 
 	t.Run("EmptyWrappedKeyMaterial", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 		_, err := km.ImportKeyMaterial(ctx, byokKey.ID, "")
 
@@ -1108,7 +1108,7 @@ func TestImportKeyMaterial(t *testing.T) {
 
 	t.Run("InvalidBase64WrappedKeyMaterial", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
 		_, err := km.ImportKeyMaterial(ctx, byokKey.ID, "not-base64")
 
@@ -1130,7 +1130,7 @@ func TestImportKeyMaterial(t *testing.T) {
 
 	t.Run("InvalidKeyState", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		enabledBYOK := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStateENABLED))
+		enabledBYOK := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED)
 
 		paramsJSON, err := json.Marshal(map[string]any{
 			"providerParams": "test-provider-params",
@@ -1161,7 +1161,7 @@ func TestImportKeyMaterial(t *testing.T) {
 
 	t.Run("Error_Unauthorized_WrongGroup", func(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, string(cmkapi.KeyStatePENDINGIMPORT))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
 			ip.Expires = ptr.PointTo(time.Now().Add(24 * time.Hour))

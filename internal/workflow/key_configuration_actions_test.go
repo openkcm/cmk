@@ -23,15 +23,15 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 		name          string
 		workflow      func(kc *model.KeyConfiguration, k *model.Key) *model.Workflow
 		transition    workflow.Transition
-		expectedState workflow.State
+		expectedState model.WorkflowState
 	}{
 		{
 			name: "Delete key config",
 			workflow: func(kc *model.KeyConfiguration, k *model.Key) *model.Workflow {
 				return testutils.NewWorkflow(func(wf *model.Workflow) {
-					wf.State = workflow.StateWaitConfirmation.String()
-					wf.ActionType = workflow.ActionTypeDelete.String()
-					wf.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+					wf.State = model.WorkflowStateWaitConfirmation
+					wf.ActionType = model.WorkflowActionTypeDelete
+					wf.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
 					wf.Approvers = []model.WorkflowApprover{
 						*testutils.NewWorkflowApprover(func(a *model.WorkflowApprover) {
 							a.Approved = sqlNullBoolNull
@@ -45,15 +45,15 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 				})
 			},
 			transition:    workflow.TransitionConfirm,
-			expectedState: workflow.StateSuccessful,
+			expectedState: model.WorkflowStateSuccessful,
 		},
 		{
 			name: "Update primary key",
 			workflow: func(kc *model.KeyConfiguration, k *model.Key) *model.Workflow {
 				return testutils.NewWorkflow(func(wf *model.Workflow) {
-					wf.State = workflow.StateWaitConfirmation.String()
-					wf.ActionType = workflow.ActionTypeUpdatePrimary.String()
-					wf.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+					wf.State = model.WorkflowStateWaitConfirmation
+					wf.ActionType = model.WorkflowActionTypeUpdatePrimary
+					wf.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
 					wf.Approvers = []model.WorkflowApprover{
 						*testutils.NewWorkflowApprover(func(a *model.WorkflowApprover) {
 							a.Approved = sqlNullBoolNull
@@ -67,7 +67,7 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 				})
 			},
 			transition:    workflow.TransitionConfirm,
-			expectedState: workflow.StateSuccessful,
+			expectedState: model.WorkflowStateSuccessful,
 		},
 	}
 
@@ -107,7 +107,7 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 			assert.NoError(t, err)
 			assert.True(t, ok)
 
-			assert.Equal(t, tt.expectedState.String(), wf.State)
+			assert.Equal(t, tt.expectedState, wf.State)
 		})
 	}
 }

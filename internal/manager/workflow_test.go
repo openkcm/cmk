@@ -172,10 +172,10 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		wf, err := createTestWorkflow(
 			ctxSys, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
-					w.State = workflow.StateInitial.String()
-					w.ActionType = workflow.ActionTypeDelete.String()
+					w.State = model.WorkflowStateInitial
+					w.ActionType = model.WorkflowActionTypeDelete
 					w.ArtifactID = key.ID
-					w.ArtifactType = workflow.ArtifactTypeKey.String()
+					w.ArtifactType = model.WorkflowArtifactTypeKey
 				},
 			),
 		)
@@ -194,7 +194,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		groupIAM := uuid.NewString()
 		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{groupIAM})
 		key := testutils.NewKey(func(k *model.Key) {
-			k.State = string(cmkapi.KeyStateFORBIDDEN)
+			k.State = cmkapi.KeyStateFORBIDDEN
 		})
 
 		testGroup := testutils.NewGroup(
@@ -216,10 +216,10 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		wf, err := createTestWorkflow(
 			ctx, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
-					w.State = workflow.StateInitial.String()
-					w.ActionType = workflow.ActionTypeLink.String()
+					w.State = model.WorkflowStateInitial
+					w.ActionType = model.WorkflowActionTypeLink
 					w.ArtifactID = system.ID
-					w.ArtifactType = workflow.ArtifactTypeSystem.String()
+					w.ArtifactType = model.WorkflowArtifactTypeSystem
 					w.Parameters = keyConfig.ID.String()
 				},
 			),
@@ -255,10 +255,10 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		wf, err := createTestWorkflow(
 			ctx, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
-					w.State = workflow.StateInitial.String()
-					w.ActionType = workflow.ActionTypeLink.String()
+					w.State = model.WorkflowStateInitial
+					w.ActionType = model.WorkflowActionTypeLink
 					w.ArtifactID = system.ID
-					w.ArtifactType = workflow.ArtifactTypeSystem.String()
+					w.ArtifactType = model.WorkflowArtifactTypeSystem
 					w.Parameters = keyConfig.ID.String()
 				},
 			),
@@ -278,11 +278,11 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		wf, err := createTestWorkflow(
 			ctxSys, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
-					w.State = workflow.StateInitial.String()
-					w.State = workflow.StateRejected.String()
-					w.ActionType = workflow.ActionTypeDelete.String()
+					w.State = model.WorkflowStateInitial
+					w.State = model.WorkflowStateRejected
+					w.ActionType = model.WorkflowActionTypeDelete
 					w.ArtifactID = keyConfig.ID
-					w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+					w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
 				},
 			),
 		)
@@ -312,10 +312,10 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, key, system)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeUpdatePrimary.String()
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeUpdatePrimary
 				w.ArtifactID = keyConfig.ID
-				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
 				w.Parameters = uuid.NewString()
 			},
 		)
@@ -341,10 +341,10 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeUpdatePrimary.String()
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeUpdatePrimary
 				w.ArtifactID = keyConfig.ID
-				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
 				w.Parameters = key.ID.String()
 			},
 		)
@@ -370,10 +370,10 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, system)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeUpdatePrimary.String()
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeUpdatePrimary
 				w.ArtifactID = keyConfig.ID
-				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
+				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
 				w.Parameters = uuid.NewString()
 			},
 		)
@@ -390,9 +390,9 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		wf, err := createTestWorkflow(
 			ctxSys, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
-					w.State = workflow.StateRejected.String()
-					w.ActionType = workflow.ActionTypeDelete.String()
-					w.ArtifactType = workflow.ArtifactTypeKey.String()
+					w.State = model.WorkflowStateRejected
+					w.ActionType = model.WorkflowActionTypeDelete
+					w.ArtifactType = model.WorkflowArtifactTypeKey
 				},
 			),
 		)
@@ -472,9 +472,9 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 
 	t.Run("Should error on existing workflow", func(t *testing.T) {
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.State = model.WorkflowStateInitial
+			w.ActionType = model.WorkflowActionTypeDelete
+			w.ArtifactType = model.WorkflowArtifactTypeKey
 			w.ArtifactID = key.ID
 		})
 		err := r.Create(ctx, wf)
@@ -493,9 +493,9 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 		testutils.CreateTestEntities(ctxSys, t, r, key)
 
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.State = model.WorkflowStateInitial
+			w.ActionType = model.WorkflowActionTypeDelete
+			w.ArtifactType = model.WorkflowArtifactTypeKey
 			w.ArtifactID = key.ID
 		})
 		res, err := m.CreateWorkflow(ctxSys, wf)
@@ -516,9 +516,9 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 			ID:           uuid.New(),
 			State:        "INITIAL",
 			InitiatorID:  uuid.NewString(),
-			ArtifactType: "SYSTEM",
+			ArtifactType: model.WorkflowArtifactTypeSystem,
 			ArtifactID:   system.ID,
-			ActionType:   "LINK",
+			ActionType:   model.WorkflowActionTypeLink,
 			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
 			Parameters:   keyConfig.ID.String(),
 		}
@@ -536,9 +536,9 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 		testutils.CreateTestEntities(ctxSys, t, r, system)
 
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
-			w.ArtifactType = workflow.ArtifactTypeSystem.String()
+			w.ArtifactType = model.WorkflowArtifactTypeSystem
 			w.ArtifactID = system.ID
-			w.ActionType = workflow.ActionTypeUnlink.String() // Need an action type
+			w.ActionType = model.WorkflowActionTypeUnlink // Need an action type
 		})
 
 		_, err := m.CreateWorkflow(ctxSys, wf)
@@ -558,9 +558,9 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 			ID:           uuid.New(),
 			State:        "INITIAL",
 			InitiatorID:  uuid.NewString(),
-			ArtifactType: "SYSTEM",
+			ArtifactType: model.WorkflowArtifactTypeSystem,
 			ArtifactID:   system.ID,
-			ActionType:   "LINK",
+			ActionType:   model.WorkflowActionTypeLink,
 			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
 			Parameters:   keyConfig.ID.String(),
 		}
@@ -587,9 +587,9 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 			repo,
 			testutils.NewWorkflow(
 				func(w *model.Workflow) {
-					w.State = workflow.StateInitial.String()
-					w.ActionType = workflow.ActionTypeDelete.String()
-					w.ArtifactType = workflow.ArtifactTypeKey.String()
+					w.State = model.WorkflowStateInitial
+					w.ActionType = model.WorkflowActionTypeDelete
+					w.ArtifactType = model.WorkflowArtifactTypeKey
 				},
 			),
 		)
@@ -617,9 +617,9 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 			repo,
 			testutils.NewWorkflow(
 				func(w *model.Workflow) {
-					w.State = workflow.StateWaitApproval.String()
-					w.ActionType = workflow.ActionTypeDelete.String()
-					w.ArtifactType = workflow.ArtifactTypeKey.String()
+					w.State = model.WorkflowStateWaitApproval
+					w.ActionType = model.WorkflowActionTypeDelete
+					w.ArtifactType = model.WorkflowArtifactTypeKey
 				},
 			),
 		)
@@ -639,7 +639,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 			workflow.TransitionApprove,
 		)
 		assert.NoError(t, err)
-		assert.EqualValues(t, workflow.StateWaitConfirmation, res.State)
+		assert.Equal(t, model.WorkflowStateWaitConfirmation, res.State)
 	})
 
 	t.Run("Should transit to reject on reject", func(t *testing.T) {
@@ -648,9 +648,9 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 			repo,
 			testutils.NewWorkflow(
 				func(w *model.Workflow) {
-					w.State = workflow.StateWaitApproval.String()
-					w.ActionType = workflow.ActionTypeDelete.String()
-					w.ArtifactType = workflow.ArtifactTypeKey.String()
+					w.State = model.WorkflowStateWaitApproval
+					w.ActionType = model.WorkflowActionTypeDelete
+					w.ArtifactType = model.WorkflowArtifactTypeKey
 				},
 			),
 		)
@@ -670,7 +670,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 			workflow.TransitionReject,
 		)
 		assert.NoError(t, err)
-		assert.EqualValues(t, workflow.StateRejected, res.State)
+		assert.Equal(t, model.WorkflowStateRejected, res.State)
 	})
 }
 
@@ -690,9 +690,9 @@ func TestWorkflowManager_GetWorkflowByID(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	wf := testutils.NewWorkflow(
 		func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.State = model.WorkflowStateInitial
+			w.ActionType = model.WorkflowActionTypeDelete
+			w.ArtifactType = model.WorkflowArtifactTypeKey
 			w.InitiatorID = userID
 		},
 	)
@@ -757,9 +757,9 @@ func TestWorkflowManager_GetWorkflowByID(t *testing.T) {
 
 func newGetWorkflowsFilter(
 	artifactID uuid.UUID,
-	state string,
-	actionType string,
-	artifactType string,
+	state model.WorkflowState,
+	actionType model.WorkflowActionType,
+	artifactType model.WorkflowArtifactType,
 ) manager.WorkflowFilter {
 	return manager.WorkflowFilter{
 		State:        state,
@@ -791,8 +791,8 @@ func TestWorkflowFilter_GetUUID(t *testing.T) {
 func TestWorkflowFilter_GetString(t *testing.T) {
 	filter := manager.WorkflowFilter{
 		State:        "INITIAL",
-		ArtifactType: "KEY",
-		ActionType:   "DELETE",
+		ArtifactType: model.WorkflowArtifactTypeKey,
+		ActionType:   model.WorkflowActionTypeDelete,
 	}
 
 	// Should return correct values for supported fields
@@ -834,9 +834,9 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 
 	workflow1 := testutils.NewWorkflow(
 		func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.State = model.WorkflowStateInitial
+			w.ActionType = model.WorkflowActionTypeDelete
+			w.ArtifactType = model.WorkflowArtifactTypeKey
 			w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
 			w.InitiatorID = userID
 			w.CreatedAt = baseTime.Add(-3 * time.Hour)
@@ -846,9 +846,9 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 
 	workflow2 := testutils.NewWorkflow(
 		func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.State = model.WorkflowStateInitial
+			w.ActionType = model.WorkflowActionTypeDelete
+			w.ArtifactType = model.WorkflowArtifactTypeKey
 			w.ArtifactID = uuid.New()
 			w.Approvers = []model.WorkflowApprover{{UserID: userID}}
 			w.InitiatorID = allWorkflowUserID
@@ -859,9 +859,9 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 
 	workflow3 := testutils.NewWorkflow(
 		func(w *model.Workflow) {
-			w.State = workflow.StateRejected.String()
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.State = model.WorkflowStateRejected
+			w.ActionType = model.WorkflowActionTypeDelete
+			w.ArtifactType = model.WorkflowArtifactTypeKey
 			w.Approvers = []model.WorkflowApprover{{UserID: userID}}
 			w.InitiatorID = allWorkflowUserID
 			w.CreatedAt = baseTime.Add(-1 * time.Hour)
@@ -871,9 +871,9 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 
 	workflow4 := testutils.NewWorkflow(
 		func(w *model.Workflow) {
-			w.State = workflow.StateInitial.String()
-			w.ActionType = workflow.ActionTypeUpdateState.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.State = model.WorkflowStateInitial
+			w.ActionType = model.WorkflowActionTypeUpdateState
+			w.ArtifactType = model.WorkflowArtifactTypeKey
 			w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
 			w.InitiatorID = userID
 			w.CreatedAt = baseTime
@@ -912,9 +912,9 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 		name                string
 		filter              manager.WorkflowFilter
 		expectedCount       int
-		expectedState       string
-		expectedActionType  string
-		expectedArtfactType string
+		expectedState       model.WorkflowState
+		expectedActionType  model.WorkflowActionType
+		expectedArtfactType model.WorkflowArtifactType
 		expectedInitiatorID string
 	}{
 		{
@@ -927,9 +927,9 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 		},
 		{
 			name:                "Should get rejected workflows",
-			filter:              manager.WorkflowFilter{State: workflow.StateRejected.String()},
+			filter:              manager.WorkflowFilter{State: model.WorkflowStateRejected},
 			expectedCount:       1,
-			expectedState:       workflow.StateRejected.String(),
+			expectedState:       model.WorkflowStateRejected,
 			expectedActionType:  "",
 			expectedArtfactType: "",
 		},
@@ -937,12 +937,12 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 			name: "Should get initial workflows",
 			filter: newGetWorkflowsFilter(
 				uuid.Nil,
-				workflow.StateInitial.String(),
+				model.WorkflowStateInitial,
 				"",
 				"",
 			),
 			expectedCount:      3,
-			expectedState:      workflow.StateInitial.String(),
+			expectedState:      model.WorkflowStateInitial,
 			expectedActionType: "",
 		},
 		{
@@ -950,12 +950,12 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 			filter: newGetWorkflowsFilter(
 				uuid.Nil,
 				"",
-				workflow.ActionTypeUpdateState.String(),
+				model.WorkflowActionTypeUpdateState,
 				"",
 			),
 			expectedCount:       1,
 			expectedState:       "",
-			expectedActionType:  workflow.ActionTypeUpdateState.String(),
+			expectedActionType:  model.WorkflowActionTypeUpdateState,
 			expectedArtfactType: "",
 		},
 		{
@@ -964,12 +964,12 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 				uuid.Nil,
 				"",
 				"",
-				workflow.ArtifactTypeKey.String(),
+				model.WorkflowArtifactTypeKey,
 			),
 			expectedCount:       4,
 			expectedState:       "",
 			expectedActionType:  "",
-			expectedArtfactType: workflow.ArtifactTypeKey.String(),
+			expectedArtfactType: model.WorkflowArtifactTypeKey,
 		},
 		{
 			name: "Get workflows by artifact id",
@@ -977,7 +977,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 				workflow2.ArtifactID,
 				"",
 				"",
-				workflow.ArtifactTypeKey.String(),
+				model.WorkflowArtifactTypeKey,
 			),
 			expectedCount:       1,
 			expectedState:       "",
@@ -1070,9 +1070,9 @@ func TestWorkflowManager_GetApproversGroupsFromLegacyField(t *testing.T) {
 		r,
 		testutils.NewWorkflow(
 			func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeDelete
+				w.ArtifactType = model.WorkflowArtifactTypeKey
 				w.ApproverGroupIDs = groupIDsJSON
 			},
 		),
@@ -1091,9 +1091,9 @@ func TestWorkflowManager_ListApprovers(t *testing.T) {
 		r,
 		testutils.NewWorkflow(
 			func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeDelete
+				w.ArtifactType = model.WorkflowArtifactTypeKey
 			},
 		),
 	)
@@ -1216,8 +1216,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "KeyDelete",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = key.ID
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactType = model.WorkflowArtifactTypeKey
+				w.ActionType = model.WorkflowActionTypeDelete
 				w.Approvers = nil
 			},
 			approversCount: 2,
@@ -1227,8 +1227,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "KeyDelete - Invalid key",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = uuid.New()
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactType = model.WorkflowArtifactTypeKey
+				w.ActionType = model.WorkflowActionTypeDelete
 				w.Approvers = nil
 			},
 			expectErr:  true,
@@ -1238,8 +1238,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "KeyStateUpdate",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = key.ID
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
-				w.ActionType = workflow.ActionTypeUpdateState.String()
+				w.ArtifactType = model.WorkflowArtifactTypeKey
+				w.ActionType = model.WorkflowActionTypeUpdateState
 				w.Parameters = "DISABLED"
 				w.Approvers = nil
 			},
@@ -1250,8 +1250,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "KeyConfigDelete",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = keyConfigs[0].ID
-				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
+				w.ActionType = model.WorkflowActionTypeDelete
 				w.Approvers = nil
 			},
 			approversCount: 2,
@@ -1261,8 +1261,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "KeyConfigDelete - Invalid key config",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = uuid.New()
-				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
+				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
+				w.ActionType = model.WorkflowActionTypeDelete
 				w.Approvers = nil
 			},
 			expectErr:  true,
@@ -1272,8 +1272,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "KeyConfigUpdatePK",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = keyConfigs[0].ID
-				w.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
-				w.ActionType = workflow.ActionTypeUpdatePrimary.String()
+				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
+				w.ActionType = model.WorkflowActionTypeUpdatePrimary
 				w.Parameters = uuid.NewString()
 				w.Approvers = nil
 			},
@@ -1284,8 +1284,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "SystemLink",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = systems[0].ID
-				w.ArtifactType = workflow.ArtifactTypeSystem.String()
-				w.ActionType = workflow.ActionTypeLink.String()
+				w.ArtifactType = model.WorkflowArtifactTypeSystem
+				w.ActionType = model.WorkflowActionTypeLink
 				w.Parameters = keyConfigs[0].ID.String()
 				w.Approvers = nil
 			},
@@ -1296,8 +1296,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "SystemLink - Invalid key config",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = systems[0].ID
-				w.ArtifactType = workflow.ArtifactTypeSystem.String()
-				w.ActionType = workflow.ActionTypeLink.String()
+				w.ArtifactType = model.WorkflowArtifactTypeSystem
+				w.ActionType = model.WorkflowActionTypeLink
 				w.Parameters = uuid.NewString()
 				w.Approvers = nil
 			},
@@ -1308,8 +1308,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "SystemUnlink",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = systems[1].ID
-				w.ArtifactType = workflow.ArtifactTypeSystem.String()
-				w.ActionType = workflow.ActionTypeUnlink.String()
+				w.ArtifactType = model.WorkflowArtifactTypeSystem
+				w.ActionType = model.WorkflowActionTypeUnlink
 				w.Approvers = nil
 			},
 			approversCount: 2,
@@ -1319,8 +1319,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "SystemUnLink - Invalid system",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = uuid.New()
-				w.ArtifactType = workflow.ArtifactTypeSystem.String()
-				w.ActionType = workflow.ActionTypeUnlink.String()
+				w.ArtifactType = model.WorkflowArtifactTypeSystem
+				w.ActionType = model.WorkflowActionTypeUnlink
 				w.Approvers = nil
 			},
 			expectErr:  true,
@@ -1330,8 +1330,8 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 			name: "SystemSwitch",
 			workflowMut: func(w *model.Workflow) {
 				w.ArtifactID = systems[1].ID
-				w.ArtifactType = workflow.ArtifactTypeSystem.String()
-				w.ActionType = workflow.ActionTypeSwitch.String()
+				w.ArtifactType = model.WorkflowArtifactTypeSystem
+				w.ActionType = model.WorkflowActionTypeSwitch
 				w.Parameters = keyConfigs[1].ID.String()
 				w.Approvers = nil
 			},
@@ -1389,9 +1389,9 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 			ID:           uuid.New(),
 			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
-			ArtifactType: "KEY",
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   uuid.New(),
-			State:        string(workflow.StateWaitConfirmation),
+			State:        model.WorkflowStateWaitConfirmation,
 		}
 
 		recipients := []string{"approver1@example.com", "approver2@example.com"}
@@ -1410,7 +1410,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 			ID:           uuid.New(),
 			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
-			ArtifactType: "KEY",
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   uuid.New(),
 		}
 
@@ -1431,7 +1431,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 			ID:           uuid.New(),
 			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
-			ArtifactType: "KEY",
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   uuid.New(),
 		}
 
@@ -1455,7 +1455,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 			ID:           uuid.New(),
 			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
-			ArtifactType: "KEY",
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   uuid.New(),
 		}
 
@@ -1477,7 +1477,7 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 			ID:           uuid.New(),
 			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
-			ArtifactType: "KEY",
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   uuid.New(),
 		}
 
@@ -1500,9 +1500,9 @@ func TestWorkflowManager_CreateWorkflowTransitionNotificationTask(t *testing.T) 
 			ID:           uuid.New(),
 			InitiatorID:  initatorID,
 			ActionType:   "CREATE",
-			ArtifactType: "KEY",
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   uuid.New(),
-			State:        string(workflow.StateWaitConfirmation),
+			State:        model.WorkflowStateWaitConfirmation,
 		}
 
 		recipients := []string{"user@example.com"}
@@ -1534,22 +1534,22 @@ func TestWorkflowManager_WorkflowCanExpire(t *testing.T) {
 	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
 	tests := []struct {
-		state    string
+		state    model.WorkflowState
 		expected bool
 	}{
-		{workflow.StateInitial.String(), false},
-		{workflow.StateWaitApproval.String(), true},
-		{workflow.StateWaitConfirmation.String(), true},
-		{workflow.StateExecuting.String(), true},
-		{workflow.StateRevoked.String(), false},
-		{workflow.StateRejected.String(), false},
-		{workflow.StateExpired.String(), false},
-		{workflow.StateSuccessful.String(), false},
-		{workflow.StateFailed.String(), false},
+		{model.WorkflowStateInitial, false},
+		{model.WorkflowStateWaitApproval, true},
+		{model.WorkflowStateWaitConfirmation, true},
+		{model.WorkflowStateExecuting, true},
+		{model.WorkflowStateRevoked, false},
+		{model.WorkflowStateRejected, false},
+		{model.WorkflowStateExpired, false},
+		{model.WorkflowStateSuccessful, false},
+		{model.WorkflowStateFailed, false},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.state, func(t *testing.T) {
+		t.Run(tt.state.String(), func(t *testing.T) {
 			wf := testutils.NewWorkflow(func(w *model.Workflow) {
 				w.State = tt.state
 			})
@@ -1573,41 +1573,41 @@ func TestWorkflowManager_ExpireWorkflow(t *testing.T) {
 	ctxSys, err := cmkcontext.BusinessToInternalContext(ctx, constants.InternalTaskWorkflowExpirationRole)
 	assert.NoError(t, err)
 
-	expirableStates := []workflow.State{
-		workflow.StateWaitApproval,
-		workflow.StateWaitConfirmation,
-		workflow.StateExecuting,
+	expirableStates := []model.WorkflowState{
+		model.WorkflowStateWaitApproval,
+		model.WorkflowStateWaitConfirmation,
+		model.WorkflowStateExecuting,
 	}
 
 	for _, state := range expirableStates {
 		t.Run("transitions "+state.String()+" to EXPIRED", func(t *testing.T) {
-			wf := testutils.NewWorkflow(func(w *model.Workflow) { w.State = state.String() })
+			wf := testutils.NewWorkflow(func(w *model.Workflow) { w.State = state })
 			testutils.CreateTestEntities(ctx, t, r, wf)
 
 			result, err := m.ExpireWorkflow(ctxSys, wf.ID)
 			assert.NoError(t, err)
-			assert.Equal(t, workflow.StateExpired.String(), result.State)
+			assert.Equal(t, model.WorkflowStateExpired, result.State)
 
 			// Verify state persisted in DB.
 			persisted := testutils.NewWorkflow(func(w *model.Workflow) { w.ID = wf.ID })
 			_, err = r.First(ctx, persisted, *repo.NewQuery())
 			assert.NoError(t, err)
-			assert.Equal(t, workflow.StateExpired.String(), persisted.State)
+			assert.Equal(t, model.WorkflowStateExpired, persisted.State)
 		})
 	}
 
-	nonExpirableStates := []workflow.State{
-		workflow.StateInitial,
-		workflow.StateRevoked,
-		workflow.StateRejected,
-		workflow.StateExpired,
-		workflow.StateSuccessful,
-		workflow.StateFailed,
+	nonExpirableStates := []model.WorkflowState{
+		model.WorkflowStateInitial,
+		model.WorkflowStateRevoked,
+		model.WorkflowStateRejected,
+		model.WorkflowStateExpired,
+		model.WorkflowStateSuccessful,
+		model.WorkflowStateFailed,
 	}
 
 	for _, state := range nonExpirableStates {
 		t.Run("errors on non-expirable state "+state.String(), func(t *testing.T) {
-			wf := testutils.NewWorkflow(func(w *model.Workflow) { w.State = state.String() })
+			wf := testutils.NewWorkflow(func(w *model.Workflow) { w.State = state })
 			testutils.CreateTestEntities(ctx, t, r, wf)
 
 			_, err := m.ExpireWorkflow(ctxSys, wf.ID)
@@ -1651,7 +1651,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 		// Create old terminal workflow (should be deleted)
 		oldTerminalWf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
-				w.State = workflow.StateSuccessful.String()
+				w.State = model.WorkflowStateSuccessful
 				w.CreatedAt = time.Now().AddDate(0, 0, -31) // 31 days ago
 				w.InitiatorID = userID
 			},
@@ -1690,7 +1690,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 		// Create recent terminal workflow (should NOT be deleted)
 		recentTerminalWf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
-				w.State = workflow.StateRejected.String()
+				w.State = model.WorkflowStateRejected
 				w.CreatedAt = time.Now().AddDate(0, 0, -15) // 15 days ago
 				w.InitiatorID = userID
 			},
@@ -1729,7 +1729,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 		// Create old non-terminal workflow (should NOT be deleted)
 		oldActiveWf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
-				w.State = workflow.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 				w.CreatedAt = time.Now().AddDate(0, 0, -31) // 31 days ago
 				w.InitiatorID = userID
 			},
@@ -1756,7 +1756,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 
 	t.Run("should delete all terminal state types", func(t *testing.T) {
 		// Create workflows in all terminal states (all old enough to be deleted)
-		terminalStates := workflow.TerminalStates
+		terminalStates := model.WorkflowTerminalStates
 
 		workflowIDs := make([]uuid.UUID, len(terminalStates))
 		for i, state := range terminalStates {
@@ -1801,7 +1801,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 		for i := range total {
 			wf := testutils.NewWorkflow(
 				func(w *model.Workflow) {
-					w.State = workflow.StateSuccessful.String()
+					w.State = model.WorkflowStateSuccessful
 					w.CreatedAt = time.Now().AddDate(0, 0, -31)
 					w.InitiatorID = userID
 				},
@@ -1834,7 +1834,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 		// Create only recent terminal workflows
 		recentWf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
-				w.State = workflow.StateSuccessful.String()
+				w.State = model.WorkflowStateSuccessful
 				w.CreatedAt = time.Now().AddDate(0, 0, -5)
 				w.InitiatorID = userID
 			},
@@ -1863,7 +1863,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 		// Create workflow without approvers
 		oldWf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
-				w.State = workflow.StateSuccessful.String()
+				w.State = model.WorkflowStateSuccessful
 				w.CreatedAt = time.Now().AddDate(0, 0, -31)
 				w.Approvers = nil // No approvers
 				w.InitiatorID = userID
@@ -1890,7 +1890,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 
 	t.Run("should preserve non-terminal workflow states", func(t *testing.T) {
 		// Create workflows in all non-terminal states (all old)
-		nonTerminalStates := workflow.NonTerminalStates
+		nonTerminalStates := model.WorkflowNonTerminalStates
 
 		workflowIDs := make([]uuid.UUID, len(nonTerminalStates))
 		for i, state := range nonTerminalStates {
@@ -2001,11 +2001,11 @@ func setupEligibilityTest(
 	paramsResourceType := "KEY_CONFIGURATION"
 
 	wf := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.State = workflow.StateWaitApproval.String()
-		w.ArtifactType = workflow.ArtifactTypeSystem.String()
+		w.State = model.WorkflowStateWaitApproval
+		w.ArtifactType = model.WorkflowArtifactTypeSystem
 		w.ArtifactID = system.ID
 		w.ArtifactName = &artifactName
-		w.ActionType = workflow.ActionTypeLink.String()
+		w.ActionType = model.WorkflowActionTypeLink
 		w.Parameters = keyConfig.ID.String()
 		w.ParametersResourceName = &paramsResourceName
 		w.ParametersResourceType = &paramsResourceType
@@ -2063,7 +2063,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		insufficientApprovers := eligibility != nil && eligibility.InsufficientApprovers
 		require.NoError(t, err)
 		assert.True(t, insufficientApprovers, "Should detect insufficient approvers")
-		assert.Equal(t, workflow.StateWaitApproval.String(), gotWf.State)
+		assert.Equal(t, model.WorkflowStateWaitApproval, gotWf.State)
 
 		// Attempt to approve - should fail with eligibility error
 		_, err = wm.TransitionWorkflow(ctx, wf.ID, workflow.TransitionApprove)
@@ -2072,7 +2072,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		// Verify workflow state unchanged
 		gotWf, _, err = wm.GetWorkflowByID(ctx, wf.ID)
 		require.NoError(t, err)
-		assert.Equal(t, workflow.StateWaitApproval.String(), gotWf.State)
+		assert.Equal(t, model.WorkflowStateWaitApproval, gotWf.State)
 
 		// Simulate expiry by updating ExpiryDate
 		now := time.Now()
@@ -2100,7 +2100,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		// Verify expired state (only if transition succeeded)
 		gotWf, _, err = wm.GetWorkflowByID(ctx, wf.ID)
 		require.NoError(t, err)
-		assert.Equal(t, workflow.StateExpired.String(), gotWf.State)
+		assert.Equal(t, model.WorkflowStateExpired, gotWf.State)
 	})
 
 	t.Run("all eligible approvers removed - initiator revokes", func(t *testing.T) {
@@ -2116,7 +2116,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		insufficientApprovers := eligibility != nil && eligibility.InsufficientApprovers
 		require.NoError(t, err)
 		assert.True(t, insufficientApprovers)
-		assert.Equal(t, workflow.StateWaitApproval.String(), gotWf.State)
+		assert.Equal(t, model.WorkflowStateWaitApproval, gotWf.State)
 
 		// Initiator revokes workflow
 		_, err = wm.TransitionWorkflow(ctx, wf.ID, workflow.TransitionRevoke)
@@ -2125,7 +2125,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		// Verify revoked state
 		gotWf, _, err = wm.GetWorkflowByID(ctx, wf.ID)
 		require.NoError(t, err)
-		assert.Equal(t, workflow.StateRevoked.String(), gotWf.State)
+		assert.Equal(t, model.WorkflowStateRevoked, gotWf.State)
 	})
 
 	t.Run("eligible approvers removed then re-added - warning cleared", func(t *testing.T) {
@@ -2159,7 +2159,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		// After 1 approval, workflow stays in WAIT_APPROVAL
 		gotWf, _, err := wm.GetWorkflowByID(ctx, wf.ID)
 		require.NoError(t, err)
-		assert.Equal(t, workflow.StateWaitApproval.String(), gotWf.State,
+		assert.Equal(t, model.WorkflowStateWaitApproval, gotWf.State,
 			"Workflow stays in WAIT_APPROVAL - need 2 approvals with threshold=2")
 
 		// Approver 2 votes
@@ -2170,7 +2170,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		// Now workflow transitions to WAIT_CONFIRMATION
 		gotWf, _, err = wm.GetWorkflowByID(ctx2, wf.ID)
 		require.NoError(t, err)
-		assert.Equal(t, workflow.StateWaitConfirmation.String(), gotWf.State,
+		assert.Equal(t, model.WorkflowStateWaitConfirmation, gotWf.State,
 			"Workflow transitions after 2 approvals")
 	})
 
@@ -2213,7 +2213,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		// Auto-reject only happens AT VOTE TIME, not retroactively
 		gotWf, _, err := wm.GetWorkflowByID(ctx1, wf.ID)
 		require.NoError(t, err)
-		assert.Equal(t, workflow.StateWaitApproval.String(), gotWf.State,
+		assert.Equal(t, model.WorkflowStateWaitApproval, gotWf.State,
 			"Workflow stays in WAIT_APPROVAL - auto-reject happens at vote time, not retroactively")
 
 		// Approver 2 (removed) tries to vote - should fail with eligibility error
@@ -2248,7 +2248,7 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		// Removed approver's vote still counts: approved=2, threshold=2
 		gotWf, _, err := wm.GetWorkflowByID(ctx2, wf.ID)
 		require.NoError(t, err)
-		assert.Equal(t, workflow.StateWaitConfirmation.String(), gotWf.State,
+		assert.Equal(t, model.WorkflowStateWaitConfirmation, gotWf.State,
 			"Workflow should transition - removed approver's vote still counts")
 	})
 
@@ -2286,8 +2286,8 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		// Verify workflow transitioned (may be WAIT_CONFIRMATION or SUCCESSFUL)
 		gotWf, _, err := wm.GetWorkflowByID(ctx1, wf.ID)
 		require.NoError(t, err)
-		assert.NotEqual(t, workflow.StateWaitApproval.String(), gotWf.State)
-		assert.Contains(t, []string{workflow.StateWaitConfirmation.String(), workflow.StateSuccessful.String()}, gotWf.State)
+		assert.NotEqual(t, model.WorkflowStateWaitApproval, gotWf.State)
+		assert.Contains(t, []model.WorkflowState{model.WorkflowStateWaitConfirmation, model.WorkflowStateSuccessful}, gotWf.State)
 	})
 
 	t.Run("rejected vote from removed approver still counts", func(t *testing.T) {
@@ -2412,7 +2412,7 @@ func TestWorkflowApproverEligibilityGetWorkflowByID(t *testing.T) {
 
 		// Create workflow in SUCCESSFUL state
 		successfulWf := testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = workflow.StateSuccessful.String()
+			w.State = model.WorkflowStateSuccessful
 			w.InitiatorID = approver1ID
 		})
 		testutils.CreateTestEntities(
@@ -2476,14 +2476,14 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 		// Verify workflow is still WAIT_APPROVAL (not auto-rejected before vote)
 		workflowBefore, _, err := wm.GetWorkflowByID(ctx, wf.ID)
 		require.NoError(t, err)
-		assert.Equal(t, workflow.StateWaitApproval.String(), workflowBefore.State)
+		assert.Equal(t, model.WorkflowStateWaitApproval, workflowBefore.State)
 
 		// Remaining approver votes APPROVE
 		workflowAfter, err := wm.TransitionWorkflow(ctx, wf.ID, workflow.TransitionApprove)
 		require.NoError(t, err)
 
 		// Workflow should auto-reject because only 1 eligible approver can't reach threshold of 2
-		assert.Equal(t, workflow.StateRejected.String(), workflowAfter.State,
+		assert.Equal(t, model.WorkflowStateRejected, workflowAfter.State,
 			"Workflow should auto-reject when approval becomes mathematically impossible")
 	})
 
@@ -2499,7 +2499,7 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should still be in WAIT_APPROVAL (approval still possible with 1 pending eligible approver)
-		assert.Equal(t, workflow.StateWaitApproval.String(), workflowAfter1.State)
+		assert.Equal(t, model.WorkflowStateWaitApproval, workflowAfter1.State)
 
 		// Second approver votes APPROVE
 		ctx = setAuthContext(ctx, approver2ID, approver2Email)
@@ -2507,7 +2507,7 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should transition to WAIT_CONFIRMATION (normal flow)
-		assert.Equal(t, workflow.StateWaitConfirmation.String(), workflowAfter2.State)
+		assert.Equal(t, model.WorkflowStateWaitConfirmation, workflowAfter2.State)
 	})
 
 	t.Run("auto-rejects even when user votes REJECT", func(t *testing.T) {
@@ -2525,7 +2525,7 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should be REJECTED (auto-reject check runs after any vote)
-		assert.Equal(t, workflow.StateRejected.String(), workflowAfter.State)
+		assert.Equal(t, model.WorkflowStateRejected, workflowAfter.State)
 	})
 
 	t.Run("handles SCIM failure gracefully during auto-reject check", func(t *testing.T) {
@@ -2536,7 +2536,7 @@ func TestWorkflowAutoRejectWhenApprovalImpossible(t *testing.T) {
 		// First vote succeeds
 		workflowAfter1, err := wm.TransitionWorkflow(ctx, wf.ID, workflow.TransitionApprove)
 		require.NoError(t, err)
-		assert.Equal(t, workflow.StateWaitApproval.String(), workflowAfter1.State)
+		assert.Equal(t, model.WorkflowStateWaitApproval, workflowAfter1.State)
 
 		// Simulate SCIM failure by removing group mapping (after first vote)
 		idmPlugin.DeleteGroup(testGroupName)
@@ -2654,10 +2654,10 @@ func TestWorkflowManager_ValidateApproverCount(t *testing.T) {
 
 			// Create workflow for key deletion
 			wf := testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = workflow.StateInitial.String()
-				w.ActionType = workflow.ActionTypeDelete.String()
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeDelete
 				w.ArtifactID = key.ID
-				w.ArtifactType = workflow.ArtifactTypeKey.String()
+				w.ArtifactType = model.WorkflowArtifactTypeKey
 				w.InitiatorID = testUser1
 			})
 
@@ -2722,13 +2722,13 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	testutils.CreateTestEntities(ctx, t, r, adminGroup, adminGroup2)
 
 	// Helper to create a workflow with approver groups via junction table
-	createWorkflowWithApproverGroups := func(t *testing.T, state string, groups ...*model.Group) *model.Workflow {
+	createWorkflowWithApproverGroups := func(t *testing.T, state model.WorkflowState, groups ...*model.Group) *model.Workflow {
 		t.Helper()
 
 		wf := testutils.NewWorkflow(func(w *model.Workflow) {
 			w.State = state
-			w.ActionType = workflow.ActionTypeDelete.String()
-			w.ArtifactType = workflow.ArtifactTypeKey.String()
+			w.ActionType = model.WorkflowActionTypeDelete
+			w.ArtifactType = model.WorkflowArtifactTypeKey
 			w.InitiatorID = initiatorID
 			w.Approvers = []model.WorkflowApprover{
 				{UserID: approverID},
@@ -2750,7 +2750,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	}
 
 	t.Run("Initiator removed from group cannot see workflow in list", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateWaitApproval, adminGroup)
 
 		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),
@@ -2767,7 +2767,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("Initiator removed from group cannot revoke workflow", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateWaitApproval, adminGroup)
 
 		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),
@@ -2781,7 +2781,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("Initiator removed from group cannot confirm workflow", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitConfirmation.String(), adminGroup)
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateWaitConfirmation, adminGroup)
 
 		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),
@@ -2795,7 +2795,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("Approver removed from group cannot see workflow in list", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateWaitApproval, adminGroup)
 
 		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),
@@ -2812,7 +2812,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("Approver removed from group cannot approve workflow", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateWaitApproval, adminGroup)
 
 		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),
@@ -2826,7 +2826,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("Approver removed from group cannot reject workflow", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateWaitApproval, adminGroup)
 
 		ctxNoGroup := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),
@@ -2840,7 +2840,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("Initiator still in group can see and act on workflow", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateWaitApproval, adminGroup)
 
 		ctxInGroup := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),
@@ -2865,7 +2865,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("Approver still in group can see workflow", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateWaitApproval, adminGroup)
 
 		ctxInGroup := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),
@@ -2886,7 +2886,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("New user added to group after workflow creation does not gain access", func(t *testing.T) {
-		_ = createWorkflowWithApproverGroups(t, workflow.StateWaitApproval.String(), adminGroup)
+		_ = createWorkflowWithApproverGroups(t, model.WorkflowStateWaitApproval, adminGroup)
 		newUserID := "new-user-not-in-approvers"
 
 		ctxNewUser := testutils.InjectBusinessUserDataIntoContext(
@@ -2903,7 +2903,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("Initiator can see INITIAL workflow with no approver groups assigned", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateInitial.String()) // no groups
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateInitial) // no groups
 
 		ctxInitiator := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),
@@ -2923,7 +2923,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("Initiator can see FAILED workflow with no approver groups assigned", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateFailed.String()) // no groups
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateFailed) // no groups
 
 		ctxInitiator := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),
@@ -2943,7 +2943,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	})
 
 	t.Run("Non-initiator cannot see INITIAL workflow with no approver groups assigned", func(t *testing.T) {
-		wf := createWorkflowWithApproverGroups(t, workflow.StateInitial.String()) // no groups
+		wf := createWorkflowWithApproverGroups(t, model.WorkflowStateInitial) // no groups
 
 		ctxOther := testutils.InjectBusinessUserDataIntoContext(
 			testutils.CreateCtxWithTenant(tenant),

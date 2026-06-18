@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/enums"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -49,8 +50,8 @@ func TestWorkflow_Description(t *testing.T) {
 
 	tests := []struct {
 		name                   string
-		artifactType           string
-		actionType             string
+		artifactType           model.WorkflowArtifactType
+		actionType             model.WorkflowActionType
 		artifactName           *string
 		parameters             string
 		parametersResourceType *string
@@ -174,6 +175,165 @@ func TestWorkflow_Description(t *testing.T) {
 			assert.NoError(t, err)
 
 			assert.Equal(t, tt.expectedDescription, description)
+		})
+	}
+}
+
+func TestWorkflowState_Valid(t *testing.T) {
+	assert.True(t, model.WorkflowStateInitial.Valid())
+	assert.False(t, model.WorkflowState("").Valid())
+	assert.False(t, model.WorkflowState("BOGUS").Valid())
+}
+
+func TestWorkflowState_Value(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		v, err := model.WorkflowStateInitial.Value()
+		assert.NoError(t, err)
+		assert.Equal(t, "INITIAL", v)
+	})
+
+	t.Run("empty becomes NULL", func(t *testing.T) {
+		v, err := model.WorkflowState("").Value()
+		assert.NoError(t, err)
+		assert.Nil(t, v)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		_, err := model.WorkflowState("BOGUS").Value()
+		assert.ErrorIs(t, err, model.ErrInvalidWorkflowState)
+	})
+}
+
+func TestWorkflowState_Scan(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     any
+		want    model.WorkflowState
+		wantErr error
+	}{
+		{name: "string", src: "INITIAL", want: model.WorkflowStateInitial},
+		{name: "bytes", src: []byte("WAIT_APPROVAL"), want: model.WorkflowStateWaitApproval},
+		{name: "nil clears", src: nil, want: model.WorkflowState("")},
+		{name: "invalid", src: "BOGUS", wantErr: model.ErrInvalidWorkflowState},
+		{name: "wrong type", src: 123, wantErr: enums.ErrUnexpectedScanType},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var s model.WorkflowState
+			err := s.Scan(tt.src)
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, s)
+		})
+	}
+}
+
+func TestWorkflowArtifactType_Valid(t *testing.T) {
+	assert.True(t, model.WorkflowArtifactTypeKey.Valid())
+	assert.False(t, model.WorkflowArtifactType("").Valid())
+	assert.False(t, model.WorkflowArtifactType("BOGUS").Valid())
+}
+
+func TestWorkflowArtifactType_Value(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		v, err := model.WorkflowArtifactTypeKey.Value()
+		assert.NoError(t, err)
+		assert.Equal(t, "KEY", v)
+	})
+
+	t.Run("empty becomes NULL", func(t *testing.T) {
+		v, err := model.WorkflowArtifactType("").Value()
+		assert.NoError(t, err)
+		assert.Nil(t, v)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		_, err := model.WorkflowArtifactType("BOGUS").Value()
+		assert.ErrorIs(t, err, model.ErrInvalidWorkflowArtifactType)
+	})
+}
+
+func TestWorkflowArtifactType_Scan(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     any
+		want    model.WorkflowArtifactType
+		wantErr error
+	}{
+		{name: "string", src: "KEY", want: model.WorkflowArtifactTypeKey},
+		{name: "bytes", src: []byte("SYSTEM"), want: model.WorkflowArtifactTypeSystem},
+		{name: "nil clears", src: nil, want: model.WorkflowArtifactType("")},
+		{name: "invalid", src: "BOGUS", wantErr: model.ErrInvalidWorkflowArtifactType},
+		{name: "wrong type", src: 3.14, wantErr: enums.ErrUnexpectedScanType},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var a model.WorkflowArtifactType
+			err := a.Scan(tt.src)
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, a)
+		})
+	}
+}
+
+func TestWorkflowActionType_Valid(t *testing.T) {
+	assert.True(t, model.WorkflowActionTypeDelete.Valid())
+	assert.False(t, model.WorkflowActionType("").Valid())
+	assert.False(t, model.WorkflowActionType("BOGUS").Valid())
+}
+
+func TestWorkflowActionType_Value(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		v, err := model.WorkflowActionTypeDelete.Value()
+		assert.NoError(t, err)
+		assert.Equal(t, "DELETE", v)
+	})
+
+	t.Run("empty becomes NULL", func(t *testing.T) {
+		v, err := model.WorkflowActionType("").Value()
+		assert.NoError(t, err)
+		assert.Nil(t, v)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		_, err := model.WorkflowActionType("BOGUS").Value()
+		assert.ErrorIs(t, err, model.ErrInvalidWorkflowActionType)
+	})
+}
+
+func TestWorkflowActionType_Scan(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     any
+		want    model.WorkflowActionType
+		wantErr error
+	}{
+		{name: "string", src: "DELETE", want: model.WorkflowActionTypeDelete},
+		{name: "bytes", src: []byte("LINK"), want: model.WorkflowActionTypeLink},
+		{name: "nil clears", src: nil, want: model.WorkflowActionType("")},
+		{name: "invalid", src: "INVALID", wantErr: model.ErrInvalidWorkflowActionType},
+		{name: "wrong type", src: 42, wantErr: enums.ErrUnexpectedScanType},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var a model.WorkflowActionType
+			err := a.Scan(tt.src)
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, a)
 		})
 	}
 }

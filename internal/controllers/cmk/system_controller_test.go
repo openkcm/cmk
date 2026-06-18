@@ -25,7 +25,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -601,18 +600,18 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	})
 	wfFullDetails := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.InitiatorID = authClient.Identifier
-		w.ArtifactType = workflow.ArtifactTypeSystem.String()
+		w.ArtifactType = model.WorkflowArtifactTypeSystem
 		w.ArtifactID = systemUnderWorkflowFullDetails.ID
-		w.State = workflow.StateWaitApproval.String()
+		w.State = model.WorkflowStateWaitApproval
 	})
 	systemUnderWorkflowApproversDetails := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 		s.Status = cmkapi.SystemStatusUNDERWORKFLOW
 	})
 	wfApproverDetails := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.ArtifactType = workflow.ArtifactTypeSystem.String()
+		w.ArtifactType = model.WorkflowArtifactTypeSystem
 		w.ArtifactID = systemUnderWorkflowApproversDetails.ID
-		w.State = workflow.StateWaitApproval.String()
+		w.State = model.WorkflowStateWaitApproval
 	})
 
 	idmPlugin.PutUser(identitymanagement.User{ID: wfApproverDetails.InitiatorID})

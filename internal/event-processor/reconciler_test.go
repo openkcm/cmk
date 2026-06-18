@@ -861,7 +861,7 @@ func TestConfirmJob(t *testing.T) {
 		kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = kc.ID
-			k.State = string(cmkapi.KeyStateDETACHING)
+			k.State = cmkapi.KeyStateDETACHING
 		})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		testutils.CreateTestEntities(ctx, t, r, kc, key)
@@ -1342,7 +1342,7 @@ func TestJobTermination(t *testing.T) {
 		}
 		_, err = r.First(ctx, keyAfter, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateDETACHED), keyAfter.State)
+		assert.Equal(t, cmkapi.KeyStateDETACHED, keyAfter.State)
 	})
 
 	t.Run("Should update key state to DETACHED on failed key detach job termination", func(t *testing.T) {
@@ -1370,7 +1370,7 @@ func TestJobTermination(t *testing.T) {
 		}
 		_, err = r.First(ctx, keyAfter, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateDETACHED), keyAfter.State)
+		assert.Equal(t, cmkapi.KeyStateDETACHED, keyAfter.State)
 	})
 
 	t.Run("Should update key state to UNKNOWN on canceled key detach job termination", func(t *testing.T) {
@@ -1399,7 +1399,7 @@ func TestJobTermination(t *testing.T) {
 		}
 		_, err = r.First(ctx, keyAfter, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateUNKNOWN), keyAfter.State)
+		assert.Equal(t, cmkapi.KeyStateUNKNOWN, keyAfter.State)
 	})
 
 	t.Run("should add trace with correct attributes for JobDone", func(t *testing.T) {

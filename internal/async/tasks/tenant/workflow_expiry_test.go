@@ -25,7 +25,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -80,7 +79,7 @@ func (s *WorkflowExpiryMock) ExpireWorkflow(ctx context.Context,
 	workflows, _, _ := s.GetWorkflows(ctx, manager.WorkflowFilter{})
 	for _, wf := range workflows {
 		if wf.ID == workflowID {
-			wf.State = string(wfMechanism.StateExpired)
+			wf.State = model.WorkflowStateExpired
 
 			_, err := s.repo.Patch(ctx, wf, *repo.NewQuery())
 			if err != nil {
@@ -155,10 +154,10 @@ func runExpiryProcessor(t *testing.T, wm *manager.WorkflowManager, r repo.Repo, 
 
 func TestWorkflowExpiresAction(t *testing.T) {
 	// States that should be transitioned to Expired when past due.
-	for _, state := range []wfMechanism.State{
-		wfMechanism.StateWaitApproval,
-		wfMechanism.StateWaitConfirmation,
-		wfMechanism.StateExecuting,
+	for _, state := range []model.WorkflowState{
+		model.WorkflowStateWaitApproval,
+		model.WorkflowStateWaitConfirmation,
+		model.WorkflowStateExecuting,
 	} {
 		t.Run(state.String(), func(t *testing.T) {
 			wm, r, tenantID := setupWorkflowExpiry(t)
@@ -166,7 +165,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 
 			testutils.CreateTestEntities(ctx, t, r,
 				testutils.NewWorkflow(func(w *model.Workflow) {
-					w.State = state.String()
+					w.State = state
 					w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
 				}),
 			)
@@ -176,7 +175,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 			wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
 			assert.NoError(t, err)
 			assert.Len(t, wfs, 1)
-			assert.Equal(t, wfMechanism.StateExpired.String(), wfs[0].State)
+			assert.Equal(t, model.WorkflowStateExpired, wfs[0].State)
 		})
 	}
 
@@ -186,7 +185,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 
 		testutils.CreateTestEntities(ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, 1))
 			}),
 		)
@@ -196,7 +195,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
 		assert.NoError(t, err)
 		assert.Len(t, wfs, 1)
-		assert.Equal(t, wfMechanism.StateWaitApproval.String(), wfs[0].State)
+		assert.Equal(t, model.WorkflowStateWaitApproval, wfs[0].State)
 	})
 
 	t.Run("no expiry skipped", func(t *testing.T) {
@@ -205,7 +204,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 
 		testutils.CreateTestEntities(ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 				w.ExpiryDate = nil
 			}),
 		)
@@ -215,16 +214,16 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
 		assert.NoError(t, err)
 		assert.Len(t, wfs, 1)
-		assert.Equal(t, wfMechanism.StateWaitApproval.String(), wfs[0].State)
+		assert.Equal(t, model.WorkflowStateWaitApproval, wfs[0].State)
 	})
 
 	t.Run("terminal states skipped", func(t *testing.T) {
-		for _, state := range []wfMechanism.State{
-			wfMechanism.StateExpired,
-			wfMechanism.StateRevoked,
-			wfMechanism.StateRejected,
-			wfMechanism.StateSuccessful,
-			wfMechanism.StateFailed,
+		for _, state := range []model.WorkflowState{
+			model.WorkflowStateExpired,
+			model.WorkflowStateRevoked,
+			model.WorkflowStateRejected,
+			model.WorkflowStateSuccessful,
+			model.WorkflowStateFailed,
 		} {
 			t.Run(state.String(), func(t *testing.T) {
 				wm, r, tenantID := setupWorkflowExpiry(t)
@@ -232,7 +231,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 
 				testutils.CreateTestEntities(ctx, t, r,
 					testutils.NewWorkflow(func(w *model.Workflow) {
-						w.State = state.String()
+						w.State = state
 						w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
 					}),
 				)
@@ -242,7 +241,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 				wfs, _, err := wm.GetWorkflows(ctx, manager.WorkflowFilter{})
 				assert.NoError(t, err)
 				assert.Len(t, wfs, 1)
-				assert.Equal(t, state.String(), wfs[0].State, "terminal workflow state should not change")
+				assert.Equal(t, state, wfs[0].State, "terminal workflow state should not change")
 			})
 		}
 	})
@@ -253,15 +252,15 @@ func TestWorkflowExpiresAction(t *testing.T) {
 
 		testutils.CreateTestEntities(ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
 			}),
 			testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, 1))
 			}),
 			testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = wfMechanism.StateInitial.String()
+				w.State = model.WorkflowStateInitial
 				w.ExpiryDate = nil
 			}),
 		)
@@ -272,13 +271,13 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, wfs, 3)
 
-		stateCounts := map[string]int{}
+		stateCounts := map[model.WorkflowState]int{}
 		for _, wf := range wfs {
 			stateCounts[wf.State]++
 		}
-		assert.Equal(t, 1, stateCounts[wfMechanism.StateExpired.String()])
-		assert.Equal(t, 1, stateCounts[wfMechanism.StateWaitApproval.String()])
-		assert.Equal(t, 1, stateCounts[wfMechanism.StateInitial.String()])
+		assert.Equal(t, 1, stateCounts[model.WorkflowStateExpired])
+		assert.Equal(t, 1, stateCounts[model.WorkflowStateWaitApproval])
+		assert.Equal(t, 1, stateCounts[model.WorkflowStateInitial])
 	})
 
 	t.Run("no workflows", func(t *testing.T) {
@@ -313,7 +312,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 
 		testutils.CreateTestEntities(ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
 			}),
 		)

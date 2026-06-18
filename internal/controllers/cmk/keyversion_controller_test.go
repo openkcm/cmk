@@ -49,12 +49,12 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 
 	key1 := testutils.NewKey(func(k *model.Key) {
 		k.CreatedAt = time.Now()
-		k.State = string(cmkapi.KeyStateENABLED)
+		k.State = cmkapi.KeyStateENABLED
 		k.KeyConfigurationID = keyConfig.ID
 	})
 
 	key2 := testutils.NewKey(func(k *model.Key) {
-		k.State = string(cmkapi.KeyStateENABLED)
+		k.State = cmkapi.KeyStateENABLED
 		k.KeyConfigurationID = keyConfig.ID
 	})
 
@@ -153,7 +153,7 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 
 					// Assert State matches parent key
 					assert.NotNil(t, keyVersion.State)
-					assert.Equal(t, cmkapi.KeyState(tt.key.State), *keyVersion.State)
+					assert.Equal(t, tt.key.State, *keyVersion.State)
 
 					// Assert IsPrimary - first version should be primary (latest)
 					assert.NotNil(t, keyVersion.IsPrimary)
@@ -330,7 +330,7 @@ func TestKeyVersionController_GetKeyVersions_IsPrimaryWithPagination(t *testing.
 		testutils.WithAuthBusinessUserDataKC(authClient))
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
-		k.State = string(cmkapi.KeyStateENABLED)
+		k.State = cmkapi.KeyStateENABLED
 	})
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
@@ -452,7 +452,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 	key := testutils.NewKey(func(k *model.Key) {
 		k.ID = keyID
 		k.Provider = providerTest
-		k.State = string(cmkapi.KeyStateENABLED)
+		k.State = cmkapi.KeyStateENABLED
 		k.KeyConfigurationID = keyConfig.ID
 		k.KeyVersions = []model.KeyVersion{
 			*testutils.NewKeyVersion(func(kv *model.KeyVersion) {
@@ -545,7 +545,7 @@ func TestKeyVersionController_GetKeyVersions_EmptyList(t *testing.T) {
 
 	// Create a key with NO versions
 	keyWithNoVersions := testutils.NewKey(func(k *model.Key) {
-		k.State = string(cmkapi.KeyStateENABLED)
+		k.State = cmkapi.KeyStateENABLED
 		k.KeyConfigurationID = keyConfig.ID
 	})
 

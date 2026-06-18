@@ -124,18 +124,38 @@ func NewWorkflowManager(
 }
 
 type WorkflowFilter struct {
-	State                  string
-	ArtifactType           string
+	State                  model.WorkflowState
+	ArtifactType           model.WorkflowArtifactType
 	ArtifactID             uuid.UUID
 	ArtifactName           string
 	ParametersResourceName string
-	ActionType             string
+	ActionType             model.WorkflowActionType
 	Skip                   int
 	Top                    int
 	Count                  bool
 }
 
 var _ repo.QueryMapper = (*WorkflowFilter)(nil) // Assert interface impl
+
+// validateFilterEnums casts raw OData strings to typed workflow enums and
+// rejects unknown non-empty values.
+func validateFilterEnums(
+	state, artifactType, actionType string,
+) (model.WorkflowState, model.WorkflowArtifactType, model.WorkflowActionType, error) {
+	wfState := model.WorkflowState(state)
+	if state != "" && !wfState.Valid() {
+		return "", "", "", fmt.Errorf("%w: %q", model.ErrInvalidWorkflowState, state)
+	}
+	wfArtifactType := model.WorkflowArtifactType(artifactType)
+	if artifactType != "" && !wfArtifactType.Valid() {
+		return "", "", "", fmt.Errorf("%w: %q", model.ErrInvalidWorkflowArtifactType, artifactType)
+	}
+	wfActionType := model.WorkflowActionType(actionType)
+	if actionType != "" && !wfActionType.Valid() {
+		return "", "", "", fmt.Errorf("%w: %q", model.ErrInvalidWorkflowActionType, actionType)
+	}
+	return wfState, wfArtifactType, wfActionType, nil
+}
 
 func NewWorkflowFilterFromOData(queryMapper odata.QueryOdataMapper) (*WorkflowFilter, error) {
 	skipPtr, topPtr, countPtr := queryMapper.GetPaging()
@@ -173,13 +193,18 @@ func NewWorkflowFilterFromOData(queryMapper odata.QueryOdataMapper) (*WorkflowFi
 		return nil, err
 	}
 
+	wfState, wfArtifactType, wfActionType, err := validateFilterEnums(state, artifactType, actionType)
+	if err != nil {
+		return nil, err
+	}
+
 	return &WorkflowFilter{
-		State:                  state,
-		ArtifactType:           artifactType,
+		State:                  wfState,
+		ArtifactType:           wfArtifactType,
 		ArtifactID:             artifactID,
 		ArtifactName:           artifactName,
 		ParametersResourceName: parametersResourceName,
-		ActionType:             actionType,
+		ActionType:             wfActionType,
 		Skip:                   skip,
 		Top:                    top,
 		Count:                  count,
@@ -253,11 +278,11 @@ func (w WorkflowFilter) GetString(field repo.QueryField) (string, error) {
 
 	switch field {
 	case repo.StateField:
-		val = w.State
+		val = w.State.String()
 	case repo.ArtifactTypeField:
-		val = w.ArtifactType
+		val = w.ArtifactType.String()
 	case repo.ActionTypeField:
-		val = w.ActionType
+		val = w.ActionType.String()
 	case repo.ArtifactNameField:
 		val = w.ArtifactName
 	case repo.ParamResourceNameField:
@@ -316,7 +341,7 @@ func (w *WorkflowManager) CreateWorkflow(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (*model.Workflow, error) {
-	workflow.State = wf.StateInitial.String()
+	workflow.State = model.WorkflowStateInitial
 
 	// Capture minimum approvals from current tenant configuration as a snapshot
 	minimumApprovals := w.getMinimumApprovals(ctx)
@@ -680,7 +705,7 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 
 	cutoffDate := time.Now().AddDate(0, 0, -workflowConfig.RetentionPeriodDays)
 	compositeKey := repo.NewCompositeKey().
-		Where(repo.StateField, wf.TerminalStates).
+		Where(repo.StateField, model.WorkflowTerminalStates).
 		Where(repo.CreatedField, cutoffDate, repo.Lt)
 
 	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey))
@@ -719,12 +744,12 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 
 // HandleTerminalWorkflow clears the UnderWorkflow flag when a workflow reaches a terminal state
 func (w *WorkflowManager) HandleTerminalWorkflow(ctx context.Context, workflow *model.Workflow) error {
-	if !slices.Contains(wf.TerminalStates, workflow.State) {
+	if !slices.Contains(model.WorkflowTerminalStates, workflow.State) {
 		return nil
 	}
 
 	switch workflow.ArtifactType {
-	case wf.ArtifactTypeSystem.String():
+	case model.WorkflowArtifactTypeSystem:
 		system := &model.System{
 			ID:            workflow.ArtifactID,
 			UnderWorkflow: false,
@@ -808,7 +833,7 @@ func (w *WorkflowManager) validateApproverCount(
 
 func (w *WorkflowManager) handleNewWorkflow(ctx context.Context, workflow *model.Workflow) error {
 	switch workflow.ArtifactType {
-	case wf.ArtifactTypeSystem.String():
+	case model.WorkflowArtifactTypeSystem:
 		system := &model.System{
 			ID:            workflow.ArtifactID,
 			UnderWorkflow: true,
@@ -1038,7 +1063,7 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 				return false, err
 			}
 
-			if key.State != string(cmkapi.KeyStateENABLED) {
+			if key.State != cmkapi.KeyStateENABLED {
 				return false, ErrConnectSystemNoPrimaryKey
 			}
 		}
@@ -1075,13 +1100,13 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 }
 
 func (w *WorkflowManager) isPrimaryKeySwitch(workflow *model.Workflow) bool {
-	return workflow.ArtifactType == wf.ArtifactTypeKeyConfiguration.String() &&
-		workflow.ActionType == wf.ActionTypeUpdatePrimary.String()
+	return workflow.ArtifactType == model.WorkflowArtifactTypeKeyConfiguration &&
+		workflow.ActionType == model.WorkflowActionTypeUpdatePrimary
 }
 
 func (w *WorkflowManager) isSystemConnect(workflow *model.Workflow) bool {
-	return workflow.ArtifactType == wf.ArtifactTypeSystem.String() &&
-		(workflow.ActionType == wf.ActionTypeLink.String() || workflow.ActionType == wf.ActionTypeSwitch.String())
+	return workflow.ArtifactType == model.WorkflowArtifactTypeSystem &&
+		(workflow.ActionType == model.WorkflowActionTypeLink || workflow.ActionType == model.WorkflowActionTypeSwitch)
 }
 
 // getWorkflows retrieves workflows based on the provided query,
@@ -1351,7 +1376,7 @@ func (w *WorkflowManager) checkOngoingWorkflowForArtifact(
 	ck := repo.NewCompositeKey().
 		Where(fmt.Sprintf("%s_%s", repo.ArtifactField, repo.TypeField), workflow.ArtifactType).
 		Where(fmt.Sprintf("%s_%s", repo.ArtifactField, repo.IDField), workflow.ArtifactID).
-		Where(repo.StateField, wf.NonTerminalStates)
+		Where(repo.StateField, model.WorkflowNonTerminalStates)
 
 	count, err := w.repo.Count(ctx, &model.Workflow{}, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 	if err != nil {
@@ -1444,7 +1469,7 @@ func (w *WorkflowManager) fetchEligibilityForVote(
 	transition wf.Transition,
 ) map[string]bool {
 	// Only fetch eligibility for approve/reject transitions in WAIT_APPROVAL state
-	if workflow.State != wf.StateWaitApproval.String() {
+	if workflow.State != model.WorkflowStateWaitApproval {
 		return nil
 	}
 	if transition != wf.TransitionApprove && transition != wf.TransitionReject {
@@ -1492,7 +1517,7 @@ func (w *WorkflowManager) attemptAutoReject(
 	eligibleApproverIDs map[string]bool,
 ) {
 	// Only check after approve/reject votes in WAIT_APPROVAL state
-	if workflow.State != wf.StateWaitApproval.String() {
+	if workflow.State != model.WorkflowStateWaitApproval {
 		return
 	}
 	if transition != wf.TransitionApprove && transition != wf.TransitionReject {
@@ -1568,7 +1593,7 @@ func (w *WorkflowManager) checkPermissionToCreateWorkflow(
 	workflow *model.Workflow,
 ) (bool, error) {
 	switch workflow.ArtifactType {
-	case wf.ArtifactTypeKeyConfiguration.String(), wf.ArtifactTypeSystem.String(), wf.ArtifactTypeKey.String():
+	case model.WorkflowArtifactTypeKeyConfiguration, model.WorkflowArtifactTypeSystem, model.WorkflowArtifactTypeKey:
 		_, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
 		if errors.Is(err, ErrKeyConfigurationNotAllowed) || errors.Is(err, repo.ErrNotFound) {
 			return false, nil
@@ -1590,7 +1615,7 @@ func (w *WorkflowManager) checkPermissionToCreateWorkflow(
 		return true, nil
 	}
 	return false, errs.Wrapf(ErrGetKeyConfigFromArtifact,
-		"unsupported artifact type: "+workflow.ArtifactType)
+		"unsupported artifact type: "+workflow.ArtifactType.String())
 }
 
 func (w *WorkflowManager) getKeyConfigurationsFromArtifact(
@@ -1600,7 +1625,7 @@ func (w *WorkflowManager) getKeyConfigurationsFromArtifact(
 	var keyConfigs []*model.KeyConfiguration
 
 	switch workflow.ArtifactType {
-	case wf.ArtifactTypeKeyConfiguration.String():
+	case model.WorkflowArtifactTypeKeyConfiguration:
 		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, workflow.ArtifactID)
 		if err != nil {
 			return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
@@ -1608,7 +1633,7 @@ func (w *WorkflowManager) getKeyConfigurationsFromArtifact(
 
 		keyConfigs = append(keyConfigs, keyConfig)
 
-	case wf.ArtifactTypeSystem.String():
+	case model.WorkflowArtifactTypeSystem:
 		keyConfigsFromSystems, err := w.getKeyConfigFromSystem(ctx, workflow)
 		if err != nil {
 			return nil, err
@@ -1616,7 +1641,7 @@ func (w *WorkflowManager) getKeyConfigurationsFromArtifact(
 
 		keyConfigs = append(keyConfigs, keyConfigsFromSystems...)
 
-	case wf.ArtifactTypeKey.String():
+	case model.WorkflowArtifactTypeKey:
 		keyConfig, err := w.getKeyConfigFromKey(ctx, workflow)
 		if err != nil {
 			return nil, err
@@ -1626,7 +1651,7 @@ func (w *WorkflowManager) getKeyConfigurationsFromArtifact(
 
 	default:
 		return nil, errs.Wrapf(ErrGetKeyConfigFromArtifact,
-			"unsupported artifact type: "+workflow.ArtifactType)
+			"unsupported artifact type: "+workflow.ArtifactType.String())
 	}
 
 	return keyConfigs, nil
@@ -1639,7 +1664,7 @@ func (w *WorkflowManager) getKeyConfigFromSystem(
 	var keyConfigs []*model.KeyConfiguration
 	// If action type is UNLINK or SWITCH, we need to get the current key configuration from artifact ID
 	switch workflow.ActionType {
-	case wf.ActionTypeUnlink.String(), wf.ActionTypeSwitch.String():
+	case model.WorkflowActionTypeUnlink, model.WorkflowActionTypeSwitch:
 		system, err := w.systemManager.GetSystemByID(ctx, workflow.ArtifactID)
 		if err != nil {
 			return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
@@ -1651,11 +1676,13 @@ func (w *WorkflowManager) getKeyConfigFromSystem(
 		}
 
 		keyConfigs = append(keyConfigs, keyConfig)
+	default:
+		// other action types do not source a key configuration from the artifact
 	}
 
 	// If action type is LINK or SWITCH, we need to get the target key configuration from parameters
 	switch workflow.ActionType {
-	case wf.ActionTypeLink.String(), wf.ActionTypeSwitch.String():
+	case model.WorkflowActionTypeLink, model.WorkflowActionTypeSwitch:
 		keyConfigID, err := uuid.Parse(workflow.Parameters)
 		if err != nil {
 			return nil, errs.Wrapf(ErrGetKeyConfigFromArtifact,
@@ -1668,6 +1695,8 @@ func (w *WorkflowManager) getKeyConfigFromSystem(
 		}
 
 		keyConfigs = append(keyConfigs, keyConfig)
+	default:
+		// other action types do not source a target key configuration from parameters
 	}
 
 	return keyConfigs, nil
@@ -1963,21 +1992,21 @@ func (w *WorkflowManager) populateArtifact(
 	workflow *model.Workflow,
 ) error {
 	switch workflow.ArtifactType {
-	case wf.ArtifactTypeKey.String():
+	case model.WorkflowArtifactTypeKey:
 		key, err := w.keyManager.Get(ctx, workflow.ArtifactID)
 		if err != nil {
 			return err
 		}
 		workflow.ArtifactName = ptr.PointTo(key.Name)
 
-	case wf.ArtifactTypeKeyConfiguration.String():
+	case model.WorkflowArtifactTypeKeyConfiguration:
 		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, workflow.ArtifactID)
 		if err != nil {
 			return err
 		}
 		workflow.ArtifactName = ptr.PointTo(keyConfig.Name)
 
-	case wf.ArtifactTypeSystem.String():
+	case model.WorkflowArtifactTypeSystem:
 		system, err := w.systemManager.GetSystemByID(ctx, workflow.ArtifactID)
 		if err != nil {
 			return err
@@ -1991,13 +2020,17 @@ func (w *WorkflowManager) populateArtifact(
 	return nil
 }
 
+// populateParametersResource resolves the resource info for the workflow
+// parameters payload.
+//
+//nolint:cyclop
 func (w *WorkflowManager) populateParametersResource(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) error {
 	switch workflow.ArtifactType {
-	case wf.ArtifactTypeKeyConfiguration.String():
-		if workflow.ActionType == wf.ActionTypeUpdatePrimary.String() {
+	case model.WorkflowArtifactTypeKeyConfiguration:
+		if workflow.ActionType == model.WorkflowActionTypeUpdatePrimary {
 			keyID, err := uuid.Parse(workflow.Parameters)
 			if err != nil {
 				return err
@@ -2012,9 +2045,9 @@ func (w *WorkflowManager) populateParametersResource(
 			workflow.ParametersResourceName = ptr.PointTo(key.Name)
 		}
 
-	case wf.ArtifactTypeSystem.String():
+	case model.WorkflowArtifactTypeSystem:
 		switch workflow.ActionType {
-		case wf.ActionTypeLink.String(), wf.ActionTypeSwitch.String():
+		case model.WorkflowActionTypeLink, model.WorkflowActionTypeSwitch:
 			keyConfigID, err := uuid.Parse(workflow.Parameters)
 			if err != nil {
 				return err
@@ -2027,6 +2060,8 @@ func (w *WorkflowManager) populateParametersResource(
 
 			workflow.ParametersResourceType = ptr.PointTo(wf.ParametersResourceTypeKeyConfiguration.String())
 			workflow.ParametersResourceName = ptr.PointTo(keyConfig.Name)
+		default:
+			// other system action types do not populate the parameters resource
 		}
 	default:
 		// empty

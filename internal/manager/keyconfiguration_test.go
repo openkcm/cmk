@@ -915,7 +915,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 		})
 
 		key := testutils.NewKey(func(k *model.Key) {
-			k.State = string(cmkapi.KeyStateDISABLED)
+			k.State = cmkapi.KeyStateDISABLED
 			k.KeyConfigurationID = keyConfig.ID
 		})
 		testutils.CreateTestEntities(ctx, t, r, oldPrimaryKey, keyConfig, key)

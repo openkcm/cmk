@@ -66,7 +66,7 @@ func (w *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 
 		if !canExpire {
 			log.Debug(ctx, "Workflow cannot be expired from current state, skipping",
-				slog.String("workflow_id", wf.ID.String()), slog.String("current_state", wf.State))
+				slog.String("workflow_id", wf.ID.String()), slog.String("current_state", wf.State.String()))
 			continue
 		}
 

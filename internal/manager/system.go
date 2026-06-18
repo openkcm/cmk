@@ -360,7 +360,7 @@ func (m *SystemManager) LinkSystemAction(
 
 		// Pre-check System key state.
 		// Should fail if the key is not enabled
-		if pKey.State != string(cmkapi.KeyStateENABLED) {
+		if pKey.State != cmkapi.KeyStateENABLED {
 			return ErrConnectSystemNoPrimaryKey
 		}
 

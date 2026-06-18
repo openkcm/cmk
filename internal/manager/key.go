@@ -40,14 +40,14 @@ const (
 	IsEditableCryptoAccess      string     = "isEditable"
 )
 
-var UnavailableKeyStates = []string{
-	string(cmkapi.KeyStatePENDINGDELETION),
-	string(cmkapi.KeyStateDELETED),
-	string(cmkapi.KeyStateFORBIDDEN),
-	string(cmkapi.KeyStateUNKNOWN),
+var UnavailableKeyStates = []cmkapi.KeyState{
+	cmkapi.KeyStatePENDINGDELETION,
+	cmkapi.KeyStateDELETED,
+	cmkapi.KeyStateFORBIDDEN,
+	cmkapi.KeyStateUNKNOWN,
 }
 
-func IsUnavailableKeyState(state string) bool {
+func IsUnavailableKeyState(state cmkapi.KeyState) bool {
 	return slices.Contains(UnavailableKeyStates, state)
 }
 
@@ -416,7 +416,7 @@ func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 
 func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 	return km.repo.Transaction(ctx, func(ctx context.Context) error {
-		key.State = string(cmkapi.KeyStateDETACHING)
+		key.State = cmkapi.KeyStateDETACHING
 
 		_, err := km.repo.Patch(ctx, key, *repo.NewQuery())
 		if err != nil {
@@ -559,7 +559,7 @@ func (km *KeyManager) createManagedProviderKey(
 	}
 
 	key.NativeID = ptr.PointTo(keyResp.KeyID)
-	key.State = keyResp.Status
+	key.State = cmkapi.KeyState(keyResp.Status)
 
 	return nil
 }
@@ -597,14 +597,14 @@ func (km *KeyManager) registerHYOKKey(
 
 	key.Algorithm = string(cmkapi.KeyAlgorithmAES256)
 
-	if keyResp.Status != string(cmkapi.KeyStateENABLED) {
+	if cmkapi.KeyState(keyResp.Status) != cmkapi.KeyStateENABLED {
 		return nil, errs.Wrapf(
 			ErrInvalidKeyState,
 			keyResp.Status+" for HYOK registration",
 		)
 	}
 
-	key.State = string(cmkapi.KeyStateENABLED)
+	key.State = cmkapi.KeyStateENABLED
 
 	// Initial KeyVersion will be created after key is saved via syncKeyVersion
 	// This ensures proper use of RotationTime from keystore and consistent version creation logic
@@ -732,7 +732,7 @@ func (km *KeyManager) setPrimaryIfFirstKey(ctx context.Context, key *model.Key) 
 
 	// Update keyconfig primaryKey
 	if !exist {
-		if key.State == string(cmkapi.KeyStateDISABLED) {
+		if key.State == cmkapi.KeyStateDISABLED {
 			return ErrKeyIsNotEnabled
 		}
 		keyConfig := &model.KeyConfiguration{
@@ -785,11 +785,11 @@ func copyFieldsToModelKey(apiKey cmkapi.KeyPatch, dbKey *model.Key) bool {
 	}
 
 	if apiKey.Enabled != nil {
-		if *apiKey.Enabled && dbKey.State != string(cmkapi.KeyStateENABLED) {
-			dbKey.State = string(cmkapi.KeyStateENABLED)
+		if *apiKey.Enabled && dbKey.State != cmkapi.KeyStateENABLED {
+			dbKey.State = cmkapi.KeyStateENABLED
 			enablementUpdated = true
-		} else if !(*apiKey.Enabled) && dbKey.State != string(cmkapi.KeyStateDISABLED) {
-			dbKey.State = string(cmkapi.KeyStateDISABLED)
+		} else if !(*apiKey.Enabled) && dbKey.State != cmkapi.KeyStateDISABLED {
+			dbKey.State = cmkapi.KeyStateDISABLED
 			enablementUpdated = true
 		}
 	}
@@ -835,7 +835,7 @@ func (km *KeyManager) validateBYOKKey(ctx context.Context, keyID uuid.UUID, acti
 			return nil, errs.Wrapf(ErrInvalidKeyTypeForImportParams,
 				fmt.Sprintf("key type %s is not supported", key.KeyType))
 		}
-		if key.State != string(cmkapi.KeyStatePENDINGIMPORT) {
+		if key.State != cmkapi.KeyStatePENDINGIMPORT {
 			return nil, errs.Wrapf(ErrInvalidKeyStateForImportParams,
 				fmt.Sprintf("key state %s is not supported", key.State))
 		}
@@ -845,7 +845,7 @@ func (km *KeyManager) validateBYOKKey(ctx context.Context, keyID uuid.UUID, acti
 			return nil, errs.Wrapf(ErrInvalidKeyTypeForImportKeyMaterial,
 				fmt.Sprintf("key type %s is not supported", key.KeyType))
 		}
-		if key.State != string(cmkapi.KeyStatePENDINGIMPORT) {
+		if key.State != cmkapi.KeyStatePENDINGIMPORT {
 			return nil, errs.Wrapf(ErrInvalidKeyStateForImportKeyMaterial,
 				fmt.Sprintf("key state %s is not supported", key.State))
 		}
@@ -937,7 +937,7 @@ func (km *KeyManager) importProviderKeyMaterial(
 		return nil, errs.Wrap(ErrGetProviderKey, err)
 	}
 
-	key.State = keyResp.Status
+	key.State = cmkapi.KeyState(keyResp.Status)
 
 	return key, nil
 }
@@ -999,7 +999,7 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 		km.sendUnavailableAuditLog(ctx, key)
 	} else if keyResp != nil {
 		// Successful case - update the status in the database for the HYOK key Enabled/Disabled
-		key.State = keyResp.Status
+		key.State = cmkapi.KeyState(keyResp.Status)
 
 		// Check if a new version was detected from the keystore
 		if keyResp.LatestKeyVersionId != "" {
@@ -1117,9 +1117,9 @@ func (km *KeyManager) handleNewKeyVersion(
 	return nil
 }
 
-func (km *KeyManager) handleKeyStateTransition(ctx context.Context, key *model.Key, oldKeyState string) error {
+func (km *KeyManager) handleKeyStateTransition(ctx context.Context, key *model.Key, oldKeyState cmkapi.KeyState) error {
 	switch key.State {
-	case string(cmkapi.KeyStateENABLED):
+	case cmkapi.KeyStateENABLED:
 		if IsUnavailableKeyState(oldKeyState) {
 			km.sendAvailableAuditLog(ctx, key)
 		} else {
@@ -1127,10 +1127,10 @@ func (km *KeyManager) handleKeyStateTransition(ctx context.Context, key *model.K
 		}
 
 		return km.sendEnableEvent(ctx, key)
-	case string(cmkapi.KeyStatePENDINGDELETION):
+	case cmkapi.KeyStatePENDINGDELETION:
 		km.sendUnavailableAuditLog(ctx, key)
 		return nil
-	case string(cmkapi.KeyStateDISABLED):
+	case cmkapi.KeyStateDISABLED:
 		// When transitioning from unavailable states (DELETED, PENDING_DELETION, UNKNOWN, FORBIDDEN)
 		// to DISABLED, we send AvailableAuditLog because DISABLED is considered an available state.
 		// The key is still accessible despite being disabled.
@@ -1228,16 +1228,16 @@ func (km *KeyManager) sendDetachEvent(ctx context.Context, key *model.Key) error
 	})
 }
 
-func (km *KeyManager) getKeyStateOnSyncError(ctx context.Context, key *model.Key, err error) string {
-	var newState string
+func (km *KeyManager) getKeyStateOnSyncError(ctx context.Context, key *model.Key, err error) cmkapi.KeyState {
+	var newState cmkapi.KeyState
 
 	switch {
 	case errors.Is(err, keymanagement.ErrProviderAuthenticationFailed):
-		newState = string(cmkapi.KeyStateFORBIDDEN)
+		newState = cmkapi.KeyStateFORBIDDEN
 	case errors.Is(err, keymanagement.ErrHYOKKeyNotFound):
-		newState = string(cmkapi.KeyStateDELETED)
+		newState = cmkapi.KeyStateDELETED
 	case errs.IsAnyError(err, ErrFailedToInitProvider, ErrGetProviderKey):
-		newState = string(cmkapi.KeyStateUNKNOWN)
+		newState = cmkapi.KeyStateUNKNOWN
 	default:
 		log.Warn(
 			ctx, "Failed to sync HYOK key due to unhandled error, keeping existing state",

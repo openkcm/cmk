@@ -13,7 +13,6 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/workflow"
 	"github.com/openkcm/cmk/utils/odata"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -200,7 +199,7 @@ func (c *APIController) handleSystemUnderWorkflow(
 	sys *model.System,
 ) (*cmkapi.System, error) {
 	workflows, _, err := c.Manager.Workflow.GetWorkflows(ctx, manager.WorkflowFilter{
-		ArtifactType: workflow.ArtifactTypeSystem.String(),
+		ArtifactType: model.WorkflowArtifactTypeSystem,
 		ArtifactID:   sys.ID,
 	})
 	if err != nil || len(workflows) < 1 {

@@ -60,7 +60,7 @@ func (c *APIController) GetKeyVersions(ctx context.Context,
 
 	// Convert each Key Version to its response format
 	response := make([]cmkapi.KeyVersion, 0, len(keyVersions))
-	keyState := cmkapi.KeyState(key.State)
+	keyState := key.State
 
 	for _, kv := range keyVersions {
 		apiKv, err := keyversion.ToAPI(*kv, latestVersion.ID, keyState)

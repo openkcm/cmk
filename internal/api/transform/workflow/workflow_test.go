@@ -33,8 +33,8 @@ func TestWorkflow_ToAPI(t *testing.T) {
 			ID:           uuid.New(),
 			InitiatorID:  uuid.NewString(),
 			State:        "INITIAL",
-			ActionType:   "LINK",
-			ArtifactType: "SYSTEM",
+			ActionType:   model.WorkflowActionTypeLink,
+			ArtifactType: model.WorkflowArtifactTypeSystem,
 			ArtifactID:   uuid.New(),
 			Parameters:   "ENABLED",
 		}
@@ -185,8 +185,8 @@ func TestWorkflow_FromAPI(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, string(tt.apiWorkflow.ActionType), w.ActionType)
-				assert.Equal(t, string(tt.apiWorkflow.ArtifactType), w.ArtifactType)
+				assert.Equal(t, string(tt.apiWorkflow.ActionType), w.ActionType.String())
+				assert.Equal(t, string(tt.apiWorkflow.ArtifactType), w.ArtifactType.String())
 				assert.Equal(t, tt.apiWorkflow.ArtifactID, w.ArtifactID)
 				assert.Equal(t, *tt.apiWorkflow.Parameters, w.Parameters)
 			}
@@ -329,8 +329,8 @@ func TestWorkflow_ToAPI_EligibilityMetadata(t *testing.T) {
 			ID:           uuid.New(),
 			InitiatorID:  uuid.NewString(),
 			State:        "WAIT_APPROVAL",
-			ActionType:   "LINK",
-			ArtifactType: "SYSTEM",
+			ActionType:   model.WorkflowActionTypeLink,
+			ArtifactType: model.WorkflowArtifactTypeSystem,
 			ArtifactID:   uuid.New(),
 			Parameters:   "ENABLED",
 		}

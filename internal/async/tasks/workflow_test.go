@@ -19,7 +19,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -89,7 +88,7 @@ func (s *WorkflowAssignMock) AutoAssignApprovers(
 
 func (s *WorkflowAssignMock) HandleTerminalWorkflow(ctx context.Context, workflow *model.Workflow) error {
 	switch workflow.ArtifactType {
-	case wfMechanism.ArtifactTypeSystem.String():
+	case model.WorkflowArtifactTypeSystem:
 		system := &model.System{
 			ID:            workflow.ArtifactID,
 			UnderWorkflow: false,
@@ -206,7 +205,7 @@ func TestWorkflowAssignAction(t *testing.T) {
 			*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 		assert.NoError(t, err)
 
-		assert.Equal(t, wfMechanism.StateFailed.String(), updatedWorkflow.State)
+		assert.Equal(t, model.WorkflowStateFailed, updatedWorkflow.State)
 		assert.Equal(t, "bad workflow error", updatedWorkflow.FailureReason)
 	})
 
@@ -229,7 +228,7 @@ func TestWorkflowAssignAction(t *testing.T) {
 			*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 		assert.NoError(t, err)
 
-		assert.Equal(t, wfMechanism.StateFailed.String(), updatedWorkflow.State)
+		assert.Equal(t, model.WorkflowStateFailed, updatedWorkflow.State)
 		assert.Equal(t, "internal error when assigning approvers", updatedWorkflow.FailureReason)
 	})
 
@@ -262,7 +261,7 @@ func TestWorkflowAssignAction(t *testing.T) {
 		assert.NoError(t, err)
 
 		workflow := testutils.NewWorkflow(func(w *model.Workflow) {
-			w.ArtifactType = wfMechanism.ArtifactTypeSystem.String()
+			w.ArtifactType = model.WorkflowArtifactTypeSystem
 			w.ArtifactID = system.ID
 			w.ID = workflowID
 		})
@@ -299,6 +298,6 @@ func TestWorkflowAssignAction(t *testing.T) {
 		updatedWorkflow := &model.Workflow{ID: workflow.ID}
 		_, err = rawRepo.First(ctx, updatedWorkflow, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, wfMechanism.StateFailed.String(), updatedWorkflow.State)
+		assert.Equal(t, model.WorkflowStateFailed, updatedWorkflow.State)
 	})
 }

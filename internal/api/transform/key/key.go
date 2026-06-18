@@ -60,9 +60,9 @@ func FromAPI(ctx context.Context, apiKey cmkapi.Key, tf transformer.ProviderTran
 	dbKey.UpdatedAt = now
 
 	if apiKey.Enabled == nil || *apiKey.Enabled {
-		dbKey.State = string(cmkapi.KeyStateENABLED)
+		dbKey.State = cmkapi.KeyStateENABLED
 	} else {
-		dbKey.State = string(cmkapi.KeyStateDISABLED)
+		dbKey.State = cmkapi.KeyStateDISABLED
 	}
 
 	return dbKey, nil
@@ -99,7 +99,7 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 		apiKey.Description = &k.Description
 	}
 
-	state := cmkapi.KeyState(k.State)
+	state := k.State
 	apiKey.State = &state
 
 	apiKey.Metadata = &cmkapi.KeyMetadata{

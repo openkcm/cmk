@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	"github.com/openkcm/cmk/utils/odata"
@@ -68,8 +69,8 @@ var GetWorkflowsSchema = odata.FilterSchema{
 			FilterType: odata.String,
 			DBName:     repo.ArtifactTypeField,
 			ValueValidator: func(s string) bool {
-				return slices.Contains(wfMechanism.ArtifactTypes,
-					wfMechanism.ArtifactType(s))
+				return slices.Contains(model.WorkflowArtifactTypes,
+					model.WorkflowArtifactType(s))
 			},
 			ValueModifier: odata.ToUpper,
 		},
@@ -90,8 +91,8 @@ var GetWorkflowsSchema = odata.FilterSchema{
 			FilterType: odata.String,
 			DBName:     repo.ActionTypeField,
 			ValueValidator: func(s string) bool {
-				return slices.Contains(wfMechanism.ActionTypes,
-					wfMechanism.ActionType(s))
+				return slices.Contains(model.WorkflowActionTypes,
+					model.WorkflowActionType(s))
 			},
 			ValueModifier: odata.ToUpper,
 		},
@@ -100,8 +101,8 @@ var GetWorkflowsSchema = odata.FilterSchema{
 			FilterType: odata.String,
 			DBName:     repo.StateField,
 			ValueValidator: func(s string) bool {
-				return slices.Contains(wfMechanism.States,
-					wfMechanism.State(s))
+				return slices.Contains(model.WorkflowStates,
+					model.WorkflowState(s))
 			},
 			ValueModifier: odata.ToUpper,
 		},

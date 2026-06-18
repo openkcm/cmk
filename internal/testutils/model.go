@@ -15,7 +15,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -101,7 +100,7 @@ func NewKey(m func(*model.Key)) *model.Key {
 			ID:       uuid.New(),
 			KeyType:  constants.KeyTypeBYOK,
 			Name:     uuid.NewString(),
-			State:    string(cmkapi.KeyStateENABLED),
+			State:    cmkapi.KeyStateENABLED,
 			NativeID: ptr.PointTo(uuid.NewString()),
 		}
 	})
@@ -216,11 +215,11 @@ func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 	mut := NewMutator(func() model.Workflow {
 		return model.Workflow{
 			ID:                   uuid.New(),
-			State:                wfMechanism.StateInitial.String(),
+			State:                model.WorkflowStateInitial,
 			InitiatorID:          uuid.NewString(),
-			ArtifactType:         wfMechanism.ArtifactTypeKey.String(),
+			ArtifactType:         model.WorkflowArtifactTypeKey,
 			ArtifactID:           uuid.New(),
-			ActionType:           wfMechanism.ActionTypeDelete.String(),
+			ActionType:           model.WorkflowActionTypeDelete,
 			Approvers:            []model.WorkflowApprover{{UserID: uuid.NewString()}},
 			MinimumApprovalCount: 1, // Default to 1 to match single approver
 		}
