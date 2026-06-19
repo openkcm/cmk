@@ -22,10 +22,10 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/looplab/fsm v1.0.3
 	github.com/microcosm-cc/bluemonday v1.0.27
-	github.com/moby/moby/api v1.54.2
+	github.com/moby/moby/api v1.55.0
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/runtime v1.4.1
-	github.com/openkcm/api-sdk v0.18.0
+	github.com/openkcm/api-sdk v0.18.1
 	github.com/openkcm/common-sdk v1.17.0
 	github.com/openkcm/orbital v0.5.1
 	github.com/openkcm/plugin-sdk v0.13.0
@@ -34,10 +34,10 @@ require (
 	github.com/samber/oops v1.22.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	github.com/testcontainers/testcontainers-go v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/rabbitmq v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/redis v0.42.0
+	github.com/testcontainers/testcontainers-go v0.43.0
+	github.com/testcontainers/testcontainers-go/modules/postgres v0.43.0
+	github.com/testcontainers/testcontainers-go/modules/rabbitmq v0.43.0
+	github.com/testcontainers/testcontainers-go/modules/redis v0.43.0
 	github.com/veqryn/slog-context v0.9.0
 	github.com/zeebo/assert v1.3.1
 	go.opentelemetry.io/collector/pdata v1.60.0
@@ -149,7 +149,7 @@ require (
 	github.com/samber/slog-multi v1.8.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
-	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
+	github.com/shirou/gopsutil/v4 v4.26.5 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
