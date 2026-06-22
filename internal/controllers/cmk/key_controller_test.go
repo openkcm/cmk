@@ -846,10 +846,13 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		sys.Status = cmkapi.SystemStatusCONNECTED
 	})
 
+	validMgmtData, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+	assert.NoError(t, err)
+
 	key := testutils.NewKey(func(k *model.Key) {
 		k.ID = keyID
 		k.CryptoAccessData = cryptoData
-		k.ManagementAccessData = json.RawMessage("{\"test\":\"test\"}")
+		k.ManagementAccessData = validMgmtData
 		k.KeyConfigurationID = kc.ID
 		k.Provider = providerTest
 	})
@@ -858,7 +861,15 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		k.IsPrimary = true
 		k.KeyType = constants.KeyTypeHYOK
 		k.CryptoAccessData = cryptoData
-		k.ManagementAccessData = json.RawMessage("{\"test\":\"test\"}")
+		k.ManagementAccessData = validMgmtData
+		k.KeyConfigurationID = kc.ID
+		k.Provider = providerTest
+	})
+
+	hyokKeyInvalidMgmt := testutils.NewKey(func(k *model.Key) {
+		k.KeyType = constants.KeyTypeHYOK
+		k.CryptoAccessData = cryptoData
+		k.ManagementAccessData = json.RawMessage("{\"wrong\":\"data\"}")
 		k.KeyConfigurationID = kc.ID
 		k.Provider = providerTest
 	})
@@ -870,6 +881,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		kc,
 		key,
 		hyokKey,
+		hyokKeyInvalidMgmt,
 		keystore,
 		keystoreDefaultCert,
 		keystoreKeyMgmtCert,
@@ -887,13 +899,21 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	assert.True(t, ok, "test key should exist")
 	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
+	notAllowedClientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{uuid.NewString()},
+	}
+	headersNotAllowed := testutils.NewSignedBusinessUserDataHeaders(t, notAllowedClientData, privateKey, 0)
+
 	tests := []struct {
-		name           string
-		keyID          string
-		input          cmkapi.KeyPatch
-		expectedStatus int
-		expectedName   string
-		expectedDesc   string
+		name              string
+		keyID             string
+		input             cmkapi.KeyPatch
+		headers           http.Header
+		expectedStatus    int
+		expectedName      string
+		expectedDesc      string
+		expectedErrorCode string
 	}{
 		{
 			name:  "T400KeyUPDATESuccess",
@@ -1002,16 +1022,42 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			expectedName:   "updated-hyok-key",
 			expectedDesc:   "updated description",
 		},
+		{
+			name:              "should not update when no group permission",
+			keyID:             key.ID.String(),
+			input:             cmkapi.KeyPatch{Name: ptr.PointTo("new-name")},
+			headers:           headersNotAllowed,
+			expectedStatus:    http.StatusForbidden,
+			expectedErrorCode: "FORBIDDEN",
+		},
+		{
+			name:  "Should 400 INVALID_ACCESS_DATA on invalid crypto",
+			keyID: hyokKeyInvalidMgmt.ID.String(),
+			input: cmkapi.KeyPatch{
+				AccessDetails: &cmkapi.KeyAccessDetails{
+					Crypto: &map[string]map[string]any{
+						regionEditable: {"key": "value"},
+					},
+				},
+			},
+			expectedStatus:    http.StatusBadRequest,
+			expectedErrorCode: "INVALID_ACCESS_DATA",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			reqHeaders := headers
+			if tt.headers != nil {
+				reqHeaders = tt.headers
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodPatch,
 				Endpoint: "/keys/" + tt.keyID,
 				Tenant:   tenant,
 				Body:     testutils.WithJSON(t, tt.input),
-				Headers:  headers,
+				Headers:  reqHeaders,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -1021,28 +1067,13 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 				assert.Equal(t, tt.expectedName, response.Name)
 				assert.Equal(t, tt.expectedDesc, *response.Description)
 			}
+
+			if tt.expectedErrorCode != "" {
+				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+				assert.Equal(t, tt.expectedErrorCode, response.Error.Code)
+			}
 		})
 	}
-
-	t.Run("should not update when no group permission", func(t *testing.T) {
-		notAllowedClientData := &auth.ClientData{
-			Identifier: authClient.Identifier,
-			Groups:     []string{uuid.NewString()},
-		}
-		headersNotAllowed := testutils.NewSignedBusinessUserDataHeaders(t, notAllowedClientData, privateKey, 0)
-
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodPatch,
-			Endpoint: "/keys/" + key.ID.String(),
-			Tenant:   tenant,
-			Body:     testutils.WithJSON(t, cmkapi.KeyPatch{Name: ptr.PointTo("new-name")}),
-			Headers:  headersNotAllowed,
-		})
-
-		assert.Equal(t, http.StatusForbidden, w.Code)
-		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "FORBIDDEN", response.Error.Code)
-	})
 }
 
 func TestKeyControllerGetImportParams(t *testing.T) {

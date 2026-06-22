@@ -41,12 +41,13 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{manager.ErrBadCryptoRegionData},
+		InternalErrorChain: []error{manager.ErrCryptoDetailsUpdate, transformer.ErrGRPCInvalidAccessData},
 		ExposedError: &APIError{
-			Code:    "BAD_CRYPTO_DETAILS",
-			Message: "Crypto details invalid",
+			Code:    "INVALID_ACCESS_DATA",
+			Message: "Invalid access data provided",
 			Status:  http.StatusBadRequest,
 		},
+		ContextGetter: errs.GetGRPCErrorContext,
 	},
 	{
 		InternalErrorChain: []error{manager.ErrCryptoRegionNotExists},

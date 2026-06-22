@@ -11,6 +11,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
+
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
@@ -24,6 +26,14 @@ var (
 
 	ErrKeyIDIsNil          = errors.New("keyId is nil")
 	ErrTransformAccessData = errors.New("failed to transform access data")
+
+	// ValidManagementAccessData is the management access data the test plugin accepts
+	// in ValidateKeyAccessData. It mirrors the fields returned by CreateKeystore and
+	// used throughout HYOK key tests.
+	ValidManagementAccessData = map[string]bool{
+		"AccountID": true,
+		"UserID":    true,
+	}
 )
 
 const importParamsValidityHours = 24
@@ -225,6 +235,11 @@ func (s *TestKeyManagement) ValidateKeyAccessData(
 ) (*keymanagement.ValidateKeyAccessDataResponse, error) {
 	if len(req.Management) == 0 || len(req.Crypto) == 0 {
 		return nil, keymanagement.ErrHYOKKeyNotFound
+	}
+	for k := range ValidManagementAccessData {
+		if _, ok := req.Management[k]; !ok {
+			return nil, keystoreErrs.StatusInvalidKeyAccessData.Err()
+		}
 	}
 	return &keymanagement.ValidateKeyAccessDataResponse{IsValid: true}, nil
 }
