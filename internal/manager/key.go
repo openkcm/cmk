@@ -527,7 +527,10 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 	for region, regionValues := range *patchAccessDetails.Crypto {
 		editable, exist := key.EditableRegions[region]
 		if !editable && exist {
-			return ErrNonEditableCryptoRegionUpdate
+			// If region is not editable and content changed error
+			if !maps.Equal(keyCryptoData[region], (*patchAccessDetails.Crypto)[region]) {
+				return ErrNonEditableCryptoRegionUpdate
+			}
 		}
 		keyCryptoData[region] = regionValues
 	}
