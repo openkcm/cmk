@@ -996,7 +996,6 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 	if err != nil {
 		log.Error(ctx, "Failed to sync HYOK key state with provider", err, slog.String("keyID", key.ID.String()))
 		key.State = km.getKeyStateOnSyncError(ctx, key, err)
-		km.sendUnavailableAuditLog(ctx, key)
 	} else if keyResp != nil {
 		// Successful case - update the status in the database for the HYOK key Enabled/Disabled
 		key.State = cmkapi.KeyState(keyResp.Status)
@@ -1120,35 +1119,15 @@ func (km *KeyManager) handleNewKeyVersion(
 func (km *KeyManager) handleKeyStateTransition(ctx context.Context, key *model.Key, oldKeyState cmkapi.KeyState) error {
 	switch key.State {
 	case cmkapi.KeyStateENABLED:
-		if IsUnavailableKeyState(oldKeyState) {
-			km.sendAvailableAuditLog(ctx, key)
-		} else {
+		if !IsUnavailableKeyState(oldKeyState) {
 			km.sendEnableAuditLog(ctx, key)
 		}
 
 		return km.sendEnableEvent(ctx, key)
 	case cmkapi.KeyStatePENDINGDELETION:
-		km.sendUnavailableAuditLog(ctx, key)
 		return nil
 	case cmkapi.KeyStateDISABLED:
-		// When transitioning from unavailable states (DELETED, PENDING_DELETION, UNKNOWN, FORBIDDEN)
-		// to DISABLED, we send AvailableAuditLog because DISABLED is considered an available state.
-		// The key is still accessible despite being disabled.
-		//
-		// Key availability states:
-		// - Available: ENABLED, DISABLED
-		// - Unavailable: DELETED, PENDING_DELETION, UNKNOWN, FORBIDDEN
-		//
-		// Common scenarios:
-		// 1. Customer deletes key on provider → key becomes PENDING_DELETION (unavailable)
-		//    Customer cancels deletion → key transitions to DISABLED (available again)
-		// 2. Customer removes access permissions → key becomes FORBIDDEN (unavailable)
-		//    Customer restores permissions → key transitions to DISABLED (available again)
-		// 3. Provider connection issues → key becomes UNKNOWN (unavailable)
-		//    Connection restored → key transitions to DISABLED (available again)
-		if IsUnavailableKeyState(oldKeyState) {
-			km.sendAvailableAuditLog(ctx, key)
-		} else {
+		if !IsUnavailableKeyState(oldKeyState) {
 			km.sendDisableAuditLog(ctx, key)
 		}
 
@@ -1288,26 +1267,6 @@ func (km *KeyManager) sendEnableAuditLog(ctx context.Context, key *model.Key) {
 	}
 
 	log.Info(ctx, "Audit log for CMK Enable sent successfully")
-}
-
-func (km *KeyManager) sendAvailableAuditLog(ctx context.Context, key *model.Key) {
-	err := km.cmkAuditor.SendCmkAvailableAuditLog(ctx, key.ID.String())
-	if err != nil {
-		log.Error(ctx, "Failed to send audit log for CMK Available", err)
-		return
-	}
-
-	log.Info(ctx, "Audit log for CMK Available sent successfully")
-}
-
-func (km *KeyManager) sendUnavailableAuditLog(ctx context.Context, key *model.Key) {
-	err := km.cmkAuditor.SendCmkUnavailableAuditLog(ctx, key.ID.String())
-	if err != nil {
-		log.Error(ctx, "Failed to send audit log for CMK Unavailable", err)
-		return
-	}
-
-	log.Info(ctx, "Audit log for CMK Unavailable sent successfully")
 }
 
 func (km *KeyManager) sendRotateAuditLog(ctx context.Context, key *model.Key) {
