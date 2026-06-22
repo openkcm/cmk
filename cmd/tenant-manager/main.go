@@ -129,7 +129,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 func createTenantManager(
 	ctx context.Context,
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName, authz.RepoAction],
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType, authz.RepoAction],
 	r repo.Repo,
 	clients clients.Factory,
 	svcRegistry *cmkpluginregistry.Registry,

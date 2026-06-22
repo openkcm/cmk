@@ -2,44 +2,33 @@ package authz
 
 import "github.com/openkcm/cmk/internal/constants"
 
-var RepoInternalPolicies = make(map[constants.InternalRole][]BasePolicy[constants.InternalRole,
-	RepoResourceTypeName, RepoAction])
-
-type internalRepoPolicies struct {
-	Roles    []constants.InternalRole
-	Policies []BasePolicy[constants.InternalRole, RepoResourceTypeName, RepoAction]
-}
-
-var InternalRepoPolicyData = internalRepoPolicies{
-	Roles: []constants.InternalRole{
-		constants.InternalTenantProvisioningRole,
-	},
-	Policies: []BasePolicy[constants.InternalRole, RepoResourceTypeName, RepoAction]{
-		NewPolicy(
-			"InternalBusinessAuthz",
-			constants.InternalBusinessAuthzRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType, RepoAction]{
+	constants.InternalBusinessAuthzRole: {
+		{
+			ID: constants.InternalBusinessAuthzPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeGroup,
+					Type: RepoResourceTypeGroup,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionCount,
 					},
 				},
 				{
-					ID: RepoResourceTypeKeyconfiguration,
+					Type: RepoResourceTypeKeyconfiguration,
 					Actions: []RepoAction{
 						RepoActionCount,
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalTenantCLI",
-			constants.InternalTenantCLIRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalTenantCLIRole: {
+		{
+			ID: constants.InternalTenantCLIPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeTenant,
+					Type: RepoResourceTypeTenant,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -49,25 +38,26 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeGroup,
+					Type: RepoResourceTypeGroup,
 					Actions: []RepoAction{
 						RepoActionCreate,
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalEventReconciler",
-			constants.InternalEventReconcilerRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalEventReconcilerRole: {
+		{
+			ID: constants.InternalEventReconcilerPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeTenant,
+					Type: RepoResourceTypeTenant,
 					Actions: []RepoAction{
 						RepoActionFirst,
 					},
 				},
 				{
-					ID: RepoResourceTypeKey,
+					Type: RepoResourceTypeKey,
 					Actions: []RepoAction{
 						RepoActionFirst,
 						RepoActionList,
@@ -75,7 +65,7 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeSystem,
+					Type: RepoResourceTypeSystem,
 					Actions: []RepoAction{
 						RepoActionFirst,
 						RepoActionCount,
@@ -85,14 +75,14 @@ var InternalRepoPolicyData = internalRepoPolicies{
 				},
 				{
 					// To get role-management client cert
-					ID: RepoResourceTypeCertificate,
+					Type: RepoResourceTypeCertificate,
 					Actions: []RepoAction{
 						RepoActionFirst,
 					},
 				},
 				{
 					// To sync default keystore configuration
-					ID: RepoResourceTypeTenantconfig,
+					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionFirst,
 						RepoActionDelete,
@@ -101,7 +91,7 @@ var InternalRepoPolicyData = internalRepoPolicies{
 				},
 				{
 					// To update event error state and clean up completed events
-					ID: RepoResourceTypeEvent,
+					Type: RepoResourceTypeEvent,
 					Actions: []RepoAction{
 						RepoActionUpdate,
 						RepoActionDelete,
@@ -109,19 +99,20 @@ var InternalRepoPolicyData = internalRepoPolicies{
 				},
 				{
 					// To get the latest key version native ID
-					ID: RepoResourceTypeKeyversion,
+					Type: RepoResourceTypeKeyversion,
 					Actions: []RepoAction{
 						RepoActionFirst,
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalTenantProvisioning",
-			constants.InternalTenantProvisioningRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalTenantProvisioningRole: {
+		{
+			ID: constants.InternalTenantProvisioningPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeTenant,
+					Type: RepoResourceTypeTenant,
 					Actions: []RepoAction{
 						RepoActionCreate,
 						RepoActionUpdate,
@@ -129,47 +120,49 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeGroup,
+					Type: RepoResourceTypeGroup,
 					Actions: []RepoAction{
 						RepoActionFirst,
 						RepoActionCreate,
 					},
 				},
 				{
-					ID: RepoResourceTypeSystem,
+					Type: RepoResourceTypeSystem,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
 					},
 				},
 				{
-					ID: RepoResourceTypeKey,
-					Actions: []RepoAction{
-						RepoActionCount,
-						RepoActionList,
-					},
-				},
-			},
-		),
-		NewPolicy(
-			"InternalTaskProcessing",
-			constants.InternalTaskProcessingRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
-				{
-					ID: RepoResourceTypeTenant,
+					Type: RepoResourceTypeKey,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalTaskCertRotation",
-			constants.InternalTaskCertRotationRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalTaskProcessingRole: {
+		{
+			ID: constants.InternalTaskProcessingPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeCertificate,
+					Type: RepoResourceTypeTenant,
+					Actions: []RepoAction{
+						RepoActionCount,
+						RepoActionList,
+					},
+				},
+			},
+		},
+	},
+	constants.InternalTaskCertRotationRole: {
+		{
+			ID: constants.InternalTaskCertRotationPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
+				{
+					Type: RepoResourceTypeCertificate,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -179,25 +172,26 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalTaskWorkflowApprovers",
-			constants.InternalTaskWorkflowApproversRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalTaskWorkflowApproversRole: {
+		{
+			ID: constants.InternalTaskWorkflowApproversPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeTenant,
+					Type: RepoResourceTypeTenant,
 					Actions: []RepoAction{
 						RepoActionFirst,
 					},
 				},
 				{
-					ID: RepoResourceTypeTenantconfig,
+					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionFirst,
 					},
 				},
 				{
-					ID: RepoResourceTypeWorkflow,
+					Type: RepoResourceTypeWorkflow,
 					Actions: []RepoAction{
 						RepoActionUpdate,
 						RepoActionFirst,
@@ -207,7 +201,7 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeWorkflowApprover,
+					Type: RepoResourceTypeWorkflowApprover,
 					Actions: []RepoAction{
 						RepoActionCreate,
 						RepoActionDelete,
@@ -216,7 +210,7 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKey,
+					Type: RepoResourceTypeKey,
 					Actions: []RepoAction{
 						RepoActionFirst,
 						// Update for setting the editable state
@@ -224,20 +218,20 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKeyversion,
+					Type: RepoResourceTypeKeyversion,
 					Actions: []RepoAction{
 						RepoActionFirst,
 					},
 				},
 				{
-					ID: RepoResourceTypeGroup,
+					Type: RepoResourceTypeGroup,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
 					},
 				},
 				{
-					ID: RepoResourceTypeKeyconfiguration,
+					Type: RepoResourceTypeKeyconfiguration,
 					Actions: []RepoAction{
 						RepoActionFirst,
 						RepoActionList,
@@ -245,7 +239,7 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeSystem,
+					Type: RepoResourceTypeSystem,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
@@ -255,14 +249,14 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeSystemProperty,
+					Type: RepoResourceTypeSystemProperty,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
 					},
 				},
 				{
-					ID: RepoResourceTypeEvent,
+					Type: RepoResourceTypeEvent,
 					Actions: []RepoAction{
 						RepoActionFirst,
 						RepoActionList,
@@ -270,13 +264,14 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalTaskHYOKSync",
-			constants.InternalTaskHYOKSyncRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalTaskHYOKSyncRole: {
+		{
+			ID: constants.InternalTaskHYOKSyncPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeKey,
+					Type: RepoResourceTypeKey,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
@@ -284,7 +279,7 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeCertificate,
+					Type: RepoResourceTypeCertificate,
 					Actions: []RepoAction{
 						RepoActionFirst,
 						RepoActionCount,
@@ -293,40 +288,42 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalTaskKeystorePool",
-			constants.InternalTaskKeystorePoolRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalTaskKeystorePoolRole: {
+		{
+			ID: constants.InternalTaskKeystorePoolPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeKeystore,
+					Type: RepoResourceTypeKeystore,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionCreate,
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalTaskSystemRefresh",
-			constants.InternalTaskSystemRefreshRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalTaskSystemRefreshRole: {
+		{
+			ID: constants.InternalTaskSystemRefreshPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeKeyconfiguration,
+					Type: RepoResourceTypeKeyconfiguration,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionCount,
 					},
 				},
 				{
-					ID: RepoResourceTypeSystem,
+					Type: RepoResourceTypeSystem,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
 					},
 				},
 				{
-					ID: RepoResourceTypeSystemProperty,
+					Type: RepoResourceTypeSystemProperty,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
@@ -334,38 +331,40 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeEvent,
+					Type: RepoResourceTypeEvent,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalTaskTenantRefresh",
-			constants.InternalTaskTenantRefreshRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalTaskTenantRefreshRole: {
+		{
+			ID: constants.InternalTaskTenantRefreshPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeTenant,
+					Type: RepoResourceTypeTenant,
 					Actions: []RepoAction{
 						RepoActionUpdate,
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalTaskWorkflowCleanup",
-			constants.InternalTaskWorkflowCleanupRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalTaskWorkflowCleanupRole: {
+		{
+			ID: constants.InternalTaskWorkflowCleanupPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeTenantconfig,
+					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionFirst,
 					},
 				},
 				{
-					ID: RepoResourceTypeWorkflow,
+					Type: RepoResourceTypeWorkflow,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionCount,
@@ -373,13 +372,14 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"InternalTaskWorkExpiration",
-			constants.InternalTaskWorkflowExpirationRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.InternalTaskWorkflowExpirationRole: {
+		{
+			ID: constants.InternalTaskWorkflowExpirationPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeWorkflow,
+					Type: RepoResourceTypeWorkflow,
 					Actions: []RepoAction{
 						RepoActionFirst,
 						RepoActionList,
@@ -388,21 +388,12 @@ var InternalRepoPolicyData = internalRepoPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeSystem,
+					Type: RepoResourceTypeSystem,
 					Actions: []RepoAction{
 						RepoActionUpdate,
 					},
 				},
 			},
-		),
+		},
 	},
-}
-
-func init() {
-	// Index policies by role for fast lookup
-	RepoInternalPolicies = make(map[constants.InternalRole][]BasePolicy[
-		constants.InternalRole, RepoResourceTypeName, RepoAction])
-	for _, policy := range InternalRepoPolicyData.Policies {
-		RepoInternalPolicies[policy.Role] = append(RepoInternalPolicies[policy.Role], policy)
-	}
 }

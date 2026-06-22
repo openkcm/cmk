@@ -23,7 +23,7 @@ type ImportParams struct {
 }
 
 // TableResourceType return the authz resource type
-func (m ImportParams) TableResourceType() authz.RepoResourceTypeName {
+func (m ImportParams) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeImportparam
 }
 
@@ -37,8 +37,9 @@ func (ImportParams) IsSharedModel() bool {
 }
 
 func (m ImportParams) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 

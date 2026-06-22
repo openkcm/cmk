@@ -26,7 +26,7 @@ func (m Tenant) Validate() error {
 }
 
 // TableResourceType return the authz resource type
-func (m Tenant) TableResourceType() authz.RepoResourceTypeName {
+func (m Tenant) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeTenant
 }
 
@@ -37,7 +37,8 @@ func (m Tenant) TableName() string {
 func (m Tenant) IsSharedModel() bool { return true }
 
 func (m Tenant) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }

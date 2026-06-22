@@ -36,7 +36,7 @@ type Resource interface {
 	IsSharedModel() bool
 	TableName() string
 	CheckAuthz(ctx context.Context,
-		authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+		authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 		action authz.RepoAction) (bool, error)
 }
 
@@ -108,7 +108,8 @@ func HasConnectedSystems(ctx context.Context, r Repo, keyConfigID uuid.UUID) (bo
 		*NewQuery().Where(
 			NewCompositeKeyGroup(
 				NewCompositeKey().Where(
-					KeyConfigIDField, keyConfigID),
+					KeyConfigIDField, keyConfigID,
+				),
 			),
 		),
 	)
@@ -123,7 +124,8 @@ func GetSystemByIDWithProperties(ctx context.Context, r Repo, systemID uuid.UUID
 	query.Where(
 		NewCompositeKeyGroup(
 			NewCompositeKey().Where(
-				fmt.Sprintf("%s.%s", model.System{}.TableName(), IDField), systemID),
+				fmt.Sprintf("%s.%s", model.System{}.TableName(), IDField), systemID,
+			),
 		),
 	)
 

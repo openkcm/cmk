@@ -45,13 +45,14 @@ type User interface {
 	NeedsGroupFiltering(
 		ctx context.Context,
 		action authz.APIAction,
-		resource authz.APIResourceTypeName,
+		resource authz.APIResourceType,
 	) (bool, error)
 }
 
 func NewUserManager(
 	r repo.Repo,
-	cmkAuditor *auditor.Auditor) User {
+	cmkAuditor *auditor.Auditor,
+) User {
 	return &user{
 		repo:       r,
 		cmkAuditor: cmkAuditor,
@@ -63,7 +64,7 @@ func NewUserManager(
 func (u *user) NeedsGroupFiltering(
 	ctx context.Context,
 	action authz.APIAction,
-	resource authz.APIResourceTypeName,
+	resource authz.APIResourceType,
 ) (bool, error) {
 	err := ensureBusinessUserOpsAllowed(ctx, []constants.InternalRole{
 		constants.InternalTaskWorkflowApproversRole,
@@ -334,7 +335,7 @@ func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (con
 
 // roleBypassesGroupFilter returns true when the given role grants full visibility
 // for the resource on read, meaning no group-level filtering is needed.
-func (u *user) roleBypassesGroupFilter(role constants.BusinessRole, resource authz.APIResourceTypeName) bool {
+func (u *user) roleBypassesGroupFilter(role constants.BusinessRole, resource authz.APIResourceType) bool {
 	// Tenant auditor has read-only access to all data
 	if role == constants.TenantAuditorRole {
 		return true
@@ -350,7 +351,7 @@ func (u *user) roleBypassesGroupFilter(role constants.BusinessRole, resource aut
 func (u *user) isCreateKeyconfig(
 	keyConfig *model.KeyConfiguration,
 	action authz.APIAction,
-	resource authz.APIResourceTypeName,
+	resource authz.APIResourceType,
 ) bool {
 	return action == authz.APIActionCreate &&
 		resource == authz.APIResourceTypeKeyConfiguration &&
@@ -363,7 +364,7 @@ func (u *user) hasKeyConfigAccess(
 	ctx context.Context,
 	keyConfig *model.KeyConfiguration,
 	action authz.APIAction,
-	resource authz.APIResourceTypeName,
+	resource authz.APIResourceType,
 ) (bool, error) {
 	iamIdentifiers, err := cmkcontext.ExtractBusinessUserDataGroupsString(ctx)
 	if err != nil {
@@ -425,7 +426,7 @@ func (u *user) hasKeyConfigAccess(
 
 func (u *user) sendUnauthorizedAccessAuditLog(
 	ctx context.Context,
-	resource authz.APIResourceTypeName,
+	resource authz.APIResourceType,
 	action authz.APIAction,
 ) {
 	err := u.cmkAuditor.SendCmkUnauthorizedRequestAuditLog(ctx, string(resource), string(action))

@@ -20,7 +20,7 @@ func NewUserManager() manager.User {
 func (u *user) NeedsGroupFiltering(
 	ctx context.Context,
 	action authz.APIAction,
-	resource authz.APIResourceTypeName,
+	resource authz.APIResourceType,
 ) (bool, error) {
 	return false, nil
 }

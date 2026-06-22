@@ -48,8 +48,10 @@ func (cd AuthBusinessUserData) GetClientMap(opts ...ClientMapOpt) map[any]any {
 		o(businessUserData)
 	}
 
-	return map[any]any{constants.UserType: constants.BusinessUser,
-		constants.BusinessUserData: businessUserData}
+	return map[any]any{
+		constants.UserType:         constants.BusinessUser,
+		constants.BusinessUserData: businessUserData,
+	}
 }
 
 // WithBusinessUserData builds signed client-data headers for the given auth client.
@@ -160,23 +162,29 @@ func WithIdentifier(identifier string) AuthClientOpt {
 // GetClientMap returns a client map created with the provided identifier and group names
 // It does not create anything in the database
 func GetClientMap(identifier string, groupNames []string) map[any]any {
-	return map[any]any{constants.UserType: constants.BusinessUser,
-		constants.BusinessUserData: getBusinessUserData(identifier, groupNames)}
+	return map[any]any{
+		constants.UserType:         constants.BusinessUser,
+		constants.BusinessUserData: getBusinessUserData(identifier, groupNames),
+	}
 }
 
 // GetGrouplessClientMap returns a client map with a random identifier and no groupnames
 // It does not create anything in the database
 func GetGrouplessClientMap() map[any]any {
-	return map[any]any{constants.UserType: constants.BusinessUser,
-		constants.BusinessUserData: getBusinessUserData(uuid.NewString(), []string{})}
+	return map[any]any{
+		constants.UserType:         constants.BusinessUser,
+		constants.BusinessUserData: getBusinessUserData(uuid.NewString(), []string{}),
+	}
 }
 
 // GetInvalidClientMap returns a client map with random identifier and random groupnames
 // It does not create anything in the database
 func GetInvalidClientMap(opts ...ClientMapOpt) map[any]any {
 	businessUserData := getBusinessUserData(uuid.NewString(), []string{uuid.NewString(), uuid.NewString()})
-	return map[any]any{constants.UserType: constants.BusinessUser,
-		constants.BusinessUserData: businessUserData}
+	return map[any]any{
+		constants.UserType:         constants.BusinessUser,
+		constants.BusinessUserData: businessUserData,
+	}
 }
 
 func newAuthClient(opts ...AuthClientOpt) AuthBusinessUserData {
@@ -283,26 +291,13 @@ func RoleAuthClientOpt(role constants.BusinessRole) AuthClientOpt {
 // GetAllowedRoles returns roles that have the given resource type + action
 // based on the API policy data.
 func GetAllowedRoles(
-	resourceType authz.APIResourceTypeName,
+	resourceType authz.APIResourceType,
 	action authz.APIAction,
 ) []constants.BusinessRole {
-	allowed := make(map[constants.BusinessRole]struct{})
-
-	for _, policy := range authz.PolicyData.Policies {
-		for _, rt := range policy.ResourceTypes {
-			if rt.ID != resourceType {
-				continue
-			}
-
-			if slices.Contains(rt.Actions, action) {
-				allowed[policy.Role] = struct{}{}
-			}
-		}
-	}
-
 	var roles []constants.BusinessRole
-	for _, role := range allRoles() {
-		if _, ok := allowed[role]; ok {
+
+	for role, policies := range authz.APIPolicies {
+		if roleHasAccess(policies, resourceType, action) {
 			roles = append(roles, role)
 		}
 	}
@@ -310,10 +305,25 @@ func GetAllowedRoles(
 	return roles
 }
 
+func roleHasAccess(
+	policies []authz.Policy[authz.APIResourceType, authz.APIAction],
+	resourceType authz.APIResourceType,
+	action authz.APIAction,
+) bool {
+	for _, policy := range policies {
+		for _, rt := range policy.ResourceTypes {
+			if rt.Type == resourceType && slices.Contains(rt.Actions, action) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // GetBlockedRoles returns roles that do NOT have the given
 // resource type + action.
 func GetBlockedRoles(
-	resourceType authz.APIResourceTypeName,
+	resourceType authz.APIResourceType,
 	action authz.APIAction,
 ) []constants.BusinessRole {
 	allowed := GetAllowedRoles(resourceType, action)

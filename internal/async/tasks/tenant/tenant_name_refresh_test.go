@@ -31,7 +31,7 @@ const RefreshedName = "refreshed-name"
 type MockTenantRegistry struct {
 	tenantv1.UnimplementedServiceServer
 
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
@@ -46,7 +46,7 @@ func (m *MockTenantRegistry) ListTenants(ctx context.Context, in *tenantv1.ListT
 func (m *MockTenantRegistry) GetTenant(ctx context.Context, in *tenantv1.GetTenantRequest, opts ...grpc.CallOption) (*tenantv1.GetTenantResponse, error) {
 	if m.authzLoader != nil {
 		// We test for unauthz in this case
-		err := m.authzLoader.LoadAllowList(ctx)
+		err := m.authzLoader.LoadTenantAllowedActions(ctx)
 		if err != nil {
 			return nil, err
 		}

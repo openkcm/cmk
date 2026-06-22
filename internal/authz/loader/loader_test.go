@@ -79,18 +79,18 @@ func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {
 	// Load and check for each tenantID
 	for tIndex, ts := range tenants {
 		ctx := testutils.CreateCtxWithTenant(ts.tenantID)
-		err := am.LoadAllowList(ctx)
+		err := am.LoadTenantAllowedActions(ctx)
 		assert.NoError(t, err)
 		assert.Len(t, am.AuthzHandler.BusinessUserAuthzData.AuthzKeys, (tIndex+1)*numKeysPerTenant)
 	}
 
 	// Reload for tenant1 and check again
 	ctx1 := testutils.CreateCtxWithTenant(tenants[0].tenantID)
-	err := am.ReloadAllowList(ctx1)
+	err := am.ReloadTenantAllowedActions(ctx1)
 	assert.NoError(t, err)
 	assert.Len(t, am.AuthzHandler.BusinessUserAuthzData.AuthzKeys, len(tenants)*numKeysPerTenant)
 
-	err = am.LoadAllowList(ctx1)
+	err = am.LoadTenantAllowedActions(ctx1)
 	assert.NoError(t, err)
 	assert.Len(t, am.AuthzHandler.BusinessUserAuthzData.AuthzKeys, len(tenants)*numKeysPerTenant)
 }

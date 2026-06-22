@@ -267,7 +267,8 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 
 // Helper function to setup authz loader with a specific role
 func setupAuthzLoaderWithRole(t *testing.T, tenantID, groupIdentifier string,
-	role constants.BusinessRole) *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
+	role constants.BusinessRole,
+) *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction] {
 	t.Helper()
 
 	r := repomock.NewInMemoryRepository()
@@ -302,7 +303,7 @@ func setupAuthzLoaderWithRole(t *testing.T, tenantID, groupIdentifier string,
 }
 
 // Go
-func SetupAuthzLoaderWithAllowList(t *testing.T) *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
+func SetupAuthzLoaderWithAllowList(t *testing.T) *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction] {
 	t.Helper()
 
 	r := repomock.NewInMemoryRepository()

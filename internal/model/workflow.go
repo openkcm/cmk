@@ -54,7 +54,7 @@ type Workflow struct {
 }
 
 // TableResourceType return the authz resource type
-func (m Workflow) TableResourceType() authz.RepoResourceTypeName {
+func (m Workflow) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeWorkflow
 }
 
@@ -65,7 +65,7 @@ func (m Workflow) TableName() string {
 func (Workflow) IsSharedModel() bool { return false }
 
 func (m Workflow) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
@@ -147,7 +147,8 @@ func (m Workflow) buildSystemDescription(
 		return "", err
 	}
 
-	description = fmt.Sprintf("%s requested approval to %s %s",
+	description = fmt.Sprintf(
+		"%s requested approval to %s %s",
 		initiatorName,
 		m.ActionType,
 		m.ArtifactType,
@@ -196,7 +197,8 @@ func (m Workflow) buildDefaultDescription(
 		return "", err
 	}
 
-	description := fmt.Sprintf("%s requested approval to %s %s",
+	description := fmt.Sprintf(
+		"%s requested approval to %s %s",
 		initiatorName,
 		m.ActionType,
 		m.ArtifactType,
@@ -224,7 +226,7 @@ type WorkflowApprover struct {
 }
 
 // TableResourceType return the authz resource type
-func (m WorkflowApprover) TableResourceType() authz.RepoResourceTypeName {
+func (m WorkflowApprover) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeWorkflowApprover
 }
 
@@ -235,7 +237,7 @@ func (m WorkflowApprover) TableName() string {
 func (WorkflowApprover) IsSharedModel() bool { return false }
 
 func (m WorkflowApprover) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)

@@ -2,25 +2,13 @@ package authz
 
 import "github.com/openkcm/cmk/internal/constants"
 
-var RepoBusinessPolicies = make(map[constants.BusinessRole][]BasePolicy[constants.BusinessRole,
-	RepoResourceTypeName, RepoAction])
-
-type repoBusinessPolicies struct {
-	Roles    []constants.BusinessRole
-	Policies []BasePolicy[constants.BusinessRole, RepoResourceTypeName, RepoAction]
-}
-
-var BusinessRepoPolicyData = repoBusinessPolicies{
-	Roles: []constants.BusinessRole{
-		constants.KeyAdminRole, constants.TenantAdminRole, constants.TenantAuditorRole,
-	},
-	Policies: []BasePolicy[constants.BusinessRole, RepoResourceTypeName, RepoAction]{
-		NewPolicy(
-			"AuditorPolicy",
-			constants.TenantAuditorRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+var RepoBusinessPolicies = RolePolicies[constants.BusinessRole, RepoResourceType, RepoAction]{
+	constants.TenantAuditorRole: {
+		{
+			ID: constants.AuditorPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeCertificate,
+					Type: RepoResourceTypeCertificate,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -28,7 +16,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeEvent,
+					Type: RepoResourceTypeEvent,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -36,7 +24,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeGroup,
+					Type: RepoResourceTypeGroup,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -44,7 +32,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeImportparam,
+					Type: RepoResourceTypeImportparam,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -52,7 +40,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKey,
+					Type: RepoResourceTypeKey,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -60,7 +48,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKeyconfiguration,
+					Type: RepoResourceTypeKeyconfiguration,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -68,7 +56,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKeystore,
+					Type: RepoResourceTypeKeystore,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -76,7 +64,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKeyversion,
+					Type: RepoResourceTypeKeyversion,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -84,7 +72,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKeyLabel,
+					Type: RepoResourceTypeKeyLabel,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -92,7 +80,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeSystem,
+					Type: RepoResourceTypeSystem,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -100,7 +88,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeSystemProperty,
+					Type: RepoResourceTypeSystemProperty,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -108,7 +96,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeTag,
+					Type: RepoResourceTypeTag,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -116,7 +104,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeTenant,
+					Type: RepoResourceTypeTenant,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -124,7 +112,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeTenantconfig,
+					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -132,7 +120,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeWorkflow,
+					Type: RepoResourceTypeWorkflow,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -140,7 +128,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeWorkflowApprover,
+					Type: RepoResourceTypeWorkflowApprover,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -148,13 +136,14 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"KeyAdminPolicy",
-			constants.KeyAdminRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.KeyAdminRole: {
+		{
+			ID: constants.KeyAdminPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeCertificate,
+					Type: RepoResourceTypeCertificate,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -165,7 +154,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeEvent,
+					Type: RepoResourceTypeEvent,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -176,7 +165,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeGroup,
+					Type: RepoResourceTypeGroup,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -184,18 +173,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeImportparam,
-					Actions: []RepoAction{
-						RepoActionList,
-						RepoActionFirst,
-						RepoActionCount,
-						RepoActionCreate,
-						RepoActionUpdate,
-						RepoActionDelete,
-					},
-				},
-				{
-					ID: RepoResourceTypeKey,
+					Type: RepoResourceTypeImportparam,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -206,7 +184,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKeyconfiguration,
+					Type: RepoResourceTypeKey,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -217,7 +195,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKeystore,
+					Type: RepoResourceTypeKeyconfiguration,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -228,7 +206,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKeyversion,
+					Type: RepoResourceTypeKeystore,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -239,7 +217,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKeyLabel,
+					Type: RepoResourceTypeKeyversion,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -250,7 +228,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeSystem,
+					Type: RepoResourceTypeKeyLabel,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -261,7 +239,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeSystemProperty,
+					Type: RepoResourceTypeSystem,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -272,7 +250,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeTag,
+					Type: RepoResourceTypeSystemProperty,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -283,7 +261,18 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeTenant,
+					Type: RepoResourceTypeTag,
+					Actions: []RepoAction{
+						RepoActionList,
+						RepoActionFirst,
+						RepoActionCount,
+						RepoActionCreate,
+						RepoActionUpdate,
+						RepoActionDelete,
+					},
+				},
+				{
+					Type: RepoResourceTypeTenant,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -291,7 +280,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeTenantconfig,
+					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -301,7 +290,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeWorkflow,
+					Type: RepoResourceTypeWorkflow,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -312,7 +301,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeWorkflowApprover,
+					Type: RepoResourceTypeWorkflowApprover,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -323,13 +312,14 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"TenantAdminPolicy",
-			constants.TenantAdminRole,
-			[]BaseResourceType[RepoResourceTypeName, RepoAction]{
+		},
+	},
+	constants.TenantAdminRole: {
+		{
+			ID: constants.TenantAdminPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					ID: RepoResourceTypeGroup,
+					Type: RepoResourceTypeGroup,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -340,13 +330,13 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeKeyconfiguration,
+					Type: RepoResourceTypeKeyconfiguration,
 					Actions: []RepoAction{
 						RepoActionFirst, // When deleting a group
 					},
 				},
 				{
-					ID: RepoResourceTypeTenant,
+					Type: RepoResourceTypeTenant,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -357,7 +347,7 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 				{
-					ID: RepoResourceTypeTenantconfig,
+					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -368,15 +358,6 @@ var BusinessRepoPolicyData = repoBusinessPolicies{
 					},
 				},
 			},
-		),
+		},
 	},
-}
-
-func init() {
-	// Index policies by role for fast lookup
-	RepoBusinessPolicies = make(map[constants.BusinessRole][]BasePolicy[constants.BusinessRole,
-		RepoResourceTypeName, RepoAction])
-	for _, policy := range BusinessRepoPolicyData.Policies {
-		RepoBusinessPolicies[policy.Role] = append(RepoBusinessPolicies[policy.Role], policy)
-	}
 }

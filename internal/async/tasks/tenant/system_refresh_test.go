@@ -31,7 +31,7 @@ var allowedSystemRefreshActions = []authz.RepoAction{
 }
 
 type SystemUpdaterMock struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
@@ -59,8 +59,7 @@ func (s *SystemUpdaterMockNonConnection) UpdateSystems(_ context.Context) error 
 	return errMockSystemRefresh
 }
 
-type SystemUpdaterMockError struct {
-}
+type SystemUpdaterMockError struct{}
 
 //nolint:wrapcheck
 func (s *SystemUpdaterMockError) UpdateSystems(ctx context.Context) error {
@@ -69,12 +68,12 @@ func (s *SystemUpdaterMockError) UpdateSystems(ctx context.Context) error {
 }
 
 type SystemUpdaterMockUnauthz struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
 func (s *SystemUpdaterMockUnauthz) UpdateSystems(ctx context.Context) error {
-	err := s.authzLoader.LoadAllowList(ctx)
+	err := s.authzLoader.LoadTenantAllowedActions(ctx)
 	if err != nil {
 		return err
 	}
@@ -125,7 +124,8 @@ func TestSystemRefresherProcessAction(t *testing.T) {
 		slog.SetDefault(logger)
 
 		nonConnRefresher := tasks.NewSystemsRefresher(
-			&SystemUpdaterMockNonConnection{}, authzRepo)
+			&SystemUpdaterMockNonConnection{}, authzRepo,
+		)
 		ctx, err := cmkcontext.InjectInternalUserData(t.Context(), constants.InternalTaskSystemRefreshRole)
 		assert.NoError(t, err)
 		err = nonConnRefresher.ProcessTask(ctx, task)

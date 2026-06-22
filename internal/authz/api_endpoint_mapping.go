@@ -2,346 +2,210 @@ package authz
 
 type APIMethod string
 
-const (
-	APIMethodGet    APIMethod = "GET"
-	APIMethodPost   APIMethod = "POST"
-	APIMethodPut    APIMethod = "PUT"
-	APIMethodDelete APIMethod = "DELETE"
-	APIMethodPatch  APIMethod = "PATCH"
-)
-
-type Allowed struct {
-	APIPath   string
-	APIMethod APIMethod
-}
-
-var allowList = []Allowed{
-	{
-		APIPath:   "/tenants",
-		APIMethod: APIMethodGet,
-	},
-	{
-		APIPath:   "/tenants/{tenantID}",
-		APIMethod: APIMethodGet,
-	},
-	{
-		APIPath:   "/userInfo",
-		APIMethod: APIMethodGet,
-	},
-	{
-		APIPath:   "/swagger",
-		APIMethod: APIMethodGet,
-	},
+// AllowListByAPI is a map acting like a set with O(1) search. As long as the endpoint exists it's valid
+var AllowListByAPI = map[string]struct{}{
+	"GET /tenants":            {},
+	"GET /tenants/{tenantID}": {},
+	"GET /userInfo":           {},
+	"GET /swagger":            {},
 }
 
 type Restricted struct {
-	APIPath             string
-	APIMethod           APIMethod
-	APIResourceTypeName APIResourceTypeName
+	APIResourceTypeName APIResourceType
 	APIAction           APIAction
 }
 
-// Define all restrictions once
-var allRestrictions = []Restricted{
+// RestrictionsByAPI maps "METHOD path" to authorization requirements
+var RestrictionsByAPI = map[string]Restricted{
 	// Keys endpoints
-	{
-		APIPath:             "/keys",
-		APIMethod:           APIMethodGet,
+	"GET /keys": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/keys",
-		APIMethod:           APIMethodPost,
+	"POST /keys": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionCreate,
 	},
-	{
-		APIPath:             "/keys/{keyID}",
-		APIMethod:           APIMethodGet,
+	"GET /keys/{keyID}": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/keys/{keyID}",
-		APIMethod:           APIMethodPatch,
+	"PATCH /keys/{keyID}": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionUpdate,
 	},
-	{
-		APIPath:             "/keys/{keyID}",
-		APIMethod:           APIMethodDelete,
+	"DELETE /keys/{keyID}": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionDelete,
 	},
-	{
-		APIPath:             "/keys/{keyID}/importParams",
-		APIMethod:           APIMethodGet,
+	"GET /keys/{keyID}/importParams": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/keys/{keyID}/importKeyMaterial",
-		APIMethod:           APIMethodPost,
+	"POST /keys/{keyID}/importKeyMaterial": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionUpdate,
 	},
-	{
-		APIPath:             "/keys/{keyID}/versions",
-		APIMethod:           APIMethodGet,
+	"GET /keys/{keyID}/versions": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/keys/{keyID}/versions",
-		APIMethod:           APIMethodPost,
+	"POST /keys/{keyID}/versions": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionCreate,
 	},
-	{
-		APIPath:             "/keys/{keyID}/versions/{version}",
-		APIMethod:           APIMethodGet,
+	"GET /keys/{keyID}/versions/{version}": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/key/{keyID}/labels",
-		APIMethod:           APIMethodGet,
+	"GET /key/{keyID}/labels": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/key/{keyID}/labels",
-		APIMethod:           APIMethodPost,
+	"POST /key/{keyID}/labels": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionCreate,
 	},
-	{
-		APIPath:             "/key/{keyID}/label/{labelName}",
-		APIMethod:           APIMethodDelete,
+	"DELETE /key/{keyID}/label/{labelName}": {
 		APIResourceTypeName: APIResourceTypeKey,
 		APIAction:           APIActionDelete,
 	},
 
 	// Key Configurations endpoints
-	{
-		APIPath:             "/keyConfigurations",
-		APIMethod:           APIMethodGet,
+	"GET /keyConfigurations": {
 		APIResourceTypeName: APIResourceTypeKeyConfiguration,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/keyConfigurations",
-		APIMethod:           APIMethodPost,
+	"POST /keyConfigurations": {
 		APIResourceTypeName: APIResourceTypeKeyConfiguration,
 		APIAction:           APIActionCreate,
 	},
-	{
-		APIPath:             "/keyConfigurations/{keyConfigurationID}",
-		APIMethod:           APIMethodGet,
+	"GET /keyConfigurations/{keyConfigurationID}": {
 		APIResourceTypeName: APIResourceTypeKeyConfiguration,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/keyConfigurations/{keyConfigurationID}",
-		APIMethod:           APIMethodPatch,
+	"PATCH /keyConfigurations/{keyConfigurationID}": {
 		APIResourceTypeName: APIResourceTypeKeyConfiguration,
 		APIAction:           APIActionUpdate,
 	},
-	{
-		APIPath:             "/keyConfigurations/{keyConfigurationID}",
-		APIMethod:           APIMethodDelete,
+	"DELETE /keyConfigurations/{keyConfigurationID}": {
 		APIResourceTypeName: APIResourceTypeKeyConfiguration,
 		APIAction:           APIActionDelete,
 	},
-	{
-		APIPath:             "/keyConfigurations/{keyConfigurationID}/tags",
-		APIMethod:           APIMethodGet,
+	"GET /keyConfigurations/{keyConfigurationID}/tags": {
 		APIResourceTypeName: APIResourceTypeKeyConfiguration,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/keyConfigurations/{keyConfigurationID}/tags",
-		APIMethod:           APIMethodPut,
+	"PUT /keyConfigurations/{keyConfigurationID}/tags": {
 		APIResourceTypeName: APIResourceTypeKeyConfiguration,
 		APIAction:           APIActionUpdate,
 	},
-	{
-		APIPath:             "/keyConfigurations/{keyConfigurationID}/certificates",
-		APIMethod:           APIMethodGet,
+	"GET /keyConfigurations/{keyConfigurationID}/certificates": {
 		APIResourceTypeName: APIResourceTypeKeyConfiguration,
 		APIAction:           APIActionRead,
 	},
 
 	// Systems endpoints
-	{
-		APIPath:             "/systems",
-		APIMethod:           APIMethodGet,
+	"GET /systems": {
 		APIResourceTypeName: APIResourceTypeSystem,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/systems/filterOptions",
-		APIMethod:           APIMethodGet,
+	"GET /systems/filterOptions": {
 		APIResourceTypeName: APIResourceTypeSystem,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/systems/{systemID}",
-		APIMethod:           APIMethodGet,
+	"GET /systems/{systemID}": {
 		APIResourceTypeName: APIResourceTypeSystem,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/systems/{systemID}/link",
-		APIMethod:           APIMethodPatch,
+	"PATCH /systems/{systemID}/link": {
 		APIResourceTypeName: APIResourceTypeSystem,
 		APIAction:           APIActionSystemModifyLink,
 	},
-	{
-		APIPath:             "/systems/{systemID}/link",
-		APIMethod:           APIMethodDelete,
+	"DELETE /systems/{systemID}/link": {
 		APIResourceTypeName: APIResourceTypeSystem,
 		APIAction:           APIActionSystemModifyLink,
 	},
-	{
-		APIPath:             "/systems/{systemID}/recoveryActions",
-		APIMethod:           APIMethodPost,
+	"POST /systems/{systemID}/recoveryActions": {
 		APIResourceTypeName: APIResourceTypeSystem,
 		APIAction:           APIActionSystemModifyLink,
 	},
-	{
-		APIPath:             "/systems/{systemID}/recoveryActions",
-		APIMethod:           APIMethodGet,
+	"GET /systems/{systemID}/recoveryActions": {
 		APIResourceTypeName: APIResourceTypeSystem,
 		APIAction:           APIActionSystemModifyLink,
 	},
 
 	// Workflows endpoints
-	{
-		APIPath:             "/workflows",
-		APIMethod:           APIMethodPost,
+	"POST /workflows": {
 		APIResourceTypeName: APIResourceTypeWorkFlow,
 		APIAction:           APIActionCreate,
 	},
-	{
-		APIPath:             "/workflows",
-		APIMethod:           APIMethodGet,
+	"GET /workflows": {
 		APIResourceTypeName: APIResourceTypeWorkFlow,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/workflows/check",
-		APIMethod:           APIMethodPost,
+	"POST /workflows/check": {
 		APIResourceTypeName: APIResourceTypeWorkFlow,
 		APIAction:           APIActionUpdate,
 	},
-	{
-		APIPath:             "/workflows/{workflowID}",
-		APIMethod:           APIMethodGet,
+	"GET /workflows/{workflowID}": {
 		APIResourceTypeName: APIResourceTypeWorkFlow,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/workflows/{workflowID}/approvers",
-		APIMethod:           APIMethodGet,
+	"GET /workflows/{workflowID}/approvers": {
 		APIResourceTypeName: APIResourceTypeWorkFlow,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/workflows/{workflowID}/approvers",
-		APIMethod:           APIMethodPost,
+	"POST /workflows/{workflowID}/approvers": {
 		APIResourceTypeName: APIResourceTypeWorkFlow,
 		APIAction:           APIActionCreate,
 	},
-	{
-		APIPath:             "/workflows/{workflowID}/state",
-		APIMethod:           APIMethodPost,
+	"POST /workflows/{workflowID}/state": {
 		APIResourceTypeName: APIResourceTypeWorkFlow,
 		APIAction:           APIActionUpdate,
 	},
 
 	// Groups endpoints
-	{
-		APIPath:             "/groups",
-		APIMethod:           APIMethodGet,
+	"GET /groups": {
 		APIResourceTypeName: APIResourceTypeUserGroup,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/groups",
-		APIMethod:           APIMethodPost,
+	"POST /groups": {
 		APIResourceTypeName: APIResourceTypeUserGroup,
 		APIAction:           APIActionCreate,
 	},
-	{
-		APIPath:             "/groups/iamCheck",
-		APIMethod:           APIMethodPost,
+	"POST /groups/iamCheck": {
 		APIResourceTypeName: APIResourceTypeUserGroup,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/groups/{groupID}",
-		APIMethod:           APIMethodGet,
+	"GET /groups/{groupID}": {
 		APIResourceTypeName: APIResourceTypeUserGroup,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/groups/{groupID}",
-		APIMethod:           APIMethodPatch,
+	"PATCH /groups/{groupID}": {
 		APIResourceTypeName: APIResourceTypeUserGroup,
 		APIAction:           APIActionUpdate,
 	},
-	{
-		APIPath:             "/groups/{groupID}",
-		APIMethod:           APIMethodDelete,
+	"DELETE /groups/{groupID}": {
 		APIResourceTypeName: APIResourceTypeUserGroup,
 		APIAction:           APIActionDelete,
 	},
 
 	// Tenant endpoints
-	{
-		APIPath:             "/tenantConfigurations/keystores",
-		APIMethod:           APIMethodGet,
+	"GET /tenantConfigurations/keystores": {
 		APIResourceTypeName: APIResourceTypeTenantSettings,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/tenantConfigurations/workflow",
-		APIMethod:           APIMethodGet,
+	"GET /tenantConfigurations/workflow": {
 		APIResourceTypeName: APIResourceTypeTenantSettings,
 		APIAction:           APIActionRead,
 	},
-	{
-		APIPath:             "/tenantConfigurations/workflow",
-		APIMethod:           APIMethodPatch,
+	"PATCH /tenantConfigurations/workflow": {
 		APIResourceTypeName: APIResourceTypeTenantSettings,
 		APIAction:           APIActionUpdate,
 	},
-	{
-		APIPath:             "/tenantInfo",
-		APIMethod:           APIMethodGet,
+	"GET /tenantInfo": {
 		APIResourceTypeName: APIResourceTypeTenant,
 		APIAction:           APIActionRead,
 	},
-}
-
-var (
-	RestrictionsByAPI = make(map[string]Restricted)
-	AllowListByAPI    = make(map[string]Allowed)
-)
-
-func init() {
-	// Initialize restrictions maps
-	for _, req := range allRestrictions {
-		// Lookup by API method + path combination
-		apiKey := string(req.APIMethod) + " " + req.APIPath
-		RestrictionsByAPI[apiKey] = req
-	}
-
-	// Initialize allow list map
-	for _, api := range allowList {
-		apiKey := string(api.APIMethod) + " " + api.APIPath
-		AllowListByAPI[apiKey] = api
-	}
 }

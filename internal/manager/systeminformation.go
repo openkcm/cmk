@@ -29,7 +29,7 @@ type SystemInformation struct {
 	repo        repo.Repo
 	systemCfg   *config.System
 	authzLoader *authz_loader.AuthzLoader[
-		authz.RepoResourceTypeName, authz.RepoAction]
+		authz.RepoResourceType, authz.RepoAction]
 
 	svc systeminformation.SystemInformation
 }
@@ -37,7 +37,7 @@ type SystemInformation struct {
 func NewSystemInformationManager(
 	repo repo.Repo,
 	authzLoader *authz_loader.AuthzLoader[
-		authz.RepoResourceTypeName, authz.RepoAction],
+		authz.RepoResourceType, authz.RepoAction],
 	svcRegistry serviceapi.Registry,
 	systemCfg *config.System,
 ) (*SystemInformation, error) {
@@ -107,7 +107,7 @@ func (m *SystemInformation) updateSystem(ctx context.Context, system *model.Syst
 		return errs.Wrap(err, repo.ErrSystemProperties)
 	}
 
-	var authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction]
+	var authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction]
 	if m.authzLoader != nil {
 		authzHandler = m.authzLoader.AuthzHandler
 	}

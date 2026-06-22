@@ -3,6 +3,7 @@ package authz_test
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,12 +15,14 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
+var EmptyTenantID = authz.TenantID("")
+
 // TestIsAllowed tests the IsAllowed function of the AuthorizationHandler
 func TestIsAllowed(t *testing.T) {
 	tests := []struct {
 		name               string
-		entities           []authz.Entity[constants.BusinessRole, authz.BusinessUserEntity]
-		request            authz.Request[authz.BusinessUserRequest, authz.APIResourceTypeName, authz.APIAction]
+		entities           map[constants.BusinessRole]*authz.BusinessUser
+		request            authz.Request[authz.BusinessUserRequest, authz.APIResourceType, authz.APIAction]
 		expectError        bool
 		expectedErrHandler bool
 		expectAllow        bool
@@ -27,16 +30,13 @@ func TestIsAllowed(t *testing.T) {
 	}{
 		{
 			name: "NoExistentRole",
-			entities: []authz.Entity[constants.BusinessRole, authz.BusinessUserEntity]{
-				{
-					User: authz.BusinessUserEntity{
-						TenantID: "tenant1",
-						Groups:   []string{"Group1"},
-					},
-					Role: "NonExistentRole",
+			entities: map[constants.BusinessRole]*authz.BusinessUser{
+				"NonExistentRole": {
+					TenantID: "tenant1",
+					Groups:   []string{"Group1"},
 				},
 			},
-			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceTypeName, authz.APIAction]{
+			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceType, authz.APIAction]{
 				User: authz.BusinessUserRequest{
 					TenantID: "tenant1",
 					UserName: "test_user",
@@ -52,8 +52,8 @@ func TestIsAllowed(t *testing.T) {
 		},
 		{
 			name:     "EmptyEntities",
-			entities: []authz.Entity[constants.BusinessRole, authz.BusinessUserEntity]{},
-			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceTypeName, authz.APIAction]{
+			entities: map[constants.BusinessRole]*authz.BusinessUser{},
+			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceType, authz.APIAction]{
 				User: authz.BusinessUserRequest{
 					TenantID: "tenant1",
 					UserName: "test_user",
@@ -69,22 +69,19 @@ func TestIsAllowed(t *testing.T) {
 		},
 		{
 			name: "EmptyRequest",
-			entities: []authz.Entity[constants.BusinessRole, authz.BusinessUserEntity]{
-				{
-					User: authz.BusinessUserEntity{
-						TenantID: "tenant1",
-						Groups:   []string{"Group1"},
-					},
-					Role: constants.TenantAdminRole,
+			entities: map[constants.BusinessRole]*authz.BusinessUser{
+				constants.TenantAdminRole: {
+					TenantID: "tenant1",
+					Groups:   []string{"Group1"},
 				},
 			},
-			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceTypeName, authz.APIAction]{
+			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceType, authz.APIAction]{
 				User: authz.BusinessUserRequest{
 					TenantID: "tenant1",
 					UserName: "test_user",
 					Groups:   []string{"Group1"},
 				},
-				ResourceTypeName: authz.APIResourceTypeName(""),
+				ResourceTypeName: authz.APIResourceType(""),
 				Action:           authz.APIAction(""),
 			},
 			expectError:        true,
@@ -94,18 +91,15 @@ func TestIsAllowed(t *testing.T) {
 		},
 		{
 			name: "EmptyTenant",
-			entities: []authz.Entity[constants.BusinessRole, authz.BusinessUserEntity]{
-				{
-					User: authz.BusinessUserEntity{
-						TenantID: "tenant1",
-						Groups:   []string{"Group1"},
-					},
-					Role: constants.KeyAdminRole,
+			entities: map[constants.BusinessRole]*authz.BusinessUser{
+				constants.KeyAdminRole: {
+					TenantID: "tenant1",
+					Groups:   []string{"Group1"},
 				},
 			},
-			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceTypeName, authz.APIAction]{
+			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceType, authz.APIAction]{
 				User: authz.BusinessUserRequest{
-					TenantID: authz.EmptyTenantID,
+					TenantID: EmptyTenantID,
 					UserName: "test_user",
 					Groups:   []string{"Group1"},
 				},
@@ -115,20 +109,17 @@ func TestIsAllowed(t *testing.T) {
 			expectError:        true,
 			expectedErrHandler: false,
 			expectAllow:        false,
-			tenantID:           authz.EmptyTenantID,
+			tenantID:           EmptyTenantID,
 		},
 		{
 			name: "ValidRequestWithAllowedAction",
-			entities: []authz.Entity[constants.BusinessRole, authz.BusinessUserEntity]{
-				{
-					User: authz.BusinessUserEntity{
-						TenantID: "tenant1",
-						Groups:   []string{"Group1"},
-					},
-					Role: constants.KeyAdminRole,
+			entities: map[constants.BusinessRole]*authz.BusinessUser{
+				constants.KeyAdminRole: {
+					TenantID: "tenant1",
+					Groups:   []string{"Group1"},
 				},
 			},
-			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceTypeName, authz.APIAction]{
+			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceType, authz.APIAction]{
 				User: authz.BusinessUserRequest{
 					TenantID: "tenant1",
 					UserName: "test_user",
@@ -144,16 +135,13 @@ func TestIsAllowed(t *testing.T) {
 		},
 		{
 			name: "ValidRequestWithNotAllowedAction",
-			entities: []authz.Entity[constants.BusinessRole, authz.BusinessUserEntity]{
-				{
-					User: authz.BusinessUserEntity{
-						TenantID: "tenant1",
-						Groups:   []string{"Group1"},
-					},
-					Role: constants.KeyAdminRole,
+			entities: map[constants.BusinessRole]*authz.BusinessUser{
+				constants.KeyAdminRole: {
+					TenantID: "tenant1",
+					Groups:   []string{"Group1"},
 				},
 			},
-			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceTypeName, authz.APIAction]{
+			request: authz.Request[authz.BusinessUserRequest, authz.APIResourceType, authz.APIAction]{
 				User: authz.BusinessUserRequest{
 					TenantID: "tenant1",
 					UserName: "test_user",
@@ -175,11 +163,9 @@ func TestIsAllowed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(
 			tt.name, func(t *testing.T) {
-				APIInternalPolicies := make(
-					map[constants.InternalRole][]authz.BasePolicy[constants.InternalRole,
-						authz.APIResourceTypeName, authz.APIAction])
+				APIInternalPolicies := make(authz.RolePolicies[constants.InternalRole, authz.APIResourceType, authz.APIAction])
 				authHandler, err := authz.NewAuthorizationHandler(audit, APIInternalPolicies,
-					authz.APIBusinessPolicies, authz.APIResourceTypeActions)
+					authz.APIPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
 				assert.NoError(t, err)
 
 				err = authHandler.UpdateBusinessUserData(tt.entities)
@@ -235,10 +221,10 @@ func BenchmarkIsAllowed(b *testing.B) {
 	audit := auditor.New(context.Background(), cfg)
 
 	// Initialize authorization handler
-	APIInternalPolicies := make(map[constants.InternalRole][]authz.BasePolicy[constants.InternalRole,
-		authz.APIResourceTypeName, authz.APIAction])
+	APIInternalPolicies := make(authz.RolePolicies[constants.InternalRole,
+		authz.APIResourceType, authz.APIAction])
 	authHandler, err := authz.NewAuthorizationHandler(audit,
-		APIInternalPolicies, authz.APIBusinessPolicies, authz.APIResourceTypeActions)
+		APIInternalPolicies, authz.APIPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
 	if err != nil {
 		b.Fatalf("Failed to create authorization handler: %v", err)
 	}
@@ -252,13 +238,13 @@ func BenchmarkIsAllowed(b *testing.B) {
 	request := []struct {
 		name    string
 		request authz.Request[authz.BusinessUserRequest,
-			authz.APIResourceTypeName, authz.APIAction]
+			authz.APIResourceType, authz.APIAction]
 		tenantID authz.TenantID
 	}{
 		{
 			name: "singleGroupCommonAccess",
 			request: authz.Request[authz.BusinessUserRequest,
-				authz.APIResourceTypeName, authz.APIAction]{
+				authz.APIResourceType, authz.APIAction]{
 				User: authz.BusinessUserRequest{
 					TenantID: "tenant2000",
 					UserName: testUsername,
@@ -272,7 +258,7 @@ func BenchmarkIsAllowed(b *testing.B) {
 		{
 			name: "multipleGroupsCommonAccess",
 			request: authz.Request[authz.BusinessUserRequest,
-				authz.APIResourceTypeName, authz.APIAction]{
+				authz.APIResourceType, authz.APIAction]{
 				User: authz.BusinessUserRequest{
 					TenantID: "tenant300",
 					UserName: testUsername,
@@ -286,7 +272,7 @@ func BenchmarkIsAllowed(b *testing.B) {
 		{
 			name: "singleGroupNoAccess",
 			request: authz.Request[authz.BusinessUserRequest,
-				authz.APIResourceTypeName, authz.APIAction]{
+				authz.APIResourceType, authz.APIAction]{
 				User: authz.BusinessUserRequest{
 					TenantID: "tenant3",
 					UserName: testUsername,
@@ -338,19 +324,19 @@ func (ra *RoleAssignment) getRoleForIndex(idx int) constants.BusinessRole {
 	return ra.roles[idx%len(ra.roles)]
 }
 
-func createTestEntities(totalCount int) []authz.Entity[constants.BusinessRole, authz.BusinessUserEntity] {
+func createTestEntities(totalCount int) map[constants.BusinessRole]*authz.BusinessUser {
 	if totalCount%entitiesPerTenant != 0 {
 		return nil
 	}
 
 	numTenants := totalCount / entitiesPerTenant
-	entities := make([]authz.Entity[constants.BusinessRole, authz.BusinessUserEntity], 0, numTenants*entitiesPerTenant)
+	entities := make(map[constants.BusinessRole]*authz.BusinessUser)
 
 	userGroups := generateUserGroups()
 	roleAssigner := newRoleAssignment()
 
 	for tenantIdx := range numTenants {
-		entities = append(entities, createEntitiesForTenant(tenantIdx, userGroups, roleAssigner)...)
+		createEntitiesForTenant(tenantIdx, userGroups, roleAssigner, entities)
 	}
 
 	return entities
@@ -367,9 +353,8 @@ func generateUserGroups() []string {
 }
 
 func createEntitiesForTenant(
-	tenantIdx int, allGroups []string, roleAssigner *RoleAssignment,
-) []authz.Entity[constants.BusinessRole, authz.BusinessUserEntity] {
-	entities := make([]authz.Entity[constants.BusinessRole, authz.BusinessUserEntity], entitiesPerTenant)
+	tenantIdx int, allGroups []string, roleAssigner *RoleAssignment, entities map[constants.BusinessRole]*authz.BusinessUser,
+) {
 	tenantID := authz.TenantID(fmt.Sprintf("tenant%d", tenantIdx+1))
 
 	for entityIdx := range entitiesPerTenant {
@@ -379,14 +364,10 @@ func createEntitiesForTenant(
 		// Ensure groupCount does not exceed the length of allGroups
 		safeGroupCount := min(groupCount, len(allGroups))
 
-		entities[entityIdx] = authz.Entity[constants.BusinessRole, authz.BusinessUserEntity]{
-			User: authz.BusinessUserEntity{
-				TenantID: tenantID,
-				Groups:   allGroups[:safeGroupCount],
-			},
-			Role: roleAssigner.getRoleForIndex(globalIdx),
+		role := roleAssigner.getRoleForIndex(globalIdx)
+		entities[role] = &authz.BusinessUser{
+			TenantID: tenantID,
+			Groups:   allGroups[:safeGroupCount],
 		}
 	}
-
-	return entities
 }

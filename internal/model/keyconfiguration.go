@@ -30,7 +30,7 @@ type KeyConfiguration struct {
 }
 
 // TableResourceType return the authz resource type
-func (m KeyConfiguration) TableResourceType() authz.RepoResourceTypeName {
+func (m KeyConfiguration) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeKeyconfiguration
 }
 
@@ -44,7 +44,7 @@ func (KeyConfiguration) IsSharedModel() bool {
 }
 
 func (m KeyConfiguration) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)

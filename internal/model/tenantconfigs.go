@@ -14,7 +14,7 @@ type TenantConfig struct {
 }
 
 // TableResourceType return the authz resource type
-func (m TenantConfig) TableResourceType() authz.RepoResourceTypeName {
+func (m TenantConfig) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeTenantconfig
 }
 
@@ -28,8 +28,9 @@ func (TenantConfig) IsSharedModel() bool {
 }
 
 func (m TenantConfig) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 

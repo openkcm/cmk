@@ -42,7 +42,7 @@ type WorkflowExpiryMock struct {
 	transitionErr error
 	canExpireErr  error
 	canExpire     bool
-	authzLoader   *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader   *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
@@ -62,7 +62,7 @@ func (s *WorkflowExpiryMock) ExpireWorkflow(ctx context.Context,
 ) (*model.Workflow, error) {
 	if s.authzLoader != nil {
 		// We test for unauthz in this case
-		err := s.authzLoader.LoadAllowList(ctx)
+		err := s.authzLoader.LoadTenantAllowedActions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +127,8 @@ func setupWorkflowExpiry(t *testing.T) (*manager.WorkflowManager, repo.Repo, str
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
 	systemManager := manager.NewSystemManager(
-		t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
+		t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager,
+	)
 
 	keyManager := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager,
 		userManager, certManager, nil, cmkAuditor)
@@ -141,7 +142,8 @@ func newExpiryContext(t *testing.T, tenantID string) context.Context {
 	t.Helper()
 	ctx, err := cmkcontext.InjectInternalUserData(
 		cmkcontext.CreateTenantContext(t.Context(), tenantID),
-		constants.InternalTaskWorkflowExpirationRole)
+		constants.InternalTaskWorkflowExpirationRole,
+	)
 	assert.NoError(t, err)
 	return ctx
 }
@@ -163,7 +165,8 @@ func TestWorkflowExpiresAction(t *testing.T) {
 			wm, r, tenantID := setupWorkflowExpiry(t)
 			ctx := newExpiryContext(t, tenantID)
 
-			testutils.CreateTestEntities(ctx, t, r,
+			testutils.CreateTestEntities(
+				ctx, t, r,
 				testutils.NewWorkflow(func(w *model.Workflow) {
 					w.State = state
 					w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
@@ -183,7 +186,8 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		wm, r, tenantID := setupWorkflowExpiry(t)
 		ctx := newExpiryContext(t, tenantID)
 
-		testutils.CreateTestEntities(ctx, t, r,
+		testutils.CreateTestEntities(
+			ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
 				w.State = model.WorkflowStateWaitApproval
 				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, 1))
@@ -202,7 +206,8 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		wm, r, tenantID := setupWorkflowExpiry(t)
 		ctx := newExpiryContext(t, tenantID)
 
-		testutils.CreateTestEntities(ctx, t, r,
+		testutils.CreateTestEntities(
+			ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
 				w.State = model.WorkflowStateWaitApproval
 				w.ExpiryDate = nil
@@ -229,7 +234,8 @@ func TestWorkflowExpiresAction(t *testing.T) {
 				wm, r, tenantID := setupWorkflowExpiry(t)
 				ctx := newExpiryContext(t, tenantID)
 
-				testutils.CreateTestEntities(ctx, t, r,
+				testutils.CreateTestEntities(
+					ctx, t, r,
 					testutils.NewWorkflow(func(w *model.Workflow) {
 						w.State = state
 						w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
@@ -250,7 +256,8 @@ func TestWorkflowExpiresAction(t *testing.T) {
 		wm, r, tenantID := setupWorkflowExpiry(t)
 		ctx := newExpiryContext(t, tenantID)
 
-		testutils.CreateTestEntities(ctx, t, r,
+		testutils.CreateTestEntities(
+			ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
 				w.State = model.WorkflowStateWaitApproval
 				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
@@ -310,7 +317,8 @@ func TestWorkflowExpiresAction(t *testing.T) {
 
 		ctx := newExpiryContext(t, tenants[0])
 
-		testutils.CreateTestEntities(ctx, t, r,
+		testutils.CreateTestEntities(
+			ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
 				w.State = model.WorkflowStateWaitApproval
 				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))

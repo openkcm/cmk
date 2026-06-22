@@ -29,7 +29,7 @@ var allowedWorkflowCleanupTestActions = []authz.RepoAction{
 }
 
 type WorkflowRemovalMock struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
@@ -48,7 +48,7 @@ func (w *WorkflowRemovalMock) CleanupTerminalWorkflows(ctx context.Context) erro
 }
 
 type WorkflowRemovalMockUnauthz struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
