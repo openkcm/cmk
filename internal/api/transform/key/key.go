@@ -101,6 +101,7 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 
 	state := k.State
 	apiKey.State = &state
+	apiKey.UnderWorkflow = &k.UnderWorkflow
 
 	apiKey.Metadata = &cmkapi.KeyMetadata{
 		CreatedAt: &k.CreatedAt,

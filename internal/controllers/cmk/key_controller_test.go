@@ -696,6 +696,15 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	// Create workflow config with workflows DISABLED by default
+	workflowConfig := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
+		var wc model.WorkflowConfig
+		_ = json.Unmarshal(tc.Value, &wc)
+		wc.Enabled = false // Disable workflow requirement
+		tc.Value, _ = json.Marshal(wc)
+	})
+	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
@@ -748,6 +757,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		name           string
 		keyID          uuid.UUID
 		expectedStatus int
+		workflowEnable bool
 	}{
 		{
 			name:           "T300KeyDELETEByIdSuccess",
@@ -764,10 +774,29 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 			keyID:          pkey.ID,
 			expectedStatus: http.StatusBadRequest,
 		},
+		{
+			name:           "Should 400 on pkey delete and workflow is required",
+			keyID:          pkey.ID,
+			expectedStatus: http.StatusBadRequest,
+			workflowEnable: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.workflowEnable {
+				// Enable workflow for this specific test case
+				workflowConfigEnabled := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
+					var wc model.WorkflowConfig
+					_ = json.Unmarshal(tc.Value, &wc)
+					wc.Enabled = true // Enable workflow requirement
+					tc.Value, _ = json.Marshal(wc)
+				})
+				// Update the existing workflow config
+				_, err := r.Patch(ctx, workflowConfigEnabled, *repo.NewQuery())
+				assert.NoError(t, err)
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodDelete,
 				Endpoint: "/keys/" + tt.keyID.String(),
@@ -817,6 +846,15 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	db, sv, tenant, keyStorage := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
+
+	// Create workflow config with workflows DISABLED by default
+	workflowConfig := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
+		var wc model.WorkflowConfig
+		_ = json.Unmarshal(tc.Value, &wc)
+		wc.Enabled = false // Disable workflow requirement by default
+		tc.Value, _ = json.Marshal(wc)
+	})
+	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
 	regionEditable := "region1"
 	regionNonEditable := "region2"
@@ -914,6 +952,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		expectedName      string
 		expectedDesc      string
 		expectedErrorCode string
+		workflowEnable    bool
 	}{
 		{
 			name:  "T400KeyUPDATESuccess",
@@ -1023,6 +1062,25 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			expectedDesc:   "updated description",
 		},
 		{
+			name:  "Should 400 when update primary key and workflow is required",
+			keyID: key.ID.String(),
+			input: cmkapi.KeyPatch{
+				IsPrimary: ptr.PointTo(true),
+			},
+			expectedStatus: http.StatusBadRequest,
+			workflowEnable: true,
+		},
+		{
+			name:  "Should 400 on byok state update and workflow is required",
+			keyID: key.ID.String(),
+			input: cmkapi.KeyPatch{
+				Enabled:   ptr.PointTo(true),
+				IsPrimary: ptr.PointTo(true),
+			},
+			expectedStatus: http.StatusBadRequest,
+			workflowEnable: true,
+		},
+		{
 			name:              "should not update when no group permission",
 			keyID:             key.ID.String(),
 			input:             cmkapi.KeyPatch{Name: ptr.PointTo("new-name")},
@@ -1047,6 +1105,18 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.workflowEnable {
+				// Enable workflow for this specific test case
+				workflowConfigEnabled := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
+					var wc model.WorkflowConfig
+					_ = json.Unmarshal(tc.Value, &wc)
+					wc.Enabled = true // Enable workflow requirement
+					tc.Value, _ = json.Marshal(wc)
+				})
+				// Update the existing workflow config
+				_, err := r.Patch(ctx, workflowConfigEnabled, *repo.NewQuery())
+				assert.NoError(t, err)
+			}
 			reqHeaders := headers
 			if tt.headers != nil {
 				reqHeaders = tt.headers
@@ -1166,7 +1236,8 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 		assert.Equal(t, "INVALID_ACTION_FOR_KEY_TYPE", response.Error.Code)
 		assert.Equal(
 			t, "The action cannot be performed for the key type. Only BYOK keys can get import parameters.",
-			response.Error.Message)
+			response.Error.Message,
+		)
 	})
 
 	t.Run("GetImportParamsInvalidKeyState", func(t *testing.T) {

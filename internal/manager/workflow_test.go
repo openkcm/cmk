@@ -158,14 +158,15 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		constants.InternalTaskWorkflowApproversRole)
 	assert.NoError(t, err)
 
-	t.Run("Should return false on canCreate and error on non existing artifacts", func(t *testing.T) {
-		status, err := m.CheckWorkflow(ctx, &model.Workflow{})
-		assert.False(t, status.Enabled)
-		assert.False(t, status.Exists)
-		assert.False(t, status.Valid)
-		assert.False(t, status.CanCreate)
-		assert.Error(t, err)
-	},
+	t.Run(
+		"Should return false on canCreate and error on non existing artifacts", func(t *testing.T) {
+			status, err := m.CheckWorkflow(ctx, &model.Workflow{})
+			assert.False(t, status.Enabled)
+			assert.False(t, status.Exists)
+			assert.False(t, status.Valid)
+			assert.False(t, status.CanCreate)
+			assert.Error(t, err)
+		},
 	)
 
 	t.Run("Should return be valid and cant create on existing active workflow", func(t *testing.T) {
@@ -358,6 +359,31 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.Equal(t, manager.ErrAlreadyPrimaryKey, status.ErrDetails)
 	})
 
+	t.Run("Should not be valid on non byok key state change", func(t *testing.T) {
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyType = constants.KeyTypeHYOK
+		})
+
+		testutils.CreateTestEntities(ctxSys, t, r, key)
+
+		wf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeUpdateState
+				w.ArtifactID = key.ID
+				w.ArtifactType = model.WorkflowArtifactTypeKey
+			},
+		)
+
+		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.True(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.False(t, status.Valid)
+		assert.False(t, status.CanCreate)
+		assert.NoError(t, err)
+		assert.Equal(t, manager.ErrUpdateNonBYOKKeyStatus, status.ErrDetails)
+	})
+
 	t.Run("should have canCreate on primary key change without unconnected system", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 			kc.AdminGroup = *testGroup
@@ -386,23 +412,24 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("Should return authorization error on non active artifact", func(t *testing.T) {
-		wf, err := createTestWorkflow(
-			ctxSys, r, testutils.NewWorkflow(
-				func(w *model.Workflow) {
-					w.State = model.WorkflowStateRejected
-					w.ActionType = model.WorkflowActionTypeDelete
-					w.ArtifactType = model.WorkflowArtifactTypeKey
-				},
-			),
-		)
-		assert.NoError(t, err)
+	t.Run(
+		"Should return authorization error on non active artifact", func(t *testing.T) {
+			wf, err := createTestWorkflow(
+				ctxSys, r, testutils.NewWorkflow(
+					func(w *model.Workflow) {
+						w.State = model.WorkflowStateRejected
+						w.ActionType = model.WorkflowActionTypeDelete
+						w.ArtifactType = model.WorkflowArtifactTypeKey
+					},
+				),
+			)
+			assert.NoError(t, err)
 
-		status, err := m.CheckWorkflow(ctxSys, wf)
-		assert.False(t, status.Enabled)
-		assert.False(t, status.Exists)
-		assert.ErrorIs(t, err, manager.ErrWorkflowCreationNotAllowed)
-	},
+			status, err := m.CheckWorkflow(ctxSys, wf)
+			assert.False(t, status.Enabled)
+			assert.False(t, status.Exists)
+			assert.ErrorIs(t, err, manager.ErrWorkflowCreationNotAllowed)
+		},
 	)
 }
 
@@ -470,38 +497,40 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 	})
 	testutils.CreateTestEntities(ctxSys, t, r, key, keyConfig)
 
-	t.Run("Should error on existing workflow", func(t *testing.T) {
-		wf := testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = model.WorkflowStateInitial
-			w.ActionType = model.WorkflowActionTypeDelete
-			w.ArtifactType = model.WorkflowArtifactTypeKey
-			w.ArtifactID = key.ID
-		})
-		err := r.Create(ctx, wf)
-		assert.NoError(t, err)
+	t.Run(
+		"Should error on existing workflow", func(t *testing.T) {
+			wf := testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeDelete
+				w.ArtifactType = model.WorkflowArtifactTypeKey
+				w.ArtifactID = key.ID
+			})
+			err := r.Create(ctx, wf)
+			assert.NoError(t, err)
 
-		_, err = m.CreateWorkflow(ctxSys, wf)
-		assert.ErrorIs(t, err, manager.ErrOngoingWorkflowExist)
-	},
+			_, err = m.CreateWorkflow(ctxSys, wf)
+			assert.ErrorIs(t, err, manager.ErrOngoingWorkflowExist)
+		},
 	)
 
-	t.Run("Should create workflow", func(t *testing.T) {
-		createAuditorGroup(ctx, t, r)
+	t.Run(
+		"Should create workflow", func(t *testing.T) {
+			createAuditorGroup(ctx, t, r)
 
-		// Create key using the same test group
-		key := testutils.NewKey(func(k *model.Key) {})
-		testutils.CreateTestEntities(ctxSys, t, r, key)
+			// Create key using the same test group
+			key := testutils.NewKey(func(k *model.Key) {})
+			testutils.CreateTestEntities(ctxSys, t, r, key)
 
-		wf := testutils.NewWorkflow(func(w *model.Workflow) {
-			w.State = model.WorkflowStateInitial
-			w.ActionType = model.WorkflowActionTypeDelete
-			w.ArtifactType = model.WorkflowArtifactTypeKey
-			w.ArtifactID = key.ID
-		})
-		res, err := m.CreateWorkflow(ctxSys, wf)
-		assert.NoError(t, err)
-		assert.Equal(t, wf, res)
-	},
+			wf := testutils.NewWorkflow(func(w *model.Workflow) {
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeDelete
+				w.ArtifactType = model.WorkflowArtifactTypeKey
+				w.ArtifactID = key.ID
+			})
+			res, err := m.CreateWorkflow(ctxSys, wf)
+			assert.NoError(t, err)
+			assert.Equal(t, wf, res)
+		},
 	)
 
 	t.Run("Should create system workflow with artifact name from property", func(t *testing.T) {
@@ -550,25 +579,26 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 		assert.True(t, system.UnderWorkflow)
 	})
 
-	t.Run("Should create system workflow with artifact name from identifier", func(t *testing.T) {
-		system := testutils.NewSystem(func(s *model.System) {})
-		testutils.CreateTestEntities(ctxSys, t, r, system)
+	t.Run(
+		"Should create system workflow with artifact name from identifier", func(t *testing.T) {
+			system := testutils.NewSystem(func(s *model.System) {})
+			testutils.CreateTestEntities(ctxSys, t, r, system)
 
-		expected := &model.Workflow{
-			ID:           uuid.New(),
-			State:        "INITIAL",
-			InitiatorID:  uuid.NewString(),
-			ArtifactType: model.WorkflowArtifactTypeSystem,
-			ArtifactID:   system.ID,
-			ActionType:   model.WorkflowActionTypeLink,
-			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
-			Parameters:   keyConfig.ID.String(),
-		}
-		res, err := m.CreateWorkflow(ctxSys, expected)
-		assert.NoError(t, err)
-		assert.Equal(t, system.Identifier, *res.ArtifactName)
-		assert.Equal(t, keyConfig.Name, *res.ParametersResourceName)
-	},
+			expected := &model.Workflow{
+				ID:           uuid.New(),
+				State:        "INITIAL",
+				InitiatorID:  uuid.NewString(),
+				ArtifactType: model.WorkflowArtifactTypeSystem,
+				ArtifactID:   system.ID,
+				ActionType:   model.WorkflowActionTypeLink,
+				Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+				Parameters:   keyConfig.ID.String(),
+			}
+			res, err := m.CreateWorkflow(ctxSys, expected)
+			assert.NoError(t, err)
+			assert.Equal(t, system.Identifier, *res.ArtifactName)
+			assert.Equal(t, keyConfig.Name, *res.ParametersResourceName)
+		},
 	)
 }
 
@@ -2264,7 +2294,8 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 		// Get workflow - should NOT show insufficient approvers (still has approver 1 and 2)
 		_, eligibility, err := wm.GetWorkflowByID(
-			setAuthContext(ctx, approver1ID, approver1Email), wf.ID)
+			setAuthContext(ctx, approver1ID, approver1Email), wf.ID,
+		)
 		insufficientApprovers := eligibility != nil && eligibility.InsufficientApprovers
 		require.NoError(t, err)
 		assert.False(t, insufficientApprovers)
@@ -2301,7 +2332,8 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 		// Verify rejection recorded
 		approvers, _, err := wm.ListWorkflowApprovers(
-			setAuthContext(ctx, approver1ID, approver1Email), wf.ID, false, repo.Pagination{})
+			setAuthContext(ctx, approver1ID, approver1Email), wf.ID, false, repo.Pagination{},
+		)
 		require.NoError(t, err)
 		rejectionFound := false
 		for _, a := range approvers {
@@ -2344,7 +2376,8 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 		// Get workflow - should show insufficient approvers
 		_, eligibility, err := wm.GetWorkflowByID(
-			setAuthContext(ctx, approver1ID, approver1Email), wf.ID)
+			setAuthContext(ctx, approver1ID, approver1Email), wf.ID,
+		)
 		insufficientApprovers := eligibility != nil && eligibility.InsufficientApprovers
 		require.NoError(t, err)
 		assert.True(t, insufficientApprovers, "Should detect no eligible approvers")
@@ -2354,7 +2387,8 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 		// Get workflow again - should still show insufficient (only 1 assigned approver, threshold=2)
 		_, eligibility, err = wm.GetWorkflowByID(
-			setAuthContext(ctx, approver1ID, approver1Email), wf.ID)
+			setAuthContext(ctx, approver1ID, approver1Email), wf.ID,
+		)
 		insufficientApprovers = eligibility != nil && eligibility.InsufficientApprovers
 		require.NoError(t, err)
 		assert.True(t, insufficientApprovers, "Should still be insufficient: only 1 assigned approver (approver2 never added to workflow), threshold=2")

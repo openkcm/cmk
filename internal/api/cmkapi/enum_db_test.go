@@ -95,7 +95,7 @@ func TestSystemStatus_Scan(t *testing.T) {
 		wantErr error
 	}{
 		{name: "string", src: "CONNECTED", want: cmkapi.SystemStatusCONNECTED},
-		{name: "bytes", src: []byte("UNDER_WORKFLOW"), want: cmkapi.SystemStatusUNDERWORKFLOW},
+		{name: "bytes", src: []byte("FAILED"), want: cmkapi.SystemStatusFAILED},
 		{name: "nil clears", src: nil, want: cmkapi.SystemStatus("")},
 		{name: "invalid", src: "BOGUS", wantErr: cmkapi.ErrInvalidSystemStatus},
 		{name: "wrong type", src: 1.5, wantErr: enums.ErrUnexpectedScanType},

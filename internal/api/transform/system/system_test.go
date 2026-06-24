@@ -88,6 +88,7 @@ func TestToAPI(t *testing.T) {
 				Status:               tt.sys.Status,
 				Type:                 tt.sys.Type,
 				Properties:           ptr.PointTo(properties),
+				UnderWorkflow:        &tt.sys.UnderWorkflow,
 			}
 			tt.updateExpected(tt.sys, expected)
 			assert.Equal(t, expected, res)

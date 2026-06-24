@@ -479,6 +479,18 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   12,
 		},
+		{
+			name:      "Should up tenant/00013_add_under_workflow_column_to_key.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   13,
+		},
+		{
+			name:      "Should down tenant/00013_add_under_workflow_column_to_key.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   13,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

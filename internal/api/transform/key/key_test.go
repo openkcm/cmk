@@ -285,6 +285,7 @@ func TestTransformKeyToAPI(t *testing.T) {
 				CreatedAt: AnyPtr(time.Time{}),
 				UpdatedAt: AnyPtr(time.Time{}),
 			},
+			UnderWorkflow: ptr.PointTo(false),
 		}
 	})
 

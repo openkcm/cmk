@@ -842,6 +842,15 @@ func (w *WorkflowManager) handleNewWorkflow(ctx context.Context, workflow *model
 		if err != nil {
 			return err
 		}
+	case model.WorkflowArtifactTypeKey:
+		key := &model.Key{
+			ID:            workflow.ArtifactID,
+			UnderWorkflow: true,
+		}
+		_, err := w.repo.Patch(ctx, key, *repo.NewQuery())
+		if err != nil {
+			return err
+		}
 	default:
 		// empty
 	}
@@ -955,7 +964,13 @@ func (w *WorkflowManager) checkInitiatorIneligible(
 }
 
 func isInvalidAction(err error) bool {
-	return errs.IsAnyError(err, ErrConnectSystemNoPrimaryKey, ErrNotAllSystemsConnected, ErrAlreadyPrimaryKey)
+	return errs.IsAnyError(
+		err,
+		ErrConnectSystemNoPrimaryKey,
+		ErrNotAllSystemsConnected,
+		ErrAlreadyPrimaryKey,
+		ErrUpdateNonBYOKKeyStatus,
+	)
 }
 
 // transformCheckWorkflowError checks the returned error from validate
@@ -1093,10 +1108,24 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 		if err != nil {
 			return false, err
 		}
+	case w.isKeyStateChange(workflow):
+		key := &model.Key{ID: workflow.ArtifactID}
+		_, err := w.repo.First(ctx, key, *repo.NewQuery())
+		if key.KeyType != string(cmkapi.KeyTypeBYOK) {
+			return false, ErrUpdateNonBYOKKeyStatus
+		}
+		if err != nil {
+			return false, err
+		}
 	default:
 	}
 
 	return true, nil
+}
+
+func (w *WorkflowManager) isKeyStateChange(workflow *model.Workflow) bool {
+	return workflow.ArtifactType == model.WorkflowArtifactTypeKey &&
+		workflow.ActionType == model.WorkflowActionTypeUpdateState
 }
 
 func (w *WorkflowManager) isPrimaryKeySwitch(workflow *model.Workflow) bool {
@@ -1180,7 +1209,8 @@ func (w *WorkflowManager) getWorkflows(
 			repo.QueryFunction{
 				Function: repo.CountFunc,
 				Distinct: true,
-			})),
+			},
+		)),
 	)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrGetWorkflowDB, err)

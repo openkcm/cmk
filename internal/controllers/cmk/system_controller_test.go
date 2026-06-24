@@ -596,7 +596,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	})
 	systemUnderWorkflowFullDetails := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
-		s.Status = cmkapi.SystemStatusUNDERWORKFLOW
+		s.UnderWorkflow = true
 	})
 	wfFullDetails := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.InitiatorID = authClient.Identifier
@@ -606,7 +606,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	})
 	systemUnderWorkflowApproversDetails := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
-		s.Status = cmkapi.SystemStatusUNDERWORKFLOW
+		s.UnderWorkflow = true
 	})
 	wfApproverDetails := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.ArtifactType = model.WorkflowArtifactTypeSystem

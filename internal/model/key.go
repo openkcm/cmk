@@ -34,6 +34,7 @@ type Key struct {
 	LastUsed             *time.Time
 	ManagementAccessData json.RawMessage `gorm:"type:jsonb"`
 	CryptoAccessData     json.RawMessage `gorm:"type:jsonb"`
+	UnderWorkflow        bool            `gorm:"type:bool"`
 
 	IsPrimary       bool            `gorm:"-:all"` // Loaded on the managear/get methods
 	EditableRegions map[string]bool `gorm:"-:all"`

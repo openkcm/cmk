@@ -97,7 +97,7 @@ func (c *APIController) GetSystemByID(ctx context.Context,
 	}
 
 	var systemResponse *cmkapi.System
-	if sys.Status == cmkapi.SystemStatusUNDERWORKFLOW {
+	if sys.UnderWorkflow {
 		systemResponse, err = c.handleSystemUnderWorkflow(ctx, sys)
 	} else {
 		systemResponse, err = system.ToAPI(*sys, &c.config.ContextModels.System)

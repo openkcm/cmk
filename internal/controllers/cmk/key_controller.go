@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -105,7 +106,21 @@ func (c *APIController) GetKeys(ctx context.Context,
 func (c *APIController) DeleteKeysKeyID(ctx context.Context,
 	request cmkapi.DeleteKeysKeyIDRequestObject,
 ) (cmkapi.DeleteKeysKeyIDResponseObject, error) {
-	err := c.Manager.Keys.Delete(ctx, request.KeyID)
+	isPrimaryKeyDeletion, err := c.isPrimaryKeyDeletion(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if isPrimaryKeyDeletion {
+		required, err := c.Manager.Workflow.IsWorkflowRequired(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if required {
+			return nil, apierrors.ErrActionRequireWorkflow
+		}
+	}
+	err = c.Manager.Keys.Delete(ctx, request.KeyID)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrDeleteKey, err)
 	}
@@ -134,6 +149,21 @@ func (c *APIController) GetKeysKeyID(ctx context.Context,
 func (c *APIController) UpdateKey(ctx context.Context,
 	request cmkapi.UpdateKeyRequestObject,
 ) (cmkapi.UpdateKeyResponseObject, error) {
+	isPrimaryKeyStateUpdate, err := c.isPrimaryKeyStateUpdate(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	if ptr.GetSafeDeref(request.Body.IsPrimary) || isPrimaryKeyStateUpdate {
+		required, err := c.Manager.Workflow.IsWorkflowRequired(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if required {
+			return nil, apierrors.ErrActionRequireWorkflow
+		}
+	}
 	dbKey, err := c.Manager.Keys.UpdateKey(ctx, request.KeyID, *request.Body)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrUpdateKey, err)
@@ -151,7 +181,8 @@ func (c *APIController) GetKeyImportParams(ctx context.Context,
 	request cmkapi.GetKeyImportParamsRequestObject,
 ) (cmkapi.GetKeyImportParamsResponseObject, error) {
 	importParams, err := c.Manager.Keys.GetImportParams(
-		ctx, request.KeyID)
+		ctx, request.KeyID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -178,4 +209,44 @@ func (c *APIController) ImportKeyMaterial(ctx context.Context,
 	}
 
 	return cmkapi.ImportKeyMaterial201JSONResponse(*cmkAPIKey), nil
+}
+
+func (c *APIController) isPrimaryKeyStateUpdate(
+	ctx context.Context,
+	req cmkapi.UpdateKeyRequestObject,
+) (bool, error) {
+	if req.Body.Enabled == nil {
+		return false, nil
+	}
+
+	key, err := c.Manager.Keys.Get(ctx, req.KeyID)
+	if err != nil {
+		return false, err
+	}
+
+	if key.KeyType != string(cmkapi.KeyTypeBYOK) {
+		return true, manager.ErrUpdateNonBYOKKeyStatus
+	}
+
+	if key.IsPrimary {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (c *APIController) isPrimaryKeyDeletion(
+	ctx context.Context,
+	req cmkapi.DeleteKeysKeyIDRequestObject,
+) (bool, error) {
+	key, err := c.Manager.Keys.Get(ctx, req.KeyID)
+	if err != nil {
+		return false, err
+	}
+
+	if key.IsPrimary {
+		return true, nil
+	}
+
+	return false, nil
 }
