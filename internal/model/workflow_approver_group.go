@@ -23,12 +23,12 @@ func (w WorkflowApproverGroup) IsSharedModel() bool {
 	return false
 }
 
-func (w WorkflowApproverGroup) TableResourceType() authz.RepoResourceTypeName {
+func (w WorkflowApproverGroup) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeWorkflow
 }
 
 func (w WorkflowApproverGroup) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, w.TableResourceType(), action)

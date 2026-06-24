@@ -22,7 +22,7 @@ type APIController struct {
 	Repository    repo.Repo
 	Manager       *manager.Manager
 	config        *config.Config
-	AuthzLoader   *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction]
+	AuthzLoader   *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction]
 }
 
 // NewAPIController creates a new instance of APIController with the provided Repository.
@@ -34,8 +34,8 @@ func NewAPIController(
 	clientsFactory clients.Factory,
 	migrator db.Migrator,
 	svcRegistry serviceapi.Registry,
-	authzRepoLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName, authz.RepoAction],
-	authzAPILoader *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction],
+	authzRepoLoader *authz_loader.AuthzLoader[authz.RepoResourceType, authz.RepoAction],
+	authzAPILoader *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction],
 ) *APIController {
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, config, r)
 	if err != nil {

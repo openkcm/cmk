@@ -48,7 +48,7 @@ type TestModel struct {
 	UpdatedAt   time.Time
 }
 
-func (TestModel) TableResourceType() authz.RepoResourceTypeName {
+func (TestModel) TableResourceType() authz.RepoResourceType {
 	return RepoResourceTypeTest
 }
 
@@ -61,7 +61,7 @@ func (TestModel) IsSharedModel() bool {
 }
 
 func (m TestModel) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)

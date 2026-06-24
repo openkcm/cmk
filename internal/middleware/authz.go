@@ -87,7 +87,7 @@ func AuthzMiddleware(
 						return
 					}
 
-					loadErr := ctr.AuthzLoader.LoadAllowList(ctx)
+					loadErr := ctr.AuthzLoader.LoadTenantAllowedActions(ctx)
 					if loadErr != nil {
 						log.Debug(ctx, "LoadAllowList error", log.ErrorAttr(loadErr))
 						write.ErrorResponse(

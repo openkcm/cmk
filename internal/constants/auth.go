@@ -27,7 +27,28 @@ const (
 	InternalTaskSystemRefreshRole      InternalRole = "INTERNAL_TASK_SYSTEM_REFRESH"
 	InternalTaskTenantRefreshRole      InternalRole = "INTERNAL_TASK_TENANT_REFRESH"
 	InternalTaskSendNotificationRole   InternalRole = "INTERNAL_TASK_SEND_NOTIFICATION"
+
+	AuditorPolicy     PolicyID = "AuditorPolicy"
+	KeyAdminPolicy    PolicyID = "KeyAdminPolicy"
+	TenantAdminPolicy PolicyID = "TenantAdminPolicy"
+
+	InternalTenantCLIPolicy              PolicyID = "InternalTenantCLI"
+	InternalBusinessAuthzPolicy          PolicyID = "InternalBusinessAuthz"
+	InternalEventReconcilerPolicy        PolicyID = "InternalEventReconciler"
+	InternalTenantProvisioningPolicy     PolicyID = "InternalTenantProvisioning"
+	InternalTaskProcessingPolicy         PolicyID = "InternalTaskProcessing"
+	InternalTaskCertRotationPolicy       PolicyID = "InternalTaskCertRotation"
+	InternalTaskWorkflowApproversPolicy  PolicyID = "InternalTaskWorkflowApprovers"
+	InternalTaskHYOKSyncPolicy           PolicyID = "InternalTaskHYOKSync"
+	InternalTaskKeystorePoolPolicy       PolicyID = "InternalTaskKeystorePool"
+	InternalTaskSystemRefreshPolicy      PolicyID = "InternalTaskSystemRefresh"
+	InternalTaskTenantRefreshPolicy      PolicyID = "InternalTaskTenantRefresh"
+	InternalTaskWorkflowCleanupPolicy    PolicyID = "InternalTaskWorkflowCleanup"
+	InternalTaskWorkflowExpirationPolicy PolicyID = "InternalTaskWorkflowExpiration"
 )
 
-type BusinessRole string
-type InternalRole string
+type (
+	BusinessRole string
+	InternalRole string
+	PolicyID     string
+)

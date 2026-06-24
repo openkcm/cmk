@@ -20,11 +20,14 @@ var (
 	ErrExtractInternalUserData = errors.New("error extracting internal data from context")
 )
 
-func CheckAuthz[TResourceTypeName, TAction comparable](
+func CheckAuthz[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
 	ctx context.Context,
-	authzHandler *Handler[TResourceTypeName, TAction],
-	resourceType TResourceTypeName,
-	action TAction,
+	authzHandler *Handler[Resource, Action],
+	resourceType Resource,
+	action Action,
 ) (bool, error) {
 	userType, err := cmkcontext.ExtractUserType(ctx)
 	if err != nil {
@@ -54,11 +57,14 @@ func CheckAuthz[TResourceTypeName, TAction comparable](
 	return allowed, nil
 }
 
-func checkBusinessUserAuthz[TResourceTypeName, TAction comparable](
+func checkBusinessUserAuthz[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
 	ctx context.Context,
-	authzHandler *Handler[TResourceTypeName, TAction],
-	resourceType TResourceTypeName,
-	action TAction,
+	authzHandler *Handler[Resource, Action],
+	resourceType Resource,
+	action Action,
 ) (bool, error) {
 	tenant, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
@@ -87,7 +93,7 @@ func checkBusinessUserAuthz[TResourceTypeName, TAction comparable](
 		slog.String("action", fmt.Sprintf("%v", action)),
 	)
 
-	authzRequest, err := NewRequest[BusinessUserRequest, TResourceTypeName, TAction](
+	authzRequest, err := NewRequest(
 		ctx,
 		user,
 		resourceType,
@@ -105,11 +111,14 @@ func checkBusinessUserAuthz[TResourceTypeName, TAction comparable](
 	return allowed, nil
 }
 
-func checkInternalUserAuthz[TResourceTypeName, TAction comparable](
+func checkInternalUserAuthz[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
 	ctx context.Context,
-	authzHandler *Handler[TResourceTypeName, TAction],
-	resourceType TResourceTypeName,
-	action TAction,
+	authzHandler *Handler[Resource, Action],
+	resourceType Resource,
+	action Action,
 ) (bool, error) {
 	role, err := cmkcontext.ExtractInternalRole(ctx)
 	if err != nil {
@@ -126,7 +135,7 @@ func checkInternalUserAuthz[TResourceTypeName, TAction comparable](
 		slog.String("action", fmt.Sprintf("%v", action)),
 	)
 
-	authzRequest, err := NewRequest[InternalUserRequest, TResourceTypeName, TAction](
+	authzRequest, err := NewRequest(
 		ctx,
 		user,
 		resourceType,
@@ -158,7 +167,8 @@ func CheckInternalUserRole(ctx context.Context, role constants.InternalRole) err
 }
 
 func CheckInternalUserRoles(ctx context.Context,
-	allowedRoles []constants.InternalRole) error {
+	allowedRoles []constants.InternalRole,
+) error {
 	ctxRole, err := cmkcontext.ExtractInternalRole(ctx)
 	if err != nil {
 		return errs.Wrap(ErrExtractInternalUserData, err)

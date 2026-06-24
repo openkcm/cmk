@@ -13,12 +13,12 @@ var ErrUnauthorized = errors.New("action on resource unauthorized")
 
 type AuthzRepo struct {
 	repo        repo.Repo
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName, authz.RepoAction]
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType, authz.RepoAction]
 }
 
 func NewAuthzRepo(
-	repo repo.Repo, authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
-		authz.RepoAction],
+	repo repo.Repo,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType, authz.RepoAction],
 ) *AuthzRepo {
 	return &AuthzRepo{
 		repo:        repo,
@@ -27,7 +27,8 @@ func NewAuthzRepo(
 }
 
 func (r *AuthzRepo) Create(
-	ctx context.Context, resource repo.Resource,
+	ctx context.Context,
+	resource repo.Resource,
 ) error {
 	err := r.checkResourceAuthZ(ctx, resource, authz.RepoActionCreate)
 	if err != nil {
@@ -37,7 +38,9 @@ func (r *AuthzRepo) Create(
 }
 
 func (r *AuthzRepo) Count(
-	ctx context.Context, resource repo.Resource, query repo.Query,
+	ctx context.Context,
+	resource repo.Resource,
+	query repo.Query,
 ) (int, error) {
 	err := r.checkResourceAuthZ(ctx, resource, authz.RepoActionCount)
 	if err != nil {
@@ -153,9 +156,11 @@ func (r *AuthzRepo) GetFilterOptions(
 }
 
 func (r *AuthzRepo) checkResourceAuthZ(
-	ctx context.Context, resource repo.Resource, action authz.RepoAction,
+	ctx context.Context,
+	resource repo.Resource,
+	action authz.RepoAction,
 ) error {
-	err := r.authzLoader.LoadAllowList(ctx)
+	err := r.authzLoader.LoadTenantAllowedActions(ctx)
 	if err != nil {
 		return err
 	}
@@ -171,9 +176,11 @@ func (r *AuthzRepo) checkResourceAuthZ(
 }
 
 func (r *AuthzRepo) checkQueryAuthZ(
-	ctx context.Context, query repo.Query, action authz.RepoAction,
+	ctx context.Context,
+	query repo.Query,
+	action authz.RepoAction,
 ) error {
-	err := r.authzLoader.LoadAllowList(ctx)
+	err := r.authzLoader.LoadTenantAllowedActions(ctx)
 	if err != nil {
 		return err
 	}

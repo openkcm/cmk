@@ -40,7 +40,7 @@ func New(
 	ctx context.Context,
 	repo repo.Repo,
 	authzLoader *authz_loader.AuthzLoader[
-		authz.RepoResourceTypeName, authz.RepoAction],
+		authz.RepoResourceType, authz.RepoAction],
 	config *config.Config,
 	clientsFactory clients.Factory,
 	svcRegistry serviceapi.Registry,

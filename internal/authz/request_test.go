@@ -15,26 +15,32 @@ func TestNewRequest_ValidCases(t *testing.T) {
 	tests := []struct {
 		name         string
 		user         authz.BusinessUserRequest
-		resourceType authz.APIResourceTypeName
+		resourceType authz.APIResourceType
 		action       authz.APIAction
 	}{
 		{
 			"ValidRequest",
-			authz.BusinessUserRequest{TenantID: "tenant1",
-				UserName: "test_user", Groups: []string{"group1"}},
+			authz.BusinessUserRequest{
+				TenantID: "tenant1",
+				UserName: "test_user", Groups: []string{"group1"},
+			},
 			authz.APIResourceTypeKey,
 			authz.APIActionRead,
 		},
 		{
 			"EmptyAPIResourceType",
-			authz.BusinessUserRequest{TenantID: "tenant1",
-				UserName: "test_user", Groups: []string{"group1"}},
-			authz.APIResourceTypeName(""), authz.APIActionRead,
+			authz.BusinessUserRequest{
+				TenantID: "tenant1",
+				UserName: "test_user", Groups: []string{"group1"},
+			},
+			authz.APIResourceType(""), authz.APIActionRead,
 		},
 		{
 			"EmptyAPIAction",
-			authz.BusinessUserRequest{TenantID: "tenant1",
-				UserName: "test_user", Groups: []string{"group1"}},
+			authz.BusinessUserRequest{
+				TenantID: "tenant1",
+				UserName: "test_user", Groups: []string{"group1"},
+			},
 			authz.APIResourceTypeKey,
 			authz.APIAction(""),
 		},
@@ -61,40 +67,50 @@ func TestNewRequest_InvalidCases(t *testing.T) {
 	tests := []struct {
 		name         string
 		user         authz.BusinessUserRequest
-		resourceType authz.APIResourceTypeName
+		resourceType authz.APIResourceType
 		action       authz.APIAction
 	}{
 		{
 			"EmptyUser",
-			authz.BusinessUserRequest{TenantID: "tenant1",
-				UserName: "", Groups: []string{"group1"}},
+			authz.BusinessUserRequest{
+				TenantID: "tenant1",
+				UserName: "", Groups: []string{"group1"},
+			},
 			authz.APIResourceTypeKey,
 			authz.APIActionRead,
 		},
 		{
 			"EmptyUserGroups",
-			authz.BusinessUserRequest{TenantID: "tenant1",
-				UserName: "test_user", Groups: []string{}},
+			authz.BusinessUserRequest{
+				TenantID: "tenant1",
+				UserName: "test_user", Groups: []string{},
+			},
 			authz.APIResourceTypeKey,
 			authz.APIActionRead,
 		},
 		{
 			"InvalidAPIResourceType",
-			authz.BusinessUserRequest{TenantID: "tenant1",
-				UserName: "test_user", Groups: []string{"group1"}},
-			authz.APIResourceTypeName("invalid"), authz.APIActionRead,
+			authz.BusinessUserRequest{
+				TenantID: "tenant1",
+				UserName: "test_user", Groups: []string{"group1"},
+			},
+			authz.APIResourceType("invalid"), authz.APIActionRead,
 		},
 		{
 			"InvalidAPIResourceTypeForAPIAction",
-			authz.BusinessUserRequest{TenantID: "tenant1",
-				UserName: "test_user", Groups: []string{"group1"}},
+			authz.BusinessUserRequest{
+				TenantID: "tenant1",
+				UserName: "test_user", Groups: []string{"group1"},
+			},
 			authz.APIResourceTypeKeyConfiguration,
 			authz.APIActionRead,
 		},
 		{
 			"InvalidAPIAction",
-			authz.BusinessUserRequest{TenantID: "tenant1",
-				UserName: "test_user", Groups: []string{"group1"}},
+			authz.BusinessUserRequest{
+				TenantID: "tenant1",
+				UserName: "test_user", Groups: []string{"group1"},
+			},
 			authz.APIResourceTypeKey,
 			authz.APIAction("invalid"),
 		},

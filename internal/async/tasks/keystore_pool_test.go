@@ -24,12 +24,12 @@ var allowedKeystorePoolActions = []authz.RepoAction{
 }
 
 type KeystorePoolFillerMock struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
 func (s *KeystorePoolFillerMock) FillKeystorePool(ctx context.Context, _ int) error {
-	err := s.authzLoader.LoadAllowList(ctx)
+	err := s.authzLoader.LoadTenantAllowedActions(ctx)
 	if err != nil {
 		return err
 	}
@@ -48,12 +48,12 @@ func (s *KeystorePoolFillerMock) FillKeystorePool(ctx context.Context, _ int) er
 }
 
 type KeystorePoolFillerMockUnauthz struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
 func (s *KeystorePoolFillerMockUnauthz) FillKeystorePool(ctx context.Context, _ int) error {
-	err := s.authzLoader.LoadAllowList(ctx)
+	err := s.authzLoader.LoadTenantAllowedActions(ctx)
 	if err != nil {
 		return err
 	}

@@ -3,8 +3,8 @@ package authz
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/constants"
@@ -13,27 +13,32 @@ import (
 
 type TenantID string
 
-type BusinessUserEntity struct {
+type BusinessUser struct {
 	TenantID TenantID
 	Groups   []string
 }
 
-type Entity[TRole, TUser any] struct {
-	User TUser
-	Role TRole
+type Entity[
+	Role constants.BusinessRole | constants.InternalRole,
+	User BusinessUser,
+] struct {
+	User User
+	Role Role
 }
 
-type Handler[TResourceTypeName, TAction comparable] struct {
-	InternalUserAuthzData InternalUserAuthzData[TResourceTypeName, TAction]
-	BusinessUserAuthzData BusinessUserAuthzData[TResourceTypeName, TAction]
+type Handler[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+] struct {
+	InternalUserAuthzData InternalUserAuthzData[Resource, Action]
+	BusinessUserAuthzData BusinessUserAuthzData[Resource, Action]
 
 	Auditor *auditor.Auditor
 
-	resourceTypeActions map[TResourceTypeName][]TAction
-	validActions        map[TAction]struct{}
-}
+	resourceActions map[Resource][]Action
 
-const EmptyTenantID = TenantID("")
+	mu *sync.Mutex
+}
 
 var (
 	ErrInvalidRequest        = errors.New("invalid request")
@@ -50,12 +55,16 @@ var (
 
 var InfoAuthorizationPassed = "Authorization check passed"
 
-func NewAuthorizationHandler[TResourceTypeName, TAction comparable](
+func NewAuthorizationHandler[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
 	auditor *auditor.Auditor,
-	internalUserPolicies map[constants.InternalRole][]BasePolicy[constants.InternalRole, TResourceTypeName, TAction],
-	businessUserPolicies map[constants.BusinessRole][]BasePolicy[constants.BusinessRole, TResourceTypeName, TAction],
-	resourceTypeActions map[TResourceTypeName][]TAction,
-) (*Handler[TResourceTypeName, TAction], error) {
+	internalUserPolicies RolePolicies[constants.InternalRole, Resource, Action],
+	businessUserPolicies RolePolicies[constants.BusinessRole, Resource, Action],
+	resourceActions map[Resource][]Action,
+	mu *sync.Mutex,
+) (*Handler[Resource, Action], error) {
 	internalUserAuthzData, err := NewInternalUserAuthzData(internalUserPolicies)
 	if err != nil {
 		return nil, err
@@ -66,132 +75,123 @@ func NewAuthorizationHandler[TResourceTypeName, TAction comparable](
 		return nil, err
 	}
 
-	validActions := map[TAction]struct{}{}
-
-	for _, actions := range resourceTypeActions {
-		for _, action := range actions {
-			validActions[action] = struct{}{}
-		}
-	}
-
-	return &Handler[TResourceTypeName, TAction]{
-		resourceTypeActions:   resourceTypeActions,
-		validActions:          validActions,
+	return &Handler[Resource, Action]{
+		resourceActions:       resourceActions,
 		BusinessUserAuthzData: *businessUserAuthzData,
 		InternalUserAuthzData: *internalUserAuthzData,
 		Auditor:               auditor,
+		mu:                    mu,
 	}, nil
 }
 
-func (as *Handler[TResourceTypeName, TAction]) ResetBusinessUserData() {
+func (as *Handler[Resource, Action]) ResetBusinessUserData() {
 	as.BusinessUserAuthzData.InitialiseAuthzKeys()
 }
 
-func (as *Handler[TResourceTypeName, TAction]) UpdateBusinessUserData(
-	entities []Entity[constants.BusinessRole, BusinessUserEntity]) error {
-	return as.BusinessUserAuthzData.AddEntities(entities)
+func (as *Handler[Resource, Action]) UpdateBusinessUserData(
+	user map[constants.BusinessRole]*BusinessUser,
+) error {
+	return as.BusinessUserAuthzData.AddUser(user)
 }
 
 // IsBusinessUserAllowed checks if the given Business User is allowed to perform
 // the given Action on the given Resource
-func (as *Handler[TResourceTypeName, TAction]) IsBusinessUserAllowed(ctx context.Context,
-	ar Request[BusinessUserRequest, TResourceTypeName, TAction]) (bool, error) {
-	err := ar.IsValidContext(ctx)
+func (as *Handler[Resource, Action]) IsBusinessUserAllowed(
+	ctx context.Context,
+	request Request[BusinessUserRequest, Resource, Action],
+) (bool, error) {
+	// The AuthzKeys are updated by a background task
+	// This needs a mutex to be concurrent safe
+	as.mu.Lock()
+	defer as.mu.Unlock()
+
+	err := request.IsValidContext(ctx)
 	if err != nil {
-		LogDecision[BusinessUserRequest, TResourceTypeName, TAction](
-			ctx, ar, as.Auditor, false, Reason(err.Error()))
+		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
 		return false, errs.Wrap(ErrInvalidRequest, err)
 	}
 
-	err = as.isValidResourceAction(ar.ResourceTypeName, ar.Action)
+	err = as.isValidResourceAction(request.ResourceTypeName, request.Action)
 	if err != nil {
-		LogDecision[BusinessUserRequest, TResourceTypeName, TAction](
-			ctx, ar, as.Auditor, false, Reason(err.Error()))
+		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
 		return false, errs.Wrap(ErrInvalidRequest, ErrInvalidRequest)
 	}
 
-	for _, group := range ar.User.Groups {
-		reqData := AuthorizationKey[BusinessAuthzKey, TResourceTypeName, TAction]{
-			User: BusinessAuthzKey{
-				TenantID: ar.User.TenantID,
+	for _, group := range request.User.Groups {
+		reqData := AuthorizationKey[BusinessUserCheck, Resource, Action]{
+			User: BusinessUserCheck{
+				TenantID: request.User.TenantID,
 				Group:    group,
 			},
-			ResourceTypeName: ar.ResourceTypeName,
-			Action:           ar.Action,
+			ResourceType: request.ResourceTypeName,
+			Action:       request.Action,
 		}
 		_, ok := as.BusinessUserAuthzData.AuthzKeys[reqData]
 
 		if ok {
 			// Allow
-			LogDecision[BusinessUserRequest, TResourceTypeName, TAction](
-				ctx, ar, as.Auditor, true, Reason(InfoAuthorizationPassed))
+			LogDecision(ctx, request, as.Auditor, true, Reason(InfoAuthorizationPassed))
 			return true, nil
 		}
 	}
 
 	// If no matching policy is found, deny authorization
-	// Deny
-	LogDecision[BusinessUserRequest, TResourceTypeName, TAction](
-		ctx, ar, as.Auditor, false, Reason(ErrAuthorizationDecision.Error()))
+	LogDecision(ctx, request, as.Auditor, false, Reason(ErrAuthorizationDecision.Error()))
 
 	return false, errs.Wrap(ErrAuthorizationDecision, ErrAuthorizationDenied)
 }
 
 // IsInternalUserAllowed checks if the given Business User is allowed to perform
 // the given Action on the given Resource
-func (as *Handler[TResourceTypeName, TAction]) IsInternalUserAllowed(ctx context.Context,
-	ar Request[InternalUserRequest, TResourceTypeName, TAction]) (bool, error) {
-	err := ar.IsValidContext(ctx)
+func (as *Handler[Resource, Action]) IsInternalUserAllowed(
+	ctx context.Context,
+	request Request[InternalUserRequest, Resource, Action],
+) (bool, error) {
+	err := request.IsValidContext(ctx)
 	if err != nil {
-		LogDecision[InternalUserRequest, TResourceTypeName, TAction](
-			ctx, ar, as.Auditor, false, Reason(err.Error()))
+		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
 		return false, errs.Wrap(ErrInvalidRequest, err)
 	}
 
-	err = as.isValidResourceAction(ar.ResourceTypeName, ar.Action)
+	err = as.isValidResourceAction(request.ResourceTypeName, request.Action)
 	if err != nil {
-		LogDecision[InternalUserRequest, TResourceTypeName, TAction](
-			ctx, ar, as.Auditor, false, Reason(err.Error()))
+		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
 		return false, errs.Wrap(ErrInvalidRequest, ErrInvalidRequest)
 	}
 
-	reqData := AuthorizationKey[InternalAuthzKey, TResourceTypeName, TAction]{
-		User: InternalAuthzKey{
-			Role: ar.User.Role,
+	reqData := AuthorizationKey[InternalUserCheck, Resource, Action]{
+		User: InternalUserCheck{
+			Role: request.User.Role,
 		},
-		ResourceTypeName: ar.ResourceTypeName,
-		Action:           ar.Action,
+		ResourceType: request.ResourceTypeName,
+		Action:       request.Action,
 	}
 	_, ok := as.InternalUserAuthzData.AuthzKeys[reqData]
 
 	if ok {
 		// Allow
-		LogDecision[InternalUserRequest, TResourceTypeName, TAction](
-			ctx, ar, as.Auditor, true, Reason(InfoAuthorizationPassed))
+		LogDecision(ctx, request, as.Auditor, true, Reason(InfoAuthorizationPassed))
 		return true, nil
 	}
 
 	// If no matching policy is found, deny authorization
 	// Deny
-	LogDecision[InternalUserRequest, TResourceTypeName, TAction](
-		ctx, ar, as.Auditor, false, Reason(ErrAuthorizationDecision.Error()))
+	LogDecision(ctx, request, as.Auditor, false, Reason(ErrAuthorizationDecision.Error()))
 
 	return false, errs.Wrap(ErrAuthorizationDecision, ErrAuthorizationDenied)
 }
 
-func (as *Handler[TResourceTypeName, TAction]) isValidResourceAction(
-	resourceTypeName TResourceTypeName, action TAction) error {
-	if _, exists := as.validActions[action]; !exists {
-		return errs.Wrapf(ErrActionInvalid, fmt.Sprintf("%v", action))
+// isValidResourceAction checks if user can trigger action on resource
+func (as *Handler[Resource, Action]) isValidResourceAction(
+	resource Resource,
+	action Action,
+) error {
+	actions, ok := as.resourceActions[resource]
+	if !ok {
+		return errs.Wrapf(ErrResourceTypeInvalid, string(resource))
 	}
-
-	if actions, resourceExists := as.resourceTypeActions[resourceTypeName]; resourceExists {
-		if actionExists := slices.Contains(actions, action); !actionExists {
-			return errs.Wrapf(ErrActionInvalidForResource, fmt.Sprintf("%v", action))
-		}
-	} else {
-		return errs.Wrapf(ErrResourceTypeInvalid, fmt.Sprintf("%v", resourceTypeName))
+	if !slices.Contains(actions, action) {
+		return errs.Wrapf(ErrActionInvalidForResource, string(action))
 	}
-
 	return nil
 }

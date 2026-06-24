@@ -35,12 +35,12 @@ var allowedCertTestActions = []authz.RepoAction{
 }
 
 type CertUpdaterMock struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
 func (s *CertUpdaterMock) RotateExpiredCertificates(ctx context.Context) error {
-	err := s.authzLoader.LoadAllowList(ctx)
+	err := s.authzLoader.LoadTenantAllowedActions(ctx)
 	if err != nil {
 		return err
 	}
@@ -65,12 +65,12 @@ func (s *CertUpdaterMock) RotateCertificate(_ context.Context,
 }
 
 type CertUpdaterMockUnauthz struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
 func (s *CertUpdaterMockUnauthz) RotateExpiredCertificates(ctx context.Context) error {
-	err := s.authzLoader.LoadAllowList(ctx)
+	err := s.authzLoader.LoadTenantAllowedActions(ctx)
 	if err != nil {
 		return err
 	}

@@ -31,12 +31,12 @@ var allowedHYOKTestActions = []authz.RepoAction{
 }
 
 type HYOKClientMock struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
 func (s *HYOKClientMock) SyncHYOKKeys(ctx context.Context) error {
-	err := s.authzLoader.LoadAllowList(ctx)
+	err := s.authzLoader.LoadTenantAllowedActions(ctx)
 	if err != nil {
 		return err
 	}
@@ -54,20 +54,19 @@ func (s *HYOKClientMock) SyncHYOKKeys(ctx context.Context) error {
 	return nil
 }
 
-type HYOKClientMockFailed struct {
-}
+type HYOKClientMockFailed struct{}
 
 func (s *HYOKClientMockFailed) SyncHYOKKeys(_ context.Context) error {
 	return errMockSyncHYOKClient
 }
 
 type HYOKClientMockUnauthz struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
 func (s *HYOKClientMockUnauthz) SyncHYOKKeys(ctx context.Context) error {
-	err := s.authzLoader.LoadAllowList(ctx)
+	err := s.authzLoader.LoadTenantAllowedActions(ctx)
 	if err != nil {
 		return err
 	}

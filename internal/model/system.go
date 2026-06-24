@@ -33,7 +33,7 @@ type System struct {
 }
 
 // TableResourceType return the authz resource type
-func (m System) TableResourceType() authz.RepoResourceTypeName {
+func (m System) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeSystem
 }
 
@@ -47,7 +47,7 @@ func (System) IsSharedModel() bool {
 }
 
 func (m System) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
@@ -57,7 +57,7 @@ func (m System) CheckAuthz(ctx context.Context,
 // and returns a bool if any field was updated
 func (m *System) UpdateSystemProperties(
 	ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	props map[string]string,
 	cfg *config.System,
 ) (bool, error) {
@@ -122,7 +122,7 @@ type SystemProperty struct {
 }
 
 // TableResourceType return the authz resource type
-func (m SystemProperty) TableResourceType() authz.RepoResourceTypeName {
+func (m SystemProperty) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeSystemProperty
 }
 
@@ -135,7 +135,7 @@ func (SystemProperty) IsSharedModel() bool {
 }
 
 func (m SystemProperty) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)

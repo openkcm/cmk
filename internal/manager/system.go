@@ -138,7 +138,7 @@ func NewSystemManager(
 	ctx context.Context,
 	repository repo.Repo,
 	authzLoader *authz_loader.AuthzLoader[
-		authz.RepoResourceTypeName, authz.RepoAction],
+		authz.RepoResourceType, authz.RepoAction],
 	clientsFactory clients.Factory,
 	eventFactory *eventprocessor.EventFactory,
 	svcRegistry serviceapi.Registry,
@@ -325,61 +325,61 @@ func (m *SystemManager) LinkSystemAction(
 ) (*model.System, error) {
 	var updatedSystem *model.System
 
-	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
-		system, err := m.GetSystemByID(ctx, systemID)
-		if err != nil {
-			return err
-		}
-
-		updatedSystem = system
-		keyConfig := &model.KeyConfiguration{ID: patchSystem.KeyConfigurationID}
-
-		// Check authorization for the TARGET key configuration
-		if patchSystem.KeyConfigurationID != uuid.Nil {
-			_, err = m.user.HasSystemAccess(ctx, authz.APIActionSystemModifyLink, system)
+	err := m.repo.Transaction(
+		ctx, func(ctx context.Context) error {
+			system, err := m.GetSystemByID(ctx, systemID)
 			if err != nil {
 				return err
 			}
-		}
 
-		_, err = m.repo.First(ctx, keyConfig, *repo.NewQuery())
-		if err != nil {
-			return errs.Wrap(ErrGettingKeyConfigByID, err)
-		}
+			updatedSystem = system
+			keyConfig := &model.KeyConfiguration{ID: patchSystem.KeyConfigurationID}
 
-		// Check if primary key exists
-		if !ptr.IsNotNilUUID(keyConfig.PrimaryKeyID) {
-			return ErrConnectSystemNoPrimaryKey
-		}
+			// Check authorization for the TARGET key configuration
+			if patchSystem.KeyConfigurationID != uuid.Nil {
+				_, err = m.user.HasSystemAccess(ctx, authz.APIActionSystemModifyLink, system)
+				if err != nil {
+					return err
+				}
+			}
 
-		pKey := &model.Key{ID: *keyConfig.PrimaryKeyID}
-		_, err = m.repo.First(ctx, pKey, *repo.NewQuery())
-		if err != nil {
-			return errs.Wrap(ErrGettingKeyByID, err)
-		}
+			_, err = m.repo.First(ctx, keyConfig, *repo.NewQuery())
+			if err != nil {
+				return errs.Wrap(ErrGettingKeyConfigByID, err)
+			}
 
-		// Pre-check System key state.
-		// Should fail if the key is not enabled
-		if pKey.State != cmkapi.KeyStateENABLED {
-			return ErrConnectSystemNoPrimaryKey
-		}
+			// Check if primary key exists
+			if !ptr.IsNotNilUUID(keyConfig.PrimaryKeyID) {
+				return ErrConnectSystemNoPrimaryKey
+			}
 
-		if system.Status == cmkapi.SystemStatusPROCESSING || system.Status == cmkapi.SystemStatusFAILED {
-			return ErrLinkSystemProcessingOrFailed
-		}
+			pKey := &model.Key{ID: *keyConfig.PrimaryKeyID}
+			_, err = m.repo.First(ctx, pKey, *repo.NewQuery())
+			if err != nil {
+				return errs.Wrap(ErrGettingKeyByID, err)
+			}
 
-		event, err := m.selectEvent(ctx, system, keyConfig)
-		if err != nil {
-			return err
-		}
+			// Pre-check System key state.
+			// Should fail if the key is not enabled
+			if pKey.State != cmkapi.KeyStateENABLED {
+				return ErrConnectSystemNoPrimaryKey
+			}
+			if system.Status == cmkapi.SystemStatusPROCESSING || system.Status == cmkapi.SystemStatusFAILED {
+				return ErrLinkSystemProcessingOrFailed
+			}
 
-		err = m.eventFactory.SendEvent(ctx, event)
-		if err != nil {
-			return err
-		}
+			event, err := m.selectEvent(ctx, system, keyConfig)
+			if err != nil {
+				return err
+			}
 
-		return nil
-	},
+			err = m.eventFactory.SendEvent(ctx, event)
+			if err != nil {
+				return err
+			}
+
+			return nil
+		},
 	)
 	if err != nil {
 		return nil, errs.Wrap(ErrUpdateSystem, err)
@@ -395,44 +395,45 @@ func (m *SystemManager) LinkSystemAction(
 func (m *SystemManager) UnlinkSystemAction(ctx context.Context, systemID uuid.UUID, trigger string) error {
 	var dbSystem *model.System
 
-	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
-		system := &model.System{ID: systemID}
+	err := m.repo.Transaction(
+		ctx, func(ctx context.Context) error {
+			system := &model.System{ID: systemID}
 
-		_, err := m.repo.First(ctx, system, repo.Query{})
-		if err != nil {
-			return errs.Wrap(ErrGettingSystemByID, err)
-		}
+			_, err := m.repo.First(ctx, system, repo.Query{})
+			if err != nil {
+				return errs.Wrap(ErrGettingSystemByID, err)
+			}
 
-		if !ptr.IsNotNilUUID(system.KeyConfigurationID) {
-			return errs.Wrap(ErrUpdateSystem, ErrSystemNotLinked)
-		}
+			if !ptr.IsNotNilUUID(system.KeyConfigurationID) {
+				return errs.Wrap(ErrUpdateSystem, ErrSystemNotLinked)
+			}
 
-		keyConfig := &model.KeyConfiguration{ID: *system.KeyConfigurationID}
+			keyConfig := &model.KeyConfiguration{ID: *system.KeyConfigurationID}
 
-		// Check authorization for the system's key configuration
-		// User must have access to the key configuration to perform the unlink
-		_, err = m.user.HasSystemAccess(ctx, authz.APIActionSystemModifyLink, system)
-		if err != nil {
-			return err
-		}
+			// Check authorization for the system's key configuration
+			// User must have access to the key configuration to perform the unlink
+			_, err = m.user.HasSystemAccess(ctx, authz.APIActionSystemModifyLink, system)
+			if err != nil {
+				return err
+			}
 
-		_, err = m.repo.First(ctx, keyConfig, *repo.NewQuery())
-		if err != nil {
-			return errs.Wrap(ErrGettingKeyConfigByID, err)
-		}
+			_, err = m.repo.First(ctx, keyConfig, *repo.NewQuery())
+			if err != nil {
+				return errs.Wrap(ErrGettingKeyConfigByID, err)
+			}
 
-		if system.Status == cmkapi.SystemStatusPROCESSING {
-			return ErrUnlinkSystemProcessing
-		}
+			if system.Status == cmkapi.SystemStatusPROCESSING {
+				return ErrUnlinkSystemProcessing
+			}
 
-		dbSystem = system
-		err = m.sendSystemUnlinkEvent(ctx, dbSystem, keyConfig, trigger)
-		if err != nil {
-			return err
-		}
+			dbSystem = system
+			err = m.sendSystemUnlinkEvent(ctx, dbSystem, keyConfig, trigger)
+			if err != nil {
+				return err
+			}
 
-		return nil
-	},
+			return nil
+		},
 	)
 	if err != nil {
 		return err
@@ -521,22 +522,23 @@ func (m *SystemManager) retrySystemAction(ctx context.Context, system *model.Sys
 		Event: func(ctx context.Context) (orbital.Job, error) {
 			var job orbital.Job
 
-			err := m.repo.Transaction(ctx, func(ctx context.Context) error {
-				// Only set to PROCESSING for user-initiated actions (LINK/UNLINK/SWITCH)
-				// SYSTEM_KEY_ROTATE is an external notification and doesn't require PROCESSING state
-				if lastJob.Type != eventprocessor.JobTypeSystemKeyRotate.String() {
-					system.Status = cmkapi.SystemStatusPROCESSING
+			err := m.repo.Transaction(
+				ctx, func(ctx context.Context) error {
+					// Only set to PROCESSING for user-initiated actions (LINK/UNLINK/SWITCH)
+					// SYSTEM_KEY_ROTATE is an external notification and doesn't require PROCESSING state
+					if lastJob.Type != eventprocessor.JobTypeSystemKeyRotate.String() {
+						system.Status = cmkapi.SystemStatusPROCESSING
 
-					_, err := m.repo.Patch(ctx, system, *repo.NewQuery())
-					if err != nil {
-						return err
+						_, err := m.repo.Patch(ctx, system, *repo.NewQuery())
+						if err != nil {
+							return err
+						}
 					}
-				}
 
-				job, err = m.eventFactory.CreateJob(ctx, lastJob)
+					job, err = m.eventFactory.CreateJob(ctx, lastJob)
 
-				return err
-			},
+					return err
+				},
 			)
 
 			return job, err
@@ -645,31 +647,32 @@ func (m *SystemManager) removeSystemsNotInRegistry(ctx context.Context, registry
 	err := repo.ProcessInBatch(
 		ctx, m.repo, repo.NewQuery(), repo.DefaultLimit, func(systems []*model.System) error {
 			// Process each batch in a separate transaction
-			return m.repo.Transaction(ctx, func(ctx context.Context) error {
-				for _, dbSystem := range systems {
-					key := dbSystem.Identifier + ":" + dbSystem.Region
-					if !registrySystemsMap[key] {
-						log.Info(ctx, "System no longer exists in registry, removing from CMK DB")
+			return m.repo.Transaction(
+				ctx, func(ctx context.Context) error {
+					for _, dbSystem := range systems {
+						key := dbSystem.Identifier + ":" + dbSystem.Region
+						if !registrySystemsMap[key] {
+							log.Info(ctx, "System no longer exists in registry, removing from CMK DB")
 
-						query := *repo.NewQuery().Where(
-							repo.NewCompositeKeyGroup(
-								repo.NewCompositeKey().Where(repo.IDField, dbSystem.ID),
-							),
-						)
+							query := *repo.NewQuery().Where(
+								repo.NewCompositeKeyGroup(
+									repo.NewCompositeKey().Where(repo.IDField, dbSystem.ID),
+								),
+							)
 
-						// Delete the system (BeforeDelete hook will automatically delete associated properties)
-						_, err := m.repo.Delete(ctx, &model.System{ID: dbSystem.ID}, query)
-						if err != nil {
-							log.Error(ctx, "Failed to delete system", err)
-							return err
+							// Delete the system (BeforeDelete hook will automatically delete associated properties)
+							_, err := m.repo.Delete(ctx, &model.System{ID: dbSystem.ID}, query)
+							if err != nil {
+								log.Error(ctx, "Failed to delete system", err)
+								return err
+							}
+
+							log.Info(ctx, "Successfully removed system from CMK DB")
 						}
-
-						log.Info(ctx, "Successfully removed system from CMK DB")
 					}
-				}
 
-				return nil
-			},
+					return nil
+				},
 			)
 		},
 	)

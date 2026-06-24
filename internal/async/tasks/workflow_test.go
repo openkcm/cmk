@@ -43,7 +43,7 @@ var allowedWorkflowApproversTestActions = []authz.RepoAction{
 }
 
 type WorkflowAssignMock struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 	repo repo.Repo
 }
@@ -104,7 +104,7 @@ func (s *WorkflowAssignMock) HandleTerminalWorkflow(ctx context.Context, workflo
 }
 
 type WorkflowAssignMockUnauthz struct {
-	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceTypeName,
+	authzLoader *authz_loader.AuthzLoader[authz.RepoResourceType,
 		authz.RepoAction]
 }
 
@@ -132,7 +132,8 @@ func TestWorkflowAssignAction(t *testing.T) {
 	tenantID := tenants[0]
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenantID)
 
-	testutils.CreateTestEntities(ctx, t, rawRepo,
+	testutils.CreateTestEntities(
+		ctx, t, rawRepo,
 		testutils.NewWorkflow(
 			func(workflow *model.Workflow) {
 				workflow.ID = uuid.MustParse(GoodWorkflowID)
@@ -156,10 +157,12 @@ func TestWorkflowAssignAction(t *testing.T) {
 	authzRepo := authz_repo.NewAuthzRepo(rawRepo, authzRepoLoader)
 
 	assigner := tasks.NewWorkflowProcessor(
-		&WorkflowAssignMock{authzLoader: authzRepoLoader, repo: authzRepo}, authzRepo)
+		&WorkflowAssignMock{authzLoader: authzRepoLoader, repo: authzRepo}, authzRepo,
+	)
 
 	unauthzAssigner := tasks.NewWorkflowProcessor(
-		&WorkflowAssignMockUnauthz{authzLoader: authzRepoLoader}, authzRepo)
+		&WorkflowAssignMockUnauthz{authzLoader: authzRepoLoader}, authzRepo,
+	)
 
 	t.Run("No task data", func(t *testing.T) {
 		assert.Panics(t, func() {

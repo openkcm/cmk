@@ -465,9 +465,9 @@ func (q *Query) SetOffset(offset int) *Query {
 
 type table interface {
 	TableName() string
-	TableResourceType() authz.RepoResourceTypeName
+	TableResourceType() authz.RepoResourceType
 	CheckAuthz(ctx context.Context,
-		authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+		authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 		action authz.RepoAction) (bool, error)
 }
 

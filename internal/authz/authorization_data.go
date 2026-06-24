@@ -7,68 +7,88 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 )
 
-type BusinessAuthzKey struct {
+type BusinessUserCheck struct {
 	TenantID TenantID
 	Group    string
 }
 
-type InternalAuthzKey struct {
+type InternalUserCheck struct {
 	Role constants.InternalRole
 }
 
-type AuthorizationKey[TUser, TResourceTypeName, TAction comparable] struct {
-	User             TUser
-	ResourceTypeName TResourceTypeName
-	Action           TAction
+type AuthorizationKey[
+	User BusinessUserCheck | InternalUserCheck,
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+] struct {
+	User         User
+	ResourceType Resource
+	Action       Action
 }
 
 var ErrInvalidRole = errors.New("invalid role")
 
-type AuthzData[TRole, TAuthzKey, TResourceTypeName, TAction comparable] struct {
-	RolePolicies map[TRole][]BasePolicy[TRole, TResourceTypeName, TAction]
-	AuthzKeys    map[AuthorizationKey[TAuthzKey, TResourceTypeName, TAction]]struct{}
+type AuthzData[
+	Role constants.BusinessRole | constants.InternalRole,
+	UserCheck BusinessUserCheck | InternalUserCheck,
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+] struct {
+	RolePolicies RolePolicies[Role, Resource, Action]
+	AuthzKeys    map[AuthorizationKey[UserCheck, Resource, Action]]struct{}
 }
 
-type BusinessUserAuthzData[TResourceTypeName, TAction comparable] AuthzData[
-	constants.BusinessRole, BusinessAuthzKey, TResourceTypeName, TAction]
+type BusinessUserAuthzData[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+] AuthzData[constants.BusinessRole, BusinessUserCheck, Resource, Action]
+
+type InternalUserAuthzData[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+] AuthzData[constants.InternalRole, InternalUserCheck, Resource, Action]
 
 // NewBusinessUserAuthzData creates and return a BusinessUserAuthzData. We have separate functions to add
 // the entities, since these are dynamic
-func NewBusinessUserAuthzData[TResourceTypeName, TAction comparable](
-	rolePolicies map[constants.BusinessRole][]BasePolicy[constants.BusinessRole, TResourceTypeName, TAction]) (
-	*BusinessUserAuthzData[TResourceTypeName, TAction], error) {
-	authzData := &BusinessUserAuthzData[TResourceTypeName, TAction]{
+func NewBusinessUserAuthzData[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
+	rolePolicies RolePolicies[constants.BusinessRole, Resource, Action]) (
+	*BusinessUserAuthzData[Resource, Action], error,
+) {
+	authzData := &BusinessUserAuthzData[Resource, Action]{
 		RolePolicies: rolePolicies,
 		// The loader will add the authzkeys later
-		AuthzKeys: make(map[AuthorizationKey[BusinessAuthzKey, TResourceTypeName, TAction]]struct{}),
+		AuthzKeys: make(map[AuthorizationKey[BusinessUserCheck, Resource, Action]]struct{}),
 	}
 	return authzData, nil
 }
 
-func (l *BusinessUserAuthzData[TResourceTypeName, TAction]) InitialiseAuthzKeys() {
-	l.AuthzKeys = make(map[AuthorizationKey[BusinessAuthzKey, TResourceTypeName, TAction]]struct{})
+func (l *BusinessUserAuthzData[ResourceType, Action]) InitialiseAuthzKeys() {
+	l.AuthzKeys = make(map[AuthorizationKey[BusinessUserCheck, ResourceType, Action]]struct{})
 }
 
-func (l BusinessUserAuthzData[TResourceTypeName, TAction]) AddEntities(
-	entities []Entity[constants.BusinessRole, BusinessUserEntity]) error {
-	for _, entity := range entities {
-		// entities with unknown roles are not authzKeys
-		policies, ok := l.RolePolicies[entity.Role]
+func (l *BusinessUserAuthzData[ResourceType, Action]) AddUser(
+	user map[constants.BusinessRole]*BusinessUser,
+) error {
+	for role, tenantAuth := range user {
+		policies, ok := l.RolePolicies[role]
 		if !ok {
 			return errs.Wrap(ErrValidation, ErrInvalidRole)
 		}
 
-		for _, group := range entity.User.Groups {
-			for _, policy := range policies {
-				for _, resourceType := range policy.ResourceTypes {
-					for _, action := range resourceType.Actions {
-						key := AuthorizationKey[BusinessAuthzKey, TResourceTypeName, TAction]{
-							User: BusinessAuthzKey{
-								TenantID: entity.User.TenantID,
+		for _, policy := range policies {
+			for _, resource := range policy.ResourceTypes {
+				for _, action := range resource.Actions {
+					for _, group := range tenantAuth.Groups {
+						key := AuthorizationKey[BusinessUserCheck, ResourceType, Action]{
+							User: BusinessUserCheck{
+								TenantID: tenantAuth.TenantID,
 								Group:    group,
 							},
-							ResourceTypeName: resourceType.ID,
-							Action:           action,
+							ResourceType: resource.Type,
+							Action:       action,
 						}
 						l.AuthzKeys[key] = struct{}{}
 					}
@@ -76,30 +96,33 @@ func (l BusinessUserAuthzData[TResourceTypeName, TAction]) AddEntities(
 			}
 		}
 	}
+
 	return nil
 }
 
-type InternalUserAuthzData[TResourceTypeName, TAction comparable] AuthzData[
-	constants.InternalRole, InternalAuthzKey, TResourceTypeName, TAction]
-
-// NewInternalUserAuthzData creates and return a BusinessUserAuthzData. There are no separate functions to add
-// the entities, they are created on construction, since the policies and roles are all static
-func NewInternalUserAuthzData[TResourceTypeName, TAction comparable](
-	rolePolicies map[constants.InternalRole][]BasePolicy[constants.InternalRole, TResourceTypeName, TAction]) (
-	*InternalUserAuthzData[TResourceTypeName, TAction], error) {
+// NewInternalUserAuthzData creates and return a InternalUserAuthzData.
+// There are no separate functions to add the entities,
+// they are created on construction, since the policies and roles are all static
+func NewInternalUserAuthzData[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
+	rolePolicies RolePolicies[constants.InternalRole, Resource, Action]) (
+	*InternalUserAuthzData[Resource, Action], error,
+) {
 	// hold only authzKeys actions
-	authzKeys := make(map[AuthorizationKey[InternalAuthzKey, TResourceTypeName, TAction]]struct{})
+	authzKeys := make(map[AuthorizationKey[InternalUserCheck, Resource, Action]]struct{})
 
 	for role, policies := range rolePolicies {
 		for _, policy := range policies {
-			for _, resourceType := range policy.ResourceTypes {
-				for _, action := range resourceType.Actions {
-					key := AuthorizationKey[InternalAuthzKey, TResourceTypeName, TAction]{
-						User: InternalAuthzKey{
+			for _, resource := range policy.ResourceTypes {
+				for _, action := range resource.Actions {
+					key := AuthorizationKey[InternalUserCheck, Resource, Action]{
+						User: InternalUserCheck{
 							Role: role,
 						},
-						ResourceTypeName: resourceType.ID,
-						Action:           action,
+						ResourceType: resource.Type,
+						Action:       action,
 					}
 					authzKeys[key] = struct{}{}
 				}
@@ -107,8 +130,8 @@ func NewInternalUserAuthzData[TResourceTypeName, TAction comparable](
 		}
 	}
 
-	return &InternalUserAuthzData[TResourceTypeName, TAction]{
-			AuthzKeys: authzKeys, RolePolicies: rolePolicies,
-		},
-		nil
+	return &InternalUserAuthzData[Resource, Action]{
+		AuthzKeys:    authzKeys,
+		RolePolicies: rolePolicies,
+	}, nil
 }

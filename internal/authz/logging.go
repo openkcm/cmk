@@ -16,7 +16,8 @@ type Reason string
 // Additionally, it sends an audit log for unauthorized requests using the provided auditor.
 func LogDecision[TUser UserRequest, TResourceTypeName, TAction comparable](
 	ctx context.Context, request Request[TUser, TResourceTypeName, TAction],
-	auditor *auditor.Auditor, isAllowed bool, reason Reason) {
+	auditor *auditor.Auditor, isAllowed bool, reason Reason,
+) {
 	logFn := log.Warn
 
 	if isAllowed { // Allow

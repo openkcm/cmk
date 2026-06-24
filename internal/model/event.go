@@ -30,7 +30,7 @@ type Event struct {
 }
 
 // TableResourceType return the authz resource type
-func (m Event) TableResourceType() authz.RepoResourceTypeName {
+func (m Event) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeEvent
 }
 
@@ -44,7 +44,7 @@ func (Event) IsSharedModel() bool {
 }
 
 func (m Event) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
