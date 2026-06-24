@@ -102,7 +102,8 @@ func setupTestInstance(
 	logger := testutils.SetupLoggerWithBuffer()
 	systemService := systems.NewFakeService(logger)
 	mappingService := mapping.NewFakeService()
-	_, grpcClient := testutils.NewGRPCSuite(t,
+	_, grpcClient := testutils.NewGRPCSuite(
+		t,
 		func(s *grpc.Server) {
 			systemgrpc.RegisterServiceServer(s, systemService)
 			mappingv1.RegisterServiceServer(s, mappingService)
@@ -1763,11 +1764,11 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	// Pre-seed DEFAULT_KEYSTORE with the cert already trusted so SyncAndGetCryptoAccessData
 	// skips GrantTrust (no role-management cert needed).
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	clientCert := model.NewClientCertificateFromConfig(certCfg, tenant)
+	clientCert := model.NewClientCertificate(certCfg, tenant)
 	ksConfig := model.KeystoreConfig{
 		CryptoAccessData: map[string]model.CryptoConfig{
 			region: {
-				Subject: clientCert.Subject.FormatSubjectWithSlashSeparatedOUs(),
+				Subject: clientCert.Subject.String(),
 				AccessData: model.KeystoreAccessData{
 					"key1": "value1",
 					"key2": "value2",

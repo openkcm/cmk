@@ -14,16 +14,16 @@ import (
 func TestToAPI(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    map[model.CertificatePurpose][]*model.ClientCertificate
+		input    model.ClientCertificates
 		expected *cmkapi.ClientCertificates
 	}{
 		{
 			name: "Valid",
-			input: map[model.CertificatePurpose][]*model.ClientCertificate{
+			input: model.ClientCertificates{
 				model.CertificatePurposeHYOKManagement: {
 					{
 						RootCA: "TDRoot",
-						Subject: model.ClientCertificateSubject{
+						Subject: model.CertificateSubject{
 							Locality:           []string{"L"},
 							OrganizationalUnit: []string{"OU1", "OU2"},
 							Organization:       []string{"O"},
@@ -35,7 +35,7 @@ func TestToAPI(t *testing.T) {
 				model.CertificatePurposeCrypto: {
 					{
 						RootCA: "CRoot",
-						Subject: model.ClientCertificateSubject{
+						Subject: model.CertificateSubject{
 							Locality:           []string{"L"},
 							OrganizationalUnit: []string{"OU1", "OU2"},
 							Organization:       []string{"O"},
@@ -46,18 +46,30 @@ func TestToAPI(t *testing.T) {
 				},
 			},
 			expected: &cmkapi.ClientCertificates{
-				TenantDefault: &cmkapi.TenantDefaultCertificateList{
+				TenantDefault: &cmkapi.CertificateList{
 					Count: ptr.PointTo(1),
-					Value: []cmkapi.TenantDefaultCertificate{{
-						RootCA:  "TDRoot",
-						Subject: "CN=CN,OU=OU1/OU2,O=O,L=L,C=C",
+					Value: []cmkapi.Certificate{{
+						RootCA: "TDRoot",
+						Subject: cmkapi.CertificateSubject{
+							C:  "C",
+							CN: "CN",
+							L:  "L",
+							O:  "O",
+							OU: []string{"OU1", "OU2"},
+						},
 					}},
 				},
-				Crypto: &cmkapi.CryptoCertificateList{
+				Crypto: &cmkapi.CertificateList{
 					Count: ptr.PointTo(1),
-					Value: []cmkapi.CryptoCertificate{{
-						RootCA:  "CRoot",
-						Subject: "CN=CN,OU=OU1/OU2,O=O,L=L,C=C",
+					Value: []cmkapi.Certificate{{
+						RootCA: "CRoot",
+						Subject: cmkapi.CertificateSubject{
+							C:  "C",
+							CN: "CN",
+							L:  "L",
+							O:  "O",
+							OU: []string{"OU1", "OU2"},
+						},
 					}},
 				},
 			},

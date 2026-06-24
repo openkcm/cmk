@@ -120,7 +120,8 @@ func TestCryptoAccessDataSyncer_InvalidYAMLCertSource(t *testing.T) {
 
 func TestCryptoAccessDataSyncer_DefaultKeystoreConfigNotFound(t *testing.T) {
 	// Cert configured but no DEFAULT_KEYSTORE exists
-	inst := setupAccessDataTestInstance(t,
+	inst := setupAccessDataTestInstance(
+		t,
 		[]config.CryptoCert{
 			{Name: "cert1", Subject: config.CryptoCertSubject{CommonNamePrefix: "test", Organization: []string{"org"}}},
 		},
@@ -145,7 +146,8 @@ func TestCryptoAccessDataSyncer_CertAlreadyUpToDate(t *testing.T) {
 		},
 	}
 
-	inst := setupAccessDataTestInstance(t,
+	inst := setupAccessDataTestInstance(
+		t,
 		[]config.CryptoCert{cert},
 		testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, true)),
 		testplugins.WithKeystoreManagement(testplugins.Name, testplugins.NewTestKeystoreManagement()),
@@ -153,8 +155,8 @@ func TestCryptoAccessDataSyncer_CertAlreadyUpToDate(t *testing.T) {
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), inst.tenantID)
 
-	clientCert := model.NewClientCertificateFromConfig(cert, inst.tenantID)
-	expectedSubject := clientCert.Subject.FormatSubjectWithSlashSeparatedOUs()
+	clientCert := model.NewClientCertificate(cert, inst.tenantID)
+	expectedSubject := clientCert.Subject.String()
 
 	// Pre-populate keystore config with cert already trusted at the expected subject.
 	storeKeystoreConfig(t, inst.repo, ctx, model.KeystoreConfig{
@@ -181,7 +183,8 @@ func TestCryptoAccessDataSyncer_NewCertGrantsTrust(t *testing.T) {
 		Subject: config.CryptoCertSubject{CommonNamePrefix: "new", OrganizationalUnit: []string{"xyz"}},
 	}
 
-	inst := setupAccessDataTestInstance(t,
+	inst := setupAccessDataTestInstance(
+		t,
 		[]config.CryptoCert{cert},
 		testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, true)),
 		testplugins.WithKeystoreManagement(testplugins.Name, testplugins.NewTestKeystoreManagement()),
@@ -207,7 +210,8 @@ func TestCryptoAccessDataSyncer_SubjectChangedRegranted(t *testing.T) {
 		Subject: config.CryptoCertSubject{CommonNamePrefix: "test", OrganizationalUnit: []string{"abc"}},
 	}
 
-	inst := setupAccessDataTestInstance(t,
+	inst := setupAccessDataTestInstance(
+		t,
 		[]config.CryptoCert{cert},
 		testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, true)),
 		testplugins.WithKeystoreManagement(testplugins.Name, testplugins.NewTestKeystoreManagement()),
@@ -242,7 +246,8 @@ func TestCryptoAccessDataSyncer_NoRoleManagementCert(t *testing.T) {
 		Subject: config.CryptoCertSubject{CommonNamePrefix: "test", Organization: []string{"org"}},
 	}
 
-	inst := setupAccessDataTestInstance(t,
+	inst := setupAccessDataTestInstance(
+		t,
 		[]config.CryptoCert{cert},
 		testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, true)),
 		testplugins.WithKeystoreManagement(testplugins.Name, testplugins.NewTestKeystoreManagement()),
@@ -267,7 +272,8 @@ func TestCryptoAccessDataSyncer_NoDefaultKeystorePlugin(t *testing.T) {
 	}
 
 	// Key management plugin is NOT marked as default (isDefault=false).
-	inst := setupAccessDataTestInstance(t,
+	inst := setupAccessDataTestInstance(
+		t,
 		[]config.CryptoCert{cert},
 		testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, false)),
 		testplugins.WithKeystoreManagement(testplugins.Name, testplugins.NewTestKeystoreManagement()),
@@ -289,13 +295,16 @@ func TestCryptoAccessDataSyncer_MultipleCerts(t *testing.T) {
 	certs := []config.CryptoCert{
 		{
 			Name:    cert1Name,
-			Subject: config.CryptoCertSubject{CommonNamePrefix: "alpha", OrganizationalUnit: []string{"alpha-org"}}},
+			Subject: config.CryptoCertSubject{CommonNamePrefix: "alpha", OrganizationalUnit: []string{"alpha-org"}},
+		},
 		{
 			Name:    cert2Name,
-			Subject: config.CryptoCertSubject{CommonNamePrefix: "beta", OrganizationalUnit: []string{"beta-org"}}},
+			Subject: config.CryptoCertSubject{CommonNamePrefix: "beta", OrganizationalUnit: []string{"beta-org"}},
+		},
 	}
 
-	inst := setupAccessDataTestInstance(t,
+	inst := setupAccessDataTestInstance(
+		t,
 		certs,
 		testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, true)),
 		testplugins.WithKeystoreManagement(testplugins.Name, testplugins.NewTestKeystoreManagement()),
@@ -303,8 +312,8 @@ func TestCryptoAccessDataSyncer_MultipleCerts(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), inst.tenantID)
 
 	// cert1 already trusted; cert2 is new.
-	clientCert1 := model.NewClientCertificateFromConfig(certs[0], inst.tenantID)
-	cert1Subject := clientCert1.Subject.FormatSubjectWithSlashSeparatedOUs()
+	clientCert1 := model.NewClientCertificate(certs[0], inst.tenantID)
+	cert1Subject := clientCert1.Subject.String()
 
 	storeKeystoreConfig(t, inst.repo, ctx, model.KeystoreConfig{
 		CryptoAccessData: map[string]model.CryptoConfig{

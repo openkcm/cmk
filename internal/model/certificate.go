@@ -88,15 +88,17 @@ type RequestCertArgs struct {
 	Locality    []string
 }
 
+type ClientCertificates map[CertificatePurpose][]*ClientCertificate
+
 // ClientCertificate represents a client certificate used for HYOK key management.
 type ClientCertificate struct {
-	Name    string                   `yaml:"name"`
-	RootCA  string                   `yaml:"rootCA"` //nolint:tagliatelle
-	Subject ClientCertificateSubject `yaml:"subject"`
+	Name    string             `yaml:"name"`
+	RootCA  string             `yaml:"rootCA"` //nolint:tagliatelle
+	Subject CertificateSubject `yaml:"subject"`
 }
 
-// ClientCertificateSubject holds the subject fields of a client certificate.
-type ClientCertificateSubject struct {
+// CertificateSubject holds the subject fields of a client certificate.
+type CertificateSubject struct {
 	Locality           []string `yaml:"locality"`
 	OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
 	Organization       []string `yaml:"organization"`
@@ -104,11 +106,11 @@ type ClientCertificateSubject struct {
 	CommonName         string
 }
 
-func NewClientCertificateFromConfig(value config.CryptoCert, tenant string) ClientCertificate {
+func NewClientCertificate(value config.CryptoCert, tenant string) ClientCertificate {
 	return ClientCertificate{
 		Name:   value.Name,
 		RootCA: value.RootCA,
-		Subject: ClientCertificateSubject{
+		Subject: CertificateSubject{
 			CommonName:         value.Subject.CommonNamePrefix + tenant,
 			Country:            value.Subject.Country,
 			Organization:       value.Subject.Organization,
@@ -118,8 +120,8 @@ func NewClientCertificateFromConfig(value config.CryptoCert, tenant string) Clie
 	}
 }
 
-func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSubject {
-	return ClientCertificateSubject{
+func ToCertificateSubjectFromPKIX(subject pkix.Name) CertificateSubject {
+	return CertificateSubject{
 		Locality:           subject.Locality,
 		OrganizationalUnit: subject.OrganizationalUnit,
 		Organization:       subject.Organization,
@@ -128,7 +130,7 @@ func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSub
 	}
 }
 
-func (subject ClientCertificateSubject) FormatSubjectWithSlashSeparatedOUs() string {
+func (subject CertificateSubject) String() string {
 	s := pkix.Name{
 		Locality:           subject.Locality,
 		Country:            subject.Country,

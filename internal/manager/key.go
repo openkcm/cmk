@@ -591,7 +591,8 @@ func (km *KeyManager) registerHYOKKey(
 	if keyResp.KeyAlgorithm != keymanagement.AES256 {
 		return nil, errs.Wrapf(
 			ErrUnsupportedKeyAlgorithm,
-			fmt.Sprintf("%v for HYOK registration", keyResp.KeyAlgorithm))
+			fmt.Sprintf("%v for HYOK registration", keyResp.KeyAlgorithm),
+		)
 	}
 
 	key.Algorithm = string(cmkapi.KeyAlgorithmAES256)
@@ -611,7 +612,8 @@ func (km *KeyManager) registerHYOKKey(
 	log.Debug(
 		ctx,
 		"Key Register",
-		slog.Group("Provider Key",
+		slog.Group(
+			"Provider Key",
 			slog.String("id", keyResp.KeyID),
 			slog.String("status", keyResp.Status),
 			slog.String("version", keyResp.LatestKeyVersionId),
@@ -638,7 +640,7 @@ func (km *KeyManager) addCertificateSubjectToCryptoData(ctx context.Context, key
 			continue
 		}
 
-		accessData[model.CertificateSubjectKey] = cert.Subject.FormatSubjectWithSlashSeparatedOUs()
+		accessData[model.CertificateSubjectKey] = cert.Subject.String()
 	}
 
 	key.CryptoAccessData, err = json.Marshal(cryptoAccessData)
@@ -951,7 +953,8 @@ func (km *KeyManager) handleSystemsOnKeyRotation(ctx context.Context, key *model
 	query := repo.NewQuery().Where(
 		repo.NewCompositeKeyGroup(
 			repo.NewCompositeKey().Where(
-				repo.KeyConfigIDField, key.KeyConfigurationID),
+				repo.KeyConfigIDField, key.KeyConfigurationID,
+			),
 		),
 	)
 
@@ -1087,7 +1090,8 @@ func (km *KeyManager) handleNewKeyVersion(
 		return err
 	}
 
-	log.Debug(ctx, "Created new key version",
+	log.Debug(
+		ctx, "Created new key version",
 		slog.String("keyId", key.ID.String()),
 		slog.String("nativeId", newVersion.NativeID),
 	)
@@ -1235,7 +1239,8 @@ func (km *KeyManager) getKeyStateOnSyncError(ctx context.Context, key *model.Key
 	case errs.IsAnyError(err, ErrFailedToInitProvider, ErrGetProviderKey):
 		newState = string(cmkapi.KeyStateUNKNOWN)
 	default:
-		log.Warn(ctx, "Failed to sync HYOK key due to unhandled error, keeping existing state",
+		log.Warn(
+			ctx, "Failed to sync HYOK key due to unhandled error, keeping existing state",
 			log.ErrorAttr(err),
 		)
 

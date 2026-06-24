@@ -1006,7 +1006,8 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 			*repo.NewQuery().Where(
 				repo.NewCompositeKeyGroup(
 					repo.NewCompositeKey().Where(
-						repo.IDField, expected.ID),
+						repo.IDField, expected.ID,
+					),
 				),
 			),
 		)
@@ -1120,7 +1121,7 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, certs[model.CertificatePurposeHYOKManagement], 1)
 		assert.Len(t, certs[model.CertificatePurposeCrypto], 1)
-		assert.Equal(t, model.NewClientCertificateSubjectFromPKIX(tenantSubjectPKIX),
+		assert.Equal(t, model.ToCertificateSubjectFromPKIX(tenantSubjectPKIX),
 			certs[model.CertificatePurposeHYOKManagement][0].Subject)
 		assert.Equal(t, TestCertURL,
 			certs[model.CertificatePurposeHYOKManagement][0].RootCA)

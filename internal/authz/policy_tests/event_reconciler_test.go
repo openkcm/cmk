@@ -49,7 +49,8 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 	cfg := &config.Config{Database: dbCfg}
 
 	reconciler, err := eventprocessor.NewCryptoReconciler(
-		t.Context(), cfg, authzRepo, testutils.NewTestPlugins(), nil)
+		t.Context(), cfg, authzRepo, testutils.NewTestPlugins(), nil,
+	)
 	assert.NoError(t, err)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -113,8 +114,8 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 		syncer := eventprocessor.NewCryptoAccessDataSyncer(syncerCfg, authzRepo, testutils.NewTestPlugins())
 
 		// Compute the subject the syncer will derive for this tenant.
-		clientCert := model.NewClientCertificateFromConfig(certCfg, tenant)
-		expectedSubject := clientCert.Subject.FormatSubjectWithSlashSeparatedOUs()
+		clientCert := model.NewClientCertificate(certCfg, tenant)
+		expectedSubject := clientCert.Subject.String()
 
 		// Seed DEFAULT_KEYSTORE via plain repo (bypassing authz) so the authz-guarded
 		// First read is what we're testing, not the write.

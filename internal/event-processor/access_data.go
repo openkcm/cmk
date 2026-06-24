@@ -108,7 +108,7 @@ func (s *CryptoAccessDataSyncer) syncCert(
 	ksConfig *model.KeystoreConfig,
 	cryptoAccessData model.KeyAccessData,
 ) (bool, error) {
-	subject := cert.Subject.FormatSubjectWithSlashSeparatedOUs()
+	subject := cert.Subject.String()
 	cryptoCfg, exists := ksConfig.CryptoAccessData[cert.Name]
 
 	subjectChanged := exists && cryptoCfg.Subject != subject
@@ -122,13 +122,15 @@ func (s *CryptoAccessDataSyncer) syncCert(
 	if subjectChanged {
 		err := s.removeCryptoRoleTrust(ctx, cryptoCfg.AccessData, ksConfig)
 		if err != nil {
-			log.Warn(ctx, "Failed to remove old crypto role trust",
+			log.Warn(
+				ctx, "Failed to remove old crypto role trust",
 				slog.String("cert", cert.Name),
 				slog.String("subject", cryptoCfg.Subject),
 				log.ErrorAttr(err),
 			)
 		} else {
-			log.Info(ctx, "Old crypto role trust removed",
+			log.Info(
+				ctx, "Old crypto role trust removed",
 				slog.String("cert", cert.Name),
 				slog.String("oldSubject", cryptoCfg.Subject),
 			)
@@ -136,13 +138,15 @@ func (s *CryptoAccessDataSyncer) syncCert(
 	}
 
 	if subjectChanged {
-		log.Info(ctx, "Crypto cert subject changed, re-granting trust",
+		log.Info(
+			ctx, "Crypto cert subject changed, re-granting trust",
 			slog.String("cert", cert.Name),
 			slog.String("oldSubject", cryptoCfg.Subject),
 			slog.String("newSubject", subject),
 		)
 	} else {
-		log.Info(ctx, "Crypto cert access not found, granting trust",
+		log.Info(
+			ctx, "Crypto cert access not found, granting trust",
 			slog.String("cert", cert.Name),
 			slog.String("subject", subject),
 		)
@@ -153,7 +157,8 @@ func (s *CryptoAccessDataSyncer) syncCert(
 		return false, err
 	}
 
-	log.Info(ctx, "Crypto role trust granted",
+	log.Info(
+		ctx, "Crypto role trust granted",
 		slog.String("cert", cert.Name),
 		slog.String("subject", subject),
 	)
@@ -357,7 +362,7 @@ func (s *CryptoAccessDataSyncer) getCryptoCertificates(ctx context.Context) ([]m
 	}
 
 	for _, certCfg := range certConfigurations {
-		certs = append(certs, model.NewClientCertificateFromConfig(*certCfg, tenantID))
+		certs = append(certs, model.NewClientCertificate(*certCfg, tenantID))
 	}
 
 	return certs, nil
