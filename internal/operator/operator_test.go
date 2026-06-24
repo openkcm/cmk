@@ -180,9 +180,10 @@ func createInvalidOperatorRequest(
 
 	invalidData := []byte("invalid-proto")
 	taskReq := orbital.TaskRequest{
-		TaskID: uuid.New(),
-		Type:   taskType,
-		Data:   invalidData,
+		TaskID:        uuid.New(),
+		Type:          taskType,
+		Data:          invalidData,
+		TaskCreatedAt: time.Now().UnixNano(),
 	}
 
 	return sessionManagerClient, taskReq, responder
@@ -985,6 +986,9 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 	unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
 	cfg := &config.Config{
 		Database: testutils.TestDB,
+		TenantManager: config.TenantManager{
+			TerminationTimeout: 48 * time.Hour,
+		},
 	}
 
 	svcRegistry := testutils.NewTestPlugins()
@@ -1071,9 +1075,10 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 			assert.NoError(t, err)
 
 			taskReq := orbital.TaskRequest{
-				TaskID: uuid.New(),
-				Type:   taskType,
-				Data:   data,
+				TaskID:        uuid.New(),
+				Type:          taskType,
+				Data:          data,
+				TaskCreatedAt: time.Now().UnixNano(),
 			}
 
 			noOfCalls := 0
@@ -1110,6 +1115,9 @@ func TestHandleTerminateTenant(t *testing.T) {
 	unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
 	cfg := &config.Config{
 		Database: testutils.TestDB,
+		TenantManager: config.TenantManager{
+			TerminationTimeout: 48 * time.Hour,
+		},
 	}
 
 	svcRegistry := testutils.NewTestPlugins()
@@ -1219,9 +1227,10 @@ func TestHandleTerminateTenant(t *testing.T) {
 			assert.NoError(t, err)
 
 			taskReq := orbital.TaskRequest{
-				TaskID: uuid.New(),
-				Type:   taskType,
-				Data:   data,
+				TaskID:        uuid.New(),
+				Type:          taskType,
+				Data:          data,
+				TaskCreatedAt: time.Now().UnixNano(),
 			}
 
 			noOfCalls := 0
@@ -1259,6 +1268,64 @@ func TestHandleTerminateTenant(t *testing.T) {
 			assert.Contains(t, taskResp.ErrorMessage, tt.expTaskResponse.ErrorMessage)
 		})
 	}
+}
+
+func TestHandleTerminateTenantTimeout(t *testing.T) {
+	unusedDB := &multitenancy.DB{}
+	_, clientCon := testutils.NewGRPCSuite(t)
+	unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
+
+	sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
+	clientFactory := mockClient.NewMockFactory(
+		registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
+		sessionmanager.NewMockService(sessionManagerClient),
+	)
+
+	svcRegistry := testutils.NewTestPlugins()
+	_, groupManager, authzRepo := createManagers(t, unusedDB, &config.Config{Database: testutils.TestDB}, svcRegistry)
+	mockTenantManager := &MockTenantManager{}
+
+	cfg := &config.Config{
+		Database: testutils.TestDB,
+		TenantManager: config.TenantManager{
+			TerminationTimeout: time.Hour,
+		},
+	}
+
+	responder := respondertest.NewResponder()
+	op, err := operator.NewTenantOperator(
+		unusedDB,
+		cfg,
+		orbital.TargetOperator{Client: responder},
+		clientFactory,
+		mockTenantManager,
+		groupManager,
+		authzRepo,
+	)
+	require.NoError(t, err)
+
+	go func() {
+		err = op.RunOperator(createContext(t))
+		assert.NoError(t, err)
+	}()
+
+	tenant := tenantgrpc.Tenant{Id: uuid.NewString()}
+	data, err := proto.Marshal(&tenant)
+	require.NoError(t, err)
+
+	// Task was created 2 hours ago — exceeds the 1h timeout set in cfg.
+	taskReq := orbital.TaskRequest{
+		TaskID:        uuid.New(),
+		Type:          tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String(),
+		Data:          data,
+		TaskCreatedAt: time.Now().Add(-2 * time.Hour).UnixNano(),
+	}
+
+	responder.NewRequest(taskReq)
+	taskResp := responder.NewResponse()
+
+	assert.Equal(t, string(orbital.TaskStatusFailed), taskResp.Status)
+	assert.Contains(t, taskResp.ErrorMessage, operator.ErrTerminationTimeout.Error())
 }
 
 func TestExtractOIDCConfig(t *testing.T) {
@@ -1576,9 +1643,10 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 // buildRequest creates a properly structured task request with TaskID
 func buildRequest(taskID uuid.UUID, actionType string, data []byte) orbital.TaskRequest {
 	return orbital.TaskRequest{
-		TaskID: taskID,
-		Type:   actionType,
-		Data:   data,
+		TaskID:        taskID,
+		Type:          actionType,
+		Data:          data,
+		TaskCreatedAt: time.Now().UnixNano(),
 	}
 }
 

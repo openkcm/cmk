@@ -829,6 +829,12 @@ config:
     # need maxReconcileCount = 18, as there is an exponential backoff for retries,
     # starting with 10s and limiting at 10240s.
 
+  # Tenant manager configuration
+  tenantManager:
+    # Maximum duration before a tenant termination job is failed.
+    # Default is 48h.
+    #terminationTimeout: "48h"
+
   audit:
     #endpoint: http://localhost:4043/logs
     #mtls:

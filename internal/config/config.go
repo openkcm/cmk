@@ -258,8 +258,9 @@ type HTTPServer struct {
 }
 
 type TenantManager struct {
-	SecretRef commoncfg.SecretRef `yaml:"secretRef"`
-	AMQP      AMQP                `yaml:"amqp"`
+	SecretRef          commoncfg.SecretRef `yaml:"secretRef"`
+	AMQP               AMQP                `yaml:"amqp"`
+	TerminationTimeout time.Duration       `yaml:"terminationTimeout" default:"48h"`
 }
 
 // Validate checks the TenantManager configuration values

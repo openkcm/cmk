@@ -39,6 +39,8 @@ const (
 	reconcileAfterSecProcessing = 3 * time.Second
 	reconcileAfterSecError      = 15 * time.Second
 
+	defaultTerminationTimeout = 48 * time.Hour
+
 	operatorComponent       = "operator"
 	msgRegisteringHandler   = "registering handler"
 	msgInitializingOperator = "initializing operator"
@@ -61,12 +63,14 @@ const (
 	WorkingStateWaitingTenantOffboarding = "waiting for tenant offboarding to complete"
 	WorkingStateTenantOffboardingFailed  = "tenant offboarding failed"
 	WorkingStateTenantProbingFailed      = "tenant probing failed"
+	WorkingStateTenantTerminationTimeout = "tenant termination timed out"
 )
 
 var (
-	ErrInvalidData       = errors.New("invalid data")
-	ErrFailedResponse    = errors.New("failed response")
-	ErrTenantOffboarding = errors.New("tenant offboarding error")
+	ErrInvalidData        = errors.New("invalid data")
+	ErrFailedResponse     = errors.New("failed response")
+	ErrTenantOffboarding  = errors.New("tenant offboarding error")
+	ErrTerminationTimeout = errors.New("tenant termination timed out")
 
 	ErrInvalidTenantID  = errors.New("invalid tenant ID")
 	ErrInvalidAuthProps = errors.New("invalid authentication properties")
@@ -110,6 +114,10 @@ func NewTenantOperator(
 
 	if clientsFactory.SessionManager().OIDCMapping() == nil {
 		return nil, oops.Errorf("sessionManagerClient is nil")
+	}
+
+	if cfg.TenantManager.TerminationTimeout == 0 {
+		cfg.TenantManager.TerminationTimeout = defaultTerminationTimeout
 	}
 
 	return &TenantOperator{
@@ -378,6 +386,11 @@ func (o *TenantOperator) handleTerminateTenant(
 	req orbital.HandlerRequest,
 	resp *orbital.HandlerResponse,
 ) {
+	if time.Since(req.TaskCreatedAt) > o.cfg.TenantManager.TerminationTimeout {
+		setErrorStateAndFail(ctx, resp, ErrTerminationTimeout, WorkingStateTenantTerminationTimeout)
+		return
+	}
+
 	tenantProto := &tenantgrpc.Tenant{}
 
 	err := proto.Unmarshal(req.TaskData, tenantProto)
