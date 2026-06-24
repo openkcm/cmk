@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commonfs/loader"
@@ -15,6 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openkcm/cmk/internal/constants"
+)
+
+var (
+	onceSigningKeys    sync.Once
+	sharedSigningKeys  *TestSigningKeyStorage
+	errSigningKeysInit error
 )
 
 // GenerateTestKeyPair generates an RSA key pair for testing
@@ -65,58 +72,78 @@ func (t *TestSigningKeyStorage) Cleanup() {
 	}
 }
 
-// NewTestSigningKeyStorage creates a signing key storage with pre-generated test keys.
-// Generates 1 key pair (keyID 0). Tests can opt into rotation scenarios elsewhere if needed.
+// NewTestSigningKeyStorage creates or returns a shared signing key storage with pre-generated test keys.
+// Generates 1 key pair (keyID 0) on first call, then reuses the same keys for all subsequent tests.
+// This significantly speeds up test execution by avoiding redundant RSA key generation.
 // Returns storage that implements keyvalue.ReadOnlyStringToBytesStorage interface
 //
-//nolint:funcorder
+//nolint:funcorder,funlen
 func NewTestSigningKeyStorage(tb testing.TB) *TestSigningKeyStorage {
 	tb.Helper()
 
-	tmpDir := tb.TempDir()
-	privateKeys := make(map[int]*rsa.PrivateKey)
+	onceSigningKeys.Do(func() {
+		tmpDir := tb.TempDir()
+		privateKeys := make(map[int]*rsa.PrivateKey)
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(tb, err, "failed to generate private key")
+		privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			errSigningKeysInit = err
+			return
+		}
 
-	privateKeys[0] = privateKey
+		privateKeys[0] = privateKey
 
-	// Write public key to PEM file
-	pubASN1, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
-	require.NoError(tb, err, "failed to marshal public key")
+		// Write public key to PEM file
+		pubASN1, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+		if err != nil {
+			errSigningKeysInit = err
+			return
+		}
 
-	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubASN1})
-	keyFile := filepath.Join(tmpDir, "0.pem")
+		pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubASN1})
+		keyFile := filepath.Join(tmpDir, "0.pem")
 
-	err = os.WriteFile(keyFile, pubPEM, 0o600)
-	require.NoError(tb, err, "failed to write public key file")
+		err = os.WriteFile(keyFile, pubPEM, 0o600)
+		if err != nil {
+			errSigningKeysInit = err
+			return
+		}
 
-	// Create memory storage and loader for public keys
-	memoryStorage := keyvalue.NewMemoryStorage[string, []byte]()
-	signingKeysLoader, err := loader.Create(
-		loader.OnPath(tmpDir),
-		loader.WithExtension("pem"),
-		loader.WithKeyIDType(loader.FileNameWithoutExtension),
-		loader.WithStorage(memoryStorage),
-	)
-	require.NoError(tb, err, "failed to create signing keys loader")
+		// Create memory storage and loader for public keys
+		memoryStorage := keyvalue.NewMemoryStorage[string, []byte]()
+		signingKeysLoader, err := loader.Create(
+			loader.OnPath(tmpDir),
+			loader.WithExtension("pem"),
+			loader.WithKeyIDType(loader.FileNameWithoutExtension),
+			loader.WithStorage(memoryStorage),
+		)
+		if err != nil {
+			errSigningKeysInit = err
+			return
+		}
 
-	err = signingKeysLoader.Start()
-	require.NoError(tb, err, "failed to load signing keys")
+		err = signingKeysLoader.Start()
+		if err != nil {
+			errSigningKeysInit = err
+			return
+		}
 
-	storage := &TestSigningKeyStorage{
-		storage:     memoryStorage,
-		loader:      signingKeysLoader,
-		tempDir:     tmpDir,
-		privateKeys: privateKeys,
-		cleanupFunc: func() {
-			_ = signingKeysLoader.Close()
-		},
-	}
+		sharedSigningKeys = &TestSigningKeyStorage{
+			storage:     memoryStorage,
+			loader:      signingKeysLoader,
+			tempDir:     tmpDir,
+			privateKeys: privateKeys,
+			cleanupFunc: func() {
+				_ = signingKeysLoader.Close()
+			},
+		}
 
-	tb.Cleanup(storage.Cleanup)
+		tb.Cleanup(sharedSigningKeys.Cleanup)
+	})
 
-	return storage
+	require.NoError(tb, errSigningKeysInit, "failed to initialize signing keys")
+
+	return sharedSigningKeys
 }
 
 // TestRoleGetter is a mock RoleGetter for testing that always returns a default role
@@ -126,7 +153,8 @@ type TestRoleGetter struct {
 
 // GetRoleFromIAM returns the configured default role (or TenantAdminRole if not set)
 func (t *TestRoleGetter) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (
-	constants.BusinessRole, error) {
+	constants.BusinessRole, error,
+) {
 	if t.DefaultRole != "" {
 		return t.DefaultRole, nil
 	}

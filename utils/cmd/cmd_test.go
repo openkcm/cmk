@@ -2,6 +2,7 @@ package cmd_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/utils/cmd"
 )
+
+var ErrForced = errors.New("")
 
 func buildCfg(t *testing.T) *config.Config {
 	t.Helper()
@@ -62,9 +65,28 @@ func buildCfg(t *testing.T) *config.Config {
 }
 
 func TestRunFunctionWithSigHandling(t *testing.T) {
-	t.Run("Should exitCode 1 on config not found", func(t *testing.T) {
+	t.Run("Should exitCode 1 when run function returns error", func(t *testing.T) {
+		// Run in a temp directory for isolation
+		tempDir := t.TempDir()
+		t.Chdir(tempDir)
+
+		// Create a minimal valid config so LoadConfig succeeds
+		cfg := &config.Config{
+			BaseConfig: commoncfg.BaseConfig{
+				Logger: commoncfg.Logger{
+					Format: "json",
+					Level:  "info",
+				},
+			},
+		}
+		bytes, err := yaml.Marshal(cfg)
+		require.NoError(t, err)
+		err = os.WriteFile("config.yaml", bytes, 0o600)
+		require.NoError(t, err)
+
+		// The function returns an error
 		exitCode := cmd.RunFuncWithSignalHandling(func(ctx context.Context, c *config.Config) error {
-			return nil
+			return ErrForced
 		}, cmd.RunFlags{})
 
 		require.Equal(t, 1, exitCode)
@@ -86,18 +108,16 @@ func TestRunFunctionWithSigHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filename := "config.yaml"
-			f, err := os.Create(filename)
-			require.NoError(t, err)
+			// Run in a temp directory for isolation
+			tempDir := t.TempDir()
+			t.Chdir(tempDir)
 
+			filename := "config.yaml"
 			bytes, err := yaml.Marshal(tt.cfg())
 			require.NoError(t, err)
 
-			_, err = f.Write(bytes)
+			err = os.WriteFile(filename, bytes, 0o600)
 			require.NoError(t, err)
-
-			defer f.Close()
-			defer os.Remove(filename)
 
 			exitCode := cmd.RunFuncWithSignalHandling(func(_ context.Context, _ *config.Config) error {
 				return nil

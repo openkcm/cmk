@@ -84,12 +84,12 @@ func TestKeystorePoolMonitorCallback(t *testing.T) {
 		},
 		Database: dbConf,
 		KeystorePool: config.KeystorePool{
-			Interval: 5 * time.Second,
+			Interval: 100 * time.Millisecond,
 		},
 	})
 
 	t.Run("initial read", func(t *testing.T) {
-		time.Sleep(1 * time.Second) // Ensure the initial entries are committed before starting the monitor
+		time.Sleep(50 * time.Millisecond)
 
 		var metrics metricdata.ResourceMetrics
 		err := reader.Collect(t.Context(), &metrics)
@@ -102,7 +102,7 @@ func TestKeystorePoolMonitorCallback(t *testing.T) {
 	})
 
 	t.Run("previous value is returned within interval", func(t *testing.T) {
-		time.Sleep(2 * time.Second)
+		time.Sleep(50 * time.Millisecond)
 		addToKeystorePool(t, dbRepo, 3)
 
 		var metrics metricdata.ResourceMetrics
@@ -116,7 +116,7 @@ func TestKeystorePoolMonitorCallback(t *testing.T) {
 	})
 
 	t.Run("value is refreshed after interval", func(t *testing.T) {
-		time.Sleep(5 * time.Second)
+		time.Sleep(150 * time.Millisecond)
 
 		var metrics metricdata.ResourceMetrics
 		err := reader.Collect(t.Context(), &metrics)
