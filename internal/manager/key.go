@@ -520,7 +520,7 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 
 	err = providerTransformer.ValidateKeyAccessData(ctx, keyPatch.AccessDetails)
 	if err != nil {
-		return errs.Wrap(ErrBadCryptoRegionData, err)
+		return err
 	}
 
 	keyCryptoData := key.GetCryptoAccessData()
