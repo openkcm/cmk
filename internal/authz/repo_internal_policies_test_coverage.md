@@ -236,7 +236,10 @@ block, unblock, terminate) received via AMQP.
 | Update | Tenant | `TenantOperator.applyOIDC` (handleApplyTenantAuth) | ✓ |
 | Delete | Tenant | `TenantManager.DeleteTenant` (handleTerminateTenant) | ✓ |
 | Count, List | System | `TenantManager.sendUnlinkForConnectedSystems`, `checkAllSystemsUnlinked`, `unmapAllSystemsFromRegistry` | ✓ |
+| First | System | `TenantManager.sendUnlinkForConnectedSystems` → `UnlinkSystemAction` (when systems are still linked) | ✓ |
 | Count, List | Key | `TenantManager.detachPrimaryKeys`, `checkAllPrimaryKeysProcessed`, `checkAllPrimaryKeysDetached` | ✓ |
+| Update | Key | `TenantManager.detachPrimaryKeys` → `KeyManager.Detach` → `repo.Patch` (when primary keys are not yet detached) | ✓ |
+| First | KeyConfiguration | `TenantManager.sendUnlinkForConnectedSystems` → `UnlinkSystemAction` → `repo.First(keyConfig)` | ✓ |
 
 **Test:** `internal/operator/authz_test.go`
 `TestTenantProvisioning_AuthzPolicy`
@@ -244,25 +247,25 @@ block, unblock, terminate) received via AMQP.
 Three sub-tests drive the three database-touching handlers directly via
 `orbital.ExecuteHandler` (no AMQP):
 
-- `InternalTenantProvisioningRole allows First+Create on Group and Create on Tenant`:
+- `handleCreateTenant`:
   Calls `HandleCreateTenant` with a new tenant ID. `probe.Check` performs First on
   Group (none exist → not found, clean). `CreateTenant` creates the schema
   (Create on Tenant). `CreateDefaultGroups` creates the admin/auditor groups
   (Create on Group). Handler returns PROCESSING (waiting for registry confirmation).
 
-- `InternalTenantProvisioningRole allows Update on Tenant`:
+- `handleApplyTenantAuth`:
   Calls `HandleApplyTenantAuth` with a seeded tenant ID and a fake session manager
   that returns success. `applyOIDC` performs Patch (Update) on Tenant and calls
   the session manager. Handler returns DONE.
 
-- `InternalTenantProvisioningRole allows Count+List on System and Key, Delete on Tenant`:
-  Calls `HandleTerminateTenant` with a seeded tenant ID. No systems or primary keys
-  are seeded → `sendUnlinkForConnectedSystems`, `checkAllSystemsUnlinked`, and
-  `unmapAllSystemsFromRegistry` all exercise Count+List on System via empty
-  `ProcessInBatch` → `detachPrimaryKeys`, `checkAllPrimaryKeysProcessed`, and
-  `checkAllPrimaryKeysDetached` exercise Count+List on Key → `OffboardTenant` returns
-  OffboardingSuccess → `DeleteTenant` deletes the tenant row (Delete on Tenant).
-  Handler returns DONE.
+- `handleTerminateTenant`:
+  Seeds a KeyConfiguration and a Key (ENABLED, PrimaryKeyID set) via plain repo,
+  then calls `HandleTerminateTenant`. No linked systems → `sendUnlinkForConnectedSystems`
+  is a no-op (Count+List on System). One key matching `checkKeyDetatchingQuery` →
+  `detachPrimaryKeys` calls `KeyManager.Detach` → `repo.Patch` (Update on Key).
+  After Detach the key is DETACHING so `checkAllPrimaryKeysDetached` returns false
+  → handler returns ContinueAndWait. Exercises Count+List+First on System,
+  Count+List+Update on Key, and First on KeyConfiguration.
 
 ---
 

@@ -131,6 +131,7 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
+						RepoActionFirst,
 					},
 				},
 				{
@@ -138,6 +139,13 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
+						RepoActionUpdate,
+					},
+				},
+				{
+					Type: RepoResourceTypeKeyconfiguration,
+					Actions: []RepoAction{
+						RepoActionFirst,
 					},
 				},
 			},
