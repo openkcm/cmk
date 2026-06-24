@@ -90,7 +90,8 @@ func SetupKeyTest(t *testing.T) (
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 
 	km := manager.NewKeyManager(
-		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
+		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor,
+	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
@@ -128,12 +129,19 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 	require.NoError(t, err)
 
+	cryptoAccessData := model.KeyAccessData{
+		"crypto-1": {"someKey": "someValue"},
+	}
+	cryptoBytes, err := json.Marshal(cryptoAccessData)
+	require.NoError(t, err)
+
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
 		k.KeyType = constants.KeyTypeHYOK
 		k.NativeID = ptr.PointTo("mock-key/11111111")
 		k.ManagementAccessData = hyokInfo
 		k.Provider = providerTest
+		k.CryptoAccessData = cryptoBytes
 	})
 
 	createdKey, err := km.Create(ctx, key)
@@ -791,7 +799,7 @@ func TestList(t *testing.T) {
 
 //nolint:nestif
 func TestUpdate(t *testing.T) {
-	km, _, ctx, keyConfig := SetupKeyTest(t)
+	km, r, ctx, keyConfig := SetupKeyTest(t)
 	createdKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
 
 	tests := []struct {
@@ -866,6 +874,36 @@ func TestUpdate(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Should allow adding more crypto regions with uneditable ones", func(t *testing.T) {
+		// Set new key to primary
+		key := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyConfig.PrimaryKeyID = ptr.PointTo(key.ID)
+
+		_, err := r.Patch(ctx, keyConfig, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		// Create system to make region not editable
+		keyPatch := cmkapi.KeyPatch{
+			AccessDetails: &cmkapi.KeyAccessDetails{
+				Crypto: &map[string]map[string]any{
+					"crypto-1": {
+						"certificateSubject": "CN=test_tenant0,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE",
+						"someKey":            "someValue",
+					},
+					"crypto-2": {"someKey": "someValue"},
+				},
+			},
+		}
+		system1 := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfig.ID
+			s.Status = cmkapi.SystemStatusCONNECTED
+			s.Region = "crypto-1"
+		})
+		testutils.CreateTestEntities(ctx, t, r, system1)
+		_, err = km.UpdateKey(ctx, key.ID, keyPatch)
+		assert.NoError(t, err)
+	})
 }
 
 func TestDelete(t *testing.T) {
@@ -1271,7 +1309,8 @@ func TestKeyRotationTime(t *testing.T) {
 			ctx, r, repo.Pagination{Skip: 0, Top: 10, Count: true},
 			model.KeyVersion{},
 			repo.NewQuery().Where(repo.NewCompositeKeyGroup(
-				repo.NewCompositeKey().Where("key_id", createdKey.ID))),
+				repo.NewCompositeKey().Where("key_id", createdKey.ID),
+			)),
 		)
 		require.NoError(t, err)
 		assert.Equal(t, 1, count)
@@ -1324,7 +1363,8 @@ func TestKeyRotationTime(t *testing.T) {
 			ctx, r, repo.Pagination{Skip: 0, Top: 10, Count: true},
 			model.KeyVersion{},
 			repo.NewQuery().Where(repo.NewCompositeKeyGroup(
-				repo.NewCompositeKey().Where("key_id", key.ID))),
+				repo.NewCompositeKey().Where("key_id", key.ID),
+			)),
 		)
 		require.NoError(t, err)
 		assert.Equal(t, 2, count, "Should have 2 versions after rotation")
@@ -1390,7 +1430,8 @@ func TestKeyRotationTime(t *testing.T) {
 			ctx, r, repo.Pagination{Skip: 0, Top: 10, Count: true},
 			model.KeyVersion{},
 			repo.NewQuery().Where(repo.NewCompositeKeyGroup(
-				repo.NewCompositeKey().Where("key_id", createdKey.ID))),
+				repo.NewCompositeKey().Where("key_id", createdKey.ID),
+			)),
 		)
 		require.NoError(t, err)
 		require.Len(t, versions, 1)
@@ -1542,7 +1583,8 @@ func countEvents(ctx context.Context, r repo.Repo, eventType string) (int, error
 		repo.Pagination{Skip: 0, Top: 1000, Count: true},
 		model.Event{},
 		repo.NewQuery().Where(repo.NewCompositeKeyGroup(
-			repo.NewCompositeKey().Where("type", eventType))),
+			repo.NewCompositeKey().Where("type", eventType),
+		)),
 	)
 	if err != nil {
 		return 0, err
