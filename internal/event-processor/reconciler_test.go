@@ -1230,6 +1230,43 @@ func TestJobTermination(t *testing.T) {
 		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfig2.ID, *sysAfter.KeyConfigurationID)
+		assert.Equal(t, cmkapi.SystemStatusCONNECTED, sysAfter.Status)
+	})
+
+	t.Run("System switch to new key on successful SYSTEM_SWITCH_NEW_PK job termination", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusPROCESSING
+		})
+		keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		key2 := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig2.ID
+		})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig2, key2)
+		require.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
+
+		data := eventprocessor.SystemActionJobData{
+			TenantID:  tenant,
+			SystemID:  sys.ID.String(),
+			KeyIDFrom: key.ID.String(),
+			KeyIDTo:   key2.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventprocessor.JobTypeSystemSwitchNewPK.String(),
+			Data:       dataBytes,
+		}, true)
+
+		sysAfter := &model.System{
+			ID: sys.ID,
+		}
+		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, keyConfig2.ID, *sysAfter.KeyConfigurationID)
+		assert.Equal(t, cmkapi.SystemStatusCONNECTED, sysAfter.Status)
 	})
 
 	t.Run("System status on success SYSTEM_UNLINK_DECOMMISSION job termination", func(t *testing.T) {

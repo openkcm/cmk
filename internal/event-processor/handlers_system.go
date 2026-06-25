@@ -258,6 +258,7 @@ func (h *SystemSwitchJobHandler) HandleJobDoneEvent(ctx context.Context, job orb
 	}
 
 	err = h.repo.Transaction(ctx, func(ctx context.Context) error {
+		system.Status = cmkapi.SystemStatusCONNECTED
 		system.KeyConfigurationID = &key.KeyConfigurationID
 		err = updateSystem(ctx, h.repo, system)
 		if err != nil {
