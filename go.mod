@@ -1,6 +1,6 @@
 module github.com/openkcm/cmk
 
-go 1.25.7
+go 1.25.9
 
 toolchain go1.26.4
 
@@ -26,7 +26,8 @@ require (
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/runtime v1.4.2
 	github.com/openkcm/api-sdk v0.18.1
-	github.com/openkcm/common-sdk v1.17.0
+	github.com/openkcm/cmk v0.8.0
+	github.com/openkcm/common-sdk v1.17.1-0.20260625093719-a9d985dfad28
 	github.com/openkcm/orbital v0.5.1
 	github.com/openkcm/plugin-sdk v0.13.0
 	github.com/pkg/errors v0.9.1

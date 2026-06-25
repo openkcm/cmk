@@ -14,6 +14,7 @@ import (
 	"github.com/samber/oops"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
+	commonmiddleware "github.com/openkcm/common-sdk/pkg/middleware"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
@@ -203,6 +204,10 @@ func createHTTPServer(
 				middleware.InjectMultiTenancy(),
 				middleware.InjectRequestID(),
 				middleware.TracingMiddleware(cfg),
+				// SecurityHeadersMiddleware is last in the slice so it runs first (FILO order).
+				// Security headers must be set before any other middleware runs to ensure
+				// they appear on every response, including error responses.
+				commonmiddleware.SecurityHeadersMiddleware(nil),
 			},
 		},
 	)
