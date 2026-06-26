@@ -21,6 +21,12 @@ import (
 
 var ErrAuthzLoader = errors.New("error creating authz repo loader")
 
+type contextKey string
+
+const (
+	TenantManagerFactoryKey contextKey = "tenantManagerFactory"
+)
+
 type CommandFactory struct {
 	dbCon *multitenancy.DB
 	r     repo.Repo

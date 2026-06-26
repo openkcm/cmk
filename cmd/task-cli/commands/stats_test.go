@@ -2,7 +2,6 @@ package commands_test
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,10 +10,7 @@ import (
 )
 
 func TestStatsCmd_QueueInfo(t *testing.T) {
-	ctx := context.Background()
-	inspector := &commands.MockInspector{}
-
-	cmd := commands.NewStatsCmd(ctx, inspector)
+	cmd := commands.SetupCommandTest(t, commands.NewStatsCmd())
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -28,10 +24,7 @@ func TestStatsCmd_QueueInfo(t *testing.T) {
 }
 
 func TestStatsCmd_History(t *testing.T) {
-	ctx := context.Background()
-	inspector := &commands.MockInspector{}
-
-	cmd := commands.NewStatsCmd(ctx, inspector)
+	cmd := commands.SetupCommandTest(t, commands.NewStatsCmd())
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -45,10 +38,7 @@ func TestStatsCmd_History(t *testing.T) {
 }
 
 func TestStatsCmd_PendingTasks(t *testing.T) {
-	ctx := context.Background()
-	inspector := &commands.MockInspector{}
-
-	cmd := commands.NewStatsCmd(ctx, inspector)
+	cmd := commands.SetupCommandTest(t, commands.NewStatsCmd())
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -62,10 +52,7 @@ func TestStatsCmd_PendingTasks(t *testing.T) {
 }
 
 func TestStatsCmd_ActiveTasks(t *testing.T) {
-	ctx := context.Background()
-	inspector := &commands.MockInspector{}
-
-	cmd := commands.NewStatsCmd(ctx, inspector)
+	cmd := commands.SetupCommandTest(t, commands.NewStatsCmd())
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -76,11 +63,9 @@ func TestStatsCmd_ActiveTasks(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, out.String(), "\"ID\": \"task3\"")
 }
-func TestStatsCmd_CompletedTasks(t *testing.T) {
-	ctx := context.Background()
-	inspector := &commands.MockInspector{}
 
-	cmd := commands.NewStatsCmd(ctx, inspector)
+func TestStatsCmd_CompletedTasks(t *testing.T) {
+	cmd := commands.SetupCommandTest(t, commands.NewStatsCmd())
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -94,10 +79,7 @@ func TestStatsCmd_CompletedTasks(t *testing.T) {
 }
 
 func TestStatsCmd_ArchivedTasks(t *testing.T) {
-	ctx := context.Background()
-	inspector := &commands.MockInspector{}
-
-	cmd := commands.NewStatsCmd(ctx, inspector)
+	cmd := commands.SetupCommandTest(t, commands.NewStatsCmd())
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)

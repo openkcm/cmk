@@ -1,30 +1,31 @@
 package commands
 
 import (
-	"context"
 	"encoding/json"
 
 	"github.com/spf13/cobra"
+
+	"github.tools.sap/kms/cmk/utils/context"
 )
 
 // NewGetTenantCmd creates a Cobra command that gets tenant information.
-func (f *CommandFactory) NewGetTenantCmd(ctx context.Context) *cobra.Command {
+func NewGetTenantCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get",
 		Short: "Get tenant by id. Usage: tm get -i [tenant id]",
 		Long:  "Get tenant by id. Usage: tm get --id [tenant id]",
 		Args:  cobra.ExactArgs(0),
 
-		//nolint:contextcheck
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			f := context.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
+
 			id, _ := cmd.Flags().GetString("id")
 
 			if id == "" {
 				cmd.Println("Tenant id is required")
 				return ErrTenantIDRequired
 			}
-
-			ctx := cmd.Context()
 
 			tenant, err := f.tm.GetTenantByID(ctx, id)
 			if err != nil {
@@ -57,8 +58,6 @@ func (f *CommandFactory) NewGetTenantCmd(ctx context.Context) *cobra.Command {
 	if err != nil {
 		cmd.PrintErrf("failed to mark flag 'id' as required: %v\n", err)
 	}
-
-	cmd.SetContext(ctx)
 
 	return cmd
 }

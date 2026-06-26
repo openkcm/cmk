@@ -12,14 +12,15 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/cmd/tenant-manager-cli/commands"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/log"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
-	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/cmd/tenant-manager-cli/commands"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	"github.tools.sap/kms/cmk/internal/db"
+	cmkpluginregistry "github.tools.sap/kms/cmk/internal/pluginregistry"
+	serviceapi "github.tools.sap/kms/cmk/internal/pluginregistry/service/api"
+	cliUtils "github.tools.sap/kms/cmk/utils/cli"
+	"github.tools.sap/kms/cmk/utils/cmd"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 var (
@@ -76,24 +77,30 @@ func setupCommands(
 		return nil, err
 	}
 
-	rootCmd := factory.NewRootCmd(ctx, cfg)
+	root := &cobra.Command{
+		Use:   "tm",
+		Short: "Tenant Manager CLI Application",
+		Long: "Tenant Manager is a simple CLI tool to manage tenants, supporting: creating tenant, " +
+			"creating tenant with groups, " +
+			"creating groups, " +
+			"updating of region and status field on a tenant entity in public table, " +
+			"updating of group names, " +
+			"changing any field value in any table of a tenant schema.",
 
-	createCmd := factory.NewCreateTenantCmd(ctx)
-	rootCmd.AddCommand(createCmd)
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			ctx := context.WithValue(cmd.Context(), commands.TenantManagerFactoryKey, factory)
+			cmd.SetContext(ctx)
+		},
+	}
 
-	deleteTenantCmd := factory.NewDeleteTenantCmd(ctx)
-	rootCmd.AddCommand(deleteTenantCmd)
+	root.AddCommand(commands.NewCreateTenantCmd())
+	root.AddCommand(commands.NewDeleteTenantCmd())
+	root.AddCommand(commands.NewGetTenantCmd())
+	root.AddCommand(commands.NewListTenantsCmd())
+	root.AddCommand(commands.NewUpdateTenantCmd())
+	root.AddCommand(cliUtils.NewSleep(cfg))
 
-	getTenantCmd := factory.NewGetTenantCmd(ctx)
-	rootCmd.AddCommand(getTenantCmd)
-
-	listTenantsCmd := factory.NewListTenantsCmd(ctx)
-	rootCmd.AddCommand(listTenantsCmd)
-
-	updateTenantCmd := factory.NewUpdateTenantCmd(ctx)
-	rootCmd.AddCommand(updateTenantCmd)
-
-	return rootCmd, nil
+	return root, nil
 }
 
 func main() {

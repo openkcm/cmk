@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,47 +11,21 @@ import (
 	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
-// NewRootCmdWithInfinitySleep creates a new root cobra command with infinite sleep option.
-// The command will sleep indefinitely when the --sleep flag is provided.
-// This is useful for containers so the CLI can be invoked by exec commands while keeping the container running.
-func NewRootCmdWithInfinitySleep(
-	ctx context.Context,
-	cfg *config.Config,
-	use string,
-	shortDesc string,
-	longDesc string,
-) *cobra.Command {
-	var sleep bool
+func NewSleep(cfg *config.Config) *cobra.Command {
+	return &cobra.Command{
+		Use:   "sleep",
+		Short: "sleep",
+		Long:  "sleep",
+		Run: func(cmd *cobra.Command, args []string) {
+			statusserver.StartStatusServer(cmd.Context(), cfg)
 
-	rootCmd := &cobra.Command{
-		Use:   use,
-		Short: shortDesc,
-		Long:  longDesc,
+			cmd.Println("Pod running...")
 
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			return nil
-		},
+			sigs := make(chan os.Signal, 1)
+			signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-		Run: func(cmd *cobra.Command, _ []string) {
-			if sleep {
-				statusserver.StartStatusServer(ctx, cfg)
-				infiniteRun(cmd)
-			}
+			<-sigs
+			cmd.Println("Shutting down gracefully...")
 		},
 	}
-
-	rootCmd.PersistentFlags().BoolVar(&sleep, "sleep", false, "Enable sleep mode")
-	rootCmd.SetContext(ctx)
-
-	return rootCmd
-}
-
-func infiniteRun(cmd *cobra.Command) {
-	cmd.Println("Pod running...")
-
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	<-sigs
-	cmd.Println("Shutting down gracefully...")
 }
