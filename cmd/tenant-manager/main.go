@@ -3,11 +3,7 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/logger"
@@ -267,51 +263,24 @@ func loadConfig() (*config.Config, error) {
 	return cfg, err
 }
 
-// runFuncWithSignalHandling runs the given function with signal handling. When
-// a CTRL-C is received, the context will be cancelled on which the function can
-// act upon.
-func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {
-	ctx, cancelOnSignal := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt, syscall.SIGTERM,
-	)
-	defer cancelOnSignal()
-
-	exitCode := 0
-
-	// Load Configuration
-	cfg, err := loadConfig()
-	if err != nil {
-		log.Error(ctx, errMsgLoadConfig, err)
-		_, _ = fmt.Fprintln(os.Stderr, err)
-
-		exitCode = 1
-	}
-
-	err = f(ctx, cfg)
-	if err != nil {
-		log.Error(ctx, errMsgStartApp, err)
-		_, _ = fmt.Fprintln(os.Stderr, err)
-		exitCode = 1
-	}
-
-	// graceful shutdown so running goroutines may finish
-	_, _ = fmt.Fprintln(os.Stderr, fmt.Sprintf(*gracefulShutdownMessage, *gracefulShutdownSec))
-	time.Sleep(time.Duration(*gracefulShutdownSec) * time.Second)
-
-	return exitCode
-}
-
 // main is the entry point for the application. It is intentionally kept small
 // because it is hard to test, which would lower test coverage.
 func main() {
 	flag.Parse()
 
-	exitCode := runFuncWithSignalHandling(run)
+	exitCode := cmd.RunFuncWithSignalHandling(run, cmd.RunFlags{
+		GracefulShutdownSec:     *gracefulShutdownSec,
+		GracefulShutdownMessage: *gracefulShutdownMessage,
+		Env:                     "TENANT_MANAGER",
+		LoadOptions: []commoncfg.Option{
+			commoncfg.WithPaths(
+				"/etc/tenant-manager",
+				".",
+			),
+		},
+	})
 	os.Exit(exitCode)
 }
-
-// validateConfig
 
 // validateConfig validates the configuration before starting services
 func validateConfig(cfg *config.Config) error {

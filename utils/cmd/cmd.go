@@ -19,6 +19,7 @@ type RunFlags struct {
 	GracefulShutdownSec     int64
 	GracefulShutdownMessage string
 	Env                     string
+	LoadOptions             []commoncfg.Option
 }
 
 // RunFuncWithSignalHandling runs the given function with signal handling. When
@@ -32,9 +33,12 @@ func RunFuncWithSignalHandling(f func(context.Context, *config.Config) error, ru
 	)
 	defer cancelOnSignal()
 
-	cfg, err := config.LoadConfig(
+	loadOpts := append(
+		runFlags.LoadOptions,
 		commoncfg.WithEnvOverride(runFlags.Env),
 	)
+
+	cfg, err := config.LoadConfig(loadOpts...)
 	if err != nil {
 		log.Error(ctx, "Failed to load the configuration", err)
 		_, _ = fmt.Fprintln(os.Stderr, err)
