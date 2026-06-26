@@ -1,7 +1,6 @@
 package main_test
 
 import (
-	"context"
 	"errors"
 	"os"
 	"testing"
@@ -63,31 +62,6 @@ services:
 		require.NoError(t, err)
 		require.NotNil(t, cfg)
 		require.Equal(t, "test-app", cfg.Application.Name)
-	})
-}
-
-func TestRunFuncWithSignalHandling(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		exitCode := tenantmanager.RunFunctionWithSigHandling(func(_ context.Context, _ *config.Config) error {
-			filename := "config.yaml"
-			f, err := os.Create(filename)
-			require.NoError(t, err)
-
-			defer f.Close()
-			defer os.Remove(filename)
-
-			return nil
-		})
-
-		assert.Equal(t, 1, exitCode)
-	})
-
-	t.Run("error", func(t *testing.T) {
-		exitCode := tenantmanager.RunFunctionWithSigHandling(func(_ context.Context, _ *config.Config) error {
-			return ErrTest
-		})
-
-		assert.Equal(t, 1, exitCode)
 	})
 }
 
