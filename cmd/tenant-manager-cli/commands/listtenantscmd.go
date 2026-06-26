@@ -1,24 +1,23 @@
 package commands
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/utils/context"
 )
 
 // NewListTenantsCmd creates a Cobra command that gets tenant list.
-func (f *CommandFactory) NewListTenantsCmd(ctx context.Context) *cobra.Command {
+func NewListTenantsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all tenants. Usage: tm list",
 		Long:  "List all tenants. Usage: tm list",
 
-		//nolint:contextcheck
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+			f := context.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
 
 			var tenants []model.Tenant
 
@@ -40,8 +39,6 @@ func (f *CommandFactory) NewListTenantsCmd(ctx context.Context) *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.SetContext(ctx)
 
 	return cmd
 }

@@ -118,21 +118,27 @@ func (s *CLISuite) SetupSuite() {
 		constants.InternalTenantCLIRole)
 	s.NoError(err)
 
-	s.rootCmd = factory.NewRootCmd(cmdCtx, cfg)
+	s.rootCmd = &cobra.Command{
+		Use:   "tm",
+		Short: "Tenant Manager CLI Application",
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			cmd.SetContext(context.WithValue(cmdCtx, commands.TenantManagerFactoryKey, factory))
+		},
+	}
 
-	s.createCmd = factory.NewCreateTenantCmd(cmdCtx)
+	s.createCmd = commands.NewCreateTenantCmd()
 	s.rootCmd.AddCommand(s.createCmd)
 
-	s.deleteTenantCmd = factory.NewDeleteTenantCmd(cmdCtx)
+	s.deleteTenantCmd = commands.NewDeleteTenantCmd()
 	s.rootCmd.AddCommand(s.deleteTenantCmd)
 
-	s.getTenantCmd = factory.NewGetTenantCmd(cmdCtx)
+	s.getTenantCmd = commands.NewGetTenantCmd()
 	s.rootCmd.AddCommand(s.getTenantCmd)
 
-	s.listTenantsCmd = factory.NewListTenantsCmd(cmdCtx)
+	s.listTenantsCmd = commands.NewListTenantsCmd()
 	s.rootCmd.AddCommand(s.listTenantsCmd)
 
-	s.updateTenantCmd = factory.NewUpdateTenantCmd(cmdCtx)
+	s.updateTenantCmd = commands.NewUpdateTenantCmd()
 	s.rootCmd.AddCommand(s.updateTenantCmd)
 }
 

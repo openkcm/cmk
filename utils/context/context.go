@@ -264,3 +264,11 @@ func BusinessToInternalContext(
 
 	return internalCtx, nil
 }
+
+func GetFromContext[T any](ctx context.Context, key any) T {
+	if val := ctx.Value(key); val != nil {
+		return val.(T)
+	}
+	var zero T
+	return zero
+}

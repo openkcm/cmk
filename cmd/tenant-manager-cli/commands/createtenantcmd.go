@@ -1,18 +1,18 @@
 package commands
 
 import (
-	"context"
 	"errors"
 
 	"github.com/spf13/cobra"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/base62"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.tools.sap/kms/cmk/internal/errs"
+	"github.tools.sap/kms/cmk/internal/manager"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/utils/base62"
+	"github.tools.sap/kms/cmk/utils/context"
+	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
 var (
@@ -23,7 +23,7 @@ var (
 // NewCreateTenantCmd creates a Cobra command that creates tenant.
 //
 //nolint:funlen
-func (f *CommandFactory) NewCreateTenantCmd(ctx context.Context) *cobra.Command {
+func NewCreateTenantCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new tenant. Usage: tm create -i [tenant id] -s [tenant status] -R [tenant role]",
@@ -32,6 +32,9 @@ func (f *CommandFactory) NewCreateTenantCmd(ctx context.Context) *cobra.Command 
 		Args: cobra.ExactArgs(0),
 
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			f := context.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
+
 			id, _ := cmd.Flags().GetString("id")
 			status, _ := cmd.Flags().GetString("status")
 			role, _ := cmd.Flags().GetString("role")
@@ -60,7 +63,7 @@ func (f *CommandFactory) NewCreateTenantCmd(ctx context.Context) *cobra.Command 
 				return errs.Wrap(ErrCreateTenant, err)
 			}
 
-			ctx := cmkcontext.CreateTenantContext(ctx, tenant.ID)
+			ctx = cmkcontext.CreateTenantContext(ctx, tenant.ID)
 
 			err = f.gm.CreateDefaultGroups(ctx)
 			if err != nil {
@@ -98,8 +101,6 @@ func (f *CommandFactory) NewCreateTenantCmd(ctx context.Context) *cobra.Command 
 	if err != nil {
 		cmd.PrintErrf("failed to mark flag 'role' as required: %v\n", err)
 	}
-
-	cmd.SetContext(ctx)
 
 	return cmd
 }

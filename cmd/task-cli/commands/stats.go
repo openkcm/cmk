@@ -1,11 +1,12 @@
 package commands
 
 import (
-	"context"
 	"encoding/json"
 
 	"github.com/hibiken/asynq"
 	"github.com/spf13/cobra"
+
+	"github.tools.sap/kms/cmk/utils/context"
 )
 
 const (
@@ -24,7 +25,7 @@ type Inspector interface {
 }
 
 //nolint:cyclop,funlen
-func NewStatsCmd(ctx context.Context, asyncInspector Inspector) *cobra.Command {
+func NewStatsCmd() *cobra.Command {
 	var queue string
 	var queueInfo, weeklyHistory, pendingTasks, activeTasks, completeTasks, archivedTasks bool
 	var page int
@@ -37,45 +38,47 @@ func NewStatsCmd(ctx context.Context, asyncInspector Inspector) *cobra.Command {
 			"When displaying tasks, results are paginated with a default page size of 10.\n" +
 			"Use the --page flag to navigate through pages.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			inspector := context.GetFromContext[Inspector](cmd.Context(), AsyncInspectorKey)
+
 			var stats any
 			switch {
 			case queueInfo:
-				s, err := asyncInspector.GetQueueInfo(queue)
+				s, err := inspector.GetQueueInfo(queue)
 				if err != nil {
 					cmd.PrintErrf("Failed to get queue info: %v", err)
 					return err
 				}
 				stats = s
 			case weeklyHistory:
-				s, err := asyncInspector.History(queue, historyDays)
+				s, err := inspector.History(queue, historyDays)
 				if err != nil {
 					cmd.PrintErrf("Failed to get weekly history: %v", err)
 					return err
 				}
 				stats = s
 			case pendingTasks:
-				s, err := asyncInspector.ListPendingTasks(queue, asynq.PageSize(pageSize), asynq.Page(page))
+				s, err := inspector.ListPendingTasks(queue, asynq.PageSize(pageSize), asynq.Page(page))
 				if err != nil {
 					cmd.PrintErrf("Failed to get pending tasks: %v", err)
 					return err
 				}
 				stats = s
 			case activeTasks:
-				s, err := asyncInspector.ListActiveTasks(queue, asynq.PageSize(pageSize), asynq.Page(page))
+				s, err := inspector.ListActiveTasks(queue, asynq.PageSize(pageSize), asynq.Page(page))
 				if err != nil {
 					cmd.PrintErrf("Failed to get active tasks: %v", err)
 					return err
 				}
 				stats = s
 			case completeTasks:
-				s, err := asyncInspector.ListCompletedTasks(queue, asynq.PageSize(pageSize), asynq.Page(page))
+				s, err := inspector.ListCompletedTasks(queue, asynq.PageSize(pageSize), asynq.Page(page))
 				if err != nil {
 					cmd.PrintErrf("Failed to get complete tasks: %v", err)
 					return err
 				}
 				stats = s
 			case archivedTasks:
-				s, err := asyncInspector.ListArchivedTasks(queue, asynq.PageSize(pageSize), asynq.Page(page))
+				s, err := inspector.ListArchivedTasks(queue, asynq.PageSize(pageSize), asynq.Page(page))
 				if err != nil {
 					cmd.PrintErrf("Failed to get archived tasks: %v", err)
 					return err
@@ -86,20 +89,19 @@ func NewStatsCmd(ctx context.Context, asyncInspector Inspector) *cobra.Command {
 				return nil
 			}
 
-			statsJson, err := json.MarshalIndent(stats, "", "\t")
+			statsJSON, err := json.MarshalIndent(stats, "", "\t")
 			if err != nil {
 				cmd.PrintErrf("Failed to marshal stats to JSON: %v", err)
 				return err
 			}
 
-			cmd.Print(string(statsJson))
+			cmd.Print(string(statsJSON))
 			cmd.Println()
 
 			return nil
 		},
 	}
 
-	cmd.SetContext(ctx)
 	cmd.Flags().StringVar(&queue, "queue", "", "Queue name")
 	cmd.Flags().BoolVar(&queueInfo, "queue-info", false, "Show queue info")
 	cmd.Flags().BoolVar(&weeklyHistory, "weekly-history", false, "Show weekly history")
@@ -109,9 +111,11 @@ func NewStatsCmd(ctx context.Context, asyncInspector Inspector) *cobra.Command {
 	cmd.Flags().BoolVar(&archivedTasks, "archived-tasks", false, "Show archived tasks")
 	cmd.Flags().IntVar(&page, "page", 0, "Page number for paginated results")
 	cmd.MarkFlagsMutuallyExclusive(
-		"queue-info", "weekly-history", "pending-tasks", "active-tasks", "complete-tasks", "archived-tasks")
+		"queue-info", "weekly-history", "pending-tasks", "active-tasks", "complete-tasks", "archived-tasks",
+	)
 	cmd.MarkFlagsOneRequired(
-		"queue-info", "weekly-history", "pending-tasks", "active-tasks", "complete-tasks", "archived-tasks")
+		"queue-info", "weekly-history", "pending-tasks", "active-tasks", "complete-tasks", "archived-tasks",
+	)
 
 	err := cmd.MarkFlagRequired("queue")
 	if err != nil {

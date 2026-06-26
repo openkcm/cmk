@@ -50,6 +50,7 @@ func NewEventReconciler() *cobra.Command {
 	return cmd
 }
 
+//nolint:cyclop
 func runEventReconciler(ctx context.Context, cfg *config.Config) error {
 	err := commoncfg.UpdateConfigVersion(&cfg.BaseConfig, BuildInfo)
 	if err != nil {

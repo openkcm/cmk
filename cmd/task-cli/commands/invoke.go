@@ -1,17 +1,16 @@
 package commands
 
 import (
-	"context"
-
 	"github.com/hibiken/asynq"
 	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/config"
-	asyncUtils "github.com/openkcm/cmk/utils/async"
+	"github.tools.sap/kms/cmk/internal/async"
+	"github.tools.sap/kms/cmk/internal/config"
+	asyncUtils "github.tools.sap/kms/cmk/utils/async"
+	"github.tools.sap/kms/cmk/utils/context"
 )
 
-func NewInvokeCmd(ctx context.Context, asyncClient async.Client) *cobra.Command {
+func NewInvokeCmd() *cobra.Command {
 	var (
 		taskName string
 		tenants  []string
@@ -24,6 +23,8 @@ func NewInvokeCmd(ctx context.Context, asyncClient async.Client) *cobra.Command 
 			"List of tenant IDs can be provided to invoke the task for specific tenants. \n" +
 			"For example: task-cli invoke --task <task-name> --tenants <tenant1,tenant2>",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			client := context.GetFromContext[async.Client](cmd.Context(), AsyncClientKey)
+
 			switch taskName {
 			case config.TypeCertificateTask, config.TypeSystemsTask, config.TypeHYOKSync,
 				config.TypeWorkflowExpire, config.TypeWorkflowCleanup, config.TypeKeystorePool:
@@ -40,7 +41,7 @@ func NewInvokeCmd(ctx context.Context, asyncClient async.Client) *cobra.Command 
 					payload = b
 				}
 				task := asynq.NewTask(taskName, payload)
-				taskInfo, err := asyncClient.Enqueue(task)
+				taskInfo, err := client.Enqueue(task)
 				if err != nil {
 					cmd.PrintErrf("Failed to enqueue task: %v", err)
 					return err
@@ -54,7 +55,6 @@ func NewInvokeCmd(ctx context.Context, asyncClient async.Client) *cobra.Command 
 		},
 	}
 
-	cmd.SetContext(ctx)
 	cmd.Flags().StringVar(&taskName, "task", "", "Task name to invoke")
 	cmd.Flags().StringSliceVar(&tenants, "tenants", nil, "Comma-separated list of tenant IDs")
 

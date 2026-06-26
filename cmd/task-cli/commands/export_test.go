@@ -1,9 +1,14 @@
 package commands
 
 import (
+	"context"
+	"testing"
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/spf13/cobra"
+
+	"github.tools.sap/kms/cmk/internal/async"
 )
 
 type MockInspector struct{}
@@ -47,4 +52,16 @@ func (m *MockInspector) ListArchivedTasks(queue string, opts ...asynq.ListOption
 	return []*asynq.TaskInfo{
 		{ID: "task6", Type: "typeF"},
 	}, nil
+}
+
+func SetupCommandTest(t *testing.T, cmd *cobra.Command) *cobra.Command {
+	t.Helper()
+
+	mockClient := &async.MockClient{}
+	mockInspector := &MockInspector{}
+	ctx := context.WithValue(t.Context(), AsyncClientKey, mockClient)
+	ctx = context.WithValue(ctx, AsyncInspectorKey, mockInspector)
+	cmd.SetContext(ctx)
+
+	return cmd
 }

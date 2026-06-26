@@ -1,7 +1,6 @@
 package main_test
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
@@ -12,8 +11,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/testutils"
 )
-
-var errTest = errors.New("test error")
 
 func TestSetupCommands(t *testing.T) {
 	t.Run("Should create root command with all subcommands", func(t *testing.T) {
@@ -34,7 +31,6 @@ func TestSetupCommands(t *testing.T) {
 
 		assert.NotNil(t, rootCmd)
 		assert.NotEmpty(t, rootCmd.Use)
-		assert.NotNil(t, rootCmd.PersistentFlags().Lookup("sleep"))
 
 		commands := rootCmd.Commands()
 		t.Logf("Found %d commands", len(commands))

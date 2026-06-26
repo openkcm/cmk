@@ -2,21 +2,16 @@ package commands_test
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/cmd/task-cli/commands"
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/config"
+	"github.tools.sap/kms/cmk/cmd/task-cli/commands"
+	"github.tools.sap/kms/cmk/internal/config"
 )
 
 func TestInvokeCmd_Success_NoTenants(t *testing.T) {
-	ctx := context.Background()
-	client := async.MockClient{}
-
-	cmd := commands.NewInvokeCmd(ctx, &client)
+	cmd := commands.SetupCommandTest(t, commands.NewInvokeCmd())
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -28,10 +23,7 @@ func TestInvokeCmd_Success_NoTenants(t *testing.T) {
 }
 
 func TestInvokeCmd_Success_WithTenants(t *testing.T) {
-	ctx := context.Background()
-	client := async.MockClient{}
-
-	cmd := commands.NewInvokeCmd(ctx, &client)
+	cmd := commands.SetupCommandTest(t, commands.NewInvokeCmd())
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -43,10 +35,7 @@ func TestInvokeCmd_Success_WithTenants(t *testing.T) {
 }
 
 func TestInvokeCmd_UnknownTask(t *testing.T) {
-	ctx := context.Background()
-	client := async.MockClient{}
-
-	cmd := commands.NewInvokeCmd(ctx, &client)
+	cmd := commands.SetupCommandTest(t, commands.NewInvokeCmd())
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

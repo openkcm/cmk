@@ -1,18 +1,15 @@
 package commands
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/internal/model"
+	"github.tools.sap/kms/cmk/internal/repo"
+	"github.tools.sap/kms/cmk/utils/context"
 )
 
 // NewUpdateTenantCmd creates a Cobra command that updates single tenant.
-//
-
-func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command {
+func NewUpdateTenantCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update existing tenant. Usage: tm update -i [tenant id] (-s [tenant status])",
@@ -20,12 +17,12 @@ func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command 
 			"(--status [tenant status])",
 		Args: cobra.ExactArgs(0),
 
-		//nolint:contextcheck
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			f := context.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
+
 			id, _ := cmd.Flags().GetString("id")
 			status, _ := cmd.Flags().GetString("status")
-
-			ctx := cmd.Context()
 
 			tenant, err := f.tm.GetTenantByID(ctx, id)
 			if err != nil {
@@ -66,8 +63,6 @@ func (f *CommandFactory) NewUpdateTenantCmd(ctx context.Context) *cobra.Command 
 	if err != nil {
 		cmd.PrintErrf("failed to mark flag 'id' as required: %v\n", err)
 	}
-
-	cmd.SetContext(ctx)
 
 	return cmd
 }

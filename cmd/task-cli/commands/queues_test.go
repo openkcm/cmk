@@ -2,7 +2,6 @@ package commands_test
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,10 +10,7 @@ import (
 )
 
 func TestQueuesCmd(t *testing.T) {
-	ctx := context.Background()
-	inspector := &commands.MockInspector{}
-
-	cmd := commands.NewQueuesCmd(ctx, inspector)
+	cmd := commands.SetupCommandTest(t, commands.NewQueuesCmd())
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)

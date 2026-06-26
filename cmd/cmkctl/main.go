@@ -24,6 +24,7 @@ func run() error {
 
 	root.AddCommand(commands.NewTenantManagerCLI())
 	root.AddCommand(commands.NewTaskCLI())
+	root.AddCommand(commands.NewSleep())
 
 	return root.Execute()
 }

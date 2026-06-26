@@ -7,12 +7,14 @@ import (
 
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/samber/oops"
+	"github.com/spf13/cobra"
 
-	"github.com/openkcm/cmk/cmd/task-cli/commands"
-	"github.com/openkcm/cmk/internal/async"
-	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/log"
+	"github.tools.sap/kms/cmk/cmd/task-cli/commands"
+	"github.tools.sap/kms/cmk/internal/async"
+	"github.tools.sap/kms/cmk/internal/config"
+	"github.tools.sap/kms/cmk/internal/constants"
+	cliUtils "github.tools.sap/kms/cmk/utils/cli"
+	"github.tools.sap/kms/cmk/utils/cmd"
 )
 
 var (
@@ -32,15 +34,26 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return oops.In("main").Wrapf(err, "failed to create the async app")
 	}
 
-	asyncClient := asyncApp.Client()
-	asyncInspector := asyncApp.Inspector()
+	root := &cobra.Command{
+		Use:   "task",
+		Short: "Async Task CLI",
+		Long:  "CLI tool to manage and invoke CMK asynchronous tasks.",
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			ctx := cmd.Context()
 
-	rootCmd := commands.NewRootCmd(ctx, cfg)
-	rootCmd.AddCommand(commands.NewStatsCmd(ctx, asyncInspector))
-	rootCmd.AddCommand(commands.NewQueuesCmd(ctx, asyncInspector))
-	rootCmd.AddCommand(commands.NewInvokeCmd(ctx, asyncClient))
+			ctx = context.WithValue(ctx, commands.AsyncClientKey, asyncApp.Client())
+			ctx = context.WithValue(ctx, commands.AsyncInspectorKey, asyncApp.Inspector())
 
-	err = rootCmd.ExecuteContext(ctx)
+			cmd.SetContext(ctx)
+		},
+	}
+
+	root.AddCommand(commands.NewStatsCmd())
+	root.AddCommand(commands.NewQueuesCmd())
+	root.AddCommand(commands.NewInvokeCmd())
+	root.AddCommand(cliUtils.NewSleep(cfg))
+
+	err = root.ExecuteContext(ctx)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "error executing command")
 	}

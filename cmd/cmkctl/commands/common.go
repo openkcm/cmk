@@ -1,7 +1,41 @@
 package commands
 
-var (
-	BuildInfo               = "{}"
-	gracefulShutdownSec     int64
-	gracefulShutdownMessage string
+import (
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/spf13/cobra"
+
+	"github.tools.sap/kms/cmk/internal/config"
+	statusserver "github.tools.sap/kms/cmk/utils/status_server"
 )
+
+var BuildInfo = "{}"
+
+func NewSleep() *cobra.Command {
+	return &cobra.Command{
+		Use:   "sleep",
+		Short: "Sleep",
+		Long:  "Sleep",
+
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := config.LoadConfig()
+			if err != nil {
+				return err
+			}
+
+			statusserver.StartStatusServer(cmd.Context(), cfg)
+
+			cmd.Println("Pod running...")
+
+			sigs := make(chan os.Signal, 1)
+			signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+			<-sigs
+			cmd.Println("Shutting down gracefully...")
+
+			return nil
+		},
+	}
+}
