@@ -68,7 +68,12 @@ func NewTenantManagerCLI() *cobra.Command {
 	return cmd
 }
 
-func initializeTenantManager(ctx context.Context) (*config.Config, *multitenancy.DB, serviceapi.Registry, error) {
+func initializeTenantManager(ctx context.Context) (
+	*config.Config,
+	*multitenancy.DB,
+	serviceapi.Registry,
+	error,
+) {
 	cfg, err := config.LoadConfig(
 		commoncfg.WithPaths(
 			constants.DefaultConfigPath1,

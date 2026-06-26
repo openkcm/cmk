@@ -37,7 +37,7 @@ func NewEventReconciler() *cobra.Command {
 				Env:                     "event_reconciler",
 			})
 			if exitCode != 0 {
-				return fmt.Errorf("event-reconciler exited with code %d", exitCode)
+				return fmt.Errorf("%w: event-reconciler exited with code %d", ErrNonZeroExit, exitCode)
 			}
 			return nil
 		},
@@ -50,7 +50,7 @@ func NewEventReconciler() *cobra.Command {
 	return cmd
 }
 
-//nolint:cyclop
+//nolint:cyclop,funlen
 func runEventReconciler(ctx context.Context, cfg *config.Config) error {
 	err := commoncfg.UpdateConfigVersion(&cfg.BaseConfig, BuildInfo)
 	if err != nil {

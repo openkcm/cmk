@@ -265,10 +265,12 @@ func BusinessToInternalContext(
 	return internalCtx, nil
 }
 
+// GetFromContext gets a value from context
+//
+//nolint:forcetypeassert
 func GetFromContext[T any](ctx context.Context, key any) T {
 	if val := ctx.Value(key); val != nil {
 		return val.(T)
 	}
-	var zero T
-	return zero
+	return *new(T)
 }

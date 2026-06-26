@@ -35,7 +35,7 @@ func NewAPIServer() *cobra.Command {
 				Env:                     constants.APIName,
 			})
 			if exitCode != 0 {
-				return fmt.Errorf("api-server exited with code %d", exitCode)
+				return fmt.Errorf("%w: api-server exited with code %d", ErrNonZeroExit, exitCode)
 			}
 			return nil
 		},

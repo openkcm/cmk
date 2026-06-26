@@ -11,7 +11,6 @@ import (
 	"github.tools.sap/kms/cmk/internal/manager"
 	"github.tools.sap/kms/cmk/internal/model"
 	"github.tools.sap/kms/cmk/utils/base62"
-	"github.tools.sap/kms/cmk/utils/context"
 	cmkcontext "github.tools.sap/kms/cmk/utils/context"
 )
 
@@ -33,7 +32,7 @@ func NewCreateTenantCmd() *cobra.Command {
 
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			f := context.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
+			f := cmkcontext.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
 
 			id, _ := cmd.Flags().GetString("id")
 			status, _ := cmd.Flags().GetString("status")

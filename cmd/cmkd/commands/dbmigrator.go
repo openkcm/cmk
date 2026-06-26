@@ -35,7 +35,7 @@ func NewDBMigrator() *cobra.Command {
 				Env:                     "DB_MIGRATOR",
 			})
 			if exitCode != 0 {
-				return fmt.Errorf("db-migrator exited with code %d", exitCode)
+				return fmt.Errorf("%w: db-migrator exited with code %d", ErrNonZeroExit, exitCode)
 			}
 			return nil
 		},
