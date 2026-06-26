@@ -28,7 +28,7 @@ func NewTaskScheduler() *cobra.Command {
 				Env:                     constants.APIName + "_task_scheduler",
 			})
 			if exitCode != 0 {
-				return fmt.Errorf("task-scheduler exited with code %d", exitCode)
+				return fmt.Errorf("%w: task-scheduler exited with code %d", ErrNonZeroExit, exitCode)
 			}
 			return nil
 		},

@@ -50,7 +50,7 @@ func NewTenantManager() *cobra.Command {
 				},
 			})
 			if exitCode != 0 {
-				return fmt.Errorf("tenant-manager exited with code %d", exitCode)
+				return fmt.Errorf("%w: tenant-manager exited with code %d", ErrNonZeroExit, exitCode)
 			}
 			return nil
 		},
@@ -141,7 +141,16 @@ func createTenantManager(
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, eventFactory, cfg)
 
 	sys := manager.NewSystemManager(ctx, r, authzLoader, clients, eventFactory, svcRegistry, cfg, kcm, um)
-	km := manager.NewKeyManager(r, svcRegistry, manager.NewTenantConfigManager(r, svcRegistry, cfg), kcm, um, cm, eventFactory, cmkAuditor)
+	km := manager.NewKeyManager(
+		r,
+		svcRegistry,
+		manager.NewTenantConfigManager(r, svcRegistry, cfg),
+		kcm,
+		um,
+		cm,
+		eventFactory,
+		cmkAuditor,
+	)
 
 	migrator, err := db.NewMigrator(r, cfg)
 	if err != nil {

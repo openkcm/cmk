@@ -39,9 +39,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		Short: "Async Task CLI",
 		Long:  "CLI tool to manage and invoke CMK asynchronous tasks.",
 		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
-			ctx := cmd.Context()
-
-			ctx = context.WithValue(ctx, commands.AsyncClientKey, asyncApp.Client())
+			ctx := context.WithValue(ctx, commands.AsyncClientKey, asyncApp.Client())
 			ctx = context.WithValue(ctx, commands.AsyncInspectorKey, asyncApp.Inspector())
 
 			cmd.SetContext(ctx)

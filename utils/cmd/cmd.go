@@ -33,12 +33,9 @@ func RunFuncWithSignalHandling(f func(context.Context, *config.Config) error, ru
 	)
 	defer cancelOnSignal()
 
-	loadOpts := append(
-		runFlags.LoadOptions,
-		commoncfg.WithEnvOverride(runFlags.Env),
-	)
+	runFlags.LoadOptions = append(runFlags.LoadOptions, commoncfg.WithEnvOverride(runFlags.Env))
 
-	cfg, err := config.LoadConfig(loadOpts...)
+	cfg, err := config.LoadConfig(runFlags.LoadOptions...)
 	if err != nil {
 		log.Error(ctx, "Failed to load the configuration", err)
 		_, _ = fmt.Fprintln(os.Stderr, err)

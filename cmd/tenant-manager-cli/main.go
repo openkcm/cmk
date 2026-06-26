@@ -20,7 +20,7 @@ import (
 	serviceapi "github.tools.sap/kms/cmk/internal/pluginregistry/service/api"
 	cliUtils "github.tools.sap/kms/cmk/utils/cli"
 	"github.tools.sap/kms/cmk/utils/cmd"
-	cmkcontext "github.tools.sap/kms/cmk/utils/context"
+	cmkContext "github.tools.sap/kms/cmk/utils/context"
 )
 
 var (
@@ -72,11 +72,6 @@ func setupCommands(
 		return nil, err
 	}
 
-	ctx, err = cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantCLIRole)
-	if err != nil {
-		return nil, err
-	}
-
 	root := &cobra.Command{
 		Use:   "tm",
 		Short: "Tenant Manager CLI Application",
@@ -87,9 +82,16 @@ func setupCommands(
 			"updating of group names, " +
 			"changing any field value in any table of a tenant schema.",
 
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			ctx := context.WithValue(cmd.Context(), commands.TenantManagerFactoryKey, factory)
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := cmkContext.InjectInternalUserData(ctx, constants.InternalTenantCLIRole)
+			if err != nil {
+				return err
+			}
+
+			ctx = context.WithValue(ctx, commands.TenantManagerFactoryKey, factory)
 			cmd.SetContext(ctx)
+
+			return nil
 		},
 	}
 

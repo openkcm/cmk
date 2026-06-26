@@ -50,7 +50,7 @@ func NewTaskWorker() *cobra.Command {
 				Env:                     constants.APIName + "_task_worker",
 			})
 			if exitCode != 0 {
-				return fmt.Errorf("task-worker exited with code %d", exitCode)
+				return fmt.Errorf("%w: task-worker exited with code %d", ErrNonZeroExit, exitCode)
 			}
 			return nil
 		},
@@ -119,6 +119,7 @@ func runTaskWorker(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
+//nolint:funlen
 func registerTasks(
 	ctx context.Context,
 	r repo.Repo,
@@ -166,11 +167,49 @@ func registerTasks(
 	certManager := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg)
 	tagManager := manager.NewTagManager(authzRepo)
-	keyConfigManager := manager.NewKeyConfigManager(authzRepo, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
-	keyManager := manager.NewKeyManager(authzRepo, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
-	systemManager := manager.NewSystemManager(ctx, authzRepo, authzRepoLoader, nil, eventFactory, svcRegistry, cfg, keyConfigManager, userManager)
+	keyConfigManager := manager.NewKeyConfigManager(
+		authzRepo,
+		certManager,
+		userManager,
+		tagManager,
+		cmkAuditor,
+		eventFactory,
+		cfg,
+	)
+	keyManager := manager.NewKeyManager(
+		authzRepo,
+		svcRegistry,
+		tenantConfigManager,
+		keyConfigManager,
+		userManager,
+		certManager,
+		eventFactory,
+		cmkAuditor,
+	)
+	systemManager := manager.NewSystemManager(
+		ctx,
+		authzRepo,
+		authzRepoLoader,
+		nil,
+		eventFactory,
+		svcRegistry,
+		cfg,
+		keyConfigManager,
+		userManager,
+	)
 	groupManager := manager.NewGroupManager(authzRepo, svcRegistry, userManager)
-	workflowManager := manager.NewWorkflowManager(authzRepo, svcRegistry, keyManager, keyConfigManager, systemManager, groupManager, userManager, cron.Client(), tenantConfigManager, cfg)
+	workflowManager := manager.NewWorkflowManager(
+		authzRepo,
+		svcRegistry,
+		keyManager,
+		keyConfigManager,
+		systemManager,
+		groupManager,
+		userManager,
+		cron.Client(),
+		tenantConfigManager,
+		cfg,
+	)
 
 	taskHandlers := []async.TaskHandler{
 		tenantTask.NewSystemsRefresher(sis, authzRepo),
