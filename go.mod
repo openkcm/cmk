@@ -1,6 +1,6 @@
 module github.com/openkcm/cmk
 
-go 1.25.7
+go 1.25.9
 
 toolchain go1.26.4
 
@@ -25,8 +25,8 @@ require (
 	github.com/moby/moby/api v1.55.0
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
 	github.com/oapi-codegen/runtime v1.4.2
-	github.com/openkcm/api-sdk v0.18.1
-	github.com/openkcm/common-sdk v1.17.0
+	github.com/openkcm/api-sdk v0.19.1
+	github.com/openkcm/common-sdk v1.18.0
 	github.com/openkcm/orbital v0.5.1
 	github.com/openkcm/plugin-sdk v0.13.0
 	github.com/pkg/errors v0.9.1
@@ -40,7 +40,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.43.0
 	github.com/veqryn/slog-context v0.9.0
 	github.com/zeebo/assert v1.3.1
-	go.opentelemetry.io/collector/pdata v1.60.0
+	go.opentelemetry.io/collector/pdata v1.61.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/metric v1.44.0
@@ -51,7 +51,7 @@ require (
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.0
-	gorm.io/gorm v1.31.1
+	gorm.io/gorm v1.31.2
 	gorm.io/plugin/dbresolver v1.6.2
 )
 
@@ -162,7 +162,7 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/errs/v2 v2.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/featuregate v1.60.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.61.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.19.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.69.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.69.0 // indirect
