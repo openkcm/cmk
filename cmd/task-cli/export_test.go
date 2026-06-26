@@ -1,6 +1,3 @@
 package main
 
-var (
-	Run                        = run
-	RunFunctionWithSigHandling = runFuncWithSignalHandling
-)
+var Run = run

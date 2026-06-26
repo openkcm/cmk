@@ -1,7 +1,6 @@
 package main
 
 var (
-	Run                        = run
-	RunFunctionWithSigHandling = runFuncWithSignalHandling
-	SetupCommands              = setupCommands
+	Run           = run
+	SetupCommands = setupCommands
 )

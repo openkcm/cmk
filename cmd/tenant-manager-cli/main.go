@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"log/slog"
+	"flag"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/logger"
@@ -24,45 +22,13 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
-func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Create signal channel
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	// Handle signals in a separate goroutine
-	go func() {
-		<-sigChan
-		log.Info(ctx, "Interrupt signal received, shutting down...")
-		cancel()
-	}()
-
-	cfg, err := config.LoadConfig(
-		commoncfg.WithPaths(
-			constants.DefaultConfigPath1,
-			constants.DefaultConfigPath2,
-			".",
-			"/etc/tenant-manager-cli",
-		),
+var (
+	gracefulShutdownSec     = flag.Int64("graceful-shutdown", 1, "graceful shutdown seconds")
+	gracefulShutdownMessage = flag.String(
+		"graceful-shutdown-message", "Graceful shutdown in %d seconds",
+		"graceful shutdown message",
 	)
-	if err != nil {
-		log.Error(ctx, "Failed to load config:", err)
-
-		return 1
-	}
-
-	log.Debug(ctx, "Starting the application", slog.Any("config", cfg))
-
-	err = f(ctx, cfg)
-	if err != nil {
-		log.Error(ctx, "Falied running tenant-manager-cli", err)
-		return 1
-	}
-
-	return 0
-}
+)
 
 func run(ctx context.Context, cfg *config.Config) error {
 	err := logger.InitAsDefault(cfg.Logger, cfg.Application)
@@ -131,6 +97,20 @@ func setupCommands(
 }
 
 func main() {
-	exitCode := runFuncWithSignalHandling(run)
+	flag.Parse()
+
+	exitCode := cmd.RunFuncWithSignalHandling(run, cmd.RunFlags{
+		GracefulShutdownSec:     *gracefulShutdownSec,
+		GracefulShutdownMessage: *gracefulShutdownMessage,
+		Env:                     "TENANT_MANAGER_CLI",
+		LoadOptions: []commoncfg.Option{
+			commoncfg.WithPaths(
+				constants.DefaultConfigPath1,
+				constants.DefaultConfigPath2,
+				".",
+				"/etc/tenant-manager-cli",
+			),
+		},
+	})
 	os.Exit(exitCode)
 }

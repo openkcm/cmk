@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"log/slog"
+	"flag"
 	"os"
-	"os/signal"
-	"syscall"
 
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/samber/oops"
 
@@ -18,38 +15,11 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 )
 
-func runFuncWithSignalHandling(f func(context.Context, *config.Config) error) int {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Create signal channel
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	// Handle signals in a separate goroutine
-	go func() {
-		<-sigChan
-		log.Info(ctx, "Interrupt signal received, shutting down...")
-		cancel()
-	}()
-
-	cfg, err := config.LoadConfig(commoncfg.WithEnvOverride(constants.APIName + "_task_cli"))
-	if err != nil {
-		log.Error(ctx, "Failed to load config:", err)
-
-		return 1
-	}
-
-	log.Debug(ctx, "Starting the application", slog.Any("config", cfg))
-
-	err = f(ctx, cfg)
-	if err != nil {
-		log.Error(ctx, "Failed running task-cli", err)
-		return 1
-	}
-
-	return 0
-}
+var (
+	gracefulShutdownSec     = flag.Int64("graceful-shutdown", 1, "graceful shutdown seconds")
+	gracefulShutdownMessage = flag.String("graceful-shutdown-message", "Graceful shutdown in %d seconds",
+		"graceful shutdown message")
+)
 
 func run(ctx context.Context, cfg *config.Config) error {
 	err := logger.InitAsDefault(cfg.Logger, cfg.Application)
@@ -79,6 +49,12 @@ func run(ctx context.Context, cfg *config.Config) error {
 }
 
 func main() {
-	exitCode := runFuncWithSignalHandling(run)
+	flag.Parse()
+
+	exitCode := cmd.RunFuncWithSignalHandling(run, cmd.RunFlags{
+		GracefulShutdownSec:     *gracefulShutdownSec,
+		GracefulShutdownMessage: *gracefulShutdownMessage,
+		Env:                     constants.APIName + "_task_cli",
+	})
 	os.Exit(exitCode)
 }

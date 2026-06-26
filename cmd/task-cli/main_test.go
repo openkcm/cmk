@@ -3,8 +3,6 @@ package main_test
 import (
 	"context"
 	"os"
-	"os/signal"
-	"syscall"
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
@@ -61,40 +59,6 @@ func writeCfg(t *testing.T, cfg *config.Config, filename string) *os.File {
 	require.NoError(t, err)
 
 	return file
-}
-
-func TestRunFuncHandlesSignal(t *testing.T) {
-	cfg := buildCfg(t)
-	filename := "config.yaml"
-	file := writeCfg(t, cfg, filename)
-
-	defer file.Close()
-	defer os.Remove(filename)
-
-	signal.Ignore(syscall.SIGTERM)
-	defer signal.Reset(syscall.SIGTERM)
-
-	called := false
-	f := func(ctx context.Context, cfg *config.Config) error {
-		called = true
-		return nil
-	}
-
-	exitCode := taskCLI.RunFunctionWithSigHandling(f)
-	assert.Equal(t, 0, exitCode)
-	assert.True(t, called)
-}
-
-func TestRunFuncHandlesSignalFailure(t *testing.T) {
-	signal.Ignore(syscall.SIGTERM)
-	defer signal.Reset(syscall.SIGTERM)
-
-	f := func(ctx context.Context, cfg *config.Config) error {
-		return os.ErrClosed
-	}
-
-	exitCode := taskCLI.RunFunctionWithSigHandling(f)
-	assert.NotEqual(t, 0, exitCode)
 }
 
 func TestRunExecutesCommands(t *testing.T) {

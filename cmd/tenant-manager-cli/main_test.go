@@ -1,15 +1,12 @@
 package main_test
 
 import (
-	"context"
 	"errors"
-	"os"
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	tmCLI "github.com/openkcm/cmk/cmd/tenant-manager-cli"
 	"github.com/openkcm/cmk/internal/config"
@@ -47,45 +44,6 @@ func TestSetupCommands(t *testing.T) {
 		}
 
 		assert.GreaterOrEqual(t, len(commands), 1, "Root command should be created")
-	})
-}
-
-func TestRunFunctionWithSigHandling(t *testing.T) {
-	t.Run("Should return exit code 1 when run function returns error", func(t *testing.T) {
-		testFunc := func(_ context.Context, _ *config.Config) error {
-			return errTest
-		}
-
-		exitCode := tmCLI.RunFunctionWithSigHandling(testFunc)
-		assert.Equal(t, 1, exitCode)
-	})
-
-	t.Run("Should return exit code 0 when run function succeeds", func(t *testing.T) {
-		cfg := &config.Config{
-			BaseConfig: commoncfg.BaseConfig{
-				Application: commoncfg.Application{Name: "test-app"},
-				Logger: commoncfg.Logger{
-					Level:  "info",
-					Format: "json",
-				},
-			},
-			Certificates: config.Certificates{
-				ValidityDays: config.MinCertificateValidityDays,
-			},
-		}
-
-		configBytes, err := yaml.Marshal(cfg)
-		require.NoError(t, err)
-		err = os.WriteFile("config.yaml", configBytes, 0o600)
-		require.NoError(t, err)
-		defer os.Remove("config.yaml")
-
-		testFunc := func(_ context.Context, cfg *config.Config) error {
-			return nil
-		}
-
-		exitCode := tmCLI.RunFunctionWithSigHandling(testFunc)
-		assert.Equal(t, 0, exitCode)
 	})
 }
 
