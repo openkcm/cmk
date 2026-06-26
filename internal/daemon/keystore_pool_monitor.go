@@ -21,13 +21,16 @@ const (
 	labelKeystore = "keystore"
 	gaugeName     = "keystore_pool_available"
 	gaugeDesc     = "The number of keystore entries in the pool"
+	fillGaugeName = "keystore_pool_fill_percentage"
+	fillGaugeDesc = "The percentage of the keystore pool that is filled (pool count / max pool size)"
 )
 
 var ErrInvalidKeystorePoolInterval = errors.New("invalid keystore pool interval, must be > 0")
 
 type KeystorePoolMonitor struct {
-	meter metric.Meter
-	gauge metric.Int64Gauge
+	meter     metric.Meter
+	gauge     metric.Int64Gauge
+	fillGauge metric.Float64Gauge
 
 	interval time.Duration
 
@@ -51,11 +54,17 @@ func NewKeystorePoolMonitorFromCfg(cfg *config.Config) (*KeystorePoolMonitor, er
 		return nil, err
 	}
 
+	fillGauge, err := meter.Float64Gauge(fillGaugeName, metric.WithDescription(fillGaugeDesc))
+	if err != nil {
+		return nil, err
+	}
+
 	return &KeystorePoolMonitor{
-		meter:    meter,
-		gauge:    gauge,
-		cfg:      cfg,
-		interval: cfg.KeystorePool.Interval,
+		meter:     meter,
+		gauge:     gauge,
+		fillGauge: fillGauge,
+		cfg:       cfg,
+		interval:  cfg.KeystorePool.Interval,
 	}, nil
 }
 
@@ -106,6 +115,10 @@ func (m *KeystorePoolMonitor) record(ctx context.Context) {
 	}
 
 	m.gauge.Record(ctx, int64(count))
+
+	if m.cfg.KeystorePool.Size > 0 {
+		m.fillGauge.Record(ctx, float64(count)/float64(m.cfg.KeystorePool.Size))
+	}
 
 	log.Debug(ctx, "keystore pool size", slog.Int("size", count))
 }
