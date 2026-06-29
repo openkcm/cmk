@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.tools.sap/kms/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/context"
 )
 
 // NewGetTenantCmd creates a Cobra command that gets tenant information.

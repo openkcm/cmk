@@ -7,11 +7,11 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.tools.sap/kms/cmk/internal/errs"
-	"github.tools.sap/kms/cmk/internal/manager"
-	"github.tools.sap/kms/cmk/internal/model"
-	"github.tools.sap/kms/cmk/utils/base62"
-	cmkcontext "github.tools.sap/kms/cmk/utils/context"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/utils/base62"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var (

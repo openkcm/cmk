@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.tools.sap/kms/cmk/cmd/task-cli/commands"
-	"github.tools.sap/kms/cmk/internal/config"
+	"github.com/openkcm/cmk/cmd/task-cli/commands"
+	"github.com/openkcm/cmk/internal/config"
 )
 
 func TestInvokeCmd_Success_NoTenants(t *testing.T) {

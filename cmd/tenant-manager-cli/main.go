@@ -12,15 +12,15 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.tools.sap/kms/cmk/cmd/tenant-manager-cli/commands"
-	"github.tools.sap/kms/cmk/internal/config"
-	"github.tools.sap/kms/cmk/internal/constants"
-	"github.tools.sap/kms/cmk/internal/db"
-	cmkpluginregistry "github.tools.sap/kms/cmk/internal/pluginregistry"
-	serviceapi "github.tools.sap/kms/cmk/internal/pluginregistry/service/api"
-	cliUtils "github.tools.sap/kms/cmk/utils/cli"
-	"github.tools.sap/kms/cmk/utils/cmd"
-	cmkContext "github.tools.sap/kms/cmk/utils/context"
+	"github.com/openkcm/cmk/cmd/tenant-manager-cli/commands"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/db"
+	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
+	cliUtils "github.com/openkcm/cmk/utils/cli"
+	"github.com/openkcm/cmk/utils/cmd"
+	cmkContext "github.com/openkcm/cmk/utils/context"
 )
 
 var (

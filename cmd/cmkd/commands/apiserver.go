@@ -14,13 +14,13 @@ import (
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 
-	"github.tools.sap/kms/cmk/internal/config"
-	"github.tools.sap/kms/cmk/internal/constants"
-	"github.tools.sap/kms/cmk/internal/daemon"
-	"github.tools.sap/kms/cmk/internal/db"
-	"github.tools.sap/kms/cmk/internal/log"
-	runcmd "github.tools.sap/kms/cmk/utils/cmd"
-	statusserver "github.tools.sap/kms/cmk/utils/status_server"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/daemon"
+	"github.com/openkcm/cmk/internal/db"
+	"github.com/openkcm/cmk/internal/log"
+	runcmd "github.com/openkcm/cmk/utils/cmd"
+	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
 func NewAPIServer() *cobra.Command {

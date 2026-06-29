@@ -3,7 +3,7 @@ package commands
 import (
 	"github.com/spf13/cobra"
 
-	"github.tools.sap/kms/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/context"
 )
 
 func NewQueuesCmd() *cobra.Command {

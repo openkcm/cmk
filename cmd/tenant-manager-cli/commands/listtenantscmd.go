@@ -3,9 +3,9 @@ package commands
 import (
 	"github.com/spf13/cobra"
 
-	"github.tools.sap/kms/cmk/internal/model"
-	"github.tools.sap/kms/cmk/internal/repo"
-	"github.tools.sap/kms/cmk/utils/context"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/utils/context"
 )
 
 // NewListTenantsCmd creates a Cobra command that gets tenant list.
