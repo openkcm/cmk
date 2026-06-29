@@ -15,8 +15,11 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -31,7 +34,7 @@ import (
 
 func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	*manager.TenantManager,
-	repo.Repo, []string,
+	repo.Repo, *config.Config, []string,
 ) {
 	t.Helper()
 
@@ -107,12 +110,12 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 
 	m := manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator)
 
-	return m, r, tenants
+	return m, r, cfg, tenants
 }
 
 func TestTenantManager(t *testing.T) {
 	nTenants := 10
-	m, r, tenants := SetupTenantManager(t, testutils.WithGenerateTenants(nTenants))
+	m, r, _, tenants := SetupTenantManager(t, testutils.WithGenerateTenants(nTenants))
 
 	t.Run("Should get tenant info", func(t *testing.T) {
 		tenant := tenants[5]
@@ -163,8 +166,29 @@ func TestTenantManager(t *testing.T) {
 	)
 }
 
+// Run the offboarding process with an internal user context to test authorization checks
+func runOffboardTenant(
+	t *testing.T,
+	ctx context.Context,
+	cfg *config.Config,
+	m *manager.TenantManager,
+	r repo.Repo,
+) (manager.OffboardingResult, error) {
+	t.Helper()
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
+	assert.NotNil(t, authzRepoLoader.AuthzHandler)
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+	m.SetRepoForTests(authzRepo)
+
+	ctx, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantProvisioningRole)
+	assert.NoError(t, err)
+
+	return m.OffboardTenant(ctx)
+}
+
 func TestOffboardTenant(t *testing.T) {
-	m, r, tenants := SetupTenantManager(t)
+	m, r, cfg, tenants := SetupTenantManager(t)
 
 	keyConfigID := uuid.New()
 	key := testutils.NewKey(
@@ -179,12 +203,12 @@ func TestOffboardTenant(t *testing.T) {
 		},
 	)
 
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
-	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+	tenantBaseCtx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
+	ctx := testutils.InjectBusinessUserDataIntoContext(tenantBaseCtx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
 	t.Run("Should return success", func(t *testing.T) {
-		m, r, tenants := SetupTenantManager(t)
+		m, r, _, tenants := SetupTenantManager(t)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
 
 		keyID := uuid.New()
@@ -213,12 +237,14 @@ func TestOffboardTenant(t *testing.T) {
 			key,
 			keyConfig,
 		)
-		result, err := m.OffboardTenant(ctx)
+		ctx = cmkcontext.CreateTenantContext(t.Context(), tenants[0])
+		result, err := runOffboardTenant(t, ctx, cfg, m, r)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingSuccess, result.Status)
 	})
 
 	t.Run("Should return in processing on processing systems", func(t *testing.T) {
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
 		disconnectAllExistingSystems(t, ctx, r)
 		testutils.CreateTestEntities(
 			ctx, t, r, testutils.NewSystem(
@@ -228,7 +254,7 @@ func TestOffboardTenant(t *testing.T) {
 				},
 			),
 		)
-		result, err := m.OffboardTenant(ctx)
+		result, err := runOffboardTenant(t, ctx, cfg, m, r)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 	})
@@ -242,11 +268,11 @@ func TestOffboardTenant(t *testing.T) {
 			},
 		)
 		testutils.CreateTestEntities(ctx, t, r, system)
-		result, err := m.OffboardTenant(ctx)
+		result, err := runOffboardTenant(t, tenantBaseCtx, cfg, m, r)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 
-		_, err = r.First(ctx, system, *repo.NewQuery())
+		_, err = r.First(tenantBaseCtx, system, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, cmkapi.SystemStatusPROCESSING, system.Status)
 	})
@@ -268,11 +294,11 @@ func TestOffboardTenant(t *testing.T) {
 		)
 		testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
-		result, err := m.OffboardTenant(ctx)
+		result, err := runOffboardTenant(t, tenantBaseCtx, cfg, m, r)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 
-		_, err = r.First(ctx, key, *repo.NewQuery())
+		_, err = r.First(tenantBaseCtx, key, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, cmkapi.KeyStateDETACHING, key.State)
 	})
@@ -287,7 +313,7 @@ func TestOffboardTenant(t *testing.T) {
 
 		mockSys := &mockSystemManager{unlinkErr: manager.ErrGettingSystemByID}
 		m.SetSystemForTests(mockSys)
-		_, err := m.OffboardTenant(ctx)
+		_, err := runOffboardTenant(t, tenantBaseCtx, cfg, m, r)
 		assert.Error(t, err)
 	})
 
@@ -302,7 +328,7 @@ func TestOffboardTenant(t *testing.T) {
 		mockSys := &mockSystemManager{unmapErr: status.Error(codes.Internal, "internal")}
 		m.SetSystemForTests(mockSys)
 
-		result, err := m.OffboardTenant(ctx)
+		result, err := runOffboardTenant(t, tenantBaseCtx, cfg, m, r)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 	})
@@ -313,14 +339,14 @@ func TestOffboardTenant(t *testing.T) {
 		mockSys := &mockSystemManager{unmapErr: status.Error(codes.InvalidArgument, "invalid argument")}
 		m.SetSystemForTests(mockSys)
 
-		result, err := m.OffboardTenant(ctx)
+		result, err := runOffboardTenant(t, tenantBaseCtx, cfg, m, r)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingFailed, result.Status)
 	})
 }
 
 func TestGetTenantByID(t *testing.T) {
-	m, _, tenants := SetupTenantManager(t, testutils.WithGenerateTenants(1))
+	m, _, _, tenants := SetupTenantManager(t, testutils.WithGenerateTenants(1))
 	tenant := tenants[0]
 
 	tests := []struct {

@@ -2,7 +2,6 @@ package authz_policy_test
 
 import (
 	"log/slog"
-	"strings"
 	"testing"
 
 	"github.com/hibiken/asynq"
@@ -14,7 +13,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
@@ -25,11 +23,11 @@ import (
 // policy grants exactly the repo access that WorkflowManager.CleanupTerminalWorkflows
 // requires, without the manager being mocked out.
 //
-// CleanupTerminalWorkflows first calls WorkflowConfig (First on TenantConfig), which
-// is not in the cleanup role policy. If TenantConfig does not exist, GetWorkflowConfig
-// falls back to SetWorkflowConfig (Create on TenantConfig) — also not in the policy.
-// This test surfaces that gap: both paths require TenantConfig access that the cleanup
-// role does not grant.
+// CleanupTerminalWorkflows calls GetWorkflowConfig (First on TenantConfig). When no
+// config exists, GetWorkflowConfig falls back to SetWorkflowConfig which reads the
+// tenant (First on Tenant) and then upserts the default config (Set = Delete+Create
+// on TenantConfig). No TenantConfig is seeded so the full fallback path is exercised
+// under the authz repo, confirming all three TenantConfig permissions are granted.
 func TestWorkflowCleanup_AuthzPolicy(t *testing.T) {
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
@@ -67,13 +65,9 @@ func TestWorkflowCleanup_AuthzPolicy(t *testing.T) {
 	cleaner := tasks.NewWorkflowCleaner(wfManager, authzRepo)
 	task := asynq.NewTask(config.TypeWorkflowCleanup, nil)
 
-	// CleanupTerminalWorkflows calls WorkflowConfig → First on TenantConfig.
-	// InternalTaskWorkflowCleanupRole does not grant access to TenantConfig, so
-	// if TenantConfig is absent it will attempt a Create (also not in the policy).
-	// Seed a TenantConfig with WorkflowConfigKey directly via the plain repo (bypassing
-	// authz) so that the First succeeds and execution reaches the Workflow Count+List.
-	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.TenantConfig) {})
-	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+	// No TenantConfig is seeded. GetWorkflowConfig will call repo.First (not found),
+	// then fall through to SetWorkflowConfig → repo.GetTenant (Tenant:First) → repo.Set
+	// (TenantConfig:Delete+Create). All three operations must be permitted by the policy.
 
 	t.Run("InternalTaskWorkflowCleanupRole allows Count, List, Delete on Workflow", func(t *testing.T) {
 		logger, buf := testutils.NewLogBuffer()
@@ -81,7 +75,7 @@ func TestWorkflowCleanup_AuthzPolicy(t *testing.T) {
 
 		err := cleaner.ProcessTask(ctx, task)
 		assert.NoError(t, err)
-		assert.NotContains(t, strings.ToLower(buf.String()), "error",
-			"unexpected error log: %s", buf.String())
+		assert.NotContains(t, buf.String(), `"allowed":false`,
+			"unexpected authz denial: %s", buf.String())
 	})
 }

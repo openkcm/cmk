@@ -169,16 +169,13 @@ permitted by the policy.
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
 | First | TenantConfig | `WorkflowManager.CleanupTerminalWorkflows` → `GetWorkflowConfig` | ✓ |
+| Delete, Create | TenantConfig | `SetWorkflowConfig` → `repo.Set` (upsert when no config exists) | ✓ |
+| First | Tenant | `SetWorkflowConfig` → `repo.GetTenant` (to pick default config) | ✓ |
 | Count, List | Workflow | `WorkflowManager.CleanupTerminalWorkflows` | ✓ |
 | Delete | Workflow | `WorkflowManager.CleanupTerminalWorkflows` | – |
 
 **Test:** `internal/authz/policy_tests/workflow_cleanup_test.go`
 `TestWorkflowCleanup_AuthzPolicy/InternalTaskWorkflowCleanupRole_allows_Count,_List,_Delete_on_Workflow`
-
-A `TenantConfig` with `WorkflowConfigKey` is seeded directly via the plain repo
-(bypassing authz) so that `GetWorkflowConfig`'s First on TenantConfig succeeds. No
-terminal workflows are seeded, so `CleanupTerminalWorkflows` calls Count+List on
-Workflow → empty result → clean exit.
 
 ---
 
@@ -244,7 +241,7 @@ block, unblock, terminate) received via AMQP.
 **Test:** `internal/operator/authz_test.go`
 `TestTenantProvisioning_AuthzPolicy`
 
-Three sub-tests drive the three database-touching handlers directly via
+Two sub-tests drive the two database-touching handlers directly via
 `orbital.ExecuteHandler` (no AMQP):
 
 - `handleCreateTenant`:
@@ -258,14 +255,8 @@ Three sub-tests drive the three database-touching handlers directly via
   that returns success. `applyOIDC` performs Patch (Update) on Tenant and calls
   the session manager. Handler returns DONE.
 
-- `handleTerminateTenant`:
-  Seeds a KeyConfiguration and a Key (ENABLED, PrimaryKeyID set) via plain repo,
-  then calls `HandleTerminateTenant`. No linked systems → `sendUnlinkForConnectedSystems`
-  is a no-op (Count+List on System). One key matching `checkKeyDetatchingQuery` →
-  `detachPrimaryKeys` calls `KeyManager.Detach` → `repo.Patch` (Update on Key).
-  After Detach the key is DETACHING so `checkAllPrimaryKeysDetached` returns false
-  → handler returns ContinueAndWait. Exercises Count+List+First on System,
-  Count+List+Update on Key, and First on KeyConfiguration.
+The `handleTerminateTenant` permissions are covered by the manager-level tests
+in `internal/manager/tenant_test.go`.
 
 ---
 

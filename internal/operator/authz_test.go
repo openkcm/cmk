@@ -4,15 +4,14 @@ package operator_test
 // grants all the repo permissions the operator handlers require, without any
 // manager being mocked.
 //
-// The three handlers tested correspond to the three AMQP task types the operator
-// handles and that touch the database:
+// The two handlers tested correspond to AMQP task types the operator handles
+// and that touch the database:
 //
 //   - handleCreateTenant  → probe.Check (First on Group) + CreateTenant (Create on
 //     Tenant) + CreateDefaultGroups (Create on Group)
 //   - handleApplyTenantAuth → applyOIDC (Update/Patch on Tenant)
-//   - handleTerminateTenant → seeds a KeyConfiguration+Key with PrimaryKeyID so that
-//     detachPrimaryKeys → KeyManager.Detach → repo.Patch is exercised (Update on Key),
-//     plus Count+List+First on System and First on KeyConfiguration
+//
+// Note: handleTerminateTenant authz is covered by the manager-level tests.
 
 import (
 	"context"
@@ -34,27 +33,23 @@ import (
 
 	"github.com/openkcm/cmk/internal/clients/registry/tenants"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/operator"
-	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	mockClient "github.com/openkcm/cmk/internal/testutils/clients"
 	"github.com/openkcm/cmk/internal/testutils/clients/registry"
 	sessionmanager "github.com/openkcm/cmk/internal/testutils/clients/session-manager"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 func TestTenantProvisioning_AuthzPolicy(t *testing.T) {
 	ctx := createContext(t)
 
 	// Shared test DB: CreateDatabase=true so that CreateTenant (which runs
-	// MigrateTenantToLatest) can create a new schema. Two tenants are seeded:
-	// one for handleApplyTenantAuth (which only updates) and one for
-	// handleTerminateTenant (which deletes its tenant row).
+	// MigrateTenantToLatest) can create a new schema. A tenant is seeded
+	// for handleApplyTenantAuth (which only updates).
 	multitenancyDB, tenantList, cfgDB := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
-	}, testutils.WithGenerateTenants(2))
+	}, testutils.WithGenerateTenants(1))
 
 	ps := testutils.NewTestPlugins(testplugins.WithIdentityManagement(testplugins.NewTestIdentityManagement()))
 	cfg := &config.Config{
@@ -145,45 +140,6 @@ func TestTenantProvisioning_AuthzPolicy(t *testing.T) {
 
 		req := buildRequest(uuid.New(), authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String(), data)
 		resp := orbital.ExecuteHandler(ctx, op.HandleApplyTenantAuth, req)
-
-		assert.Empty(t, resp.ErrorMessage,
-			"unexpected error — possible authz denial: %s", buf.String())
-		assert.NotContains(t, buf.String(), `"allowed":false`,
-			"authz denial in log — policy is missing a required permission: %s", buf.String())
-	})
-
-	// -----------------------------------------------------------------------
-	// handleTerminateTenant
-	// -----------------------------------------------------------------------
-	t.Run("handleTerminateTenant", func(t *testing.T) {
-		logger, buf := testutils.NewLogBuffer()
-		slog.SetDefault(logger)
-
-		// Use a second tenant so it is not already deleted by a previous sub-test.
-		tenantID := tenantList[1]
-
-		// Seed via plain repo so authz-guarded paths are what we're testing.
-		// No linked systems → sendUnlinkForConnectedSystems is a no-op.
-		// One ENABLED key → detachPrimaryKeys → KeyManager.Detach → repo.Patch.
-		// Key moves to DETACHING → checkAllPrimaryKeysDetached returns false → ContinueAndWait.
-		keyID := uuid.New()
-		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-			kc.PrimaryKeyID = &keyID
-		})
-		key := testutils.NewKey(func(k *model.Key) {
-			k.ID = keyID
-			k.KeyConfigurationID = keyConfig.ID
-		})
-		ctx := cmkcontext.CreateTenantContext(t.Context(), tenantID)
-		r := sql.NewRepository(multitenancyDB)
-		testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
-
-		tenant := &tenantgrpc.Tenant{Id: tenantID}
-		data, err := proto.Marshal(tenant)
-		require.NoError(t, err)
-
-		req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String(), data)
-		resp := orbital.ExecuteHandler(ctx, op.HandleTerminateTenant, req)
 
 		assert.Empty(t, resp.ErrorMessage,
 			"unexpected error — possible authz denial: %s", buf.String())

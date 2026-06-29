@@ -145,7 +145,9 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 				{
 					Type: RepoResourceTypeKeyconfiguration,
 					Actions: []RepoAction{
+						RepoActionCount,
 						RepoActionFirst,
+						RepoActionList,
 					},
 				},
 			},
@@ -287,6 +289,14 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					},
 				},
 				{
+					Type: RepoResourceTypeKeyversion,
+					Actions: []RepoAction{
+						RepoActionCount,
+						RepoActionList,
+						RepoActionUpdate,
+					},
+				},
+				{
 					Type: RepoResourceTypeCertificate,
 					Actions: []RepoAction{
 						RepoActionFirst,
@@ -366,7 +376,18 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 			ID: constants.InternalTaskWorkflowCleanupPolicy,
 			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
+					// First: GetWorkflowConfig reads existing config.
+					// Delete+Create: Set (upsert) called by SetWorkflowConfig when no config exists.
 					Type: RepoResourceTypeTenantconfig,
+					Actions: []RepoAction{
+						RepoActionFirst,
+						RepoActionDelete,
+						RepoActionCreate,
+					},
+				},
+				{
+					// First: GetTenant called by SetWorkflowConfig to determine default config.
+					Type: RepoResourceTypeTenant,
 					Actions: []RepoAction{
 						RepoActionFirst,
 					},

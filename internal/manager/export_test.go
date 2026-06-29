@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
+	"github.com/openkcm/cmk/internal/repo"
 	wf "github.com/openkcm/cmk/internal/workflow"
 )
 
@@ -105,6 +106,10 @@ func (m *TenantManager) UnmapSystemErrorCanContinue(ctx context.Context, err err
 
 func (m *TenantManager) SetSystemForTests(sys System) {
 	m.sys = sys
+}
+
+func (m *TenantManager) SetRepoForTests(repo repo.Repo) {
+	m.repo = repo
 }
 
 func (w *WorkflowManager) GetApproverGroupsFromLegacyField(
