@@ -80,7 +80,7 @@ spec:
           {{- end }}
           volumeMounts:
             - name: {{ include "cmk.name" . }}-tenant-manager-cli-config-volume
-              mountPath: /etc/tenant-manager-cli
+              mountPath: /etc/cmk
               readOnly: true
           {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
