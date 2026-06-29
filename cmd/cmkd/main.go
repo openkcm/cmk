@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.tools.sap/kms/cmk/cmd/cmkd/commands"
+	"github.com/openkcm/cmk/cmd/cmkd/commands"
 )
 
 func main() {

@@ -7,9 +7,9 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	"github.tools.sap/kms/cmk/internal/model"
-	"github.tools.sap/kms/cmk/internal/repo"
-	"github.tools.sap/kms/cmk/utils/context"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/utils/context"
 )
 
 // NewDeleteTenantCmd creates a Cobra command that deletes a tenant.

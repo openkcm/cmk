@@ -8,7 +8,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/spf13/cobra"
 
-	"github.tools.sap/kms/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/async"
 )
 
 type MockInspector struct{}

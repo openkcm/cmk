@@ -9,11 +9,11 @@ import (
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 
-	taskcommands "github.tools.sap/kms/cmk/cmd/task-cli/commands"
-	"github.tools.sap/kms/cmk/internal/async"
-	"github.tools.sap/kms/cmk/internal/config"
-	"github.tools.sap/kms/cmk/internal/constants"
-	"github.tools.sap/kms/cmk/internal/log"
+	taskcommands "github.com/openkcm/cmk/cmd/task-cli/commands"
+	"github.com/openkcm/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/log"
 )
 
 func NewTaskCLI() *cobra.Command {

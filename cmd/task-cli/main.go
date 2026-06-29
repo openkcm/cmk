@@ -9,12 +9,12 @@ import (
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 
-	"github.tools.sap/kms/cmk/cmd/task-cli/commands"
-	"github.tools.sap/kms/cmk/internal/async"
-	"github.tools.sap/kms/cmk/internal/config"
-	"github.tools.sap/kms/cmk/internal/constants"
-	cliUtils "github.tools.sap/kms/cmk/utils/cli"
-	"github.tools.sap/kms/cmk/utils/cmd"
+	"github.com/openkcm/cmk/cmd/task-cli/commands"
+	"github.com/openkcm/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	cliUtils "github.com/openkcm/cmk/utils/cli"
+	"github.com/openkcm/cmk/utils/cmd"
 )
 
 var (

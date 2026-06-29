@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.tools.sap/kms/cmk/internal/config"
-	statusserver "github.tools.sap/kms/cmk/utils/status_server"
+	"github.com/openkcm/cmk/internal/config"
+	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
 var BuildInfo = "{}"

@@ -4,10 +4,10 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/spf13/cobra"
 
-	"github.tools.sap/kms/cmk/internal/async"
-	"github.tools.sap/kms/cmk/internal/config"
-	asyncUtils "github.tools.sap/kms/cmk/utils/async"
-	"github.tools.sap/kms/cmk/utils/context"
+	"github.com/openkcm/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/config"
+	asyncUtils "github.com/openkcm/cmk/utils/async"
+	"github.com/openkcm/cmk/utils/context"
 )
 
 func NewInvokeCmd() *cobra.Command {
