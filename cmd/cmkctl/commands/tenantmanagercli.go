@@ -79,7 +79,6 @@ func initializeTenantManager(ctx context.Context) (
 			constants.DefaultConfigPath1,
 			constants.DefaultConfigPath2,
 			".",
-			"/etc/tenant-manager-cli",
 		),
 		commoncfg.WithEnvOverride("TENANT_MANAGER_CLI"),
 	)
