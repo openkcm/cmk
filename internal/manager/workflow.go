@@ -758,6 +758,15 @@ func (w *WorkflowManager) HandleTerminalWorkflow(ctx context.Context, workflow *
 		if err != nil {
 			return err
 		}
+	case model.WorkflowArtifactTypeKey:
+		key := &model.Key{
+			ID:            workflow.ArtifactID,
+			UnderWorkflow: false,
+		}
+		_, err := w.repo.Patch(ctx, key, *repo.NewQuery().Update(repo.UnderWorkflowField))
+		if err != nil {
+			return err
+		}
 	default:
 		// empty
 	}
