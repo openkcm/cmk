@@ -2493,7 +2493,9 @@ components:
         - LINK
         - UNLINK
         - SWITCH
+        - DELETE
         - UPDATE_PRIMARY
+        - UPDATE_STATE
       example: LINK
     WorkflowState:
       $ref: "#/components/schemas/WorkflowStateEnum"
