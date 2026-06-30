@@ -66,8 +66,7 @@ tenantManager:
   # Component-specific resources override; falls back to global `resources`.
   resources: {}
 
-# tenant-manager-cli configuration
-tenantManagerCLI:
+cmkctl:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
   image:
     # Setting the command
@@ -80,12 +79,12 @@ tenantManagerCLI:
     #  - --graceful-shutdown=2
     #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
 
-  # Enable the tenant-manager-cli deployment.
+  # Enable the cmkctl deployment.
   deploy: false
 
-  # tenant-manager-cli service configuration
+  # cmkctl service configuration
   service:
-    # Enable the tenant-manager-cli service
+    # Enable the cmkctl service
     enabled: false
 
   # This is for setting up pod topology spread constraints, more information can be found here:
@@ -135,35 +134,6 @@ taskWorker:
 
   # Enable the task worker deployment.
   deploy: false
-
-  # This is for setting up pod topology spread constraints, more information can be found here:
-  # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
-  topologySpreadConstraints: []
-
-  # Component-specific resources override; falls back to global `resources`.
-  resources: {}
-
-# task-cli configuration
-taskCLI:
-  # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
-  image:
-    # Setting the command
-    # +docs:property
-    command: ""
-
-    # Setting the arguments for the container
-    # +docs:property
-    args: []
-    #  - --graceful-shutdown=2
-    #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
-
-  # Enable the task-cli deployment.
-  deploy: false
-
-  # task-cli service configuration
-  service:
-    # Enable the task-cli service
-    enabled: false
 
   # This is for setting up pod topology spread constraints, more information can be found here:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
