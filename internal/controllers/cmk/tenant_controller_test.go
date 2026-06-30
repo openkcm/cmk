@@ -103,7 +103,7 @@ func TestGetTenants(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 
-	t.Run("Should 403 on list tenants without permission", func(t *testing.T) {
+	t.Run("Should 200 and be empty where there is no issuer", func(t *testing.T) {
 		notAllowedClientData := &auth.ClientData{
 			Identifier: "user-123",
 			Email:      "bob@example.com",
@@ -128,10 +128,9 @@ func TestGetTenants(t *testing.T) {
 			Headers:  headersNotAllowed,
 		})
 
-		assert.Equal(t, http.StatusForbidden, w.Code)
-
-		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "NO_TENANT_ACCESS", response.Error.Code)
+		assert.Equal(t, http.StatusOK, w.Code)
+		resp := testutils.GetJSONBody[cmkapi.TenantList](t, w)
+		assert.Empty(t, resp.Value)
 	})
 }
 

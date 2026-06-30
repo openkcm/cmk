@@ -40,5 +40,11 @@ func (m Tenant) CheckAuthz(ctx context.Context,
 	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
-	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
+	// Read tenant actions can run without authorization checks
+	switch action {
+	case authz.RepoActionList, authz.RepoActionFirst, authz.RepoActionCount:
+		return true, nil
+	default:
+		return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
+	}
 }
