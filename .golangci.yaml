@@ -4,7 +4,6 @@ run:
   concurrency: 4
   timeout: 10m
 
-
 linters:
   default: all
   disable:
@@ -84,6 +83,9 @@ linters:
           - contextcheck
           - fatcontext
         path: (.+)workflow_test\.go
+      - linters:
+          - staticcheck
+        text: "SA1019.*The entire proto file kms/api/cmk/sessionmanager/oidcmapping/v1/oidcmapping.proto is marked as deprecated"
     paths:
       - third_party$
       - builtin$

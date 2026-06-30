@@ -294,7 +294,7 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 				Issuer:     cfg.Issuer,
 				JwksUri:    &cfg.JwksURI,
 				Audiences:  cfg.Audiences,
-				ClientId:   &cfg.ClientID,
+				ClientId:   cfg.ClientID,
 				Properties: cfg.AdditionalProperties,
 			},
 		)
@@ -330,7 +330,6 @@ func (o *TenantOperator) handleBlockTenant(
 			TenantId: tenantProto.GetId(),
 		},
 	)
-
 	if err != nil {
 		resp.ContinueAndWaitFor(reconcileAfterSecError)
 		return
@@ -365,7 +364,6 @@ func (o *TenantOperator) handleUnblockTenant(
 			TenantId: tenantProto.GetId(),
 		},
 	)
-
 	if err != nil {
 		setErrorStateAndContinue(ctx, resp, err, WorkingStateOIDCUnblockFailed)
 		return
