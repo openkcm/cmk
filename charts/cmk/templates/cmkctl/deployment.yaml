@@ -1,18 +1,18 @@
-{{- if .Values.taskCLI.deploy }}
+{{- if .Values.cmkctl.deploy }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "cmk.fullname" . }}-task-cli
+  name: {{ include "cmk.fullname" . }}-cmkctl
   labels:
-    {{- include "cmk.task-cli.labels" . | nindent 4 }}
+    {{- include "cmk.cmkctl.labels" . | nindent 4 }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      {{- include "cmk.task-cli.selectorLabels" . | nindent 6 }}
+      {{- include "cmk.cmkctl.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -20,7 +20,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "cmk.task-cli.labels" . | nindent 8 }}
+        {{- include "cmk.cmkctl.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -29,7 +29,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "cmk.serviceAccountName" . }}-task-cli
+      serviceAccountName: {{ include "cmk.serviceAccountName" . }}-cmkctl
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -42,17 +42,17 @@ spec:
         {{- with .Values.extraContainers }}
           {{- toYaml . | nindent 8 }}
         {{- end }}
-        - name: {{ include "cmk.name" . }}-task-cli
+        - name: {{ include "cmk.name" . }}-cmkctl
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           image: "{{ template "cmk.image" (tuple .Values.image) }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- with .Values.taskCLI.image.command }}
+          {{- with .Values.cmkctl.image.command }}
           command: [ "{{- toYaml . }}" ]
           {{- end }}
-          {{- with .Values.taskCLI.image.args }}
+          {{- with .Values.cmkctl.image.args }}
           args:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -74,23 +74,23 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.hostIP
-          {{- with (default .Values.resources .Values.taskCLI.resources) }}
+          {{- with (default .Values.resources .Values.cmkctl.resources) }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
-            - name: {{ include "cmk.name" . }}-task-cli-config-volume
+            - name: {{ include "cmk.name" . }}-cmkctl-config-volume
               mountPath: /etc/cmk
               readOnly: true
           {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
-        - name: {{ include "cmk.name" . }}-task-cli-config-volume
+        - name: {{ include "cmk.name" . }}-cmkctl-config-volume
           projected:
             sources:
               - configMap:
-                  name: {{ include "cmk.name" . }}-task-cli-config
+                  name: {{ include "cmk.name" . }}-cmkctl-config
       {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -106,7 +106,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.taskCLI.topologySpreadConstraints }}
+      {{- with .Values.cmkctl.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}

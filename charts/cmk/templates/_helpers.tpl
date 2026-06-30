@@ -91,11 +91,11 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
-Task CLI labels
+CMKCTL labels
 */}}
-{{- define "cmk.task-cli.labels" -}}
+{{- define "cmk.cmkctl.labels" -}}
 helm.sh/chart: {{ include "cmk.chart" . }}
-{{ include "cmk.task-cli.selectorLabels" . }}
+{{ include "cmk.cmkctl.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -109,18 +109,6 @@ Tenant Manager labels
 {{- define "cmk.tenant-manager.labels" -}}
 helm.sh/chart: {{ include "cmk.chart" . }}
 {{ include "cmk.tenant-manager.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- end }}
-
-{{/*
-Tenant Manager CLI labels
-*/}}
-{{- define "cmk.tenant-manager-cli.labels" -}}
-helm.sh/chart: {{ include "cmk.chart" . }}
-{{ include "cmk.tenant-manager-cli.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -185,12 +173,12 @@ app.kubernetes.io/component: {{ .Chart.Name }}-tenant-manager
 {{- end }}
 
 {{/*
-Tenant Manager CLI Selector labels
+CMKCTL CLI Selector labels
 */}}
-{{- define "cmk.tenant-manager-cli.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "cmk.name" . }}-tenant-manager-cli
-app.kubernetes.io/instance: {{ .Release.Name }}-tenant-manager-cli
-app.kubernetes.io/component: {{ .Chart.Name }}-tenant-manager-cli
+{{- define "cmk.cmkctl.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "cmk.name" . }}-cmkctl
+app.kubernetes.io/instance: {{ .Release.Name }}-cmkctl
+app.kubernetes.io/component: {{ .Chart.Name }}-cmkctl
 {{- end }}
 
 {{/*
