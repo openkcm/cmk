@@ -368,8 +368,9 @@ type Region struct {
 }
 
 type KeystorePool struct {
-	Size     int           `yaml:"size" default:"5"`
-	Interval time.Duration `yaml:"interval" default:"1h"`
+	Size             int                 `yaml:"size" default:"5"`
+	Interval         time.Duration       `yaml:"interval" default:"1h"`
+	SupportedRegions commoncfg.SourceRef `yaml:"supportedRegions" json:"supportedRegions"`
 }
 
 type Landscape struct {

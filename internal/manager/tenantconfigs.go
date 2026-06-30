@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
+
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -191,13 +193,29 @@ func (m *TenantConfigManager) GetTenantsKeystores(ctx context.Context) (TenantKe
 		return TenantKeystores{}, err
 	}
 
-	byokKeystore := model.KeystoreConfig{}
+	var supportedRegions []config.Region
+	byokKeystore := &model.KeystoreConfig{}
 	if found {
-		byokKeystore = *defaultKeystore
+		byokKeystore = defaultKeystore
+	} else if m.isBYOKAllowed() && m.cfg.KeystorePool.SupportedRegions.Source != "" {
+		// Initialize supportedRegions to an empty slice.
+		// If BYOK is allowed, populate it with the configured supported regions.
+		// This ensures that supportedRegions is always defined even if keystore has not been retrieved from pool.
+		ref, err := commoncfg.LoadValueFromSourceRef(m.cfg.KeystorePool.SupportedRegions)
+		if err != nil {
+			return TenantKeystores{}, err
+		}
+
+		err = json.Unmarshal(ref, &supportedRegions)
+		if err != nil {
+			return TenantKeystores{}, err
+		}
+
+		byokKeystore.SupportedRegions = supportedRegions
 	}
 
 	return TenantKeystores{
-		BYOK:      byokKeystore,
+		BYOK:      *byokKeystore,
 		AllowBYOK: m.isBYOKAllowed(),
 		HYOK:      m.getTenantConfigsHyokKeystore(),
 	}, nil
