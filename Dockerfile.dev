@@ -7,22 +7,35 @@ WORKDIR /app
 ENV GOCACHE=/root/.cache/go-build
 
 RUN --mount=type=cache,target=/go/pkg/mod \
-  --mount=type=cache,target=/root/.cache/go-build \
-  --mount=type=bind,target=. \
-  CGO_ENABLED=0 \
-  go build -o /bin/api-server ./cmd/api-server
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 \
+    go build -o /bin/api-server ./cmd/api-server
 
 RUN --mount=type=cache,target=/go/pkg/mod \
-  --mount=type=cache,target=/root/.cache/go-build \
-  --mount=type=bind,target=. \
-  CGO_ENABLED=0 \
-  go build -o /bin/task-worker ./cmd/task-worker
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 \
+    go build -o /bin/cmkd ./cmd/cmkd
 
 RUN --mount=type=cache,target=/go/pkg/mod \
-  --mount=type=cache,target=/root/.cache/go-build \
-  --mount=type=bind,target=. \
-  CGO_ENABLED=0 \
-  go build -o /bin/task-scheduler ./cmd/task-scheduler
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 \
+    go build -o /bin/cmkctl ./cmd/cmkctl
+
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 \
+    go build -o /bin/task-worker ./cmd/task-worker
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 \
+    go build -o /bin/task-scheduler ./cmd/task-scheduler
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
@@ -37,23 +50,23 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -o /bin/tenant-manager ./cmd/tenant-manager
 
 RUN --mount=type=cache,target=/go/pkg/mod \
-  --mount=type=cache,target=/root/.cache/go-build \
-  --mount=type=bind,target=. \
-  CGO_ENABLED=0 \
-  go build -o /bin/tenant-manager-cli ./cmd/tenant-manager-cli
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 \
+    go build -o /bin/tenant-manager-cli ./cmd/tenant-manager-cli
 
 RUN --mount=type=cache,target=/go/pkg/mod \
-  --mount=type=cache,target=/root/.cache/go-build \
-  --mount=type=bind,target=. \
-  CGO_ENABLED=0 \
-  go build -o /bin/event-reconciler ./cmd/event-reconciler
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 \
+    go build -o /bin/event-reconciler ./cmd/event-reconciler
 
 
 RUN --mount=type=cache,target=/go/pkg/mod \
-  --mount=type=cache,target=/root/.cache/go-build \
-  --mount=type=bind,target=. \
-  CGO_ENABLED=0 \
-  go build -o /bin/db-migrator ./cmd/db-migrator
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 \
+    go build -o /bin/db-migrator ./cmd/db-migrator
 
 FROM gcr.io/distroless/static-debian12:debug AS runner
 
@@ -67,6 +80,9 @@ COPY --from=builder /bin/tenant-manager /bin/tenant-manager
 COPY --from=builder /bin/tenant-manager-cli /bin/tenant-manager-cli
 COPY --from=builder /bin/db-migrator /bin/db-migrator
 COPY --from=builder /bin/event-reconciler /bin/event-reconciler
+
+COPY --from=builder /bin/cmkctl /bin/cmkctl
+COPY --from=builder /bin/cmkd /bin/cmkd
 
 EXPOSE 8080
 ENTRYPOINT ["/bin/api-server"]

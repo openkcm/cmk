@@ -4,18 +4,34 @@
 
 apiServer:
   image:
-    command: "./bin/api-server"
-    args: []
+    command: "/bin/cmkd"
+    args:
+      - api-server
 
   # Enable the API-server deployment.
   deploy: true
 
   topologySpreadConstraints: []
 
+eventReconciler:
+  image:
+    command: "/bin/cmkd"
+    args:
+      - event-reconciler
+
+  # Enable the event-reconciler deployment.
+  deploy: true
+
+  service:
+    enabled: true
+
+  topologySpreadConstraints: []
+
 tenantManager:
   image:
-    command: "/bin/tenant-manager"
-    args: []
+    command: "/bin/cmkd"
+    args:
+      - tenant-manager
 
   # Enable the tenant-manager deployment.
   deploy: true
@@ -34,27 +50,11 @@ tenantManager:
 
   topologySpreadConstraints: []
 
-tenantManagerCLI:
-  image:
-    # We don't use /bin/tenant-manager-cli
-    # A intention of tenant-manager-cli is to create a new shell session
-    # later to perform tenant operations.
-    # Sleeping allows us to enter a pod which doesn't crash.
-    command: "/bin/tenant-manager-cli"
-    args: ["--sleep"]
-
-  # Enable the tenant-manager-cli deployment.
-  deploy: true
-
-  service:
-    enabled: true
-
-  topologySpreadConstraints: []
-
 taskScheduler:
   image:
-    command: "/bin/task-scheduler"
-    args: []
+    command: "/bin/cmkd"
+    args:
+      - task-scheduler
 
   # Enable the task-scheduler deployment
   deploy: true
@@ -63,32 +63,20 @@ taskScheduler:
 
 taskWorker:
   image:
-    command: "/bin/task-worker"
-    args: []
+    command: "/bin/cmkd"
+    args:
+      - task-worker
 
   # Enable the task-worker deployment
   deploy: true
 
   topologySpreadConstraints: []
 
-taskCLI:
+cmkctl:
   image:
-    # Create a sleeping task-cli pod to allow entering into it later.
-    command: "/bin/task-cli"
-    args: ["--sleep"]
-
-  # Enable the task-cli deployment.
-  deploy: true
-
-  service:
-    enabled: true
-
-  topologySpreadConstraints: []
-
-eventReconciler:
-  image:
-    command: "/bin/event-reconciler"
-    args: []
+    command: "/bin/cmkctl"
+    args:
+      - sleep
 
   deploy: true
 
