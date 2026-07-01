@@ -15,7 +15,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -102,10 +101,10 @@ func TestGetDefaultKeystore(t *testing.T) {
 
 	t.Run("Config Exists", func(t *testing.T) {
 		// Arrange
-		configManager, db, tenant := SetupTenantConfigManager(t)
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
 
-		tenantConfigRepo := sql.NewRepository(db)
-		ksConfigJSON, err := json.Marshal(&model.KeystoreConfig{
+		err := configManager.SetDefaultKeystore(ctx, &model.KeystoreConfig{
 			RoleManagementConfig: model.ManagementConfig{
 				LocalityID: testutils.TestLocalityID,
 				CommonName: testutils.TestDefaultKeystoreCommonName,
@@ -118,16 +117,8 @@ func TestGetDefaultKeystore(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		conf := &model.TenantConfig{
-			Key:   constants.DefaultKeyStore,
-			Value: ksConfigJSON,
-		}
-
-		err = tenantConfigRepo.Set(testutils.CreateCtxWithTenant(tenant), conf)
-		assert.NoError(t, err)
-
 		// Act
-		keystore, err := configManager.GetDefaultKeystoreConfig(testutils.CreateCtxWithTenant(tenant))
+		keystore, err := configManager.GetDefaultKeystoreConfig(ctx)
 
 		// Assert
 		assert.NoError(t, err)
@@ -520,4 +511,69 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			assert.Equal(t, 3, result.MinimumApprovals)
 		})
 	})
+}
+
+// TestSetWorkflowConfig_FlatRoundTrip verifies SetWorkflowConfig writes flat
+// rows and GetWorkflowConfig reads them back.
+func TestSetWorkflowConfig_FlatRoundTrip(t *testing.T) {
+	m, _, tenant := SetupTenantConfigManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	wc := &model.WorkflowConfig{
+		Enabled:                 true,
+		MinimumApprovals:        2,
+		RetentionPeriodDays:     30,
+		DefaultExpiryPeriodDays: 7,
+		MaxExpiryPeriodDays:     14,
+	}
+
+	stored, err := m.SetWorkflowConfig(ctx, wc)
+	assert.NoError(t, err)
+	assert.Equal(t, wc, stored)
+
+	got, err := m.GetWorkflowConfig(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, wc, got)
+}
+
+// TestSetDefaultKeystore_ClearsOmittedOptionalFields ensures whole-object
+// replace semantics: optional fields present in a previous write must not
+// linger as stale flat rows after a subsequent write that omits them.
+func TestSetDefaultKeystore_ClearsOmittedOptionalFields(t *testing.T) {
+	m, _, tenant := SetupTenantConfigManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	full := &model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-1",
+			CommonName: "cn-1",
+			AccessData: model.KeystoreAccessData{"roleArn": "arn:initial"},
+		},
+		CryptoAccessData: map[string]model.CryptoConfig{
+			"cert-a": {Subject: "/CN=a", AccessData: model.KeystoreAccessData{"k": "v"}},
+		},
+		SupportedRegions: []config.Region{{Name: "eu-west-1", TechnicalName: "eu-west-1"}},
+	}
+	err := m.SetDefaultKeystore(ctx, full)
+	assert.NoError(t, err)
+
+	// Overwrite with a config that omits optional fields. Previous values must
+	// not bleed through.
+	minimal := &model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-2",
+			CommonName: "cn-2",
+		},
+	}
+	err = m.SetDefaultKeystore(ctx, minimal)
+	assert.NoError(t, err)
+
+	got, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "loc-2", got.RoleManagementConfig.LocalityID)
+	assert.Equal(t, "cn-2", got.RoleManagementConfig.CommonName)
+	assert.Nil(t, got.RoleManagementConfig.AccessData)
+	assert.Empty(t, got.CryptoAccessData)
+	assert.Empty(t, got.SupportedRegions)
 }

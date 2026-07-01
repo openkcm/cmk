@@ -697,13 +697,9 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	// Create workflow config with workflows DISABLED by default
-	workflowConfig := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
-		var wc model.WorkflowConfig
-		_ = json.Unmarshal(tc.Value, &wc)
+	testutils.NewWorkflowConfig(ctx, t, r, func(wc *model.WorkflowConfig) {
 		wc.Enabled = false // Disable workflow requirement
-		tc.Value, _ = json.Marshal(wc)
 	})
-	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
@@ -786,15 +782,9 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.workflowEnable {
 				// Enable workflow for this specific test case
-				workflowConfigEnabled := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
-					var wc model.WorkflowConfig
-					_ = json.Unmarshal(tc.Value, &wc)
+				testutils.NewWorkflowConfig(ctx, t, r, func(wc *model.WorkflowConfig) {
 					wc.Enabled = true // Enable workflow requirement
-					tc.Value, _ = json.Marshal(wc)
 				})
-				// Update the existing workflow config
-				_, err := r.Patch(ctx, workflowConfigEnabled, *repo.NewQuery())
-				assert.NoError(t, err)
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -848,13 +838,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	// Create workflow config with workflows DISABLED by default
-	workflowConfig := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
-		var wc model.WorkflowConfig
-		_ = json.Unmarshal(tc.Value, &wc)
+	testutils.NewWorkflowConfig(ctx, t, r, func(wc *model.WorkflowConfig) {
 		wc.Enabled = false // Disable workflow requirement by default
-		tc.Value, _ = json.Marshal(wc)
 	})
-	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
 	regionEditable := "region1"
 	regionNonEditable := "region2"
@@ -1107,15 +1093,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.workflowEnable {
 				// Enable workflow for this specific test case
-				workflowConfigEnabled := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
-					var wc model.WorkflowConfig
-					_ = json.Unmarshal(tc.Value, &wc)
+				testutils.NewWorkflowConfig(ctx, t, r, func(wc *model.WorkflowConfig) {
 					wc.Enabled = true // Enable workflow requirement
-					tc.Value, _ = json.Marshal(wc)
 				})
-				// Update the existing workflow config
-				_, err := r.Patch(ctx, workflowConfigEnabled, *repo.NewQuery())
-				assert.NoError(t, err)
 			}
 			reqHeaders := headers
 			if tt.headers != nil {

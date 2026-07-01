@@ -85,6 +85,7 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionFirst,
+						RepoActionList,
 						RepoActionDelete,
 						RepoActionCreate,
 					},
@@ -198,6 +199,7 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionFirst,
+						RepoActionList,
 					},
 				},
 				{
@@ -376,11 +378,12 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 			ID: constants.InternalTaskWorkflowCleanupPolicy,
 			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					// First: GetWorkflowConfig reads existing config.
+					// First+List: GetWorkflowConfig flat-row read with legacy-blob fallback.
 					// Delete+Create: Set (upsert) called by SetWorkflowConfig when no config exists.
 					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionFirst,
+						RepoActionList,
 						RepoActionDelete,
 						RepoActionCreate,
 					},

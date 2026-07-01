@@ -2,7 +2,6 @@ package eventprocessor
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"maps"
@@ -33,23 +32,34 @@ var (
 	errPluginCatalogUnavailable = errors.New("no keystore management plugin available")
 )
 
+// TenantConfigStore is the subset of TenantConfigManager that the syncer uses
+// to read and write the default keystore config. Defined here to keep the
+// dependency direction event-processor → manager.
+type TenantConfigStore interface {
+	GetStoredDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, bool, error)
+	SetDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error
+}
+
 // CryptoAccessDataSyncer builds fresh crypto access data by syncing trust for all
-// configured crypto certificates. It uses only repo and svcRegistry.
+// configured crypto certificates.
 type CryptoAccessDataSyncer struct {
-	cfg         *config.Config
-	repo        repo.Repo
-	svcRegistry serviceapi.Registry
+	cfg               *config.Config
+	repo              repo.Repo
+	svcRegistry       serviceapi.Registry
+	tenantConfigStore TenantConfigStore
 }
 
 func NewCryptoAccessDataSyncer(
 	cfg *config.Config,
 	r repo.Repo,
 	svcRegistry serviceapi.Registry,
+	tenantConfigStore TenantConfigStore,
 ) *CryptoAccessDataSyncer {
 	return &CryptoAccessDataSyncer{
-		cfg:         cfg,
-		repo:        r,
-		svcRegistry: svcRegistry,
+		cfg:               cfg,
+		repo:              r,
+		svcRegistry:       svcRegistry,
+		tenantConfigStore: tenantConfigStore,
 	}
 }
 
@@ -297,39 +307,19 @@ func (s *CryptoAccessDataSyncer) getRoleManagementCert(ctx context.Context) (*mo
 }
 
 func (s *CryptoAccessDataSyncer) getDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, error) {
-	var cfg model.TenantConfig
-
-	ck := repo.NewCompositeKey().Where(repo.KeyField, constants.DefaultKeyStore)
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
-
-	found, err := s.repo.First(ctx, &cfg, *query)
-	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+	cfg, found, err := s.tenantConfigStore.GetStoredDefaultKeystoreConfig(ctx)
+	if err != nil {
 		return nil, errs.Wrap(errGetDefaultKeystoreConfig, err)
 	}
 	if !found {
 		return nil, errs.Wrapf(errGetDefaultKeystoreConfig, "default keystore config not found")
 	}
 
-	ksConfig := &model.KeystoreConfig{}
-	if err := json.Unmarshal(cfg.Value, ksConfig); err != nil {
-		return nil, errs.Wrap(errGetDefaultKeystoreConfig, err)
-	}
-
-	return ksConfig, nil
+	return cfg, nil
 }
 
 func (s *CryptoAccessDataSyncer) setDefaultKeystoreConfig(ctx context.Context, ksConfig *model.KeystoreConfig) error {
-	ksBytes, err := json.Marshal(ksConfig)
-	if err != nil {
-		return errs.Wrap(errSetDefaultKeystoreConfig, err)
-	}
-
-	conf := &model.TenantConfig{
-		Key:   constants.DefaultKeyStore,
-		Value: ksBytes,
-	}
-
-	if err := s.repo.Set(ctx, conf); err != nil {
+	if err := s.tenantConfigStore.SetDefaultKeystore(ctx, ksConfig); err != nil {
 		return errs.Wrap(errSetDefaultKeystoreConfig, err)
 	}
 

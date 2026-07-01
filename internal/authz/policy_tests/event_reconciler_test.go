@@ -18,6 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -47,10 +48,11 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
 	cfg := &config.Config{Database: dbCfg}
+	svcRegistry := testutils.NewTestPlugins()
+	tcm := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg)
 
 	reconciler, err := eventprocessor.NewCryptoReconciler(
-		t.Context(), cfg, authzRepo, testutils.NewTestPlugins(), nil,
-	)
+		t.Context(), cfg, authzRepo, svcRegistry, nil, tcm)
 	assert.NoError(t, err)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -111,25 +113,26 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 			},
 		}
 
-		syncer := eventprocessor.NewCryptoAccessDataSyncer(syncerCfg, authzRepo, testutils.NewTestPlugins())
+		svcRegistry := testutils.NewTestPlugins()
+		tcm := manager.NewTenantConfigManager(authzRepo, svcRegistry, syncerCfg)
+		syncer := eventprocessor.NewCryptoAccessDataSyncer(syncerCfg, authzRepo, svcRegistry, tcm)
 
 		// Compute the subject the syncer will derive for this tenant.
 		clientCert := model.NewClientCertificate(certCfg, tenant)
 		expectedSubject := clientCert.Subject.String()
 
-		// Seed DEFAULT_KEYSTORE via plain repo (bypassing authz) so the authz-guarded
-		// First read is what we're testing, not the write.
-		ksConfig := model.KeystoreConfig{
-			CryptoAccessData: map[string]model.CryptoConfig{
-				certName: {
-					Subject:    expectedSubject,
-					AccessData: model.KeystoreAccessData{"authzKey": "authzVal"},
+		// Seed DEFAULT_KEYSTORE via a plain-repo TenantConfigManager (bypassing
+		// authz) so the authz-guarded read is what we're testing, not the write.
+		require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, syncerCfg).
+			SetDefaultKeystore(ctx, &model.KeystoreConfig{
+				RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
+				CryptoAccessData: map[string]model.CryptoConfig{
+					certName: {
+						Subject:    expectedSubject,
+						AccessData: model.KeystoreAccessData{"authzKey": "authzVal"},
+					},
 				},
-			},
-		}
-		ksBytes, err := json.Marshal(ksConfig)
-		require.NoError(t, err)
-		require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}))
+			}))
 
 		// SyncAndGetCryptoAccessData under InternalEventReconcilerRole: exercises
 		// TenantConfig:First. Cert is already up-to-date so exits without Set or plugin.
@@ -170,12 +173,16 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 			},
 		}
 
-		syncer := eventprocessor.NewCryptoAccessDataSyncer(syncerCfg, authzRepo2, testutils.NewTestPlugins())
+		svcRegistry := testutils.NewTestPlugins()
+		tcm := manager.NewTenantConfigManager(authzRepo2, svcRegistry, syncerCfg)
+		syncer := eventprocessor.NewCryptoAccessDataSyncer(syncerCfg, authzRepo2, svcRegistry, tcm)
 
-		// Seed DEFAULT_KEYSTORE with no CryptoAccessData (cert not yet trusted).
-		emptyKS, err := json.Marshal(model.KeystoreConfig{})
-		require.NoError(t, err)
-		require.NoError(t, r2.Set(ctx2, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: emptyKS}))
+		// Seed DEFAULT_KEYSTORE with no CryptoAccessData (cert not yet trusted),
+		// via a plain-repo TenantConfigManager (bypassing authz).
+		require.NoError(t, manager.NewTenantConfigManager(r2, svcRegistry, syncerCfg).
+			SetDefaultKeystore(ctx2, &model.KeystoreConfig{
+				RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
+			}))
 
 		// Seed a role-management cert via plain repo.
 		roleManagementCert := testutils.NewCertificate(func(c *model.Certificate) {

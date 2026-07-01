@@ -2,7 +2,6 @@ package eventprocessor_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/config"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -24,6 +24,7 @@ import (
 type accessDataTestInstance struct {
 	syncer   *eventprocessor.CryptoAccessDataSyncer
 	repo     repo.Repo
+	tcm      *manager.TenantConfigManager
 	tenantID string
 }
 
@@ -56,17 +57,16 @@ func setupAccessDataTestInstance(
 
 	r := sql.NewRepository(db)
 	svcRegistry := testutils.NewTestPlugins(opts...)
-	syncer := eventprocessor.NewCryptoAccessDataSyncer(cfg, r, svcRegistry)
+	tcm := manager.NewTenantConfigManager(r, svcRegistry, cfg)
+	syncer := eventprocessor.NewCryptoAccessDataSyncer(cfg, r, svcRegistry, tcm)
 
-	return accessDataTestInstance{syncer: syncer, repo: r, tenantID: tenants[0]}
+	return accessDataTestInstance{syncer: syncer, repo: r, tcm: tcm, tenantID: tenants[0]}
 }
 
-// storeKeystoreConfig stores a KeystoreConfig into TenantConfig via the repo.
-func storeKeystoreConfig(t *testing.T, r repo.Repo, ctx context.Context, ksConfig model.KeystoreConfig) {
+// storeKeystoreConfig stores a KeystoreConfig via the manager (flat rows).
+func storeKeystoreConfig(t *testing.T, tcm *manager.TenantConfigManager, ctx context.Context, ksConfig model.KeystoreConfig) {
 	t.Helper()
-	b, err := json.Marshal(ksConfig)
-	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: "DEFAULT_KEYSTORE", Value: b}))
+	require.NoError(t, tcm.SetDefaultKeystore(ctx, &ksConfig))
 }
 
 // storeRoleManagementCert stores a role management certificate via the repo.
@@ -109,7 +109,8 @@ func TestCryptoAccessDataSyncer_InvalidYAMLCertSource(t *testing.T) {
 	}
 	r := sql.NewRepository(db)
 	svcRegistry := testutils.NewTestPlugins()
-	syncer := eventprocessor.NewCryptoAccessDataSyncer(cfg, r, svcRegistry)
+	tcm := manager.NewTenantConfigManager(r, svcRegistry, cfg)
+	syncer := eventprocessor.NewCryptoAccessDataSyncer(cfg, r, svcRegistry, tcm)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
 
 	_, err := syncer.SyncAndGetCryptoAccessData(ctx)
@@ -159,7 +160,8 @@ func TestCryptoAccessDataSyncer_CertAlreadyUpToDate(t *testing.T) {
 	expectedSubject := clientCert.Subject.String()
 
 	// Pre-populate keystore config with cert already trusted at the expected subject.
-	storeKeystoreConfig(t, inst.repo, ctx, model.KeystoreConfig{
+	storeKeystoreConfig(t, inst.tcm, ctx, model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
 		CryptoAccessData: map[string]model.CryptoConfig{
 			certName: {
 				Subject:    expectedSubject,
@@ -193,7 +195,9 @@ func TestCryptoAccessDataSyncer_NewCertGrantsTrust(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), inst.tenantID)
 
 	// Keystore config exists but has no entry for this cert.
-	storeKeystoreConfig(t, inst.repo, ctx, model.KeystoreConfig{})
+	storeKeystoreConfig(t, inst.tcm, ctx, model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
+	})
 	storeRoleManagementCert(t, inst.repo, ctx)
 
 	result, err := inst.syncer.SyncAndGetCryptoAccessData(ctx)
@@ -219,7 +223,8 @@ func TestCryptoAccessDataSyncer_SubjectChangedRegranted(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), inst.tenantID)
 
 	// Pre-populate with a different (old) subject.
-	storeKeystoreConfig(t, inst.repo, ctx, model.KeystoreConfig{
+	storeKeystoreConfig(t, inst.tcm, ctx, model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
 		CryptoAccessData: map[string]model.CryptoConfig{
 			certName: {
 				Subject:    "/OU=abc/CN=test",
@@ -255,7 +260,9 @@ func TestCryptoAccessDataSyncer_NoRoleManagementCert(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), inst.tenantID)
 
 	// Keystore config exists but cert is not trusted → will try to grant trust → needs role cert.
-	storeKeystoreConfig(t, inst.repo, ctx, model.KeystoreConfig{})
+	storeKeystoreConfig(t, inst.tcm, ctx, model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
+	})
 	// No role management cert stored.
 
 	_, err := inst.syncer.SyncAndGetCryptoAccessData(ctx)
@@ -280,7 +287,9 @@ func TestCryptoAccessDataSyncer_NoDefaultKeystorePlugin(t *testing.T) {
 	)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), inst.tenantID)
 
-	storeKeystoreConfig(t, inst.repo, ctx, model.KeystoreConfig{})
+	storeKeystoreConfig(t, inst.tcm, ctx, model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
+	})
 
 	_, err := inst.syncer.SyncAndGetCryptoAccessData(ctx)
 
@@ -315,7 +324,8 @@ func TestCryptoAccessDataSyncer_MultipleCerts(t *testing.T) {
 	clientCert1 := model.NewClientCertificate(certs[0], inst.tenantID)
 	cert1Subject := clientCert1.Subject.String()
 
-	storeKeystoreConfig(t, inst.repo, ctx, model.KeystoreConfig{
+	storeKeystoreConfig(t, inst.tcm, ctx, model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
 		CryptoAccessData: map[string]model.CryptoConfig{
 			cert1Name: {
 				Subject:    cert1Subject,

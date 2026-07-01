@@ -1,6 +1,7 @@
 package testutils
 
 import (
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -78,8 +79,12 @@ func NewGRPCSuite(
 	go func(lis net.Listener) {
 		defer wg.Done()
 
-		err = grpcServer.Serve(lis)
-		assert.NoError(tb, err)
+		// GracefulStop in tb.Cleanup makes Serve return ErrServerStopped on
+		// some grpc-go versions; that is the expected shutdown path, not a
+		// test failure.
+		if serveErr := grpcServer.Serve(lis); serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
+			assert.NoError(tb, serveErr)
+		}
 	}(lis)
 
 	grpcClient, err := commongrpc.NewDynamicClientConn(&cfg, DefaultThrottleInterval)
