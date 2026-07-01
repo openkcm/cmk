@@ -12,6 +12,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/config"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -56,7 +57,8 @@ func setupAccessDataTestInstance(
 
 	r := sql.NewRepository(db)
 	svcRegistry := testutils.NewTestPlugins(opts...)
-	syncer := eventprocessor.NewCryptoAccessDataSyncer(cfg, r, svcRegistry)
+	tcm := manager.NewTenantConfigManager(r, svcRegistry, cfg)
+	syncer := eventprocessor.NewCryptoAccessDataSyncer(cfg, r, svcRegistry, tcm)
 
 	return accessDataTestInstance{syncer: syncer, repo: r, tenantID: tenants[0]}
 }
@@ -66,7 +68,7 @@ func storeKeystoreConfig(t *testing.T, r repo.Repo, ctx context.Context, ksConfi
 	t.Helper()
 	b, err := json.Marshal(ksConfig)
 	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: "DEFAULT_KEYSTORE", Value: b}))
+	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: "DEFAULT_KEYSTORE", Value: string(b)}))
 }
 
 // storeRoleManagementCert stores a role management certificate via the repo.
@@ -109,7 +111,8 @@ func TestCryptoAccessDataSyncer_InvalidYAMLCertSource(t *testing.T) {
 	}
 	r := sql.NewRepository(db)
 	svcRegistry := testutils.NewTestPlugins()
-	syncer := eventprocessor.NewCryptoAccessDataSyncer(cfg, r, svcRegistry)
+	tcm := manager.NewTenantConfigManager(r, svcRegistry, cfg)
+	syncer := eventprocessor.NewCryptoAccessDataSyncer(cfg, r, svcRegistry, tcm)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
 
 	_, err := syncer.SyncAndGetCryptoAccessData(ctx)

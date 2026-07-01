@@ -1,6 +1,7 @@
 package mock
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
 
@@ -50,6 +51,12 @@ func NewInMemoryDB() *InMemoryDB {
 			Workflows:             map[uuid.UUID]model.Workflow{},
 		},
 	}
+}
+
+// tenantConfigMapKey produces a composite map key matching the production
+// (key, type) primary key on tenant_configs.
+func tenantConfigMapKey(tc model.TenantConfig) string {
+	return fmt.Sprintf("%s|%s", tc.Key, tc.Type)
 }
 
 // Create adds resource to the InMemoryDatabase
@@ -141,7 +148,7 @@ func (db *InMemoryDB) Create(resource repo.Resource) error {
 			return errs.Wrap(ErrTenantConfigurationNotFound, err)
 		}
 
-		db.Data.TenantConfigs[tenantConfig.Key] = *tenantConfig
+		db.Data.TenantConfigs[tenantConfigMapKey(*tenantConfig)] = *tenantConfig
 	case Workflow:
 		workflow, err := GetModelFromInterface[model.Workflow](resource)
 		if err != nil {
@@ -530,7 +537,7 @@ func (db *InMemoryDB) getTenantConfig(resource repo.Resource) (repo.Resource, er
 	}
 
 	for _, tenantConfig := range db.Data.TenantConfigs {
-		if tenantConfig.Key == resourceTenantConfig.Key {
+		if tenantConfig.Key == resourceTenantConfig.Key && tenantConfig.Type == resourceTenantConfig.Type {
 			return tenantConfig, nil
 		}
 	}
@@ -710,9 +717,9 @@ func (db *InMemoryDB) deleteTenantConfig(resource repo.Resource) (bool, error) {
 		return true, errs.Wrap(ErrTenantConfigurationNotFound, err)
 	}
 
-	for _, tenantConfig := range db.Data.TenantConfigs {
-		if tenantConfig.Key == resourceTenantConfig.Key {
-			delete(db.Data.TenantConfigs, tenantConfig.Key)
+	for mapKey, tenantConfig := range db.Data.TenantConfigs {
+		if tenantConfig.Key == resourceTenantConfig.Key && tenantConfig.Type == resourceTenantConfig.Type {
+			delete(db.Data.TenantConfigs, mapKey)
 			return true, nil
 		}
 	}
@@ -886,9 +893,9 @@ func (db *InMemoryDB) updateTenantConfig(resource repo.Resource) error {
 		return errs.Wrap(ErrTenantConfigurationNotFound, err)
 	}
 
-	for _, tenantConfig := range db.Data.TenantConfigs {
-		if tenantConfig.Key == resourceTenantConfig.Key {
-			db.Data.TenantConfigs[tenantConfig.Key] = *resourceTenantConfig
+	for mapKey, tenantConfig := range db.Data.TenantConfigs {
+		if tenantConfig.Key == resourceTenantConfig.Key && tenantConfig.Type == resourceTenantConfig.Type {
+			db.Data.TenantConfigs[mapKey] = *resourceTenantConfig
 			return nil
 		}
 	}

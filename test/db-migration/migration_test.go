@@ -178,6 +178,7 @@ func TestSchemaMigrations(t *testing.T) {
 		target          db.MigrationTarget
 		downgrade       bool
 		version         int64
+		setupData       func(t *testing.T) func(db *multitenancy.DB) error
 		assertMigration func(t *testing.T) func(db *multitenancy.DB) error
 	}{
 		{
@@ -491,6 +492,88 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   13,
 		},
+		{
+			name:      "Should up tenant/00014_repair_keystore_config_shape.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   14,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value) VALUES
+							('DEFAULT_KEYSTORE', '{"localityId":"loc-1","commonName":"cn-1","managementAccessData":{"roleArn":"arn:aws:..."},"supportedRegions":[]}'::jsonb)`,
+					).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var localityID string
+					err := db.Raw(
+						`SELECT value::jsonb -> 'roleManagementConfig' ->> 'localityId'
+						 FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
+					).Scan(&localityID).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "loc-1", localityID)
+
+					var hasOldKey bool
+					err = db.Raw(
+						`SELECT (value::jsonb ? 'localityId')
+						 FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
+					).Scan(&hasOldKey).Error
+					assert.NoError(t, err)
+					assert.False(t, hasOldKey, "old-shape top-level localityId must be removed")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00014_repair_keystore_config_shape.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   14,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value) VALUES
+							('DEFAULT_KEYSTORE', '{"roleManagementConfig":{"localityId":"loc-1","commonName":"cn-1"},"supportedRegions":[]}'::jsonb)`,
+					).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var localityID string
+					err := db.Raw(
+						`SELECT value::jsonb ->> 'localityId'
+						 FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
+					).Scan(&localityID).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "loc-1", localityID)
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should up tenant/00015_flatten_tenant_configs.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   15,
+		},
+		{
+			name:      "Should down tenant/00015_flatten_tenant_configs.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   15,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -511,6 +594,11 @@ func TestSchemaMigrations(t *testing.T) {
 				Target:  tt.target,
 				Version: ptr.PointTo(setupVersion),
 			})
+
+			if tt.setupData != nil {
+				err := dbCon.WithTenant(t.Context(), tenant, tt.setupData(t))
+				assert.NoError(t, err)
+			}
 
 			var migrateVersion int64
 			if tt.downgrade {
@@ -625,6 +713,72 @@ func TestDataMigrations(t *testing.T) {
 					}
 
 					return nil
+				}
+			},
+		},
+		{
+			name:          "Should flatten tenant_configs legacy blobs into typed flat rows",
+			target:        db.TenantTarget,
+			version:       2,
+			schemaVersion: ptr.PointTo(int64(15)),
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var count int
+
+					err := db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE "type" = 'workflow'`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 5, count, "all 5 workflow keys must be flattened")
+
+					var enabled string
+					err = db.Raw(
+						`SELECT value FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'enabled'`,
+					).Scan(&enabled).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "true", enabled)
+
+					var minApprovals string
+					err = db.Raw(
+						`SELECT value FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'minimum_approvals'`,
+					).Scan(&minApprovals).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "2", minApprovals)
+
+					err = db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE "type" = 'default_keystore'`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 2, count, "locality_id and common_name must be flattened")
+
+					var locality string
+					err = db.Raw(
+						`SELECT value FROM tenant_configs WHERE "type" = 'default_keystore' AND "key" = 'locality_id'`,
+					).Scan(&locality).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "loc-1", locality)
+
+					// Legacy blobs are preserved as a read-time fallback for unmigrated tenants.
+					err = db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE length("type") = 0`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 2, count, "legacy blobs must remain")
+
+					return nil
+				}
+			},
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('WORKFLOW_CONFIG', '{"Enabled":true,"MinimumApprovals":2,"RetentionPeriodDays":30,"DefaultExpiryPeriodDays":7,"MaxExpiryPeriodDays":14}', ''),
+							('DEFAULT_KEYSTORE', '{"roleManagementConfig":{"localityId":"loc-1","commonName":"cn-1"}}', '')`,
+					).Error
 				}
 			},
 		},

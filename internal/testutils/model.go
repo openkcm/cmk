@@ -313,7 +313,7 @@ func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
 	mut := NewMutator(func() model.TenantConfig {
 		return model.TenantConfig{
 			Key:   constants.WorkflowConfigKey,
-			Value: configValue,
+			Value: string(configValue),
 		}
 	})
 
