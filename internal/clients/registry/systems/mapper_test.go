@@ -42,7 +42,7 @@ func Test_MapRegistrySystemsToCmkSystems(t *testing.T) {
 				{
 					Identifier: "id",
 					Region:     string(v1.Region_REGION_EU),
-					Type:       string(systems.SystemTypeSYSTEM),
+					Type:       systems.SystemTypeSYSTEM,
 				},
 			},
 		},

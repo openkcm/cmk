@@ -3,7 +3,10 @@ package model
 import (
 	"context"
 	"crypto/x509/pkix"
+	"database/sql/driver"
+	"errors"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -11,8 +14,10 @@ import (
 
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/utils/enums"
 )
 
+//nolint:recvcheck
 type CertificateState string
 
 const (
@@ -22,6 +27,22 @@ const (
 	CertificateSubjectKey string = "certificateSubject"
 )
 
+// CertificateStates enumerates all valid CertificateState values.
+var CertificateStates = []CertificateState{CertificateStateActive, CertificateStateExpired}
+
+var ErrInvalidCertificateState = errors.New("invalid certificate state")
+
+func (s CertificateState) Valid() bool { return slices.Contains(CertificateStates, s) }
+
+func (s CertificateState) Value() (driver.Value, error) {
+	return enums.Value(s, ErrInvalidCertificateState)
+}
+
+func (s *CertificateState) Scan(src any) error {
+	return enums.Scan(src, s, ErrInvalidCertificateState)
+}
+
+//nolint:recvcheck
 type CertificatePurpose string
 
 // - Generic purpose is used as a fallback default purpose when no specific purpose is provided.
@@ -37,6 +58,27 @@ const (
 	CertificatePurposeKeyManagement  CertificatePurpose = "KEY_MANAGEMENT"
 	CertificatePurposeCrypto         CertificatePurpose = "CRYPTO"
 )
+
+// CertificatePurposes enumerates all valid CertificatePurpose values.
+var CertificatePurposes = []CertificatePurpose{
+	CertificatePurposeGeneric,
+	CertificatePurposeHYOKManagement,
+	CertificatePurposeRoleManagement,
+	CertificatePurposeKeyManagement,
+	CertificatePurposeCrypto,
+}
+
+var ErrInvalidCertificatePurpose = errors.New("invalid certificate purpose")
+
+func (p CertificatePurpose) Valid() bool { return slices.Contains(CertificatePurposes, p) }
+
+func (p CertificatePurpose) Value() (driver.Value, error) {
+	return enums.Value(p, ErrInvalidCertificatePurpose)
+}
+
+func (p *CertificatePurpose) Scan(src any) error {
+	return enums.Scan(src, p, ErrInvalidCertificatePurpose)
+}
 
 // SingletonCertificatePurposes defines the certificate purposes
 // for which only one active certificate can exist at a time.

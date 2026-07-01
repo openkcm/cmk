@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -124,7 +125,7 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 	}
 
 	keystoreName := constants.DefaultKeyStore
-	if key.KeyType == constants.KeyTypeHYOK {
+	if key.KeyType == cmkapi.KeyTypeHYOK {
 		keystoreName = constants.HYOKKeyStore
 	}
 

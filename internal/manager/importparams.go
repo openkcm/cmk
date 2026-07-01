@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
@@ -15,8 +16,8 @@ import (
 // CommonImportFields contains fields that are common across all providers
 type CommonImportFields struct {
 	PublicKeyPEM      string
-	WrappingAlgorithm string
-	HashFunction      string
+	WrappingAlgorithm cmkapi.WrappingAlgorithmName
+	HashFunction      cmkapi.WrappingAlgorithmHashFunction
 }
 
 // ProviderImportFields contains provider-specific parameters and optional expiration
@@ -87,8 +88,8 @@ func extractCommonFields(reader *structreader.StructReader) (*CommonImportFields
 
 	return &CommonImportFields{
 		PublicKeyPEM:      publicKey,
-		WrappingAlgorithm: wrappingAlgorithm,
-		HashFunction:      hashFunction,
+		WrappingAlgorithm: cmkapi.WrappingAlgorithmName(wrappingAlgorithm),
+		HashFunction:      cmkapi.WrappingAlgorithmHashFunction(hashFunction),
 	}, nil
 }
 

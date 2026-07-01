@@ -1,7 +1,7 @@
 package workflow
 
-// Persisted workflow enums (State, ArtifactType, ActionType) live in
-// internal/model. This file holds the non-persisted workflow vocabulary.
+// Persisted workflow enums live in internal/model. This file holds the
+// FSM-only vocabulary.
 
 // Transition is a state-machine event name.
 type Transition string
@@ -23,13 +23,3 @@ var Transitions = []Transition{
 	TransitionCreate, TransitionRevoke, TransitionReject,
 	TransitionExpire, TransitionApprove, TransitionConfirm, TransitionExecute, TransitionFail,
 }
-
-// ParametersResourceType is stored as an opaque varchar.
-type ParametersResourceType string
-
-func (t ParametersResourceType) String() string { return string(t) }
-
-const (
-	ParametersResourceTypeKey              ParametersResourceType = "KEY"
-	ParametersResourceTypeKeyConfiguration ParametersResourceType = "KEY_CONFIGURATION"
-)

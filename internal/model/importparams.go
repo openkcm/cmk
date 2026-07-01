@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/authz"
 )
 
@@ -14,10 +15,10 @@ import (
 type ImportParams struct {
 	AutoTimeModel
 
-	KeyID              uuid.UUID `gorm:"type:uuid;primaryKey"`
-	WrappingAlg        string    `gorm:"type:varchar(50);not null"`
-	HashFunction       string    `gorm:"type:varchar(50);not null"`
-	PublicKeyPEM       string    `gorm:"type:text;not null"`
+	KeyID              uuid.UUID                            `gorm:"type:uuid;primaryKey"`
+	WrappingAlg        cmkapi.WrappingAlgorithmName         `gorm:"type:varchar(50);not null"`
+	HashFunction       cmkapi.WrappingAlgorithmHashFunction `gorm:"type:varchar(50);not null"`
+	PublicKeyPEM       string                               `gorm:"type:text;not null"`
 	Expires            *time.Time
 	ProviderParameters json.RawMessage `gorm:"type:jsonb"`
 }

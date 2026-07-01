@@ -2,6 +2,9 @@ package model
 
 import (
 	"context"
+	"database/sql/driver"
+	"errors"
+	"slices"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -9,7 +12,33 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/utils/enums"
 )
+
+// SystemType identifies the kind of registered system.
+//
+//nolint:recvcheck
+type SystemType string
+
+const (
+	SystemTypeSYSTEM     SystemType = "SYSTEM"
+	SystemTypeSUBACCOUNT SystemType = "SUBACCOUNT"
+)
+
+// SystemTypes enumerates all valid SystemType values.
+var SystemTypes = []SystemType{SystemTypeSYSTEM, SystemTypeSUBACCOUNT}
+
+var ErrInvalidSystemType = errors.New("invalid system type")
+
+func (t SystemType) Valid() bool { return slices.Contains(SystemTypes, t) }
+
+func (t SystemType) Value() (driver.Value, error) {
+	return enums.Value(t, ErrInvalidSystemType)
+}
+
+func (t *SystemType) Scan(src any) error {
+	return enums.Scan(src, t, ErrInvalidSystemType)
+}
 
 //nolint:recvcheck
 type System struct {
@@ -18,7 +47,7 @@ type System struct {
 	Identifier string `gorm:"type:varchar(255);not null;uniqueindex:region_sys,priority:2"`
 
 	Region               string            `gorm:"type:varchar(50);not null;uniqueindex:region_sys,priority:1"`
-	Type                 string            `gorm:"type:varchar(50);not null"`
+	Type                 SystemType        `gorm:"type:varchar(50);not null"`
 	KeyConfigurationID   *uuid.UUID        `gorm:"type:uuid"`
 	KeyConfigurationName *string           `gorm:"->;-:migration;column:key_configuration_name"`
 	Properties           map[string]string `gorm:"-:all"`

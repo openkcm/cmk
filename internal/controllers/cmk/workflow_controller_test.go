@@ -27,7 +27,6 @@ import (
 	cmksql "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
@@ -151,7 +150,7 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 		w.ArtifactName = &system.Identifier
 		w.Parameters = keyConfig.ID.String()
 		w.ParametersResourceName = &keyConfig.Name
-		w.ParametersResourceType = ptr.PointTo(wfMechanism.ParametersResourceTypeKeyConfiguration.String())
+		w.ParametersResourceType = ptr.PointTo(model.WorkflowParametersResourceTypeKeyConfiguration)
 	})
 	workflow3ApproverGroups := testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
 		wag.WorkflowID = workflow3.ID
