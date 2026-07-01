@@ -13,6 +13,14 @@ import (
 
 var BuildInfo = "{}"
 
+type contextKey string
+
+const (
+	AsyncInspectorKey       contextKey = "asyncInspector"
+	AsyncClientKey          contextKey = "asyncClient"
+	TenantManagerFactoryKey contextKey = "tenantManagerFactory"
+)
+
 func NewSleep() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sleep",
