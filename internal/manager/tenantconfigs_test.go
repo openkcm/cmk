@@ -121,9 +121,9 @@ func TestGetDefaultKeystore(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		conf := &model.TenantConfig{
+		conf := &model.LegacyTenantConfig{
 			Key:   constants.DefaultKeyStore,
-			Value: ksConfigJSON,
+			Value: string(ksConfigJSON),
 		}
 
 		err = tenantConfigRepo.Set(testutils.CreateCtxWithTenant(tenant), conf)
@@ -724,7 +724,7 @@ func storeKsConfig(t *testing.T, db *multitenancy.DB, tenant string, ks *model.K
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	b, err := json.Marshal(ks)
 	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: b}))
+	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(b)}))
 }
 
 func TestEnsureKeystoreProvisioned(t *testing.T) {
@@ -909,4 +909,156 @@ func TestSyncCryptoAccessData(t *testing.T) {
 		assert.Empty(t, capture.removeCalls, "expected no RemoveTrust call")
 		assert.Empty(t, capture.grantCallsOfType(keystoremanagement.TrustTypeCrypto), "expected no GrantTrust(CRYPTO) call when entry already exists")
 	})
+}
+
+// TestGetWorkflowConfig_LegacyFallback covers the dual-read fallback: when a
+// tenant has only the legacy JSON blob (no flat rows yet), GetWorkflowConfig
+// must still return the correct config.
+func TestGetWorkflowConfig_LegacyFallback(t *testing.T) {
+	m, db, tenant := SetupTenantConfigManager(t)
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	wc := &model.WorkflowConfig{
+		Enabled:                 true,
+		MinimumApprovals:        3,
+		RetentionPeriodDays:     45,
+		DefaultExpiryPeriodDays: 10,
+		MaxExpiryPeriodDays:     20,
+	}
+	bytes, err := json.Marshal(wc)
+	assert.NoError(t, err)
+
+	err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.WorkflowConfigKey, Value: string(bytes)})
+	assert.NoError(t, err)
+
+	got, err := m.GetWorkflowConfig(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, wc, got)
+}
+
+// TestSetWorkflowConfig_FlatRoundTrip verifies SetWorkflowConfig writes flat
+// rows and GetWorkflowConfig reads them back without consulting the legacy blob.
+func TestSetWorkflowConfig_FlatRoundTrip(t *testing.T) {
+	m, _, tenant := SetupTenantConfigManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	wc := &model.WorkflowConfig{
+		Enabled:                 true,
+		MinimumApprovals:        2,
+		RetentionPeriodDays:     30,
+		DefaultExpiryPeriodDays: 7,
+		MaxExpiryPeriodDays:     14,
+	}
+
+	stored, err := m.SetWorkflowConfig(ctx, wc)
+	assert.NoError(t, err)
+	assert.Equal(t, wc, stored)
+
+	got, err := m.GetWorkflowConfig(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, wc, got)
+}
+
+// TestGetDefaultKeystoreConfig_LegacyFallback covers the dual-read fallback for
+// the default keystore config.
+func TestGetDefaultKeystoreConfig_LegacyFallback(t *testing.T) {
+	m, db, tenant := SetupTenantConfigManager(t)
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	ks := &model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-1",
+			CommonName: "cn-1",
+		},
+	}
+	bytes, err := json.Marshal(ks)
+	assert.NoError(t, err)
+
+	err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(bytes)})
+	assert.NoError(t, err)
+
+	got, err := m.GetDefaultKeystoreConfig(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, ks.RoleManagementConfig.LocalityID, got.RoleManagementConfig.LocalityID)
+	assert.Equal(t, ks.RoleManagementConfig.CommonName, got.RoleManagementConfig.CommonName)
+}
+
+// TestSetDefaultKeystore_ClearsOmittedOptionalFields ensures whole-object
+// replace semantics: optional fields present in a previous write must not
+// linger as stale flat rows after a subsequent write that omits them.
+func TestSetDefaultKeystore_ClearsOmittedOptionalFields(t *testing.T) {
+	m, _, tenant := SetupTenantConfigManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	full := &model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-1",
+			CommonName: "cn-1",
+			AccessData: model.KeystoreAccessData{"roleArn": "arn:initial"},
+		},
+		CryptoAccessData: map[string]model.CryptoConfig{
+			"cert-a": {Subject: "/CN=a", AccessData: model.KeystoreAccessData{"k": "v"}},
+		},
+		SupportedRegions: []config.Region{{Name: "eu-west-1", TechnicalName: "eu-west-1"}},
+	}
+	err := m.SetDefaultKeystore(ctx, full)
+	assert.NoError(t, err)
+
+	// Overwrite with a config that omits optional fields. Previous values must
+	// not bleed through.
+	minimal := &model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-2",
+			CommonName: "cn-2",
+		},
+	}
+	err = m.SetDefaultKeystore(ctx, minimal)
+	assert.NoError(t, err)
+
+	got, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "loc-2", got.RoleManagementConfig.LocalityID)
+	assert.Equal(t, "cn-2", got.RoleManagementConfig.CommonName)
+	assert.Nil(t, got.RoleManagementConfig.AccessData)
+	assert.Empty(t, got.CryptoAccessData)
+	assert.Empty(t, got.SupportedRegions)
+}
+
+// TestGetStoredDefaultKeystoreConfig_IncompleteRows verifies incomplete flat
+// rows are reported as not found.
+func TestGetStoredDefaultKeystoreConfig_IncompleteRows(t *testing.T) {
+	m, db, tenant := SetupTenantConfigManager(t)
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	// common_name missing -> incomplete.
+	err := r.Set(ctx, &model.TenantConfig{Key: "locality_id", Value: "loc-1", Type: "default_keystore"})
+	assert.NoError(t, err)
+
+	_, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
+	assert.NoError(t, err)
+	assert.False(t, found, "incomplete keystore rows must be reported as not found")
+}
+
+// TestGetStoredDefaultKeystoreConfig_MalformedRow verifies a flat row with
+// invalid JSON surfaces an unmarshal error.
+func TestGetStoredDefaultKeystoreConfig_MalformedRow(t *testing.T) {
+	m, db, tenant := SetupTenantConfigManager(t)
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	rows := []*model.TenantConfig{
+		{Key: "locality_id", Value: "loc-1", Type: "default_keystore"},
+		{Key: "common_name", Value: "cn-1", Type: "default_keystore"},
+		{Key: "crypto_access_data", Value: "{not-valid-json", Type: "default_keystore"},
+	}
+	for _, row := range rows {
+		assert.NoError(t, r.Set(ctx, row))
+	}
+
+	_, _, err := m.GetStoredDefaultKeystoreConfig(ctx)
+	assert.Error(t, err, "malformed sub-blob must surface an unmarshal error")
 }

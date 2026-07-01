@@ -153,9 +153,9 @@ func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Co
 	configJSON, err := json.Marshal(workflowConfig)
 	require.NoError(t, err)
 
-	tenantConfig := &model.TenantConfig{
+	tenantConfig := &model.LegacyTenantConfig{
 		Key:   constants.WorkflowConfigKey,
-		Value: configJSON,
+		Value: string(configJSON),
 	}
 	err = r.Set(ctx, tenantConfig)
 	require.NoError(t, err)
@@ -174,9 +174,9 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		configJSON, err := json.Marshal(workflowConfig)
 		require.NoError(t, err)
 
-		tenantConfig := &model.TenantConfig{
+		tenantConfig := &model.LegacyTenantConfig{
 			Key:   constants.WorkflowConfigKey,
-			Value: configJSON,
+			Value: string(configJSON),
 		}
 		err = r.Set(ctx, tenantConfig)
 		require.NoError(t, err)
@@ -379,7 +379,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		enabledConfig := testutils.NewDefaultWorkflowConfig(true)
 		configJSON, err := json.Marshal(enabledConfig)
 		require.NoError(t, err)
-		err = r.Set(ctx, &model.TenantConfig{Key: constants.WorkflowConfigKey, Value: configJSON})
+		err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.WorkflowConfigKey, Value: string(configJSON)})
 		require.NoError(t, err)
 
 		businessUserData := &auth.ClientData{
@@ -420,9 +420,9 @@ func setupDefaultWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx con
 	configJSON, err := json.Marshal(workflowConfig)
 	require.NoError(t, err)
 
-	tenantConfig := &model.TenantConfig{
+	tenantConfig := &model.LegacyTenantConfig{
 		Key:   constants.WorkflowConfigKey,
-		Value: configJSON,
+		Value: string(configJSON),
 	}
 	err = r.Set(ctx, tenantConfig)
 	require.NoError(t, err)

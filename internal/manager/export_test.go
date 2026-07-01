@@ -21,10 +21,6 @@ func (m *TenantConfigManager) GetTenantConfigsHyokKeystore() HYOKKeystore {
 	return m.getTenantConfigsHyokKeystore()
 }
 
-func (m *TenantConfigManager) SetDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error {
-	return m.setDefaultKeystore(ctx, keystore)
-}
-
 func (m *SystemInformation) SetClient(systemInformation systeminformation.SystemInformation) {
 	m.svc = systemInformation
 }

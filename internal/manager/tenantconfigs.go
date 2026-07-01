@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"sort"
 	"strconv"
@@ -35,6 +36,33 @@ const (
 	// defaultKeystoreCertInfix is inserted between the tenant cert prefix and the tenantID
 	// when constructing the BYOK key-management CN, keeping it under the X.509 64-char limit.
 	defaultKeystoreCertInfix = "byok-"
+)
+
+// Tenant config "type" values used to group flat rows in tenant_configs.
+const (
+	tenantConfigTypeWorkflow        = "workflow"
+	tenantConfigTypeDefaultKeystore = "default_keystore"
+)
+
+// Flat-row keys for workflow config under type = "workflow".
+const (
+	workflowKeyEnabled                 = "enabled"
+	workflowKeyMinimumApprovals        = "minimum_approvals"
+	workflowKeyRetentionPeriodDays     = "retention_period_days"
+	workflowKeyDefaultExpiryPeriodDays = "default_expiry_period_days"
+	workflowKeyMaxExpiryPeriodDays     = "max_expiry_period_days"
+)
+
+// Flat-row keys for default keystore config under type = "default_keystore".
+// LocalityID, CommonName and AccessData mirror RoleManagementConfig fields;
+// KeyManagementConfig and CryptoAccessData are stored as single JSON sub-blobs.
+const (
+	keystoreKeyLocalityID           = "locality_id"
+	keystoreKeyCommonName           = "common_name"
+	keystoreKeyManagementAccessData = "management_access_data"
+	keystoreKeyKeyManagementConfig  = "key_management_config"
+	keystoreKeyCryptoAccessData     = "crypto_access_data"
+	keystoreKeySupportedRegions     = "supported_regions"
 )
 
 var (
@@ -92,30 +120,26 @@ type TenantKeystores struct {
 	HYOK      HYOKKeystore
 }
 
+// GetWorkflowConfig reads flat rows first, falling back to the legacy JSON
+// blob for tenants whose data migration has not yet completed.
 func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
-	var tenantConfig model.TenantConfig
-
-	ck := repo.NewCompositeKey().Where(repo.KeyField, constants.WorkflowConfigKey)
-	query := repo.NewQuery().Where(
-		repo.NewCompositeKeyGroup(ck),
-	)
-
-	found, err := m.repo.First(ctx, &tenantConfig, *query)
-	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+	wc, found, err := m.getWorkflowConfigFromFlatRows(ctx)
+	if err != nil {
 		return nil, errs.Wrap(ErrGetWorkflowConfig, err)
 	}
-
-	if !found {
-		return m.SetWorkflowConfig(ctx, nil)
+	if found {
+		return wc, nil
 	}
 
-	// Convert TenantConfig to WorkflowConfig
-	workflowConfig, err := m.convertToWorkflowConfig(&tenantConfig)
+	wc, found, err = m.getWorkflowConfigFromLegacyBlob(ctx)
 	if err != nil {
-		return nil, errs.Wrap(ErrUnmarshalConfig, err)
+		return nil, errs.Wrap(ErrGetWorkflowConfig, err)
+	}
+	if found {
+		return wc, nil
 	}
 
-	return workflowConfig, nil
+	return m.SetWorkflowConfig(ctx, nil)
 }
 
 // SetWorkflowConfig stores the workflow config or creates default if nil
@@ -150,18 +174,7 @@ func (m *TenantConfigManager) SetWorkflowConfig(
 		return nil, errs.Wrap(ErrSetWorkflowConfig, ErrMinimumApprovalsTooLow)
 	}
 
-	configValue, err := json.Marshal(workflowConfig)
-	if err != nil {
-		return nil, errs.Wrap(ErrMarshalConfig, err)
-	}
-
-	conf := &model.TenantConfig{
-		Key:   constants.WorkflowConfigKey,
-		Value: configValue,
-	}
-
-	err = m.repo.Set(ctx, conf)
-	if err != nil {
+	if err := m.writeWorkflowConfigFlatRows(ctx, workflowConfig); err != nil {
 		return nil, errs.Wrap(ErrSetWorkflowConfig, err)
 	}
 
@@ -200,7 +213,7 @@ func (m *TenantConfigManager) UpdateWorkflowConfig(
 }
 
 func (m *TenantConfigManager) GetTenantsKeystores(ctx context.Context) (TenantKeystores, error) {
-	defaultKeystore, found, err := m.getStoredDefaultKeystoreConfig(ctx)
+	defaultKeystore, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
 	if err != nil {
 		return TenantKeystores{}, err
 	}
@@ -224,7 +237,7 @@ func (m *TenantConfigManager) GetTenantsKeystores(ctx context.Context) (TenantKe
 // If KeyManagementConfig is not yet provisioned, it lazily calls GrantTrust(MANAGEMENT).
 // If CryptoAccessData is missing entries, it syncs via GrantTrust(CRYPTO).
 func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, error) {
-	keystore, found, err := m.getStoredDefaultKeystoreConfig(ctx)
+	keystore, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -244,12 +257,35 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 		if !updated {
 			return keystore, nil
 		}
-		if err := m.setDefaultKeystore(ctx, keystore); err != nil {
+		if err := m.SetDefaultKeystore(ctx, keystore); err != nil {
 			return nil, err
 		}
 	}
 
 	return keystore, nil
+}
+
+// GetStoredDefaultKeystoreConfig reads the stored default keystore without
+// pool fallback. Reads flat rows first, falling back to the legacy JSON blob.
+func (m *TenantConfigManager) GetStoredDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, bool, error) {
+	ks, found, err := m.getKeystoreConfigFromFlatRows(ctx)
+	if err != nil {
+		return nil, false, errs.Wrap(ErrGetDefaultKeystore, err)
+	}
+	if found {
+		return ks, true, nil
+	}
+
+	return m.getKeystoreConfigFromLegacyBlob(ctx)
+}
+
+// SetDefaultKeystore stores the default keystore config
+func (m *TenantConfigManager) SetDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error {
+	if err := m.writeKeystoreConfigFlatRows(ctx, keystore); err != nil {
+		return errs.Wrap(ErrSetDefaultKeystore, err)
+	}
+
+	return nil
 }
 
 func (m *TenantConfigManager) initDefaultKeystoreFromPool(ctx context.Context) (*model.KeystoreConfig, error) {
@@ -260,36 +296,9 @@ func (m *TenantConfigManager) initDefaultKeystoreFromPool(ctx context.Context) (
 		if err != nil {
 			return err
 		}
-		return m.setDefaultKeystore(ctx, keystore)
+		return m.SetDefaultKeystore(ctx, keystore)
 	})
 	return keystore, err
-}
-
-func (m *TenantConfigManager) getStoredDefaultKeystoreConfig(
-	ctx context.Context,
-) (*model.KeystoreConfig, bool, error) {
-	var cfg model.TenantConfig
-
-	ck := repo.NewCompositeKey().Where(repo.KeyField, constants.DefaultKeyStore)
-	query := repo.NewQuery().Where(
-		repo.NewCompositeKeyGroup(ck),
-	)
-
-	found, err := m.repo.First(ctx, &cfg, *query)
-	if err != nil && !errors.Is(err, repo.ErrNotFound) {
-		return nil, false, errs.Wrap(ErrGetDefaultKeystore, err)
-	}
-	if !found {
-		return nil, false, nil
-	}
-
-	keystore := &model.KeystoreConfig{}
-	err = json.Unmarshal(cfg.Value, keystore)
-	if err != nil {
-		return nil, false, errs.Wrap(ErrUnmarshalConfig, err)
-	}
-
-	return keystore, true, nil
 }
 
 // isBYOKAllowed checks whether BYOK is enabled by deployment feature-gate configuration.
@@ -299,26 +308,6 @@ func (m *TenantConfigManager) isBYOKAllowed() bool {
 	}
 
 	return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
-}
-
-// SetDefaultKeystore stores the default keystore config
-func (m *TenantConfigManager) setDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error {
-	ksBytes, err := json.Marshal(keystore)
-	if err != nil {
-		return errs.Wrap(ErrMarshalConfig, err)
-	}
-
-	conf := &model.TenantConfig{
-		Key:   constants.DefaultKeyStore,
-		Value: ksBytes,
-	}
-
-	err = m.repo.Set(ctx, conf)
-	if err != nil {
-		return errs.Wrap(ErrSetDefaultKeystore, err)
-	}
-
-	return nil
 }
 
 func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
@@ -364,16 +353,327 @@ func (m *TenantConfigManager) getKeystoreConfigFromPool(ctx context.Context) (*m
 	return ksConfig, nil
 }
 
-// convertToWorkflowConfig converts TenantConfig to WorkflowConfig
-func (m *TenantConfigManager) convertToWorkflowConfig(config *model.TenantConfig) (*model.WorkflowConfig, error) {
-	var workflowConfig model.WorkflowConfig
-
-	err := json.Unmarshal(config.Value, &workflowConfig)
+func (m *TenantConfigManager) getWorkflowConfigFromFlatRows(
+	ctx context.Context,
+) (*model.WorkflowConfig, bool, error) {
+	configs, err := m.listConfigsByType(ctx, tenantConfigTypeWorkflow)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	if len(configs) == 0 {
+		return nil, false, nil
 	}
 
-	return &workflowConfig, nil
+	return buildWorkflowConfigFromRows(configs)
+}
+
+// requiredWorkflowKeys are the keys that must be present for the flat-row
+// workflow config to be considered complete; otherwise the caller falls back
+// to the legacy blob.
+var requiredWorkflowKeys = []string{
+	workflowKeyEnabled,
+	workflowKeyMinimumApprovals,
+	workflowKeyRetentionPeriodDays,
+	workflowKeyDefaultExpiryPeriodDays,
+	workflowKeyMaxExpiryPeriodDays,
+}
+
+func buildWorkflowConfigFromRows(configs []model.TenantConfig) (*model.WorkflowConfig, bool, error) {
+	wc := &model.WorkflowConfig{}
+	seen := make(map[string]struct{}, len(requiredWorkflowKeys))
+
+	for _, c := range configs {
+		if err := applyWorkflowConfigField(wc, c.Key, c.Value); err != nil {
+			return nil, false, err
+		}
+		seen[c.Key] = struct{}{}
+	}
+
+	for _, k := range requiredWorkflowKeys {
+		if _, ok := seen[k]; !ok {
+			return nil, false, nil
+		}
+	}
+
+	return wc, true, nil
+}
+
+//nolint:cyclop // simple switch over a fixed set of keys
+func applyWorkflowConfigField(wc *model.WorkflowConfig, key, value string) error {
+	switch key {
+	case workflowKeyEnabled:
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", key, err)
+		}
+		wc.Enabled = b
+	case workflowKeyMinimumApprovals:
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", key, err)
+		}
+		wc.MinimumApprovals = v
+	case workflowKeyRetentionPeriodDays:
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", key, err)
+		}
+		wc.RetentionPeriodDays = v
+	case workflowKeyDefaultExpiryPeriodDays:
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", key, err)
+		}
+		wc.DefaultExpiryPeriodDays = v
+	case workflowKeyMaxExpiryPeriodDays:
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", key, err)
+		}
+		wc.MaxExpiryPeriodDays = v
+	}
+
+	return nil
+}
+
+func (m *TenantConfigManager) writeWorkflowConfigFlatRows(
+	ctx context.Context,
+	wc *model.WorkflowConfig,
+) error {
+	t := tenantConfigTypeWorkflow
+	rows := []model.TenantConfig{
+		{Key: workflowKeyEnabled, Value: strconv.FormatBool(wc.Enabled), Type: t},
+		{Key: workflowKeyMinimumApprovals, Value: strconv.Itoa(wc.MinimumApprovals), Type: t},
+		{Key: workflowKeyRetentionPeriodDays, Value: strconv.Itoa(wc.RetentionPeriodDays), Type: t},
+		{Key: workflowKeyDefaultExpiryPeriodDays, Value: strconv.Itoa(wc.DefaultExpiryPeriodDays), Type: t},
+		{Key: workflowKeyMaxExpiryPeriodDays, Value: strconv.Itoa(wc.MaxExpiryPeriodDays), Type: t},
+	}
+
+	return m.setRows(ctx, rows)
+}
+
+func (m *TenantConfigManager) getKeystoreConfigFromFlatRows(
+	ctx context.Context,
+) (*model.KeystoreConfig, bool, error) {
+	configs, err := m.listConfigsByType(ctx, tenantConfigTypeDefaultKeystore)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(configs) == 0 {
+		return nil, false, nil
+	}
+
+	return buildKeystoreConfigFromRows(configs)
+}
+
+// buildKeystoreConfigFromRows returns found=false when required identity fields
+// are missing, so the caller can fall back to the legacy blob.
+func buildKeystoreConfigFromRows(configs []model.TenantConfig) (*model.KeystoreConfig, bool, error) {
+	ks := &model.KeystoreConfig{}
+
+	for _, c := range configs {
+		if err := applyKeystoreConfigField(ks, c.Key, c.Value); err != nil {
+			return nil, false, err
+		}
+	}
+
+	if ks.RoleManagementConfig.LocalityID == "" || ks.RoleManagementConfig.CommonName == "" {
+		return nil, false, nil
+	}
+
+	return ks, true, nil
+}
+
+//nolint:cyclop // simple switch over a fixed set of keys
+func applyKeystoreConfigField(ks *model.KeystoreConfig, key, value string) error {
+	switch key {
+	case keystoreKeyLocalityID:
+		ks.RoleManagementConfig.LocalityID = value
+	case keystoreKeyCommonName:
+		ks.RoleManagementConfig.CommonName = value
+	case keystoreKeyManagementAccessData:
+		var ad model.KeystoreAccessData
+		if err := json.Unmarshal([]byte(value), &ad); err != nil {
+			return errs.Wrap(ErrUnmarshalConfig, err)
+		}
+		ks.RoleManagementConfig.AccessData = ad
+	case keystoreKeyKeyManagementConfig:
+		if err := json.Unmarshal([]byte(value), &ks.KeyManagementConfig); err != nil {
+			return errs.Wrap(ErrUnmarshalConfig, err)
+		}
+	case keystoreKeyCryptoAccessData:
+		if err := json.Unmarshal([]byte(value), &ks.CryptoAccessData); err != nil {
+			return errs.Wrap(ErrUnmarshalConfig, err)
+		}
+	case keystoreKeySupportedRegions:
+		if err := json.Unmarshal([]byte(value), &ks.SupportedRegions); err != nil {
+			return errs.Wrap(ErrUnmarshalConfig, err)
+		}
+	}
+
+	return nil
+}
+
+// writeKeystoreConfigFlatRows replaces the default-keystore flat rows
+// (delete + insert in one tx) so omitted optional fields don't leave stale
+// rows behind — matching the legacy blob's whole-object replace semantics.
+func (m *TenantConfigManager) writeKeystoreConfigFlatRows(
+	ctx context.Context,
+	ks *model.KeystoreConfig,
+) error {
+	t := tenantConfigTypeDefaultKeystore
+	rows := []model.TenantConfig{
+		{Key: keystoreKeyLocalityID, Value: ks.RoleManagementConfig.LocalityID, Type: t},
+		{Key: keystoreKeyCommonName, Value: ks.RoleManagementConfig.CommonName, Type: t},
+	}
+
+	if ks.RoleManagementConfig.AccessData != nil {
+		adBytes, err := json.Marshal(ks.RoleManagementConfig.AccessData)
+		if err != nil {
+			return errs.Wrap(ErrMarshalConfig, err)
+		}
+		rows = append(rows, model.TenantConfig{
+			Key: keystoreKeyManagementAccessData, Value: string(adBytes), Type: t,
+		})
+	}
+
+	// KeyManagementConfig is stored as a single JSON sub-blob.
+	kmBytes, err := json.Marshal(ks.KeyManagementConfig)
+	if err != nil {
+		return errs.Wrap(ErrMarshalConfig, err)
+	}
+	rows = append(rows, model.TenantConfig{
+		Key: keystoreKeyKeyManagementConfig, Value: string(kmBytes), Type: t,
+	})
+
+	if ks.CryptoAccessData != nil {
+		cdBytes, err := json.Marshal(ks.CryptoAccessData)
+		if err != nil {
+			return errs.Wrap(ErrMarshalConfig, err)
+		}
+		rows = append(rows, model.TenantConfig{
+			Key: keystoreKeyCryptoAccessData, Value: string(cdBytes), Type: t,
+		})
+	}
+
+	if ks.SupportedRegions != nil {
+		regBytes, err := json.Marshal(ks.SupportedRegions)
+		if err != nil {
+			return errs.Wrap(ErrMarshalConfig, err)
+		}
+		rows = append(rows, model.TenantConfig{
+			Key: keystoreKeySupportedRegions, Value: string(regBytes), Type: t,
+		})
+	}
+
+	return m.replaceRowsByType(ctx, t, rows)
+}
+
+func (m *TenantConfigManager) getWorkflowConfigFromLegacyBlob(
+	ctx context.Context,
+) (*model.WorkflowConfig, bool, error) {
+	blob, found, err := m.getLegacyBlob(ctx, constants.WorkflowConfigKey)
+	if err != nil || !found {
+		return nil, found, err
+	}
+
+	var wc model.WorkflowConfig
+	if err := json.Unmarshal([]byte(blob), &wc); err != nil {
+		return nil, false, errs.Wrap(ErrUnmarshalConfig, err)
+	}
+
+	return &wc, true, nil
+}
+
+func (m *TenantConfigManager) getKeystoreConfigFromLegacyBlob(
+	ctx context.Context,
+) (*model.KeystoreConfig, bool, error) {
+	blob, found, err := m.getLegacyBlob(ctx, constants.DefaultKeyStore)
+	if err != nil || !found {
+		return nil, found, err
+	}
+
+	keystore := &model.KeystoreConfig{}
+	if err := json.Unmarshal([]byte(blob), keystore); err != nil {
+		return nil, false, errs.Wrap(ErrUnmarshalConfig, err)
+	}
+
+	return keystore, true, nil
+}
+
+// getLegacyBlob reads a legacy single-row JSON blob from the jsonb value column.
+func (m *TenantConfigManager) getLegacyBlob(
+	ctx context.Context,
+	key string,
+) (string, bool, error) {
+	var tc model.LegacyTenantConfig
+
+	ck := repo.NewCompositeKey().
+		Where(repo.KeyField, key).
+		Where(repo.TypeField, "")
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+
+	found, err := m.repo.First(ctx, &tc, *query)
+	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+		return "", false, err
+	}
+	if !found {
+		return "", false, nil
+	}
+
+	return tc.Value, true, nil
+}
+
+func (m *TenantConfigManager) listConfigsByType(
+	ctx context.Context,
+	configType string,
+) ([]model.TenantConfig, error) {
+	var configs []model.TenantConfig
+
+	ck := repo.NewCompositeKey().Where(repo.TypeField, configType)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+
+	if err := m.repo.List(ctx, &model.TenantConfig{}, &configs, *query); err != nil {
+		// Preserve the same error contract as the legacy First-based path so that
+		// API error mappings keyed on repo.ErrGetResource keep working.
+		return nil, errs.Wrap(repo.ErrGetResource, err)
+	}
+
+	return configs, nil
+}
+
+// setRows upserts a slice of TenantConfig rows in a single transaction.
+func (m *TenantConfigManager) setRows(ctx context.Context, rows []model.TenantConfig) error {
+	return m.repo.Transaction(ctx, func(ctx context.Context) error {
+		for i := range rows {
+			if err := m.repo.Set(ctx, &rows[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// replaceRowsByType deletes all rows of the given type and inserts the
+// provided rows in a single transaction.
+func (m *TenantConfigManager) replaceRowsByType(
+	ctx context.Context,
+	configType string,
+	rows []model.TenantConfig,
+) error {
+	return m.repo.Transaction(ctx, func(ctx context.Context) error {
+		ck := repo.NewCompositeKey().Where(repo.TypeField, configType)
+		query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+		if _, err := m.repo.Delete(ctx, &model.TenantConfig{}, *query); err != nil {
+			return err
+		}
+		for i := range rows {
+			if err := m.repo.Set(ctx, &rows[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // getDefaultWorkflowConfig returns default workflow config, checking deploymentConfig first,
