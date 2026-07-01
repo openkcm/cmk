@@ -1,20 +1,31 @@
-package commands
+package taskcli
 
 import (
 	"context"
 	"log/slog"
 
+	"github.com/hibiken/asynq"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/logger"
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 
-	taskcommands "github.com/openkcm/cmk/cmd/task-cli/commands"
+	"github.com/openkcm/cmk/cmd/cmkctl/commands/taskcli/commands"
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/log"
 )
+
+type Inspector interface {
+	Queues() ([]string, error)
+	GetQueueInfo(queue string) (*asynq.QueueInfo, error)
+	History(queue string, days int) ([]*asynq.DailyStats, error)
+	ListPendingTasks(queue string, opts ...asynq.ListOption) ([]*asynq.TaskInfo, error)
+	ListActiveTasks(queue string, opts ...asynq.ListOption) ([]*asynq.TaskInfo, error)
+	ListCompletedTasks(queue string, opts ...asynq.ListOption) ([]*asynq.TaskInfo, error)
+	ListArchivedTasks(queue string, opts ...asynq.ListOption) ([]*asynq.TaskInfo, error)
+}
 
 func NewTaskCLI() *cobra.Command {
 	cmd := &cobra.Command{
@@ -32,22 +43,22 @@ func NewTaskCLI() *cobra.Command {
 				return err
 			}
 
-			ctx = context.WithValue(ctx, taskcommands.AsyncClientKey, client)
-			ctx = context.WithValue(ctx, taskcommands.AsyncInspectorKey, inspector)
+			ctx = context.WithValue(ctx, commands.AsyncClientKey, client)
+			ctx = context.WithValue(ctx, commands.AsyncInspectorKey, inspector)
 			cmd.SetContext(ctx)
 
 			return nil
 		},
 	}
 
-	cmd.AddCommand(taskcommands.NewStatsCmd())
-	cmd.AddCommand(taskcommands.NewQueuesCmd())
-	cmd.AddCommand(taskcommands.NewInvokeCmd())
+	cmd.AddCommand(commands.NewStatsCmd())
+	cmd.AddCommand(commands.NewQueuesCmd())
+	cmd.AddCommand(commands.NewInvokeCmd())
 
 	return cmd
 }
 
-func newTaskCLI(ctx context.Context) (async.Client, taskcommands.Inspector, error) {
+func newTaskCLI(ctx context.Context) (async.Client, Inspector, error) {
 	cfg, err := config.LoadConfig(
 		commoncfg.WithEnvOverride(constants.APIName + "_task_cli"),
 	)

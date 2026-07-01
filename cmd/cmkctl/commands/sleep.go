@@ -11,8 +11,6 @@ import (
 	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
-var BuildInfo = "{}"
-
 func NewSleep() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sleep",

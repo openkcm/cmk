@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/cmd/task-cli/commands"
+	"github.com/openkcm/cmk/cmd/cmkctl/commands/taskcli/commands"
 )
 
 func TestStatsCmd_QueueInfo(t *testing.T) {

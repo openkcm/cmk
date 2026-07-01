@@ -32,7 +32,7 @@ func TestAsync(t *testing.T) {
 			ValidityDays: config.MinCertificateValidityDays,
 		},
 		Database: dbCfg,
-		Plugins:  integrationutils.NoopPluginConfigs(),
+		Plugins:  testutils.NoopPluginConfigs(),
 		Services: config.Services{
 			Registry: &commoncfg.GRPCClient{
 				Enabled: true,
@@ -47,38 +47,42 @@ func TestAsync(t *testing.T) {
 	testutils.StartRedis(t, &cfg.Scheduler)
 
 	var wg sync.WaitGroup
-	var taskCli testcontainers.Container
+	var cmkdctl testcontainers.Container
 
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
-			Service: integrationutils.TaskWorker,
+			Service: integrationutils.Cmkctl,
+			Args:    []string{string(integrationutils.TaskWorker)},
 		}, cfg)
 	}()
 	go func() {
 		defer wg.Done()
-		taskCli = integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
-			Service: integrationutils.TaskCLI,
-			Args:    []string{"--sleep"},
+		cmkdctl = integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
+			Service: integrationutils.Cmkctl,
+			Args:    []string{string(integrationutils.TaskCLI), "sleep"},
 		}, cfg)
 	}()
 	wg.Wait()
 
-	exitCode, _, err := taskCli.Exec(t.Context(), []string{
-		string(integrationutils.TaskCLI),
-		"invoke",
-		"--task",
-		config.TypeHYOKSync,
-		"--tenants",
-		tenant,
-	},
+	exitCode, _, err := cmkdctl.Exec(
+		t.Context(), []string{
+			string(integrationutils.Cmkctl),
+			string(integrationutils.TaskCLI),
+			"invoke",
+			"--task",
+			config.TypeHYOKSync,
+			"--tenants",
+			tenant,
+		},
 	)
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 
 	require.NoError(t, err)
-	exitCode, reader, err := taskCli.Exec(t.Context(), []string{
+	exitCode, reader, err := cmkdctl.Exec(t.Context(), []string{
+		string(integrationutils.Cmkctl),
 		string(integrationutils.TaskCLI),
 		"stats",
 		"--queue",
@@ -97,7 +101,8 @@ func TestAsync(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		stdout.Reset()
 		stderr.Reset()
-		exitCode, reader, err = taskCli.Exec(t.Context(), []string{
+		exitCode, reader, err = cmkdctl.Exec(t.Context(), []string{
+			string(integrationutils.Cmkctl),
 			string(integrationutils.TaskCLI),
 			"stats",
 			"--queue",
@@ -129,7 +134,7 @@ func TestAsyncFanout(t *testing.T) {
 			ValidityDays: config.MinCertificateValidityDays,
 		},
 		Database: dbCfg,
-		Plugins:  integrationutils.NoopPluginConfigs(),
+		Plugins:  testutils.NoopPluginConfigs(),
 		Services: config.Services{
 			Registry: &commoncfg.GRPCClient{
 				Enabled: true,
@@ -166,20 +171,22 @@ func TestAsyncFanout(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
-			Service: integrationutils.TaskWorker,
+			Service: integrationutils.Cmkctl,
+			Args:    []string{string(integrationutils.TaskWorker)},
 		}, cfg)
 	}()
 	go func() {
 		defer wg.Done()
 		integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
-			Service: integrationutils.TaskScheduler,
+			Service: integrationutils.Cmkctl,
+			Args:    []string{string(integrationutils.TaskScheduler)},
 		}, cfg)
 	}()
 	go func() {
 		defer wg.Done()
 		taskCli = integrationutils.RunCMKService(t, integrationutils.ServiceConfig{
-			Service: integrationutils.TaskCLI,
-			Args:    []string{"--sleep"},
+			Service: integrationutils.Cmkctl,
+			Args:    []string{string(integrationutils.TaskCLI), "sleep"},
 		}, cfg)
 	}()
 	wg.Wait()
@@ -189,6 +196,7 @@ func TestAsyncFanout(t *testing.T) {
 		stdout.Reset()
 		stderr.Reset()
 		exitCode, reader, err := taskCli.Exec(t.Context(), []string{
+			string(integrationutils.Cmkctl),
 			string(integrationutils.TaskCLI),
 			"stats",
 			"--queue",

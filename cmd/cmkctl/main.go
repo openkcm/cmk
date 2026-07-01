@@ -6,6 +6,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/openkcm/cmk/cmd/cmkctl/commands"
+	"github.com/openkcm/cmk/cmd/cmkctl/commands/taskcli"
+	"github.com/openkcm/cmk/cmd/cmkctl/commands/tenantmanagercli"
 )
 
 func main() {
@@ -22,8 +24,8 @@ func run() error {
 		Long:  `CMK control provides a single entry point for tenant management and task operations`,
 	}
 
-	root.AddCommand(commands.NewTenantManagerCLI())
-	root.AddCommand(commands.NewTaskCLI())
+	root.AddCommand(tenantmanagercli.NewTenantManagerCLI())
+	root.AddCommand(taskcli.NewTaskCLI())
 	root.AddCommand(commands.NewSleep())
 
 	return root.Execute()

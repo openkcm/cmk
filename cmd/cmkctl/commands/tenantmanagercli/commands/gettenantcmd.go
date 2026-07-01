@@ -20,24 +20,9 @@ func NewGetTenantCmd() *cobra.Command {
 			ctx := cmd.Context()
 			f := context.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
 
-			id, _ := cmd.Flags().GetString("id")
-
-			if id == "" {
-				cmd.Println("Tenant id is required")
-				return ErrTenantIDRequired
-			}
-
-			tenant, err := f.tm.GetTenantByID(ctx, id)
+			tenant, err := GetTenant(cmd, f)
 			if err != nil {
-				cmd.PrintErrf("Failed to get tenant by ID %s: %v", id, err)
-
-				return nil
-			}
-
-			if tenant == nil {
-				cmd.Printf("Tenant with id %s not found\n", id)
-
-				return ErrTenantNotFound
+				return err
 			}
 
 			out, err := json.MarshalIndent(tenant, "", "  ")

@@ -1,19 +1,19 @@
 package main
 
 import (
+	"context"
 	"os"
 	"testing"
+	"time"
 
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/cmd/cmkctl/commands"
-	"github.com/openkcm/cmk/internal/config"
+	taskCLI "github.com/openkcm/cmk/cmd/cmkctl/commands/taskcli"
+	tenantManagerCLI "github.com/openkcm/cmk/cmd/cmkctl/commands/tenantmanagercli"
 	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
 
 func TestCommandsWithConfig(t *testing.T) {
@@ -24,12 +24,12 @@ func TestCommandsWithConfig(t *testing.T) {
 	}{
 		{
 			name:        "tenant-manager-cli",
-			commandFunc: commands.NewTenantManagerCLI,
+			commandFunc: tenantManagerCLI.NewTenantManagerCLI,
 			expectedUse: "tenant",
 		},
 		{
 			name:        "task-cli",
-			commandFunc: commands.NewTaskCLI,
+			commandFunc: taskCLI.NewTaskCLI,
 			expectedUse: "task",
 		},
 	}
@@ -41,54 +41,38 @@ func TestCommandsWithConfig(t *testing.T) {
 			assert.Equal(t, tt.expectedUse, cmd.Use)
 			assert.NotEmpty(t, cmd.Short)
 
-			createTestConfigFileForCLI(t)
+			_ = testutils.CreateTestConfigFile(t)
 
 			_ = cmd.PersistentPreRunE(cmd, []string{})
 		})
 	}
-}
 
-// createTestConfigFileForCLI creates a minimal test config file for CLI commands
-func createTestConfigFileForCLI(t *testing.T) {
-	t.Helper()
+	t.Run("sleep", func(t *testing.T) {
+		cmd := commands.NewSleep()
+		cfg := testutils.CreateTestConfigFile(t)
 
-	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
-	_, amqpCfg := testutils.NewAMQPClient(t, testutils.AMQPCfg{})
+		errChan := make(chan error, 1)
 
-	cfg := &config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name: "cmkctl-test",
-			},
-			Logger: commoncfg.Logger{
-				Level: "error",
-			},
-		},
-		Database: dbCfg,
-		Certificates: config.Certificates{
-			ValidityDays: config.MinCertificateValidityDays,
-		},
-		Services: config.Services{
-			Registry:       testutils.TestRegistryConfig,
-			SessionManager: testutils.TestSessionManagerConfig,
-		},
-		TenantManager: config.TenantManager{
-			SecretRef: commoncfg.SecretRef{
-				Type: commoncfg.InsecureSecretType,
-			},
-			AMQP: amqpCfg,
-		},
-		Plugins: integrationutils.NoopPluginConfigs(),
-	}
+		go func() {
+			cmd.SetContext(context.Background())
+			errChan <- cmd.RunE(cmd, []string{})
+		}()
 
-	testutils.StartRedis(t, &cfg.Scheduler)
+		// If status server gives back 200, service has started
+		testutils.WaitForServer(t, cfg.Status.Address)
 
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
+		// Send interrupt signal to trigger graceful shutdown
+		p, err := os.FindProcess(os.Getpid())
+		require.NoError(t, err, "failed to get process")
+		err = p.Signal(os.Interrupt)
+		require.NoError(t, err, "failed to send interrupt signal")
 
-	data, err := yaml.Marshal(cfg)
-	require.NoError(t, err, "failed to marshal config")
-
-	err = os.WriteFile("config.yaml", data, 0o600)
-	require.NoError(t, err, "failed to write config file")
+		// Wait for the service to exit
+		select {
+		case err := <-errChan:
+			assert.NoError(t, err, "Service should shut down gracefully without error")
+		case <-time.After(5 * time.Second):
+			assert.Fail(t, "Service did not shutdown within timeout")
+		}
+	})
 }

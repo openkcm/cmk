@@ -1,21 +1,16 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/cmd/cmkd/commands"
-	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
 
 func TestCommands(t *testing.T) {
@@ -67,10 +62,7 @@ func TestCommands(t *testing.T) {
 			assert.NotEmpty(t, cmd.Long)
 			require.NotNil(t, cmd.RunE, "Command should have RunE function")
 
-			port, err := testutils.GetFreePort()
-			require.NoError(t, err, "failed to get free port")
-
-			statusServer := createTestConfigFile(t, port)
+			cfg := testutils.CreateTestConfigFile(t)
 
 			if tt.doesNotHaveStatusServer {
 				err := cmd.RunE(cmd, []string{})
@@ -85,7 +77,7 @@ func TestCommands(t *testing.T) {
 			}()
 
 			// If status server gives back 200, service has started
-			testutils.WaitForServer(t, statusServer)
+			testutils.WaitForServer(t, cfg.Status.Address)
 
 			// Send interrupt signal to trigger graceful shutdown
 			p, err := os.FindProcess(os.Getpid())
@@ -102,55 +94,4 @@ func TestCommands(t *testing.T) {
 			}
 		})
 	}
-}
-
-// createTestConfigFile creates a minimal test config file with the given status server port
-func createTestConfigFile(t *testing.T, port int) string {
-	t.Helper()
-
-	_, _, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
-	_, amqpCfg := testutils.NewAMQPClient(t, testutils.AMQPCfg{})
-
-	cfg := &config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name: "cmk-test",
-			},
-			Status: commoncfg.Status{
-				Enabled: true,
-				Address: fmt.Sprintf("localhost:%d", port),
-			},
-			Logger: commoncfg.Logger{
-				Level: "error",
-			},
-		},
-		Database: dbCfg,
-		Certificates: config.Certificates{
-			ValidityDays: config.MinCertificateValidityDays,
-		},
-		Services: config.Services{
-			Registry:       testutils.TestRegistryConfig,
-			SessionManager: testutils.TestSessionManagerConfig,
-		},
-		TenantManager: config.TenantManager{
-			SecretRef: commoncfg.SecretRef{
-				Type: commoncfg.InsecureSecretType,
-			},
-			AMQP: amqpCfg,
-		},
-		Plugins: integrationutils.NoopPluginConfigs(),
-	}
-
-	testutils.StartRedis(t, &cfg.Scheduler)
-
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	data, err := yaml.Marshal(cfg)
-	require.NoError(t, err, "failed to marshal config")
-
-	err = os.WriteFile("config.yaml", data, 0o600)
-	require.NoError(t, err, "failed to write config file")
-
-	return cfg.Status.Address
 }
