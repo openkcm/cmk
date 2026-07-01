@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
@@ -17,8 +18,8 @@ func TestBuildImportParamsFromAPI(t *testing.T) {
 	validTime := time.Now().Add(24 * time.Hour)
 	validTimeStr := validTime.Format(time.RFC3339)
 	publicKey := "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0B..."
-	wrappingAlgorithm := "RSAES_OAEP_SHA_256"
-	hashFunction := "SHA_256"
+	wrappingAlgorithm := string(cmkapi.WrappingAlgorithmNameCKMRSAAESKEYWRAP)
+	hashFunction := string(cmkapi.WrappingAlgorithmHashFunctionSHA256)
 	providerParams := "example-import-token"
 
 	key := testutils.NewKey(func(k *model.Key) {
@@ -41,8 +42,8 @@ func TestBuildImportParamsFromAPI(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.Equal(t, key.ID, result.KeyID)
 		assert.Equal(t, publicKey, result.PublicKeyPEM)
-		assert.Equal(t, wrappingAlgorithm, result.WrappingAlg)
-		assert.Equal(t, hashFunction, result.HashFunction)
+		assert.Equal(t, cmkapi.WrappingAlgorithmName(wrappingAlgorithm), result.WrappingAlg)
+		assert.Equal(t, cmkapi.WrappingAlgorithmHashFunction(hashFunction), result.HashFunction)
 		assert.NotNil(t, result.Expires)
 		assert.WithinDuration(t, validTime, *result.Expires, time.Second)
 

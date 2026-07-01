@@ -85,7 +85,7 @@ func TestToAPI(t *testing.T) {
 				KeyConfigurationName: tt.sys.KeyConfigurationName,
 				Region:               tt.sys.Region,
 				Status:               tt.sys.Status,
-				Type:                 tt.sys.Type,
+				Type:                 string(tt.sys.Type),
 				Properties:           new(properties),
 				UnderWorkflow:        &tt.sys.UnderWorkflow,
 			}

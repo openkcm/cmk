@@ -53,7 +53,7 @@ func TestWorkflow_Description(t *testing.T) {
 		actionType             model.WorkflowActionType
 		artifactName           *string
 		parameters             string
-		parametersResourceType *string
+		parametersResourceType *model.WorkflowParametersResourceType
 		parametersResourceName *string
 		expectedDescription    string
 	}{
@@ -63,7 +63,7 @@ func TestWorkflow_Description(t *testing.T) {
 			actionType:             "LINK",
 			artifactName:           new("Production System"),
 			parameters:             keyConfigID,
-			parametersResourceType: new("KEY_CONFIGURATION"),
+			parametersResourceType: new(model.WorkflowParametersResourceTypeKeyConfiguration),
 			parametersResourceName: new(keyConfigName),
 			expectedDescription:    "initiator@example.com requested approval to LINK SYSTEM: 'Production System' to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
@@ -73,7 +73,7 @@ func TestWorkflow_Description(t *testing.T) {
 			actionType:             "LINK",
 			artifactName:           nil,
 			parameters:             keyConfigID,
-			parametersResourceType: new("KEY_CONFIGURATION"),
+			parametersResourceType: new(model.WorkflowParametersResourceTypeKeyConfiguration),
 			parametersResourceName: new(keyConfigName),
 			expectedDescription:    "initiator@example.com requested approval to LINK SYSTEM to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
@@ -83,7 +83,7 @@ func TestWorkflow_Description(t *testing.T) {
 			actionType:             "LINK",
 			artifactName:           new("Production System"),
 			parameters:             keyConfigID,
-			parametersResourceType: new("KEY_CONFIGURATION"),
+			parametersResourceType: new(model.WorkflowParametersResourceTypeKeyConfiguration),
 			parametersResourceName: nil,
 			expectedDescription:    "initiator@example.com requested approval to LINK SYSTEM: 'Production System'.",
 		},
@@ -113,7 +113,7 @@ func TestWorkflow_Description(t *testing.T) {
 			actionType:             "SWITCH",
 			artifactName:           new("Staging System"),
 			parameters:             keyConfigID,
-			parametersResourceType: new("KEY_CONFIGURATION"),
+			parametersResourceType: new(model.WorkflowParametersResourceTypeKeyConfiguration),
 			parametersResourceName: new(keyConfigName),
 			expectedDescription:    "initiator@example.com requested approval to SWITCH SYSTEM: 'Staging System' to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
@@ -123,7 +123,7 @@ func TestWorkflow_Description(t *testing.T) {
 			actionType:             "SWITCH",
 			artifactName:           nil,
 			parameters:             keyConfigID,
-			parametersResourceType: new("KEY_CONFIGURATION"),
+			parametersResourceType: new(model.WorkflowParametersResourceTypeKeyConfiguration),
 			parametersResourceName: new(keyConfigName),
 			expectedDescription:    "initiator@example.com requested approval to SWITCH SYSTEM to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},

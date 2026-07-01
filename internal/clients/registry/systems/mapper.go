@@ -33,6 +33,6 @@ func mapRegistrySystemToCmkSystem(grpcSystem *systemgrpc.System) (*model.System,
 		ID:         uuid.New(),
 		Region:     grpcSystem.GetRegion(),
 		Identifier: grpcSystem.GetExternalId(),
-		Type:       string(*systemType),
+		Type:       *systemType,
 	}, nil
 }

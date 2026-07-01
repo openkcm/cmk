@@ -284,7 +284,8 @@ func createKeyForTest(
 		KeyConfigurationID: keyConfigID,
 		Name:               uuid.NewString(),
 		Provider:           "TEST",
-		KeyType:            string(cmkapi.KeyTypeHYOK),
+		KeyType:            cmkapi.KeyTypeHYOK,
+		Algorithm:          cmkapi.KeyAlgorithmAES256,
 		State:              state,
 		NativeID:           new("arn:aws:kms:us-east-1:123456789012:key/" + keyUUID.String()),
 		CryptoAccessData:   bytes,
@@ -615,7 +616,8 @@ func addDataToDB(
 		// own CryptoAccessData. The non-HYOK path goes through
 		// CryptoAccessDataSyncer, which has no crypto certs in the test
 		// landscape and would fail with UNSUPPORTED_REGION.
-		KeyType:          string(cmkapi.KeyTypeHYOK),
+		KeyType:          cmkapi.KeyTypeHYOK,
+		Algorithm:        cmkapi.KeyAlgorithmAES256,
 		NativeID:         new("arn:aws:kms:us-east-1:123456789012:key/12345678-90ab-cdef-1234-567890abcdef"),
 		CryptoAccessData: bytes,
 	})

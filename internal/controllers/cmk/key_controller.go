@@ -224,7 +224,7 @@ func (c *APIController) isPrimaryKeyStateUpdate(
 		return false, err
 	}
 
-	if key.KeyType != string(cmkapi.KeyTypeBYOK) {
+	if key.KeyType != cmkapi.KeyTypeBYOK {
 		return true, manager.ErrUpdateNonBYOKKeyStatus
 	}
 

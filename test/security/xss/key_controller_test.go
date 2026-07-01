@@ -11,7 +11,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -84,9 +83,9 @@ func TestKeyController_ForXSS(t *testing.T) {
 
 	baseKey := map[string]any{
 		"name":               "test-key",
-		"type":               string(cmkapi.KeyTypeBYOK),
+		"type":               cmkapi.KeyTypeBYOK,
 		"keyConfigurationID": keyConfig.ID,
-		"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+		"algorithm":          cmkapi.KeyAlgorithmAES256,
 		"region":             "us-west-2",
 		"description":        "test key",
 		"enabled":            true,
@@ -241,7 +240,7 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.ManagementAccessData = json.RawMessage("{\"<>\":\"><\"}")
 		k.CryptoAccessData = json.RawMessage("{\"<>\":{\"test\":\"test\"}}")
 		k.KeyConfigurationID = kc.ID

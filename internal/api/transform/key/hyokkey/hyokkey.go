@@ -62,7 +62,7 @@ func FromCmkAPIKey(
 	}
 
 	return &model.Key{
-		KeyType:              string(apiKey.Type),
+		KeyType:              apiKey.Type,
 		Description:          description,
 		NativeID:             apiKey.NativeID,
 		Provider:             *apiKey.Provider,

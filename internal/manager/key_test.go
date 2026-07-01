@@ -17,7 +17,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -113,7 +112,7 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	return km, r, ctx, keyConfig
 }
 
-func createTestSystemManagedKey(t *testing.T, km *manager.KeyManager, ctx context.Context, keyConfigID uuid.UUID) *model.Key {
+func createTestBYOKKeyViaManager(t *testing.T, km *manager.KeyManager, ctx context.Context, keyConfigID uuid.UUID) *model.Key {
 	t.Helper()
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
@@ -143,7 +142,7 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = new("mock-key/11111111")
 		k.ManagementAccessData = hyokInfo
 		k.Provider = providerTest
@@ -160,7 +159,7 @@ func createTestBYOKKey(t *testing.T, r repo.Repo, ctx context.Context, keyConfig
 	t.Helper()
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
-		k.KeyType = constants.KeyTypeBYOK
+		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = state
 		k.NativeID = new("arn:aws:kms:us-west-2:111122223333:alias/<alias-name>")
 	})
@@ -196,7 +195,7 @@ func TestCreate(t *testing.T) {
 			key: func() *model.Key {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
-					k.KeyType = constants.KeyTypeHYOK
+					k.KeyType = cmkapi.KeyTypeHYOK
 					k.NativeID = new("mock-key/11111111")
 					k.ManagementAccessData = hyokInfo
 					k.Provider = "INVALID"
@@ -209,7 +208,7 @@ func TestCreate(t *testing.T) {
 			key: func() *model.Key {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
-					k.KeyType = constants.KeyTypeHYOK
+					k.KeyType = cmkapi.KeyTypeHYOK
 					k.NativeID = new("mock-key/11111111")
 					k.ManagementAccessData = hyokInfo
 					k.Provider = providerTest
@@ -222,7 +221,7 @@ func TestCreate(t *testing.T) {
 			key: func() *model.Key {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
-					k.KeyType = constants.KeyTypeHYOK
+					k.KeyType = cmkapi.KeyTypeHYOK
 					k.NativeID = new("mock-key/11111111")
 					k.ManagementAccessData = []byte("{\"invalid\": \"data\"}")
 					k.Provider = providerTest
@@ -236,7 +235,7 @@ func TestCreate(t *testing.T) {
 			key: func() *model.Key {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
-					k.KeyType = constants.KeyTypeHYOK
+					k.KeyType = cmkapi.KeyTypeHYOK
 					k.NativeID = new("invalid-key-id")
 					k.ManagementAccessData = hyokInfo
 					k.Provider = providerTest
@@ -250,7 +249,7 @@ func TestCreate(t *testing.T) {
 			key: func() *model.Key {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
-					k.KeyType = constants.KeyTypeBYOK
+					k.KeyType = cmkapi.KeyTypeBYOK
 					k.State = cmkapi.KeyStatePENDINGIMPORT
 				})
 			},
@@ -343,7 +342,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.NativeID = new("mock-key/11111111")
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
@@ -378,7 +377,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.NativeID = new("mock-key/11111111")
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
@@ -397,7 +396,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 	t.Run("should handle HYOK key with no crypto access data", func(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.NativeID = new("mock-key/11111111")
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
@@ -413,9 +412,9 @@ func TestSetFirstKeyPrimary(t *testing.T) {
 	km, r, ctx, keyConfig := SetupKeyTest(t)
 
 	t.Run("Should set first key as primary", func(t *testing.T) {
-		createdKey1 := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
+		createdKey1 := createTestBYOKKeyViaManager(t, km, ctx, keyConfig.ID)
 
-		_ = createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
+		_ = createTestBYOKKeyViaManager(t, km, ctx, keyConfig.ID)
 
 		resKeyConfig := &model.KeyConfiguration{ID: keyConfig.ID, AdminGroup: model.Group{ID: uuid.New()}}
 		_, err := r.First(ctx, resKeyConfig, *repo.NewQuery())
@@ -452,7 +451,7 @@ func TestEditableCryptoData(t *testing.T) {
 		})
 
 		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.CryptoAccessData = cryptoData
 			k.KeyConfigurationID = kc.ID
 		})
@@ -489,7 +488,7 @@ func TestEditableCryptoData(t *testing.T) {
 
 		key := testutils.NewKey(func(k *model.Key) {
 			k.ID = keyID
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.CryptoAccessData = cryptoData
 			k.KeyConfigurationID = kc.ID
 		})
@@ -508,7 +507,7 @@ func TestEditableCryptoData(t *testing.T) {
 func TestGet(t *testing.T) {
 	km, r, ctx, keyConfig := SetupKeyTest(t)
 
-	createdKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
+	createdKey := createTestBYOKKeyViaManager(t, km, ctx, keyConfig.ID)
 	hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
 	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 
@@ -760,8 +759,8 @@ func enableKey(t *testing.T, km *manager.KeyManager, ctx context.Context, hyokKe
 func TestList(t *testing.T) {
 	km, r, ctx, keyConfig := SetupKeyTest(t)
 
-	createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
-	createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
+	createTestBYOKKeyViaManager(t, km, ctx, keyConfig.ID)
+	createTestBYOKKeyViaManager(t, km, ctx, keyConfig.ID)
 
 	sys := testutils.NewSystem(func(sys *model.System) {
 		sys.Status = cmkapi.SystemStatusFAILED
@@ -813,7 +812,7 @@ func TestList(t *testing.T) {
 //nolint:nestif
 func TestUpdate(t *testing.T) {
 	km, r, ctx, keyConfig := SetupKeyTest(t)
-	createdKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
+	createdKey := createTestBYOKKeyViaManager(t, km, ctx, keyConfig.ID)
 
 	tests := []struct {
 		name     string
@@ -958,7 +957,7 @@ func TestUpdate(t *testing.T) {
 func TestDelete(t *testing.T) {
 	km, r, ctx, keyConfig := SetupKeyTest(t)
 
-	createdKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
+	createdKey := createTestBYOKKeyViaManager(t, km, ctx, keyConfig.ID)
 	createdPrimaryKey, err := km.Create(ctx, testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
 	}))
@@ -1097,7 +1096,7 @@ func TestGetImportParams(t *testing.T) {
 		km, r, ctx, keyConfig := SetupKeyTest(t)
 
 		byokEnabledKey := testutils.NewKey(func(k *model.Key) {
-			k.KeyType = string(cmkapi.KeyTypeBYOK)
+			k.KeyType = cmkapi.KeyTypeBYOK
 			k.State = cmkapi.KeyStateENABLED
 			k.KeyConfigurationID = keyConfig.ID
 		})
@@ -1340,8 +1339,8 @@ func TestKeyRotationTime(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.Name = "test-hyok-key"
 			k.KeyConfigurationID = keyConfig.ID
-			k.KeyType = constants.KeyTypeHYOK
-			k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.Algorithm = cmkapi.KeyAlgorithmAES256
 			k.Provider = testplugins.Name
 			k.Region = testRegionUSEast1
 			k.NativeID = new("test-native-id")
@@ -1383,7 +1382,7 @@ func TestKeyRotationTime(t *testing.T) {
 		pluginOps.SetKeyVersionInfo("test-native-id-rotate", "version-1", initialRotationTime.Format(time.RFC3339))
 
 		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.Provider = testplugins.Name
 			k.NativeID = new("test-native-id-rotate")
 			k.KeyConfigurationID = keyConfig.ID
@@ -1459,8 +1458,8 @@ func TestKeyRotationTime(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.Name = "test-hyok-no-time"
 			k.KeyConfigurationID = keyConfig.ID
-			k.KeyType = constants.KeyTypeHYOK
-			k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.Algorithm = cmkapi.KeyAlgorithmAES256
 			k.Provider = testplugins.Name
 			k.Region = testRegionUSEast1
 			k.NativeID = new("test-native-id-no-time")
@@ -1505,8 +1504,8 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 	primaryKey := testutils.NewKey(func(k *model.Key) {
 		k.Name = "primary-key"
 		k.KeyConfigurationID = keyConfig.ID
-		k.KeyType = constants.KeyTypeHYOK
-		k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.Algorithm = cmkapi.KeyAlgorithmAES256
 		k.Provider = testplugins.Name
 		k.Region = testRegionUSEast1
 		k.NativeID = new("primary-key-native-id")
@@ -1520,8 +1519,8 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 	nonPrimaryKey := testutils.NewKey(func(k *model.Key) {
 		k.Name = "non-primary-key"
 		k.KeyConfigurationID = keyConfig.ID
-		k.KeyType = constants.KeyTypeHYOK
-		k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.Algorithm = cmkapi.KeyAlgorithmAES256
 		k.Provider = testplugins.Name
 		k.Region = testRegionUSEast1
 		k.NativeID = new("non-primary-key-native-id")
@@ -1596,7 +1595,7 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 
 		emptyKey := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = emptyKeyConfig.ID
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.Provider = testplugins.Name
 			k.Region = testRegionUSEast1
 			k.NativeID = new("empty-key-native-id")
