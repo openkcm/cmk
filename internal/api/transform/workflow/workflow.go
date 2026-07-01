@@ -147,7 +147,7 @@ func ToAPI(
 
 	var parametersResourceType *cmkapi.WorkflowParametersResourceType
 	if w.ParametersResourceType != nil {
-		resourceType := cmkapi.WorkflowParametersResourceType(strings.ToUpper(*w.ParametersResourceType))
+		resourceType := cmkapi.WorkflowParametersResourceType(strings.ToUpper(string(*w.ParametersResourceType)))
 		parametersResourceType = &resourceType
 	}
 

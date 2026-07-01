@@ -34,9 +34,9 @@ func FromCmkAPIKey(
 	}
 
 	return &model.Key{
-		KeyType:     string(apiKey.Type),
+		KeyType:     apiKey.Type,
 		Description: description,
-		Algorithm:   string(*apiKey.Algorithm),
+		Algorithm:   *apiKey.Algorithm,
 		Provider:    *apiKey.Provider,
 		Region:      *apiKey.Region,
 	}, nil

@@ -18,7 +18,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/authz"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/log"
@@ -126,7 +125,7 @@ func (km *KeyManager) Create(
 		}
 
 		// For HYOK keys, create initial version from keystore response
-		if key.KeyType == constants.KeyTypeHYOK && keyResp != nil {
+		if key.KeyType == cmkapi.KeyTypeHYOK && keyResp != nil {
 			if err := km.syncKeyVersion(ctx, key, keyResp); err != nil {
 				return errs.Wrap(ErrCreateKeyVersionDB, err)
 			}
@@ -174,8 +173,8 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 	}
 
 	switch key.KeyType {
-	case constants.KeyTypeSystemManaged, constants.KeyTypeBYOK:
-	case constants.KeyTypeHYOK:
+	case cmkapi.KeyTypeBYOK:
+	case cmkapi.KeyTypeHYOK:
 		err := km.syncHYOKKeyState(ctx, key)
 		if err != nil {
 			return nil, err
@@ -247,7 +246,7 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 		return nil, errs.Wrap(ErrCryptoDetailsUpdate, err)
 	}
 
-	if key.KeyType == constants.KeyTypeHYOK && keyPatch.Enabled != nil {
+	if key.KeyType == cmkapi.KeyTypeHYOK && keyPatch.Enabled != nil {
 		return nil, errs.Wrapf(ErrHYOKKeyActionNotAllowed, "update key state")
 	}
 
@@ -398,7 +397,7 @@ func (km *KeyManager) ImportKeyMaterial(
 func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 	baseQuery := repo.NewQuery().Where(
 		repo.NewCompositeKeyGroup(
-			repo.NewCompositeKey().Where(repo.KeyTypeField, constants.KeyTypeHYOK),
+			repo.NewCompositeKey().Where(repo.KeyTypeField, cmkapi.KeyTypeHYOK),
 		),
 	)
 
@@ -454,9 +453,9 @@ func (km *KeyManager) createOrRegisterProviderKey(
 	provider *ProviderConfig,
 ) (*keymanagement.GetKeyResponse, error) {
 	switch key.KeyType {
-	case constants.KeyTypeSystemManaged, constants.KeyTypeBYOK:
+	case cmkapi.KeyTypeBYOK:
 		return nil, km.createManagedProviderKey(ctx, key, provider)
-	case constants.KeyTypeHYOK:
+	case cmkapi.KeyTypeHYOK:
 		return km.registerHYOKKey(ctx, key, provider)
 	default:
 		return nil, ErrInvalidKeystore
@@ -471,12 +470,12 @@ func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) err
 
 	// By default HYOK keys can be editable
 	for region := range cryptoData {
-		key.EditableRegions[region] = key.KeyType == constants.KeyTypeHYOK
+		key.EditableRegions[region] = key.KeyType == cmkapi.KeyTypeHYOK
 	}
 
 	// All regions for non primary keys are editable
 	// Non-HYOK will not be editable, so we also end here
-	if !key.IsPrimary || key.KeyType != constants.KeyTypeHYOK {
+	if !key.IsPrimary || key.KeyType != cmkapi.KeyTypeHYOK {
 		return nil
 	}
 
@@ -598,7 +597,7 @@ func (km *KeyManager) registerHYOKKey(
 		)
 	}
 
-	key.Algorithm = string(cmkapi.KeyAlgorithmAES256)
+	key.Algorithm = cmkapi.KeyAlgorithmAES256
 
 	if cmkapi.KeyState(keyResp.Status) != cmkapi.KeyStateENABLED {
 		return nil, errs.Wrapf(
@@ -656,7 +655,7 @@ func (km *KeyManager) addCertificateSubjectToCryptoData(ctx context.Context, key
 
 func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) error {
 	// If the key is a HYOK key, we do not delete it from the provider
-	if key.KeyType == constants.KeyTypeHYOK {
+	if key.KeyType == cmkapi.KeyTypeHYOK {
 		return nil
 	}
 
@@ -666,20 +665,7 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 	}
 
 	switch key.KeyType {
-	case constants.KeyTypeSystemManaged:
-		// Delete all key versions for system managed keys
-		for _, kv := range key.KeyVersions {
-			_, err = provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
-				Parameters: keymanagement.RequestParameters{
-					Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
-					KeyID:  kv.NativeID,
-				},
-			})
-			if err != nil {
-				return errs.Wrap(ErrFailedToDeleteProvider, err)
-			}
-		}
-	case constants.KeyTypeBYOK:
+	case cmkapi.KeyTypeBYOK:
 		// For BYOK keys, we delete the key itself, since BYOK keys are not versioned
 		_, err = provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
 			Parameters: keymanagement.RequestParameters{
@@ -690,6 +676,8 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 		if err != nil {
 			return errs.Wrap(ErrFailedToDeleteProvider, err)
 		}
+	case cmkapi.KeyTypeHYOK:
+		// HYOK keys are managed externally; nothing to delete on the provider side.
 	}
 
 	return nil
@@ -834,7 +822,7 @@ func (km *KeyManager) validateBYOKKey(ctx context.Context, keyID uuid.UUID, acti
 	switch action {
 	case BYOKActionGetImportParams:
 		authzAction = authz.APIActionRead
-		if key.KeyType != constants.KeyTypeBYOK {
+		if key.KeyType != cmkapi.KeyTypeBYOK {
 			return nil, errs.Wrapf(ErrInvalidKeyTypeForImportParams,
 				fmt.Sprintf("key type %s is not supported", key.KeyType))
 		}
@@ -844,7 +832,7 @@ func (km *KeyManager) validateBYOKKey(ctx context.Context, keyID uuid.UUID, acti
 		}
 	case BYOKActionImportKeyMaterial:
 		authzAction = authz.APIActionUpdate
-		if key.KeyType != constants.KeyTypeBYOK {
+		if key.KeyType != cmkapi.KeyTypeBYOK {
 			return nil, errs.Wrapf(ErrInvalidKeyTypeForImportKeyMaterial,
 				fmt.Sprintf("key type %s is not supported", key.KeyType))
 		}
@@ -1141,7 +1129,7 @@ func (km *KeyManager) handleKeyStateTransition(ctx context.Context, key *model.K
 }
 
 func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keymanagement.GetKeyResponse, error) {
-	if key.KeyType != constants.KeyTypeHYOK {
+	if key.KeyType != cmkapi.KeyTypeHYOK {
 		return nil, ErrInvalidKeyTypeForHYOKSync
 	}
 
@@ -1304,21 +1292,19 @@ func (km *KeyManager) disableKey(ctx context.Context, key *model.Key) error {
 	return km.sendDisableEvent(ctx, key)
 }
 
-func convertToAPIKeyAlgorithm(alg string) keymanagement.KeyAlgorithm {
-	if alg == string(cmkapi.KeyAlgorithmAES256) {
+func convertToAPIKeyAlgorithm(alg cmkapi.KeyAlgorithm) keymanagement.KeyAlgorithm {
+	if alg == cmkapi.KeyAlgorithmAES256 {
 		return keymanagement.AES256
 	}
 
 	return keymanagement.UnspecifiedKeyAlgorithm
 }
 
-func convertToAPIKeyType(keyType string) keymanagement.KeyType {
+func convertToAPIKeyType(keyType cmkapi.KeyType) keymanagement.KeyType {
 	switch keyType {
-	case constants.KeyTypeSystemManaged:
-		return keymanagement.SystemManaged
-	case constants.KeyTypeBYOK:
+	case cmkapi.KeyTypeBYOK:
 		return keymanagement.BYOK
-	case constants.KeyTypeHYOK:
+	case cmkapi.KeyTypeHYOK:
 		return keymanagement.HYOK
 	default:
 		return keymanagement.UnspecifiedKeyType

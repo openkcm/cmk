@@ -7,8 +7,8 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -108,7 +108,7 @@ func TestGetOrInitProvider(t *testing.T) {
 		{
 			name: "Valid Provider",
 			key: testutils.NewKey(func(k *model.Key) {
-				k.KeyType = constants.KeyTypeHYOK
+				k.KeyType = cmkapi.KeyTypeHYOK
 				k.Provider = providerTest
 			}),
 			assert: func(t *testing.T, provider *manager.ProviderConfig, err error) {
@@ -121,7 +121,7 @@ func TestGetOrInitProvider(t *testing.T) {
 		{
 			name: "Invalid Provider",
 			key: testutils.NewKey(func(k *model.Key) {
-				k.KeyType = constants.KeyTypeHYOK
+				k.KeyType = cmkapi.KeyTypeHYOK
 				k.Provider = "GCP"
 			}),
 			assert: func(t *testing.T, provider *manager.ProviderConfig, err error) {

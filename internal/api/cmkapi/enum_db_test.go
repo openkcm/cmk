@@ -1,13 +1,52 @@
 package cmkapi_test
 
 import (
+	"database/sql/driver"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/utils/enums"
 )
+
+// validator is implemented by every cmkapi enum type used here.
+type validator interface {
+	~string
+	Valid() bool
+}
+
+// valuer is the driver.Valuer interface our enum_db.go Value() methods implement.
+type valuer interface {
+	Value() (driver.Value, error)
+}
+
+// runEnumValueTests asserts the standard Value() contract for an enum type.
+func runEnumValueTests[T validator](t *testing.T, name string, validVal T, invalidErr error) {
+	t.Helper()
+	t.Run(name+"/valid", func(t *testing.T) {
+		v, ok := any(validVal).(valuer)
+		require.True(t, ok, "type does not implement driver.Valuer")
+		got, err := v.Value()
+		require.NoError(t, err)
+		assert.Equal(t, string(validVal), got)
+	})
+	t.Run(name+"/empty becomes NULL", func(t *testing.T) {
+		var zero T
+		v, ok := any(zero).(valuer)
+		require.True(t, ok, "type does not implement driver.Valuer")
+		got, err := v.Value()
+		require.NoError(t, err)
+		assert.Nil(t, got)
+	})
+	t.Run(name+"/invalid", func(t *testing.T) {
+		v, ok := any(T("BOGUS")).(valuer)
+		require.True(t, ok, "type does not implement driver.Valuer")
+		_, err := v.Value()
+		assert.ErrorIs(t, err, invalidErr)
+	})
+}
 
 func TestKeyState_Valid(t *testing.T) {
 	assert.True(t, cmkapi.KeyStateENABLED.Valid())
@@ -16,22 +55,7 @@ func TestKeyState_Valid(t *testing.T) {
 }
 
 func TestKeyState_Value(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		v, err := cmkapi.KeyStateENABLED.Value()
-		assert.NoError(t, err)
-		assert.Equal(t, "ENABLED", v)
-	})
-
-	t.Run("empty becomes NULL", func(t *testing.T) {
-		v, err := cmkapi.KeyState("").Value()
-		assert.NoError(t, err)
-		assert.Nil(t, v)
-	})
-
-	t.Run("invalid", func(t *testing.T) {
-		_, err := cmkapi.KeyState("BOGUS").Value()
-		assert.ErrorIs(t, err, cmkapi.ErrInvalidKeyState)
-	})
+	runEnumValueTests(t, "KeyState", cmkapi.KeyStateENABLED, cmkapi.ErrInvalidKeyState)
 }
 
 func TestKeyState_Scan(t *testing.T) {
@@ -47,7 +71,6 @@ func TestKeyState_Scan(t *testing.T) {
 		{name: "invalid", src: "BOGUS", wantErr: cmkapi.ErrInvalidKeyState},
 		{name: "wrong type", src: 1, wantErr: enums.ErrUnexpectedScanType},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var s cmkapi.KeyState
@@ -69,22 +92,7 @@ func TestSystemStatus_Valid(t *testing.T) {
 }
 
 func TestSystemStatus_Value(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		v, err := cmkapi.SystemStatusCONNECTED.Value()
-		assert.NoError(t, err)
-		assert.Equal(t, "CONNECTED", v)
-	})
-
-	t.Run("empty becomes NULL", func(t *testing.T) {
-		v, err := cmkapi.SystemStatus("").Value()
-		assert.NoError(t, err)
-		assert.Nil(t, v)
-	})
-
-	t.Run("invalid", func(t *testing.T) {
-		_, err := cmkapi.SystemStatus("BOGUS").Value()
-		assert.ErrorIs(t, err, cmkapi.ErrInvalidSystemStatus)
-	})
+	runEnumValueTests(t, "SystemStatus", cmkapi.SystemStatusCONNECTED, cmkapi.ErrInvalidSystemStatus)
 }
 
 func TestSystemStatus_Scan(t *testing.T) {
@@ -100,7 +108,6 @@ func TestSystemStatus_Scan(t *testing.T) {
 		{name: "invalid", src: "BOGUS", wantErr: cmkapi.ErrInvalidSystemStatus},
 		{name: "wrong type", src: 1.5, wantErr: enums.ErrUnexpectedScanType},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var s cmkapi.SystemStatus
@@ -113,4 +120,50 @@ func TestSystemStatus_Scan(t *testing.T) {
 			assert.Equal(t, tt.want, s)
 		})
 	}
+}
+
+func TestKeyType_Value(t *testing.T) {
+	runEnumValueTests(t, "KeyType", cmkapi.KeyTypeBYOK, cmkapi.ErrInvalidKeyType)
+}
+
+func TestKeyType_Scan(t *testing.T) {
+	var k cmkapi.KeyType
+	require.NoError(t, k.Scan("HYOK"))
+	assert.Equal(t, cmkapi.KeyTypeHYOK, k)
+	assert.ErrorIs(t, k.Scan("BOGUS"), cmkapi.ErrInvalidKeyType)
+}
+
+func TestKeyAlgorithm_Value(t *testing.T) {
+	runEnumValueTests(t, "KeyAlgorithm", cmkapi.KeyAlgorithmAES256, cmkapi.ErrInvalidKeyAlgorithm)
+}
+
+func TestKeyAlgorithm_Scan(t *testing.T) {
+	var a cmkapi.KeyAlgorithm
+	require.NoError(t, a.Scan("AES256"))
+	assert.Equal(t, cmkapi.KeyAlgorithmAES256, a)
+	assert.ErrorIs(t, a.Scan("BOGUS"), cmkapi.ErrInvalidKeyAlgorithm)
+}
+
+func TestWrappingAlgorithmName_Value(t *testing.T) {
+	runEnumValueTests(t, "WrappingAlgorithmName",
+		cmkapi.WrappingAlgorithmNameCKMRSAAESKEYWRAP, cmkapi.ErrInvalidWrappingAlgorithmName)
+}
+
+func TestWrappingAlgorithmName_Scan(t *testing.T) {
+	var a cmkapi.WrappingAlgorithmName
+	require.NoError(t, a.Scan("CKM_RSA_PKCS_OAEP"))
+	assert.Equal(t, cmkapi.WrappingAlgorithmNameCKMRSAPKCSOAEP, a)
+	assert.ErrorIs(t, a.Scan("BOGUS"), cmkapi.ErrInvalidWrappingAlgorithmName)
+}
+
+func TestWrappingAlgorithmHashFunction_Value(t *testing.T) {
+	runEnumValueTests(t, "WrappingAlgorithmHashFunction",
+		cmkapi.WrappingAlgorithmHashFunctionSHA256, cmkapi.ErrInvalidWrappingAlgorithmHashFunction)
+}
+
+func TestWrappingAlgorithmHashFunction_Scan(t *testing.T) {
+	var h cmkapi.WrappingAlgorithmHashFunction
+	require.NoError(t, h.Scan("SHA1"))
+	assert.Equal(t, cmkapi.WrappingAlgorithmHashFunctionSHA1, h)
+	assert.ErrorIs(t, h.Scan("BOGUS"), cmkapi.ErrInvalidWrappingAlgorithmHashFunction)
 }
