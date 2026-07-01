@@ -484,7 +484,7 @@ func (m *SystemManager) UnmapSystemFromRegistry(ctx context.Context, system *mod
 
 	_, err = m.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
 		ExternalId: system.Identifier,
-		Type:       strings.ToLower(system.Type),
+		Type:       strings.ToLower(string(system.Type)),
 		TenantId:   tenant,
 	})
 

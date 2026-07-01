@@ -67,7 +67,7 @@ func ToAPI(system model.System, systemCfg *config.System, opts ...ToAPIOpt) (*cm
 		Identifier:           &system.Identifier,
 		Region:               system.Region,
 		Properties:           &properties,
-		Type:                 system.Type,
+		Type:                 string(system.Type),
 		KeyConfigurationID:   system.KeyConfigurationID,
 		KeyConfigurationName: system.KeyConfigurationName,
 		Status:               system.Status,

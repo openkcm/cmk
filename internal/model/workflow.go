@@ -35,20 +35,21 @@ const WorkflowID = "workflow_id"
 type Workflow struct {
 	AutoTimeModel
 
-	ID                     uuid.UUID            `gorm:"type:uuid;primaryKey"`
-	State                  WorkflowState        `gorm:"type:varchar(50);not null"`
-	InitiatorID            string               `gorm:"type:varchar(255);not null"`
-	initiatorName          string               `gorm:"-:all"`
-	Approvers              []WorkflowApprover   `gorm:"foreignKey:WorkflowID"`
-	ApproverGroupIDs       json.RawMessage      `gorm:"type:jsonb"`
-	ArtifactType           WorkflowArtifactType `gorm:"type:varchar(50);not null"`
-	ArtifactID             uuid.UUID            `gorm:"type:uuid;not null"`
-	ArtifactName           *string              `gorm:"type:varchar(255)"` // Currently a snapshot at time of creation
-	ActionType             WorkflowActionType   `gorm:"type:varchar(50);not null"`
-	Parameters             string               `gorm:"type:text"`
-	ParametersResourceName *string              `gorm:"type:varchar(255)"`
-	ParametersResourceType *string              `gorm:"type:varchar(50)"`
-	FailureReason          string               `gorm:"type:text"`
+	ID               uuid.UUID            `gorm:"type:uuid;primaryKey"`
+	State            WorkflowState        `gorm:"type:varchar(50);not null"`
+	InitiatorID      string               `gorm:"type:varchar(255);not null"`
+	initiatorName    string               `gorm:"-:all"`
+	Approvers        []WorkflowApprover   `gorm:"foreignKey:WorkflowID"`
+	ApproverGroupIDs json.RawMessage      `gorm:"type:jsonb"`
+	ArtifactType     WorkflowArtifactType `gorm:"type:varchar(50);not null"`
+	ArtifactID       uuid.UUID            `gorm:"type:uuid;not null"`
+	// ArtifactName is currently a snapshot at time of creation
+	ArtifactName           *string                         `gorm:"type:varchar(255)"`
+	ActionType             WorkflowActionType              `gorm:"type:varchar(50);not null"`
+	Parameters             string                          `gorm:"type:text"`
+	ParametersResourceName *string                         `gorm:"type:varchar(255)"`
+	ParametersResourceType *WorkflowParametersResourceType `gorm:"type:varchar(50)"`
+	FailureReason          string                          `gorm:"type:text"`
 	ExpiryDate             *time.Time
 	MinimumApprovalCount   int `gorm:"type:integer;default:2"` // Snapshot of minimum approvals at creation time
 }
@@ -172,7 +173,7 @@ func (m Workflow) buildSystemDescription(
 // getParametersResourceType returns the parameters resource type or empty string if nil
 func (m Workflow) getParametersResourceType() string {
 	if m.ParametersResourceType != nil {
-		return *m.ParametersResourceType
+		return string(*m.ParametersResourceType)
 	}
 	return ""
 }
@@ -260,9 +261,10 @@ func (m *WorkflowApprover) GetUserName(
 }
 
 var (
-	ErrInvalidWorkflowState        = errors.New("invalid workflow state")
-	ErrInvalidWorkflowArtifactType = errors.New("invalid workflow artifact type")
-	ErrInvalidWorkflowActionType   = errors.New("invalid workflow action type")
+	ErrInvalidWorkflowState                  = errors.New("invalid workflow state")
+	ErrInvalidWorkflowArtifactType           = errors.New("invalid workflow artifact type")
+	ErrInvalidWorkflowActionType             = errors.New("invalid workflow action type")
+	ErrInvalidWorkflowParametersResourceType = errors.New("invalid workflow parameters resource type")
 )
 
 //nolint:recvcheck
@@ -273,6 +275,9 @@ type WorkflowArtifactType string
 
 //nolint:recvcheck
 type WorkflowActionType string
+
+//nolint:recvcheck
+type WorkflowParametersResourceType string
 
 const (
 	WorkflowStateInitial          WorkflowState = "INITIAL"
@@ -295,6 +300,9 @@ const (
 	WorkflowActionTypeUnlink        WorkflowActionType = "UNLINK"
 	WorkflowActionTypeSwitch        WorkflowActionType = "SWITCH"
 	WorkflowActionTypeDelete        WorkflowActionType = "DELETE"
+
+	WorkflowParametersResourceTypeKey              WorkflowParametersResourceType = "KEY"
+	WorkflowParametersResourceTypeKeyConfiguration WorkflowParametersResourceType = "KEY_CONFIGURATION"
 )
 
 var WorkflowStates = []WorkflowState{
@@ -312,6 +320,10 @@ var WorkflowActionTypes = []WorkflowActionType{
 	WorkflowActionTypeLink, WorkflowActionTypeUnlink, WorkflowActionTypeSwitch, WorkflowActionTypeDelete,
 }
 
+var WorkflowParametersResourceTypes = []WorkflowParametersResourceType{
+	WorkflowParametersResourceTypeKey, WorkflowParametersResourceTypeKeyConfiguration,
+}
+
 var WorkflowNonTerminalStates = []WorkflowState{
 	WorkflowStateInitial, WorkflowStateWaitApproval, WorkflowStateWaitConfirmation, WorkflowStateExecuting,
 }
@@ -320,9 +332,10 @@ var WorkflowTerminalStates = []WorkflowState{
 	WorkflowStateRevoked, WorkflowStateRejected, WorkflowStateExpired, WorkflowStateSuccessful, WorkflowStateFailed,
 }
 
-func (s WorkflowState) String() string        { return string(s) }
-func (t WorkflowArtifactType) String() string { return string(t) }
-func (t WorkflowActionType) String() string   { return string(t) }
+func (s WorkflowState) String() string                  { return string(s) }
+func (t WorkflowArtifactType) String() string           { return string(t) }
+func (t WorkflowActionType) String() string             { return string(t) }
+func (t WorkflowParametersResourceType) String() string { return string(t) }
 
 func (s WorkflowState) Valid() bool { return slices.Contains(WorkflowStates, s) }
 
@@ -356,4 +369,16 @@ func (t WorkflowActionType) Value() (driver.Value, error) {
 
 func (t *WorkflowActionType) Scan(src any) error {
 	return enums.Scan(src, t, ErrInvalidWorkflowActionType)
+}
+
+func (t WorkflowParametersResourceType) Valid() bool {
+	return slices.Contains(WorkflowParametersResourceTypes, t)
+}
+
+func (t WorkflowParametersResourceType) Value() (driver.Value, error) {
+	return enums.Value(t, ErrInvalidWorkflowParametersResourceType)
+}
+
+func (t *WorkflowParametersResourceType) Scan(src any) error {
+	return enums.Scan(src, t, ErrInvalidWorkflowParametersResourceType)
 }

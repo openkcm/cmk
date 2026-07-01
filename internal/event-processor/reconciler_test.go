@@ -186,6 +186,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-connected",
 		Region:             "region-connected",
+		Type:               model.SystemTypeSYSTEM,
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusCONNECTED,
 	}
@@ -193,6 +194,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-disconnected",
 		Region:             "region-disconnected",
+		Type:               model.SystemTypeSYSTEM,
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusDISCONNECTED,
 	}
@@ -200,6 +202,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-targetless",
 		Region:             "region-targetless",
+		Type:               model.SystemTypeSYSTEM,
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusCONNECTED,
 	}
@@ -207,6 +210,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:         uuid.New(),
 		Identifier: "system-keyless",
 		Region:     "region-keyless",
+		Type:       model.SystemTypeSYSTEM,
 		Status:     cmkapi.SystemStatusCONNECTED,
 	}
 
@@ -270,6 +274,8 @@ func TestResolveKeyTasks(t *testing.T) {
 					ID:                 keyID,
 					KeyConfigurationID: keyConfigID,
 					Name:               uuid.NewString(),
+					KeyType:            cmkapi.KeyTypeBYOK,
+					Algorithm:          cmkapi.KeyAlgorithmAES256,
 				})
 				assert.NoError(t, err)
 
@@ -327,6 +333,8 @@ func TestResolveKeyTasks(t *testing.T) {
 						ID:                 keyID,
 						KeyConfigurationID: uuid.New(),
 						Name:               uuid.NewString(),
+						KeyType:            cmkapi.KeyTypeBYOK,
+						Algorithm:          cmkapi.KeyAlgorithmAES256,
 					})
 					assert.NoError(t, err)
 
@@ -359,6 +367,8 @@ func TestResolveKeyTasks(t *testing.T) {
 						ID:                 keyID,
 						KeyConfigurationID: uuid.New(),
 						Name:               uuid.NewString(),
+						KeyType:            cmkapi.KeyTypeBYOK,
+						Algorithm:          cmkapi.KeyAlgorithmAES256,
 					})
 					assert.NoError(t, err)
 
@@ -410,7 +420,7 @@ func TestResolveSystemTasks(t *testing.T) {
 	keyFrom := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = ptr.PointTo("key-from-native-id")
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value1"}}`)
 	})
@@ -418,7 +428,7 @@ func TestResolveSystemTasks(t *testing.T) {
 	keyTo := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = ptr.PointTo("key-to-native-id")
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value2"}}`)
 	})
@@ -718,7 +728,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 	keyWithVersion := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = ptr.PointTo(keyWithVersionID)
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
@@ -727,7 +737,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 	keyWithoutVersion := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = ptr.PointTo(keyWithoutVerID)
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
@@ -1308,7 +1318,7 @@ func TestJobTermination(t *testing.T) {
 		_, err := systemService.RegisterSystem(ctx, &systemgrpc.RegisterSystemRequest{
 			ExternalId: sys.Identifier,
 			Region:     sys.Region,
-			Type:       sys.Type,
+			Type:       string(sys.Type),
 			TenantId:   tenant,
 		})
 		assert.NoError(t, err)
@@ -1876,13 +1886,13 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	keyFrom := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.KeyType = cmkapi.KeyTypeBYOK
 		k.NativeID = ptr.PointTo("byok-key-from")
 	})
 	keyTo := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.KeyType = cmkapi.KeyTypeBYOK
 		k.NativeID = ptr.PointTo("byok-key-to")
 	})
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyFrom, keyTo)
@@ -2058,7 +2068,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.KeyType = cmkapi.KeyTypeBYOK
 		k.NativeID = ptr.PointTo("byok-grant-key")
 	})
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, key)

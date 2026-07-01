@@ -7,10 +7,6 @@ const (
 )
 
 const (
-	KeyTypeSystemManaged = "SYSTEM_MANAGED"
-	KeyTypeBYOK          = "BYOK"
-	KeyTypeHYOK          = "HYOK"
-
 	DefaultKeyStore = "DEFAULT_KEYSTORE"
 	HYOKKeyStore    = "HYOK_KEYSTORE"
 )
