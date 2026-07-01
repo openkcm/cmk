@@ -121,19 +121,18 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 		clientCert := model.NewClientCertificate(certCfg, tenant)
 		expectedSubject := clientCert.Subject.String()
 
-		// Seed DEFAULT_KEYSTORE via plain repo (bypassing authz) so the authz-guarded
-		// First read is what we're testing, not the write.
-		ksConfig := model.KeystoreConfig{
-			CryptoAccessData: map[string]model.CryptoConfig{
-				certName: {
-					Subject:    expectedSubject,
-					AccessData: model.KeystoreAccessData{"authzKey": "authzVal"},
+		// Seed DEFAULT_KEYSTORE via a plain-repo TenantConfigManager (bypassing
+		// authz) so the authz-guarded read is what we're testing, not the write.
+		require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, syncerCfg).
+			SetDefaultKeystore(ctx, &model.KeystoreConfig{
+				RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
+				CryptoAccessData: map[string]model.CryptoConfig{
+					certName: {
+						Subject:    expectedSubject,
+						AccessData: model.KeystoreAccessData{"authzKey": "authzVal"},
+					},
 				},
-			},
-		}
-		ksBytes, err := json.Marshal(ksConfig)
-		require.NoError(t, err)
-		require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}))
+			}))
 
 		// SyncAndGetCryptoAccessData under InternalEventReconcilerRole: exercises
 		// TenantConfig:First. Cert is already up-to-date so exits without Set or plugin.
@@ -178,10 +177,12 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 		tcm := manager.NewTenantConfigManager(authzRepo2, svcRegistry, syncerCfg)
 		syncer := eventprocessor.NewCryptoAccessDataSyncer(syncerCfg, authzRepo2, svcRegistry, tcm)
 
-		// Seed DEFAULT_KEYSTORE with no CryptoAccessData (cert not yet trusted).
-		emptyKS, err := json.Marshal(model.KeystoreConfig{})
-		require.NoError(t, err)
-		require.NoError(t, r2.Set(ctx2, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: string(emptyKS)}))
+		// Seed DEFAULT_KEYSTORE with no CryptoAccessData (cert not yet trusted),
+		// via a plain-repo TenantConfigManager (bypassing authz).
+		require.NoError(t, manager.NewTenantConfigManager(r2, svcRegistry, syncerCfg).
+			SetDefaultKeystore(ctx2, &model.KeystoreConfig{
+				RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
+			}))
 
 		// Seed a role-management cert via plain repo.
 		roleManagementCert := testutils.NewCertificate(func(c *model.Certificate) {

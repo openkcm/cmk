@@ -31,7 +31,6 @@ import (
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/manager"
@@ -1856,20 +1855,19 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	// skips GrantTrust (no role-management cert needed).
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	clientCert := model.NewClientCertificate(certCfg, tenant)
-	ksConfig := model.KeystoreConfig{
-		CryptoAccessData: map[string]model.CryptoConfig{
-			region: {
-				Subject: clientCert.Subject.String(),
-				AccessData: model.KeystoreAccessData{
-					"key1": "value1",
-					"key2": "value2",
+	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg).
+		SetDefaultKeystore(ctx, &model.KeystoreConfig{
+			RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
+			CryptoAccessData: map[string]model.CryptoConfig{
+				region: {
+					Subject: clientCert.Subject.String(),
+					AccessData: model.KeystoreAccessData{
+						"key1": "value1",
+						"key2": "value2",
+					},
 				},
 			},
-		},
-	}
-	ksBytes, err := json.Marshal(ksConfig)
-	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}))
+		}))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) {
@@ -2045,9 +2043,10 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 
 	// DEFAULT_KEYSTORE exists but has no CryptoAccessData entry for this cert —
 	// the syncer will call GrantTrust.
-	emptyKS, err := json.Marshal(model.KeystoreConfig{})
-	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: string(emptyKS)}))
+	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg).
+		SetDefaultKeystore(ctx, &model.KeystoreConfig{
+			RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
+		}))
 
 	// Role-management cert required by GrantTrust path.
 	roleManagementCert := testutils.NewCertificate(func(c *model.Certificate) {

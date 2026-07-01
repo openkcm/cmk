@@ -782,6 +782,48 @@ func TestDataMigrations(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:          "Should remove legacy tenant_configs blobs after flatten",
+			target:        db.TenantTarget,
+			version:       3,
+			schemaVersion: ptr.PointTo(int64(15)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('WORKFLOW_CONFIG', '{"Enabled":true}', ''),
+							('DEFAULT_KEYSTORE', '{"localityId":"loc-1"}', ''),
+							('enabled', 'true', 'workflow'),
+							('locality_id', 'loc-1', 'default_keystore')`,
+					).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var legacyCount int
+					err := db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs
+						 WHERE length("type") = 0
+						   AND "key" IN ('WORKFLOW_CONFIG', 'DEFAULT_KEYSTORE')`,
+					).Scan(&legacyCount).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 0, legacyCount, "legacy blobs must be deleted")
+
+					var flatCount int
+					err = db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE length("type") > 0`,
+					).Scan(&flatCount).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 2, flatCount, "flat rows must remain")
+
+					return nil
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

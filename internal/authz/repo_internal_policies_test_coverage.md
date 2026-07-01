@@ -133,7 +133,7 @@ call is reached and exercised.
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
 | First | Tenant | `WorkflowProcessor.ProcessTask` | ✓ |
-| First, List | TenantConfig | `WorkflowProcessor.ProcessTask` (flat-row read + legacy fallback) | ✓ |
+| First, List | TenantConfig | `WorkflowProcessor.ProcessTask` (flat-row read) | ✓ |
 | First | Workflow | `WorkflowManager.AutoAssignApprovers` | ✓ |
 | Update | Workflow | `WorkflowManager.AutoAssignApprovers` | – |
 | Create, Delete, Count, List | WorkflowApprover | `WorkflowManager.AutoAssignApprovers` | – |
@@ -168,7 +168,7 @@ permitted by the policy.
 
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
-| First, List | TenantConfig | `WorkflowManager.CleanupTerminalWorkflows` → `GetWorkflowConfig` (flat-row read + legacy fallback) | ✓ |
+| First, List | TenantConfig | `WorkflowManager.CleanupTerminalWorkflows` → `GetWorkflowConfig` (flat-row read) | ✓ |
 | Delete, Create | TenantConfig | `SetWorkflowConfig` → `repo.Set` (upsert when no config exists) | ✓ |
 | First | Tenant | `SetWorkflowConfig` → `repo.GetTenant` (to pick default config) | ✓ |
 | Count, List | Workflow | `WorkflowManager.CleanupTerminalWorkflows` | ✓ |
@@ -292,7 +292,7 @@ covering every permission in the policy.
 | First, Count, List | System | `KeyTaskInfoResolver.getRegionsByKeyID`, `SystemTaskInfoResolver.loadTenantAndSystem` | ✓ / – |
 | Update | System | system event handlers → `updateSystem` | – |
 | First | Certificate | `CryptoAccessDataSyncer.getRoleManagementCert` | ✓ |
-| First, List | TenantConfig | `CryptoAccessDataSyncer.getDefaultKeystoreConfig` (via `TenantConfigManager` flat-row read + legacy fallback) | ✓ |
+| List | TenantConfig | `CryptoAccessDataSyncer.getDefaultKeystoreConfig` (via `TenantConfigManager.GetStoredDefaultKeystoreConfig`) | ✓ |
 | Delete, Create | TenantConfig | `CryptoAccessDataSyncer.setDefaultKeystoreConfig` (via `TenantConfigManager.SetDefaultKeystore`) | ✓ |
 | Update | Event | `updateEventError` → `r.Patch` on Event | ✓ |
 | Delete | Event | `cleanUpEvent` → `r.Delete` on Event | ✓ |
@@ -307,7 +307,7 @@ A key configuration, a HYOK key, and a CONNECTED system sharing the same `KeyCon
 
 Two additional sub-tests cover `CryptoAccessDataSyncer`:
 
-- **TenantConfig read (flat-row read path):** A DEFAULT_KEYSTORE `TenantConfig` is seeded with a crypto cert entry whose subject already matches what the syncer computes for the test tenant. `SyncAndGetCryptoAccessData` under `InternalEventReconcilerRole` reads the config via `TenantConfigManager.GetStoredDefaultKeystoreConfig` (TenantConfig:List with First fallback to the legacy blob), finds the cert is up-to-date, and returns without invoking the plugin or writing back. Confirms List and First on TenantConfig are permitted.
+- **TenantConfig read (flat-row read path):** A DEFAULT_KEYSTORE `TenantConfig` is seeded with a crypto cert entry whose subject already matches what the syncer computes for the test tenant. `SyncAndGetCryptoAccessData` under `InternalEventReconcilerRole` reads the config via `TenantConfigManager.GetStoredDefaultKeystoreConfig` (TenantConfig:List), finds the cert is up-to-date, and returns without invoking the plugin or writing back. Confirms List on TenantConfig is permitted.
 
 - **Certificate:First and TenantConfig:Set (grant-trust path):** A DEFAULT_KEYSTORE `TenantConfig` with no existing crypto entries and a role-management `Certificate` are seeded. `SyncAndGetCryptoAccessData` reads the config, fetches the role-management cert (Certificate:First), calls `GrantTrust` on the `TestKeystoreManagement` plugin, then writes the updated config back via `TenantConfigManager.SetDefaultKeystore` (Delete+Create on TenantConfig). Confirms all operations are permitted by the policy.
 
