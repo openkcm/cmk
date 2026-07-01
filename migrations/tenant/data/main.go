@@ -9,5 +9,15 @@ func GetMigrations() []*goose.Migration {
 			&goose.GoFunc{RunTx: upWorkflowApproverGroupTable},
 			&goose.GoFunc{RunTx: downWorkflowApproverGroupTable},
 		),
+		goose.NewGoMigration(
+			2,
+			&goose.GoFunc{RunTx: upRepairKeystoreConfigShape},
+			&goose.GoFunc{RunTx: downRepairKeystoreConfigShape},
+		),
+		goose.NewGoMigration(
+			3,
+			&goose.GoFunc{RunTx: upFlattenTenantConfigs},
+			&goose.GoFunc{RunTx: downFlattenTenantConfigs},
+		),
 	}
 }
