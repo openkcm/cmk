@@ -279,6 +279,77 @@ func TestGetTenantsKeystore(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, res.AllowBYOK)
 	})
+
+	t.Run("BYOK allowed, no stored keystore: regions from config", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		r := sql.NewRepository(db)
+
+		regionsJSON, err := json.Marshal(testutils.SupportedRegions)
+		assert.NoError(t, err)
+
+		cfg := &config.Config{
+			BaseConfig: commoncfg.BaseConfig{
+				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
+			},
+			KeystorePool: config.KeystorePool{
+				SupportedRegions: commoncfg.SourceRef{
+					Source: commoncfg.EmbeddedSourceValue,
+					Value:  string(regionsJSON),
+				},
+			},
+		}
+		m := manager.NewTenantConfigManager(r, nil, cfg)
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.Equal(t, testutils.SupportedRegions, res.BYOK.SupportedRegions)
+	})
+
+	t.Run("BYOK disabled, no stored keystore", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		r := sql.NewRepository(db)
+		m := manager.NewTenantConfigManager(r, nil, &config.Config{})
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.Nil(t, res.BYOK.SupportedRegions)
+	})
+
+	t.Run("stored keystore: regions from keystore", func(t *testing.T) {
+		configManager, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		err := configManager.SetDefaultKeystore(ctx, testutils.NewKeystoreConfig(func(k *model.KeystoreConfig) {
+			k.SupportedRegions = testutils.SupportedRegions
+		}))
+		assert.NoError(t, err)
+
+		cfg := &config.Config{
+			BaseConfig: commoncfg.BaseConfig{
+				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
+			},
+		}
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg)
+		res, err := m.GetTenantsKeystores(ctx)
+		assert.NoError(t, err)
+		assert.Equal(t, testutils.SupportedRegions, res.BYOK.SupportedRegions)
+	})
+
+	t.Run("BYOK allowed, bad source ref", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		cfg := &config.Config{
+			BaseConfig: commoncfg.BaseConfig{
+				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
+			},
+			KeystorePool: config.KeystorePool{
+				SupportedRegions: commoncfg.SourceRef{
+					Source: commoncfg.FileSourceValue,
+					Value:  "/nonexistent/regions.json",
+				},
+			},
+		}
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg)
+		_, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.Error(t, err)
+	})
 }
 
 func TestUpdateWorkflowConfig(t *testing.T) {
