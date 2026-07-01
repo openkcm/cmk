@@ -1,4 +1,4 @@
-package commands
+package tenantmanagercli
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
-	tmcommands "github.com/openkcm/cmk/cmd/tenant-manager-cli/commands"
+	"github.com/openkcm/cmk/cmd/cmkctl/commands/tenantmanagercli/commands"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
@@ -45,13 +45,13 @@ func NewTenantManagerCLI() *cobra.Command {
 			}
 
 			// Create command factory
-			factory, err := tmcommands.NewCommandFactory(ctx, cfg, dbCon, svcRegistry)
+			factory, err := commands.NewCommandFactory(ctx, cfg, dbCon, svcRegistry)
 			if err != nil {
 				return fmt.Errorf("failed to create command factory: %w", err)
 			}
 
 			// Store factory in context using the shared context key
-			ctx = context.WithValue(ctx, tmcommands.TenantManagerFactoryKey, *factory)
+			ctx = context.WithValue(ctx, commands.TenantManagerFactoryKey, *factory)
 			cmd.SetContext(ctx)
 
 			return nil
@@ -59,11 +59,11 @@ func NewTenantManagerCLI() *cobra.Command {
 	}
 
 	// Add subcommands - they retrieve factory from context
-	cmd.AddCommand(tmcommands.NewCreateTenantCmd())
-	cmd.AddCommand(tmcommands.NewDeleteTenantCmd())
-	cmd.AddCommand(tmcommands.NewGetTenantCmd())
-	cmd.AddCommand(tmcommands.NewListTenantsCmd())
-	cmd.AddCommand(tmcommands.NewUpdateTenantCmd())
+	cmd.AddCommand(commands.NewCreateTenantCmd())
+	cmd.AddCommand(commands.NewDeleteTenantCmd())
+	cmd.AddCommand(commands.NewGetTenantCmd())
+	cmd.AddCommand(commands.NewListTenantsCmd())
+	cmd.AddCommand(commands.NewUpdateTenantCmd())
 
 	return cmd
 }
