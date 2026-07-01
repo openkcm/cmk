@@ -539,11 +539,19 @@ func TestDataMigrations(t *testing.T) {
 		schemaVersion   *int64
 		assertMigration func(t *testing.T) func(db *multitenancy.DB) error
 		setupData       func(t *testing.T) func(db *multitenancy.DB) error
+		downgrade       bool
 	}{
 		{
-			name:    "Should migrate workflow approvers to workflow_approver_groups table",
-			target:  db.TenantTarget,
-			version: 1,
+			name:          "Should skip data migration if workflow approvers column does not exists",
+			target:        db.TenantTarget,
+			version:       1,
+			schemaVersion: ptr.PointTo(int64(9)),
+		},
+		{
+			name:          "Should migrate up workflow approvers to workflow_approver_groups table",
+			target:        db.TenantTarget,
+			version:       1,
+			schemaVersion: ptr.PointTo(int64(10)),
 			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
 				t.Helper()
 
@@ -628,15 +636,28 @@ func TestDataMigrations(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:          "Should migrate down 0001",
+			target:        db.TenantTarget,
+			version:       1,
+			schemaVersion: ptr.PointTo(int64(10)),
+			downgrade:     true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			migration := db.Migration{
-				Type:   db.DataMigration,
-				Target: tt.target,
+				Downgrade: tt.downgrade,
+				Type:      db.DataMigration,
+				Target:    tt.target,
 			}
 
-			setupVersion := tt.version - 1
+			var setupVersion int64
+			if tt.downgrade {
+				setupVersion = tt.version
+			} else {
+				setupVersion = tt.version - 1
+			}
 
 			dbCon, m, tenant := setupDataMigration(t, DataMigrationSetup{
 				Target:        tt.target,
@@ -649,7 +670,12 @@ func TestDataMigrations(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			migrateVersion := tt.version
+			var migrateVersion int64
+			if tt.downgrade {
+				migrateVersion = tt.version - 1
+			} else {
+				migrateVersion = tt.version
+			}
 
 			_, err := m.MigrateTo(t.Context(), migration, migrateVersion)
 			assert.NoError(t, err)
