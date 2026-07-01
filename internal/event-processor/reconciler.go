@@ -95,6 +95,7 @@ func NewCryptoReconciler(
 	repository repo.Repo,
 	svcRegistry serviceapi.Registry,
 	clientsFactory clients.Factory,
+	tenantConfigStore TenantConfigStore,
 	opts ...Option,
 ) (*CryptoReconciler, error) {
 	orbRepo, err := createOrbitalRepository(ctx, cfg.Database)
@@ -158,7 +159,7 @@ func NewCryptoReconciler(
 		svcRegistry:  svcRegistry,
 		targets:      targetMap,
 		cfg:          cfg,
-		cryptoSyncer: NewCryptoAccessDataSyncer(cfg, repository, svcRegistry),
+		cryptoSyncer: NewCryptoAccessDataSyncer(cfg, repository, svcRegistry, tenantConfigStore),
 	}
 
 	keyResolver := &KeyTaskInfoResolver{

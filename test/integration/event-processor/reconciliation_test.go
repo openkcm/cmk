@@ -30,6 +30,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	sqlPkg "github.com/openkcm/cmk/internal/repo/sql"
@@ -140,12 +141,14 @@ func setupTest(t *testing.T) tester {
 
 	reconcilerCtx, cancelFunc := context.WithCancel(t.Context())
 
+	tcm := manager.NewTenantConfigManager(r, svcRegistry, &cfg)
 	reconciler, err := eventprocessor.NewCryptoReconciler(
 		reconcilerCtx,
 		&cfg,
 		r,
 		svcRegistry,
 		clientsFactory,
+		tcm,
 		eventprocessor.WithExecInterval(5*time.Millisecond),
 		eventprocessor.WithConfirmJobAfter(10*time.Millisecond),
 	)

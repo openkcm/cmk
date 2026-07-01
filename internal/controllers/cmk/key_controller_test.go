@@ -699,9 +699,10 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 	// Create workflow config with workflows DISABLED by default
 	workflowConfig := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
 		var wc model.WorkflowConfig
-		_ = json.Unmarshal(tc.Value, &wc)
+		_ = json.Unmarshal([]byte(tc.Value), &wc)
 		wc.Enabled = false // Disable workflow requirement
-		tc.Value, _ = json.Marshal(wc)
+		b, _ := json.Marshal(wc)
+		tc.Value = string(b)
 	})
 	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
@@ -788,9 +789,10 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 				// Enable workflow for this specific test case
 				workflowConfigEnabled := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
 					var wc model.WorkflowConfig
-					_ = json.Unmarshal(tc.Value, &wc)
+					_ = json.Unmarshal([]byte(tc.Value), &wc)
 					wc.Enabled = true // Enable workflow requirement
-					tc.Value, _ = json.Marshal(wc)
+					b, _ := json.Marshal(wc)
+					tc.Value = string(b)
 				})
 				// Update the existing workflow config
 				_, err := r.Patch(ctx, workflowConfigEnabled, *repo.NewQuery())
@@ -850,9 +852,10 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	// Create workflow config with workflows DISABLED by default
 	workflowConfig := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
 		var wc model.WorkflowConfig
-		_ = json.Unmarshal(tc.Value, &wc)
+		_ = json.Unmarshal([]byte(tc.Value), &wc)
 		wc.Enabled = false // Disable workflow requirement by default
-		tc.Value, _ = json.Marshal(wc)
+		b, _ := json.Marshal(wc)
+		tc.Value = string(b)
 	})
 	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
@@ -1109,9 +1112,10 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 				// Enable workflow for this specific test case
 				workflowConfigEnabled := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
 					var wc model.WorkflowConfig
-					_ = json.Unmarshal(tc.Value, &wc)
+					_ = json.Unmarshal([]byte(tc.Value), &wc)
 					wc.Enabled = true // Enable workflow requirement
-					tc.Value, _ = json.Marshal(wc)
+					b, _ := json.Marshal(wc)
+					tc.Value = string(b)
 				})
 				// Update the existing workflow config
 				_, err := r.Patch(ctx, workflowConfigEnabled, *repo.NewQuery())

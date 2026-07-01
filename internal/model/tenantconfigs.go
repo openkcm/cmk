@@ -2,15 +2,17 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/openkcm/cmk/internal/authz"
 )
 
 // TenantConfig represents a key in the database.
+// Key + Type form the composite primary key. Type groups related entries
+// (e.g. "workflow"); empty Type marks legacy single-row JSON blobs.
 type TenantConfig struct {
-	Key   string          `gorm:"type:varchar(255);primaryKey"`
-	Value json.RawMessage `gorm:"type:jsonb;not null"`
+	Key   string `gorm:"type:varchar(255);primaryKey"`
+	Value string `gorm:"type:text;not null"`
+	Type  string `gorm:"type:varchar(255);primaryKey;default:''"`
 }
 
 // TableResourceType return the authz resource type

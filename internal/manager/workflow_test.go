@@ -1998,9 +1998,10 @@ func setupEligibilityTest(
 	// Create tenant workflow config with minimum approvals matching approver count
 	workflowConfig := testutils.NewWorkflowConfig(func(tc *model.TenantConfig) {
 		var wc model.WorkflowConfig
-		_ = json.Unmarshal(tc.Value, &wc)
+		_ = json.Unmarshal([]byte(tc.Value), &wc)
 		wc.MinimumApprovals = approverCount
-		tc.Value, _ = json.Marshal(wc)
+		wcBytes, _ := json.Marshal(wc)
+		tc.Value = string(wcBytes)
 	})
 	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
 
