@@ -1,4 +1,4 @@
-package cli
+package commands
 
 import (
 	"os"
@@ -11,12 +11,28 @@ import (
 	statusserver "github.com/openkcm/cmk/utils/status_server"
 )
 
-func NewSleep(cfg *config.Config) *cobra.Command {
+var BuildInfo = "{}"
+
+type contextKey string
+
+const (
+	AsyncInspectorKey       contextKey = "asyncInspector"
+	AsyncClientKey          contextKey = "asyncClient"
+	TenantManagerFactoryKey contextKey = "tenantManagerFactory"
+)
+
+func NewSleep() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sleep",
-		Short: "sleep",
-		Long:  "sleep",
-		Run: func(cmd *cobra.Command, args []string) {
+		Short: "Sleep",
+		Long:  "Sleep",
+
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := config.LoadConfig()
+			if err != nil {
+				return err
+			}
+
 			statusserver.StartStatusServer(cmd.Context(), cfg)
 
 			cmd.Println("Pod running...")
@@ -26,6 +42,8 @@ func NewSleep(cfg *config.Config) *cobra.Command {
 
 			<-sigs
 			cmd.Println("Shutting down gracefully...")
+
+			return nil
 		},
 	}
 }

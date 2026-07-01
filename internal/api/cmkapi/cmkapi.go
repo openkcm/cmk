@@ -17,11 +17,13 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/runtime"
+
 	strictnethttp "github.com/oapi-codegen/runtime/strictmiddleware/nethttp"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
@@ -480,8 +482,8 @@ type DetailedError struct {
 	Code string `json:"code"`
 
 	// Context Additional context of the api_errors
-	Context *map[string]interface{} `json:"context,omitempty"`
-	Details *[]Error                `json:"details,omitempty"`
+	Context *map[string]any `json:"context,omitempty"`
+	Details *[]Error        `json:"details,omitempty"`
 
 	// Message Human readable message describing the reason and context of the api_errors, as well as possible instructions to resolve it. This value is subject to changes over time and must not be used to handle code logic decisions.
 	Message  string    `json:"message"`
@@ -503,7 +505,7 @@ type Error struct {
 	Code string `json:"code"`
 
 	// Context Additional context of the api_errors
-	Context *map[string]interface{} `json:"context,omitempty"`
+	Context *map[string]any `json:"context,omitempty"`
 
 	// Message Human readable message describing the reason and context of the api_errors, as well as possible instructions to resolve it. This value is subject to changes over time and must not be used to handle code logic decisions.
 	Message string `json:"message"`
@@ -516,7 +518,7 @@ type ErrorMessage struct {
 
 // Group defines model for Group.
 type Group struct {
-	// Description Description of the Group
+	// Description of the Group
 	Description *string `json:"description,omitempty"`
 
 	// IamIdentifier Reference of the Group in the customer's Identity & Access Management (IAM) provider
@@ -525,10 +527,10 @@ type Group struct {
 	// Id The ID of the group
 	Id *openapi_types.UUID `json:"id,omitempty"`
 
-	// Name Name of the group
+	// Name of the group
 	Name string `json:"name"`
 
-	// Role Role of the group
+	// Role of the group
 	Role GroupRole `json:"role"`
 }
 
@@ -567,10 +569,10 @@ type GroupList struct {
 
 // GroupPatch A patch for updating a group
 type GroupPatch struct {
-	// IAMIdentifier IAMIdentifier of the group
+	// IAMIdentifier of the group
 	IAMIdentifier *string `json:"IAMIdentifier,omitempty"`
 
-	// Description Description of the Group
+	// Description of the Group
 	Description *string `json:"description,omitempty"`
 
 	// Name The name of the Group
@@ -658,10 +660,10 @@ type KeyAccessDetails struct {
 	//     "key2": "value3",
 	//     "isEditable": bool // true if system on this region failed to connect
 	// },
-	Crypto *map[string]map[string]interface{} `json:"crypto,omitempty"`
+	Crypto *map[string]map[string]any `json:"crypto,omitempty"`
 
 	// Management Access details for management operations.
-	Management *map[string]interface{} `json:"management,omitempty"`
+	Management *map[string]any `json:"management,omitempty"`
 }
 
 // KeyAlgorithm The algorithm of the Key
@@ -941,8 +943,8 @@ type System struct {
 	KeyConfigurationName *string `json:"keyConfigurationName,omitempty"`
 
 	// Metadata System Metadata
-	Metadata   *SystemMetadata         `json:"metadata,omitempty"`
-	Properties *map[string]interface{} `json:"properties,omitempty"`
+	Metadata   *SystemMetadata `json:"metadata,omitempty"`
+	Properties *map[string]any `json:"properties,omitempty"`
 
 	// Region The region of the System
 	Region string `json:"region"`
@@ -1040,10 +1042,10 @@ type Tenant struct {
 	// Id The ID of tenant
 	Id *string `json:"id,omitempty"`
 
-	// Name Name of the tenant
+	// Name of the tenant
 	Name string `json:"name"`
 
-	// Role Role of the tenant
+	// Role of the tenant
 	Role *TenantRole `json:"role,omitempty"`
 }
 
@@ -1141,7 +1143,7 @@ type Workflow struct {
 	InitiatorName string            `json:"initiatorName"`
 	Metadata      *WorkflowMetadata `json:"metadata,omitempty"`
 
-	// Parameters Parameters required to execute the Workflow
+	// Parameters required to execute the Workflow
 	Parameters *string `json:"parameters,omitempty"`
 
 	// ParametersResourceName The name of the resource derived from the Workflow parameters
@@ -1164,7 +1166,7 @@ type WorkflowAdditionalInfo struct {
 	// Message Human-readable message explaining the information
 	Message string `json:"message"`
 
-	// Severity Severity level of the information
+	// Severity level of the information
 	Severity WorkflowAdditionalInfoSeverity `json:"severity"`
 }
 
@@ -1221,7 +1223,7 @@ type WorkflowBody struct {
 	// ExpiresAt The datetime of when the workflow expires (RFC3339 format)
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 
-	// Parameters Parameters required to execute the Workflow
+	// Parameters required to execute the Workflow
 	Parameters *string `json:"parameters,omitempty"`
 }
 
@@ -1704,7 +1706,6 @@ type MiddlewareFunc func(http.Handler) http.Handler
 
 // GetGroups operation middleware
 func (siw *ServerInterfaceWrapper) GetGroups(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// Parameter object where we will unmarshal all parameters from the context
@@ -1747,7 +1748,6 @@ func (siw *ServerInterfaceWrapper) GetGroups(w http.ResponseWriter, r *http.Requ
 
 // CreateGroup operation middleware
 func (siw *ServerInterfaceWrapper) CreateGroup(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateGroup(w, r)
 	}))
@@ -1761,7 +1761,6 @@ func (siw *ServerInterfaceWrapper) CreateGroup(w http.ResponseWriter, r *http.Re
 
 // CheckGroupsIAM operation middleware
 func (siw *ServerInterfaceWrapper) CheckGroupsIAM(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CheckGroupsIAM(w, r)
 	}))
@@ -1775,7 +1774,6 @@ func (siw *ServerInterfaceWrapper) CheckGroupsIAM(w http.ResponseWriter, r *http
 
 // DeleteGroupByID operation middleware
 func (siw *ServerInterfaceWrapper) DeleteGroupByID(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "groupID" -------------
@@ -1800,7 +1798,6 @@ func (siw *ServerInterfaceWrapper) DeleteGroupByID(w http.ResponseWriter, r *htt
 
 // GetGroupByID operation middleware
 func (siw *ServerInterfaceWrapper) GetGroupByID(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "groupID" -------------
@@ -1825,7 +1822,6 @@ func (siw *ServerInterfaceWrapper) GetGroupByID(w http.ResponseWriter, r *http.R
 
 // UpdateGroup operation middleware
 func (siw *ServerInterfaceWrapper) UpdateGroup(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "groupID" -------------
@@ -1850,7 +1846,6 @@ func (siw *ServerInterfaceWrapper) UpdateGroup(w http.ResponseWriter, r *http.Re
 
 // DeleteLabel operation middleware
 func (siw *ServerInterfaceWrapper) DeleteLabel(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyID" -------------
@@ -1884,7 +1879,6 @@ func (siw *ServerInterfaceWrapper) DeleteLabel(w http.ResponseWriter, r *http.Re
 
 // GetKeyLabels operation middleware
 func (siw *ServerInterfaceWrapper) GetKeyLabels(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyID" -------------
@@ -1936,7 +1930,6 @@ func (siw *ServerInterfaceWrapper) GetKeyLabels(w http.ResponseWriter, r *http.R
 
 // CreateOrUpdateLabels operation middleware
 func (siw *ServerInterfaceWrapper) CreateOrUpdateLabels(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyID" -------------
@@ -1961,7 +1954,6 @@ func (siw *ServerInterfaceWrapper) CreateOrUpdateLabels(w http.ResponseWriter, r
 
 // GetKeyConfigurations operation middleware
 func (siw *ServerInterfaceWrapper) GetKeyConfigurations(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// Parameter object where we will unmarshal all parameters from the context
@@ -2012,7 +2004,6 @@ func (siw *ServerInterfaceWrapper) GetKeyConfigurations(w http.ResponseWriter, r
 
 // PostKeyConfigurations operation middleware
 func (siw *ServerInterfaceWrapper) PostKeyConfigurations(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostKeyConfigurations(w, r)
 	}))
@@ -2026,7 +2017,6 @@ func (siw *ServerInterfaceWrapper) PostKeyConfigurations(w http.ResponseWriter, 
 
 // DeleteKeyConfigurationByID operation middleware
 func (siw *ServerInterfaceWrapper) DeleteKeyConfigurationByID(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyConfigurationID" -------------
@@ -2051,7 +2041,6 @@ func (siw *ServerInterfaceWrapper) DeleteKeyConfigurationByID(w http.ResponseWri
 
 // GetKeyConfigurationByID operation middleware
 func (siw *ServerInterfaceWrapper) GetKeyConfigurationByID(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyConfigurationID" -------------
@@ -2076,7 +2065,6 @@ func (siw *ServerInterfaceWrapper) GetKeyConfigurationByID(w http.ResponseWriter
 
 // UpdateKeyConfigurationByID operation middleware
 func (siw *ServerInterfaceWrapper) UpdateKeyConfigurationByID(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyConfigurationID" -------------
@@ -2101,7 +2089,6 @@ func (siw *ServerInterfaceWrapper) UpdateKeyConfigurationByID(w http.ResponseWri
 
 // GetKeyConfigurationCertificates operation middleware
 func (siw *ServerInterfaceWrapper) GetKeyConfigurationCertificates(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyConfigurationID" -------------
@@ -2126,7 +2113,6 @@ func (siw *ServerInterfaceWrapper) GetKeyConfigurationCertificates(w http.Respon
 
 // GetTagsForKeyConfiguration operation middleware
 func (siw *ServerInterfaceWrapper) GetTagsForKeyConfiguration(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyConfigurationID" -------------
@@ -2178,7 +2164,6 @@ func (siw *ServerInterfaceWrapper) GetTagsForKeyConfiguration(w http.ResponseWri
 
 // AddTagsToKeyConfiguration operation middleware
 func (siw *ServerInterfaceWrapper) AddTagsToKeyConfiguration(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyConfigurationID" -------------
@@ -2203,7 +2188,6 @@ func (siw *ServerInterfaceWrapper) AddTagsToKeyConfiguration(w http.ResponseWrit
 
 // GetKeys operation middleware
 func (siw *ServerInterfaceWrapper) GetKeys(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// Parameter object where we will unmarshal all parameters from the context
@@ -2261,7 +2245,6 @@ func (siw *ServerInterfaceWrapper) GetKeys(w http.ResponseWriter, r *http.Reques
 
 // PostKeys operation middleware
 func (siw *ServerInterfaceWrapper) PostKeys(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostKeys(w, r)
 	}))
@@ -2275,7 +2258,6 @@ func (siw *ServerInterfaceWrapper) PostKeys(w http.ResponseWriter, r *http.Reque
 
 // DeleteKeysKeyID operation middleware
 func (siw *ServerInterfaceWrapper) DeleteKeysKeyID(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyID" -------------
@@ -2300,7 +2282,6 @@ func (siw *ServerInterfaceWrapper) DeleteKeysKeyID(w http.ResponseWriter, r *htt
 
 // GetKeysKeyID operation middleware
 func (siw *ServerInterfaceWrapper) GetKeysKeyID(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyID" -------------
@@ -2325,7 +2306,6 @@ func (siw *ServerInterfaceWrapper) GetKeysKeyID(w http.ResponseWriter, r *http.R
 
 // UpdateKey operation middleware
 func (siw *ServerInterfaceWrapper) UpdateKey(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyID" -------------
@@ -2350,7 +2330,6 @@ func (siw *ServerInterfaceWrapper) UpdateKey(w http.ResponseWriter, r *http.Requ
 
 // ImportKeyMaterial operation middleware
 func (siw *ServerInterfaceWrapper) ImportKeyMaterial(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyID" -------------
@@ -2375,7 +2354,6 @@ func (siw *ServerInterfaceWrapper) ImportKeyMaterial(w http.ResponseWriter, r *h
 
 // GetKeyImportParams operation middleware
 func (siw *ServerInterfaceWrapper) GetKeyImportParams(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyID" -------------
@@ -2400,7 +2378,6 @@ func (siw *ServerInterfaceWrapper) GetKeyImportParams(w http.ResponseWriter, r *
 
 // GetKeyVersions operation middleware
 func (siw *ServerInterfaceWrapper) GetKeyVersions(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "keyID" -------------
@@ -2452,7 +2429,6 @@ func (siw *ServerInterfaceWrapper) GetKeyVersions(w http.ResponseWriter, r *http
 
 // GetAllSystems operation middleware
 func (siw *ServerInterfaceWrapper) GetAllSystems(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// Parameter object where we will unmarshal all parameters from the context
@@ -2503,7 +2479,6 @@ func (siw *ServerInterfaceWrapper) GetAllSystems(w http.ResponseWriter, r *http.
 
 // GetFilters operation middleware
 func (siw *ServerInterfaceWrapper) GetFilters(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetFilters(w, r)
 	}))
@@ -2517,7 +2492,6 @@ func (siw *ServerInterfaceWrapper) GetFilters(w http.ResponseWriter, r *http.Req
 
 // GetSystemByID operation middleware
 func (siw *ServerInterfaceWrapper) GetSystemByID(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "systemID" -------------
@@ -2542,7 +2516,6 @@ func (siw *ServerInterfaceWrapper) GetSystemByID(w http.ResponseWriter, r *http.
 
 // UnlinkSystemAction operation middleware
 func (siw *ServerInterfaceWrapper) UnlinkSystemAction(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "systemID" -------------
@@ -2567,7 +2540,6 @@ func (siw *ServerInterfaceWrapper) UnlinkSystemAction(w http.ResponseWriter, r *
 
 // LinkSystemAction operation middleware
 func (siw *ServerInterfaceWrapper) LinkSystemAction(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "systemID" -------------
@@ -2592,7 +2564,6 @@ func (siw *ServerInterfaceWrapper) LinkSystemAction(w http.ResponseWriter, r *ht
 
 // GetRecoveryActions operation middleware
 func (siw *ServerInterfaceWrapper) GetRecoveryActions(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "systemID" -------------
@@ -2617,7 +2588,6 @@ func (siw *ServerInterfaceWrapper) GetRecoveryActions(w http.ResponseWriter, r *
 
 // SendRecoveryActions operation middleware
 func (siw *ServerInterfaceWrapper) SendRecoveryActions(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "systemID" -------------
@@ -2642,7 +2612,6 @@ func (siw *ServerInterfaceWrapper) SendRecoveryActions(w http.ResponseWriter, r 
 
 // GetTenantKeystores operation middleware
 func (siw *ServerInterfaceWrapper) GetTenantKeystores(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetTenantKeystores(w, r)
 	}))
@@ -2656,7 +2625,6 @@ func (siw *ServerInterfaceWrapper) GetTenantKeystores(w http.ResponseWriter, r *
 
 // GetTenantWorkflowConfiguration operation middleware
 func (siw *ServerInterfaceWrapper) GetTenantWorkflowConfiguration(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetTenantWorkflowConfiguration(w, r)
 	}))
@@ -2670,7 +2638,6 @@ func (siw *ServerInterfaceWrapper) GetTenantWorkflowConfiguration(w http.Respons
 
 // UpdateTenantWorkflowConfiguration operation middleware
 func (siw *ServerInterfaceWrapper) UpdateTenantWorkflowConfiguration(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateTenantWorkflowConfiguration(w, r)
 	}))
@@ -2684,7 +2651,6 @@ func (siw *ServerInterfaceWrapper) UpdateTenantWorkflowConfiguration(w http.Resp
 
 // GetTenantInfo operation middleware
 func (siw *ServerInterfaceWrapper) GetTenantInfo(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetTenantInfo(w, r)
 	}))
@@ -2698,7 +2664,6 @@ func (siw *ServerInterfaceWrapper) GetTenantInfo(w http.ResponseWriter, r *http.
 
 // GetTenants operation middleware
 func (siw *ServerInterfaceWrapper) GetTenants(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// Parameter object where we will unmarshal all parameters from the context
@@ -2741,7 +2706,6 @@ func (siw *ServerInterfaceWrapper) GetTenants(w http.ResponseWriter, r *http.Req
 
 // GetUserInfo operation middleware
 func (siw *ServerInterfaceWrapper) GetUserInfo(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetUserInfo(w, r)
 	}))
@@ -2755,7 +2719,6 @@ func (siw *ServerInterfaceWrapper) GetUserInfo(w http.ResponseWriter, r *http.Re
 
 // GetWorkflows operation middleware
 func (siw *ServerInterfaceWrapper) GetWorkflows(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// Parameter object where we will unmarshal all parameters from the context
@@ -2806,7 +2769,6 @@ func (siw *ServerInterfaceWrapper) GetWorkflows(w http.ResponseWriter, r *http.R
 
 // CreateWorkflow operation middleware
 func (siw *ServerInterfaceWrapper) CreateWorkflow(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateWorkflow(w, r)
 	}))
@@ -2820,7 +2782,6 @@ func (siw *ServerInterfaceWrapper) CreateWorkflow(w http.ResponseWriter, r *http
 
 // CheckWorkflow operation middleware
 func (siw *ServerInterfaceWrapper) CheckWorkflow(w http.ResponseWriter, r *http.Request) {
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CheckWorkflow(w, r)
 	}))
@@ -2834,7 +2795,6 @@ func (siw *ServerInterfaceWrapper) CheckWorkflow(w http.ResponseWriter, r *http.
 
 // GetWorkflowByID operation middleware
 func (siw *ServerInterfaceWrapper) GetWorkflowByID(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "workflowID" -------------
@@ -2859,7 +2819,6 @@ func (siw *ServerInterfaceWrapper) GetWorkflowByID(w http.ResponseWriter, r *htt
 
 // TransitionWorkflow operation middleware
 func (siw *ServerInterfaceWrapper) TransitionWorkflow(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 
 	// ------------- Path parameter "workflowID" -------------
@@ -3078,7 +3037,7 @@ type GetGroups200JSONResponse GroupList
 
 func (response GetGroups200JSONResponse) VisitGetGroupsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3087,7 +3046,7 @@ type GetGroups400JSONResponse struct{ N400JSONResponse }
 
 func (response GetGroups400JSONResponse) VisitGetGroupsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3096,7 +3055,7 @@ type GetGroups403JSONResponse struct{ N403JSONResponse }
 
 func (response GetGroups403JSONResponse) VisitGetGroupsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3104,8 +3063,8 @@ func (response GetGroups403JSONResponse) VisitGetGroupsResponse(w http.ResponseW
 type GetGroups429Response = N429Response
 
 func (response GetGroups429Response) VisitGetGroupsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3113,7 +3072,7 @@ type GetGroups500JSONResponse struct{ N500JSONResponse }
 
 func (response GetGroups500JSONResponse) VisitGetGroupsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3130,7 +3089,7 @@ type CreateGroup201JSONResponse Group
 
 func (response CreateGroup201JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
+	w.WriteHeader(http.StatusCreated)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3139,7 +3098,7 @@ type CreateGroup400JSONResponse struct{ N400JSONResponse }
 
 func (response CreateGroup400JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3148,7 +3107,7 @@ type CreateGroup403JSONResponse struct{ N403JSONResponse }
 
 func (response CreateGroup403JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3157,7 +3116,7 @@ type CreateGroup409JSONResponse struct{ N409JSONResponse }
 
 func (response CreateGroup409JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3165,8 +3124,8 @@ func (response CreateGroup409JSONResponse) VisitCreateGroupResponse(w http.Respo
 type CreateGroup429Response = N429Response
 
 func (response CreateGroup429Response) VisitCreateGroupResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3174,7 +3133,7 @@ type CreateGroup500JSONResponse struct{ N500JSONResponse }
 
 func (response CreateGroup500JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3191,7 +3150,7 @@ type CheckGroupsIAM200JSONResponse GroupIAMCheckResponse
 
 func (response CheckGroupsIAM200JSONResponse) VisitCheckGroupsIAMResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3200,7 +3159,7 @@ type CheckGroupsIAM400JSONResponse struct{ N400JSONResponse }
 
 func (response CheckGroupsIAM400JSONResponse) VisitCheckGroupsIAMResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3209,7 +3168,7 @@ type CheckGroupsIAM403JSONResponse struct{ N403JSONResponse }
 
 func (response CheckGroupsIAM403JSONResponse) VisitCheckGroupsIAMResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3218,7 +3177,7 @@ type CheckGroupsIAM409JSONResponse struct{ N409JSONResponse }
 
 func (response CheckGroupsIAM409JSONResponse) VisitCheckGroupsIAMResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3226,8 +3185,8 @@ func (response CheckGroupsIAM409JSONResponse) VisitCheckGroupsIAMResponse(w http
 type CheckGroupsIAM429Response = N429Response
 
 func (response CheckGroupsIAM429Response) VisitCheckGroupsIAMResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3235,7 +3194,7 @@ type CheckGroupsIAM500JSONResponse struct{ N500JSONResponse }
 
 func (response CheckGroupsIAM500JSONResponse) VisitCheckGroupsIAMResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3252,7 +3211,7 @@ type DeleteGroupByID204Response struct {
 }
 
 func (response DeleteGroupByID204Response) VisitDeleteGroupByIDResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
@@ -3260,7 +3219,7 @@ type DeleteGroupByID400JSONResponse struct{ N400JSONResponse }
 
 func (response DeleteGroupByID400JSONResponse) VisitDeleteGroupByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3269,7 +3228,7 @@ type DeleteGroupByID403JSONResponse struct{ N403JSONResponse }
 
 func (response DeleteGroupByID403JSONResponse) VisitDeleteGroupByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3278,7 +3237,7 @@ type DeleteGroupByID404JSONResponse struct{ N404JSONResponse }
 
 func (response DeleteGroupByID404JSONResponse) VisitDeleteGroupByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3286,8 +3245,8 @@ func (response DeleteGroupByID404JSONResponse) VisitDeleteGroupByIDResponse(w ht
 type DeleteGroupByID429Response = N429Response
 
 func (response DeleteGroupByID429Response) VisitDeleteGroupByIDResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3295,7 +3254,7 @@ type DeleteGroupByID500JSONResponse struct{ N500JSONResponse }
 
 func (response DeleteGroupByID500JSONResponse) VisitDeleteGroupByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3312,7 +3271,7 @@ type GetGroupByID200JSONResponse Group
 
 func (response GetGroupByID200JSONResponse) VisitGetGroupByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3321,7 +3280,7 @@ type GetGroupByID400JSONResponse struct{ N400JSONResponse }
 
 func (response GetGroupByID400JSONResponse) VisitGetGroupByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3330,7 +3289,7 @@ type GetGroupByID403JSONResponse struct{ N403JSONResponse }
 
 func (response GetGroupByID403JSONResponse) VisitGetGroupByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3338,8 +3297,8 @@ func (response GetGroupByID403JSONResponse) VisitGetGroupByIDResponse(w http.Res
 type GetGroupByID429Response = N429Response
 
 func (response GetGroupByID429Response) VisitGetGroupByIDResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3347,7 +3306,7 @@ type GetGroupByID500JSONResponse struct{ N500JSONResponse }
 
 func (response GetGroupByID500JSONResponse) VisitGetGroupByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3365,7 +3324,7 @@ type UpdateGroup200JSONResponse Group
 
 func (response UpdateGroup200JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3374,7 +3333,7 @@ type UpdateGroup400JSONResponse struct{ N400JSONResponse }
 
 func (response UpdateGroup400JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3383,7 +3342,7 @@ type UpdateGroup403JSONResponse struct{ N403JSONResponse }
 
 func (response UpdateGroup403JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3392,7 +3351,7 @@ type UpdateGroup404JSONResponse struct{ N404JSONResponse }
 
 func (response UpdateGroup404JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3401,7 +3360,7 @@ type UpdateGroup409JSONResponse struct{ N409JSONResponse }
 
 func (response UpdateGroup409JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3409,8 +3368,8 @@ func (response UpdateGroup409JSONResponse) VisitUpdateGroupResponse(w http.Respo
 type UpdateGroup429Response = N429Response
 
 func (response UpdateGroup429Response) VisitUpdateGroupResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3418,7 +3377,7 @@ type UpdateGroup500JSONResponse struct{ N500JSONResponse }
 
 func (response UpdateGroup500JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3436,7 +3395,7 @@ type DeleteLabel204Response struct {
 }
 
 func (response DeleteLabel204Response) VisitDeleteLabelResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
@@ -3444,7 +3403,7 @@ type DeleteLabel400JSONResponse struct{ N400JSONResponse }
 
 func (response DeleteLabel400JSONResponse) VisitDeleteLabelResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3453,7 +3412,7 @@ type DeleteLabel403JSONResponse struct{ N403JSONResponse }
 
 func (response DeleteLabel403JSONResponse) VisitDeleteLabelResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3462,7 +3421,7 @@ type DeleteLabel404JSONResponse struct{ N404JSONResponse }
 
 func (response DeleteLabel404JSONResponse) VisitDeleteLabelResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3470,8 +3429,8 @@ func (response DeleteLabel404JSONResponse) VisitDeleteLabelResponse(w http.Respo
 type DeleteLabel429Response = N429Response
 
 func (response DeleteLabel429Response) VisitDeleteLabelResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3479,7 +3438,7 @@ type DeleteLabel500JSONResponse struct{ N500JSONResponse }
 
 func (response DeleteLabel500JSONResponse) VisitDeleteLabelResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3497,7 +3456,7 @@ type GetKeyLabels200JSONResponse LabelList
 
 func (response GetKeyLabels200JSONResponse) VisitGetKeyLabelsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3506,7 +3465,7 @@ type GetKeyLabels400JSONResponse struct{ N400JSONResponse }
 
 func (response GetKeyLabels400JSONResponse) VisitGetKeyLabelsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3515,7 +3474,7 @@ type GetKeyLabels403JSONResponse struct{ N403JSONResponse }
 
 func (response GetKeyLabels403JSONResponse) VisitGetKeyLabelsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3524,7 +3483,7 @@ type GetKeyLabels404JSONResponse struct{ N404JSONResponse }
 
 func (response GetKeyLabels404JSONResponse) VisitGetKeyLabelsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3532,8 +3491,8 @@ func (response GetKeyLabels404JSONResponse) VisitGetKeyLabelsResponse(w http.Res
 type GetKeyLabels429Response = N429Response
 
 func (response GetKeyLabels429Response) VisitGetKeyLabelsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3541,7 +3500,7 @@ type GetKeyLabels500JSONResponse struct{ N500JSONResponse }
 
 func (response GetKeyLabels500JSONResponse) VisitGetKeyLabelsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3559,7 +3518,7 @@ type CreateOrUpdateLabels204Response struct {
 }
 
 func (response CreateOrUpdateLabels204Response) VisitCreateOrUpdateLabelsResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
@@ -3567,7 +3526,7 @@ type CreateOrUpdateLabels400JSONResponse struct{ N400JSONResponse }
 
 func (response CreateOrUpdateLabels400JSONResponse) VisitCreateOrUpdateLabelsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3576,7 +3535,7 @@ type CreateOrUpdateLabels403JSONResponse struct{ N403JSONResponse }
 
 func (response CreateOrUpdateLabels403JSONResponse) VisitCreateOrUpdateLabelsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3585,7 +3544,7 @@ type CreateOrUpdateLabels404JSONResponse struct{ N404JSONResponse }
 
 func (response CreateOrUpdateLabels404JSONResponse) VisitCreateOrUpdateLabelsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3593,8 +3552,8 @@ func (response CreateOrUpdateLabels404JSONResponse) VisitCreateOrUpdateLabelsRes
 type CreateOrUpdateLabels429Response = N429Response
 
 func (response CreateOrUpdateLabels429Response) VisitCreateOrUpdateLabelsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3602,7 +3561,7 @@ type CreateOrUpdateLabels500JSONResponse struct{ N500JSONResponse }
 
 func (response CreateOrUpdateLabels500JSONResponse) VisitCreateOrUpdateLabelsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3619,7 +3578,7 @@ type GetKeyConfigurations200JSONResponse KeyConfigurationList
 
 func (response GetKeyConfigurations200JSONResponse) VisitGetKeyConfigurationsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3628,7 +3587,7 @@ type GetKeyConfigurations400JSONResponse struct{ N400JSONResponse }
 
 func (response GetKeyConfigurations400JSONResponse) VisitGetKeyConfigurationsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3637,7 +3596,7 @@ type GetKeyConfigurations403JSONResponse struct{ N403JSONResponse }
 
 func (response GetKeyConfigurations403JSONResponse) VisitGetKeyConfigurationsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3645,8 +3604,8 @@ func (response GetKeyConfigurations403JSONResponse) VisitGetKeyConfigurationsRes
 type GetKeyConfigurations429Response = N429Response
 
 func (response GetKeyConfigurations429Response) VisitGetKeyConfigurationsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3654,7 +3613,7 @@ type GetKeyConfigurations500JSONResponse struct{ N500JSONResponse }
 
 func (response GetKeyConfigurations500JSONResponse) VisitGetKeyConfigurationsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3671,7 +3630,7 @@ type PostKeyConfigurations201JSONResponse KeyConfiguration
 
 func (response PostKeyConfigurations201JSONResponse) VisitPostKeyConfigurationsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
+	w.WriteHeader(http.StatusCreated)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3680,7 +3639,7 @@ type PostKeyConfigurations400JSONResponse struct{ N400JSONResponse }
 
 func (response PostKeyConfigurations400JSONResponse) VisitPostKeyConfigurationsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3689,7 +3648,7 @@ type PostKeyConfigurations403JSONResponse struct{ N403JSONResponse }
 
 func (response PostKeyConfigurations403JSONResponse) VisitPostKeyConfigurationsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3698,7 +3657,7 @@ type PostKeyConfigurations409JSONResponse struct{ N409JSONResponse }
 
 func (response PostKeyConfigurations409JSONResponse) VisitPostKeyConfigurationsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3706,8 +3665,8 @@ func (response PostKeyConfigurations409JSONResponse) VisitPostKeyConfigurationsR
 type PostKeyConfigurations429Response = N429Response
 
 func (response PostKeyConfigurations429Response) VisitPostKeyConfigurationsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3715,7 +3674,7 @@ type PostKeyConfigurations500JSONResponse struct{ N500JSONResponse }
 
 func (response PostKeyConfigurations500JSONResponse) VisitPostKeyConfigurationsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3732,7 +3691,7 @@ type DeleteKeyConfigurationByID204Response struct {
 }
 
 func (response DeleteKeyConfigurationByID204Response) VisitDeleteKeyConfigurationByIDResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
@@ -3740,7 +3699,7 @@ type DeleteKeyConfigurationByID400JSONResponse struct{ N400JSONResponse }
 
 func (response DeleteKeyConfigurationByID400JSONResponse) VisitDeleteKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3749,7 +3708,7 @@ type DeleteKeyConfigurationByID403JSONResponse struct{ N403JSONResponse }
 
 func (response DeleteKeyConfigurationByID403JSONResponse) VisitDeleteKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3758,7 +3717,7 @@ type DeleteKeyConfigurationByID404JSONResponse struct{ N404JSONResponse }
 
 func (response DeleteKeyConfigurationByID404JSONResponse) VisitDeleteKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3766,8 +3725,8 @@ func (response DeleteKeyConfigurationByID404JSONResponse) VisitDeleteKeyConfigur
 type DeleteKeyConfigurationByID429Response = N429Response
 
 func (response DeleteKeyConfigurationByID429Response) VisitDeleteKeyConfigurationByIDResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3775,7 +3734,7 @@ type DeleteKeyConfigurationByID500JSONResponse struct{ N500JSONResponse }
 
 func (response DeleteKeyConfigurationByID500JSONResponse) VisitDeleteKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3792,7 +3751,7 @@ type GetKeyConfigurationByID200JSONResponse KeyConfiguration
 
 func (response GetKeyConfigurationByID200JSONResponse) VisitGetKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3801,7 +3760,7 @@ type GetKeyConfigurationByID400JSONResponse struct{ N400JSONResponse }
 
 func (response GetKeyConfigurationByID400JSONResponse) VisitGetKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3810,7 +3769,7 @@ type GetKeyConfigurationByID403JSONResponse struct{ N403JSONResponse }
 
 func (response GetKeyConfigurationByID403JSONResponse) VisitGetKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3819,7 +3778,7 @@ type GetKeyConfigurationByID404JSONResponse struct{ N404JSONResponse }
 
 func (response GetKeyConfigurationByID404JSONResponse) VisitGetKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3827,8 +3786,8 @@ func (response GetKeyConfigurationByID404JSONResponse) VisitGetKeyConfigurationB
 type GetKeyConfigurationByID429Response = N429Response
 
 func (response GetKeyConfigurationByID429Response) VisitGetKeyConfigurationByIDResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3836,7 +3795,7 @@ type GetKeyConfigurationByID500JSONResponse struct{ N500JSONResponse }
 
 func (response GetKeyConfigurationByID500JSONResponse) VisitGetKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3854,7 +3813,7 @@ type UpdateKeyConfigurationByID200JSONResponse KeyConfiguration
 
 func (response UpdateKeyConfigurationByID200JSONResponse) VisitUpdateKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3863,7 +3822,7 @@ type UpdateKeyConfigurationByID400JSONResponse struct{ N400JSONResponse }
 
 func (response UpdateKeyConfigurationByID400JSONResponse) VisitUpdateKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3872,7 +3831,7 @@ type UpdateKeyConfigurationByID403JSONResponse struct{ N403JSONResponse }
 
 func (response UpdateKeyConfigurationByID403JSONResponse) VisitUpdateKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3881,7 +3840,7 @@ type UpdateKeyConfigurationByID404JSONResponse struct{ N404JSONResponse }
 
 func (response UpdateKeyConfigurationByID404JSONResponse) VisitUpdateKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3890,7 +3849,7 @@ type UpdateKeyConfigurationByID409JSONResponse struct{ N409JSONResponse }
 
 func (response UpdateKeyConfigurationByID409JSONResponse) VisitUpdateKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3898,8 +3857,8 @@ func (response UpdateKeyConfigurationByID409JSONResponse) VisitUpdateKeyConfigur
 type UpdateKeyConfigurationByID429Response = N429Response
 
 func (response UpdateKeyConfigurationByID429Response) VisitUpdateKeyConfigurationByIDResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3907,7 +3866,7 @@ type UpdateKeyConfigurationByID500JSONResponse struct{ N500JSONResponse }
 
 func (response UpdateKeyConfigurationByID500JSONResponse) VisitUpdateKeyConfigurationByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3924,7 +3883,7 @@ type GetKeyConfigurationCertificates200JSONResponse ClientCertificates
 
 func (response GetKeyConfigurationCertificates200JSONResponse) VisitGetKeyConfigurationCertificatesResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3933,7 +3892,7 @@ type GetKeyConfigurationCertificates400JSONResponse struct{ N400JSONResponse }
 
 func (response GetKeyConfigurationCertificates400JSONResponse) VisitGetKeyConfigurationCertificatesResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3942,7 +3901,7 @@ type GetKeyConfigurationCertificates403JSONResponse struct{ N403JSONResponse }
 
 func (response GetKeyConfigurationCertificates403JSONResponse) VisitGetKeyConfigurationCertificatesResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3950,8 +3909,8 @@ func (response GetKeyConfigurationCertificates403JSONResponse) VisitGetKeyConfig
 type GetKeyConfigurationCertificates429Response = N429Response
 
 func (response GetKeyConfigurationCertificates429Response) VisitGetKeyConfigurationCertificatesResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -3959,7 +3918,7 @@ type GetKeyConfigurationCertificates500JSONResponse struct{ N500JSONResponse }
 
 func (response GetKeyConfigurationCertificates500JSONResponse) VisitGetKeyConfigurationCertificatesResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3977,7 +3936,7 @@ type GetTagsForKeyConfiguration200JSONResponse TagList
 
 func (response GetTagsForKeyConfiguration200JSONResponse) VisitGetTagsForKeyConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3986,7 +3945,7 @@ type GetTagsForKeyConfiguration400JSONResponse struct{ N400JSONResponse }
 
 func (response GetTagsForKeyConfiguration400JSONResponse) VisitGetTagsForKeyConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -3995,7 +3954,7 @@ type GetTagsForKeyConfiguration403JSONResponse struct{ N403JSONResponse }
 
 func (response GetTagsForKeyConfiguration403JSONResponse) VisitGetTagsForKeyConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4004,7 +3963,7 @@ type GetTagsForKeyConfiguration404JSONResponse struct{ N404JSONResponse }
 
 func (response GetTagsForKeyConfiguration404JSONResponse) VisitGetTagsForKeyConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4012,8 +3971,8 @@ func (response GetTagsForKeyConfiguration404JSONResponse) VisitGetTagsForKeyConf
 type GetTagsForKeyConfiguration429Response = N429Response
 
 func (response GetTagsForKeyConfiguration429Response) VisitGetTagsForKeyConfigurationResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4021,7 +3980,7 @@ type GetTagsForKeyConfiguration500JSONResponse struct{ N500JSONResponse }
 
 func (response GetTagsForKeyConfiguration500JSONResponse) VisitGetTagsForKeyConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4039,7 +3998,7 @@ type AddTagsToKeyConfiguration204Response struct {
 }
 
 func (response AddTagsToKeyConfiguration204Response) VisitAddTagsToKeyConfigurationResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
@@ -4047,7 +4006,7 @@ type AddTagsToKeyConfiguration400JSONResponse struct{ N400JSONResponse }
 
 func (response AddTagsToKeyConfiguration400JSONResponse) VisitAddTagsToKeyConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4056,7 +4015,7 @@ type AddTagsToKeyConfiguration403JSONResponse struct{ N403JSONResponse }
 
 func (response AddTagsToKeyConfiguration403JSONResponse) VisitAddTagsToKeyConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4065,7 +4024,7 @@ type AddTagsToKeyConfiguration404JSONResponse struct{ N404JSONResponse }
 
 func (response AddTagsToKeyConfiguration404JSONResponse) VisitAddTagsToKeyConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4074,7 +4033,7 @@ type AddTagsToKeyConfiguration409JSONResponse struct{ N409JSONResponse }
 
 func (response AddTagsToKeyConfiguration409JSONResponse) VisitAddTagsToKeyConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4082,8 +4041,8 @@ func (response AddTagsToKeyConfiguration409JSONResponse) VisitAddTagsToKeyConfig
 type AddTagsToKeyConfiguration429Response = N429Response
 
 func (response AddTagsToKeyConfiguration429Response) VisitAddTagsToKeyConfigurationResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4091,7 +4050,7 @@ type AddTagsToKeyConfiguration500JSONResponse struct{ N500JSONResponse }
 
 func (response AddTagsToKeyConfiguration500JSONResponse) VisitAddTagsToKeyConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4108,7 +4067,7 @@ type GetKeys200JSONResponse KeyList
 
 func (response GetKeys200JSONResponse) VisitGetKeysResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4117,7 +4076,7 @@ type GetKeys400JSONResponse struct{ N400JSONResponse }
 
 func (response GetKeys400JSONResponse) VisitGetKeysResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4126,7 +4085,7 @@ type GetKeys403JSONResponse struct{ N403JSONResponse }
 
 func (response GetKeys403JSONResponse) VisitGetKeysResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4134,8 +4093,8 @@ func (response GetKeys403JSONResponse) VisitGetKeysResponse(w http.ResponseWrite
 type GetKeys429Response = N429Response
 
 func (response GetKeys429Response) VisitGetKeysResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4143,7 +4102,7 @@ type GetKeys500JSONResponse struct{ N500JSONResponse }
 
 func (response GetKeys500JSONResponse) VisitGetKeysResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4160,7 +4119,7 @@ type PostKeys201JSONResponse Key
 
 func (response PostKeys201JSONResponse) VisitPostKeysResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
+	w.WriteHeader(http.StatusCreated)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4169,7 +4128,7 @@ type PostKeys400JSONResponse struct{ N400JSONResponse }
 
 func (response PostKeys400JSONResponse) VisitPostKeysResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4178,7 +4137,7 @@ type PostKeys403JSONResponse struct{ N403JSONResponse }
 
 func (response PostKeys403JSONResponse) VisitPostKeysResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4187,7 +4146,7 @@ type PostKeys409JSONResponse struct{ N409JSONResponse }
 
 func (response PostKeys409JSONResponse) VisitPostKeysResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4195,8 +4154,8 @@ func (response PostKeys409JSONResponse) VisitPostKeysResponse(w http.ResponseWri
 type PostKeys429Response = N429Response
 
 func (response PostKeys429Response) VisitPostKeysResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4204,7 +4163,7 @@ type PostKeys500JSONResponse struct{ N500JSONResponse }
 
 func (response PostKeys500JSONResponse) VisitPostKeysResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4221,7 +4180,7 @@ type DeleteKeysKeyID204Response struct {
 }
 
 func (response DeleteKeysKeyID204Response) VisitDeleteKeysKeyIDResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
@@ -4229,7 +4188,7 @@ type DeleteKeysKeyID400JSONResponse struct{ N400JSONResponse }
 
 func (response DeleteKeysKeyID400JSONResponse) VisitDeleteKeysKeyIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4238,7 +4197,7 @@ type DeleteKeysKeyID403JSONResponse struct{ N403JSONResponse }
 
 func (response DeleteKeysKeyID403JSONResponse) VisitDeleteKeysKeyIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4247,7 +4206,7 @@ type DeleteKeysKeyID404JSONResponse struct{ N404JSONResponse }
 
 func (response DeleteKeysKeyID404JSONResponse) VisitDeleteKeysKeyIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4255,8 +4214,8 @@ func (response DeleteKeysKeyID404JSONResponse) VisitDeleteKeysKeyIDResponse(w ht
 type DeleteKeysKeyID429Response = N429Response
 
 func (response DeleteKeysKeyID429Response) VisitDeleteKeysKeyIDResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4264,7 +4223,7 @@ type DeleteKeysKeyID500JSONResponse struct{ N500JSONResponse }
 
 func (response DeleteKeysKeyID500JSONResponse) VisitDeleteKeysKeyIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4281,7 +4240,7 @@ type GetKeysKeyID200JSONResponse Key
 
 func (response GetKeysKeyID200JSONResponse) VisitGetKeysKeyIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4290,7 +4249,7 @@ type GetKeysKeyID400JSONResponse struct{ N400JSONResponse }
 
 func (response GetKeysKeyID400JSONResponse) VisitGetKeysKeyIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4299,7 +4258,7 @@ type GetKeysKeyID403JSONResponse struct{ N403JSONResponse }
 
 func (response GetKeysKeyID403JSONResponse) VisitGetKeysKeyIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4308,7 +4267,7 @@ type GetKeysKeyID404JSONResponse struct{ N404JSONResponse }
 
 func (response GetKeysKeyID404JSONResponse) VisitGetKeysKeyIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4316,8 +4275,8 @@ func (response GetKeysKeyID404JSONResponse) VisitGetKeysKeyIDResponse(w http.Res
 type GetKeysKeyID429Response = N429Response
 
 func (response GetKeysKeyID429Response) VisitGetKeysKeyIDResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4325,7 +4284,7 @@ type GetKeysKeyID500JSONResponse struct{ N500JSONResponse }
 
 func (response GetKeysKeyID500JSONResponse) VisitGetKeysKeyIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4343,7 +4302,7 @@ type UpdateKey200JSONResponse Key
 
 func (response UpdateKey200JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4352,7 +4311,7 @@ type UpdateKey400JSONResponse struct{ N400JSONResponse }
 
 func (response UpdateKey400JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4361,7 +4320,7 @@ type UpdateKey403JSONResponse struct{ N403JSONResponse }
 
 func (response UpdateKey403JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4370,7 +4329,7 @@ type UpdateKey404JSONResponse struct{ N404JSONResponse }
 
 func (response UpdateKey404JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4379,7 +4338,7 @@ type UpdateKey409JSONResponse struct{ N409JSONResponse }
 
 func (response UpdateKey409JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4387,8 +4346,8 @@ func (response UpdateKey409JSONResponse) VisitUpdateKeyResponse(w http.ResponseW
 type UpdateKey429Response = N429Response
 
 func (response UpdateKey429Response) VisitUpdateKeyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4396,7 +4355,7 @@ type UpdateKey500JSONResponse struct{ N500JSONResponse }
 
 func (response UpdateKey500JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4414,7 +4373,7 @@ type ImportKeyMaterial201JSONResponse Key
 
 func (response ImportKeyMaterial201JSONResponse) VisitImportKeyMaterialResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
+	w.WriteHeader(http.StatusCreated)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4423,7 +4382,7 @@ type ImportKeyMaterial400JSONResponse struct{ N400JSONResponse }
 
 func (response ImportKeyMaterial400JSONResponse) VisitImportKeyMaterialResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4432,7 +4391,7 @@ type ImportKeyMaterial403JSONResponse struct{ N403JSONResponse }
 
 func (response ImportKeyMaterial403JSONResponse) VisitImportKeyMaterialResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4441,7 +4400,7 @@ type ImportKeyMaterial404JSONResponse struct{ N404JSONResponse }
 
 func (response ImportKeyMaterial404JSONResponse) VisitImportKeyMaterialResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4449,8 +4408,8 @@ func (response ImportKeyMaterial404JSONResponse) VisitImportKeyMaterialResponse(
 type ImportKeyMaterial429Response = N429Response
 
 func (response ImportKeyMaterial429Response) VisitImportKeyMaterialResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4458,7 +4417,7 @@ type ImportKeyMaterial500JSONResponse struct{ N500JSONResponse }
 
 func (response ImportKeyMaterial500JSONResponse) VisitImportKeyMaterialResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4475,7 +4434,7 @@ type GetKeyImportParams200JSONResponse ImportParams
 
 func (response GetKeyImportParams200JSONResponse) VisitGetKeyImportParamsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4484,7 +4443,7 @@ type GetKeyImportParams400JSONResponse struct{ N400JSONResponse }
 
 func (response GetKeyImportParams400JSONResponse) VisitGetKeyImportParamsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4493,7 +4452,7 @@ type GetKeyImportParams403JSONResponse struct{ N403JSONResponse }
 
 func (response GetKeyImportParams403JSONResponse) VisitGetKeyImportParamsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4502,7 +4461,7 @@ type GetKeyImportParams404JSONResponse struct{ N404JSONResponse }
 
 func (response GetKeyImportParams404JSONResponse) VisitGetKeyImportParamsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4510,8 +4469,8 @@ func (response GetKeyImportParams404JSONResponse) VisitGetKeyImportParamsRespons
 type GetKeyImportParams429Response = N429Response
 
 func (response GetKeyImportParams429Response) VisitGetKeyImportParamsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4519,7 +4478,7 @@ type GetKeyImportParams500JSONResponse struct{ N500JSONResponse }
 
 func (response GetKeyImportParams500JSONResponse) VisitGetKeyImportParamsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4537,7 +4496,7 @@ type GetKeyVersions200JSONResponse KeyVersionList
 
 func (response GetKeyVersions200JSONResponse) VisitGetKeyVersionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4546,7 +4505,7 @@ type GetKeyVersions400JSONResponse struct{ N400JSONResponse }
 
 func (response GetKeyVersions400JSONResponse) VisitGetKeyVersionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4555,7 +4514,7 @@ type GetKeyVersions403JSONResponse struct{ N403JSONResponse }
 
 func (response GetKeyVersions403JSONResponse) VisitGetKeyVersionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4564,7 +4523,7 @@ type GetKeyVersions404JSONResponse struct{ N404JSONResponse }
 
 func (response GetKeyVersions404JSONResponse) VisitGetKeyVersionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4572,8 +4531,8 @@ func (response GetKeyVersions404JSONResponse) VisitGetKeyVersionsResponse(w http
 type GetKeyVersions429Response = N429Response
 
 func (response GetKeyVersions429Response) VisitGetKeyVersionsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4581,7 +4540,7 @@ type GetKeyVersions500JSONResponse struct{ N500JSONResponse }
 
 func (response GetKeyVersions500JSONResponse) VisitGetKeyVersionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4598,7 +4557,7 @@ type GetAllSystems200JSONResponse SystemList
 
 func (response GetAllSystems200JSONResponse) VisitGetAllSystemsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4607,7 +4566,7 @@ type GetAllSystems400JSONResponse struct{ N400JSONResponse }
 
 func (response GetAllSystems400JSONResponse) VisitGetAllSystemsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4616,7 +4575,7 @@ type GetAllSystems403JSONResponse struct{ N403JSONResponse }
 
 func (response GetAllSystems403JSONResponse) VisitGetAllSystemsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4624,8 +4583,8 @@ func (response GetAllSystems403JSONResponse) VisitGetAllSystemsResponse(w http.R
 type GetAllSystems429Response = N429Response
 
 func (response GetAllSystems429Response) VisitGetAllSystemsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4633,7 +4592,7 @@ type GetAllSystems500JSONResponse struct{ N500JSONResponse }
 
 func (response GetAllSystems500JSONResponse) VisitGetAllSystemsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4649,7 +4608,7 @@ type GetFilters200JSONResponse SystemFilters
 
 func (response GetFilters200JSONResponse) VisitGetFiltersResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4658,7 +4617,7 @@ type GetFilters400JSONResponse struct{ N400JSONResponse }
 
 func (response GetFilters400JSONResponse) VisitGetFiltersResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4667,7 +4626,7 @@ type GetFilters403JSONResponse struct{ N403JSONResponse }
 
 func (response GetFilters403JSONResponse) VisitGetFiltersResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4676,7 +4635,7 @@ type GetFilters404JSONResponse struct{ N404JSONResponse }
 
 func (response GetFilters404JSONResponse) VisitGetFiltersResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4684,8 +4643,8 @@ func (response GetFilters404JSONResponse) VisitGetFiltersResponse(w http.Respons
 type GetFilters429Response = N429Response
 
 func (response GetFilters429Response) VisitGetFiltersResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4693,7 +4652,7 @@ type GetFilters500JSONResponse struct{ N500JSONResponse }
 
 func (response GetFilters500JSONResponse) VisitGetFiltersResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4710,7 +4669,7 @@ type GetSystemByID200JSONResponse System
 
 func (response GetSystemByID200JSONResponse) VisitGetSystemByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4719,7 +4678,7 @@ type GetSystemByID400JSONResponse struct{ N400JSONResponse }
 
 func (response GetSystemByID400JSONResponse) VisitGetSystemByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4728,7 +4687,7 @@ type GetSystemByID403JSONResponse struct{ N403JSONResponse }
 
 func (response GetSystemByID403JSONResponse) VisitGetSystemByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4737,7 +4696,7 @@ type GetSystemByID404JSONResponse struct{ N404JSONResponse }
 
 func (response GetSystemByID404JSONResponse) VisitGetSystemByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4745,8 +4704,8 @@ func (response GetSystemByID404JSONResponse) VisitGetSystemByIDResponse(w http.R
 type GetSystemByID429Response = N429Response
 
 func (response GetSystemByID429Response) VisitGetSystemByIDResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4754,7 +4713,7 @@ type GetSystemByID500JSONResponse struct{ N500JSONResponse }
 
 func (response GetSystemByID500JSONResponse) VisitGetSystemByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4771,7 +4730,7 @@ type UnlinkSystemAction204Response struct {
 }
 
 func (response UnlinkSystemAction204Response) VisitUnlinkSystemActionResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
@@ -4779,7 +4738,7 @@ type UnlinkSystemAction400JSONResponse struct{ N400JSONResponse }
 
 func (response UnlinkSystemAction400JSONResponse) VisitUnlinkSystemActionResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4788,7 +4747,7 @@ type UnlinkSystemAction403JSONResponse struct{ N403JSONResponse }
 
 func (response UnlinkSystemAction403JSONResponse) VisitUnlinkSystemActionResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4797,7 +4756,7 @@ type UnlinkSystemAction404JSONResponse struct{ N404JSONResponse }
 
 func (response UnlinkSystemAction404JSONResponse) VisitUnlinkSystemActionResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4805,8 +4764,8 @@ func (response UnlinkSystemAction404JSONResponse) VisitUnlinkSystemActionRespons
 type UnlinkSystemAction429Response = N429Response
 
 func (response UnlinkSystemAction429Response) VisitUnlinkSystemActionResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4814,7 +4773,7 @@ type UnlinkSystemAction500JSONResponse struct{ N500JSONResponse }
 
 func (response UnlinkSystemAction500JSONResponse) VisitUnlinkSystemActionResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4832,7 +4791,7 @@ type LinkSystemAction200JSONResponse System
 
 func (response LinkSystemAction200JSONResponse) VisitLinkSystemActionResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4841,7 +4800,7 @@ type LinkSystemAction400JSONResponse struct{ N400JSONResponse }
 
 func (response LinkSystemAction400JSONResponse) VisitLinkSystemActionResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4850,7 +4809,7 @@ type LinkSystemAction403JSONResponse struct{ N403JSONResponse }
 
 func (response LinkSystemAction403JSONResponse) VisitLinkSystemActionResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4859,7 +4818,7 @@ type LinkSystemAction409JSONResponse struct{ N409JSONResponse }
 
 func (response LinkSystemAction409JSONResponse) VisitLinkSystemActionResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4867,8 +4826,8 @@ func (response LinkSystemAction409JSONResponse) VisitLinkSystemActionResponse(w 
 type LinkSystemAction429Response = N429Response
 
 func (response LinkSystemAction429Response) VisitLinkSystemActionResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4876,7 +4835,7 @@ type LinkSystemAction500JSONResponse struct{ N500JSONResponse }
 
 func (response LinkSystemAction500JSONResponse) VisitLinkSystemActionResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4893,7 +4852,7 @@ type GetRecoveryActions200JSONResponse SystemRecoveryAction
 
 func (response GetRecoveryActions200JSONResponse) VisitGetRecoveryActionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4902,7 +4861,7 @@ type GetRecoveryActions400JSONResponse struct{ N400JSONResponse }
 
 func (response GetRecoveryActions400JSONResponse) VisitGetRecoveryActionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4911,7 +4870,7 @@ type GetRecoveryActions403JSONResponse struct{ N403JSONResponse }
 
 func (response GetRecoveryActions403JSONResponse) VisitGetRecoveryActionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4920,7 +4879,7 @@ type GetRecoveryActions409JSONResponse struct{ N409JSONResponse }
 
 func (response GetRecoveryActions409JSONResponse) VisitGetRecoveryActionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4928,8 +4887,8 @@ func (response GetRecoveryActions409JSONResponse) VisitGetRecoveryActionsRespons
 type GetRecoveryActions429Response = N429Response
 
 func (response GetRecoveryActions429Response) VisitGetRecoveryActionsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4937,7 +4896,7 @@ type GetRecoveryActions500JSONResponse struct{ N500JSONResponse }
 
 func (response GetRecoveryActions500JSONResponse) VisitGetRecoveryActionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4955,7 +4914,7 @@ type SendRecoveryActions200Response struct {
 }
 
 func (response SendRecoveryActions200Response) VisitSendRecoveryActionsResponse(w http.ResponseWriter) error {
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 	return nil
 }
 
@@ -4963,7 +4922,7 @@ type SendRecoveryActions400JSONResponse struct{ N400JSONResponse }
 
 func (response SendRecoveryActions400JSONResponse) VisitSendRecoveryActionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4972,7 +4931,7 @@ type SendRecoveryActions403JSONResponse struct{ N403JSONResponse }
 
 func (response SendRecoveryActions403JSONResponse) VisitSendRecoveryActionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4981,7 +4940,7 @@ type SendRecoveryActions409JSONResponse struct{ N409JSONResponse }
 
 func (response SendRecoveryActions409JSONResponse) VisitSendRecoveryActionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -4989,8 +4948,8 @@ func (response SendRecoveryActions409JSONResponse) VisitSendRecoveryActionsRespo
 type SendRecoveryActions429Response = N429Response
 
 func (response SendRecoveryActions429Response) VisitSendRecoveryActionsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -4998,7 +4957,7 @@ type SendRecoveryActions500JSONResponse struct{ N500JSONResponse }
 
 func (response SendRecoveryActions500JSONResponse) VisitSendRecoveryActionsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5014,7 +4973,7 @@ type GetTenantKeystores200JSONResponse TenantKeystore
 
 func (response GetTenantKeystores200JSONResponse) VisitGetTenantKeystoresResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5023,7 +4982,7 @@ type GetTenantKeystores400JSONResponse struct{ N400JSONResponse }
 
 func (response GetTenantKeystores400JSONResponse) VisitGetTenantKeystoresResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5032,7 +4991,7 @@ type GetTenantKeystores403JSONResponse struct{ N403JSONResponse }
 
 func (response GetTenantKeystores403JSONResponse) VisitGetTenantKeystoresResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5040,8 +4999,8 @@ func (response GetTenantKeystores403JSONResponse) VisitGetTenantKeystoresRespons
 type GetTenantKeystores429Response = N429Response
 
 func (response GetTenantKeystores429Response) VisitGetTenantKeystoresResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5049,7 +5008,7 @@ type GetTenantKeystores500JSONResponse struct{ N500JSONResponse }
 
 func (response GetTenantKeystores500JSONResponse) VisitGetTenantKeystoresResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5065,7 +5024,7 @@ type GetTenantWorkflowConfiguration200JSONResponse TenantWorkflowConfiguration
 
 func (response GetTenantWorkflowConfiguration200JSONResponse) VisitGetTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5074,7 +5033,7 @@ type GetTenantWorkflowConfiguration400JSONResponse struct{ N400JSONResponse }
 
 func (response GetTenantWorkflowConfiguration400JSONResponse) VisitGetTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5083,7 +5042,7 @@ type GetTenantWorkflowConfiguration403JSONResponse struct{ N403JSONResponse }
 
 func (response GetTenantWorkflowConfiguration403JSONResponse) VisitGetTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5091,8 +5050,8 @@ func (response GetTenantWorkflowConfiguration403JSONResponse) VisitGetTenantWork
 type GetTenantWorkflowConfiguration429Response = N429Response
 
 func (response GetTenantWorkflowConfiguration429Response) VisitGetTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5100,7 +5059,7 @@ type GetTenantWorkflowConfiguration500JSONResponse struct{ N500JSONResponse }
 
 func (response GetTenantWorkflowConfiguration500JSONResponse) VisitGetTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5117,7 +5076,7 @@ type UpdateTenantWorkflowConfiguration200JSONResponse TenantWorkflowConfiguratio
 
 func (response UpdateTenantWorkflowConfiguration200JSONResponse) VisitUpdateTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5126,7 +5085,7 @@ type UpdateTenantWorkflowConfiguration400JSONResponse struct{ N400JSONResponse }
 
 func (response UpdateTenantWorkflowConfiguration400JSONResponse) VisitUpdateTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5135,7 +5094,7 @@ type UpdateTenantWorkflowConfiguration403JSONResponse struct{ N403JSONResponse }
 
 func (response UpdateTenantWorkflowConfiguration403JSONResponse) VisitUpdateTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5144,7 +5103,7 @@ type UpdateTenantWorkflowConfiguration404JSONResponse struct{ N404JSONResponse }
 
 func (response UpdateTenantWorkflowConfiguration404JSONResponse) VisitUpdateTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5153,7 +5112,7 @@ type UpdateTenantWorkflowConfiguration409JSONResponse struct{ N409JSONResponse }
 
 func (response UpdateTenantWorkflowConfiguration409JSONResponse) VisitUpdateTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5161,8 +5120,8 @@ func (response UpdateTenantWorkflowConfiguration409JSONResponse) VisitUpdateTena
 type UpdateTenantWorkflowConfiguration429Response = N429Response
 
 func (response UpdateTenantWorkflowConfiguration429Response) VisitUpdateTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5170,7 +5129,7 @@ type UpdateTenantWorkflowConfiguration500JSONResponse struct{ N500JSONResponse }
 
 func (response UpdateTenantWorkflowConfiguration500JSONResponse) VisitUpdateTenantWorkflowConfigurationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5186,7 +5145,7 @@ type GetTenantInfo200JSONResponse Tenant
 
 func (response GetTenantInfo200JSONResponse) VisitGetTenantInfoResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5195,7 +5154,7 @@ type GetTenantInfo400JSONResponse struct{ N400JSONResponse }
 
 func (response GetTenantInfo400JSONResponse) VisitGetTenantInfoResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5204,7 +5163,7 @@ type GetTenantInfo403JSONResponse struct{ N403JSONResponse }
 
 func (response GetTenantInfo403JSONResponse) VisitGetTenantInfoResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5213,7 +5172,7 @@ type GetTenantInfo404JSONResponse struct{ N404JSONResponse }
 
 func (response GetTenantInfo404JSONResponse) VisitGetTenantInfoResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5221,8 +5180,8 @@ func (response GetTenantInfo404JSONResponse) VisitGetTenantInfoResponse(w http.R
 type GetTenantInfo429Response = N429Response
 
 func (response GetTenantInfo429Response) VisitGetTenantInfoResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5230,7 +5189,7 @@ type GetTenantInfo500JSONResponse struct{ N500JSONResponse }
 
 func (response GetTenantInfo500JSONResponse) VisitGetTenantInfoResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5247,7 +5206,7 @@ type GetTenants200JSONResponse TenantList
 
 func (response GetTenants200JSONResponse) VisitGetTenantsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5256,7 +5215,7 @@ type GetTenants400JSONResponse struct{ N400JSONResponse }
 
 func (response GetTenants400JSONResponse) VisitGetTenantsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5265,7 +5224,7 @@ type GetTenants403JSONResponse struct{ N403JSONResponse }
 
 func (response GetTenants403JSONResponse) VisitGetTenantsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5273,8 +5232,8 @@ func (response GetTenants403JSONResponse) VisitGetTenantsResponse(w http.Respons
 type GetTenants429Response = N429Response
 
 func (response GetTenants429Response) VisitGetTenantsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5282,7 +5241,7 @@ type GetTenants500JSONResponse struct{ N500JSONResponse }
 
 func (response GetTenants500JSONResponse) VisitGetTenantsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5298,7 +5257,7 @@ type GetUserInfo200JSONResponse UserInfo
 
 func (response GetUserInfo200JSONResponse) VisitGetUserInfoResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5307,7 +5266,7 @@ type GetUserInfo404JSONResponse struct{ N404JSONResponse }
 
 func (response GetUserInfo404JSONResponse) VisitGetUserInfoResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5315,8 +5274,8 @@ func (response GetUserInfo404JSONResponse) VisitGetUserInfoResponse(w http.Respo
 type GetUserInfo429Response = N429Response
 
 func (response GetUserInfo429Response) VisitGetUserInfoResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5324,7 +5283,7 @@ type GetUserInfo500JSONResponse struct{ N500JSONResponse }
 
 func (response GetUserInfo500JSONResponse) VisitGetUserInfoResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5341,7 +5300,7 @@ type GetWorkflows200JSONResponse WorkflowList
 
 func (response GetWorkflows200JSONResponse) VisitGetWorkflowsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5350,7 +5309,7 @@ type GetWorkflows400JSONResponse struct{ N400JSONResponse }
 
 func (response GetWorkflows400JSONResponse) VisitGetWorkflowsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5359,7 +5318,7 @@ type GetWorkflows403JSONResponse struct{ N403JSONResponse }
 
 func (response GetWorkflows403JSONResponse) VisitGetWorkflowsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5367,8 +5326,8 @@ func (response GetWorkflows403JSONResponse) VisitGetWorkflowsResponse(w http.Res
 type GetWorkflows429Response = N429Response
 
 func (response GetWorkflows429Response) VisitGetWorkflowsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5376,7 +5335,7 @@ type GetWorkflows500JSONResponse struct{ N500JSONResponse }
 
 func (response GetWorkflows500JSONResponse) VisitGetWorkflowsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5393,7 +5352,7 @@ type CreateWorkflow201JSONResponse Workflow
 
 func (response CreateWorkflow201JSONResponse) VisitCreateWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
+	w.WriteHeader(http.StatusCreated)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5402,7 +5361,7 @@ type CreateWorkflow400JSONResponse struct{ N400JSONResponse }
 
 func (response CreateWorkflow400JSONResponse) VisitCreateWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5411,7 +5370,7 @@ type CreateWorkflow403JSONResponse struct{ N403JSONResponse }
 
 func (response CreateWorkflow403JSONResponse) VisitCreateWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5420,7 +5379,7 @@ type CreateWorkflow404JSONResponse struct{ N404JSONResponse }
 
 func (response CreateWorkflow404JSONResponse) VisitCreateWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5429,7 +5388,7 @@ type CreateWorkflow409JSONResponse struct{ N409JSONResponse }
 
 func (response CreateWorkflow409JSONResponse) VisitCreateWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5437,8 +5396,8 @@ func (response CreateWorkflow409JSONResponse) VisitCreateWorkflowResponse(w http
 type CreateWorkflow429Response = N429Response
 
 func (response CreateWorkflow429Response) VisitCreateWorkflowResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5446,7 +5405,7 @@ type CreateWorkflow500JSONResponse struct{ N500JSONResponse }
 
 func (response CreateWorkflow500JSONResponse) VisitCreateWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5463,7 +5422,7 @@ type CheckWorkflow200JSONResponse WorkflowCheck
 
 func (response CheckWorkflow200JSONResponse) VisitCheckWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5472,7 +5431,7 @@ type CheckWorkflow400JSONResponse struct{ N400JSONResponse }
 
 func (response CheckWorkflow400JSONResponse) VisitCheckWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5481,7 +5440,7 @@ type CheckWorkflow403JSONResponse struct{ N403JSONResponse }
 
 func (response CheckWorkflow403JSONResponse) VisitCheckWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5490,7 +5449,7 @@ type CheckWorkflow404JSONResponse struct{ N404JSONResponse }
 
 func (response CheckWorkflow404JSONResponse) VisitCheckWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5499,7 +5458,7 @@ type CheckWorkflow409JSONResponse struct{ N409JSONResponse }
 
 func (response CheckWorkflow409JSONResponse) VisitCheckWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
+	w.WriteHeader(http.StatusConflict)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5507,8 +5466,8 @@ func (response CheckWorkflow409JSONResponse) VisitCheckWorkflowResponse(w http.R
 type CheckWorkflow429Response = N429Response
 
 func (response CheckWorkflow429Response) VisitCheckWorkflowResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5516,7 +5475,7 @@ type CheckWorkflow500JSONResponse struct{ N500JSONResponse }
 
 func (response CheckWorkflow500JSONResponse) VisitCheckWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5533,7 +5492,7 @@ type GetWorkflowByID200JSONResponse Workflow
 
 func (response GetWorkflowByID200JSONResponse) VisitGetWorkflowByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5542,7 +5501,7 @@ type GetWorkflowByID400JSONResponse struct{ N400JSONResponse }
 
 func (response GetWorkflowByID400JSONResponse) VisitGetWorkflowByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5551,7 +5510,7 @@ type GetWorkflowByID403JSONResponse struct{ N403JSONResponse }
 
 func (response GetWorkflowByID403JSONResponse) VisitGetWorkflowByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5560,7 +5519,7 @@ type GetWorkflowByID404JSONResponse struct{ N404JSONResponse }
 
 func (response GetWorkflowByID404JSONResponse) VisitGetWorkflowByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5568,8 +5527,8 @@ func (response GetWorkflowByID404JSONResponse) VisitGetWorkflowByIDResponse(w ht
 type GetWorkflowByID429Response = N429Response
 
 func (response GetWorkflowByID429Response) VisitGetWorkflowByIDResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5577,7 +5536,7 @@ type GetWorkflowByID500JSONResponse struct{ N500JSONResponse }
 
 func (response GetWorkflowByID500JSONResponse) VisitGetWorkflowByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5595,7 +5554,7 @@ type TransitionWorkflow200JSONResponse Workflow
 
 func (response TransitionWorkflow200JSONResponse) VisitTransitionWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5604,7 +5563,7 @@ type TransitionWorkflow400JSONResponse struct{ N400JSONResponse }
 
 func (response TransitionWorkflow400JSONResponse) VisitTransitionWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(http.StatusBadRequest)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5613,7 +5572,7 @@ type TransitionWorkflow403JSONResponse struct{ N403JSONResponse }
 
 func (response TransitionWorkflow403JSONResponse) VisitTransitionWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
+	w.WriteHeader(http.StatusForbidden)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5622,7 +5581,7 @@ type TransitionWorkflow404JSONResponse struct{ N404JSONResponse }
 
 func (response TransitionWorkflow404JSONResponse) VisitTransitionWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(http.StatusNotFound)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5630,8 +5589,8 @@ func (response TransitionWorkflow404JSONResponse) VisitTransitionWorkflowRespons
 type TransitionWorkflow429Response = N429Response
 
 func (response TransitionWorkflow429Response) VisitTransitionWorkflowResponse(w http.ResponseWriter) error {
-	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
-	w.WriteHeader(429)
+	w.Header().Set("Retry-After", strconv.Itoa(response.Headers.RetryAfter))
+	w.WriteHeader(http.StatusTooManyRequests)
 	return nil
 }
 
@@ -5639,7 +5598,7 @@ type TransitionWorkflow500JSONResponse struct{ N500JSONResponse }
 
 func (response TransitionWorkflow500JSONResponse) VisitTransitionWorkflowResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.WriteHeader(http.StatusInternalServerError)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -5812,7 +5771,7 @@ func (sh *strictHandler) GetGroups(w http.ResponseWriter, r *http.Request, param
 
 	request.Params = params
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetGroups(ctx, request.(GetGroupsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -5843,7 +5802,7 @@ func (sh *strictHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.CreateGroup(ctx, request.(CreateGroupRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -5874,7 +5833,7 @@ func (sh *strictHandler) CheckGroupsIAM(w http.ResponseWriter, r *http.Request) 
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.CheckGroupsIAM(ctx, request.(CheckGroupsIAMRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -5900,7 +5859,7 @@ func (sh *strictHandler) DeleteGroupByID(w http.ResponseWriter, r *http.Request,
 
 	request.GroupID = groupID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.DeleteGroupByID(ctx, request.(DeleteGroupByIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -5926,7 +5885,7 @@ func (sh *strictHandler) GetGroupByID(w http.ResponseWriter, r *http.Request, gr
 
 	request.GroupID = groupID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetGroupByID(ctx, request.(GetGroupByIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -5962,7 +5921,7 @@ func (sh *strictHandler) UpdateGroup(w http.ResponseWriter, r *http.Request, gro
 		request.Body = &body
 	}
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.UpdateGroup(ctx, request.(UpdateGroupRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -5989,7 +5948,7 @@ func (sh *strictHandler) DeleteLabel(w http.ResponseWriter, r *http.Request, key
 	request.KeyID = keyID
 	request.LabelName = labelName
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.DeleteLabel(ctx, request.(DeleteLabelRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6016,7 +5975,7 @@ func (sh *strictHandler) GetKeyLabels(w http.ResponseWriter, r *http.Request, ke
 	request.KeyID = keyID
 	request.Params = params
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetKeyLabels(ctx, request.(GetKeyLabelsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6049,7 +6008,7 @@ func (sh *strictHandler) CreateOrUpdateLabels(w http.ResponseWriter, r *http.Req
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.CreateOrUpdateLabels(ctx, request.(CreateOrUpdateLabelsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6075,7 +6034,7 @@ func (sh *strictHandler) GetKeyConfigurations(w http.ResponseWriter, r *http.Req
 
 	request.Params = params
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetKeyConfigurations(ctx, request.(GetKeyConfigurationsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6106,7 +6065,7 @@ func (sh *strictHandler) PostKeyConfigurations(w http.ResponseWriter, r *http.Re
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.PostKeyConfigurations(ctx, request.(PostKeyConfigurationsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6132,7 +6091,7 @@ func (sh *strictHandler) DeleteKeyConfigurationByID(w http.ResponseWriter, r *ht
 
 	request.KeyConfigurationID = keyConfigurationID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.DeleteKeyConfigurationByID(ctx, request.(DeleteKeyConfigurationByIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6158,7 +6117,7 @@ func (sh *strictHandler) GetKeyConfigurationByID(w http.ResponseWriter, r *http.
 
 	request.KeyConfigurationID = keyConfigurationID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetKeyConfigurationByID(ctx, request.(GetKeyConfigurationByIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6194,7 +6153,7 @@ func (sh *strictHandler) UpdateKeyConfigurationByID(w http.ResponseWriter, r *ht
 		request.Body = &body
 	}
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.UpdateKeyConfigurationByID(ctx, request.(UpdateKeyConfigurationByIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6220,7 +6179,7 @@ func (sh *strictHandler) GetKeyConfigurationCertificates(w http.ResponseWriter, 
 
 	request.KeyConfigurationID = keyConfigurationID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetKeyConfigurationCertificates(ctx, request.(GetKeyConfigurationCertificatesRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6247,7 +6206,7 @@ func (sh *strictHandler) GetTagsForKeyConfiguration(w http.ResponseWriter, r *ht
 	request.KeyConfigurationID = keyConfigurationID
 	request.Params = params
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetTagsForKeyConfiguration(ctx, request.(GetTagsForKeyConfigurationRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6283,7 +6242,7 @@ func (sh *strictHandler) AddTagsToKeyConfiguration(w http.ResponseWriter, r *htt
 		request.Body = &body
 	}
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.AddTagsToKeyConfiguration(ctx, request.(AddTagsToKeyConfigurationRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6309,7 +6268,7 @@ func (sh *strictHandler) GetKeys(w http.ResponseWriter, r *http.Request, params 
 
 	request.Params = params
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetKeys(ctx, request.(GetKeysRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6340,7 +6299,7 @@ func (sh *strictHandler) PostKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.PostKeys(ctx, request.(PostKeysRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6366,7 +6325,7 @@ func (sh *strictHandler) DeleteKeysKeyID(w http.ResponseWriter, r *http.Request,
 
 	request.KeyID = keyID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.DeleteKeysKeyID(ctx, request.(DeleteKeysKeyIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6392,7 +6351,7 @@ func (sh *strictHandler) GetKeysKeyID(w http.ResponseWriter, r *http.Request, ke
 
 	request.KeyID = keyID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetKeysKeyID(ctx, request.(GetKeysKeyIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6428,7 +6387,7 @@ func (sh *strictHandler) UpdateKey(w http.ResponseWriter, r *http.Request, keyID
 		request.Body = &body
 	}
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.UpdateKey(ctx, request.(UpdateKeyRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6461,7 +6420,7 @@ func (sh *strictHandler) ImportKeyMaterial(w http.ResponseWriter, r *http.Reques
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.ImportKeyMaterial(ctx, request.(ImportKeyMaterialRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6487,7 +6446,7 @@ func (sh *strictHandler) GetKeyImportParams(w http.ResponseWriter, r *http.Reque
 
 	request.KeyID = keyID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetKeyImportParams(ctx, request.(GetKeyImportParamsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6514,7 +6473,7 @@ func (sh *strictHandler) GetKeyVersions(w http.ResponseWriter, r *http.Request, 
 	request.KeyID = keyID
 	request.Params = params
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetKeyVersions(ctx, request.(GetKeyVersionsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6540,7 +6499,7 @@ func (sh *strictHandler) GetAllSystems(w http.ResponseWriter, r *http.Request, p
 
 	request.Params = params
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetAllSystems(ctx, request.(GetAllSystemsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6564,7 +6523,7 @@ func (sh *strictHandler) GetAllSystems(w http.ResponseWriter, r *http.Request, p
 func (sh *strictHandler) GetFilters(w http.ResponseWriter, r *http.Request) {
 	var request GetFiltersRequestObject
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetFilters(ctx, request.(GetFiltersRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6590,7 +6549,7 @@ func (sh *strictHandler) GetSystemByID(w http.ResponseWriter, r *http.Request, s
 
 	request.SystemID = systemID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetSystemByID(ctx, request.(GetSystemByIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6616,7 +6575,7 @@ func (sh *strictHandler) UnlinkSystemAction(w http.ResponseWriter, r *http.Reque
 
 	request.SystemID = systemID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.UnlinkSystemAction(ctx, request.(UnlinkSystemActionRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6649,7 +6608,7 @@ func (sh *strictHandler) LinkSystemAction(w http.ResponseWriter, r *http.Request
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.LinkSystemAction(ctx, request.(LinkSystemActionRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6675,7 +6634,7 @@ func (sh *strictHandler) GetRecoveryActions(w http.ResponseWriter, r *http.Reque
 
 	request.SystemID = systemID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetRecoveryActions(ctx, request.(GetRecoveryActionsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6708,7 +6667,7 @@ func (sh *strictHandler) SendRecoveryActions(w http.ResponseWriter, r *http.Requ
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.SendRecoveryActions(ctx, request.(SendRecoveryActionsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6732,7 +6691,7 @@ func (sh *strictHandler) SendRecoveryActions(w http.ResponseWriter, r *http.Requ
 func (sh *strictHandler) GetTenantKeystores(w http.ResponseWriter, r *http.Request) {
 	var request GetTenantKeystoresRequestObject
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetTenantKeystores(ctx, request.(GetTenantKeystoresRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6756,7 +6715,7 @@ func (sh *strictHandler) GetTenantKeystores(w http.ResponseWriter, r *http.Reque
 func (sh *strictHandler) GetTenantWorkflowConfiguration(w http.ResponseWriter, r *http.Request) {
 	var request GetTenantWorkflowConfigurationRequestObject
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetTenantWorkflowConfiguration(ctx, request.(GetTenantWorkflowConfigurationRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6790,7 +6749,7 @@ func (sh *strictHandler) UpdateTenantWorkflowConfiguration(w http.ResponseWriter
 		request.Body = &body
 	}
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.UpdateTenantWorkflowConfiguration(ctx, request.(UpdateTenantWorkflowConfigurationRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6814,7 +6773,7 @@ func (sh *strictHandler) UpdateTenantWorkflowConfiguration(w http.ResponseWriter
 func (sh *strictHandler) GetTenantInfo(w http.ResponseWriter, r *http.Request) {
 	var request GetTenantInfoRequestObject
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetTenantInfo(ctx, request.(GetTenantInfoRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6840,7 +6799,7 @@ func (sh *strictHandler) GetTenants(w http.ResponseWriter, r *http.Request, para
 
 	request.Params = params
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetTenants(ctx, request.(GetTenantsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6864,7 +6823,7 @@ func (sh *strictHandler) GetTenants(w http.ResponseWriter, r *http.Request, para
 func (sh *strictHandler) GetUserInfo(w http.ResponseWriter, r *http.Request) {
 	var request GetUserInfoRequestObject
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetUserInfo(ctx, request.(GetUserInfoRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6890,7 +6849,7 @@ func (sh *strictHandler) GetWorkflows(w http.ResponseWriter, r *http.Request, pa
 
 	request.Params = params
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetWorkflows(ctx, request.(GetWorkflowsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6921,7 +6880,7 @@ func (sh *strictHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request) 
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.CreateWorkflow(ctx, request.(CreateWorkflowRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6952,7 +6911,7 @@ func (sh *strictHandler) CheckWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.CheckWorkflow(ctx, request.(CheckWorkflowRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -6978,7 +6937,7 @@ func (sh *strictHandler) GetWorkflowByID(w http.ResponseWriter, r *http.Request,
 
 	request.WorkflowID = workflowID
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetWorkflowByID(ctx, request.(GetWorkflowByIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
@@ -7011,7 +6970,7 @@ func (sh *strictHandler) TransitionWorkflow(w http.ResponseWriter, r *http.Reque
 	}
 	request.Body = &body
 
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.TransitionWorkflow(ctx, request.(TransitionWorkflowRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
