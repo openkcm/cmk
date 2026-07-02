@@ -158,16 +158,14 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		constants.InternalTaskWorkflowApproversRole)
 	assert.NoError(t, err)
 
-	t.Run(
-		"Should return false on canCreate and error on non existing artifacts", func(t *testing.T) {
-			status, err := m.CheckWorkflow(ctx, &model.Workflow{})
-			assert.False(t, status.Enabled)
-			assert.False(t, status.Exists)
-			assert.False(t, status.Valid)
-			assert.False(t, status.CanCreate)
-			assert.Error(t, err)
-		},
-	)
+	t.Run("Should return false on canCreate and error on non existing artifacts", func(t *testing.T) {
+		status, err := m.CheckWorkflow(ctx, &model.Workflow{})
+		assert.False(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.False(t, status.Valid)
+		assert.False(t, status.CanCreate)
+		assert.Error(t, err)
+	})
 
 	t.Run("Should return be valid and cant create on existing active workflow", func(t *testing.T) {
 		wf, err := createTestWorkflow(
@@ -275,15 +273,37 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("Should return unsupported workflow on artifact and action type", func(t *testing.T) {
+		status, err := m.CheckWorkflow(ctxSys, testutils.NewWorkflow(func(w *model.Workflow) {
+			w.State = model.WorkflowStateInitial
+			w.State = model.WorkflowStateRejected
+			w.ActionType = model.WorkflowActionTypeUpdatePrimary
+			w.ArtifactID = keyConfig.ID
+			w.ArtifactType = model.WorkflowArtifactTypeSystem
+		}))
+		assert.NoError(t, err)
+		assert.True(t, status.Enabled, "status.Enabled should be true")
+		assert.False(t, status.Exists, "status.Exists should be false")
+		assert.False(t, status.Valid, "status.Valid should be false")
+		assert.False(t, status.CanCreate, "status.CanCreate should be false")
+		assert.Equal(t, status.ErrDetails, manager.ErrUnsuportedWorkflow)
+	})
+
 	t.Run("Should be creatable on rejected previous workflow", func(t *testing.T) {
+		// Create a new key for this test to avoid conflicts with other tests
+		testKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		testutils.CreateTestEntities(ctxSys, t, r, testKey)
+
 		wf, err := createTestWorkflow(
 			ctxSys, r, testutils.NewWorkflow(
 				func(w *model.Workflow) {
 					w.State = model.WorkflowStateInitial
 					w.State = model.WorkflowStateRejected
 					w.ActionType = model.WorkflowActionTypeDelete
-					w.ArtifactID = keyConfig.ID
-					w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
+					w.ArtifactID = testKey.ID
+					w.ArtifactType = model.WorkflowArtifactTypeKey
 				},
 			),
 		)

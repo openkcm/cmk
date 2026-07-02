@@ -139,6 +139,7 @@ var (
 	ErrSystemNotLinked           = errors.New("system is not linked to a key configuration")
 	ErrFailedToReencryptSystem   = errors.New("system reencrypt failed on new key")
 	ErrNotAllSystemsConnected    = errors.New("keyconfig contains systems not connected")
+	ErrUnsuportedWorkflow        = errors.New("workflow artifact type and action type set is not supported")
 
 	ErrUpdateNonBYOKKeyStatus = errors.New("key status update is only supported for byok")
 	ErrAlreadyPrimaryKey      = errors.New("key is already primary key")

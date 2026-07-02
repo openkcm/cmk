@@ -109,9 +109,11 @@ func NewStatsCmd(ctx context.Context, asyncInspector Inspector) *cobra.Command {
 	cmd.Flags().BoolVar(&archivedTasks, "archived-tasks", false, "Show archived tasks")
 	cmd.Flags().IntVar(&page, "page", 0, "Page number for paginated results")
 	cmd.MarkFlagsMutuallyExclusive(
-		"queue-info", "weekly-history", "pending-tasks", "active-tasks", "complete-tasks", "archived-tasks")
+		"queue-info", "weekly-history", "pending-tasks", "active-tasks", "complete-tasks", "archived-tasks",
+	)
 	cmd.MarkFlagsOneRequired(
-		"queue-info", "weekly-history", "pending-tasks", "active-tasks", "complete-tasks", "archived-tasks")
+		"queue-info", "weekly-history", "pending-tasks", "active-tasks", "complete-tasks", "archived-tasks",
+	)
 
 	err := cmd.MarkFlagRequired("queue")
 	if err != nil {

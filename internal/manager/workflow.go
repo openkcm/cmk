@@ -980,6 +980,7 @@ func isInvalidAction(err error) bool {
 		ErrAlreadyPrimaryKey,
 		ErrUpdateNonBYOKKeyStatus,
 		ErrPrimaryKeyDisabled,
+		ErrUnsuportedWorkflow,
 	)
 }
 
@@ -1005,6 +1006,7 @@ func transformCheckWorkflowError(status WorkflowStatus, err error) (WorkflowStat
 	return status, errs.Wrap(ErrCheckWorkflow, err)
 }
 
+//nolint:funlen
 func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 	workflow *model.Workflow,
 	enabled bool,
@@ -1014,6 +1016,15 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 		return WorkflowStatus{
 			Enabled: false,
 		}, nil
+	}
+
+	isSupported := w.isSupportedWorkflow(workflow)
+	if !isSupported {
+		return WorkflowStatus{
+			Enabled:   enabled,
+			Valid:     false,
+			CanCreate: false,
+		}, ErrUnsuportedWorkflow
 	}
 
 	isValid, err := w.validateWorkflow(ctx, workflow)
@@ -1065,6 +1076,33 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 		CanCreate:  canCreate,
 		ErrDetails: errDetails,
 	}, nil
+}
+
+// isSupportedWorkflow checks if the API supports workflow actionType on a certain artifactType
+func (w *WorkflowManager) isSupportedWorkflow(workflow *model.Workflow) bool {
+	switch workflow.ArtifactType {
+	case model.WorkflowArtifactTypeKey:
+		switch workflow.ActionType {
+		case model.WorkflowActionTypeUpdateState, model.WorkflowActionTypeDelete:
+			return true
+		default:
+			return false
+		}
+	case model.WorkflowArtifactTypeSystem:
+		switch workflow.ActionType {
+		case model.WorkflowActionTypeLink, model.WorkflowActionTypeUnlink, model.WorkflowActionTypeSwitch:
+			return true
+		default:
+			return false
+		}
+	case model.WorkflowArtifactTypeKeyConfiguration:
+		if workflow.ActionType == model.WorkflowActionTypeUpdatePrimary {
+			return true
+		}
+		return false
+	default:
+		return false
+	}
 }
 
 //nolint:cyclop,gocognit,funlen
