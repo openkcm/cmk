@@ -258,5 +258,7 @@ func makeController(
 	authzAPILoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
 	authzRepoLoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
 
+	svcRegistry.WatchPlugins(ctx)
+
 	return controller, nil
 }

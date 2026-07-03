@@ -128,6 +128,7 @@ func registerTasks(
 	if err != nil {
 		return errs.Wrapf(err, "failed to start loading catalog")
 	}
+	svcRegistry.WatchPlugins(ctx)
 
 	notifierClient, err := notifierclient.New(ctx, svcRegistry)
 	if err != nil {

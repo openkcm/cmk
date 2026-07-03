@@ -92,6 +92,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	svcRegistry.WatchPlugins(ctx)
 
 	r := sql.NewRepository(dbConn)
 

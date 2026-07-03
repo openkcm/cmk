@@ -86,6 +86,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		log.Error(ctx, "Failed to load plugin", err)
 	}
+	svcRegistry.WatchPlugins(ctx)
 
 	ctx, err = cmkcontext.InjectInternalUserData(ctx, constants.InternalEventReconcilerRole)
 	if err != nil {
