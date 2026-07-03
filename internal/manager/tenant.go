@@ -9,6 +9,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	pb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
+
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/constants"
@@ -190,6 +192,13 @@ func (m *TenantManager) ListTenantInfo(
 ) ([]*model.Tenant, int, error) {
 	query := repo.NewQuery()
 
+	query = query.Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(
+				repo.StatusField, pb.Status_STATUS_ACTIVE.String(),
+			),
+		),
+	)
 	if issuerURL != nil {
 		ck := repo.NewCompositeKey().Where(repo.IssuerURLField, issuerURL)
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
@@ -391,7 +400,8 @@ func checkKeyDetatchingQuery() *repo.Query {
 			Field:     repo.KeyConfigIDField,
 			JoinTable: model.KeyConfiguration{},
 			JoinField: repo.IDField,
-		})
+		},
+	)
 }
 
 func (m *TenantManager) checkAllPrimaryKeysDetached(ctx context.Context) (bool, error) {
@@ -405,7 +415,8 @@ func (m *TenantManager) checkAllPrimaryKeysDetached(ctx context.Context) (bool, 
 			Field:     repo.KeyConfigIDField,
 			JoinTable: model.KeyConfiguration{},
 			JoinField: repo.IDField,
-		})
+		},
+	)
 
 	count, err := m.repo.Count(
 		ctx,

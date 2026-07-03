@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
+	pb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
@@ -41,7 +42,6 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	dbCon, tenants, dbCfg := testutils.NewTestDB(
 		t, testutils.TestDBConfig{
 			CreateDatabase: true,
-			WithOrbital:    true,
 		}, opts...,
 	)
 
@@ -66,7 +66,8 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, eventFactory, cfg)
 
 	mappingService := mapping.NewFakeService()
-	_, grpcClient := testutils.NewGRPCSuite(t,
+	_, grpcClient := testutils.NewGRPCSuite(
+		t,
 		func(s *grpc.Server) {
 			mappingv1.RegisterServiceServer(s, mappingService)
 		},
@@ -122,8 +123,8 @@ func TestTenantManager(t *testing.T) {
 		tenantModel, err := m.GetTenant(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Equal(t, tenant, tenantModel.ID)
-	},
-	)
+	})
+
 	t.Run("Should list tenants", func(t *testing.T) {
 		tenantsModel, _, err := m.ListTenantInfo(t.Context(), nil, repo.Pagination{})
 		assert.NoError(t, err)
@@ -131,8 +132,22 @@ func TestTenantManager(t *testing.T) {
 		for i := range nTenants {
 			assert.Equal(t, tenants[i], tenantsModel[i].ID)
 		}
-	},
-	)
+	})
+
+	t.Run("Should only list active tenants", func(t *testing.T) {
+		m, r, _, _ := SetupTenantManager(t)
+
+		err := r.Create(t.Context(), testutils.NewTenant(func(t *model.Tenant) {
+			t.Status = model.TenantStatus(pb.Status_STATUS_BLOCKED.String())
+		}))
+		assert.NoError(t, err)
+
+		tenantsModel, count, err := m.ListTenantInfo(t.Context(), nil, repo.Pagination{Count: true})
+		assert.NoError(t, err)
+		assert.Len(t, tenantsModel, 1)
+		assert.Equal(t, 1, count)
+	})
+
 	t.Run("Should delete tenant", func(t *testing.T) {
 		tenant := testutils.NewTenant(
 			func(t *model.Tenant) {
@@ -153,8 +168,8 @@ func TestTenantManager(t *testing.T) {
 		count, err := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		assert.ErrorIs(t, err, repo.ErrTenantNotFound)
 		assert.Equal(t, 0, count)
-	},
-	)
+	})
+
 	t.Run("Should not error on delete non existing tenant", func(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(uuid.NewString())
 		_, err := m.GetTenant(ctx)
@@ -162,8 +177,7 @@ func TestTenantManager(t *testing.T) {
 
 		err = m.DeleteTenant(ctx)
 		assert.NoError(t, err)
-	},
-	)
+	})
 }
 
 // Run the offboarding process with an internal user context to test authorization checks
@@ -367,18 +381,19 @@ func TestGetTenantByID(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := t.Context()
+		t.Run(
+			tt.name, func(t *testing.T) {
+				ctx := t.Context()
 
-			result, err := m.GetTenantByID(ctx, tt.tenantID)
-			if tt.wantErr {
-				assert.Error(t, err)
-				return
-			}
+				result, err := m.GetTenantByID(ctx, tt.tenantID)
+				if tt.wantErr {
+					assert.Error(t, err)
+					return
+				}
 
-			assert.NoError(t, err)
-			assert.Equal(t, tt.tenantID, result.ID)
-		},
+				assert.NoError(t, err)
+				assert.Equal(t, tt.tenantID, result.ID)
+			},
 		)
 	}
 }
