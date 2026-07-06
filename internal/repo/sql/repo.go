@@ -371,7 +371,6 @@ func (r *ResourceRepository) GetFilterOptions(
 	}
 
 	return r.WithTenant(ctx, resource, func(tx *multitenancy.DB) error {
-		tx = tx.Debug()
 		parts := make([]any, 0, len(filters))
 		placeholders := make([]string, 0, len(filters))
 		columnMap := make(map[string]*[]string, len(filters))
@@ -406,7 +405,6 @@ func (r *ResourceRepository) GetFilterOptions(
 			Value      string `gorm:"column:value"`
 		}
 
-		tx = tx.Debug()
 		if err := tx.Raw(unionSQL, parts...).Scan(&results).Error; err != nil {
 			return errs.Wrap(repo.ErrGetResource, err)
 		}

@@ -20,7 +20,7 @@ type System struct {
 	Region               string            `gorm:"type:varchar(50);not null;uniqueindex:region_sys,priority:1"`
 	Type                 string            `gorm:"type:varchar(50);not null"`
 	KeyConfigurationID   *uuid.UUID        `gorm:"type:uuid"`
-	KeyConfigurationName *string           `gorm:"->;-:migration;column:key_configuration_name"`
+	KeyConfigurationName *string           `gorm:"-"`
 	Properties           map[string]string `gorm:"-:all"`
 
 	// Status can be 'CONNECTED', 'DISCONNECTED', 'FAILED', or 'PROCESSING'
@@ -28,8 +28,8 @@ type System struct {
 	UnderWorkflow bool                `gorm:"type:bool"`
 
 	// Only set for failed systems by the event table
-	ErrorCode    string `gorm:"->;-:migration;column:error_code"`
-	ErrorMessage string `gorm:"->;-:migration;column:error_message"`
+	ErrorCode    string `gorm:"-"`
+	ErrorMessage string `gorm:"-"`
 }
 
 // TableResourceType return the authz resource type
@@ -143,6 +143,10 @@ func (m SystemProperty) CheckAuthz(ctx context.Context,
 
 type JoinSystem struct {
 	System
+
+	KeyConfigurationName *string `gorm:"column:key_configuration_name"`
+	ErrorCode            string  `gorm:"column:error_code"`
+	ErrorMessage         string  `gorm:"column:error_message"`
 
 	Key   string `gorm:"type:varchar(255);primaryKey"`
 	Value string `gorm:"type:varchar(255)"`

@@ -201,8 +201,8 @@ type Query struct {
 	// By default, if this is not provided select all fields
 	SelectFields []*SelectField
 
-	// Joins stores the JOIN clauses for the query.
-	Joins []JoinClause
+	Joins    []JoinClause
+	joinsSet map[string]bool
 
 	// Used to aggregate columns. Use on GroupBy
 	Group []QueryField
@@ -321,6 +321,7 @@ func NewQuery() *Query {
 	return &Query{
 		CompositeKeyGroup: make([]CompositeKeyGroup, 0),
 		Joins:             make([]JoinClause, 0),
+		joinsSet:          make(map[string]bool),
 		UpdateFields: Update{
 			Fields: make([]QueryField, 0),
 			All:    false,
@@ -472,10 +473,16 @@ type table interface {
 }
 
 func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {
-	q.Joins = append(q.Joins, JoinClause{
+	joinClause := JoinClause{
 		Type:        joinType,
 		OnCondition: onCondition,
-	})
+	}
+	joinKey := joinClause.JoinStatement()
+
+	if !q.joinsSet[joinKey] {
+		q.Joins = append(q.Joins, joinClause)
+		q.joinsSet[joinKey] = true
+	}
 
 	return q
 }

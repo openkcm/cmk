@@ -16,14 +16,6 @@ const (
 	UUID   Type = "UUID"
 )
 
-// DBQuery specifies the mapping between odata filters (and potentially other things) to a CMK repo operation.
-type DBQuery string
-
-const (
-	WhereQuery DBQuery = ""     // Default, Therefore leave as empty string
-	NoQuery    DBQuery = "None" // Client must handle
-)
-
 // FilterSchemaEntry provides an endpoint specific specification for supported filters.
 // FieldName and Type specify the odata filter names and types.
 // DBName specifies the DB column name the filter maps to.
@@ -33,7 +25,7 @@ type FilterSchemaEntry struct {
 	FilterName     string
 	FilterType     Type
 	DBName         repo.QueryField
-	DBQuery        DBQuery
+	DBQuery        func(query *repo.Query, value any) *repo.Query
 	ValueModifier  func(string) (string, bool)
 	ValueValidator func(string) bool
 }

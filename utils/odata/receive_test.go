@@ -58,7 +58,7 @@ func TestBasicSchema(t *testing.T) {
 			name: "single filter",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test", odata.Int, "testDB", odata.WhereQuery, nil, nil},
+					{"test", odata.Int, "testDB", nil, nil, nil},
 				},
 			},
 			filterString:  "test eq 1",
@@ -69,7 +69,7 @@ func TestBasicSchema(t *testing.T) {
 			name: "two filters same field",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test", odata.Int, "testDB", odata.WhereQuery, nil, nil},
+					{"test", odata.Int, "testDB", nil, nil, nil},
 				},
 			},
 			filterString: "test eq 1 and test eq 2",
@@ -81,7 +81,7 @@ func TestBasicSchema(t *testing.T) {
 			name: "two filters same field with whitespace",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test", odata.Int, "testDB", odata.WhereQuery, nil, nil},
+					{"test", odata.Int, "testDB", nil, nil, nil},
 				},
 			},
 			filterString: "   test    eq   1    and    test  eq     2    ",
@@ -93,10 +93,10 @@ func TestBasicSchema(t *testing.T) {
 			name: "three filters three fields and types",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test1", odata.Int, "test1DB", odata.WhereQuery, nil, nil},
-					{"test2", odata.String, "test2DB", odata.WhereQuery, nil, nil},
-					{"test3", odata.Bool, "test3DB", odata.WhereQuery, nil, nil},
-					{"test4", odata.UUID, "test4DB", odata.WhereQuery, nil, nil},
+					{"test1", odata.Int, "test1DB", nil, nil, nil},
+					{"test2", odata.String, "test2DB", nil, nil, nil},
+					{"test3", odata.Bool, "test3DB", nil, nil, nil},
+					{"test4", odata.UUID, "test4DB", nil, nil, nil},
 				},
 			},
 			filterString: `test1 eq 1 and test2 eq 'teststr' and test3 eq true and test4 eq ` +
@@ -112,7 +112,7 @@ func TestBasicSchema(t *testing.T) {
 			name: "empty string",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test", odata.String, "testDB", odata.WhereQuery, nil, nil},
+					{"test", odata.String, "testDB", nil, nil, nil},
 				},
 			},
 			filterString:  "test eq ''",
@@ -123,7 +123,7 @@ func TestBasicSchema(t *testing.T) {
 			name: "unquoted string",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test", odata.String, "testDB", odata.WhereQuery, nil, nil},
+					{"test", odata.String, "testDB", nil, nil, nil},
 				},
 			},
 			filterString:  "test eq teststr",
@@ -197,7 +197,7 @@ func TestBasicSchema(t *testing.T) {
 			name: "invalid filter",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test", odata.Int, "testDB", odata.WhereQuery, nil, nil},
+					{"test", odata.Int, "testDB", nil, nil, nil},
 				},
 			},
 			filterString:  "test eq 1 eq 2",
@@ -208,7 +208,7 @@ func TestBasicSchema(t *testing.T) {
 			name: "bad int",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test", odata.Int, "testDB", odata.WhereQuery, nil, nil},
+					{"test", odata.Int, "testDB", nil, nil, nil},
 				},
 			},
 			filterString:  "test eq re and test eq 2",
@@ -219,7 +219,7 @@ func TestBasicSchema(t *testing.T) {
 			name: "bad bool",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test", odata.Bool, "testDB", odata.WhereQuery, nil, nil},
+					{"test", odata.Bool, "testDB", nil, nil, nil},
 				},
 			},
 			filterString:  "test eq re and test eq true",
@@ -230,9 +230,9 @@ func TestBasicSchema(t *testing.T) {
 			name: "non schema filter",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test1", odata.Int, "test1DB", odata.WhereQuery, nil, nil},
-					{"test2", odata.String, "test2DB", odata.WhereQuery, nil, nil},
-					{"test3", odata.Bool, "test3DB", odata.WhereQuery, nil, nil},
+					{"test1", odata.Int, "test1DB", nil, nil, nil},
+					{"test2", odata.String, "test2DB", nil, nil, nil},
+					{"test3", odata.Bool, "test3DB", nil, nil, nil},
 				},
 			},
 			filterString:  "test4 eq 1 and test2 eq 'teststr' and test3 eq true",
@@ -276,21 +276,6 @@ func TestPagination(t *testing.T) {
 	}
 }
 
-func TestDBNonDefaultQueries(t *testing.T) {
-	filterSchema := odata.FilterSchema{
-		Entries: []odata.FilterSchemaEntry{
-			{"test", odata.Int, "testDB", odata.NoQuery, nil, nil},
-		},
-	}
-	filterString := "test eq 1"
-	expectedQuery := makeExpectedQuery([]string{}, []any{})
-
-	fieldMap := odata.NewQueryOdataMapper(filterSchema)
-	err := fieldMap.ParseFilter(&filterString)
-	assert.NoError(t, err)
-	assert.Equal(t, expectedQuery, fieldMap.GetQuery(t.Context()))
-}
-
 func TestOperations(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -303,9 +288,9 @@ func TestOperations(t *testing.T) {
 			name: "and operation within string",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test1", odata.Int, "test1DB", odata.WhereQuery, nil, nil},
-					{"test2", odata.String, "test2DB", odata.WhereQuery, nil, nil},
-					{"test3", odata.Bool, "test3DB", odata.WhereQuery, nil, nil},
+					{"test1", odata.Int, "test1DB", nil, nil, nil},
+					{"test2", odata.String, "test2DB", nil, nil, nil},
+					{"test3", odata.Bool, "test3DB", nil, nil, nil},
 				},
 			},
 			filterString: "test1 eq 1 and test2 eq 'test and str' and test3 eq true",
@@ -317,9 +302,9 @@ func TestOperations(t *testing.T) {
 			name: "or operation within string",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test1", odata.Int, "test1DB", odata.WhereQuery, nil, nil},
-					{"test2", odata.String, "test2DB", odata.WhereQuery, nil, nil},
-					{"test3", odata.Bool, "test3DB", odata.WhereQuery, nil, nil},
+					{"test1", odata.Int, "test1DB", nil, nil, nil},
+					{"test2", odata.String, "test2DB", nil, nil, nil},
+					{"test3", odata.Bool, "test3DB", nil, nil, nil},
 				},
 			},
 			filterString: "test1 eq 1 and test2 eq 'test or str' and test3 eq true",
@@ -331,9 +316,9 @@ func TestOperations(t *testing.T) {
 			name: "eq operation within string",
 			filterSchema: odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test1", odata.Int, "test1DB", odata.WhereQuery, nil, nil},
-					{"test2", odata.String, "test2DB", odata.WhereQuery, nil, nil},
-					{"test3", odata.Bool, "test3DB", odata.WhereQuery, nil, nil},
+					{"test1", odata.Int, "test1DB", nil, nil, nil},
+					{"test2", odata.String, "test2DB", nil, nil, nil},
+					{"test3", odata.Bool, "test3DB", nil, nil, nil},
 				},
 			},
 			filterString: "test1 eq 1 and test2 eq 'test eq str' and test3 eq true",
@@ -405,7 +390,7 @@ func TestStringQuoteEscape(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			filterSchema := odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test", odata.String, "testDB", odata.WhereQuery, nil, nil},
+					{"test", odata.String, "testDB", nil, nil, nil},
 				},
 			}
 			fieldMap := odata.NewQueryOdataMapper(filterSchema)
@@ -451,8 +436,8 @@ func TestStringErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			filterSchema := odata.FilterSchema{
 				Entries: []odata.FilterSchemaEntry{
-					{"test", odata.String, "testDB", odata.WhereQuery, nil, nil},
-					{"test2", odata.Int, "test2DB", odata.WhereQuery, nil, nil},
+					{"test", odata.String, "testDB", nil, nil, nil},
+					{"test2", odata.Int, "test2DB", nil, nil, nil},
 				},
 			}
 			fieldMap := odata.NewQueryOdataMapper(filterSchema)
@@ -535,9 +520,9 @@ func TestGetUUID(t *testing.T) {
 	for _, tt := range tests {
 		filterSchema := odata.FilterSchema{
 			Entries: []odata.FilterSchemaEntry{
-				{"test1", odata.UUID, "test1DB", odata.WhereQuery, nil, nil},
-				{"test2", odata.String, "test2DB", odata.WhereQuery, nil, nil},
-				{"test3", odata.Bool, "test3DB", odata.WhereQuery, nil, nil},
+				{"test1", odata.UUID, "test1DB", nil, nil, nil},
+				{"test2", odata.String, "test2DB", nil, nil, nil},
+				{"test3", odata.Bool, "test3DB", nil, nil, nil},
 			},
 		}
 
@@ -568,7 +553,7 @@ func TestValueModifier(t *testing.T) {
 	filterSchema := odata.FilterSchema{
 		Entries: []odata.FilterSchemaEntry{
 			{
-				"test1", odata.Int, "test1DB", odata.WhereQuery,
+				"test1", odata.Int, "test1DB", nil,
 				func(s string) (string, bool) {
 					i, _ := strconv.ParseInt(s, 10, 64)
 					return strconv.Itoa(int(i * 20)), true
@@ -576,17 +561,17 @@ func TestValueModifier(t *testing.T) {
 				nil,
 			},
 			{
-				"test2", odata.String, "test2DB", odata.WhereQuery,
+				"test2", odata.String, "test2DB", nil,
 				func(s string) (string, bool) { return strings.ToUpper(s), true },
 				nil,
 			},
 			{
-				"test3", odata.Bool, "test3DB", odata.WhereQuery,
+				"test3", odata.Bool, "test3DB", nil,
 				func(string) (string, bool) { return "false", true },
 				nil,
 			},
 			{
-				"test4", odata.UUID, "test4DB", odata.WhereQuery,
+				"test4", odata.UUID, "test4DB", nil,
 				func(s string) (string, bool) { return s, true },
 				nil,
 			},
@@ -610,7 +595,7 @@ func TestValueValidation(t *testing.T) {
 	filterSchema := odata.FilterSchema{
 		Entries: []odata.FilterSchemaEntry{
 			{
-				"test1", odata.Int, "test1DB", odata.WhereQuery, nil,
+				"test1", odata.Int, "test1DB", nil, nil,
 				func(s string) bool {
 					i, _ := strconv.ParseInt(s, 10, 64)
 					return i < 10

@@ -40,7 +40,9 @@ func (mf *QueryOdataMapper) GetQuery(_ context.Context) *repo.Query {
 
 	for i := range mf.parseFilterFields {
 		entry, _ := mf.filterSchema.getEntryFromDBName(mf.parseFilterFields[i])
-		if entry.DBQuery == WhereQuery {
+		if entry.DBQuery != nil {
+			query = entry.DBQuery(query, mf.parseFilterValues[i])
+		} else {
 			ck := repo.NewCompositeKey()
 			entry := repo.CompositeKeyEntry{
 				Key: repo.Key{
@@ -144,7 +146,8 @@ func (mf *QueryOdataMapper) ParseFilter(param *string) error {
 
 	for i, field := range parsedFilterFields {
 		convertedField, convertedValue, err := mf.filterSchema.apply(
-			field, parsedFilterValues[i])
+			field, parsedFilterValues[i],
+		)
 		if err != nil {
 			return err
 		}

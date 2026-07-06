@@ -230,41 +230,42 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 		name                 string
 		expectedStatus       int
 		withKeyConfig        bool
-		keyConfigurationID   *uuid.UUID
+		keyConfigTarget      string
 		expectedSystemsCount int
 		expectedSystems      []string
 		expectedErrorCode    string
+		filter               string
 	}{
-		{
-			name:                 "Should get systems",
-			expectedStatus:       http.StatusOK,
-			keyConfigurationID:   nil,
-			expectedSystemsCount: 3,
-			expectedSystems:      []string{systems1.Identifier, systems2.Identifier, systems3.Identifier},
-		},
 		{
 			name:                 "Should get systems filtered by keyConfigID",
 			expectedStatus:       http.StatusOK,
-			keyConfigurationID:   ptr.PointTo(keyConfig1.ID),
+			keyConfigTarget:      keyConfig1.ID.String(),
 			expectedSystemsCount: 1,
 			expectedSystems:      []string{systems1.Identifier},
+			filter:               "keyConfigurationID",
+		},
+		{
+			name:                 "Should get systems filtered by keyConfigName",
+			expectedStatus:       http.StatusOK,
+			keyConfigTarget:      keyConfig1.Name,
+			expectedSystemsCount: 1,
+			expectedSystems:      []string{systems1.Identifier},
+			filter:               "keyConfigurationName",
 		},
 		{
 			name:                 "Should error on getting systems filtered by non-existing keyConfigID",
 			expectedStatus:       http.StatusNotFound,
-			keyConfigurationID:   keyConfiguration3ID,
+			keyConfigTarget:      keyConfiguration3ID.String(),
 			expectedSystemsCount: 0,
 			expectedSystems:      []string{},
 			expectedErrorCode:    "KEY_CONFIGURATION_NOT_FOUND",
+			filter:               "keyConfigurationID",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			url := "/systems?$count=true"
-			if tt.keyConfigurationID != nil {
-				url = url + "&$filter=keyConfigurationID eq '" + tt.keyConfigurationID.String() + "'"
-			}
+			url := fmt.Sprintf("/systems?$count=true&$filter=%v eq '%v'", tt.filter, tt.keyConfigTarget)
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodGet,
@@ -859,7 +860,8 @@ func TestSendRecoveryActions(t *testing.T) {
 func TestLinkSystemAction(t *testing.T) {
 	systemService := systems.NewFakeService(testutils.SetupLoggerWithBuffer())
 
-	_, grpcCon := testutils.NewGRPCSuite(t,
+	_, grpcCon := testutils.NewGRPCSuite(
+		t,
 		func(s *grpc.Server) {
 			systemgrpc.RegisterServiceServer(s, systemService)
 		},

@@ -2,6 +2,7 @@ package cmk
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -23,6 +24,25 @@ var getSystemsSchema = odata.FilterSchema{
 			FilterName: "keyConfigurationID",
 			FilterType: odata.UUID,
 			DBName:     repo.KeyConfigIDField,
+		},
+		{
+			FilterName: "keyConfigurationName",
+			FilterType: odata.String,
+			DBQuery: func(query *repo.Query, entry any) *repo.Query {
+				return query.Join(repo.LeftJoin, repo.JoinCondition{
+					JoinTable: &model.KeyConfiguration{},
+					JoinField: repo.IDField,
+					Table:     &model.System{},
+					Field:     repo.KeyConfigIDField,
+				}).Where(
+					repo.NewCompositeKeyGroup(
+						repo.NewCompositeKey().Where(
+							fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), repo.Name), entry,
+						),
+					),
+				)
+			},
+			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
 		},
 		{
 			FilterName:     "region",

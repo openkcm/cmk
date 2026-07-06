@@ -46,7 +46,7 @@ func TestOdata_ForSqlInjection(t *testing.T) {
 				Entries: []odata.FilterSchemaEntry{
 					{
 						FilterName: "test", FilterType: odata.Int,
-						DBName: "testDB", DBQuery: odata.WhereQuery,
+						DBName:        "testDB",
 						ValueModifier: nil, ValueValidator: nil,
 					},
 				},
@@ -61,7 +61,7 @@ func TestOdata_ForSqlInjection(t *testing.T) {
 				Entries: []odata.FilterSchemaEntry{
 					{
 						FilterName: "test", FilterType: odata.String,
-						DBName: "testDB", DBQuery: odata.WhereQuery,
+						DBName:        "testDB",
 						ValueModifier: nil, ValueValidator: nil,
 					},
 				},
@@ -76,7 +76,7 @@ func TestOdata_ForSqlInjection(t *testing.T) {
 				Entries: []odata.FilterSchemaEntry{
 					{
 						FilterName: "test", FilterType: odata.String,
-						DBName: "testDB", DBQuery: odata.WhereQuery,
+						DBName:        "testDB",
 						ValueModifier: nil, ValueValidator: nil,
 					},
 				},
