@@ -306,18 +306,22 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 			k.ID = keyID
 			k.KeyConfigurationID = keyConfig.ID
 		})
+		newKey := testutils.NewKey(func(k *model.Key) {
+			k.ID = uuid.New()
+			k.KeyConfigurationID = keyConfig.ID
+		})
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.Status = cmkapi.SystemStatusDISCONNECTED
 		})
-		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, key, system)
+		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, key, system, newKey)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = model.WorkflowStateInitial
 				w.ActionType = model.WorkflowActionTypeUpdatePrimary
 				w.ArtifactID = keyConfig.ID
 				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
-				w.Parameters = uuid.NewString()
+				w.Parameters = newKey.ID.String()
 			},
 		)
 
@@ -359,6 +363,37 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.Equal(t, manager.ErrAlreadyPrimaryKey, status.ErrDetails)
 	})
 
+	t.Run("should not be valid on change primary key with disabled key", func(t *testing.T) {
+		key := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateDISABLED
+		})
+
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.PrimaryKeyID = &key.ID
+			kc.PrimaryKeyID = ptr.PointTo(key.ID)
+		})
+
+		testutils.CreateTestEntities(ctxSys, t, r, key, keyConfig)
+
+		wf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeUpdatePrimary
+				w.ArtifactID = keyConfig.ID
+				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
+				w.Parameters = key.ID.String()
+			},
+		)
+
+		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.True(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.False(t, status.Valid)
+		assert.False(t, status.CanCreate)
+		assert.NoError(t, err)
+		assert.Equal(t, manager.ErrPrimaryKeyDisabled, status.ErrDetails)
+	})
+
 	t.Run("Should not be valid on non byok key state change", func(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyType = constants.KeyTypeHYOK
@@ -393,14 +428,15 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.Status = cmkapi.SystemStatusCONNECTED
 		})
-		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, system)
+		key := testutils.NewKey(func(k *model.Key) {})
+		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, system, key)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = model.WorkflowStateInitial
 				w.ActionType = model.WorkflowActionTypeUpdatePrimary
 				w.ArtifactID = keyConfig.ID
 				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
-				w.Parameters = uuid.NewString()
+				w.Parameters = key.ID.String()
 			},
 		)
 

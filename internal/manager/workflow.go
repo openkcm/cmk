@@ -979,6 +979,7 @@ func isInvalidAction(err error) bool {
 		ErrNotAllSystemsConnected,
 		ErrAlreadyPrimaryKey,
 		ErrUpdateNonBYOKKeyStatus,
+		ErrPrimaryKeyDisabled,
 	)
 }
 
@@ -1066,7 +1067,7 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 	}, nil
 }
 
-//nolint:cyclop
+//nolint:cyclop,gocognit,funlen
 func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.Workflow) (bool, error) {
 	// Always returns at least one key configuration
 	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
@@ -1095,6 +1096,16 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 		keyID, err := uuid.Parse(workflow.Parameters)
 		if err != nil {
 			return false, err
+		}
+
+		key := &model.Key{ID: keyID}
+		_, err = w.repo.First(ctx, key, *repo.NewQuery())
+		if err != nil {
+			return false, err
+		}
+
+		if key.State != cmkapi.KeyStateENABLED {
+			return false, ErrPrimaryKeyDisabled
 		}
 
 		// There is always only one keyconfig from KeyConfig ArtifactType

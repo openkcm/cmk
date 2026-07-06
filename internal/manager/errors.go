@@ -133,6 +133,7 @@ var (
 	ErrGettingSystemByID         = errors.New("failed to get system by ID")
 	ErrGettingSystemLinkByID     = errors.New("failed to get system link by ID")
 	ErrConnectSystemNoPrimaryKey = errors.New("system cannot be connect without an enabled primary key")
+	ErrPrimaryKeyDisabled        = errors.New("primary key must be enabled to perform switch action")
 	ErrUnlinkSystemNoPrimaryKey  = errors.New("failed to unlink system without primary key")
 	ErrUpdateSystem              = errors.New("failed to update system")
 	ErrSystemNotLinked           = errors.New("system is not linked to a key configuration")
