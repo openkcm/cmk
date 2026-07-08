@@ -111,29 +111,11 @@ squash:
 	@rm -f git_log.tmp
 
 
-#
-# Open API Code Generation
-#
-
-# codegen will generate desired API clients, see below help text for supported apis
-codegen: install-codegen
-ifeq ($(api),)
-	@echo "API is not defined. Please provide name of api to generate. Parameters allowed:"
-	@echo "		- cmk"
-	@echo "		- sysinfo"
-	@echo "		- all"
-	@echo "CMK API Example: make codegen api=cmk"
-	exit 1
-endif
-
-# Generate CMK API v1
-ifeq ($(api), $(filter $(api),all cmk))
+# OpenAPI Code Generation
+codegen:
+	@go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.6.0
 	@echo "Generating CMK API from Swagger definition"
 	@oapi-codegen -config "$(CMK_API_V1_SPEC_PATH)/.config.yaml" "$(CMK_API_V1_SPEC_PATH)/cmk-ui.yaml"
-endif
-
-install-codegen:
-	go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.4.1
 
 .PHONY: codegen-commit
 codegen-commit:
