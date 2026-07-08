@@ -313,6 +313,19 @@ func TestGetTenantsKeystore(t *testing.T) {
 		assert.Nil(t, res.BYOK.SupportedRegions)
 	})
 
+	t.Run("BYOK allowed, no source ref", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		cfg := &config.Config{
+			BaseConfig: commoncfg.BaseConfig{
+				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
+			},
+		}
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg)
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.Nil(t, res.BYOK.SupportedRegions)
+	})
+
 	t.Run("stored keystore: regions from keystore", func(t *testing.T) {
 		configManager, db, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
@@ -347,8 +360,9 @@ func TestGetTenantsKeystore(t *testing.T) {
 			},
 		}
 		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg)
-		_, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
-		assert.Error(t, err)
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.Nil(t, res.BYOK.SupportedRegions)
 	})
 }
 

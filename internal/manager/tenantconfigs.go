@@ -15,6 +15,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
@@ -193,25 +194,11 @@ func (m *TenantConfigManager) GetTenantsKeystores(ctx context.Context) (TenantKe
 		return TenantKeystores{}, err
 	}
 
-	var supportedRegions []config.Region
 	byokKeystore := &model.KeystoreConfig{}
 	if found {
 		byokKeystore = defaultKeystore
-	} else if m.isBYOKAllowed() && m.cfg.KeystorePool.SupportedRegions.Source != "" {
-		// Initialize supportedRegions to an empty slice.
-		// If BYOK is allowed, populate it with the configured supported regions.
-		// This ensures that supportedRegions is always defined even if keystore has not been retrieved from pool.
-		ref, err := commoncfg.LoadValueFromSourceRef(m.cfg.KeystorePool.SupportedRegions)
-		if err != nil {
-			return TenantKeystores{}, err
-		}
-
-		err = json.Unmarshal(ref, &supportedRegions)
-		if err != nil {
-			return TenantKeystores{}, err
-		}
-
-		byokKeystore.SupportedRegions = supportedRegions
+	} else if m.isBYOKAllowed() {
+		byokKeystore.SupportedRegions = m.loadConfiguredSupportedRegions(ctx)
 	}
 
 	return TenantKeystores{
@@ -433,4 +420,20 @@ func (m *TenantConfigManager) mergeWorkflowConfig(
 	}
 
 	return result
+}
+
+func (m *TenantConfigManager) loadConfiguredSupportedRegions(ctx context.Context) []config.Region {
+	ref, err := commoncfg.LoadValueFromSourceRef(m.cfg.KeystorePool.SupportedRegions)
+	if err != nil {
+		log.Error(ctx, "Failed to load supported regions from source ref", err)
+		return nil
+	}
+
+	var regions []config.Region
+	if err = json.Unmarshal(ref, &regions); err != nil {
+		log.Error(ctx, "Failed to unmarshal supported regions", err)
+		return nil
+	}
+
+	return regions
 }
