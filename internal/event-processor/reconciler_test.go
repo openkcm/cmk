@@ -1033,7 +1033,9 @@ func TestJobTermination(t *testing.T) {
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	system := testutils.NewSystem(func(_ *model.System) {})
+	system := testutils.NewSystem(func(s *model.System) {
+		s.TargetKeyConfigurationID = ptr.PointTo(uuid.New())
+	})
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
@@ -1056,10 +1058,11 @@ func TestJobTermination(t *testing.T) {
 	unlinkDataBytes, err := json.Marshal(unlinkJobData)
 	assert.NoError(t, err)
 
-	t.Run("Should update system key config ID on job termination", func(t *testing.T) {
+	t.Run("Should update system key config ID on job termination and clean target", func(t *testing.T) {
 		_, err := r.First(ctx, system, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Nil(t, system.KeyConfigurationID)
+		assert.NotNil(t, system.TargetKeyConfigurationID)
 
 		item := uuid.NewString()
 		terminateNewJob(t, eventProcessor, &model.Event{
@@ -1075,6 +1078,7 @@ func TestJobTermination(t *testing.T) {
 		_, err = r.First(ctx, systemAfterLink, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.NotNil(t, systemAfterLink.KeyConfigurationID)
+		assert.Nil(t, systemAfterLink.TargetKeyConfigurationID)
 
 		item = uuid.NewString()
 		terminateNewJob(t, eventProcessor, &model.Event{
@@ -1197,11 +1201,12 @@ func TestJobTermination(t *testing.T) {
 		assert.Equal(t, cmkapi.SystemStatusFAILED, sysAfter.Status)
 	})
 
-	t.Run("System switch to new key on successful SYSTEM_SWITCH job termination", func(t *testing.T) {
+	t.Run("System switch to new key on successful SYSTEM_SWITCH job termination and clean target", func(t *testing.T) {
+		keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 		sys := testutils.NewSystem(func(s *model.System) {
 			s.Status = cmkapi.SystemStatusPROCESSING
+			s.TargetKeyConfigurationID = &keyConfig2.ID
 		})
-		keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 		key2 := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig2.ID
 		})
@@ -1216,6 +1221,7 @@ func TestJobTermination(t *testing.T) {
 		}
 		dataBytes, err := json.Marshal(data)
 		assert.NoError(t, err)
+		assert.NotNil(t, sys.TargetKeyConfigurationID)
 
 		item := uuid.NewString()
 		terminateNewJob(t, eventProcessor, &model.Event{
@@ -1230,6 +1236,7 @@ func TestJobTermination(t *testing.T) {
 		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfig2.ID, *sysAfter.KeyConfigurationID)
+		assert.Nil(t, sysAfter.TargetKeyConfigurationID)
 		assert.Equal(t, cmkapi.SystemStatusCONNECTED, sysAfter.Status)
 	})
 

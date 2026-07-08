@@ -1384,7 +1384,7 @@ components:
 
         The following operators are supported:
 
-        - Equal (eq), on the following attributes: keyConfigurationId, keyConfigurationName, region, role, status and type.
+        - Equal (eq), on the following attributes: keyConfigurationId, keyConfigurationName, region, role, status and type, targetKeyConfigurationID.
         - Logical AND (and).
 
         Example: region eq eu
