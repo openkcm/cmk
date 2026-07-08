@@ -1494,7 +1494,14 @@ components:
           type: string
           maxLength: 255
           example: new-key-configuration-name
+        targetKeyConfigurationName:
+          description: The name of the target key configuration
+          type: string
+          maxLength: 255
+          example: new-key-configuration-name
         keyConfigurationID:
+          $ref: "#/components/schemas/KeyConfigurationID"
+        targetKeyConfigurationID:
           $ref: "#/components/schemas/KeyConfigurationID"
         metadata:
           $ref: "#/components/schemas/SystemMetadata"

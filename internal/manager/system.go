@@ -497,12 +497,11 @@ func (m *SystemManager) cancelSystemAction(ctx context.Context, systemID uuid.UU
 		return err
 	}
 
-	_, err = m.repo.Patch(
-		ctx, &model.System{
-			ID:     systemID,
-			Status: cmkapi.SystemStatus(event.PreviousItemStatus),
-		}, *repo.NewQuery(),
-	)
+	_, err = m.repo.Patch(ctx, &model.System{
+		ID:                       systemID,
+		Status:                   cmkapi.SystemStatus(event.PreviousItemStatus),
+		TargetKeyConfigurationID: nil,
+	}, *repo.NewQuery().Update(repo.StatusField, repo.TargetKeyConfigIDField))
 
 	return err
 }
@@ -554,6 +553,12 @@ func (m *SystemManager) selectEvent(
 	newKeyConfig *model.KeyConfiguration,
 ) (eventprocessor.Event, error) {
 	oldKeyConfigID := system.KeyConfigurationID
+
+	system.TargetKeyConfigurationID = &newKeyConfig.ID
+	_, err := m.repo.Patch(ctx, system, *repo.NewQuery())
+	if err != nil {
+		return eventprocessor.Event{}, err
+	}
 
 	// If system doesn't have a link already, we send SYSTEM_LINK
 	if !ptr.IsNotNilUUID(oldKeyConfigID) {

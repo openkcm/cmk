@@ -197,6 +197,13 @@ func ListAndCountSystemWithProperties(
 		JoinField: IDField,
 		Table:     &model.System{},
 		Field:     KeyConfigIDField,
+		Alias:     "key_config",
+	}).Join(LeftJoin, JoinCondition{
+		JoinTable: &model.KeyConfiguration{},
+		JoinField: IDField,
+		Table:     &model.System{},
+		Field:     TargetKeyConfigIDField,
+		Alias:     "target_key_config",
 	}).Join(LeftJoin, JoinCondition{
 		JoinTable: &model.Event{},
 		JoinField: IdentifierField,
@@ -213,9 +220,14 @@ func ListAndCountSystemWithProperties(
 		}),
 		// Get KeyConfigName with alias so it's injected into System KeyConfigName
 		NewSelectField(
-			fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), NameField),
+			fmt.Sprintf("%s.%s", "key_config", NameField),
 			QueryFunction{},
 		).SetAlias(SystemKeyconfigName),
+		// Get TargetKeyConfigName with alias so it's injected into System TargetKeyConfigurationName
+		NewSelectField(
+			fmt.Sprintf("%s.%s", "target_key_config", NameField),
+			QueryFunction{},
+		).SetAlias(SystemTargetKeyconfigName),
 		// Get ErrorMessage so it's injected into System ErrorMessage
 		NewSelectField(
 			fmt.Sprintf("%s.%s", model.Event{}.TableName(), ErrorMessageField),
@@ -239,6 +251,7 @@ func ListAndCountSystemWithProperties(
 				sys = &row.System
 				sys.Properties = map[string]string{}
 				sys.KeyConfigurationName = row.KeyConfigurationName
+				sys.TargetKeyConfigurationName = row.TargetKeyConfigurationName
 				sys.ErrorCode = row.ErrorCode
 				sys.ErrorMessage = row.ErrorMessage
 				systemsMap[row.ID] = sys

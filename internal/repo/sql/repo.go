@@ -464,12 +464,11 @@ func (r *ResourceRepository) getSchemaFromCtx(ctx context.Context) (string, erro
 //nolint:unqueryvet
 func applyUpdateQuery(db *gorm.DB, query repo.Query) *gorm.DB {
 	if query.UpdateFields.All {
-		db = db.Select("*")
+		return db.Select("*")
 	}
 
-	if !query.UpdateFields.All && len(query.UpdateFields.Fields) > 0 {
-		sel := strings.Join(query.UpdateFields.Fields, ",")
-		db = db.Select(sel)
+	if len(query.UpdateFields.Fields) > 0 {
+		return db.Select(query.UpdateFields.Fields)
 	}
 
 	return db
