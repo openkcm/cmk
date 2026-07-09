@@ -31,7 +31,6 @@ import (
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/manager"
@@ -1863,20 +1862,19 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	// skips GrantTrust (no role-management cert needed).
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	clientCert := model.NewClientCertificate(certCfg, tenant)
-	ksConfig := model.KeystoreConfig{
-		CryptoAccessData: map[string]model.CryptoConfig{
-			region: {
-				Subject: clientCert.Subject.String(),
-				AccessData: model.KeystoreAccessData{
-					"key1": "value1",
-					"key2": "value2",
+	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil).
+		SetDefaultKeystore(ctx, &model.KeystoreConfig{
+			RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
+			CryptoAccessData: map[string]model.CryptoConfig{
+				region: {
+					Subject: clientCert.Subject.String(),
+					AccessData: model.KeystoreAccessData{
+						"key1": "value1",
+						"key2": "value2",
+					},
 				},
 			},
-		},
-	}
-	ksBytes, err := json.Marshal(ksConfig)
-	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}))
+		}))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) {
@@ -2057,6 +2055,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 	// Pre-seed DEFAULT_KEYSTORE with CryptoAccessData already provisioned
 	// (simulating manager enrollment). The event-processor reads this directly.
 	ksConfig := model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
 		CryptoAccessData: map[string]model.CryptoConfig{
 			region: {
 				Subject: certSubject,
@@ -2067,9 +2066,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 			},
 		},
 	}
-	ksBytes, err := json.Marshal(ksConfig)
-	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}))
+	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil).SetDefaultKeystore(ctx, &ksConfig))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) { s.Region = region })
@@ -2234,9 +2231,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		ksConfig := model.KeystoreConfig{
 			CryptoAccessData: map[string]model.CryptoConfig{},
 		}
-		ksBytes, err := json.Marshal(ksConfig)
-		require.NoError(t, err)
-		require.NoError(t, inst.r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}))
+		require.NoError(t, manager.NewTenantConfigManager(inst.r, testutils.NewTestPlugins(), &config.Config{}, nil).SetDefaultKeystore(ctx, &ksConfig))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 
@@ -2252,6 +2247,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 
 		// Store a TenantConfig with CryptoAccessData populated, keyed by the region.
 		ksConfig := model.KeystoreConfig{
+			RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
 			CryptoAccessData: map[string]model.CryptoConfig{
 				region: {
 					Subject: testSubject,
@@ -2261,9 +2257,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 				},
 			},
 		}
-		ksBytes, err := json.Marshal(ksConfig)
-		require.NoError(t, err)
-		require.NoError(t, inst.r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}))
+		require.NoError(t, manager.NewTenantConfigManager(inst.r, testutils.NewTestPlugins(), &config.Config{}, nil).SetDefaultKeystore(ctx, &ksConfig))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 
