@@ -207,7 +207,9 @@ func createHTTPServer(
 				// SecurityHeadersMiddleware is last in the slice so it runs first (FILO order).
 				// Security headers must be set before any other middleware runs to ensure
 				// they appear on every response, including error responses.
-				commonmiddleware.SecurityHeadersMiddleware(nil),
+				commonmiddleware.SecurityHeadersMiddleware(map[string]string{
+					"Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none';",
+				}),
 			},
 		},
 	)
