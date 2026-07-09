@@ -1028,7 +1028,19 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 
 		testutils.CreateTestEntities(ctx, t, r, keyConfig, sys)
 		err := m.DeleteKeyConfigurationByID(ctx, keyConfig.ID)
-		assert.ErrorIs(t, err, manager.ErrDeleteKeyConfiguration)
+		assert.ErrorIs(t, err, manager.ErrConnectedSystemToKeyConfig)
+	})
+
+	t.Run("Should error on delete key configuration on connected keys", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
+		err := m.DeleteKeyConfigurationByID(ctx, keyConfig.ID)
+		assert.ErrorIs(t, err, manager.ErrConnectedKeysToKeyConfig)
 	})
 
 	t.Run("Should allow access when user belongs to admin group", func(t *testing.T) {

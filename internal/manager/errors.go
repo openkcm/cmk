@@ -26,6 +26,7 @@ var (
 
 	ErrCreateKeyConfiguration       = errors.New("failed to create key configuration")
 	ErrConnectedSystemToKeyConfig   = errors.New("system is connected to keyconfig")
+	ErrConnectedKeysToKeyConfig     = errors.New("keys are connected to keyconfig")
 	ErrInvalidKeyAdminGroup         = errors.New("invalid keyconfig admin group")
 	ErrDeleteKeyConfiguration       = errors.New("failed to delete key configuration")
 	ErrQueryKeyConfigurationList    = errors.New("failed to query key configuration list")

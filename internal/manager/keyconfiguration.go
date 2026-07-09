@@ -163,6 +163,15 @@ func (m *KeyConfigManager) DeleteKeyConfigurationByID(
 		return errs.Wrap(ErrDeleteKeyConfiguration, ErrConnectedSystemToKeyConfig)
 	}
 
+	exist, err = repo.HasConnectedKeys(ctx, m.r, keyConfigID)
+	if err != nil {
+		return err
+	}
+
+	if exist {
+		return errs.Wrap(ErrDeleteKeyConfiguration, ErrConnectedKeysToKeyConfig)
+	}
+
 	return m.r.Transaction(ctx, func(ctx context.Context) error {
 		_, err = m.r.Delete(ctx, keyConfig, *repo.NewQuery())
 		if err != nil {

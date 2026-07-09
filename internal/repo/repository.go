@@ -101,6 +101,25 @@ func ToSharedModel[T LoadEntity](v *T, opts ...Opt[T]) (*T, error) {
 	return v, nil
 }
 
+func HasConnectedKeys(ctx context.Context, r Repo, keyConfigID uuid.UUID) (bool, error) {
+	count, err := r.Count(
+		ctx,
+		&model.Key{},
+		*NewQuery().Where(
+			NewCompositeKeyGroup(
+				NewCompositeKey().Where(
+					KeyConfigIDField, keyConfigID,
+				),
+			),
+		),
+	)
+	if err != nil {
+		return true, err
+	}
+
+	return count > 0, nil
+}
+
 func HasConnectedSystems(ctx context.Context, r Repo, keyConfigID uuid.UUID) (bool, error) {
 	count, err := r.Count(
 		ctx,

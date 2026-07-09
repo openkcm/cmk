@@ -20,10 +20,9 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	tests := []struct {
-		name          string
-		workflow      func(kc *model.KeyConfiguration, k *model.Key) *model.Workflow
-		transition    workflow.Transition
-		expectedState model.WorkflowState
+		name     string
+		workflow func(kc *model.KeyConfiguration, k *model.Key) *model.Workflow
+		delete   bool
 	}{
 		{
 			name: "Delete key config",
@@ -41,11 +40,9 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 						}),
 					}
 					wf.ArtifactID = kc.ID
-					wf.Parameters = k.ID.String()
 				})
 			},
-			transition:    workflow.TransitionConfirm,
-			expectedState: model.WorkflowStateSuccessful,
+			delete: true,
 		},
 		{
 			name: "Update primary key",
@@ -66,8 +63,6 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 					wf.Parameters = k.ID.String()
 				})
 			},
-			transition:    workflow.TransitionConfirm,
-			expectedState: model.WorkflowStateSuccessful,
 		},
 	}
 
@@ -88,18 +83,17 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 
 			key := testutils.NewKey(func(k *model.Key) {
 				k.ID = keyID
-				k.KeyConfigurationID = keyConfig.ID
 			})
-			err = r.Create(ctx, key)
-			assert.NoError(t, err)
+			if !tt.delete {
+				key.KeyConfigurationID = keyConfig.ID
+			}
 
 			wf := tt.workflow(keyConfig, key)
 
-			err = r.Create(ctx, wf)
-			assert.NoError(t, err)
+			testutils.CreateTestEntities(ctx, t, r, key, wf)
 
 			lifecycle := workflow.NewLifecycle(wf, mgr.Keys, mgr.KeyConfig, mgr.System, r, wf.InitiatorID, 2)
-			err = lifecycle.ValidateAndApplyTransition(ctx, tt.transition)
+			err = lifecycle.ValidateAndApplyTransition(ctx, workflow.TransitionConfirm)
 			assert.NoError(t, err)
 
 			wf = &model.Workflow{ID: wf.ID}
@@ -107,7 +101,7 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 			assert.NoError(t, err)
 			assert.True(t, ok)
 
-			assert.Equal(t, tt.expectedState, wf.State)
+			assert.Equal(t, model.WorkflowStateSuccessful, wf.State)
 		})
 	}
 }
