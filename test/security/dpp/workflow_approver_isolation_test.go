@@ -90,8 +90,7 @@ func TestWorkflowApproverIsolation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Enable workflow feature
-	workflowConfig := testutils.NewWorkflowConfig(func(_ *model.LegacyTenantConfig) {})
-	testutils.CreateTestEntities(ctx, t, r, workflowConfig)
+	testutils.NewWorkflowConfig(ctx, t, r, func(_ *model.WorkflowConfig) {})
 
 	// Seed all groups in DB
 	adminGroupModel := testutils.NewGroup(func(g *model.Group) {

@@ -13,9 +13,9 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
-	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -145,19 +145,13 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Context) {
 	t.Helper()
 
-	workflowConfig := testutils.NewDefaultWorkflowConfig(true)
-	workflowConfig.MinimumApprovals = 3
-	workflowConfig.RetentionPeriodDays = 45
-
-	configJSON, err := json.Marshal(workflowConfig)
-	require.NoError(t, err)
-
-	tenantConfig := &model.LegacyTenantConfig{
-		Key:   constants.WorkflowConfigKey,
-		Value: string(configJSON),
-	}
-	err = r.Set(ctx, tenantConfig, *repo.NewQuery())
-	require.NoError(t, err)
+	testutils.NewWorkflowConfig(ctx, t, r, func(wc *model.WorkflowConfig) {
+		wc.Enabled = true
+		wc.MinimumApprovals = 3
+		wc.RetentionPeriodDays = 45
+		wc.DefaultExpiryPeriodDays = constants.DefaultExpiryPeriodDays
+		wc.MaxExpiryPeriodDays = constants.DefaultMaxExpiryPeriodDays
+	})
 }
 
 func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
@@ -169,16 +163,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 		// Setup: Create initial workflow config
-		workflowConfig := testutils.NewDefaultWorkflowConfig(false)
-		configJSON, err := json.Marshal(workflowConfig)
-		require.NoError(t, err)
-
-		tenantConfig := &model.LegacyTenantConfig{
-			Key:   constants.WorkflowConfigKey,
-			Value: string(configJSON),
-		}
-		err = r.Set(ctx, tenantConfig, *repo.NewQuery())
-		require.NoError(t, err)
+		setupDefaultWorkflowConfig(t, r, ctx)
 
 		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
@@ -206,7 +191,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		var response cmkapi.TenantWorkflowConfiguration
-		err = json.Unmarshal(w.Body.Bytes(), &response)
+		err := json.Unmarshal(w.Body.Bytes(), &response)
 		require.NoError(t, err)
 
 		assert.NotNil(t, response.MinimumApprovals)
@@ -375,10 +360,8 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 		// Store config with enabled=true so changing to false triggers role validation
-		enabledConfig := testutils.NewDefaultWorkflowConfig(true)
-		configJSON, err := json.Marshal(enabledConfig)
-		require.NoError(t, err)
-		err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.WorkflowConfigKey, Value: string(configJSON)}, *repo.NewQuery())
+		tcm := manager.NewTenantConfigManager(r, nil, nil, nil)
+		_, err := tcm.SetWorkflowConfig(ctx, testutils.NewDefaultWorkflowConfig(true))
 		require.NoError(t, err)
 
 		businessUserData := &auth.ClientData{
@@ -415,14 +398,11 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 func setupDefaultWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Context) {
 	t.Helper()
 
-	workflowConfig := testutils.NewDefaultWorkflowConfig(false)
-	configJSON, err := json.Marshal(workflowConfig)
-	require.NoError(t, err)
-
-	tenantConfig := &model.LegacyTenantConfig{
-		Key:   constants.WorkflowConfigKey,
-		Value: string(configJSON),
-	}
-	err = r.Set(ctx, tenantConfig, *repo.NewQuery())
-	require.NoError(t, err)
+	testutils.NewWorkflowConfig(ctx, t, r, func(wc *model.WorkflowConfig) {
+		wc.Enabled = false
+		wc.MinimumApprovals = constants.DefaultMinimumApprovalCount
+		wc.RetentionPeriodDays = constants.DefaultRetentionPeriodDays
+		wc.DefaultExpiryPeriodDays = constants.DefaultExpiryPeriodDays
+		wc.MaxExpiryPeriodDays = constants.DefaultMaxExpiryPeriodDays
+	})
 }

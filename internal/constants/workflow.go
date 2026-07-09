@@ -1,8 +1,6 @@
 package constants
 
 const (
-	WorkflowConfigKey = "WORKFLOW_CONFIG"
-
 	DefaultMinimumApprovalCount = 2
 	DefaultRetentionPeriodDays  = 30
 
