@@ -79,19 +79,27 @@ paths:
         - Keys
       summary: Create a new Key
       description: |
-        Generate and store a new Key or register a key from customer held keystore.
-        - For `Hold Your Own Key (HYOK)`, a native key identifier needs to be provided. In this case no new key
-        material is generated but the key is enrolled within KMS CMK.
+        Create a new cryptographic key. The API supports two key management models:
+
+        **BYOK (Bring Your Own Key)**
+        - Key material is imported into CMK-managed keystore
+
+        **HYOK (Hold Your Own Key)**
+        - Key remains in customer's keystore, CMK connects to it
+
+        Use the `type` field to specify which key model to use.
       requestBody:
-        description: Key request body
+        description: Key request body - see examples for BYOK and HYOK formats
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/Key"
             examples:
-              KeyRequest:
-                $ref: "#/components/examples/KeyRequest"
+              BYOKKeyRequest:
+                $ref: "#/components/examples/BYOKKeyRequest"
+              HYOKKeyRequest:
+                $ref: "#/components/examples/HYOKKeyRequest"
       responses:
         "201":
           description: Created
@@ -3079,25 +3087,42 @@ components:
                   message: Requested feature is not implemented.
                   id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
   examples:
-    KeyRequest:
+    BYOKKeyRequest:
+      summary: Create a BYOK (Bring Your Own Key) key
+      description: |
+        BYOK key creation request. The key material will be imported into CMK-managed keystore.
+        Provider and region are required to specify where the key will be created.
+        Note: In the response, provider and region will NOT be returned as they are internal implementation details.
       value:
-        name: example_key_name
-        type: HYOK
-        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
-        description: This key is used for DB key store encryption.
-        enabled: true
-        algorithm: AES256
-        provider: AWS
-        region: eu-central-1
-    AWSBYOKRequest:
-      value:
-        name: byok_key_name
+        name: byok_example_key
         type: BYOK
         keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
-        description: This key is used for DB key store encryption.
+        description: BYOK key for database encryption
         algorithm: AES256
-        provider: AWS
         region: eu-central-1
+    HYOKKeyRequest:
+      summary: Create a HYOK (Hold Your Own Key) key
+      description: |
+        HYOK key creation request. The key remains in customer's keystore.
+        NativeID is the customer-provided key identifier, and accessDetails configure
+        how CMK connects to the customer's keystore.
+      value:
+        name: hyok_example_key
+        type: HYOK
+        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
+        description: HYOK key connected to customer AWS KMS
+        nativeID: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+        provider: AWS
+        accessDetails:
+          management:
+            accessAccountID: "111122223333"
+            accessUserID: "arn:aws:iam::111122223333:user/cmk-service"
+            endpoint: "https://kms.us-east-2.amazonaws.com"
+          crypto:
+            us-east-2:
+              accessAccountID: "111122223333"
+              accessUserID: "arn:aws:iam::111122223333:user/cmk-crypto"
+              endpoint: "https://kms.us-east-2.amazonaws.com"
     SystemPatchUpdatingLink:
       value:
         keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef

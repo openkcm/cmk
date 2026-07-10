@@ -209,116 +209,124 @@ func TestTransformKeyFromAPI(t *testing.T) {
 }
 
 func TestTransformKeyToAPI(t *testing.T) {
-	description := "Test key"
-	nativeID := "native-id-1234"
 	id := uuid.New()
 	keyConfigID := uuid.New()
-
-	managementAccessData := AccessDataTest{
-		AccessAccountID: "123456789012",
-		AccessUserID:    "123456789012:user/test-user",
-	}
-	managementAccessJSON, err := json.Marshal(managementAccessData)
-	assert.NoError(t, err)
-
-	cryptoAccessData := map[string]AccessDataTest{
-		"serviceA": {
-			AccessAccountID: "12344",
-			AccessUserID:    "123456789012:user/serviceA",
-		},
-		"serviceB": {
-			AccessAccountID: "12345",
-			AccessUserID:    "123456789012:user/serviceB",
-		},
-	}
-	cryptoAccessJSON, err := json.Marshal(cryptoAccessData)
-	assert.NoError(t, err)
-
-	modelHYOKKeyRequestMut := testutils.NewMutator(func() model.Key {
-		return model.Key{
-			ID:                   id,
-			Name:                 "test-key",
-			KeyType:              string(cmkapi.KeyTypeHYOK),
-			KeyConfigurationID:   keyConfigID,
-			Description:          description,
-			NativeID:             &nativeID,
-			State:                cmkapi.KeyStateENABLED,
-			IsPrimary:            false,
-			ManagementAccessData: managementAccessJSON,
-			CryptoAccessData:     cryptoAccessJSON,
-			EditableRegions: map[string]bool{
-				"serviceA": true,
-				"serviceB": false,
-			},
-		}
-	})
-
-	HYOKKeyRequestMut := testutils.NewMutator(func() cmkapi.Key {
-		return cmkapi.Key{
-			Id:                 AnyPtr(uuid.MustParse(id.String())),
-			Name:               "test-key",
-			Type:               cmkapi.KeyTypeHYOK,
-			KeyConfigurationID: keyConfigID,
-			Description:        &description,
-			NativeID:           &nativeID,
-			State:              AnyPtr(cmkapi.KeyStateENABLED),
-			IsPrimary:          ptr.PointTo(false),
-			AccessDetails: &cmkapi.KeyAccessDetails{
-				Management: ptr.PointTo(map[string]any{
-					accessAccountIDField: "123456789012",
-					accessUserIDField:    "123456789012:user/test-user",
-				}),
-				Crypto: ptr.PointTo(map[string]map[string]any{
-					"serviceA": {
-						accessAccountIDField:           "12344",
-						accessUserIDField:              "123456789012:user/serviceA",
-						manager.IsEditableCryptoAccess: true,
-					},
-					"serviceB": {
-						accessAccountIDField:           "12345",
-						accessUserIDField:              "123456789012:user/serviceB",
-						manager.IsEditableCryptoAccess: false,
-					},
-				}),
-			},
-			Metadata: &cmkapi.KeyMetadata{
-				CreatedAt: AnyPtr(time.Time{}),
-				UpdatedAt: AnyPtr(time.Time{}),
-			},
-			UnderWorkflow: ptr.PointTo(false),
-		}
-	})
+	description := "Test key"
 
 	tests := []struct {
-		name      string
-		key       model.Key
-		expected  cmkapi.Key
-		expectErr bool
-		err       error
+		name     string
+		key      model.Key
+		expected cmkapi.Key
 	}{
 		{
-			name:      "T212KeyToAPISuccess",
-			key:       modelHYOKKeyRequestMut(),
-			expected:  HYOKKeyRequestMut(),
-			expectErr: false,
+			name: "Transform to HYOK Key",
+			key: model.Key{
+				ID:                 id,
+				Name:               "test-key",
+				KeyType:            string(cmkapi.KeyTypeHYOK),
+				KeyConfigurationID: keyConfigID,
+				Description:        description,
+				NativeID:           ptr.PointTo("native-id-1234"),
+				State:              cmkapi.KeyStateENABLED,
+				IsPrimary:          false,
+				ManagementAccessData: mustMarshal(AccessDataTest{
+					AccessAccountID: "123456789012",
+					AccessUserID:    "123456789012:user/test-user",
+				}),
+				CryptoAccessData: mustMarshal(map[string]AccessDataTest{
+					"serviceA": {
+						AccessAccountID: "12344",
+						AccessUserID:    "123456789012:user/serviceA",
+					},
+					"serviceB": {
+						AccessAccountID: "12345",
+						AccessUserID:    "123456789012:user/serviceB",
+					},
+				}),
+				EditableRegions: map[string]bool{
+					"serviceA": true,
+					"serviceB": false,
+				},
+			},
+			expected: cmkapi.Key{
+				Id:                 &id,
+				Name:               "test-key",
+				Type:               cmkapi.KeyTypeHYOK,
+				KeyConfigurationID: keyConfigID,
+				Description:        &description,
+				NativeID:           ptr.PointTo("native-id-1234"),
+				State:              ptr.PointTo(cmkapi.KeyStateENABLED),
+				IsPrimary:          ptr.PointTo(false),
+				AccessDetails: &cmkapi.KeyAccessDetails{
+					Management: ptr.PointTo(map[string]any{
+						accessAccountIDField: "123456789012",
+						accessUserIDField:    "123456789012:user/test-user",
+					}),
+					Crypto: ptr.PointTo(map[string]map[string]any{
+						"serviceA": {
+							accessAccountIDField:           "12344",
+							accessUserIDField:              "123456789012:user/serviceA",
+							manager.IsEditableCryptoAccess: true,
+						},
+						"serviceB": {
+							accessAccountIDField:           "12345",
+							accessUserIDField:              "123456789012:user/serviceB",
+							manager.IsEditableCryptoAccess: false,
+						},
+					}),
+				},
+				Metadata: &cmkapi.KeyMetadata{
+					CreatedAt: &time.Time{},
+					UpdatedAt: &time.Time{},
+				},
+				UnderWorkflow: ptr.PointTo(false),
+			},
+		},
+		{
+			name: "Transform to BYOK key",
+			key: model.Key{
+				ID:                 id,
+				Name:               "byok-key",
+				KeyType:            string(cmkapi.KeyTypeBYOK),
+				KeyConfigurationID: keyConfigID,
+				Description:        description,
+				Algorithm:          string(cmkapi.KeyAlgorithmAES256),
+				Region:             regionEUWest1,
+				State:              cmkapi.KeyStateENABLED,
+				IsPrimary:          true,
+			},
+			expected: cmkapi.Key{
+				Id:                 &id,
+				Name:               "byok-key",
+				Type:               cmkapi.KeyTypeBYOK,
+				KeyConfigurationID: keyConfigID,
+				Description:        &description,
+				Algorithm:          ptr.PointTo(cmkapi.KeyAlgorithmAES256),
+				Region:             ptr.PointTo(regionEUWest1),
+				State:              ptr.PointTo(cmkapi.KeyStateENABLED),
+				IsPrimary:          ptr.PointTo(true),
+				Metadata: &cmkapi.KeyMetadata{
+					CreatedAt: &time.Time{},
+					UpdatedAt: &time.Time{},
+				},
+				UnderWorkflow: ptr.PointTo(false),
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			apiKey, err := key.ToAPI(tt.key)
-			if tt.expectErr {
-				assert.EqualError(t, err, tt.err.Error())
-				assert.Nil(t, apiKey)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expected, *apiKey)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, *apiKey)
 		})
 	}
 }
 
-// AnyPtr returns a pointer to the given value of any type.
-func AnyPtr[T any](v T) *T {
-	return &v
+func mustMarshal(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
