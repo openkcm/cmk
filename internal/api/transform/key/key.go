@@ -84,15 +84,9 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 		apiKey.Algorithm = &algorithm
 	}
 
-	if k.Provider != "" {
-		apiKey.Provider = &k.Provider
-	}
-
 	if k.Region != "" {
 		apiKey.Region = &k.Region
 	}
-
-	apiKey.NativeID = k.NativeID
 
 	apiKey.Name = k.Name
 	if k.Description != "" {
@@ -118,6 +112,10 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 		}
 
 		apiKey.AccessDetails = accessDetails
+		apiKey.NativeID = k.NativeID
+		if k.Provider != "" {
+			apiKey.Provider = &k.Provider
+		}
 	}
 
 	apiKey.IsPrimary = &k.IsPrimary
