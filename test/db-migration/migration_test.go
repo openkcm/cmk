@@ -491,6 +491,18 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   13,
 		},
+		{
+			name:      "Should up tenant/00014_add_system_target_keyconfig.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   14,
+		},
+		{
+			name:      "Should down tenant/00014_add_system_target_keyconfig.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   14,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

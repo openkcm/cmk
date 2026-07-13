@@ -121,8 +121,7 @@ func TestNewSystemManager(t *testing.T) {
 		m, _, _ := SetupSystemManager(t, nil)
 
 		assert.NotNil(t, m)
-	},
-	)
+	})
 }
 
 func TestGetAllSystems(t *testing.T) {
@@ -177,8 +176,7 @@ func TestGetAllSystems(t *testing.T) {
 		assert.NoError(t, err)
 		assert.ElementsMatch(t, expected, allSystems)
 		assert.Equal(t, len(expected), total)
-	},
-	)
+	})
 	t.Run("Should fail to get all systems", func(t *testing.T) {
 		forced := testutils.NewDBErrorForced(db, ErrForced)
 		forced.Register()
@@ -197,8 +195,7 @@ func TestGetAllSystems(t *testing.T) {
 		assert.Nil(t, allSystems)
 		assert.Equal(t, 0, total)
 		assert.ErrorIs(t, err, manager.ErrQuerySystemList)
-	},
-	)
+	})
 
 	t.Run("Should get all systems filtered by keyConfigID", func(t *testing.T) {
 		expected := []*model.System{system1}
@@ -213,8 +210,7 @@ func TestGetAllSystems(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, expected, allSystems)
 		assert.Equal(t, len(expected), total)
-	},
-	)
+	})
 	t.Run("Should fail to get all systems filtered by keyConfigID", func(t *testing.T) {
 		forced := testutils.NewDBErrorForced(db, ErrForced)
 		forced.Register()
@@ -234,8 +230,7 @@ func TestGetAllSystems(t *testing.T) {
 		assert.Nil(t, allSystems)
 		assert.Equal(t, 0, total)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotFound)
-	},
-	)
+	})
 }
 
 func TestGetAllSystemsFiltered(t *testing.T) {
@@ -272,8 +267,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, expected1, allSystems)
 		assert.Equal(t, 1, total)
-	},
-	)
+	})
 
 	t.Run("Should get all systems filtered by type", func(t *testing.T) {
 		filter := manager.SystemFilter{
@@ -287,8 +281,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, expected1, allSystems)
 		assert.Equal(t, 1, total)
-	},
-	)
+	})
 
 	t.Run("Should fail to get systems filtered by region", func(t *testing.T) {
 		filter := manager.SystemFilter{
@@ -301,8 +294,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Empty(t, allSystems)
 		assert.Equal(t, 0, total)
-	},
-	)
+	})
 	t.Run("Should fail to get systems filtered by type", func(t *testing.T) {
 		filter := manager.SystemFilter{
 			Type:  "TypeInvalid",
@@ -314,8 +306,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Empty(t, allSystems)
 		assert.Equal(t, 0, total)
-	},
-	)
+	})
 }
 
 func TestGetAllSystemsOrderByIdentifier(t *testing.T) {
@@ -770,10 +761,11 @@ func TestSendRecoveryAction(t *testing.T) {
 
 	t.Run("Should error if user not in groups", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
-		sys := testutils.NewSystem(func(s *model.System) {
-			s.Status = cmkapi.SystemStatusFAILED
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
-		},
+		sys := testutils.NewSystem(
+			func(s *model.System) {
+				s.Status = cmkapi.SystemStatusFAILED
+				s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			},
 		)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{uuid.NewString()})
@@ -786,6 +778,7 @@ func TestSendRecoveryAction(t *testing.T) {
 		sys := testutils.NewSystem(
 			func(s *model.System) {
 				s.Status = cmkapi.SystemStatusFAILED
+				s.TargetKeyConfigurationID = ptr.PointTo(uuid.New())
 			},
 		)
 		testutils.CreateTestEntities(
@@ -799,11 +792,17 @@ func TestSendRecoveryAction(t *testing.T) {
 		err := m.SendRecoveryActions(ctx, sys.ID, cmkapi.SystemRecoveryActionBodyActionCANCEL)
 		assert.NoError(t, err)
 
+		expected := *sys
+		expected.Status = cmkapi.SystemStatusCONNECTED
+		expected.TargetKeyConfigurationID = nil
+		expected.Properties = nil
+
+		sys = &model.System{ID: sys.ID}
 		_, err = r.First(ctx, sys, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, cmkapi.SystemStatusCONNECTED, sys.Status)
-	},
-	)
+
+		assert.Equal(t, expected, *sys)
+	})
 
 	t.Run("Should error on cancel if there are no previous actions", func(t *testing.T) {
 		sys := testutils.NewSystem(
@@ -863,8 +862,7 @@ func TestSendRecoveryAction(t *testing.T) {
 
 		err = m.SendRecoveryActions(ctx, system.ID, cmkapi.SystemRecoveryActionBodyActionRETRY)
 		assert.ErrorIs(t, err, manager.ErrRetryNonFailedSystem)
-	},
-	)
+	})
 
 	t.Run("Should error on retry without previous event", func(t *testing.T) {
 		system := testutils.NewSystem(
@@ -953,8 +951,7 @@ func TestSendRecoveryAction(t *testing.T) {
 			err = m.SendRecoveryActions(ctx, system.ID, cmkapi.SystemRecoveryActionBodyActionRETRY)
 			assert.NoError(t, err)
 			tt.f(t, ctx, system)
-		},
-		)
+		})
 	}
 }
 
@@ -1091,6 +1088,7 @@ func TestLinkSystemAction(t *testing.T) {
 		expected := system
 		expected.Status = cmkapi.SystemStatusPROCESSING
 		expected.KeyConfigurationName = &keyConfig.Name
+		expected.TargetKeyConfigurationID = &keyConfig.ID
 
 		actualSystem, err := m.LinkSystemAction(
 			ctx, system.ID, cmkapi.SystemPatch{
@@ -1100,8 +1098,7 @@ func TestLinkSystemAction(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t, expected, actualSystem)
-	},
-	)
+	})
 
 	t.Run("Should not be able to update system in failed state", func(t *testing.T) {
 		_, err := m.LinkSystemAction(
@@ -1111,8 +1108,7 @@ func TestLinkSystemAction(t *testing.T) {
 		)
 
 		assert.ErrorIs(t, err, manager.ErrLinkSystemProcessingOrFailed)
-	},
-	)
+	})
 
 	t.Run("Should not be able to update system in processing state", func(t *testing.T) {
 		_, err := m.LinkSystemAction(
@@ -1122,8 +1118,7 @@ func TestLinkSystemAction(t *testing.T) {
 		)
 
 		assert.ErrorIs(t, err, manager.ErrLinkSystemProcessingOrFailed)
-	},
-	)
+	})
 
 	t.Run("Should fail on updating non-existing system", func(t *testing.T) {
 		id := uuid.New()
@@ -1131,8 +1126,7 @@ func TestLinkSystemAction(t *testing.T) {
 
 		assert.Nil(t, actualSystem)
 		assert.ErrorIs(t, err, manager.ErrGettingSystemByID)
-	},
-	)
+	})
 
 	t.Run("Should fail on updating system", func(t *testing.T) {
 		forced := testutils.NewDBErrorForced(db, ErrForced).WithUpdate()
@@ -1151,8 +1145,7 @@ func TestLinkSystemAction(t *testing.T) {
 
 		assert.Nil(t, actualSystem)
 		assert.ErrorIs(t, err, manager.ErrUpdateSystem)
-	},
-	)
+	})
 
 	tests := []struct {
 		name           string
@@ -1307,8 +1300,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		)
 		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID, "")
 		assert.NoError(t, err)
-	},
-	)
+	})
 
 	t.Run("Should not delete system link blocked state connecting", func(t *testing.T) {
 		systemUnderTest := &model.System{
@@ -1325,8 +1317,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		)
 		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID, "")
 		assert.ErrorIs(t, err, manager.ErrUnlinkSystemProcessing)
-	},
-	)
+	})
 
 	t.Run("Should error on delete system link with empty keyConfigurationID", func(t *testing.T) {
 		system := &model.System{
@@ -1338,8 +1329,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 
 		err = m.UnlinkSystemAction(ctx, system.ID, "")
 		assert.ErrorIs(t, err, manager.ErrUpdateSystem)
-	},
-	)
+	})
 
 	t.Run("Should error on delete system link with non-existing system", func(t *testing.T) {
 		system := &model.System{
@@ -1349,8 +1339,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		}
 		err := m.UnlinkSystemAction(ctx, system.ID, "")
 		assert.ErrorIs(t, err, manager.ErrGettingSystemByID)
-	},
-	)
+	})
 }
 
 func TestRefreshSystems(t *testing.T) {
@@ -1407,8 +1396,7 @@ func TestRefreshSystems(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, count)
-	},
-	)
+	})
 
 	t.Run("No systems for current tenant in registry - systems in DB deleted", func(t *testing.T) {
 		// Prepare
@@ -1431,8 +1419,7 @@ func TestRefreshSystems(t *testing.T) {
 		count, err := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, 0, count)
-	},
-	)
+	})
 
 	t.Run("System from different tenant is not created, as it is not returned by registry", func(t *testing.T) {
 		// Prepare
@@ -1460,8 +1447,7 @@ func TestRefreshSystems(t *testing.T) {
 		)
 		assert.False(t, found)
 		assert.Error(t, err)
-	},
-	)
+	})
 
 	t.Run("New system returned by the registry with empty SIS metadata", func(t *testing.T) {
 		externalID := uuid.New().String()
@@ -1494,8 +1480,7 @@ func TestRefreshSystems(t *testing.T) {
 		assert.Equal(t, externalID, foundSystem.Identifier)
 		assert.Equal(t, systemType, foundSystem.Type)
 		assert.Equal(t, region, foundSystem.Region)
-	},
-	)
+	})
 
 	t.Run("Same System in a different region returned by the registry - two different systems in DB", func(t *testing.T) {
 		// Prepare
@@ -1540,8 +1525,7 @@ func TestRefreshSystems(t *testing.T) {
 				}
 			}
 		}
-	},
-	)
+	})
 }
 
 func TestGetFilters(t *testing.T) {

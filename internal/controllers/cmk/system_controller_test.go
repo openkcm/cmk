@@ -198,13 +198,17 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 		testutils.WithAuthBusinessUserDataKC(authClient1))
 	keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient2))
+	keyConfig3 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthBusinessUserDataKC(authClient2))
 	systems1 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig1.ID)
 	})
 	systems2 := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig2.ID)
 	})
-	systems3 := testutils.NewSystem(func(_ *model.System) {})
+	systems3 := testutils.NewSystem(func(s *model.System) {
+		s.TargetKeyConfigurationID = &keyConfig3.ID
+	})
 
 	testutils.CreateTestEntities(
 		ctx,
@@ -212,6 +216,7 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 		r,
 		keyConfig1,
 		keyConfig2,
+		keyConfig3,
 		systems1,
 		systems2,
 		systems3,
@@ -230,7 +235,6 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 		name                 string
 		expectedStatus       int
 		withKeyConfig        bool
-		keyConfigTarget      string
 		expectedSystemsCount int
 		expectedSystems      []string
 		expectedErrorCode    string
@@ -239,33 +243,37 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 		{
 			name:                 "Should get systems filtered by keyConfigID",
 			expectedStatus:       http.StatusOK,
-			keyConfigTarget:      keyConfig1.ID.String(),
 			expectedSystemsCount: 1,
 			expectedSystems:      []string{systems1.Identifier},
-			filter:               "keyConfigurationID",
+			filter:               fmt.Sprintf("%v eq '%v'", "keyConfigurationID", keyConfig1.ID.String()),
 		},
 		{
 			name:                 "Should get systems filtered by keyConfigName",
 			expectedStatus:       http.StatusOK,
-			keyConfigTarget:      keyConfig1.Name,
 			expectedSystemsCount: 1,
 			expectedSystems:      []string{systems1.Identifier},
-			filter:               "keyConfigurationName",
+			filter:               fmt.Sprintf("%v eq '%v'", "keyConfigurationName", keyConfig1.Name),
+		},
+		{
+			name:                 "Should get systems filtered by targetKeyConfigurationID",
+			expectedStatus:       http.StatusOK,
+			expectedSystemsCount: 1,
+			expectedSystems:      []string{systems3.Identifier},
+			filter:               fmt.Sprintf("%v eq '%v'", "targetKeyConfigurationID", keyConfig3.ID.String()),
 		},
 		{
 			name:                 "Should error on getting systems filtered by non-existing keyConfigID",
 			expectedStatus:       http.StatusNotFound,
-			keyConfigTarget:      keyConfiguration3ID.String(),
 			expectedSystemsCount: 0,
 			expectedSystems:      []string{},
 			expectedErrorCode:    "KEY_CONFIGURATION_NOT_FOUND",
-			filter:               "keyConfigurationID",
+			filter:               fmt.Sprintf("%v eq '%v'", "keyConfigurationID", keyConfiguration3ID.String()),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			url := fmt.Sprintf("/systems?$count=true&$filter=%v eq '%v'", tt.filter, tt.keyConfigTarget)
+			url := fmt.Sprintf("/systems?$count=true&$filter=%v", tt.filter)
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodGet,
@@ -592,6 +600,12 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
+	keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthBusinessUserDataKC(authClient))
+
+	systemWithTarget := testutils.NewSystem(func(s *model.System) {
+		s.TargetKeyConfigurationID = &keyConfig2.ID
+	})
 	system := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
 	})
@@ -622,12 +636,14 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 		r,
 		system,
 		keyConfig,
+		keyConfig2,
 		systemUnderWorkflowFullDetails,
 		wfFullDetails,
 		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
 			wag.GroupID = authClient.Group.ID
 			wag.WorkflowID = wfFullDetails.ID
 		}),
+		systemWithTarget,
 		systemUnderWorkflowApproversDetails,
 		wfApproverDetails,
 	)
@@ -647,6 +663,19 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 			id:             system.ID.String(),
 			expectedSystem: system,
 			authClient:     authClient,
+		},
+		{
+			name:           "System with Target KeyConfig",
+			expectedStatus: http.StatusOK,
+			id:             systemWithTarget.ID.String(),
+			expectedSystem: systemWithTarget,
+			authClient:     authClient,
+			assertFn: func(t *testing.T, res cmkapi.System) {
+				t.Helper()
+
+				assert.Equal(t, keyConfig2.ID, *res.TargetKeyConfigurationID)
+				assert.Equal(t, keyConfig2.Name, *res.TargetKeyConfigurationName)
+			},
 		},
 		{
 			name:              "SystemGETByIdInvalidId",

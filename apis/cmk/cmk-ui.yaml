@@ -1384,7 +1384,7 @@ components:
 
         The following operators are supported:
 
-        - Equal (eq), on the following attributes: keyConfigurationId, keyConfigurationName, region, role, status and type.
+        - Equal (eq), on the following attributes: keyConfigurationId, keyConfigurationName, region, role, status and type, targetKeyConfigurationID.
         - Logical AND (and).
 
         Example: region eq eu
@@ -1494,7 +1494,14 @@ components:
           type: string
           maxLength: 255
           example: new-key-configuration-name
+        targetKeyConfigurationName:
+          description: The name of the target key configuration
+          type: string
+          maxLength: 255
+          example: new-key-configuration-name
         keyConfigurationID:
+          $ref: "#/components/schemas/KeyConfigurationID"
+        targetKeyConfigurationID:
           $ref: "#/components/schemas/KeyConfigurationID"
         metadata:
           $ref: "#/components/schemas/SystemMetadata"

@@ -45,6 +45,11 @@ var getSystemsSchema = odata.FilterSchema{
 			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
 		},
 		{
+			FilterName: "targetKeyConfigurationID",
+			FilterType: odata.UUID,
+			DBName:     repo.TargetKeyConfigIDField,
+		},
+		{
 			FilterName:     "region",
 			FilterType:     odata.String,
 			DBName:         repo.RegionField,

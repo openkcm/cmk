@@ -74,9 +74,11 @@ const (
 
 	// KeyconfigTotalSystems and KeyconfigTotalKeys are used as aliases in JOIN operations,
 	// typically in combination with the tableName to reference aggregated fields.
-	KeyconfigTotalSystems QueryField = "total_systems"
-	KeyconfigTotalKeys    QueryField = "total_keys"
-	SystemKeyconfigName   QueryField = "key_configuration_name"
+	KeyconfigTotalSystems     QueryField = "total_systems"
+	KeyconfigTotalKeys        QueryField = "total_keys"
+	SystemKeyconfigName       QueryField = "key_configuration_name"
+	SystemTargetKeyconfigName QueryField = "target_key_configuration_name"
+	TargetKeyConfigIDField    QueryField = "target_key_configuration_id"
 
 	Null      QueryFieldValue = "null"
 	NotNull   QueryFieldValue = "not_null"
@@ -217,6 +219,7 @@ type JoinCondition struct {
 	Field     string
 	JoinTable table
 	JoinField string
+	Alias     string
 }
 type JoinClause struct {
 	OnCondition JoinCondition
@@ -224,12 +227,21 @@ type JoinClause struct {
 }
 
 func (r *JoinClause) JoinStatement() string {
-	statement := fmt.Sprintf(`%s JOIN "%s" ON "%s".%s = "%s".%s`,
+	joinTableName := r.OnCondition.JoinTable.TableName()
+	joinTableRef := fmt.Sprintf(`"%s"`, joinTableName)
+
+	// If alias is provided, use "table_name" AS "alias"
+	if r.OnCondition.Alias != "" {
+		joinTableRef = fmt.Sprintf(`"%s" AS "%s"`, joinTableName, r.OnCondition.Alias)
+		joinTableName = r.OnCondition.Alias
+	}
+
+	statement := fmt.Sprintf(`%s JOIN %s ON "%s".%s = "%s".%s`,
 		r.Type,
-		r.OnCondition.JoinTable.TableName(),
+		joinTableRef,
 		r.OnCondition.Table.TableName(),
 		r.OnCondition.Field,
-		r.OnCondition.JoinTable.TableName(),
+		joinTableName,
 		r.OnCondition.JoinField)
 
 	return statement

@@ -17,11 +17,13 @@ type System struct {
 
 	Identifier string `gorm:"type:varchar(255);not null;uniqueindex:region_sys,priority:2"`
 
-	Region               string            `gorm:"type:varchar(50);not null;uniqueindex:region_sys,priority:1"`
-	Type                 string            `gorm:"type:varchar(50);not null"`
-	KeyConfigurationID   *uuid.UUID        `gorm:"type:uuid"`
-	KeyConfigurationName *string           `gorm:"-"`
-	Properties           map[string]string `gorm:"-:all"`
+	Region                     string            `gorm:"type:varchar(50);not null;uniqueindex:region_sys,priority:1"`
+	Type                       string            `gorm:"type:varchar(50);not null"`
+	KeyConfigurationID         *uuid.UUID        `gorm:"type:uuid"`
+	TargetKeyConfigurationID   *uuid.UUID        `gorm:"type:uuid"`
+	KeyConfigurationName       *string           `gorm:"-"`
+	TargetKeyConfigurationName *string           `gorm:"-"`
+	Properties                 map[string]string `gorm:"-:all"`
 
 	// Status can be 'CONNECTED', 'DISCONNECTED', 'FAILED', or 'PROCESSING'
 	Status        cmkapi.SystemStatus `gorm:"type:varchar(50);default:'DISCONNECTED'"`
@@ -144,9 +146,10 @@ func (m SystemProperty) CheckAuthz(ctx context.Context,
 type JoinSystem struct {
 	System
 
-	KeyConfigurationName *string `gorm:"column:key_configuration_name"`
-	ErrorCode            string  `gorm:"column:error_code"`
-	ErrorMessage         string  `gorm:"column:error_message"`
+	KeyConfigurationName       *string `gorm:"column:key_configuration_name"`
+	TargetKeyConfigurationName *string `gorm:"column:target_key_configuration_name"`
+	ErrorCode                  string  `gorm:"column:error_code"`
+	ErrorMessage               string  `gorm:"column:error_message"`
 
 	Key   string `gorm:"type:varchar(255);primaryKey"`
 	Value string `gorm:"type:varchar(255)"`

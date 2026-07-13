@@ -63,14 +63,16 @@ func ToAPI(system model.System, systemCfg *config.System, opts ...ToAPIOpt) (*cm
 	}
 
 	apiSystem := &cmkapi.System{
-		ID:                   &system.ID,
-		Identifier:           &system.Identifier,
-		Region:               system.Region,
-		Properties:           &properties,
-		Type:                 system.Type,
-		KeyConfigurationID:   system.KeyConfigurationID,
-		KeyConfigurationName: system.KeyConfigurationName,
-		Status:               system.Status,
+		ID:                         &system.ID,
+		Identifier:                 &system.Identifier,
+		Region:                     system.Region,
+		Properties:                 &properties,
+		Type:                       system.Type,
+		KeyConfigurationID:         system.KeyConfigurationID,
+		KeyConfigurationName:       system.KeyConfigurationName,
+		TargetKeyConfigurationID:   system.TargetKeyConfigurationID,
+		TargetKeyConfigurationName: system.TargetKeyConfigurationName,
+		Status:                     system.Status,
 	}
 
 	apiSystem.UnderWorkflow = &system.UnderWorkflow

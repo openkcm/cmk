@@ -117,16 +117,6 @@ codegen:
 	@echo "Generating CMK API from Swagger definition"
 	@oapi-codegen -config "$(CMK_API_V1_SPEC_PATH)/.config.yaml" "$(CMK_API_V1_SPEC_PATH)/cmk-ui.yaml"
 
-.PHONY: codegen-commit
-codegen-commit:
-	git diff --cached --exit-code > /dev/null  # Fail if there is currently anything staged
-	@echo "Adding generated files to git"
-	git add $(CMK_API_V1_OUT_PATH)/cmkapi.go $(CMK_API_V1_OUT_PATH)/patch_cmkapi.go
-	! git diff --cached --exit-code > /dev/null  # Fail if there is nothing staged
-	@echo "Committing"
-	git commit -m "Update generated CMK api code"
-
-
 stack_name := cmk-stack-local
 test-db-container := postgres-test
 docker_compose_file := local_env/docker-compose.yml

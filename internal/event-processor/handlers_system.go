@@ -86,6 +86,7 @@ func (h *SystemLinkJobHandler) HandleJobDoneEvent(ctx context.Context, job orbit
 	err = h.repo.Transaction(ctx, func(ctx context.Context) error {
 		system.Status = cmkapi.SystemStatusCONNECTED
 		system.KeyConfigurationID = &key.KeyConfigurationID
+		system.TargetKeyConfigurationID = nil
 		err = updateSystem(ctx, h.repo, system)
 		if err != nil {
 			return err
@@ -260,6 +261,7 @@ func (h *SystemSwitchJobHandler) HandleJobDoneEvent(ctx context.Context, job orb
 	err = h.repo.Transaction(ctx, func(ctx context.Context) error {
 		system.Status = cmkapi.SystemStatusCONNECTED
 		system.KeyConfigurationID = &key.KeyConfigurationID
+		system.TargetKeyConfigurationID = nil
 		err = updateSystem(ctx, h.repo, system)
 		if err != nil {
 			return err
@@ -346,7 +348,8 @@ func (h *SystemUnlinkDecommissionJobHandler) HandleJobFailedEvent(ctx context.Co
 		taskErrorMessage = "unknown error"
 	}
 
-	log.Warn(ctx,
+	log.Warn(
+		ctx,
 		"System unlink decommission job failed; locking system in registry, marking disconnected and cleaning key claim",
 		slog.String("errorMessage", taskErrorMessage),
 	)
@@ -742,12 +745,12 @@ func cleanUpEvent(ctx context.Context, r repo.Repo, job orbital.Job) error {
 	_, err := r.Delete(
 		ctx,
 		&model.Event{},
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().
-			Where(repo.IdentifierField, job.ExternalID).
-			Where(repo.TypeField, job.Type),
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().
+				Where(repo.IdentifierField, job.ExternalID).
+				Where(repo.TypeField, job.Type),
 		)),
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to clean up event for job %s: %w", job.ID, err)
 	}
