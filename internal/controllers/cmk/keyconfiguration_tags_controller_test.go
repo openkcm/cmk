@@ -1,11 +1,11 @@
 package cmk_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
@@ -40,19 +40,27 @@ func TestGetTagsForKeyConfiguration(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	tags := []string{"tag1", "tag2"}
-	bytes, err := json.Marshal(tags)
-	assert.NoError(t, err)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(*model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
-	tag := testutils.NewTag(func(t *model.Tag) {
-		t.ID = keyConfig.ID
-		t.Values = bytes
-	})
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, tag)
+	tag1 := &model.ResourceLabel{
+		ID:           uuid.New(),
+		ResourceType: model.ResourceTypeKeyConfig,
+		ResourceID:   keyConfig.ID,
+		Key:          model.SystemTagKey,
+		Value:        tags[0],
+	}
+	tag2 := &model.ResourceLabel{
+		ID:           uuid.New(),
+		ResourceType: model.ResourceTypeKeyConfig,
+		ResourceID:   keyConfig.ID,
+		Key:          model.SystemTagKey,
+		Value:        tags[1],
+	}
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, tag1, tag2)
 
 	clientData := &auth.ClientData{
 		Identifier: authClient.Identifier,
@@ -185,14 +193,18 @@ func TestAddTagsToKeyConfiguration(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusNoContent {
-				tag := &model.Tag{ID: keyConfig.ID}
-
-				_, err := r.First(ctx, tag, *repo.NewQuery())
+				labels := []*model.ResourceLabel{}
+				ck := repo.NewCompositeKey().
+					Where(repo.ResourceTypeField, model.ResourceTypeKeyConfig).
+					Where(repo.ResourceIDField, keyConfig.ID).
+					Where(repo.KeyField, model.SystemTagKey)
+				err := r.List(ctx, &model.ResourceLabel{}, &labels, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 				assert.NoError(t, err)
 
-				resTags := []string{}
-				err = json.Unmarshal(tag.Values, &resTags)
-				assert.NoError(t, err)
+				resTags := make([]string, 0, len(labels))
+				for _, l := range labels {
+					resTags = append(resTags, l.Value)
+				}
 				assert.ElementsMatch(t, tt.expectedTagValues, resTags)
 			}
 		})

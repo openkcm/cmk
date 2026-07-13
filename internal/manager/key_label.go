@@ -2,7 +2,6 @@ package manager
 
 import (
 	"context"
-	"errors"
 
 	"github.com/google/uuid"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 )
 
+// Label interface for managing labels on keys
 type Label interface {
 	GetKeyLabels(
 		ctx context.Context,
@@ -29,18 +29,25 @@ type Label interface {
 	) (bool, error)
 }
 
+// LabelManager is an adapter that delegates to ResourceLabelManager
+// Maintains backward compatibility while using the new unified resource_labels table
 type LabelManager struct {
-	repository repo.Repo
+	repository     repo.Repo
+	resourceLabels ResourceLabels
 }
 
+// NewLabelManager creates a new LabelManager that uses ResourceLabelManager
 func NewLabelManager(
 	repository repo.Repo,
+	resourceLabels ResourceLabels,
 ) *LabelManager {
 	return &LabelManager{
-		repository: repository,
+		repository:     repository,
+		resourceLabels: resourceLabels,
 	}
 }
 
+// DeleteLabel removes a label by key name for a specific key
 func (m *LabelManager) DeleteLabel(
 	ctx context.Context,
 	keyID uuid.UUID,
@@ -50,37 +57,24 @@ func (m *LabelManager) DeleteLabel(
 		return false, ErrEmptyInputLabelDB
 	}
 
+	// Verify key exists
 	key := &model.Key{ID: keyID}
-
 	_, err := m.repository.First(ctx, key, *repo.NewQuery())
 	if err != nil {
 		return false, errs.Wrap(ErrGetKeyIDDB, err)
 	}
 
-	label := &model.KeyLabel{}
-
-	ck := repo.NewCompositeKey().
-		Where(repo.KeyField, labelName).
-		Where(repo.ResourceIDField, keyID)
-
-	ok, err := m.repository.Delete(
-		ctx,
-		label,
-		*repo.NewQuery().
-			Where(repo.NewCompositeKeyGroup(ck)),
-	)
-	if err != nil {
-		return false, errs.Wrap(ErrDeleteLabelDB, err)
-	}
-
-	return ok, nil
+	// Delete label using ResourceLabelManager
+	return m.resourceLabels.DeleteLabel(ctx, model.ResourceTypeKey, keyID, labelName)
 }
 
+// CreateOrUpdateLabel creates or updates labels for a key
 func (m *LabelManager) CreateOrUpdateLabel(
 	ctx context.Context,
 	keyID uuid.UUID,
 	labels []*model.KeyLabel,
 ) error {
+	// Verify key exists
 	key := &model.Key{ID: keyID}
 	ck := repo.NewCompositeKey().Where(repo.IDField, keyID)
 
@@ -90,65 +84,57 @@ func (m *LabelManager) CreateOrUpdateLabel(
 		return errs.Wrap(ErrGettingKeyByID, err)
 	}
 
-	err = m.repository.Transaction(ctx, func(ctx context.Context) error {
-		for _, label := range labels {
-			l := &model.KeyLabel{}
-			ck = repo.NewCompositeKey().Where(repo.KeyField, label.Key).Where(repo.ResourceIDField, keyID)
-
-			_, err := m.repository.First(
-				ctx,
-				l,
-				*repo.NewQuery().
-					Where(repo.NewCompositeKeyGroup(ck)),
-			)
-			if err != nil {
-				if !errors.Is(err, repo.ErrNotFound) {
-					return errs.Wrap(ErrFetchLabel, err)
-				}
-
-				err := m.repository.Create(ctx, label)
-				if err != nil {
-					return errs.Wrap(ErrInsertLabel, err)
-				}
-			} else {
-				l.Value = label.Value
-
-				_, err := m.repository.Patch(
-					ctx,
-					l,
-					*repo.NewQuery().UpdateAll(true),
-				)
-				if err != nil {
-					return errs.Wrap(ErrUpdateLabelDB, err)
-				}
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		return errs.Wrap(ErrUpdateLabelDB, err)
+	// Convert KeyLabel to ResourceLabel
+	resourceLabels := make([]*model.ResourceLabel, 0, len(labels))
+	for _, label := range labels {
+		resourceLabels = append(resourceLabels, &model.ResourceLabel{
+			ID:           label.ID,
+			ResourceType: model.ResourceTypeKey,
+			ResourceID:   keyID,
+			Key:          label.Key,
+			Value:        label.Value,
+		})
 	}
 
-	return nil
+	// Delegate to ResourceLabelManager
+	return m.resourceLabels.CreateOrUpdateLabels(ctx, model.ResourceTypeKey, keyID, resourceLabels)
 }
 
+// GetKeyLabels retrieves all labels for a key with pagination
 func (m *LabelManager) GetKeyLabels(
 	ctx context.Context,
 	keyID uuid.UUID,
 	pagination repo.Pagination,
 ) ([]*model.KeyLabel, int, error) {
+	// Verify key exists
 	key := &model.Key{ID: keyID}
-
 	_, err := m.repository.First(ctx, key, *repo.NewQuery())
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrGettingKeyByID, err)
 	}
 
-	ck := repo.NewCompositeKey().
-		Where(repo.ResourceIDField, keyID)
+	// Get labels from ResourceLabelManager
+	resourceLabels, count, err := m.resourceLabels.GetLabels(ctx, model.ResourceTypeKey, keyID, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
 
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+	// Convert ResourceLabel back to KeyLabel for backward compatibility
+	keyLabels := make([]*model.KeyLabel, 0, len(resourceLabels))
+	for _, rl := range resourceLabels {
+		keyLabels = append(keyLabels, &model.KeyLabel{
+			BaseLabel: model.BaseLabel{
+				ID:         rl.ID,
+				Key:        rl.Key,
+				Value:      rl.Value,
+				ResourceID: rl.ResourceID,
+			},
+			AutoTimeModel: model.AutoTimeModel{
+				CreatedAt: rl.CreatedAt,
+				UpdatedAt: rl.UpdatedAt,
+			},
+		})
+	}
 
-	return repo.ListAndCount(ctx, m.repository, pagination, model.KeyLabel{}, query)
+	return keyLabels, count, nil
 }

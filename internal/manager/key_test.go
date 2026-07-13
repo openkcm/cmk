@@ -86,7 +86,8 @@ func SetupKeyTest(t *testing.T) (
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
-	tagManager := manager.NewTagManager(r)
+	resourceLabelManager := manager.NewResourceLabelManager(r)
+	tagManager := manager.NewTagManager(resourceLabelManager)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 
 	km := manager.NewKeyManager(
@@ -1265,7 +1266,8 @@ func TestKeyRotationTime(t *testing.T) {
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
-	tagManager := manager.NewTagManager(r)
+	resourceLabelManager := manager.NewResourceLabelManager(r)
+	tagManager := manager.NewTagManager(resourceLabelManager)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 	km := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
 

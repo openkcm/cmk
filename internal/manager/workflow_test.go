@@ -73,7 +73,8 @@ func SetupWorkflowManager(
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
-	tagManager := manager.NewTagManager(r)
+	resourceLabelManager := manager.NewResourceLabelManager(r)
+	tagManager := manager.NewTagManager(resourceLabelManager)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, nil, cfg)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 
