@@ -383,17 +383,21 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		assert.Equal(t, manager.ErrAlreadyPrimaryKey, status.ErrDetails)
 	})
 
-	t.Run("should not be valid on change primary key with disabled key", func(t *testing.T) {
-		key := testutils.NewKey(func(k *model.Key) {
+	t.Run("should not be valid on change primary key with disabled target key", func(t *testing.T) {
+		keyTarget := testutils.NewKey(func(k *model.Key) {
 			k.State = cmkapi.KeyStateDISABLED
 		})
 
-		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-			kc.PrimaryKeyID = &key.ID
-			kc.PrimaryKeyID = ptr.PointTo(key.ID)
+		keySource := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateENABLED
 		})
 
-		testutils.CreateTestEntities(ctxSys, t, r, key, keyConfig)
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.PrimaryKeyID = &keyTarget.ID
+			kc.PrimaryKeyID = ptr.PointTo(keySource.ID)
+		})
+
+		testutils.CreateTestEntities(ctxSys, t, r, keySource, keyTarget, keyConfig)
 
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
@@ -401,7 +405,42 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 				w.ActionType = model.WorkflowActionTypeUpdatePrimary
 				w.ArtifactID = keyConfig.ID
 				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
-				w.Parameters = key.ID.String()
+				w.Parameters = keyTarget.ID.String()
+			},
+		)
+
+		status, err := m.CheckWorkflow(ctxSys, wf)
+		assert.True(t, status.Enabled)
+		assert.False(t, status.Exists)
+		assert.False(t, status.Valid)
+		assert.False(t, status.CanCreate)
+		assert.NoError(t, err)
+		assert.Equal(t, manager.ErrPrimaryKeyDisabled, status.ErrDetails)
+	})
+
+	t.Run("should not be valid on change primary key with disabled source key", func(t *testing.T) {
+		keySource := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateDISABLED
+		})
+
+		keyTarget := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateENABLED
+		})
+
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.PrimaryKeyID = &keyTarget.ID
+			kc.PrimaryKeyID = ptr.PointTo(keySource.ID)
+		})
+
+		testutils.CreateTestEntities(ctxSys, t, r, keySource, keyTarget, keyConfig)
+
+		wf := testutils.NewWorkflow(
+			func(w *model.Workflow) {
+				w.State = model.WorkflowStateInitial
+				w.ActionType = model.WorkflowActionTypeUpdatePrimary
+				w.ArtifactID = keyConfig.ID
+				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
+				w.Parameters = keyTarget.ID.String()
 			},
 		)
 
