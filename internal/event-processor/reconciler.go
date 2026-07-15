@@ -35,6 +35,11 @@ const (
 	// starting with 10s and limiting at 10240s.
 	defaultMaxReconcileCount = 18
 
+	// systemConfirmGraceWindow bounds how long a system-action job re-confirms
+	// while its PROCESSING status is still committing in a concurrent transaction.
+	// Past it, a non-PROCESSING system is treated as a genuine failure.
+	systemConfirmGraceWindow = 60 * time.Second
+
 	EmbeddedTarget = "embedded"
 )
 

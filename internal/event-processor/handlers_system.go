@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/openkcm/orbital"
 
@@ -612,6 +613,13 @@ func handleSystemJobConfirm(
 	}
 
 	if system.Status != cmkapi.SystemStatusPROCESSING {
+		// The status may still be committing in a concurrent transaction. Re-poll
+		// within the grace window; cancel only once past it. A job with no
+		// CreatedAt is treated as past the window.
+		if job.CreatedAt > 0 && time.Since(time.Unix(0, job.CreatedAt)) < systemConfirmGraceWindow {
+			return orbital.ContinueJobConfirmer(), nil
+		}
+
 		return orbital.CancelJobConfirmer(fmt.Sprintf("system %s is not in processing status", system.ID)), nil
 	}
 

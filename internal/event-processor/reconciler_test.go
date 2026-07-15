@@ -975,6 +975,70 @@ func TestConfirmJob(t *testing.T) {
 		assert.IsType(t, orbital.CancelJobConfirmer(""), res)
 	})
 
+	t.Run("young job with system not in PROCESSING continues", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusCONNECTED
+		})
+		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
+
+		data := eventprocessor.SystemActionJobData{
+			TenantID: tenant,
+			SystemID: sys.ID.String(),
+		}
+		b, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		systemJobTypes := []string{
+			eventprocessor.JobTypeSystemLink.String(),
+			eventprocessor.JobTypeSystemUnlink.String(),
+			eventprocessor.JobTypeSystemSwitch.String(),
+			eventprocessor.JobTypeSystemSwitchNewPK.String(),
+		}
+
+		for _, jobType := range systemJobTypes {
+			t.Run(jobType, func(t *testing.T) {
+				job := orbital.NewJob(jobType, b)
+				job.CreatedAt = time.Now().UTC().UnixNano()
+
+				res, err := reconciler.ConfirmJob(t.Context(), job)
+				assert.NoError(t, err)
+				assert.IsType(t, orbital.ContinueJobConfirmer(), res)
+			})
+		}
+	})
+
+	t.Run("old job with system not in PROCESSING is canceled", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusCONNECTED
+		})
+		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
+
+		data := eventprocessor.SystemActionJobData{
+			TenantID: tenant,
+			SystemID: sys.ID.String(),
+		}
+		b, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		systemJobTypes := []string{
+			eventprocessor.JobTypeSystemLink.String(),
+			eventprocessor.JobTypeSystemUnlink.String(),
+			eventprocessor.JobTypeSystemSwitch.String(),
+			eventprocessor.JobTypeSystemSwitchNewPK.String(),
+		}
+
+		for _, jobType := range systemJobTypes {
+			t.Run(jobType, func(t *testing.T) {
+				job := orbital.NewJob(jobType, b)
+				job.CreatedAt = time.Now().Add(-2 * time.Minute).UTC().UnixNano()
+
+				res, err := reconciler.ConfirmJob(t.Context(), job)
+				assert.NoError(t, err)
+				assert.IsType(t, orbital.CancelJobConfirmer(""), res)
+			})
+		}
+	})
+
 	t.Run("system in PROCESSING is confirmed as done", func(t *testing.T) {
 		sys := testutils.NewSystem(func(s *model.System) {
 			s.Status = cmkapi.SystemStatusPROCESSING
@@ -1022,6 +1086,120 @@ func TestConfirmJob(t *testing.T) {
 		assert.Equal(t, "job.type", string(span.Attributes()[1].Key))
 		assert.Equal(t, jobType, span.Attributes()[1].Value.AsString())
 	})
+}
+
+// TestConfirmJobGraceWindow verifies that a system-action job whose system is not
+// yet PROCESSING re-confirms while within the grace window, so a concurrent
+// PROCESSING write is not lost, and cancels only once past the window.
+func TestConfirmJobGraceWindow(t *testing.T) {
+	instance := setupTestInstance(t, []string{})
+	reconciler := instance.reconciler
+	r := instance.repo
+	tenant := instance.tenant
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	newLinkJob := func(t *testing.T, systemID string, createdAt int64) orbital.Job {
+		t.Helper()
+		data := eventprocessor.SystemActionJobData{TenantID: tenant, SystemID: systemID}
+		b, err := json.Marshal(data)
+		require.NoError(t, err)
+		job := orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), b).
+			WithExternalID(systemID)
+		job.CreatedAt = createdAt
+		return job
+	}
+
+	t.Run("young job re-confirms and leaves system untouched", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusDISCONNECTED
+		})
+		require.NoError(t, r.Create(ctx, sys))
+
+		job := newLinkJob(t, sys.ID.String(), time.Now().UTC().UnixNano())
+		res, err := reconciler.ConfirmJob(t.Context(), job)
+		require.NoError(t, err)
+		assert.IsType(t, orbital.ContinueJobConfirmer(), res)
+
+		after := &model.System{ID: sys.ID}
+		_, err = r.First(ctx, after, *repo.NewQuery())
+		require.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusDISCONNECTED, after.Status)
+	})
+
+	t.Run("old job still cancels", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusDISCONNECTED
+		})
+		require.NoError(t, r.Create(ctx, sys))
+
+		job := newLinkJob(t, sys.ID.String(), time.Now().Add(-2*time.Minute).UTC().UnixNano())
+		res, err := reconciler.ConfirmJob(t.Context(), job)
+		require.NoError(t, err)
+		assert.IsType(t, orbital.CancelJobConfirmer(""), res)
+	})
+
+	t.Run("persisted job carries a real CreatedAt and re-confirms", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusDISCONNECTED
+		})
+		require.NoError(t, r.Create(ctx, sys))
+
+		data := eventprocessor.SystemActionJobData{TenantID: tenant, SystemID: sys.ID.String()}
+		b, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		// PrepareJob stamps CreatedAt via orbital, exercising the guard against a
+		// persisted job rather than an injected timestamp.
+		job, err := reconciler.PrepareJob(t.Context(),
+			orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), b).WithExternalID(sys.ID.String()))
+		require.NoError(t, err)
+		require.NotZero(t, job.CreatedAt)
+
+		res, err := reconciler.ConfirmJob(t.Context(), job)
+		require.NoError(t, err)
+		assert.IsType(t, orbital.ContinueJobConfirmer(), res)
+	})
+}
+
+// TestConfirmWorkerEndToEnd drives the real orbital worker loop: a job created
+// while its system is not yet PROCESSING must re-confirm (stay CONFIRMING) rather
+// than cancel and flip the system to FAILED.
+func TestConfirmWorkerEndToEnd(t *testing.T) {
+	instance := setupTestInstance(t, []string{})
+	reconciler := instance.reconciler
+	r := instance.repo
+	tenant := instance.tenant
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	reconciler.SetWorkerExecInterval(200 * time.Millisecond)
+
+	system := testutils.NewSystem(func(s *model.System) {
+		s.Status = cmkapi.SystemStatusDISCONNECTED
+	})
+	require.NoError(t, r.Create(ctx, system))
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = reconciler.Start(runCtx) }()
+
+	data := eventprocessor.SystemActionJobData{TenantID: tenant, SystemID: system.ID.String()}
+	dataBytes, err := json.Marshal(data)
+	require.NoError(t, err)
+
+	job, err := reconciler.PrepareJob(t.Context(),
+		orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), dataBytes).WithExternalID(system.ID.String()))
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, job.ID)
+
+	require.Eventually(t, func() bool {
+		got, ok, gErr := reconciler.GetJob(t.Context(), job.ID)
+		return gErr == nil && ok && got.Status == orbital.JobStatusConfirming
+	}, 30*time.Second, 200*time.Millisecond, "job never reached CONFIRMING")
+
+	sysAfter := &model.System{ID: system.ID}
+	_, err = r.First(ctx, sysAfter, *repo.NewQuery())
+	require.NoError(t, err)
+	assert.NotEqual(t, cmkapi.SystemStatusFAILED, sysAfter.Status)
 }
 
 func TestJobTermination(t *testing.T) {

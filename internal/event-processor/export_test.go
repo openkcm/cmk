@@ -2,7 +2,9 @@ package eventprocessor
 
 import (
 	"context"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/openkcm/orbital"
 
 	"github.com/openkcm/cmk/internal/auditor"
@@ -26,6 +28,18 @@ func (c *CryptoReconciler) JobCanceledFunc(ctx context.Context, job orbital.Job)
 
 func (c *CryptoReconciler) ResolveTasks() orbital.TaskResolveFunc {
 	return c.resolveTasks()
+}
+
+func (c *CryptoReconciler) PrepareJob(ctx context.Context, job orbital.Job) (orbital.Job, error) {
+	return c.manager.PrepareJob(ctx, job)
+}
+
+func (c *CryptoReconciler) GetJob(ctx context.Context, id uuid.UUID) (orbital.Job, bool, error) {
+	return c.manager.GetJob(ctx, id)
+}
+
+func (c *CryptoReconciler) SetWorkerExecInterval(d time.Duration) {
+	WithExecInterval(d)(c.manager)
 }
 
 //nolint:forcetypeassert
