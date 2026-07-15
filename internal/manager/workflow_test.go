@@ -479,23 +479,25 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	})
 
 	t.Run("should have canCreate on primary key change without unconnected system", func(t *testing.T) {
+		sourceKey := testutils.NewKey(func(_ *model.Key) {})
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 			kc.AdminGroup = *testGroup
 			kc.AdminGroupID = testGroup.ID
+			kc.PrimaryKeyID = ptr.PointTo(sourceKey.ID)
 		})
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.Status = cmkapi.SystemStatusCONNECTED
 		})
-		key := testutils.NewKey(func(k *model.Key) {})
-		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, system, key)
+		targetKey := testutils.NewKey(func(_ *model.Key) {})
+		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, system, sourceKey, targetKey)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = model.WorkflowStateInitial
 				w.ActionType = model.WorkflowActionTypeUpdatePrimary
 				w.ArtifactID = keyConfig.ID
 				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
-				w.Parameters = key.ID.String()
+				w.Parameters = targetKey.ID.String()
 			},
 		)
 

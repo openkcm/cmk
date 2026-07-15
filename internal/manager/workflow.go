@@ -1136,6 +1136,10 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 			return false, err
 		}
 
+		if keyConfigs[0].PrimaryKeyID == nil {
+			return false, ErrPrimaryKeyDisabled
+		}
+
 		targetKey := &model.Key{ID: targetKeyID}
 		_, err = w.repo.First(ctx, targetKey, *repo.NewQuery())
 		if err != nil {
