@@ -187,7 +187,7 @@ func TestCreateOrUpdateLabels(t *testing.T) {
 		retrieved, count, err := m.GetLabels(ctx, model.ResourceTypeKey, resourceID, repo.Pagination{Count: true})
 		require.NoError(t, err)
 		assert.Equal(t, 2, count)
-		assert.Equal(t, 2, len(retrieved))
+		assert.Len(t, retrieved, 2)
 	})
 
 	t.Run("Should handle empty label slice", func(t *testing.T) {
@@ -211,7 +211,7 @@ func TestCreateOrUpdateLabels(t *testing.T) {
 		// Verify it exists
 		labels, _, err := m.GetLabels(ctx, model.ResourceTypeKey, newResourceID, repo.Pagination{})
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(labels))
+		assert.Len(t, labels, 1)
 	})
 }
 
@@ -249,7 +249,7 @@ func TestDeleteLabel(t *testing.T) {
 		// Verify label was deleted
 		labels, _, err := m.GetLabels(ctx, model.ResourceTypeKey, resourceID, repo.Pagination{})
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(labels))
+		assert.Len(t, labels, 1)
 		assert.Equal(t, "region", labels[0].Key)
 	})
 
@@ -267,7 +267,7 @@ func TestDeleteLabel(t *testing.T) {
 		// Verify original label still exists
 		labels, _, err := m.GetLabels(ctx, model.ResourceTypeKey, resourceID, repo.Pagination{})
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(labels))
+		assert.Len(t, labels, 1)
 	})
 }
 
@@ -308,7 +308,7 @@ func TestGetTags(t *testing.T) {
 	t.Run("Should get tags as string array", func(t *testing.T) {
 		tags, err := m.GetTags(ctx, model.ResourceTypeKeyConfig, resourceID)
 		require.NoError(t, err)
-		assert.Equal(t, 2, len(tags))
+		assert.Len(t, tags, 2)
 		assert.Contains(t, tags, "EU")
 		assert.Contains(t, tags, "TEST")
 	})
@@ -367,7 +367,7 @@ func TestSetTags(t *testing.T) {
 
 		retrieved, err := m.GetTags(ctx, model.ResourceTypeKeyConfig, newResourceID)
 		require.NoError(t, err)
-		assert.Equal(t, 2, len(retrieved))
+		assert.Len(t, retrieved, 2)
 		assert.Contains(t, retrieved, "VALID")
 		assert.Contains(t, retrieved, "ALSO_VALID")
 	})
@@ -408,7 +408,7 @@ func TestSetTags(t *testing.T) {
 		// Verify label still exists
 		labels, _, err := m.GetLabels(ctx, model.ResourceTypeKeyConfig, newResourceID, repo.Pagination{})
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(labels))
+		assert.Len(t, labels, 1)
 		assert.Equal(t, "environment", labels[0].Key)
 	})
 }
@@ -461,7 +461,7 @@ func TestDeleteTags(t *testing.T) {
 		// Verify label still exists
 		labels, _, err := m.GetLabels(ctx, model.ResourceTypeKeyConfig, resourceID, repo.Pagination{})
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(labels))
+		assert.Len(t, labels, 1)
 		assert.Equal(t, "environment", labels[0].Key)
 	})
 
@@ -503,13 +503,13 @@ func TestResourceTypeIsolation(t *testing.T) {
 		// Get KEY labels
 		keyLabels, _, err := m.GetLabels(ctx, model.ResourceTypeKey, resourceID, repo.Pagination{})
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(keyLabels))
+		assert.Len(t, keyLabels, 1)
 		assert.Equal(t, "key-label", keyLabels[0].Key)
 
 		// Get KEY_CONFIG labels
 		configLabels, _, err := m.GetLabels(ctx, model.ResourceTypeKeyConfig, resourceID, repo.Pagination{})
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(configLabels))
+		assert.Len(t, configLabels, 1)
 		assert.Equal(t, "config-label", configLabels[0].Key)
 	})
 
@@ -522,6 +522,6 @@ func TestResourceTypeIsolation(t *testing.T) {
 		// Verify KEY_CONFIG label still exists
 		configLabels, _, err := m.GetLabels(ctx, model.ResourceTypeKeyConfig, resourceID, repo.Pagination{})
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(configLabels))
+		assert.Len(t, configLabels, 1)
 	})
 }
