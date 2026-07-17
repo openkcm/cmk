@@ -1,5 +1,14 @@
 package model
 
+import "errors"
+
+// ErrValidation is the shared parent of all model-level validation errors.
+// Every "invalid X" validation sentinel in this package wraps it, so callers can
+// classify any validation failure with errors.Is(err, ErrValidation) without
+// enumerating each specific error. Such failures are permanent: the input will
+// never become valid on retry.
+var ErrValidation = errors.New("validation failed")
+
 // Validator defines the methods for validation.
 type Validator interface {
 	Validate() error

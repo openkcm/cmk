@@ -210,7 +210,7 @@ func (o *TenantOperator) handleCreateTenant(
 	if probeResult.SchemaStatus != SchemaExists {
 		err = o.createTenantSchema(ctx, tenant)
 		if err != nil {
-			setErrorStateAndContinue(ctx, resp, err, WorkingStateSchemaCreationFailed)
+			setErrorState(ctx, resp, err, WorkingStateSchemaCreationFailed)
 			return
 		}
 	}
@@ -219,7 +219,7 @@ func (o *TenantOperator) handleCreateTenant(
 	if probeResult.GroupsStatus != GroupsExist {
 		err = o.createTenantGroups(ctx, tenant)
 		if err != nil {
-			setErrorStateAndContinue(ctx, resp, err, WorkingStateGroupsCreationFailed)
+			setErrorState(ctx, resp, err, WorkingStateGroupsCreationFailed)
 			return
 		}
 	}
@@ -513,6 +513,26 @@ func setErrorStateAndFail(ctx context.Context, resp *orbital.HandlerResponse, er
 	log.Error(ctx, "Task Failed, ending processing", err, slog.String("state", state))
 	setWorkingState(ctx, resp, err, state)
 	resp.Fail(err.Error())
+}
+
+// setErrorState transitions the task to a terminal failure state when the error is
+// irrecoverable (e.g. invalid input that will never succeed on retry), otherwise it
+// keeps reconciling. This prevents unbounded reconciliation loops on permanent errors.
+func setErrorState(ctx context.Context, resp *orbital.HandlerResponse, err error, state string) {
+	if isIrrecoverable(err) {
+		setErrorStateAndFail(ctx, resp, err, state)
+		return
+	}
+
+	setErrorStateAndContinue(ctx, resp, err, state)
+}
+
+// isIrrecoverable reports whether an error represents a permanent failure that
+// cannot be resolved by retrying, such as invalid tenant input propagated from
+// downstream validation. Retrying these would cause an infinite reconciliation loop.
+// All model-level validation errors wrap model.ErrValidation and are treated as terminal.
+func isIrrecoverable(err error) bool {
+	return errors.Is(err, model.ErrValidation)
 }
 
 func (o *TenantOperator) injectInternalUser(

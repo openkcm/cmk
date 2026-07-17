@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -260,9 +259,9 @@ func (m *WorkflowApprover) GetUserName(
 }
 
 var (
-	ErrInvalidWorkflowState        = errors.New("invalid workflow state")
-	ErrInvalidWorkflowArtifactType = errors.New("invalid workflow artifact type")
-	ErrInvalidWorkflowActionType   = errors.New("invalid workflow action type")
+	ErrInvalidWorkflowState        = fmt.Errorf("%w: invalid workflow state", ErrValidation)
+	ErrInvalidWorkflowArtifactType = fmt.Errorf("%w: invalid workflow artifact type", ErrValidation)
+	ErrInvalidWorkflowActionType   = fmt.Errorf("%w: invalid workflow action type", ErrValidation)
 )
 
 //nolint:recvcheck

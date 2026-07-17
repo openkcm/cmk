@@ -69,3 +69,7 @@ func ParseCommaSeparatedValues(input string) []string {
 func ExtractOIDCConfig(properties map[string]string) (OIDCConfig, error) {
 	return extractOIDCConfig(properties)
 }
+
+func SetErrorState(ctx context.Context, resp *orbital.HandlerResponse, err error, state string) {
+	setErrorState(ctx, resp, err, state)
+}
