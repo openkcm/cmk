@@ -72,7 +72,7 @@ func TestGetLabels(t *testing.T) {
 	t.Run("Should get labels excluding system tags", func(t *testing.T) {
 		labels, count, err := m.GetLabels(ctx, model.ResourceTypeKey, resourceID, repo.Pagination{Count: true})
 		require.NoError(t, err)
-		assert.Equal(t, 2, len(labels))
+		assert.Len(t, labels, 2)
 		assert.Equal(t, 2, count)
 
 		// Verify labels are returned
@@ -107,7 +107,7 @@ func TestGetLabels(t *testing.T) {
 			Skip: 0,
 		})
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(labels))
+		assert.Len(t, labels, 1)
 	})
 
 	t.Run("Should filter by resource type", func(t *testing.T) {
@@ -143,7 +143,7 @@ func TestCreateOrUpdateLabels(t *testing.T) {
 		// Verify labels were created
 		retrieved, _, err := m.GetLabels(ctx, model.ResourceTypeKey, resourceID, repo.Pagination{})
 		require.NoError(t, err)
-		assert.Equal(t, 2, len(retrieved))
+		assert.Len(t, retrieved, 2)
 	})
 
 	t.Run("Should update existing label value", func(t *testing.T) {
