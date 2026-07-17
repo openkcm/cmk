@@ -69,10 +69,11 @@ func StartPostgresSQL(
 		postgres.WithUsername(user.Value),
 		postgres.WithPassword(secret.Value),
 		postgres.BasicWaitStrategies(),
-		testcontainers.WithStartupCommand(testcontainers.NewRawCommand([]string{
+		testcontainers.WithCmd(
 			"postgres",
+			"-c", "fsync=off",
 			"-c", "max_connections=1000",
-		})),
+		),
 		testcontainers.WithReuseByName(postgresContainer),
 	}, opts...)
 

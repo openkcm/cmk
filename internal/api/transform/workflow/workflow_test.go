@@ -265,11 +265,11 @@ func TestWorkflow_FromAPI_Expires(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 
-				nowTestTime := time.Now()
-				assert.Equal(t, tt.expiredNow, nowTestTime.After(*w.ExpiryDate))
+				now := time.Now()
+				assert.Equal(t, tt.expiredNow, now.After(*w.ExpiryDate))
 
-				maxTestTime := time.Now().AddDate(0, 0, defaultExpiry)
-				assert.Equal(t, tt.expiredAtMax, maxTestTime.After(*w.ExpiryDate))
+				maxTestTime := now.AddDate(0, 0, defaultExpiry)
+				assert.Equal(t, tt.expiredAtMax, !maxTestTime.Before(*w.ExpiryDate))
 			}
 		})
 	}
