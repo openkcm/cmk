@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 
@@ -14,8 +13,8 @@ import (
 )
 
 var (
-	ErrInvalidIAMIdentifier = errors.New("invalid group IAMIdentifier")
-	ErrInvalidName          = errors.New("invalid group name")
+	ErrInvalidIAMIdentifier = fmt.Errorf("%w: invalid group IAMIdentifier", ErrValidation)
+	ErrInvalidName          = fmt.Errorf("%w: invalid group name", ErrValidation)
 )
 
 const (

@@ -349,6 +349,23 @@ func TestHandleCreateTenant(t *testing.T) {
 			setup:      func() {},
 			checkDB:    false,
 		},
+		{
+			name: "invalid tenant ID fails group creation terminally",
+			data: func() []byte {
+				// Tenant IDs containing characters invalid for downstream IAM use
+				// (e.g. @, #, $) pass schema creation but fail group IAMIdentifier
+				// validation. This must terminate rather than reconcile forever.
+				d, mErr := createValidTenantData("qa-awsstagingeu-a78ecd6f35-@#$", RegionUSWest1, tenantName)
+				require.NoError(t, mErr)
+				return d
+			}(),
+			wantResult: "FAILED",
+			wantState:  operator.WorkingStateGroupsCreationFailed,
+			wantErr:    true,
+			setup:      func() {},
+			checkDB:    false,
+			region:     RegionUSWest1,
+		},
 	}
 
 	for _, tt := range tests {
@@ -367,6 +384,11 @@ func TestHandleCreateTenant(t *testing.T) {
 
 				assert.Equal(t, tt.wantResult, resp.Status, "Unexpected task status")
 
+				if tt.wantState != "" {
+					assert.Contains(t, string(resp.WorkingState), tt.wantState,
+						"Unexpected working state")
+				}
+
 				if tt.checkDB {
 					schemaName, _ := tmdb.EncodeSchemaNameBase62(validTenantID)
 					integrationutils.TenantExists(t, testConfig.DB, schemaName, model.Group{}.TableName())
@@ -380,6 +402,59 @@ func TestHandleCreateTenant(t *testing.T) {
 				}
 			},
 		)
+	}
+}
+
+func TestSetErrorState(t *testing.T) {
+	ctx := createContext(t)
+
+	// A recoverable error (does not wrap model.ErrValidation) must keep reconciling,
+	// while an irrecoverable validation error must transition to a terminal failure.
+	recoverableErr := assert.AnError
+	irrecoverableErr := model.ErrInvalidIAMIdentifier
+
+	tests := []struct {
+		name           string
+		err            error
+		wantStatus     string
+		wantReconcile  uint64
+		wantErrMessage bool
+	}{
+		{
+			name:           "recoverable error continues reconciling",
+			err:            recoverableErr,
+			wantStatus:     string(orbital.TaskStatusProcessing),
+			wantReconcile:  15,
+			wantErrMessage: false,
+		},
+		{
+			name:           "irrecoverable validation error fails terminally",
+			err:            irrecoverableErr,
+			wantStatus:     string(orbital.TaskStatusFailed),
+			wantReconcile:  0,
+			wantErrMessage: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := func(ctx context.Context, _ orbital.HandlerRequest, resp *orbital.HandlerResponse) {
+				operator.SetErrorState(ctx, resp, tt.err, "some working state")
+			}
+
+			resp := orbital.ExecuteHandler(ctx, handler, orbital.TaskRequest{TaskID: uuid.New()})
+
+			assert.Equal(t, tt.wantStatus, resp.Status, "Unexpected task status")
+			assert.Equal(t, tt.wantReconcile, resp.ReconcileAfterSec, "Unexpected reconcile interval")
+
+			if tt.wantErrMessage {
+				assert.Contains(t, resp.ErrorMessage, tt.err.Error(),
+					"Terminal failure must surface the error message")
+			} else {
+				assert.Empty(t, resp.ErrorMessage,
+					"Recoverable error must not set a terminal error message")
+			}
+		})
 	}
 }
 
