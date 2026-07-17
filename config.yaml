@@ -220,6 +220,22 @@ workflows:
   enabled: false
   minimumApprovals: 2
 
+keystorePool:
+  size: 2
+  interval: 10m
+  supportedRegions:
+    source: embedded
+    value: |
+      {
+        "regions": [
+          {"name": "Europe (Frankfurt)", "technicalName": "eu-central-1"},
+          {"name": "Europe (Ireland)", "technicalName": "eu-west-1"},
+          {"name": "Europe (London)", "technicalName": "eu-west-2"},
+          {"name": "United States (N. Virginia)", "technicalName": "us-east-1"},
+          {"name": "United States (Ohio)", "technicalName": "us-east-2"}
+        ]
+      }
+
 certificates:
   rootCertURL: https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt
   validityDays: 30
