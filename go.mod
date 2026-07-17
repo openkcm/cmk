@@ -23,7 +23,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/moby/moby/api v1.55.0
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
-	github.com/oapi-codegen/runtime v1.5.0
+	github.com/oapi-codegen/runtime v1.6.0
 	github.com/openkcm/api-sdk v0.19.1
 	github.com/openkcm/common-sdk v1.18.0
 	github.com/openkcm/orbital v0.5.1
