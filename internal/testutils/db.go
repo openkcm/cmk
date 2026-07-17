@@ -143,7 +143,7 @@ var (
 // By default, it uses TestDB configuration. Use opts to customize the setup.
 // This function is intended for use in unit tests.
 //
-//nolint:funlen,cyclop
+//nolint:funlen
 func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multitenancy.DB, []string, config.Database) {
 	tb.Helper()
 
@@ -168,18 +168,12 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 		o(&cfg)
 	}
 
-	if !cfg.WithIsolatedService {
-		oncePostgres.Do(func() {
-			// All package processes share one postgres container. Each process gets its own isolated database,
-			// so tests never see each other's data.
-			StartPostgresSQL(tb, &cfg.dbCon)
-			cfg.dbCon = NewIsolatedDB(tb, cfg.dbCon)
-			dbCfg = cfg.dbCon
-		})
-		cfg.dbCon = dbCfg
-	} else {
+	oncePostgres.Do(func() {
 		StartPostgresSQL(tb, &cfg.dbCon)
-	}
+		cfg.dbCon = NewIsolatedDB(tb, cfg.dbCon)
+		dbCfg = cfg.dbCon
+	})
+	cfg.dbCon = dbCfg
 
 	dbCon := newTestDBCon(tb, &cfg)
 
@@ -364,11 +358,6 @@ type TestDBConfig struct {
 	// - Shared Tables
 	// - Multiple Tenants
 	CreateDatabase bool
-
-	// If true create an isolated PSQL instance
-	// In most cases this should not be set as it will take a longer time
-	// as the container needs to build and startup
-	WithIsolatedService bool
 
 	// Shared schema version to migrate up to
 	// If it's nil migrate to latest version

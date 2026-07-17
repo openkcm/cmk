@@ -55,8 +55,7 @@ func setupTest(t *testing.T) tester {
 	db, tenants, dbConf := testutils.NewTestDB(
 		t,
 		testutils.TestDBConfig{
-			CreateDatabase:      true,
-			WithIsolatedService: true,
+			CreateDatabase: true,
 		},
 	)
 

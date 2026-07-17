@@ -95,10 +95,10 @@ func setupInfrastructure(tb testing.TB) (
 	// Wait for gRPC servers to be ready
 	time.Sleep(1000 * time.Millisecond) // Give the servers time to start
 
-	multitenancyDB, _, dbConfig := testutils.NewTestDB(tb, testutils.TestDBConfig{
-		CreateDatabase:      true,
-		WithIsolatedService: true,
-	}, testutils.WithGenerateTenants(0), // Do not create tenants
+	multitenancyDB, _, dbConfig := testutils.NewTestDB(
+		tb, testutils.TestDBConfig{
+			CreateDatabase: true,
+		}, testutils.WithGenerateTenants(0), // Do not create tenants
 	)
 
 	return fakeTenantService, registryAddr, sessionManagerAddr, multitenancyDB, dbConfig
