@@ -19,16 +19,24 @@ CREATE INDEX idx_resource_labels_resource_type_id
 CREATE INDEX idx_resource_labels_key
     ON resource_labels(key);
 
--- Enable combined filtering and enforce uniqueness per resource
--- Prevents duplicate (resource_type, resource_id, key, value) combinations
-CREATE UNIQUE INDEX idx_resource_labels_unique
-    ON resource_labels(resource_type, resource_id, key, value);
+-- Enforce uniqueness: one value per (resource_type, resource_id, key) for labels
+-- Exception: system.tag key can have multiple values (multiple tags per resource)
+-- This prevents duplicate keys and matches label semantics (update by key, delete by key)
+CREATE UNIQUE INDEX idx_resource_labels_unique_key
+    ON resource_labels(resource_type, resource_id, key)
+    WHERE key != 'system.tag';
+
+-- For system tags, allow multiple values but prevent exact duplicates
+CREATE UNIQUE INDEX idx_resource_labels_unique_tag
+    ON resource_labels(resource_type, resource_id, key, value)
+    WHERE key = 'system.tag';
 
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DROP INDEX IF EXISTS idx_resource_labels_unique;
+DROP INDEX IF EXISTS idx_resource_labels_unique_tag;
+DROP INDEX IF EXISTS idx_resource_labels_unique_key;
 DROP INDEX IF EXISTS idx_resource_labels_key;
 DROP INDEX IF EXISTS idx_resource_labels_resource_type_id;
 DROP TABLE IF EXISTS resource_labels;

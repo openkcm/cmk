@@ -3,8 +3,10 @@
 
 -- Migrate existing key_labels to resource_labels
 -- Maps: key_labels -> resource_labels with resource_type='KEY'
+-- Note: With the new unique constraint on (resource_type, resource_id, key),
+-- if there are duplicate keys, only the most recently updated one is kept
 INSERT INTO resource_labels (id, resource_type, resource_id, key, value, created_at, updated_at)
-SELECT
+SELECT DISTINCT ON (resource_id, key)
     id,
     'KEY' AS resource_type,
     resource_id,
@@ -13,27 +15,29 @@ SELECT
     created_at,
     updated_at
 FROM key_labels
-ON CONFLICT (resource_type, resource_id, key, value) DO NOTHING;
+ORDER BY resource_id, key, updated_at DESC  -- Keep most recent if duplicates exist
+ON CONFLICT (resource_type, resource_id, key) DO NOTHING;
 
--- Migrate existing key_configuration_tags to resource_labels
--- Maps: key_configuration_tags + keyconfigurations_tags -> resource_labels
+-- Migrate existing key_configuration tags to resource_labels
+-- Maps: tags table (JSONB values) -> resource_labels
 -- with resource_type='KEY_CONFIG' and key='system.tag'
+-- The tags table was created in migration 00002, replacing the old keyconfigurations_tags structure
 DO $$
 BEGIN
-    -- These legacy tables may not exist on fresh installs (they are dropped in migration 00002).
-    IF to_regclass('public.keyconfigurations_tags') IS NOT NULL
-       AND to_regclass('public.key_configuration_tags') IS NOT NULL THEN
+    -- Check if tags table exists (it should, but check for safety)
+    IF to_regclass('tags') IS NOT NULL THEN
         INSERT INTO resource_labels (id, resource_type, resource_id, key, value, created_at, updated_at)
         SELECT
-            gen_random_uuid() AS id,  -- Generate new UUIDs for tag entries
+            gen_random_uuid() AS id,
             'KEY_CONFIG' AS resource_type,
-            kt.key_configuration_id AS resource_id,
+            t.id AS resource_id,  -- tags.id is the key_configuration_id
             'system.tag' AS key,
-            t.value AS value,
+            tag_value::text AS value,  -- Extract each tag from JSONB array
             CURRENT_TIMESTAMP AS created_at,
             CURRENT_TIMESTAMP AS updated_at
-        FROM keyconfigurations_tags kt
-        JOIN key_configuration_tags t ON kt.key_configuration_tag_id = t.id
+        FROM tags t,
+        LATERAL jsonb_array_elements_text(t.values) AS tag_value
+        WHERE t.values IS NOT NULL AND jsonb_array_length(t.values) > 0
         ON CONFLICT (resource_type, resource_id, key, value) DO NOTHING;
     END IF;
 END $$;
