@@ -801,6 +801,178 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 	}
 }
 
+func TestHandleRemoveAuth_InvalidData(t *testing.T) {
+	taskType := authgrpc.AuthAction_AUTH_ACTION_REMOVE_AUTH.String()
+
+	tests := []struct {
+		name   string
+		data   []byte
+		expErr error
+	}{
+		{
+			name:   "invalid proto data",
+			data:   []byte("invalid-proto"),
+			expErr: operator.ErrInvalidData,
+		},
+		{
+			name: "missing tenant ID",
+			data: func() []byte {
+				data, err := proto.Marshal(&authgrpc.Auth{})
+				assert.NoError(t, err)
+
+				return data
+			}(),
+			expErr: operator.ErrInvalidTenantID,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(
+			tt.name, func(t *testing.T) {
+				unusedDB := &multitenancy.DB{}
+				_, clientCon := testutils.NewGRPCSuite(t)
+				unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
+				unusedSMClient := sessionmanager.NewFakeSessionManagerClient()
+
+				clientFactory := mockClient.NewMockFactory(
+					registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
+					sessionmanager.NewMockService(unusedSMClient),
+				)
+
+				responder := respondertest.NewResponder()
+				target := orbital.TargetOperator{
+					Client: responder,
+				}
+				cfg := &config.Config{}
+				op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, nil, nil, nil)
+				require.NoError(t, err)
+
+				go func() {
+					err = op.RunOperator(createContext(t))
+					assert.NoError(t, err)
+				}()
+
+				taskReq := orbital.TaskRequest{
+					TaskID: uuid.New(),
+					Type:   taskType,
+					Data:   tt.data,
+				}
+
+				responder.NewRequest(taskReq)
+				taskResp := responder.NewResponse()
+
+				assert.Equal(t, taskReq.TaskID, taskResp.TaskID)
+				assert.Equal(t, string(orbital.TaskStatusFailed), taskResp.Status)
+				assert.Contains(t, taskResp.ErrorMessage, tt.expErr.Error())
+			},
+		)
+	}
+}
+
+func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
+	taskType := authgrpc.AuthAction_AUTH_ACTION_REMOVE_AUTH.String()
+
+	tests := []struct {
+		name               string
+		expTaskResponse    orbital.TaskResponse
+		sessionManagerResp *oidcmappinggrpc.RemoveOIDCMappingResponse
+		sessionManagerErr  error
+	}{
+		{
+			name: "should return task in progress when session manager returns error",
+			expTaskResponse: orbital.TaskResponse{
+				Status:            string(orbital.TaskStatusProcessing),
+				ReconcileAfterSec: 15,
+			},
+			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+				Success: true,
+			},
+			sessionManagerErr: assert.AnError,
+		},
+		{
+			name: "should return failed task when session manager returns unsuccessful response",
+			expTaskResponse: orbital.TaskResponse{
+				Status:       string(orbital.TaskStatusFailed),
+				ErrorMessage: operator.ErrFailedResponse.Error(),
+			},
+			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+				Success: false,
+			},
+		},
+		{
+			name: "should return done task when session manager removes successfully",
+			expTaskResponse: orbital.TaskResponse{
+				Status: string(orbital.TaskStatusDone),
+			},
+			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+				Success: true,
+			},
+		},
+	}
+
+	unusedDB := &multitenancy.DB{}
+	cfg := &config.Config{}
+
+	for _, tt := range tests {
+		t.Run(
+			tt.name, func(t *testing.T) {
+				_, clientCon := testutils.NewGRPCSuite(t)
+				unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
+				sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
+				responder := respondertest.NewResponder()
+				operatorTarget := orbital.TargetOperator{
+					Client: responder,
+				}
+
+				clientFactory := mockClient.NewMockFactory(
+					registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
+					sessionmanager.NewMockService(sessionManagerClient),
+				)
+				op, err := operator.NewTenantOperator(unusedDB, cfg, operatorTarget, clientFactory, nil, nil, nil)
+				require.NoError(t, err)
+
+				go func() {
+					err = op.RunOperator(createContext(t))
+					assert.NoError(t, err)
+				}()
+
+				auth := authgrpc.Auth{
+					TenantId: uuid.NewString(),
+				}
+				data, err := proto.Marshal(&auth)
+				assert.NoError(t, err)
+
+				taskReq := orbital.TaskRequest{
+					TaskID: uuid.New(),
+					Type:   taskType,
+					Data:   data,
+				}
+
+				noOfCalls := 0
+				sessionManagerClient.MockRemoveOIDCMapping = func(
+					_ context.Context,
+					req *oidcmappinggrpc.RemoveOIDCMappingRequest,
+				) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
+					assert.Equal(t, auth.GetTenantId(), req.GetTenantId())
+
+					noOfCalls++
+
+					return tt.sessionManagerResp, tt.sessionManagerErr
+				}
+
+				responder.NewRequest(taskReq)
+				taskResp := responder.NewResponse()
+
+				assert.Equal(t, 1, noOfCalls)
+				assert.Equal(t, taskReq.TaskID, taskResp.TaskID)
+				assert.Equal(t, tt.expTaskResponse.Status, taskResp.Status)
+				assert.Equal(t, tt.expTaskResponse.ReconcileAfterSec, taskResp.ReconcileAfterSec)
+				assert.Contains(t, taskResp.ErrorMessage, tt.expTaskResponse.ErrorMessage)
+			},
+		)
+	}
+}
+
 func TestHandleBlockTenant(t *testing.T) {
 	unusedDB := &multitenancy.DB{}
 	_, clientCon := testutils.NewGRPCSuite(t)

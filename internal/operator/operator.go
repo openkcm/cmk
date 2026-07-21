@@ -310,6 +310,38 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 	})
 }
 
+// handleRemoveTenantAuth is handler for Remove Tenant Auth task.
+// It removes the tenant's OIDC mapping on the session manager, the inverse of handleApplyTenantAuth.
+func (o *TenantOperator) handleRemoveTenantAuth(
+	ctx context.Context,
+	req orbital.HandlerRequest,
+	resp *orbital.HandlerResponse,
+) {
+	authProto := &authgrpc.Auth{}
+
+	err := proto.Unmarshal(req.TaskData, authProto)
+	if err != nil {
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidData, err), WorkingStateInvalidTaskData)
+		return
+	}
+
+	tenantID := authProto.GetTenantId()
+	if tenantID == "" {
+		setErrorStateAndFail(ctx, resp, ErrInvalidTenantID, WorkingStateInvalidTaskData)
+		return
+	}
+
+	ctx = slogctx.With(ctx, "tenantId", tenantID)
+
+	hasErr := o.removeOIDCMapping(ctx, resp, tenantID)
+	if hasErr {
+		// removeOIDCMapping already set the response to fail or retry, so just return.
+		return
+	}
+
+	resp.Complete()
+}
+
 // handleBlockTenant is handler for Block Tenant task
 func (o *TenantOperator) handleBlockTenant(
 	ctx context.Context,
@@ -565,11 +597,12 @@ func (o *TenantOperator) trace(
 // registerHandlers registers all task handlers with the orbital operator
 func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
 	handlers := map[string]orbital.HandlerFunc{
-		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():  o.handleCreateTenant,
-		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():      o.handleBlockTenant,
-		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():    o.handleUnblockTenant,
-		tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String():  o.handleTerminateTenant,
-		authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String(): o.handleApplyTenantAuth,
+		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():   o.handleCreateTenant,
+		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():       o.handleBlockTenant,
+		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():     o.handleUnblockTenant,
+		tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String():   o.handleTerminateTenant,
+		authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String():  o.handleApplyTenantAuth,
+		authgrpc.AuthAction_AUTH_ACTION_REMOVE_AUTH.String(): o.handleRemoveTenantAuth,
 	}
 
 	for action, handler := range handlers {
