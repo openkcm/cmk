@@ -140,8 +140,7 @@ func setupDB(t *testing.T) (*sql.ResourceRepository, *multitenancy.DB) {
 	t.Helper()
 
 	multitenancyDB, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		CreateDatabase:      false, // false until testcontainers for TM is prepared to allow custom cmk db
-		WithIsolatedService: true,
+		CreateDatabase: false, // false until testcontainers for TM is prepared to allow custom cmk db
 	})
 
 	return sql.NewRepository(multitenancyDB), multitenancyDB

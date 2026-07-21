@@ -111,8 +111,7 @@ func assertVersion(t *testing.T, dbCon *multitenancy.DB, version int64, versionT
 
 func TestMissingSchemaScripts(t *testing.T) {
 	gooseMigrated, gooseTenant, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		CreateDatabase:      true,
-		WithIsolatedService: true,
+		CreateDatabase: true,
 	})
 
 	// There is no current support to create a tenant if shared version is set to 0
