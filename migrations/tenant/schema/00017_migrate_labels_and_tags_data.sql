@@ -16,7 +16,7 @@ SELECT DISTINCT ON (resource_id, key)
     updated_at
 FROM key_labels
 ORDER BY resource_id, key, updated_at DESC  -- Keep most recent if duplicates exist
-ON CONFLICT (resource_type, resource_id, key) DO NOTHING;
+ON CONFLICT (resource_type, resource_id, key) WHERE key != 'system.tag' DO NOTHING;
 
 -- Migrate existing key_configuration tags to resource_labels
 -- Maps: tags table (JSONB values) -> resource_labels
@@ -38,7 +38,7 @@ BEGIN
         FROM tags t,
         LATERAL jsonb_array_elements_text(t.values) AS tag_value
         WHERE t.values IS NOT NULL AND jsonb_array_length(t.values) > 0
-        ON CONFLICT (resource_type, resource_id, key, value) DO NOTHING;
+        ON CONFLICT (resource_type, resource_id, key, value) WHERE key = 'system.tag' DO NOTHING;
     END IF;
 END $$;
 
