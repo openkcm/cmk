@@ -500,6 +500,7 @@ func isManagementDetailsUpdate(keyPatch cmkapi.KeyPatch) bool {
 	return patchAccessDetails != nil && patchAccessDetails.Management != nil
 }
 
+//nolint:cyclop
 func (km *KeyManager) handleCryptoDetailsUpdate(
 	ctx context.Context,
 	keyPatch cmkapi.KeyPatch,
@@ -532,7 +533,16 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 				return ErrNonEditableCryptoRegionUpdate
 			}
 		}
-		keyCryptoData[region] = regionValues
+
+		// Workaround: This will be enhanced in the future
+		// For now to fix issues where whole object is being overridden in the PATCH call
+		// only override the fields that where sent on the patch. If it's a new region add it
+		_, exist = keyCryptoData[region]
+		if !exist {
+			keyCryptoData[region] = regionValues
+		} else {
+			maps.Copy(keyCryptoData[region], regionValues)
+		}
 	}
 
 	bytes, err := json.Marshal(keyCryptoData)
