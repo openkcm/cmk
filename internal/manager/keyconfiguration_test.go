@@ -904,28 +904,57 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 		assert.Equal(t, key.ID.String(), jobData.KeyIDTo)
 	})
 
-	t.Run("Should error on set primary on disabled key", func(t *testing.T) {
-		oldPkeyID := uuid.New()
+	t.Run("Should error on set primary on target disabled key", func(t *testing.T) {
+		sourceKeyID := uuid.New()
 		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(oldPkeyID)
+			k.PrimaryKeyID = ptr.PointTo(sourceKeyID)
 		})
-		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
-			k.ID = oldPkeyID
+		sourceKey := testutils.NewKey(func(k *model.Key) {
+			k.ID = sourceKeyID
+			k.State = cmkapi.KeyStateENABLED
 			k.KeyConfigurationID = keyConfig.ID
 		})
 
-		key := testutils.NewKey(func(k *model.Key) {
+		targetKey := testutils.NewKey(func(k *model.Key) {
 			k.State = cmkapi.KeyStateDISABLED
 			k.KeyConfigurationID = keyConfig.ID
 		})
-		testutils.CreateTestEntities(ctx, t, r, oldPrimaryKey, keyConfig, key)
+		testutils.CreateTestEntities(ctx, t, r, sourceKey, keyConfig, targetKey)
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 		_, err := m.UpdateKeyConfigurationByID(
 			ctx,
 			keyConfig.ID,
 			cmkapi.KeyConfigurationPatch{
-				PrimaryKeyID: ptr.PointTo(key.ID),
+				PrimaryKeyID: ptr.PointTo(targetKey.ID),
+			},
+		)
+		assert.ErrorIs(t, err, manager.ErrKeyIsNotEnabled)
+	})
+
+	t.Run("Should error on set primary on source disabled key", func(t *testing.T) {
+		sourceKeyID := uuid.New()
+		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = ptr.PointTo(sourceKeyID)
+		})
+		sourceKey := testutils.NewKey(func(k *model.Key) {
+			k.ID = sourceKeyID
+			k.State = cmkapi.KeyStateDISABLED
+			k.KeyConfigurationID = keyConfig.ID
+		})
+
+		targetKey := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateENABLED
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		testutils.CreateTestEntities(ctx, t, r, sourceKey, keyConfig, targetKey)
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		_, err := m.UpdateKeyConfigurationByID(
+			ctx,
+			keyConfig.ID,
+			cmkapi.KeyConfigurationPatch{
+				PrimaryKeyID: ptr.PointTo(targetKey.ID),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrKeyIsNotEnabled)

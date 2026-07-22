@@ -1131,23 +1131,37 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 			}
 		}
 	case w.isPrimaryKeySwitch(workflow):
-		keyID, err := uuid.Parse(workflow.Parameters)
+		targetKeyID, err := uuid.Parse(workflow.Parameters)
 		if err != nil {
 			return false, err
 		}
 
-		key := &model.Key{ID: keyID}
-		_, err = w.repo.First(ctx, key, *repo.NewQuery())
+		if keyConfigs[0].PrimaryKeyID == nil {
+			return false, ErrPrimaryKeyDisabled
+		}
+
+		targetKey := &model.Key{ID: targetKeyID}
+		_, err = w.repo.First(ctx, targetKey, *repo.NewQuery())
 		if err != nil {
 			return false, err
 		}
 
-		if key.State != cmkapi.KeyStateENABLED {
+		if targetKey.State != cmkapi.KeyStateENABLED {
+			return false, ErrPrimaryKeyDisabled
+		}
+
+		sourceKey := &model.Key{ID: *keyConfigs[0].PrimaryKeyID}
+		_, err = w.repo.First(ctx, sourceKey, *repo.NewQuery())
+		if err != nil {
+			return false, err
+		}
+
+		if sourceKey.State != cmkapi.KeyStateENABLED {
 			return false, ErrPrimaryKeyDisabled
 		}
 
 		// There is always only one keyconfig from KeyConfig ArtifactType
-		if ptr.GetSafeDeref(keyConfigs[0].PrimaryKeyID) == keyID {
+		if ptr.GetSafeDeref(keyConfigs[0].PrimaryKeyID) == targetKey.ID {
 			return false, ErrAlreadyPrimaryKey
 		}
 

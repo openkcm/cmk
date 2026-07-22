@@ -399,23 +399,34 @@ func (m *KeyConfigManager) applyIAMGroupFilter(
 
 // Whenever Keyconfig PrimaryKey switches, systems need to send switch events
 // If systems had a previous switch event the event key needs to be updated for the retru
+//
+//nolint:funlen
 func (m *KeyConfigManager) handleUpdatePrimaryKey(
 	ctx context.Context,
 	keyConfig *model.KeyConfiguration,
 	primaryKeyID uuid.UUID,
 ) error {
-	key := &model.Key{ID: primaryKeyID, KeyConfigurationID: keyConfig.ID}
-	_, err := m.r.First(ctx, key, *repo.NewQuery())
+	targetKey := &model.Key{ID: primaryKeyID, KeyConfigurationID: keyConfig.ID}
+	_, err := m.r.First(ctx, targetKey, *repo.NewQuery())
 	if err != nil {
 		return err
 	}
-	if key.State == cmkapi.KeyStateDISABLED {
+	if targetKey.State != cmkapi.KeyStateENABLED {
 		return ErrKeyIsNotEnabled
 	}
 
 	// Key is valid. If keyconfig has no existing key no need for further validations
 	if keyConfig.PrimaryKeyID == nil {
 		return nil
+	}
+
+	sourceKey := &model.Key{ID: *keyConfig.PrimaryKeyID}
+	_, err = m.r.First(ctx, sourceKey, *repo.NewQuery())
+	if err != nil {
+		return err
+	}
+	if sourceKey.State != cmkapi.KeyStateENABLED {
+		return ErrKeyIsNotEnabled
 	}
 
 	err = m.updatePrimaryKeySystemEvents(
