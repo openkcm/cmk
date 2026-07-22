@@ -130,7 +130,10 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 	require.NoError(t, err)
 
 	cryptoAccessData := model.KeyAccessData{
-		"crypto-1": {"someKey": "someValue"},
+		"crypto-1": {
+			"someKey":            "someValue",
+			"certificateSubject": "CN=test_tenant0,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE",
+		},
 	}
 	cryptoBytes, err := json.Marshal(cryptoAccessData)
 	require.NoError(t, err)
@@ -876,7 +879,10 @@ func TestUpdate(t *testing.T) {
 	}
 
 	t.Run("Should allow adding more crypto regions with uneditable ones", func(t *testing.T) {
-		// Set new key to primary
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig)
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
 		key := createTestHYOKKey(t, km, ctx, keyConfig.ID)
 		keyConfig.PrimaryKeyID = ptr.PointTo(key.ID)
 
@@ -887,10 +893,6 @@ func TestUpdate(t *testing.T) {
 		keyPatch := cmkapi.KeyPatch{
 			AccessDetails: &cmkapi.KeyAccessDetails{
 				Crypto: &map[string]map[string]any{
-					"crypto-1": {
-						"certificateSubject": "CN=test_tenant0,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE",
-						"someKey":            "someValue",
-					},
 					"crypto-2": {"someKey": "someValue"},
 				},
 			},
@@ -901,8 +903,37 @@ func TestUpdate(t *testing.T) {
 			s.Region = "crypto-1"
 		})
 		testutils.CreateTestEntities(ctx, t, r, system1)
-		_, err = km.UpdateKey(ctx, key.ID, keyPatch)
+		res, err := km.UpdateKey(ctx, key.ID, keyPatch)
 		assert.NoError(t, err)
+
+		cryptoData := res.GetCryptoAccessData()
+		assert.Contains(t, cryptoData, "crypto-2")
+	})
+
+	t.Run("Should only override sent fields on registered regions", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig)
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		key := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyConfig.PrimaryKeyID = ptr.PointTo(key.ID)
+
+		_, err := r.Patch(ctx, keyConfig, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		keyPatch := cmkapi.KeyPatch{
+			AccessDetails: &cmkapi.KeyAccessDetails{
+				Crypto: &map[string]map[string]any{
+					"crypto-1": {"someKey": "patchValue"},
+				},
+			},
+		}
+		res, err := km.UpdateKey(ctx, key.ID, keyPatch)
+		assert.NoError(t, err)
+
+		cryptoData := res.GetCryptoAccessData()
+		assert.Contains(t, cryptoData["crypto-1"], "certificateSubject")
+		assert.Equal(t, "patchValue", cryptoData["crypto-1"]["someKey"])
 	})
 }
 
