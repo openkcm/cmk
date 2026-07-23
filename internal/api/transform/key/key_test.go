@@ -107,7 +107,7 @@ func TestTransformKeyFromAPI(t *testing.T) {
 		return model.Key{
 			ID:                 ID,
 			Name:               "test-key",
-			KeyType:            string(cmkapi.KeyTypeHYOK),
+			KeyType:            cmkapi.KeyTypeHYOK,
 			KeyConfigurationID: keyConfigID,
 			State:              cmkapi.KeyStateENABLED,
 			Description:        description,
@@ -238,7 +238,7 @@ func TestTransformKeyToAPI(t *testing.T) {
 		return model.Key{
 			ID:                   id,
 			Name:                 "test-key",
-			KeyType:              string(cmkapi.KeyTypeHYOK),
+			KeyType:              cmkapi.KeyTypeHYOK,
 			KeyConfigurationID:   keyConfigID,
 			Description:          description,
 			NativeID:             &nativeID,

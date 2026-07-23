@@ -14,7 +14,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -47,7 +46,7 @@ func FromAPI(ctx context.Context, apiKey cmkapi.Key, tf transformer.ProviderTran
 	}
 
 	dbKey.Name = apiKey.Name
-	dbKey.KeyType = string(apiKey.Type)
+	dbKey.KeyType = apiKey.Type
 	dbKey.KeyConfigurationID = apiKey.KeyConfigurationID
 
 	if apiKey.Description != nil {
@@ -80,7 +79,7 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 	apiKey.Id = &k.ID
 
 	if k.Algorithm != "" {
-		algorithm := cmkapi.KeyAlgorithm(k.Algorithm)
+		algorithm := k.Algorithm
 		apiKey.Algorithm = &algorithm
 	}
 
@@ -109,9 +108,9 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 	}
 
 	apiKey.KeyConfigurationID = k.KeyConfigurationID
-	apiKey.Type = cmkapi.KeyType(k.KeyType)
+	apiKey.Type = k.KeyType
 
-	if k.KeyType == constants.KeyTypeHYOK {
+	if k.KeyType == cmkapi.KeyTypeHYOK {
 		accessDetails, err := getAccessDetailsFromModel(k)
 		if err != nil {
 			return nil, err

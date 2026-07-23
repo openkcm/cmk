@@ -308,7 +308,7 @@ func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
 	providers := make([]string, 0)
 
 	for _, plugin := range plugins {
-		if pluginHelpers.HasTag(plugin.ServiceInfo().Tags(), constants.KeyTypeHYOK) {
+		if pluginHelpers.HasTag(plugin.ServiceInfo().Tags(), string(cmkapi.KeyTypeHYOK)) {
 			providers = append(providers, plugin.ServiceInfo().Name())
 		}
 	}

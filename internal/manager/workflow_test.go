@@ -455,7 +455,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 
 	t.Run("Should not be valid on non byok key state change", func(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 		})
 
 		testutils.CreateTestEntities(ctxSys, t, r, key)
@@ -2125,7 +2125,7 @@ func setupEligibilityTest(
 
 	artifactName := system.Identifier
 	paramsResourceName := keyConfig.Name
-	paramsResourceType := "KEY_CONFIGURATION"
+	paramsResourceType := model.WorkflowParametersResourceTypeKeyConfiguration
 
 	wf := testutils.NewWorkflow(func(w *model.Workflow) {
 		w.State = model.WorkflowStateWaitApproval

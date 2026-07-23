@@ -3,7 +3,6 @@ package cmk
 import (
 	"context"
 	"errors"
-	"slices"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	wfTransform "github.com/openkcm/cmk/internal/api/transform/workflow"
@@ -69,8 +68,7 @@ var GetWorkflowsSchema = odata.FilterSchema{
 			FilterType: odata.String,
 			DBName:     repo.ArtifactTypeField,
 			ValueValidator: func(s string) bool {
-				return slices.Contains(model.WorkflowArtifactTypes,
-					model.WorkflowArtifactType(s))
+				return model.WorkflowArtifactType(s).Valid()
 			},
 			ValueModifier: odata.ToUpper,
 		},
@@ -91,8 +89,7 @@ var GetWorkflowsSchema = odata.FilterSchema{
 			FilterType: odata.String,
 			DBName:     repo.ActionTypeField,
 			ValueValidator: func(s string) bool {
-				return slices.Contains(model.WorkflowActionTypes,
-					model.WorkflowActionType(s))
+				return model.WorkflowActionType(s).Valid()
 			},
 			ValueModifier: odata.ToUpper,
 		},
@@ -101,8 +98,7 @@ var GetWorkflowsSchema = odata.FilterSchema{
 			FilterType: odata.String,
 			DBName:     repo.StateField,
 			ValueValidator: func(s string) bool {
-				return slices.Contains(model.WorkflowStates,
-					model.WorkflowState(s))
+				return model.WorkflowState(s).Valid()
 			},
 			ValueModifier: odata.ToUpper,
 		},

@@ -1183,7 +1183,7 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 	case w.isKeyStateChange(workflow):
 		key := &model.Key{ID: workflow.ArtifactID}
 		_, err := w.repo.First(ctx, key, *repo.NewQuery())
-		if key.KeyType != string(cmkapi.KeyTypeBYOK) {
+		if key.KeyType != cmkapi.KeyTypeBYOK {
 			return false, ErrUpdateNonBYOKKeyStatus
 		}
 		if err != nil {
@@ -2143,7 +2143,7 @@ func (w *WorkflowManager) populateParametersResource(
 				return err
 			}
 
-			workflow.ParametersResourceType = ptr.PointTo(wf.ParametersResourceTypeKey.String())
+			workflow.ParametersResourceType = ptr.PointTo(model.WorkflowParametersResourceTypeKey)
 			workflow.ParametersResourceName = ptr.PointTo(key.Name)
 		}
 
@@ -2160,7 +2160,7 @@ func (w *WorkflowManager) populateParametersResource(
 				return err
 			}
 
-			workflow.ParametersResourceType = ptr.PointTo(wf.ParametersResourceTypeKeyConfiguration.String())
+			workflow.ParametersResourceType = ptr.PointTo(model.WorkflowParametersResourceTypeKeyConfiguration)
 			workflow.ParametersResourceName = ptr.PointTo(keyConfig.Name)
 		default:
 			// other system action types do not populate the parameters resource

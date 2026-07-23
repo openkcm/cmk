@@ -331,18 +331,23 @@ func TestTotalSystemAndKey(t *testing.T) {
 		sys := &model.System{
 			ID:                 uuid.New(),
 			Identifier:         uuid.NewString(),
+			Type:               model.SystemTypeSYSTEM,
 			KeyConfigurationID: &keyConfig.ID,
 		}
 
 		key1 := &model.Key{
 			ID:                 uuid.New(),
 			Name:               uuid.NewString(),
+			KeyType:            cmkapi.KeyTypeBYOK,
+			Algorithm:          cmkapi.KeyAlgorithmAES256,
 			KeyConfigurationID: keyConfig.ID,
 		}
 
 		key2 := &model.Key{
 			ID:                 uuid.New(),
 			Name:               uuid.NewString(),
+			KeyType:            cmkapi.KeyTypeBYOK,
+			Algorithm:          cmkapi.KeyAlgorithmAES256,
 			KeyConfigurationID: keyConfig.ID,
 		}
 
@@ -368,6 +373,7 @@ func TestTotalSystemAndKey(t *testing.T) {
 		sys := &model.System{
 			ID:                 uuid.New(),
 			Identifier:         uuid.NewString(),
+			Type:               model.SystemTypeSYSTEM,
 			KeyConfigurationID: &keyConfig.ID,
 		}
 

@@ -9,6 +9,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/auditor"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
@@ -80,7 +81,7 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 	cert := testutils.NewCertificate(func(_ *model.Certificate) {})
 	hyokKey := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = ptr.PointTo("mock-key/11111111")
 		k.ManagementAccessData = hyokInfo
 		k.Provider = testplugins.Name

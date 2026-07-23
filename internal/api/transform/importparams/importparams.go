@@ -15,8 +15,8 @@ func ToAPI(p model.ImportParams) (*cmkapi.ImportParams, error) {
 	return &cmkapi.ImportParams{
 		PublicKey: &p.PublicKeyPEM,
 		WrappingAlgorithm: &cmkapi.WrappingAlgorithm{
-			Name:         cmkapi.WrappingAlgorithmName(p.WrappingAlg),
-			HashFunction: cmkapi.WrappingAlgorithmHashFunction(p.HashFunction),
+			Name:         p.WrappingAlg,
+			HashFunction: p.HashFunction,
 		},
 	}, nil
 }
