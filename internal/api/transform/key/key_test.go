@@ -16,7 +16,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/utils/ptr"
@@ -94,9 +93,11 @@ func TestTransformKeyFromAPI(t *testing.T) {
 			Description:        &description,
 			Provider:           &provider,
 			AccessDetails: &cmkapi.KeyAccessDetails{
-				Management: ptr.PointTo(map[string]any{
-					accessAccountIDField: accessAccountID,
-					accessUserIDField:    accessUserID,
+				Management: ptr.PointTo(cmkapi.KeyAccessDetailsRegion{
+					AdditionalProperties: map[string]any{
+						accessAccountIDField: accessAccountID,
+						accessUserIDField:    accessUserID,
+					},
 				}),
 			},
 		}
@@ -258,22 +259,28 @@ func TestTransformKeyToAPI(t *testing.T) {
 				State:              ptr.PointTo(cmkapi.KeyStateENABLED),
 				IsPrimary:          ptr.PointTo(false),
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Management: ptr.PointTo(map[string]any{
-						accessAccountIDField: "123456789012",
-						accessUserIDField:    "123456789012:user/test-user",
-					}),
-					Crypto: ptr.PointTo(map[string]map[string]any{
+					Management: &cmkapi.KeyAccessDetailsRegion{
+						AdditionalProperties: map[string]any{
+							accessAccountIDField: "123456789012",
+							accessUserIDField:    "123456789012:user/test-user",
+						},
+					},
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						"serviceA": {
-							accessAccountIDField:           "12344",
-							accessUserIDField:              "123456789012:user/serviceA",
-							manager.IsEditableCryptoAccess: true,
+							IsEditable: ptr.PointTo(true),
+							AdditionalProperties: map[string]any{
+								accessAccountIDField: "12344",
+								accessUserIDField:    "123456789012:user/serviceA",
+							},
 						},
 						"serviceB": {
-							accessAccountIDField:           "12345",
-							accessUserIDField:              "123456789012:user/serviceB",
-							manager.IsEditableCryptoAccess: false,
+							IsEditable: ptr.PointTo(false),
+							AdditionalProperties: map[string]any{
+								accessAccountIDField: "12345",
+								accessUserIDField:    "123456789012:user/serviceB",
+							},
 						},
-					}),
+					},
 				},
 				Metadata: &cmkapi.KeyMetadata{
 					CreatedAt: &time.Time{},

@@ -12,7 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/authz"
 )
 
-type KeyAccessData map[string]map[string]any // Map of regions and their properties
+type KeyAccessData map[string]cmkapi.KeyAccessDetailsRegion // Map of regions and their properties
 
 //nolint:recvcheck
 type Key struct {
@@ -66,19 +66,17 @@ func (m *Key) AfterFind(tx *gorm.DB) error {
 	return nil
 }
 
-func (m *Key) GetManagementAccessData() map[string]any {
+func (m *Key) GetManagementAccessData() (cmkapi.KeyAccessDetailsRegion, error) {
 	if m.ManagementAccessData == nil {
-		return nil
+		return cmkapi.KeyAccessDetailsRegion{}, nil
 	}
 
-	var data map[string]any
-
-	err := json.Unmarshal(m.ManagementAccessData, &data)
+	management := cmkapi.KeyAccessDetailsRegion{}
+	err := management.UnmarshalJSON(m.ManagementAccessData)
 	if err != nil {
-		return nil // Return nil if unmarshalling fails to avoid panic
+		return cmkapi.KeyAccessDetailsRegion{}, err
 	}
-
-	return data
+	return management, err
 }
 
 func (m *Key) GetCryptoAccessData() KeyAccessData {

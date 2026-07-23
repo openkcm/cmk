@@ -100,10 +100,10 @@ func (v PluginProviderTransformer) ValidateKeyAccessData(
 ) error {
 	var management map[string]any
 	if accessDetails.Management != nil {
-		management = *accessDetails.Management
+		management = accessDetails.Management.AdditionalProperties
 	}
 
-	var crypto map[string]map[string]any
+	var crypto map[string]cmkapi.KeyAccessDetailsRegion
 	if accessDetails.Crypto != nil {
 		crypto = *accessDetails.Crypto
 	}
@@ -159,7 +159,7 @@ func (v PluginProviderTransformer) GetRegion(
 ) (string, error) {
 	var management map[string]any
 	if key.AccessDetails != nil && key.AccessDetails.Management != nil {
-		management = *key.AccessDetails.Management
+		management = key.AccessDetails.Management.AdditionalProperties
 	}
 
 	response, err := v.pluginClient.ExtractKeyRegion(ctx, &keymanagement.ExtractKeyRegionRequest{
