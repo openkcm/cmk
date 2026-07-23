@@ -26,6 +26,14 @@ func (o *TenantOperator) HandleApplyTenantAuth(
 	o.handleApplyTenantAuth(ctx, req, resp)
 }
 
+func (o *TenantOperator) HandleRemoveTenantAuth(
+	ctx context.Context,
+	req orbital.HandlerRequest,
+	resp *orbital.HandlerResponse,
+) {
+	o.handleRemoveTenantAuth(ctx, req, resp)
+}
+
 func (o *TenantOperator) HandleTerminateTenant(
 	ctx context.Context,
 	req orbital.HandlerRequest,
