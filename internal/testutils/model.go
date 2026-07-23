@@ -301,7 +301,7 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 	return ptr.PointTo(mut(m))
 }
 
-func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
+func NewWorkflowConfig(m func(m *model.LegacyTenantConfig)) *model.LegacyTenantConfig {
 	retentionPeriodDays := 30
 	wc := model.WorkflowConfig{
 		Enabled:             true,
@@ -310,10 +310,10 @@ func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
 	}
 	//nolint:errchkjson
 	configValue, _ := json.Marshal(wc)
-	mut := NewMutator(func() model.TenantConfig {
-		return model.TenantConfig{
+	mut := NewMutator(func() model.LegacyTenantConfig {
+		return model.LegacyTenantConfig{
 			Key:   constants.WorkflowConfigKey,
-			Value: configValue,
+			Value: string(configValue),
 		}
 	})
 

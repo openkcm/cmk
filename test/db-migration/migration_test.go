@@ -177,6 +177,7 @@ func TestSchemaMigrations(t *testing.T) {
 		target          db.MigrationTarget
 		downgrade       bool
 		version         int64
+		setupData       func(t *testing.T) func(db *multitenancy.DB) error
 		assertMigration func(t *testing.T) func(db *multitenancy.DB) error
 	}{
 		{
@@ -502,6 +503,52 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   14,
 		},
+		{
+			name:      "Should up tenant/00015_flatten_tenant_configs.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   15,
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var typeExists, valueTextExists bool
+					err := db.Raw(`
+						SELECT
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'type'),
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value_text')
+					`).Row().Scan(&typeExists, &valueTextExists)
+					assert.NoError(t, err)
+					assert.True(t, typeExists, "type column must be added")
+					assert.True(t, valueTextExists, "value_text column must be added")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00015_flatten_tenant_configs.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   15,
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var valueTextExists bool
+					err := db.Raw(`
+						SELECT EXISTS (SELECT 1 FROM information_schema.columns
+							WHERE table_name = 'tenant_configs' AND column_name = 'value_text')
+					`).Row().Scan(&valueTextExists)
+					assert.NoError(t, err)
+					assert.False(t, valueTextExists, "value_text column must be dropped")
+
+					return nil
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -522,6 +569,11 @@ func TestSchemaMigrations(t *testing.T) {
 				Target:  tt.target,
 				Version: ptr.PointTo(setupVersion),
 			})
+
+			if tt.setupData != nil {
+				err := dbCon.WithTenant(t.Context(), tenant, tt.setupData(t))
+				assert.NoError(t, err)
+			}
 
 			var migrateVersion int64
 			if tt.downgrade {
@@ -654,6 +706,173 @@ func TestDataMigrations(t *testing.T) {
 			schemaVersion: ptr.PointTo(int64(10)),
 			downgrade:     true,
 		},
+		{
+			name:          "Should repair keystore config shape into nested roleManagementConfig",
+			target:        db.TenantTarget,
+			version:       2,
+			schemaVersion: ptr.PointTo(int64(15)),
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var locality string
+					err := db.Raw(
+						`SELECT value::jsonb -> 'roleManagementConfig' ->> 'localityId'
+						 FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
+					).Scan(&locality).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "loc-1", locality)
+
+					var hasLegacyShape bool
+					err = db.Raw(
+						`SELECT value::jsonb ? 'localityId' FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
+					).Scan(&hasLegacyShape).Error
+					assert.NoError(t, err)
+					assert.False(t, hasLegacyShape, "flat keystore shape must be rewritten to nested")
+
+					return nil
+				}
+			},
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('DEFAULT_KEYSTORE', '{"localityId":"loc-1","commonName":"cn-1"}', '')`,
+					).Error
+				}
+			},
+		},
+		{
+			name:          "Should flatten tenant_configs legacy blobs into typed flat rows",
+			target:        db.TenantTarget,
+			version:       3,
+			schemaVersion: ptr.PointTo(int64(15)),
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var count int
+
+					err := db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE "type" = 'workflow'`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 5, count, "all 5 workflow keys must be flattened")
+
+					var enabled string
+					err = db.Raw(
+						`SELECT value_text FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'enabled'`,
+					).Scan(&enabled).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "true", enabled)
+
+					var minApprovals string
+					err = db.Raw(
+						`SELECT value_text FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'minimum_approvals'`,
+					).Scan(&minApprovals).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "2", minApprovals)
+
+					err = db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE "type" = 'default_keystore'`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 2, count, "locality_id and common_name must be flattened")
+
+					var locality string
+					err = db.Raw(
+						`SELECT value_text FROM tenant_configs WHERE "type" = 'default_keystore' AND "key" = 'locality_id'`,
+					).Scan(&locality).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "loc-1", locality)
+
+					// Legacy blobs are preserved as a read-time fallback for unmigrated tenants.
+					err = db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE length("type") = 0`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 2, count, "legacy blobs must remain")
+
+					return nil
+				}
+			},
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('WORKFLOW_CONFIG', '{"Enabled":true,"MinimumApprovals":2,"RetentionPeriodDays":30,"DefaultExpiryPeriodDays":7,"MaxExpiryPeriodDays":14}', ''),
+							('DEFAULT_KEYSTORE', '{"roleManagementConfig":{"localityId":"loc-1","commonName":"cn-1"}}', '')`,
+					).Error
+				}
+			},
+		},
+		{
+			name:          "Should migrate down repair keystore config shape",
+			target:        db.TenantTarget,
+			version:       2,
+			schemaVersion: ptr.PointTo(int64(15)),
+			downgrade:     true,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('DEFAULT_KEYSTORE', '{"roleManagementConfig":{"localityId":"loc-1","commonName":"cn-1"}}', '')`,
+					).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var locality string
+					err := db.Raw(
+						`SELECT value::jsonb ->> 'localityId' FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
+					).Scan(&locality).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "loc-1", locality, "repair down must restore the flat keystore shape")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should migrate down flatten tenant_configs",
+			target:        db.TenantTarget,
+			version:       3,
+			schemaVersion: ptr.PointTo(int64(15)),
+			downgrade:     true,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('enabled', 'true', 'workflow'),
+							('minimum_approvals', '2', 'workflow')`,
+					).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var count int
+					err := db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE length("type") > 0`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 0, count, "flatten down must remove flat rows")
+
+					return nil
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -698,6 +917,34 @@ func TestDataMigrations(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFlattenBackfillFailsWhenSchemaMissing verifies the backfill errors (rather
+// than no-ops) when run before the flatten schema, so goose retries it instead of
+// marking it applied and skipping the backfill permanently.
+func TestFlattenBackfillFailsWhenSchemaMissing(t *testing.T) {
+	dbCon, m, tenant := setupDataMigration(t, DataMigrationSetup{
+		Target:        db.TenantTarget,
+		SchemaVersion: ptr.PointTo(int64(14)), // before flatten schema (00015)
+		Version:       2,                      // repair applied, flatten (3) pending
+	})
+
+	err := dbCon.WithTenant(t.Context(), tenant, func(db *multitenancy.DB) error {
+		return db.Exec(
+			`INSERT INTO tenant_configs ("key", value) VALUES
+				('WORKFLOW_CONFIG', '{"Enabled":true,"MinimumApprovals":2,"RetentionPeriodDays":30,"DefaultExpiryPeriodDays":7,"MaxExpiryPeriodDays":14}')`,
+		).Error
+	})
+	assert.NoError(t, err)
+
+	_, err = m.MigrateTo(t.Context(), db.Migration{
+		Type:   db.DataMigration,
+		Target: db.TenantTarget,
+	}, 3)
+	assert.Error(t, err, "backfill must fail when the flatten schema is absent")
+
+	// Version 3 must remain unapplied so it retries after the schema migration.
+	assertVersion(t, dbCon, 2, db.DataMigrationTable, tenant)
 }
 
 // TestEnumCheckConstraintDrift asserts the IN(...) lists in migration 00012

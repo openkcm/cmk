@@ -15,6 +15,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -44,10 +45,11 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
 	cfg := &config.Config{Database: dbCfg}
+	svcRegistry := testutils.NewTestPlugins()
+	tcm := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, nil)
 
 	reconciler, err := eventprocessor.NewCryptoReconciler(
-		t.Context(), cfg, authzRepo, testutils.NewTestPlugins(), nil,
-	)
+		t.Context(), cfg, authzRepo, svcRegistry, nil, tcm)
 	assert.NoError(t, err)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})

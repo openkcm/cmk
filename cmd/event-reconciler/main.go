@@ -18,6 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/manager"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/utils/cmd"
@@ -93,7 +94,11 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return oops.In("main").Wrapf(err, "Failed injecting authz role")
 	}
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, authzRepo, svcRegistry, clientsFactory)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, nil)
+
+	reconciler, err := eventprocessor.NewCryptoReconciler(
+		ctx, cfg, authzRepo, svcRegistry, clientsFactory, tenantConfigManager,
+	)
 	if err != nil {
 		return oops.In("main").Wrapf(err, "Failed to create crypto reconciler")
 	}
