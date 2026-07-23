@@ -80,7 +80,7 @@ func (s *DBSuite) SetupSuite() {
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, nil),
+		manager.NewTenantConfigManager(r, svcRegistry, nil, nil),
 		kcm,
 		um,
 		cm,

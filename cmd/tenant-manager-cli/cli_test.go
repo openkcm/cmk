@@ -97,7 +97,7 @@ func (s *CLISuite) SetupSuite() {
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
-		manager.NewTenantConfigManager(authzRepo, svcRegistry, nil),
+		manager.NewTenantConfigManager(authzRepo, svcRegistry, nil, nil),
 		kcm,
 		um,
 		cm,

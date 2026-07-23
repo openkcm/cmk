@@ -9,6 +9,13 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 )
 
+type TrustType string
+
+const (
+	TrustTypeManagement TrustType = "MANAGEMENT"
+	TrustTypeCrypto     TrustType = "CRYPTO"
+)
+
 type ManagementConfig struct {
 	// V1 Fields
 	LocalityID string
@@ -67,6 +74,7 @@ type GrantTrustRequest struct {
 	Config  common.KeystoreConfig
 	Subject string
 	Region  string
+	Type    TrustType
 }
 
 type GrantTrustResponse struct {

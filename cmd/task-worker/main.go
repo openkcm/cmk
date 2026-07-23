@@ -157,7 +157,7 @@ func registerTasks(
 	cmkAuditor := auditor.New(ctx, cfg)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	certManager := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, certManager)
 	tagManager := manager.NewTagManager(authzRepo)
 	keyConfigManager := manager.NewKeyConfigManager(
 		authzRepo,

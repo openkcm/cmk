@@ -3,11 +3,13 @@ package manager_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"github.com/openkcm/plugin-sdk/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -32,7 +34,7 @@ const (
 	testRegionUSEast1 = "us-east-1"
 )
 
-func SetupKeyTest(t *testing.T) (
+func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	*manager.KeyManager,
 	repo.Repo,
 	context.Context,
@@ -48,7 +50,7 @@ func SetupKeyTest(t *testing.T) (
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	r := sql.NewRepository(db)
 
-	svcRegistry := testutils.NewTestPlugins()
+	svcRegistry := testutils.NewTestPlugins(opts...)
 	cryptoCerts := []config.CryptoCert{
 		{
 			Name: "crypto-1",
@@ -83,8 +85,8 @@ func SetupKeyTest(t *testing.T) (
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	assert.NoError(t, err)
 
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
@@ -1293,8 +1295,8 @@ func TestKeyRotationTime(t *testing.T) {
 	assert.NoError(t, err)
 
 	cmkAuditor := auditor.New(ctx, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
@@ -1621,4 +1623,127 @@ func countEvents(ctx context.Context, r repo.Repo, eventType string) (int, error
 		return 0, err
 	}
 	return count, nil
+}
+
+// failingNTimesKeyManagement wraps TestKeyManagement and returns failErr for the
+// first failCount calls to CreateKey, then delegates to the inner implementation.
+type failingNTimesKeyManagement struct {
+	inner     *testplugins.TestKeyManagement
+	failCount int
+	callCount int
+	failErr   error
+}
+
+var _ keymanagement.KeyManagement = (*failingNTimesKeyManagement)(nil)
+
+var errNonAuthTest = errors.New("some other error")
+
+func (f *failingNTimesKeyManagement) ServiceInfo() api.Info {
+	return f.inner.ServiceInfo()
+}
+func (f *failingNTimesKeyManagement) GetKey(ctx context.Context, req *keymanagement.GetKeyRequest) (*keymanagement.GetKeyResponse, error) {
+	return f.inner.GetKey(ctx, req)
+}
+func (f *failingNTimesKeyManagement) CreateKey(ctx context.Context, req *keymanagement.CreateKeyRequest) (*keymanagement.CreateKeyResponse, error) {
+	if f.callCount < f.failCount {
+		f.callCount++
+		return nil, f.failErr
+	}
+	return f.inner.CreateKey(ctx, req)
+}
+func (f *failingNTimesKeyManagement) DeleteKey(ctx context.Context, req *keymanagement.DeleteKeyRequest) (*keymanagement.DeleteKeyResponse, error) {
+	return f.inner.DeleteKey(ctx, req)
+}
+func (f *failingNTimesKeyManagement) EnableKey(ctx context.Context, req *keymanagement.EnableKeyRequest) (*keymanagement.EnableKeyResponse, error) {
+	return f.inner.EnableKey(ctx, req)
+}
+func (f *failingNTimesKeyManagement) DisableKey(ctx context.Context, req *keymanagement.DisableKeyRequest) (*keymanagement.DisableKeyResponse, error) {
+	return f.inner.DisableKey(ctx, req)
+}
+func (f *failingNTimesKeyManagement) GetImportParameters(ctx context.Context, req *keymanagement.GetImportParametersRequest) (*keymanagement.GetImportParametersResponse, error) {
+	return f.inner.GetImportParameters(ctx, req)
+}
+func (f *failingNTimesKeyManagement) ImportKeyMaterial(ctx context.Context, req *keymanagement.ImportKeyMaterialRequest) (*keymanagement.ImportKeyMaterialResponse, error) {
+	return f.inner.ImportKeyMaterial(ctx, req)
+}
+func (f *failingNTimesKeyManagement) ValidateKey(ctx context.Context, req *keymanagement.ValidateKeyRequest) (*keymanagement.ValidateKeyResponse, error) {
+	return f.inner.ValidateKey(ctx, req)
+}
+func (f *failingNTimesKeyManagement) ValidateKeyAccessData(ctx context.Context, req *keymanagement.ValidateKeyAccessDataRequest) (*keymanagement.ValidateKeyAccessDataResponse, error) {
+	return f.inner.ValidateKeyAccessData(ctx, req)
+}
+func (f *failingNTimesKeyManagement) TransformCryptoAccessData(ctx context.Context, req *keymanagement.TransformCryptoAccessDataRequest) (*keymanagement.TransformCryptoAccessDataResponse, error) {
+	return f.inner.TransformCryptoAccessData(ctx, req)
+}
+func (f *failingNTimesKeyManagement) ExtractKeyRegion(ctx context.Context, req *keymanagement.ExtractKeyRegionRequest) (*keymanagement.ExtractKeyRegionResponse, error) {
+	return f.inner.ExtractKeyRegion(ctx, req)
+}
+
+func TestCreateManagedProviderKeyRetry(t *testing.T) {
+	// Zero out the retry delays so the test runs in milliseconds, not minutes.
+	original := *manager.CreateKeyRetryDelay
+	*manager.CreateKeyRetryDelay = 0
+	t.Cleanup(func() { *manager.CreateKeyRetryDelay = original })
+	originalMax := *manager.CreateKeyMaxDelay
+	*manager.CreateKeyMaxDelay = 0
+	t.Cleanup(func() { *manager.CreateKeyMaxDelay = originalMax })
+
+	t.Run("succeeds on second attempt after one auth failure", func(t *testing.T) {
+		plugin := &failingNTimesKeyManagement{
+			inner:     testplugins.NewTestKeyManagement(true, true),
+			failCount: 1,
+			failErr:   keymanagement.ErrProviderAuthenticationFailed,
+		}
+		km, _, ctx, keyConfig := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+
+		result, err := km.Create(ctx, key)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.NotNil(t, result.NativeID)
+		assert.Equal(t, 1, plugin.callCount, "expected exactly one failure before success")
+	})
+
+	t.Run("fails after exhausting all retry attempts", func(t *testing.T) {
+		// failCount=100 always fails — exceeds createKeyRetryAttempts (5).
+		plugin := &failingNTimesKeyManagement{
+			inner:     testplugins.NewTestKeyManagement(true, true),
+			failCount: 100,
+			failErr:   keymanagement.ErrProviderAuthenticationFailed,
+		}
+		km, _, ctx, keyConfig := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+
+		result, err := km.Create(ctx, key)
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, keymanagement.ErrProviderAuthenticationFailed)
+	})
+
+	t.Run("does not retry on non-auth error", func(t *testing.T) {
+		plugin := &failingNTimesKeyManagement{
+			inner:     testplugins.NewTestKeyManagement(true, true),
+			failCount: 100, // would succeed on attempt 101 if retried
+			failErr:   errNonAuthTest,
+		}
+		km, _, ctx, keyConfig := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+
+		result, err := km.Create(ctx, key)
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Equal(t, 1, plugin.callCount, "expected only one attempt for non-auth error")
+	})
 }

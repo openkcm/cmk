@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"sort"
 	"strconv"
 
@@ -18,7 +19,10 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
 
@@ -27,6 +31,10 @@ const (
 	// Since the workflow expiry must be less than the retention minus a day
 	minimumRetentionPeriodDays = 30
 	allowBYOKFeatureGateKey    = "allow-byok"
+
+	// defaultKeystoreCertInfix is inserted between the tenant cert prefix and the tenantID
+	// when constructing the BYOK key-management CN, keeping it under the X.509 64-char limit.
+	defaultKeystoreCertInfix = "byok-"
 )
 
 var (
@@ -39,18 +47,21 @@ type TenantConfigManager struct {
 	svcRegistry  serviceapi.Registry
 	keystorePool *Pool
 	cfg          *config.Config
+	certs        *CertificateManager
 }
 
 func NewTenantConfigManager(
 	repo repo.Repo,
 	svcRegistry serviceapi.Registry,
 	deploymentConfig *config.Config,
+	certs *CertificateManager,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
 		repo:         repo,
 		svcRegistry:  svcRegistry,
 		keystorePool: NewPool(repo),
 		cfg:          deploymentConfig,
+		certs:        certs,
 	}
 }
 
@@ -209,34 +220,49 @@ func (m *TenantConfigManager) GetTenantsKeystores(ctx context.Context) (TenantKe
 }
 
 // GetDefaultKeystoreConfig retrieves the default keystore config
-// If the config doesn't exist, it gets the config from the pool and sets it
+// If the config doesn't exist, it gets the config from the pool and sets it.
+// If KeyManagementConfig is not yet provisioned, it lazily calls GrantTrust(MANAGEMENT).
+// If CryptoAccessData is missing entries, it syncs via GrantTrust(CRYPTO).
 func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, error) {
 	keystore, found, err := m.getStoredDefaultKeystoreConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		err = m.repo.Transaction(ctx, func(ctx context.Context) error {
-			keystore, err = m.getKeystoreConfigFromPool(ctx)
-			if err != nil {
-				return err
-			}
-
-			err = m.setDefaultKeystore(ctx, keystore)
-			if err != nil {
-				return err
-			}
-
-			return nil
-		})
+		keystore, err = m.initDefaultKeystoreFromPool(ctx)
 		if err != nil {
 			return nil, err
 		}
-
 		return keystore, nil
 	}
 
+	if m.certs != nil && m.svcRegistry != nil {
+		updated, err := m.ensureKeystoreProvisioned(ctx, keystore)
+		if err != nil {
+			return nil, err
+		}
+		if !updated {
+			return keystore, nil
+		}
+		if err := m.setDefaultKeystore(ctx, keystore); err != nil {
+			return nil, err
+		}
+	}
+
 	return keystore, nil
+}
+
+func (m *TenantConfigManager) initDefaultKeystoreFromPool(ctx context.Context) (*model.KeystoreConfig, error) {
+	var keystore *model.KeystoreConfig
+	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
+		var err error
+		keystore, err = m.getKeystoreConfigFromPool(ctx)
+		if err != nil {
+			return err
+		}
+		return m.setDefaultKeystore(ctx, keystore)
+	})
+	return keystore, err
 }
 
 func (m *TenantConfigManager) getStoredDefaultKeystoreConfig(
@@ -436,4 +462,206 @@ func (m *TenantConfigManager) loadConfiguredSupportedRegions(ctx context.Context
 	}
 
 	return regions
+}
+
+// ensureKeystoreProvisioned lazily provisions KeyManagementConfig and syncs CryptoAccessData.
+// Returns true if ksConfig was mutated and should be persisted.
+func (m *TenantConfigManager) ensureKeystoreProvisioned(
+	ctx context.Context,
+	ksConfig *model.KeystoreConfig,
+) (bool, error) {
+	updated := false
+
+	if ksConfig.KeyManagementConfig.LocalityID == "" {
+		if err := m.provisionKeyManagementRole(ctx, ksConfig); err != nil {
+			return false, err
+		}
+		updated = true
+	}
+
+	cryptoUpdated, err := m.syncCryptoAccessData(ctx, ksConfig)
+	if err != nil {
+		return false, err
+	}
+
+	return updated || cryptoUpdated, nil
+}
+
+// provisionKeyManagementRole calls GrantTrust(MANAGEMENT) using the role-management cert
+// and stores the result in ksConfig.KeyManagementConfig.
+func (m *TenantConfigManager) provisionKeyManagementRole(
+	ctx context.Context,
+	ksConfig *model.KeystoreConfig,
+) error {
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return errs.Wrap(ErrGetTenantFromCtx, err)
+	}
+
+	client, err := m.getKeystoreManagementClient()
+	if err != nil {
+		return err
+	}
+
+	configMap, err := m.buildRoleManagementConfigMap(ctx, ksConfig)
+	if err != nil {
+		return err
+	}
+
+	keyMgmtCN := m.cfg.Certificates.DefaultTenantCertPrefix + defaultKeystoreCertInfix + tenantID
+
+	resp, err := client.GrantTrust(ctx, &keystoremanagement.GrantTrustRequest{
+		Config:  common.KeystoreConfig{Values: configMap},
+		Subject: keyMgmtCN,
+		Region:  ksConfig.RoleManagementConfig.LocalityID,
+		Type:    keystoremanagement.TrustTypeManagement,
+	})
+	if err != nil {
+		return errs.Wrap(ErrGrantTrustFailed, err)
+	}
+
+	ksConfig.KeyManagementConfig = model.ManagementConfig{
+		LocalityID: ksConfig.RoleManagementConfig.LocalityID,
+		CommonName: keyMgmtCN,
+		AccessData: resp.AccessData.Values,
+	}
+
+	return nil
+}
+
+// syncCryptoAccessData ensures all configured crypto certs are trusted.
+// Returns true if ksConfig was mutated.
+func (m *TenantConfigManager) syncCryptoAccessData(
+	ctx context.Context,
+	ksConfig *model.KeystoreConfig,
+) (bool, error) {
+	cryptoCerts, err := m.certs.getCryptoCertificates(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	if len(cryptoCerts) == 0 {
+		return false, nil
+	}
+
+	if ksConfig.CryptoAccessData == nil {
+		ksConfig.CryptoAccessData = make(map[string]model.CryptoConfig)
+	}
+
+	updated := false
+	for _, cert := range cryptoCerts {
+		certUpdated, err := m.syncCert(ctx, cert, ksConfig)
+		if err != nil {
+			return false, err
+		}
+		updated = updated || certUpdated
+	}
+
+	return updated, nil
+}
+
+func (m *TenantConfigManager) syncCert(
+	ctx context.Context,
+	cert *model.ClientCertificate,
+	ksConfig *model.KeystoreConfig,
+) (bool, error) {
+	if _, exists := ksConfig.CryptoAccessData[cert.Name]; exists {
+		return false, nil
+	}
+
+	accessData, err := m.grantCryptoRoleTrust(ctx, cert.Subject.String(), cert.Name, ksConfig)
+	if err != nil {
+		return false, err
+	}
+
+	ksConfig.CryptoAccessData[cert.Name] = model.CryptoConfig{
+		Subject:    cert.Subject.String(),
+		AccessData: accessData.Values,
+	}
+
+	return true, nil
+}
+
+func (m *TenantConfigManager) grantCryptoRoleTrust(
+	ctx context.Context,
+	subject, region string,
+	ksConfig *model.KeystoreConfig,
+) (*common.KeystoreConfig, error) {
+	client, err := m.getKeystoreManagementClient()
+	if err != nil {
+		return nil, err
+	}
+
+	configMap, err := m.buildRoleManagementConfigMap(ctx, ksConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.GrantTrust(ctx, &keystoremanagement.GrantTrustRequest{
+		Config:  common.KeystoreConfig{Values: configMap},
+		Subject: subject,
+		Region:  region,
+		Type:    keystoremanagement.TrustTypeCrypto,
+	})
+	if err != nil {
+		return nil, errs.Wrap(ErrGrantTrustFailed, err)
+	}
+
+	return &common.KeystoreConfig{Values: resp.AccessData.Values}, nil
+}
+
+// buildRoleManagementConfigMap builds the config map for GrantTrust calls
+// by combining the role-management cert with the role-management access data from ksConfig.
+func (m *TenantConfigManager) buildRoleManagementConfigMap(
+	ctx context.Context,
+	ksConfig *model.KeystoreConfig,
+) (map[string]any, error) {
+	cert, err := m.getRoleManagementCert(ctx, ksConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	configMap := map[string]any{
+		"authType":   constants.AuthTypeCertificate,
+		"clientCert": cert.CertPEM,
+		"privateKey": cert.PrivateKeyPEM,
+	}
+	maps.Copy(configMap, ksConfig.RoleManagementConfig.AccessData)
+
+	return configMap, nil
+}
+
+func (m *TenantConfigManager) getRoleManagementCert(
+	ctx context.Context,
+	ksConfig *model.KeystoreConfig,
+) (*model.Certificate, error) {
+	return m.certs.getDefaultKeystoreClientCert(
+		ctx,
+		ksConfig.RoleManagementConfig.LocalityID,
+		ksConfig.RoleManagementConfig.CommonName,
+		model.CertificatePurposeRoleManagement,
+	)
+}
+
+func (m *TenantConfigManager) getKeystoreManagementClient() (keystoremanagement.KeystoreManagement, error) {
+	clients, err := m.svcRegistry.KeystoreManagements()
+	if err != nil {
+		return nil, errs.Wrap(ErrGetDefaultKeystore, err)
+	}
+
+	plugins, err := m.svcRegistry.KeyManagementList()
+	if err != nil || len(plugins) == 0 {
+		return nil, errs.Wrapf(ErrGetDefaultKeystore, "no keystore plugins found")
+	}
+
+	for _, plugin := range plugins {
+		if pluginHelpers.HasTag(plugin.ServiceInfo().Tags(), constants.DefaultKeyStore) {
+			client, ok := clients[plugin.ServiceInfo().Name()]
+			if ok {
+				return client, nil
+			}
+		}
+	}
+
+	return nil, errs.Wrapf(ErrGetDefaultKeystore, "no default keystore management client found")
 }

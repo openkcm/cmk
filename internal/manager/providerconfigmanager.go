@@ -39,7 +39,6 @@ var (
 	ErrAddConfigToPool               = errors.New("failed to add keystore configuration to pool")
 	ErrCountKeystorePool             = errors.New("failed to get keystore pool size")
 	ErrGrantTrustFailed              = errors.New("failed to grant trust to certificate")
-	ErrRemoveTrustFailed             = errors.New("failed to remove trust from certificate")
 )
 
 type ProviderConfig struct {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/openkcm/orbital"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
@@ -23,14 +25,18 @@ import (
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
+var (
+	ErrKeystoreNotEnrolled = errors.New("no crypto access data provisioned for tenant: keystore not enrolled")
+	ErrNoCryptoAccessData  = errors.New("no crypto access data provisioned for tenant")
+)
+
 // SystemTaskInfoResolver is responsible for resolving the necessary information to create a TaskInfo
 // for system-related tasks such as linking and unlinking systems.
 type SystemTaskInfoResolver struct {
-	repo         repo.Repo
-	targets      map[string]struct{}
-	svcRegistry  serviceapi.Registry
-	cfg          *config.Config
-	cryptoSyncer *CryptoAccessDataSyncer
+	repo        repo.Repo
+	targets     map[string]struct{}
+	svcRegistry serviceapi.Registry
+	cfg         *config.Config
 }
 
 func (r *SystemTaskInfoResolver) Resolve(
@@ -226,6 +232,40 @@ func (r *SystemTaskInfoResolver) fetchAndPopulateVersionInfo(
 	return cryptoData, nil
 }
 
+func (r *SystemTaskInfoResolver) getCryptoAccessDataFromConfig(ctx context.Context) (model.KeyAccessData, error) {
+	var cfg model.TenantConfig
+
+	ck := repo.NewCompositeKey().Where(repo.KeyField, constants.DefaultKeyStore)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+
+	found, err := r.repo.First(ctx, &cfg, *query)
+	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+		return nil, fmt.Errorf("failed to get default keystore config: %w", err)
+	}
+	if !found {
+		return nil, ErrKeystoreNotEnrolled
+	}
+
+	ksConfig := &model.KeystoreConfig{}
+	if err := json.Unmarshal(cfg.Value, ksConfig); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal keystore config: %w", err)
+	}
+
+	if len(ksConfig.CryptoAccessData) == 0 {
+		return nil, ErrNoCryptoAccessData
+	}
+
+	result := make(model.KeyAccessData)
+	for name, cryptoCfg := range ksConfig.CryptoAccessData {
+		entry := make(map[string]any, len(cryptoCfg.AccessData)+1)
+		maps.Copy(entry, cryptoCfg.AccessData)
+		entry[model.CertificateSubjectKey] = cryptoCfg.Subject
+		result[name] = entry
+	}
+
+	return result, nil
+}
+
 func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 	ctx context.Context,
 	key model.Key,
@@ -242,13 +282,12 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 	}
 
 	var cryptoData model.KeyAccessData
-	// For HYOK keys, we need to fetch the latest version info and populate it into the crypto access data
-	// to support key rotation.
-	// For BYOK/managed keys, we need to sync crypto access data instead
+	// For HYOK keys, fetch the latest version info from DB.
+	// For BYOK/managed keys, read pre-provisioned crypto access data from the stored keystore config.
 	if key.KeyType == string(cmkapi.KeyTypeHYOK) {
 		cryptoData, err = r.fetchAndPopulateVersionInfo(ctx, key)
 	} else {
-		cryptoData, err = r.cryptoSyncer.SyncAndGetCryptoAccessData(ctx)
+		cryptoData, err = r.getCryptoAccessDataFromConfig(ctx)
 	}
 	if err != nil {
 		return nil, err

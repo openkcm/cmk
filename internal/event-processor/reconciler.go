@@ -154,11 +154,10 @@ func NewCryptoReconciler(
 	reconciler.manager = manager
 
 	systemResolver := &SystemTaskInfoResolver{
-		repo:         repository,
-		svcRegistry:  svcRegistry,
-		targets:      targetMap,
-		cfg:          cfg,
-		cryptoSyncer: NewCryptoAccessDataSyncer(cfg, repository, svcRegistry),
+		repo:        repository,
+		svcRegistry: svcRegistry,
+		targets:     targetMap,
+		cfg:         cfg,
 	}
 
 	keyResolver := &KeyTaskInfoResolver{

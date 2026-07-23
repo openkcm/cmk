@@ -120,10 +120,19 @@ func (v1 *V1) GrantTrust(
 	if err != nil {
 		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
 	}
+	var trustType grpckeystoremanagementv1.TrustType
+	switch req.Type {
+	case keystoremanagement.TrustTypeManagement:
+		trustType = grpckeystoremanagementv1.TrustType_TRUST_TYPE_MANAGEMENT
+	case keystoremanagement.TrustTypeCrypto:
+		trustType = grpckeystoremanagementv1.TrustType_TRUST_TYPE_CRYPTO
+	}
+
 	in := &grpckeystoremanagementv1.GrantTrustRequest{
 		Config:  &grpccommonv1.KeystoreInstanceConfig{Values: value},
 		Subject: req.Subject,
 		Region:  req.Region,
+		Type:    trustType,
 	}
 	if err := protovalidate.Validate(in); err != nil {
 		return nil, fmt.Errorf(errFailedValidationMsg, err)
