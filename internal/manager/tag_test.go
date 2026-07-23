@@ -1,7 +1,6 @@
 package manager_test
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -25,7 +23,8 @@ func SetupTagManager(t *testing.T) (*manager.TagManager,
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	dbRepository := sql.NewRepository(db)
-	tagManager := manager.NewTagManager(dbRepository)
+	resourceLabelManager := manager.NewResourceLabelManager(dbRepository)
+	tagManager := manager.NewTagManager(resourceLabelManager)
 
 	return tagManager, db, tenants[0]
 }
@@ -36,22 +35,23 @@ func TestGetKeyConfigurationTags(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	expectedTagValue := []string{"tag1"}
-	bytes, err := json.Marshal(expectedTagValue)
-	assert.NoError(t, err)
-
 	id := uuid.New()
-	tag := testutils.NewTag(func(t *model.Tag) {
-		t.ID = id
-		t.Values = bytes
-	})
 
-	testutils.CreateTestEntities(ctx, t, r, tag)
+	// Create tags using the new resource_labels format
+	tag1 := &model.ResourceLabel{
+		ID:           uuid.New(),
+		ResourceType: model.ResourceTypeKeyConfig,
+		ResourceID:   id,
+		Key:          model.SystemTagKey,
+		Value:        "tag1",
+	}
+
+	testutils.CreateTestEntities(ctx, t, r, tag1)
 
 	t.Run("Should get tags", func(t *testing.T) {
 		tags, err := m.GetTags(ctx, id)
 		assert.NoError(t, err)
-		assert.Equal(t, expectedTagValue, tags)
+		assert.Equal(t, []string{"tag1"}, tags)
 	})
 
 	t.Run("Should return empty on non existing tag", func(t *testing.T) {
@@ -62,9 +62,8 @@ func TestGetKeyConfigurationTags(t *testing.T) {
 }
 
 func TestCreateTags(t *testing.T) {
-	m, db, tenant := SetupTagManager(t)
+	m, _, tenant := SetupTagManager(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	r := sql.NewRepository(db)
 
 	t.Run("Should set tags", func(t *testing.T) {
 		id := uuid.New()
@@ -72,24 +71,19 @@ func TestCreateTags(t *testing.T) {
 		err := m.SetTags(ctx, id, tags)
 		assert.NoError(t, err)
 
-		tag := &model.Tag{ID: id}
-		_, err = r.First(ctx, tag, *repo.NewQuery())
+		// Verify tags were created in resource_labels table
+		retrievedTags, err := m.GetTags(ctx, id)
 		assert.NoError(t, err)
+		assert.ElementsMatch(t, tags, retrievedTags)
 
-		res := []string{}
-		err = json.Unmarshal(tag.Values, &res)
-		assert.NoError(t, err)
-		assert.Equal(t, tags, res)
-
+		// Update tags
 		tags = []string{"tag3", "tag4"}
 		err = m.SetTags(ctx, id, tags)
 		assert.NoError(t, err)
-		_, err = r.First(ctx, tag, *repo.NewQuery())
-		assert.NoError(t, err)
 
-		err = json.Unmarshal(tag.Values, &res)
+		retrievedTags, err = m.GetTags(ctx, id)
 		assert.NoError(t, err)
-		assert.Equal(t, tags, res)
+		assert.ElementsMatch(t, tags, retrievedTags)
 	})
 
 	t.Run("Should not write empty tag", func(t *testing.T) {

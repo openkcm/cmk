@@ -23,6 +23,7 @@ var (
 
 	ErrGetTags      = errors.New("failed getting tags")
 	ErrDeletingTags = errors.New("failed to delete tags")
+	ErrCreateTag    = errors.New("error setting tags")
 
 	ErrCreateKeyConfiguration       = errors.New("failed to create key configuration")
 	ErrConnectedSystemToKeyConfig   = errors.New("system is connected to keyconfig")

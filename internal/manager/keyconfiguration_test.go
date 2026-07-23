@@ -101,7 +101,8 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
-	tagManager := manager.NewTagManager(authzRepo)
+	resourceLabelManager := manager.NewResourceLabelManager(authzRepo)
+	tagManager := manager.NewTagManager(resourceLabelManager)
 
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
 	assert.NoError(t, err)
@@ -1016,12 +1017,13 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
 	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
-	bytes, err := json.Marshal(&[]string{"tag1"})
-	assert.NoError(t, err)
-	tags := testutils.NewTag(func(t *model.Tag) {
-		t.ID = expected.ID
-		t.Values = bytes
-	})
+	tags := &model.ResourceLabel{
+		ID:           uuid.New(),
+		ResourceType: model.ResourceTypeKeyConfig,
+		ResourceID:   expected.ID,
+		Key:          model.SystemTagKey,
+		Value:        "tag1",
+	}
 
 	testutils.CreateTestEntities(ctx, t, r, expected, tags, adminGroup, keyConfigWithAdminGroup)
 
@@ -1043,7 +1045,11 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 		assert.Equal(t, 0, count)
 		assert.NoError(t, err)
 
-		count, err = r.Count(ctx, &model.Tag{ID: expected.ID}, *repo.NewQuery())
+		ck := repo.NewCompositeKey().
+			Where(repo.ResourceTypeField, model.ResourceTypeKeyConfig).
+			Where(repo.ResourceIDField, expected.ID).
+			Where(repo.KeyField, model.SystemTagKey)
+		count, err = r.Count(ctx, &model.ResourceLabel{}, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 		assert.Equal(t, 0, count)
 		assert.NoError(t, err)
 	})

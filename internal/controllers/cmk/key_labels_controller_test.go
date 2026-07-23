@@ -106,21 +106,24 @@ func TestLabelsController_GetKeyLabels(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.ID = keyID
 			k.KeyConfigurationID = keyConfig.ID
-			k.KeyLabels = []model.KeyLabel{
-				*testutils.NewKeyLabel(func(l *model.KeyLabel) {
-					l.Key = "foo"
-					l.Value = "bar"
-					l.ResourceID = keyID
-				}),
-				*testutils.NewKeyLabel(func(l *model.KeyLabel) {
-					l.Key = "region/az"
-					l.Value = "eu-west-1/a"
-					l.ResourceID = keyID
-				}),
-			}
 		})
 
-		testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
+		rl1 := &model.ResourceLabel{
+			ID:           uuid.New(),
+			ResourceType: model.ResourceTypeKey,
+			ResourceID:   keyID,
+			Key:          "foo",
+			Value:        "bar",
+		}
+		rl2 := &model.ResourceLabel{
+			ID:           uuid.New(),
+			ResourceType: model.ResourceTypeKey,
+			ResourceID:   keyID,
+			Key:          "region/az",
+			Value:        "eu-west-1/a",
+		}
+
+		testutils.CreateTestEntities(ctx, t, r, keyConfig, key, rl1, rl2)
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,
@@ -169,12 +172,6 @@ func TestLabelsController_GetKeyLabelsPagination(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	key := testutils.NewKey(func(_ *model.Key) {})
-	for range totalRecordCount {
-		key.KeyLabels = append(
-			key.KeyLabels,
-			*testutils.NewKeyLabel(func(_ *model.KeyLabel) {}),
-		)
-	}
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 	headers := signedHeadersForAuthClient(t, keyStorage, authClient)
@@ -183,6 +180,16 @@ func TestLabelsController_GetKeyLabelsPagination(t *testing.T) {
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
+	for i := range totalRecordCount {
+		label := &model.ResourceLabel{
+			ID:           uuid.New(),
+			ResourceType: model.ResourceTypeKey,
+			ResourceID:   key.ID,
+			Key:          fmt.Sprintf("key-%03d", i),
+			Value:        fmt.Sprintf("value-%03d", i),
+		}
+		testutils.CreateTestEntities(ctx, t, r, label)
+	}
 
 	type testCase struct {
 		name           string
@@ -430,15 +437,16 @@ func TestLabelsController_CreateOrUpdateLabels(t *testing.T) {
 			assert.Equal(t, tc.expectedStatus, w.Code)
 
 			if tc.validateByFetchingDataFromDB && tc.doesKeyExist {
-				var ls []*model.KeyLabel
+				var ls []*model.ResourceLabel
 
-				err := r.List(ctx, model.KeyLabel{}, &ls, *repo.NewQuery().Order(repo.OrderField{
+				err := r.List(ctx, model.ResourceLabel{}, &ls, *repo.NewQuery().Order(repo.OrderField{
 					Field:     "Key",
 					Direction: repo.Asc,
 				}).Where(
 					repo.NewCompositeKeyGroup(
-						repo.NewCompositeKey().Where(
-							repo.ResourceIDField, key.ID),
+						repo.NewCompositeKey().
+							Where(repo.ResourceTypeField, model.ResourceTypeKey).
+							Where(repo.ResourceIDField, key.ID),
 					),
 				))
 				assert.NoError(t, err)
@@ -510,20 +518,23 @@ func TestLabelsController_DeleteLabel(t *testing.T) {
 				keyID := uuid.New()
 				key = testutils.NewKey(func(k *model.Key) {
 					k.ID = keyID
-					k.KeyLabels = []model.KeyLabel{
-						*testutils.NewKeyLabel(func(l *model.KeyLabel) {
-							l.Key = "foo"
-							l.Value = "bar"
-							l.ResourceID = keyID
-						}),
-						*testutils.NewKeyLabel(func(l *model.KeyLabel) {
-							l.Key = "region/az"
-							l.Value = "eu-west-1/a"
-							l.ResourceID = keyID
-						}),
-					}
 				})
-				testutils.CreateTestEntities(ctx, t, r, key)
+				rl1 := &model.ResourceLabel{
+					ID:           uuid.New(),
+					ResourceType: model.ResourceTypeKey,
+					ResourceID:   keyID,
+					Key:          "foo",
+					Value:        "bar",
+				}
+				rl2 := &model.ResourceLabel{
+					ID:           uuid.New(),
+					ResourceType: model.ResourceTypeKey,
+					ResourceID:   keyID,
+					Key:          "region/az",
+					Value:        "eu-west-1/a",
+				}
+
+				testutils.CreateTestEntities(ctx, t, r, key, rl1, rl2)
 			} else {
 				key = testutils.NewKey(func(_ *model.Key) {})
 			}
@@ -537,15 +548,16 @@ func TestLabelsController_DeleteLabel(t *testing.T) {
 			assert.Equal(t, tc.expectedStatus, w.Code)
 
 			if tc.validateByFetchingDataFromDB && tc.doesKeyExist {
-				var ls []*model.KeyLabel
+				var ls []*model.ResourceLabel
 
-				err := r.List(ctx, model.KeyLabel{}, &ls, *repo.NewQuery().Order(repo.OrderField{
+				err := r.List(ctx, model.ResourceLabel{}, &ls, *repo.NewQuery().Order(repo.OrderField{
 					Field:     "Key",
 					Direction: repo.Asc,
 				}).Where(
 					repo.NewCompositeKeyGroup(
-						repo.NewCompositeKey().Where(
-							repo.ResourceIDField, key.ID),
+						repo.NewCompositeKey().
+							Where(repo.ResourceTypeField, model.ResourceTypeKey).
+							Where(repo.ResourceIDField, key.ID),
 					),
 				))
 				assert.NoError(t, err)

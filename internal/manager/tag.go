@@ -2,76 +2,44 @@ package manager
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
 )
 
-var (
-	ErrGetKeyConfig = errors.New("error getting keyconfig")
-	ErrCreateTag    = errors.New("error setting tags")
-)
-
+// Tags interface for managing tags on resources (currently KeyConfigurations)
 type Tags interface {
 	SetTags(ctx context.Context, itemID uuid.UUID, values []string) error
 	GetTags(ctx context.Context, itemID uuid.UUID) ([]string, error)
 	DeleteTags(ctx context.Context, itemID uuid.UUID) error
 }
 
+// TagManager is an adapter that delegates to ResourceLabelManager
+// Maintains backward compatibility while using the new unified resource_labels table
 type TagManager struct {
-	r repo.Repo
+	resourceLabels ResourceLabels
 }
 
-func NewTagManager(r repo.Repo) *TagManager {
+// NewTagManager creates a new TagManager that uses ResourceLabelManager
+func NewTagManager(resourceLabels ResourceLabels) *TagManager {
 	return &TagManager{
-		r: r,
+		resourceLabels: resourceLabels,
 	}
 }
 
-func (m *TagManager) DeleteTags(ctx context.Context, itemID uuid.UUID) error {
-	_, err := m.r.Delete(ctx, &model.Tag{ID: itemID}, *repo.NewQuery())
-	if err != nil {
-		return errs.Wrap(ErrDeletingTags, err)
-	}
-
-	return nil
-}
-
+// SetTags sets tags for a key configuration
+// Tags are stored as labels with key="system.tag"
 func (m *TagManager) SetTags(ctx context.Context, itemID uuid.UUID, values []string) error {
-	if len(values) == 1 && values[0] == "" {
-		return m.DeleteTags(ctx, itemID)
-	}
-
-	bytes, err := json.Marshal(values)
-	if err != nil {
-		return err
-	}
-
-	return m.r.Set(ctx, &model.Tag{ID: itemID, Values: bytes})
+	return m.resourceLabels.SetTags(ctx, model.ResourceTypeKeyConfig, itemID, values)
 }
 
+// GetTags retrieves tags for a key configuration
 func (m *TagManager) GetTags(ctx context.Context, itemID uuid.UUID) ([]string, error) {
-	values := []string{}
-	tag := &model.Tag{ID: itemID}
-	_, err := m.r.First(ctx, tag, *repo.NewQuery())
+	return m.resourceLabels.GetTags(ctx, model.ResourceTypeKeyConfig, itemID)
+}
 
-	if errors.Is(err, repo.ErrNotFound) {
-		return values, nil
-	}
-
-	if !errors.Is(err, err) {
-		return nil, errs.Wrap(ErrGetTags, err)
-	}
-
-	err = json.Unmarshal(tag.Values, &values)
-	if err != nil {
-		return nil, err
-	}
-
-	return values, nil
+// DeleteTags removes all tags for a key configuration
+func (m *TagManager) DeleteTags(ctx context.Context, itemID uuid.UUID) error {
+	return m.resourceLabels.DeleteTags(ctx, model.ResourceTypeKeyConfig, itemID)
 }

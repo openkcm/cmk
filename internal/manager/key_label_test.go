@@ -24,17 +24,23 @@ func TestGetKeyLabels(t *testing.T) {
 	keyID := uuid.New()
 	key := testutils.NewKey(func(k *model.Key) {
 		k.ID = keyID
-		k.KeyLabels = []model.KeyLabel{
-			*testutils.NewKeyLabel(func(l *model.KeyLabel) {
-				l.ResourceID = keyID
-			}),
-			*testutils.NewKeyLabel(func(l *model.KeyLabel) {
-				l.ResourceID = keyID
-			}),
-		}
 	})
 	key2 := testutils.NewKey(func(_ *model.Key) {})
-	testutils.CreateTestEntities(ctx, t, r, key, key2)
+	rl1 := &model.ResourceLabel{
+		ID:           uuid.New(),
+		ResourceType: model.ResourceTypeKey,
+		ResourceID:   keyID,
+		Key:          "foo",
+		Value:        "bar",
+	}
+	rl2 := &model.ResourceLabel{
+		ID:           uuid.New(),
+		ResourceType: model.ResourceTypeKey,
+		ResourceID:   keyID,
+		Key:          "region/az",
+		Value:        "eu-west-1/a",
+	}
+	testutils.CreateTestEntities(ctx, t, r, key, key2, rl1, rl2)
 
 	t.Run("Should get key labels", func(t *testing.T) {
 		labels, count, err := m.GetKeyLabels(
@@ -44,11 +50,11 @@ func TestGetKeyLabels(t *testing.T) {
 		)
 		assert.NoError(t, err)
 
-		for i := range labels {
-			assert.Equal(t, key.KeyLabels[i].ResourceID, labels[i].ResourceID)
+		assert.Len(t, labels, 2)
+		for _, l := range labels {
+			assert.Equal(t, keyID, l.ResourceID)
 		}
-
-		assert.Equal(t, len(key.KeyLabels), count)
+		assert.Equal(t, 2, count)
 	})
 
 	t.Run("Should error getting key labels on invalid key", func(t *testing.T) {
@@ -73,9 +79,8 @@ func TestCreateOrUpdateLabel(t *testing.T) {
 	expected := []*model.KeyLabel{
 		{
 			BaseLabel: model.BaseLabel{
-				ID:    uuid.New(),
 				Value: "test-1",
-				Key:   key.ID.String(),
+				Key:   "test-key",
 			},
 			CryptoKey: *key,
 		},
@@ -94,7 +99,8 @@ func TestCreateOrUpdateLabel(t *testing.T) {
 		assert.NoError(t, err)
 
 		for i := range labels {
-			assert.Equal(t, expected[i].BaseLabel, labels[i].BaseLabel)
+			assert.Equal(t, expected[i].Key, labels[i].Key)
+			assert.Equal(t, expected[i].Value, labels[i].Value)
 		}
 	})
 	t.Run("Should update labels", func(t *testing.T) {
@@ -142,19 +148,17 @@ func TestDeleteKeyLabel(t *testing.T) {
 	keyID := uuid.New()
 	key := testutils.NewKey(func(k *model.Key) {
 		k.ID = keyID
-		k.KeyLabels = []model.KeyLabel{
-			*testutils.NewKeyLabel(func(l *model.KeyLabel) {
-				l.ResourceID = keyID
-			}),
-			*testutils.NewKeyLabel(func(l *model.KeyLabel) {
-				l.ResourceID = keyID
-			}),
-		}
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, key)
+	err := m.CreateOrUpdateLabel(ctx, key.ID, []*model.KeyLabel{
+		{BaseLabel: model.BaseLabel{Key: "foo", Value: "bar"}},
+		{BaseLabel: model.BaseLabel{Key: "region/az", Value: "eu-west-1/a"}},
+	})
+	assert.NoError(t, err)
+
 	t.Run("Should delete label", func(t *testing.T) {
-		ok, err := m.DeleteLabel(ctx, key.ID, key.KeyLabels[0].Key)
+		ok, err := m.DeleteLabel(ctx, key.ID, "foo")
 		assert.NoError(t, err)
 		assert.True(t, ok)
 
@@ -173,7 +177,7 @@ func TestDeleteKeyLabel(t *testing.T) {
 	})
 
 	t.Run("Should error invalid key id", func(t *testing.T) {
-		_, err := m.DeleteLabel(ctx, uuid.New(), key.KeyLabels[0].Key)
+		_, err := m.DeleteLabel(ctx, uuid.New(), "foo")
 		assert.ErrorIs(t, err, manager.ErrGetKeyIDDB)
 	})
 }
@@ -184,7 +188,8 @@ func setupTest(t *testing.T) (*multitenancy.DB, *manager.LabelManager, string) {
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	r := sql.NewRepository(db)
-	labelManager := manager.NewLabelManager(r)
+	resourceLabelManager := manager.NewResourceLabelManager(r)
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
 
 	return db, labelManager, tenants[0]
 }
