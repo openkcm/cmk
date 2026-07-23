@@ -874,11 +874,17 @@ config:
     # authContext: []
 
   # Keystore pool configuration
-  # keystorePool:
-  # Target number of keystores to keep in the pool
-  # size: 5
-  # Interval to report the size of the keystore pool
-  # interval: 10m
+  keystorePool:
+    # Target number of keystores to keep in the pool
+    size: 2
+    # Interval to report the size of the keystore pool
+    interval: 10m
+    # Supported regions configuration - should match the keystore plugin's supported regions
+    supportedRegions:
+      source: file
+      file:
+        path: /etc/credentials/keystore-plugins/management/supported-regions
+        format: binary
 
   landscape:
     # name: one of Local, Staging, Canary, Production
