@@ -76,7 +76,7 @@ func NewCommandFactory(
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
-		manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg),
+		manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, cm),
 		kcm,
 		um,
 		cm,

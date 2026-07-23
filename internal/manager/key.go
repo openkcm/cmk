@@ -11,6 +11,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/avast/retry-go/v5"
 	"github.com/google/uuid"
 	"github.com/openkcm/orbital"
 
@@ -38,7 +39,17 @@ const (
 	BYOKActionImportKeyMaterial BYOKAction = "IMPORT_KEY_MATERIAL"
 	BYOKActionGetImportParams   BYOKAction = "GET_IMPORT_PARAMETERS"
 	IsEditableCryptoAccess      string     = "isEditable"
+
+	// createKeyRetryAttempts is the number of attempts for key creation, including the initial attempt.
+	// Covers keystore provider authorization propagation delay (~1-2 min) after lazy role provisioning.
+	// With 15s base, 30s cap, and BackOffDelay: 15 + 30 + 30 + 30 = 105s total wait.
+	createKeyRetryAttempts = 5
 )
+
+// createKeyRetryDelay and createKeyMaxDelay control the backoff for key creation retries.
+// They are vars (not consts) so tests can override them to avoid real waits.
+var createKeyRetryDelay = 15 * time.Second
+var createKeyMaxDelay = 30 * time.Second
 
 var UnavailableKeyStates = []cmkapi.KeyState{
 	cmkapi.KeyStatePENDINGDELETION,
@@ -560,12 +571,28 @@ func (km *KeyManager) createManagedProviderKey(
 	key *model.Key,
 	provider *ProviderConfig,
 ) error {
-	keyResp, err := provider.Client.CreateKey(ctx, &keymanagement.CreateKeyRequest{
-		Config:       common.KeystoreConfig{Values: provider.Config.Values},
-		KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
-		ID:           ptr.PointTo(key.ID.String()),
-		Region:       key.Region,
-		KeyType:      convertToAPIKeyType(key.KeyType),
+	var keyResp *keymanagement.CreateKeyResponse
+
+	err := retry.New(
+		retry.RetryIf(func(err error) bool {
+			return errors.Is(err, keymanagement.ErrProviderAuthenticationFailed)
+		}),
+		retry.Attempts(createKeyRetryAttempts),
+		retry.Delay(createKeyRetryDelay),
+		retry.MaxDelay(createKeyMaxDelay),
+		retry.DelayType(retry.BackOffDelay),
+		retry.LastErrorOnly(true),
+		retry.Context(ctx),
+	).Do(func() error {
+		var err error
+		keyResp, err = provider.Client.CreateKey(ctx, &keymanagement.CreateKeyRequest{
+			Config:       common.KeystoreConfig{Values: provider.Config.Values},
+			KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
+			ID:           ptr.PointTo(key.ID.String()),
+			Region:       key.Region,
+			KeyType:      convertToAPIKeyType(key.KeyType),
+		})
+		return err
 	})
 	if err != nil {
 		return errs.Wrap(ErrKeyCreationFailed, err)
