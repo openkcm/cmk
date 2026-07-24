@@ -82,7 +82,8 @@ func SetupWorkflowManager(
 	assert.NoError(t, err)
 	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
 
-	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
+	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, labelManager, nil, cmkAuditor)
 	m := manager.NewWorkflowManager(
 		r, svcRegistry, keym, keyConfigManager, systemManager,
 		groupManager, userManager, nil, tenantConfigManager, cfg,

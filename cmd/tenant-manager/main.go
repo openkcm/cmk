@@ -162,6 +162,7 @@ func createTenantManager(
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
@@ -169,6 +170,7 @@ func createTenantManager(
 		kcm,
 		um,
 		cm,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

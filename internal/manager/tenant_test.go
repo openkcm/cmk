@@ -97,6 +97,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
@@ -104,6 +105,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 		kcm,
 		um,
 		cm,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

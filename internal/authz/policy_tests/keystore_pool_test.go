@@ -63,6 +63,7 @@ func TestKeystorePool_AuthzPolicy(t *testing.T) {
 	tagManager := manager.NewTagManager(resourceLabelManager)
 	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, certManager)
 	keyConfigManager := manager.NewKeyConfigManager(authzRepo, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
+	labelManager := manager.NewLabelManager(authzRepo, resourceLabelManager)
 	keyManager := manager.NewKeyManager(
 		authzRepo,
 		ps,
@@ -70,6 +71,7 @@ func TestKeystorePool_AuthzPolicy(t *testing.T) {
 		keyConfigManager,
 		userManager,
 		certManager,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

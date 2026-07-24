@@ -92,8 +92,9 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	tagManager := manager.NewTagManager(resourceLabelManager)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
 	km := manager.NewKeyManager(
-		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor,
+		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, labelManager, eventFactory, cmkAuditor,
 	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -1302,7 +1303,8 @@ func TestKeyRotationTime(t *testing.T) {
 	resourceLabelManager := manager.NewResourceLabelManager(r)
 	tagManager := manager.NewTagManager(resourceLabelManager)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
-	km := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
+	km := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, labelManager, eventFactory, cmkAuditor)
 
 	// Create test data
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -1436,7 +1438,8 @@ func TestKeyRotationTime(t *testing.T) {
 
 		svcRegistry2 := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOpsNoTime))
 
-		km2 := manager.NewKeyManager(r, svcRegistry2, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
+		labelManager2 := manager.NewLabelManager(r, resourceLabelManager)
+		km2 := manager.NewKeyManager(r, svcRegistry2, tenantConfigManager, keyConfigManager, userManager, certManager, labelManager2, eventFactory, cmkAuditor)
 
 		// Create HYOK key
 		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)

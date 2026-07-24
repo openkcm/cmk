@@ -95,6 +95,7 @@ func (s *CLISuite) SetupSuite() {
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(authzRepo, resourceLabelManager)
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
@@ -102,6 +103,7 @@ func (s *CLISuite) SetupSuite() {
 		kcm,
 		um,
 		cm,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

@@ -74,6 +74,7 @@ func NewCommandFactory(
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(authzRepo, resourceLabelManager)
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
@@ -81,6 +82,7 @@ func NewCommandFactory(
 		kcm,
 		um,
 		cm,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

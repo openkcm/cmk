@@ -169,8 +169,9 @@ func registerTasks(
 		eventFactory,
 		cfg,
 	)
+	labelManager := manager.NewLabelManager(authzRepo, resourceLabelManager)
 	keyManager := manager.NewKeyManager(
-		authzRepo, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
+		authzRepo, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, labelManager, eventFactory, cmkAuditor)
 	systemManager := manager.NewSystemManager(ctx, authzRepo, authzRepoLoader, nil, eventFactory,
 		svcRegistry, cfg, keyConfigManager, userManager)
 	groupManager := manager.NewGroupManager(authzRepo, svcRegistry, userManager)
