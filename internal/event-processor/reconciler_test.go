@@ -2048,17 +2048,26 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 
-	// DEFAULT_KEYSTORE exists but has no CryptoAccessData entry for this cert —
-	// the syncer will call GrantTrust.
-	emptyKS, err := json.Marshal(model.KeystoreConfig{})
-	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: emptyKS}))
+	// Compute the cert subject the way model.NewClientCertificate does.
+	clientCert := model.NewClientCertificate(certCfg, tenant)
+	certSubject := clientCert.Subject.String()
 
-	// Role-management cert required by GrantTrust path.
-	roleManagementCert := testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeRoleManagement
-	})
-	require.NoError(t, r.Create(ctx, roleManagementCert))
+	// Pre-seed DEFAULT_KEYSTORE with CryptoAccessData already provisioned
+	// (simulating manager enrollment). The event-processor reads this directly.
+	ksConfig := model.KeystoreConfig{
+		CryptoAccessData: map[string]model.CryptoConfig{
+			region: {
+				Subject: certSubject,
+				AccessData: model.KeystoreAccessData{
+					"trustedSubject": certSubject,
+					"trustedRegion":  region,
+				},
+			},
+		},
+	}
+	ksBytes, err := json.Marshal(ksConfig)
+	require.NoError(t, err)
+	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) { s.Region = region })
@@ -2083,7 +2092,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 
 	tasks, err := handler.ResolveTasks(ctx, j)
 
-	// GrantTrust (TestKeystoreManagement) returns an empty AccessData map.
+	// CryptoAccessData is read from the stored keystore config.
 	// TransformCryptoAccessData adds keyID, so key_access_meta_data must be present.
 	assert.NoError(t, err)
 	if assert.Len(t, tasks, 1) {
@@ -2099,9 +2108,179 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 		assert.NoError(t, json.Unmarshal(sa.GetKeyAccessMetaData(), &keyAccessData))
 		// TransformCryptoAccessData injects the native key ID.
 		assert.Equal(t, "byok-grant-key", keyAccessData["keyID"])
-		// Validate access data from GrantTrust
+		// Validate access data read from stored keystore config.
 		assert.Equal(t, "CN=byok-granttenant0,OU=abc", keyAccessData["certificateSubject"])
 		assert.Equal(t, "CN=byok-granttenant0,OU=abc", keyAccessData["trustedSubject"])
 		assert.Equal(t, "byok-grant-region", keyAccessData["trustedRegion"])
 	}
+}
+
+// TestGetCryptoAccessDataFromConfig verifies the behavior of getCryptoAccessDataFromConfig,
+// which is exercised via ResolveTasks for BYOK keys.
+//
+// Covered cases:
+//   - keystore not enrolled → ResolveTasks returns error containing "keystore not enrolled"
+//   - CryptoAccessData empty → ResolveTasks returns error containing "no crypto access data"
+//   - CryptoAccessData present → certificateSubject key is injected into each region's map
+func TestGetCryptoAccessDataFromConfig(t *testing.T) {
+	const region = "cfg-test-region"
+
+	// setupBYOKReconciler creates a CryptoReconciler with an isolated DB and a BYOK
+	// key/system pair. The returned ctx is tenant-scoped. The caller stores any
+	// TenantConfig (or none) before calling ResolveTasks.
+	type byokInstance struct {
+		r      repo.Repo
+		rec    *eventprocessor.CryptoReconciler
+		tenant string
+		system *model.System
+		key    *model.Key
+	}
+
+	setupBYOKReconciler := func(t *testing.T) (byokInstance, context.Context) {
+		t.Helper()
+		db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+			CreateDatabase: true,
+			WithOrbital:    true,
+		})
+		r := sql.NewRepository(db)
+		tenant := tenants[0]
+
+		svcRegistry := testutils.NewTestPlugins(
+			testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, true)),
+		)
+		rabbitMQURL := testutils.StartRabbitMQ(t)
+		cfg := &config.Config{
+			Database:  dbCfg,
+			Landscape: config.Landscape{Region: uuid.NewString()},
+			BaseConfig: commoncfg.BaseConfig{
+				Application: commoncfg.Application{Name: "event-processor"},
+			},
+		}
+		cfg.EventProcessor.Targets = []config.Target{{
+			Region: region,
+			AMQP:   config.AMQP{URL: rabbitMQURL, Target: region, Source: region},
+		}}
+
+		logger := testutils.SetupLoggerWithBuffer()
+		systemService := systems.NewFakeService(logger)
+		mappingService := mapping.NewFakeService()
+		_, grpcClient := testutils.NewGRPCSuite(t, func(s *grpc.Server) {
+			systemgrpc.RegisterServiceServer(s, systemService)
+			mappingv1.RegisterServiceServer(s, mappingService)
+		})
+		clientsFactory, err := clients.NewFactory(config.Services{
+			Registry: &commoncfg.GRPCClient{
+				Enabled:   true,
+				Address:   grpcClient.Target(),
+				SecretRef: &commoncfg.SecretRef{Type: commoncfg.InsecureSecretType},
+			},
+		})
+		require.NoError(t, err)
+
+		rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory)
+		require.NoError(t, err)
+		rec.DisableAuditLog()
+		t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
+
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+		keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		system := testutils.NewSystem(func(s *model.System) { s.Region = region })
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfiguration.ID
+			k.Provider = testProvider
+			k.KeyType = string(cmkapi.KeyTypeBYOK)
+			k.NativeID = ptr.PointTo("byok-cfg-test-key")
+		})
+		testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, key)
+
+		return byokInstance{r: r, rec: rec, tenant: tenant, system: system, key: key}, ctx
+	}
+
+	// resolveTasksForBYOK is a helper that fires a SYSTEM_LINK ResolveTasks for the
+	// instance's BYOK key and system.
+	resolveTasksForBYOK := func(t *testing.T, ctx context.Context, inst byokInstance) ([]orbital.TaskInfo, error) {
+		t.Helper()
+		jobData, err := json.Marshal(eventprocessor.SystemActionJobData{
+			TenantID: inst.tenant,
+			SystemID: inst.system.ID.String(),
+			KeyIDTo:  inst.key.ID.String(),
+		})
+		require.NoError(t, err)
+		j := orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), jobData)
+		handler, err := inst.rec.GetHandlerByJobType(eventprocessor.JobTypeSystemLink.String())
+		require.NoError(t, err)
+		return handler.ResolveTasks(ctx, j)
+	}
+
+	t.Run("errors when keystore not enrolled (no TenantConfig stored)", func(t *testing.T) {
+		inst, ctx := setupBYOKReconciler(t)
+
+		// No TenantConfig stored → getCryptoAccessDataFromConfig should report the tenant
+		// has no enrolled keystore.
+		tasks, err := resolveTasksForBYOK(t, ctx, inst)
+
+		assert.Error(t, err)
+		assert.Empty(t, tasks)
+		assert.Contains(t, err.Error(), "keystore not enrolled")
+	})
+
+	t.Run("errors when CryptoAccessData is empty", func(t *testing.T) {
+		inst, ctx := setupBYOKReconciler(t)
+
+		// Store a TenantConfig with an empty CryptoAccessData map.
+		ksConfig := model.KeystoreConfig{
+			CryptoAccessData: map[string]model.CryptoConfig{},
+		}
+		ksBytes, err := json.Marshal(ksConfig)
+		require.NoError(t, err)
+		require.NoError(t, inst.r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}))
+
+		tasks, err := resolveTasksForBYOK(t, ctx, inst)
+
+		assert.Error(t, err)
+		assert.Empty(t, tasks)
+		assert.Contains(t, err.Error(), "no crypto access data provisioned")
+	})
+
+	t.Run("injects CertificateSubjectKey into key_access_meta_data for BYOK key", func(t *testing.T) {
+		inst, ctx := setupBYOKReconciler(t)
+
+		const testSubject = "CN=byok-cfg-test-cert,OU=test"
+
+		// Store a TenantConfig with CryptoAccessData populated, keyed by the region.
+		ksConfig := model.KeystoreConfig{
+			CryptoAccessData: map[string]model.CryptoConfig{
+				region: {
+					Subject: testSubject,
+					AccessData: model.KeystoreAccessData{
+						"someProviderKey": "someProviderValue",
+					},
+				},
+			},
+		}
+		ksBytes, err := json.Marshal(ksConfig)
+		require.NoError(t, err)
+		require.NoError(t, inst.r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}))
+
+		tasks, err := resolveTasksForBYOK(t, ctx, inst)
+
+		require.NoError(t, err)
+		require.Len(t, tasks, 1)
+
+		var act eventProto.Data
+		require.NoError(t, proto.Unmarshal(tasks[0].Data, &act))
+		sa := act.GetSystemAction()
+		require.NotNil(t, sa)
+
+		var keyAccessData map[string]any
+		require.NoError(t, json.Unmarshal(sa.GetKeyAccessMetaData(), &keyAccessData))
+
+		// TransformCryptoAccessData injects the native key ID.
+		assert.Equal(t, "byok-cfg-test-key", keyAccessData["keyID"])
+		// getCryptoAccessDataFromConfig must inject the certificateSubject field.
+		assert.Equal(t, testSubject, keyAccessData[model.CertificateSubjectKey])
+		// Original provider access data must be present too.
+		assert.Equal(t, "someProviderValue", keyAccessData["someProviderKey"])
+	})
 }

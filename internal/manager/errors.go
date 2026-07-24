@@ -126,6 +126,7 @@ var (
 	ErrUpdateLabelDB     = errors.New("failed to update label")
 	ErrInsertLabel       = errors.New("failed to insert label")
 	ErrDeleteLabelDB     = errors.New("failed to delete label")
+	ErrReservedLabelKey  = errors.New("label key 'system.tag' is reserved for tags, use SetTags/GetTags instead")
 	ErrGetKeyIDDB        = errors.New("KeyID is required")
 	ErrEmptyInputLabelDB = errors.New("invalid input empty label name")
 

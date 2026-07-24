@@ -23,25 +23,6 @@ var DB = config.Database{
 	Port: "5432",
 }
 
-var ReplicaDB = []config.Database{
-	{
-		Host: commoncfg.SourceRef{
-			Source: commoncfg.EmbeddedSourceValue,
-			Value:  "localhost",
-		},
-		User: commoncfg.SourceRef{
-			Source: commoncfg.EmbeddedSourceValue,
-			Value:  "admin",
-		},
-		Secret: commoncfg.SourceRef{
-			Source: commoncfg.EmbeddedSourceValue,
-			Value:  "password",
-		},
-		Name: "mydb",
-		Port: "5433",
-	},
-}
-
 var MessageService = config.Redis{
 	Host: commoncfg.SourceRef{
 		Source: commoncfg.EmbeddedSourceValue,

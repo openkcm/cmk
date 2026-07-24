@@ -5,12 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/google/uuid"
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/orbital"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
@@ -78,121 +75,6 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 		_, err = handler.ResolveTasks(ctx, job)
 		// Check error is not authz related
 		assert.ErrorIs(t, err, eventprocessor.ErrNoConnectedRegionsForKey)
-	})
-
-	// TestCryptoAccessDataSyncer_AuthzPolicy verifies that InternalEventReconcilerRole
-	// grants the repo access needed by CryptoAccessDataSyncer.SyncAndGetCryptoAccessData:
-	//   - TenantConfig: First (getDefaultKeystoreConfig)
-	//   - TenantConfig: Delete + Create (setDefaultKeystoreConfig via repo.Set)
-	//   - Certificate:  First (getRoleManagementCert)
-	//
-	// Strategy: seed a DEFAULT_KEYSTORE TenantConfig with a crypto cert entry whose
-	// subject already matches what the syncer will compute. This causes SyncAndGetCryptoAccessData
-	// to exercise TenantConfig:First (read config) and then return early — no plugin
-	// call and no repo.Set needed. Then a second sub-test seeds a role-management cert
-	// and a keystore config with no entry, exercising the grant-trust path up to the
-	// plugin call, confirming Certificate:First and TenantConfig:Set are permitted.
-	t.Run("InternalEventReconcilerRole allows CryptoAccessDataSyncer to read TenantConfig and Certificate", func(t *testing.T) {
-		certName := "authz-test-cert"
-		certCfg := config.CryptoCert{
-			Name:    certName,
-			Subject: config.CryptoCertSubject{CommonNamePrefix: "authz", Organization: []string{"test-org"}},
-		}
-		certsYAML, err := yaml.Marshal([]config.CryptoCert{certCfg})
-		require.NoError(t, err)
-
-		syncerCfg := &config.Config{
-			Database: dbCfg,
-			CryptoLayer: config.CryptoLayer{
-				CertX509Trusts: commoncfg.SourceRef{
-					Source: commoncfg.EmbeddedSourceValue,
-					Value:  string(certsYAML),
-				},
-			},
-		}
-
-		syncer := eventprocessor.NewCryptoAccessDataSyncer(syncerCfg, authzRepo, testutils.NewTestPlugins())
-
-		// Compute the subject the syncer will derive for this tenant.
-		clientCert := model.NewClientCertificate(certCfg, tenant)
-		expectedSubject := clientCert.Subject.String()
-
-		// Seed DEFAULT_KEYSTORE via plain repo (bypassing authz) so the authz-guarded
-		// First read is what we're testing, not the write.
-		ksConfig := model.KeystoreConfig{
-			CryptoAccessData: map[string]model.CryptoConfig{
-				certName: {
-					Subject:    expectedSubject,
-					AccessData: model.KeystoreAccessData{"authzKey": "authzVal"},
-				},
-			},
-		}
-		ksBytes, err := json.Marshal(ksConfig)
-		require.NoError(t, err)
-		require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}))
-
-		// SyncAndGetCryptoAccessData under InternalEventReconcilerRole: exercises
-		// TenantConfig:First. Cert is already up-to-date so exits without Set or plugin.
-		result, err := syncer.SyncAndGetCryptoAccessData(ctx)
-
-		assert.NoError(t, err)
-		require.Contains(t, result, certName)
-		assert.Equal(t, expectedSubject, result[certName][model.CertificateSubjectKey])
-	})
-
-	t.Run("InternalEventReconcilerRole allows CryptoAccessDataSyncer Certificate:First and TenantConfig:Set", func(t *testing.T) {
-		// Use a fresh DB so there's no pre-existing keystore config or cert.
-		db2, tenants2, dbCfg2 := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
-		tenant2 := tenants2[0]
-		ctx2 := cmkcontext.CreateTenantContext(t.Context(), tenant2)
-		ctx2, err = cmkcontext.InjectInternalUserData(ctx2, constants.InternalEventReconcilerRole)
-		require.NoError(t, err)
-
-		r2 := sql.NewRepository(db2)
-		authzRepoLoader2 := authz_loader.NewRepoAuthzLoader(t.Context(), r2, &config.Config{})
-		authzRepo2 := authz_repo.NewAuthzRepo(r2, authzRepoLoader2)
-
-		certName := "authz-grant-cert"
-		certCfg := config.CryptoCert{
-			Name:    certName,
-			Subject: config.CryptoCertSubject{CommonNamePrefix: "grant", Organization: []string{"grant-org"}},
-		}
-		certsYAML, err := yaml.Marshal([]config.CryptoCert{certCfg})
-		require.NoError(t, err)
-
-		syncerCfg := &config.Config{
-			Database: dbCfg2,
-			CryptoLayer: config.CryptoLayer{
-				CertX509Trusts: commoncfg.SourceRef{
-					Source: commoncfg.EmbeddedSourceValue,
-					Value:  string(certsYAML),
-				},
-			},
-		}
-
-		syncer := eventprocessor.NewCryptoAccessDataSyncer(syncerCfg, authzRepo2, testutils.NewTestPlugins())
-
-		// Seed DEFAULT_KEYSTORE with no CryptoAccessData (cert not yet trusted).
-		emptyKS, err := json.Marshal(model.KeystoreConfig{})
-		require.NoError(t, err)
-		require.NoError(t, r2.Set(ctx2, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: emptyKS}))
-
-		// Seed a role-management cert via plain repo.
-		roleManagementCert := testutils.NewCertificate(func(c *model.Certificate) {
-			c.ID = uuid.New()
-			c.Purpose = model.CertificatePurposeRoleManagement
-		})
-		require.NoError(t, r2.Create(ctx2, roleManagementCert))
-
-		// SyncAndGetCryptoAccessData will:
-		//   1. TenantConfig:First  — read DEFAULT_KEYSTORE
-		//   2. Certificate:First   — getRoleManagementCert (authz-guarded)
-		//   3. call GrantTrust on plugin (TestKeystoreManagement returns success)
-		//   4. TenantConfig:Set (Delete+Create) — write updated keystore config
-		result, err := syncer.SyncAndGetCryptoAccessData(ctx2)
-
-		assert.NoError(t, err)
-		assert.Contains(t, result, certName)
 	})
 
 	t.Run("InternalEventReconcilerRole allows KeyVersion:First", func(t *testing.T) {

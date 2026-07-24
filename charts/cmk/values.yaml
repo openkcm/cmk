@@ -496,7 +496,7 @@ config:
             jwt-token: "*****"
   telemetry:
     logs:
-      enabled: false
+      enabled: true
       protocol: http # one of: http, grpc; Default is http
       # Host configuration example set as a value:
       # host:
@@ -602,7 +602,7 @@ config:
           source: embedded
           value: "unknown"
     traces:
-      enabled: false
+      enabled: true
       protocol: http # one of: http, grpc; Default is http
       # Host configuration example set as a value:
       # host:

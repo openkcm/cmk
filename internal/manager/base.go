@@ -50,7 +50,7 @@ func New(
 ) *Manager {
 	cmkAuditor := auditor.New(ctx, config)
 	certManager := NewCertificateManager(ctx, repo, svcRegistry, config)
-	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config)
+	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config, certManager)
 	userManager := NewUserManager(repo, cmkAuditor)
 
 	// Create ResourceLabelManager for unified label/tag management

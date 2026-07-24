@@ -72,7 +72,7 @@ func TestWorkflowAutoAssign_AuthzPolicy(t *testing.T) {
 	certManager := manager.NewCertificateManager(t.Context(), authzRepo, ps, cfg)
 	resourceLabelManager := manager.NewResourceLabelManager(authzRepo)
 	tagManager := manager.NewTagManager(resourceLabelManager)
-	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, certManager)
 	keyConfigManager := manager.NewKeyConfigManager(authzRepo, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 	keyManager := manager.NewKeyManager(
 		authzRepo,

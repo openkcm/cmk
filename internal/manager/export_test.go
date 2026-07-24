@@ -127,3 +127,12 @@ func (km *KeyManager) ExportedHandleNewKeyVersion(
 ) error {
 	return km.handleNewKeyVersion(ctx, key, keyResp, rotationTime)
 }
+
+// CreateKeyRetryDelay exposes the package-level retry delay so tests can set it to
+// zero and avoid real waits.
+var CreateKeyRetryDelay = &createKeyRetryDelay
+
+// CreateKeyMaxDelay exposes the package-level max delay so tests can zero it alongside CreateKeyRetryDelay.
+var CreateKeyMaxDelay = &createKeyMaxDelay
+
+const DefaultKeystoreCertInfix = defaultKeystoreCertInfix

@@ -8,7 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"github.com/openkcm/plugin-sdk/api"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
@@ -18,6 +20,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
@@ -42,7 +45,7 @@ func SetupTenantConfigManager(t *testing.T, opts ...testplugins.RegistryOption) 
 			ValidityDays: config.MinCertificateValidityDays,
 		},
 	}
-	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil)
 
 	return tenantManager, db, tenants[0]
 }
@@ -57,7 +60,7 @@ func SetupTenantConfigManagerWithRole(t *testing.T, role string, opts ...testplu
 
 	r := sql.NewRepository(db)
 	svcRegistry := testutils.NewTestPlugins(opts...)
-	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil)
 
 	return tenantManager, db, tenants[0]
 }
@@ -230,7 +233,7 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 				),
 			)
 
-			mgr := manager.NewTenantConfigManager(nil, svcRegistry, nil)
+			mgr := manager.NewTenantConfigManager(nil, svcRegistry, nil, nil)
 
 			result := mgr.GetTenantConfigsHyokKeystore()
 			assert.ElementsMatch(t, tt.expectedOutput, result.Provider)
@@ -274,7 +277,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 				},
 			},
 		}
-		m := manager.NewTenantConfigManager(r, nil, cfg)
+		m := manager.NewTenantConfigManager(r, nil, cfg, nil)
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.True(t, res.AllowBYOK)
@@ -298,7 +301,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 				},
 			},
 		}
-		m := manager.NewTenantConfigManager(r, nil, cfg)
+		m := manager.NewTenantConfigManager(r, nil, cfg, nil)
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Equal(t, testutils.SupportedRegions, res.BYOK.SupportedRegions)
@@ -307,7 +310,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 	t.Run("BYOK disabled, no stored keystore", func(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		r := sql.NewRepository(db)
-		m := manager.NewTenantConfigManager(r, nil, &config.Config{})
+		m := manager.NewTenantConfigManager(r, nil, &config.Config{}, nil)
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Nil(t, res.BYOK.SupportedRegions)
@@ -320,7 +323,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
 			},
 		}
-		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg, nil)
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Nil(t, res.BYOK.SupportedRegions)
@@ -340,7 +343,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
 			},
 		}
-		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg, nil)
 		res, err := m.GetTenantsKeystores(ctx)
 		assert.NoError(t, err)
 		assert.Equal(t, testutils.SupportedRegions, res.BYOK.SupportedRegions)
@@ -359,7 +362,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 				},
 			},
 		}
-		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg, nil)
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Nil(t, res.BYOK.SupportedRegions)
@@ -604,5 +607,306 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			assert.True(t, result.Enabled)
 			assert.Equal(t, 3, result.MinimumApprovals)
 		})
+	})
+}
+
+// capturingKeystoreManagement wraps a TestKeystoreManagement and records every
+// GrantTrust call so tests can assert on the Subject and Type values passed.
+type capturingKeystoreManagement struct {
+	inner       *testplugins.TestKeystoreManagement
+	grantCalls  []*keystoremanagement.GrantTrustRequest
+	removeCalls []*keystoremanagement.RemoveTrustRequest
+}
+
+var _ keystoremanagement.KeystoreManagement = (*capturingKeystoreManagement)(nil)
+
+func newCapturingKeystoreManagement() *capturingKeystoreManagement {
+	return &capturingKeystoreManagement{inner: testplugins.NewTestKeystoreManagement()}
+}
+
+func (c *capturingKeystoreManagement) ServiceInfo() api.Info {
+	return c.inner.ServiceInfo()
+}
+
+func (c *capturingKeystoreManagement) CreateKeystore(
+	ctx context.Context, req *keystoremanagement.CreateKeystoreRequest,
+) (*keystoremanagement.CreateKeystoreResponse, error) {
+	return c.inner.CreateKeystore(ctx, req)
+}
+
+func (c *capturingKeystoreManagement) DeleteKeystore(
+	ctx context.Context, req *keystoremanagement.DeleteKeystoreRequest,
+) (*keystoremanagement.DeleteKeystoreResponse, error) {
+	return c.inner.DeleteKeystore(ctx, req)
+}
+
+func (c *capturingKeystoreManagement) GrantTrust(
+	ctx context.Context, req *keystoremanagement.GrantTrustRequest,
+) (*keystoremanagement.GrantTrustResponse, error) {
+	c.grantCalls = append(c.grantCalls, req)
+	return c.inner.GrantTrust(ctx, req)
+}
+
+func (c *capturingKeystoreManagement) RemoveTrust(
+	ctx context.Context, req *keystoremanagement.RemoveTrustRequest,
+) (*keystoremanagement.RemoveTrustResponse, error) {
+	c.removeCalls = append(c.removeCalls, req)
+	return c.inner.RemoveTrust(ctx, req)
+}
+
+// grantCallsOfType returns GrantTrust calls matching the given TrustType.
+func (c *capturingKeystoreManagement) grantCallsOfType(
+	trustType keystoremanagement.TrustType,
+) []*keystoremanagement.GrantTrustRequest {
+	var out []*keystoremanagement.GrantTrustRequest
+	for _, call := range c.grantCalls {
+		if call.Type == trustType {
+			out = append(out, call)
+		}
+	}
+	return out
+}
+
+// setupTenantConfigManagerWithCerts creates a TenantConfigManager backed by a
+// CertificateManager so that ensureKeystoreProvisioned is exercised.
+// It also pre-persists a role-management certificate so that
+// getDefaultKeystoreClientCert finds it without triggering IssueCertificate
+// (the test issuer returns an empty chain).
+// cfg is the config to use; if nil, a default is created.
+func setupTenantConfigManagerWithCerts(
+	t *testing.T,
+	cfg *config.Config,
+	opts ...testplugins.RegistryOption,
+) (*manager.TenantConfigManager, *multitenancy.DB, string) {
+	t.Helper()
+
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	r := sql.NewRepository(db)
+	svcRegistry := testutils.NewTestPlugins(opts...)
+
+	if cfg == nil {
+		cfg = &config.Config{
+			Certificates: config.Certificates{
+				RootCertURL:  testutils.TestCertURL,
+				ValidityDays: config.MinCertificateValidityDays,
+			},
+		}
+	}
+
+	// Ensure getCryptoCertificates returns an empty list (so syncCryptoAccessData
+	// exits early) without failing on "no credential found".
+	if cfg.CryptoLayer.CertX509Trusts.Source == "" {
+		cfg.CryptoLayer.CertX509Trusts = commoncfg.SourceRef{
+			Source: commoncfg.EmbeddedSourceValue,
+			Value:  "[]",
+		}
+	}
+
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager)
+
+	// Pre-persist a role-management cert so getDefaultKeystoreClientCert doesn't
+	// attempt to call IssueCertificate (the test stub returns an empty chain).
+	ctx := testutils.CreateCtxWithTenant(tenants[0])
+	roleManagementCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeRoleManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName
+	})
+	testutils.CreateTestEntities(ctx, t, r, roleManagementCert)
+
+	return tenantConfigManager, db, tenants[0]
+}
+
+// storeKsConfig marshals ks and persists it as the tenant's default keystore config.
+func storeKsConfig(t *testing.T, db *multitenancy.DB, tenant string, ks *model.KeystoreConfig) {
+	t.Helper()
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	b, err := json.Marshal(ks)
+	require.NoError(t, err)
+	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: b}))
+}
+
+func TestEnsureKeystoreProvisioned(t *testing.T) {
+	const testPrefix = "test_prefix_"
+
+	cfg := &config.Config{
+		Certificates: config.Certificates{
+			RootCertURL:             testutils.TestCertURL,
+			ValidityDays:            config.MinCertificateValidityDays,
+			DefaultTenantCertPrefix: testPrefix,
+		},
+	}
+
+	t.Run("skips GrantTrust(MANAGEMENT) when KeyManagementConfig already set", func(t *testing.T) {
+		// Arrange: create a keystore config that already has KeyManagementConfig.LocalityID set.
+		capture := newCapturingKeystoreManagement()
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Use a full ksConfig (both RoleManagementConfig and KeyManagementConfig set).
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {}))
+
+		// Act
+		_, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		// Assert: no MANAGEMENT GrantTrust call should have been made.
+		mgmtCalls := capture.grantCallsOfType(keystoremanagement.TrustTypeManagement)
+		assert.Empty(t, mgmtCalls, "expected no GrantTrust(MANAGEMENT) call when KeyManagementConfig already provisioned")
+	})
+
+	t.Run("calls GrantTrust(MANAGEMENT) with Subject=prefix+tenantID when KeyManagementConfig missing", func(t *testing.T) {
+		// Arrange: store a ksConfig with empty KeyManagementConfig (only RoleManagementConfig set).
+		capture := newCapturingKeystoreManagement()
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		ksWithoutKeyMgmt := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{} // clear it
+		})
+		storeKsConfig(t, db, tenant, ksWithoutKeyMgmt)
+
+		// Act
+		_, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		// Assert: exactly one MANAGEMENT call with Subject == prefix+tenantID.
+		mgmtCalls := capture.grantCallsOfType(keystoremanagement.TrustTypeManagement)
+		require.Len(t, mgmtCalls, 1)
+		assert.Equal(t, keystoremanagement.TrustTypeManagement, mgmtCalls[0].Type)
+		assert.Equal(t, testPrefix+manager.DefaultKeystoreCertInfix+tenant, mgmtCalls[0].Subject)
+	})
+
+	t.Run("stores KeyManagementConfig with correct CommonName after GrantTrust(MANAGEMENT)", func(t *testing.T) {
+		// Arrange
+		capture := newCapturingKeystoreManagement()
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		ksWithoutKeyMgmt := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{}
+		})
+		storeKsConfig(t, db, tenant, ksWithoutKeyMgmt)
+
+		// Act
+		result, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		// Assert: the returned config has the expected CommonName.
+		expectedCN := testPrefix + manager.DefaultKeystoreCertInfix + tenant
+		assert.Equal(t, expectedCN, result.KeyManagementConfig.CommonName)
+		assert.NotEmpty(t, result.KeyManagementConfig.LocalityID)
+	})
+}
+
+// cryptoCertCfg returns a *config.Config whose CryptoLayer contains one CryptoCert
+// with the given name and CN prefix, embedded as inline YAML.
+func cryptoCertCfg(name, cnPrefix string) *config.Config {
+	yamlVal := "- name: " + name + "\n  subject:\n    commonNamePrefix: " + cnPrefix + "\n"
+	return &config.Config{
+		Certificates: config.Certificates{
+			RootCertURL:             testutils.TestCertURL,
+			ValidityDays:            config.MinCertificateValidityDays,
+			DefaultTenantCertPrefix: "test_prefix_",
+		},
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  yamlVal,
+			},
+		},
+	}
+}
+
+func TestSyncCryptoAccessData(t *testing.T) {
+	const (
+		certName = "crypto-cert-1"
+		cnPrefix = "crypto_"
+	)
+
+	t.Run("skips GrantTrust(CRYPTO) when subject already matches", func(t *testing.T) {
+		capture := newCapturingKeystoreManagement()
+		cfg := cryptoCertCfg(certName, cnPrefix)
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Pre-populate CryptoAccessData with the correct subject so no sync needed.
+		// The subject is formatted as pkix.Name.String(), e.g. "CN=crypto_<tenant>".
+		expectedSubject := "CN=" + cnPrefix + tenant
+		ksConfig := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.CryptoAccessData = map[string]model.CryptoConfig{
+				certName: {Subject: expectedSubject, AccessData: model.KeystoreAccessData{}},
+			}
+		})
+		storeKsConfig(t, db, tenant, ksConfig)
+
+		_, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		cryptoCalls := capture.grantCallsOfType(keystoremanagement.TrustTypeCrypto)
+		assert.Empty(t, cryptoCalls, "expected no GrantTrust(CRYPTO) call when subject already matches")
+		assert.Empty(t, capture.removeCalls, "expected no RemoveTrust call when subject already matches")
+	})
+
+	t.Run("calls GrantTrust(CRYPTO) when entry missing", func(t *testing.T) {
+		capture := newCapturingKeystoreManagement()
+		cfg := cryptoCertCfg(certName, cnPrefix)
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Store ksConfig with no CryptoAccessData.
+		ksConfig := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.CryptoAccessData = nil
+		})
+		storeKsConfig(t, db, tenant, ksConfig)
+
+		_, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		cryptoCalls := capture.grantCallsOfType(keystoremanagement.TrustTypeCrypto)
+		require.Len(t, cryptoCalls, 1, "expected exactly one GrantTrust(CRYPTO) call")
+		assert.Equal(t, keystoremanagement.TrustTypeCrypto, cryptoCalls[0].Type)
+		assert.Equal(t, "CN="+cnPrefix+tenant, cryptoCalls[0].Subject)
+		assert.Empty(t, capture.removeCalls, "expected no RemoveTrust call when entry is new")
+	})
+
+	t.Run("skips GrantTrust(CRYPTO) when entry already exists regardless of subject", func(t *testing.T) {
+		capture := newCapturingKeystoreManagement()
+		cfg := cryptoCertCfg(certName, cnPrefix)
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Store ksConfig with an existing entry (even with a different subject).
+		ksConfig := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.CryptoAccessData = map[string]model.CryptoConfig{
+				certName: {Subject: "old_subject", AccessData: model.KeystoreAccessData{}},
+			}
+		})
+		storeKsConfig(t, db, tenant, ksConfig)
+
+		_, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		assert.Empty(t, capture.removeCalls, "expected no RemoveTrust call")
+		assert.Empty(t, capture.grantCallsOfType(keystoremanagement.TrustTypeCrypto), "expected no GrantTrust(CRYPTO) call when entry already exists")
 	})
 }

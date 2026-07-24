@@ -83,6 +83,13 @@ func (m *ResourceLabelManager) CreateOrUpdateLabels(
 		return nil
 	}
 
+	// Validate that no labels use the reserved system.tag key
+	for _, label := range labels {
+		if label.Key == model.SystemTagKey {
+			return ErrReservedLabelKey
+		}
+	}
+
 	return m.r.Transaction(ctx, func(ctx context.Context) error {
 		for _, label := range labels {
 			// Ensure the label has correct resource type and ID
@@ -104,6 +111,11 @@ func (m *ResourceLabelManager) DeleteLabel(
 	resourceID uuid.UUID,
 	labelKey string,
 ) (bool, error) {
+	// Prevent deletion of system tags via DeleteLabel - use DeleteTags instead
+	if labelKey == model.SystemTagKey {
+		return false, ErrReservedLabelKey
+	}
+
 	ck := repo.NewCompositeKey().
 		Where(repo.ResourceTypeField, resourceType).
 		Where(repo.ResourceIDField, resourceID).
@@ -173,12 +185,16 @@ func (m *ResourceLabelManager) SetTags(
 			return errs.Wrap(ErrDeletingTags, err)
 		}
 
-		// Create new tags
+		// Deduplicate and filter empty tags
+		uniqueTags := make(map[string]struct{})
 		for _, tag := range tags {
-			if tag == "" {
-				continue // Skip empty tags
+			if tag != "" {
+				uniqueTags[tag] = struct{}{}
 			}
+		}
 
+		// Create new tags
+		for tag := range uniqueTags {
 			label := &model.ResourceLabel{
 				ID:           uuid.New(),
 				ResourceType: resourceType,

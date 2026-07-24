@@ -48,7 +48,7 @@ func TestWorkflowExpiry_AuthzPolicy(t *testing.T) {
 	}
 
 	cmkAuditor := auditor.New(t.Context(), cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, nil)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 
 	wfManager := manager.NewWorkflowManager(
