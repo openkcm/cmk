@@ -6,13 +6,15 @@
 -- Note: With the new unique constraint on (resource_type, resource_id, key),
 -- if there are duplicate keys, only the most recently updated one is kept
 -- Excludes the reserved 'system.tag' key (tags are managed separately)
+-- COALESCE(value, '') converts NULL to empty string - semantic shift from nullable
+-- to NOT NULL. Flag if downstream code distinguishes null vs empty string.
 INSERT INTO resource_labels (id, resource_type, resource_id, key, value, created_at, updated_at)
 SELECT DISTINCT ON (resource_id, key)
     id,
     'KEY' AS resource_type,
     resource_id,
     key,
-    COALESCE(value, '') AS value,  -- Ensure value is not null
+    COALESCE(value, '') AS value,  -- NULL → '' semantic shift
     created_at,
     updated_at
 FROM key_labels
@@ -48,6 +50,13 @@ END $$;
 
 -- +goose Down
 -- +goose StatementBegin
+
+-- WARNING: This down migration is DESTRUCTIVE and NON-REVERSIBLE after writes.
+-- It deletes ALL resource_labels rows for KEY and KEY_CONFIG resources,
+-- including any labels/tags created by the application after the migration ran.
+-- For tags: we generate new UUIDs during migration, so we cannot distinguish
+-- migrated data from app-created data.
+-- For labels: we preserve IDs but still cannot track post-migration changes.
 
 -- Remove migrated key labels (based on resource_type='KEY')
 -- Only removes labels that were actually migrated (excludes system.tag)

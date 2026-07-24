@@ -27,6 +27,8 @@ type Label interface {
 		keyID uuid.UUID,
 		labelName string,
 	) (bool, error)
+	// DeleteAllKeyLabels removes all labels for a key
+	DeleteAllKeyLabels(ctx context.Context, keyID uuid.UUID) error
 }
 
 // LabelManager is an adapter that delegates to ResourceLabelManager
@@ -137,4 +139,17 @@ func (m *LabelManager) GetKeyLabels(
 	}
 
 	return keyLabels, count, nil
+}
+
+// DeleteAllKeyLabels removes all labels for a key
+func (m *LabelManager) DeleteAllKeyLabels(ctx context.Context, keyID uuid.UUID) error {
+	// Verify key exists
+	key := &model.Key{ID: keyID}
+	_, err := m.repository.First(ctx, key, *repo.NewQuery())
+	if err != nil {
+		return errs.Wrap(ErrGetKeyIDDB, err)
+	}
+
+	// Delete all labels using ResourceLabelManager
+	return m.resourceLabels.DeleteAllLabels(ctx, model.ResourceTypeKey, keyID)
 }

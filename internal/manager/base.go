@@ -56,6 +56,7 @@ func New(
 	// Create ResourceLabelManager for unified label/tag management
 	resourceLabelManager := NewResourceLabelManager(repo)
 	tagManager := NewTagManager(resourceLabelManager)
+	labelManager := NewLabelManager(repo, resourceLabelManager)
 
 	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, eventFactory, config)
 	keyManager := NewKeyManager(
@@ -65,6 +66,7 @@ func New(
 		keyConfigManager,
 		userManager,
 		certManager,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

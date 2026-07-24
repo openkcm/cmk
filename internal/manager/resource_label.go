@@ -32,6 +32,12 @@ type ResourceLabels interface {
 		resourceID uuid.UUID,
 		labelKey string,
 	) (bool, error)
+	// DeleteAllLabels removes all labels (excluding tags) for a resource
+	DeleteAllLabels(
+		ctx context.Context,
+		resourceType model.ResourceType,
+		resourceID uuid.UUID,
+	) error
 
 	// Tag operations - manage tags as special labels with key="system.tag"
 	GetTags(ctx context.Context, resourceType model.ResourceType, resourceID uuid.UUID) ([]string, error)
@@ -129,6 +135,28 @@ func (m *ResourceLabelManager) DeleteLabel(
 	}
 
 	return deleted, nil
+}
+
+// DeleteAllLabels removes all labels (excluding tags) for a resource
+// Used when deleting the parent resource to clean up orphaned labels
+func (m *ResourceLabelManager) DeleteAllLabels(
+	ctx context.Context,
+	resourceType model.ResourceType,
+	resourceID uuid.UUID,
+) error {
+	ck := repo.NewCompositeKey().
+		Where(repo.ResourceTypeField, resourceType).
+		Where(repo.ResourceIDField, resourceID).
+		Where(repo.KeyField, model.SystemTagKey, repo.NotEq) // Exclude system tags
+
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+
+	_, err := m.r.Delete(ctx, &model.ResourceLabel{}, *query)
+	if err != nil {
+		return errs.Wrap(ErrDeleteLabelDB, err)
+	}
+
+	return nil
 }
 
 // GetTags retrieves all tag values for a resource
@@ -234,61 +262,58 @@ func (m *ResourceLabelManager) DeleteTags(
 	return nil
 }
 
-// upsertLabel creates or updates a single label
+// upsertLabel creates or updates a single label atomically
 func (m *ResourceLabelManager) upsertLabel(ctx context.Context, label *model.ResourceLabel) error {
-	// Check if label already exists with same value
-	_, found, err := m.findExactLabel(ctx, label)
-	if err != nil {
-		return errs.Wrap(ErrFetchLabel, err)
-	}
-
-	if found {
-		// Label already exists with same value, skip
+	// Try to create the label first
+	// The unique constraint on (resource_type, resource_id, key) WHERE key != 'system.tag'
+	// will prevent duplicate keys atomically at the database level
+	label.ID = uuid.New()
+	err := m.r.Create(ctx, label)
+	if err == nil {
+		// Successfully created
 		return nil
 	}
 
-	// Check if a label with same key but different value exists
-	existing, found, err := m.findLabelByKey(ctx, label.ResourceType, label.ResourceID, label.Key)
-	if err != nil {
-		return errs.Wrap(ErrFetchLabel, err)
+	// Check if it's a unique constraint violation
+	var uniqueErr *repo.UniqueConstraintError
+	if !errors.As(err, &uniqueErr) {
+		// Some other error occurred
+		return errs.Wrap(ErrInsertLabel, err)
 	}
 
-	if found {
-		// Update existing label with new value
-		existing.Value = label.Value
-		_, err = m.r.Patch(ctx, existing, *repo.NewQuery().UpdateAll(true))
-		if err != nil {
-			return errs.Wrap(ErrUpdateLabelDB, err)
+	// Unique constraint hit - label with this key already exists, update it
+	// Find the existing label by key
+	existing, found, findErr := m.findLabelByKey(ctx, label.ResourceType, label.ResourceID, label.Key)
+	if findErr != nil {
+		return errs.Wrap(ErrFetchLabel, findErr)
+	}
+
+	if !found {
+		// This shouldn't happen - unique constraint says it exists but we can't find it
+		// Possible race: another transaction deleted it between our insert and this query
+		// Retry by attempting insert again
+		label.ID = uuid.New()
+		retryErr := m.r.Create(ctx, label)
+		if retryErr != nil {
+			return errs.Wrap(ErrInsertLabel, retryErr)
 		}
 		return nil
 	}
 
-	// Create new label
-	label.ID = uuid.New()
-	if err := m.r.Create(ctx, label); err != nil {
-		return errs.Wrap(ErrInsertLabel, err)
+	// Check if the value is already correct
+	if existing.Value == label.Value {
+		// No update needed
+		return nil
 	}
+
+	// Update the existing label
+	existing.Value = label.Value
+	_, err = m.r.Patch(ctx, existing, *repo.NewQuery().UpdateAll(true))
+	if err != nil {
+		return errs.Wrap(ErrUpdateLabelDB, err)
+	}
+
 	return nil
-}
-
-// findExactLabel finds a label with exact resource type, ID, key, and value match
-func (m *ResourceLabelManager) findExactLabel(
-	ctx context.Context,
-	label *model.ResourceLabel,
-) (*model.ResourceLabel, bool, error) {
-	ck := repo.NewCompositeKey().
-		Where(repo.ResourceTypeField, label.ResourceType).
-		Where(repo.ResourceIDField, label.ResourceID).
-		Where(repo.KeyField, label.Key).
-		Where(repo.ValueField, label.Value)
-
-	existing := &model.ResourceLabel{}
-	found, err := m.r.First(ctx, existing, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
-	if err != nil && !errors.Is(err, repo.ErrNotFound) {
-		return nil, false, err
-	}
-
-	return existing, found, nil
 }
 
 // findLabelByKey finds a label with matching resource type, ID, and key

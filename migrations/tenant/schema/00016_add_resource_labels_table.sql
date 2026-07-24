@@ -12,22 +12,22 @@ CREATE TABLE IF NOT EXISTS resource_labels (
 );
 
 -- Enable filtering by resource (resource_type + resource_id combination)
-CREATE INDEX idx_resource_labels_resource_type_id
+CREATE INDEX IF NOT EXISTS idx_resource_labels_resource_type_id
     ON resource_labels(resource_type, resource_id);
 
 -- Enable filtering by label/tag key
-CREATE INDEX idx_resource_labels_key
+CREATE INDEX IF NOT EXISTS idx_resource_labels_key
     ON resource_labels(key);
 
 -- Enforce uniqueness: one value per (resource_type, resource_id, key) for labels
 -- Exception: system.tag key can have multiple values (multiple tags per resource)
 -- This prevents duplicate keys and matches label semantics (update by key, delete by key)
-CREATE UNIQUE INDEX idx_resource_labels_unique_key
+CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_labels_unique_key
     ON resource_labels(resource_type, resource_id, key)
     WHERE key != 'system.tag';
 
 -- For system tags, allow multiple values but prevent exact duplicates
-CREATE UNIQUE INDEX idx_resource_labels_unique_tag
+CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_labels_unique_tag
     ON resource_labels(resource_type, resource_id, key, value)
     WHERE key = 'system.tag';
 
