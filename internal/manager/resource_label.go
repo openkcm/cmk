@@ -264,53 +264,39 @@ func (m *ResourceLabelManager) DeleteTags(
 
 // upsertLabel creates or updates a single label atomically
 func (m *ResourceLabelManager) upsertLabel(ctx context.Context, label *model.ResourceLabel) error {
-	// Try to create the label first
-	// The unique constraint on (resource_type, resource_id, key) WHERE key != 'system.tag'
-	// will prevent duplicate keys atomically at the database level
-	label.ID = uuid.New()
-	err := m.r.Create(ctx, label)
-	if err == nil {
-		// Successfully created
-		return nil
-	}
-
-	// Check if it's a unique constraint violation
-	var uniqueErr *repo.UniqueConstraintError
-	if !errors.As(err, &uniqueErr) {
-		// Some other error occurred
-		return errs.Wrap(ErrInsertLabel, err)
-	}
-
-	// Unique constraint hit - label with this key already exists, update it
-	// Find the existing label by key
+	// First check if the label already exists
 	existing, found, findErr := m.findLabelByKey(ctx, label.ResourceType, label.ResourceID, label.Key)
 	if findErr != nil {
 		return errs.Wrap(ErrFetchLabel, findErr)
 	}
 
-	if !found {
-		// This shouldn't happen - unique constraint says it exists but we can't find it
-		// Possible race: another transaction deleted it between our insert and this query
-		// Retry by attempting insert again
-		label.ID = uuid.New()
-		retryErr := m.r.Create(ctx, label)
-		if retryErr != nil {
-			return errs.Wrap(ErrInsertLabel, retryErr)
+	if found {
+		// Label exists - check if update is needed
+		if existing.Value == label.Value {
+			// No update needed - value is already correct
+			return nil
+		}
+
+		// Update the existing label
+		existing.Value = label.Value
+		_, err := m.r.Patch(ctx, existing, *repo.NewQuery().UpdateAll(true))
+		if err != nil {
+			return errs.Wrap(ErrUpdateLabelDB, err)
 		}
 		return nil
 	}
 
-	// Check if the value is already correct
-	if existing.Value == label.Value {
-		// No update needed
-		return nil
-	}
-
-	// Update the existing label
-	existing.Value = label.Value
-	_, err = m.r.Patch(ctx, existing, *repo.NewQuery().UpdateAll(true))
+	// Label doesn't exist - create it
+	label.ID = uuid.New()
+	err := m.r.Create(ctx, label)
 	if err != nil {
-		return errs.Wrap(ErrUpdateLabelDB, err)
+		// Check if it's a unique constraint violation (race condition)
+		if errors.Is(err, repo.ErrUniqueConstraint) {
+			// Another transaction created it between our check and insert
+			// Retry the whole operation
+			return m.upsertLabel(ctx, label)
+		}
+		return errs.Wrap(ErrInsertLabel, err)
 	}
 
 	return nil
