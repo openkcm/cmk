@@ -5,6 +5,7 @@
 -- Maps: key_labels -> resource_labels with resource_type='KEY'
 -- Note: With the new unique constraint on (resource_type, resource_id, key),
 -- if there are duplicate keys, only the most recently updated one is kept
+-- Excludes the reserved 'system.tag' key (tags are managed separately)
 INSERT INTO resource_labels (id, resource_type, resource_id, key, value, created_at, updated_at)
 SELECT DISTINCT ON (resource_id, key)
     id,
@@ -15,6 +16,7 @@ SELECT DISTINCT ON (resource_id, key)
     created_at,
     updated_at
 FROM key_labels
+WHERE key != 'system.tag'  -- Exclude reserved tag key
 ORDER BY resource_id, key, updated_at DESC  -- Keep most recent if duplicates exist
 ON CONFLICT (resource_type, resource_id, key) WHERE key != 'system.tag' DO NOTHING;
 
@@ -48,9 +50,10 @@ END $$;
 -- +goose StatementBegin
 
 -- Remove migrated key labels (based on resource_type='KEY')
+-- Only removes labels that were actually migrated (excludes system.tag)
 DELETE FROM resource_labels
 WHERE resource_type = 'KEY'
-AND id IN (SELECT id FROM key_labels);
+AND id IN (SELECT id FROM key_labels WHERE key != 'system.tag');
 
 -- Remove migrated key configuration tags (based on resource_type='KEY_CONFIG' and key='system.tag')
 -- Note: Since we generated new UUIDs during migration, we can't match by ID
