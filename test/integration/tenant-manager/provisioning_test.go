@@ -78,6 +78,7 @@ func (s *DBSuite) SetupSuite() {
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
@@ -85,6 +86,7 @@ func (s *DBSuite) SetupSuite() {
 		kcm,
 		um,
 		cm,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

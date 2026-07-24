@@ -131,8 +131,9 @@ func setupWorkflowExpiry(t *testing.T) (*manager.WorkflowManager, repo.Repo, str
 		t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager,
 	)
 
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
 	keyManager := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager,
-		userManager, certManager, nil, cmkAuditor)
+		userManager, certManager, labelManager, eventFactory, cmkAuditor)
 	wm := manager.NewWorkflowManager(r, svcRegistry, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, nil, tenantConfigManager, cfg)
 

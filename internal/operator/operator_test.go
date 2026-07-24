@@ -129,6 +129,7 @@ func createManagers(
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(authzRepo, resourceLabelManager)
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
@@ -136,6 +137,7 @@ func createManagers(
 		kcm,
 		um,
 		cm,
+		labelManager,
 		nil,
 		cmkAuditor,
 	)

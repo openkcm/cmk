@@ -313,10 +313,18 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 	}
 
 	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
+		// Delete all labels associated with this key (AC5 requirement)
+		// Delete labels BEFORE deleting the key to maintain referential integrity checks
+		err := km.labels.DeleteAllKeyLabels(ctx, keyID)
+		if err != nil {
+			return errs.Wrap(ErrDeleteKeyDB, err)
+		}
+
+		// Delete key versions
 		ck := repo.NewCompositeKey().
 			Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), keyID)
 
-		_, err := km.repo.Delete(
+		_, err = km.repo.Delete(
 			ctx,
 			&model.KeyVersion{KeyID: keyID},
 			*repo.NewQuery().
@@ -326,16 +334,10 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 			return errs.Wrap(ErrDeleteKeyDB, err)
 		}
 
+		// Delete the key itself
 		key := &model.Key{ID: keyID}
 
 		_, err = km.repo.Delete(ctx, key, *repo.NewQuery())
-		if err != nil {
-			return errs.Wrap(ErrDeleteKeyDB, err)
-		}
-
-		// Delete all labels associated with this key (AC5 requirement)
-		// Uses the same transaction to ensure atomicity
-		err = km.labels.DeleteAllKeyLabels(ctx, keyID)
 		if err != nil {
 			return errs.Wrap(ErrDeleteKeyDB, err)
 		}
