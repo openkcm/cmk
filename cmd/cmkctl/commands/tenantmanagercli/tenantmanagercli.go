@@ -103,6 +103,7 @@ func initializeTenantManager(ctx context.Context) (
 	if err != nil {
 		return nil, nil, nil, oops.In("tenant-manager-cli").Wrapf(err, "Failed to initialise plugin catalog")
 	}
+	svcRegistry.WatchPlugins(ctx)
 
 	return cfg, dbCon, svcRegistry, nil
 }
