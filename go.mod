@@ -26,7 +26,7 @@ require (
 	github.com/oapi-codegen/runtime v1.6.0
 	github.com/openkcm/api-sdk v0.19.1
 	github.com/openkcm/common-sdk v1.18.0
-	github.com/openkcm/orbital v0.5.1
+	github.com/openkcm/orbital v0.6.0
 	github.com/openkcm/plugin-sdk v0.14.0
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.27.3
