@@ -9,11 +9,10 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	pg "github.com/bartventer/gorm-multitenancy/postgres/v8"
-
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/db/dialect"
 	"github.com/openkcm/cmk/internal/db/dsn"
+	pg "github.com/openkcm/cmk/internal/multitenancy/postgres"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 

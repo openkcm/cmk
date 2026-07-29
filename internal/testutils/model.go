@@ -9,12 +9,11 @@ import (
 	"github.com/jxskiss/base62"
 	"github.com/openkcm/orbital"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 

@@ -5,8 +5,7 @@ import (
 
 	"github.com/openkcm/orbital"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 )
 

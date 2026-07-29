@@ -8,9 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	multitenancyMiddleware "github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
-
 	"github.com/openkcm/cmk/internal/middleware"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 func TestMultiTenancyMiddleware(t *testing.T) {
@@ -18,7 +17,7 @@ func TestMultiTenancyMiddleware(t *testing.T) {
 		name           string
 		path           string
 		expectedTenant string
-		expectedError  string
+		expectError    bool
 	}{
 		{
 			name:           "Valid Tenant",
@@ -26,9 +25,9 @@ func TestMultiTenancyMiddleware(t *testing.T) {
 			expectedTenant: "tenant123",
 		},
 		{
-			name:          "Missing Tenant",
-			path:          "/cmk/v1/abcd",
-			expectedError: "invalid tenant or tenant not found",
+			name:        "Missing Tenant",
+			path:        "/cmk/v1/abcd",
+			expectError: true,
 		},
 	}
 
@@ -39,7 +38,7 @@ func TestMultiTenancyMiddleware(t *testing.T) {
 
 			// Create a new HTTP handler
 			handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-				tenant, err := r.Context().Value(multitenancyMiddleware.TenantKey).(string)
+				tenant, err := r.Context().Value(cmkcontext.TenantKey).(string)
 				if err {
 					capturedTenant = tenant
 				}
@@ -66,10 +65,11 @@ func TestMultiTenancyMiddleware(t *testing.T) {
 			res := w.Result()
 
 			// Validate results
-			if tt.expectedError != "" {
+			if tt.expectError {
+				assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
 				resBody, err := io.ReadAll(res.Body)
 				assert.NoError(t, err)
-				assert.Contains(t, string(resBody), tt.expectedError)
+				assert.Contains(t, string(resBody), "INTERNAL_SERVER_ERROR")
 			} else {
 				assert.Equal(t, tt.expectedTenant, capturedTenant)
 			}

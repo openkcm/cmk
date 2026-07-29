@@ -8,8 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/authz"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/config"
@@ -18,6 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/middleware"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	repomock "github.com/openkcm/cmk/internal/repo/mock"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"

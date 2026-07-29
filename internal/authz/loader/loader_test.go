@@ -6,12 +6,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	repomock "github.com/openkcm/cmk/internal/repo/mock"
 	"github.com/openkcm/cmk/internal/testutils"
 )

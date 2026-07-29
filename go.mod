@@ -9,9 +9,6 @@ require (
 	github.com/Azure/go-amqp v1.7.0
 	github.com/XSAM/otelsql v0.43.0
 	github.com/avast/retry-go/v5 v5.0.0
-	github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8 v8.9.0
-	github.com/bartventer/gorm-multitenancy/postgres/v8 v8.9.0
-	github.com/bartventer/gorm-multitenancy/v8 v8.9.0
 	github.com/getkin/kin-openapi v0.145.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0

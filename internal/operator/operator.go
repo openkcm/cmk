@@ -17,7 +17,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	goamqp "github.com/Azure/go-amqp"
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
@@ -30,6 +29,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/base62"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
