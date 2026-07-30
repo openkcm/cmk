@@ -99,20 +99,27 @@ func buildProviderParams(reader *structreader.StructReader) (*ProviderImportFiel
 		return nil, err
 	}
 
+	params := map[string]any{
+		"providerParams": providerParams,
+	}
+
+	// Some providers require algorithm at import time; store it if present.
+	if algorithm, err := reader.GetString("algorithm"); err == nil && algorithm != "" {
+		params["algorithm"] = algorithm
+	}
+
+	result := &ProviderImportFields{
+		ProviderParams: params,
+	}
+
 	validTo, err := reader.GetString("validTo")
-	if err != nil {
-		return nil, err
+	if err == nil && validTo != "" {
+		expires, err := time.Parse(time.RFC3339, validTo)
+		if err != nil {
+			return nil, err
+		}
+		result.Expires = &expires
 	}
 
-	expires, err := time.Parse(time.RFC3339, validTo)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ProviderImportFields{
-		ProviderParams: map[string]any{
-			"providerParams": providerParams,
-		},
-		Expires: &expires,
-	}, nil
+	return result, nil
 }
