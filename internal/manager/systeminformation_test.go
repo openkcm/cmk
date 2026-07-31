@@ -8,11 +8,10 @@ import (
 	"github.com/openkcm/plugin-sdk/api"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/wrapper/system_information"
 	"github.com/openkcm/cmk/internal/repo"

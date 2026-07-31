@@ -8,16 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 func TestRepo_WithTenant(t *testing.T) {
@@ -42,7 +41,7 @@ func TestRepo_WithTenant(t *testing.T) {
 		err := r.WithTenant(t.Context(), model.Key{}, func(_ *multitenancy.DB) error {
 			return nil
 		})
-		assert.ErrorIs(t, err, nethttp.ErrTenantInvalid)
+		assert.ErrorIs(t, err, cmkcontext.ErrTenantInvalid)
 	})
 }
 
