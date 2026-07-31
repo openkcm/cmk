@@ -8,13 +8,12 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/plugin/dbresolver"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db/dialect"
 	"github.com/openkcm/cmk/internal/db/dsn"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 )
 
 var (
@@ -60,6 +59,7 @@ func StartDBConnectionPlugins(
 		return nil, errs.Wrap(ErrStartingDBCon, err)
 	}
 
+	//nolint:contextcheck // multitenancy.Open does not accept a context
 	db, err := multitenancy.Open(dialector, &gorm.Config{
 		Plugins:        plugins,
 		TranslateError: true,

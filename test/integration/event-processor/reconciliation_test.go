@@ -16,9 +16,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
-	_ "github.com/bartventer/gorm-multitenancy/postgres/v8"
-
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	slogctx "github.com/veqryn/slog-context"
@@ -31,6 +28,8 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	_ "github.com/openkcm/cmk/internal/multitenancy/postgres"
 	"github.com/openkcm/cmk/internal/repo"
 	sqlPkg "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"

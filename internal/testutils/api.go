@@ -17,7 +17,6 @@ import (
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	md "github.com/oapi-codegen/nethttp-middleware"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -31,6 +30,7 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/handlers"
 	"github.com/openkcm/cmk/internal/middleware"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
