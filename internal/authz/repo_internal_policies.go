@@ -132,6 +132,7 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 						RepoActionCount,
 						RepoActionList,
 						RepoActionFirst,
+						RepoActionUpdate,
 					},
 				},
 				{
