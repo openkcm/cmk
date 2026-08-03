@@ -234,6 +234,7 @@ block, unblock, terminate) received via AMQP.
 | Delete | Tenant | `TenantManager.DeleteTenant` (handleTerminateTenant) | ✓ |
 | Count, List | System | `TenantManager.sendUnlinkForConnectedSystems`, `checkAllSystemsUnlinked`, `unmapAllSystemsFromRegistry` | ✓ |
 | First | System | `TenantManager.sendUnlinkForConnectedSystems` → `UnlinkSystemAction` (when systems are still linked) | ✓ |
+| Update | System | `TenantManager.sendUnlinkForConnectedSystems` → `UnlinkSystemAction` → `SystemUnlinkDecommission` → `repo.Patch` (sets the system to PROCESSING before unlinking) | ✓ |
 | Count, List | Key | `TenantManager.detachPrimaryKeys`, `checkAllPrimaryKeysProcessed`, `checkAllPrimaryKeysDetached` | ✓ |
 | Update | Key | `TenantManager.detachPrimaryKeys` → `KeyManager.Detach` → `repo.Patch` (when primary keys are not yet detached) | ✓ |
 | First | KeyConfiguration | `TenantManager.sendUnlinkForConnectedSystems` → `UnlinkSystemAction` → `repo.First(keyConfig)` | ✓ |
