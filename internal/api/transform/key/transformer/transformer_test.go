@@ -42,18 +42,24 @@ func TestSerializesKeyAccessData(t *testing.T) {
 
 	key := cmkapi.Key{
 		AccessDetails: &cmkapi.KeyAccessDetails{
-			Management: ptr.PointTo(map[string]any{
-				"AccountID": "123456789012",
-				"UserID":    "123456789012:user/test-user",
-			}),
-			Crypto: ptr.PointTo(map[string]map[string]any{
+			Management: &cmkapi.KeyAccessDetailsRegion{
+				AdditionalProperties: map[string]any{
+					"AccountID": "123456789012",
+					"UserID":    "123456789012:user/test-user",
+				},
+			},
+			Crypto: ptr.PointTo(map[string]cmkapi.KeyAccessDetailsRegion{
 				"serviceA": {
-					"AccountID": "12344",
-					"UserID":    "123456789012:user/serviceA",
+					AdditionalProperties: map[string]any{
+						"AccountID": "12344",
+						"UserID":    "123456789012:user/serviceA",
+					},
 				},
 				"serviceB": {
-					"AccountID": "12345",
-					"UserID":    "123456789012:user/serviceB",
+					AdditionalProperties: map[string]any{
+						"AccountID": "12345",
+						"UserID":    "123456789012:user/serviceB",
+					},
 				},
 			}),
 		},
@@ -71,8 +77,8 @@ func TestSerializesKeyAccessData_Invalid(t *testing.T) {
 
 	key := cmkapi.Key{
 		AccessDetails: &cmkapi.KeyAccessDetails{
-			Management: ptr.PointTo(map[string]any{}),
-			Crypto:     ptr.PointTo(map[string]map[string]any{}),
+			Management: &cmkapi.KeyAccessDetailsRegion{},
+			Crypto:     ptr.PointTo(map[string]cmkapi.KeyAccessDetailsRegion{}),
 		},
 	}
 
@@ -86,7 +92,11 @@ func TestExtractRegion(t *testing.T) {
 	key := cmkapi.Key{
 		NativeID: ptr.PointTo("native-key-id"),
 		AccessDetails: &cmkapi.KeyAccessDetails{
-			Management: ptr.PointTo(map[string]any{"key": "value"}),
+			Management: &cmkapi.KeyAccessDetailsRegion{
+				AdditionalProperties: map[string]any{
+					"key": "value",
+				},
+			},
 		},
 	}
 

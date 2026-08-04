@@ -38,7 +38,7 @@ func (f MockHYOKProviderTransformer) ValidateKeyAccessData(
 		return ErrManagementCryptoRequired
 	}
 
-	if len(*accessDetails.Management) == 0 || len(*accessDetails.Crypto) == 0 {
+	if len(accessDetails.Management.AdditionalProperties) == 0 || len(*accessDetails.Crypto) == 0 {
 		return ErrManagementCryptoEmpty
 	}
 
@@ -124,7 +124,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 				NativeID: ptr.PointTo("native-id"),
 				Provider: ptr.PointTo("test-provider"),
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Management: ptr.PointTo(map[string]any{}),
+					Management: ptr.PointTo(cmkapi.KeyAccessDetailsRegion{}),
 				},
 			},
 			expected: nil,
@@ -136,10 +136,18 @@ func TestFromCmkAPIKey(t *testing.T) {
 				NativeID: ptr.PointTo("native-id"),
 				Provider: ptr.PointTo("TEST"),
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Management: ptr.PointTo(map[string]any{"key": "value"}),
-					Crypto: ptr.PointTo(map[string]map[string]any{"cryptoRegion": {
-						"cryptoKey": "cryptoValue",
-					}}),
+					Management: &cmkapi.KeyAccessDetailsRegion{
+						AdditionalProperties: map[string]any{
+							"key": "value",
+						},
+					},
+					Crypto: ptr.PointTo(map[string]cmkapi.KeyAccessDetailsRegion{
+						"cryptoRegion": {
+							AdditionalProperties: map[string]any{
+								"cryptoKey": "cryptoValue",
+							},
+						},
+					}),
 				},
 			},
 			expected: &model.Key{

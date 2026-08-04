@@ -2185,19 +2185,26 @@ components:
         management:
           description: Access details for management operations.
           type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/KeyAccessDetailsRegion"
         crypto:
           description: |
-            Access details for cryptographic operations. Follows the following format:
-            "region-1": {
-                "key1": "value1",
-                "key2": "value3",
-                "isEditable": bool // true if system on this region failed to connect
-            },
+            Access details for cryptographic operations. Map of region ID to region values
           type: object
           additionalProperties:
-            type: object
-            additionalProperties: true
+            $ref: "#/components/schemas/KeyAccessDetailsRegion"
+    KeyAccessDetailsRegion:
+      type: object
+      properties:
+        certificateSubject:
+          type: string
+          description: Certificate subject for this region
+          example: "CN=tenant123,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE"
+          readOnly: true
+        isEditable:
+          type: boolean
+          description: Is true if systems on the region failed to connect or there are no systems connected/attempting
+          readOnly: true
+      additionalProperties: true
     ImportParams:
       type: object
       description: Import parameters for Bring Your Own Key (BYOK) scenario.

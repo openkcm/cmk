@@ -133,8 +133,10 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 
 	cryptoAccessData := model.KeyAccessData{
 		"crypto-1": {
-			"someKey":            "someValue",
-			"certificateSubject": "CN=test_tenant0,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE",
+			CertificateSubject: ptr.PointTo("CN=test_tenant0,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE"),
+			AdditionalProperties: map[string]any{
+				"someKey": "someValue",
+			},
 		},
 	}
 	cryptoBytes, err := json.Marshal(cryptoAccessData)
@@ -331,7 +333,11 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 
 	t.Run("should add certificate subject to crypto access data when cert name matches", func(t *testing.T) {
 		cryptoAccessData := model.KeyAccessData{
-			"crypto-1": {"someKey": "someValue"},
+			"crypto-1": {
+				AdditionalProperties: map[string]any{
+					"someKey": "someValue",
+				},
+			},
 		}
 		cryptoBytes, err := json.Marshal(cryptoAccessData)
 		require.NoError(t, err)
@@ -351,10 +357,9 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 		resultData := createdKey.GetCryptoAccessData()
 		require.NotNil(t, resultData)
 		require.Contains(t, resultData, "crypto-1")
-		assert.Contains(t, resultData["crypto-1"], "certificateSubject")
+		assert.NotNil(t, resultData["crypto-1"].CertificateSubject)
 
-		subject, ok := resultData["crypto-1"]["certificateSubject"].(string)
-		require.True(t, ok)
+		subject := *resultData["crypto-1"].CertificateSubject
 		assert.Contains(t, subject, "OU=OU1/OU2")
 		assert.Contains(t, subject, "O=TestOrg")
 		assert.Contains(t, subject, "L=Berlin")
@@ -363,7 +368,11 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 
 	t.Run("should not add certificate subject when cert name does not match", func(t *testing.T) {
 		cryptoAccessData := model.KeyAccessData{
-			"non-existent-cert": {"someKey": "someValue"},
+			"non-existent-cert": {
+				AdditionalProperties: map[string]any{
+					"someKey": "someValue",
+				},
+			},
 		}
 		cryptoBytes, err := json.Marshal(cryptoAccessData)
 		require.NoError(t, err)
@@ -383,7 +392,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 		resultData := createdKey.GetCryptoAccessData()
 		require.NotNil(t, resultData)
 		require.Contains(t, resultData, "non-existent-cert")
-		assert.NotContains(t, resultData["non-existent-cert"], "certificateSubject")
+		assert.Empty(t, resultData["crypto-1"].CertificateSubject)
 	})
 
 	t.Run("should handle HYOK key with no crypto access data", func(t *testing.T) {
@@ -423,8 +432,8 @@ func TestEditableCryptoData(t *testing.T) {
 	regionNonEditable := "region2"
 
 	cryptoData, err := json.Marshal(model.KeyAccessData{
-		regionEditable:    map[string]any{},
-		regionNonEditable: map[string]any{},
+		regionEditable:    cmkapi.KeyAccessDetailsRegion{},
+		regionNonEditable: cmkapi.KeyAccessDetailsRegion{},
 	})
 	require.NoError(t, err)
 
@@ -894,8 +903,10 @@ func TestUpdate(t *testing.T) {
 		// Create system to make region not editable
 		keyPatch := cmkapi.KeyPatch{
 			AccessDetails: &cmkapi.KeyAccessDetails{
-				Crypto: &map[string]map[string]any{
-					"crypto-2": {"someKey": "someValue"},
+				Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
+					"crypto-2": {
+						AdditionalProperties: map[string]any{"key": "value"},
+					},
 				},
 			},
 		}
@@ -925,8 +936,12 @@ func TestUpdate(t *testing.T) {
 
 		keyPatch := cmkapi.KeyPatch{
 			AccessDetails: &cmkapi.KeyAccessDetails{
-				Crypto: &map[string]map[string]any{
-					"crypto-1": {"someKey": "patchValue"},
+				Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
+					"crypto-1": {
+						AdditionalProperties: map[string]any{
+							"someKey": "patchValue",
+						},
+					},
 				},
 			},
 		}
@@ -934,8 +949,10 @@ func TestUpdate(t *testing.T) {
 		assert.NoError(t, err)
 
 		cryptoData := res.GetCryptoAccessData()
-		assert.Contains(t, cryptoData["crypto-1"], "certificateSubject")
-		assert.Equal(t, "patchValue", cryptoData["crypto-1"]["someKey"])
+		assert.NotNil(t, cryptoData["crypto-1"].CertificateSubject)
+		someKeyVal, ok := cryptoData["crypto-1"].Get("someKey")
+		assert.True(t, ok)
+		assert.Equal(t, "patchValue", someKeyVal)
 	})
 }
 
@@ -1641,9 +1658,11 @@ var errNonAuthTest = errors.New("some other error")
 func (f *failingNTimesKeyManagement) ServiceInfo() api.Info {
 	return f.inner.ServiceInfo()
 }
+
 func (f *failingNTimesKeyManagement) GetKey(ctx context.Context, req *keymanagement.GetKeyRequest) (*keymanagement.GetKeyResponse, error) {
 	return f.inner.GetKey(ctx, req)
 }
+
 func (f *failingNTimesKeyManagement) CreateKey(ctx context.Context, req *keymanagement.CreateKeyRequest) (*keymanagement.CreateKeyResponse, error) {
 	if f.callCount < f.failCount {
 		f.callCount++
@@ -1651,30 +1670,39 @@ func (f *failingNTimesKeyManagement) CreateKey(ctx context.Context, req *keymana
 	}
 	return f.inner.CreateKey(ctx, req)
 }
+
 func (f *failingNTimesKeyManagement) DeleteKey(ctx context.Context, req *keymanagement.DeleteKeyRequest) (*keymanagement.DeleteKeyResponse, error) {
 	return f.inner.DeleteKey(ctx, req)
 }
+
 func (f *failingNTimesKeyManagement) EnableKey(ctx context.Context, req *keymanagement.EnableKeyRequest) (*keymanagement.EnableKeyResponse, error) {
 	return f.inner.EnableKey(ctx, req)
 }
+
 func (f *failingNTimesKeyManagement) DisableKey(ctx context.Context, req *keymanagement.DisableKeyRequest) (*keymanagement.DisableKeyResponse, error) {
 	return f.inner.DisableKey(ctx, req)
 }
+
 func (f *failingNTimesKeyManagement) GetImportParameters(ctx context.Context, req *keymanagement.GetImportParametersRequest) (*keymanagement.GetImportParametersResponse, error) {
 	return f.inner.GetImportParameters(ctx, req)
 }
+
 func (f *failingNTimesKeyManagement) ImportKeyMaterial(ctx context.Context, req *keymanagement.ImportKeyMaterialRequest) (*keymanagement.ImportKeyMaterialResponse, error) {
 	return f.inner.ImportKeyMaterial(ctx, req)
 }
+
 func (f *failingNTimesKeyManagement) ValidateKey(ctx context.Context, req *keymanagement.ValidateKeyRequest) (*keymanagement.ValidateKeyResponse, error) {
 	return f.inner.ValidateKey(ctx, req)
 }
+
 func (f *failingNTimesKeyManagement) ValidateKeyAccessData(ctx context.Context, req *keymanagement.ValidateKeyAccessDataRequest) (*keymanagement.ValidateKeyAccessDataResponse, error) {
 	return f.inner.ValidateKeyAccessData(ctx, req)
 }
+
 func (f *failingNTimesKeyManagement) TransformCryptoAccessData(ctx context.Context, req *keymanagement.TransformCryptoAccessDataRequest) (*keymanagement.TransformCryptoAccessDataResponse, error) {
 	return f.inner.TransformCryptoAccessData(ctx, req)
 }
+
 func (f *failingNTimesKeyManagement) ExtractKeyRegion(ctx context.Context, req *keymanagement.ExtractKeyRegionRequest) (*keymanagement.ExtractKeyRegionResponse, error) {
 	return f.inner.ExtractKeyRegion(ctx, req)
 }

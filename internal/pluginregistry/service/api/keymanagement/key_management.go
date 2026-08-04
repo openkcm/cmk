@@ -6,6 +6,7 @@ import (
 
 	"github.com/openkcm/plugin-sdk/api"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 )
 
@@ -147,7 +148,7 @@ type ValidateKeyResponse struct {
 type ValidateKeyAccessDataRequest struct {
 	// V1 Fields
 	Management map[string]any
-	Crypto     map[string]map[string]any
+	Crypto     map[string]cmkapi.KeyAccessDetailsRegion
 }
 
 type ValidateKeyAccessDataResponse struct {

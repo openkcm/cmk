@@ -859,8 +859,8 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	regionNonEditable := "region2"
 
 	cryptoData, err := json.Marshal(model.KeyAccessData{
-		regionEditable:    map[string]any{},
-		regionNonEditable: map[string]any{},
+		regionEditable:    cmkapi.KeyAccessDetailsRegion{},
+		regionNonEditable: cmkapi.KeyAccessDetailsRegion{},
 	})
 	assert.NoError(t, err)
 
@@ -1018,8 +1018,10 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Management: &map[string]any{
-						"a": "b",
+					Management: &cmkapi.KeyAccessDetailsRegion{
+						AdditionalProperties: map[string]any{
+							"a": "b",
+						},
 					},
 				},
 			},
@@ -1030,9 +1032,11 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						regionNonEditable: {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 					},
 				},
@@ -1046,12 +1050,16 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 				Description: ptr.PointTo("updated description"),
 				Name:        ptr.PointTo("updated-hyok-key"),
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						regionEditable: {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 						"new-region": {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 					},
 				},
@@ -1092,8 +1100,12 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			keyID: hyokKeyInvalidMgmt.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
-						regionEditable: {"key": "value"},
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
+						regionEditable: {
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
+						},
 					},
 				},
 			},
