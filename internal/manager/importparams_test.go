@@ -124,8 +124,9 @@ func TestBuildImportParamsFromAPI(t *testing.T) {
 		response := &keymanagement.GetImportParametersResponse{ImportParameters: fields}
 
 		result, err := manager.BuildImportParamsFromAPI(key, response)
-		assert.Error(t, err)
-		assert.Nil(t, result)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Nil(t, result.Expires)
 	})
 
 	t.Run("AWS_InvalidValidToFormat", func(t *testing.T) {
