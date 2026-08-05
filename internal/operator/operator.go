@@ -150,7 +150,12 @@ func (o *TenantOperator) RunOperator(ctx context.Context) error {
 	log.Info(ctx, "Tenant Manager is running and waiting for tenant operations")
 
 	// Start listener in goroutine
-	go operator.ListenAndRespond(ctx)
+	go func() {
+		err := operator.ListenAndRespond(ctx)
+		if err != nil {
+			log.Error(ctx, "Tenant Manager listener exited with error", err)
+		}
+	}()
 
 	// Block until context is cancelled
 	<-ctx.Done()
