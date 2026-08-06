@@ -2,8 +2,6 @@ module github.com/openkcm/cmk
 
 go 1.26.5
 
-toolchain go1.26.5
-
 require (
 	buf.build/go/protovalidate v1.2.0
 	github.com/Azure/go-amqp v1.7.0
