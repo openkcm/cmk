@@ -130,11 +130,7 @@ func (fs *FakeService) UpdateSystemStatus(
 
 func (fs *FakeService) mustEmbedUnimplementedServiceServer() {}
 
-func (fs *FakeService) validateListRequest(req *systemv1.ListSystemsRequest) error {
-	if req.GetTenantId() == "" && (req.GetExternalId() == "" || req.GetRegion() == "") {
-		return errs.Wrapf(status.Error(codes.InvalidArgument, "Too few arguments"), "error listing systems")
-	}
-
+func (fs *FakeService) validateListRequest(_ *systemv1.ListSystemsRequest) error {
 	return nil
 }
 

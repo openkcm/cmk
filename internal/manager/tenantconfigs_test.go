@@ -287,18 +287,12 @@ func TestGetTenantsKeystore(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		r := sql.NewRepository(db)
 
-		regionsJSON, err := json.Marshal(testutils.SupportedRegions)
-		assert.NoError(t, err)
-
 		cfg := &config.Config{
 			BaseConfig: commoncfg.BaseConfig{
 				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
 			},
 			KeystorePool: config.KeystorePool{
-				SupportedRegions: commoncfg.SourceRef{
-					Source: commoncfg.EmbeddedSourceValue,
-					Value:  string(regionsJSON),
-				},
+				SupportedRegions: testutils.SupportedRegions,
 			},
 		}
 		m := manager.NewTenantConfigManager(r, nil, cfg, nil)
@@ -316,7 +310,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 		assert.Nil(t, res.BYOK.SupportedRegions)
 	})
 
-	t.Run("BYOK allowed, no source ref", func(t *testing.T) {
+	t.Run("BYOK allowed, no regions configured", func(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		cfg := &config.Config{
 			BaseConfig: commoncfg.BaseConfig{
@@ -329,7 +323,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 		assert.Nil(t, res.BYOK.SupportedRegions)
 	})
 
-	t.Run("stored keystore: regions from keystore", func(t *testing.T) {
+	t.Run("stored keystore: regions from config", func(t *testing.T) {
 		configManager, db, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
@@ -342,30 +336,14 @@ func TestGetTenantsKeystore(t *testing.T) {
 			BaseConfig: commoncfg.BaseConfig{
 				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
 			},
+			KeystorePool: config.KeystorePool{
+				SupportedRegions: testutils.SupportedRegions,
+			},
 		}
 		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg, nil)
 		res, err := m.GetTenantsKeystores(ctx)
 		assert.NoError(t, err)
 		assert.Equal(t, testutils.SupportedRegions, res.BYOK.SupportedRegions)
-	})
-
-	t.Run("BYOK allowed, bad source ref", func(t *testing.T) {
-		_, db, tenant := SetupTenantConfigManager(t)
-		cfg := &config.Config{
-			BaseConfig: commoncfg.BaseConfig{
-				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
-			},
-			KeystorePool: config.KeystorePool{
-				SupportedRegions: commoncfg.SourceRef{
-					Source: commoncfg.FileSourceValue,
-					Value:  "/nonexistent/regions.json",
-				},
-			},
-		}
-		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg, nil)
-		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
-		assert.NoError(t, err)
-		assert.Nil(t, res.BYOK.SupportedRegions)
 	})
 }
 

@@ -363,14 +363,14 @@ type KeystoreConfigValue struct {
 }
 
 type Region struct {
-	Name          string `json:"name"`
-	TechnicalName string `json:"technicalName"`
+	Name          string `json:"name" yaml:"name"`
+	TechnicalName string `json:"technicalName" yaml:"technicalName"`
 }
 
 type KeystorePool struct {
-	Size             int                 `yaml:"size" default:"5"`
-	Interval         time.Duration       `yaml:"interval" default:"1h"`
-	SupportedRegions commoncfg.SourceRef `yaml:"supportedRegions" json:"supportedRegions"`
+	Size             int           `yaml:"size" default:"5"`
+	Interval         time.Duration `yaml:"interval" default:"1h"`
+	SupportedRegions []Region      `yaml:"supportedRegions" json:"supportedRegions"`
 }
 
 type Landscape struct {

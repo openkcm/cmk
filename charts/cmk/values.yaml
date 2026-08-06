@@ -879,13 +879,7 @@ config:
     size: 2
     # Interval to report the size of the keystore pool
     interval: 10m
-    # Supported regions configuration - should match the keystore plugin's supported regions
-    supportedRegions:
-      source: file
-      file:
-        path: /etc/credentials/keystore-plugins/management/supported-regions
-        format: json
-        jsonPath: "$.regions"
+    supportedRegions: []
 
   landscape:
     # name: one of Local, Staging, Canary, Production
