@@ -23,7 +23,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
@@ -53,7 +52,7 @@ func NewProviderConfig(
 	expiration *time.Time,
 ) *ProviderConfig {
 	if expiration == nil {
-		expiration = ptr.PointTo(time.Now().Add(DefaultProviderConfigCacheExpiration)) // Default expiration if nil
+		expiration = new(time.Now().Add(DefaultProviderConfigCacheExpiration)) // Default expiration if nil
 	}
 
 	return &ProviderConfig{

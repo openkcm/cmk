@@ -29,7 +29,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var (
@@ -712,8 +711,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Name:        ptr.PointTo("test-name"),
-				Description: ptr.PointTo("test-description"),
+				Name:        new("test-name"),
+				Description: new("test-description"),
 			},
 		)
 		assert.NoError(t, err)
@@ -730,8 +729,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Description: ptr.PointTo("test-description"),
-				Name:        ptr.PointTo(""),
+				Description: new("test-description"),
+				Name:        new(""),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrNameCannotBeEmpty)
@@ -742,8 +741,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Description: ptr.PointTo("test-description"),
-				Name:        ptr.PointTo("   "),
+				Description: new("test-description"),
+				Name:        new("   "),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrNameCannotBeEmpty)
@@ -754,8 +753,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			uuid.New(),
 			cmkapi.KeyConfigurationPatch{
-				Description: ptr.PointTo("test-description"),
-				Name:        ptr.PointTo("test-name"),
+				Description: new("test-description"),
+				Name:        new("test-name"),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
@@ -772,8 +771,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Description: ptr.PointTo("test-description"),
-				Name:        ptr.PointTo("test-name"),
+				Description: new("test-description"),
+				Name:        new("test-name"),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrUpdateKeyConfiguration)
@@ -791,8 +790,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctxWithGroups,
 			keyConfigWithAdminGroup.ID,
 			cmkapi.KeyConfigurationPatch{
-				Name:        ptr.PointTo("updated-name"),
-				Description: ptr.PointTo("updated-description"),
+				Name:        new("updated-name"),
+				Description: new("updated-description"),
 			},
 		)
 		assert.NoError(t, err)
@@ -813,8 +812,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctxWithGroups,
 			keyConfigWithAdminGroup.ID,
 			cmkapi.KeyConfigurationPatch{
-				Name:        ptr.PointTo("updated-name"),
-				Description: ptr.PointTo("updated-description"),
+				Name:        new("updated-name"),
+				Description: new("updated-description"),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
@@ -827,8 +826,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctxWithoutGroups,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Name:        ptr.PointTo("backward-compat-name"),
-				Description: ptr.PointTo("backward-compat-description"),
+				Name:        new("backward-compat-name"),
+				Description: new("backward-compat-description"),
 			},
 		)
 		assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
@@ -846,8 +845,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctxWithEmptyGroups,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Name:        ptr.PointTo("empty-groups-name"),
-				Description: ptr.PointTo("empty-groups-description"),
+				Name:        new("empty-groups-name"),
+				Description: new("empty-groups-description"),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
@@ -856,7 +855,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 	t.Run("Should update primary key and existing events", func(t *testing.T) {
 		oldPKeyID := uuid.New()
 		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(oldPKeyID)
+			k.PrimaryKeyID = new(oldPKeyID)
 		})
 		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
 			k.ID = oldPKeyID
@@ -864,7 +863,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 		})
 
 		sys := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 
 		key := testutils.NewKey(func(k *model.Key) {
@@ -890,7 +889,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			keyConfig.ID,
 			cmkapi.KeyConfigurationPatch{
-				PrimaryKeyID: ptr.PointTo(key.ID),
+				PrimaryKeyID: new(key.ID),
 			},
 		)
 		assert.NoError(t, err)
@@ -906,7 +905,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 	t.Run("Should error on set primary on target disabled key", func(t *testing.T) {
 		sourceKeyID := uuid.New()
 		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(sourceKeyID)
+			k.PrimaryKeyID = new(sourceKeyID)
 		})
 		sourceKey := testutils.NewKey(func(k *model.Key) {
 			k.ID = sourceKeyID
@@ -925,7 +924,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			keyConfig.ID,
 			cmkapi.KeyConfigurationPatch{
-				PrimaryKeyID: ptr.PointTo(targetKey.ID),
+				PrimaryKeyID: new(targetKey.ID),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrKeyIsNotEnabled)
@@ -934,7 +933,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 	t.Run("Should error on set primary on source disabled key", func(t *testing.T) {
 		sourceKeyID := uuid.New()
 		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(sourceKeyID)
+			k.PrimaryKeyID = new(sourceKeyID)
 		})
 		sourceKey := testutils.NewKey(func(k *model.Key) {
 			k.ID = sourceKeyID
@@ -953,7 +952,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			keyConfig.ID,
 			cmkapi.KeyConfigurationPatch{
-				PrimaryKeyID: ptr.PointTo(targetKey.ID),
+				PrimaryKeyID: new(targetKey.ID),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrKeyIsNotEnabled)
@@ -967,7 +966,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 		keyConfig.PrimaryKeyID = &oldPrimaryKey.ID
 
 		sys := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 
 		key := testutils.NewKey(func(k *model.Key) {
@@ -978,7 +977,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 		_, err := m.UpdateKeyConfigurationByID(ctx, keyConfig.ID, cmkapi.KeyConfigurationPatch{
-			PrimaryKeyID: ptr.PointTo(key.ID),
+			PrimaryKeyID: new(key.ID),
 		})
 
 		assert.NoError(t, err)
@@ -1050,7 +1049,7 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 	t.Run("Should error on delete key configuration on connected systems", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 		sys := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 

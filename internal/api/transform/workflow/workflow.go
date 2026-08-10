@@ -15,7 +15,6 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -118,10 +117,10 @@ func WithDetailed(
 
 		if approvalSummary != nil {
 			w.ApprovalSummary = &cmkapi.WorkflowApprovalSummary{
-				Approved:    ptr.PointTo(approvalSummary.Approvals),
-				Rejected:    ptr.PointTo(approvalSummary.Rejections),
-				Pending:     ptr.PointTo(approvalSummary.Pending),
-				TargetScore: ptr.PointTo(approvalSummary.TargetScore),
+				Approved:    new(approvalSummary.Approvals),
+				Rejected:    new(approvalSummary.Rejections),
+				Pending:     new(approvalSummary.Pending),
+				TargetScore: new(approvalSummary.TargetScore),
 			}
 		}
 
@@ -158,13 +157,13 @@ func ToAPI(
 
 	// Build metadata with additional info
 	metadata := &cmkapi.WorkflowMetadata{
-		CreatedAt:      ptr.PointTo(w.CreatedAt),
-		UpdatedAt:      ptr.PointTo(w.UpdatedAt),
+		CreatedAt:      new(w.CreatedAt),
+		UpdatedAt:      new(w.UpdatedAt),
 		AdditionalInfo: buildEligibilityAdditionalInfo(eligibility, eligibilityErr),
 	}
 
 	base := &cmkapi.Workflow{
-		Id:                     ptr.PointTo(w.ID),
+		Id:                     new(w.ID),
 		InitiatorID:            w.InitiatorID,
 		InitiatorName:          initiatorName,
 		State:                  cmkapi.WorkflowState(strings.ToUpper(w.State.String())),
@@ -174,8 +173,8 @@ func ToAPI(
 		ParametersResourceName: w.ParametersResourceName,
 		ParametersResourceType: parametersResourceType,
 		ArtifactID:             w.ArtifactID,
-		Parameters:             ptr.PointTo(w.Parameters),
-		FailureReason:          ptr.PointTo(w.FailureReason),
+		Parameters:             new(w.Parameters),
+		FailureReason:          new(w.FailureReason),
 		Metadata:               metadata,
 		ExpiresAt:              w.ExpiryDate,
 	}
@@ -248,7 +247,7 @@ func ApproverToAPI(
 
 	return cmkapi.WorkflowApprover{
 		Id:   approver.UserID,
-		Name: ptr.PointTo(name),
+		Name: new(name),
 		Decision: func() cmkapi.WorkflowApproverDecision {
 			if approver.Approved.Valid {
 				if approver.Approved.Bool {

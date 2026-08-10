@@ -43,7 +43,7 @@ func (c *APIController) GetGroups(
 	}
 
 	if pagination.Count {
-		response.Count = ptr.PointTo(total)
+		response.Count = new(total)
 	}
 
 	return cmkapi.GetGroups200JSONResponse(response), err

@@ -29,7 +29,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func startAPIKeyConfig(t *testing.T, idmPlugin identitymanagement.IdentityManagement) (
@@ -78,13 +77,13 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(uuid.New())
+		k.PrimaryKeyID = new(uuid.New())
 	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	authClient2 := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(uuid.New())
+		k.PrimaryKeyID = new(uuid.New())
 	}, testutils.WithAuthBusinessUserDataKC(authClient2), testutils.WithIDMPluginKC(idmPlugin))
 
 	keyConfig3 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
@@ -157,7 +156,7 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(uuid.New())
+		k.PrimaryKeyID = new(uuid.New())
 	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -320,7 +319,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			name: "KeyConfigPOST_Failed_WithoutBusinessUserDataIdentifier",
 			input: cmkapi.KeyConfiguration{
 				Name:         "test-config",
-				Description:  ptr.PointTo("test-config"),
+				Description:  new("test-config"),
 				AdminGroupID: authClient.Group.ID,
 			},
 			expectedStatus: http.StatusInternalServerError,
@@ -330,7 +329,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			name: "KeyConfigPOST_Success_WithBusinessUserDataUserGroups",
 			input: cmkapi.KeyConfiguration{
 				Name:         "test-config-2",
-				Description:  ptr.PointTo("test-config"),
+				Description:  new("test-config"),
 				AdminGroupID: authClient.Group.ID,
 			},
 			additionalContext: map[any]any{
@@ -348,7 +347,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			name: "KeyConfigPOST_Unauthorised_WithWrongBusinessUserDataUserGroups",
 			input: cmkapi.KeyConfiguration{
 				Name:         "test-config-2",
-				Description:  ptr.PointTo("test-config"),
+				Description:  new("test-config"),
 				AdminGroupID: authClient.Group.ID,
 			},
 			additionalContext: testutils.GetInvalidClientMap(),
@@ -360,7 +359,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			name: "KeyConfigPOST_Unauthorised_WithEmptyBusinessUserDataUserGroups",
 			input: cmkapi.KeyConfiguration{
 				Name:         "test-config-2",
-				Description:  ptr.PointTo("test-config"),
+				Description:  new("test-config"),
 				AdminGroupID: authClient.Group.ID,
 			},
 			additionalContext: testutils.GetGrouplessClientMap(),
@@ -371,7 +370,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 		{
 			name: "KeyConfigPOST_MissingName",
 			input: cmkapi.KeyConfiguration{
-				Description:  ptr.PointTo("test-config"),
+				Description:  new("test-config"),
 				AdminGroupID: authClient.Group.ID,
 			},
 			expectedStatus:    http.StatusBadRequest,
@@ -382,7 +381,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			name: "KeyConfigPOST_EmptyName",
 			input: cmkapi.KeyConfiguration{
 				Name:         "",
-				Description:  ptr.PointTo("test-config"),
+				Description:  new("test-config"),
 				AdminGroupID: authClient.Group.ID,
 			},
 			expectedStatus:    http.StatusBadRequest,
@@ -393,7 +392,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			name: "KeyConfigPOST_MissingAdminGroupID",
 			input: cmkapi.KeyConfiguration{
 				Name:        "",
-				Description: ptr.PointTo("test-config"),
+				Description: new("test-config"),
 			},
 			expectedStatus:    http.StatusBadRequest,
 			expectedBody:      "error",
@@ -403,7 +402,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			name: "KeyConfigPOST_NonExistentAdminGroupID",
 			input: cmkapi.KeyConfiguration{
 				Name:         "",
-				Description:  ptr.PointTo("test-config"),
+				Description:  new("test-config"),
 				AdminGroupID: uuid.New(),
 			},
 			expectedStatus:    http.StatusBadRequest,
@@ -414,7 +413,7 @@ func TestKeyConfigurationController_PostKeyConfigurations(t *testing.T) {
 			name: "KeyConfigPOST_DuplicateName",
 			input: cmkapi.KeyConfiguration{
 				Name:         "test-config-2",
-				Description:  ptr.PointTo("test-config-2"),
+				Description:  new("test-config-2"),
 				AdminGroupID: authClient.Group.ID,
 			},
 			additionalContext: authClient.GetClientMap(
@@ -466,7 +465,7 @@ func TestKeyConfigurationController_UpdateByID(t *testing.T) {
 	key := testutils.NewKey(func(_ *model.Key) {})
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(key.ID)
+		k.PrimaryKeyID = new(key.ID)
 	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 	existingKeyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.Name = "existing-config"
@@ -684,7 +683,7 @@ func TestKeyConfigurationController_DeleteByID(t *testing.T) {
 	keyConfigWithSystems := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient))
 	sys := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfigWithSystems.ID)
+		s.KeyConfigurationID = new(keyConfigWithSystems.ID)
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyConfigWithSystems, sys, keyConfig2)

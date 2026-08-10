@@ -9,7 +9,6 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -25,7 +24,7 @@ func FromAPI(keyUUID cmkapi.KeyIDPath, apiKeyLabel cmkapi.Label) (*model.KeyLabe
 
 	var labelValue *string
 	if apiKeyLabel.Value == nil {
-		labelValue = ptr.PointTo("")
+		labelValue = new("")
 	} else {
 		labelValue = apiKeyLabel.Value
 	}
@@ -52,6 +51,6 @@ func ToAPI(modelKeyLabel *model.KeyLabel) (cmkapi.Label, error) {
 
 	return cmkapi.Label{
 		Key:   modelKeyLabel.Key,
-		Value: ptr.PointTo(modelKeyLabel.Value),
+		Value: new(modelKeyLabel.Value),
 	}, nil
 }

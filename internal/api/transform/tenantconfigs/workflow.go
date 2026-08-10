@@ -3,7 +3,6 @@ package tenantconfigs
 import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // WorkflowConfigToAPI transforms a model.WorkflowConfig to an API TenantWorkflowConfiguration.
@@ -13,10 +12,10 @@ func WorkflowConfigToAPI(config *model.WorkflowConfig) *cmkapi.TenantWorkflowCon
 	}
 
 	return &cmkapi.TenantWorkflowConfiguration{
-		Enabled:                 ptr.PointTo(config.Enabled),
-		MinimumApprovals:        ptr.PointTo(config.MinimumApprovals),
-		RetentionPeriodDays:     ptr.PointTo(config.RetentionPeriodDays),
-		DefaultExpiryPeriodDays: ptr.PointTo(config.DefaultExpiryPeriodDays),
-		MaxExpiryPeriodDays:     ptr.PointTo(config.MaxExpiryPeriodDays),
+		Enabled:                 new(config.Enabled),
+		MinimumApprovals:        new(config.MinimumApprovals),
+		RetentionPeriodDays:     new(config.RetentionPeriodDays),
+		DefaultExpiryPeriodDays: new(config.DefaultExpiryPeriodDays),
+		MaxExpiryPeriodDays:     new(config.MaxExpiryPeriodDays),
 	}
 }

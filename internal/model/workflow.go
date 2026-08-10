@@ -17,7 +17,6 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/utils/enums"
 	"github.com/openkcm/cmk/utils/identity"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const WorkflowID = "workflow_id"
@@ -77,7 +76,7 @@ func (m Workflow) BeforeDelete(tx *gorm.DB) error {
 
 func (m *Workflow) BeforeSave(tx *gorm.DB) error {
 	if m.ExpiryDate == nil {
-		m.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, constants.DefaultExpiryPeriodDays))
+		m.ExpiryDate = new(time.Now().AddDate(0, 0, constants.DefaultExpiryPeriodDays))
 	}
 	return nil
 }

@@ -3,7 +3,6 @@ package tenantconfigs
 import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/manager"
-	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -24,7 +23,7 @@ func ToAPI(keystore manager.TenantKeystores) (*cmkapi.TenantKeystore, error) {
 
 	apiTenant := &cmkapi.TenantKeystore{
 		Byok: &cmkapi.BYOKKeystore{
-			Allow:            ptr.PointTo(keystore.AllowBYOK),
+			Allow:            new(keystore.AllowBYOK),
 			SupportedRegions: &supportedRegions,
 		},
 		Hyok: cmkapi.HYOKKeystore{

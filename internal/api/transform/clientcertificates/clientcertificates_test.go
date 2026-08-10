@@ -8,7 +8,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/clientcertificates"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestToAPI(t *testing.T) {
@@ -47,7 +46,7 @@ func TestToAPI(t *testing.T) {
 			},
 			expected: &cmkapi.ClientCertificates{
 				TenantDefault: &cmkapi.CertificateList{
-					Count: ptr.PointTo(1),
+					Count: new(1),
 					Value: []cmkapi.Certificate{{
 						RootCA: "TDRoot",
 						Subject: cmkapi.CertificateSubject{
@@ -60,7 +59,7 @@ func TestToAPI(t *testing.T) {
 					}},
 				},
 				Crypto: &cmkapi.CertificateList{
-					Count: ptr.PointTo(1),
+					Count: new(1),
 					Value: []cmkapi.Certificate{{
 						RootCA: "CRoot",
 						Subject: cmkapi.CertificateSubject{

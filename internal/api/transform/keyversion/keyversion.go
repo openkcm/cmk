@@ -5,7 +5,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -24,11 +23,11 @@ func ToAPI(kv model.KeyVersion, latestVersionID uuid.UUID, keyState cmkapi.KeySt
 		Id:        &kv.ID,
 		IsPrimary: &isPrimary,
 		State:     &keyState,
-		Metadata: ptr.PointTo(cmkapi.KeyVersionMetadata{
-			CreatedAt: ptr.PointTo(kv.CreatedAt),
-			UpdatedAt: ptr.PointTo(kv.UpdatedAt),
-			RotatedAt: ptr.PointTo(kv.RotatedAt),
-		}),
+		Metadata: &cmkapi.KeyVersionMetadata{
+			CreatedAt: new(kv.CreatedAt),
+			UpdatedAt: new(kv.UpdatedAt),
+			RotatedAt: new(kv.RotatedAt),
+		},
 		NativeID: &kv.NativeID,
 	}, nil
 }

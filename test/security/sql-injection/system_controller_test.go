@@ -12,7 +12,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func startAPIAndDB(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
@@ -40,7 +39,7 @@ func TestAPIController_GetAllSystems_ForInjection(t *testing.T) {
 
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.KeyConfigurationID = new(keyConfig.ID)
 		s.Status = cmkapi.SystemStatusPROCESSING
 	})
 

@@ -13,7 +13,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrForced = errors.New("forced")
@@ -41,7 +40,7 @@ func TestAPIController_GetAllSystems_ForParameterPollution(t *testing.T) {
 
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.KeyConfigurationID = new(keyConfig.ID)
 	})
 
 	testutils.CreateTestEntities(

@@ -18,7 +18,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
@@ -29,24 +28,24 @@ const (
 var regularLabels = []cmkapi.Label{
 	{
 		Key:   "foo",
-		Value: ptr.PointTo("bar"),
+		Value: new("bar"),
 	},
 	{
 		Key:   "region/az",
-		Value: ptr.PointTo("eu-west-1/a"),
+		Value: new("eu-west-1/a"),
 	},
 }
 
 var labelWithEmptyValue = []cmkapi.Label{
 	{
 		Key:   "foo",
-		Value: ptr.PointTo(""),
+		Value: new(""),
 	},
 }
 
 var errorLabel = []cmkapi.Label{
 	{
-		Value: ptr.PointTo(""),
+		Value: new(""),
 	},
 }
 
@@ -94,11 +93,11 @@ func TestLabelsController_GetKeyLabels(t *testing.T) {
 		expected := []cmkapi.Label{
 			{
 				Key:   "foo",
-				Value: ptr.PointTo("bar"),
+				Value: new("bar"),
 			},
 			{
 				Key:   "region/az",
-				Value: ptr.PointTo("eu-west-1/a"),
+				Value: new("eu-west-1/a"),
 			},
 		}
 		keyID := uuid.New()
@@ -339,16 +338,16 @@ func TestLabelsController_CreateOrUpdateLabels(t *testing.T) {
 			updatedLabels: []cmkapi.Label{
 				{
 					Key:   "foo",
-					Value: ptr.PointTo(""),
+					Value: new(""),
 				},
 			},
 			expectedLabels: []cmkapi.Label{
 				{
 					Key:   "foo",
-					Value: ptr.PointTo(""),
+					Value: new(""),
 				}, {
 					Key:   "region/az",
-					Value: ptr.PointTo("eu-west-1/a"),
+					Value: new("eu-west-1/a"),
 				},
 			},
 		},
@@ -366,15 +365,15 @@ func TestLabelsController_CreateOrUpdateLabels(t *testing.T) {
 			expectedStatus: http.StatusNoContent,
 			updatedLabels: []cmkapi.Label{{
 				Key:   "foo",
-				Value: ptr.PointTo("updated-value"),
+				Value: new("updated-value"),
 			}},
 			expectedLabels: []cmkapi.Label{
 				{
 					Key:   "foo",
-					Value: ptr.PointTo("updated-value"),
+					Value: new("updated-value"),
 				}, {
 					Key:   "region/az",
-					Value: ptr.PointTo("eu-west-1/a"),
+					Value: new("eu-west-1/a"),
 				},
 			},
 		},
@@ -484,7 +483,7 @@ func TestLabelsController_DeleteLabel(t *testing.T) {
 			validateByFetchingDataFromDB: true,
 			expectedLabels: []cmkapi.Label{{
 				Key:   "region/az",
-				Value: ptr.PointTo("eu-west-1/a"),
+				Value: new("eu-west-1/a"),
 			}},
 		},
 	}
@@ -620,7 +619,7 @@ func TestLabelsController_DeleteInvalidLabel(t *testing.T) {
 			label := []cmkapi.Label{
 				{
 					Key:   tc.key,
-					Value: ptr.PointTo(tc.value),
+					Value: new(tc.value),
 				},
 			}
 

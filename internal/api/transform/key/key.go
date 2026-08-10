@@ -17,7 +17,6 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -164,7 +163,7 @@ func getAccessDetailsFromModel(k model.Key) (*cmkapi.KeyAccessDetails, error) {
 	}
 
 	return &cmkapi.KeyAccessDetails{
-		Management: ptr.PointTo(management),
-		Crypto:     ptr.PointTo(crypto),
+		Management: new(management),
+		Crypto:     new(crypto),
 	}, nil
 }

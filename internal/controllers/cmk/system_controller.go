@@ -107,7 +107,7 @@ func (c *APIController) GetAllSystems(ctx context.Context,
 	}
 
 	if ptr.GetSafeDeref(request.Params.Count) {
-		response.Count = ptr.PointTo(total)
+		response.Count = new(total)
 	}
 
 	return response, nil

@@ -14,7 +14,6 @@ import (
 	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func startAPIGroups(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
@@ -347,7 +346,7 @@ func TestUpdateGroup(t *testing.T) {
 
 	t.Run("Should code 200 on successful group rename", func(t *testing.T) {
 		updateGroup := cmkapi.GroupPatch{
-			Name: ptr.PointTo("test"),
+			Name: new("test"),
 		}
 
 		w := testutils.MakeHTTPRequest(
@@ -366,7 +365,7 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should code 400 on invalid group rename object", func(t *testing.T) {
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo(""),
+				Name: new(""),
 			}
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
@@ -385,7 +384,7 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should code 400 on rename to protect group name", func(t *testing.T) {
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo(constants.TenantAdminGroup),
+				Name: new(constants.TenantAdminGroup),
 			}
 
 			w := testutils.MakeHTTPRequest(
@@ -405,7 +404,7 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should code 404 on non existing group", func(t *testing.T) {
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo("test"),
+				Name: new("test"),
 			}
 
 			w := testutils.MakeHTTPRequest(
@@ -430,7 +429,7 @@ func TestUpdateGroup(t *testing.T) {
 			defer forced.Unregister()
 
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo("test"),
+				Name: new("test"),
 			}
 
 			w := testutils.MakeHTTPRequest(
@@ -477,15 +476,15 @@ func TestCheckGroupsIAM(t *testing.T) {
 			expected := cmkapi.CheckGroupsIAM200JSONResponse{
 				Value: []cmkapi.GroupIAMExistence{
 					{
-						IamIdentifier: ptr.PointTo("KMS_001"),
+						IamIdentifier: new("KMS_001"),
 						Exists:        true,
 					},
 					{
-						IamIdentifier: ptr.PointTo("KMS_002"),
+						IamIdentifier: new("KMS_002"),
 						Exists:        true,
 					},
 					{
-						IamIdentifier: ptr.PointTo("KMS_999"),
+						IamIdentifier: new("KMS_999"),
 						Exists:        false,
 					},
 				},

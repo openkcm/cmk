@@ -28,7 +28,6 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // BYOKAction constants represent the actions that can be performed on a BYOK key
@@ -599,7 +598,7 @@ func (km *KeyManager) createManagedProviderKey(
 		keyResp, err = provider.Client.CreateKey(ctx, &keymanagement.CreateKeyRequest{
 			Config:       common.KeystoreConfig{Values: provider.Config.Values},
 			KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
-			ID:           ptr.PointTo(key.ID.String()),
+			ID:           new(key.ID.String()),
 			Region:       key.Region,
 			KeyType:      convertToAPIKeyType(key.KeyType),
 		})
@@ -609,7 +608,7 @@ func (km *KeyManager) createManagedProviderKey(
 		return errs.Wrap(ErrKeyCreationFailed, err)
 	}
 
-	key.NativeID = ptr.PointTo(keyResp.KeyID)
+	key.NativeID = new(keyResp.KeyID)
 	key.State = cmkapi.KeyState(keyResp.Status)
 
 	return nil
@@ -694,7 +693,7 @@ func (km *KeyManager) addCertificateSubjectToCryptoData(ctx context.Context, key
 			continue
 		}
 
-		accessData.CertificateSubject = ptr.PointTo(cert.Subject.String())
+		accessData.CertificateSubject = new(cert.Subject.String())
 		cryptoAccessData[cert.Name] = accessData
 	}
 
