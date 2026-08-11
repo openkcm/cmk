@@ -53,7 +53,7 @@ func (c *APIController) GetKeyVersions(ctx context.Context,
 	if latestVersion == nil || len(keyVersions) == 0 {
 		apiresponse := cmkapi.KeyVersionList{Value: []cmkapi.KeyVersion{}}
 		if ptr.GetSafeDeref(request.Params.Count) {
-			apiresponse.Count = ptr.PointTo(0)
+			apiresponse.Count = new(0)
 		}
 		return cmkapi.GetKeyVersions200JSONResponse(apiresponse), nil
 	}
@@ -74,7 +74,7 @@ func (c *APIController) GetKeyVersions(ctx context.Context,
 	apiresponse := cmkapi.KeyVersionList{Value: response}
 
 	if ptr.GetSafeDeref(request.Params.Count) {
-		apiresponse.Count = ptr.PointTo(count)
+		apiresponse.Count = new(count)
 	}
 
 	return cmkapi.GetKeyVersions200JSONResponse(apiresponse), nil

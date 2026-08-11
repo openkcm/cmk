@@ -96,7 +96,7 @@ func (c *APIController) GetKeys(ctx context.Context,
 	}
 
 	if pagination.Count {
-		response.Count = ptr.PointTo(total)
+		response.Count = new(total)
 	}
 
 	return cmkapi.GetKeys200JSONResponse(response), err

@@ -10,7 +10,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestToAPI(t *testing.T) {
@@ -38,12 +37,12 @@ func TestToAPI(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			expected := cmkapi.TenantKeystore{
 				Byok: &cmkapi.BYOKKeystore{
-					Allow:            ptr.PointTo(tc.allowBYOK),
+					Allow:            new(tc.allowBYOK),
 					SupportedRegions: &supportedRegions,
 				},
 				Hyok: cmkapi.HYOKKeystore{
 					Providers: &providers,
-					Allow:     ptr.PointTo(true),
+					Allow:     new(true),
 				},
 			}
 

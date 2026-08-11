@@ -30,7 +30,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/clients/registry/mapping"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
@@ -230,7 +229,7 @@ func TestOffboardTenant(t *testing.T) {
 	)
 	keyConfig := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(key.ID)
+			k.PrimaryKeyID = new(key.ID)
 			k.ID = keyConfigID
 		},
 	)
@@ -246,7 +245,7 @@ func TestOffboardTenant(t *testing.T) {
 		keyID := uuid.New()
 		keyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(keyID)
+				k.PrimaryKeyID = new(keyID)
 			},
 		)
 		key := testutils.NewKey(
@@ -282,7 +281,7 @@ func TestOffboardTenant(t *testing.T) {
 			ctx, t, r, testutils.NewSystem(
 				func(s *model.System) {
 					s.Status = cmkapi.SystemStatusPROCESSING
-					s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+					s.KeyConfigurationID = new(keyConfig.ID)
 				},
 			),
 		)
@@ -296,7 +295,7 @@ func TestOffboardTenant(t *testing.T) {
 		system := testutils.NewSystem(
 			func(s *model.System) {
 				s.Status = cmkapi.SystemStatusCONNECTED
-				s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+				s.KeyConfigurationID = new(keyConfig.ID)
 			},
 		)
 		testutils.CreateTestEntities(ctx, t, r, system)
@@ -314,7 +313,7 @@ func TestOffboardTenant(t *testing.T) {
 		keyID := uuid.New()
 		keyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(key.ID)
+				k.PrimaryKeyID = new(key.ID)
 			},
 		)
 		key := testutils.NewKey(
@@ -339,7 +338,7 @@ func TestOffboardTenant(t *testing.T) {
 		disconnectAllExistingSystems(t, ctx, r)
 		system := testutils.NewSystem(func(s *model.System) {
 			s.Status = cmkapi.SystemStatusCONNECTED
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 		testutils.CreateTestEntities(ctx, t, r, system)
 

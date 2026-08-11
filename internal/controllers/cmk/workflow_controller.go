@@ -48,9 +48,9 @@ func (c *APIController) CheckWorkflow(
 	if status.ErrDetails != nil {
 		// Extract error code for the details field
 		if errors.Is(status.ErrDetails, wfMechanism.ErrWorkflowGroupNotSufficientMembers) {
-			response.Details = ptr.PointTo(apierrors.WorkflowGroupNotSufficientMembers)
+			response.Details = new(apierrors.WorkflowGroupNotSufficientMembers)
 		} else {
-			response.Details = ptr.PointTo(status.ErrDetails.Error())
+			response.Details = new(status.ErrDetails.Error())
 		}
 	}
 

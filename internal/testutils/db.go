@@ -28,7 +28,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
@@ -325,7 +324,7 @@ func WithGenerateTenants(count int) TestDBConfigOpt {
 		c.generateTenants = count
 		c.CreateDatabase = true
 		if count == 0 {
-			c.TenantVersion = ptr.PointTo(int64(0))
+			c.TenantVersion = new(int64(0))
 		}
 	}
 }

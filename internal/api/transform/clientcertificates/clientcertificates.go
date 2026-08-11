@@ -6,7 +6,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -55,11 +54,11 @@ func ToAPI(cc model.ClientCertificates) (*cmkapi.ClientCertificates, error) {
 
 	return &cmkapi.ClientCertificates{
 		TenantDefault: &cmkapi.CertificateList{
-			Count: ptr.PointTo(len(tenantDefaultCertList)),
+			Count: new(len(tenantDefaultCertList)),
 			Value: tenantDefaultCertList,
 		},
 		Crypto: &cmkapi.CertificateList{
-			Count: ptr.PointTo(len(cryptoCertList)),
+			Count: new(len(cryptoCertList)),
 			Value: cryptoCertList,
 		},
 	}, nil

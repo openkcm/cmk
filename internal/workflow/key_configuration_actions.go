@@ -8,7 +8,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type KeyConfigurationActions interface {
@@ -36,7 +35,7 @@ func (l *Lifecycle) updatePrimaryKey(ctx context.Context) error {
 	}
 
 	_, err = l.KeyConfigurationActions.UpdateKeyConfigurationByID(ctx, l.Workflow.ArtifactID, cmkapi.KeyConfigurationPatch{
-		PrimaryKeyID: ptr.PointTo(keyID),
+		PrimaryKeyID: new(keyID),
 	})
 	if err != nil {
 		return errs.Wrap(ErrWorkflowExecution, err)

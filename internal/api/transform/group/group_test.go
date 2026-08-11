@@ -8,7 +8,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/group"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestToAPI(t *testing.T) {
@@ -16,7 +15,7 @@ func TestToAPI(t *testing.T) {
 		expected := &cmkapi.Group{
 			Name:        "test",
 			Role:        "test",
-			Description: ptr.PointTo("test"),
+			Description: new("test"),
 		}
 		res, err := group.ToAPI(model.Group{
 			Name:        "test",

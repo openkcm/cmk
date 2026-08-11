@@ -35,7 +35,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/clients/registry/mapping"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type tester struct {
@@ -287,7 +286,7 @@ func createKeyForTest(
 		Provider:           "TEST",
 		KeyType:            string(cmkapi.KeyTypeHYOK),
 		State:              state,
-		NativeID:           ptr.PointTo("arn:aws:kms:us-east-1:123456789012:key/" + keyUUID.String()),
+		NativeID:           new("arn:aws:kms:us-east-1:123456789012:key/" + keyUUID.String()),
 		CryptoAccessData:   bytes,
 	}))
 
@@ -617,7 +616,7 @@ func addDataToDB(
 		// CryptoAccessDataSyncer, which has no crypto certs in the test
 		// landscape and would fail with UNSUPPORTED_REGION.
 		KeyType:          string(cmkapi.KeyTypeHYOK),
-		NativeID:         ptr.PointTo("arn:aws:kms:us-east-1:123456789012:key/12345678-90ab-cdef-1234-567890abcdef"),
+		NativeID:         new("arn:aws:kms:us-east-1:123456789012:key/12345678-90ab-cdef-1234-567890abcdef"),
 		CryptoAccessData: bytes,
 	})
 	require.NoError(t, err)

@@ -19,7 +19,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func startAPIKeyVersion(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
@@ -460,7 +459,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 				kv.RotatedAt = time.Now().UTC()
 			}),
 		}
-		k.NativeID = ptr.PointTo(uuid.NewString())
+		k.NativeID = new(uuid.NewString())
 	})
 
 	testutils.CreateTestEntities(

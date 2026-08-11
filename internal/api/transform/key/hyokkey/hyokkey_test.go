@@ -12,7 +12,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/key/hyokkey"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var (
@@ -84,7 +83,7 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Missing NativeID",
 			apiKey: cmkapi.Key{
-				Provider: ptr.PointTo("test-provider"),
+				Provider: new("test-provider"),
 			},
 			expected: nil,
 			errMsg:   "nativeID is required",
@@ -92,8 +91,8 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Missing AccessDetails",
 			apiKey: cmkapi.Key{
-				NativeID: ptr.PointTo("native-id"),
-				Provider: ptr.PointTo("test-provider"),
+				NativeID: new("native-id"),
+				Provider: new("test-provider"),
 			},
 			expected: nil,
 			errMsg:   "accessDetails is required",
@@ -101,9 +100,9 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Unexpected Algorithm",
 			apiKey: cmkapi.Key{
-				NativeID:  ptr.PointTo("native-id"),
-				Provider:  ptr.PointTo("test-provider"),
-				Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
+				NativeID:  new("native-id"),
+				Provider:  new("test-provider"),
+				Algorithm: new(cmkapi.KeyAlgorithmAES256),
 			},
 			expected: nil,
 			errMsg:   "unexpected field: algorithm",
@@ -111,9 +110,9 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Unexpected Region",
 			apiKey: cmkapi.Key{
-				NativeID: ptr.PointTo("native-id"),
-				Provider: ptr.PointTo("test-provider"),
-				Region:   ptr.PointTo("us-east-1"),
+				NativeID: new("native-id"),
+				Provider: new("test-provider"),
+				Region:   new("us-east-1"),
 			},
 			expected: nil,
 			errMsg:   "unexpected field: region",
@@ -121,10 +120,10 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Invalid AccessDetails",
 			apiKey: cmkapi.Key{
-				NativeID: ptr.PointTo("native-id"),
-				Provider: ptr.PointTo("test-provider"),
+				NativeID: new("native-id"),
+				Provider: new("test-provider"),
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Management: ptr.PointTo(cmkapi.KeyAccessDetailsRegion{}),
+					Management: &cmkapi.KeyAccessDetailsRegion{},
 				},
 			},
 			expected: nil,
@@ -133,25 +132,25 @@ func TestFromCmkAPIKey(t *testing.T) {
 		{
 			name: "Successful Transformation",
 			apiKey: cmkapi.Key{
-				NativeID: ptr.PointTo("native-id"),
-				Provider: ptr.PointTo("TEST"),
+				NativeID: new("native-id"),
+				Provider: new("TEST"),
 				AccessDetails: &cmkapi.KeyAccessDetails{
 					Management: &cmkapi.KeyAccessDetailsRegion{
 						AdditionalProperties: map[string]any{
 							"key": "value",
 						},
 					},
-					Crypto: ptr.PointTo(map[string]cmkapi.KeyAccessDetailsRegion{
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						"cryptoRegion": {
 							AdditionalProperties: map[string]any{
 								"cryptoKey": "cryptoValue",
 							},
 						},
-					}),
+					},
 				},
 			},
 			expected: &model.Key{
-				NativeID:             ptr.PointTo("native-id"),
+				NativeID:             new("native-id"),
 				Provider:             "TEST",
 				Region:               "test-region",
 				ManagementAccessData: []byte(`{"key":"value"}`),

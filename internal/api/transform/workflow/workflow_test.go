@@ -20,7 +20,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const testStateWaitConfirmation = "WAIT_CONFIRMATION"
@@ -88,7 +87,7 @@ func TestWorkflow_ToAPI(t *testing.T) {
 			expectedState:        cmkapi.WorkflowStateEnumFAILED,
 			expectedActionType:   cmkapi.WorkflowActionTypeEnumLINK,
 			expectedArtifactType: cmkapi.WorkflowArtifactTypeEnumSYSTEM,
-			expectedExpiryAt:     ptr.PointTo(expires),
+			expectedExpiryAt:     new(expires),
 		},
 	}
 
@@ -127,7 +126,7 @@ func TestWorkflow_FromAPI(t *testing.T) {
 			ActionType:   cmkapi.WorkflowActionTypeEnumLINK,
 			ArtifactType: cmkapi.WorkflowArtifactTypeEnumSYSTEM,
 			ArtifactID:   uuid.New(),
-			Parameters:   ptr.PointTo("ENABLED"),
+			Parameters:   new("ENABLED"),
 		}
 	})
 
@@ -152,7 +151,7 @@ func TestWorkflow_FromAPI(t *testing.T) {
 		{
 			name: "TestWorkflow_FromAPExpiry",
 			apiWorkflow: apiWorkflowMutator(func(w *cmkapi.WorkflowBody) {
-				w.ExpiresAt = ptr.PointTo(time.Now())
+				w.ExpiresAt = new(time.Now())
 			}),
 			ctxFn: func(ctx context.Context) context.Context {
 				return cmkcontext.InjectBusinessUserData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
@@ -161,7 +160,7 @@ func TestWorkflow_FromAPI(t *testing.T) {
 		{
 			name: "TestWorkflow_FromAPI_ExceededExpiry",
 			apiWorkflow: apiWorkflowMutator(func(w *cmkapi.WorkflowBody) {
-				w.ExpiresAt = ptr.PointTo(time.Now().AddDate(0, 0, 31))
+				w.ExpiresAt = new(time.Now().AddDate(0, 0, 31))
 			}),
 			ctxFn: func(ctx context.Context) context.Context {
 				return cmkcontext.InjectBusinessUserData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
@@ -200,7 +199,7 @@ func TestWorkflow_FromAPI_Expires(t *testing.T) {
 			ActionType:   cmkapi.WorkflowActionTypeEnumLINK,
 			ArtifactType: cmkapi.WorkflowArtifactTypeEnumSYSTEM,
 			ArtifactID:   uuid.New(),
-			Parameters:   ptr.PointTo("ENABLED"),
+			Parameters:   new("ENABLED"),
 		}
 	})
 
@@ -223,7 +222,7 @@ func TestWorkflow_FromAPI_Expires(t *testing.T) {
 		{
 			name: "TestWorkflow_FromAPExpires_Yesterday",
 			apiWorkflow: apiWorkflowMutator(func(w *cmkapi.WorkflowBody) {
-				w.ExpiresAt = ptr.PointTo(time.Now().AddDate(0, 0, -1))
+				w.ExpiresAt = new(time.Now().AddDate(0, 0, -1))
 			}),
 			expiredNow:   true,
 			expiredAtMax: true,
@@ -231,7 +230,7 @@ func TestWorkflow_FromAPI_Expires(t *testing.T) {
 		{
 			name: "TestWorkflow_FromAPExpires_1DayBeforeMax",
 			apiWorkflow: apiWorkflowMutator(func(w *cmkapi.WorkflowBody) {
-				w.ExpiresAt = ptr.PointTo(time.Now().AddDate(0, 0, maxExpiry-1))
+				w.ExpiresAt = new(time.Now().AddDate(0, 0, maxExpiry-1))
 			}),
 			expiredNow:   false,
 			expiredAtMax: true,
@@ -239,7 +238,7 @@ func TestWorkflow_FromAPI_Expires(t *testing.T) {
 		{
 			name: "TestWorkflow_FromAPExpires_AtMax",
 			apiWorkflow: apiWorkflowMutator(func(w *cmkapi.WorkflowBody) {
-				w.ExpiresAt = ptr.PointTo(time.Now().AddDate(0, 0, maxExpiry))
+				w.ExpiresAt = new(time.Now().AddDate(0, 0, maxExpiry))
 			}),
 			expiredNow:   false,
 			expiredAtMax: false,
@@ -247,7 +246,7 @@ func TestWorkflow_FromAPI_Expires(t *testing.T) {
 		{
 			name: "TestWorkflow_FromAPExpires_1DayAfterMax",
 			apiWorkflow: apiWorkflowMutator(func(w *cmkapi.WorkflowBody) {
-				w.ExpiresAt = ptr.PointTo(time.Now().AddDate(0, 0, maxExpiry+1))
+				w.ExpiresAt = new(time.Now().AddDate(0, 0, maxExpiry+1))
 			}),
 			error: true,
 		},

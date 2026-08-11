@@ -14,7 +14,6 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
@@ -56,7 +55,7 @@ func NewSystem(m func(*model.System)) *model.System {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 type KeyConfigOpt func(*model.KeyConfiguration)
@@ -79,7 +78,7 @@ func NewKeyConfig(m func(*model.KeyConfiguration),
 		return keyConfig
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewTag(m func(*model.Tag)) *model.Tag {
@@ -90,7 +89,7 @@ func NewTag(m func(*model.Tag)) *model.Tag {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewKey(m func(*model.Key)) *model.Key {
@@ -100,11 +99,11 @@ func NewKey(m func(*model.Key)) *model.Key {
 			KeyType:  constants.KeyTypeBYOK,
 			Name:     uuid.NewString(),
 			State:    cmkapi.KeyStateENABLED,
-			NativeID: ptr.PointTo(uuid.NewString()),
+			NativeID: new(uuid.NewString()),
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewKeyVersion(m func(*model.KeyVersion)) *model.KeyVersion {
@@ -118,7 +117,7 @@ func NewKeyVersion(m func(*model.KeyVersion)) *model.KeyVersion {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewGroup(m func(*model.Group)) *model.Group {
@@ -131,7 +130,7 @@ func NewGroup(m func(*model.Group)) *model.Group {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewKeystoreConfig(m func(*model.KeystoreConfig)) *model.KeystoreConfig {
@@ -160,7 +159,7 @@ func NewKeystoreConfig(m func(*model.KeystoreConfig)) *model.KeystoreConfig {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewKeystore(m func(*model.Keystore)) *model.Keystore {
@@ -175,7 +174,7 @@ func NewKeystore(m func(*model.Keystore)) *model.Keystore {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewCertificate(m func(*model.Certificate)) *model.Certificate {
@@ -193,7 +192,7 @@ func NewCertificate(m func(*model.Certificate)) *model.Certificate {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewImportParams(m func(*model.ImportParams)) *model.ImportParams {
@@ -202,12 +201,12 @@ func NewImportParams(m func(*model.ImportParams)) *model.ImportParams {
 			KeyID:              uuid.New(),
 			WrappingAlg:        "CKM_RSA_AES_KEY_WRAP",
 			HashFunction:       "SHA256",
-			Expires:            ptr.PointTo(time.Now().Add(1 * time.Hour)),
+			Expires:            new(time.Now().Add(1 * time.Hour)),
 			ProviderParameters: json.RawMessage{},
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
@@ -224,7 +223,7 @@ func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewWorkflowApproverGroup(m func(*model.WorkflowApproverGroup)) *model.WorkflowApproverGroup {
@@ -236,7 +235,7 @@ func NewWorkflowApproverGroup(m func(*model.WorkflowApproverGroup)) *model.Workf
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewEvent(m func(*model.Event)) *model.Event {
@@ -249,7 +248,7 @@ func NewEvent(m func(*model.Event)) *model.Event {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewWorkflowApprover(m func(approver *model.WorkflowApprover)) *model.WorkflowApprover {
@@ -262,7 +261,7 @@ func NewWorkflowApprover(m func(approver *model.WorkflowApprover)) *model.Workfl
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewKeyLabel(m func(l *model.KeyLabel)) *model.KeyLabel {
@@ -276,7 +275,7 @@ func NewKeyLabel(m func(l *model.KeyLabel)) *model.KeyLabel {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewTenant(m func(t *model.Tenant)) *model.Tenant {
@@ -297,7 +296,7 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
@@ -316,7 +315,7 @@ func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 // NewDefaultWorkflowConfig creates a default WorkflowConfig for testing

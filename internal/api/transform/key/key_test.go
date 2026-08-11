@@ -18,7 +18,6 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
@@ -93,12 +92,12 @@ func TestTransformKeyFromAPI(t *testing.T) {
 			Description:        &description,
 			Provider:           &provider,
 			AccessDetails: &cmkapi.KeyAccessDetails{
-				Management: ptr.PointTo(cmkapi.KeyAccessDetailsRegion{
+				Management: &cmkapi.KeyAccessDetailsRegion{
 					AdditionalProperties: map[string]any{
 						accessAccountIDField: accessAccountID,
 						accessUserIDField:    accessUserID,
 					},
-				}),
+				},
 			},
 		}
 	})
@@ -227,7 +226,7 @@ func TestTransformKeyToAPI(t *testing.T) {
 				KeyType:            string(cmkapi.KeyTypeHYOK),
 				KeyConfigurationID: keyConfigID,
 				Description:        description,
-				NativeID:           ptr.PointTo("native-id-1234"),
+				NativeID:           new("native-id-1234"),
 				State:              cmkapi.KeyStateENABLED,
 				IsPrimary:          false,
 				ManagementAccessData: mustMarshal(AccessDataTest{
@@ -255,9 +254,9 @@ func TestTransformKeyToAPI(t *testing.T) {
 				Type:               cmkapi.KeyTypeHYOK,
 				KeyConfigurationID: keyConfigID,
 				Description:        &description,
-				NativeID:           ptr.PointTo("native-id-1234"),
-				State:              ptr.PointTo(cmkapi.KeyStateENABLED),
-				IsPrimary:          ptr.PointTo(false),
+				NativeID:           new("native-id-1234"),
+				State:              new(cmkapi.KeyStateENABLED),
+				IsPrimary:          new(false),
 				AccessDetails: &cmkapi.KeyAccessDetails{
 					Management: &cmkapi.KeyAccessDetailsRegion{
 						AdditionalProperties: map[string]any{
@@ -267,14 +266,14 @@ func TestTransformKeyToAPI(t *testing.T) {
 					},
 					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						"serviceA": {
-							IsEditable: ptr.PointTo(true),
+							IsEditable: new(true),
 							AdditionalProperties: map[string]any{
 								accessAccountIDField: "12344",
 								accessUserIDField:    "123456789012:user/serviceA",
 							},
 						},
 						"serviceB": {
-							IsEditable: ptr.PointTo(false),
+							IsEditable: new(false),
 							AdditionalProperties: map[string]any{
 								accessAccountIDField: "12345",
 								accessUserIDField:    "123456789012:user/serviceB",
@@ -286,7 +285,7 @@ func TestTransformKeyToAPI(t *testing.T) {
 					CreatedAt: &time.Time{},
 					UpdatedAt: &time.Time{},
 				},
-				UnderWorkflow: ptr.PointTo(false),
+				UnderWorkflow: new(false),
 			},
 		},
 		{
@@ -308,15 +307,15 @@ func TestTransformKeyToAPI(t *testing.T) {
 				Type:               cmkapi.KeyTypeBYOK,
 				KeyConfigurationID: keyConfigID,
 				Description:        &description,
-				Algorithm:          ptr.PointTo(cmkapi.KeyAlgorithmAES256),
-				Region:             ptr.PointTo(regionEUWest1),
-				State:              ptr.PointTo(cmkapi.KeyStateENABLED),
-				IsPrimary:          ptr.PointTo(true),
+				Algorithm:          new(cmkapi.KeyAlgorithmAES256),
+				Region:             new(regionEUWest1),
+				State:              new(cmkapi.KeyStateENABLED),
+				IsPrimary:          new(true),
 				Metadata: &cmkapi.KeyMetadata{
 					CreatedAt: &time.Time{},
 					UpdatedAt: &time.Time{},
 				},
-				UnderWorkflow: ptr.PointTo(false),
+				UnderWorkflow: new(false),
 			},
 		},
 	}

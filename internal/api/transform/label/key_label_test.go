@@ -11,7 +11,6 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -38,7 +37,7 @@ func TestTransformLabel_FromAPI(t *testing.T) {
 			},
 			inputKeyID:         uuid.New(),
 			inputLabelName:     "foo",
-			inputLabelValuePtr: ptr.PointTo("bar"),
+			inputLabelValuePtr: new("bar"),
 			expectedLabelValue: "bar",
 		},
 		{
@@ -48,7 +47,7 @@ func TestTransformLabel_FromAPI(t *testing.T) {
 			},
 			inputKeyID:         uuid.New(),
 			inputLabelName:     "foo",
-			inputLabelValuePtr: ptr.PointTo(""),
+			inputLabelValuePtr: new(""),
 			expectedLabelValue: "",
 		},
 		{
@@ -68,7 +67,7 @@ func TestTransformLabel_FromAPI(t *testing.T) {
 			},
 			inputKeyID:         uuid.New(),
 			inputLabelName:     "",
-			inputLabelValuePtr: ptr.PointTo("bar"),
+			inputLabelValuePtr: new("bar"),
 		},
 	}
 

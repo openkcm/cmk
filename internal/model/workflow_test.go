@@ -12,7 +12,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/enums"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestWorkflowTable(t *testing.T) {
@@ -62,10 +61,10 @@ func TestWorkflow_Description(t *testing.T) {
 			name:                   "SYSTEM LINK with artifact name and resource name",
 			artifactType:           "SYSTEM",
 			actionType:             "LINK",
-			artifactName:           ptr.PointTo("Production System"),
+			artifactName:           new("Production System"),
 			parameters:             keyConfigID,
-			parametersResourceType: ptr.PointTo("KEY_CONFIGURATION"),
-			parametersResourceName: ptr.PointTo(keyConfigName),
+			parametersResourceType: new("KEY_CONFIGURATION"),
+			parametersResourceName: new(keyConfigName),
 			expectedDescription:    "initiator@example.com requested approval to LINK SYSTEM: 'Production System' to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
 		{
@@ -74,17 +73,17 @@ func TestWorkflow_Description(t *testing.T) {
 			actionType:             "LINK",
 			artifactName:           nil,
 			parameters:             keyConfigID,
-			parametersResourceType: ptr.PointTo("KEY_CONFIGURATION"),
-			parametersResourceName: ptr.PointTo(keyConfigName),
+			parametersResourceType: new("KEY_CONFIGURATION"),
+			parametersResourceName: new(keyConfigName),
 			expectedDescription:    "initiator@example.com requested approval to LINK SYSTEM to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
 		{
 			name:                   "SYSTEM LINK with artifact name but no resource name",
 			artifactType:           "SYSTEM",
 			actionType:             "LINK",
-			artifactName:           ptr.PointTo("Production System"),
+			artifactName:           new("Production System"),
 			parameters:             keyConfigID,
-			parametersResourceType: ptr.PointTo("KEY_CONFIGURATION"),
+			parametersResourceType: new("KEY_CONFIGURATION"),
 			parametersResourceName: nil,
 			expectedDescription:    "initiator@example.com requested approval to LINK SYSTEM: 'Production System'.",
 		},
@@ -92,7 +91,7 @@ func TestWorkflow_Description(t *testing.T) {
 			name:                   "SYSTEM UNLINK with artifact name",
 			artifactType:           "SYSTEM",
 			actionType:             "UNLINK",
-			artifactName:           ptr.PointTo("Production System"),
+			artifactName:           new("Production System"),
 			parameters:             "",
 			parametersResourceType: nil,
 			parametersResourceName: nil,
@@ -112,10 +111,10 @@ func TestWorkflow_Description(t *testing.T) {
 			name:                   "SYSTEM SWITCH with artifact name and resource name",
 			artifactType:           "SYSTEM",
 			actionType:             "SWITCH",
-			artifactName:           ptr.PointTo("Staging System"),
+			artifactName:           new("Staging System"),
 			parameters:             keyConfigID,
-			parametersResourceType: ptr.PointTo("KEY_CONFIGURATION"),
-			parametersResourceName: ptr.PointTo(keyConfigName),
+			parametersResourceType: new("KEY_CONFIGURATION"),
+			parametersResourceName: new(keyConfigName),
 			expectedDescription:    "initiator@example.com requested approval to SWITCH SYSTEM: 'Staging System' to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
 		{
@@ -124,15 +123,15 @@ func TestWorkflow_Description(t *testing.T) {
 			actionType:             "SWITCH",
 			artifactName:           nil,
 			parameters:             keyConfigID,
-			parametersResourceType: ptr.PointTo("KEY_CONFIGURATION"),
-			parametersResourceName: ptr.PointTo(keyConfigName),
+			parametersResourceType: new("KEY_CONFIGURATION"),
+			parametersResourceName: new(keyConfigName),
 			expectedDescription:    "initiator@example.com requested approval to SWITCH SYSTEM to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
 		{
 			name:                   "KEY DELETE with artifact name",
 			artifactType:           "KEY",
 			actionType:             "DELETE",
-			artifactName:           ptr.PointTo("Test Key"),
+			artifactName:           new("Test Key"),
 			parameters:             "",
 			parametersResourceType: nil,
 			parametersResourceName: nil,

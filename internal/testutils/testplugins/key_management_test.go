@@ -10,7 +10,6 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func setupTest() *testplugins.TestKeyManagement {
@@ -70,7 +69,7 @@ func TestDeleteKeyVersion(t *testing.T) {
 
 	_, err := p.DeleteKey(t.Context(), &keymanagement.DeleteKeyRequest{
 		Parameters: keymanagement.RequestParameters{KeyID: "test-key-id"},
-		Window:     ptr.PointTo(int32(7)),
+		Window:     new(int32(7)),
 	})
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)

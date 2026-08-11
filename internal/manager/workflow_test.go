@@ -30,7 +30,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrEnqueuingTask = errors.New("error enqueuing task")
@@ -203,12 +202,12 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		)
 
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-			kc.PrimaryKeyID = ptr.PointTo(key.ID)
+			kc.PrimaryKeyID = new(key.ID)
 			kc.AdminGroup = *testGroup
 			kc.AdminGroupID = testGroup.ID
 		})
 		system := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 		testutils.CreateTestEntities(ctx, t, r, key, testGroup, keyConfig, system)
 
@@ -247,7 +246,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 			kc.AdminGroupID = testGroup.ID
 		})
 		system := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 		testutils.CreateTestEntities(ctx, t, r, testGroup, keyConfig, system)
 
@@ -320,7 +319,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	t.Run("should not be valid on primary key change with unconnected system", func(t *testing.T) {
 		keyID := uuid.New()
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-			kc.PrimaryKeyID = ptr.PointTo(keyID)
+			kc.PrimaryKeyID = new(keyID)
 		})
 		key := testutils.NewKey(func(k *model.Key) {
 			k.ID = keyID
@@ -359,7 +358,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 			kc.PrimaryKeyID = &key.ID
-			kc.PrimaryKeyID = ptr.PointTo(key.ID)
+			kc.PrimaryKeyID = new(key.ID)
 		})
 
 		testutils.CreateTestEntities(ctxSys, t, r, key, keyConfig)
@@ -394,7 +393,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 			kc.PrimaryKeyID = &keyTarget.ID
-			kc.PrimaryKeyID = ptr.PointTo(keySource.ID)
+			kc.PrimaryKeyID = new(keySource.ID)
 		})
 
 		testutils.CreateTestEntities(ctxSys, t, r, keySource, keyTarget, keyConfig)
@@ -429,7 +428,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 			kc.PrimaryKeyID = &keyTarget.ID
-			kc.PrimaryKeyID = ptr.PointTo(keySource.ID)
+			kc.PrimaryKeyID = new(keySource.ID)
 		})
 
 		testutils.CreateTestEntities(ctxSys, t, r, keySource, keyTarget, keyConfig)
@@ -483,7 +482,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 			kc.AdminGroup = *testGroup
 			kc.AdminGroupID = testGroup.ID
-			kc.PrimaryKeyID = ptr.PointTo(sourceKey.ID)
+			kc.PrimaryKeyID = new(sourceKey.ID)
 		})
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID

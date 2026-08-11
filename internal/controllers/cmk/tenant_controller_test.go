@@ -251,3 +251,70 @@ func TestGetTenantInfo(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 }
+
+func TestGetTenantsCount(t *testing.T) {
+	db, sv, keyStorage := startAPITenant(t)
+	r := sql.NewRepository(db)
+
+	var tenants []model.Tenant
+
+	err := r.List(t.Context(), model.Tenant{}, &tenants, *repo.NewQuery())
+	assert.NoError(t, err)
+
+	// Set issuerURL for first tenant and create a group for auth
+	tenants[0].IssuerURL = "test"
+	_, err = r.Patch(t.Context(), &tenants[0], *repo.NewQuery())
+	assert.NoError(t, err)
+
+	tenantCtx := cmkContext.CreateTenantContext(t.Context(), tenants[0].ID)
+	group := testutils.NewGroup(func(group *model.Group) {
+		group.IAMIdentifier = "sysadmin"
+	})
+
+	err = r.Create(tenantCtx, group)
+	assert.NoError(t, err)
+
+	clientData := &auth.ClientData{
+		Identifier: "user-123",
+		Email:      "bob@example.com",
+		GivenName:  "Bob",
+		FamilyName: "Builder",
+		Groups:     []string{"sysadmin"},
+		AuthContext: map[string]string{
+			"issuer": "test",
+		},
+	}
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
+
+	t.Run("count=true includes count", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/tenants?$count=true",
+			Tenant:   tenants[0].ID,
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.TenantList](t, w)
+		assert.NotNil(t, response.Count)
+		assert.Equal(t, len(response.Value), *response.Count)
+	})
+
+	t.Run("count=false omits count", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/tenants?$count=false",
+			Tenant:   tenants[0].ID,
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.TenantList](t, w)
+		assert.Nil(t, response.Count)
+	})
+}

@@ -17,7 +17,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const providerTest = "TEST"
@@ -247,7 +246,7 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 		k.CryptoAccessData = json.RawMessage("{\"<>\":{\"test\":\"test\"}}")
 		k.KeyConfigurationID = kc.ID
 		k.Provider = providerTest
-		k.NativeID = ptr.PointTo("sdsad")
+		k.NativeID = new("sdsad")
 	})
 
 	testutils.CreateTestEntities(

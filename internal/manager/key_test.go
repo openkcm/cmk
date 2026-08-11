@@ -27,7 +27,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
@@ -133,7 +132,7 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 
 	cryptoAccessData := model.KeyAccessData{
 		"crypto-1": {
-			CertificateSubject: ptr.PointTo("CN=test_tenant0,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE"),
+			CertificateSubject: new("CN=test_tenant0,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE"),
 			AdditionalProperties: map[string]any{
 				"someKey": "someValue",
 			},
@@ -145,7 +144,7 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
 		k.KeyType = constants.KeyTypeHYOK
-		k.NativeID = ptr.PointTo("mock-key/11111111")
+		k.NativeID = new("mock-key/11111111")
 		k.ManagementAccessData = hyokInfo
 		k.Provider = providerTest
 		k.CryptoAccessData = cryptoBytes
@@ -163,7 +162,7 @@ func createTestBYOKKey(t *testing.T, r repo.Repo, ctx context.Context, keyConfig
 		k.KeyConfigurationID = keyConfigID
 		k.KeyType = constants.KeyTypeBYOK
 		k.State = state
-		k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:111122223333:alias/<alias-name>")
+		k.NativeID = new("arn:aws:kms:us-west-2:111122223333:alias/<alias-name>")
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, key)
@@ -198,7 +197,7 @@ func TestCreate(t *testing.T) {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
 					k.KeyType = constants.KeyTypeHYOK
-					k.NativeID = ptr.PointTo("mock-key/11111111")
+					k.NativeID = new("mock-key/11111111")
 					k.ManagementAccessData = hyokInfo
 					k.Provider = "INVALID"
 				})
@@ -211,7 +210,7 @@ func TestCreate(t *testing.T) {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
 					k.KeyType = constants.KeyTypeHYOK
-					k.NativeID = ptr.PointTo("mock-key/11111111")
+					k.NativeID = new("mock-key/11111111")
 					k.ManagementAccessData = hyokInfo
 					k.Provider = providerTest
 				})
@@ -224,7 +223,7 @@ func TestCreate(t *testing.T) {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
 					k.KeyType = constants.KeyTypeHYOK
-					k.NativeID = ptr.PointTo("mock-key/11111111")
+					k.NativeID = new("mock-key/11111111")
 					k.ManagementAccessData = []byte("{\"invalid\": \"data\"}")
 					k.Provider = providerTest
 				})
@@ -238,7 +237,7 @@ func TestCreate(t *testing.T) {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
 					k.KeyType = constants.KeyTypeHYOK
-					k.NativeID = ptr.PointTo("invalid-key-id")
+					k.NativeID = new("invalid-key-id")
 					k.ManagementAccessData = hyokInfo
 					k.Provider = providerTest
 				})
@@ -345,7 +344,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
 			k.KeyType = constants.KeyTypeHYOK
-			k.NativeID = ptr.PointTo("mock-key/11111111")
+			k.NativeID = new("mock-key/11111111")
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
 			k.CryptoAccessData = cryptoBytes
@@ -380,7 +379,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
 			k.KeyType = constants.KeyTypeHYOK
-			k.NativeID = ptr.PointTo("mock-key/11111111")
+			k.NativeID = new("mock-key/11111111")
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
 			k.CryptoAccessData = cryptoBytes
@@ -399,7 +398,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
 			k.KeyType = constants.KeyTypeHYOK
-			k.NativeID = ptr.PointTo("mock-key/11111111")
+			k.NativeID = new("mock-key/11111111")
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
 		})
@@ -441,13 +440,13 @@ func TestEditableCryptoData(t *testing.T) {
 		kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 
 		sysFailed := testutils.NewSystem(func(sys *model.System) {
-			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+			sys.KeyConfigurationID = new(kc.ID)
 			sys.Region = regionEditable
 			sys.Status = cmkapi.SystemStatusFAILED
 		})
 
 		sysConnected := testutils.NewSystem(func(sys *model.System) {
-			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+			sys.KeyConfigurationID = new(kc.ID)
 			sys.Region = regionNonEditable
 			sys.Status = cmkapi.SystemStatusCONNECTED
 		})
@@ -475,13 +474,13 @@ func TestEditableCryptoData(t *testing.T) {
 		})
 
 		sysFailed := testutils.NewSystem(func(sys *model.System) {
-			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+			sys.KeyConfigurationID = new(kc.ID)
 			sys.Region = regionEditable
 			sys.Status = cmkapi.SystemStatusFAILED
 		})
 
 		sysConnected := testutils.NewSystem(func(sys *model.System) {
-			sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+			sys.KeyConfigurationID = new(kc.ID)
 			sys.Region = regionNonEditable
 			sys.Status = cmkapi.SystemStatusCONNECTED
 		})
@@ -664,7 +663,7 @@ func TestHYOKSync(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, cmkapi.KeyStateENABLED, key.State)
 
-		key.NativeID = ptr.PointTo("invalid-key-id")
+		key.NativeID = new("invalid-key-id")
 		_, err = r.Patch(ctx, key, *repo.NewQuery())
 		assert.NoError(t, err)
 		syncAndVerifyState(t, km, ctx, hyokKey, cmkapi.KeyStateDELETED)
@@ -766,7 +765,7 @@ func TestList(t *testing.T) {
 
 	sys := testutils.NewSystem(func(sys *model.System) {
 		sys.Status = cmkapi.SystemStatusFAILED
-		sys.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		sys.KeyConfigurationID = new(keyConfig.ID)
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, sys)
@@ -826,8 +825,8 @@ func TestUpdate(t *testing.T) {
 			name:  "Update name and description",
 			keyID: createdKey.ID,
 			keyPatch: cmkapi.KeyPatch{
-				Name:        ptr.PointTo("updated-name"),
-				Description: ptr.PointTo("Updated description"),
+				Name:        new("updated-name"),
+				Description: new("Updated description"),
 			},
 			wantErr: false,
 		},
@@ -835,7 +834,7 @@ func TestUpdate(t *testing.T) {
 			name:  "Disable key",
 			keyID: createdKey.ID,
 			keyPatch: cmkapi.KeyPatch{
-				Enabled: ptr.PointTo(false),
+				Enabled: new(false),
 			},
 			wantErr: false,
 		},
@@ -843,7 +842,7 @@ func TestUpdate(t *testing.T) {
 			name:  "Enable key",
 			keyID: createdKey.ID,
 			keyPatch: cmkapi.KeyPatch{
-				Enabled: ptr.PointTo(true),
+				Enabled: new(true),
 			},
 			wantErr: false,
 		},
@@ -851,7 +850,7 @@ func TestUpdate(t *testing.T) {
 			name:  "Non-existent key",
 			keyID: uuid.New(),
 			keyPatch: cmkapi.KeyPatch{
-				Name: ptr.PointTo("new-name"),
+				Name: new("new-name"),
 			},
 			wantErr: true,
 		},
@@ -895,7 +894,7 @@ func TestUpdate(t *testing.T) {
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 		key := createTestHYOKKey(t, km, ctx, keyConfig.ID)
-		keyConfig.PrimaryKeyID = ptr.PointTo(key.ID)
+		keyConfig.PrimaryKeyID = new(key.ID)
 
 		_, err := r.Patch(ctx, keyConfig, *repo.NewQuery())
 		assert.NoError(t, err)
@@ -929,7 +928,7 @@ func TestUpdate(t *testing.T) {
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 		key := createTestHYOKKey(t, km, ctx, keyConfig.ID)
-		keyConfig.PrimaryKeyID = ptr.PointTo(key.ID)
+		keyConfig.PrimaryKeyID = new(key.ID)
 
 		_, err := r.Patch(ctx, keyConfig, *repo.NewQuery())
 		assert.NoError(t, err)
@@ -968,10 +967,10 @@ func TestDelete(t *testing.T) {
 
 	keyID := uuid.New()
 	keyConfigWSystems := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(keyID)
+		k.PrimaryKeyID = new(keyID)
 	})
 	sys := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfigWSystems.ID)
+		s.KeyConfigurationID = new(keyConfigWSystems.ID)
 	})
 	keyFailSystems := testutils.NewKey(func(k *model.Key) {
 		k.ID = keyID
@@ -1047,7 +1046,7 @@ func TestGetImportParams(t *testing.T) {
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
 			ip.PublicKeyPEM = cachedPublicKeyFromDB
-			ip.Expires = ptr.PointTo(time.Now().Add(24 * time.Hour))
+			ip.Expires = new(time.Now().Add(24 * time.Hour))
 		})
 		testutils.CreateTestEntities(ctx, t, r, importParams)
 		got, err := km.GetImportParams(ctx, byokKey.ID)
@@ -1077,7 +1076,7 @@ func TestGetImportParams(t *testing.T) {
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
 			ip.PublicKeyPEM = cachedPublicKeyFromDB
-			ip.Expires = ptr.PointTo(time.Now().Add(-1 * time.Hour))
+			ip.Expires = new(time.Now().Add(-1 * time.Hour))
 		})
 		testutils.CreateTestEntities(ctx, t, r, importParams)
 		got, err := km.GetImportParams(ctx, byokKey.ID)
@@ -1152,7 +1151,7 @@ func TestImportKeyMaterial(t *testing.T) {
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
 			ip.ProviderParameters = paramsJSON
-			ip.Expires = ptr.PointTo(time.Now().Add(-1 * time.Hour))
+			ip.Expires = new(time.Now().Add(-1 * time.Hour))
 		})
 		testutils.CreateTestEntities(ctx, t, r, importParams)
 
@@ -1252,7 +1251,7 @@ func TestImportKeyMaterial(t *testing.T) {
 		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
-			ip.Expires = ptr.PointTo(time.Now().Add(24 * time.Hour))
+			ip.Expires = new(time.Now().Add(24 * time.Hour))
 		})
 		testutils.CreateTestEntities(ctx, t, r, importParams)
 
@@ -1345,7 +1344,7 @@ func TestKeyRotationTime(t *testing.T) {
 			k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
 			k.Provider = testplugins.Name
 			k.Region = testRegionUSEast1
-			k.NativeID = ptr.PointTo("test-native-id")
+			k.NativeID = new("test-native-id")
 			k.ManagementAccessData = hyokInfo
 		})
 
@@ -1386,7 +1385,7 @@ func TestKeyRotationTime(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyType = constants.KeyTypeHYOK
 			k.Provider = testplugins.Name
-			k.NativeID = ptr.PointTo("test-native-id-rotate")
+			k.NativeID = new("test-native-id-rotate")
 			k.KeyConfigurationID = keyConfig.ID
 			k.ManagementAccessData = hyokInfo
 			k.KeyVersions = []model.KeyVersion{
@@ -1464,7 +1463,7 @@ func TestKeyRotationTime(t *testing.T) {
 			k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
 			k.Provider = testplugins.Name
 			k.Region = testRegionUSEast1
-			k.NativeID = ptr.PointTo("test-native-id-no-time")
+			k.NativeID = new("test-native-id-no-time")
 			k.ManagementAccessData = hyokInfo
 		})
 
@@ -1510,11 +1509,11 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 		k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
 		k.Provider = testplugins.Name
 		k.Region = testRegionUSEast1
-		k.NativeID = ptr.PointTo("primary-key-native-id")
+		k.NativeID = new("primary-key-native-id")
 		k.ManagementAccessData = hyokInfo
 	})
 
-	keyConfig.PrimaryKeyID = ptr.PointTo(primaryKey.ID)
+	keyConfig.PrimaryKeyID = new(primaryKey.ID)
 	_, err = r.Patch(ctx, keyConfig, *repo.NewQuery())
 	assert.NoError(t, err)
 
@@ -1525,7 +1524,7 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 		k.Algorithm = string(cmkapi.KeyAlgorithmAES256)
 		k.Provider = testplugins.Name
 		k.Region = testRegionUSEast1
-		k.NativeID = ptr.PointTo("non-primary-key-native-id")
+		k.NativeID = new("non-primary-key-native-id")
 		k.ManagementAccessData = hyokInfo
 	})
 
@@ -1600,7 +1599,7 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 			k.KeyType = constants.KeyTypeHYOK
 			k.Provider = testplugins.Name
 			k.Region = testRegionUSEast1
-			k.NativeID = ptr.PointTo("empty-key-native-id")
+			k.NativeID = new("empty-key-native-id")
 			k.ManagementAccessData = hyokInfo
 			k.IsPrimary = true
 		})

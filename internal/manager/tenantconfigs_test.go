@@ -24,7 +24,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrForced = errors.New("forced")
@@ -363,7 +362,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: ptr.PointTo(3),
+			MinimumApprovals: new(3),
 		})
 
 		assert.NoError(t, err)
@@ -379,8 +378,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals:    ptr.PointTo(3),
-			RetentionPeriodDays: ptr.PointTo(60),
+			MinimumApprovals:    new(3),
+			RetentionPeriodDays: new(60),
 		})
 
 		assert.NoError(t, err)
@@ -397,7 +396,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			RetentionPeriodDays: ptr.PointTo(29),
+			RetentionPeriodDays: new(29),
 		})
 
 		assert.Error(t, err)
@@ -411,8 +410,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: ptr.PointTo(15),
-			MaxExpiryPeriodDays:     ptr.PointTo(10),
+			DefaultExpiryPeriodDays: new(15),
+			MaxExpiryPeriodDays:     new(10),
 		})
 
 		assert.Error(t, err)
@@ -426,8 +425,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: ptr.PointTo(10),
-			MaxExpiryPeriodDays:     ptr.PointTo(10),
+			DefaultExpiryPeriodDays: new(10),
+			MaxExpiryPeriodDays:     new(10),
 		})
 
 		assert.NoError(t, err)
@@ -442,7 +441,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: ptr.PointTo(1),
+			MinimumApprovals: new(1),
 		})
 
 		assert.Error(t, err)
@@ -456,7 +455,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: ptr.PointTo(2),
+			MinimumApprovals: new(2),
 		})
 
 		assert.NoError(t, err)
@@ -469,7 +468,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			Enabled: ptr.PointTo(true),
+			Enabled: new(true),
 		})
 
 		assert.NoError(t, err)
@@ -519,7 +518,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 				setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(tt.initialState))
 
 				result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-					Enabled: ptr.PointTo(tt.targetState),
+					Enabled: new(tt.targetState),
 				})
 
 				if tt.shouldSucceed {
@@ -540,8 +539,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				MinimumApprovals:    ptr.PointTo(5),
-				RetentionPeriodDays: ptr.PointTo(90),
+				MinimumApprovals:    new(5),
+				RetentionPeriodDays: new(90),
 			})
 
 			assert.NoError(t, err)
@@ -558,9 +557,9 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(false))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				Enabled:             ptr.PointTo(true),
-				MinimumApprovals:    ptr.PointTo(4),
-				RetentionPeriodDays: ptr.PointTo(60),
+				Enabled:             new(true),
+				MinimumApprovals:    new(4),
+				RetentionPeriodDays: new(60),
 			})
 
 			assert.NoError(t, err)
@@ -576,8 +575,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				Enabled:          ptr.PointTo(true),
-				MinimumApprovals: ptr.PointTo(3),
+				Enabled:          new(true),
+				MinimumApprovals: new(3),
 			})
 
 			assert.NoError(t, err)

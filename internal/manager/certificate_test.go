@@ -24,7 +24,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type CertificateIssuerMock struct {
@@ -367,7 +366,7 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 		})
 	assert.NoError(t, err)
 
-	gotOrigCert, err := m.GetCertificate(ctx, ptr.PointTo(origCert.ID))
+	gotOrigCert, err := m.GetCertificate(ctx, new(origCert.ID))
 	assert.NoError(t, err)
 	assert.True(t, gotOrigCert.AutoRotate)
 
@@ -377,17 +376,17 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	rot1Cert, _, err := m.RotateCertificate(ctx,
 		model.RequestCertArgs{
 			CertPurpose: model.CertificatePurposeHYOKManagement,
-			Supersedes:  ptr.PointTo(origCert.ID),
+			Supersedes:  new(origCert.ID),
 			CommonName:  "MyCert",
 			Locality:    []string{"locality"},
 		})
 	assert.NoError(t, err)
 
-	gotOrigCert2, err := m.GetCertificate(ctx, ptr.PointTo(origCert.ID))
+	gotOrigCert2, err := m.GetCertificate(ctx, new(origCert.ID))
 	assert.NoError(t, err)
 	assert.False(t, gotOrigCert2.AutoRotate)
 
-	gotRot1Cert, err := m.GetCertificate(ctx, ptr.PointTo(rot1Cert.ID))
+	gotRot1Cert, err := m.GetCertificate(ctx, new(rot1Cert.ID))
 	assert.NoError(t, err)
 	assert.True(t, gotRot1Cert.AutoRotate)
 
@@ -395,21 +394,21 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	rot2Cert, _, err := m.RotateCertificate(ctx,
 		model.RequestCertArgs{
 			CertPurpose: model.CertificatePurposeHYOKManagement,
-			Supersedes:  ptr.PointTo(rot1Cert.ID),
+			Supersedes:  new(rot1Cert.ID),
 			CommonName:  "MyCert",
 			Locality:    []string{"locality"},
 		})
 	assert.NoError(t, err)
 
-	gotOrigCert3, err := m.GetCertificate(ctx, ptr.PointTo(origCert.ID))
+	gotOrigCert3, err := m.GetCertificate(ctx, new(origCert.ID))
 	assert.NoError(t, err)
 	assert.False(t, gotOrigCert3.AutoRotate)
 
-	gotRot1Cert2, err := m.GetCertificate(ctx, ptr.PointTo(rot1Cert.ID))
+	gotRot1Cert2, err := m.GetCertificate(ctx, new(rot1Cert.ID))
 	assert.NoError(t, err)
 	assert.False(t, gotRot1Cert2.AutoRotate)
 
-	gotRot2Cert, err := m.GetCertificate(ctx, ptr.PointTo(rot2Cert.ID))
+	gotRot2Cert, err := m.GetCertificate(ctx, new(rot2Cert.ID))
 	assert.NoError(t, err)
 	assert.True(t, gotRot2Cert.AutoRotate)
 }
