@@ -2,6 +2,7 @@ package manager_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -140,4 +141,51 @@ func TestGetOrInitProvider(t *testing.T) {
 			tt.assert(t, provider, err)
 		})
 	}
+}
+
+func TestGetOrInitProvider_ExpiredEntryIsReinitialized(t *testing.T) {
+	svcRegistry := testutils.NewTestPlugins()
+	cfg := &config.Config{}
+
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	r := sql.NewRepository(db)
+	tenant := tenants[0]
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+	cert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeHYOKManagement
+	})
+	testutils.CreateTestEntities(ctx, t, r, cert)
+
+	expiredAt := time.Now().Add(-time.Second)
+	expiredCfg := manager.NewProviderConfig(nil, nil, &expiredAt)
+
+	compositeKey := manager.ProviderCachedKey{
+		KeyStore: constants.HYOKKeyStore,
+		Provider: providerTest,
+		Tenant:   tenant,
+	}
+
+	m := manager.NewProviderConfigManager(
+		svcRegistry,
+		map[manager.ProviderCachedKey]*manager.ProviderConfig{
+			compositeKey: expiredCfg,
+		},
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)),
+		manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg),
+		manager.NewPool(r),
+		r,
+	)
+
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyType = constants.KeyTypeHYOK
+		k.Provider = providerTest
+	})
+
+	provider, err := m.GetOrInitProvider(ctx, key)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, provider)
+	assert.False(t, provider.IsExpired())
+	assert.True(t, provider.Expiration.After(expiredAt))
 }

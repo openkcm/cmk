@@ -446,6 +446,50 @@ func TestUpdateGroup(t *testing.T) {
 		})
 }
 
+func TestGetGroupsCount(t *testing.T) {
+	db, r, tenant, keyStorage := startAPIGroups(t)
+	repo := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	authClient := testutils.NewAuthClient(ctx, t, repo, testutils.WithTenantAdminRole())
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
+
+	t.Run("count=true includes count", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(
+			t, r, testutils.RequestOptions{
+				Method:   http.MethodGet,
+				Endpoint: "/groups?$count=true",
+				Tenant:   tenant,
+				Headers:  headers,
+			},
+		)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.GroupList](t, w)
+		assert.Len(t, response.Value, 1)
+		assert.NotNil(t, response.Count)
+		assert.Equal(t, 1, *response.Count)
+	})
+
+	t.Run("count=false omits count", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(
+			t, r, testutils.RequestOptions{
+				Method:   http.MethodGet,
+				Endpoint: "/groups?$count=false",
+				Tenant:   tenant,
+				Headers:  headers,
+			},
+		)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.GroupList](t, w)
+		assert.Len(t, response.Value, 1)
+		assert.Nil(t, response.Count)
+	})
+}
+
 func TestCheckGroupsIAM(t *testing.T) {
 	db, sv, tenant, keyStorage := startAPIGroups(t)
 	r := sql.NewRepository(db)
