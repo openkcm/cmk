@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	keystoreErrs "github.com/openkcm/plugin-sdk/pkg/plugin/keystore/errors"
 
@@ -16,7 +15,8 @@ import (
 )
 
 const (
-	GRPCErrorCodeInvalidAccessData errs.GRPCErrorCode = "INVALID_ACCESS_DATA"
+	GRPCErrorCodeInvalidAccessData   errs.GRPCErrorCode = "INVALID_ACCESS_DATA"
+	GRPCErrorCodeInvalidKeyAttribute errs.GRPCErrorCode = "INVALID_KEY_ATTRIBUTE"
 )
 
 var (
@@ -26,6 +26,10 @@ var (
 	ErrGRPCInvalidAccessData  = errs.GRPCError{
 		Code:        GRPCErrorCodeInvalidAccessData,
 		BaseMessage: "failed to validate access data for the keystore provider",
+	}
+	ErrGRPCValidateKey = errs.GRPCError{
+		Code:        GRPCErrorCodeInvalidKeyAttribute,
+		BaseMessage: "invalid key attribute for the keystore provider",
 	}
 )
 
@@ -88,7 +92,7 @@ func (v PluginProviderTransformer) ValidateAPI(ctx context.Context, k cmkapi.Key
 	}
 
 	if !response.IsValid {
-		return errs.Wrapf(ErrValidateKey, response.Message)
+		return errors.Join(ErrValidateKey, ErrGRPCValidateKey.WithReason(response.Message))
 	}
 
 	return nil
@@ -167,11 +171,11 @@ func (v PluginProviderTransformer) GetRegion(
 		ManagementAccessData: management,
 	})
 	if err != nil {
-		return "", errs.Wrapf(ErrExtractKeyRegion, fmt.Sprintf("failed to extract key region: %v", err))
+		return "", errors.Join(ErrExtractKeyRegion, ErrGRPCValidateKey.WithReason(err.Error()))
 	}
 
 	if response.Region == "" {
-		return "", errs.Wrapf(ErrExtractKeyRegion, "extracted region is empty")
+		return "", errors.Join(ErrExtractKeyRegion, ErrGRPCValidateKey.WithReason("extracted region is empty"))
 	}
 
 	return response.Region, nil

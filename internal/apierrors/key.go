@@ -251,6 +251,15 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{ErrTransformKeyFromAPI, transformer.ErrGRPCValidateKey},
+		ExposedError: &APIError{
+			Code:    "INVALID_KEY_ATTRIBUTE",
+			Message: "Invalid key attribute provided",
+			Status:  http.StatusBadRequest,
+		},
+		ContextGetter: errs.GetGRPCErrorContext,
+	},
+	{
 		InternalErrorChain: []error{ErrTransformKeyFromAPI, transformer.ErrGRPCInvalidAccessData},
 		ExposedError: &APIError{
 			Code:    "INVALID_ACCESS_DATA",
