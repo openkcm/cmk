@@ -2,6 +2,7 @@ package key_management
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -317,7 +318,15 @@ func (v1 *V1) ValidateKeyAccessData(
 	}
 	cryptoFlat := make(map[string]any, len(req.Crypto))
 	for k, v := range req.Crypto {
-		cryptoFlat[k] = v
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+		}
+		var regionMap map[string]any
+		if err := json.Unmarshal(b, &regionMap); err != nil {
+			return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+		}
+		cryptoFlat[k] = regionMap
 	}
 	crypto, err := structpb.NewStruct(cryptoFlat)
 	if err != nil {

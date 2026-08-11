@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -239,6 +240,22 @@ func (s *TestKeyManagement) ValidateKeyAccessData(
 	for k := range ValidManagementAccessData {
 		if _, ok := req.Management[k]; !ok {
 			return nil, keystoreErrs.StatusInvalidKeyAccessData.Err()
+		}
+	}
+
+	// Mirror the real wrapper: verify each crypto region can be converted to a proto struct.
+	for regionName, region := range req.Crypto {
+		b, err := json.Marshal(region)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal crypto region %q: %w", regionName, err)
+		}
+
+		var regionMap map[string]any
+		if err := json.Unmarshal(b, &regionMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal crypto region %q: %w", regionName, err)
+		}
+		if _, err := structpb.NewStruct(regionMap); err != nil {
+			return nil, fmt.Errorf("failed to convert crypto region %q to proto struct: %w", regionName, err)
 		}
 	}
 	return &keymanagement.ValidateKeyAccessDataResponse{IsValid: true}, nil
