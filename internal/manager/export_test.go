@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"crypto/rsa"
-	"time"
 
 	"github.com/openkcm/cmk/internal/async"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
@@ -117,10 +116,9 @@ func (w *WorkflowManager) GetApproverGroupsFromLegacyField(
 func (km *KeyManager) ExportedHandleNewKeyVersion(
 	ctx context.Context,
 	key *model.Key,
-	keyResp *keymanagement.GetKeyResponse,
-	rotationTime *time.Time,
+	keyResp *keymanagement.GetKeyVersionsResponse,
 ) error {
-	return km.handleNewKeyVersion(ctx, key, keyResp, rotationTime)
+	return km.handleNewKeyVersion(ctx, key, keyResp)
 }
 
 // CreateKeyRetryDelay exposes the package-level retry delay so tests can set it to

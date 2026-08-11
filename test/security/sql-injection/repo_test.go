@@ -262,7 +262,7 @@ func TestRepo_Set_ForInjection(t *testing.T) {
 		assert.NoError(t, err)
 
 		m.Name += attackString
-		err = r.Set(ctx, &m)
+		err = r.Set(ctx, &m, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		// Check table still exists

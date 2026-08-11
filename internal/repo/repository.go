@@ -24,7 +24,7 @@ type Repo interface {
 	Delete(ctx context.Context, resource Resource, query Query) (bool, error)
 	First(ctx context.Context, resource Resource, query Query) (bool, error)
 	Patch(ctx context.Context, resource Resource, query Query) (bool, error)
-	Set(ctx context.Context, resource Resource) error
+	Set(ctx context.Context, resource Resource, query Query) error
 	Transaction(ctx context.Context, txFunc TransactionFunc) error
 	Count(ctx context.Context, resource Resource, query Query) (int, error)
 	OffboardTenant(ctx context.Context, tenantID string) error

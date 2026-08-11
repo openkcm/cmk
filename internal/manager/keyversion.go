@@ -12,6 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -156,4 +157,41 @@ func (kvm *KeyVersionManager) CreateVersion(
 	}
 
 	return &existingVersion, nil
+}
+
+func (kvm *KeyVersionManager) UpdateVersions(
+	ctx context.Context,
+	keyID uuid.UUID,
+	versions []keymanagement.KeyVersion,
+) error {
+	for _, k := range versions {
+		if k.CreationTime != nil {
+			// Insert/Update key with keystore info
+			err := kvm.repo.Set(ctx, &model.KeyVersion{
+				ID:        uuid.New(),
+				NativeID:  k.ID,
+				KeyID:     keyID,
+				RotatedAt: *k.CreationTime,
+			}, *repo.NewQuery().
+				OnConflict(repo.KeyIDField, repo.NativeIDField).
+				Update(repo.RotatedField, repo.UpdatedField),
+			)
+			if err != nil {
+				return err
+			}
+		} else {
+			// This only runs on inserts without keystore provided time as time is always set either on the keystore or manually
+			k.CreationTime = new(time.Now().UTC())
+			err := kvm.repo.Create(ctx, &model.KeyVersion{
+				ID:        uuid.New(),
+				NativeID:  k.ID,
+				KeyID:     keyID,
+				RotatedAt: *k.CreationTime,
+			})
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

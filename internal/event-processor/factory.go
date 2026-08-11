@@ -227,7 +227,7 @@ func (f *EventFactory) SystemKeyRotate(
 		Data:               job.Data,
 		Status:             job.Status,
 		PreviousItemStatus: string(system.Status),
-	})
+	}, *repo.NewQuery())
 	if err != nil {
 		log.Error(ctx, "failed to store event", err)
 	}
@@ -344,7 +344,7 @@ func (f *EventFactory) handleSystemStatus(
 		Data:               job.Data,
 		Status:             job.Status,
 		PreviousItemStatus: string(previousStatus),
-	})
+	}, *repo.NewQuery())
 	if err != nil {
 		log.Error(ctx, "failed to store event", err)
 	}

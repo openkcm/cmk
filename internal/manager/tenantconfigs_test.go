@@ -21,6 +21,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
@@ -125,7 +126,7 @@ func TestGetDefaultKeystore(t *testing.T) {
 			Value: ksConfigJSON,
 		}
 
-		err = tenantConfigRepo.Set(testutils.CreateCtxWithTenant(tenant), conf)
+		err = tenantConfigRepo.Set(testutils.CreateCtxWithTenant(tenant), conf, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		// Act
@@ -701,7 +702,7 @@ func storeKsConfig(t *testing.T, db *multitenancy.DB, tenant string, ks *model.K
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	b, err := json.Marshal(ks)
 	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: b}))
+	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: b}, *repo.NewQuery()))
 }
 
 func TestEnsureKeystoreProvisioned(t *testing.T) {

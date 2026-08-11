@@ -19,6 +19,7 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
@@ -46,7 +47,8 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(), r, &config.Config{})
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
-	ps := testutils.NewTestPlugins(testplugins.WithCertificateIssuer(testplugins.NewTestCertificateIssuer()))
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	ps := testutils.NewTestPlugins(testplugins.WithCertificateIssuer(testplugins.NewTestCertificateIssuer()), testplugins.WithKeyManagement(testplugins.Name, pluginOp))
 	cfg := &config.Config{
 		Database: dbCfg,
 	}
@@ -76,12 +78,17 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 	assert.NoError(t, err)
 
+	keyProvider, err := pluginOp.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
+
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	cert := testutils.NewCertificate(func(_ *model.Certificate) {})
 	hyokKey := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
-		k.KeyType = cmkapi.KeyTypeHYOK
-		k.NativeID = new("mock-key/11111111")
+		k.KeyType = constants.KeyTypeHYOK
+		k.NativeID = &keyProvider.KeyID
 		k.ManagementAccessData = hyokInfo
 		k.Provider = testplugins.Name
 	})

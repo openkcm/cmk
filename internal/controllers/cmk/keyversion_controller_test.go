@@ -16,6 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -437,7 +438,7 @@ func TestKeyVersionController_GetKeyVersions_IsPrimaryWithPagination(t *testing.
 }
 
 func TestKeyVersionRefreshAndDisable(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, provider := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -445,6 +446,11 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient))
+
+	providerKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.BYOK,
+	})
+	assert.NoError(t, err)
 
 	keyID := uuid.New()
 	key := testutils.NewKey(func(k *model.Key) {
@@ -459,7 +465,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 				kv.RotatedAt = time.Now().UTC()
 			}),
 		}
-		k.NativeID = new(uuid.NewString())
+		k.NativeID = &providerKey.KeyID
 	})
 
 	testutils.CreateTestEntities(

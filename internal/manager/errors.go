@@ -38,6 +38,7 @@ var (
 	ErrFailedToDisableProviderKey   = errors.New("failed to disable provider key")
 	ErrFailedToDeleteProvider       = errors.New("failed to delete provider")
 	ErrGetProviderKey               = errors.New("failed to get provider key")
+	ErrGetProviderKeyVersions       = errors.New("failed to get provider key versions")
 	ErrGetImportParamsFromProvider  = errors.New("failed to get import parameters from provider")
 	ErrImportKeyMaterialsToProvider = errors.New("failed to import key materials to provider")
 	ErrKeyIsNotEnabled              = errors.New("key is not enabled")

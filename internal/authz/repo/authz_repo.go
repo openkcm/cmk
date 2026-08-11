@@ -122,7 +122,7 @@ func (r *AuthzRepo) Patch(
 	return r.repo.Patch(ctx, resource, query)
 }
 
-func (r *AuthzRepo) Set(ctx context.Context, resource repo.Resource) error {
+func (r *AuthzRepo) Set(ctx context.Context, resource repo.Resource, query repo.Query) error {
 	err := r.checkResourceAuthZ(ctx, resource, authz.RepoActionDelete)
 	if err != nil {
 		return err
@@ -131,7 +131,7 @@ func (r *AuthzRepo) Set(ctx context.Context, resource repo.Resource) error {
 	if err != nil {
 		return err
 	}
-	return r.repo.Set(ctx, resource)
+	return r.repo.Set(ctx, resource, query)
 }
 
 func (r *AuthzRepo) Transaction(ctx context.Context, txFunc repo.TransactionFunc) error {
