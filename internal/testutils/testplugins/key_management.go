@@ -26,9 +26,9 @@ var (
 	PendingImportKeyStatus   = "PENDING_IMPORT"
 	PendingDeletionKeyStatus = "PENDING_DELETION"
 
-	ErrKeyIDIsNil                = errors.New("keyId is nil")
-	ErrTransformAccessData       = errors.New("failed to transform access data")
-	ErrNativeKeyIDInvalidPattern = errors.New("native key ID does not match valid pattern")
+	ErrKeyIDIsNil          = errors.New("keyId is nil")
+	ErrKeyNotFound         = errors.New("key does not exist")
+	ErrTransformAccessData = errors.New("failed to transform access data")
 
 	// ValidManagementAccessData is the management access data the test plugin accepts
 	// in ValidateKeyAccessData. It mirrors the fields returned by CreateKeystore and
@@ -72,7 +72,7 @@ func NewTestKeyManagement(isHYOK, isDefault bool) *TestKeyManagement {
 		IsDefault: isDefault,
 	}
 	for range 3 {
-		km.CreateKey(context.Background(), &keymanagement.CreateKeyRequest{
+		_, _ = km.CreateKey(context.Background(), &keymanagement.CreateKeyRequest{
 			KeyType: keymanagement.HYOK,
 		})
 	}
@@ -114,7 +114,7 @@ func (s *TestKeyManagement) ServiceInfo() api.Info {
 func (s *TestKeyManagement) RotateKey(keyID string, versionID string, rotationTime *time.Time) error {
 	record, exists := s.KeyStore[keyID]
 	if !exists {
-		return fmt.Errorf("key does not exist")
+		return ErrKeyNotFound
 	}
 
 	record.PKeyVersion = versionID
@@ -192,41 +192,6 @@ func (s *TestKeyManagement) CreateKey(
 		KeyID:  keyID,
 		Status: s.createKey(keyID, req.KeyType),
 	}, nil
-}
-
-func (s *TestKeyManagement) createKey(
-	keyID string,
-	keyType keymanagement.KeyType,
-) string {
-	st := EnabledKeyStatus
-	if keyType == keymanagement.BYOK {
-		st = PendingImportKeyStatus
-	}
-	initialVersion := "version0"
-	time := time.Now().UTC()
-	s.KeyStore[keyID] = &KeyRecord{
-		KeyID:       keyID,
-		Status:      st,
-		PKeyVersion: initialVersion,
-		Versions: []KeyVersionRecord{
-			{
-				VersionID:    initialVersion,
-				CreationTime: &time,
-			},
-		},
-		RotationTime: &time,
-	}
-	return st
-}
-
-func (s *TestKeyManagement) updateKeyStatus(key string, status string) error {
-	record, exists := s.KeyStore[key]
-	if !exists {
-		return fmt.Errorf("key does not exist")
-	}
-	record.Status = status
-	s.KeyStore[key] = record
-	return nil
 }
 
 func (s *TestKeyManagement) DeleteKey(
@@ -381,4 +346,39 @@ func (s *TestKeyManagement) ExtractKeyRegion(
 		return nil, fmt.Errorf("%w: %q", ErrNativeKeyIDInvalidPattern, req.NativeKeyID)
 	}
 	return &keymanagement.ExtractKeyRegionResponse{Region: "test-region"}, nil
+}
+
+func (s *TestKeyManagement) createKey(
+	keyID string,
+	keyType keymanagement.KeyType,
+) string {
+	st := EnabledKeyStatus
+	if keyType == keymanagement.BYOK {
+		st = PendingImportKeyStatus
+	}
+	initialVersion := "version0"
+	time := time.Now().UTC()
+	s.KeyStore[keyID] = &KeyRecord{
+		KeyID:       keyID,
+		Status:      st,
+		PKeyVersion: initialVersion,
+		Versions: []KeyVersionRecord{
+			{
+				VersionID:    initialVersion,
+				CreationTime: &time,
+			},
+		},
+		RotationTime: &time,
+	}
+	return st
+}
+
+func (s *TestKeyManagement) updateKeyStatus(key string, status string) error {
+	record, exists := s.KeyStore[key]
+	if !exists {
+		return ErrKeyNotFound
+	}
+	record.Status = status
+	s.KeyStore[key] = record
+	return nil
 }

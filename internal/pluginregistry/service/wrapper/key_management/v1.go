@@ -55,7 +55,10 @@ func convertGRPCError(err error) error {
 	}
 }
 
-func (v1 *V1) GetKeyVersions(ctx context.Context, req *keymanagement.GetKeyVersionsRequest) (*keymanagement.GetKeyVersionsResponse, error) {
+func (v1 *V1) GetKeyVersions(
+	ctx context.Context,
+	req *keymanagement.GetKeyVersionsRequest,
+) (*keymanagement.GetKeyVersionsResponse, error) {
 	value, err := structpb.NewStruct(req.Parameters.Config.Values)
 	if err != nil {
 		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
@@ -74,12 +77,12 @@ func (v1 *V1) GetKeyVersions(ctx context.Context, req *keymanagement.GetKeyVersi
 		return nil, convertGRPCError(err)
 	}
 
-	versions := make([]keymanagement.KeyVersion, len(grpcResp.GetVersions()))
+	versions := make([]keymanagement.KeyVersion, 0, len(grpcResp.GetVersions()))
 	for _, v := range grpcResp.GetVersions() {
 		versions = append(versions, keymanagement.KeyVersion{
-			ID:           v.VersionId,
-			CreationTime: new(v.CreationTime.AsTime()),
-			Status:       *v.Status,
+			ID:           v.GetVersionId(),
+			CreationTime: new(v.GetCreationTime().AsTime()),
+			Status:       v.GetStatus(),
 		})
 	}
 

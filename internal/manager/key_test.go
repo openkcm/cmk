@@ -140,7 +140,7 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 	cryptoBytes, err := json.Marshal(cryptoAccessData)
 	require.NoError(t, err)
 
-	keyProvider, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+	keyProvider, err := provider.CreateKey(ctx, &keymanagement.CreateKeyRequest{
 		KeyType: keymanagement.HYOK,
 	})
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 func createTestBYOKKey(t *testing.T, r repo.Repo, ctx context.Context, keyConfigID uuid.UUID, state cmkapi.KeyState, provider *testplugins.TestKeyManagement) *model.Key {
 	t.Helper()
 
-	keyProvider, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+	keyProvider, err := provider.CreateKey(ctx, &keymanagement.CreateKeyRequest{
 		KeyType: keymanagement.BYOK,
 	})
 
@@ -1424,12 +1424,12 @@ func TestKeyRotationTime(t *testing.T) {
 		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 		require.NoError(t, err)
 
-		keyProvider, err := keyProviderPlugins.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		keyProvider, err := keyProviderPlugins.CreateKey(ctx, &keymanagement.CreateKeyRequest{
 			KeyType: keymanagement.HYOK,
 		})
 		assert.NoError(t, err)
 		// Register the key in the plugin first
-		keyProviderPlugins.RotateKey(keyProvider.KeyID, "version-1", &rotationTime)
+		require.NoError(t, keyProviderPlugins.RotateKey(keyProvider.KeyID, "version-1", &rotationTime))
 
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyType = cmkapi.KeyTypeHYOK
@@ -1481,13 +1481,13 @@ func TestKeyRotationTime(t *testing.T) {
 
 	t.Run("Fallback to current time when keystore doesn't provide rotation time", func(t *testing.T) {
 		// Register the key in the plugin first
-		keyProvider, err := keyProviderPlugins.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		keyProvider, err := keyProviderPlugins.CreateKey(ctx, &keymanagement.CreateKeyRequest{
 			KeyType: keymanagement.HYOK,
 		})
 		assert.NoError(t, err)
 
 		// Rotate key but don't set rotation time (empty string)
-		keyProviderPlugins.RotateKey(keyProvider.KeyID, "version-1", nil)
+		require.NoError(t, keyProviderPlugins.RotateKey(keyProvider.KeyID, "version-1", nil))
 
 		// Create HYOK key
 		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
