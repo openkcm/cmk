@@ -14,7 +14,7 @@ import (
 )
 
 func TestWorkflowKeyConfigActions(t *testing.T) {
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 

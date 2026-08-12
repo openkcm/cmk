@@ -85,7 +85,7 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionFirst,
-						RepoActionDelete,
+						RepoActionUpdate,
 						RepoActionCreate,
 					},
 				},
@@ -206,8 +206,8 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					Actions: []RepoAction{
 						RepoActionUpdate,
 						RepoActionFirst,
-						// Delete+Create required by Set(WorkflowApproverGroup), which resolves its resource type to workflows
-						RepoActionDelete,
+						// Update+Create required by Set(WorkflowApproverGroup), which resolves its resource type to workflows
+						RepoActionUpdate,
 						RepoActionCreate,
 					},
 				},
@@ -215,7 +215,7 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					Type: RepoResourceTypeWorkflowApprover,
 					Actions: []RepoAction{
 						RepoActionCreate,
-						RepoActionDelete,
+						RepoActionUpdate,
 						RepoActionCount,
 						RepoActionList,
 					},
@@ -287,14 +287,17 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 						RepoActionCount,
 						RepoActionList,
 						RepoActionUpdate,
+						RepoActionFirst,
 					},
 				},
 				{
 					Type: RepoResourceTypeKeyversion,
 					Actions: []RepoAction{
+						RepoActionCreate,
 						RepoActionCount,
 						RepoActionList,
 						RepoActionUpdate,
+						RepoActionFirst,
 					},
 				},
 				{
@@ -304,6 +307,12 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 						RepoActionCount,
 						RepoActionCreate,
 						RepoActionUpdate,
+					},
+				},
+				{
+					Type: RepoResourceTypeKeyconfiguration,
+					Actions: []RepoAction{
+						RepoActionFirst,
 					},
 				},
 			},
@@ -378,11 +387,11 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
 					// First: GetWorkflowConfig reads existing config.
-					// Delete+Create: Set (upsert) called by SetWorkflowConfig when no config exists.
+					// Update+Create: Set (upsert) called by SetWorkflowConfig when no config exists.
 					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionFirst,
-						RepoActionDelete,
+						RepoActionUpdate,
 						RepoActionCreate,
 					},
 				},

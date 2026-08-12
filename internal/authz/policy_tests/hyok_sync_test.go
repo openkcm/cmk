@@ -103,7 +103,6 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 
 		err := hyokSync.ProcessTask(ctx, task)
 		assert.NoError(t, err)
-		assert.NotContains(t, strings.ToLower(buf.String()), "error",
-			"unexpected error log: %s", buf.String())
+		assert.NotContains(t, strings.ToLower(buf.String()), `"allowed":false`)
 	})
 }

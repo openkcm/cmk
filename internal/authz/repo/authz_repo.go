@@ -123,7 +123,7 @@ func (r *AuthzRepo) Patch(
 }
 
 func (r *AuthzRepo) Set(ctx context.Context, resource repo.Resource, query repo.Query) error {
-	err := r.checkResourceAuthZ(ctx, resource, authz.RepoActionDelete)
+	err := r.checkResourceAuthZ(ctx, resource, authz.RepoActionUpdate)
 	if err != nil {
 		return err
 	}
