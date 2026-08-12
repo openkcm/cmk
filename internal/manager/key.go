@@ -1081,11 +1081,9 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 		key.State = cmkapi.KeyState(keyResp.Status)
 
 		// Check if a new version was detected from the keystore
-		if keyResp.LatestKeyVersionId != "" {
-			err := km.syncKeyVersion(ctx, provider, key)
-			if err != nil {
-				log.Warn(ctx, "Failed to sync key version", log.ErrorAttr(err))
-			}
+		err := km.syncKeyVersion(ctx, provider, key)
+		if err != nil {
+			log.Warn(ctx, "Failed to sync key version", log.ErrorAttr(err))
 		}
 	}
 
