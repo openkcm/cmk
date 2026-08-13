@@ -150,7 +150,20 @@ func TestBuildCMKConfigOverrides_NoRegionsConfigured(t *testing.T) {
 	overrides, err := cmkpluginregistry.BuildCMKConfigOverrides(cfg)
 	require.NoError(t, err)
 
-	assert.Empty(t, overrides)
+	keystoreOverrides, ok := overrides[servicewrapper.KeystoreManagementType]
+	require.True(t, ok, "override must always be present even with no regions")
+
+	sr, ok := keystoreOverrides["supportedregions"].(commoncfg.SourceRef)
+	require.True(t, ok)
+
+	raw, err := commoncfg.LoadValueFromSourceRef(sr)
+	require.NoError(t, err)
+
+	var wrapped map[string]any
+	require.NoError(t, json.Unmarshal(raw, &wrapped))
+	regions, ok := wrapped["regions"].([]any)
+	require.True(t, ok)
+	assert.Empty(t, regions)
 }
 
 func TestBuildCMKConfigOverrides_YAMLRoundTrip(t *testing.T) {
