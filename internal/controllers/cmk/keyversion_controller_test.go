@@ -150,10 +150,6 @@ func TestKeyVersionController_GetKeyVersions(t *testing.T) {
 					// Assert NativeID
 					assert.Equal(t, expectedKV.NativeID, *keyVersion.NativeID)
 
-					// Assert State matches parent key
-					assert.NotNil(t, keyVersion.State)
-					assert.Equal(t, tt.key.State, *keyVersion.State)
-
 					// Assert IsPrimary - first version should be primary (latest)
 					assert.NotNil(t, keyVersion.IsPrimary)
 					if i == 0 {

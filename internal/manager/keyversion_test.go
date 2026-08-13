@@ -19,18 +19,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
-var (
-	ksConfig            = testutils.NewKeystore(func(_ *model.Keystore) {})
-	keystoreDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeRoleManagement
-		c.CommonName = testutils.TestDefaultKeystoreCommonName
-	})
-	keystoreKeyMgmtCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeyManagement
-		c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
-	})
-)
-
 func setupKeyVersionManager(t *testing.T) (*manager.KeyVersionManager, repo.Repo, string, uuid.UUID) {
 	t.Helper()
 
@@ -65,9 +53,14 @@ func setupKeyVersionManager(t *testing.T) (*manager.KeyVersionManager, repo.Repo
 		t,
 		r,
 		keyConfig,
-		ksConfig,
-		keystoreDefaultCert,
-		keystoreKeyMgmtCert,
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeRoleManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName
+		}),
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeKeyManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+		}),
 	)
 
 	return kvm, r, tenant, keyConfig.ID
@@ -244,7 +237,7 @@ func TestUpdateVersions(t *testing.T) {
 		err := kvm.UpdateVersions(ctx, keyID, versions)
 		require.NoError(t, err)
 
-		updatedTime := time.Now().UTC()
+		updatedTime := time.Date(2025, 2, 1, 10, 0, 0, 0, time.UTC)
 		updatedVersions := []keymanagement.KeyVersion{
 			{ID: "v1", CreationTime: &updatedTime},
 		}

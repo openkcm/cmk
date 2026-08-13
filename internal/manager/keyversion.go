@@ -172,9 +172,10 @@ func (kvm *KeyVersionManager) UpdateVersions(
 				NativeID:  k.ID,
 				KeyID:     keyID,
 				RotatedAt: *k.CreationTime,
+				Status:    k.Status,
 			}, *repo.NewQuery().
 				OnConflict(repo.KeyIDField, repo.NativeIDField).
-				Update(repo.RotatedField, repo.UpdatedField),
+				Update(repo.RotatedField, repo.UpdatedField, repo.StatusField),
 			)
 			if err != nil {
 				return err
@@ -187,6 +188,7 @@ func (kvm *KeyVersionManager) UpdateVersions(
 				NativeID:  k.ID,
 				KeyID:     keyID,
 				RotatedAt: *k.CreationTime,
+				Status:    k.Status,
 			})
 			if err != nil {
 				return err

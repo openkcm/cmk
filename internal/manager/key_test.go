@@ -102,9 +102,15 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 		r,
 		keyConfig,
 		tenantDefaultCert,
-		keystoreDefaultCert,
-		keystoreKeyMgmtCert,
-		ksConfig,
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeRoleManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName
+		}),
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeKeyManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+		}),
+		testutils.NewKeystore(func(_ *model.Keystore) {}),
 	)
 
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})

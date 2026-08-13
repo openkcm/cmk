@@ -138,7 +138,7 @@ func (km *KeyManager) Create(
 
 		// For HYOK keys, create initial version from keystore response
 		if key.KeyType == constants.KeyTypeHYOK && keyResp != nil {
-			if err := km.syncKeyVersion(ctx, provider, key); err != nil {
+			if err := km.syncKeyVersions(ctx, provider, key); err != nil {
 				return errs.Wrap(ErrCreateKeyVersionDB, err)
 			}
 		}
@@ -1081,7 +1081,7 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 		key.State = cmkapi.KeyState(keyResp.Status)
 
 		// Check if a new version was detected from the keystore
-		err := km.syncKeyVersion(ctx, provider, key)
+		err := km.syncKeyVersions(ctx, provider, key)
 		if err != nil {
 			log.Warn(ctx, "Failed to sync key version", log.ErrorAttr(err))
 		}
@@ -1106,9 +1106,9 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 	return nil
 }
 
-// syncKeyVersion checks if the latest version from keystore matches the stored version.
+// syncKeyVersions checks if the latest version from keystore matches the stored version.
 // If a new version is detected, it creates a new KeyVersion record.
-func (km *KeyManager) syncKeyVersion(
+func (km *KeyManager) syncKeyVersions(
 	ctx context.Context,
 	provider *ProviderConfig,
 	key *model.Key,
@@ -1122,20 +1122,6 @@ func (km *KeyManager) syncKeyVersion(
 		return ErrNoKeyVersionsFound
 	}
 
-	// Get current stored version (latest RotatedAt)
-	currentVersion, err := km.keyVersionManager.GetLatestVersion(ctx, key.ID)
-	if err != nil && !errors.Is(err, ErrNoKeyVersionsFound) {
-		// Return error unless it's just "no versions found" (which is expected for first sync)
-		return err
-	}
-
-	// Compare with latest_key_version_id from response
-	if currentVersion != nil && currentVersion.NativeID == keyResp.Versions[0].ID {
-		// Same version - no changes needed
-		return nil
-	}
-
-	// Different version detected - create new one
 	return km.handleNewKeyVersion(ctx, key, keyResp)
 }
 
