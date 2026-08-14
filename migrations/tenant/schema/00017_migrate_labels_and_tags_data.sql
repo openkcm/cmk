@@ -1,6 +1,9 @@
 -- +goose Up
 -- +goose StatementBegin
 
+-- Ensure pgcrypto extension is available for gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Migrate existing key_labels to resource_labels
 -- Maps: key_labels -> resource_labels with resource_type='KEY'
 -- Note: With the new unique constraint on (resource_type, resource_id, key),
