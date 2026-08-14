@@ -76,20 +76,30 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
+	keyConfigID := uuid.New()
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+	})
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = new(uuid.New())
+		k.ID = keyConfigID
+		k.PrimaryKeyID = &key.ID
 	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
 	authClient2 := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
+	keyConfigID2 := uuid.New()
+	key2 := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID2
+	})
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = new(uuid.New())
+		k.ID = keyConfigID2
+		k.PrimaryKeyID = &key2.ID
 	}, testutils.WithAuthBusinessUserDataKC(authClient2), testutils.WithIDMPluginKC(idmPlugin))
 
 	keyConfig3 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyConfig2, keyConfig3)
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, key, keyConfig2, key2, keyConfig3)
 	clientData := &auth.ClientData{
 		Identifier: authClient.Identifier,
 		Groups:     []string{authClient.Group.IAMIdentifier},
@@ -155,10 +165,15 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
+	keyConfigID := uuid.New()
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+	})
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = new(uuid.New())
+		k.ID = keyConfigID
+		k.PrimaryKeyID = &key.ID
 	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
-	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
 	t.Run("Should get keyConfig", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{

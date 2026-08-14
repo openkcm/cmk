@@ -43,7 +43,7 @@ func (c *APIController) GetKeyConfigurations(
 	values := make([]cmkapi.KeyConfiguration, len(keyConfigs))
 
 	for i, dbConfig := range keyConfigs {
-		apiConfig, err := keyconfiguration.ToAPI(ctx, *dbConfig, idm)
+		apiConfig, err := keyconfiguration.ToAPI(ctx, dbConfig, c.Manager.KeyConfig, idm)
 		if err != nil {
 			return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationList, err)
 		}
@@ -88,7 +88,7 @@ func (c *APIController) PostKeyConfigurations(
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGettingKeyConfig, err)
 	}
-	response, err := keyconfiguration.ToAPI(ctx, *keyConfig, idm)
+	response, err := keyconfiguration.ToAPI(ctx, keyConfig, c.Manager.KeyConfig, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationToAPI, err)
 	}
@@ -123,7 +123,7 @@ func (c *APIController) GetKeyConfigurationByID(
 	if err != nil {
 		return nil, err
 	}
-	response, err := keyconfiguration.ToAPI(ctx, *keyConfig, idm)
+	response, err := keyconfiguration.ToAPI(ctx, keyConfig, c.Manager.KeyConfig, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationToAPI, err)
 	}
@@ -163,7 +163,7 @@ func (c *APIController) UpdateKeyConfigurationByID(
 	if err != nil {
 		return nil, err
 	}
-	response, err := keyconfiguration.ToAPI(ctx, *keyConfig, idm)
+	response, err := keyconfiguration.ToAPI(ctx, keyConfig, c.Manager.KeyConfig, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationToAPI, err)
 	}

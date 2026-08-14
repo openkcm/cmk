@@ -1,6 +1,7 @@
 package keyconfiguration_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -12,12 +13,45 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/keyconfiguration"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
+
+type mockKeyConfigManager struct{}
+
+var _ manager.KeyConfigurationAPI = (*mockKeyConfigManager)(nil)
+
+func (m *mockKeyConfigManager) GetKeyConfigurations(_ context.Context, _ manager.KeyConfigFilter) ([]*model.KeyConfiguration, int, error) {
+	return nil, 0, nil
+}
+
+func (m *mockKeyConfigManager) PostKeyConfigurations(_ context.Context, _ *model.KeyConfiguration) (*model.KeyConfiguration, error) {
+	return &model.KeyConfiguration{}, nil
+}
+
+func (m *mockKeyConfigManager) DeleteKeyConfigurationByID(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockKeyConfigManager) GetKeyConfigurationByID(_ context.Context, _ uuid.UUID) (*model.KeyConfiguration, error) {
+	return &model.KeyConfiguration{}, nil
+}
+
+func (m *mockKeyConfigManager) UpdateKeyConfigurationByID(_ context.Context, _ uuid.UUID, _ cmkapi.KeyConfigurationPatch) (*model.KeyConfiguration, error) {
+	return &model.KeyConfiguration{}, nil
+}
+
+func (m *mockKeyConfigManager) GetClientCertificates(_ context.Context) (model.ClientCertificates, error) {
+	return model.ClientCertificates{}, nil
+}
+
+func (m *mockKeyConfigManager) CanConnectSystems(_ context.Context, keyConfig *model.KeyConfiguration) (bool, error) {
+	return keyConfig.PrimaryKeyID != nil, nil
+}
 
 func TestTransformKeyConfiguration_FromAPI(t *testing.T) {
 	description := "Test key configuration"
@@ -165,7 +199,7 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := cmkcontext.InjectBusinessUserData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
-			apiConf, err := keyconfiguration.ToAPI(ctx, tt.conf, idm)
+			apiConf, err := keyconfiguration.ToAPI(ctx, &tt.conf, &mockKeyConfigManager{}, idm)
 			if tt.expectErr {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, tt.err)
@@ -178,9 +212,9 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 	}
 
 	t.Run("Should have nil creator id and name on invalid creator id", func(t *testing.T) {
-		apiConf, err := keyconfiguration.ToAPI(t.Context(), *testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+		apiConf, err := keyconfiguration.ToAPI(t.Context(), testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 			kc.CreatorID = uuid.Nil.String()
-		}), nil)
+		}), &mockKeyConfigManager{}, nil)
 		assert.NoError(t, err)
 		assert.Nil(t, apiConf.Metadata.CreatorID)
 		assert.Nil(t, apiConf.Metadata.CreatorName)
