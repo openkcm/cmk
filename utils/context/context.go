@@ -5,7 +5,6 @@ import (
 	"errors"
 	"maps"
 
-	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 
@@ -13,7 +12,10 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 )
 
+const TenantKey = key("tenant")
+
 var (
+	ErrTenantInvalid                      = errors.New("invalid tenant or tenant not found")
 	ErrExtractTenantID                    = errors.New("could not extract tenant ID from context")
 	ErrGetRequestID                       = errors.New("no requestID found in context")
 	ErrExtractBusinessUserData            = errors.New("could not extract business data from context")
@@ -37,9 +39,9 @@ func New(ctx context.Context, opts ...Opt) context.Context {
 }
 
 func ExtractTenantID(ctx context.Context) (string, error) {
-	tenantID, ok := ctx.Value(nethttp.TenantKey).(string)
+	tenantID, ok := ctx.Value(TenantKey).(string)
 	if !ok || tenantID == "" {
-		return "", errs.Wrap(ErrExtractTenantID, nethttp.ErrTenantInvalid)
+		return "", errs.Wrap(ErrExtractTenantID, ErrTenantInvalid)
 	}
 
 	return tenantID, nil
@@ -50,7 +52,7 @@ func CreateTenantContext(ctx context.Context, tenantSchema string) context.Conte
 		ctx = context.Background()
 	}
 
-	return context.WithValue(ctx, nethttp.TenantKey, tenantSchema)
+	return context.WithValue(ctx, TenantKey, tenantSchema)
 }
 
 func WithTenant(tenantSchema string) Opt {

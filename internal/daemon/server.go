@@ -13,7 +13,6 @@ import (
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 	"github.com/samber/oops"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	commonmiddleware "github.com/openkcm/common-sdk/pkg/middleware"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -28,6 +27,7 @@ import (
 	"github.com/openkcm/cmk/internal/handlers"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/middleware"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )

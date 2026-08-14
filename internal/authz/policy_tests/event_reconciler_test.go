@@ -20,7 +20,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // TestEventReconciler_AuthzPolicy verifies that the InternalEventReconcilerRole
@@ -55,7 +54,7 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 		k.KeyConfigurationID = keyConfig.ID
 	})
 	system := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.KeyConfigurationID = new(keyConfig.ID)
 		s.Status = cmkapi.SystemStatusCONNECTED
 	})
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key, system)

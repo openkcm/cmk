@@ -9,16 +9,14 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const providerTest = "TEST"
@@ -248,7 +246,7 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 		k.CryptoAccessData = json.RawMessage("{\"<>\":{\"test\":\"test\"}}")
 		k.KeyConfigurationID = kc.ID
 		k.Provider = providerTest
-		k.NativeID = ptr.PointTo("sdsad")
+		k.NativeID = new("sdsad")
 	})
 
 	testutils.CreateTestEntities(

@@ -17,17 +17,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var (
@@ -717,12 +715,12 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 	pKeyID := uuid.New()
 	keyConfigWSys := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(pKeyID)
+			k.PrimaryKeyID = new(pKeyID)
 		},
 		testutils.WithAuthBusinessUserDataKC(authClient),
 	)
 	sys := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfigWSys.ID)
+		s.KeyConfigurationID = new(keyConfigWSys.ID)
 		s.Status = cmkapi.SystemStatusCONNECTED
 	})
 	pkey := testutils.NewKey(func(k *model.Key) {
@@ -860,8 +858,8 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	regionNonEditable := "region2"
 
 	cryptoData, err := json.Marshal(model.KeyAccessData{
-		regionEditable:    map[string]any{},
-		regionNonEditable: map[string]any{},
+		regionEditable:    cmkapi.KeyAccessDetailsRegion{},
+		regionNonEditable: cmkapi.KeyAccessDetailsRegion{},
 	})
 	assert.NoError(t, err)
 
@@ -869,17 +867,17 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 
 	keyID := uuid.New()
 	kc := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(keyID)
+		k.PrimaryKeyID = new(keyID)
 	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	sysFailed := testutils.NewSystem(func(sys *model.System) {
-		sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+		sys.KeyConfigurationID = new(kc.ID)
 		sys.Region = regionEditable
 		sys.Status = cmkapi.SystemStatusFAILED
 	})
 
 	sys := testutils.NewSystem(func(sys *model.System) {
-		sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+		sys.KeyConfigurationID = new(kc.ID)
 		sys.Region = regionNonEditable
 		sys.Status = cmkapi.SystemStatusCONNECTED
 	})
@@ -958,9 +956,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T400KeyUPDATESuccess",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusOK,
 			expectedName:   "updated-key",
@@ -970,9 +968,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T400KeyUPDATESuccessDisable",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(false),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(false),
 			},
 			expectedStatus: http.StatusOK,
 			expectedName:   "updated-key",
@@ -982,9 +980,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T400KeyUPDATESuccessEnable",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusOK,
 			expectedName:   "updated-key",
@@ -994,9 +992,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T401KeyUPDATEInvalidId",
 			keyID: "invalid-key-id",
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedName:   "",
@@ -1006,9 +1004,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T402KeyUPDATENotFound",
 			keyID: uuid.New().String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusNotFound,
 			expectedName:   "",
@@ -1019,8 +1017,10 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Management: &map[string]any{
-						"a": "b",
+					Management: &cmkapi.KeyAccessDetailsRegion{
+						AdditionalProperties: map[string]any{
+							"a": "b",
+						},
 					},
 				},
 			},
@@ -1031,9 +1031,11 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						regionNonEditable: {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 					},
 				},
@@ -1044,15 +1046,19 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "Should 200 on valid crypto access data update",
 			keyID: hyokKey.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-hyok-key"),
+				Description: new("updated description"),
+				Name:        new("updated-hyok-key"),
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						regionEditable: {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 						"new-region": {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 					},
 				},
@@ -1065,7 +1071,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "Should 400 when update primary key and workflow is required",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				IsPrimary: ptr.PointTo(true),
+				IsPrimary: new(true),
 			},
 			expectedStatus: http.StatusBadRequest,
 			workflowEnable: true,
@@ -1074,8 +1080,8 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "Should 400 on byok state update and workflow is required",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Enabled:   ptr.PointTo(true),
-				IsPrimary: ptr.PointTo(true),
+				Enabled:   new(true),
+				IsPrimary: new(true),
 			},
 			expectedStatus: http.StatusBadRequest,
 			workflowEnable: true,
@@ -1083,7 +1089,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		{
 			name:              "should not update when no group permission",
 			keyID:             key.ID.String(),
-			input:             cmkapi.KeyPatch{Name: ptr.PointTo("new-name")},
+			input:             cmkapi.KeyPatch{Name: new("new-name")},
 			headers:           headersNotAllowed,
 			expectedStatus:    http.StatusForbidden,
 			expectedErrorCode: "FORBIDDEN",
@@ -1093,8 +1099,12 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			keyID: hyokKeyInvalidMgmt.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
-						regionEditable: {"key": "value"},
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
+						regionEditable: {
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
+						},
 					},
 				},
 			},
@@ -1307,7 +1317,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
 		k.State = cmkapi.KeyStatePENDINGIMPORT
-		k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-1234-567890abcdef")
+		k.NativeID = new("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-1234-567890abcdef")
 		k.KeyConfigurationID = keyConfig.ID
 	})
 
@@ -1398,7 +1408,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			k.Name = "byok-no-import-params"
 			k.KeyType = string(cmkapi.KeyTypeBYOK)
 			k.State = cmkapi.KeyStatePENDINGIMPORT
-			k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-6789-567890abcdef")
+			k.NativeID = new("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-6789-567890abcdef")
 			k.KeyConfigurationID = keyConfig.ID
 		})
 		testutils.CreateTestEntities(ctx, t, r, byokNoImportParams)
@@ -1433,7 +1443,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			WrappingAlg:        "CKM_RSA_AES_KEY_WRAP",
 			HashFunction:       "SHA256",
 			ProviderParameters: paramsJSON,
-			Expires:            ptr.PointTo(time.Now().Add(1 * time.Hour)),
+			Expires:            new(time.Now().Add(1 * time.Hour)),
 		}
 
 		testutils.CreateTestEntities(ctx, t, r, hyokKey, &params)

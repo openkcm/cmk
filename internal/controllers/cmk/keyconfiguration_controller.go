@@ -56,7 +56,7 @@ func (c *APIController) GetKeyConfigurations(
 	}
 
 	if pagination.Count {
-		response.Count = ptr.PointTo(total)
+		response.Count = new(total)
 	}
 
 	return cmkapi.GetKeyConfigurations200JSONResponse(response), nil

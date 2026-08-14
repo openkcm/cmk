@@ -16,9 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -84,15 +82,9 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 		apiKey.Algorithm = &algorithm
 	}
 
-	if k.Provider != "" {
-		apiKey.Provider = &k.Provider
-	}
-
 	if k.Region != "" {
 		apiKey.Region = &k.Region
 	}
-
-	apiKey.NativeID = k.NativeID
 
 	apiKey.Name = k.Name
 	if k.Description != "" {
@@ -118,6 +110,10 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 		}
 
 		apiKey.AccessDetails = accessDetails
+		apiKey.NativeID = k.NativeID
+		if k.Provider != "" {
+			apiKey.Provider = &k.Provider
+		}
 	}
 
 	apiKey.IsPrimary = &k.IsPrimary
@@ -143,13 +139,10 @@ func getKeyModel(ctx context.Context, tf transformer.ProviderTransformer, apiKey
 }
 
 func getAccessDetailsFromModel(k model.Key) (*cmkapi.KeyAccessDetails, error) {
-	var (
-		management map[string]any
-		crypto     map[string]map[string]any
-		err        error
-	)
+	var crypto map[string]cmkapi.KeyAccessDetailsRegion
 
-	err = json.Unmarshal(k.ManagementAccessData, &management)
+	management := cmkapi.KeyAccessDetailsRegion{}
+	err := management.UnmarshalJSON(k.ManagementAccessData)
 	if err != nil {
 		return nil, errs.Wrap(ErrDeserializeKeyAccessData, err)
 	}
@@ -160,16 +153,17 @@ func getAccessDetailsFromModel(k model.Key) (*cmkapi.KeyAccessDetails, error) {
 	}
 
 	for region, editable := range k.EditableRegions {
-		regionValues := crypto[region]
-		if regionValues == nil {
+		regionValues, ok := crypto[region]
+		if !ok {
 			// Skip regions that don't exist in crypto access data
 			continue
 		}
-		regionValues[manager.IsEditableCryptoAccess] = editable
+		regionValues.IsEditable = &editable
+		crypto[region] = regionValues
 	}
 
 	return &cmkapi.KeyAccessDetails{
-		Management: ptr.PointTo(management),
-		Crypto:     ptr.PointTo(crypto),
+		Management: new(management),
+		Crypto:     new(crypto),
 	}, nil
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func getPluginProviderTransformer(t *testing.T) *transformer.PluginProviderTransformer {
@@ -27,9 +26,9 @@ func TestValidatesAPIKey(t *testing.T) {
 
 	key := cmkapi.Key{
 		Type:      cmkapi.KeyTypeBYOK,
-		Algorithm: ptr.PointTo(cmkapi.KeyAlgorithmAES256),
-		Region:    ptr.PointTo("us-east-1"),
-		NativeID:  ptr.PointTo("native-key-id"),
+		Algorithm: new(cmkapi.KeyAlgorithmAES256),
+		Region:    new("us-east-1"),
+		NativeID:  new("native-key-id"),
 	}
 
 	err := tf.ValidateAPI(t.Context(), key)
@@ -42,20 +41,26 @@ func TestSerializesKeyAccessData(t *testing.T) {
 
 	key := cmkapi.Key{
 		AccessDetails: &cmkapi.KeyAccessDetails{
-			Management: ptr.PointTo(map[string]any{
-				"AccountID": "123456789012",
-				"UserID":    "123456789012:user/test-user",
-			}),
-			Crypto: ptr.PointTo(map[string]map[string]any{
+			Management: &cmkapi.KeyAccessDetailsRegion{
+				AdditionalProperties: map[string]any{
+					"AccountID": "123456789012",
+					"UserID":    "123456789012:user/test-user",
+				},
+			},
+			Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 				"serviceA": {
-					"AccountID": "12344",
-					"UserID":    "123456789012:user/serviceA",
+					AdditionalProperties: map[string]any{
+						"AccountID": "12344",
+						"UserID":    "123456789012:user/serviceA",
+					},
 				},
 				"serviceB": {
-					"AccountID": "12345",
-					"UserID":    "123456789012:user/serviceB",
+					AdditionalProperties: map[string]any{
+						"AccountID": "12345",
+						"UserID":    "123456789012:user/serviceB",
+					},
 				},
-			}),
+			},
 		},
 	}
 
@@ -71,8 +76,8 @@ func TestSerializesKeyAccessData_Invalid(t *testing.T) {
 
 	key := cmkapi.Key{
 		AccessDetails: &cmkapi.KeyAccessDetails{
-			Management: ptr.PointTo(map[string]any{}),
-			Crypto:     ptr.PointTo(map[string]map[string]any{}),
+			Management: &cmkapi.KeyAccessDetailsRegion{},
+			Crypto:     new(map[string]cmkapi.KeyAccessDetailsRegion{}),
 		},
 	}
 
@@ -84,9 +89,13 @@ func TestExtractRegion(t *testing.T) {
 	tf := getPluginProviderTransformer(t)
 
 	key := cmkapi.Key{
-		NativeID: ptr.PointTo("native-key-id"),
+		NativeID: new("native-key-id"),
 		AccessDetails: &cmkapi.KeyAccessDetails{
-			Management: ptr.PointTo(map[string]any{"key": "value"}),
+			Management: &cmkapi.KeyAccessDetailsRegion{
+				AdditionalProperties: map[string]any{
+					"key": "value",
+				},
+			},
 		},
 	}
 

@@ -9,13 +9,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func startAPIGroups(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
@@ -348,7 +346,7 @@ func TestUpdateGroup(t *testing.T) {
 
 	t.Run("Should code 200 on successful group rename", func(t *testing.T) {
 		updateGroup := cmkapi.GroupPatch{
-			Name: ptr.PointTo("test"),
+			Name: new("test"),
 		}
 
 		w := testutils.MakeHTTPRequest(
@@ -367,7 +365,7 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should code 400 on invalid group rename object", func(t *testing.T) {
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo(""),
+				Name: new(""),
 			}
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
@@ -386,7 +384,7 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should code 400 on rename to protect group name", func(t *testing.T) {
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo(constants.TenantAdminGroup),
+				Name: new(constants.TenantAdminGroup),
 			}
 
 			w := testutils.MakeHTTPRequest(
@@ -406,7 +404,7 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should code 404 on non existing group", func(t *testing.T) {
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo("test"),
+				Name: new("test"),
 			}
 
 			w := testutils.MakeHTTPRequest(
@@ -431,7 +429,7 @@ func TestUpdateGroup(t *testing.T) {
 			defer forced.Unregister()
 
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo("test"),
+				Name: new("test"),
 			}
 
 			w := testutils.MakeHTTPRequest(
@@ -446,6 +444,50 @@ func TestUpdateGroup(t *testing.T) {
 
 			assert.Equal(t, http.StatusInternalServerError, w.Code)
 		})
+}
+
+func TestGetGroupsCount(t *testing.T) {
+	db, r, tenant, keyStorage := startAPIGroups(t)
+	repo := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	authClient := testutils.NewAuthClient(ctx, t, repo, testutils.WithTenantAdminRole())
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
+
+	t.Run("count=true includes count", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(
+			t, r, testutils.RequestOptions{
+				Method:   http.MethodGet,
+				Endpoint: "/groups?$count=true",
+				Tenant:   tenant,
+				Headers:  headers,
+			},
+		)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.GroupList](t, w)
+		assert.Len(t, response.Value, 1)
+		assert.NotNil(t, response.Count)
+		assert.Equal(t, 1, *response.Count)
+	})
+
+	t.Run("count=false omits count", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(
+			t, r, testutils.RequestOptions{
+				Method:   http.MethodGet,
+				Endpoint: "/groups?$count=false",
+				Tenant:   tenant,
+				Headers:  headers,
+			},
+		)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.GroupList](t, w)
+		assert.Len(t, response.Value, 1)
+		assert.Nil(t, response.Count)
+	})
 }
 
 func TestCheckGroupsIAM(t *testing.T) {
@@ -478,15 +520,15 @@ func TestCheckGroupsIAM(t *testing.T) {
 			expected := cmkapi.CheckGroupsIAM200JSONResponse{
 				Value: []cmkapi.GroupIAMExistence{
 					{
-						IamIdentifier: ptr.PointTo("KMS_001"),
+						IamIdentifier: new("KMS_001"),
 						Exists:        true,
 					},
 					{
-						IamIdentifier: ptr.PointTo("KMS_002"),
+						IamIdentifier: new("KMS_002"),
 						Exists:        true,
 					},
 					{
-						IamIdentifier: ptr.PointTo("KMS_999"),
+						IamIdentifier: new("KMS_999"),
 						Exists:        false,
 					},
 				},

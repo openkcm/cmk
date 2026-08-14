@@ -11,10 +11,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	"gorm.io/gorm"
 
-	_ "github.com/bartventer/gorm-multitenancy/postgres/v8"
-
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
@@ -22,6 +18,8 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	_ "github.com/openkcm/cmk/internal/multitenancy/postgres"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"

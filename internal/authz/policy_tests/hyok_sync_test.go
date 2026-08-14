@@ -22,7 +22,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // TestHYOKSync_AuthzPolicy verifies that the InternalTaskHYOKSyncRole policy
@@ -84,7 +83,7 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 	hyokKey := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
 		k.KeyType = constants.KeyTypeHYOK
-		k.NativeID = ptr.PointTo("mock-key/11111111")
+		k.NativeID = new("mock-key/11111111")
 		k.ManagementAccessData = hyokInfo
 		k.Provider = testplugins.Name
 	})

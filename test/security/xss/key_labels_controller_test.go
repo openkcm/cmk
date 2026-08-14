@@ -7,14 +7,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
@@ -37,11 +35,11 @@ func startAPIAndDBForKeyLabels(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux,
 func TestLabelsController_Labels_ForXSS(t *testing.T) {
 	inputLabels := []cmkapi.Label{{
 		Key:   "Hello <STYLE></STYLE>World",
-		Value: ptr.PointTo("Hello <STYLE></STYLE>World"),
+		Value: new("Hello <STYLE></STYLE>World"),
 	}}
 	output := []cmkapi.Label{{
 		Key:   "Hello World",
-		Value: ptr.PointTo("Hello World"),
+		Value: new("Hello World"),
 	}}
 
 	db, sv, tenant := startAPIAndDBForKeyLabels(t)

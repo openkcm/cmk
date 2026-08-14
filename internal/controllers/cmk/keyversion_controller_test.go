@@ -12,15 +12,13 @@ import (
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func startAPIKeyVersion(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
@@ -461,7 +459,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 				kv.RotatedAt = time.Now().UTC()
 			}),
 		}
-		k.NativeID = ptr.PointTo(uuid.NewString())
+		k.NativeID = new(uuid.NewString())
 	})
 
 	testutils.CreateTestEntities(

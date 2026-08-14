@@ -28,7 +28,6 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // BYOKAction constants represent the actions that can be performed on a BYOK key
@@ -48,8 +47,10 @@ const (
 
 // createKeyRetryDelay and createKeyMaxDelay control the backoff for key creation retries.
 // They are vars (not consts) so tests can override them to avoid real waits.
-var createKeyRetryDelay = 15 * time.Second
-var createKeyMaxDelay = 30 * time.Second
+var (
+	createKeyRetryDelay = 15 * time.Second
+	createKeyMaxDelay   = 30 * time.Second
+)
 
 var UnavailableKeyStates = []cmkapi.KeyState{
 	cmkapi.KeyStatePENDINGDELETION,
@@ -540,7 +541,11 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 		return err
 	}
 
-	keyPatch.AccessDetails.Management = ptr.PointTo(key.GetManagementAccessData())
+	management, err := key.GetManagementAccessData()
+	if err != nil {
+		return err
+	}
+	keyPatch.AccessDetails.Management = &management
 
 	err = providerTransformer.ValidateKeyAccessData(ctx, keyPatch.AccessDetails)
 	if err != nil {
@@ -548,23 +553,28 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 	}
 
 	keyCryptoData := key.GetCryptoAccessData()
-	for region, regionValues := range *patchAccessDetails.Crypto {
+	for region, patchRegionValues := range *patchAccessDetails.Crypto {
 		editable, exist := key.EditableRegions[region]
 		if !editable && exist {
 			// If region is not editable and content changed error
-			if !maps.Equal(keyCryptoData[region], (*patchAccessDetails.Crypto)[region]) {
+			if !maps.Equal(keyCryptoData[region].AdditionalProperties, patchRegionValues.AdditionalProperties) {
 				return ErrNonEditableCryptoRegionUpdate
 			}
 		}
 
-		// Workaround: This will be enhanced in the future
-		// For now to fix issues where whole object is being overridden in the PATCH call
-		// only override the fields that where sent on the patch. If it's a new region add it
-		_, exist = keyCryptoData[region]
 		if !exist {
-			keyCryptoData[region] = regionValues
+			res, err := km.newCryptoRegion(ctx, region, patchRegionValues.AdditionalProperties)
+			if err != nil {
+				return err
+			}
+			keyCryptoData[region] = res
 		} else {
-			maps.Copy(keyCryptoData[region], regionValues)
+			regionData := keyCryptoData[region]
+			if regionData.AdditionalProperties == nil {
+				regionData.AdditionalProperties = make(map[string]any)
+			}
+			maps.Copy(regionData.AdditionalProperties, patchRegionValues.AdditionalProperties)
+			keyCryptoData[region] = regionData
 		}
 	}
 
@@ -600,7 +610,7 @@ func (km *KeyManager) createManagedProviderKey(
 		keyResp, err = provider.Client.CreateKey(ctx, &keymanagement.CreateKeyRequest{
 			Config:       common.KeystoreConfig{Values: provider.Config.Values},
 			KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
-			ID:           ptr.PointTo(key.ID.String()),
+			ID:           new(key.ID.String()),
 			Region:       key.Region,
 			KeyType:      convertToAPIKeyType(key.KeyType),
 		})
@@ -610,7 +620,7 @@ func (km *KeyManager) createManagedProviderKey(
 		return errs.Wrap(ErrKeyCreationFailed, err)
 	}
 
-	key.NativeID = ptr.PointTo(keyResp.KeyID)
+	key.NativeID = new(keyResp.KeyID)
 	key.State = cmkapi.KeyState(keyResp.Status)
 
 	return nil
@@ -623,7 +633,10 @@ func (km *KeyManager) registerHYOKKey(
 	key *model.Key,
 	provider *ProviderConfig,
 ) (*keymanagement.GetKeyResponse, error) {
-	configValues := mergeProviderConfigValuesWithKeyAccessData(provider, key)
+	configValues, err := mergeProviderConfigValuesWithKeyAccessData(provider, key)
+	if err != nil {
+		return nil, err
+	}
 
 	keyResp, err := provider.Client.GetKey(ctx, &keymanagement.GetKeyRequest{
 		Parameters: keymanagement.RequestParameters{
@@ -692,7 +705,8 @@ func (km *KeyManager) addCertificateSubjectToCryptoData(ctx context.Context, key
 			continue
 		}
 
-		accessData[model.CertificateSubjectKey] = cert.Subject.String()
+		accessData.CertificateSubject = new(cert.Subject.String())
+		cryptoAccessData[cert.Name] = accessData
 	}
 
 	key.CryptoAccessData, err = json.Marshal(cryptoAccessData)
@@ -701,6 +715,30 @@ func (km *KeyManager) addCertificateSubjectToCryptoData(ctx context.Context, key
 	}
 
 	return nil
+}
+
+func (km *KeyManager) newCryptoRegion(
+	ctx context.Context,
+	region string,
+	properties map[string]any,
+) (cmkapi.KeyAccessDetailsRegion, error) {
+	cryptoCerts, err := km.certs.getCryptoCertificates(ctx)
+	if err != nil {
+		return cmkapi.KeyAccessDetailsRegion{}, err
+	}
+
+	var certName string
+	for _, cert := range cryptoCerts {
+		if cert.Name == region {
+			certName = region
+			break
+		}
+	}
+
+	return cmkapi.KeyAccessDetailsRegion{
+		CertificateSubject:   &certName,
+		AdditionalProperties: properties,
+	}, nil
 }
 
 func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) error {
@@ -852,19 +890,24 @@ func copyFieldsToModelKey(apiKey cmkapi.KeyPatch, dbKey *model.Key) bool {
 func mergeProviderConfigValuesWithKeyAccessData(
 	provider *ProviderConfig,
 	key *model.Key,
-) map[string]any {
+) (map[string]any, error) {
 	// Start with the provider config values
 	configValues := provider.Config.Values
 
+	management, err := key.GetManagementAccessData()
+	if err != nil {
+		return nil, err
+	}
+
 	// Create a copy to avoid modifying the original
-	merged := make(map[string]any, len(configValues)+len(key.GetManagementAccessData()))
+	merged := make(map[string]any, len(configValues)+len(management.AdditionalProperties))
 	maps.Copy(merged, configValues)
 
 	// At this point, we assume the access data is already validated
 	// in the API layer, so we can directly merge it.
-	maps.Copy(merged, key.GetManagementAccessData())
+	maps.Copy(merged, management.AdditionalProperties)
 
-	return merged
+	return merged, nil
 }
 
 func (km *KeyManager) validateBYOKKey(ctx context.Context, keyID uuid.UUID, action BYOKAction) (*model.Key, error) {
@@ -1199,7 +1242,10 @@ func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keym
 		return nil, errs.Wrap(ErrFailedToInitProvider, err)
 	}
 
-	configValues := mergeProviderConfigValuesWithKeyAccessData(provider, key)
+	configValues, err := mergeProviderConfigValuesWithKeyAccessData(provider, key)
+	if err != nil {
+		return nil, err
+	}
 
 	keyResp, err := provider.Client.GetKey(ctx, &keymanagement.GetKeyRequest{
 		Parameters: keymanagement.RequestParameters{

@@ -31,7 +31,7 @@ func (c *APIController) GetTagsForKeyConfiguration(
 	}
 
 	if ptr.GetSafeDeref(request.Params.Count) {
-		response.Count = ptr.PointTo(count)
+		response.Count = new(count)
 	}
 
 	return cmkapi.GetTagsForKeyConfiguration200JSONResponse(response), nil

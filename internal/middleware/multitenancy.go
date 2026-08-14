@@ -1,10 +1,11 @@
 package middleware
 
 import (
-	"errors"
+	"context"
 	"net/http"
 
-	multitenancyMiddleware "github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
+	"github.com/openkcm/cmk/internal/handlers"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 const (
@@ -12,22 +13,21 @@ const (
 	TenantPathParamName = "tenant"
 )
 
-// ErrTenantNotFound is returned when the tenant ID is not found in the request.
-var ErrTenantNotFound = errors.New("tenant not found as path parameter")
-
-// InjectMultiTenancy returns a middleware function that handles multi-tenancy based on path parameter.
+// InjectMultiTenancy returns a middleware that extracts the tenant ID from the request path
+// parameter and stores it in the request context.
 func InjectMultiTenancy() func(http.Handler) http.Handler {
-	WithTenantConfig := multitenancyMiddleware.DefaultWithTenantConfig
-	WithTenantConfig.TenantGetters = []func(r *http.Request) (string, error){
-		func(r *http.Request) (string, error) {
+	handleError := handlers.ResponseErrorHandlerFunc()
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tenant := r.PathValue(TenantPathParamName)
 			if tenant == "" {
-				return "", ErrTenantNotFound
+				handleError(w, r, cmkcontext.ErrTenantInvalid)
+				return
 			}
 
-			return tenant, nil
-		},
+			ctx := context.WithValue(r.Context(), cmkcontext.TenantKey, tenant)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
 	}
-
-	return multitenancyMiddleware.WithTenant(WithTenantConfig)
 }

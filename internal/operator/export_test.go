@@ -5,8 +5,7 @@ import (
 
 	"github.com/openkcm/orbital"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -24,6 +23,14 @@ func (o *TenantOperator) HandleApplyTenantAuth(
 	resp *orbital.HandlerResponse,
 ) {
 	o.handleApplyTenantAuth(ctx, req, resp)
+}
+
+func (o *TenantOperator) HandleRemoveTenantAuth(
+	ctx context.Context,
+	req orbital.HandlerRequest,
+	resp *orbital.HandlerResponse,
+) {
+	o.handleRemoveTenantAuth(ctx, req, resp)
 }
 
 func (o *TenantOperator) HandleTerminateTenant(

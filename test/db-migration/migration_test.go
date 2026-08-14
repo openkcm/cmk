@@ -14,14 +14,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type GooseVersion struct {
@@ -118,8 +116,8 @@ func TestMissingSchemaScripts(t *testing.T) {
 	// due to missing tenant table. Tenant must be created on a different step
 	gormMigrated, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
-		SharedVersion:  ptr.PointTo(int64(0)),
-		TenantVersion:  ptr.PointTo(int64(0)),
+		SharedVersion:  new(int64(0)),
+		TenantVersion:  new(int64(0)),
 	}, testutils.WithGenerateTenants(0))
 
 	assert.NoError(t, gormMigrated.MigrateSharedModels(t.Context()))
@@ -520,7 +518,7 @@ func TestSchemaMigrations(t *testing.T) {
 
 			dbCon, m, tenant := setupSchemaMigration(t, SchemaMigrationSetup{
 				Target:  tt.target,
-				Version: ptr.PointTo(setupVersion),
+				Version: new(setupVersion),
 			})
 
 			var migrateVersion int64
@@ -556,13 +554,13 @@ func TestDataMigrations(t *testing.T) {
 			name:          "Should skip data migration if workflow approvers column does not exists",
 			target:        db.TenantTarget,
 			version:       1,
-			schemaVersion: ptr.PointTo(int64(9)),
+			schemaVersion: new(int64(9)),
 		},
 		{
 			name:          "Should migrate up workflow approvers to workflow_approver_groups table",
 			target:        db.TenantTarget,
 			version:       1,
-			schemaVersion: ptr.PointTo(int64(10)),
+			schemaVersion: new(int64(10)),
 			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
 				t.Helper()
 
@@ -651,7 +649,7 @@ func TestDataMigrations(t *testing.T) {
 			name:          "Should migrate down 0001",
 			target:        db.TenantTarget,
 			version:       1,
-			schemaVersion: ptr.PointTo(int64(10)),
+			schemaVersion: new(int64(10)),
 			downgrade:     true,
 		},
 	}

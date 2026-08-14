@@ -17,7 +17,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestTransformKeyConfiguration_FromAPI(t *testing.T) {
@@ -127,12 +126,12 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 			Description:  &description,
 			AdminGroupID: adminGroupID,
 			Metadata: &cmkapi.KeyConfigurationMetadata{
-				CreatedAt:    ptr.PointTo(time.Time{}),
-				UpdatedAt:    ptr.PointTo(time.Time{}),
+				CreatedAt:    new(time.Time{}),
+				UpdatedAt:    new(time.Time{}),
 				CreatorID:    &creatorID,
 				CreatorName:  &creatorName,
-				TotalKeys:    ptr.PointTo(0),
-				TotalSystems: ptr.PointTo(0),
+				TotalKeys:    new(0),
+				TotalSystems: new(0),
 			},
 			CanConnectSystems: &connect,
 		}

@@ -21,7 +21,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
@@ -35,13 +34,13 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/clients/registry/mapping"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const testProvider = "TEST"
@@ -411,7 +410,7 @@ func TestResolveSystemTasks(t *testing.T) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
 		k.KeyType = string(cmkapi.KeyTypeHYOK)
-		k.NativeID = ptr.PointTo("key-from-native-id")
+		k.NativeID = new("key-from-native-id")
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value1"}}`)
 	})
 
@@ -419,7 +418,7 @@ func TestResolveSystemTasks(t *testing.T) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
 		k.KeyType = string(cmkapi.KeyTypeHYOK)
-		k.NativeID = ptr.PointTo("key-to-native-id")
+		k.NativeID = new("key-to-native-id")
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value2"}}`)
 	})
 
@@ -719,7 +718,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
 		k.KeyType = string(cmkapi.KeyTypeHYOK)
-		k.NativeID = ptr.PointTo(keyWithVersionID)
+		k.NativeID = new(keyWithVersionID)
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
 	})
@@ -728,7 +727,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
 		k.KeyType = string(cmkapi.KeyTypeHYOK)
-		k.NativeID = ptr.PointTo(keyWithoutVerID)
+		k.NativeID = new(keyWithoutVerID)
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
 	})
@@ -1034,7 +1033,7 @@ func TestJobTermination(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	system := testutils.NewSystem(func(s *model.System) {
-		s.TargetKeyConfigurationID = ptr.PointTo(uuid.New())
+		s.TargetKeyConfigurationID = new(uuid.New())
 	})
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	key := testutils.NewKey(func(k *model.Key) {
@@ -1884,13 +1883,13 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.NativeID = ptr.PointTo("byok-key-from")
+		k.NativeID = new("byok-key-from")
 	})
 	keyTo := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.NativeID = ptr.PointTo("byok-key-to")
+		k.NativeID = new("byok-key-to")
 	})
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyFrom, keyTo)
 
@@ -2075,7 +2074,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
 		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.NativeID = ptr.PointTo("byok-grant-key")
+		k.NativeID = new("byok-grant-key")
 	})
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, key)
 
@@ -2190,7 +2189,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 			k.KeyConfigurationID = keyConfiguration.ID
 			k.Provider = testProvider
 			k.KeyType = string(cmkapi.KeyTypeBYOK)
-			k.NativeID = ptr.PointTo("byok-cfg-test-key")
+			k.NativeID = new("byok-cfg-test-key")
 		})
 		testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, key)
 

@@ -30,10 +30,28 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/clients/registry/mapping"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
+	*manager.TenantManager,
+	repo.Repo, *config.Config, []string,
+) {
+	t.Helper()
+	return setupTenantManager(t, nil, opts...)
+}
+
+// SetupTenantManagerWithAuthz builds the manager graph on an AuthzRepo for the
+// given role, so authz is enforced through the full offboarding chain.
+func SetupTenantManagerWithAuthz(
+	t *testing.T,
+	role constants.InternalRole,
+	opts ...testutils.TestDBConfigOpt,
+) (*manager.TenantManager, repo.Repo, *config.Config, []string) {
+	t.Helper()
+	return setupTenantManager(t, &role, opts...)
+}
+
+func setupTenantManager(t *testing.T, authzRole *constants.InternalRole, opts ...testutils.TestDBConfigOpt) (
 	*manager.TenantManager,
 	repo.Repo, *config.Config, []string,
 ) {
@@ -50,7 +68,13 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	}
 	ctx := t.Context()
 
-	r := sql.NewRepository(dbCon)
+	// rawRepo seeds without authz; the manager graph uses r (authz-wrapped when a role is set).
+	rawRepo := sql.NewRepository(dbCon)
+	var r repo.Repo = rawRepo
+	if authzRole != nil {
+		authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, rawRepo, cfg)
+		r = authz_repo.NewAuthzRepo(rawRepo, authzRepoLoader)
+	}
 
 	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	assert.NoError(t, err)
@@ -114,7 +138,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 
 	m := manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator)
 
-	return m, r, cfg, tenants
+	return m, rawRepo, cfg, tenants
 }
 
 func TestTenantManager(t *testing.T) {
@@ -187,16 +211,9 @@ func TestTenantManager(t *testing.T) {
 func runOffboardTenant(
 	t *testing.T,
 	ctx context.Context,
-	cfg *config.Config,
 	m *manager.TenantManager,
-	r repo.Repo,
 ) (manager.OffboardingResult, error) {
 	t.Helper()
-	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
-	assert.NotNil(t, authzRepoLoader.AuthzHandler)
-
-	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
-	m.SetRepoForTests(authzRepo)
 
 	ctx, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantProvisioningRole)
 	assert.NoError(t, err)
@@ -205,7 +222,7 @@ func runOffboardTenant(
 }
 
 func TestOffboardTenant(t *testing.T) {
-	m, r, cfg, tenants := SetupTenantManager(t)
+	m, r, _, tenants := SetupTenantManagerWithAuthz(t, constants.InternalTenantProvisioningRole)
 
 	keyConfigID := uuid.New()
 	key := testutils.NewKey(
@@ -215,7 +232,7 @@ func TestOffboardTenant(t *testing.T) {
 	)
 	keyConfig := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(key.ID)
+			k.PrimaryKeyID = new(key.ID)
 			k.ID = keyConfigID
 		},
 	)
@@ -225,13 +242,13 @@ func TestOffboardTenant(t *testing.T) {
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
 
 	t.Run("Should return success", func(t *testing.T) {
-		m, r, _, tenants := SetupTenantManager(t)
+		m, r, _, tenants := SetupTenantManagerWithAuthz(t, constants.InternalTenantProvisioningRole)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
 
 		keyID := uuid.New()
 		keyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(keyID)
+				k.PrimaryKeyID = new(keyID)
 			},
 		)
 		key := testutils.NewKey(
@@ -255,7 +272,7 @@ func TestOffboardTenant(t *testing.T) {
 			keyConfig,
 		)
 		ctx = cmkcontext.CreateTenantContext(t.Context(), tenants[0])
-		result, err := runOffboardTenant(t, ctx, cfg, m, r)
+		result, err := runOffboardTenant(t, ctx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingSuccess, result.Status)
 	})
@@ -267,11 +284,11 @@ func TestOffboardTenant(t *testing.T) {
 			ctx, t, r, testutils.NewSystem(
 				func(s *model.System) {
 					s.Status = cmkapi.SystemStatusPROCESSING
-					s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+					s.KeyConfigurationID = new(keyConfig.ID)
 				},
 			),
 		)
-		result, err := runOffboardTenant(t, ctx, cfg, m, r)
+		result, err := runOffboardTenant(t, ctx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 	})
@@ -281,11 +298,11 @@ func TestOffboardTenant(t *testing.T) {
 		system := testutils.NewSystem(
 			func(s *model.System) {
 				s.Status = cmkapi.SystemStatusCONNECTED
-				s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+				s.KeyConfigurationID = new(keyConfig.ID)
 			},
 		)
 		testutils.CreateTestEntities(ctx, t, r, system)
-		result, err := runOffboardTenant(t, tenantBaseCtx, cfg, m, r)
+		result, err := runOffboardTenant(t, tenantBaseCtx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 
@@ -299,7 +316,7 @@ func TestOffboardTenant(t *testing.T) {
 		keyID := uuid.New()
 		keyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(key.ID)
+				k.PrimaryKeyID = new(key.ID)
 			},
 		)
 		key := testutils.NewKey(
@@ -311,7 +328,7 @@ func TestOffboardTenant(t *testing.T) {
 		)
 		testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
-		result, err := runOffboardTenant(t, tenantBaseCtx, cfg, m, r)
+		result, err := runOffboardTenant(t, tenantBaseCtx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 
@@ -324,13 +341,13 @@ func TestOffboardTenant(t *testing.T) {
 		disconnectAllExistingSystems(t, ctx, r)
 		system := testutils.NewSystem(func(s *model.System) {
 			s.Status = cmkapi.SystemStatusCONNECTED
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 		testutils.CreateTestEntities(ctx, t, r, system)
 
 		mockSys := &mockSystemManager{unlinkErr: manager.ErrGettingSystemByID}
 		m.SetSystemForTests(mockSys)
-		_, err := runOffboardTenant(t, tenantBaseCtx, cfg, m, r)
+		_, err := runOffboardTenant(t, tenantBaseCtx, m)
 		assert.Error(t, err)
 	})
 
@@ -345,7 +362,7 @@ func TestOffboardTenant(t *testing.T) {
 		mockSys := &mockSystemManager{unmapErr: status.Error(codes.Internal, "internal")}
 		m.SetSystemForTests(mockSys)
 
-		result, err := runOffboardTenant(t, tenantBaseCtx, cfg, m, r)
+		result, err := runOffboardTenant(t, tenantBaseCtx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 	})
@@ -356,7 +373,7 @@ func TestOffboardTenant(t *testing.T) {
 		mockSys := &mockSystemManager{unmapErr: status.Error(codes.InvalidArgument, "invalid argument")}
 		m.SetSystemForTests(mockSys)
 
-		result, err := runOffboardTenant(t, tenantBaseCtx, cfg, m, r)
+		result, err := runOffboardTenant(t, tenantBaseCtx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingFailed, result.Status)
 	})

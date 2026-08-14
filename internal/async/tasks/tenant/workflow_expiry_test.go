@@ -26,7 +26,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var (
@@ -171,7 +170,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 				ctx, t, r,
 				testutils.NewWorkflow(func(w *model.Workflow) {
 					w.State = state
-					w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
+					w.ExpiryDate = new(time.Now().AddDate(0, 0, -1))
 				}),
 			)
 
@@ -192,7 +191,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 			ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
 				w.State = model.WorkflowStateWaitApproval
-				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, 1))
+				w.ExpiryDate = new(time.Now().AddDate(0, 0, 1))
 			}),
 		)
 
@@ -240,7 +239,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 					ctx, t, r,
 					testutils.NewWorkflow(func(w *model.Workflow) {
 						w.State = state
-						w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
+						w.ExpiryDate = new(time.Now().AddDate(0, 0, -1))
 					}),
 				)
 
@@ -262,11 +261,11 @@ func TestWorkflowExpiresAction(t *testing.T) {
 			ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
 				w.State = model.WorkflowStateWaitApproval
-				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
+				w.ExpiryDate = new(time.Now().AddDate(0, 0, -1))
 			}),
 			testutils.NewWorkflow(func(w *model.Workflow) {
 				w.State = model.WorkflowStateWaitApproval
-				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, 1))
+				w.ExpiryDate = new(time.Now().AddDate(0, 0, 1))
 			}),
 			testutils.NewWorkflow(func(w *model.Workflow) {
 				w.State = model.WorkflowStateInitial
@@ -323,7 +322,7 @@ func TestWorkflowExpiresAction(t *testing.T) {
 			ctx, t, r,
 			testutils.NewWorkflow(func(w *model.Workflow) {
 				w.State = model.WorkflowStateWaitApproval
-				w.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, -1))
+				w.ExpiryDate = new(time.Now().AddDate(0, 0, -1))
 			}),
 		)
 

@@ -6,10 +6,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func setupTest() *testplugins.TestKeyManagement {
@@ -69,7 +69,7 @@ func TestDeleteKeyVersion(t *testing.T) {
 
 	_, err := p.DeleteKey(t.Context(), &keymanagement.DeleteKeyRequest{
 		Parameters: keymanagement.RequestParameters{KeyID: "test-key-id"},
-		Window:     ptr.PointTo(int32(7)),
+		Window:     new(int32(7)),
 	})
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -196,4 +196,27 @@ func TestDeleteKeyVersion_SetsStatus(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, testplugins.PendingDeletionKeyStatus, resp.Status)
+}
+
+func TestValidateKeyAccessData(t *testing.T) {
+	p := setupTest()
+
+	certSubject := "CN=test"
+	isEditable := true
+	req := &keymanagement.ValidateKeyAccessDataRequest{
+		Management: map[string]any{
+			"AccountID": "acct-1",
+			"UserID":    "user-1",
+		},
+		Crypto: map[string]cmkapi.KeyAccessDetailsRegion{
+			"eu-west-1": {
+				CertificateSubject: &certSubject,
+				IsEditable:         &isEditable,
+			},
+		},
+	}
+
+	resp, err := p.ValidateKeyAccessData(t.Context(), req)
+	assert.NoError(t, err)
+	assert.True(t, resp.IsValid)
 }

@@ -94,9 +94,15 @@ func NewSystemsClient(grpcClient *commongrpc.DynamicClientConn, options ...Optio
 }
 
 // GetSystemsWithFilter using systems client.
+//
+//nolint:cyclop
 func (c *client) GetSystemsWithFilter(ctx context.Context,
 	filter SystemFilter,
 ) ([]*model.System, error) {
+	if filter.TenantID == "" && filter.ExternalID == "" && filter.Region == "" {
+		return nil, errs.Wrap(ErrSystemsClientFailedGettingSystems, ErrSystemsClientEmptyFilter)
+	}
+
 	var (
 		grpcSystems []*systemgrpc.System
 		err         error

@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/pressly/goose/v3"
@@ -21,15 +20,14 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/utils/ptr"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 const (
@@ -68,7 +66,7 @@ func (m TestModel) CheckAuthz(ctx context.Context,
 }
 
 func CreateCtxWithTenant(tenant string) context.Context {
-	return context.WithValue(context.Background(), nethttp.TenantKey, tenant)
+	return context.WithValue(context.Background(), cmkcontext.TenantKey, tenant)
 }
 
 func WithTenantID(ctx context.Context, db *multitenancy.DB, tenantID string, fn func(tx *multitenancy.DB) error) error {
@@ -326,7 +324,7 @@ func WithGenerateTenants(count int) TestDBConfigOpt {
 		c.generateTenants = count
 		c.CreateDatabase = true
 		if count == 0 {
-			c.TenantVersion = ptr.PointTo(int64(0))
+			c.TenantVersion = new(int64(0))
 		}
 	}
 }

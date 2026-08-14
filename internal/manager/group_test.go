@@ -6,18 +6,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func SetupGroupManager(t *testing.T) (*manager.GroupManager, *multitenancy.DB, string) {
@@ -310,7 +308,7 @@ func TestUpdateGroup(t *testing.T) {
 			)
 			assert.NoError(t, err)
 
-			patchGroup := cmkapi.GroupPatch{Name: ptr.PointTo("test-updated")}
+			patchGroup := cmkapi.GroupPatch{Name: new("test-updated")}
 			group, err := groupManager.UpdateGroup(ctx, expected.ID, patchGroup)
 			expected.Name = *patchGroup.Name
 			assert.Equal(t, expected, group)
@@ -329,7 +327,7 @@ func TestUpdateGroup(t *testing.T) {
 		)
 		assert.NoError(t, err)
 
-		patchGroup := cmkapi.GroupPatch{IAMIdentifier: ptr.PointTo("new-identifier")}
+		patchGroup := cmkapi.GroupPatch{IAMIdentifier: new("new-identifier")}
 		group, err := groupManager.UpdateGroup(ctx, expected.ID, patchGroup)
 		expected.IAMIdentifier = *patchGroup.IAMIdentifier
 		assert.Equal(t, expected, group)
@@ -340,7 +338,7 @@ func TestUpdateGroup(t *testing.T) {
 		group, err := groupManager.UpdateGroup(
 			ctx,
 			reservedGroup.ID,
-			cmkapi.GroupPatch{IAMIdentifier: ptr.PointTo("test")},
+			cmkapi.GroupPatch{IAMIdentifier: new("test")},
 		)
 		assert.Nil(t, group)
 		assert.Error(t, err)
@@ -361,7 +359,7 @@ func TestUpdateGroup(t *testing.T) {
 		group, err := groupManager.UpdateGroup(
 			ctx,
 			expected.ID,
-			cmkapi.GroupPatch{IAMIdentifier: ptr.PointTo("!test!")},
+			cmkapi.GroupPatch{IAMIdentifier: new("!test!")},
 		)
 		assert.Nil(t, group)
 		assert.Error(t, err)
@@ -382,7 +380,7 @@ func TestUpdateGroup(t *testing.T) {
 			)
 			assert.NoError(t, err)
 
-			patchGroup := cmkapi.GroupPatch{Name: ptr.PointTo("")}
+			patchGroup := cmkapi.GroupPatch{Name: new("")}
 			group, err := groupManager.UpdateGroup(ctx, expected.ID, patchGroup)
 			assert.Nil(t, group)
 			assert.Error(t, err)
@@ -397,7 +395,7 @@ func TestUpdateGroup(t *testing.T) {
 			group, err := groupManager.UpdateGroup(
 				ctx,
 				reservedGroup.ID,
-				cmkapi.GroupPatch{Name: ptr.PointTo("test")},
+				cmkapi.GroupPatch{Name: new("test")},
 			)
 			assert.Nil(t, group)
 			assert.Error(t, err)
@@ -412,7 +410,7 @@ func TestUpdateGroup(t *testing.T) {
 			group, err := groupManager.UpdateGroup(
 				ctx,
 				reservedGroup.ID,
-				cmkapi.GroupPatch{Name: ptr.PointTo(constants.TenantAdminGroup)},
+				cmkapi.GroupPatch{Name: new(constants.TenantAdminGroup)},
 			)
 			assert.Nil(t, group)
 			assert.Error(t, err)
@@ -427,7 +425,7 @@ func TestUpdateGroup(t *testing.T) {
 			group, err := groupManager.UpdateGroup(
 				ctx,
 				uuid.New(),
-				cmkapi.GroupPatch{Name: ptr.PointTo("test")},
+				cmkapi.GroupPatch{Name: new("test")},
 			)
 			assert.Nil(t, group)
 			assert.Error(t, err)
@@ -456,7 +454,7 @@ func TestUpdateGroup(t *testing.T) {
 			group, err := groupManager.UpdateGroup(
 				ctx,
 				expected.ID,
-				cmkapi.GroupPatch{Name: ptr.PointTo("test")},
+				cmkapi.GroupPatch{Name: new("test")},
 			)
 			assert.Nil(t, group)
 			assert.Error(t, err)

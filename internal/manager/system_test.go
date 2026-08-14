@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	regionpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 
@@ -25,10 +24,10 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
@@ -765,7 +764,7 @@ func TestSendRecoveryAction(t *testing.T) {
 		sys := testutils.NewSystem(
 			func(s *model.System) {
 				s.Status = cmkapi.SystemStatusFAILED
-				s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+				s.KeyConfigurationID = new(keyConfig.ID)
 			},
 		)
 		ctx := testutils.CreateCtxWithTenant(tenant)
@@ -779,7 +778,7 @@ func TestSendRecoveryAction(t *testing.T) {
 		sys := testutils.NewSystem(
 			func(s *model.System) {
 				s.Status = cmkapi.SystemStatusFAILED
-				s.TargetKeyConfigurationID = ptr.PointTo(uuid.New())
+				s.TargetKeyConfigurationID = new(uuid.New())
 			},
 		)
 		testutils.CreateTestEntities(
@@ -845,12 +844,12 @@ func TestSendRecoveryAction(t *testing.T) {
 		)
 
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-			kc.PrimaryKeyID = ptr.PointTo(key.ID)
+			kc.PrimaryKeyID = new(key.ID)
 			kc.AdminGroup = *testGroup
 			kc.AdminGroupID = testGroup.ID
 		})
 		system := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 		testutils.CreateTestEntities(ctx, t, r, key, testGroup, keyConfig, system)
 
@@ -965,7 +964,7 @@ func TestSelectEvent(t *testing.T) {
 	t.Run("Should LINK if new system", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(uuid.New())
+				k.PrimaryKeyID = new(uuid.New())
 			},
 		)
 
@@ -980,19 +979,19 @@ func TestSelectEvent(t *testing.T) {
 		// given
 		oldKeyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(uuid.New())
+				k.PrimaryKeyID = new(uuid.New())
 			},
 		)
 		newKeyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(uuid.New())
+				k.PrimaryKeyID = new(uuid.New())
 			},
 		)
 		testutils.CreateTestEntities(ctx, t, r, oldKeyConfig, newKeyConfig)
 
 		system := testutils.NewSystem(
 			func(s *model.System) {
-				s.KeyConfigurationID = ptr.PointTo(oldKeyConfig.ID)
+				s.KeyConfigurationID = new(oldKeyConfig.ID)
 			},
 		)
 
@@ -1008,14 +1007,14 @@ func TestSelectEvent(t *testing.T) {
 		// given
 		keyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(uuid.New())
+				k.PrimaryKeyID = new(uuid.New())
 			},
 		)
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 		system := testutils.NewSystem(
 			func(s *model.System) {
-				s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+				s.KeyConfigurationID = new(keyConfig.ID)
 			},
 		)
 
@@ -1049,7 +1048,7 @@ func TestLinkSystemAction(t *testing.T) {
 	)
 	keyConfig2 := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(uuid.New())
+			k.PrimaryKeyID = new(uuid.New())
 			k.AdminGroupID = testGroup.ID
 			k.AdminGroup = *testGroup
 		},
@@ -1169,7 +1168,7 @@ func TestLinkSystemAction(t *testing.T) {
 					k.State = cmkapi.KeyStateDISABLED
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-					kc.PrimaryKeyID = ptr.PointTo(key.ID)
+					kc.PrimaryKeyID = new(key.ID)
 					kc.AdminGroupID = group.ID
 					kc.AdminGroup = *group
 				}), key
@@ -1182,7 +1181,7 @@ func TestLinkSystemAction(t *testing.T) {
 					k.State = cmkapi.KeyStateFORBIDDEN
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-					kc.PrimaryKeyID = ptr.PointTo(key.ID)
+					kc.PrimaryKeyID = new(key.ID)
 					kc.AdminGroupID = group.ID
 					kc.AdminGroup = *group
 				}), key
@@ -1195,7 +1194,7 @@ func TestLinkSystemAction(t *testing.T) {
 					k.State = cmkapi.KeyStateUNKNOWN
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-					kc.PrimaryKeyID = ptr.PointTo(key.ID)
+					kc.PrimaryKeyID = new(key.ID)
 					kc.AdminGroupID = group.ID
 					kc.AdminGroup = *group
 				}), key
@@ -1276,7 +1275,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 
 	keyConfig := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(uuid.New())
+			k.PrimaryKeyID = new(uuid.New())
 			k.AdminGroupID = testGroup.ID
 			k.AdminGroup = *testGroup
 		},
