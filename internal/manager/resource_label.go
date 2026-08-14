@@ -266,48 +266,61 @@ func (m *ResourceLabelManager) DeleteTags(
 func (m *ResourceLabelManager) upsertLabel(ctx context.Context, label *model.ResourceLabel) error {
 	const maxRetries = 3
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		// First check if the label already exists
-		existing, found, findErr := m.findLabelByKey(ctx, label.ResourceType, label.ResourceID, label.Key)
-		if findErr != nil {
-			return errs.Wrap(ErrFetchLabel, findErr)
-		}
-
-		if found {
-			// Label exists - check if update is needed
-			if existing.Value == label.Value {
-				// No update needed - value is already correct
-				return nil
-			}
-
-			// Update the existing label
-			existing.Value = label.Value
-			_, err := m.r.Patch(ctx, existing, *repo.NewQuery().UpdateAll(true))
-			if err != nil {
-				return errs.Wrap(ErrUpdateLabelDB, err)
-			}
-			return nil
-		}
-
-		// Label doesn't exist - try to create it
-		label.ID = uuid.New()
-		err := m.r.Create(ctx, label)
-		if err != nil {
+	for attempt := range maxRetries {
+		if err := m.attemptUpsert(ctx, label); err != nil {
 			// Check if it's a unique constraint violation (race condition)
-			if errors.Is(err, repo.ErrUniqueConstraint) {
+			if errors.Is(err, repo.ErrUniqueConstraint) && attempt < maxRetries-1 {
 				// Another transaction created it between our check and insert
 				// Retry the whole operation (loop continues)
 				continue
 			}
-			return errs.Wrap(ErrInsertLabel, err)
+			return err
 		}
-
-		// Successfully created
+		// Successfully created or updated
 		return nil
 	}
 
 	// Exceeded max retries - make a final attempt to update the existing row
 	// that won the race to ensure the desired value is set
+	return m.updateExistingLabel(ctx, label)
+}
+
+// attemptUpsert attempts to create or update a label
+func (m *ResourceLabelManager) attemptUpsert(ctx context.Context, label *model.ResourceLabel) error {
+	// First check if the label already exists
+	existing, found, findErr := m.findLabelByKey(ctx, label.ResourceType, label.ResourceID, label.Key)
+	if findErr != nil {
+		return errs.Wrap(ErrFetchLabel, findErr)
+	}
+
+	if found {
+		// Label exists - check if update is needed
+		if existing.Value == label.Value {
+			// No update needed - value is already correct
+			return nil
+		}
+
+		// Update the existing label
+		existing.Value = label.Value
+		_, err := m.r.Patch(ctx, existing, *repo.NewQuery().UpdateAll(true))
+		if err != nil {
+			return errs.Wrap(ErrUpdateLabelDB, err)
+		}
+		return nil
+	}
+
+	// Label doesn't exist - try to create it
+	label.ID = uuid.New()
+	err := m.r.Create(ctx, label)
+	if err != nil {
+		return errs.Wrap(ErrInsertLabel, err)
+	}
+
+	return nil
+}
+
+// updateExistingLabel attempts to update an existing label as a fallback after retries
+func (m *ResourceLabelManager) updateExistingLabel(ctx context.Context, label *model.ResourceLabel) error {
 	existing, found, findErr := m.findLabelByKey(ctx, label.ResourceType, label.ResourceID, label.Key)
 	if findErr != nil {
 		return errs.Wrap(ErrFetchLabel, findErr)
@@ -328,7 +341,7 @@ func (m *ResourceLabelManager) upsertLabel(ctx context.Context, label *model.Res
 	}
 
 	// Should not reach here under normal circumstances
-	return errs.Wrap(ErrInsertLabel, errors.New("exceeded retry limit and failed to create or update label"))
+	return errs.Wrap(ErrInsertLabel, ErrLabelUpsertRetryExceeded)
 }
 
 // findLabelByKey finds a label with matching resource type, ID, and key

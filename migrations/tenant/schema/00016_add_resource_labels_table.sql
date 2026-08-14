@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS resource_labels (
     resource_type varchar(50) NOT NULL,
     resource_id uuid NOT NULL,
     key varchar(255) NOT NULL,
-    value varchar(255) NOT NULL,
+    value text NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     CONSTRAINT resource_labels_pkey PRIMARY KEY (id)
