@@ -19,17 +19,19 @@ import (
 func buildCMKConfigOverrides(cfg *config.Config) (map[string]map[string]any, error) {
 	overrides := make(map[string]map[string]any)
 
-	if len(cfg.KeystorePool.SupportedRegions) > 0 {
-		wrapped, err := json.Marshal(map[string]any{"regions": cfg.KeystorePool.SupportedRegions})
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal supported regions: %w", err)
-		}
-		overrides[servicewrapper.KeystoreManagementType] = map[string]any{
-			"supportedregions": commoncfg.SourceRef{
-				Source: commoncfg.EmbeddedSourceValue,
-				Value:  string(wrapped),
-			},
-		}
+	regions := cfg.KeystorePool.SupportedRegions
+	if regions == nil {
+		regions = []config.Region{}
+	}
+	wrapped, err := json.Marshal(map[string]any{"regions": regions})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal supported regions: %w", err)
+	}
+	overrides[servicewrapper.KeystoreManagementType] = map[string]any{
+		"supportedregions": commoncfg.SourceRef{
+			Source: commoncfg.EmbeddedSourceValue,
+			Value:  string(wrapped),
+		},
 	}
 
 	return overrides, nil
