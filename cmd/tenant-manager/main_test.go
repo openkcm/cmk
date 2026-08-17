@@ -3,6 +3,7 @@ package main_test
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"testing"
 
@@ -205,6 +206,11 @@ func TestBusinessMain(t *testing.T) {
 	}
 
 	t.Run("valid configuration", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		statusAddr := ln.Addr().String()
+		require.NoError(t, ln.Close())
+
 		cfg := &config.Config{
 			TenantManager: config.TenantManager{
 				SecretRef: commoncfg.SecretRef{
@@ -224,7 +230,7 @@ func TestBusinessMain(t *testing.T) {
 				},
 				Status: commoncfg.Status{
 					Enabled: true,
-					Address: ":8888",
+					Address: statusAddr,
 				},
 			},
 		}

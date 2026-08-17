@@ -60,7 +60,8 @@ func (s *DBSuite) SetupSuite() {
 
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := manager.NewUserManager(r, cmkAuditor)
-	tagm := manager.NewTagManager(r)
+	resourceLabelManager := manager.NewResourceLabelManager(r)
+	tagm := manager.NewTagManager(resourceLabelManager)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, eventFactory, cfg)
 
 	sys := manager.NewSystemManager(
@@ -75,6 +76,7 @@ func (s *DBSuite) SetupSuite() {
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
@@ -82,6 +84,7 @@ func (s *DBSuite) SetupSuite() {
 		kcm,
 		um,
 		cm,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

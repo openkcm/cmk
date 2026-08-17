@@ -116,7 +116,8 @@ func createManagers(
 
 	cm := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
 	um := manager.NewUserManager(authzRepo, cmkAuditor)
-	tagm := manager.NewTagManager(r)
+	resourceLabelManager := manager.NewResourceLabelManager(authzRepo)
+	tagm := manager.NewTagManager(resourceLabelManager)
 	kcm := manager.NewKeyConfigManager(authzRepo, cm, um, tagm, cmkAuditor, nil, cfg)
 
 	sys := manager.NewSystemManager(
@@ -130,6 +131,7 @@ func createManagers(
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(authzRepo, resourceLabelManager)
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
@@ -137,6 +139,7 @@ func createManagers(
 		kcm,
 		um,
 		cm,
+		labelManager,
 		nil,
 		cmkAuditor,
 	)

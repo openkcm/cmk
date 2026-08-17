@@ -36,6 +36,8 @@ const (
 	KeyConfigIDField    QueryField = "key_configuration_id"
 	AdminGroupIDField   QueryField = "admin_group_id"
 	ResourceIDField     QueryField = "resource_id"
+	ResourceTypeField   QueryField = "resource_type"
+	ValueField          QueryField = "value"
 	IsPrimaryField      QueryField = "is_primary"
 	VersionField        QueryField = "version"
 	NativeIDField       QueryField = "native_id"

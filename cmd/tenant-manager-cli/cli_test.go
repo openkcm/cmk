@@ -79,7 +79,8 @@ func (s *CLISuite) SetupSuite() {
 
 	cm := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
 	um := manager.NewUserManager(authzRepo, cmkAuditor)
-	tagm := manager.NewTagManager(authzRepo)
+	resourceLabelManager := manager.NewResourceLabelManager(authzRepo)
+	tagm := manager.NewTagManager(resourceLabelManager)
 	kcm := manager.NewKeyConfigManager(authzRepo, cm, um, tagm, cmkAuditor, eventFactory, cfg)
 
 	sys := manager.NewSystemManager(
@@ -94,6 +95,7 @@ func (s *CLISuite) SetupSuite() {
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(authzRepo, resourceLabelManager)
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
@@ -101,6 +103,7 @@ func (s *CLISuite) SetupSuite() {
 		kcm,
 		um,
 		cm,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

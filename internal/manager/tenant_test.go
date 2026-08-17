@@ -86,7 +86,8 @@ func setupTenantManager(t *testing.T, authzRole *constants.InternalRole, opts ..
 
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := testutils.NewUserManager()
-	tagManager := manager.NewTagManager(r)
+	resourceLabelManager := manager.NewResourceLabelManager(r)
+	tagManager := manager.NewTagManager(resourceLabelManager)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, eventFactory, cfg)
 
 	mappingService := mapping.NewFakeService()
@@ -120,6 +121,7 @@ func setupTenantManager(t *testing.T, authzRole *constants.InternalRole, opts ..
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
@@ -127,6 +129,7 @@ func setupTenantManager(t *testing.T, authzRole *constants.InternalRole, opts ..
 		kcm,
 		um,
 		cm,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

@@ -52,7 +52,12 @@ func New(
 	certManager := NewCertificateManager(ctx, repo, svcRegistry, config)
 	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config, certManager)
 	userManager := NewUserManager(repo, cmkAuditor)
-	tagManager := NewTagManager(repo)
+
+	// Create ResourceLabelManager for unified label/tag management
+	resourceLabelManager := NewResourceLabelManager(repo)
+	tagManager := NewTagManager(resourceLabelManager)
+	labelManager := NewLabelManager(repo, resourceLabelManager)
+
 	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, eventFactory, config)
 	keyManager := NewKeyManager(
 		repo,
@@ -61,6 +66,7 @@ func New(
 		keyConfigManager,
 		userManager,
 		certManager,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)
@@ -83,8 +89,8 @@ func New(
 		TenantConfigs: tenantConfigManager,
 		System:        systemManager,
 		KeyConfig:     keyConfigManager,
-		Tags:          NewTagManager(repo),
-		Labels:        NewLabelManager(repo),
+		Tags:          tagManager,
+		Labels:        NewLabelManager(repo, resourceLabelManager),
 		Workflow: NewWorkflowManager(
 			repo,
 			svcRegistry,

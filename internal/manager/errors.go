@@ -23,6 +23,7 @@ var (
 
 	ErrGetTags      = errors.New("failed getting tags")
 	ErrDeletingTags = errors.New("failed to delete tags")
+	ErrCreateTag    = errors.New("error setting tags")
 
 	ErrCreateKeyConfiguration       = errors.New("failed to create key configuration")
 	ErrConnectedSystemToKeyConfig   = errors.New("system is connected to keyconfig")
@@ -120,13 +121,15 @@ var (
 		"body must be provided only for customer held key rotation",
 	)
 
-	ErrQueryLabelList    = errors.New("failed to query system list")
-	ErrFetchLabel        = errors.New("failed to fetch label")
-	ErrUpdateLabelDB     = errors.New("failed to update label")
-	ErrInsertLabel       = errors.New("failed to insert label")
-	ErrDeleteLabelDB     = errors.New("failed to delete label")
-	ErrGetKeyIDDB        = errors.New("KeyID is required")
-	ErrEmptyInputLabelDB = errors.New("invalid input empty label name")
+	ErrQueryLabelList           = errors.New("failed to query system list")
+	ErrFetchLabel               = errors.New("failed to fetch label")
+	ErrUpdateLabelDB            = errors.New("failed to update label")
+	ErrInsertLabel              = errors.New("failed to insert label")
+	ErrDeleteLabelDB            = errors.New("failed to delete label")
+	ErrReservedLabelKey         = errors.New("label key 'system.tag' is reserved for tags, use SetTags/GetTags instead")
+	ErrLabelUpsertRetryExceeded = errors.New("exceeded retry limit and failed to create or update label")
+	ErrGetKeyIDDB               = errors.New("KeyID is required")
+	ErrEmptyInputLabelDB        = errors.New("invalid input empty label name")
 
 	ErrQuerySystemList           = errors.New("failed to query system list")
 	ErrGettingSystem             = errors.New("failed to get system")

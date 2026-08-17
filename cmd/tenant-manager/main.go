@@ -146,7 +146,8 @@ func createTenantManager(
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := manager.NewUserManager(r, cmkAuditor)
 
-	tagm := manager.NewTagManager(r)
+	resourceLabelManager := manager.NewResourceLabelManager(r)
+	tagm := manager.NewTagManager(resourceLabelManager)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, eventFactory, cfg)
 
 	sys := manager.NewSystemManager(
@@ -161,6 +162,7 @@ func createTenantManager(
 		um,
 	)
 
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
@@ -168,6 +170,7 @@ func createTenantManager(
 		kcm,
 		um,
 		cm,
+		labelManager,
 		eventFactory,
 		cmkAuditor,
 	)

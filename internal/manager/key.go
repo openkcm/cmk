@@ -69,6 +69,7 @@ type KeyManager struct {
 	repo              repo.Repo
 	keyConfigManager  *KeyConfigManager
 	keyVersionManager *KeyVersionManager
+	labels            Label
 	user              User
 	eventFactory      *eventprocessor.EventFactory
 	cmkAuditor        *auditor.Auditor
@@ -81,6 +82,7 @@ func NewKeyManager(
 	keyConfigManager *KeyConfigManager,
 	user User,
 	certManager *CertificateManager,
+	labels Label,
 	eventFactory *eventprocessor.EventFactory,
 	cmkAuditor *auditor.Auditor,
 ) *KeyManager {
@@ -98,6 +100,7 @@ func NewKeyManager(
 		repo:              repo,
 		keyConfigManager:  keyConfigManager,
 		keyVersionManager: keyVersionManager,
+		labels:            labels,
 		user:              user,
 		eventFactory:      eventFactory,
 		cmkAuditor:        cmkAuditor,
@@ -311,10 +314,18 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 	}
 
 	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
+		// Delete all labels associated with this key (AC5 requirement)
+		// Delete labels BEFORE deleting the key to maintain referential integrity checks
+		err := km.labels.DeleteAllKeyLabels(ctx, keyID)
+		if err != nil {
+			return errs.Wrap(ErrDeleteKeyDB, err)
+		}
+
+		// Delete key versions
 		ck := repo.NewCompositeKey().
 			Where(fmt.Sprintf("%s_%s", repo.KeyField, repo.IDField), keyID)
 
-		_, err := km.repo.Delete(
+		_, err = km.repo.Delete(
 			ctx,
 			&model.KeyVersion{KeyID: keyID},
 			*repo.NewQuery().
@@ -324,6 +335,7 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 			return errs.Wrap(ErrDeleteKeyDB, err)
 		}
 
+		// Delete the key itself
 		key := &model.Key{ID: keyID}
 
 		_, err = km.repo.Delete(ctx, key, *repo.NewQuery())

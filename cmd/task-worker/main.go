@@ -158,7 +158,8 @@ func registerTasks(
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	certManager := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, certManager)
-	tagManager := manager.NewTagManager(authzRepo)
+	resourceLabelManager := manager.NewResourceLabelManager(authzRepo)
+	tagManager := manager.NewTagManager(resourceLabelManager)
 	keyConfigManager := manager.NewKeyConfigManager(
 		authzRepo,
 		certManager,
@@ -168,8 +169,18 @@ func registerTasks(
 		eventFactory,
 		cfg,
 	)
+	labelManager := manager.NewLabelManager(authzRepo, resourceLabelManager)
 	keyManager := manager.NewKeyManager(
-		authzRepo, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
+		authzRepo,
+		svcRegistry,
+		tenantConfigManager,
+		keyConfigManager,
+		userManager,
+		certManager,
+		labelManager,
+		eventFactory,
+		cmkAuditor,
+	)
 	systemManager := manager.NewSystemManager(ctx, authzRepo, authzRepoLoader, nil, eventFactory,
 		svcRegistry, cfg, keyConfigManager, userManager)
 	groupManager := manager.NewGroupManager(authzRepo, svcRegistry, userManager)

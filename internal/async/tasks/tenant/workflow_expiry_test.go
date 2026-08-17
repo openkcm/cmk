@@ -119,7 +119,8 @@ func setupWorkflowExpiry(t *testing.T) (*manager.WorkflowManager, repo.Repo, str
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager)
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
-	tagManager := manager.NewTagManager(r)
+	resourceLabelManager := manager.NewResourceLabelManager(r)
+	tagManager := manager.NewTagManager(resourceLabelManager)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 
@@ -129,8 +130,9 @@ func setupWorkflowExpiry(t *testing.T) (*manager.WorkflowManager, repo.Repo, str
 		t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager,
 	)
 
+	labelManager := manager.NewLabelManager(r, resourceLabelManager)
 	keyManager := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager,
-		userManager, certManager, nil, cmkAuditor)
+		userManager, certManager, labelManager, eventFactory, cmkAuditor)
 	wm := manager.NewWorkflowManager(r, svcRegistry, keyManager, keyConfigManager, systemManager,
 		groupManager, userManager, nil, tenantConfigManager, cfg)
 
