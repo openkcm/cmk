@@ -49,6 +49,11 @@ func (e GRPCError) FromStatusError(err error) GRPCError {
 	return e
 }
 
+func (e GRPCError) WithReason(reason string) GRPCError {
+	e.Reason = reason
+	return e
+}
+
 type JoinedError interface {
 	Unwrap() []error
 }

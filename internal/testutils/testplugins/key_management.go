@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,8 +26,9 @@ var (
 	PendingImportKeyStatus   = "PENDING_IMPORT"
 	PendingDeletionKeyStatus = "PENDING_DELETION"
 
-	ErrKeyIDIsNil          = errors.New("keyId is nil")
-	ErrTransformAccessData = errors.New("failed to transform access data")
+	ErrKeyIDIsNil                = errors.New("keyId is nil")
+	ErrTransformAccessData       = errors.New("failed to transform access data")
+	ErrNativeKeyIDInvalidPattern = errors.New("native key ID does not match valid pattern")
 
 	// ValidManagementAccessData is the management access data the test plugin accepts
 	// in ValidateKeyAccessData. It mirrors the fields returned by CreateKeystore and
@@ -53,9 +55,11 @@ var InitialKeys = map[string]KeyRecord{
 }
 
 type TestKeyManagement struct {
-	KeyStore  map[string]*KeyRecord
-	IsHYOK    bool
-	IsDefault bool
+	KeyStore             map[string]*KeyRecord
+	IsHYOK               bool
+	IsDefault            bool
+	validRegions         map[string]bool // if non-nil, ValidateKey rejects regions not in this set
+	validNativeIDPattern *regexp.Regexp  // if non-nil, ExtractKeyRegion rejects non-matching native IDs
 }
 
 var _ keymanagement.KeyManagement = (*TestKeyManagement)(nil)
@@ -70,6 +74,22 @@ func NewTestKeyManagement(isHYOK, isDefault bool) *TestKeyManagement {
 		km.HandleKeyRecord(keyID, record.Status)
 	}
 	return km
+}
+
+// WithValidRegions restricts ValidateKey to the given regions
+func (s *TestKeyManagement) WithValidRegions(regions ...string) *TestKeyManagement {
+	s.validRegions = make(map[string]bool, len(regions))
+	for _, r := range regions {
+		s.validRegions[r] = true
+	}
+	return s
+}
+
+// WithValidNativeIDPattern restricts ExtractKeyRegion to native IDs matching the given pattern,
+// returning an error for non-matching IDs.
+func (s *TestKeyManagement) WithValidNativeIDPattern(pattern string) *TestKeyManagement {
+	s.validNativeIDPattern = regexp.MustCompile(pattern)
+	return s
 }
 
 func (s *TestKeyManagement) ServiceInfo() api.Info {
@@ -225,8 +245,14 @@ func (s *TestKeyManagement) ImportKeyMaterial(
 
 func (s *TestKeyManagement) ValidateKey(
 	_ context.Context,
-	_ *keymanagement.ValidateKeyRequest,
+	req *keymanagement.ValidateKeyRequest,
 ) (*keymanagement.ValidateKeyResponse, error) {
+	if s.validRegions != nil && !s.validRegions[req.Region] {
+		return &keymanagement.ValidateKeyResponse{
+			IsValid: false,
+			Message: fmt.Sprintf("region %s is not supported", req.Region),
+		}, nil
+	}
 	return &keymanagement.ValidateKeyResponse{IsValid: true}, nil
 }
 
@@ -291,7 +317,10 @@ func (s *TestKeyManagement) TransformCryptoAccessData(
 
 func (s *TestKeyManagement) ExtractKeyRegion(
 	_ context.Context,
-	_ *keymanagement.ExtractKeyRegionRequest,
+	req *keymanagement.ExtractKeyRegionRequest,
 ) (*keymanagement.ExtractKeyRegionResponse, error) {
+	if s.validNativeIDPattern != nil && !s.validNativeIDPattern.MatchString(req.NativeKeyID) {
+		return nil, fmt.Errorf("%w: %q", ErrNativeKeyIDInvalidPattern, req.NativeKeyID)
+	}
 	return &keymanagement.ExtractKeyRegionResponse{Region: "test-region"}, nil
 }

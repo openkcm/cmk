@@ -25,6 +25,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
@@ -598,6 +599,70 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
 		assert.Equal(t, "KEYSTORE_POOL_DRAINED", response.Error.Code)
+	})
+}
+
+func TestKeyControllerPostKeysInvalidKeyAttribute(t *testing.T) {
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+	})
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+	tenant := tenants[0]
+
+	km := testplugins.NewTestKeyManagement(true, true).WithValidRegions("us-east-1")
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Registry: testutils.NewTestPlugins(testplugins.WithKeyManagement(providerTest, km)),
+		Config: config.Config{
+			Database: dbCfg,
+			CryptoLayer: config.CryptoLayer{
+				CertX509Trusts: commoncfg.SourceRef{
+					Source: commoncfg.EmbeddedSourceValue,
+					Value:  "[]",
+				},
+			},
+		},
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
+	})
+
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthBusinessUserDataKC(authClient))
+	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
+	testutils.CreateTestEntities(ctx, t, r, tenantDefaultCert, keyConfig,
+		keystore, keystoreDefaultCert, keystoreKeyMgmtCert)
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}, privateKey, 0)
+
+	t.Run("POST BYOK key with unsupported region", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: "keys",
+			Tenant:   tenant,
+			Body: testutils.WithJSON(t, map[string]any{
+				"name":               "byok-bad-region",
+				"type":               string(cmkapi.KeyTypeBYOK),
+				"keyConfigurationID": keyConfig.ID,
+				"provider":           providerTest,
+				"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+				"region":             "eu-west-1",
+			}),
+			Headers: headers,
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+		assert.Equal(t, "INVALID_KEY_ATTRIBUTE", response.Error.Code)
+		assert.NotNil(t, response.Error.Context)
+		assert.Contains(t, *response.Error.Context, "reason")
 	})
 }
 

@@ -7,7 +7,9 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
+	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 )
 
 func getPluginProviderTransformer(t *testing.T) *transformer.PluginProviderTransformer {
@@ -34,6 +36,29 @@ func TestValidatesAPIKey(t *testing.T) {
 	err := tf.ValidateAPI(t.Context(), key)
 
 	assert.NoError(t, err)
+}
+
+func TestValidatesAPIKey_InvalidRegion(t *testing.T) {
+	km := testplugins.NewTestKeyManagement(true, true).WithValidRegions("us-east-1")
+
+	svcRegistry := testutils.NewTestPlugins(testplugins.WithKeyManagement("TEST", km))
+	tf, err := transformer.NewPluginProviderTransformer(svcRegistry, "TEST")
+	assert.NoError(t, err)
+
+	key := cmkapi.Key{
+		Type:      cmkapi.KeyTypeBYOK,
+		Algorithm: new(cmkapi.KeyAlgorithmAES256),
+		Region:    new("eu-west-1"),
+	}
+
+	gotErr := tf.ValidateAPI(t.Context(), key)
+
+	assert.ErrorIs(t, gotErr, transformer.ErrValidateKey)
+	assert.ErrorIs(t, gotErr, transformer.ErrGRPCValidateKey)
+
+	var grpcErr errs.GRPCError
+	assert.ErrorAs(t, gotErr, &grpcErr)
+	assert.Equal(t, "region eu-west-1 is not supported", grpcErr.Reason)
 }
 
 func TestSerializesKeyAccessData(t *testing.T) {
@@ -103,4 +128,25 @@ func TestExtractRegion(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, "test-region", region)
+}
+
+func TestExtractRegion_InvalidNativeID(t *testing.T) {
+	km := testplugins.NewTestKeyManagement(true, true).WithValidNativeIDPattern(`^valid-key/`)
+
+	svcRegistry := testutils.NewTestPlugins(testplugins.WithKeyManagement("TEST", km))
+	tf, err := transformer.NewPluginProviderTransformer(svcRegistry, "TEST")
+	assert.NoError(t, err)
+
+	key := cmkapi.Key{
+		NativeID: new("invalid-native-id"),
+	}
+
+	_, gotErr := tf.GetRegion(t.Context(), key)
+
+	assert.ErrorIs(t, gotErr, transformer.ErrExtractKeyRegion)
+	assert.ErrorIs(t, gotErr, transformer.ErrGRPCValidateKey)
+
+	var grpcErr errs.GRPCError
+	assert.ErrorAs(t, gotErr, &grpcErr)
+	assert.Contains(t, grpcErr.Reason, "invalid-native-id")
 }
