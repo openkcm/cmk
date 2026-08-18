@@ -228,6 +228,11 @@ func (c *APIController) isPrimaryKeyStateUpdate(
 		return true, manager.ErrUpdateNonBYOKKeyStatus
 	}
 
+	// A PENDING_IMPORT BYOK key cannot be enabled/disabled, so it never needs a workflow.
+	if manager.IsPendingImportBYOK(key) {
+		return false, nil
+	}
+
 	if key.IsPrimary {
 		return true, nil
 	}
@@ -242,6 +247,11 @@ func (c *APIController) isPrimaryKeyDeletion(
 	key, err := c.Manager.Keys.Get(ctx, req.KeyID)
 	if err != nil {
 		return false, err
+	}
+
+	// A PENDING_IMPORT BYOK key deletes without a workflow, even when primary.
+	if manager.IsPendingImportBYOK(key) {
+		return false, nil
 	}
 
 	if key.IsPrimary {

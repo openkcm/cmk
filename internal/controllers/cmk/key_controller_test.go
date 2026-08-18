@@ -742,7 +742,7 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
-	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
+	db, sv, tenant, keyStorage, provider := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -781,6 +781,30 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		k.ID = pKeyID
 	})
 
+	// A primary PENDING_IMPORT BYOK key with a connected system: deletion bypasses the workflow and dependency checks.
+	pendingPKeyID := uuid.New()
+	keyConfigPendingPKey := testutils.NewKeyConfig(
+		func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = new(pendingPKeyID)
+		},
+		testutils.WithAuthBusinessUserDataKC(authClient),
+	)
+	pendingSys := testutils.NewSystem(func(s *model.System) {
+		s.KeyConfigurationID = new(keyConfigPendingPKey.ID)
+		s.Status = cmkapi.SystemStatusCONNECTED
+	})
+	pendingProviderKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.BYOK,
+	})
+	assert.NoError(t, err)
+	pendingPKey := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigPendingPKey.ID
+		k.ID = pendingPKeyID
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.State = cmkapi.KeyStatePENDINGIMPORT
+		k.NativeID = &pendingProviderKey.KeyID
+	})
+
 	testutils.CreateTestEntities(
 		ctx,
 		t,
@@ -793,6 +817,9 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		keyConfigWSys,
 		pkey,
 		sys,
+		keyConfigPendingPKey,
+		pendingPKey,
+		pendingSys,
 	)
 
 	clientData := &auth.ClientData{
@@ -829,6 +856,12 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 			name:           "Should 400 on pkey delete and workflow is required",
 			keyID:          pkey.ID,
 			expectedStatus: http.StatusBadRequest,
+			workflowEnable: true,
+		},
+		{
+			name:           "Should 204 on primary PENDING_IMPORT BYOK delete despite connected system and workflow",
+			keyID:          pendingPKey.ID,
+			expectedStatus: http.StatusNoContent,
 			workflowEnable: true,
 		},
 	}
@@ -969,6 +1002,19 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		k.Provider = providerTest
 	})
 
+	// A primary PENDING_IMPORT BYOK key: enable/disable bypasses the workflow gate and returns the state error.
+	pendingKeyID := uuid.New()
+	pendingKC := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.PrimaryKeyID = new(pendingKeyID)
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
+	pendingKey := testutils.NewKey(func(k *model.Key) {
+		k.ID = pendingKeyID
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.State = cmkapi.KeyStatePENDINGIMPORT
+		k.KeyConfigurationID = pendingKC.ID
+		k.Provider = providerTest
+	})
+
 	testutils.CreateTestEntities(
 		ctx,
 		t,
@@ -977,6 +1023,8 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		key,
 		hyokKey,
 		hyokKeyInvalidMgmt,
+		pendingKC,
+		pendingKey,
 		keystore,
 		keystoreDefaultCert,
 		keystoreKeyMgmtCert,
@@ -1144,6 +1192,16 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			},
 			expectedStatus: http.StatusBadRequest,
 			workflowEnable: true,
+		},
+		{
+			name:  "Should 400 INVALID_KEY_STATE on primary PENDING_IMPORT enable despite workflow",
+			keyID: pendingKey.ID.String(),
+			input: cmkapi.KeyPatch{
+				Enabled: new(true),
+			},
+			expectedStatus:    http.StatusBadRequest,
+			expectedErrorCode: "INVALID_KEY_STATE",
+			workflowEnable:    true,
 		},
 		{
 			name:              "should not update when no group permission",
