@@ -776,7 +776,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 	})
 
 	pKeyID := uuid.New()

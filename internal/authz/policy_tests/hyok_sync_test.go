@@ -87,7 +87,7 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 	cert := testutils.NewCertificate(func(_ *model.Certificate) {})
 	hyokKey := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = &keyProvider.KeyID
 		k.ManagementAccessData = hyokInfo
 		k.Provider = testplugins.Name

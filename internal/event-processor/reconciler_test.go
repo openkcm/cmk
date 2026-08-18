@@ -430,7 +430,7 @@ func TestResolveSystemTasks(t *testing.T) {
 	keyFrom := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = &fromNative.KeyID
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value1"}}`)
 	})
@@ -438,7 +438,7 @@ func TestResolveSystemTasks(t *testing.T) {
 	keyTo := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = &toNative.KeyID
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value2"}}`)
 	})
@@ -741,7 +741,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 	keyWithVersionOnDB := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = &keyWithVersionIDOnDBProvider.KeyID
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
@@ -750,7 +750,7 @@ func TestVersionInfoPropagation(t *testing.T) {
 	keyWithoutVersionOnDB := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = &keyWithoutVersionIDOnDBProvider.KeyID
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)

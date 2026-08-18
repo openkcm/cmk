@@ -153,7 +153,7 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.NativeID = &keyProvider.KeyID
 		k.ManagementAccessData = hyokInfo
 		k.Provider = providerTest
@@ -218,7 +218,7 @@ func TestCreate(t *testing.T) {
 			key: func() *model.Key {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
-					k.KeyType = constants.KeyTypeHYOK
+					k.KeyType = cmkapi.KeyTypeHYOK
 					k.NativeID = &keyProvider.KeyID
 					k.ManagementAccessData = hyokInfo
 					k.Provider = "INVALID"
@@ -231,7 +231,7 @@ func TestCreate(t *testing.T) {
 			key: func() *model.Key {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
-					k.KeyType = constants.KeyTypeHYOK
+					k.KeyType = cmkapi.KeyTypeHYOK
 					k.NativeID = &keyProvider.KeyID
 					k.ManagementAccessData = hyokInfo
 					k.Provider = providerTest
@@ -244,7 +244,7 @@ func TestCreate(t *testing.T) {
 			key: func() *model.Key {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
-					k.KeyType = constants.KeyTypeHYOK
+					k.KeyType = cmkapi.KeyTypeHYOK
 					k.NativeID = &keyProvider.KeyID
 					k.ManagementAccessData = []byte("{\"invalid\": \"data\"}")
 					k.Provider = providerTest
@@ -371,7 +371,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.NativeID = &keyProvider.KeyID
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
@@ -406,7 +406,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.NativeID = &keyProvider.KeyID
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
@@ -425,7 +425,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 	t.Run("should handle HYOK key with no crypto access data", func(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
-			k.KeyType = constants.KeyTypeHYOK
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.NativeID = &keyProvider.KeyID
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
@@ -537,7 +537,7 @@ func TestGet(t *testing.T) {
 	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
 	km, r, ctx, keyConfig := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
 
-	createdKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
+	createdKey := createTestBYOKKeyViaManager(t, km, ctx, keyConfig.ID)
 	hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
@@ -852,7 +852,7 @@ func TestList(t *testing.T) {
 func TestUpdate(t *testing.T) {
 	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
 	km, r, ctx, keyConfig := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
-	createdKey := createTestSystemManagedKey(t, km, ctx, keyConfig.ID)
+	createdKey := createTestBYOKKeyViaManager(t, km, ctx, keyConfig.ID)
 
 	tests := []struct {
 		name     string

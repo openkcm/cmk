@@ -22,7 +22,7 @@ require (
 	github.com/openkcm/api-sdk v0.19.3
 	github.com/openkcm/common-sdk v1.19.1
 	github.com/openkcm/orbital v0.6.1
-	github.com/openkcm/plugin-sdk v0.14.1-0.20260810165105-01c2b2853308
+	github.com/openkcm/plugin-sdk v0.15.0
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/samber/oops v1.23.0
@@ -50,7 +50,7 @@ require (
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260709200747-435963d16310.1 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260709200747-435963d16310.1 // indirect
 	cel.dev/expr v0.25.2 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect

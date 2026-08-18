@@ -137,7 +137,7 @@ func (km *KeyManager) Create(
 		}
 
 		// For HYOK keys, create initial version from keystore response
-		if key.KeyType == constants.KeyTypeHYOK && keyResp != nil {
+		if key.KeyType == cmkapi.KeyTypeHYOK && keyResp != nil {
 			if err := km.syncKeyVersions(ctx, provider, key); err != nil {
 				return errs.Wrap(ErrCreateKeyVersionDB, err)
 			}
@@ -1062,7 +1062,7 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 	ctx = model.LogInjectKey(ctx, key)
 	oldKeyState := key.State
 
-	if key.KeyType != constants.KeyTypeHYOK {
+	if key.KeyType != cmkapi.KeyTypeHYOK {
 		return ErrInvalidKeyTypeForHYOKSync
 	}
 

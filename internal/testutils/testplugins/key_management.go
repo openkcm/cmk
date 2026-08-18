@@ -26,9 +26,10 @@ var (
 	PendingImportKeyStatus   = "PENDING_IMPORT"
 	PendingDeletionKeyStatus = "PENDING_DELETION"
 
-	ErrKeyIDIsNil          = errors.New("keyId is nil")
-	ErrKeyNotFound         = errors.New("key does not exist")
-	ErrTransformAccessData = errors.New("failed to transform access data")
+	ErrKeyIDIsNil                = errors.New("keyId is nil")
+	ErrKeyNotFound               = errors.New("key does not exist")
+	ErrTransformAccessData       = errors.New("failed to transform access data")
+	ErrNativeKeyIDInvalidPattern = errors.New("native key ID does not match valid pattern")
 
 	// ValidManagementAccessData is the management access data the test plugin accepts
 	// in ValidateKeyAccessData. It mirrors the fields returned by CreateKeystore and
