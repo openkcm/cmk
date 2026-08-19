@@ -1945,6 +1945,8 @@ components:
         underWorkflow:
           description: Flag indicating whether the Key is under workflow
           type: boolean
+        errorDetail:
+          $ref: "#/components/schemas/KeyErrorDetail"
     KeyID:
       description: The ID of the Key
       type: string
@@ -2062,18 +2064,41 @@ components:
         FORBIDDEN state is for when a HYOK customer key permission is not
         granted to the system. DETACHING/DETACHED state is applicable for keys
         that have been marked with a detach call on tenant termination.
+        PENDING_CREATION is a transient state for BYOK keys where provider-side
+        prerequisites are still being set up. ERROR is a terminal failure
+        state for keys that could not be provisioned within the timeout.
       type: string
       readOnly: true
       enum:
         - ENABLED
         - DISABLED
-        - PENDING_DELETION
+        - PENDING_CREATION
         - PENDING_IMPORT
+        - PENDING_DELETION
         - DELETED
         - UNKNOWN
         - FORBIDDEN
         - DETACHING
         - DETACHED
+        - ERROR
+    KeyErrorDetail:
+      description: Structured error detail recorded when a key transitions to ERROR or FORBIDDEN state.
+      type: object
+      readOnly: true
+      properties:
+        errorCode:
+          description: Stable machine-readable error code identifying the failure cause.
+          type: string
+          example: PROVISIONING_TIMEOUT
+        errorMessage:
+          description: Human-readable description of the failure.
+          type: string
+          example: Key provisioning timed out. Delete this key and re-create it once the issue is resolved.
+        errorTimestamp:
+          description: When the error transition occurred (RFC 3339).
+          type: string
+          format: date-time
+          example: "2026-07-01T10:00:00Z"
     KeyAlgorithm:
       description: The algorithm of the Key
       type: string

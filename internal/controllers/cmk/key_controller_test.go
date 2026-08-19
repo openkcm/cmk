@@ -531,7 +531,11 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	}
 }
 
-func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
+func TestKeyControllerPostKeysBYOKPendingCreation(t *testing.T) {
+	// When no DEFAULT_KEYSTORE tenant config exists, BYOK key creation is deferred:
+	// the key is persisted in PENDING_CREATION state and the async sync worker completes
+	// provisioning once the keystore pool is filled. This replaces the old synchronous
+	// KEYSTORE_POOL_DRAINED 503 behaviour.
 	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
@@ -552,33 +556,8 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 	assert.True(t, ok, "test key should exist")
 	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
-	t.Run("Should fail to create key if keystore pool is drained", func(t *testing.T) {
-		// Arrange
-		sysManagedKey := map[string]any{
-			"name":               "test-key",
-			"type":               cmkapi.KeyTypeBYOK,
-			"keyConfigurationID": keyConfig.ID,
-			"algorithm":          cmkapi.KeyAlgorithmAES256,
-			"region":             "us-west-2",
-			"description":        "test key",
-			"enabled":            true,
-		}
-		// Act
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodPost,
-			Endpoint: "keys",
-			Tenant:   tenant,
-			Body:     testutils.WithJSON(t, sysManagedKey),
-			Headers:  headers,
-		})
-		// Assert
-		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "KEYSTORE_POOL_DRAINED", response.Error.Code)
-	})
-
-	t.Run("Should fail to create BYOK key if keystore pool is drained", func(t *testing.T) {
-		// Arrange
+	t.Run("Should create BYOK key in PENDING_CREATION when keystore not yet provisioned", func(t *testing.T) {
+		// Arrange: no DEFAULT_KEYSTORE config seeded — provisioning is pending
 		byokKey := map[string]any{
 			"name":               "test-key",
 			"type":               cmkapi.KeyTypeBYOK,
@@ -597,9 +576,11 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 			Headers:  headers,
 		})
 		// Assert
-		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "KEYSTORE_POOL_DRAINED", response.Error.Code)
+		assert.Equal(t, http.StatusCreated, w.Code)
+		response := testutils.GetJSONBody[cmkapi.Key](t, w)
+		if assert.NotNil(t, response.State) {
+			assert.Equal(t, cmkapi.KeyStatePENDINGCREATION, *response.State)
+		}
 	})
 }
 

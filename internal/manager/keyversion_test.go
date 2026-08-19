@@ -284,7 +284,7 @@ func TestUpdateVersions(t *testing.T) {
 		assert.Equal(t, 1, count)
 		assert.Len(t, allVersions, 1)
 		assert.Equal(t, "v1", allVersions[0].NativeID)
-		assert.True(t, allVersions[0].RotatedAt.After(before), "RotatedAt should be >= before")
-		assert.True(t, allVersions[0].RotatedAt.Before(after), "RotatedAt should be <= after")
+		assert.False(t, allVersions[0].RotatedAt.Before(before), "RotatedAt should be >= before")
+		assert.False(t, allVersions[0].RotatedAt.After(after), "RotatedAt should be <= after")
 	})
 }

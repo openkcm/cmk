@@ -139,6 +139,7 @@ func createManagers(
 		cm,
 		nil,
 		cmkAuditor,
+		nil,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)

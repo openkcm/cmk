@@ -573,7 +573,7 @@ func TestSchemaMigrations(t *testing.T) {
 			version:   15,
 		},
 		{
-			name:      "Should up tenant/00016_add_status_to_keyversions.sql",
+			name:      "Should up tenant/00016_add_pending_creation_key_state.sql",
 			downgrade: false,
 			target:    db.TenantTarget,
 			version:   16,
@@ -583,6 +583,18 @@ func TestSchemaMigrations(t *testing.T) {
 			downgrade: true,
 			target:    db.TenantTarget,
 			version:   16,
+		},
+		{
+			name:      "Should up tenant/00017_add_status_to_keyversions.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   17,
+		},
+		{
+			name:      "Should down tenant/00017_add_status_to_keyversions.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   17,
 		},
 	}
 	for _, tt := range tests {

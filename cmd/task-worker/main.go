@@ -169,7 +169,8 @@ func registerTasks(
 		cfg,
 	)
 	keyManager := manager.NewKeyManager(
-		authzRepo, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor)
+		authzRepo, svcRegistry, tenantConfigManager, keyConfigManager,
+		userManager, certManager, eventFactory, cmkAuditor, cron.Client())
 	systemManager := manager.NewSystemManager(ctx, authzRepo, authzRepoLoader, nil, eventFactory,
 		svcRegistry, cfg, keyConfigManager, userManager)
 	groupManager := manager.NewGroupManager(authzRepo, svcRegistry, userManager)
@@ -186,6 +187,7 @@ func registerTasks(
 		tenantTask.NewWorkflowCleaner(workflowManager, authzRepo),
 		tenantTask.NewTenantNameRefresher(authzRepo, f.Registry()),
 		tenantTask.NewHYOKSync(keyManager, authzRepo),
+		tasks.NewPendingStateSync(keyManager, authzRepo),
 	}
 
 	cron.RegisterTasks(ctx, taskHandlers)

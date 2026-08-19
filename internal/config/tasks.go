@@ -8,6 +8,7 @@ const (
 	TypeSystemsTask        = "sys:refresh"
 	TypeCertificateTask    = "cert:rotate"
 	TypeHYOKSync           = "key:sync"
+	TypePendingStateSync   = "key:pending-state-sync"
 	TypeKeystorePool       = "keystore:fill"
 	TypeSendNotifications  = "notify:send"
 	TypeWorkflowAutoAssign = "workflow:auto-assign"

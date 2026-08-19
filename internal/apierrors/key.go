@@ -273,7 +273,23 @@ var key = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "KEY_IS_NOT_ENABLED",
 			Message: "key is not enabled",
-			Status:  http.StatusInternalServerError,
+			Status:  http.StatusConflict,
+		},
+	},
+	{
+		InternalErrorChain: []error{manager.ErrKeyIsDeleted},
+		ExposedError: &APIError{
+			Code:    "KEY_IS_DELETED",
+			Message: "key is deleted",
+			Status:  http.StatusNotFound,
+		},
+	},
+	{
+		InternalErrorChain: []error{manager.ErrKeyInPendingState},
+		ExposedError: &APIError{
+			Code:    "KEY_NOT_READY",
+			Message: "Operation not allowed: key is still being provisioned",
+			Status:  http.StatusConflict,
 		},
 	},
 	{

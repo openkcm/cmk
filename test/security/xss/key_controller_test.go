@@ -239,14 +239,17 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
+	nativeID := "sdsad"
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = cmkapi.KeyTypeHYOK
 		k.ManagementAccessData = json.RawMessage("{\"<>\":\"><\"}")
 		k.CryptoAccessData = json.RawMessage("{\"<>\":{\"test\":\"test\"}}")
 		k.KeyConfigurationID = kc.ID
 		k.Provider = providerTest
-		k.NativeID = new("sdsad")
+		k.NativeID = &nativeID
 	})
+
+	localKsConfig := testutils.NewKeystore(func(_ *model.Keystore) {})
 
 	testutils.CreateTestEntities(
 		ctx,
@@ -256,7 +259,7 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 		tenantDefaultCert,
 		key,
 		kc,
-		ksConfig,
+		localKsConfig,
 	)
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{

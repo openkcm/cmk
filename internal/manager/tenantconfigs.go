@@ -250,6 +250,22 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 	return keystore, nil
 }
 
+// NeedsDefaultKeystoreProvisioning reports whether the tenant's default keystore
+// management role has not yet been fully provisioned. It reads the stored config without
+// triggering any lazy provisioning side effects (no GrantTrust calls).
+// Returns true when no stored config exists, LocalityID is empty, or AccessData is empty.
+func (m *TenantConfigManager) NeedsDefaultKeystoreProvisioning(ctx context.Context) (bool, error) {
+	keystore, found, err := m.getStoredDefaultKeystoreConfig(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		// No stored config yet means the pool assignment hasn't happened — provisioning needed.
+		return true, nil
+	}
+	return keystore.KeyManagementConfig.LocalityID == "" || len(keystore.KeyManagementConfig.AccessData) == 0, nil
+}
+
 func (m *TenantConfigManager) initDefaultKeystoreFromPool(ctx context.Context) (*model.KeystoreConfig, error) {
 	var keystore *model.KeystoreConfig
 	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
