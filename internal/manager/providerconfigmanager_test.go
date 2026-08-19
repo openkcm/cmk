@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
@@ -108,7 +109,7 @@ func TestGetOrInitProvider(t *testing.T) {
 		{
 			name: "Valid Provider",
 			key: testutils.NewKey(func(k *model.Key) {
-				k.KeyType = constants.KeyTypeHYOK
+				k.KeyType = cmkapi.KeyTypeHYOK
 				k.Provider = providerTest
 			}),
 			assert: func(t *testing.T, provider *manager.ProviderConfig, err error) {
@@ -121,7 +122,7 @@ func TestGetOrInitProvider(t *testing.T) {
 		{
 			name: "Invalid Provider",
 			key: testutils.NewKey(func(k *model.Key) {
-				k.KeyType = constants.KeyTypeHYOK
+				k.KeyType = cmkapi.KeyTypeHYOK
 				k.Provider = "GCP"
 			}),
 			assert: func(t *testing.T, provider *manager.ProviderConfig, err error) {
@@ -178,7 +179,7 @@ func TestGetOrInitProvider_ExpiredEntryIsReinitialized(t *testing.T) {
 	)
 
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.Provider = providerTest
 	})
 

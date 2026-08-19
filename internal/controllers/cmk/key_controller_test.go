@@ -19,7 +19,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
@@ -317,12 +316,12 @@ func TestKeyControllerPostKeys(t *testing.T) {
 		keystoreKeyMgmtCert,
 	)
 
-	SystemManagedRequest := map[string]any{
+	BYOKRequest := map[string]any{
 		"name":               "test-key",
-		"type":               string(cmkapi.KeyTypeBYOK),
+		"type":               cmkapi.KeyTypeBYOK,
 		"keyConfigurationID": keyConfig.ID,
 		"provider":           providerTest,
-		"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+		"algorithm":          cmkapi.KeyAlgorithmAES256,
 		"region":             "us-west-2",
 		"description":        "test key",
 		"enabled":            true,
@@ -330,7 +329,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 
 	HYOKRequest := map[string]any{
 		"name":               "hyok-key",
-		"type":               string(cmkapi.KeyTypeHYOK),
+		"type":               cmkapi.KeyTypeHYOK,
 		"keyConfigurationID": keyConfig.ID,
 		"enabled":            true,
 		"nativeID":           "arn:aws:kms:eu-west-2:399521560603:key/03e6b16b-f0c8-4699-8ef9-8947871924d3",
@@ -354,7 +353,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	requestMut := testutils.NewMutator(func() map[string]any {
 		// Create a copy of the base map
 		baseMap := make(map[string]any)
-		maps.Copy(baseMap, SystemManagedRequest)
+		maps.Copy(baseMap, BYOKRequest)
 
 		return baseMap
 	})
@@ -555,9 +554,9 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 		// Arrange
 		sysManagedKey := map[string]any{
 			"name":               "test-key",
-			"type":               string(cmkapi.KeyTypeBYOK),
+			"type":               cmkapi.KeyTypeBYOK,
 			"keyConfigurationID": keyConfig.ID,
-			"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+			"algorithm":          cmkapi.KeyAlgorithmAES256,
 			"region":             "us-west-2",
 			"description":        "test key",
 			"enabled":            true,
@@ -580,9 +579,9 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 		// Arrange
 		byokKey := map[string]any{
 			"name":               "test-key",
-			"type":               string(cmkapi.KeyTypeBYOK),
+			"type":               cmkapi.KeyTypeBYOK,
 			"keyConfigurationID": keyConfig.ID,
-			"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+			"algorithm":          cmkapi.KeyAlgorithmAES256,
 			"region":             "us-west-2",
 			"description":        "test key",
 			"enabled":            true,
@@ -960,7 +959,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 
 	hyokKey := testutils.NewKey(func(k *model.Key) {
 		k.IsPrimary = true
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.CryptoAccessData = cryptoData
 		k.ManagementAccessData = validMgmtData
 		k.KeyConfigurationID = kc.ID
@@ -968,7 +967,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	})
 
 	hyokKeyInvalidMgmt := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.CryptoAccessData = cryptoData
 		k.ManagementAccessData = json.RawMessage("{\"wrong\":\"data\"}")
 		k.KeyConfigurationID = kc.ID
@@ -1233,7 +1232,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	// Create a BYOK key and import params in the database
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStatePENDINGIMPORT
 		k.KeyConfigurationID = kc.ID
 	})
@@ -1244,7 +1243,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 	})
 
 	byokEnabled := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStateENABLED
 		k.KeyConfigurationID = kc.ID
 	})
@@ -1252,7 +1251,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 	sysManagedKey := testutils.NewKey(func(_ *model.Key) {})
 
 	hyokKey := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.KeyConfigurationID = kc.ID
 	})
 
@@ -1380,7 +1379,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStatePENDINGIMPORT
 		k.NativeID = new("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-1234-567890abcdef")
 		k.KeyConfigurationID = keyConfig.ID
@@ -1471,7 +1470,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	t.Run("ImportKeyMaterialFailedNoImportParams", func(t *testing.T) {
 		byokNoImportParams := testutils.NewKey(func(k *model.Key) {
 			k.Name = "byok-no-import-params"
-			k.KeyType = string(cmkapi.KeyTypeBYOK)
+			k.KeyType = cmkapi.KeyTypeBYOK
 			k.State = cmkapi.KeyStatePENDINGIMPORT
 			k.NativeID = new("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-6789-567890abcdef")
 			k.KeyConfigurationID = keyConfig.ID
@@ -1498,7 +1497,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	t.Run("ImportKeyMaterialFailedInvalidKeyTypeHYOK", func(t *testing.T) {
 		hyokKey := testutils.NewKey(func(k *model.Key) {
 			k.Name = "hyok-key"
-			k.KeyType = string(cmkapi.KeyTypeHYOK)
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.KeyConfigurationID = keyConfig.ID
 		})
 
@@ -1537,7 +1536,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	t.Run("ImportKeyMaterialFailedInvalidKeyState", func(t *testing.T) {
 		// Prepare
 		byokEnabled := testutils.NewKey(func(k *model.Key) {
-			k.KeyType = string(cmkapi.KeyTypeBYOK)
+			k.KeyType = cmkapi.KeyTypeBYOK
 			k.State = cmkapi.KeyStateENABLED
 			k.KeyConfigurationID = keyConfig.ID
 		})

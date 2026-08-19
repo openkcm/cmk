@@ -144,7 +144,7 @@ func (r *SystemTaskInfoResolver) buildSystemActionTaskData(
 			SystemAction: &proto.SystemAction{
 				SystemId:          system.Identifier,
 				SystemRegion:      system.Region,
-				SystemType:        strings.ToLower(system.Type),
+				SystemType:        strings.ToLower(string(system.Type)),
 				KeyIdFrom:         data.KeyIDFrom,
 				KeyIdTo:           data.KeyIDTo,
 				KeyProvider:       strings.ToLower(key.Provider),
@@ -279,9 +279,10 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 	}
 
 	var cryptoData model.KeyAccessData
-	// For HYOK keys, fetch the latest version info from DB.
-	// For BYOK/managed keys, read pre-provisioned crypto access data from the stored keystore config.
-	if key.KeyType == string(cmkapi.KeyTypeHYOK) {
+	// For HYOK keys, we need to fetch the latest version info and populate it into the crypto access data
+	// to support key rotation.
+	// For BYOK/managed keys, we need to sync crypto access data instead
+	if key.KeyType == cmkapi.KeyTypeHYOK {
 		cryptoData, err = r.fetchAndPopulateVersionInfo(ctx, key)
 	} else {
 		cryptoData, err = r.getCryptoAccessDataFromConfig(ctx)

@@ -3,6 +3,8 @@ package model
 import (
 	"context"
 	"crypto/x509/pkix"
+	"database/sql/driver"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -11,8 +13,10 @@ import (
 
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/utils/enums"
 )
 
+//nolint:recvcheck
 type CertificateState string
 
 const (
@@ -22,6 +26,25 @@ const (
 	CertificateSubjectKey string = "certificateSubject"
 )
 
+var ErrInvalidCertificateState = fmt.Errorf("%w: invalid certificate state", ErrValidation)
+
+func (s CertificateState) Valid() bool {
+	switch s {
+	case CertificateStateActive, CertificateStateExpired:
+		return true
+	}
+	return false
+}
+
+func (s CertificateState) Value() (driver.Value, error) {
+	return enums.Value(s, ErrInvalidCertificateState)
+}
+
+func (s *CertificateState) Scan(src any) error {
+	return enums.Scan(src, s, ErrInvalidCertificateState)
+}
+
+//nolint:recvcheck
 type CertificatePurpose string
 
 // - Generic purpose is used as a fallback default purpose when no specific purpose is provided.
@@ -37,6 +60,28 @@ const (
 	CertificatePurposeKeyManagement  CertificatePurpose = "KEY_MANAGEMENT"
 	CertificatePurposeCrypto         CertificatePurpose = "CRYPTO"
 )
+
+var ErrInvalidCertificatePurpose = fmt.Errorf("%w: invalid certificate purpose", ErrValidation)
+
+func (p CertificatePurpose) Valid() bool {
+	switch p {
+	case CertificatePurposeGeneric,
+		CertificatePurposeHYOKManagement,
+		CertificatePurposeRoleManagement,
+		CertificatePurposeKeyManagement,
+		CertificatePurposeCrypto:
+		return true
+	}
+	return false
+}
+
+func (p CertificatePurpose) Value() (driver.Value, error) {
+	return enums.Value(p, ErrInvalidCertificatePurpose)
+}
+
+func (p *CertificatePurpose) Scan(src any) error {
+	return enums.Scan(src, p, ErrInvalidCertificatePurpose)
+}
 
 // SingletonCertificatePurposes defines the certificate purposes
 // for which only one active certificate can exist at a time.

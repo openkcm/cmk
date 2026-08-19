@@ -68,8 +68,8 @@ func TestFromCmkAPIKey(t *testing.T) {
 				Provider:  new("TEST"),
 			},
 			expected: &model.Key{
-				KeyType:   string(cmkapi.KeyTypeBYOK),
-				Algorithm: string(cmkapi.KeyAlgorithmAES256),
+				KeyType:   cmkapi.KeyTypeBYOK,
+				Algorithm: cmkapi.KeyAlgorithmAES256,
 				Region:    "test-region",
 				Provider:  "TEST",
 			},

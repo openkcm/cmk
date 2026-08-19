@@ -87,7 +87,7 @@ func (m *SystemInformation) updateSystem(ctx context.Context, system *model.Syst
 
 	resp, err := m.svc.GetSystemInfo(ctx, &systeminformation.GetSystemInfoRequest{
 		ID:   system.Identifier,
-		Type: system.Type,
+		Type: string(system.Type),
 	})
 	if err != nil {
 		log.Warn(ctx, "Could not get information from SIS", log.ErrorAttr(err))

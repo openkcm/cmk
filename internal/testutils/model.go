@@ -51,6 +51,7 @@ func NewSystem(m func(*model.System)) *model.System {
 			ID:         uuid.New(),
 			Identifier: uuid.NewString(),
 			Region:     uuid.NewString(),
+			Type:       model.SystemTypeSYSTEM,
 			Properties: make(map[string]string),
 		}
 	})
@@ -95,11 +96,12 @@ func NewTag(m func(*model.Tag)) *model.Tag {
 func NewKey(m func(*model.Key)) *model.Key {
 	mut := NewMutator(func() model.Key {
 		return model.Key{
-			ID:       uuid.New(),
-			KeyType:  constants.KeyTypeBYOK,
-			Name:     uuid.NewString(),
-			State:    cmkapi.KeyStateENABLED,
-			NativeID: new(uuid.NewString()),
+			ID:        uuid.New(),
+			KeyType:   cmkapi.KeyTypeBYOK,
+			Algorithm: cmkapi.KeyAlgorithmAES256,
+			Name:      uuid.NewString(),
+			State:     cmkapi.KeyStateENABLED,
+			NativeID:  new(uuid.NewString()),
 		}
 	})
 

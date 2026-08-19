@@ -123,7 +123,13 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 
 			testutils.CreateTestEntities(ctx, t, r, key3, key4, keyConfig, keyConfig3)
 
-			system := &model.System{ID: systemID01, KeyConfigurationID: &keyConfigID04}
+			system := &model.System{
+				ID:                 systemID01,
+				Identifier:         "test-system",
+				Region:             "us-west-2",
+				Type:               model.SystemTypeSYSTEM,
+				KeyConfigurationID: &keyConfigID04,
+			}
 			err = r.Create(ctx, system)
 			assert.NoError(t, err)
 

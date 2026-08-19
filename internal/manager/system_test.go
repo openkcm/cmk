@@ -241,7 +241,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 	system1 := testutils.NewSystem(
 		func(s *model.System) {
 			s.Region = "Region1"
-			s.Type = "Type1"
+			s.Type = systems.SystemTypeSYSTEM
 		},
 	)
 
@@ -270,7 +270,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 
 	t.Run("Should get all systems filtered by type", func(t *testing.T) {
 		filter := manager.SystemFilter{
-			Type:  "Type1",
+			Type:  string(systems.SystemTypeSYSTEM),
 			Skip:  constants.DefaultSkip,
 			Top:   constants.DefaultTop,
 			Count: true,
@@ -1280,7 +1280,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		},
 	)
 	region := regionpb.Region_REGION_EU.String()
-	sysType := string(systems.SystemTypeSYSTEM)
+	sysType := systems.SystemTypeSYSTEM
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -1295,7 +1295,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		}
 		testutils.CreateTestEntities(ctx, t, r, systemUnderTest)
 		registerSystem(
-			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, systemUnderTest.Type,
+			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, string(systemUnderTest.Type),
 		)
 		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID, "")
 		assert.NoError(t, err)
@@ -1312,7 +1312,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		}
 		testutils.CreateTestEntities(ctx, t, r, systemUnderTest)
 		registerSystem(
-			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, systemUnderTest.Type,
+			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, string(systemUnderTest.Type),
 		)
 		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID, "")
 		assert.ErrorIs(t, err, manager.ErrUnlinkSystemProcessing)
@@ -1321,6 +1321,9 @@ func TestUnlinkSystemAction(t *testing.T) {
 	t.Run("Should error on delete system link with empty keyConfigurationID", func(t *testing.T) {
 		system := &model.System{
 			ID:                 uuid.New(),
+			Identifier:         uuid.NewString(),
+			Region:             "us-west-2",
+			Type:               systems.SystemTypeSYSTEM,
 			KeyConfigurationID: nil,
 		}
 		err := r.Create(ctx, system)
@@ -1374,7 +1377,7 @@ func TestRefreshSystems(t *testing.T) {
 		ID:         uuid.New(),
 		Identifier: uuid.New().String(),
 		Region:     regionpb.Region_REGION_EU.String(),
-		Type:       string(systems.SystemTypeSYSTEM),
+		Type:       systems.SystemTypeSYSTEM,
 	}
 	testutils.CreateTestEntities(ctx, t, r, existingSystem)
 
@@ -1403,10 +1406,10 @@ func TestRefreshSystems(t *testing.T) {
 			ID:         uuid.New(),
 			Identifier: uuid.New().String(),
 			Region:     regionpb.Region_REGION_US.String(),
-			Type:       string(systems.SystemTypeSUBACCOUNT),
+			Type:       systems.SystemTypeSUBACCOUNT,
 		}
 		registerSystem(
-			ctx, t, systemService, foreignSystem.Identifier, foreignSystem.Region, foreignSystem.Type,
+			ctx, t, systemService, foreignSystem.Identifier, foreignSystem.Region, string(foreignSystem.Type),
 			func(req *systemgrpc.RegisterSystemRequest) {
 				req.TenantId = "OtherTenant"
 			},
@@ -1451,9 +1454,9 @@ func TestRefreshSystems(t *testing.T) {
 	t.Run("New system returned by the registry with empty SIS metadata", func(t *testing.T) {
 		externalID := uuid.New().String()
 		region := regionpb.Region_REGION_US.String()
-		systemType := string(systems.SystemTypeSUBACCOUNT)
+		systemType := systems.SystemTypeSUBACCOUNT
 		registerSystem(
-			ctx, t, systemService, externalID, region, systemType,
+			ctx, t, systemService, externalID, region, string(systemType),
 			func(req *systemgrpc.RegisterSystemRequest) {
 				req.TenantId = tenant
 			},
@@ -1487,7 +1490,7 @@ func TestRefreshSystems(t *testing.T) {
 
 		existingSystemsCount, _ := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		registerSystem(
-			ctx, t, systemService, existingSystem.Identifier, existingSystem.Region, existingSystem.Type,
+			ctx, t, systemService, existingSystem.Identifier, existingSystem.Region, string(existingSystem.Type),
 			func(req *systemgrpc.RegisterSystemRequest) {
 				req.TenantId = tenant
 			},
@@ -1495,9 +1498,9 @@ func TestRefreshSystems(t *testing.T) {
 
 		externalID := uuid.New().String()
 		region := regionpb.Region_REGION_US.String()
-		systemType := string(systems.SystemTypeSUBACCOUNT)
+		systemType := systems.SystemTypeSUBACCOUNT
 		registerSystem(
-			ctx, t, systemService, externalID, region, systemType,
+			ctx, t, systemService, externalID, region, string(systemType),
 			func(req *systemgrpc.RegisterSystemRequest) {
 				req.TenantId = tenant
 			},
@@ -1553,20 +1556,20 @@ func TestGetFilters(t *testing.T) {
 	})
 
 	system1 := testutils.NewSystem(func(s *model.System) {
-		s.Type = "type1"
+		s.Type = systems.SystemTypeSYSTEM
 		s.Region = "region1"
 		s.KeyConfigurationID = &keyConfig1.ID
 	})
 
 	system2 := testutils.NewSystem(func(s *model.System) {
-		s.Type = "type2"
+		s.Type = systems.SystemTypeSUBACCOUNT
 		s.Region = "region2"
 		s.KeyConfigurationID = &keyConfig2.ID
 	})
 
 	// Repeated type and region, should not create new entries
 	system3 := testutils.NewSystem(func(s *model.System) {
-		s.Type = "type1"
+		s.Type = systems.SystemTypeSYSTEM
 		s.Region = "region1"
 		s.KeyConfigurationID = &keyConfig1.ID
 	})
@@ -1578,8 +1581,8 @@ func TestGetFilters(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.Len(t, *filters.Type, 2)
-		assert.Contains(t, *filters.Type, system1.Type)
-		assert.Contains(t, *filters.Type, system2.Type)
+		assert.Contains(t, *filters.Type, string(system1.Type))
+		assert.Contains(t, *filters.Type, string(system2.Type))
 
 		assert.Len(t, *filters.Region, 2)
 		assert.Contains(t, *filters.Region, system1.Region)

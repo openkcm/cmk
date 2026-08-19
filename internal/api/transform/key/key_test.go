@@ -107,7 +107,7 @@ func TestTransformKeyFromAPI(t *testing.T) {
 		return model.Key{
 			ID:                 ID,
 			Name:               "test-key",
-			KeyType:            string(cmkapi.KeyTypeHYOK),
+			KeyType:            cmkapi.KeyTypeHYOK,
 			KeyConfigurationID: keyConfigID,
 			State:              cmkapi.KeyStateENABLED,
 			Description:        description,
@@ -223,7 +223,7 @@ func TestTransformKeyToAPI(t *testing.T) {
 			key: model.Key{
 				ID:                 id,
 				Name:               "test-key",
-				KeyType:            string(cmkapi.KeyTypeHYOK),
+				KeyType:            cmkapi.KeyTypeHYOK,
 				KeyConfigurationID: keyConfigID,
 				Description:        description,
 				NativeID:           new("native-id-1234"),
@@ -293,10 +293,10 @@ func TestTransformKeyToAPI(t *testing.T) {
 			key: model.Key{
 				ID:                 id,
 				Name:               "byok-key",
-				KeyType:            string(cmkapi.KeyTypeBYOK),
+				KeyType:            cmkapi.KeyTypeBYOK,
 				KeyConfigurationID: keyConfigID,
 				Description:        description,
-				Algorithm:          string(cmkapi.KeyAlgorithmAES256),
+				Algorithm:          cmkapi.KeyAlgorithmAES256,
 				Region:             regionEUWest1,
 				State:              cmkapi.KeyStateENABLED,
 				IsPrimary:          true,
