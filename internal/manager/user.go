@@ -105,6 +105,7 @@ func (u *user) HasKeyAccess(
 	err := ensureBusinessUserOpsAllowed(ctx, []constants.InternalRole{
 		constants.InternalTaskWorkflowApproversRole,
 		constants.InternalTenantProvisioningRole,
+		constants.InternalTaskPendingStateSyncRole,
 	})
 	if errors.Is(err, errInternalBypass) {
 		return false, nil

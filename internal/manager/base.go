@@ -63,6 +63,7 @@ func New(
 		certManager,
 		eventFactory,
 		cmkAuditor,
+		asyncClient,
 	)
 	systemManager := NewSystemManager(
 		ctx,

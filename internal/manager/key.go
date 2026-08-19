@@ -13,12 +13,20 @@ import (
 
 	"github.com/avast/retry-go/v5"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/openkcm/orbital"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/log"
@@ -27,6 +35,7 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
+	asyncUtils "github.com/openkcm/cmk/utils/async"
 )
 
 // BYOKAction constants represent the actions that can be performed on a BYOK key
@@ -49,6 +58,11 @@ const (
 var (
 	createKeyRetryDelay = 15 * time.Second
 	createKeyMaxDelay   = 30 * time.Second
+
+	// pendingCreationTimeout is the hard timeout for PENDING_CREATION keys.
+	// After this duration without successful provisioning, the key transitions to ERROR.
+	// It is a var (not const) so tests can override it.
+	pendingCreationTimeout = 15 * time.Minute
 )
 
 var UnavailableKeyStates = []cmkapi.KeyState{
@@ -56,6 +70,8 @@ var UnavailableKeyStates = []cmkapi.KeyState{
 	cmkapi.KeyStateDELETED,
 	cmkapi.KeyStateFORBIDDEN,
 	cmkapi.KeyStateUNKNOWN,
+	cmkapi.KeyStatePENDINGCREATION,
+	cmkapi.KeyStateERROR,
 }
 
 func IsUnavailableKeyState(state cmkapi.KeyState) bool {
@@ -71,6 +87,7 @@ type KeyManager struct {
 	user              User
 	eventFactory      *eventprocessor.EventFactory
 	cmkAuditor        *auditor.Auditor
+	asyncClient       async.Client
 }
 
 func NewKeyManager(
@@ -82,6 +99,7 @@ func NewKeyManager(
 	certManager *CertificateManager,
 	eventFactory *eventprocessor.EventFactory,
 	cmkAuditor *auditor.Auditor,
+	asyncClient async.Client,
 ) *KeyManager {
 	keyVersionManager := NewKeyVersionManager(repo, svcRegistry, tenantConfigs, certManager, cmkAuditor)
 
@@ -100,6 +118,7 @@ func NewKeyManager(
 		user:              user,
 		eventFactory:      eventFactory,
 		cmkAuditor:        cmkAuditor,
+		asyncClient:       asyncClient,
 	}
 }
 
@@ -114,6 +133,20 @@ func (km *KeyManager) Create(
 		return nil, err
 	}
 
+	// For BYOK keys, check if tenant provisioning is needed before attempting provider creation.
+	// If the default keystore has not yet had its management role provisioned (LocalityID == ""),
+	// persist the key in PENDING_CREATION state and return immediately. The sync worker will
+	// complete creation once provisioning succeeds.
+	if key.KeyType == constants.KeyTypeBYOK {
+		pending, err := km.createPendingBYOKKeyIfNeeded(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if pending {
+			return key, nil
+		}
+	}
+
 	// Initialize provider
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
@@ -126,25 +159,7 @@ func (km *KeyManager) Create(
 		return nil, err
 	}
 
-	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
-		err = km.setPrimaryIfFirstKey(ctx, key)
-		if err != nil {
-			return errs.Wrap(ErrUpdatePrimary, err)
-		}
-		err := km.repo.Create(ctx, key)
-		if err != nil {
-			return errs.Wrap(ErrCreateKeyDB, err)
-		}
-
-		// For HYOK keys, create initial version from keystore response
-		if key.KeyType == cmkapi.KeyTypeHYOK && keyResp != nil {
-			if err := km.syncKeyVersion(ctx, key, keyResp); err != nil {
-				return errs.Wrap(ErrCreateKeyVersionDB, err)
-			}
-		}
-		return nil
-	})
-	if err != nil {
+	if err := km.persistCreatedKey(ctx, key, keyResp); err != nil {
 		return nil, err
 	}
 
@@ -253,6 +268,10 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 
 	ctx = model.LogInjectKey(ctx, key)
 
+	if key.State == cmkapi.KeyStatePENDINGCREATION && keyPatch.Enabled != nil {
+		return nil, ErrKeyInPendingState
+	}
+
 	err = km.handleCryptoDetailsUpdate(ctx, keyPatch, key)
 	if err != nil {
 		return nil, errs.Wrap(ErrCryptoDetailsUpdate, err)
@@ -264,23 +283,7 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 
 	enablementUpdated := copyFieldsToModelKey(keyPatch, key)
 
-	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
-		_, err := km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
-		if err != nil {
-			return errs.Wrap(ErrUpdateKeyDB, err)
-		}
-
-		if enablementUpdated {
-			if *keyPatch.Enabled {
-				return km.enableKey(ctx, key)
-			}
-
-			return km.disableKey(ctx, key)
-		}
-
-		return nil
-	})
-	if err != nil {
+	if err = km.applyKeyPatch(ctx, key, keyPatch, enablementUpdated); err != nil {
 		return nil, errs.Wrap(ErrUpdateKeyDB, err)
 	}
 
@@ -425,6 +428,24 @@ func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 	})
 }
 
+// SyncPendingCreationKey processes a single BYOK key in PENDING_CREATION state.
+// It attempts to complete provisioning and transitions the key to PENDING_IMPORT on success,
+// or to ERROR on hard timeout.
+func (km *KeyManager) SyncPendingCreationKey(ctx context.Context, keyID uuid.UUID) error {
+	key, err := km.Get(ctx, keyID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			log.Debug(ctx, "PENDING_CREATION key no longer exists, skipping sync", slog.String("keyID", keyID.String()))
+			return nil
+		}
+		return errs.Wrap(ErrGetKeyDB, err)
+	}
+	if key.State != cmkapi.KeyStatePENDINGCREATION {
+		return nil
+	}
+	return km.syncPendingCreationKey(ctx, key)
+}
+
 func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 	return km.repo.Transaction(ctx, func(ctx context.Context) error {
 		key.State = cmkapi.KeyStateDETACHING
@@ -440,6 +461,238 @@ func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 		}
 		return nil
 	})
+}
+
+func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key) error {
+	ctx = model.LogInjectKey(ctx, key)
+	elapsed := time.Since(key.CreatedAt)
+	elapsedDisplay := elapsed.Round(time.Second)
+	ctx = slogctx.With(ctx, slog.Duration("elapsed", elapsedDisplay))
+
+	// Check hard timeout: if the key has been in PENDING_CREATION for too long, transition to ERROR.
+	if elapsed > pendingCreationTimeout {
+		log.Error(ctx, "PENDING_CREATION key timed out, transitioning to ERROR", ErrProvisioningTimeout)
+		return km.transitionPendingKeyToError(ctx, key,
+			"PROVISIONING_TIMEOUT",
+			"Key provisioning timed out. Delete this key and re-create it once the issue is resolved.")
+	}
+
+	log.Info(ctx, "Attempting to provision PENDING_CREATION key",
+		slog.Duration("timeout", pendingCreationTimeout))
+
+	provider, err := km.initProviderForPendingKey(ctx, key, elapsedDisplay)
+	if err != nil {
+		return err
+	}
+	if provider == nil {
+		// Terminal non-retryable condition already handled (e.g. pool drained → ERROR state set).
+		return nil
+	}
+
+	log.Info(ctx, "Provider initialised, creating key in keystore")
+
+	if err := km.createOrRecoverProviderKey(ctx, key, provider, elapsedDisplay); err != nil {
+		return err
+	}
+
+	// Persist the updated key (NativeID and State set by createManagedProviderKey)
+	// and set primary if this is the first key for the configuration.
+	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
+		if err := km.setPrimaryIfFirstKey(ctx, key); err != nil {
+			return errs.Wrap(ErrUpdatePrimary, err)
+		}
+		_, err := km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
+		if err != nil {
+			return errs.Wrap(ErrUpdateKeyDB, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	log.Debug(ctx, "PENDING_CREATION key transitioned to PENDING_IMPORT",
+		slog.String("newState", string(key.State)))
+
+	return nil
+}
+
+// isBYOKProvisioningNeeded reports whether the default keystore's management role
+// has not yet been provisioned for this tenant. It reads the stored config without
+// triggering lazy provisioning, so it never blocks on GrantTrust.
+func (km *KeyManager) isBYOKProvisioningNeeded(ctx context.Context) (bool, error) {
+	needed, err := km.tenantConfigs.NeedsDefaultKeystoreProvisioning(ctx)
+	if err != nil {
+		return false, err
+	}
+	return needed, nil
+}
+
+func (km *KeyManager) persistCreatedKey(
+	ctx context.Context,
+	key *model.Key,
+	keyResp *keymanagement.GetKeyResponse,
+) error {
+	return km.repo.Transaction(ctx, func(ctx context.Context) error {
+		if err := km.setPrimaryIfFirstKey(ctx, key); err != nil {
+			return errs.Wrap(ErrUpdatePrimary, err)
+		}
+		if err := km.repo.Create(ctx, key); err != nil {
+			return errs.Wrap(ErrCreateKeyDB, err)
+		}
+		if key.KeyType == constants.KeyTypeHYOK && keyResp != nil {
+			if err := km.syncKeyVersion(ctx, key, keyResp); err != nil {
+				return errs.Wrap(ErrCreateKeyVersionDB, err)
+			}
+		}
+		return nil
+	})
+}
+
+// createPendingBYOKKeyIfNeeded persists the key in PENDING_CREATION when tenant provisioning
+// is not yet complete. Returns true if the key was saved as pending (caller should return early).
+func (km *KeyManager) createPendingBYOKKeyIfNeeded(ctx context.Context, key *model.Key) (bool, error) {
+	needsProvisioning, err := km.isBYOKProvisioningNeeded(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !needsProvisioning {
+		return false, nil
+	}
+	key.State = cmkapi.KeyStatePENDINGCREATION
+	key.NativeID = nil // not yet created in provider
+	if err := km.repo.Transaction(ctx, func(ctx context.Context) error {
+		return km.repo.Create(ctx, key)
+	}); err != nil {
+		return false, errs.Wrap(ErrCreateKeyDB, err)
+	}
+	km.sendCreateAuditLog(ctx, key)
+	km.enqueuePendingStateSync(ctx, key)
+	return true, nil
+}
+
+func (km *KeyManager) applyKeyPatch(
+	ctx context.Context,
+	key *model.Key,
+	keyPatch cmkapi.KeyPatch,
+	enablementUpdated bool,
+) error {
+	return km.repo.Transaction(ctx, func(ctx context.Context) error {
+		_, err := km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
+		if err != nil {
+			return errs.Wrap(ErrUpdateKeyDB, err)
+		}
+
+		if enablementUpdated {
+			if *keyPatch.Enabled {
+				return km.enableKey(ctx, key)
+			}
+			return km.disableKey(ctx, key)
+		}
+
+		return nil
+	})
+}
+
+// initProviderForPendingKey calls GetOrInitProvider and maps known error types to appropriate
+// actions: ErrGrantTrustFailed returns the error for retry, ErrPoolIsDrained transitions to ERROR.
+func (km *KeyManager) initProviderForPendingKey(
+	ctx context.Context,
+	key *model.Key,
+	elapsed time.Duration,
+) (*ProviderConfig, error) {
+	ctx = slogctx.With(ctx, slog.Duration("elapsed", elapsed))
+	provider, err := km.GetOrInitProvider(ctx, key)
+	if err == nil {
+		return provider, nil
+	}
+	if errors.Is(err, ErrGrantTrustFailed) {
+		log.Info(ctx, "Provisioning still in progress: waiting for trust grant (WIF pool / IAM role)",
+			log.ErrorAttr(err))
+		return nil, err
+	}
+	if errors.Is(err, ErrPoolIsDrained) {
+		log.Warn(ctx, "Provisioning failed: keystore pool is drained, transitioning to ERROR",
+			log.ErrorAttr(err))
+		return nil, km.transitionPendingKeyToError(ctx, key,
+			"KEYSTORE_POOL_DRAINED",
+			"No keystore available for key provisioning. "+
+				"Delete this key and re-create it once the keystore pool is replenished.")
+	}
+	return nil, err
+}
+
+// createOrRecoverProviderKey creates the key in the provider. On AlreadyExists, attempts to
+// recover the NativeID from a prior partial attempt instead of failing.
+func (km *KeyManager) createOrRecoverProviderKey(
+	ctx context.Context,
+	key *model.Key,
+	provider *ProviderConfig,
+	elapsed time.Duration,
+) error {
+	ctx = slogctx.With(ctx, slog.Duration("elapsed", elapsed))
+	err := km.createManagedProviderKey(ctx, key, provider)
+	if err == nil {
+		return nil
+	}
+	if status.Code(err) != codes.AlreadyExists {
+		log.Info(ctx, "Provider key creation failed, will retry", log.ErrorAttr(err))
+		return err
+	}
+	log.Info(ctx, "Provider key already exists (prior partial attempt), recovering NativeID")
+	if recovErr := km.recoverExistingProviderKey(ctx, key, provider); recovErr != nil {
+		log.Info(ctx, "Recovery of existing provider key failed, will retry", log.ErrorAttr(recovErr))
+		return recovErr
+	}
+	return nil
+}
+
+// enqueuePendingStateSync immediately enqueues the pending state sync task so
+// provisioning can begin right away. Errors are non-fatal and logged.
+func (km *KeyManager) enqueuePendingStateSync(ctx context.Context, key *model.Key) {
+	if km.asyncClient == nil {
+		log.Warn(ctx, "async client not initialized, skipping pending state sync enqueue")
+		return
+	}
+	payload := asyncUtils.NewTaskPayload(ctx, []byte(key.ID.String()))
+	payloadBytes, err := payload.ToBytes()
+	if err != nil {
+		log.Error(ctx, "Failed to serialize pending state sync task payload", err)
+		return
+	}
+	task := asynq.NewTask(config.TypePendingStateSync, payloadBytes)
+	info, err := km.asyncClient.Enqueue(task)
+	if err != nil {
+		log.Error(ctx, "Failed to enqueue pending state sync task", err)
+		return
+	}
+	log.Info(ctx, "Enqueued pending state sync task",
+		slog.String("taskId", info.ID),
+		slog.String("keyId", key.ID.String()))
+}
+
+func (km *KeyManager) transitionPendingKeyToError(ctx context.Context, key *model.Key, code, msg string) error {
+	now := time.Now().UTC()
+	detail := cmkapi.KeyErrorDetail{
+		ErrorCode:      &code,
+		ErrorMessage:   &msg,
+		ErrorTimestamp: &now,
+	}
+
+	detailBytes, err := json.Marshal(detail)
+	if err != nil {
+		return err
+	}
+
+	key.State = cmkapi.KeyStateERROR
+	key.ErrorDetail = detailBytes
+
+	_, err = km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
+	if err != nil {
+		return errs.Wrap(ErrUpdateKeyDB, err)
+	}
+
+	return nil
 }
 
 // validateKeyCreation checks user access and loads key configuration
@@ -594,10 +847,11 @@ func (km *KeyManager) createManagedProviderKey(
 		retry.Context(ctx),
 	).Do(func() error {
 		var err error
+		keyID := key.ID.String()
 		keyResp, err = provider.Client.CreateKey(ctx, &keymanagement.CreateKeyRequest{
 			Config:       common.KeystoreConfig{Values: provider.Config.Values},
 			KeyAlgorithm: convertToAPIKeyAlgorithm(key.Algorithm),
-			ID:           new(key.ID.String()),
+			ID:           &keyID,
 			Region:       key.Region,
 			KeyType:      convertToAPIKeyType(key.KeyType),
 		})
@@ -607,7 +861,31 @@ func (km *KeyManager) createManagedProviderKey(
 		return errs.Wrap(ErrKeyCreationFailed, err)
 	}
 
-	key.NativeID = new(keyResp.KeyID)
+	key.NativeID = &keyResp.KeyID
+	key.State = cmkapi.KeyState(keyResp.Status)
+
+	return nil
+}
+
+// recoverExistingProviderKey handles the case where CreateKey returned AlreadyExists,
+// meaning a prior attempt created the key in the provider but never updated the DB.
+// It calls GetKey to retrieve the existing key's NativeID and status.
+func (km *KeyManager) recoverExistingProviderKey(
+	ctx context.Context,
+	key *model.Key,
+	provider *ProviderConfig,
+) error {
+	keyResp, err := provider.Client.GetKey(ctx, &keymanagement.GetKeyRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: provider.Config.Values},
+			KeyID:  key.ID.String(),
+		},
+	})
+	if err != nil {
+		return errs.Wrap(ErrKeyCreationFailed, err)
+	}
+
+	key.NativeID = &keyResp.KeyID
 	key.State = cmkapi.KeyState(keyResp.Status)
 
 	return nil
@@ -692,7 +970,8 @@ func (km *KeyManager) addCertificateSubjectToCryptoData(ctx context.Context, key
 			continue
 		}
 
-		accessData.CertificateSubject = new(cert.Subject.String())
+		subject := cert.Subject.String()
+		accessData.CertificateSubject = &subject
 		cryptoAccessData[cert.Name] = accessData
 	}
 
@@ -734,14 +1013,25 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 		return nil
 	}
 
+	// PENDING_CREATION keys have no NativeID yet — nothing to delete from the provider.
+	if key.State == cmkapi.KeyStatePENDINGCREATION {
+		return nil
+	}
+
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
 		return errs.Wrap(ErrFailedToInitProvider, err)
 	}
 
 	switch key.KeyType {
-	case cmkapi.KeyTypeBYOK:
-		// For BYOK keys, we delete the key itself, since BYOK keys are not versioned
+	case constants.KeyTypeSystemManaged:
+		return km.deleteSystemManagedProviderKey(ctx, key, provider)
+	case constants.KeyTypeBYOK:
+		// For BYOK keys, we delete the key itself, since BYOK keys are not versioned.
+		// NativeID may be nil if the key never completed provisioning.
+		if key.NativeID == nil {
+			return nil
+		}
 		_, err = provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
 			Parameters: keymanagement.RequestParameters{
 				Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
@@ -755,6 +1045,25 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 		// HYOK keys are managed externally; nothing to delete on the provider side.
 	}
 
+	return nil
+}
+
+func (km *KeyManager) deleteSystemManagedProviderKey(
+	ctx context.Context,
+	key *model.Key,
+	provider *ProviderConfig,
+) error {
+	for _, kv := range key.KeyVersions {
+		_, err := provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
+			Parameters: keymanagement.RequestParameters{
+				Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
+				KeyID:  kv.NativeID,
+			},
+		})
+		if err != nil {
+			return errs.Wrap(ErrFailedToDeleteProvider, err)
+		}
+	}
 	return nil
 }
 
@@ -798,6 +1107,9 @@ func (km *KeyManager) setPrimaryIfFirstKey(ctx context.Context, key *model.Key) 
 
 	// Update keyconfig primaryKey
 	if !exist {
+		if key.State == cmkapi.KeyStatePENDINGCREATION {
+			return nil // Not primary yet; skip until creation completes
+		}
 		if key.State == cmkapi.KeyStateDISABLED {
 			return ErrKeyIsNotEnabled
 		}

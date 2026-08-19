@@ -435,8 +435,8 @@ func (m *KeyConfigManager) handleUpdatePrimaryKey(
 	if err != nil {
 		return err
 	}
-	if targetKey.State != cmkapi.KeyStateENABLED {
-		return ErrKeyIsNotEnabled
+	if err := validateKeyForPrimarySwitch(targetKey); err != nil {
+		return err
 	}
 
 	// Key is valid. If keyconfig has no existing key no need for further validations
@@ -449,8 +449,8 @@ func (m *KeyConfigManager) handleUpdatePrimaryKey(
 	if err != nil {
 		return err
 	}
-	if sourceKey.State != cmkapi.KeyStateENABLED {
-		return ErrKeyIsNotEnabled
+	if err := validateKeyForPrimarySwitch(sourceKey); err != nil {
+		return err
 	}
 
 	err = m.updatePrimaryKeySystemEvents(
@@ -526,4 +526,14 @@ func (m *KeyConfigManager) updatePrimaryKeySystemEvents(ctx context.Context, old
 		}
 		return nil
 	})
+}
+
+func validateKeyForPrimarySwitch(key *model.Key) error {
+	if key.State == cmkapi.KeyStateDELETED || key.State == cmkapi.KeyStatePENDINGDELETION {
+		return ErrKeyIsDeleted
+	}
+	if key.State != cmkapi.KeyStateENABLED {
+		return ErrKeyIsNotEnabled
+	}
+	return nil
 }

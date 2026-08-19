@@ -35,6 +35,7 @@ type Key struct {
 	ManagementAccessData json.RawMessage `gorm:"type:jsonb"`
 	CryptoAccessData     json.RawMessage `gorm:"type:jsonb"`
 	UnderWorkflow        bool            `gorm:"type:bool"`
+	ErrorDetail          json.RawMessage `gorm:"type:jsonb"`
 
 	IsPrimary       bool            `gorm:"-:all"` // Loaded on the managear/get methods
 	EditableRegions map[string]bool `gorm:"-:all"`

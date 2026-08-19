@@ -130,4 +130,7 @@ var CreateKeyRetryDelay = &createKeyRetryDelay
 // CreateKeyMaxDelay exposes the package-level max delay so tests can zero it alongside CreateKeyRetryDelay.
 var CreateKeyMaxDelay = &createKeyMaxDelay
 
+// PendingCreationTimeout exposes the package-level pending creation timeout so tests can override it.
+var PendingCreationTimeout = &pendingCreationTimeout
+
 const DefaultKeystoreCertInfix = defaultKeystoreCertInfix

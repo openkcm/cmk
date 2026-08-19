@@ -887,3 +887,78 @@ func TestSyncCryptoAccessData(t *testing.T) {
 		assert.Empty(t, capture.grantCallsOfType(keystoremanagement.TrustTypeCrypto), "expected no GrantTrust(CRYPTO) call when entry already exists")
 	})
 }
+
+func TestNeedsDefaultKeystoreProvisioning(t *testing.T) {
+	t.Run("returns true when no stored config exists", func(t *testing.T) {
+		// Arrange: fresh tenant with no stored keystore config
+		m, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.True(t, needed, "should need provisioning when no stored config exists")
+	})
+
+	t.Run("returns true when KeyManagementConfig.LocalityID is empty", func(t *testing.T) {
+		// Arrange: stored config exists but management role not yet provisioned
+		m, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Store a config with empty KeyManagementConfig.LocalityID
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{} // empty LocalityID
+		}))
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.True(t, needed, "should need provisioning when LocalityID is empty")
+	})
+
+	t.Run("returns true when LocalityID is set but AccessData is empty", func(t *testing.T) {
+		// Arrange: provider like GCP may set LocalityID before AccessData is returned by GrantTrust
+		m, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{
+				LocalityID: testutils.TestLocalityID,
+				CommonName: testutils.TestDefaultKeystoreCommonName,
+				// AccessData intentionally empty — access credentials not yet provisioned
+			}
+		}))
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.True(t, needed, "should need provisioning when AccessData is empty even if LocalityID is set")
+	})
+
+	t.Run("returns false when both LocalityID and AccessData are set", func(t *testing.T) {
+		// Arrange: fully provisioned config with both locality and access credentials
+		m, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{
+				LocalityID: testutils.TestLocalityID,
+				CommonName: testutils.TestDefaultKeystoreCommonName,
+				AccessData: model.KeystoreAccessData{"key": "value"},
+			}
+		}))
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.False(t, needed, "should not need provisioning when LocalityID and AccessData are both set")
+	})
+}

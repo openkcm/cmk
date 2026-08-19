@@ -103,6 +103,7 @@ func (s *CLISuite) SetupSuite() {
 		cm,
 		eventFactory,
 		cmkAuditor,
+		nil,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)
