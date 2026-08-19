@@ -309,6 +309,65 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 			},
 		},
 	},
+	constants.InternalTaskPendingStateSyncRole: {
+		{
+			ID: constants.InternalTaskPendingStateSyncPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
+				{
+					Type: RepoResourceTypeKey,
+					Actions: []RepoAction{
+						RepoActionFirst,
+						RepoActionCount,
+						RepoActionList,
+						RepoActionUpdate,
+						RepoActionCreate,
+					},
+				},
+				{
+					// KeyVersion: joined in Get to fetch the latest key version.
+					Type: RepoResourceTypeKeyversion,
+					Actions: []RepoAction{
+						RepoActionFirst,
+					},
+				},
+				{
+					// KeyConfiguration: read primary key ID (First) and update it (Patch) in setPrimaryIfFirstKey.
+					Type: RepoResourceTypeKeyconfiguration,
+					Actions: []RepoAction{
+						RepoActionFirst,
+						RepoActionUpdate,
+					},
+				},
+				{
+					Type: RepoResourceTypeCertificate,
+					Actions: []RepoAction{
+						RepoActionFirst,
+						RepoActionCount,
+						RepoActionCreate,
+						RepoActionUpdate,
+					},
+				},
+				{
+					// TenantConfig: read stored keystore config (First) and write it back after
+					// provisioning (Set = Delete + Create).
+					Type: RepoResourceTypeTenantconfig,
+					Actions: []RepoAction{
+						RepoActionFirst,
+						RepoActionDelete,
+						RepoActionCreate,
+					},
+				},
+				{
+					// Keystore pool: pop an item (First + Delete) when no stored config exists yet.
+					Type: RepoResourceTypeKeystore,
+					Actions: []RepoAction{
+						RepoActionFirst,
+						RepoActionDelete,
+					},
+				},
+			},
+		},
+	},
 	constants.InternalTaskKeystorePoolRole: {
 		{
 			ID: constants.InternalTaskKeystorePoolPolicy,

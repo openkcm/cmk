@@ -67,7 +67,7 @@ func (s *KeyVersionManagerSuit) SetupSuite() {
 	userManager := manager.NewUserManager(s.r, cmkAuditor)
 	tagManager := manager.NewTagManager(s.r)
 	keyConfigManager := manager.NewKeyConfigManager(s.r, certManager, userManager, tagManager, cmkAuditor, nil, &cfg)
-	s.km = manager.NewKeyManager(s.r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor)
+	s.km = manager.NewKeyManager(s.r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil)
 	s.kvm = manager.NewKeyVersionManager(
 		s.r,
 		svcRegistry,

@@ -170,6 +170,7 @@ func createTenantManager(
 		cm,
 		eventFactory,
 		cmkAuditor,
+		nil,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)

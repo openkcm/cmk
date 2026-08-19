@@ -41,6 +41,9 @@ var (
 	ErrGetImportParamsFromProvider  = errors.New("failed to get import parameters from provider")
 	ErrImportKeyMaterialsToProvider = errors.New("failed to import key materials to provider")
 	ErrKeyIsNotEnabled              = errors.New("key is not enabled")
+	ErrKeyIsDeleted                 = errors.New("key is deleted")
+	ErrKeyInPendingState            = errors.New("operation not allowed: key is in a pending state")
+	ErrProvisioningTimeout          = errors.New("provisioning timeout")
 
 	ErrGetKeyDB                         = errors.New("failed to get key from database")
 	ErrGettingKeyByID                   = errors.New("failed to get key by ID")
