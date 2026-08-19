@@ -256,8 +256,8 @@ func TestCreate(t *testing.T) {
 					k.Provider = providerTest
 				})
 			},
-			wantErr: true,
-			errMsg:  "failed to authenticate with the keystore provider",
+			wantErr:   false,
+			wantState: cmkapi.KeyStatePENDINGREGISTRATION,
 		},
 		{
 			name: "HYOK key creation key not found",
@@ -2203,4 +2203,313 @@ func SetupKeyTestWithAsyncClient(
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 	return km, r, ctx, keyConfig
+}
+
+// createTestHYOKKeyDirect persists a HYOK key directly in the given state,
+// bypassing the manager's Create flow. Used for PENDING_REGISTRATION sync tests.
+func createTestHYOKKeyDirect(t *testing.T, r repo.Repo, ctx context.Context, keyConfigID uuid.UUID, state cmkapi.KeyState) *model.Key {
+	t.Helper()
+	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+	require.NoError(t, err)
+
+	cryptoAccessData := model.KeyAccessData{
+		"crypto-1": {
+			CertificateSubject: new("CN=test_tenant0,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE"),
+			AdditionalProperties: map[string]any{
+				"someKey": "someValue",
+			},
+		},
+	}
+	cryptoBytes, err := json.Marshal(cryptoAccessData)
+	require.NoError(t, err)
+
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.State = state
+		k.NativeID = new("mock-key/11111111")
+		k.ManagementAccessData = hyokInfo
+		k.Provider = providerTest
+		k.CryptoAccessData = cryptoBytes
+	})
+	testutils.CreateTestEntities(ctx, t, r, key)
+	return key
+}
+
+func TestCreateHYOKPendingRegistration(t *testing.T) {
+	t.Run("HYOK key is created in PENDING_REGISTRATION when GetKey returns auth error", func(t *testing.T) {
+		// Use invalid credentials to trigger ErrProviderAuthenticationFailed on GetKey.
+		invalidInfo, err := json.Marshal(map[string]string{"AccountID": "bad", "UserID": "bad"})
+		require.NoError(t, err)
+		cryptoAccessData := model.KeyAccessData{"crypto-1": {AdditionalProperties: map[string]any{"someKey": "someValue"}}}
+		cryptoBytes, err := json.Marshal(cryptoAccessData)
+		require.NoError(t, err)
+
+		km, r, ctx, keyConfig := SetupKeyTest(t)
+		seedDefaultKeystore(t, r, ctx)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.NativeID = new("mock-key/11111111")
+			k.ManagementAccessData = invalidInfo
+			k.Provider = providerTest
+			k.CryptoAccessData = cryptoBytes
+		})
+
+		result, err := km.Create(ctx, key)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, cmkapi.KeyStatePENDINGREGISTRATION, result.State)
+
+		dbKey := &model.Key{ID: result.ID}
+		found, dbErr := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, dbErr)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStatePENDINGREGISTRATION, dbKey.State)
+	})
+
+	t.Run("PENDING_REGISTRATION HYOK key is not set as primary", func(t *testing.T) {
+		invalidInfo, err := json.Marshal(map[string]string{"AccountID": "bad", "UserID": "bad"})
+		require.NoError(t, err)
+		cryptoAccessData := model.KeyAccessData{"crypto-1": {AdditionalProperties: map[string]any{"someKey": "someValue"}}}
+		cryptoBytes, err := json.Marshal(cryptoAccessData)
+		require.NoError(t, err)
+
+		km, r, ctx, keyConfig := SetupKeyTest(t)
+		seedDefaultKeystore(t, r, ctx)
+
+		freshKeyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, freshKeyConfig)
+		localCtx := testutils.InjectBusinessUserDataIntoContext(
+			ctx, uuid.NewString(),
+			[]string{freshKeyConfig.AdminGroup.IAMIdentifier, keyConfig.AdminGroup.IAMIdentifier},
+		)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = freshKeyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.NativeID = new("mock-key/11111111")
+			k.ManagementAccessData = invalidInfo
+			k.Provider = providerTest
+			k.CryptoAccessData = cryptoBytes
+		})
+
+		result, err := km.Create(localCtx, key)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, cmkapi.KeyStatePENDINGREGISTRATION, result.State)
+
+		kc := &model.KeyConfiguration{ID: freshKeyConfig.ID}
+		found, dbErr := r.First(localCtx, kc, *repo.NewQuery())
+		require.NoError(t, dbErr)
+		require.True(t, found)
+		assert.Nil(t, kc.PrimaryKeyID, "PENDING_REGISTRATION key must not become primary")
+	})
+
+	t.Run("HYOK key creation rejects synchronously when key is not in ENABLED state", func(t *testing.T) {
+		// Plugin returns DISABLED for this key — static validation, not auth error.
+		disabledPlugin := testplugins.NewTestKeyManagement(true, false)
+		disabledPlugin.HandleKeyRecord("mock-key/disabled-key", testplugins.DisabledKeyStatus)
+
+		km, r, ctx, keyConfig := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, disabledPlugin))
+		seedDefaultKeystore(t, r, ctx)
+
+		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+		require.NoError(t, err)
+		cryptoAccessData := model.KeyAccessData{"crypto-1": {AdditionalProperties: map[string]any{"someKey": "someValue"}}}
+		cryptoBytes, err := json.Marshal(cryptoAccessData)
+		require.NoError(t, err)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.NativeID = new("mock-key/disabled-key")
+			k.ManagementAccessData = hyokInfo
+			k.Provider = providerTest
+			k.CryptoAccessData = cryptoBytes
+		})
+
+		result, err := km.Create(ctx, key)
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrInvalidKeyState, "disabled key must be rejected synchronously")
+	})
+}
+
+func TestUpdateKeyPendingRegistrationGuard(t *testing.T) {
+	km, r, ctx, keyConfig := SetupKeyTest(t)
+
+	t.Run("enable/disable rejected when key is in PENDING_REGISTRATION state", func(t *testing.T) {
+		key := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGREGISTRATION)
+
+		_, err := km.UpdateKey(ctx, key.ID, cmkapi.KeyPatch{Enabled: new(true)})
+
+		assert.ErrorIs(t, err, manager.ErrKeyInPendingState)
+	})
+
+	t.Run("name update allowed on PENDING_REGISTRATION key", func(t *testing.T) {
+		key := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGREGISTRATION)
+		newName := uuid.NewString()
+
+		result, err := km.UpdateKey(ctx, key.ID, cmkapi.KeyPatch{Name: new(newName)})
+
+		require.NoError(t, err)
+		assert.Equal(t, newName, result.Name)
+	})
+}
+
+func TestSyncPendingRegistrationKey(t *testing.T) {
+	t.Run("transitions key to ENABLED when auth succeeds and key is enabled in keystore", func(t *testing.T) {
+		km, r, ctx, keyConfig := SetupKeyTest(t)
+
+		key := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGREGISTRATION)
+
+		syncErr := km.SyncPendingRegistrationKey(ctx, key.ID)
+
+		require.NoError(t, syncErr)
+		dbKey := &model.Key{ID: key.ID}
+		found, err := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStateENABLED, dbKey.State,
+			"key should transition to ENABLED when auth succeeds")
+	})
+
+	t.Run("transitions key to ERROR when key not found in keystore", func(t *testing.T) {
+		km, r, ctx, keyConfig := SetupKeyTest(t)
+
+		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+		require.NoError(t, err)
+		cryptoAccessData := model.KeyAccessData{"crypto-1": {AdditionalProperties: map[string]any{"someKey": "someValue"}}}
+		cryptoBytes, err := json.Marshal(cryptoAccessData)
+		require.NoError(t, err)
+
+		// NativeID points to a key that does not exist in the test keystore.
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.State = cmkapi.KeyStatePENDINGREGISTRATION
+			k.NativeID = new("mock-key/nonexistent")
+			k.ManagementAccessData = hyokInfo
+			k.Provider = providerTest
+			k.CryptoAccessData = cryptoBytes
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		syncErr := km.SyncPendingRegistrationKey(ctx, key.ID)
+
+		require.NoError(t, syncErr, "non-retryable failure should be handled internally (no error returned)")
+		dbKey := &model.Key{ID: key.ID}
+		found, dbErr := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, dbErr)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStateERROR, dbKey.State,
+			"key should transition to ERROR when key not found in keystore")
+	})
+
+	t.Run("returns error (retryable) when auth still fails", func(t *testing.T) {
+		km, r, ctx, keyConfig := SetupKeyTest(t)
+
+		invalidInfo, err := json.Marshal(map[string]string{"AccountID": "bad", "UserID": "bad"})
+		require.NoError(t, err)
+		cryptoAccessData := model.KeyAccessData{"crypto-1": {AdditionalProperties: map[string]any{"someKey": "someValue"}}}
+		cryptoBytes, err := json.Marshal(cryptoAccessData)
+		require.NoError(t, err)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.State = cmkapi.KeyStatePENDINGREGISTRATION
+			k.NativeID = new("mock-key/11111111")
+			k.ManagementAccessData = invalidInfo
+			k.Provider = providerTest
+			k.CryptoAccessData = cryptoBytes
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		syncErr := km.SyncPendingRegistrationKey(ctx, key.ID)
+
+		assert.Error(t, syncErr, "auth still failing should return error so Asynq retries")
+		assert.ErrorIs(t, syncErr, manager.ErrKeyRegistrationAuthFailed)
+
+		dbKey := &model.Key{ID: key.ID}
+		found, dbErr := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, dbErr)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStatePENDINGREGISTRATION, dbKey.State,
+			"state must remain PENDING_REGISTRATION while auth is still failing")
+	})
+
+	t.Run("transitions key to FORBIDDEN on timeout", func(t *testing.T) {
+		original := *manager.PendingRegistrationTimeout
+		*manager.PendingRegistrationTimeout = time.Nanosecond
+		t.Cleanup(func() { *manager.PendingRegistrationTimeout = original })
+
+		km, r, ctx, keyConfig := SetupKeyTest(t)
+
+		key := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGREGISTRATION)
+
+		time.Sleep(time.Millisecond)
+		syncErr := km.SyncPendingRegistrationKey(ctx, key.ID)
+
+		require.NoError(t, syncErr)
+		dbKey := &model.Key{ID: key.ID}
+		found, err := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStateFORBIDDEN, dbKey.State,
+			"key should transition to FORBIDDEN after timeout")
+	})
+}
+
+func TestSyncPendingRegistrationKeyEdgeCases(t *testing.T) {
+	t.Run("skips sync when key no longer exists", func(t *testing.T) {
+		km, _, ctx, _ := SetupKeyTest(t)
+
+		err := km.SyncPendingRegistrationKey(ctx, uuid.New())
+
+		require.NoError(t, err, "deleted key should be silently skipped")
+	})
+
+	t.Run("skips sync when key is not in PENDING_REGISTRATION state", func(t *testing.T) {
+		km, r, ctx, keyConfig := SetupKeyTest(t)
+
+		key := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED)
+
+		err := km.SyncPendingRegistrationKey(ctx, key.ID)
+
+		require.NoError(t, err, "non-PENDING_REGISTRATION key should be a no-op")
+	})
+}
+
+func TestSyncHYOKKeysExcludesPendingRegistration(t *testing.T) {
+	t.Run("PENDING_REGISTRATION keys are excluded from HYOK key-state-check loop", func(t *testing.T) {
+		km, r, ctx, keyConfig := SetupKeyTest(t)
+
+		enabledKey := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED)
+		pendingKey := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGREGISTRATION)
+
+		syncErr := km.SyncHYOKKeys(ctx)
+
+		require.NoError(t, syncErr)
+
+		// PENDING_REGISTRATION key must remain unchanged.
+		dbPending := &model.Key{ID: pendingKey.ID}
+		found, err := r.First(ctx, dbPending, *repo.NewQuery())
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStatePENDINGREGISTRATION, dbPending.State,
+			"PENDING_REGISTRATION key must not be touched by SyncHYOKKeys")
+
+		// ENABLED key should still be ENABLED.
+		dbEnabled := &model.Key{ID: enabledKey.ID}
+		found, err = r.First(ctx, dbEnabled, *repo.NewQuery())
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStateENABLED, dbEnabled.State)
+	})
 }

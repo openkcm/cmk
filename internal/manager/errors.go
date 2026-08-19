@@ -14,6 +14,7 @@ var (
 	ErrConfigNotFound          = errors.New("config not found")
 	ErrKeyCreationFailed       = errors.New("failed to create key in provider")
 	ErrKeyRegistration         = errors.New("failed to register key from provider")
+	ErrKeyRegistrationAuthFailed = errors.New("HYOK key registration failed: authentication error, pending async retry")
 	ErrUnsupportedKeyAlgorithm = errors.New("unsupported key algorithm")
 	ErrInvalidKeyState         = errors.New("invalid key state")
 	ErrHYOKKeyActionNotAllowed = errors.New("HYOK key action not allowed")

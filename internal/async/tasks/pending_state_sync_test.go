@@ -29,6 +29,10 @@ func (m *pendingStateUpdaterMock) SyncPendingCreationKey(_ context.Context, _ uu
 	return m.err
 }
 
+func (m *pendingStateUpdaterMock) SyncPendingRegistrationKey(_ context.Context, _ uuid.UUID) error {
+	return m.err
+}
+
 func TestPendingStateSync(t *testing.T) {
 	db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
@@ -70,7 +74,7 @@ func TestPendingStateSync(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("should return error when SyncPendingCreationKey fails", func(t *testing.T) {
+	t.Run("should return error when sync fails", func(t *testing.T) {
 		mock := &pendingStateUpdaterMock{err: errMockSyncPendingKey}
 		handler := tasks.NewPendingStateSync(mock, r)
 

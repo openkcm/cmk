@@ -71,9 +71,10 @@ const (
 	KeyStateENABLED         KeyState = "ENABLED"
 	KeyStateERROR           KeyState = "ERROR"
 	KeyStateFORBIDDEN       KeyState = "FORBIDDEN"
-	KeyStatePENDINGCREATION KeyState = "PENDING_CREATION"
-	KeyStatePENDINGDELETION KeyState = "PENDING_DELETION"
-	KeyStatePENDINGIMPORT   KeyState = "PENDING_IMPORT"
+	KeyStatePENDINGCREATION    KeyState = "PENDING_CREATION"
+	KeyStatePENDINGDELETION    KeyState = "PENDING_DELETION"
+	KeyStatePENDINGIMPORT      KeyState = "PENDING_IMPORT"
+	KeyStatePENDINGREGISTRATION KeyState = "PENDING_REGISTRATION"
 	KeyStateUNKNOWN         KeyState = "UNKNOWN"
 )
 
@@ -99,6 +100,8 @@ func (e KeyState) Valid() bool {
 	case KeyStatePENDINGDELETION:
 		return true
 	case KeyStatePENDINGIMPORT:
+		return true
+	case KeyStatePENDINGREGISTRATION:
 		return true
 	case KeyStateUNKNOWN:
 		return true
@@ -644,7 +647,7 @@ type Key struct {
 	// Region The region where the key is stored
 	Region *KeyRegion `json:"region,omitempty"`
 
-	// State Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states, the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed. FORBIDDEN state is for when a HYOK customer key permission is not granted to the system. DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination. PENDING_CREATION is a transient state for BYOK keys where provider-side prerequisites are still being set up. ERROR is a terminal failure state for keys that could not be provisioned within the timeout.
+	// State Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states, the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed. FORBIDDEN state is for when a HYOK customer key permission is not granted to the system. DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination. PENDING_CREATION is a transient state for BYOK keys where provider-side prerequisites are still being set up. PENDING_REGISTRATION is a transient state for HYOK keys where the initial authentication to the customer keystore failed and a retry loop is in progress. ERROR is a terminal failure state for keys that could not be provisioned within the timeout.
 	State *KeyState `json:"state,omitempty"`
 
 	// Type The type of the Key.
@@ -711,7 +714,7 @@ type KeyCommon struct {
 	// key identifier in full URL format.
 	NativeID *string `json:"nativeID,omitempty"`
 
-	// State Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states, the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed. FORBIDDEN state is for when a HYOK customer key permission is not granted to the system. DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination. PENDING_CREATION is a transient state for BYOK keys where provider-side prerequisites are still being set up. ERROR is a terminal failure state for keys that could not be provisioned within the timeout.
+	// State Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states, the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed. FORBIDDEN state is for when a HYOK customer key permission is not granted to the system. DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination. PENDING_CREATION is a transient state for BYOK keys where provider-side prerequisites are still being set up. PENDING_REGISTRATION is a transient state for HYOK keys where the initial authentication to the customer keystore failed and a retry loop is in progress. ERROR is a terminal failure state for keys that could not be provisioned within the timeout.
 	State *KeyState `json:"state,omitempty"`
 
 	// Type The type of the Key.
@@ -872,7 +875,7 @@ type KeyProvider = string
 // KeyRegion The region where the key is stored
 type KeyRegion = string
 
-// KeyState Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states, the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed. FORBIDDEN state is for when a HYOK customer key permission is not granted to the system. DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination. PENDING_CREATION is a transient state for BYOK keys where provider-side prerequisites are still being set up. ERROR is a terminal failure state for keys that could not be provisioned within the timeout.
+// KeyState Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states, the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed. FORBIDDEN state is for when a HYOK customer key permission is not granted to the system. DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination. PENDING_CREATION is a transient state for BYOK keys where provider-side prerequisites are still being set up. PENDING_REGISTRATION is a transient state for HYOK keys where the initial authentication to the customer keystore failed and a retry loop is in progress. ERROR is a terminal failure state for keys that could not be provisioned within the timeout.
 type KeyState string
 
 // KeyTotalVersions The number of Versions of the Key
@@ -900,7 +903,7 @@ type KeyVersion struct {
 	// NativeID The native identifier of the key material version.
 	NativeID *string `json:"nativeID,omitempty"`
 
-	// State Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states, the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed. FORBIDDEN state is for when a HYOK customer key permission is not granted to the system. DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination. PENDING_CREATION is a transient state for BYOK keys where provider-side prerequisites are still being set up. ERROR is a terminal failure state for keys that could not be provisioned within the timeout.
+	// State Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states, the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed. FORBIDDEN state is for when a HYOK customer key permission is not granted to the system. DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination. PENDING_CREATION is a transient state for BYOK keys where provider-side prerequisites are still being set up. PENDING_REGISTRATION is a transient state for HYOK keys where the initial authentication to the customer keystore failed and a retry loop is in progress. ERROR is a terminal failure state for keys that could not be provisioned within the timeout.
 	State *KeyState `json:"state,omitempty"`
 }
 

@@ -18,11 +18,12 @@ import (
 // PendingStateUpdater is implemented by KeyManager.
 type PendingStateUpdater interface {
 	SyncPendingCreationKey(ctx context.Context, keyID uuid.UUID) error
+	SyncPendingRegistrationKey(ctx context.Context, keyID uuid.UUID) error
 }
 
 // PendingStateSync is an on-demand per-key task that processes a single key in
-// PENDING_CREATION state. It completes provisioning once provider-side prerequisites
-// are met, or transitions the key to ERROR on hard timeout.
+// PENDING_CREATION or PENDING_REGISTRATION state. It drives provisioning or auth
+// retry until success, or transitions the key to ERROR/FORBIDDEN on hard timeout.
 type PendingStateSync struct {
 	keyClient PendingStateUpdater
 	repo      repo.Repo
@@ -55,7 +56,14 @@ func (h *PendingStateSync) ProcessTask(ctx context.Context, task *asynq.Task) er
 
 	log.Info(ctx, "Starting pending state sync task", slog.String("keyID", keyID.String()))
 
+	// Each sync function guards its own state and no-ops if the key is not in the
+	// expected state. Try both pending states; at most one will do real work.
 	if err := h.keyClient.SyncPendingCreationKey(ctx, keyID); err != nil {
+		log.Info(ctx, "Pending state sync will retry", slog.String("keyID", keyID.String()), log.ErrorAttr(err))
+		return err
+	}
+
+	if err := h.keyClient.SyncPendingRegistrationKey(ctx, keyID); err != nil {
 		log.Info(ctx, "Pending state sync will retry", slog.String("keyID", keyID.String()), log.ErrorAttr(err))
 		return err
 	}
