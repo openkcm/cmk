@@ -84,7 +84,7 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mgr, db, tenant := SetupWorkflowManager(t)
+			mgr, db, tenant, _ := SetupWorkflowManager(t)
 			r := sqlRepo.NewRepository(db)
 			ctx := testutils.CreateCtxWithTenant(tenant)
 

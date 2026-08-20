@@ -21,6 +21,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -40,7 +41,7 @@ var (
 	})
 )
 
-func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
+func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage, *testplugins.TestKeyManagement) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
@@ -49,8 +50,9 @@ func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *tes
 
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Registry: testutils.NewTestPlugins(),
+		Registry: testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp)),
 		Config: config.Config{
 			Database: dbCfg,
 			CryptoLayer: config.CryptoLayer{
@@ -62,11 +64,11 @@ func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *tes
 		},
 		EnableBusinessUserDataMW: true,
 		SigningKeyStorage:        keyStorage,
-	}), tenants[0], keyStorage
+	}), tenants[0], keyStorage, pluginOp
 }
 
 func TestKeyControllerGetKeys(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	nativeID := "arn:aws:kms:us-west-2:111122223333:alias/<alias-name>"
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
@@ -161,7 +163,7 @@ func TestKeyControllerGetKeys(t *testing.T) {
 }
 
 func TestKeyControllerGetKeysPagination(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -294,7 +296,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 }
 
 func TestKeyControllerPostKeys(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	r := sql.NewRepository(db)
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -534,7 +536,7 @@ func TestKeyControllerPostKeysBYOKPendingCreation(t *testing.T) {
 	// the key is persisted in PENDING_CREATION state and the async sync worker completes
 	// provisioning once the keystore pool is filled. This replaces the old synchronous
 	// KEYSTORE_POOL_DRAINED 503 behaviour.
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -647,7 +649,7 @@ func TestKeyControllerPostKeysInvalidKeyAttribute(t *testing.T) {
 }
 
 func TestKeyControllerGetKeysKeyID(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	r := sql.NewRepository(db)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 
@@ -735,7 +737,7 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -755,6 +757,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
+		k.KeyType = cmkapi.KeyTypeHYOK
 	})
 
 	pKeyID := uuid.New()
@@ -886,7 +889,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerUpdateKey(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, provider := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -930,12 +933,18 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	validMgmtData, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 	assert.NoError(t, err)
 
+	providerKeyBYOK, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.BYOK,
+	})
+	assert.NoError(t, err)
+
 	key := testutils.NewKey(func(k *model.Key) {
 		k.ID = keyID
 		k.CryptoAccessData = cryptoData
 		k.ManagementAccessData = validMgmtData
 		k.KeyConfigurationID = kc.ID
 		k.Provider = providerTest
+		k.NativeID = &providerKeyBYOK.KeyID
 	})
 
 	hyokKey := testutils.NewKey(func(k *model.Key) {
@@ -1202,7 +1211,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 }
 
 func TestKeyControllerGetImportParams(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -1350,7 +1359,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 }
 
 func TestKeyControllerImportKeyMaterial(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, provider := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -1359,10 +1368,15 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
+	providerKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
+
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStatePENDINGIMPORT
-		k.NativeID = new("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-1234-567890abcdef")
+		k.NativeID = &providerKey.KeyID
 		k.KeyConfigurationID = keyConfig.ID
 	})
 

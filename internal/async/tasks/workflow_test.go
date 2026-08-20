@@ -39,7 +39,7 @@ var allowedWorkflowTestActions = []authz.RepoAction{
 
 var allowedWorkflowApproversTestActions = []authz.RepoAction{
 	authz.RepoActionCreate,
-	authz.RepoActionDelete,
+	authz.RepoActionUpdate,
 }
 
 type WorkflowAssignMock struct {

@@ -159,7 +159,7 @@ func (km *KeyManager) Create(
 		return nil, err
 	}
 
-	if err := km.persistCreatedKey(ctx, key, keyResp); err != nil {
+	if err := km.persistCreatedKey(ctx, provider, key, keyResp); err != nil {
 		return nil, err
 	}
 
@@ -530,6 +530,7 @@ func (km *KeyManager) isBYOKProvisioningNeeded(ctx context.Context) (bool, error
 
 func (km *KeyManager) persistCreatedKey(
 	ctx context.Context,
+	provider *ProviderConfig,
 	key *model.Key,
 	keyResp *keymanagement.GetKeyResponse,
 ) error {
@@ -541,7 +542,7 @@ func (km *KeyManager) persistCreatedKey(
 			return errs.Wrap(ErrCreateKeyDB, err)
 		}
 		if key.KeyType == constants.KeyTypeHYOK && keyResp != nil {
-			if err := km.syncKeyVersion(ctx, key, keyResp); err != nil {
+			if err := km.syncKeyVersions(ctx, provider, key); err != nil {
 				return errs.Wrap(ErrCreateKeyVersionDB, err)
 			}
 		}
@@ -1267,7 +1268,7 @@ func (km *KeyManager) fetchImportParams(ctx context.Context, key *model.Key) (*m
 	}
 	// Set ImportParams in DB
 	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
-		err = km.repo.Set(ctx, importParams)
+		err = km.repo.Set(ctx, importParams, *repo.NewQuery())
 		if err != nil {
 			return errs.Wrap(ErrSetImportParamsDB, err)
 		}
@@ -1371,11 +1372,20 @@ func (km *KeyManager) handleSystemsOnKeyRotation(ctx context.Context, key *model
 }
 
 func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) error {
+	ctx = model.LogInjectKey(ctx, key)
 	oldKeyState := key.State
 
-	ctx = model.LogInjectKey(ctx, key)
+	if key.KeyType != cmkapi.KeyTypeHYOK {
+		return ErrInvalidKeyTypeForHYOKSync
+	}
 
-	keyResp, err := km.getHYOKKeySync(ctx, key)
+	provider, err := km.GetOrInitProvider(ctx, key)
+	if err != nil {
+		err = errs.Wrap(ErrFailedToInitProvider, err)
+		log.Error(ctx, "Failed to sync HYOK key state with provider", err, slog.String("keyID", key.ID.String()))
+	}
+
+	keyResp, err := km.getKeyFromProvider(ctx, provider, key)
 	if err != nil {
 		log.Error(ctx, "Failed to sync HYOK key state with provider", err, slog.String("keyID", key.ID.String()))
 		key.State = km.getKeyStateOnSyncError(ctx, key, err)
@@ -1384,10 +1394,9 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 		key.State = cmkapi.KeyState(keyResp.Status)
 
 		// Check if a new version was detected from the keystore
-		if keyResp.LatestKeyVersionId != "" {
-			if err := km.syncKeyVersion(ctx, key, keyResp); err != nil {
-				log.Warn(ctx, "Failed to sync key version", log.ErrorAttr(err))
-			}
+		err := km.syncKeyVersions(ctx, provider, key)
+		if err != nil {
+			log.Warn(ctx, "Failed to sync key version", log.ErrorAttr(err))
 		}
 	}
 
@@ -1395,11 +1404,10 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 		return nil
 	}
 
-	// Save the updated key back to the database
 	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
-		_, txErr := km.repo.Patch(ctx, key, *repo.NewQuery())
-		if txErr != nil {
-			return txErr
+		_, err := km.repo.Patch(ctx, key, *repo.NewQuery())
+		if err != nil {
+			return err
 		}
 
 		return km.handleKeyStateTransition(ctx, key, oldKeyState)
@@ -1411,62 +1419,35 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 	return nil
 }
 
-// syncKeyVersion checks if the latest version from keystore matches the stored version.
+// syncKeyVersions checks if the latest version from keystore matches the stored version.
 // If a new version is detected, it creates a new KeyVersion record.
-func (km *KeyManager) syncKeyVersion(
+func (km *KeyManager) syncKeyVersions(
 	ctx context.Context,
+	provider *ProviderConfig,
 	key *model.Key,
-	keyResp *keymanagement.GetKeyResponse,
 ) error {
-	if keyResp.LatestKeyVersionId == "" {
-		return nil
-	}
-
-	// Get rotation time from response (or use current time as fallback)
-	rotationTime := km.getRotationTime(keyResp)
-
-	// Get current stored version (latest RotatedAt)
-	currentVersion, err := km.keyVersionManager.GetLatestVersion(ctx, key.ID)
-	if err != nil && !errors.Is(err, ErrNoKeyVersionsFound) {
-		// Return error unless it's just "no versions found" (which is expected for first sync)
+	keyResp, err := km.getKeyVersionsFromProvider(ctx, provider, key)
+	if err != nil {
 		return err
 	}
 
-	// Compare with latest_key_version_id from response
-	if currentVersion != nil && currentVersion.NativeID == keyResp.LatestKeyVersionId {
-		// Same version - no changes needed
-		return nil
+	if len(keyResp.Versions) < 1 {
+		return ErrNoKeyVersionsFound
 	}
 
-	// Different version detected - create new one
-	return km.handleNewKeyVersion(ctx, key, keyResp, rotationTime)
-}
-
-func (km *KeyManager) getRotationTime(
-	keyResp *keymanagement.GetKeyResponse,
-) *time.Time {
-	if keyResp.RotationTime == nil {
-		// Return current time as default when plugin doesn't provide rotation time
-		now := time.Now().UTC()
-		return &now
-	}
-
-	// RotationTime is already a *time.Time, just return it
-	return keyResp.RotationTime
+	return km.handleNewKeyVersion(ctx, key, keyResp)
 }
 
 func (km *KeyManager) handleNewKeyVersion(
 	ctx context.Context,
 	key *model.Key,
-	keyResp *keymanagement.GetKeyResponse,
-	rotationTime *time.Time,
+	keyResp *keymanagement.GetKeyVersionsResponse,
 ) error {
 	// New version detected - create it
-	newVersion, err := km.keyVersionManager.CreateVersion(
+	err := km.keyVersionManager.UpdateVersions(
 		ctx,
 		key.ID,
-		keyResp.LatestKeyVersionId,
-		rotationTime,
+		keyResp.Versions,
 	)
 	if err != nil {
 		return err
@@ -1475,7 +1456,6 @@ func (km *KeyManager) handleNewKeyVersion(
 	log.Debug(
 		ctx, "Created new key version",
 		slog.String("keyId", key.ID.String()),
-		slog.String("nativeId", newVersion.NativeID),
 	)
 
 	// Send audit log for rotation detection
@@ -1520,14 +1500,13 @@ func (km *KeyManager) handleKeyStateTransition(ctx context.Context, key *model.K
 	}
 }
 
-func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keymanagement.GetKeyResponse, error) {
-	if key.KeyType != cmkapi.KeyTypeHYOK {
-		return nil, ErrInvalidKeyTypeForHYOKSync
-	}
-
-	provider, err := km.GetOrInitProvider(ctx, key)
-	if err != nil {
-		return nil, errs.Wrap(ErrFailedToInitProvider, err)
+func (km *KeyManager) getKeyFromProvider(
+	ctx context.Context,
+	provider *ProviderConfig,
+	key *model.Key,
+) (*keymanagement.GetKeyResponse, error) {
+	if provider == nil {
+		return nil, ErrFailedToInitProvider
 	}
 
 	configValues, err := mergeProviderConfigValuesWithKeyAccessData(provider, key)
@@ -1543,6 +1522,29 @@ func (km *KeyManager) getHYOKKeySync(ctx context.Context, key *model.Key) (*keym
 	})
 	if err != nil {
 		return nil, errs.Wrap(ErrGetProviderKey, err)
+	}
+
+	return keyResp, nil
+}
+
+func (km *KeyManager) getKeyVersionsFromProvider(
+	ctx context.Context,
+	provider *ProviderConfig,
+	key *model.Key,
+) (*keymanagement.GetKeyVersionsResponse, error) {
+	configValues, err := mergeProviderConfigValuesWithKeyAccessData(provider, key)
+	if err != nil {
+		return nil, err
+	}
+
+	keyResp, err := provider.Client.GetKeyVersions(ctx, &keymanagement.GetKeyVersionsRequest{
+		Parameters: keymanagement.RequestParameters{
+			Config: common.KeystoreConfig{Values: configValues},
+			KeyID:  *key.NativeID,
+		},
+	})
+	if err != nil {
+		return nil, errs.Wrap(ErrGetProviderKeyVersions, err)
 	}
 
 	return keyResp, nil

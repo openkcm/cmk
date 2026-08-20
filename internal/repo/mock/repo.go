@@ -145,6 +145,7 @@ func (r *InMemoryRepository) Patch(
 func (r *InMemoryRepository) Set(
 	ctx context.Context,
 	resource repo.Resource,
+	_ repo.Query,
 ) error {
 	tenantDB, err := r.WithTenant(ctx, resource)
 	if err != nil {

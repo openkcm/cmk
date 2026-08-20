@@ -1439,7 +1439,7 @@ func (w *WorkflowManager) addApproversAndGroupAssociations(
 		for _, approver := range approvers {
 			approver.WorkflowID = workflow.ID
 
-			err = w.repo.Set(ctx, approver)
+			err = w.repo.Set(ctx, approver, *repo.NewQuery())
 			if err != nil {
 				return errs.Wrap(ErrAddApproversDB, err)
 			}
@@ -1450,7 +1450,7 @@ func (w *WorkflowManager) addApproversAndGroupAssociations(
 				ID:         uuid.New(),
 				WorkflowID: workflow.ID,
 				GroupID:    g.ID,
-			})
+			}, *repo.NewQuery())
 			if err != nil {
 				return err
 			}

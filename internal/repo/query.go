@@ -28,6 +28,7 @@ const (
 	Asc  OrderDirection = "asc"
 
 	IDField             QueryField = "id"
+	KeyIDField          QueryField = "key_id"
 	TypeField           QueryField = "type"
 	RegionField         QueryField = "region"
 	IdentifierField     QueryField = "identifier"
@@ -62,6 +63,7 @@ const (
 	ExpirationDateField QueryField = "expiration_date"
 	CreationDateField   QueryField = "creation_date"
 	CreatedField        QueryField = "created_at"
+	UpdatedField        QueryField = "updated_at"
 	RotatedField        QueryField = "rotated_at"
 	IssuerURLField      QueryField = "issuer_url"
 	IAMIdField          QueryField = "iam_identifier"
@@ -198,6 +200,10 @@ type Query struct {
 	// If All is true all fields will be updated. Otherwise only the provided will be updated
 	// If this is not provided, only non-zero values are updated
 	UpdateFields Update
+
+	// ConflictColumns specifies which columns define the upsert conflict for Set.
+	// When empty, Set defaults to conflict on the primary key with update all.
+	ConflictColumns []QueryField
 
 	// Used whenever a custom select is desired
 	// By default, if this is not provided select all fields
@@ -456,6 +462,11 @@ func (q *Query) UpdateAll(b bool) *Query {
 
 func (q *Query) Update(fields ...QueryField) *Query {
 	q.UpdateFields.Fields = append(q.UpdateFields.Fields, fields...)
+	return q
+}
+
+func (q *Query) OnConflict(columns ...QueryField) *Query {
+	q.ConflictColumns = columns
 	return q
 }
 

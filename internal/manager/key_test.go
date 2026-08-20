@@ -42,6 +42,7 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	repo.Repo,
 	context.Context,
 	*model.KeyConfiguration,
+	*model.Keystore,
 ) {
 	t.Helper()
 
@@ -101,20 +102,27 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 
+	ks := testutils.NewKeystore(func(_ *model.Keystore) {})
 	testutils.CreateTestEntities(
 		ctx,
 		t,
 		r,
 		keyConfig,
 		tenantDefaultCert,
-		keystoreDefaultCert,
-		keystoreKeyMgmtCert,
-		ksConfig,
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeRoleManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName
+		}),
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeKeyManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+		}),
+		ks,
 	)
 
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
-	return km, r, ctx, keyConfig
+	return km, r, ctx, keyConfig, ks
 }
 
 func createTestSystemManagedKey(t *testing.T, km *manager.KeyManager, r repo.Repo, ctx context.Context, keyConfigID uuid.UUID) *model.Key {
@@ -141,11 +149,17 @@ func seedDefaultKeystore(t *testing.T, r repo.Repo, ctx context.Context) {
 	ksConf := testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {})
 	ksConfBytes, err := json.Marshal(ksConf)
 	require.NoError(t, err)
-	err = r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksConfBytes})
+	err = r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksConfBytes}, *repo.NewQuery())
 	require.NoError(t, err)
 }
 
-func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context, keyConfigID uuid.UUID) *model.Key {
+func createTestHYOKKey(
+	t *testing.T,
+	km *manager.KeyManager,
+	ctx context.Context,
+	keyConfigID uuid.UUID,
+	provider *testplugins.TestKeyManagement,
+) *model.Key {
 	t.Helper()
 	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 	require.NoError(t, err)
@@ -161,10 +175,15 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 	cryptoBytes, err := json.Marshal(cryptoAccessData)
 	require.NoError(t, err)
 
+	keyProvider, err := provider.CreateKey(ctx, &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	require.NoError(t, err)
+
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
 		k.KeyType = cmkapi.KeyTypeHYOK
-		k.NativeID = new("mock-key/11111111")
+		k.NativeID = &keyProvider.KeyID
 		k.ManagementAccessData = hyokInfo
 		k.Provider = providerTest
 		k.CryptoAccessData = cryptoBytes
@@ -176,13 +195,19 @@ func createTestHYOKKey(t *testing.T, km *manager.KeyManager, ctx context.Context
 	return createdKey
 }
 
-func createTestBYOKKey(t *testing.T, r repo.Repo, ctx context.Context, keyConfigID uuid.UUID, state cmkapi.KeyState) *model.Key {
+func createTestBYOKKey(t *testing.T, r repo.Repo, ctx context.Context, keyConfigID uuid.UUID, state cmkapi.KeyState, provider *testplugins.TestKeyManagement) *model.Key {
 	t.Helper()
+
+	keyProvider, err := provider.CreateKey(ctx, &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.BYOK,
+	})
+
+	require.NoError(t, err)
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
 		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = state
-		k.NativeID = new("arn:aws:kms:us-west-2:111122223333:alias/<alias-name>")
+		k.NativeID = &keyProvider.KeyID
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, key)
@@ -191,7 +216,13 @@ func createTestBYOKKey(t *testing.T, r repo.Repo, ctx context.Context, keyConfig
 }
 
 func TestCreate(t *testing.T) {
-	km, r, ctx, keyConfig := SetupKeyTest(t)
+	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+
+	keyProvider, err := keyProviderPlugin.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	require.NoError(t, err)
 
 	// Seed a provisioned DEFAULT_KEYSTORE config so NeedsDefaultKeystoreProvisioning returns false
 	// and BYOK keys take the normal creation path through the provider.
@@ -224,7 +255,7 @@ func TestCreate(t *testing.T) {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
 					k.KeyType = cmkapi.KeyTypeHYOK
-					k.NativeID = new("mock-key/11111111")
+					k.NativeID = &keyProvider.KeyID
 					k.ManagementAccessData = hyokInfo
 					k.Provider = "INVALID"
 				})
@@ -237,7 +268,7 @@ func TestCreate(t *testing.T) {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
 					k.KeyType = cmkapi.KeyTypeHYOK
-					k.NativeID = new("mock-key/11111111")
+					k.NativeID = &keyProvider.KeyID
 					k.ManagementAccessData = hyokInfo
 					k.Provider = providerTest
 				})
@@ -251,7 +282,7 @@ func TestCreate(t *testing.T) {
 				return testutils.NewKey(func(k *model.Key) {
 					k.KeyConfigurationID = keyConfig.ID
 					k.KeyType = cmkapi.KeyTypeHYOK
-					k.NativeID = new("mock-key/11111111")
+					k.NativeID = &keyProvider.KeyID
 					k.ManagementAccessData = []byte("{\"invalid\": \"data\"}")
 					k.Provider = providerTest
 				})
@@ -349,7 +380,13 @@ func TestCreate(t *testing.T) {
 }
 
 func TestHYOKRegistrationCertificateSubject(t *testing.T) {
-	km, _, ctx, keyConfig := SetupKeyTest(t)
+	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+	km, _, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+
+	keyProvider, err := keyProviderPlugin.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	require.NoError(t, err)
 
 	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 	require.NoError(t, err)
@@ -368,7 +405,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
 			k.KeyType = cmkapi.KeyTypeHYOK
-			k.NativeID = new("mock-key/11111111")
+			k.NativeID = &keyProvider.KeyID
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
 			k.CryptoAccessData = cryptoBytes
@@ -403,7 +440,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
 			k.KeyType = cmkapi.KeyTypeHYOK
-			k.NativeID = new("mock-key/11111111")
+			k.NativeID = &keyProvider.KeyID
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
 			k.CryptoAccessData = cryptoBytes
@@ -422,7 +459,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
 			k.KeyType = cmkapi.KeyTypeHYOK
-			k.NativeID = new("mock-key/11111111")
+			k.NativeID = &keyProvider.KeyID
 			k.ManagementAccessData = hyokInfo
 			k.Provider = providerTest
 		})
@@ -434,7 +471,7 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 }
 
 func TestSetFirstKeyPrimary(t *testing.T) {
-	km, r, ctx, keyConfig := SetupKeyTest(t)
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t)
 
 	t.Run("Should set first key as primary", func(t *testing.T) {
 		createdKey1 := createTestSystemManagedKey(t, km, r, ctx, keyConfig.ID)
@@ -449,7 +486,7 @@ func TestSetFirstKeyPrimary(t *testing.T) {
 }
 
 func TestEditableCryptoData(t *testing.T) {
-	km, r, ctx, _ := SetupKeyTest(t)
+	km, r, ctx, _, _ := SetupKeyTest(t)
 
 	regionEditable := "region1"
 	regionNonEditable := "region2"
@@ -482,9 +519,9 @@ func TestEditableCryptoData(t *testing.T) {
 		})
 
 		testutils.CreateTestEntities(ctx, t, r, kc, sysFailed, sysConnected, key)
-		localCtx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{kc.AdminGroup.IAMIdentifier})
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{kc.AdminGroup.IAMIdentifier})
 
-		key, err = km.Get(localCtx, key.ID)
+		key, err = km.Get(ctx, key.ID)
 		assert.NoError(t, err)
 
 		assert.True(t, key.EditableRegions[regionEditable])
@@ -530,11 +567,12 @@ func TestEditableCryptoData(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
-	km, r, ctx, keyConfig := SetupKeyTest(t)
+	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
 
 	createdKey := createTestSystemManagedKey(t, km, r, ctx, keyConfig.ID)
-	hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
-	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+	hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
+	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 	tests := []struct {
 		name    string
@@ -581,8 +619,9 @@ func TestGet(t *testing.T) {
 
 func TestHYOKSync(t *testing.T) {
 	t.Run("HYOK key state is enabled after creation", func(t *testing.T) {
-		km, _, ctx, keyConfig := SetupKeyTest(t)
-		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, _, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		gotKey, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
@@ -590,8 +629,9 @@ func TestHYOKSync(t *testing.T) {
 	})
 
 	t.Run("HYOK key state syncs after provider disable", func(t *testing.T) {
-		km, _, ctx, keyConfig := SetupKeyTest(t)
-		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, _, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
@@ -607,8 +647,9 @@ func TestHYOKSync(t *testing.T) {
 	})
 
 	t.Run("hyok state syncs after provider disable", func(t *testing.T) {
-		km, _, ctx, keyConfig := SetupKeyTest(t)
-		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, _, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
@@ -633,8 +674,9 @@ func TestHYOKSync(t *testing.T) {
 	})
 
 	t.Run("hyok sync delete", func(t *testing.T) {
-		km, _, ctx, keyConfig := SetupKeyTest(t)
-		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, _, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
@@ -649,8 +691,9 @@ func TestHYOKSync(t *testing.T) {
 	})
 
 	t.Run("hyok sync delete/enable", func(t *testing.T) {
-		km, _, ctx, keyConfig := SetupKeyTest(t)
-		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, _, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
@@ -665,8 +708,9 @@ func TestHYOKSync(t *testing.T) {
 	})
 
 	t.Run("hyok sync delete/disable", func(t *testing.T) {
-		km, _, ctx, keyConfig := SetupKeyTest(t)
-		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, _, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
@@ -680,8 +724,9 @@ func TestHYOKSync(t *testing.T) {
 	})
 
 	t.Run("hyok state syncs on key deleted", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
@@ -694,8 +739,9 @@ func TestHYOKSync(t *testing.T) {
 	})
 
 	t.Run("hyok state syncs on auth change", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
@@ -708,8 +754,9 @@ func TestHYOKSync(t *testing.T) {
 	})
 
 	t.Run("hyok state disable twice then enable twice", func(t *testing.T) {
-		km, _, ctx, keyConfig := SetupKeyTest(t)
-		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, _, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		key, err := km.Get(ctx, hyokKey.ID)
 		assert.NoError(t, err)
@@ -782,7 +829,7 @@ func enableKey(t *testing.T, km *manager.KeyManager, ctx context.Context, hyokKe
 }
 
 func TestList(t *testing.T) {
-	km, r, ctx, keyConfig := SetupKeyTest(t)
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t)
 
 	createTestSystemManagedKey(t, km, r, ctx, keyConfig.ID)
 	createTestSystemManagedKey(t, km, r, ctx, keyConfig.ID)
@@ -836,7 +883,8 @@ func TestList(t *testing.T) {
 
 //nolint:nestif
 func TestUpdate(t *testing.T) {
-	km, r, ctx, keyConfig := SetupKeyTest(t)
+	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
 	createdKey := createTestSystemManagedKey(t, km, r, ctx, keyConfig.ID)
 
 	tests := []struct {
@@ -917,8 +965,8 @@ func TestUpdate(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
-		key := createTestHYOKKey(t, km, ctx, keyConfig.ID)
-		keyConfig.PrimaryKeyID = new(key.ID)
+		key := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
+		keyConfig.PrimaryKeyID = &key.ID
 
 		_, err := r.Patch(ctx, keyConfig, *repo.NewQuery())
 		assert.NoError(t, err)
@@ -951,8 +999,8 @@ func TestUpdate(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
-		key := createTestHYOKKey(t, km, ctx, keyConfig.ID)
-		keyConfig.PrimaryKeyID = new(key.ID)
+		key := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
+		keyConfig.PrimaryKeyID = &key.ID
 
 		_, err := r.Patch(ctx, keyConfig, *repo.NewQuery())
 		assert.NoError(t, err)
@@ -980,14 +1028,15 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	km, r, ctx, keyConfig := SetupKeyTest(t)
+	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
 
 	createdKey := createTestSystemManagedKey(t, km, r, ctx, keyConfig.ID)
 	createdPrimaryKey, err := km.Create(ctx, testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
 	}))
 	require.NoError(t, err)
-	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 	keyID := uuid.New()
 	keyConfigWSystems := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
@@ -1055,8 +1104,9 @@ func TestGetImportParams(t *testing.T) {
 	fetchedPublicKeyFromProvider := "mock-public-key-from-provider"
 
 	t.Run("Success_NilImportParams", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		got, err := km.GetImportParams(ctx, byokKey.ID)
 		assert.NoError(t, err)
@@ -1064,8 +1114,9 @@ func TestGetImportParams(t *testing.T) {
 	})
 
 	t.Run("Success_ImportParamsNotExpired", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
@@ -1079,8 +1130,9 @@ func TestGetImportParams(t *testing.T) {
 	})
 
 	t.Run("Success_NilExpires", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
@@ -1094,8 +1146,9 @@ func TestGetImportParams(t *testing.T) {
 	})
 
 	t.Run("Success_ImportParamsExpired", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
@@ -1109,8 +1162,9 @@ func TestGetImportParams(t *testing.T) {
 	})
 
 	t.Run("Error_InvalidKeyType", func(t *testing.T) {
-		km, _, ctx, keyConfig := SetupKeyTest(t)
-		sysKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, _, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		sysKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 		_, err := km.GetImportParams(ctx, sysKey.ID)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, manager.ErrInvalidKeyTypeForImportParams)
@@ -1118,7 +1172,7 @@ func TestGetImportParams(t *testing.T) {
 	})
 
 	t.Run("Error_InvalidKeyState", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t)
 
 		byokEnabledKey := testutils.NewKey(func(k *model.Key) {
 			k.KeyType = cmkapi.KeyTypeBYOK
@@ -1134,14 +1188,15 @@ func TestGetImportParams(t *testing.T) {
 	})
 
 	t.Run("Error_KeyNotFound", func(t *testing.T) {
-		km, _, ctx, _ := SetupKeyTest(t)
+		km, _, ctx, _, _ := SetupKeyTest(t)
 		_, err := km.GetImportParams(ctx, uuid.New())
 		assert.Error(t, err)
 	})
 
 	t.Run("Error_Unauthorized_WrongGroup", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		ctxWrongGroup := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{"different_group"})
 		_, err := km.GetImportParams(ctxWrongGroup, byokKey.ID)
@@ -1153,8 +1208,10 @@ func TestImportKeyMaterial(t *testing.T) {
 	validMaterial := "dGVzdC1rZXktbWF0ZXJpYWw="
 
 	t.Run("ImportParamsMissing", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		_, err := km.ImportKeyMaterial(ctx, byokKey.ID, validMaterial)
 
@@ -1164,8 +1221,9 @@ func TestImportKeyMaterial(t *testing.T) {
 	})
 
 	t.Run("ImportParamsExpired", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		paramsJSON, err := json.Marshal(map[string]any{
 			"providerParams": "test-provider-params",
@@ -1187,8 +1245,9 @@ func TestImportKeyMaterial(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		paramsJSON, err := json.Marshal(map[string]any{
 			"providerParams": "test-provider-params",
@@ -1207,8 +1266,9 @@ func TestImportKeyMaterial(t *testing.T) {
 	})
 
 	t.Run("EmptyWrappedKeyMaterial", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		_, err := km.ImportKeyMaterial(ctx, byokKey.ID, "")
 
@@ -1218,8 +1278,9 @@ func TestImportKeyMaterial(t *testing.T) {
 	})
 
 	t.Run("InvalidBase64WrappedKeyMaterial", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		_, err := km.ImportKeyMaterial(ctx, byokKey.ID, "not-base64")
 
@@ -1229,8 +1290,9 @@ func TestImportKeyMaterial(t *testing.T) {
 	})
 
 	t.Run("InvalidKeyType", func(t *testing.T) {
-		km, _, ctx, keyConfig := SetupKeyTest(t)
-		sysKey := createTestHYOKKey(t, km, ctx, keyConfig.ID)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, _, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		sysKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		_, err := km.ImportKeyMaterial(ctx, sysKey.ID, validMaterial)
 
@@ -1240,8 +1302,9 @@ func TestImportKeyMaterial(t *testing.T) {
 	})
 
 	t.Run("InvalidKeyState", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		enabledBYOK := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		enabledBYOK := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED, keyProviderPlugin)
 
 		paramsJSON, err := json.Marshal(map[string]any{
 			"providerParams": "test-provider-params",
@@ -1262,7 +1325,7 @@ func TestImportKeyMaterial(t *testing.T) {
 	})
 
 	t.Run("KeyNotFound", func(t *testing.T) {
-		km, _, ctx, _ := SetupKeyTest(t)
+		km, _, ctx, _, _ := SetupKeyTest(t)
 
 		_, err := km.ImportKeyMaterial(ctx, uuid.New(), validMaterial)
 
@@ -1271,8 +1334,9 @@ func TestImportKeyMaterial(t *testing.T) {
 	})
 
 	t.Run("Error_Unauthorized_WrongGroup", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
-		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT)
+		keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 		importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
 			ip.KeyID = byokKey.ID
 			ip.Expires = new(time.Now().Add(24 * time.Hour))
@@ -1286,15 +1350,12 @@ func TestImportKeyMaterial(t *testing.T) {
 }
 
 func TestKeyRotationTime(t *testing.T) {
-	// Known rotation time from keystore
-	keystoreRotationTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
-	keystoreRotationTimeStr := keystoreRotationTime.Format(time.RFC3339)
-
 	// Setup plugin with custom rotation time
-	pluginOps := testplugins.NewTestKeyManagement(true, true)
-	// Register the key in the plugin first
-	pluginOps.HandleKeyRecord("test-native-id", testplugins.EnabledKeyStatus)
-	pluginOps.SetKeyVersionInfo("test-native-id", "version-1", keystoreRotationTimeStr)
+	keyProviderPlugins := testplugins.NewTestKeyManagement(true, true)
+	keyProvider, err := keyProviderPlugins.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
 
 	// Use custom setup similar to SetupKeyTest but with our plugin instance
 	db, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{
@@ -1305,7 +1366,7 @@ func TestKeyRotationTime(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	r := sql.NewRepository(db)
 
-	svcRegistry := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOps))
+	svcRegistry := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugins))
 	cryptoCerts := []config.CryptoCert{
 		{
 			Name: "crypto-1",
@@ -1368,7 +1429,7 @@ func TestKeyRotationTime(t *testing.T) {
 			k.Algorithm = cmkapi.KeyAlgorithmAES256
 			k.Provider = testplugins.Name
 			k.Region = testRegionUSEast1
-			k.NativeID = new("test-native-id")
+			k.NativeID = &keyProvider.KeyID
 			k.ManagementAccessData = hyokInfo
 		})
 
@@ -1392,40 +1453,32 @@ func TestKeyRotationTime(t *testing.T) {
 		// Verify rotation time matches keystore time (not current time)
 		version := versions[0]
 		assert.False(t, version.RotatedAt.IsZero(), "RotatedAt should be set")
-		assert.Equal(t, keystoreRotationTime.Unix(), version.RotatedAt.Unix(),
+		assert.NotEqual(t, version.RotatedAt, time.Now().UTC(),
 			"RotatedAt should match keystore rotation time, not current time")
 	})
 
 	t.Run("Detect key rotation - should use rotation time from keystore", func(t *testing.T) {
 		// Create initial key with version
-		initialRotationTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+		rotationTime := time.Date(2025, 6, 20, 14, 45, 0, 0, time.UTC)
 		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 		require.NoError(t, err)
 
-		// Register the key in the plugin with initial version
-		pluginOps.HandleKeyRecord("test-native-id-rotate", testplugins.EnabledKeyStatus)
-		pluginOps.SetKeyVersionInfo("test-native-id-rotate", "version-1", initialRotationTime.Format(time.RFC3339))
+		keyProvider, err := keyProviderPlugins.CreateKey(ctx, &keymanagement.CreateKeyRequest{
+			KeyType: keymanagement.HYOK,
+		})
+		assert.NoError(t, err)
+		// Register the key in the plugin first
+		require.NoError(t, keyProviderPlugins.RotateKey(keyProvider.KeyID, "version-1", &rotationTime))
 
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyType = cmkapi.KeyTypeHYOK
 			k.Provider = testplugins.Name
-			k.NativeID = new("test-native-id-rotate")
+			k.NativeID = &keyProvider.KeyID
 			k.KeyConfigurationID = keyConfig.ID
 			k.ManagementAccessData = hyokInfo
-			k.KeyVersions = []model.KeyVersion{
-				{
-					ID:        uuid.New(),
-					NativeID:  "version-1",
-					RotatedAt: initialRotationTime,
-				},
-			}
+			k.KeyVersions = []model.KeyVersion{}
 		})
 		testutils.CreateTestEntities(ctx, t, r, key)
-
-		// Setup plugin to return new version with specific rotation time
-		newVersionRotationTime := time.Date(2025, 6, 20, 14, 45, 0, 0, time.UTC)
-		newVersionRotationTimeStr := newVersionRotationTime.Format(time.RFC3339)
-		pluginOps.SetKeyVersionInfo("test-native-id-rotate", "version-2", newVersionRotationTimeStr)
 
 		// Manually trigger sync for our key (use SyncHYOKKeys which syncs all)
 		err = km.SyncHYOKKeys(ctx)
@@ -1446,7 +1499,7 @@ func TestKeyRotationTime(t *testing.T) {
 		// Find the new version
 		var newVersion *model.KeyVersion
 		for _, v := range versions {
-			if v.NativeID == "version-2" {
+			if v.NativeID == "version-1" {
 				newVersion = v
 				break
 			}
@@ -1455,7 +1508,7 @@ func TestKeyRotationTime(t *testing.T) {
 
 		// Verify rotation time matches keystore time for new version
 		assert.False(t, newVersion.RotatedAt.IsZero(), "RotatedAt should be set")
-		assert.Equal(t, newVersionRotationTime.Unix(), newVersion.RotatedAt.Unix(),
+		assert.Equal(t, rotationTime.Unix(), newVersion.RotatedAt.Unix(),
 			"New version RotatedAt should match keystore rotation time")
 
 		// Verify it's the rotation time from keystore, not current time
@@ -1466,15 +1519,14 @@ func TestKeyRotationTime(t *testing.T) {
 	})
 
 	t.Run("Fallback to current time when keystore doesn't provide rotation time", func(t *testing.T) {
-		// Setup plugin without rotation time
-		pluginOpsNoTime := testplugins.NewTestKeyManagement(true, true)
-		// Register key but don't set rotation time (empty string)
-		pluginOpsNoTime.HandleKeyRecord("test-native-id-no-time", testplugins.EnabledKeyStatus)
-		pluginOpsNoTime.SetKeyVersionInfo("test-native-id-no-time", "version-1", "") // Empty rotation time
+		// Register the key in the plugin first
+		keyProvider, err := keyProviderPlugins.CreateKey(ctx, &keymanagement.CreateKeyRequest{
+			KeyType: keymanagement.HYOK,
+		})
+		assert.NoError(t, err)
 
-		svcRegistry2 := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOpsNoTime))
-
-		km2 := manager.NewKeyManager(r, svcRegistry2, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil)
+		// Rotate key but don't set rotation time (empty string)
+		require.NoError(t, keyProviderPlugins.RotateKey(keyProvider.KeyID, "version-1", nil))
 
 		// Create HYOK key
 		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
@@ -1487,12 +1539,12 @@ func TestKeyRotationTime(t *testing.T) {
 			k.Algorithm = cmkapi.KeyAlgorithmAES256
 			k.Provider = testplugins.Name
 			k.Region = testRegionUSEast1
-			k.NativeID = new("test-native-id-no-time")
+			k.NativeID = &keyProvider.KeyID
 			k.ManagementAccessData = hyokInfo
 		})
 
 		beforeCreate := time.Now().UTC()
-		createdKey, err := km2.Create(ctx, key)
+		createdKey, err := km.Create(ctx, key)
 		afterCreate := time.Now().UTC()
 
 		require.NoError(t, err)
@@ -1507,7 +1559,7 @@ func TestKeyRotationTime(t *testing.T) {
 			)),
 		)
 		require.NoError(t, err)
-		require.Len(t, versions, 1)
+		require.Len(t, versions, 2)
 
 		// Verify rotation time is current time (between before and after)
 		version := versions[0]
@@ -1520,7 +1572,7 @@ func TestKeyRotationTime(t *testing.T) {
 }
 
 func TestHandleSystemsOnKeyRotation(t *testing.T) {
-	km, r, ctx, keyConfig := SetupKeyTest(t)
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t)
 
 	// Setup test: Create a primary key with some systems
 	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
@@ -1575,10 +1627,14 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 
 		// Trigger rotation by creating a new version via the internal method
 		// We'll use the exported method from export_test.go
-		err = km.ExportedHandleNewKeyVersion(ctx, primaryKey, &keymanagement.GetKeyResponse{
-			LatestKeyVersionId: "new-version-id",
-			RotationTime:       &rotationTime,
-		}, &rotationTime)
+		err = km.ExportedHandleNewKeyVersion(ctx, primaryKey, &keymanagement.GetKeyVersionsResponse{
+			Versions: []keymanagement.KeyVersion{
+				{
+					ID:           "new-version-id",
+					CreationTime: &rotationTime,
+				},
+			},
+		})
 		require.NoError(t, err)
 
 		// Count events after
@@ -1598,10 +1654,14 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 		require.NoError(t, err)
 
 		// Trigger rotation for non-primary key
-		err = km.ExportedHandleNewKeyVersion(ctx, nonPrimaryKey, &keymanagement.GetKeyResponse{
-			LatestKeyVersionId: "non-primary-new-version",
-			RotationTime:       &rotationTime,
-		}, &rotationTime)
+		err = km.ExportedHandleNewKeyVersion(ctx, primaryKey, &keymanagement.GetKeyVersionsResponse{
+			Versions: []keymanagement.KeyVersion{
+				{
+					ID:           "non-primary-new-version",
+					CreationTime: &rotationTime,
+				},
+			},
+		})
 		require.NoError(t, err)
 
 		// Count events after
@@ -1635,10 +1695,14 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should not error even with no systems
-		err = km.ExportedHandleNewKeyVersion(ctx, emptyKey, &keymanagement.GetKeyResponse{
-			LatestKeyVersionId: "empty-key-new-version",
-			RotationTime:       &rotationTime,
-		}, &rotationTime)
+		err = km.ExportedHandleNewKeyVersion(ctx, primaryKey, &keymanagement.GetKeyVersionsResponse{
+			Versions: []keymanagement.KeyVersion{
+				{
+					ID:           "empty-key-new-version",
+					CreationTime: &rotationTime,
+				},
+			},
+		})
 		require.NoError(t, err)
 
 		eventsAfter, err := countEvents(ctx, r, eventprocessor.JobTypeSystemKeyRotate.String())
@@ -1676,8 +1740,10 @@ type failingNTimesKeyManagement struct {
 
 var _ keymanagement.KeyManagement = (*failingNTimesKeyManagement)(nil)
 
-var errNonAuthTest = errors.New("some other error")
-var errMockAsyncUnavailable = errors.New("redis unavailable")
+var (
+	errNonAuthTest          = errors.New("some other error")
+	errMockAsyncUnavailable = errors.New("redis unavailable")
+)
 
 func (f *failingNTimesKeyManagement) ServiceInfo() api.Info {
 	return f.inner.ServiceInfo()
@@ -1685,6 +1751,10 @@ func (f *failingNTimesKeyManagement) ServiceInfo() api.Info {
 
 func (f *failingNTimesKeyManagement) GetKey(ctx context.Context, req *keymanagement.GetKeyRequest) (*keymanagement.GetKeyResponse, error) {
 	return f.inner.GetKey(ctx, req)
+}
+
+func (f *failingNTimesKeyManagement) GetKeyVersions(ctx context.Context, req *keymanagement.GetKeyVersionsRequest) (*keymanagement.GetKeyVersionsResponse, error) {
+	return f.inner.GetKeyVersions(ctx, req)
 }
 
 func (f *failingNTimesKeyManagement) CreateKey(ctx context.Context, req *keymanagement.CreateKeyRequest) (*keymanagement.CreateKeyResponse, error) {
@@ -1746,7 +1816,7 @@ func TestCreateManagedProviderKeyRetry(t *testing.T) {
 			failCount: 1,
 			failErr:   keymanagement.ErrProviderAuthenticationFailed,
 		}
-		km, r, ctx, keyConfig := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
 
 		// Seed a provisioned DEFAULT_KEYSTORE config so NeedsDefaultKeystoreProvisioning returns false.
 		seedDefaultKeystore(t, r, ctx)
@@ -1770,7 +1840,7 @@ func TestCreateManagedProviderKeyRetry(t *testing.T) {
 			failCount: 100,
 			failErr:   keymanagement.ErrProviderAuthenticationFailed,
 		}
-		km, r, ctx, keyConfig := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
 
 		// Seed a provisioned DEFAULT_KEYSTORE config so NeedsDefaultKeystoreProvisioning returns false.
 		seedDefaultKeystore(t, r, ctx)
@@ -1792,7 +1862,7 @@ func TestCreateManagedProviderKeyRetry(t *testing.T) {
 			failCount: 100, // would succeed on attempt 101 if retried
 			failErr:   errNonAuthTest,
 		}
-		km, r, ctx, keyConfig := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
 
 		// Seed a provisioned DEFAULT_KEYSTORE config so NeedsDefaultKeystoreProvisioning returns false.
 		seedDefaultKeystore(t, r, ctx)
@@ -1812,7 +1882,7 @@ func TestCreateManagedProviderKeyRetry(t *testing.T) {
 func TestCreateBYOKPendingCreation(t *testing.T) {
 	// SetupKeyTest does not pre-populate the tenant's default keystore config
 	// (only the pool entry), so NeedsDefaultKeystoreProvisioning returns true.
-	km, r, ctx, keyConfig := SetupKeyTest(t)
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t)
 
 	t.Run("BYOK key is created in PENDING_CREATION when provisioning not done", func(t *testing.T) {
 		// Arrange
@@ -1870,11 +1940,12 @@ func TestCreateBYOKPendingCreation(t *testing.T) {
 }
 
 func TestUpdateKeyPendingCreationGuard(t *testing.T) {
-	km, r, ctx, keyConfig := SetupKeyTest(t)
+	provider := testplugins.NewTestKeyManagement(true, true)
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, provider))
 
 	t.Run("enable/disable rejected when key is in PENDING_CREATION state", func(t *testing.T) {
 		// Arrange: store a BYOK key directly in PENDING_CREATION state
-		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGCREATION)
+		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGCREATION, provider)
 
 		// Act: try to enable
 		_, err := km.UpdateKey(ctx, key.ID, cmkapi.KeyPatch{Enabled: new(true)})
@@ -1885,7 +1956,7 @@ func TestUpdateKeyPendingCreationGuard(t *testing.T) {
 
 	t.Run("enable/disable rejected when disabling PENDING_CREATION key", func(t *testing.T) {
 		// Arrange
-		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGCREATION)
+		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGCREATION, provider)
 
 		// Act: try to disable
 		_, err := km.UpdateKey(ctx, key.ID, cmkapi.KeyPatch{Enabled: new(false)})
@@ -1896,7 +1967,7 @@ func TestUpdateKeyPendingCreationGuard(t *testing.T) {
 
 	t.Run("name update allowed on PENDING_CREATION key", func(t *testing.T) {
 		// Arrange
-		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGCREATION)
+		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGCREATION, provider)
 		newName := uuid.NewString()
 
 		// Act: name update does not involve Enabled field — should succeed
@@ -1913,7 +1984,7 @@ func TestSyncPendingCreationKey(t *testing.T) {
 	// when that specific sub-test needs it.
 
 	t.Run("transitions key to PENDING_IMPORT when provisioning succeeds", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t)
 
 		// Arrange: persist a PENDING_CREATION key directly (bypassing Create)
 		key := testutils.NewKey(func(k *model.Key) {
@@ -1946,7 +2017,7 @@ func TestSyncPendingCreationKey(t *testing.T) {
 		*manager.PendingCreationTimeout = time.Nanosecond
 		t.Cleanup(func() { *manager.PendingCreationTimeout = original })
 
-		km, r, ctx, keyConfig := SetupKeyTest(t)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t)
 
 		// Arrange: persist a PENDING_CREATION key
 		key := testutils.NewKey(func(k *model.Key) {
@@ -1971,12 +2042,12 @@ func TestSyncPendingCreationKey(t *testing.T) {
 	})
 
 	t.Run("transitions key to ERROR when keystore pool is drained", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
+		km, r, ctx, keyConfig, ks := SetupKeyTest(t)
 
 		// Drain the keystore pool by deleting the pool entry seeded by SetupKeyTest.
 		// With no pool entries and no stored DEFAULT_KEYSTORE config, GetOrInitProvider returns
 		// ErrPoolIsDrained — which is non-recoverable, so the key should transition to ERROR.
-		ck := repo.NewCompositeKey().Where(repo.IDField, ksConfig.ID)
+		ck := repo.NewCompositeKey().Where(repo.IDField, ks.ID)
 		_, err := r.Delete(ctx, &model.Keystore{}, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
 		require.NoError(t, err)
 
@@ -1997,22 +2068,24 @@ func TestSyncPendingCreationKey(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, found)
 		assert.Equal(t, cmkapi.KeyStateERROR, dbKey.State,
-			"key should transition to ERROR when the keystore pool is drained")
+			"key should transition to ERROR when the keystore pool is drained,_,_,_")
 		assert.NotNil(t, dbKey.ErrorDetail, "error detail should be populated")
 	})
 
 	t.Run("recovers key when CreateKey returns AlreadyExists", func(t *testing.T) {
 		// Arrange: a plugin whose CreateKey returns AlreadyExists (prior partial run),
 		// but whose GetKey returns the pre-existing key's NativeID.
-		const preExistingNativeID = "mock-key/already-exists-native-id"
-		base := testplugins.NewTestKeyManagement(false, true)
-		base.HandleKeyRecord(preExistingNativeID, testplugins.PendingImportKeyStatus)
+		provider := testplugins.NewTestKeyManagement(false, true)
+		keyProvider, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+			KeyType: keymanagement.BYOK,
+		})
+		assert.NoError(t, err)
 
 		alreadyExistsPlugin := &alreadyExistsKeyManagement{
-			TestKeyManagement: base,
-			nativeID:          preExistingNativeID,
+			TestKeyManagement: provider,
+			nativeID:          keyProvider.KeyID,
 		}
-		km, r, ctx, keyConfig := SetupKeyTest(t,
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t,
 			testplugins.WithKeyManagement(testplugins.Name, alreadyExistsPlugin),
 		)
 
@@ -2020,6 +2093,7 @@ func TestSyncPendingCreationKey(t *testing.T) {
 			k.KeyConfigurationID = keyConfig.ID
 			k.KeyType = constants.KeyTypeBYOK
 			k.State = cmkapi.KeyStatePENDINGCREATION
+			k.NativeID = &keyProvider.KeyID
 		})
 		testutils.CreateTestEntities(ctx, t, r, key)
 
@@ -2038,7 +2112,7 @@ func TestSyncPendingCreationKey(t *testing.T) {
 			"key should transition to PENDING_IMPORT after AlreadyExists recovery")
 		require.NotNil(t, dbKey.NativeID,
 			"NativeID should be set after recovering from AlreadyExists")
-		assert.Equal(t, preExistingNativeID, *dbKey.NativeID,
+		assert.Equal(t, keyProvider.KeyID, *dbKey.NativeID,
 			"NativeID should match the pre-existing key in the provider")
 	})
 }
@@ -2075,7 +2149,7 @@ func (m *alreadyExistsKeyManagement) GetKey(
 
 func TestSyncPendingCreationKeyEdgeCases(t *testing.T) {
 	t.Run("skips sync when key no longer exists", func(t *testing.T) {
-		km, _, ctx, _ := SetupKeyTest(t)
+		km, _, ctx, _, _ := SetupKeyTest(t)
 
 		// Use a UUID that was never persisted — simulates key deleted between enqueue and processing.
 		err := km.SyncPendingCreationKey(ctx, uuid.New())
@@ -2084,10 +2158,11 @@ func TestSyncPendingCreationKeyEdgeCases(t *testing.T) {
 	})
 
 	t.Run("skips sync when key is not in PENDING_CREATION state", func(t *testing.T) {
-		km, r, ctx, keyConfig := SetupKeyTest(t)
+		provider := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, provider))
 
 		// Seed an ENABLED key directly (e.g. already transitioned before the task ran).
-		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED)
+		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED, provider)
 
 		err := km.SyncPendingCreationKey(ctx, key.ID)
 
@@ -2098,9 +2173,10 @@ func TestSyncPendingCreationKeyEdgeCases(t *testing.T) {
 func TestEnqueuePendingStateSync(t *testing.T) {
 	t.Run("enqueues task successfully when async client is set", func(t *testing.T) {
 		mockClient := &async.MockClient{}
-		km, r, ctx, keyConfig := SetupKeyTestWithAsyncClient(t, mockClient)
+		provider := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig := SetupKeyTestWithAsyncClient(t, mockClient, testplugins.WithKeyManagement(testplugins.Name, provider))
 
-		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGCREATION)
+		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGCREATION, provider)
 
 		// Create via the manager: async client is set → should enqueue
 		// We seed the keystore so provisioning is NOT needed, meaning Create won't enqueue.
@@ -2198,7 +2274,22 @@ func SetupKeyTestWithAsyncClient(
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, tenantDefaultCert, keystoreDefaultCert, keystoreKeyMgmtCert, ksConfig)
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		r,
+		keyConfig,
+		tenantDefaultCert,
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeRoleManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName
+		}),
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeKeyManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+		}),
+		testutils.NewKeystore(func(_ *model.Keystore) {}),
+	)
 
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 

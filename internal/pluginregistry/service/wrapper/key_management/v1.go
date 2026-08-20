@@ -55,6 +55,42 @@ func convertGRPCError(err error) error {
 	}
 }
 
+func (v1 *V1) GetKeyVersions(
+	ctx context.Context,
+	req *keymanagement.GetKeyVersionsRequest,
+) (*keymanagement.GetKeyVersionsResponse, error) {
+	value, err := structpb.NewStruct(req.Parameters.Config.Values)
+	if err != nil {
+		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+	}
+
+	in := &grpckeymanagerv1.GetKeyVersionsRequest{
+		Parameters: &grpckeymanagerv1.RequestParameters{
+			Config: &grpccommonv1.KeystoreInstanceConfig{
+				Values: value,
+			},
+			KeyId: req.Parameters.KeyID,
+		},
+	}
+	grpcResp, err := v1.KeystoreInstanceKeyOperationPluginClient.GetKeyVersions(ctx, in)
+	if err != nil {
+		return nil, convertGRPCError(err)
+	}
+
+	versions := make([]keymanagement.KeyVersion, 0, len(grpcResp.GetVersions()))
+	for _, v := range grpcResp.GetVersions() {
+		versions = append(versions, keymanagement.KeyVersion{
+			ID:           v.GetVersionId(),
+			CreationTime: new(v.GetCreationTime().AsTime()),
+			Status:       v.GetStatus(),
+		})
+	}
+
+	return &keymanagement.GetKeyVersionsResponse{
+		Versions: versions,
+	}, nil
+}
+
 func (v1 *V1) GetKey(ctx context.Context, req *keymanagement.GetKeyRequest) (*keymanagement.GetKeyResponse, error) {
 	value, err := structpb.NewStruct(req.Parameters.Config.Values)
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -155,7 +156,7 @@ func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Co
 		Key:   constants.WorkflowConfigKey,
 		Value: configJSON,
 	}
-	err = r.Set(ctx, tenantConfig)
+	err = r.Set(ctx, tenantConfig, *repo.NewQuery())
 	require.NoError(t, err)
 }
 
@@ -176,7 +177,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 			Key:   constants.WorkflowConfigKey,
 			Value: configJSON,
 		}
-		err = r.Set(ctx, tenantConfig)
+		err = r.Set(ctx, tenantConfig, *repo.NewQuery())
 		require.NoError(t, err)
 
 		businessUserData := &auth.ClientData{
@@ -377,7 +378,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		enabledConfig := testutils.NewDefaultWorkflowConfig(true)
 		configJSON, err := json.Marshal(enabledConfig)
 		require.NoError(t, err)
-		err = r.Set(ctx, &model.TenantConfig{Key: constants.WorkflowConfigKey, Value: configJSON})
+		err = r.Set(ctx, &model.TenantConfig{Key: constants.WorkflowConfigKey, Value: configJSON}, *repo.NewQuery())
 		require.NoError(t, err)
 
 		businessUserData := &auth.ClientData{
@@ -422,6 +423,6 @@ func setupDefaultWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx con
 		Key:   constants.WorkflowConfigKey,
 		Value: configJSON,
 	}
-	err = r.Set(ctx, tenantConfig)
+	err = r.Set(ctx, tenantConfig, *repo.NewQuery())
 	require.NoError(t, err)
 }

@@ -25,8 +25,7 @@ func (c *APIController) GetKeyVersions(ctx context.Context,
 		Count: ptr.GetSafeDeref(request.Params.Count),
 	}
 
-	// Fetch the parent key to get current state for all versions
-	key, err := c.Manager.Keys.Get(ctx, request.KeyID)
+	_, err := c.Manager.Keys.Get(ctx, request.KeyID)
 	if err != nil {
 		return nil, err
 	}
@@ -60,10 +59,9 @@ func (c *APIController) GetKeyVersions(ctx context.Context,
 
 	// Convert each Key Version to its response format
 	response := make([]cmkapi.KeyVersion, 0, len(keyVersions))
-	keyState := key.State
 
 	for _, kv := range keyVersions {
-		apiKv, err := keyversion.ToAPI(*kv, latestVersion.ID, keyState)
+		apiKv, err := keyversion.ToAPI(*kv, latestVersion.ID, cmkapi.KeyState(kv.Status))
 		if err != nil {
 			return nil, apierrors.ErrTransformKeyVersionList
 		}

@@ -157,7 +157,7 @@ func (m *TenantConfigManager) SetWorkflowConfig(
 		Value: configValue,
 	}
 
-	err = m.repo.Set(ctx, conf)
+	err = m.repo.Set(ctx, conf, *repo.NewQuery())
 	if err != nil {
 		return nil, errs.Wrap(ErrSetWorkflowConfig, err)
 	}
@@ -327,7 +327,7 @@ func (m *TenantConfigManager) setDefaultKeystore(ctx context.Context, keystore *
 		Value: ksBytes,
 	}
 
-	err = m.repo.Set(ctx, conf)
+	err = m.repo.Set(ctx, conf, *repo.NewQuery())
 	if err != nil {
 		return errs.Wrap(ErrSetDefaultKeystore, err)
 	}

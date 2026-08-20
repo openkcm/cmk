@@ -313,7 +313,7 @@ func TestRepo_Set(t *testing.T) {
 
 	t.Run("Should create if empty ", func(t *testing.T) {
 		m := testutils.TestModel{ID: uuid.New(), Name: "test"}
-		err := r.Set(ctx, &m)
+		err := r.Set(ctx, &m, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		res := &testutils.TestModel{ID: m.ID}
@@ -329,7 +329,7 @@ func TestRepo_Set(t *testing.T) {
 		assert.NoError(t, err)
 
 		m.Name = "updated"
-		err = r.Set(ctx, &m)
+		err = r.Set(ctx, &m, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		res := &testutils.TestModel{ID: m.ID}

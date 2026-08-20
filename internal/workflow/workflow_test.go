@@ -20,9 +20,11 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	"github.com/openkcm/cmk/internal/workflow"
 )
 
@@ -38,7 +40,7 @@ var (
 	sqlNullBoolFalse = sql.NullBool{Bool: false, Valid: true}
 )
 
-func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, string) {
+func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, string, *testplugins.TestKeyManagement) {
 	t.Helper()
 
 	dbCon, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
@@ -48,7 +50,8 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	svcRegistry := testutils.NewTestPlugins()
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	svcRegistry := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp))
 
 	logger := testutils.SetupLoggerWithBuffer()
 	systemService := systems.NewFakeService(logger)
@@ -89,7 +92,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	migrator, err := db.NewMigrator(r, &cfg)
 	assert.NoError(t, err)
 
-	return manager.New(ctx, r, nil, &cfg, clientsFactory, svcRegistry, eventFactory, nil, migrator), dbCon, tenants[0]
+	return manager.New(ctx, r, nil, &cfg, clientsFactory, svcRegistry, eventFactory, nil, migrator), dbCon, tenants[0], pluginOp
 }
 
 func TestWorkflowLifecycleTransitions(t *testing.T) {
@@ -1012,7 +1015,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		},
 	}
 
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, provider := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -1024,6 +1027,9 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 	assert.NoError(t, err)
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConf.AdminGroup.IAMIdentifier})
 
+	providerKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{KeyType: keymanagement.BYOK})
+	assert.NoError(t, err)
+
 	testutils.CreateTestEntities(
 		ctx,
 		t,
@@ -1031,6 +1037,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		testutils.NewKey(func(k *model.Key) {
 			k.ID = artifactID01
 			k.KeyConfigurationID = keyConf.ID
+			k.NativeID = &providerKey.KeyID
 		}),
 	)
 
@@ -1166,7 +1173,7 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 		},
 	}
 
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -1263,7 +1270,7 @@ func TestAvailableBusinessUserTransitions(t *testing.T) {
 		},
 	}
 
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
@@ -1375,7 +1382,7 @@ func TestGetApprovalSummary(t *testing.T) {
 		},
 	}
 
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
@@ -1417,7 +1424,7 @@ func TestGetApprovalSummary(t *testing.T) {
 // TestWorkflowEnumValuerRejectsUnknown verifies the workflow enum Valuer
 // rejects unknown values at repo write time.
 func TestWorkflowEnumValuerRejectsUnknown(t *testing.T) {
-	_, db, tenant := SetupWorkflowManager(t)
+	_, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
@@ -1455,7 +1462,7 @@ func TestWorkflowEnumValuerRejectsUnknown(t *testing.T) {
 // TestKeyEnumValuerRejectsUnknown verifies the KeyState Valuer rejects
 // unknown values at repo write time.
 func TestKeyEnumValuerRejectsUnknown(t *testing.T) {
-	_, db, tenant := SetupWorkflowManager(t)
+	_, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 

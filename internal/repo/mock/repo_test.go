@@ -138,7 +138,7 @@ func TestInMemoryRepository_Set(t *testing.T) {
 	t.Run("Should throw error, empty tenantID context", func(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant("")
 		newKey := model.Key{ID: uuid.New(), Name: "test2"}
-		err := mockRepo.Set(ctx, &newKey)
+		err := mockRepo.Set(ctx, &newKey, *repo.NewQuery())
 		assert.Error(t, err)
 	})
 
@@ -146,7 +146,7 @@ func TestInMemoryRepository_Set(t *testing.T) {
 		keyID := uuid.New()
 
 		newKey := model.Key{ID: keyID, Name: "test2"}
-		err := mockRepo.Set(ctx, &newKey)
+		err := mockRepo.Set(ctx, &newKey, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		result := model.Key{ID: keyID}
@@ -166,7 +166,7 @@ func TestInMemoryRepository_Set(t *testing.T) {
 		assert.NoError(t, err)
 
 		newKey := model.Key{ID: keyID, Name: "test2"}
-		err = mockRepo.Set(ctx, &newKey)
+		err = mockRepo.Set(ctx, &newKey, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		result := model.Key{ID: keyID}

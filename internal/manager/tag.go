@@ -52,7 +52,7 @@ func (m *TagManager) SetTags(ctx context.Context, itemID uuid.UUID, values []str
 		return err
 	}
 
-	return m.r.Set(ctx, &model.Tag{ID: itemID, Values: bytes})
+	return m.r.Set(ctx, &model.Tag{ID: itemID, Values: bytes}, *repo.NewQuery())
 }
 
 func (m *TagManager) GetTags(ctx context.Context, itemID uuid.UUID) ([]string, error) {

@@ -1,97 +1,76 @@
 package manager_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
-var (
-	ksConfig            = testutils.NewKeystore(func(_ *model.Keystore) {})
-	keystoreDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeRoleManagement
-		c.CommonName = testutils.TestDefaultKeystoreCommonName
-	})
-	keystoreKeyMgmtCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeyManagement
-		c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
-	})
-)
+func setupKeyVersionManager(t *testing.T) (*manager.KeyVersionManager, repo.Repo, string, uuid.UUID) {
+	t.Helper()
 
-//nolint:containedctx
-type KeyVersionManagerSuit struct {
-	suite.Suite
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	tenant := tenants[0]
 
-	km          *manager.KeyManager
-	kvm         *manager.KeyVersionManager
-	r           repo.Repo
-	ctx         context.Context
-	keyConfigID uuid.UUID
-	tenant      string
-}
-
-func TestKeyVersionManagerSuit(t *testing.T) {
-	suite.Run(t, new(KeyVersionManagerSuit))
-}
-
-func (s *KeyVersionManagerSuit) SetupSuite() {
-	db, tenants, _ := testutils.NewTestDB(s.T(), testutils.TestDBConfig{})
-	s.tenant = tenants[0]
-
-	s.ctx = testutils.CreateCtxWithTenant(s.tenant)
-	s.r = sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
 
 	svcRegistry := testutils.NewTestPlugins()
-
 	cfg := config.Config{}
 
 	certManager := manager.NewCertificateManager(
-		s.ctx, s.r, svcRegistry,
+		ctx, r, svcRegistry,
 		&config.Config{
 			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 		})
-	tenantConfigManager := manager.NewTenantConfigManager(s.r, svcRegistry, nil, nil)
-	cmkAuditor := auditor.New(s.ctx, &cfg)
-	userManager := manager.NewUserManager(s.r, cmkAuditor)
-	tagManager := manager.NewTagManager(s.r)
-	keyConfigManager := manager.NewKeyConfigManager(s.r, certManager, userManager, tagManager, cmkAuditor, nil, &cfg)
-	s.km = manager.NewKeyManager(s.r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil)
-	s.kvm = manager.NewKeyVersionManager(
-		s.r,
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil)
+	cmkAuditor := auditor.New(ctx, &cfg)
+
+	kvm := manager.NewKeyVersionManager(
+		r,
 		svcRegistry,
 		tenantConfigManager,
 		certManager,
 		cmkAuditor,
 	)
 
-	// Create test key configuration once for all tests
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	testutils.CreateTestEntities(
-		s.ctx,
-		s.T(),
-		s.r,
+		ctx,
+		t,
+		r,
 		keyConfig,
-		ksConfig,
-		keystoreDefaultCert,
-		keystoreKeyMgmtCert,
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeRoleManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName
+		}),
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeKeyManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+		}),
 	)
-	s.keyConfigID = keyConfig.ID
+
+	return kvm, r, tenant, keyConfig.ID
 }
 
-func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
-	s.Run("Should list key versions", func() {
+func TestKeyVersionManager_List(t *testing.T) {
+	kvm, r, tenant, keyConfigID := setupKeyVersionManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	t.Run("Should list key versions", func(t *testing.T) {
 		keyID := uuid.New()
 		key := testutils.NewKey(func(k *model.Key) {
 			k.ID = keyID
@@ -106,116 +85,206 @@ func (s *KeyVersionManagerSuit) TestKeyVersionManager_List() {
 				}),
 			}
 		})
-		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key)
+		testutils.CreateTestEntities(ctx, t, r, key)
 
 		pagination := repo.Pagination{
 			Skip:  constants.DefaultSkip,
 			Top:   constants.DefaultTop,
 			Count: true,
 		}
-		result, _, err := s.kvm.GetKeyVersions(s.ctx, key.ID, pagination)
+		result, _, err := kvm.GetKeyVersions(ctx, key.ID, pagination)
 
-		s.NoError(err)
-		s.NotNil(result)
-		s.Len(result, len(key.KeyVersions))
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Len(t, result, len(key.KeyVersions))
 	})
 
-	s.Run("Should use created_at as tie-breaker when rotated_at is identical", func() {
-		// Create a key with multiple versions sharing the same rotated_at
+	t.Run("Should use created_at as tie-breaker when rotated_at is identical", func(t *testing.T) {
 		keyID := uuid.New()
 
-		// All versions share the same rotation time (caller-supplied timestamp scenario)
 		sharedRotationTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
 
 		key := testutils.NewKey(func(k *model.Key) {
 			k.ID = keyID
-			k.KeyConfigurationID = s.keyConfigID
+			k.KeyConfigurationID = keyConfigID
 		})
-		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key)
+		testutils.CreateTestEntities(ctx, t, r, key)
 
-		// Create versions with same rotated_at but different created_at
-		// CreateTestEntities inserts them sequentially, so created_at will naturally differ
-		_, err := s.kvm.CreateVersion(s.ctx, keyID, "version-1", &sharedRotationTime)
-		s.NoError(err)
+		_, err := kvm.CreateVersion(ctx, keyID, "version-1", &sharedRotationTime)
+		require.NoError(t, err)
 
-		_, err = s.kvm.CreateVersion(s.ctx, keyID, "version-2", &sharedRotationTime)
-		s.NoError(err)
+		_, err = kvm.CreateVersion(ctx, keyID, "version-2", &sharedRotationTime)
+		require.NoError(t, err)
 
-		version3, err := s.kvm.CreateVersion(s.ctx, keyID, "version-3", &sharedRotationTime)
-		s.NoError(err)
+		version3, err := kvm.CreateVersion(ctx, keyID, "version-3", &sharedRotationTime)
+		require.NoError(t, err)
 
-		// Get latest version - should be deterministic based on created_at
-		latest, err := s.kvm.GetLatestVersion(s.ctx, keyID)
-		s.NoError(err)
-		s.NotNil(latest)
+		latest, err := kvm.GetLatestVersion(ctx, keyID)
+		require.NoError(t, err)
+		assert.NotNil(t, latest)
 
-		// Get all versions - should be ordered by rotated_at DESC, created_at DESC
 		pagination := repo.Pagination{
 			Skip:  0,
 			Top:   10,
 			Count: true,
 		}
-		allVersions, count, err := s.kvm.GetKeyVersions(s.ctx, keyID, pagination)
-		s.NoError(err)
-		s.Equal(3, count)
-		s.Len(allVersions, 3)
+		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, pagination)
+		require.NoError(t, err)
+		assert.Equal(t, 3, count)
+		assert.Len(t, allVersions, 3)
 
-		// Latest version should be the one with most recent created_at
-		// (version3 was created last)
-		s.Equal(version3.ID, latest.ID, "Latest should be version3 (most recently created)")
-		s.Equal("version-3", latest.NativeID)
-		s.Equal("version-3", allVersions[0].NativeID)
+		assert.Equal(t, version3.ID, latest.ID, "Latest should be version3 (most recently created)")
+		assert.Equal(t, "version-3", latest.NativeID)
+		assert.Equal(t, "version-3", allVersions[0].NativeID)
 
-		// Verify ordering is deterministic: call again and should get same result
-		latest2, err := s.kvm.GetLatestVersion(s.ctx, keyID)
-		s.NoError(err)
-		s.Equal(latest.ID, latest2.ID, "GetLatestVersion should be deterministic")
+		latest2, err := kvm.GetLatestVersion(ctx, keyID)
+		require.NoError(t, err)
+		assert.Equal(t, latest.ID, latest2.ID, "GetLatestVersion should be deterministic")
 
-		allVersions2, _, err := s.kvm.GetKeyVersions(s.ctx, keyID, pagination)
-		s.NoError(err)
-		s.Equal(allVersions[0].ID, allVersions2[0].ID, "GetKeyVersions ordering should be deterministic")
+		allVersions2, _, err := kvm.GetKeyVersions(ctx, keyID, pagination)
+		require.NoError(t, err)
+		assert.Equal(t, allVersions[0].ID, allVersions2[0].ID, "GetKeyVersions ordering should be deterministic")
 	})
 
-	s.Run("Should handle concurrent version creation gracefully", func() {
-		// Create a key for testing concurrent version creation
+	t.Run("Should handle concurrent version creation gracefully", func(t *testing.T) {
 		keyID := uuid.New()
 		key := testutils.NewKey(func(k *model.Key) {
 			k.ID = keyID
-			k.KeyConfigurationID = s.keyConfigID
+			k.KeyConfigurationID = keyConfigID
 		})
-		testutils.CreateTestEntities(s.ctx, s.T(), s.r, key)
+		testutils.CreateTestEntities(ctx, t, r, key)
 
-		// Same version parameters (simulating concurrent refresh detecting same version)
 		nativeID := "concurrent-test-version-1"
 		rotationTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
 
-		// First creation should succeed
-		version1, err := s.kvm.CreateVersion(s.ctx, keyID, nativeID, &rotationTime)
-		s.NoError(err)
-		s.NotNil(version1)
-		s.Equal(nativeID, version1.NativeID)
-		s.Equal(keyID, version1.KeyID)
+		version1, err := kvm.CreateVersion(ctx, keyID, nativeID, &rotationTime)
+		require.NoError(t, err)
+		assert.NotNil(t, version1)
+		assert.Equal(t, nativeID, version1.NativeID)
+		assert.Equal(t, keyID, version1.KeyID)
 
-		// Second creation with same (key_id, native_id) should handle unique constraint
-		// and return the existing version instead of failing
-		version2, err := s.kvm.CreateVersion(s.ctx, keyID, nativeID, &rotationTime)
-		s.NoError(err, "Concurrent creation should not fail")
-		s.NotNil(version2)
-		s.Equal(nativeID, version2.NativeID)
-		s.Equal(keyID, version2.KeyID)
+		version2, err := kvm.CreateVersion(ctx, keyID, nativeID, &rotationTime)
+		assert.NoError(t, err, "Concurrent creation should not fail")
+		assert.NotNil(t, version2)
+		assert.Equal(t, nativeID, version2.NativeID)
+		assert.Equal(t, keyID, version2.KeyID)
 
-		// Should return the existing version (same ID)
-		s.Equal(version1.ID, version2.ID, "Should return existing version on duplicate")
+		assert.Equal(t, version1.ID, version2.ID, "Should return existing version on duplicate")
 
-		// Verify only one version exists in database
-		allVersions, count, err := s.kvm.GetKeyVersions(s.ctx, keyID, repo.Pagination{
+		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
 			Skip:  0,
 			Top:   10,
 			Count: true,
 		})
-		s.NoError(err)
-		s.Equal(1, count, "Should have only one version")
-		s.Len(allVersions, 1)
-		s.Equal(version1.ID, allVersions[0].ID)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, count, "Should have only one version")
+		assert.Len(t, allVersions, 1)
+		assert.Equal(t, version1.ID, allVersions[0].ID)
+	})
+}
+
+func TestUpdateVersions(t *testing.T) {
+	kvm, r, tenant, keyConfigID := setupKeyVersionManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	t.Run("Should create multiple versions", func(t *testing.T) {
+		keyID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = keyConfigID
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		creationTime1 := time.Date(2024, 1, 10, 10, 0, 0, 0, time.UTC).UTC()
+		creationTime2 := time.Date(2024, 1, 11, 10, 0, 0, 0, time.UTC).UTC()
+
+		versions := []keymanagement.KeyVersion{
+			{ID: "v1", CreationTime: &creationTime1},
+			{ID: "v2", CreationTime: &creationTime2},
+		}
+
+		err := kvm.UpdateVersions(ctx, keyID, versions)
+		require.NoError(t, err)
+
+		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 2, count)
+		assert.Len(t, allVersions, 2)
+
+		assert.Equal(t, "v2", allVersions[0].NativeID)
+		assert.Equal(t, "v1", allVersions[1].NativeID)
+		assert.Equal(t, creationTime2, allVersions[0].RotatedAt.UTC())
+		assert.Equal(t, creationTime1, allVersions[1].RotatedAt.UTC())
+	})
+
+	t.Run("Should update version if existing", func(t *testing.T) {
+		keyID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = keyConfigID
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		creationTime := time.Date(2024, 2, 1, 10, 0, 0, 0, time.UTC)
+		versions := []keymanagement.KeyVersion{
+			{ID: "v1", CreationTime: &creationTime},
+		}
+
+		err := kvm.UpdateVersions(ctx, keyID, versions)
+		require.NoError(t, err)
+
+		updatedTime := time.Date(2025, 2, 1, 10, 0, 0, 0, time.UTC)
+		updatedVersions := []keymanagement.KeyVersion{
+			{ID: "v1", CreationTime: &updatedTime},
+		}
+
+		err = kvm.UpdateVersions(ctx, keyID, updatedVersions)
+		require.NoError(t, err)
+
+		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, count)
+		assert.Len(t, allVersions, 1)
+		assert.Equal(t, "v1", allVersions[0].NativeID)
+		assert.Equal(t, updatedTime, allVersions[0].RotatedAt.UTC())
+	})
+
+	t.Run("Should create version with current time if empty", func(t *testing.T) {
+		keyID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = keyConfigID
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		before := time.Now().UTC()
+		versions := []keymanagement.KeyVersion{
+			{ID: "v1"},
+		}
+
+		err := kvm.UpdateVersions(ctx, keyID, versions)
+		require.NoError(t, err)
+		after := time.Now().UTC()
+
+		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 1, count)
+		assert.Len(t, allVersions, 1)
+		assert.Equal(t, "v1", allVersions[0].NativeID)
+		assert.False(t, allVersions[0].RotatedAt.Before(before), "RotatedAt should be >= before")
+		assert.False(t, allVersions[0].RotatedAt.After(after), "RotatedAt should be <= after")
 	})
 }

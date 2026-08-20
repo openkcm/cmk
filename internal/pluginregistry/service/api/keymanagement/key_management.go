@@ -14,6 +14,7 @@ type KeyManagement interface {
 	ServiceInfo() api.Info
 
 	GetKey(ctx context.Context, req *GetKeyRequest) (*GetKeyResponse, error)
+	GetKeyVersions(ctx context.Context, req *GetKeyVersionsRequest) (*GetKeyVersionsResponse, error)
 	CreateKey(ctx context.Context, req *CreateKeyRequest) (*CreateKeyResponse, error)
 	DeleteKey(ctx context.Context, req *DeleteKeyRequest) (*DeleteKeyResponse, error)
 	EnableKey(ctx context.Context, req *EnableKeyRequest) (*EnableKeyResponse, error)
@@ -54,6 +55,13 @@ type RequestParameters struct {
 	KeyID  string
 }
 
+type KeyVersion struct {
+	// V1 Fields
+	ID           string
+	CreationTime *time.Time
+	Status       string
+}
+
 type GetKeyRequest struct {
 	// V1 Fields
 	Parameters RequestParameters
@@ -67,6 +75,16 @@ type GetKeyResponse struct {
 	Usage              string
 	LatestKeyVersionId string
 	RotationTime       *time.Time // Timestamp of last rotation
+}
+
+type GetKeyVersionsRequest struct {
+	// V1 Fields
+	Parameters RequestParameters
+}
+
+type GetKeyVersionsResponse struct {
+	// V1 Fields
+	Versions []KeyVersion
 }
 
 // CreateKeyRequest contains parameters for key creation
