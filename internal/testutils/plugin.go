@@ -1,9 +1,12 @@
 package testutils
 
 import (
+	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
+
 	"github.com/openkcm/cmk/internal/model"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 )
 
@@ -21,5 +24,34 @@ func NewTestPlugins(opts ...testplugins.RegistryOption) serviceapi.Registry {
 func WithIDMPluginKC(idm *testplugins.TestIdentityManagement) KeyConfigOpt {
 	return func(kc *model.KeyConfiguration) {
 		idm.PutUser(identitymanagement.User{ID: kc.CreatorID})
+	}
+}
+
+func NoopPluginConfigs() []plugincatalog.PluginConfig {
+	return []plugincatalog.PluginConfig{
+		{
+			Name: "noop",
+			Type: servicewrapper.NotificationServiceType,
+		},
+		{
+			Name: "noop",
+			Type: servicewrapper.IdentityManagementServiceType,
+		},
+		{
+			Name: "noop",
+			Type: servicewrapper.SystemInformationServiceType,
+		},
+		{
+			Name: "noop",
+			Type: servicewrapper.CertificateIssuerServiceType,
+		},
+		{
+			Name: "noop",
+			Type: servicewrapper.KeystoreManagementType,
+		},
+		{
+			Name: "noop",
+			Type: servicewrapper.KeyManagementType,
+		},
 	}
 }
