@@ -280,7 +280,8 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 
 	ctx = model.LogInjectKey(ctx, key)
 
-	if (key.State == cmkapi.KeyStatePENDINGCREATION || key.State == cmkapi.KeyStatePENDINGREGISTRATION) && keyPatch.Enabled != nil {
+	isPending := key.State == cmkapi.KeyStatePENDINGCREATION || key.State == cmkapi.KeyStatePENDINGREGISTRATION
+	if isPending && keyPatch.Enabled != nil {
 		return nil, ErrKeyInPendingState
 	}
 
@@ -481,6 +482,23 @@ func (km *KeyManager) SyncPendingRegistrationKey(ctx context.Context, keyID uuid
 	return km.syncPendingRegistrationKey(ctx, key)
 }
 
+func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
+	return km.repo.Transaction(ctx, func(ctx context.Context) error {
+		key.State = cmkapi.KeyStateDETACHING
+
+		_, err := km.repo.Patch(ctx, key, *repo.NewQuery())
+		if err != nil {
+			return err
+		}
+
+		err = km.sendDetachEvent(ctx, key)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func (km *KeyManager) syncPendingRegistrationKey(ctx context.Context, key *model.Key) error {
 	ctx = model.LogInjectKey(ctx, key)
 	elapsed := time.Since(key.CreatedAt)
@@ -544,7 +562,8 @@ func (km *KeyManager) syncPendingRegistrationKey(ctx context.Context, key *model
 func (km *KeyManager) transitionPendingKeyToForbidden(ctx context.Context, key *model.Key) error {
 	now := time.Now().UTC()
 	code := "REGISTRATION_TIMEOUT"
-	msg := "HYOK key registration timed out; authentication to the external keystore did not succeed within the allowed window"
+	msg := "HYOK key registration timed out; authentication to the external keystore" +
+		" did not succeed within the allowed window"
 	detail := cmkapi.KeyErrorDetail{
 		ErrorCode:      &code,
 		ErrorMessage:   &msg,
@@ -564,23 +583,6 @@ func (km *KeyManager) transitionPendingKeyToForbidden(ctx context.Context, key *
 		return errs.Wrap(ErrUpdateKeyDB, err)
 	}
 	return nil
-}
-
-func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
-	return km.repo.Transaction(ctx, func(ctx context.Context) error {
-		key.State = cmkapi.KeyStateDETACHING
-
-		_, err := km.repo.Patch(ctx, key, *repo.NewQuery())
-		if err != nil {
-			return err
-		}
-
-		err = km.sendDetachEvent(ctx, key)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
 }
 
 func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key) error {

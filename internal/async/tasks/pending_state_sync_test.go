@@ -22,8 +22,8 @@ import (
 var errMockSyncPendingKey = errors.New("sync pending creation key error")
 
 type pendingStateUpdaterMock struct {
-	creationErr      error
-	registrationErr  error
+	creationErr     error
+	registrationErr error
 }
 
 func (m *pendingStateUpdaterMock) SyncPendingCreationKey(_ context.Context, _ uuid.UUID) error {

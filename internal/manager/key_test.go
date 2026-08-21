@@ -2418,9 +2418,9 @@ func TestCreateHYOKPendingRegistration(t *testing.T) {
 		// Plugin returns DISABLED for this key — static validation, not auth error.
 		disabledPlugin := testplugins.NewTestKeyManagement(true, false)
 		disabledPlugin.KeyStore["mock-key/disabled-key"] = &testplugins.KeyRecord{
-				KeyID:  "mock-key/disabled-key",
-				Status: testplugins.DisabledKeyStatus,
-			}
+			KeyID:  "mock-key/disabled-key",
+			Status: testplugins.DisabledKeyStatus,
+		}
 
 		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, disabledPlugin))
 		seedDefaultKeystore(t, r, ctx)
