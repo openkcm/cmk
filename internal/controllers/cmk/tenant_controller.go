@@ -48,7 +48,7 @@ func (c *APIController) GetTenants(
 	}
 
 	if pagination.Count {
-		response.Count = ptr.PointTo(total)
+		response.Count = new(total)
 	}
 
 	return cmkapi.GetTenants200JSONResponse(response), nil

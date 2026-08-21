@@ -11,15 +11,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // startAPIServerTenantConfig starts the API server for keys and returns a pointer to the database
@@ -44,7 +43,7 @@ func TestAPIController_GetTenantKeystores(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(uuid.New())
+		k.PrimaryKeyID = new(uuid.New())
 	}, testutils.WithAuthBusinessUserDataKC(authClient))
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -157,7 +156,7 @@ func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Co
 		Key:   constants.WorkflowConfigKey,
 		Value: configJSON,
 	}
-	err = r.Set(ctx, tenantConfig)
+	err = r.Set(ctx, tenantConfig, *repo.NewQuery())
 	require.NoError(t, err)
 }
 
@@ -178,7 +177,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 			Key:   constants.WorkflowConfigKey,
 			Value: configJSON,
 		}
-		err = r.Set(ctx, tenantConfig)
+		err = r.Set(ctx, tenantConfig, *repo.NewQuery())
 		require.NoError(t, err)
 
 		businessUserData := &auth.ClientData{
@@ -192,8 +191,8 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 
 		// Test: Update config
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals:    ptr.PointTo(5),
-			RetentionPeriodDays: ptr.PointTo(60),
+			MinimumApprovals:    new(5),
+			RetentionPeriodDays: new(60),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -239,7 +238,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 
 		// Test: Update with invalid retention period
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			RetentionPeriodDays: ptr.PointTo(29), // Less than minimum of 30
+			RetentionPeriodDays: new(29), // Less than minimum of 30
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -270,8 +269,8 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: ptr.PointTo(20),
-			MaxExpiryPeriodDays:     ptr.PointTo(10),
+			DefaultExpiryPeriodDays: new(20),
+			MaxExpiryPeriodDays:     new(10),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -309,7 +308,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: ptr.PointTo(1),
+			MinimumApprovals: new(1),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -347,7 +346,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			RetentionPeriodDays: ptr.PointTo(29),
+			RetentionPeriodDays: new(29),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -379,7 +378,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		enabledConfig := testutils.NewDefaultWorkflowConfig(true)
 		configJSON, err := json.Marshal(enabledConfig)
 		require.NoError(t, err)
-		err = r.Set(ctx, &model.TenantConfig{Key: constants.WorkflowConfigKey, Value: configJSON})
+		err = r.Set(ctx, &model.TenantConfig{Key: constants.WorkflowConfigKey, Value: configJSON}, *repo.NewQuery())
 		require.NoError(t, err)
 
 		businessUserData := &auth.ClientData{
@@ -391,7 +390,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			Enabled: ptr.PointTo(false),
+			Enabled: new(false),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -424,6 +423,6 @@ func setupDefaultWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx con
 		Key:   constants.WorkflowConfigKey,
 		Value: configJSON,
 	}
-	err = r.Set(ctx, tenantConfig)
+	err = r.Set(ctx, tenantConfig, *repo.NewQuery())
 	require.NoError(t, err)
 }

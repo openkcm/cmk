@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 
 	"github.com/openkcm/orbital"
@@ -145,7 +144,7 @@ func (r *SystemTaskInfoResolver) buildSystemActionTaskData(
 			SystemAction: &proto.SystemAction{
 				SystemId:          system.Identifier,
 				SystemRegion:      system.Region,
-				SystemType:        strings.ToLower(system.Type),
+				SystemType:        strings.ToLower(string(system.Type)),
 				KeyIdFrom:         data.KeyIDFrom,
 				KeyIdTo:           data.KeyIDTo,
 				KeyProvider:       strings.ToLower(key.Provider),
@@ -206,7 +205,7 @@ func (r *SystemTaskInfoResolver) selectKeyForTask(
 func (r *SystemTaskInfoResolver) fetchAndPopulateVersionInfo(
 	ctx context.Context,
 	key model.Key,
-) (map[string]map[string]any, error) {
+) (model.KeyAccessData, error) {
 	cryptoData := key.GetCryptoAccessData()
 
 	latestVersionID, err := getNewestKeyVersionNativeID(ctx, r.repo, key.ID.String())
@@ -222,11 +221,9 @@ func (r *SystemTaskInfoResolver) fetchAndPopulateVersionInfo(
 	}
 
 	for region := range cryptoData {
-		if cryptoData[region] == nil {
-			// Initialize map if it doesn't exist
-			cryptoData[region] = make(map[string]any)
-		}
-		cryptoData[region]["versionIdentifier"] = latestVersionID
+		regionValues := cryptoData[region]
+		regionValues.Set("versionIdentifier", latestVersionID)
+		cryptoData[region] = regionValues
 	}
 
 	return cryptoData, nil
@@ -257,10 +254,10 @@ func (r *SystemTaskInfoResolver) getCryptoAccessDataFromConfig(ctx context.Conte
 
 	result := make(model.KeyAccessData)
 	for name, cryptoCfg := range ksConfig.CryptoAccessData {
-		entry := make(map[string]any, len(cryptoCfg.AccessData)+1)
-		maps.Copy(entry, cryptoCfg.AccessData)
-		entry[model.CertificateSubjectKey] = cryptoCfg.Subject
-		result[name] = entry
+		result[name] = cmkapi.KeyAccessDetailsRegion{
+			CertificateSubject:   &cryptoCfg.Subject,
+			AdditionalProperties: cryptoCfg.AccessData,
+		}
 	}
 
 	return result, nil
@@ -282,9 +279,10 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 	}
 
 	var cryptoData model.KeyAccessData
-	// For HYOK keys, fetch the latest version info from DB.
-	// For BYOK/managed keys, read pre-provisioned crypto access data from the stored keystore config.
-	if key.KeyType == string(cmkapi.KeyTypeHYOK) {
+	// For HYOK keys, we need to fetch the latest version info and populate it into the crypto access data
+	// to support key rotation.
+	// For BYOK/managed keys, we need to sync crypto access data instead
+	if key.KeyType == cmkapi.KeyTypeHYOK {
 		cryptoData, err = r.fetchAndPopulateVersionInfo(ctx, key)
 	} else {
 		cryptoData, err = r.getCryptoAccessDataFromConfig(ctx)
@@ -305,7 +303,8 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 		&keymanagement.TransformCryptoAccessDataRequest{
 			NativeKeyID: *key.NativeID,
 			AccessData:  cryptoAccessDataBytes,
-		})
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

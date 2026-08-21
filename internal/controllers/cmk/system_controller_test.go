@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -20,13 +19,13 @@ import (
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrForced = errors.New("forced")
@@ -189,7 +188,7 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
-	keyConfiguration3ID := ptr.PointTo(uuid.New())
+	keyConfiguration3ID := new(uuid.New())
 
 	authClient1 := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 	authClient2 := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
@@ -201,10 +200,10 @@ func TestGetSystems_WithKeyConfigurationID(t *testing.T) {
 	keyConfig3 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient2))
 	systems1 := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig1.ID)
+		s.KeyConfigurationID = new(keyConfig1.ID)
 	})
 	systems2 := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig2.ID)
+		s.KeyConfigurationID = new(keyConfig2.ID)
 	})
 	systems3 := testutils.NewSystem(func(s *model.System) {
 		s.TargetKeyConfigurationID = &keyConfig3.ID
@@ -327,7 +326,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.KeyConfigurationID = new(keyConfig.ID)
 		s.Status = cmkapi.SystemStatusPROCESSING
 	})
 
@@ -457,7 +456,7 @@ func TestAPIController_GetAllSystemsPagination(t *testing.T) {
 				"key-1": "val-1",
 				"key-2": "val-2",
 			}
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 		testutils.CreateTestEntities(ctx, t, r, system)
 	}
@@ -607,10 +606,10 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 		s.TargetKeyConfigurationID = &keyConfig2.ID
 	})
 	system := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.KeyConfigurationID = new(keyConfig.ID)
 	})
 	systemUnderWorkflowFullDetails := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.KeyConfigurationID = new(keyConfig.ID)
 		s.UnderWorkflow = true
 	})
 	wfFullDetails := testutils.NewWorkflow(func(w *model.Workflow) {
@@ -620,7 +619,7 @@ func TestAPIController_GetSystemByID(t *testing.T) {
 		w.State = model.WorkflowStateWaitApproval
 	})
 	systemUnderWorkflowApproversDetails := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.KeyConfigurationID = new(keyConfig.ID)
 		s.UnderWorkflow = true
 	})
 	wfApproverDetails := testutils.NewWorkflow(func(w *model.Workflow) {
@@ -764,7 +763,7 @@ func TestAPIController_GetSystemByIDWithDBError(t *testing.T) {
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	system := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.KeyConfigurationID = new(keyConfig.ID)
 	})
 	testutils.CreateTestEntities(ctx, t, r, system, keyConfig)
 
@@ -914,15 +913,15 @@ func TestLinkSystemAction(t *testing.T) {
 
 	key := testutils.NewKey(func(_ *model.Key) {})
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(key.ID)
+		k.PrimaryKeyID = new(key.ID)
 	}, testutils.WithAuthBusinessUserDataKC(authClient2))
 
 	system := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig1.ID)
+		s.KeyConfigurationID = new(keyConfig1.ID)
 	})
 	systemNoConfig := testutils.NewSystem(func(_ *model.System) {})
 	systemWithKey := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig2.ID)
+		s.KeyConfigurationID = new(keyConfig2.ID)
 	})
 
 	testutils.CreateTestEntities(
@@ -1076,10 +1075,10 @@ func TestUnlinkSystemAction(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(uuid.New())
+		k.PrimaryKeyID = new(uuid.New())
 	}, testutils.WithAuthBusinessUserDataKC(authClient))
 	system := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.KeyConfigurationID = new(keyConfig.ID)
 	})
 	systemWithoutKey := testutils.NewSystem(func(_ *model.System) {})
 

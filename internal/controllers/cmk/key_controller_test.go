@@ -17,17 +17,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var (
@@ -42,7 +41,7 @@ var (
 	})
 )
 
-func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
+func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage, *testplugins.TestKeyManagement) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
@@ -51,8 +50,9 @@ func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *tes
 
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Registry: testutils.NewTestPlugins(),
+		Registry: testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp)),
 		Config: config.Config{
 			Database: dbCfg,
 			CryptoLayer: config.CryptoLayer{
@@ -64,11 +64,11 @@ func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *tes
 		},
 		EnableBusinessUserDataMW: true,
 		SigningKeyStorage:        keyStorage,
-	}), tenants[0], keyStorage
+	}), tenants[0], keyStorage, pluginOp
 }
 
 func TestKeyControllerGetKeys(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	nativeID := "arn:aws:kms:us-west-2:111122223333:alias/<alias-name>"
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
@@ -163,7 +163,7 @@ func TestKeyControllerGetKeys(t *testing.T) {
 }
 
 func TestKeyControllerGetKeysPagination(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -296,7 +296,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 }
 
 func TestKeyControllerPostKeys(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	r := sql.NewRepository(db)
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -318,12 +318,12 @@ func TestKeyControllerPostKeys(t *testing.T) {
 		keystoreKeyMgmtCert,
 	)
 
-	SystemManagedRequest := map[string]any{
+	BYOKRequest := map[string]any{
 		"name":               "test-key",
-		"type":               string(cmkapi.KeyTypeBYOK),
+		"type":               cmkapi.KeyTypeBYOK,
 		"keyConfigurationID": keyConfig.ID,
 		"provider":           providerTest,
-		"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+		"algorithm":          cmkapi.KeyAlgorithmAES256,
 		"region":             "us-west-2",
 		"description":        "test key",
 		"enabled":            true,
@@ -331,7 +331,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 
 	HYOKRequest := map[string]any{
 		"name":               "hyok-key",
-		"type":               string(cmkapi.KeyTypeHYOK),
+		"type":               cmkapi.KeyTypeHYOK,
 		"keyConfigurationID": keyConfig.ID,
 		"enabled":            true,
 		"nativeID":           "arn:aws:kms:eu-west-2:399521560603:key/03e6b16b-f0c8-4699-8ef9-8947871924d3",
@@ -355,7 +355,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	requestMut := testutils.NewMutator(func() map[string]any {
 		// Create a copy of the base map
 		baseMap := make(map[string]any)
-		maps.Copy(baseMap, SystemManagedRequest)
+		maps.Copy(baseMap, BYOKRequest)
 
 		return baseMap
 	})
@@ -531,8 +531,12 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	}
 }
 
-func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+func TestKeyControllerPostKeysBYOKPendingCreation(t *testing.T) {
+	// When no DEFAULT_KEYSTORE tenant config exists, BYOK key creation is deferred:
+	// the key is persisted in PENDING_CREATION state and the async sync worker completes
+	// provisioning once the keystore pool is filled. This replaces the old synchronous
+	// KEYSTORE_POOL_DRAINED 503 behaviour.
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -552,38 +556,13 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 	assert.True(t, ok, "test key should exist")
 	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
-	t.Run("Should fail to create key if keystore pool is drained", func(t *testing.T) {
-		// Arrange
-		sysManagedKey := map[string]any{
-			"name":               "test-key",
-			"type":               string(cmkapi.KeyTypeBYOK),
-			"keyConfigurationID": keyConfig.ID,
-			"algorithm":          string(cmkapi.KeyAlgorithmAES256),
-			"region":             "us-west-2",
-			"description":        "test key",
-			"enabled":            true,
-		}
-		// Act
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodPost,
-			Endpoint: "keys",
-			Tenant:   tenant,
-			Body:     testutils.WithJSON(t, sysManagedKey),
-			Headers:  headers,
-		})
-		// Assert
-		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "KEYSTORE_POOL_DRAINED", response.Error.Code)
-	})
-
-	t.Run("Should fail to create BYOK key if keystore pool is drained", func(t *testing.T) {
-		// Arrange
+	t.Run("Should create BYOK key in PENDING_CREATION when keystore not yet provisioned", func(t *testing.T) {
+		// Arrange: no DEFAULT_KEYSTORE config seeded — provisioning is pending
 		byokKey := map[string]any{
 			"name":               "test-key",
-			"type":               string(cmkapi.KeyTypeBYOK),
+			"type":               cmkapi.KeyTypeBYOK,
 			"keyConfigurationID": keyConfig.ID,
-			"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+			"algorithm":          cmkapi.KeyAlgorithmAES256,
 			"region":             "us-west-2",
 			"description":        "test key",
 			"enabled":            true,
@@ -597,14 +576,80 @@ func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
 			Headers:  headers,
 		})
 		// Assert
-		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+		assert.Equal(t, http.StatusCreated, w.Code)
+		response := testutils.GetJSONBody[cmkapi.Key](t, w)
+		if assert.NotNil(t, response.State) {
+			assert.Equal(t, cmkapi.KeyStatePENDINGCREATION, *response.State)
+		}
+	})
+}
+
+func TestKeyControllerPostKeysInvalidKeyAttribute(t *testing.T) {
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+	})
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+	tenant := tenants[0]
+
+	km := testplugins.NewTestKeyManagement(true, true).WithValidRegions("us-east-1")
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Registry: testutils.NewTestPlugins(testplugins.WithKeyManagement(providerTest, km)),
+		Config: config.Config{
+			Database: dbCfg,
+			CryptoLayer: config.CryptoLayer{
+				CertX509Trusts: commoncfg.SourceRef{
+					Source: commoncfg.EmbeddedSourceValue,
+					Value:  "[]",
+				},
+			},
+		},
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
+	})
+
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthBusinessUserDataKC(authClient))
+	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
+	testutils.CreateTestEntities(ctx, t, r, tenantDefaultCert, keyConfig,
+		keystore, keystoreDefaultCert, keystoreKeyMgmtCert)
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}, privateKey, 0)
+
+	t.Run("POST BYOK key with unsupported region", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: "keys",
+			Tenant:   tenant,
+			Body: testutils.WithJSON(t, map[string]any{
+				"name":               "byok-bad-region",
+				"type":               string(cmkapi.KeyTypeBYOK),
+				"keyConfigurationID": keyConfig.ID,
+				"provider":           providerTest,
+				"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+				"region":             "eu-west-1",
+			}),
+			Headers: headers,
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
 		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "KEYSTORE_POOL_DRAINED", response.Error.Code)
+		assert.Equal(t, "INVALID_KEY_ATTRIBUTE", response.Error.Code)
+		assert.NotNil(t, response.Error.Context)
+		assert.Contains(t, *response.Error.Context, "reason")
 	})
 }
 
 func TestKeyControllerGetKeysKeyID(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	r := sql.NewRepository(db)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 
@@ -692,7 +737,7 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -712,17 +757,18 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
+		k.KeyType = cmkapi.KeyTypeHYOK
 	})
 
 	pKeyID := uuid.New()
 	keyConfigWSys := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(pKeyID)
+			k.PrimaryKeyID = new(pKeyID)
 		},
 		testutils.WithAuthBusinessUserDataKC(authClient),
 	)
 	sys := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfigWSys.ID)
+		s.KeyConfigurationID = new(keyConfigWSys.ID)
 		s.Status = cmkapi.SystemStatusCONNECTED
 	})
 	pkey := testutils.NewKey(func(k *model.Key) {
@@ -843,7 +889,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerUpdateKey(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, provider := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -860,8 +906,8 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	regionNonEditable := "region2"
 
 	cryptoData, err := json.Marshal(model.KeyAccessData{
-		regionEditable:    map[string]any{},
-		regionNonEditable: map[string]any{},
+		regionEditable:    cmkapi.KeyAccessDetailsRegion{},
+		regionNonEditable: cmkapi.KeyAccessDetailsRegion{},
 	})
 	assert.NoError(t, err)
 
@@ -869,22 +915,27 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 
 	keyID := uuid.New()
 	kc := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = ptr.PointTo(keyID)
+		k.PrimaryKeyID = new(keyID)
 	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	sysFailed := testutils.NewSystem(func(sys *model.System) {
-		sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+		sys.KeyConfigurationID = new(kc.ID)
 		sys.Region = regionEditable
 		sys.Status = cmkapi.SystemStatusFAILED
 	})
 
 	sys := testutils.NewSystem(func(sys *model.System) {
-		sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+		sys.KeyConfigurationID = new(kc.ID)
 		sys.Region = regionNonEditable
 		sys.Status = cmkapi.SystemStatusCONNECTED
 	})
 
 	validMgmtData, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+	assert.NoError(t, err)
+
+	providerKeyBYOK, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.BYOK,
+	})
 	assert.NoError(t, err)
 
 	key := testutils.NewKey(func(k *model.Key) {
@@ -893,11 +944,12 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		k.ManagementAccessData = validMgmtData
 		k.KeyConfigurationID = kc.ID
 		k.Provider = providerTest
+		k.NativeID = &providerKeyBYOK.KeyID
 	})
 
 	hyokKey := testutils.NewKey(func(k *model.Key) {
 		k.IsPrimary = true
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.CryptoAccessData = cryptoData
 		k.ManagementAccessData = validMgmtData
 		k.KeyConfigurationID = kc.ID
@@ -905,7 +957,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	})
 
 	hyokKeyInvalidMgmt := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.CryptoAccessData = cryptoData
 		k.ManagementAccessData = json.RawMessage("{\"wrong\":\"data\"}")
 		k.KeyConfigurationID = kc.ID
@@ -958,9 +1010,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T400KeyUPDATESuccess",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusOK,
 			expectedName:   "updated-key",
@@ -970,9 +1022,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T400KeyUPDATESuccessDisable",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(false),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(false),
 			},
 			expectedStatus: http.StatusOK,
 			expectedName:   "updated-key",
@@ -982,9 +1034,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T400KeyUPDATESuccessEnable",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusOK,
 			expectedName:   "updated-key",
@@ -994,9 +1046,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T401KeyUPDATEInvalidId",
 			keyID: "invalid-key-id",
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedName:   "",
@@ -1006,9 +1058,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T402KeyUPDATENotFound",
 			keyID: uuid.New().String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusNotFound,
 			expectedName:   "",
@@ -1019,8 +1071,10 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Management: &map[string]any{
-						"a": "b",
+					Management: &cmkapi.KeyAccessDetailsRegion{
+						AdditionalProperties: map[string]any{
+							"a": "b",
+						},
 					},
 				},
 			},
@@ -1031,9 +1085,11 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						regionNonEditable: {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 					},
 				},
@@ -1044,15 +1100,19 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "Should 200 on valid crypto access data update",
 			keyID: hyokKey.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-hyok-key"),
+				Description: new("updated description"),
+				Name:        new("updated-hyok-key"),
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						regionEditable: {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 						"new-region": {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 					},
 				},
@@ -1065,7 +1125,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "Should 400 when update primary key and workflow is required",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				IsPrimary: ptr.PointTo(true),
+				IsPrimary: new(true),
 			},
 			expectedStatus: http.StatusBadRequest,
 			workflowEnable: true,
@@ -1074,8 +1134,8 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "Should 400 on byok state update and workflow is required",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Enabled:   ptr.PointTo(true),
-				IsPrimary: ptr.PointTo(true),
+				Enabled:   new(true),
+				IsPrimary: new(true),
 			},
 			expectedStatus: http.StatusBadRequest,
 			workflowEnable: true,
@@ -1083,7 +1143,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		{
 			name:              "should not update when no group permission",
 			keyID:             key.ID.String(),
-			input:             cmkapi.KeyPatch{Name: ptr.PointTo("new-name")},
+			input:             cmkapi.KeyPatch{Name: new("new-name")},
 			headers:           headersNotAllowed,
 			expectedStatus:    http.StatusForbidden,
 			expectedErrorCode: "FORBIDDEN",
@@ -1093,8 +1153,12 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			keyID: hyokKeyInvalidMgmt.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
-						regionEditable: {"key": "value"},
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
+						regionEditable: {
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
+						},
 					},
 				},
 			},
@@ -1147,7 +1211,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 }
 
 func TestKeyControllerGetImportParams(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -1158,7 +1222,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	// Create a BYOK key and import params in the database
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStatePENDINGIMPORT
 		k.KeyConfigurationID = kc.ID
 	})
@@ -1169,7 +1233,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 	})
 
 	byokEnabled := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStateENABLED
 		k.KeyConfigurationID = kc.ID
 	})
@@ -1177,7 +1241,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 	sysManagedKey := testutils.NewKey(func(_ *model.Key) {})
 
 	hyokKey := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.KeyConfigurationID = kc.ID
 	})
 
@@ -1295,7 +1359,7 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 }
 
 func TestKeyControllerImportKeyMaterial(t *testing.T) {
-	db, sv, tenant, keyStorage := startAPIKeys(t)
+	db, sv, tenant, keyStorage, provider := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -1304,10 +1368,15 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
+	providerKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
+
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
+		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStatePENDINGIMPORT
-		k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-1234-567890abcdef")
+		k.NativeID = &providerKey.KeyID
 		k.KeyConfigurationID = keyConfig.ID
 	})
 
@@ -1396,9 +1465,9 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	t.Run("ImportKeyMaterialFailedNoImportParams", func(t *testing.T) {
 		byokNoImportParams := testutils.NewKey(func(k *model.Key) {
 			k.Name = "byok-no-import-params"
-			k.KeyType = string(cmkapi.KeyTypeBYOK)
+			k.KeyType = cmkapi.KeyTypeBYOK
 			k.State = cmkapi.KeyStatePENDINGIMPORT
-			k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-6789-567890abcdef")
+			k.NativeID = new("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-6789-567890abcdef")
 			k.KeyConfigurationID = keyConfig.ID
 		})
 		testutils.CreateTestEntities(ctx, t, r, byokNoImportParams)
@@ -1423,7 +1492,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	t.Run("ImportKeyMaterialFailedInvalidKeyTypeHYOK", func(t *testing.T) {
 		hyokKey := testutils.NewKey(func(k *model.Key) {
 			k.Name = "hyok-key"
-			k.KeyType = string(cmkapi.KeyTypeHYOK)
+			k.KeyType = cmkapi.KeyTypeHYOK
 			k.KeyConfigurationID = keyConfig.ID
 		})
 
@@ -1433,7 +1502,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			WrappingAlg:        "CKM_RSA_AES_KEY_WRAP",
 			HashFunction:       "SHA256",
 			ProviderParameters: paramsJSON,
-			Expires:            ptr.PointTo(time.Now().Add(1 * time.Hour)),
+			Expires:            new(time.Now().Add(1 * time.Hour)),
 		}
 
 		testutils.CreateTestEntities(ctx, t, r, hyokKey, &params)
@@ -1462,7 +1531,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	t.Run("ImportKeyMaterialFailedInvalidKeyState", func(t *testing.T) {
 		// Prepare
 		byokEnabled := testutils.NewKey(func(k *model.Key) {
-			k.KeyType = string(cmkapi.KeyTypeBYOK)
+			k.KeyType = cmkapi.KeyTypeBYOK
 			k.State = cmkapi.KeyStateENABLED
 			k.KeyConfigurationID = keyConfig.ID
 		})

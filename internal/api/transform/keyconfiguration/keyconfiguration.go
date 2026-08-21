@@ -12,6 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/group"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/utils/sanitise"
@@ -51,7 +52,8 @@ func FromAPI(apiConfig cmkapi.KeyConfiguration) (*model.KeyConfiguration, error)
 // ToAPI converts KeyConfiguration db model to a KeyConfiguration api model
 func ToAPI(
 	ctx context.Context,
-	k model.KeyConfiguration,
+	k *model.KeyConfiguration,
+	kManager manager.KeyConfigurationAPI,
 	identityManager identitymanagement.IdentityManagement,
 ) (*cmkapi.KeyConfiguration, error) {
 	err := sanitise.Sanitize(&k)
@@ -96,8 +98,12 @@ func ToAPI(
 		apiConfig.Metadata.CreatorName = &name
 	}
 
-	systemConnect := k.PrimaryKeyID != nil
-	apiConfig.CanConnectSystems = &systemConnect
+	canConnectSystem, err := kManager.CanConnectSystems(ctx, k)
+	if errors.Is(err, manager.ErrGettingKeyByID) {
+		return nil, err
+	}
+
+	apiConfig.CanConnectSystems = &canConnectSystem
 
 	return apiConfig, nil
 }

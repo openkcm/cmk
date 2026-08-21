@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"crypto/rsa"
-	"time"
 
 	"github.com/openkcm/cmk/internal/async"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
@@ -11,7 +10,6 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
-	"github.com/openkcm/cmk/internal/repo"
 	wf "github.com/openkcm/cmk/internal/workflow"
 )
 
@@ -108,10 +106,6 @@ func (m *TenantManager) SetSystemForTests(sys System) {
 	m.sys = sys
 }
 
-func (m *TenantManager) SetRepoForTests(repo repo.Repo) {
-	m.repo = repo
-}
-
 func (w *WorkflowManager) GetApproverGroupsFromLegacyField(
 	ctx context.Context,
 	workflow *model.Workflow,
@@ -122,10 +116,9 @@ func (w *WorkflowManager) GetApproverGroupsFromLegacyField(
 func (km *KeyManager) ExportedHandleNewKeyVersion(
 	ctx context.Context,
 	key *model.Key,
-	keyResp *keymanagement.GetKeyResponse,
-	rotationTime *time.Time,
+	keyResp *keymanagement.GetKeyVersionsResponse,
 ) error {
-	return km.handleNewKeyVersion(ctx, key, keyResp, rotationTime)
+	return km.handleNewKeyVersion(ctx, key, keyResp)
 }
 
 // CreateKeyRetryDelay exposes the package-level retry delay so tests can set it to
@@ -134,5 +127,8 @@ var CreateKeyRetryDelay = &createKeyRetryDelay
 
 // CreateKeyMaxDelay exposes the package-level max delay so tests can zero it alongside CreateKeyRetryDelay.
 var CreateKeyMaxDelay = &createKeyMaxDelay
+
+// PendingCreationTimeout exposes the package-level pending creation timeout so tests can override it.
+var PendingCreationTimeout = &pendingCreationTimeout
 
 const DefaultKeystoreCertInfix = defaultKeystoreCertInfix

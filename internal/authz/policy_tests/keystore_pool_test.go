@@ -71,6 +71,7 @@ func TestKeystorePool_AuthzPolicy(t *testing.T) {
 		certManager,
 		eventFactory,
 		cmkAuditor,
+		nil,
 	)
 
 	filler := tasks.NewKeystorePoolFiller(keyManager, authzRepo, cfg.KeystorePool)

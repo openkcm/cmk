@@ -14,8 +14,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	_ "github.com/bartventer/gorm-multitenancy/postgres/v8"
-
 	goAmqp "github.com/Azure/go-amqp"
 	otelAttr "go.opentelemetry.io/otel/attribute"
 
@@ -25,6 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
+	_ "github.com/openkcm/cmk/internal/multitenancy/postgres"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 )

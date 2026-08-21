@@ -21,7 +21,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
@@ -35,13 +34,14 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/clients/registry/mapping"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const testProvider = "TEST"
@@ -186,6 +186,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-connected",
 		Region:             "region-connected",
+		Type:               model.SystemTypeSYSTEM,
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusCONNECTED,
 	}
@@ -193,6 +194,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-disconnected",
 		Region:             "region-disconnected",
+		Type:               model.SystemTypeSYSTEM,
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusDISCONNECTED,
 	}
@@ -200,6 +202,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-targetless",
 		Region:             "region-targetless",
+		Type:               model.SystemTypeSYSTEM,
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusCONNECTED,
 	}
@@ -207,6 +210,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:         uuid.New(),
 		Identifier: "system-keyless",
 		Region:     "region-keyless",
+		Type:       model.SystemTypeSYSTEM,
 		Status:     cmkapi.SystemStatusCONNECTED,
 	}
 
@@ -270,6 +274,8 @@ func TestResolveKeyTasks(t *testing.T) {
 					ID:                 keyID,
 					KeyConfigurationID: keyConfigID,
 					Name:               uuid.NewString(),
+					KeyType:            cmkapi.KeyTypeBYOK,
+					Algorithm:          cmkapi.KeyAlgorithmAES256,
 				})
 				assert.NoError(t, err)
 
@@ -327,6 +333,8 @@ func TestResolveKeyTasks(t *testing.T) {
 						ID:                 keyID,
 						KeyConfigurationID: uuid.New(),
 						Name:               uuid.NewString(),
+						KeyType:            cmkapi.KeyTypeBYOK,
+						Algorithm:          cmkapi.KeyAlgorithmAES256,
 					})
 					assert.NoError(t, err)
 
@@ -359,6 +367,8 @@ func TestResolveKeyTasks(t *testing.T) {
 						ID:                 keyID,
 						KeyConfigurationID: uuid.New(),
 						Name:               uuid.NewString(),
+						KeyType:            cmkapi.KeyTypeBYOK,
+						Algorithm:          cmkapi.KeyAlgorithmAES256,
 					})
 					assert.NoError(t, err)
 
@@ -407,27 +417,33 @@ func TestResolveSystemTasks(t *testing.T) {
 		s.Region = region
 	})
 
+	// Populate test plugin with keys so GetKey works
+	fromNative, err := instance.pluginOp.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
+	toNative, err := instance.pluginOp.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
+
 	keyFrom := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
-		k.NativeID = ptr.PointTo("key-from-native-id")
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.NativeID = &fromNative.KeyID
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value1"}}`)
 	})
 
 	keyTo := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
-		k.NativeID = ptr.PointTo("key-to-native-id")
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.NativeID = &toNative.KeyID
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value2"}}`)
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyFrom, keyTo)
-
-	// Populate test plugin with keys so GetKey works
-	instance.pluginOp.HandleKeyRecord("key-from-native-id", testplugins.EnabledKeyStatus)
-	instance.pluginOp.HandleKeyRecord("key-to-native-id", testplugins.EnabledKeyStatus)
 
 	t.Run("should return correct task info for", func(t *testing.T) {
 		tests := []struct {
@@ -695,11 +711,8 @@ func TestVersionInfoPropagation(t *testing.T) {
 	// Test constants
 	const (
 		testRegion       = "test-region"
-		keyWithVersionID = "key-with-version"
-		keyWithoutVerID  = "key-without-version"
+		initialVersionID = "version0"
 		testRoleArn      = "arn:aws:iam::123:role/test"
-		initialVersionID = "version-abc-123"
-		updatedVersionID = "version-xyz-456"
 	)
 
 	// given
@@ -715,41 +728,45 @@ func TestVersionInfoPropagation(t *testing.T) {
 		s.Region = testRegion
 	})
 
-	keyWithVersion := testutils.NewKey(func(k *model.Key) {
+	// Setup plugin handlers (required for TransformCryptoAccessData)
+	keyWithVersionIDOnDBProvider, err := instance.pluginOp.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	require.NoError(t, err)
+	keyWithoutVersionIDOnDBProvider, err := instance.pluginOp.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	require.NoError(t, err)
+
+	keyWithVersionOnDB := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
-		k.NativeID = ptr.PointTo(keyWithVersionID)
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.NativeID = &keyWithVersionIDOnDBProvider.KeyID
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
 	})
 
-	keyWithoutVersion := testutils.NewKey(func(k *model.Key) {
+	keyWithoutVersionOnDB := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
-		k.NativeID = ptr.PointTo(keyWithoutVerID)
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.NativeID = &keyWithoutVersionIDOnDBProvider.KeyID
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyWithVersion, keyWithoutVersion)
+	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyWithVersionOnDB, keyWithoutVersionOnDB)
 
 	// Create key versions in DB for keyWithVersion only
 	kv := &model.KeyVersion{
 		ID:        uuid.New(),
-		KeyID:     keyWithVersion.ID,
-		NativeID:  initialVersionID,
+		KeyID:     keyWithVersionOnDB.ID,
+		NativeID:  keyWithVersionIDOnDBProvider.KeyID,
 		RotatedAt: time.Now(),
 	}
-	err := r.Create(ctx, kv)
+	err = r.Create(ctx, kv)
 	require.NoError(t, err)
-
-	// Setup plugin handlers (required for TransformCryptoAccessData)
-	instance.pluginOp.HandleKeyRecord(keyWithVersionID, testplugins.EnabledKeyStatus)
-	instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, initialVersionID, "")
-
-	instance.pluginOp.HandleKeyRecord(keyWithoutVerID, testplugins.EnabledKeyStatus)
 
 	// Helper to resolve tasks and extract key access metadata
 	resolveAndExtractKeyAccessData := func(jobType string, keyID string) map[string]any {
@@ -784,32 +801,33 @@ func TestVersionInfoPropagation(t *testing.T) {
 	t.Run("should include version info in key_access_meta_data when available", func(t *testing.T) {
 		keyAccessData := resolveAndExtractKeyAccessData(
 			eventprocessor.JobTypeSystemLink.String(),
-			keyWithVersion.ID.String(),
+			keyWithVersionOnDB.ID.String(),
 		)
 
 		// Assert version info from DB key version is present
-		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
-		assert.Equal(t, initialVersionID, keyAccessData["versionIdentifier"])
+		assert.Equal(t, keyWithVersionIDOnDBProvider.KeyID, keyAccessData["keyID"])
+		assert.Equal(t, kv.NativeID, keyAccessData["versionIdentifier"])
 		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
 	})
 
 	t.Run("should handle keys without version info gracefully", func(t *testing.T) {
 		keyAccessData := resolveAndExtractKeyAccessData(
 			eventprocessor.JobTypeSystemLink.String(),
-			keyWithoutVersion.ID.String(),
+			keyWithoutVersionOnDB.ID.String(),
 		)
 
 		// Should have keyID and roleArn, but no version fields
-		assert.Equal(t, keyWithoutVerID, keyAccessData["keyID"])
+		assert.Equal(t, keyWithoutVersionIDOnDBProvider.KeyID, keyAccessData["keyID"])
 		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
 		assert.NotContains(t, keyAccessData, "versionIdentifier")
 	})
 
 	t.Run("should fetch fresh version info on every event creation", func(t *testing.T) {
 		// Simulate rotation by adding a newer key version in the DB
+		updatedVersionID := uuid.NewString()
 		kv := &model.KeyVersion{
 			ID:        uuid.New(),
-			KeyID:     keyWithVersion.ID,
+			KeyID:     keyWithVersionOnDB.ID,
 			NativeID:  updatedVersionID,
 			RotatedAt: time.Now().Add(time.Hour), // Later rotation
 		}
@@ -818,11 +836,11 @@ func TestVersionInfoPropagation(t *testing.T) {
 
 		keyAccessData := resolveAndExtractKeyAccessData(
 			eventprocessor.JobTypeSystemSwitch.String(),
-			keyWithVersion.ID.String(),
+			keyWithVersionOnDB.ID.String(),
 		)
 
 		// Assert the FRESH version info is present (not stale)
-		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
+		assert.Equal(t, keyWithVersionIDOnDBProvider.KeyID, keyAccessData["keyID"])
 		assert.Equal(t, updatedVersionID, keyAccessData["versionIdentifier"])
 	})
 }
@@ -1034,7 +1052,7 @@ func TestJobTermination(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	system := testutils.NewSystem(func(s *model.System) {
-		s.TargetKeyConfigurationID = ptr.PointTo(uuid.New())
+		s.TargetKeyConfigurationID = new(uuid.New())
 	})
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	key := testutils.NewKey(func(k *model.Key) {
@@ -1315,7 +1333,7 @@ func TestJobTermination(t *testing.T) {
 		_, err := systemService.RegisterSystem(ctx, &systemgrpc.RegisterSystemRequest{
 			ExternalId: sys.Identifier,
 			Region:     sys.Region,
-			Type:       sys.Type,
+			Type:       string(sys.Type),
 			TenantId:   tenant,
 		})
 		assert.NoError(t, err)
@@ -1589,7 +1607,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 			Data:               dataBytes,
 			PreviousItemStatus: previousStatus,
 		}
-		err := r.Set(ctx, event)
+		err := r.Set(ctx, event, *repo.NewQuery())
 		assert.NoError(t, err)
 		return eventID
 	}
@@ -1644,7 +1662,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 			Type:       eventprocessor.JobTypeSystemKeyRotate.String(),
 			Data:       dataBytes,
 		}
-		err = r.Set(ctx, event)
+		err = r.Set(ctx, event, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
@@ -1874,7 +1892,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	}
 	ksBytes, err := json.Marshal(ksConfig)
 	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}))
+	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) {
@@ -1883,14 +1901,14 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	keyFrom := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.NativeID = ptr.PointTo("byok-key-from")
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.NativeID = new("byok-key-from")
 	})
 	keyTo := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.NativeID = ptr.PointTo("byok-key-to")
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.NativeID = new("byok-key-to")
 	})
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyFrom, keyTo)
 
@@ -2067,15 +2085,15 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 	}
 	ksBytes, err := json.Marshal(ksConfig)
 	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}))
+	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) { s.Region = region })
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.NativeID = ptr.PointTo("byok-grant-key")
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.NativeID = new("byok-grant-key")
 	})
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, key)
 
@@ -2189,8 +2207,8 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfiguration.ID
 			k.Provider = testProvider
-			k.KeyType = string(cmkapi.KeyTypeBYOK)
-			k.NativeID = ptr.PointTo("byok-cfg-test-key")
+			k.KeyType = cmkapi.KeyTypeBYOK
+			k.NativeID = new("byok-cfg-test-key")
 		})
 		testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, key)
 
@@ -2234,7 +2252,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		}
 		ksBytes, err := json.Marshal(ksConfig)
 		require.NoError(t, err)
-		require.NoError(t, inst.r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}))
+		require.NoError(t, inst.r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 
@@ -2261,7 +2279,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		}
 		ksBytes, err := json.Marshal(ksConfig)
 		require.NoError(t, err)
-		require.NoError(t, inst.r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}))
+		require.NoError(t, inst.r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 

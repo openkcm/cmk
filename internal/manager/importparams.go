@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
@@ -15,8 +16,8 @@ import (
 // CommonImportFields contains fields that are common across all providers
 type CommonImportFields struct {
 	PublicKeyPEM      string
-	WrappingAlgorithm string
-	HashFunction      string
+	WrappingAlgorithm cmkapi.WrappingAlgorithmName
+	HashFunction      cmkapi.WrappingAlgorithmHashFunction
 }
 
 // ProviderImportFields contains provider-specific parameters and optional expiration
@@ -87,8 +88,8 @@ func extractCommonFields(reader *structreader.StructReader) (*CommonImportFields
 
 	return &CommonImportFields{
 		PublicKeyPEM:      publicKey,
-		WrappingAlgorithm: wrappingAlgorithm,
-		HashFunction:      hashFunction,
+		WrappingAlgorithm: cmkapi.WrappingAlgorithmName(wrappingAlgorithm),
+		HashFunction:      cmkapi.WrappingAlgorithmHashFunction(hashFunction),
 	}, nil
 }
 
@@ -99,20 +100,27 @@ func buildProviderParams(reader *structreader.StructReader) (*ProviderImportFiel
 		return nil, err
 	}
 
-	validTo, err := reader.GetString("validTo")
-	if err != nil {
-		return nil, err
+	params := map[string]any{
+		"providerParams": providerParams,
 	}
 
-	expires, err := time.Parse(time.RFC3339, validTo)
-	if err != nil {
-		return nil, err
+	// Some providers require algorithm at import time; store it if present.
+	if algorithm, ok := reader.GetOptionalString("algorithm"); ok {
+		params["algorithm"] = algorithm
 	}
 
-	return &ProviderImportFields{
-		ProviderParams: map[string]any{
-			"providerParams": providerParams,
-		},
-		Expires: &expires,
-	}, nil
+	result := &ProviderImportFields{
+		ProviderParams: params,
+	}
+
+	validTo, ok := reader.GetOptionalString("validTo")
+	if ok {
+		expires, err := time.Parse(time.RFC3339, validTo)
+		if err != nil {
+			return nil, err
+		}
+		result.Expires = &expires
+	}
+
+	return result, nil
 }

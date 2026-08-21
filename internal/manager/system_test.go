@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	regionpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 
@@ -25,10 +24,10 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
@@ -242,7 +241,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 	system1 := testutils.NewSystem(
 		func(s *model.System) {
 			s.Region = "Region1"
-			s.Type = "Type1"
+			s.Type = systems.SystemTypeSYSTEM
 		},
 	)
 
@@ -271,7 +270,7 @@ func TestGetAllSystemsFiltered(t *testing.T) {
 
 	t.Run("Should get all systems filtered by type", func(t *testing.T) {
 		filter := manager.SystemFilter{
-			Type:  "Type1",
+			Type:  string(systems.SystemTypeSYSTEM),
 			Skip:  constants.DefaultSkip,
 			Top:   constants.DefaultTop,
 			Count: true,
@@ -764,7 +763,7 @@ func TestSendRecoveryAction(t *testing.T) {
 		sys := testutils.NewSystem(
 			func(s *model.System) {
 				s.Status = cmkapi.SystemStatusFAILED
-				s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+				s.KeyConfigurationID = new(keyConfig.ID)
 			},
 		)
 		ctx := testutils.CreateCtxWithTenant(tenant)
@@ -778,7 +777,7 @@ func TestSendRecoveryAction(t *testing.T) {
 		sys := testutils.NewSystem(
 			func(s *model.System) {
 				s.Status = cmkapi.SystemStatusFAILED
-				s.TargetKeyConfigurationID = ptr.PointTo(uuid.New())
+				s.TargetKeyConfigurationID = new(uuid.New())
 			},
 		)
 		testutils.CreateTestEntities(
@@ -844,12 +843,12 @@ func TestSendRecoveryAction(t *testing.T) {
 		)
 
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-			kc.PrimaryKeyID = ptr.PointTo(key.ID)
+			kc.PrimaryKeyID = new(key.ID)
 			kc.AdminGroup = *testGroup
 			kc.AdminGroupID = testGroup.ID
 		})
 		system := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 		testutils.CreateTestEntities(ctx, t, r, key, testGroup, keyConfig, system)
 
@@ -964,7 +963,7 @@ func TestSelectEvent(t *testing.T) {
 	t.Run("Should LINK if new system", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(uuid.New())
+				k.PrimaryKeyID = new(uuid.New())
 			},
 		)
 
@@ -979,19 +978,19 @@ func TestSelectEvent(t *testing.T) {
 		// given
 		oldKeyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(uuid.New())
+				k.PrimaryKeyID = new(uuid.New())
 			},
 		)
 		newKeyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(uuid.New())
+				k.PrimaryKeyID = new(uuid.New())
 			},
 		)
 		testutils.CreateTestEntities(ctx, t, r, oldKeyConfig, newKeyConfig)
 
 		system := testutils.NewSystem(
 			func(s *model.System) {
-				s.KeyConfigurationID = ptr.PointTo(oldKeyConfig.ID)
+				s.KeyConfigurationID = new(oldKeyConfig.ID)
 			},
 		)
 
@@ -1007,14 +1006,14 @@ func TestSelectEvent(t *testing.T) {
 		// given
 		keyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(uuid.New())
+				k.PrimaryKeyID = new(uuid.New())
 			},
 		)
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 		system := testutils.NewSystem(
 			func(s *model.System) {
-				s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+				s.KeyConfigurationID = new(keyConfig.ID)
 			},
 		)
 
@@ -1048,7 +1047,7 @@ func TestLinkSystemAction(t *testing.T) {
 	)
 	keyConfig2 := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(uuid.New())
+			k.PrimaryKeyID = new(uuid.New())
 			k.AdminGroupID = testGroup.ID
 			k.AdminGroup = *testGroup
 		},
@@ -1168,7 +1167,7 @@ func TestLinkSystemAction(t *testing.T) {
 					k.State = cmkapi.KeyStateDISABLED
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-					kc.PrimaryKeyID = ptr.PointTo(key.ID)
+					kc.PrimaryKeyID = new(key.ID)
 					kc.AdminGroupID = group.ID
 					kc.AdminGroup = *group
 				}), key
@@ -1181,7 +1180,7 @@ func TestLinkSystemAction(t *testing.T) {
 					k.State = cmkapi.KeyStateFORBIDDEN
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-					kc.PrimaryKeyID = ptr.PointTo(key.ID)
+					kc.PrimaryKeyID = new(key.ID)
 					kc.AdminGroupID = group.ID
 					kc.AdminGroup = *group
 				}), key
@@ -1194,7 +1193,7 @@ func TestLinkSystemAction(t *testing.T) {
 					k.State = cmkapi.KeyStateUNKNOWN
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-					kc.PrimaryKeyID = ptr.PointTo(key.ID)
+					kc.PrimaryKeyID = new(key.ID)
 					kc.AdminGroupID = group.ID
 					kc.AdminGroup = *group
 				}), key
@@ -1275,13 +1274,13 @@ func TestUnlinkSystemAction(t *testing.T) {
 
 	keyConfig := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(uuid.New())
+			k.PrimaryKeyID = new(uuid.New())
 			k.AdminGroupID = testGroup.ID
 			k.AdminGroup = *testGroup
 		},
 	)
 	region := regionpb.Region_REGION_EU.String()
-	sysType := string(systems.SystemTypeSYSTEM)
+	sysType := systems.SystemTypeSYSTEM
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -1296,7 +1295,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		}
 		testutils.CreateTestEntities(ctx, t, r, systemUnderTest)
 		registerSystem(
-			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, systemUnderTest.Type,
+			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, string(systemUnderTest.Type),
 		)
 		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID, "")
 		assert.NoError(t, err)
@@ -1313,7 +1312,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 		}
 		testutils.CreateTestEntities(ctx, t, r, systemUnderTest)
 		registerSystem(
-			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, systemUnderTest.Type,
+			ctx, t, systemService, systemUnderTest.Identifier, systemUnderTest.Region, string(systemUnderTest.Type),
 		)
 		err := m.UnlinkSystemAction(ctx, systemUnderTest.ID, "")
 		assert.ErrorIs(t, err, manager.ErrUnlinkSystemProcessing)
@@ -1322,6 +1321,9 @@ func TestUnlinkSystemAction(t *testing.T) {
 	t.Run("Should error on delete system link with empty keyConfigurationID", func(t *testing.T) {
 		system := &model.System{
 			ID:                 uuid.New(),
+			Identifier:         uuid.NewString(),
+			Region:             "us-west-2",
+			Type:               systems.SystemTypeSYSTEM,
 			KeyConfigurationID: nil,
 		}
 		err := r.Create(ctx, system)
@@ -1375,7 +1377,7 @@ func TestRefreshSystems(t *testing.T) {
 		ID:         uuid.New(),
 		Identifier: uuid.New().String(),
 		Region:     regionpb.Region_REGION_EU.String(),
-		Type:       string(systems.SystemTypeSYSTEM),
+		Type:       systems.SystemTypeSYSTEM,
 	}
 	testutils.CreateTestEntities(ctx, t, r, existingSystem)
 
@@ -1404,10 +1406,10 @@ func TestRefreshSystems(t *testing.T) {
 			ID:         uuid.New(),
 			Identifier: uuid.New().String(),
 			Region:     regionpb.Region_REGION_US.String(),
-			Type:       string(systems.SystemTypeSUBACCOUNT),
+			Type:       systems.SystemTypeSUBACCOUNT,
 		}
 		registerSystem(
-			ctx, t, systemService, foreignSystem.Identifier, foreignSystem.Region, foreignSystem.Type,
+			ctx, t, systemService, foreignSystem.Identifier, foreignSystem.Region, string(foreignSystem.Type),
 			func(req *systemgrpc.RegisterSystemRequest) {
 				req.TenantId = "OtherTenant"
 			},
@@ -1452,9 +1454,9 @@ func TestRefreshSystems(t *testing.T) {
 	t.Run("New system returned by the registry with empty SIS metadata", func(t *testing.T) {
 		externalID := uuid.New().String()
 		region := regionpb.Region_REGION_US.String()
-		systemType := string(systems.SystemTypeSUBACCOUNT)
+		systemType := systems.SystemTypeSUBACCOUNT
 		registerSystem(
-			ctx, t, systemService, externalID, region, systemType,
+			ctx, t, systemService, externalID, region, string(systemType),
 			func(req *systemgrpc.RegisterSystemRequest) {
 				req.TenantId = tenant
 			},
@@ -1488,7 +1490,7 @@ func TestRefreshSystems(t *testing.T) {
 
 		existingSystemsCount, _ := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		registerSystem(
-			ctx, t, systemService, existingSystem.Identifier, existingSystem.Region, existingSystem.Type,
+			ctx, t, systemService, existingSystem.Identifier, existingSystem.Region, string(existingSystem.Type),
 			func(req *systemgrpc.RegisterSystemRequest) {
 				req.TenantId = tenant
 			},
@@ -1496,9 +1498,9 @@ func TestRefreshSystems(t *testing.T) {
 
 		externalID := uuid.New().String()
 		region := regionpb.Region_REGION_US.String()
-		systemType := string(systems.SystemTypeSUBACCOUNT)
+		systemType := systems.SystemTypeSUBACCOUNT
 		registerSystem(
-			ctx, t, systemService, externalID, region, systemType,
+			ctx, t, systemService, externalID, region, string(systemType),
 			func(req *systemgrpc.RegisterSystemRequest) {
 				req.TenantId = tenant
 			},
@@ -1554,20 +1556,20 @@ func TestGetFilters(t *testing.T) {
 	})
 
 	system1 := testutils.NewSystem(func(s *model.System) {
-		s.Type = "type1"
+		s.Type = systems.SystemTypeSYSTEM
 		s.Region = "region1"
 		s.KeyConfigurationID = &keyConfig1.ID
 	})
 
 	system2 := testutils.NewSystem(func(s *model.System) {
-		s.Type = "type2"
+		s.Type = systems.SystemTypeSUBACCOUNT
 		s.Region = "region2"
 		s.KeyConfigurationID = &keyConfig2.ID
 	})
 
 	// Repeated type and region, should not create new entries
 	system3 := testutils.NewSystem(func(s *model.System) {
-		s.Type = "type1"
+		s.Type = systems.SystemTypeSYSTEM
 		s.Region = "region1"
 		s.KeyConfigurationID = &keyConfig1.ID
 	})
@@ -1579,8 +1581,8 @@ func TestGetFilters(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.Len(t, *filters.Type, 2)
-		assert.Contains(t, *filters.Type, system1.Type)
-		assert.Contains(t, *filters.Type, system2.Type)
+		assert.Contains(t, *filters.Type, string(system1.Type))
+		assert.Contains(t, *filters.Type, string(system2.Type))
 
 		assert.Len(t, *filters.Region, 2)
 		assert.Contains(t, *filters.Region, system1.Region)

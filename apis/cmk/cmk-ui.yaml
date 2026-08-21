@@ -79,19 +79,27 @@ paths:
         - Keys
       summary: Create a new Key
       description: |
-        Generate and store a new Key or register a key from customer held keystore.
-        - For `Hold Your Own Key (HYOK)`, a native key identifier needs to be provided. In this case no new key
-        material is generated but the key is enrolled within KMS CMK.
+        Create a new cryptographic key. The API supports two key management models:
+
+        **BYOK (Bring Your Own Key)**
+        - Key material is imported into CMK-managed keystore
+
+        **HYOK (Hold Your Own Key)**
+        - Key remains in customer's keystore, CMK connects to it
+
+        Use the `type` field to specify which key model to use.
       requestBody:
-        description: Key request body
+        description: Key request body - see examples for BYOK and HYOK formats
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/Key"
             examples:
-              KeyRequest:
-                $ref: "#/components/examples/KeyRequest"
+              BYOKKeyRequest:
+                $ref: "#/components/examples/BYOKKeyRequest"
+              HYOKKeyRequest:
+                $ref: "#/components/examples/HYOKKeyRequest"
       responses:
         "201":
           description: Created
@@ -99,6 +107,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Key"
+              examples:
+                BYOKKeyResponse:
+                  $ref: "#/components/examples/BYOKKeyResponse"
+                HYOKKeyResponse:
+                  $ref: "#/components/examples/HYOKKeyResponse"
         "400":
           $ref: "#/components/responses/400"
         "403":
@@ -1932,6 +1945,8 @@ components:
         underWorkflow:
           description: Flag indicating whether the Key is under workflow
           type: boolean
+        errorDetail:
+          $ref: "#/components/schemas/KeyErrorDetail"
     KeyID:
       description: The ID of the Key
       type: string
@@ -2049,18 +2064,41 @@ components:
         FORBIDDEN state is for when a HYOK customer key permission is not
         granted to the system. DETACHING/DETACHED state is applicable for keys
         that have been marked with a detach call on tenant termination.
+        PENDING_CREATION is a transient state for BYOK keys where provider-side
+        prerequisites are still being set up. ERROR is a terminal failure
+        state for keys that could not be provisioned within the timeout.
       type: string
       readOnly: true
       enum:
         - ENABLED
         - DISABLED
-        - PENDING_DELETION
+        - PENDING_CREATION
         - PENDING_IMPORT
+        - PENDING_DELETION
         - DELETED
         - UNKNOWN
         - FORBIDDEN
         - DETACHING
         - DETACHED
+        - ERROR
+    KeyErrorDetail:
+      description: Structured error detail recorded when a key transitions to ERROR or FORBIDDEN state.
+      type: object
+      readOnly: true
+      properties:
+        errorCode:
+          description: Stable machine-readable error code identifying the failure cause.
+          type: string
+          example: PROVISIONING_TIMEOUT
+        errorMessage:
+          description: Human-readable description of the failure.
+          type: string
+          example: Key provisioning timed out. Delete this key and re-create it once the issue is resolved.
+        errorTimestamp:
+          description: When the error transition occurred (RFC 3339).
+          type: string
+          format: date-time
+          example: "2026-07-01T10:00:00Z"
     KeyAlgorithm:
       description: The algorithm of the Key
       type: string
@@ -2172,19 +2210,26 @@ components:
         management:
           description: Access details for management operations.
           type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/KeyAccessDetailsRegion"
         crypto:
           description: |
-            Access details for cryptographic operations. Follows the following format:
-            "region-1": {
-                "key1": "value1",
-                "key2": "value3",
-                "isEditable": bool // true if system on this region failed to connect
-            },
+            Access details for cryptographic operations. Map of region ID to region values
           type: object
           additionalProperties:
-            type: object
-            additionalProperties: true
+            $ref: "#/components/schemas/KeyAccessDetailsRegion"
+    KeyAccessDetailsRegion:
+      type: object
+      properties:
+        certificateSubject:
+          type: string
+          description: Certificate subject for this region
+          example: "CN=tenant123,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE"
+          readOnly: true
+        isEditable:
+          type: boolean
+          description: Is true if systems on the region failed to connect or there are no systems connected/attempting
+          readOnly: true
+      additionalProperties: true
     ImportParams:
       type: object
       description: Import parameters for Bring Your Own Key (BYOK) scenario.
@@ -3079,26 +3124,95 @@ components:
                   message: Requested feature is not implemented.
                   id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
   examples:
-    KeyRequest:
+    BYOKKeyRequest:
+      summary: Create a BYOK (Bring Your Own Key) key
+      description: |
+        BYOK key creation request. The key material will be imported into CMK-managed keystore, initially with status PENDING_IMPORT.
+        Region is required to specify where the key will be created.
       value:
-        name: example_key_name
-        type: HYOK
-        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
-        description: This key is used for DB key store encryption.
-        enabled: true
-        algorithm: AES256
-        provider: AWS
-        region: eu-central-1
-    AWSBYOKRequest:
-      value:
-        name: byok_key_name
+        name: byok_example_key
         type: BYOK
         keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
-        description: This key is used for DB key store encryption.
+        description: BYOK key for database encryption
         algorithm: AES256
-        provider: AWS
         region: eu-central-1
+    HYOKKeyRequest:
+      summary: Create a HYOK (Hold Your Own Key) key
+      description: |
+        HYOK key creation request. The key remains in customer's keystore.
+        NativeID is the customer-provided key identifier, and accessDetails configure
+        how CMK connects to the customer's keystore.
+      value:
+        name: hyok_example_key
+        type: HYOK
+        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
+        description: HYOK key connected to customer AWS KMS
+        nativeID: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+        provider: AWS
+        accessDetails:
+          management:
+            accessAccountID: "111122223333"
+            accessUserID: "arn:aws:iam::111122223333:user/cmk-service"
+            endpoint: "https://kms.us-east-2.amazonaws.com"
+          crypto:
+            us-east-2:
+              accessAccountID: "111122223333"
+              accessUserID: "arn:aws:iam::111122223333:user/cmk-crypto"
+              endpoint: "https://kms.us-east-2.amazonaws.com"
     SystemPatchUpdatingLink:
       value:
         keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
         retry: false
+    BYOKKeyResponse:
+      summary: BYOK key creation response
+      description: |
+        Response after creating a BYOK key. Key is in PENDING_IMPORT state until key material is imported.
+      value:
+        id: 98765432-10fe-dcba-9876-543210fedcba
+        name: byok_example_key
+        type: BYOK
+        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
+        description: BYOK key for database encryption
+        algorithm: AES256
+        region: eu-central-1
+        isPrimary: false
+        enabled: false
+        state: PENDING_IMPORT
+        underWorkflow: false
+        metadata:
+          createdAt: "2026-07-31T10:30:00Z"
+          updatedAt: "2026-07-31T10:30:00Z"
+    HYOKKeyResponse:
+      summary: HYOK key creation response
+      description: |
+        Response after registering a HYOK key. Key is ENABLED if successfully connected to customer keystore.
+      value:
+        id: 98765432-10fe-dcba-9876-543210fedcba
+        name: hyok_example_key
+        type: HYOK
+        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
+        description: HYOK key connected to customer AWS KMS
+        algorithm: AES256
+        provider: AWS
+        isPrimary: false
+        enabled: true
+        nativeID: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+        state: ENABLED
+        region: eu-central-1
+        underWorkflow: false
+        accessDetails:
+          management:
+            accessAccountID: "111122223333"
+            accessUserID: "arn:aws:iam::111122223333:user/cmk-service"
+            endpoint: "https://kms.us-east-2.amazonaws.com"
+          crypto:
+            us-east-2:
+              accessAccountID: "111122223333"
+              accessUserID: "arn:aws:iam::111122223333:user/cmk-crypto"
+              endpoint: "https://kms.us-east-2.amazonaws.com"
+              isEditable: false
+        metadata:
+          createdAt: "2026-07-31T10:30:00Z"
+          updatedAt: "2026-07-31T10:30:00Z"
+          totalVersions: 1
+          primaryVersion: 1

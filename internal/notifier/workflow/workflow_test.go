@@ -17,7 +17,6 @@ import (
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	wf "github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
@@ -229,7 +228,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 			name:              "DELETE action with artifact name",
 			actionType:        model.WorkflowActionTypeDelete,
 			artifactType:      model.WorkflowArtifactTypeKey,
-			artifactName:      ptr.PointTo("Test Key"),
+			artifactName:      new("Test Key"),
 			parameters:        "",
 			expectedInSubject: "DELETE KEY: 'Test Key'",
 		},
@@ -237,7 +236,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 			name:              "LINK SYSTEM with artifact name to key configuration",
 			actionType:        model.WorkflowActionTypeLink,
 			artifactType:      model.WorkflowArtifactTypeSystem,
-			artifactName:      ptr.PointTo("Production System"),
+			artifactName:      new("Production System"),
 			parameters:        keyConfigID,
 			expectedInSubject: "LINK SYSTEM: 'Production System'",
 		},
@@ -253,7 +252,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 			name:              "SWITCH SYSTEM with artifact name to key configuration",
 			actionType:        model.WorkflowActionTypeSwitch,
 			artifactType:      model.WorkflowArtifactTypeSystem,
-			artifactName:      ptr.PointTo("Staging System"),
+			artifactName:      new("Staging System"),
 			parameters:        keyConfigID,
 			expectedInSubject: "SWITCH SYSTEM: 'Staging System'",
 		},
@@ -572,7 +571,7 @@ func TestCreator_createHTMLBody(t *testing.T) {
 			ActionType:   model.WorkflowActionTypeDelete,
 			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID,
-			ArtifactName: ptr.PointTo("Test Key"),
+			ArtifactName: new("Test Key"),
 		},
 		Transition: wf.TransitionCreate,
 	}

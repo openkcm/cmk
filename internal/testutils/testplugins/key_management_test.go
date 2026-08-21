@@ -6,21 +6,28 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func setupTest() *testplugins.TestKeyManagement {
-	return testplugins.NewTestKeyManagement(true, true)
+func setupTest(t *testing.T) (*testplugins.TestKeyManagement, string) {
+	t.Helper()
+
+	ks := testplugins.NewTestKeyManagement(true, true)
+	key, err := ks.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
+	return ks, key.KeyID
 }
 
 func TestGetKey(t *testing.T) {
-	p := setupTest()
+	p, keyID := setupTest(t)
 
 	_, err := p.GetKey(t.Context(), &keymanagement.GetKeyRequest{
-		Parameters: keymanagement.RequestParameters{KeyID: "mock-key/11111111"},
+		Parameters: keymanagement.RequestParameters{KeyID: keyID},
 	})
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -28,21 +35,21 @@ func TestGetKey(t *testing.T) {
 }
 
 func TestGetKeyUpdateState(t *testing.T) {
-	p := setupTest()
+	p, keyID := setupTest(t)
 
 	_, err := p.GetKey(t.Context(), &keymanagement.GetKeyRequest{
-		Parameters: keymanagement.RequestParameters{KeyID: "mock-key/22222222"},
+		Parameters: keymanagement.RequestParameters{KeyID: keyID},
 	})
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
 
 	_, _ = p.DisableKey(t.Context(), &keymanagement.DisableKeyRequest{
-		Parameters: keymanagement.RequestParameters{KeyID: "test-key-id"},
+		Parameters: keymanagement.RequestParameters{KeyID: keyID},
 	})
 
 	resp, err := p.GetKey(t.Context(), &keymanagement.GetKeyRequest{
-		Parameters: keymanagement.RequestParameters{KeyID: "test-key-id"},
+		Parameters: keymanagement.RequestParameters{KeyID: keyID},
 	})
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -52,7 +59,7 @@ func TestGetKeyUpdateState(t *testing.T) {
 }
 
 func TestCreateKeyVersion(t *testing.T) {
-	p := setupTest()
+	p, _ := setupTest(t)
 
 	resp, err := p.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
 		KeyAlgorithm: keymanagement.AES256,
@@ -65,11 +72,11 @@ func TestCreateKeyVersion(t *testing.T) {
 }
 
 func TestDeleteKeyVersion(t *testing.T) {
-	p := setupTest()
+	p, keyID := setupTest(t)
 
 	_, err := p.DeleteKey(t.Context(), &keymanagement.DeleteKeyRequest{
-		Parameters: keymanagement.RequestParameters{KeyID: "test-key-id"},
-		Window:     ptr.PointTo(int32(7)),
+		Parameters: keymanagement.RequestParameters{KeyID: keyID},
+		Window:     new(int32(7)),
 	})
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -77,10 +84,10 @@ func TestDeleteKeyVersion(t *testing.T) {
 }
 
 func TestEnableKeyVersion(t *testing.T) {
-	p := setupTest()
+	p, keyID := setupTest(t)
 
 	response, err := p.EnableKey(t.Context(), &keymanagement.EnableKeyRequest{
-		Parameters: keymanagement.RequestParameters{KeyID: "test-key-id"},
+		Parameters: keymanagement.RequestParameters{KeyID: keyID},
 	})
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -90,7 +97,7 @@ func TestEnableKeyVersion(t *testing.T) {
 }
 
 func TestEnableKeyVersion_Failed_EmptyKeyID(t *testing.T) {
-	p := setupTest()
+	p, _ := setupTest(t)
 
 	response, err := p.EnableKey(t.Context(), &keymanagement.EnableKeyRequest{
 		Parameters: keymanagement.RequestParameters{KeyID: ""},
@@ -101,10 +108,10 @@ func TestEnableKeyVersion_Failed_EmptyKeyID(t *testing.T) {
 }
 
 func TestDisableKeyVersion(t *testing.T) {
-	p := setupTest()
+	p, keyID := setupTest(t)
 
 	response, err := p.DisableKey(t.Context(), &keymanagement.DisableKeyRequest{
-		Parameters: keymanagement.RequestParameters{KeyID: "test-key-id"},
+		Parameters: keymanagement.RequestParameters{KeyID: keyID},
 	})
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -114,7 +121,7 @@ func TestDisableKeyVersion(t *testing.T) {
 }
 
 func TestDisableKeyVersion_Failed_EmptyKeyID(t *testing.T) {
-	p := setupTest()
+	p, _ := setupTest(t)
 
 	response, err := p.DisableKey(t.Context(), &keymanagement.DisableKeyRequest{
 		Parameters: keymanagement.RequestParameters{KeyID: ""},
@@ -125,10 +132,10 @@ func TestDisableKeyVersion_Failed_EmptyKeyID(t *testing.T) {
 }
 
 func TestGetImportParameters(t *testing.T) {
-	p := setupTest()
+	p, keyID := setupTest(t)
 
 	resp, err := p.GetImportParameters(t.Context(), &keymanagement.GetImportParametersRequest{
-		Parameters:   keymanagement.RequestParameters{KeyID: "test-key-id"},
+		Parameters:   keymanagement.RequestParameters{KeyID: keyID},
 		KeyAlgorithm: keymanagement.AES256,
 	})
 
@@ -140,10 +147,10 @@ func TestGetImportParameters(t *testing.T) {
 }
 
 func TestImportKeyMaterial(t *testing.T) {
-	p := setupTest()
+	p, keyID := setupTest(t)
 
 	_, err := p.ImportKeyMaterial(t.Context(), &keymanagement.ImportKeyMaterialRequest{
-		Parameters:           keymanagement.RequestParameters{KeyID: "test-key-id"},
+		Parameters:           keymanagement.RequestParameters{KeyID: keyID},
 		EncryptedKeyMaterial: "abcdefghijklmnopqrstuvwxyz",
 	})
 
@@ -151,7 +158,7 @@ func TestImportKeyMaterial(t *testing.T) {
 }
 
 func TestTransformCryptoAccessData(t *testing.T) {
-	p := setupTest()
+	p, _ := setupTest(t)
 
 	input := func() []byte {
 		data := map[string]map[string]any{
@@ -173,16 +180,15 @@ func TestTransformCryptoAccessData(t *testing.T) {
 }
 
 func TestConfigure(t *testing.T) {
-	p := setupTest()
+	p, _ := setupTest(t)
 
 	cfg := p.ServiceInfo()
 	assert.Equal(t, testplugins.Name, cfg.Name())
 }
 
 func TestDeleteKeyVersion_SetsStatus(t *testing.T) {
-	p := setupTest()
+	p, keyID := setupTest(t)
 
-	keyID := "mock-key/11111111"
 	_, err := p.DeleteKey(t.Context(), &keymanagement.DeleteKeyRequest{
 		Parameters: keymanagement.RequestParameters{KeyID: keyID},
 	})
@@ -196,4 +202,27 @@ func TestDeleteKeyVersion_SetsStatus(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, testplugins.PendingDeletionKeyStatus, resp.Status)
+}
+
+func TestValidateKeyAccessData(t *testing.T) {
+	p, _ := setupTest(t)
+
+	certSubject := "CN=test"
+	isEditable := true
+	req := &keymanagement.ValidateKeyAccessDataRequest{
+		Management: map[string]any{
+			"AccountID": "acct-1",
+			"UserID":    "user-1",
+		},
+		Crypto: map[string]cmkapi.KeyAccessDetailsRegion{
+			"eu-west-1": {
+				CertificateSubject: &certSubject,
+				IsEditable:         &isEditable,
+			},
+		},
+	}
+
+	resp, err := p.ValidateKeyAccessData(t.Context(), req)
+	assert.NoError(t, err)
+	assert.True(t, resp.IsValid)
 }

@@ -802,6 +802,17 @@ config:
   keystorePool:
     size: 2
     interval: 10m
+    supportedRegions:
+      - name: Europe (Frankfurt)
+        technicalName: eu-central-1
+      - name: Europe (Ireland)
+        technicalName: eu-west-1
+      - name: Europe (London)
+        technicalName: eu-west-2
+      - name: United States (N. Virginia)
+        technicalName: us-east-1
+      - name: United States (Ohio)
+        technicalName: us-east-2
 
   landscape:
     name: Local

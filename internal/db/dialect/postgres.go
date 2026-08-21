@@ -4,7 +4,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	pg "github.com/bartventer/gorm-multitenancy/postgres/v8"
+	pg "github.com/openkcm/cmk/internal/multitenancy/postgres"
 )
 
 // NewFrom returns a postgres dialector.

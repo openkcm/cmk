@@ -10,13 +10,12 @@ import (
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/cmd/cmkctl/commands/tenantmanagercli/commands"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	cmkcontext "github.com/openkcm/cmk/utils/context"

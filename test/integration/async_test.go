@@ -17,7 +17,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/testutils"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestAsync(t *testing.T) {
@@ -148,13 +147,13 @@ func TestAsyncFanout(t *testing.T) {
 			Tasks: []config.Task{
 				{
 					TaskType: config.TypeHYOKSync,
-					Enabled:  ptr.PointTo(true),
+					Enabled:  new(true),
 					Cronspec: "@every 1s",
-					Retries:  ptr.PointTo(3),
+					Retries:  new(3),
 					TimeOut:  5 * time.Minute,
 					FanOutTask: &config.FanOutTask{
 						Enabled: true,
-						Retries: ptr.PointTo(0),
+						Retries: new(0),
 						TimeOut: 5 * time.Minute,
 					},
 				},

@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
@@ -20,11 +19,12 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrForced = errors.New("forced")
@@ -126,7 +126,7 @@ func TestGetDefaultKeystore(t *testing.T) {
 			Value: ksConfigJSON,
 		}
 
-		err = tenantConfigRepo.Set(testutils.CreateCtxWithTenant(tenant), conf)
+		err = tenantConfigRepo.Set(testutils.CreateCtxWithTenant(tenant), conf, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		// Act
@@ -287,18 +287,12 @@ func TestGetTenantsKeystore(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		r := sql.NewRepository(db)
 
-		regionsJSON, err := json.Marshal(testutils.SupportedRegions)
-		assert.NoError(t, err)
-
 		cfg := &config.Config{
 			BaseConfig: commoncfg.BaseConfig{
 				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
 			},
 			KeystorePool: config.KeystorePool{
-				SupportedRegions: commoncfg.SourceRef{
-					Source: commoncfg.EmbeddedSourceValue,
-					Value:  string(regionsJSON),
-				},
+				SupportedRegions: testutils.SupportedRegions,
 			},
 		}
 		m := manager.NewTenantConfigManager(r, nil, cfg, nil)
@@ -316,7 +310,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 		assert.Nil(t, res.BYOK.SupportedRegions)
 	})
 
-	t.Run("BYOK allowed, no source ref", func(t *testing.T) {
+	t.Run("BYOK allowed, no regions configured", func(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		cfg := &config.Config{
 			BaseConfig: commoncfg.BaseConfig{
@@ -329,7 +323,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 		assert.Nil(t, res.BYOK.SupportedRegions)
 	})
 
-	t.Run("stored keystore: regions from keystore", func(t *testing.T) {
+	t.Run("stored keystore: regions from config", func(t *testing.T) {
 		configManager, db, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
@@ -342,30 +336,14 @@ func TestGetTenantsKeystore(t *testing.T) {
 			BaseConfig: commoncfg.BaseConfig{
 				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
 			},
+			KeystorePool: config.KeystorePool{
+				SupportedRegions: testutils.SupportedRegions,
+			},
 		}
 		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg, nil)
 		res, err := m.GetTenantsKeystores(ctx)
 		assert.NoError(t, err)
 		assert.Equal(t, testutils.SupportedRegions, res.BYOK.SupportedRegions)
-	})
-
-	t.Run("BYOK allowed, bad source ref", func(t *testing.T) {
-		_, db, tenant := SetupTenantConfigManager(t)
-		cfg := &config.Config{
-			BaseConfig: commoncfg.BaseConfig{
-				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
-			},
-			KeystorePool: config.KeystorePool{
-				SupportedRegions: commoncfg.SourceRef{
-					Source: commoncfg.FileSourceValue,
-					Value:  "/nonexistent/regions.json",
-				},
-			},
-		}
-		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg, nil)
-		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
-		assert.NoError(t, err)
-		assert.Nil(t, res.BYOK.SupportedRegions)
 	})
 }
 
@@ -385,7 +363,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: ptr.PointTo(3),
+			MinimumApprovals: new(3),
 		})
 
 		assert.NoError(t, err)
@@ -401,8 +379,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals:    ptr.PointTo(3),
-			RetentionPeriodDays: ptr.PointTo(60),
+			MinimumApprovals:    new(3),
+			RetentionPeriodDays: new(60),
 		})
 
 		assert.NoError(t, err)
@@ -419,7 +397,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			RetentionPeriodDays: ptr.PointTo(29),
+			RetentionPeriodDays: new(29),
 		})
 
 		assert.Error(t, err)
@@ -433,8 +411,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: ptr.PointTo(15),
-			MaxExpiryPeriodDays:     ptr.PointTo(10),
+			DefaultExpiryPeriodDays: new(15),
+			MaxExpiryPeriodDays:     new(10),
 		})
 
 		assert.Error(t, err)
@@ -448,8 +426,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: ptr.PointTo(10),
-			MaxExpiryPeriodDays:     ptr.PointTo(10),
+			DefaultExpiryPeriodDays: new(10),
+			MaxExpiryPeriodDays:     new(10),
 		})
 
 		assert.NoError(t, err)
@@ -464,7 +442,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: ptr.PointTo(1),
+			MinimumApprovals: new(1),
 		})
 
 		assert.Error(t, err)
@@ -478,7 +456,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: ptr.PointTo(2),
+			MinimumApprovals: new(2),
 		})
 
 		assert.NoError(t, err)
@@ -491,7 +469,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			Enabled: ptr.PointTo(true),
+			Enabled: new(true),
 		})
 
 		assert.NoError(t, err)
@@ -541,7 +519,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 				setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(tt.initialState))
 
 				result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-					Enabled: ptr.PointTo(tt.targetState),
+					Enabled: new(tt.targetState),
 				})
 
 				if tt.shouldSucceed {
@@ -562,8 +540,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				MinimumApprovals:    ptr.PointTo(5),
-				RetentionPeriodDays: ptr.PointTo(90),
+				MinimumApprovals:    new(5),
+				RetentionPeriodDays: new(90),
 			})
 
 			assert.NoError(t, err)
@@ -580,9 +558,9 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(false))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				Enabled:             ptr.PointTo(true),
-				MinimumApprovals:    ptr.PointTo(4),
-				RetentionPeriodDays: ptr.PointTo(60),
+				Enabled:             new(true),
+				MinimumApprovals:    new(4),
+				RetentionPeriodDays: new(60),
 			})
 
 			assert.NoError(t, err)
@@ -598,8 +576,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				Enabled:          ptr.PointTo(true),
-				MinimumApprovals: ptr.PointTo(3),
+				Enabled:          new(true),
+				MinimumApprovals: new(3),
 			})
 
 			assert.NoError(t, err)
@@ -724,7 +702,7 @@ func storeKsConfig(t *testing.T, db *multitenancy.DB, tenant string, ks *model.K
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	b, err := json.Marshal(ks)
 	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: b}))
+	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: b}, *repo.NewQuery()))
 }
 
 func TestEnsureKeystoreProvisioned(t *testing.T) {
@@ -908,5 +886,80 @@ func TestSyncCryptoAccessData(t *testing.T) {
 
 		assert.Empty(t, capture.removeCalls, "expected no RemoveTrust call")
 		assert.Empty(t, capture.grantCallsOfType(keystoremanagement.TrustTypeCrypto), "expected no GrantTrust(CRYPTO) call when entry already exists")
+	})
+}
+
+func TestNeedsDefaultKeystoreProvisioning(t *testing.T) {
+	t.Run("returns true when no stored config exists", func(t *testing.T) {
+		// Arrange: fresh tenant with no stored keystore config
+		m, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.True(t, needed, "should need provisioning when no stored config exists")
+	})
+
+	t.Run("returns true when KeyManagementConfig.LocalityID is empty", func(t *testing.T) {
+		// Arrange: stored config exists but management role not yet provisioned
+		m, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Store a config with empty KeyManagementConfig.LocalityID
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{} // empty LocalityID
+		}))
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.True(t, needed, "should need provisioning when LocalityID is empty")
+	})
+
+	t.Run("returns true when LocalityID is set but AccessData is empty", func(t *testing.T) {
+		// Arrange: provider like GCP may set LocalityID before AccessData is returned by GrantTrust
+		m, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{
+				LocalityID: testutils.TestLocalityID,
+				CommonName: testutils.TestDefaultKeystoreCommonName,
+				// AccessData intentionally empty — access credentials not yet provisioned
+			}
+		}))
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.True(t, needed, "should need provisioning when AccessData is empty even if LocalityID is set")
+	})
+
+	t.Run("returns false when both LocalityID and AccessData are set", func(t *testing.T) {
+		// Arrange: fully provisioned config with both locality and access credentials
+		m, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{
+				LocalityID: testutils.TestLocalityID,
+				CommonName: testutils.TestDefaultKeystoreCommonName,
+				AccessData: model.KeystoreAccessData{"key": "value"},
+			}
+		}))
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.False(t, needed, "should not need provisioning when LocalityID and AccessData are both set")
 	})
 }

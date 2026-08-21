@@ -17,7 +17,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	goamqp "github.com/Azure/go-amqp"
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
@@ -30,6 +29,7 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/base62"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -150,7 +150,12 @@ func (o *TenantOperator) RunOperator(ctx context.Context) error {
 	log.Info(ctx, "Tenant Manager is running and waiting for tenant operations")
 
 	// Start listener in goroutine
-	go operator.ListenAndRespond(ctx)
+	go func() {
+		err := operator.ListenAndRespond(ctx)
+		if err != nil {
+			log.Error(ctx, "Tenant Manager listener exited with error", err)
+		}
+	}()
 
 	// Block until context is cancelled
 	<-ctx.Done()
@@ -308,6 +313,38 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 
 		return nil
 	})
+}
+
+// handleRemoveTenantAuth is handler for Remove Tenant Auth task.
+// It removes the tenant's OIDC mapping on the session manager.
+func (o *TenantOperator) handleRemoveTenantAuth(
+	ctx context.Context,
+	req orbital.HandlerRequest,
+	resp *orbital.HandlerResponse,
+) {
+	authProto := &authgrpc.Auth{}
+
+	err := proto.Unmarshal(req.TaskData, authProto)
+	if err != nil {
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidData, err), WorkingStateInvalidTaskData)
+		return
+	}
+
+	tenantID := authProto.GetTenantId()
+	if tenantID == "" {
+		setErrorStateAndFail(ctx, resp, ErrInvalidTenantID, WorkingStateInvalidTaskData)
+		return
+	}
+
+	ctx = slogctx.With(ctx, "tenantId", tenantID)
+
+	hasErr := o.removeOIDCMapping(ctx, resp, tenantID)
+	if hasErr {
+		// removeOIDCMapping already set the response to fail or retry, so just return.
+		return
+	}
+
+	resp.Complete()
 }
 
 // handleBlockTenant is handler for Block Tenant task
@@ -565,11 +602,12 @@ func (o *TenantOperator) trace(
 // registerHandlers registers all task handlers with the orbital operator
 func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
 	handlers := map[string]orbital.HandlerFunc{
-		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():  o.handleCreateTenant,
-		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():      o.handleBlockTenant,
-		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():    o.handleUnblockTenant,
-		tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String():  o.handleTerminateTenant,
-		authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String(): o.handleApplyTenantAuth,
+		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():   o.handleCreateTenant,
+		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():       o.handleBlockTenant,
+		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():     o.handleUnblockTenant,
+		tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String():   o.handleTerminateTenant,
+		authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String():  o.handleApplyTenantAuth,
+		authgrpc.AuthAction_AUTH_ACTION_REMOVE_AUTH.String(): o.handleRemoveTenantAuth,
 	}
 
 	for action, handler := range handlers {

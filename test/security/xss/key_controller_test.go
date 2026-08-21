@@ -6,38 +6,20 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const providerTest = "TEST"
-
-var (
-	ksConfig            = testutils.NewKeystore(func(_ *model.Keystore) {})
-	keystoreDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeRoleManagement
-		c.CommonName = testutils.TestDefaultKeystoreCommonName
-	})
-	keystoreKeyMgmtCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeyManagement
-		c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
-	})
-	tenantDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeHYOKManagement
-		c.CommonName = testutils.TestDefaultKeystoreCommonName
-	})
-)
 
 func startAPIAndDBForKey(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
 	t.Helper()
@@ -73,6 +55,23 @@ func TestKeyController_ForXSS(t *testing.T) {
 
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 
+	ksConfig := testutils.NewKeystore(func(k *model.Keystore) {
+		keystoreConfig := testutils.NewKeystoreConfig(func(cfg *model.KeystoreConfig) {
+			cfg.RoleManagementConfig.LocalityID = uuid.NewString()
+		})
+		configBytes, marshalErr := json.Marshal(keystoreConfig)
+		assert.NoError(t, marshalErr)
+		k.Config = configBytes
+	})
+	keystoreDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeRoleManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName
+	})
+	keystoreKeyMgmtCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeKeyManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+	})
+
 	testutils.CreateTestEntities(
 		ctx,
 		t,
@@ -86,9 +85,9 @@ func TestKeyController_ForXSS(t *testing.T) {
 
 	baseKey := map[string]any{
 		"name":               "test-key",
-		"type":               string(cmkapi.KeyTypeBYOK),
+		"type":               cmkapi.KeyTypeBYOK,
 		"keyConfigurationID": keyConfig.ID,
-		"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+		"algorithm":          cmkapi.KeyAlgorithmAES256,
 		"region":             "us-west-2",
 		"description":        "test key",
 		"enabled":            true,
@@ -242,13 +241,32 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
+	nativeID := "sdsad"
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = constants.KeyTypeHYOK
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.ManagementAccessData = json.RawMessage("{\"<>\":\"><\"}")
 		k.CryptoAccessData = json.RawMessage("{\"<>\":{\"test\":\"test\"}}")
 		k.KeyConfigurationID = kc.ID
 		k.Provider = providerTest
-		k.NativeID = ptr.PointTo("sdsad")
+		k.NativeID = &nativeID
+	})
+
+	localKsConfig := testutils.NewKeystore(func(k *model.Keystore) {
+		keystoreConfig := testutils.NewKeystoreConfig(func(cfg *model.KeystoreConfig) {
+			cfg.RoleManagementConfig.LocalityID = uuid.NewString()
+		})
+		configBytes, marshalErr := json.Marshal(keystoreConfig)
+		assert.NoError(t, marshalErr)
+		k.Config = configBytes
+	})
+
+	keystoreDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeRoleManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName
+	})
+	tenantDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeHYOKManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName
 	})
 
 	testutils.CreateTestEntities(
@@ -259,7 +277,7 @@ func TestKeyController_ForJSONXSS(t *testing.T) {
 		tenantDefaultCert,
 		key,
 		kc,
-		ksConfig,
+		localKsConfig,
 	)
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{

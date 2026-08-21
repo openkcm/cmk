@@ -17,6 +17,7 @@ type KeyVersion struct {
 	NativeID  string    `gorm:"type:varchar(255);not null"`
 	KeyID     uuid.UUID `gorm:"type:uuid;not null;index"`
 	RotatedAt time.Time `gorm:"type:timestamptz;not null"` // Rotation timestamp (latest = current version)
+	Status    string    `gorm:"type:varchar(50);not null;default:'UNKNOWN'"`
 }
 
 // TableResourceType return the authz resource type

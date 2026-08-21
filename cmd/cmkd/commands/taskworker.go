@@ -165,7 +165,7 @@ func registerTasks(
 	cmkAuditor := auditor.New(ctx, cfg)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	certManager := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, certManager)
 	tagManager := manager.NewTagManager(authzRepo)
 	keyConfigManager := manager.NewKeyConfigManager(
 		authzRepo,
@@ -185,6 +185,7 @@ func registerTasks(
 		certManager,
 		eventFactory,
 		cmkAuditor,
+		cron.Client(),
 	)
 	systemManager := manager.NewSystemManager(
 		ctx,
@@ -221,6 +222,7 @@ func registerTasks(
 		tenantTask.NewWorkflowCleaner(workflowManager, authzRepo),
 		tenantTask.NewTenantNameRefresher(authzRepo, f.Registry()),
 		tenantTask.NewHYOKSync(keyManager, authzRepo),
+		tasks.NewPendingStateSync(keyManager, authzRepo),
 	}
 
 	cron.RegisterTasks(ctx, taskHandlers)

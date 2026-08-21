@@ -96,7 +96,7 @@ func (c *APIController) GetKeys(ctx context.Context,
 	}
 
 	if pagination.Count {
-		response.Count = ptr.PointTo(total)
+		response.Count = new(total)
 	}
 
 	return cmkapi.GetKeys200JSONResponse(response), err
@@ -224,7 +224,7 @@ func (c *APIController) isPrimaryKeyStateUpdate(
 		return false, err
 	}
 
-	if key.KeyType != string(cmkapi.KeyTypeBYOK) {
+	if key.KeyType != cmkapi.KeyTypeBYOK {
 		return true, manager.ErrUpdateNonBYOKKeyStatus
 	}
 

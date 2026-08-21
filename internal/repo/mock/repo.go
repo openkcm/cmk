@@ -4,8 +4,6 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
-
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -29,7 +27,7 @@ func (r *InMemoryRepository) WithTenant(
 	resource repo.Resource,
 ) (*InMemoryDB, error) {
 	if resource.IsSharedModel() {
-		ctx = context.WithValue(ctx, nethttp.TenantKey, "public")
+		ctx = context.WithValue(ctx, cmkcontext.TenantKey, "public")
 	}
 
 	tenant, err := cmkcontext.ExtractTenantID(ctx)
@@ -147,6 +145,7 @@ func (r *InMemoryRepository) Patch(
 func (r *InMemoryRepository) Set(
 	ctx context.Context,
 	resource repo.Resource,
+	_ repo.Query,
 ) error {
 	tenantDB, err := r.WithTenant(ctx, resource)
 	if err != nil {

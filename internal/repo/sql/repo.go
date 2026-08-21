@@ -11,11 +11,10 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/violations"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -339,16 +338,32 @@ func (r *ResourceRepository) Patch(
 	return res.RowsAffected > 0, nil
 }
 
-// Set will create an item or update it if it already exists
-// It returns an error if there was an error during the operation
-func (r *ResourceRepository) Set(ctx context.Context, resource repo.Resource) error {
+// Set will create an item or update it if it already exists.
+// Uses query.ConflictColumns to specify which columns determine a conflict (default: primary key).
+// Uses query.UpdateFields.Fields to specify which columns to update on conflict (default: all).
+func (r *ResourceRepository) Set(ctx context.Context, resource repo.Resource, query repo.Query) error {
 	return r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
-			err := tx.Clauses(
-				clause.OnConflict{
-					UpdateAll: true,
-				},
-			).Create(resource).Error
+			onConflict := clause.OnConflict{UpdateAll: true}
+
+			if len(query.ConflictColumns) > 0 {
+				columns := make([]clause.Column, len(query.ConflictColumns))
+				for i, col := range query.ConflictColumns {
+					columns[i] = clause.Column{Name: col}
+				}
+
+				onConflict = clause.OnConflict{
+					Columns: columns,
+				}
+
+				if len(query.UpdateFields.Fields) > 0 {
+					onConflict.DoUpdates = clause.AssignmentColumns(query.UpdateFields.Fields)
+				} else {
+					onConflict.UpdateAll = true
+				}
+			}
+
+			err := tx.Clauses(onConflict).Create(resource).Error
 			if err != nil {
 				log.Error(ctx, "error setting the resource", err)
 				return errs.Wrap(repo.ErrSetResource, err)

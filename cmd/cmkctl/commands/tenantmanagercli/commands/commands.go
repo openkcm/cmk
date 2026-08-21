@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/auditor"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
@@ -14,6 +12,7 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
@@ -88,6 +87,7 @@ func NewCommandFactory(
 		cm,
 		eventFactory,
 		cmkAuditor,
+		nil,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)

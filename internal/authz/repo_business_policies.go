@@ -286,7 +286,7 @@ var RepoBusinessPolicies = RolePolicies[constants.BusinessRole, RepoResourceType
 						RepoActionFirst,
 						RepoActionCount,
 						RepoActionCreate, // For setting keystore config
-						RepoActionDelete, // For setting keystore config
+						RepoActionUpdate, // For setting keystore config
 					},
 				},
 				{

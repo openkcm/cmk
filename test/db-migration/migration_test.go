@@ -4,24 +4,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type GooseVersion struct {
@@ -118,8 +112,8 @@ func TestMissingSchemaScripts(t *testing.T) {
 	// due to missing tenant table. Tenant must be created on a different step
 	gormMigrated, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
-		SharedVersion:  ptr.PointTo(int64(0)),
-		TenantVersion:  ptr.PointTo(int64(0)),
+		SharedVersion:  new(int64(0)),
+		TenantVersion:  new(int64(0)),
 	}, testutils.WithGenerateTenants(0))
 
 	assert.NoError(t, gormMigrated.MigrateSharedModels(t.Context()))
@@ -502,6 +496,106 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   14,
 		},
+		{
+			name:      "Should up tenant/00015_add_more_enum_check_constraints.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   15,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					// Seed a valid keys row so import_params inserts satisfy the FK.
+					keyID := uuid.New()
+					seedErr := con.Transaction(func(tx *multitenancy.DB) error {
+						return tx.Exec(`INSERT INTO keys (created_at, updated_at, id, key_configuration_id, name, key_type, algorithm, provider, region, state) VALUES (now(), now(), ?, gen_random_uuid(), 'seed-key', 'BYOK', 'AES256', 'TEST', 'us-east-1', 'ENABLED')`, keyID).Error
+					})
+					require.NoError(t, seedErr, "failed to seed valid keys row")
+
+					cases := []struct {
+						name string
+						sql  string
+						args []any
+					}{
+						{
+							name: "keys.key_type",
+							sql:  `INSERT INTO keys (created_at, updated_at, id, key_configuration_id, name, key_type, algorithm, provider, region, state) VALUES (now(), now(), ?, ?, 'n', 'BOGUS', 'AES256', 'p', 'r', 'ENABLED')`,
+							args: []any{uuid.New(), uuid.New()},
+						},
+						{
+							name: "keys.algorithm",
+							sql:  `INSERT INTO keys (created_at, updated_at, id, key_configuration_id, name, key_type, algorithm, provider, region, state) VALUES (now(), now(), ?, ?, 'n', 'BYOK', 'BOGUS', 'p', 'r', 'ENABLED')`,
+							args: []any{uuid.New(), uuid.New()},
+						},
+						{
+							name: "import_params.wrapping_alg",
+							sql:  `INSERT INTO import_params (created_at, updated_at, key_id, wrapping_alg, hash_function, public_key_pem) VALUES (now(), now(), ?, 'BOGUS', 'SHA256', 'pem')`,
+							args: []any{keyID},
+						},
+						{
+							name: "import_params.hash_function",
+							sql:  `INSERT INTO import_params (created_at, updated_at, key_id, wrapping_alg, hash_function, public_key_pem) VALUES (now(), now(), ?, 'CKM_RSA_AES_KEY_WRAP', 'BOGUS', 'pem')`,
+							args: []any{keyID},
+						},
+						{
+							name: "workflows.parameters_resource_type",
+							sql:  `INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type, parameters_resource_type) VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'KEY', gen_random_uuid(), 'DELETE', 'BOGUS')`,
+						},
+						{
+							name: "systems.type",
+							sql:  `INSERT INTO systems (id, identifier, region, type, status) VALUES (gen_random_uuid(), 'i', 'r', 'BOGUS', 'CONNECTED')`,
+						},
+						{
+							name: "certificates.state",
+							sql:  `INSERT INTO certificates (id, fingerprint, common_name, state, creation_date, expiration_date) VALUES (gen_random_uuid(), 'fp', 'cn', 'BOGUS', now(), now())`,
+						},
+						{
+							name: "certificates.purpose",
+							sql:  `INSERT INTO certificates (id, fingerprint, common_name, purpose, creation_date, expiration_date) VALUES (gen_random_uuid(), 'fp', 'cn', 'BOGUS', now(), now())`,
+						},
+					}
+					for _, c := range cases {
+						// Wrap each insert in its own transaction so a CHECK
+						// violation rolls back without aborting the others.
+						err := con.Transaction(func(tx *multitenancy.DB) error {
+							return tx.Exec(c.sql, c.args...).Error
+						})
+						assert.ErrorContains(t, err, "violates check constraint",
+							"%s: insert with invalid value should be rejected by CHECK", c.name)
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00015_add_more_enum_check_constraints.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   15,
+		},
+		{
+			name:      "Should up tenant/00016_add_pending_creation_key_state.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   16,
+		},
+		{
+			name:      "Should down tenant/00016_add_status_to_keyversions.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   16,
+		},
+		{
+			name:      "Should up tenant/00017_add_status_to_keyversions.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   17,
+		},
+		{
+			name:      "Should down tenant/00017_add_status_to_keyversions.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   17,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -520,7 +614,7 @@ func TestSchemaMigrations(t *testing.T) {
 
 			dbCon, m, tenant := setupSchemaMigration(t, SchemaMigrationSetup{
 				Target:  tt.target,
-				Version: ptr.PointTo(setupVersion),
+				Version: new(setupVersion),
 			})
 
 			var migrateVersion int64
@@ -556,13 +650,13 @@ func TestDataMigrations(t *testing.T) {
 			name:          "Should skip data migration if workflow approvers column does not exists",
 			target:        db.TenantTarget,
 			version:       1,
-			schemaVersion: ptr.PointTo(int64(9)),
+			schemaVersion: new(int64(9)),
 		},
 		{
 			name:          "Should migrate up workflow approvers to workflow_approver_groups table",
 			target:        db.TenantTarget,
 			version:       1,
-			schemaVersion: ptr.PointTo(int64(10)),
+			schemaVersion: new(int64(10)),
 			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
 				t.Helper()
 
@@ -651,7 +745,7 @@ func TestDataMigrations(t *testing.T) {
 			name:          "Should migrate down 0001",
 			target:        db.TenantTarget,
 			version:       1,
-			schemaVersion: ptr.PointTo(int64(10)),
+			schemaVersion: new(int64(10)),
 			downgrade:     true,
 		},
 	}
@@ -698,75 +792,4 @@ func TestDataMigrations(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestEnumCheckConstraintDrift asserts the IN(...) lists in migration 00012
-// match the Go enum slices for workflow types. KeyState and SystemStatus are
-// generated from the OpenAPI spec via oapi-codegen and not duplicated here.
-func TestEnumCheckConstraintDrift(t *testing.T) {
-	const migrationFile = "../../migrations/tenant/schema/00012_add_enum_check_constraints.sql"
-
-	abs, err := filepath.Abs(migrationFile)
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(abs)
-	require.NoError(t, err, "failed to read migration file %s", abs)
-	sql := string(data)
-
-	cases := []struct {
-		name       string
-		constraint string
-		want       []string
-	}{
-		{
-			name:       "workflows.state",
-			constraint: "chk_workflows_state",
-			want:       toStrings(model.WorkflowStates),
-		},
-		{
-			name:       "workflows.action_type",
-			constraint: "chk_workflows_action_type",
-			want:       toStrings(model.WorkflowActionTypes),
-		},
-		{
-			name:       "workflows.artifact_type",
-			constraint: "chk_workflows_artifact_type",
-			want:       toStrings(model.WorkflowArtifactTypes),
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := extractCheckValues(t, sql, tc.constraint)
-			assert.ElementsMatch(t, tc.want, got,
-				"CHECK constraint %s drifted from Go enum slice", tc.constraint)
-		})
-	}
-}
-
-// extractCheckValues pulls the string literals out of
-// `ADD CONSTRAINT <name> CHECK (... IN (...))`.
-func extractCheckValues(t *testing.T, sql, constraint string) []string {
-	t.Helper()
-	pattern := `ADD CONSTRAINT ` + regexp.QuoteMeta(constraint) + `\s+CHECK\s*\([^)]*IN\s*\(([^)]+)\)`
-	re := regexp.MustCompile(pattern)
-	m := re.FindStringSubmatch(sql)
-	require.NotNil(t, m, "constraint %s not found in migration SQL", constraint)
-
-	literal := regexp.MustCompile(`'([^']*)'`)
-	matches := literal.FindAllStringSubmatch(m[1], -1)
-
-	values := make([]string, 0, len(matches))
-	for _, lm := range matches {
-		values = append(values, strings.TrimSpace(lm[1]))
-	}
-	return values
-}
-
-func toStrings[T ~string](in []T) []string {
-	out := make([]string, len(in))
-	for i, v := range in {
-		out[i] = string(v)
-	}
-	return out
 }

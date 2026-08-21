@@ -14,22 +14,19 @@ import (
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmksql "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func signedHeadersFromClientMapWorkflow(
@@ -151,7 +148,7 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 		w.ArtifactName = &system.Identifier
 		w.Parameters = keyConfig.ID.String()
 		w.ParametersResourceName = &keyConfig.Name
-		w.ParametersResourceType = ptr.PointTo(wfMechanism.ParametersResourceTypeKeyConfiguration.String())
+		w.ParametersResourceType = new(model.WorkflowParametersResourceTypeKeyConfiguration)
 	})
 	workflow3ApproverGroups := testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
 		wag.WorkflowID = workflow3.ID
@@ -208,7 +205,7 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceR
 
 	system := testutils.NewSystem(func(w *model.System) {
 		w.ID = uuid.MustParse(systemID)
-		w.KeyConfigurationID = ptr.PointTo(uuid.MustParse(keyConfigID))
+		w.KeyConfigurationID = new(uuid.MustParse(keyConfigID))
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, key, key2, system)
@@ -328,7 +325,7 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 			ActionType:   cmkapi.WorkflowActionTypeEnumLINK,
 			ArtifactID:   system.ID,
 			ArtifactType: cmkapi.WorkflowArtifactTypeEnumSYSTEM,
-			Parameters:   ptr.PointTo(keyConfig.ID.String()),
+			Parameters:   new(keyConfig.ID.String()),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{

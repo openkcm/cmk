@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var (
@@ -36,13 +35,13 @@ func TestToList(t *testing.T) {
 	}{
 		{
 			name:     "TransformsItemsSuccessfully",
-			items:    []*int{ptr.PointTo(1), ptr.PointTo(2)},
+			items:    []*int{new(1), new(2)},
 			expected: []string{"1", "2"},
 			err:      nil,
 		},
 		{
 			name:     "HandlesTransformationError",
-			items:    []*int{ptr.PointTo(1), ptr.PointTo(2), ptr.PointTo(3), ptr.PointTo(4)},
+			items:    []*int{new(1), new(2), new(3), new(4)},
 			expected: nil,
 			err:      ErrForced,
 		},

@@ -12,29 +12,30 @@ import (
 	"github.com/openkcm/cmk/internal/authz"
 )
 
-type KeyAccessData map[string]map[string]any // Map of regions and their properties
+type KeyAccessData map[string]cmkapi.KeyAccessDetailsRegion // Map of regions and their properties
 
 //nolint:recvcheck
 type Key struct {
 	AutoTimeModel
 
-	ID                   uuid.UUID       `gorm:"type:uuid;primaryKey"`
-	KeyConfigurationID   uuid.UUID       `gorm:"type:uuid;not null;uniqueindex:keyname,priority:1"`
-	Name                 string          `gorm:"type:varchar(255);not null;uniqueindex:keyname,priority:2"`
-	KeyType              string          `gorm:"type:varchar(50);not null"`
-	Description          string          `gorm:"type:text"`
-	Algorithm            string          `gorm:"type:varchar(50);not null"`
-	Provider             string          `gorm:"type:varchar(50);not null"`
-	Region               string          `gorm:"type:varchar(50);not null"`
-	State                cmkapi.KeyState `gorm:"type:varchar(50);not null;default:'ENABLED'"`
-	KeyVersions          []KeyVersion    `gorm:"foreignKey:KeyID"`
-	ImportParams         *ImportParams   `gorm:"foreignKey:KeyID;references:ID;constraint:OnDelete:CASCADE"`
-	NativeID             *string         `gorm:"type:varchar(255)"`
-	KeyLabels            []KeyLabel      `gorm:"foreignKey:ResourceID"`
+	ID                   uuid.UUID           `gorm:"type:uuid;primaryKey"`
+	KeyConfigurationID   uuid.UUID           `gorm:"type:uuid;not null;uniqueindex:keyname,priority:1"`
+	Name                 string              `gorm:"type:varchar(255);not null;uniqueindex:keyname,priority:2"`
+	KeyType              cmkapi.KeyType      `gorm:"type:varchar(50);not null"`
+	Description          string              `gorm:"type:text"`
+	Algorithm            cmkapi.KeyAlgorithm `gorm:"type:varchar(50);not null"`
+	Provider             string              `gorm:"type:varchar(50);not null"`
+	Region               string              `gorm:"type:varchar(50);not null"`
+	State                cmkapi.KeyState     `gorm:"type:varchar(50);not null;default:'ENABLED'"`
+	KeyVersions          []KeyVersion        `gorm:"foreignKey:KeyID"`
+	ImportParams         *ImportParams       `gorm:"foreignKey:KeyID;references:ID;constraint:OnDelete:CASCADE"`
+	NativeID             *string             `gorm:"type:varchar(255)"`
+	KeyLabels            []KeyLabel          `gorm:"foreignKey:ResourceID"`
 	LastUsed             *time.Time
 	ManagementAccessData json.RawMessage `gorm:"type:jsonb"`
 	CryptoAccessData     json.RawMessage `gorm:"type:jsonb"`
 	UnderWorkflow        bool            `gorm:"type:bool"`
+	ErrorDetail          json.RawMessage `gorm:"type:jsonb"`
 
 	IsPrimary       bool            `gorm:"-:all"` // Loaded on the managear/get methods
 	EditableRegions map[string]bool `gorm:"-:all"`
@@ -66,19 +67,17 @@ func (m *Key) AfterFind(tx *gorm.DB) error {
 	return nil
 }
 
-func (m *Key) GetManagementAccessData() map[string]any {
+func (m *Key) GetManagementAccessData() (cmkapi.KeyAccessDetailsRegion, error) {
 	if m.ManagementAccessData == nil {
-		return nil
+		return cmkapi.KeyAccessDetailsRegion{}, nil
 	}
 
-	var data map[string]any
-
-	err := json.Unmarshal(m.ManagementAccessData, &data)
+	management := cmkapi.KeyAccessDetailsRegion{}
+	err := management.UnmarshalJSON(m.ManagementAccessData)
 	if err != nil {
-		return nil // Return nil if unmarshalling fails to avoid panic
+		return cmkapi.KeyAccessDetailsRegion{}, err
 	}
-
-	return data
+	return management, err
 }
 
 func (m *Key) GetCryptoAccessData() KeyAccessData {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -23,7 +24,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const (
@@ -53,7 +53,7 @@ func NewProviderConfig(
 	expiration *time.Time,
 ) *ProviderConfig {
 	if expiration == nil {
-		expiration = ptr.PointTo(time.Now().Add(DefaultProviderConfigCacheExpiration)) // Default expiration if nil
+		expiration = new(time.Now().Add(DefaultProviderConfigCacheExpiration)) // Default expiration if nil
 	}
 
 	return &ProviderConfig{
@@ -123,7 +123,7 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 	}
 
 	keystoreName := constants.DefaultKeyStore
-	if key.KeyType == constants.KeyTypeHYOK {
+	if key.KeyType == cmkapi.KeyTypeHYOK {
 		keystoreName = constants.HYOKKeyStore
 	}
 

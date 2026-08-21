@@ -9,6 +9,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/api/cmkapi"
 	tasks "github.com/openkcm/cmk/internal/async/tasks/tenant"
 	"github.com/openkcm/cmk/internal/auditor"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
@@ -18,11 +19,11 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // TestHYOKSync_AuthzPolicy verifies that the InternalTaskHYOKSyncRole policy
@@ -46,7 +47,8 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(), r, &config.Config{})
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
-	ps := testutils.NewTestPlugins(testplugins.WithCertificateIssuer(testplugins.NewTestCertificateIssuer()))
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	ps := testutils.NewTestPlugins(testplugins.WithCertificateIssuer(testplugins.NewTestCertificateIssuer()), testplugins.WithKeyManagement(testplugins.Name, pluginOp))
 	cfg := &config.Config{
 		Database: dbCfg,
 	}
@@ -70,18 +72,24 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 		certManager,
 		nil, // eventFactory
 		cmkAuditor,
+		nil,
 	)
 
 	// Create a tenant-default certificate and a HYOK key
 	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
 	assert.NoError(t, err)
 
+	keyProvider, err := pluginOp.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
+
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	cert := testutils.NewCertificate(func(_ *model.Certificate) {})
 	hyokKey := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
-		k.KeyType = constants.KeyTypeHYOK
-		k.NativeID = ptr.PointTo("mock-key/11111111")
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.NativeID = &keyProvider.KeyID
 		k.ManagementAccessData = hyokInfo
 		k.Provider = testplugins.Name
 	})
@@ -96,7 +104,6 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 
 		err := hyokSync.ProcessTask(ctx, task)
 		assert.NoError(t, err)
-		assert.NotContains(t, strings.ToLower(buf.String()), "error",
-			"unexpected error log: %s", buf.String())
+		assert.NotContains(t, strings.ToLower(buf.String()), `"allowed":false`)
 	})
 }

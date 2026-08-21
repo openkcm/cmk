@@ -44,6 +44,7 @@ type KeyConfigurationAPI interface {
 		patchKeyConfig cmkapi.KeyConfigurationPatch,
 	) (*model.KeyConfiguration, error)
 	GetClientCertificates(ctx context.Context) (model.ClientCertificates, error)
+	CanConnectSystems(ctx context.Context, keyConfig *model.KeyConfiguration) (bool, error)
 }
 
 type KeyConfigManager struct {
@@ -79,6 +80,29 @@ func NewKeyConfigManager(
 		eventFactory: eventFactory,
 		cfg:          cfg,
 	}
+}
+
+func (m *KeyConfigManager) CanConnectSystems(
+	ctx context.Context,
+	keyConfig *model.KeyConfiguration,
+) (bool, error) {
+	// Check if primary key exists
+	if !ptr.IsNotNilUUID(keyConfig.PrimaryKeyID) {
+		return false, ErrConnectSystemNoPrimaryKey
+	}
+
+	pKey := &model.Key{ID: *keyConfig.PrimaryKeyID}
+	_, err := m.r.First(ctx, pKey, *repo.NewQuery())
+	if err != nil {
+		return false, errs.Wrap(ErrGettingKeyByID, err)
+	}
+
+	// Pre-check System key state.
+	// Should fail if the key is not enabled
+	if pKey.State != cmkapi.KeyStateENABLED {
+		return false, ErrConnectSystemNoPrimaryKey
+	}
+	return true, nil
 }
 
 func (m *KeyConfigManager) GetKeyConfigurations(
@@ -411,8 +435,8 @@ func (m *KeyConfigManager) handleUpdatePrimaryKey(
 	if err != nil {
 		return err
 	}
-	if targetKey.State != cmkapi.KeyStateENABLED {
-		return ErrKeyIsNotEnabled
+	if err := validateKeyForPrimarySwitch(targetKey); err != nil {
+		return err
 	}
 
 	// Key is valid. If keyconfig has no existing key no need for further validations
@@ -425,8 +449,8 @@ func (m *KeyConfigManager) handleUpdatePrimaryKey(
 	if err != nil {
 		return err
 	}
-	if sourceKey.State != cmkapi.KeyStateENABLED {
-		return ErrKeyIsNotEnabled
+	if err := validateKeyForPrimarySwitch(sourceKey); err != nil {
+		return err
 	}
 
 	err = m.updatePrimaryKeySystemEvents(
@@ -502,4 +526,14 @@ func (m *KeyConfigManager) updatePrimaryKeySystemEvents(ctx context.Context, old
 		}
 		return nil
 	})
+}
+
+func validateKeyForPrimarySwitch(key *model.Key) error {
+	if key.State == cmkapi.KeyStateDELETED || key.State == cmkapi.KeyStatePENDINGDELETION {
+		return ErrKeyIsDeleted
+	}
+	if key.State != cmkapi.KeyStateENABLED {
+		return ErrKeyIsNotEnabled
+	}
+	return nil
 }

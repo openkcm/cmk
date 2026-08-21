@@ -12,7 +12,6 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestToAPI(t *testing.T) {
@@ -44,8 +43,8 @@ func TestToAPI(t *testing.T) {
 			}),
 			updateExpected: func(s model.System, sApi *cmkapi.System) {
 				sApi.Metadata = &cmkapi.SystemMetadata{
-					ErrorCode:    ptr.PointTo(constants.DefaultErrorCode),
-					ErrorMessage: ptr.PointTo(constants.DefaultErrorMessage),
+					ErrorCode:    new(constants.DefaultErrorCode),
+					ErrorMessage: new(constants.DefaultErrorMessage),
 				}
 			},
 		},
@@ -58,8 +57,8 @@ func TestToAPI(t *testing.T) {
 			}),
 			updateExpected: func(s model.System, sApi *cmkapi.System) {
 				sApi.Metadata = &cmkapi.SystemMetadata{
-					ErrorCode:    ptr.PointTo(s.ErrorCode),
-					ErrorMessage: ptr.PointTo(s.ErrorMessage),
+					ErrorCode:    new(s.ErrorCode),
+					ErrorMessage: new(s.ErrorMessage),
 				}
 			},
 		},
@@ -86,8 +85,8 @@ func TestToAPI(t *testing.T) {
 				KeyConfigurationName: tt.sys.KeyConfigurationName,
 				Region:               tt.sys.Region,
 				Status:               tt.sys.Status,
-				Type:                 tt.sys.Type,
-				Properties:           ptr.PointTo(properties),
+				Type:                 string(tt.sys.Type),
+				Properties:           new(properties),
 				UnderWorkflow:        &tt.sys.UnderWorkflow,
 			}
 			tt.updateExpected(tt.sys, expected)

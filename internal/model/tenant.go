@@ -3,9 +3,8 @@ package model
 import (
 	"context"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/multitenancy"
 )
 
 type Tenant struct {

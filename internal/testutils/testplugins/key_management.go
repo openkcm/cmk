@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,8 +26,10 @@ var (
 	PendingImportKeyStatus   = "PENDING_IMPORT"
 	PendingDeletionKeyStatus = "PENDING_DELETION"
 
-	ErrKeyIDIsNil          = errors.New("keyId is nil")
-	ErrTransformAccessData = errors.New("failed to transform access data")
+	ErrKeyIDIsNil                = errors.New("keyId is nil")
+	ErrKeyNotFound               = errors.New("key does not exist")
+	ErrTransformAccessData       = errors.New("failed to transform access data")
+	ErrNativeKeyIDInvalidPattern = errors.New("native key ID does not match valid pattern")
 
 	// ValidManagementAccessData is the management access data the test plugin accepts
 	// in ValidateKeyAccessData. It mirrors the fields returned by CreateKeystore and
@@ -38,23 +42,26 @@ var (
 
 const importParamsValidityHours = 24
 
+type KeyVersionRecord struct {
+	VersionID    string
+	CreationTime *time.Time
+	Status       string
+}
+
 type KeyRecord struct {
 	KeyID        string `gorm:"primaryKey;column:key_id"`
 	Status       string
-	VersionID    string
-	RotationTime string // RFC3339 format
-}
-
-var InitialKeys = map[string]KeyRecord{
-	"mock-key/11111111": {Status: EnabledKeyStatus},
-	"mock-key/22222222": {Status: EnabledKeyStatus},
-	"mock-key/33333333": {Status: EnabledKeyStatus},
+	PKeyVersion  string
+	Versions     []KeyVersionRecord
+	RotationTime *time.Time // RFC3339 format
 }
 
 type TestKeyManagement struct {
-	KeyStore  map[string]*KeyRecord
-	IsHYOK    bool
-	IsDefault bool
+	KeyStore             map[string]*KeyRecord
+	IsHYOK               bool
+	IsDefault            bool
+	validRegions         map[string]bool // if non-nil, ValidateKey rejects regions not in this set
+	validNativeIDPattern *regexp.Regexp  // if non-nil, ExtractKeyRegion rejects non-matching native IDs
 }
 
 var _ keymanagement.KeyManagement = (*TestKeyManagement)(nil)
@@ -65,10 +72,28 @@ func NewTestKeyManagement(isHYOK, isDefault bool) *TestKeyManagement {
 		IsHYOK:    isHYOK,
 		IsDefault: isDefault,
 	}
-	for keyID, record := range InitialKeys {
-		km.HandleKeyRecord(keyID, record.Status)
+	for range 3 {
+		_, _ = km.CreateKey(context.Background(), &keymanagement.CreateKeyRequest{
+			KeyType: keymanagement.HYOK,
+		})
 	}
 	return km
+}
+
+// WithValidRegions restricts ValidateKey to the given regions
+func (s *TestKeyManagement) WithValidRegions(regions ...string) *TestKeyManagement {
+	s.validRegions = make(map[string]bool, len(regions))
+	for _, r := range regions {
+		s.validRegions[r] = true
+	}
+	return s
+}
+
+// WithValidNativeIDPattern restricts ExtractKeyRegion to native IDs matching the given pattern,
+// returning an error for non-matching IDs.
+func (s *TestKeyManagement) WithValidNativeIDPattern(pattern string) *TestKeyManagement {
+	s.validNativeIDPattern = regexp.MustCompile(pattern)
+	return s
 }
 
 func (s *TestKeyManagement) ServiceInfo() api.Info {
@@ -86,25 +111,47 @@ func (s *TestKeyManagement) ServiceInfo() api.Info {
 	}
 }
 
-func (s *TestKeyManagement) HandleKeyRecord(keyID, status string) {
+// RotateKey sets version and rotation metadata for a key, mirroring the KeystoreOperator helper used in tests.
+func (s *TestKeyManagement) RotateKey(keyID string, versionID string, rotationTime *time.Time) error {
 	record, exists := s.KeyStore[keyID]
 	if !exists {
-		record = &KeyRecord{KeyID: keyID, Status: status}
-		s.KeyStore[keyID] = record
+		return ErrKeyNotFound
 	}
-	record.Status = status
+
+	record.PKeyVersion = versionID
+	record.RotationTime = rotationTime
+	// Newer versions should appear first in the slice
+	record.Versions = append([]KeyVersionRecord{
+		{
+			VersionID:    versionID,
+			CreationTime: rotationTime,
+		},
+	}, record.Versions...)
+	s.KeyStore[keyID] = record
+	return nil
 }
 
-// SetKeyVersionInfo sets version and rotation metadata for a key, mirroring the
-// KeystoreOperator helper used in tests.
-func (s *TestKeyManagement) SetKeyVersionInfo(keyID, versionID, rotationTime string) {
-	record, exists := s.KeyStore[keyID]
+func (s *TestKeyManagement) GetKeyVersions(
+	_ context.Context,
+	req *keymanagement.GetKeyVersionsRequest,
+) (*keymanagement.GetKeyVersionsResponse, error) {
+	record, exists := s.KeyStore[req.Parameters.KeyID]
 	if !exists {
-		record = &KeyRecord{KeyID: keyID, Status: EnabledKeyStatus}
-		s.KeyStore[keyID] = record
+		return nil, keymanagement.ErrHYOKKeyNotFound
 	}
-	record.VersionID = versionID
-	record.RotationTime = rotationTime
+
+	res := make([]keymanagement.KeyVersion, 0, len(record.Versions))
+	for _, v := range record.Versions {
+		res = append(res, keymanagement.KeyVersion{
+			ID:           v.VersionID,
+			CreationTime: v.CreationTime,
+			Status:       v.Status,
+		})
+	}
+
+	return &keymanagement.GetKeyVersionsResponse{
+		Versions: res,
+	}, nil
 }
 
 func (s *TestKeyManagement) GetKey(
@@ -126,20 +173,11 @@ func (s *TestKeyManagement) GetKey(
 	resp := &keymanagement.GetKeyResponse{
 		KeyAlgorithm: keymanagement.AES256,
 		Status:       record.Status,
+		RotationTime: record.RotationTime,
 	}
 
-	if record.VersionID != "" {
-		resp.LatestKeyVersionId = record.VersionID
-	}
-
-	if record.RotationTime != "" {
-		t, err := time.Parse(time.RFC3339Nano, record.RotationTime)
-		if err != nil {
-			t, err = time.Parse(time.RFC3339, record.RotationTime)
-		}
-		if err == nil {
-			resp.RotationTime = &t
-		}
+	if record.PKeyVersion != "" {
+		resp.LatestKeyVersionId = record.PKeyVersion
 	}
 
 	return resp, nil
@@ -149,17 +187,11 @@ func (s *TestKeyManagement) CreateKey(
 	_ context.Context,
 	req *keymanagement.CreateKeyRequest,
 ) (*keymanagement.CreateKeyResponse, error) {
-	st := EnabledKeyStatus
-	if req.KeyType == keymanagement.BYOK {
-		st = PendingImportKeyStatus
-	}
-
-	keyID := "mock-key/" + uuid.NewString()
-	s.HandleKeyRecord(keyID, st)
+	keyID := uuid.NewString()
 
 	return &keymanagement.CreateKeyResponse{
 		KeyID:  keyID,
-		Status: st,
+		Status: s.createKey(keyID, req.KeyType),
 	}, nil
 }
 
@@ -168,7 +200,10 @@ func (s *TestKeyManagement) DeleteKey(
 	req *keymanagement.DeleteKeyRequest,
 ) (*keymanagement.DeleteKeyResponse, error) {
 	if req != nil && req.Parameters.KeyID != "" {
-		s.HandleKeyRecord(req.Parameters.KeyID, PendingDeletionKeyStatus)
+		err := s.updateKeyStatus(req.Parameters.KeyID, PendingDeletionKeyStatus)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &keymanagement.DeleteKeyResponse{}, nil
 }
@@ -180,7 +215,11 @@ func (s *TestKeyManagement) EnableKey(
 	if req.Parameters.KeyID == "" {
 		return nil, ErrKeyIDIsNil
 	}
-	s.HandleKeyRecord(req.Parameters.KeyID, EnabledKeyStatus)
+
+	err := s.updateKeyStatus(req.Parameters.KeyID, EnabledKeyStatus)
+	if err != nil {
+		return nil, err
+	}
 	return &keymanagement.EnableKeyResponse{}, nil
 }
 
@@ -191,7 +230,10 @@ func (s *TestKeyManagement) DisableKey(
 	if req.Parameters.KeyID == "" {
 		return nil, ErrKeyIDIsNil
 	}
-	s.HandleKeyRecord(req.Parameters.KeyID, DisabledKeyStatus)
+	err := s.updateKeyStatus(req.Parameters.KeyID, DisabledKeyStatus)
+	if err != nil {
+		return nil, err
+	}
 	return &keymanagement.DisableKeyResponse{}, nil
 }
 
@@ -213,19 +255,28 @@ func (s *TestKeyManagement) GetImportParameters(
 }
 
 func (s *TestKeyManagement) ImportKeyMaterial(
-	_ context.Context,
+	ctx context.Context,
 	req *keymanagement.ImportKeyMaterialRequest,
 ) (*keymanagement.ImportKeyMaterialResponse, error) {
 	if req.Parameters.KeyID != "" {
-		s.HandleKeyRecord(req.Parameters.KeyID, EnabledKeyStatus)
+		err := s.updateKeyStatus(req.Parameters.KeyID, EnabledKeyStatus)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &keymanagement.ImportKeyMaterialResponse{}, nil
 }
 
 func (s *TestKeyManagement) ValidateKey(
 	_ context.Context,
-	_ *keymanagement.ValidateKeyRequest,
+	req *keymanagement.ValidateKeyRequest,
 ) (*keymanagement.ValidateKeyResponse, error) {
+	if s.validRegions != nil && !s.validRegions[req.Region] {
+		return &keymanagement.ValidateKeyResponse{
+			IsValid: false,
+			Message: fmt.Sprintf("region %s is not supported", req.Region),
+		}, nil
+	}
 	return &keymanagement.ValidateKeyResponse{IsValid: true}, nil
 }
 
@@ -239,6 +290,22 @@ func (s *TestKeyManagement) ValidateKeyAccessData(
 	for k := range ValidManagementAccessData {
 		if _, ok := req.Management[k]; !ok {
 			return nil, keystoreErrs.StatusInvalidKeyAccessData.Err()
+		}
+	}
+
+	// Mirror the real wrapper: verify each crypto region can be converted to a proto struct.
+	for regionName, region := range req.Crypto {
+		b, err := json.Marshal(region)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal crypto region %q: %w", regionName, err)
+		}
+
+		var regionMap map[string]any
+		if err := json.Unmarshal(b, &regionMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal crypto region %q: %w", regionName, err)
+		}
+		if _, err := structpb.NewStruct(regionMap); err != nil {
+			return nil, fmt.Errorf("failed to convert crypto region %q to proto struct: %w", regionName, err)
 		}
 	}
 	return &keymanagement.ValidateKeyAccessDataResponse{IsValid: true}, nil
@@ -274,7 +341,45 @@ func (s *TestKeyManagement) TransformCryptoAccessData(
 
 func (s *TestKeyManagement) ExtractKeyRegion(
 	_ context.Context,
-	_ *keymanagement.ExtractKeyRegionRequest,
+	req *keymanagement.ExtractKeyRegionRequest,
 ) (*keymanagement.ExtractKeyRegionResponse, error) {
+	if s.validNativeIDPattern != nil && !s.validNativeIDPattern.MatchString(req.NativeKeyID) {
+		return nil, fmt.Errorf("%w: %q", ErrNativeKeyIDInvalidPattern, req.NativeKeyID)
+	}
 	return &keymanagement.ExtractKeyRegionResponse{Region: "test-region"}, nil
+}
+
+func (s *TestKeyManagement) createKey(
+	keyID string,
+	keyType keymanagement.KeyType,
+) string {
+	st := EnabledKeyStatus
+	if keyType == keymanagement.BYOK {
+		st = PendingImportKeyStatus
+	}
+	initialVersion := "version0"
+	time := time.Now().UTC()
+	s.KeyStore[keyID] = &KeyRecord{
+		KeyID:       keyID,
+		Status:      st,
+		PKeyVersion: initialVersion,
+		Versions: []KeyVersionRecord{
+			{
+				VersionID:    initialVersion,
+				CreationTime: &time,
+			},
+		},
+		RotationTime: &time,
+	}
+	return st
+}
+
+func (s *TestKeyManagement) updateKeyStatus(key string, status string) error {
+	record, exists := s.KeyStore[key]
+	if !exists {
+		return ErrKeyNotFound
+	}
+	record.Status = status
+	s.KeyStore[key] = record
+	return nil
 }

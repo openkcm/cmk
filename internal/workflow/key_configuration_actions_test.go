@@ -11,11 +11,10 @@ import (
 	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/workflow"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestWorkflowKeyConfigActions(t *testing.T) {
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
@@ -70,7 +69,7 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			keyID := uuid.New()
 			keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = ptr.PointTo(keyID)
+				k.PrimaryKeyID = new(keyID)
 			})
 			err := r.Create(ctx, keyConfig)
 			assert.NoError(t, err)

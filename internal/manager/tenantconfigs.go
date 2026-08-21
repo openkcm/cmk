@@ -8,15 +8,12 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
-
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
@@ -160,7 +157,7 @@ func (m *TenantConfigManager) SetWorkflowConfig(
 		Value: configValue,
 	}
 
-	err = m.repo.Set(ctx, conf)
+	err = m.repo.Set(ctx, conf, *repo.NewQuery())
 	if err != nil {
 		return nil, errs.Wrap(ErrSetWorkflowConfig, err)
 	}
@@ -208,8 +205,9 @@ func (m *TenantConfigManager) GetTenantsKeystores(ctx context.Context) (TenantKe
 	byokKeystore := &model.KeystoreConfig{}
 	if found {
 		byokKeystore = defaultKeystore
-	} else if m.isBYOKAllowed() {
-		byokKeystore.SupportedRegions = m.loadConfiguredSupportedRegions(ctx)
+	}
+	if m.isBYOKAllowed() {
+		byokKeystore.SupportedRegions = m.cfg.KeystorePool.SupportedRegions
 	}
 
 	return TenantKeystores{
@@ -250,6 +248,22 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 	}
 
 	return keystore, nil
+}
+
+// NeedsDefaultKeystoreProvisioning reports whether the tenant's default keystore
+// management role has not yet been fully provisioned. It reads the stored config without
+// triggering any lazy provisioning side effects (no GrantTrust calls).
+// Returns true when no stored config exists, LocalityID is empty, or AccessData is empty.
+func (m *TenantConfigManager) NeedsDefaultKeystoreProvisioning(ctx context.Context) (bool, error) {
+	keystore, found, err := m.getStoredDefaultKeystoreConfig(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		// No stored config yet means the pool assignment hasn't happened — provisioning needed.
+		return true, nil
+	}
+	return keystore.KeyManagementConfig.LocalityID == "" || len(keystore.KeyManagementConfig.AccessData) == 0, nil
 }
 
 func (m *TenantConfigManager) initDefaultKeystoreFromPool(ctx context.Context) (*model.KeystoreConfig, error) {
@@ -313,7 +327,7 @@ func (m *TenantConfigManager) setDefaultKeystore(ctx context.Context, keystore *
 		Value: ksBytes,
 	}
 
-	err = m.repo.Set(ctx, conf)
+	err = m.repo.Set(ctx, conf, *repo.NewQuery())
 	if err != nil {
 		return errs.Wrap(ErrSetDefaultKeystore, err)
 	}
@@ -334,7 +348,7 @@ func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
 	providers := make([]string, 0)
 
 	for _, plugin := range plugins {
-		if pluginHelpers.HasTag(plugin.ServiceInfo().Tags(), constants.KeyTypeHYOK) {
+		if pluginHelpers.HasTag(plugin.ServiceInfo().Tags(), string(cmkapi.KeyTypeHYOK)) {
 			providers = append(providers, plugin.ServiceInfo().Name())
 		}
 	}
@@ -446,22 +460,6 @@ func (m *TenantConfigManager) mergeWorkflowConfig(
 	}
 
 	return result
-}
-
-func (m *TenantConfigManager) loadConfiguredSupportedRegions(ctx context.Context) []config.Region {
-	ref, err := commoncfg.LoadValueFromSourceRef(m.cfg.KeystorePool.SupportedRegions)
-	if err != nil {
-		log.Error(ctx, "Failed to load supported regions from source ref", err)
-		return nil
-	}
-
-	var regions []config.Region
-	if err = json.Unmarshal(ref, &regions); err != nil {
-		log.Error(ctx, "Failed to unmarshal supported regions", err)
-		return nil
-	}
-
-	return regions
 }
 
 // ensureKeystoreProvisioned lazily provisions KeyManagementConfig and syncs CryptoAccessData.

@@ -1183,7 +1183,7 @@ func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.
 	case w.isKeyStateChange(workflow):
 		key := &model.Key{ID: workflow.ArtifactID}
 		_, err := w.repo.First(ctx, key, *repo.NewQuery())
-		if key.KeyType != string(cmkapi.KeyTypeBYOK) {
+		if key.KeyType != cmkapi.KeyTypeBYOK {
 			return false, ErrUpdateNonBYOKKeyStatus
 		}
 		if err != nil {
@@ -1439,7 +1439,7 @@ func (w *WorkflowManager) addApproversAndGroupAssociations(
 		for _, approver := range approvers {
 			approver.WorkflowID = workflow.ID
 
-			err = w.repo.Set(ctx, approver)
+			err = w.repo.Set(ctx, approver, *repo.NewQuery())
 			if err != nil {
 				return errs.Wrap(ErrAddApproversDB, err)
 			}
@@ -1450,7 +1450,7 @@ func (w *WorkflowManager) addApproversAndGroupAssociations(
 				ID:         uuid.New(),
 				WorkflowID: workflow.ID,
 				GroupID:    g.ID,
-			})
+			}, *repo.NewQuery())
 			if err != nil {
 				return err
 			}
@@ -2099,14 +2099,14 @@ func (w *WorkflowManager) populateArtifact(
 		if err != nil {
 			return err
 		}
-		workflow.ArtifactName = ptr.PointTo(key.Name)
+		workflow.ArtifactName = new(key.Name)
 
 	case model.WorkflowArtifactTypeKeyConfiguration:
 		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, workflow.ArtifactID)
 		if err != nil {
 			return err
 		}
-		workflow.ArtifactName = ptr.PointTo(keyConfig.Name)
+		workflow.ArtifactName = new(keyConfig.Name)
 
 	case model.WorkflowArtifactTypeSystem:
 		system, err := w.systemManager.GetSystemByID(ctx, workflow.ArtifactID)
@@ -2143,8 +2143,8 @@ func (w *WorkflowManager) populateParametersResource(
 				return err
 			}
 
-			workflow.ParametersResourceType = ptr.PointTo(wf.ParametersResourceTypeKey.String())
-			workflow.ParametersResourceName = ptr.PointTo(key.Name)
+			workflow.ParametersResourceType = new(model.WorkflowParametersResourceTypeKey)
+			workflow.ParametersResourceName = new(key.Name)
 		}
 
 	case model.WorkflowArtifactTypeSystem:
@@ -2160,8 +2160,8 @@ func (w *WorkflowManager) populateParametersResource(
 				return err
 			}
 
-			workflow.ParametersResourceType = ptr.PointTo(wf.ParametersResourceTypeKeyConfiguration.String())
-			workflow.ParametersResourceName = ptr.PointTo(keyConfig.Name)
+			workflow.ParametersResourceType = new(model.WorkflowParametersResourceTypeKeyConfiguration)
+			workflow.ParametersResourceName = new(keyConfig.Name)
 		default:
 			// other system action types do not populate the parameters resource
 		}
@@ -2178,7 +2178,7 @@ func (w *WorkflowManager) getWorkflowSystemArtifactName(system *model.System) *s
 	for propertyName, definition := range w.systemManager.ContextModelsCfg.OptionalProperties {
 		if strings.ToUpper(definition.DisplayName) == WorkflowSystemArtifactPropertyKey {
 			if val, ok := system.Properties[propertyName]; ok {
-				nameFromProperties = ptr.PointTo(val)
+				nameFromProperties = new(val)
 			}
 			break
 		}
@@ -2186,7 +2186,7 @@ func (w *WorkflowManager) getWorkflowSystemArtifactName(system *model.System) *s
 
 	// Set artifact name from properties if found. Fall back to system identifier otherwise.
 	if nameFromProperties == nil {
-		nameFromProperties = ptr.PointTo(system.Identifier)
+		nameFromProperties = new(system.Identifier)
 	}
 
 	return nameFromProperties

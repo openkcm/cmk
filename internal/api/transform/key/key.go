@@ -14,11 +14,8 @@ import (
 	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
 	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/utils/ptr"
 	"github.com/openkcm/cmk/utils/sanitise"
 )
 
@@ -47,7 +44,7 @@ func FromAPI(ctx context.Context, apiKey cmkapi.Key, tf transformer.ProviderTran
 	}
 
 	dbKey.Name = apiKey.Name
-	dbKey.KeyType = string(apiKey.Type)
+	dbKey.KeyType = apiKey.Type
 	dbKey.KeyConfigurationID = apiKey.KeyConfigurationID
 
 	if apiKey.Description != nil {
@@ -80,19 +77,13 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 	apiKey.Id = &k.ID
 
 	if k.Algorithm != "" {
-		algorithm := cmkapi.KeyAlgorithm(k.Algorithm)
+		algorithm := k.Algorithm
 		apiKey.Algorithm = &algorithm
-	}
-
-	if k.Provider != "" {
-		apiKey.Provider = &k.Provider
 	}
 
 	if k.Region != "" {
 		apiKey.Region = &k.Region
 	}
-
-	apiKey.NativeID = k.NativeID
 
 	apiKey.Name = k.Name
 	if k.Description != "" {
@@ -109,15 +100,19 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 	}
 
 	apiKey.KeyConfigurationID = k.KeyConfigurationID
-	apiKey.Type = cmkapi.KeyType(k.KeyType)
+	apiKey.Type = k.KeyType
 
-	if k.KeyType == constants.KeyTypeHYOK {
+	if k.KeyType == cmkapi.KeyTypeHYOK {
 		accessDetails, err := getAccessDetailsFromModel(k)
 		if err != nil {
 			return nil, err
 		}
 
 		apiKey.AccessDetails = accessDetails
+		apiKey.NativeID = k.NativeID
+		if k.Provider != "" {
+			apiKey.Provider = &k.Provider
+		}
 	}
 
 	apiKey.IsPrimary = &k.IsPrimary
@@ -143,13 +138,10 @@ func getKeyModel(ctx context.Context, tf transformer.ProviderTransformer, apiKey
 }
 
 func getAccessDetailsFromModel(k model.Key) (*cmkapi.KeyAccessDetails, error) {
-	var (
-		management map[string]any
-		crypto     map[string]map[string]any
-		err        error
-	)
+	var crypto map[string]cmkapi.KeyAccessDetailsRegion
 
-	err = json.Unmarshal(k.ManagementAccessData, &management)
+	management := cmkapi.KeyAccessDetailsRegion{}
+	err := management.UnmarshalJSON(k.ManagementAccessData)
 	if err != nil {
 		return nil, errs.Wrap(ErrDeserializeKeyAccessData, err)
 	}
@@ -160,16 +152,17 @@ func getAccessDetailsFromModel(k model.Key) (*cmkapi.KeyAccessDetails, error) {
 	}
 
 	for region, editable := range k.EditableRegions {
-		regionValues := crypto[region]
-		if regionValues == nil {
+		regionValues, ok := crypto[region]
+		if !ok {
 			// Skip regions that don't exist in crypto access data
 			continue
 		}
-		regionValues[manager.IsEditableCryptoAccess] = editable
+		regionValues.IsEditable = &editable
+		crypto[region] = regionValues
 	}
 
 	return &cmkapi.KeyAccessDetails{
-		Management: ptr.PointTo(management),
-		Crypto:     ptr.PointTo(crypto),
+		Management: new(management),
+		Crypto:     new(crypto),
 	}, nil
 }
