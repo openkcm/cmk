@@ -266,14 +266,14 @@ func TestUpdateVersions(t *testing.T) {
 		})
 		testutils.CreateTestEntities(ctx, t, r, key)
 
-		before := time.Now().UTC()
+		before := time.Now().UTC().Truncate(time.Microsecond)
 		versions := []keymanagement.KeyVersion{
 			{ID: "v1"},
 		}
 
 		err := kvm.UpdateVersions(ctx, keyID, versions)
 		require.NoError(t, err)
-		after := time.Now().UTC()
+		after := time.Now().UTC().Truncate(time.Microsecond)
 
 		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
 			Skip:  constants.DefaultSkip,
