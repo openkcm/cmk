@@ -22,11 +22,16 @@ import (
 var errMockSyncPendingKey = errors.New("sync pending creation key error")
 
 type pendingStateUpdaterMock struct {
-	err error
+	creationErr      error
+	registrationErr  error
 }
 
 func (m *pendingStateUpdaterMock) SyncPendingCreationKey(_ context.Context, _ uuid.UUID) error {
-	return m.err
+	return m.creationErr
+}
+
+func (m *pendingStateUpdaterMock) SyncPendingRegistrationKey(_ context.Context, _ uuid.UUID) error {
+	return m.registrationErr
 }
 
 func TestPendingStateSync(t *testing.T) {
@@ -70,8 +75,17 @@ func TestPendingStateSync(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("should return error when SyncPendingCreationKey fails", func(t *testing.T) {
-		mock := &pendingStateUpdaterMock{err: errMockSyncPendingKey}
+	t.Run("should return error when creation sync fails", func(t *testing.T) {
+		mock := &pendingStateUpdaterMock{creationErr: errMockSyncPendingKey}
+		handler := tasks.NewPendingStateSync(mock, r)
+
+		err := handler.ProcessTask(ctx, makeValidTask(keyID))
+
+		assert.ErrorIs(t, err, errMockSyncPendingKey)
+	})
+
+	t.Run("should return error when registration sync fails", func(t *testing.T) {
+		mock := &pendingStateUpdaterMock{registrationErr: errMockSyncPendingKey}
 		handler := tasks.NewPendingStateSync(mock, r)
 
 		err := handler.ProcessTask(ctx, makeValidTask(keyID))

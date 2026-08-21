@@ -2065,7 +2065,10 @@ components:
         granted to the system. DETACHING/DETACHED state is applicable for keys
         that have been marked with a detach call on tenant termination.
         PENDING_CREATION is a transient state for BYOK keys where provider-side
-        prerequisites are still being set up. ERROR is a terminal failure
+        prerequisites are still being set up. PENDING_REGISTRATION is a
+        transient state for HYOK keys where the initial authentication to the
+        external keystore failed and an async retry loop is driving the key to
+        ENABLED/DISABLED or FORBIDDEN on timeout. ERROR is a terminal failure
         state for keys that could not be provisioned within the timeout.
       type: string
       readOnly: true
@@ -2073,6 +2076,7 @@ components:
         - ENABLED
         - DISABLED
         - PENDING_CREATION
+        - PENDING_REGISTRATION
         - PENDING_IMPORT
         - PENDING_DELETION
         - DELETED

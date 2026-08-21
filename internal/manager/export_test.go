@@ -131,4 +131,7 @@ var CreateKeyMaxDelay = &createKeyMaxDelay
 // PendingCreationTimeout exposes the package-level pending creation timeout so tests can override it.
 var PendingCreationTimeout = &pendingCreationTimeout
 
+// PendingRegistrationTimeout exposes the package-level pending registration timeout so tests can override it.
+var PendingRegistrationTimeout = &pendingRegistrationTimeout
+
 const DefaultKeystoreCertInfix = defaultKeystoreCertInfix

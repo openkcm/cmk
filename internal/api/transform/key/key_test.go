@@ -318,6 +318,63 @@ func TestTransformKeyToAPI(t *testing.T) {
 				UnderWorkflow: new(false),
 			},
 		},
+		{
+			name: "Transform FORBIDDEN key includes errorDetail",
+			key: model.Key{
+				ID:                 id,
+				Name:               "forbidden-key",
+				KeyType:            cmkapi.KeyTypeBYOK,
+				KeyConfigurationID: keyConfigID,
+				State:              cmkapi.KeyStateFORBIDDEN,
+				IsPrimary:          false,
+				ErrorDetail: mustMarshal(cmkapi.KeyErrorDetail{
+					ErrorCode:    new("REGISTRATION_TIMEOUT"),
+					ErrorMessage: new("HYOK key registration timed out"),
+				}),
+			},
+			expected: cmkapi.Key{
+				Id:                 &id,
+				Name:               "forbidden-key",
+				Type:               cmkapi.KeyTypeBYOK,
+				KeyConfigurationID: keyConfigID,
+				State:              new(cmkapi.KeyStateFORBIDDEN),
+				IsPrimary:          new(false),
+				ErrorDetail: &cmkapi.KeyErrorDetail{
+					ErrorCode:    new("REGISTRATION_TIMEOUT"),
+					ErrorMessage: new("HYOK key registration timed out"),
+				},
+				Metadata: &cmkapi.KeyMetadata{
+					CreatedAt: &time.Time{},
+					UpdatedAt: &time.Time{},
+				},
+				UnderWorkflow: new(false),
+			},
+		},
+		{
+			name: "Transform ENABLED key omits errorDetail",
+			key: model.Key{
+				ID:                 id,
+				Name:               "enabled-key",
+				KeyType:            cmkapi.KeyTypeBYOK,
+				KeyConfigurationID: keyConfigID,
+				State:              cmkapi.KeyStateENABLED,
+				IsPrimary:          false,
+			},
+			expected: cmkapi.Key{
+				Id:                 &id,
+				Name:               "enabled-key",
+				Type:               cmkapi.KeyTypeBYOK,
+				KeyConfigurationID: keyConfigID,
+				State:              new(cmkapi.KeyStateENABLED),
+				IsPrimary:          new(false),
+				ErrorDetail:        nil,
+				Metadata: &cmkapi.KeyMetadata{
+					CreatedAt: &time.Time{},
+					UpdatedAt: &time.Time{},
+				},
+				UnderWorkflow: new(false),
+			},
+		},
 	}
 
 	for _, tt := range tests {
