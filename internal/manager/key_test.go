@@ -141,15 +141,14 @@ func createTestSystemManagedKey(t *testing.T, km *manager.KeyManager, r repo.Rep
 	return createdKey
 }
 
-// seedDefaultKeystore persists a fully-provisioned DEFAULT_KEYSTORE TenantConfig so that
+// seedDefaultKeystore persists a fully-provisioned DEFAULT_KEYSTORE config as flat rows so that
 // NeedsDefaultKeystoreProvisioning returns false and BYOK keys take the normal creation
 // path instead of PENDING_CREATION.
 func seedDefaultKeystore(t *testing.T, r repo.Repo, ctx context.Context) {
 	t.Helper()
-	ksConf := testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {})
-	ksConfBytes, err := json.Marshal(ksConf)
-	require.NoError(t, err)
-	err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksConfBytes)}, *repo.NewQuery())
+	//nolint:contextcheck
+	tcm := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), &config.Config{}, nil)
+	err := tcm.SetDefaultKeystore(ctx, testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {}))
 	require.NoError(t, err)
 }
 

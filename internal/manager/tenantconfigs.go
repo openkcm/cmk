@@ -117,18 +117,10 @@ type TenantKeystores struct {
 	HYOK      HYOKKeystore
 }
 
-// GetWorkflowConfig reads flat rows first, falling back to the legacy JSON
-// blob for tenants whose data migration has not yet completed.
+// GetWorkflowConfig reads the workflow config from flat rows, creating the
+// default when none exist.
 func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
 	wc, found, err := m.getWorkflowConfigFromFlatRows(ctx)
-	if err != nil {
-		return nil, errs.Wrap(ErrGetWorkflowConfig, err)
-	}
-	if found {
-		return wc, nil
-	}
-
-	wc, found, err = m.getWorkflowConfigFromLegacyBlob(ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetWorkflowConfig, err)
 	}
@@ -279,18 +271,15 @@ func (m *TenantConfigManager) NeedsDefaultKeystoreProvisioning(ctx context.Conte
 	return keystore.KeyManagementConfig.LocalityID == "" || len(keystore.KeyManagementConfig.AccessData) == 0, nil
 }
 
-// GetStoredDefaultKeystoreConfig reads the stored default keystore without
-// pool fallback. Reads flat rows first, falling back to the legacy JSON blob.
+// GetStoredDefaultKeystoreConfig reads the stored default keystore from flat
+// rows, without pool fallback.
 func (m *TenantConfigManager) GetStoredDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, bool, error) {
 	ks, found, err := m.getKeystoreConfigFromFlatRows(ctx)
 	if err != nil {
 		return nil, false, errs.Wrap(ErrGetDefaultKeystore, err)
 	}
-	if found {
-		return ks, true, nil
-	}
 
-	return m.getKeystoreConfigFromLegacyBlob(ctx)
+	return ks, found, nil
 }
 
 // SetDefaultKeystore stores the default keystore config
@@ -382,8 +371,8 @@ func (m *TenantConfigManager) getWorkflowConfigFromFlatRows(
 }
 
 // requiredWorkflowKeys are the keys that must be present for the flat-row
-// workflow config to be considered complete; otherwise the caller falls back
-// to the legacy blob.
+// workflow config to be considered complete; otherwise it is treated as
+// absent and defaults are created.
 var requiredWorkflowKeys = []string{
 	workflowKeyEnabled,
 	workflowKeyMinimumApprovals,
@@ -481,7 +470,7 @@ func (m *TenantConfigManager) getKeystoreConfigFromFlatRows(
 }
 
 // buildKeystoreConfigFromRows returns found=false when required identity fields
-// are missing, so the caller can fall back to the legacy blob.
+// are missing, so the caller treats the keystore as unset (pool/default path).
 func buildKeystoreConfigFromRows(configs []model.TenantConfig) (*model.KeystoreConfig, bool, error) {
 	ks := &model.KeystoreConfig{}
 
@@ -581,61 +570,6 @@ func (m *TenantConfigManager) writeKeystoreConfigFlatRows(
 	}
 
 	return m.replaceRowsByType(ctx, t, rows)
-}
-
-func (m *TenantConfigManager) getWorkflowConfigFromLegacyBlob(
-	ctx context.Context,
-) (*model.WorkflowConfig, bool, error) {
-	blob, found, err := m.getLegacyBlob(ctx, constants.WorkflowConfigKey)
-	if err != nil || !found {
-		return nil, found, err
-	}
-
-	var wc model.WorkflowConfig
-	if err := json.Unmarshal([]byte(blob), &wc); err != nil {
-		return nil, false, errs.Wrap(ErrUnmarshalConfig, err)
-	}
-
-	return &wc, true, nil
-}
-
-func (m *TenantConfigManager) getKeystoreConfigFromLegacyBlob(
-	ctx context.Context,
-) (*model.KeystoreConfig, bool, error) {
-	blob, found, err := m.getLegacyBlob(ctx, constants.DefaultKeyStore)
-	if err != nil || !found {
-		return nil, found, err
-	}
-
-	keystore := &model.KeystoreConfig{}
-	if err := json.Unmarshal([]byte(blob), keystore); err != nil {
-		return nil, false, errs.Wrap(ErrUnmarshalConfig, err)
-	}
-
-	return keystore, true, nil
-}
-
-// getLegacyBlob reads a legacy single-row JSON blob from the jsonb value column.
-func (m *TenantConfigManager) getLegacyBlob(
-	ctx context.Context,
-	key string,
-) (string, bool, error) {
-	var tc model.LegacyTenantConfig
-
-	ck := repo.NewCompositeKey().
-		Where(repo.KeyField, key).
-		Where(repo.TypeField, "")
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
-
-	found, err := m.repo.First(ctx, &tc, *query)
-	if err != nil && !errors.Is(err, repo.ErrNotFound) {
-		return "", false, err
-	}
-	if !found {
-		return "", false, nil
-	}
-
-	return tc.Value, true, nil
 }
 
 func (m *TenantConfigManager) listConfigsByType(

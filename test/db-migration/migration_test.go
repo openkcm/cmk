@@ -643,6 +643,110 @@ func TestSchemaMigrations(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:      "Should up tenant/00019_drop_legacy_tenant_config_blobs.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   19,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					// A flat row plus a straggler blob left by an old binary.
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('enabled', 'true', 'workflow');
+						 INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('WORKFLOW_CONFIG', '{"MinimumApprovals":9}'::jsonb, '')`,
+					).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					// Straggler captured into a flat row before the blob was dropped.
+					var minApprovals string
+					err := db.Raw(
+						`SELECT value FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'minimum_approvals'`,
+					).Scan(&minApprovals).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "9", minApprovals)
+
+					// Legacy blob rows removed.
+					var blobCount int
+					err = db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE length("type") = 0`,
+					).Scan(&blobCount).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 0, blobCount, "legacy blob rows must be removed")
+
+					// value_text renamed to value; legacy value column gone.
+					var valueExists, valueTextExists bool
+					err = db.Raw(`
+						SELECT
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value'),
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value_text')
+					`).Row().Scan(&valueExists, &valueTextExists)
+					assert.NoError(t, err)
+					assert.True(t, valueExists, "value column must exist")
+					assert.False(t, valueTextExists, "value_text column must be renamed away")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00019_drop_legacy_tenant_config_blobs.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   19,
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					// value_text restored, legacy value (jsonb) column back.
+					var valueTextExists, valueExists bool
+					var valueTextNullable string
+					err := db.Raw(`
+						SELECT
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value_text'),
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value'),
+							COALESCE((SELECT is_nullable FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value_text'), 'YES')
+					`).Row().Scan(&valueTextExists, &valueExists, &valueTextNullable)
+					assert.NoError(t, err)
+					assert.True(t, valueTextExists, "value_text column must be restored")
+					assert.True(t, valueExists, "legacy value column must be restored")
+					assert.Equal(t, "YES", valueTextNullable, "value_text must be nullable again")
+
+					// Primary key back to (key); the (key, type) unique index restored.
+					var pkCols string
+					err = db.Raw(`
+						SELECT string_agg(a.attname, ',' ORDER BY array_position(i.indkey, a.attnum))
+						FROM pg_index i
+						JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey)
+						WHERE i.indrelid = 'tenant_configs'::regclass AND i.indisprimary
+					`).Scan(&pkCols).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "key", pkCols, "primary key must be restored to (key)")
+
+					var keyTypeIndexExists bool
+					err = db.Raw(`
+						SELECT EXISTS (SELECT 1 FROM pg_indexes
+							WHERE tablename = 'tenant_configs' AND indexname = 'idx_tenant_configs_key_type')
+					`).Row().Scan(&keyTypeIndexExists)
+					assert.NoError(t, err)
+					assert.True(t, keyTypeIndexExists, "idx_tenant_configs_key_type must be restored")
+
+					return nil
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

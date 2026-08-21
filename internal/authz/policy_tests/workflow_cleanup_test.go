@@ -65,9 +65,9 @@ func TestWorkflowCleanup_AuthzPolicy(t *testing.T) {
 	cleaner := tasks.NewWorkflowCleaner(wfManager, authzRepo)
 	task := asynq.NewTask(config.TypeWorkflowCleanup, nil)
 
-	// No TenantConfig is seeded. GetWorkflowConfig will call repo.First (not found),
-	// then fall through to SetWorkflowConfig → repo.GetTenant (Tenant:First) → repo.Set
-	// (TenantConfig:Delete+Create). All three operations must be permitted by the policy.
+	// No TenantConfig is seeded. GetWorkflowConfig falls through to
+	// SetWorkflowConfig → Tenant:First → TenantConfig:Delete+Create. All three
+	// must be permitted by the policy.
 
 	t.Run("InternalTaskWorkflowCleanupRole allows Count, List, Delete on Workflow", func(t *testing.T) {
 		logger, buf := testutils.NewLogBuffer()
