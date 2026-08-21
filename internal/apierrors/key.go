@@ -155,6 +155,14 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{ErrUpdateKey, manager.ErrPendingImportStateNotEditable},
+		ExposedError: &APIError{
+			Code:    "INVALID_KEY_STATE",
+			Message: "Key state cannot be changed while it is pending import",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrUpdateKey},
 		ExposedError: &APIError{
 			Code:    "UPDATE_KEY",

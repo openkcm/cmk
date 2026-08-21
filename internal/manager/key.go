@@ -78,6 +78,12 @@ func IsUnavailableKeyState(state cmkapi.KeyState) bool {
 	return slices.Contains(UnavailableKeyStates, state)
 }
 
+// IsPendingImportBYOK reports whether the key is a BYOK key still awaiting material import.
+// Such a key carries no material and binds no system, so deletion skips the workflow and connected-systems checks.
+func IsPendingImportBYOK(key *model.Key) bool {
+	return key != nil && key.KeyType == constants.KeyTypeBYOK && key.State == cmkapi.KeyStatePENDINGIMPORT
+}
+
 type KeyManager struct {
 	ProviderConfigManager
 
@@ -256,6 +262,25 @@ func (km *KeyManager) GetKeys(
 	return keys, count, nil
 }
 
+// validateEnablementUpdate rejects enable/disable requests that the key's type or state forbids.
+// It is a no-op when the patch does not touch enablement.
+func validateEnablementUpdate(keyPatch cmkapi.KeyPatch, key *model.Key) error {
+	if keyPatch.Enabled == nil {
+		return nil
+	}
+
+	if key.KeyType == cmkapi.KeyTypeHYOK {
+		return errs.Wrapf(ErrHYOKKeyActionNotAllowed, "update key state")
+	}
+
+	// A PENDING_IMPORT key has no material yet, so it cannot be enabled or disabled.
+	if key.State == cmkapi.KeyStatePENDINGIMPORT {
+		return ErrPendingImportStateNotEditable
+	}
+
+	return nil
+}
+
 func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch cmkapi.KeyPatch) (*model.Key, error) {
 	if isManagementDetailsUpdate(keyPatch) {
 		return nil, ErrManagementDetailsUpdate
@@ -277,8 +302,8 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 		return nil, errs.Wrap(ErrCryptoDetailsUpdate, err)
 	}
 
-	if key.KeyType == cmkapi.KeyTypeHYOK && keyPatch.Enabled != nil {
-		return nil, errs.Wrapf(ErrHYOKKeyActionNotAllowed, "update key state")
+	if err := validateEnablementUpdate(keyPatch, key); err != nil {
+		return nil, err
 	}
 
 	enablementUpdated := copyFieldsToModelKey(keyPatch, key)
@@ -296,15 +321,8 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 		return errs.Wrap(ErrGetKeyDB, err)
 	}
 
-	if key.IsPrimary {
-		exist, err := repo.HasConnectedSystems(ctx, km.repo, key.KeyConfigurationID)
-		if err != nil {
-			return err
-		}
-
-		if exist {
-			return errs.Wrap(ErrDeleteKey, ErrConnectedSystemToKeyConfig)
-		}
+	if err := km.checkConnectedSystems(ctx, key); err != nil {
+		return err
 	}
 
 	err = km.deleteProviderKey(ctx, key)
@@ -324,6 +342,19 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 		)
 		if err != nil {
 			return errs.Wrap(ErrDeleteKeyDB, err)
+		}
+
+		// Clear the config's primary pointer first: PrimaryKeyID has no FK/delete hook,
+		// so deleting the key row would otherwise leave it dangling.
+		if key.IsPrimary {
+			_, err = km.repo.Patch(
+				ctx,
+				&model.KeyConfiguration{ID: key.KeyConfigurationID},
+				*repo.NewQuery().Update(repo.PrimaryKeyIDField),
+			)
+			if err != nil {
+				return errs.Wrap(ErrDeleteKeyDB, err)
+			}
 		}
 
 		key := &model.Key{ID: keyID}
@@ -513,6 +544,25 @@ func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key
 
 	log.Debug(ctx, "PENDING_CREATION key transitioned to PENDING_IMPORT",
 		slog.String("newState", string(key.State)))
+
+	return nil
+}
+
+// checkConnectedSystems rejects deletion of a primary key whose config still has connected
+// systems. A PENDING_IMPORT BYOK key is exempt: it binds no system.
+func (km *KeyManager) checkConnectedSystems(ctx context.Context, key *model.Key) error {
+	if !key.IsPrimary || IsPendingImportBYOK(key) {
+		return nil
+	}
+
+	exist, err := repo.HasConnectedSystems(ctx, km.repo, key.KeyConfigurationID)
+	if err != nil {
+		return err
+	}
+
+	if exist {
+		return errs.Wrap(ErrDeleteKey, ErrConnectedSystemToKeyConfig)
+	}
 
 	return nil
 }
@@ -1029,10 +1079,11 @@ func (km *KeyManager) deleteProviderKey(ctx context.Context, key *model.Key) err
 		return km.deleteSystemManagedProviderKey(ctx, key, provider)
 	case constants.KeyTypeBYOK:
 		// For BYOK keys, we delete the key itself, since BYOK keys are not versioned.
-		// NativeID may be nil if the key never completed provisioning.
-		if key.NativeID == nil {
+		// NativeID may be nil/empty if the key never completed provisioning — nothing to delete.
+		if key.NativeID == nil || *key.NativeID == "" {
 			return nil
 		}
+
 		_, err = provider.Client.DeleteKey(ctx, &keymanagement.DeleteKeyRequest{
 			Parameters: keymanagement.RequestParameters{
 				Config: common.KeystoreConfig{Values: maps.Clone(provider.Config.Values)},
@@ -1109,10 +1160,14 @@ func (km *KeyManager) setPrimaryIfFirstKey(ctx context.Context, key *model.Key) 
 	// Update keyconfig primaryKey
 	if !exist {
 		if key.State == cmkapi.KeyStatePENDINGCREATION {
-			return nil // Not primary yet; skip until creation completes
+			return nil // Not primary yet; skip until creation completes.
 		}
 		if key.State == cmkapi.KeyStateDISABLED {
 			return ErrKeyIsNotEnabled
+		}
+		// A non-ENABLED first key (e.g. a PENDING_IMPORT BYOK key) is created but not auto-promoted.
+		if key.State != cmkapi.KeyStateENABLED {
+			return nil
 		}
 		keyConfig := &model.KeyConfiguration{
 			ID:           key.KeyConfigurationID,
