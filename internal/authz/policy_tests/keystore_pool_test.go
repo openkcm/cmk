@@ -60,7 +60,7 @@ func TestKeystorePool_AuthzPolicy(t *testing.T) {
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	certManager := manager.NewCertificateManager(t.Context(), authzRepo, ps, cfg)
 	tagManager := manager.NewTagManager(authzRepo)
-	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, certManager)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, certManager, nil)
 	keyConfigManager := manager.NewKeyConfigManager(authzRepo, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
 	keyManager := manager.NewKeyManager(
 		authzRepo,

@@ -709,6 +709,17 @@ func (km *KeyManager) validateKeyCreation(ctx context.Context, key *model.Key) e
 		return errs.Wrap(ErrGetConfiguration, err)
 	}
 
+	switch key.KeyType {
+	case cmkapi.KeyTypeBYOK:
+		if !km.tenantConfigs.IsBYOKAllowed(ctx) {
+			return ErrBYOKNotAllowed
+		}
+	case cmkapi.KeyTypeHYOK:
+		if !km.tenantConfigs.IsHYOKAllowed(ctx, key.Provider) {
+			return ErrHYOKNotAllowed
+		}
+	}
+
 	return nil
 }
 

@@ -17,6 +17,8 @@ var (
 	ErrUnsupportedKeyAlgorithm = errors.New("unsupported key algorithm")
 	ErrInvalidKeyState         = errors.New("invalid key state")
 	ErrHYOKKeyActionNotAllowed = errors.New("HYOK key action not allowed")
+	ErrBYOKNotAllowed          = errors.New("BYOK is not enabled for this provider")
+	ErrHYOKNotAllowed          = errors.New("HYOK is not enabled for this provider")
 	ErrNameCannotBeEmpty       = errors.New("name field cannot be empty")
 	ErrEventSendingFailed      = errors.New("failed to send event")
 	ErrConvertAccessData       = errors.New("failed to convert access data")

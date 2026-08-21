@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/featureflags"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -47,10 +48,11 @@ func New(
 	eventFactory *eventprocessor.EventFactory,
 	asyncClient async.Client,
 	migrator db.Migrator,
+	flags featureflags.Client,
 ) *Manager {
 	cmkAuditor := auditor.New(ctx, config)
 	certManager := NewCertificateManager(ctx, repo, svcRegistry, config)
-	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config, certManager)
+	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config, certManager, flags)
 	userManager := NewUserManager(repo, cmkAuditor)
 	tagManager := NewTagManager(repo)
 	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, eventFactory, config)

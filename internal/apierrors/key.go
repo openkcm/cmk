@@ -155,6 +155,22 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrBYOKNotAllowed},
+		ExposedError: &APIError{
+			Code:    "BYOK_NOT_ALLOWED",
+			Message: "BYOK is not enabled",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrHYOKNotAllowed},
+		ExposedError: &APIError{
+			Code:    "HYOK_NOT_ALLOWED",
+			Message: "HYOK is not enabled for this provider",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrUpdateKey},
 		ExposedError: &APIError{
 			Code:    "UPDATE_KEY",

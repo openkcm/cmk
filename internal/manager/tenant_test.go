@@ -123,7 +123,7 @@ func setupTenantManager(t *testing.T, authzRole *constants.InternalRole, opts ..
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, nil, nil),
+		manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil),
 		kcm,
 		um,
 		cm,

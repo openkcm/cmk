@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
@@ -28,6 +29,7 @@ import (
 	"github.com/openkcm/cmk/internal/controllers/cmk"
 	"github.com/openkcm/cmk/internal/daemon"
 	"github.com/openkcm/cmk/internal/db"
+	"github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/handlers"
 	"github.com/openkcm/cmk/internal/middleware"
 	"github.com/openkcm/cmk/internal/multitenancy"
@@ -39,10 +41,28 @@ const TestCertURL = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.cr
 
 const TestHostPrefix = "https://kms.test/cmk/v1/"
 
+// stubFlagClient is a parallel-safe featureflags.Client for tests (T2 interface injection pattern).
+type stubFlagClient struct{ values map[string]bool }
+
+func (s *stubFlagClient) BooleanValue(_ context.Context, flag string, def bool, _ openfeature.EvaluationContext) (bool, error) {
+	if v, ok := s.values[flag]; ok {
+		return v, nil
+	}
+	return def, nil
+}
+
+// NewStubFlagClient returns a featureflags.Client that returns the given flag values.
+// Flags not in the map return the defaultValue passed to BooleanValue.
+func NewStubFlagClient(flags map[string]bool) featureflags.Client {
+	return &stubFlagClient{values: flags}
+}
+
 type TestAPIServerConfig struct {
 	Registry serviceapi.Registry           // Registry is optional; defaults to testplugins.NewRegistry()
 	GRPCCon  *commongrpc.DynamicClientConn // GRPCClient only set if needed
 	Config   config.Config
+	// Flags is an optional feature flag client. Defaults to nil (all flags off).
+	Flags featureflags.Client
 	// Enable ClientDataMiddleware (default: false for backward compatibility).
 	EnableBusinessUserDataMW bool
 	SigningKeyStorage        keyvalue.ReadOnlyStringToBytesStorage // Optional: provide custom signing key storage
@@ -106,7 +126,7 @@ func NewAPIServer(
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
 	controller := cmk.NewAPIController(tb.Context(), authzRepo, &cfg, factory,
-		migrator, svcRegistry, authzRepoLoader, authzAPILoader)
+		migrator, svcRegistry, authzRepoLoader, authzAPILoader, testCfg.Flags)
 
 	return startAPIServer(tb, controller, testCfg)
 }

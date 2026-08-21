@@ -133,7 +133,7 @@ func createManagers(
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, nil, nil),
+		manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil),
 		kcm,
 		um,
 		cm,

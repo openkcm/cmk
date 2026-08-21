@@ -92,7 +92,7 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 	migrator, err := db.NewMigrator(r, &cfg)
 	assert.NoError(t, err)
 
-	return manager.New(ctx, r, nil, &cfg, clientsFactory, svcRegistry, eventFactory, nil, migrator), dbCon, tenants[0], pluginOp
+	return manager.New(ctx, r, nil, &cfg, clientsFactory, svcRegistry, eventFactory, nil, migrator, nil), dbCon, tenants[0], pluginOp
 }
 
 func TestWorkflowLifecycleTransitions(t *testing.T) {

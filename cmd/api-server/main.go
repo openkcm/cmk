@@ -19,6 +19,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/daemon"
 	"github.com/openkcm/cmk/internal/db"
+	cmkflags "github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/utils/cmd"
 	statusserver "github.com/openkcm/cmk/utils/status_server"
@@ -57,6 +58,12 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return oops.In("main").
 			Wrapf(err, "Failed to load the telemetry")
+	}
+
+	// Feature flag provider initialisation
+	err = cmkflags.Init(cfg.FeatureFlags)
+	if err != nil {
+		return oops.In("main").Wrap(err)
 	}
 
 	// Start status server

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +63,10 @@ func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *tes
 				},
 			},
 		},
+		Flags: testutils.NewStubFlagClient(map[string]bool{
+			"enable_byok_" + strings.ToLower(testplugins.Name): true,
+			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+		}),
 		EnableBusinessUserDataMW: true,
 		SigningKeyStorage:        keyStorage,
 	}), tenants[0], keyStorage, pluginOp

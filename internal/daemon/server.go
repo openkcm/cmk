@@ -24,6 +24,7 @@ import (
 	"github.com/openkcm/cmk/internal/controllers/cmk"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/handlers"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/middleware"
@@ -255,7 +256,7 @@ func makeController(
 	}
 
 	controller := cmk.NewAPIController(ctx, authzRepo, cfg, clientsFactory,
-		migrator, svcRegistry, authzRepoLoader, authzAPILoader)
+		migrator, svcRegistry, authzRepoLoader, authzAPILoader, featureflags.NewClient())
 
 	authzAPILoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
 	authzRepoLoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
