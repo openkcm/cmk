@@ -204,6 +204,9 @@ func createHTTPServer(
 				middleware.InjectMultiTenancy(),
 				middleware.InjectRequestID(),
 				middleware.TracingMiddleware(cfg),
+				// RequestBodyLimitMiddleware runs before TracingMiddleware to cap body size
+				// before any part of the stack reads it.
+				middleware.RequestBodyLimitMiddleware(),
 				// SecurityHeadersMiddleware is last in the slice so it runs first (FILO order).
 				// Security headers must be set before any other middleware runs to ensure
 				// they appear on every response, including error responses.
