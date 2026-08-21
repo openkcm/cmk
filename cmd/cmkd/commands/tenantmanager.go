@@ -21,6 +21,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	cmkflags "github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/operator"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
@@ -62,6 +63,7 @@ func NewTenantManager() *cobra.Command {
 	return cmd
 }
 
+//nolint:cyclop,funlen
 func runTenantManager(ctx context.Context, cfg *config.Config) error {
 	err := validateConfig(cfg)
 	if err != nil {
@@ -74,6 +76,12 @@ func runTenantManager(ctx context.Context, cfg *config.Config) error {
 	}
 
 	statusserver.StartStatusServer(ctx, cfg)
+
+	// Feature flag provider initialisation
+	err = cmkflags.Init(cfg.FeatureFlags)
+	if err != nil {
+		return oops.In(logDomain).Wrap(err)
+	}
 
 	dbConn, err := db.StartDB(ctx, cfg)
 	if err != nil {
@@ -145,7 +153,8 @@ func createTenantManager(
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, cfg, cm),
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, cm,
+			cmkflags.NewClient()),
 		kcm,
 		um,
 		cm,

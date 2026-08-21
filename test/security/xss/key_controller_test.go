@@ -36,6 +36,10 @@ func startAPIAndDBForKey(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, strin
 				},
 			},
 		},
+		Flags: testutils.NewTestFlagClient(map[string]bool{
+			"enable_byok_test": true,
+			"enable_hyok_test": true,
+		}),
 	})
 
 	return db, sv, tenants[0]

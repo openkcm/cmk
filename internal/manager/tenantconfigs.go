@@ -7,6 +7,9 @@ import (
 	"maps"
 	"sort"
 	"strconv"
+	"strings"
+
+	"github.com/open-feature/go-sdk/openfeature"
 
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
@@ -14,6 +17,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/model"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
@@ -27,11 +31,16 @@ const (
 
 	// Since the workflow expiry must be less than the retention minus a day
 	minimumRetentionPeriodDays = 30
-	allowBYOKFeatureGateKey    = "allow-byok"
 
 	// defaultKeystoreCertInfix is inserted between the tenant cert prefix and the tenantID
 	// when constructing the BYOK key-management CN, keeping it under the X.509 64-char limit.
 	defaultKeystoreCertInfix = "byok-"
+
+	byokFeatureFlagPrefix = "enable_byok_"
+	hyokFeatureFlagPrefix = "enable_hyok_"
+
+	// allowBYOKFeatureGateKey is the legacy feature gate key, used when featureFlags is not configured.
+	allowBYOKFeatureGateKey = "allow-byok"
 )
 
 var (
@@ -45,6 +54,7 @@ type TenantConfigManager struct {
 	keystorePool *Pool
 	cfg          *config.Config
 	certs        *CertificateManager
+	flags        featureflags.Client
 }
 
 func NewTenantConfigManager(
@@ -52,6 +62,7 @@ func NewTenantConfigManager(
 	svcRegistry serviceapi.Registry,
 	deploymentConfig *config.Config,
 	certs *CertificateManager,
+	flags featureflags.Client,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
 		repo:         repo,
@@ -59,6 +70,7 @@ func NewTenantConfigManager(
 		keystorePool: NewPool(repo),
 		cfg:          deploymentConfig,
 		certs:        certs,
+		flags:        flags,
 	}
 }
 
@@ -206,14 +218,14 @@ func (m *TenantConfigManager) GetTenantsKeystores(ctx context.Context) (TenantKe
 	if found {
 		byokKeystore = defaultKeystore
 	}
-	if m.isBYOKAllowed() {
+	if m.isBYOKAllowed(ctx) && m.cfg != nil {
 		byokKeystore.SupportedRegions = m.cfg.KeystorePool.SupportedRegions
 	}
 
 	return TenantKeystores{
 		BYOK:      *byokKeystore,
-		AllowBYOK: m.isBYOKAllowed(),
-		HYOK:      m.getTenantConfigsHyokKeystore(),
+		AllowBYOK: m.isBYOKAllowed(ctx),
+		HYOK:      m.getTenantConfigsHyokKeystore(ctx),
 	}, nil
 }
 
@@ -266,6 +278,27 @@ func (m *TenantConfigManager) NeedsDefaultKeystoreProvisioning(ctx context.Conte
 	return keystore.KeyManagementConfig.LocalityID == "" || len(keystore.KeyManagementConfig.AccessData) == 0, nil
 }
 
+// IsBYOKAllowed is the exported form of isBYOKAllowed, used by KeyManager.
+func (m *TenantConfigManager) IsBYOKAllowed(ctx context.Context) bool {
+	return m.isBYOKAllowed(ctx)
+}
+
+// IsHYOKAllowed checks whether HYOK is enabled for the given provider.
+// When featureFlags is not configured it returns true for backward compatibility
+// (HYOK was ungated before feature flags were introduced).
+func (m *TenantConfigManager) IsHYOKAllowed(ctx context.Context, provider string) bool {
+	if m.flags == nil {
+		return true
+	}
+
+	enabled, err := m.flags.BooleanValue(ctx, hyokFeatureFlagKey(provider), false, openfeature.EvaluationContext{})
+	if err != nil {
+		return false
+	}
+
+	return enabled
+}
+
 func (m *TenantConfigManager) initDefaultKeystoreFromPool(ctx context.Context) (*model.KeystoreConfig, error) {
 	var keystore *model.KeystoreConfig
 	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
@@ -306,13 +339,57 @@ func (m *TenantConfigManager) getStoredDefaultKeystoreConfig(
 	return keystore, true, nil
 }
 
-// isBYOKAllowed checks whether BYOK is enabled by deployment feature-gate configuration.
-func (m *TenantConfigManager) isBYOKAllowed() bool {
-	if m.cfg == nil {
+// isBYOKAllowed checks whether BYOK is enabled for the default keystore provider.
+// When featureFlags is not configured it falls back to the legacy allow-byok feature gate.
+func (m *TenantConfigManager) isBYOKAllowed(ctx context.Context) bool {
+	if m.flags == nil {
+		if m.cfg == nil {
+			return false
+		}
+		return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
+	}
+
+	provider, ok := m.getDefaultProvider()
+	if !ok {
 		return false
 	}
 
-	return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
+	enabled, err := m.flags.BooleanValue(ctx, byokFeatureFlagKey(provider), false, openfeature.EvaluationContext{})
+	if err != nil {
+		return false
+	}
+
+	return enabled
+}
+
+// byokFeatureFlagKey returns the feature gate key for BYOK on the given provider.
+func byokFeatureFlagKey(provider string) string {
+	return byokFeatureFlagPrefix + strings.ToLower(provider)
+}
+
+// hyokFeatureFlagKey returns the feature gate key for HYOK on the given provider.
+func hyokFeatureFlagKey(provider string) string {
+	return hyokFeatureFlagPrefix + strings.ToLower(provider)
+}
+
+// getDefaultProvider returns the name of the plugin tagged as DEFAULT_KEYSTORE.
+func (m *TenantConfigManager) getDefaultProvider() (string, bool) {
+	if m.svcRegistry == nil {
+		return "", false
+	}
+
+	plugins, err := m.svcRegistry.KeyManagementList()
+	if err != nil {
+		return "", false
+	}
+
+	for _, p := range plugins {
+		if pluginHelpers.HasTag(p.ServiceInfo().Tags(), constants.DefaultKeyStore) {
+			return p.ServiceInfo().Name(), true
+		}
+	}
+
+	return "", false
 }
 
 // SetDefaultKeystore stores the default keystore config
@@ -335,7 +412,7 @@ func (m *TenantConfigManager) setDefaultKeystore(ctx context.Context, keystore *
 	return nil
 }
 
-func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
+func (m *TenantConfigManager) getTenantConfigsHyokKeystore(ctx context.Context) HYOKKeystore {
 	if m.svcRegistry == nil {
 		return HYOKKeystore{}
 	}
@@ -349,7 +426,10 @@ func (m *TenantConfigManager) getTenantConfigsHyokKeystore() HYOKKeystore {
 
 	for _, plugin := range plugins {
 		if pluginHelpers.HasTag(plugin.ServiceInfo().Tags(), string(cmkapi.KeyTypeHYOK)) {
-			providers = append(providers, plugin.ServiceInfo().Name())
+			name := plugin.ServiceInfo().Name()
+			if m.IsHYOKAllowed(ctx, name) {
+				providers = append(providers, name)
+			}
 		}
 	}
 

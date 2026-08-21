@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,7 +91,11 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	assert.NoError(t, err)
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
+		newTestFlags(map[string]bool{
+			"enable_byok_" + strings.ToLower(testplugins.Name): true,
+			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+		}))
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
@@ -1397,7 +1402,11 @@ func TestKeyRotationTime(t *testing.T) {
 
 	cmkAuditor := auditor.New(ctx, cfg)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
+		newTestFlags(map[string]bool{
+			"enable_byok_" + strings.ToLower(testplugins.Name): true,
+			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+		}))
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
@@ -2262,7 +2271,11 @@ func SetupKeyTestWithAsyncClient(
 	require.NoError(t, err)
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
+		newTestFlags(map[string]bool{
+			"enable_byok_" + strings.ToLower(testplugins.Name): true,
+			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+		}))
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)

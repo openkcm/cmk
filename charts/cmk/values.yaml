@@ -381,6 +381,12 @@ config:
     disable-jwt-token-computation: false
     allow-byok: false
 
+  # Feature flags
+  featureFlags:
+    enabled: false
+    filePath: /etc/featureflags/flags.yaml
+    pollingInterval: 60s
+
   http:
     port: 8081
     swaggerEnabled: false

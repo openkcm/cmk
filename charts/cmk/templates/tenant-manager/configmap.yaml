@@ -21,6 +21,9 @@ data:
     status:
       {{- toYaml .status | nindent 6 }}
 
+    featureFlags:
+      {{- toYaml .featureFlags | nindent 6 }}
+
     logger:
       {{- toYaml .logger | nindent 6 }}
 
