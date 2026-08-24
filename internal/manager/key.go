@@ -94,6 +94,8 @@ type KeyManager struct {
 	eventFactory      *eventprocessor.EventFactory
 	cmkAuditor        *auditor.Auditor
 	asyncClient       async.Client
+	pendingStateCfg   config.PendingState
+	pendingMetrics    *pendingKeyMetrics
 }
 
 func NewKeyManager(
@@ -106,8 +108,15 @@ func NewKeyManager(
 	eventFactory *eventprocessor.EventFactory,
 	cmkAuditor *auditor.Auditor,
 	asyncClient async.Client,
+	pendingStateCfg config.PendingState,
 ) *KeyManager {
 	keyVersionManager := NewKeyVersionManager(repo, svcRegistry, tenantConfigs, certManager, cmkAuditor)
+
+	metrics, err := newPendingKeyMetrics("cmk")
+	if err != nil {
+		// Metrics are best-effort; a setup failure must not block key operations.
+		metrics = nil
+	}
 
 	return &KeyManager{
 		ProviderConfigManager: *NewProviderConfigManager(
@@ -125,6 +134,8 @@ func NewKeyManager(
 		eventFactory:      eventFactory,
 		cmkAuditor:        cmkAuditor,
 		asyncClient:       asyncClient,
+		pendingStateCfg:   pendingStateCfg,
+		pendingMetrics:    metrics,
 	}
 }
 
@@ -504,13 +515,18 @@ func (km *KeyManager) syncPendingRegistrationKey(ctx context.Context, key *model
 	elapsed := time.Since(key.CreatedAt)
 	ctx = slogctx.With(ctx, slog.Duration("elapsed", elapsed.Round(time.Second)))
 
-	if elapsed > pendingRegistrationTimeout {
+	timeout := km.pendingStateCfg.RegistrationTimeout
+	if timeout <= 0 {
+		timeout = pendingRegistrationTimeout
+	}
+
+	if elapsed > timeout {
 		log.Error(ctx, "PENDING_REGISTRATION key timed out, transitioning to FORBIDDEN", ErrProvisioningTimeout)
 		return km.transitionPendingKeyToForbidden(ctx, key)
 	}
 
 	log.Debug(ctx, "Attempting to resolve PENDING_REGISTRATION key",
-		slog.Duration("timeout", pendingRegistrationTimeout))
+		slog.Duration("timeout", timeout))
 
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
@@ -556,6 +572,10 @@ func (km *KeyManager) syncPendingRegistrationKey(ctx context.Context, key *model
 	}
 
 	log.Debug(ctx, "PENDING_REGISTRATION key transitioned", slog.String("newState", string(key.State)))
+
+	if km.pendingMetrics != nil {
+		km.pendingMetrics.recordTerminal(ctx, key, false)
+	}
 	return nil
 }
 
@@ -582,6 +602,10 @@ func (km *KeyManager) transitionPendingKeyToForbidden(ctx context.Context, key *
 	if err != nil {
 		return errs.Wrap(ErrUpdateKeyDB, err)
 	}
+
+	if km.pendingMetrics != nil {
+		km.pendingMetrics.recordTerminal(ctx, key, true)
+	}
 	return nil
 }
 
@@ -591,8 +615,13 @@ func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key
 	elapsedDisplay := elapsed.Round(time.Second)
 	ctx = slogctx.With(ctx, slog.Duration("elapsed", elapsedDisplay))
 
+	timeout := km.pendingStateCfg.CreationTimeout
+	if timeout <= 0 {
+		timeout = pendingCreationTimeout
+	}
+
 	// Check hard timeout: if the key has been in PENDING_CREATION for too long, transition to ERROR.
-	if elapsed > pendingCreationTimeout {
+	if elapsed > timeout {
 		log.Error(ctx, "PENDING_CREATION key timed out, transitioning to ERROR", ErrProvisioningTimeout)
 		return km.transitionPendingKeyToError(ctx, key,
 			"PROVISIONING_TIMEOUT",
@@ -636,6 +665,9 @@ func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key
 	log.Debug(ctx, "PENDING_CREATION key transitioned to PENDING_IMPORT",
 		slog.String("newState", string(key.State)))
 
+	if km.pendingMetrics != nil {
+		km.pendingMetrics.recordTerminal(ctx, key, false)
+	}
 	return nil
 }
 
@@ -796,15 +828,45 @@ func (km *KeyManager) enqueuePendingStateSync(ctx context.Context, key *model.Ke
 		log.Error(ctx, "Failed to serialize pending state sync task payload", err)
 		return
 	}
+
+	interval := km.pendingStateCfg.RetryInterval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+
+	// Derive MaxRetry from the larger of the two timeouts so the task keeps
+	// retrying until the hard timeout fires. Cap at 200 to prevent runaway tasks.
+	registrationTimeout := km.pendingStateCfg.RegistrationTimeout
+	if registrationTimeout <= 0 {
+		registrationTimeout = pendingRegistrationTimeout
+	}
+	creationTimeout := km.pendingStateCfg.CreationTimeout
+	if creationTimeout <= 0 {
+		creationTimeout = pendingCreationTimeout
+	}
+	maxTimeout := creationTimeout
+	if registrationTimeout > maxTimeout {
+		maxTimeout = registrationTimeout
+	}
+	maxRetry := int(maxTimeout / interval)
+	if maxRetry > 200 {
+		maxRetry = 200
+	}
+
 	task := asynq.NewTask(config.TypePendingStateSync, payloadBytes)
-	info, err := km.asyncClient.Enqueue(task)
+	info, err := km.asyncClient.Enqueue(task,
+		asynq.MaxRetry(maxRetry),
+		asynq.ProcessIn(interval),
+	)
 	if err != nil {
 		log.Error(ctx, "Failed to enqueue pending state sync task", err)
 		return
 	}
 	log.Info(ctx, "Enqueued pending state sync task",
 		slog.String("taskId", info.ID),
-		slog.String("keyId", key.ID.String()))
+		slog.String("keyId", key.ID.String()),
+		slog.Duration("retryInterval", interval),
+		slog.Int("maxRetry", maxRetry))
 }
 
 func (km *KeyManager) transitionPendingKeyToError(ctx context.Context, key *model.Key, code, msg string) error {
@@ -828,6 +890,9 @@ func (km *KeyManager) transitionPendingKeyToError(ctx context.Context, key *mode
 		return errs.Wrap(ErrUpdateKeyDB, err)
 	}
 
+	if km.pendingMetrics != nil {
+		km.pendingMetrics.recordTerminal(ctx, key, true)
+	}
 	return nil
 }
 

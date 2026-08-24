@@ -82,7 +82,7 @@ func TestWorkflowApproverIsolation(t *testing.T) {
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	require.NoError(t, err)
 	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
-	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil)
+	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, config.PendingState{})
 	m := manager.NewWorkflowManager(r, svcRegistry, keym, keyConfigManager, systemManager, groupManager, userManager, nil, tenantConfigManager, cfg)
 
 	ctx := testutils.CreateCtxWithTenant(tenant)

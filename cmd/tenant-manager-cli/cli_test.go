@@ -104,6 +104,7 @@ func (s *CLISuite) SetupSuite() {
 		eventFactory,
 		cmkAuditor,
 		nil,
+		config.PendingState{},
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)

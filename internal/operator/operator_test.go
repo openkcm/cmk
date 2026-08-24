@@ -140,6 +140,7 @@ func createManagers(
 		nil,
 		cmkAuditor,
 		nil,
+		config.PendingState{},
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)

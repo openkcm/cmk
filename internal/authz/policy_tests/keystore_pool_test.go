@@ -72,6 +72,7 @@ func TestKeystorePool_AuthzPolicy(t *testing.T) {
 		eventFactory,
 		cmkAuditor,
 		nil,
+		config.PendingState{},
 	)
 
 	filler := tasks.NewKeystorePoolFiller(keyManager, authzRepo, cfg.KeystorePool)

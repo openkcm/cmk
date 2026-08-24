@@ -50,6 +50,7 @@ type Config struct {
 	KeystorePool KeystorePool `yaml:"keystorePool"`
 	Landscape    Landscape    `yaml:"landscape"`
 	Workflow     Workflow     `yaml:"workflow"`
+	PendingState PendingState `yaml:"pendingState"`
 }
 
 type ContextModels struct {
@@ -384,4 +385,18 @@ type Workflow struct {
 	DefaultRetentionPeriodDays int `yaml:"defaultRetentionPeriodDays"`
 	DefaultExpiryPeriodDays    int `yaml:"defaultExpiryPeriodDays"`
 	DefaultMaxExpiryPeriodDays int `yaml:"defaultMaxExpiryPeriodDays"`
+}
+
+// PendingState configures the auth detection loop that drives keys out of
+// PENDING_CREATION and PENDING_REGISTRATION states.
+type PendingState struct {
+	// CreationTimeout is the hard timeout for PENDING_CREATION keys before
+	// transitioning to ERROR. Default: 15m.
+	CreationTimeout time.Duration `yaml:"creationTimeout"`
+	// RegistrationTimeout is the hard timeout for PENDING_REGISTRATION keys before
+	// transitioning to FORBIDDEN. Default: 15m.
+	RegistrationTimeout time.Duration `yaml:"registrationTimeout"`
+	// RetryInterval is the initial delay before the first retry attempt.
+	// Subsequent retries use exponential backoff. Default: 5s.
+	RetryInterval time.Duration `yaml:"retryInterval"`
 }

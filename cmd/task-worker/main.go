@@ -170,7 +170,7 @@ func registerTasks(
 	)
 	keyManager := manager.NewKeyManager(
 		authzRepo, svcRegistry, tenantConfigManager, keyConfigManager,
-		userManager, certManager, eventFactory, cmkAuditor, cron.Client())
+		userManager, certManager, eventFactory, cmkAuditor, cron.Client(), cfg.PendingState)
 	systemManager := manager.NewSystemManager(ctx, authzRepo, authzRepoLoader, nil, eventFactory,
 		svcRegistry, cfg, keyConfigManager, userManager)
 	groupManager := manager.NewGroupManager(authzRepo, svcRegistry, userManager)
