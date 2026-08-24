@@ -62,7 +62,7 @@ func (v *V1) ListTenants(
 	}
 
 	protoReq := &tenantgrpc.ListTenantsRequest{
-		Id:        req.ID,
+		Id:        req.ID, //nolint:staticcheck // Id is deprecated in the proto but no replacement field exists yet
 		Name:      req.Name,
 		Region:    req.Region,
 		OwnerId:   req.OwnerID,

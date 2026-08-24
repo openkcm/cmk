@@ -23,8 +23,7 @@ var (
 
 // getInsufficientApproversContext extracts required and actual approver counts from structured error
 func getInsufficientApproversContext(err error) map[string]any {
-	var insufficientErr *workflowpkg.InsufficientApproversError
-	if errors.As(err, &insufficientErr) {
+	if insufficientErr, ok := errors.AsType[*workflowpkg.InsufficientApproversError](err); ok {
 		return map[string]any{
 			"requiredApprovers":       insufficientErr.Required,
 			"actualEligibleApprovers": insufficientErr.Actual,
