@@ -117,6 +117,13 @@ func ToAPI(k model.Key) (*cmkapi.Key, error) {
 
 	apiKey.IsPrimary = &k.IsPrimary
 
+	if len(k.ErrorDetail) > 0 {
+		var detail cmkapi.KeyErrorDetail
+		if err := json.Unmarshal(k.ErrorDetail, &detail); err == nil {
+			apiKey.ErrorDetail = &detail
+		}
+	}
+
 	return &apiKey, nil
 }
 
