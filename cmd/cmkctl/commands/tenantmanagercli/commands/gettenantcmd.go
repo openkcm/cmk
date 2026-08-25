@@ -18,9 +18,9 @@ func NewGetTenantCmd() *cobra.Command {
 
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			f := context.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
+			f := context.GetFromContext[CommandFactory](ctx, TenantManagerFactoryKey)
 
-			tenant, err := GetTenant(cmd, f)
+			tenant, err := GetTenant(cmd, &f)
 			if err != nil {
 				return err
 			}

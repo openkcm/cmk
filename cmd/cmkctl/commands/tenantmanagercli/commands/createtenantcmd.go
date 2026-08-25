@@ -31,7 +31,7 @@ func NewCreateTenantCmd() *cobra.Command {
 
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			f := cmkcontext.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
+			f := cmkcontext.GetFromContext[CommandFactory](ctx, TenantManagerFactoryKey)
 
 			id, _ := cmd.Flags().GetString("id")
 			status, _ := cmd.Flags().GetString("status")
@@ -68,7 +68,7 @@ func NewCreateTenantCmd() *cobra.Command {
 				if errors.Is(err, manager.ErrOnboardingInProgress) {
 					cmd.Printf("Default groups for tenant already exists\n")
 				} else if err != nil {
-					cmd.Printf("Failed to create Default Gruops: %v\n", err)
+					cmd.Printf("Failed to create Default Groups: %v\n", err)
 					return errs.Wrap(ErrCreateGroups, err)
 				}
 			}

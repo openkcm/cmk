@@ -50,7 +50,7 @@ func NewTenantManagerCLI() *cobra.Command {
 			}
 
 			// Store factory in context using the shared context key
-			ctx = context.WithValue(ctx, commands.TenantManagerFactoryKey, *factory)
+			ctx = context.WithValue(ctx, commands.TenantManagerFactoryKey, factory)
 			cmd.SetContext(ctx)
 
 			return nil

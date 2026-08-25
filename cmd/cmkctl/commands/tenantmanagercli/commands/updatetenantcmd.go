@@ -19,7 +19,7 @@ func NewUpdateTenantCmd() *cobra.Command {
 
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			f := context.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
+			f := context.GetFromContext[CommandFactory](ctx, TenantManagerFactoryKey)
 
 			id, _ := cmd.Flags().GetString("id")
 			status, _ := cmd.Flags().GetString("status")

@@ -80,7 +80,8 @@ spec:
           {{- end }}
           volumeMounts:
             - name: {{ include "cmk.name" . }}-cmkctl-config-volume
-              mountPath: /etc/cmk
+              mountPath: /etc/cmk/config.yaml
+              subPath: config.yaml
               readOnly: true
           {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}

@@ -39,12 +39,12 @@ func NewCommandFactory(
 	cfg *config.Config,
 	dbCon *multitenancy.DB,
 	svcRegistry serviceapi.Registry,
-) (*CommandFactory, error) {
+) (CommandFactory, error) {
 	r := sql.NewRepository(dbCon)
 
 	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
 	if authzRepoLoader.AuthzHandler == nil {
-		return nil, ErrAuthzLoader
+		return CommandFactory{}, ErrAuthzLoader
 	}
 
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
@@ -53,12 +53,12 @@ func NewCommandFactory(
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	if err != nil {
-		return nil, err
+		return CommandFactory{}, err
 	}
 
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, authzRepo)
 	if err != nil {
-		return nil, err
+		return CommandFactory{}, err
 	}
 
 	cm := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
@@ -92,10 +92,10 @@ func NewCommandFactory(
 
 	migrator, err := db.NewMigrator(r, cfg)
 	if err != nil {
-		return nil, err
+		return CommandFactory{}, err
 	}
 
-	return &CommandFactory{
+	return CommandFactory{
 		dbCon: dbCon,
 		r:     authzRepo,
 		gm:    manager.NewGroupManager(authzRepo, svcRegistry, um),

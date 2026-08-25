@@ -17,7 +17,7 @@ func NewListTenantsCmd() *cobra.Command {
 
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			f := context.GetFromContext[*CommandFactory](ctx, TenantManagerFactoryKey)
+			f := context.GetFromContext[CommandFactory](ctx, TenantManagerFactoryKey)
 
 			var tenants []model.Tenant
 
