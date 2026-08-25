@@ -56,13 +56,13 @@ func (v *V1) RegisterTenant(
 
 func (v *V1) ListTenants(
 	ctx context.Context,
-	req *tenantapi.ListTenantsRequest) (*tenantapi.ListTenantsResponse, error) {
+	req *tenantapi.ListTenantsRequest,
+) (*tenantapi.ListTenantsResponse, error) {
 	if err := validateListTenantsRequest(req); err != nil {
 		return nil, err
 	}
 
 	protoReq := &tenantgrpc.ListTenantsRequest{
-		Id:        req.ID,
 		Name:      req.Name,
 		Region:    req.Region,
 		OwnerId:   req.OwnerID,
@@ -109,7 +109,8 @@ func (v *V1) GetTenant(ctx context.Context, req *tenantapi.GetTenantRequest) (*t
 
 func (v *V1) BlockTenant(
 	ctx context.Context,
-	req *tenantapi.BlockTenantRequest) (*tenantapi.BlockTenantResponse, error) {
+	req *tenantapi.BlockTenantRequest,
+) (*tenantapi.BlockTenantResponse, error) {
 	if err := validateRequestWithTenantID(req, req.ID); err != nil {
 		return nil, err
 	}
