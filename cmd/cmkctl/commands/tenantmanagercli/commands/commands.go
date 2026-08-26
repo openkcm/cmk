@@ -88,6 +88,7 @@ func NewCommandFactory(
 		eventFactory,
 		cmkAuditor,
 		nil,
+		cfg,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)

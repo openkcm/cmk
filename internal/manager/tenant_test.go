@@ -130,6 +130,7 @@ func setupTenantManager(t *testing.T, authzRole *constants.InternalRole, opts ..
 		eventFactory,
 		cmkAuditor,
 		nil,
+		nil,
 	)
 
 	migrator := testutils.NewMigrator()

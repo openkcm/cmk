@@ -183,7 +183,7 @@ install-goimports:
 	command -v goimports >/dev/null 2>&1 || go install golang.org/x/tools/cmd/goimports@latest
 
 lint:
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
 	golangci-lint run -v --fix
 
 cmk-env:

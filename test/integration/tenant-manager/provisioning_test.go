@@ -85,6 +85,7 @@ func (s *DBSuite) SetupSuite() {
 		eventFactory,
 		cmkAuditor,
 		nil,
+		nil,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)

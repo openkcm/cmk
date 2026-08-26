@@ -64,6 +64,7 @@ func New(
 		eventFactory,
 		cmkAuditor,
 		asyncClient,
+		config,
 	)
 	systemManager := NewSystemManager(
 		ctx,

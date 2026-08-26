@@ -83,6 +83,7 @@ func TestWorkflowAutoAssign_AuthzPolicy(t *testing.T) {
 		eventFactory,
 		cmkAuditor,
 		nil,
+		nil,
 	)
 	groupManager := manager.NewGroupManager(authzRepo, ps, userManager)
 	wfManager := manager.NewWorkflowManager(
