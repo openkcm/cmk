@@ -22,17 +22,23 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
-type Service string
+type (
+	Service string
+	Command string
+)
 
 const (
-	ApiServer        Service = "/bin/api-server"
-	TaskWorker       Service = "/bin/task-worker"
-	TaskScheduler    Service = "/bin/task-scheduler"
-	TaskCLI          Service = "/bin/task-cli"
-	TenantManager    Service = "/bin/tenant-manager"
-	TenantManagerCLI Service = "/bin/tenant-manager-cli"
-	EventReconciler  Service = "/bin/event-reconciler"
-	DBMigrator       Service = "/bin/db-migrator"
+	Cmkd   Service = "/bin/cmkd"
+	Cmkctl Service = "/bin/cmkctl"
+
+	APIServer      Command = "api-server"
+	TenantManager  Command = "tenant-manager"
+	EventProcessor Command = "event-processor"
+	TaskWorker     Command = "task-woker"
+	TaskScheduler  Command = "task-scheduler"
+	DBMigrator     Command = "db-migrator"
+
+	TaskCLI Command = "task"
 )
 
 var buildOnce sync.Once
