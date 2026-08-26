@@ -186,6 +186,7 @@ func registerTasks(
 		eventFactory,
 		cmkAuditor,
 		cron.Client(),
+		cfg,
 	)
 	systemManager := manager.NewSystemManager(
 		ctx,

@@ -843,6 +843,13 @@ config:
     interval: 10m
     supportedRegions: []
 
+  # Key state timeout configuration
+  keys:
+    # Timeout for PENDING_REGISTRATION keys before transitioning to FORBIDDEN
+    pendingRegistrationTimeout: 15m
+    # Timeout for PENDING_CREATION keys before transitioning to ERROR
+    pendingCreationTimeout: 15m
+
   landscape:
     # name: one of Local, Staging, Canary, Production
     # uiBaseUrl: http://localhost:8086/#

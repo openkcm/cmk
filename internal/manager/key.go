@@ -59,10 +59,15 @@ var (
 	createKeyRetryDelay = 15 * time.Second
 	createKeyMaxDelay   = 30 * time.Second
 
-	// pendingCreationTimeout is the hard timeout for PENDING_CREATION keys.
+	// pendingCreationTimeout is the default hard timeout for PENDING_CREATION keys.
 	// After this duration without successful provisioning, the key transitions to ERROR.
-	// It is a var (not const) so tests can override it.
-	pendingCreationTimeout = 15 * time.Minute
+	// It is a var (not const) so tests can override it via export_test.go.
+	pendingCreationTimeout = 15 * time.Minute //nolint:gochecknoglobals
+
+	// pendingRegistrationTimeout is the default hard timeout for PENDING_REGISTRATION keys.
+	// After this duration without successful auth, the key transitions to FORBIDDEN.
+	// It is a var (not const) so tests can override it via export_test.go.
+	pendingRegistrationTimeout = 15 * time.Minute //nolint:gochecknoglobals
 )
 
 var UnavailableKeyStates = []cmkapi.KeyState{
@@ -71,6 +76,7 @@ var UnavailableKeyStates = []cmkapi.KeyState{
 	cmkapi.KeyStateFORBIDDEN,
 	cmkapi.KeyStateUNKNOWN,
 	cmkapi.KeyStatePENDINGCREATION,
+	cmkapi.KeyStatePENDINGREGISTRATION,
 	cmkapi.KeyStateERROR,
 }
 
@@ -88,6 +94,10 @@ type KeyManager struct {
 	eventFactory      *eventprocessor.EventFactory
 	cmkAuditor        *auditor.Auditor
 	asyncClient       async.Client
+
+	pendingRegistrationTimeout time.Duration
+	pendingCreationTimeout     time.Duration
+	metrics                    *KeyMetrics
 }
 
 func NewKeyManager(
@@ -100,8 +110,20 @@ func NewKeyManager(
 	eventFactory *eventprocessor.EventFactory,
 	cmkAuditor *auditor.Auditor,
 	asyncClient async.Client,
+	cfg *config.Config,
 ) *KeyManager {
 	keyVersionManager := NewKeyVersionManager(repo, svcRegistry, tenantConfigs, certManager, cmkAuditor)
+
+	var (
+		pendingRegTimeout time.Duration
+		pendingCreTimeout time.Duration
+		metrics           *KeyMetrics
+	)
+	if cfg != nil {
+		pendingRegTimeout = cfg.Keys.PendingRegistrationTimeout
+		pendingCreTimeout = cfg.Keys.PendingCreationTimeout
+		metrics, _ = NewKeyMetrics(cfg)
+	}
 
 	return &KeyManager{
 		ProviderConfigManager: *NewProviderConfigManager(
@@ -119,6 +141,10 @@ func NewKeyManager(
 		eventFactory:      eventFactory,
 		cmkAuditor:        cmkAuditor,
 		asyncClient:       asyncClient,
+
+		pendingRegistrationTimeout: pendingRegTimeout,
+		pendingCreationTimeout:     pendingCreTimeout,
+		metrics:                    metrics,
 	}
 }
 
@@ -156,6 +182,9 @@ func (km *KeyManager) Create(
 	// Create or register key based on type
 	keyResp, err := km.createOrRegisterProviderKey(ctx, key, provider)
 	if err != nil {
+		if errors.Is(err, ErrKeyRegistrationAuthFailed) {
+			return km.createPendingRegistrationHYOKKey(ctx, key)
+		}
 		return nil, err
 	}
 
@@ -202,9 +231,12 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 	switch key.KeyType {
 	case cmkapi.KeyTypeBYOK:
 	case cmkapi.KeyTypeHYOK:
-		err := km.syncHYOKKeyState(ctx, key)
-		if err != nil {
-			return nil, err
+		// Skip live sync for PENDING_REGISTRATION: the async loop handles state transitions.
+		if key.State != cmkapi.KeyStatePENDINGREGISTRATION {
+			err := km.syncHYOKKeyState(ctx, key)
+			if err != nil {
+				return nil, err
+			}
 		}
 	default:
 		return nil, ErrInvalidKeystore
@@ -268,7 +300,8 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 
 	ctx = model.LogInjectKey(ctx, key)
 
-	if key.State == cmkapi.KeyStatePENDINGCREATION && keyPatch.Enabled != nil {
+	isPending := key.State == cmkapi.KeyStatePENDINGCREATION || key.State == cmkapi.KeyStatePENDINGREGISTRATION
+	if isPending && keyPatch.Enabled != nil {
 		return nil, ErrKeyInPendingState
 	}
 
@@ -412,7 +445,9 @@ func (km *KeyManager) ImportKeyMaterial(
 func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 	baseQuery := repo.NewQuery().Where(
 		repo.NewCompositeKeyGroup(
-			repo.NewCompositeKey().Where(repo.KeyTypeField, cmkapi.KeyTypeHYOK),
+			repo.NewCompositeKey().
+				Where(repo.KeyTypeField, cmkapi.KeyTypeHYOK).
+				Where(repo.StateField, cmkapi.KeyStatePENDINGREGISTRATION, repo.NotEq),
 		),
 	)
 
@@ -446,6 +481,27 @@ func (km *KeyManager) SyncPendingCreationKey(ctx context.Context, keyID uuid.UUI
 	return km.syncPendingCreationKey(ctx, key)
 }
 
+// SyncPendingRegistrationKey processes a single HYOK key in PENDING_REGISTRATION state.
+// It re-attempts GetKey to check if auth now succeeds, transitioning to ENABLED/DISABLED on success,
+// ERROR on non-auth failure, or FORBIDDEN on hard timeout.
+func (km *KeyManager) SyncPendingRegistrationKey(ctx context.Context, keyID uuid.UUID) error {
+	// Use a direct repo read instead of km.Get to avoid triggering syncHYOKKeyState,
+	// which would make a live provider call before the state guard below can no-op.
+	key := &model.Key{ID: keyID}
+	_, err := km.repo.First(ctx, key, *repo.NewQuery())
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			log.Debug(ctx, "PENDING_REGISTRATION key no longer exists, skipping sync", slog.String("keyID", keyID.String()))
+			return nil
+		}
+		return errs.Wrap(ErrGetKeyDB, err)
+	}
+	if key.State != cmkapi.KeyStatePENDINGREGISTRATION {
+		return nil
+	}
+	return km.syncPendingRegistrationKey(ctx, key)
+}
+
 func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 	return km.repo.Transaction(ctx, func(ctx context.Context) error {
 		key.State = cmkapi.KeyStateDETACHING
@@ -463,22 +519,129 @@ func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 	})
 }
 
+//nolint:cyclop // state machine requires multiple condition branches
+func (km *KeyManager) syncPendingRegistrationKey(ctx context.Context, key *model.Key) error {
+	ctx = model.LogInjectKey(ctx, key)
+	elapsed := time.Since(key.CreatedAt)
+	ctx = slogctx.With(ctx, slog.Duration("elapsed", elapsed.Round(time.Second)))
+
+	timeout := km.pendingRegistrationTimeout
+	if timeout == 0 {
+		timeout = pendingRegistrationTimeout
+	}
+
+	if elapsed > timeout {
+		log.Error(ctx, "PENDING_REGISTRATION key timed out, transitioning to FORBIDDEN", ErrProvisioningTimeout)
+		if err := km.transitionPendingKeyToForbidden(ctx, key); err != nil {
+			return err
+		}
+		km.metrics.RecordTransition(ctx, string(key.KeyType), "PENDING_REGISTRATION", "FORBIDDEN", "timeout")
+		return nil
+	}
+
+	log.Debug(ctx, "Attempting to resolve PENDING_REGISTRATION key",
+		slog.Duration("timeout", timeout))
+
+	provider, err := km.GetOrInitProvider(ctx, key)
+	if err != nil {
+		return err // retryable
+	}
+
+	_, err = km.registerHYOKKey(ctx, key, provider)
+	if err != nil {
+		if errors.Is(err, ErrKeyRegistrationAuthFailed) {
+			log.Debug(ctx, "Auth still failing for PENDING_REGISTRATION key, will retry")
+			return err // retryable: Asynq retries on non-nil error
+		}
+		// Static validation failed (invalid state, unsupported algorithm, key not found, etc.) → ERROR
+		return km.transitionPendingKeyToError(ctx, key, "REGISTRATION_FAILED", err.Error())
+	}
+
+	// Auth succeeded and key validated — persist final state and set primary if first key.
+	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
+		if err := km.setPrimaryIfFirstKey(ctx, key); err != nil {
+			return errs.Wrap(ErrUpdatePrimary, err)
+		}
+		_, err := km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
+		if err != nil {
+			return errs.Wrap(ErrUpdateKeyDB, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	km.metrics.RecordTransition(ctx, string(key.KeyType), "PENDING_REGISTRATION", "ENABLED", "auth_success")
+
+	// Sync key version outside the transaction: handleNewKeyVersion sends audit logs
+	// and orbital events which must not fire before the DB commit succeeds.
+	if err := km.syncKeyVersions(ctx, provider, key); err != nil {
+		log.Warn(ctx, "Failed to sync key version for PENDING_REGISTRATION key", log.ErrorAttr(err))
+	}
+
+	// Notify connected systems of the state change (SYSTEM_LINK / SYSTEM_DISABLE events).
+	// oldKeyState is PENDING_REGISTRATION which is in UnavailableKeyStates, so audit logs
+	// are intentionally skipped — only the orbital event fires.
+	if err := km.handleKeyStateTransition(ctx, key, cmkapi.KeyStatePENDINGREGISTRATION); err != nil {
+		log.Warn(ctx, "Failed to send state transition event for PENDING_REGISTRATION key", log.ErrorAttr(err))
+	}
+
+	log.Debug(ctx, "PENDING_REGISTRATION key transitioned", slog.String("newState", string(key.State)))
+	return nil
+}
+
+func (km *KeyManager) transitionPendingKeyToForbidden(ctx context.Context, key *model.Key) error {
+	now := time.Now().UTC()
+	code := "REGISTRATION_TIMEOUT"
+	msg := "HYOK key registration timed out; authentication to the external keystore" +
+		" did not succeed within the allowed window"
+	detail := cmkapi.KeyErrorDetail{
+		ErrorCode:      &code,
+		ErrorMessage:   &msg,
+		ErrorTimestamp: &now,
+	}
+
+	detailBytes, err := json.Marshal(detail)
+	if err != nil {
+		return err
+	}
+
+	key.State = cmkapi.KeyStateFORBIDDEN
+	key.ErrorDetail = detailBytes
+
+	_, err = km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
+	if err != nil {
+		return errs.Wrap(ErrUpdateKeyDB, err)
+	}
+	return nil
+}
+
 func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key) error {
 	ctx = model.LogInjectKey(ctx, key)
 	elapsed := time.Since(key.CreatedAt)
 	elapsedDisplay := elapsed.Round(time.Second)
 	ctx = slogctx.With(ctx, slog.Duration("elapsed", elapsedDisplay))
 
+	timeout := km.pendingCreationTimeout
+	if timeout == 0 {
+		timeout = pendingCreationTimeout
+	}
+
 	// Check hard timeout: if the key has been in PENDING_CREATION for too long, transition to ERROR.
-	if elapsed > pendingCreationTimeout {
+	if elapsed > timeout {
 		log.Error(ctx, "PENDING_CREATION key timed out, transitioning to ERROR", ErrProvisioningTimeout)
-		return km.transitionPendingKeyToError(ctx, key,
+		if err := km.transitionPendingKeyToError(ctx, key,
 			"PROVISIONING_TIMEOUT",
-			"Key provisioning timed out. Delete this key and re-create it once the issue is resolved.")
+			"Key provisioning timed out. Delete this key and re-create it once the issue is resolved."); err != nil {
+			return err
+		}
+		km.metrics.RecordTransition(ctx, string(key.KeyType), "PENDING_CREATION", "ERROR", "provision_error")
+		return nil
 	}
 
 	log.Info(ctx, "Attempting to provision PENDING_CREATION key",
-		slog.Duration("timeout", pendingCreationTimeout))
+		slog.Duration("timeout", timeout))
 
 	provider, err := km.initProviderForPendingKey(ctx, key, elapsedDisplay)
 	if err != nil {
@@ -513,6 +676,8 @@ func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key
 
 	log.Debug(ctx, "PENDING_CREATION key transitioned to PENDING_IMPORT",
 		slog.String("newState", string(key.State)))
+
+	km.metrics.RecordTransition(ctx, string(key.KeyType), "PENDING_CREATION", string(key.State), "provision_success")
 
 	return nil
 }
@@ -570,6 +735,19 @@ func (km *KeyManager) createPendingBYOKKeyIfNeeded(ctx context.Context, key *mod
 	km.sendCreateAuditLog(ctx, key)
 	km.enqueuePendingStateSync(ctx, key)
 	return true, nil
+}
+
+func (km *KeyManager) createPendingRegistrationHYOKKey(ctx context.Context, key *model.Key) (*model.Key, error) {
+	key.State = cmkapi.KeyStatePENDINGREGISTRATION
+	key.Algorithm = cmkapi.KeyAlgorithmAES256
+	if err := km.repo.Transaction(ctx, func(ctx context.Context) error {
+		return km.repo.Create(ctx, key)
+	}); err != nil {
+		return nil, errs.Wrap(ErrCreateKeyDB, err)
+	}
+	km.sendCreateAuditLog(ctx, key)
+	km.enqueuePendingStateSync(ctx, key)
+	return key, nil
 }
 
 func (km *KeyManager) applyKeyPatch(
@@ -911,6 +1089,9 @@ func (km *KeyManager) registerHYOKKey(
 		},
 	})
 	if err != nil {
+		if errors.Is(err, keymanagement.ErrProviderAuthenticationFailed) {
+			return nil, ErrKeyRegistrationAuthFailed
+		}
 		return nil, errs.Wrap(ErrKeyRegistration, err)
 	}
 
@@ -1108,8 +1289,8 @@ func (km *KeyManager) setPrimaryIfFirstKey(ctx context.Context, key *model.Key) 
 
 	// Update keyconfig primaryKey
 	if !exist {
-		if key.State == cmkapi.KeyStatePENDINGCREATION {
-			return nil // Not primary yet; skip until creation completes
+		if key.State == cmkapi.KeyStatePENDINGCREATION || key.State == cmkapi.KeyStatePENDINGREGISTRATION {
+			return nil // Not primary yet; skip until provisioning/registration completes
 		}
 		if key.State == cmkapi.KeyStateDISABLED {
 			return ErrKeyIsNotEnabled

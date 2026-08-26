@@ -73,6 +73,7 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 		nil, // eventFactory
 		cmkAuditor,
 		nil,
+		nil,
 	)
 
 	// Create a tenant-default certificate and a HYOK key

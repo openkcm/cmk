@@ -50,6 +50,7 @@ type Config struct {
 	KeystorePool KeystorePool `yaml:"keystorePool"`
 	Landscape    Landscape    `yaml:"landscape"`
 	Workflow     Workflow     `yaml:"workflow"`
+	Keys         Keys         `yaml:"keys"`
 }
 
 type ContextModels struct {
@@ -384,4 +385,9 @@ type Workflow struct {
 	DefaultRetentionPeriodDays int `yaml:"defaultRetentionPeriodDays"`
 	DefaultExpiryPeriodDays    int `yaml:"defaultExpiryPeriodDays"`
 	DefaultMaxExpiryPeriodDays int `yaml:"defaultMaxExpiryPeriodDays"`
+}
+
+type Keys struct {
+	PendingRegistrationTimeout time.Duration `yaml:"pendingRegistrationTimeout" default:"15m"`
+	PendingCreationTimeout     time.Duration `yaml:"pendingCreationTimeout"     default:"15m"`
 }

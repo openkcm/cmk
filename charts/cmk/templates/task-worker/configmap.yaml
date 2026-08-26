@@ -55,6 +55,9 @@ data:
     keystorePool:
       {{- toYaml .keystorePool | nindent 6 }}
 
+    keys:
+      {{- toYaml .keys | nindent 6 }}
+
     landscape:
       {{- toYaml .landscape | nindent 6 }}
 
