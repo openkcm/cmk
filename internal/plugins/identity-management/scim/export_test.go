@@ -15,7 +15,7 @@ func getLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
-func (p *Plugin) SetTestClient(t *testing.T, host string, groupFilterAttribute, userFilterAttribute, groupMembersAttribute string, allowSearchUsersByGroup bool) {
+func (p *Plugin) SetTestClient(t *testing.T, host string, groupFilterAttribute, userFilterAttribute, groupMembersAttribute string) {
 	t.Helper()
 
 	secretRef := commoncfg.SecretRef{
@@ -37,10 +37,9 @@ func (p *Plugin) SetTestClient(t *testing.T, host string, groupFilterAttribute, 
 
 	p.scimClient = c
 	p.params = &Params{
-		BaseHost:                host,
-		GroupAttribute:          groupFilterAttribute,
-		UserAttribute:           userFilterAttribute,
-		GroupMembersAttribute:   groupMembersAttribute,
-		AllowSearchUsersByGroup: allowSearchUsersByGroup,
+		BaseHost:              host,
+		GroupAttribute:        groupFilterAttribute,
+		UserAttribute:         userFilterAttribute,
+		GroupMembersAttribute: groupMembersAttribute,
 	}
 }
