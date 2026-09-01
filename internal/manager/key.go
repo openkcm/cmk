@@ -1530,6 +1530,20 @@ func (km *KeyManager) handleSystemsOnKeyRotation(ctx context.Context, key *model
 		repo.DefaultLimit,
 		func(systems []*model.System) error {
 			for _, s := range systems {
+				// System_key_rotation event can be skipped if system is in PROCESSING state.
+				// KS still has direct access to provider key and can check
+				// for latest version to perform crypto operations
+				// CMK tracking of the version in use will lag; but CMK shouldn't be the source of truth
+				//
+				// This prevents race condition where a system event (e.g unlink) occurs at the same
+				// time of a failed system_key_rotation event. Cancelling the system event
+				// would cause the system to be stuck in PROCESSING state.
+				if s.Status == cmkapi.SystemStatusPROCESSING {
+					log.Warn(ctx, "system is still processing, skip system key rotation",
+						slog.String("systemID", s.ID.String()),
+						slog.String("keyID", key.ID.String()))
+					continue
+				}
 				log.Debug(ctx, "sending rotation event to system",
 					slog.String("systemID", s.ID.String()),
 					slog.String("keyID", key.ID.String()))
