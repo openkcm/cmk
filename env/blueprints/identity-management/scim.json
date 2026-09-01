@@ -8,7 +8,6 @@
         "groupAttribute": "",
         "userAttribute": "",
         "groupMembersAttribute": "members",
-        "listMethod": "POST",
-        "allowSearchUsersByGroup": "False"
+        "listMethod": "POST"
     }
 }
