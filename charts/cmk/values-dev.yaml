@@ -704,12 +704,6 @@ config:
               path: /etc/credentials/identity-management/scim.json
               format: json
               jsonPath: "$['params']['listMethod']"
-          allowSearchUsersByGroup:
-            source: file
-            file:
-              path: /etc/credentials/identity-management/scim.json
-              format: json
-              jsonPath: "$['params']['allowSearchUsersByGroup']"
         authContext:
           source: embedded
           value: |
