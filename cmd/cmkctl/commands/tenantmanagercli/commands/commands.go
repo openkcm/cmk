@@ -11,6 +11,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/multitenancy"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
@@ -81,7 +82,7 @@ func NewCommandFactory(
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
-		manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, cm),
+		manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, cm, featureflags.NewClient()),
 		kcm,
 		um,
 		cm,

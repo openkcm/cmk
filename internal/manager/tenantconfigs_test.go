@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/plugin-sdk/api"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
@@ -28,6 +30,21 @@ import (
 )
 
 var ErrForced = errors.New("forced")
+
+// testFlagClient is a parallel-safe featureflags.Client for tests (T2 interface injection pattern).
+type testFlagClient struct{ values map[string]bool }
+
+func (s *testFlagClient) BooleanValue(_ context.Context, flag string, def bool, _ openfeature.EvaluationContext) (bool, error) {
+	if v, ok := s.values[flag]; ok {
+		return v, nil
+	}
+	return def, nil
+}
+
+// newTestFlags returns a testFlagClient with the given flag values.
+func newTestFlags(flags map[string]bool) featureflags.Client {
+	return &testFlagClient{values: flags}
+}
 
 func SetupTenantConfigManager(t *testing.T, opts ...testplugins.RegistryOption) (*manager.TenantConfigManager,
 	*multitenancy.DB, string,
@@ -45,7 +62,7 @@ func SetupTenantConfigManager(t *testing.T, opts ...testplugins.RegistryOption) 
 			ValidityDays: config.MinCertificateValidityDays,
 		},
 	}
-	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil)
 
 	return tenantManager, db, tenants[0]
 }
@@ -60,7 +77,7 @@ func SetupTenantConfigManagerWithRole(t *testing.T, role string, opts ...testplu
 
 	r := sql.NewRepository(db)
 	svcRegistry := testutils.NewTestPlugins(opts...)
-	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
 
 	return tenantManager, db, tenants[0]
 }
@@ -211,16 +228,25 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 		name           string
 		expectedOutput []string
 		enabledPlugins bool
+		flags          map[string]bool
 	}{
 		{
-			name:           "Success - One HYOK provider",
+			name:           "Success - One HYOK provider with flag enabled",
 			expectedOutput: []string{"TEST"},
 			enabledPlugins: true,
+			flags:          map[string]bool{"enable_hyok_test": true},
+		},
+		{
+			name:           "Success - HYOK plugin present but flag disabled",
+			expectedOutput: []string{},
+			enabledPlugins: true,
+			flags:          map[string]bool{},
 		},
 		{
 			name:           "Success - No HYOK providers",
 			expectedOutput: []string{},
 			enabledPlugins: false,
+			flags:          map[string]bool{"enable_hyok_test": true},
 		},
 	}
 
@@ -233,9 +259,9 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 				),
 			)
 
-			mgr := manager.NewTenantConfigManager(nil, svcRegistry, nil, nil)
+			mgr := manager.NewTenantConfigManager(nil, svcRegistry, nil, nil, newTestFlags(tt.flags))
 
-			result := mgr.GetTenantConfigsHyokKeystore()
+			result := mgr.GetTenantConfigsHyokKeystore(t.Context())
 			assert.ElementsMatch(t, tt.expectedOutput, result.Provider)
 			assert.IsNonDecreasing(t, result.Provider)
 		})
@@ -248,6 +274,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 			testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, false)))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
+		// flags == nil → backward-compat: HYOK ungated, so provider is returned
 		assert.NotEmpty(t, res.HYOK)
 	})
 
@@ -267,17 +294,11 @@ func TestGetTenantsKeystore(t *testing.T) {
 		assert.False(t, res.AllowBYOK)
 	})
 
-	t.Run("Should enable BYOK when allow-byok feature gate is true", func(t *testing.T) {
+	t.Run("Should enable BYOK when enable_byok_test feature gate is true", func(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		r := sql.NewRepository(db)
-		cfg := &config.Config{
-			BaseConfig: commoncfg.BaseConfig{
-				FeatureGates: commoncfg.FeatureGates{
-					"allow-byok": true,
-				},
-			},
-		}
-		m := manager.NewTenantConfigManager(r, nil, cfg, nil)
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil,
+			newTestFlags(map[string]bool{"enable_byok_test": true}))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.True(t, res.AllowBYOK)
@@ -288,14 +309,12 @@ func TestGetTenantsKeystore(t *testing.T) {
 		r := sql.NewRepository(db)
 
 		cfg := &config.Config{
-			BaseConfig: commoncfg.BaseConfig{
-				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
-			},
 			KeystorePool: config.KeystorePool{
 				SupportedRegions: testutils.SupportedRegions,
 			},
 		}
-		m := manager.NewTenantConfigManager(r, nil, cfg, nil)
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil,
+			newTestFlags(map[string]bool{"enable_byok_test": true}))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Equal(t, testutils.SupportedRegions, res.BYOK.SupportedRegions)
@@ -304,7 +323,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 	t.Run("BYOK disabled, no stored keystore", func(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		r := sql.NewRepository(db)
-		m := manager.NewTenantConfigManager(r, nil, &config.Config{}, nil)
+		m := manager.NewTenantConfigManager(r, nil, &config.Config{}, nil, nil)
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Nil(t, res.BYOK.SupportedRegions)
@@ -312,12 +331,8 @@ func TestGetTenantsKeystore(t *testing.T) {
 
 	t.Run("BYOK allowed, no regions configured", func(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
-		cfg := &config.Config{
-			BaseConfig: commoncfg.BaseConfig{
-				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
-			},
-		}
-		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg, nil)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), nil, nil,
+			newTestFlags(map[string]bool{"enable_byok_test": true}))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Nil(t, res.BYOK.SupportedRegions)
@@ -333,17 +348,44 @@ func TestGetTenantsKeystore(t *testing.T) {
 		assert.NoError(t, err)
 
 		cfg := &config.Config{
-			BaseConfig: commoncfg.BaseConfig{
-				FeatureGates: commoncfg.FeatureGates{"allow-byok": true},
-			},
 			KeystorePool: config.KeystorePool{
 				SupportedRegions: testutils.SupportedRegions,
 			},
 		}
-		m := manager.NewTenantConfigManager(sql.NewRepository(db), nil, cfg, nil)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil,
+			newTestFlags(map[string]bool{"enable_byok_test": true}))
 		res, err := m.GetTenantsKeystores(ctx)
 		assert.NoError(t, err)
 		assert.Equal(t, testutils.SupportedRegions, res.BYOK.SupportedRegions)
+	})
+
+	t.Run("BYOK disabled when flag missing even with default provider plugin", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		// Registry has default keystore plugin but no flags set
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), nil, nil, nil)
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.False(t, res.AllowBYOK)
+	})
+
+	t.Run("HYOK providers returned only for enabled flags", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), nil, nil,
+			newTestFlags(map[string]bool{"enable_hyok_test": true}))
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.True(t, res.HYOK.Allow)
+		assert.Contains(t, res.HYOK.Provider, testplugins.Name)
+	})
+
+	t.Run("HYOK empty when enable_hyok flag is absent", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		// Non-nil stub with no flags set: flag absent → BooleanValue returns defaultValue (false)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), nil, nil, newTestFlags(map[string]bool{}))
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.Empty(t, res.HYOK.Provider)
+		assert.False(t, res.HYOK.Allow)
 	})
 }
 
@@ -681,7 +723,7 @@ func setupTenantConfigManagerWithCerts(
 	}
 
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, nil)
 
 	// Pre-persist a role-management cert so getDefaultKeystoreClientCert doesn't
 	// attempt to call IssueCertificate (the test stub returns an empty chain).

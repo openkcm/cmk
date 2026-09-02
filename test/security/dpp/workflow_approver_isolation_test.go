@@ -74,7 +74,7 @@ func TestWorkflowApproverIsolation(t *testing.T) {
 
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, nil)
 	userManager := manager.NewUserManager(authzRepoInst, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, nil, cfg)

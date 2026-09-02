@@ -10,6 +10,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
@@ -36,6 +37,7 @@ func NewAPIController(
 	svcRegistry serviceapi.Registry,
 	authzRepoLoader *authz_loader.AuthzLoader[authz.RepoResourceType, authz.RepoAction],
 	authzAPILoader *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction],
+	flags featureflags.Client,
 ) *APIController {
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, config, r)
 	if err != nil {
@@ -53,7 +55,7 @@ func NewAPIController(
 
 	return &APIController{
 		Manager: manager.New(ctx, r, authzRepoLoader, config, clientsFactory,
-			svcRegistry, eventFactory, asyncClient, migrator),
+			svcRegistry, eventFactory, asyncClient, migrator, flags),
 		config:        config,
 		pluginCatalog: svcRegistry,
 		AuthzLoader:   authzAPILoader,

@@ -15,8 +15,8 @@ import (
 
 var GetPluginAlgorithm = getPluginAlgorithm
 
-func (m *TenantConfigManager) GetTenantConfigsHyokKeystore() HYOKKeystore {
-	return m.getTenantConfigsHyokKeystore()
+func (m *TenantConfigManager) GetTenantConfigsHyokKeystore(ctx context.Context) HYOKKeystore {
+	return m.getTenantConfigsHyokKeystore(ctx)
 }
 
 func (m *TenantConfigManager) SetDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error {
