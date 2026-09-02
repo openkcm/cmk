@@ -44,6 +44,7 @@ const (
 	RepoResourceTypeKeystore         RepoResourceType = RepoResourceType(constants.KeystoreTable)
 	RepoResourceTypeKeyversion       RepoResourceType = RepoResourceType(constants.KeyVersionTable)
 	RepoResourceTypeKeyLabel         RepoResourceType = RepoResourceType(constants.KeyLabelTable)
+	RepoResourceTypeResourceLabel    RepoResourceType = RepoResourceType(constants.ResourceLabelTable)
 	RepoResourceTypeSystem           RepoResourceType = RepoResourceType(constants.SystemTable)
 	RepoResourceTypeSystemProperty   RepoResourceType = RepoResourceType(constants.SystemPropertyTable)
 	RepoResourceTypeTag              RepoResourceType = RepoResourceType(constants.TagTable)

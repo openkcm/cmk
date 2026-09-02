@@ -1,9 +1,12 @@
 package model
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/openkcm/cmk/internal/authz"
 )
 
 // ResourceType defines the type of resource that can have labels
@@ -37,4 +40,18 @@ func (ResourceLabel) TableName() string {
 // IsSharedModel returns false since ResourceLabel is tenant-scoped
 func (ResourceLabel) IsSharedModel() bool {
 	return false
+}
+
+// TableResourceType returns the authz resource type
+func (ResourceLabel) TableResourceType() authz.RepoResourceType {
+	return authz.RepoResourceTypeResourceLabel
+}
+
+// CheckAuthz checks authorization for the resource label
+func (m ResourceLabel) CheckAuthz(
+	ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
