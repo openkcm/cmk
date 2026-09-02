@@ -859,21 +859,22 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should update primary key and existing events", func(t *testing.T) {
-		oldPKeyID := uuid.New()
-		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = new(oldPKeyID)
-		})
+		keyConfigID := uuid.New()
+
 		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
-			k.ID = oldPKeyID
-			k.KeyConfigurationID = keyConfig.ID
+			k.KeyConfigurationID = keyConfigID
+		})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfigID
+		})
+
+		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.ID = keyConfigID
+			k.PrimaryKeyID = &oldPrimaryKey.ID
 		})
 
 		sys := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = new(keyConfig.ID)
-		})
-
-		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = keyConfig.ID
 		})
 
 		data := eventprocessor.SystemActionJobData{
@@ -888,7 +889,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			Data:       dataBytes,
 		}
 
-		testutils.CreateTestEntities(ctx, t, r, keyConfig, oldPrimaryKey, key, sys, event)
+		testutils.CreateTestEntities(ctx, t, r, oldPrimaryKey, key, keyConfig, sys, event)
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 		keyConfig, err = m.UpdateKeyConfigurationByID(
@@ -909,19 +910,20 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should error on set primary on target disabled key", func(t *testing.T) {
-		sourceKeyID := uuid.New()
-		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = new(sourceKeyID)
-		})
+		keyConfigID := uuid.New()
 		sourceKey := testutils.NewKey(func(k *model.Key) {
-			k.ID = sourceKeyID
 			k.State = cmkapi.KeyStateENABLED
-			k.KeyConfigurationID = keyConfig.ID
+			k.KeyConfigurationID = keyConfigID
 		})
 
 		targetKey := testutils.NewKey(func(k *model.Key) {
 			k.State = cmkapi.KeyStateDISABLED
-			k.KeyConfigurationID = keyConfig.ID
+			k.KeyConfigurationID = keyConfigID
+		})
+
+		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.ID = keyConfigID
+			k.PrimaryKeyID = &sourceKey.ID
 		})
 		testutils.CreateTestEntities(ctx, t, r, sourceKey, keyConfig, targetKey)
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
@@ -937,19 +939,18 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should error on set primary on source disabled key", func(t *testing.T) {
-		sourceKeyID := uuid.New()
-		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = new(sourceKeyID)
-		})
+		keyConfigID := uuid.New()
 		sourceKey := testutils.NewKey(func(k *model.Key) {
-			k.ID = sourceKeyID
 			k.State = cmkapi.KeyStateDISABLED
-			k.KeyConfigurationID = keyConfig.ID
+			k.KeyConfigurationID = keyConfigID
 		})
 
 		targetKey := testutils.NewKey(func(k *model.Key) {
 			k.State = cmkapi.KeyStateENABLED
-			k.KeyConfigurationID = keyConfig.ID
+			k.KeyConfigurationID = keyConfigID
+		})
+		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = &sourceKey.ID
 		})
 		testutils.CreateTestEntities(ctx, t, r, sourceKey, keyConfig, targetKey)
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
@@ -965,21 +966,22 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should use old pkey on switch event when system updating", func(t *testing.T) {
-		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		keyConfigID := uuid.New()
 		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = keyConfig.ID
+			k.KeyConfigurationID = keyConfigID
 		})
-		keyConfig.PrimaryKeyID = &oldPrimaryKey.ID
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfigID
+		})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.PrimaryKeyID = &oldPrimaryKey.ID
+		})
 
 		sys := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 
-		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = keyConfig.ID
-		})
-
-		testutils.CreateTestEntities(ctx, t, r, keyConfig, oldPrimaryKey, key, sys)
+		testutils.CreateTestEntities(ctx, t, r, oldPrimaryKey, key, keyConfig, sys)
 		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 		_, err := m.UpdateKeyConfigurationByID(ctx, keyConfig.ID, cmkapi.KeyConfigurationPatch{

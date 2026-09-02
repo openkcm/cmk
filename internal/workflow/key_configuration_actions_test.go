@@ -67,9 +67,9 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			keyID := uuid.New()
+			keyConfigID := uuid.New()
 			keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = new(keyID)
+				k.ID = keyConfigID
 			})
 			err := r.Create(ctx, keyConfig)
 			assert.NoError(t, err)
@@ -81,7 +81,6 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 			)
 
 			key := testutils.NewKey(func(k *model.Key) {
-				k.ID = keyID
 			})
 			if !tt.delete {
 				key.KeyConfigurationID = keyConfig.ID

@@ -317,23 +317,22 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	})
 
 	t.Run("should not be valid on primary key change with unconnected system", func(t *testing.T) {
-		keyID := uuid.New()
-		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-			kc.PrimaryKeyID = new(keyID)
-		})
+		keyConfigID := uuid.New()
 		key := testutils.NewKey(func(k *model.Key) {
-			k.ID = keyID
-			k.KeyConfigurationID = keyConfig.ID
+			k.KeyConfigurationID = keyConfigID
 		})
 		newKey := testutils.NewKey(func(k *model.Key) {
-			k.ID = uuid.New()
-			k.KeyConfigurationID = keyConfig.ID
+			k.KeyConfigurationID = keyConfigID
+		})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.ID = keyConfigID
+			kc.PrimaryKeyID = &key.ID
 		})
 		system := testutils.NewSystem(func(s *model.System) {
 			s.KeyConfigurationID = &keyConfig.ID
 			s.Status = cmkapi.SystemStatusDISCONNECTED
 		})
-		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, key, system, newKey)
+		testutils.CreateTestEntities(ctxSys, t, r, key, system, newKey, keyConfig)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = model.WorkflowStateInitial
@@ -478,18 +477,20 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	})
 
 	t.Run("should have canCreate on primary key change without unconnected system", func(t *testing.T) {
+		keyConfigID := uuid.New()
 		sourceKey := testutils.NewKey(func(_ *model.Key) {})
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 			kc.AdminGroup = *testGroup
 			kc.AdminGroupID = testGroup.ID
-			kc.PrimaryKeyID = new(sourceKey.ID)
+			kc.PrimaryKeyID = &sourceKey.ID
+			kc.ID = keyConfigID
 		})
 		system := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = &keyConfig.ID
+			s.KeyConfigurationID = &keyConfigID
 			s.Status = cmkapi.SystemStatusCONNECTED
 		})
 		targetKey := testutils.NewKey(func(_ *model.Key) {})
-		testutils.CreateTestEntities(ctxSys, t, r, keyConfig, system, sourceKey, targetKey)
+		testutils.CreateTestEntities(ctxSys, t, r, system, sourceKey, targetKey, keyConfig)
 		wf := testutils.NewWorkflow(
 			func(w *model.Workflow) {
 				w.State = model.WorkflowStateInitial

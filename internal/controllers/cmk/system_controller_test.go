@@ -1074,15 +1074,20 @@ func TestUnlinkSystemAction(t *testing.T) {
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
+	keyConfigID := uuid.New()
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+	})
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = new(uuid.New())
+		k.ID = keyConfigID
+		k.PrimaryKeyID = &key.ID
 	}, testutils.WithAuthBusinessUserDataKC(authClient))
 	system := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = new(keyConfig.ID)
 	})
 	systemWithoutKey := testutils.NewSystem(func(_ *model.System) {})
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, system, systemWithoutKey)
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig, system, systemWithoutKey)
 
 	clientData := &auth.ClientData{
 		Identifier: authClient.Identifier,

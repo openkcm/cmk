@@ -238,7 +238,7 @@ func TestOffboardTenant(t *testing.T) {
 
 	tenantBaseCtx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
 	ctx := testutils.InjectBusinessUserDataIntoContext(tenantBaseCtx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
 	t.Run("Should return success", func(t *testing.T) {
 		m, r, _, tenants := SetupTenantManagerWithAuthz(t, constants.InternalTenantProvisioningRole)

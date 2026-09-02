@@ -534,9 +534,16 @@ func TestEditableCryptoData(t *testing.T) {
 	})
 
 	t.Run("Should be editable on pkey only on failed regions", func(t *testing.T) {
-		keyID := uuid.New()
+		keyConfigID := uuid.New()
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.CryptoAccessData = cryptoData
+			k.KeyConfigurationID = keyConfigID
+		})
 		kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-			kc.PrimaryKeyID = &keyID
+			kc.ID = keyConfigID
+			kc.PrimaryKeyID = &key.ID
 		})
 
 		sysFailed := testutils.NewSystem(func(sys *model.System) {
@@ -551,17 +558,9 @@ func TestEditableCryptoData(t *testing.T) {
 			sys.Status = cmkapi.SystemStatusCONNECTED
 		})
 
-		testutils.CreateTestEntities(ctx, t, r, kc, sysFailed, sysConnected)
+		testutils.CreateTestEntities(ctx, t, r, key, kc, sysFailed, sysConnected)
 
-		key := testutils.NewKey(func(k *model.Key) {
-			k.ID = keyID
-			k.KeyType = cmkapi.KeyTypeHYOK
-			k.CryptoAccessData = cryptoData
-			k.KeyConfigurationID = kc.ID
-		})
 		localCtx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{kc.AdminGroup.IAMIdentifier})
-
-		testutils.CreateTestEntities(ctx, t, r, key)
 
 		key, err = km.Get(localCtx, key.ID)
 		assert.NoError(t, err)
@@ -1044,61 +1043,72 @@ func TestDelete(t *testing.T) {
 	byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 	keyID := uuid.New()
-	keyConfigWSystems := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = new(keyID)
-	})
+	keyConfigID := uuid.New()
 	sys := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = new(keyConfigWSystems.ID)
+		s.KeyConfigurationID = &keyConfigID
 	})
 	keyFailSystems := testutils.NewKey(func(k *model.Key) {
 		k.ID = keyID
-		k.KeyConfigurationID = keyConfigWSystems.ID
+		k.KeyConfigurationID = keyConfigID
+	})
+	keyConfigWSystems := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.ID = keyConfigID
+		k.PrimaryKeyID = &keyFailSystems.ID
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfigWSystems, sys, keyFailSystems)
+	testutils.CreateTestEntities(ctx, t, r, keyFailSystems, keyConfigWSystems, sys)
 
 	tests := []struct {
-		name    string
-		keyID   uuid.UUID
-		wantErr bool
+		name      string
+		key       *model.Key
+		wantErr   bool
+		isPrimary bool
 	}{
 		{
 			name:    "Delete existing key",
-			keyID:   createdKey.ID,
+			key:     createdKey,
 			wantErr: false,
 		},
 		{
 			name:    "Should fail on delete pkey with connected systems",
-			keyID:   keyFailSystems.ID,
+			key:     keyFailSystems,
 			wantErr: true,
 		},
 		{
-			name:    "Delete primary key",
-			keyID:   createdPrimaryKey.ID,
-			wantErr: false,
+			name:      "Delete primary key should also delete reference on key_config",
+			key:       createdPrimaryKey,
+			wantErr:   false,
+			isPrimary: true,
 		},
 		{
 			name:    "DeleteExistingBYOKKey",
-			keyID:   byokKey.ID,
+			key:     byokKey,
 			wantErr: false,
 		},
 		{
 			name:    "Delete non-existent key",
-			keyID:   uuid.New(),
+			key:     testutils.NewKey(func(_ *model.Key) {}),
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := km.Delete(ctx, tt.keyID)
+			err := km.Delete(ctx, tt.key.ID)
 
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				_, err := km.Get(ctx, tt.keyID)
+				_, err := km.Get(ctx, tt.key.ID)
 				assert.Error(t, err)
+			}
+
+			if tt.isPrimary {
+				keyConfig := &model.KeyConfiguration{ID: tt.key.KeyConfigurationID}
+				_, err := r.First(ctx, keyConfig, *repo.NewQuery())
+				assert.NoError(t, err)
+				assert.Nil(t, keyConfig.PrimaryKeyID)
 			}
 		})
 	}
@@ -1598,10 +1608,6 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 		k.ManagementAccessData = hyokInfo
 	})
 
-	keyConfig.PrimaryKeyID = new(primaryKey.ID)
-	_, err = r.Patch(ctx, keyConfig, *repo.NewQuery())
-	assert.NoError(t, err)
-
 	nonPrimaryKey := testutils.NewKey(func(k *model.Key) {
 		k.Name = "non-primary-key"
 		k.KeyConfigurationID = keyConfig.ID
@@ -1624,6 +1630,10 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, primaryKey, nonPrimaryKey, system1, system2)
+
+	keyConfig.PrimaryKeyID = &primaryKey.ID
+	_, err = r.Patch(ctx, keyConfig, *repo.NewQuery())
+	assert.NoError(t, err)
 
 	t.Run("primary key rotation triggers SYSTEM_KEY_ROTATE events", func(t *testing.T) {
 		// Simulate rotation detection by calling handleNewKeyVersion
