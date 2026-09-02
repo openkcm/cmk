@@ -51,14 +51,12 @@ func setupTestSpanRecorder(t *testing.T) *tracetest.SpanRecorder {
 
 func TestTracingMiddleware(t *testing.T) {
 	cfgWithTracing := &config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name: "test-app",
-			},
-			Telemetry: commoncfg.Telemetry{
-				Traces: commoncfg.Trace{
-					Enabled: true,
-				},
+		Application: commoncfg.Application{
+			Name: "test-app",
+		},
+		Telemetry: commoncfg.Telemetry{
+			Traces: commoncfg.Trace{
+				Enabled: true,
 			},
 		},
 	}
@@ -101,11 +99,9 @@ func TestTracingMiddleware(t *testing.T) {
 
 func TestTracingMiddleware_Disabled(t *testing.T) {
 	cfgWithoutTracing := &config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Telemetry: commoncfg.Telemetry{
-				Traces: commoncfg.Trace{
-					Enabled: false,
-				},
+		Telemetry: commoncfg.Telemetry{
+			Traces: commoncfg.Trace{
+				Enabled: false,
 			},
 		},
 	}

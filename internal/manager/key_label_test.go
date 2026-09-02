@@ -71,11 +71,9 @@ func TestCreateOrUpdateLabel(t *testing.T) {
 
 	expected := []*model.KeyLabel{
 		{
-			BaseLabel: model.BaseLabel{
-				ID:    uuid.New(),
-				Value: "test-1",
-				Key:   key.ID.String(),
-			},
+			ID:        uuid.New(),
+			Value:     "test-1",
+			Key:       key.ID.String(),
 			CryptoKey: *key,
 		},
 	}

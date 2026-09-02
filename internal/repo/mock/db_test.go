@@ -120,7 +120,7 @@ func TestCreate(t *testing.T) {
 			name: "Create Label Success",
 			CreateModel: func() (any, repo.Resource) {
 				id := uuid.New()
-				data := model.KeyLabel{BaseLabel: model.BaseLabel{ID: id}}
+				data := model.KeyLabel{ID: id}
 
 				return id, data
 			},
@@ -425,22 +425,16 @@ func TestGetAll(t *testing.T) {
 			CreateModel: func() (int, repo.Resource, []repo.Resource) {
 				data := []model.KeyLabel{
 					{
-						BaseLabel: model.BaseLabel{
-							ID:    uuid.New(),
-							Value: "Value1",
-						},
+						ID:    uuid.New(),
+						Value: "Value1",
 					},
 					{
-						BaseLabel: model.BaseLabel{
-							ID:    uuid.New(),
-							Value: "Value2",
-						},
+						ID:    uuid.New(),
+						Value: "Value2",
 					},
 					{
-						BaseLabel: model.BaseLabel{
-							ID:    uuid.New(),
-							Value: "Value3",
-						},
+						ID:    uuid.New(),
+						Value: "Value3",
 					},
 				}
 
@@ -849,13 +843,13 @@ func TestUpdate(t *testing.T) {
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				id := uuid.New()
 				data := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: id, Value: "value1"},
+					ID: id, Value: "value1",
 				}
 				newData := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: id, Value: "value2"},
+					ID: id, Value: "value2",
 				}
 				getData := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: id},
+					ID: id,
 				}
 
 				return data, newData, getData
@@ -873,13 +867,13 @@ func TestUpdate(t *testing.T) {
 			name: "Update Key Label Failure",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				data := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: uuid.New(), Value: "value1"},
+					ID: uuid.New(), Value: "value1",
 				}
 				newData := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: uuid.New(), Value: "value2"},
+					ID: uuid.New(), Value: "value2",
 				}
 				getData := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: uuid.New()},
+					ID: uuid.New(),
 				}
 
 				return data, newData, getData
@@ -1122,9 +1116,9 @@ func TestDelete(t *testing.T) {
 			name: "Delete Key Label Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				id := uuid.New()
-				data := model.KeyLabel{BaseLabel: model.BaseLabel{ID: id, Value: "test1"}}
-				dataToDelete := model.KeyLabel{BaseLabel: model.BaseLabel{ID: id}}
-				getData := model.KeyLabel{BaseLabel: model.BaseLabel{ID: id}}
+				data := model.KeyLabel{ID: id, Value: "test1"}
+				dataToDelete := model.KeyLabel{ID: id}
+				getData := model.KeyLabel{ID: id}
 
 				return data, dataToDelete, getData
 			},
