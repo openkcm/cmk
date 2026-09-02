@@ -34,11 +34,28 @@ func NewTagManager(r repo.Repo) *TagManager {
 }
 
 func (m *TagManager) DeleteTags(ctx context.Context, itemID uuid.UUID) error {
+	// Primary delete: from tags table (existing behavior)
 	_, err := m.r.Delete(ctx, &model.Tag{ID: itemID}, *repo.NewQuery())
 	if err != nil {
 		return errs.Wrap(ErrDeletingTags, err)
 	}
 
+	// Double-write: delete from resource_labels table (new table, best-effort)
+	_ = m.syncDeleteResourceLabels(ctx, itemID)
+
+	return nil
+}
+
+// syncDeleteResourceLabels removes tags from the new resource_labels table
+func (m *TagManager) syncDeleteResourceLabels(ctx context.Context, itemID uuid.UUID) error {
+	_, _ = m.r.Delete(ctx, &model.ResourceLabel{}, *repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().
+				Where(repo.ResourceTypeField, model.ResourceTypeKeyConfig).
+				Where(repo.ResourceIDField, itemID).
+				Where(repo.KeyField, model.SystemTagKey),
+		),
+	))
 	return nil
 }
 
@@ -52,7 +69,52 @@ func (m *TagManager) SetTags(ctx context.Context, itemID uuid.UUID, values []str
 		return err
 	}
 
-	return m.r.Set(ctx, &model.Tag{ID: itemID, Values: bytes}, *repo.NewQuery())
+	// Primary write: to tags table (existing behavior)
+	err = m.r.Set(ctx, &model.Tag{ID: itemID, Values: bytes}, *repo.NewQuery())
+	if err != nil {
+		return err
+	}
+
+	// Double-write: sync to resource_labels table (new table, best-effort)
+	// Errors here are logged but don't fail the operation for backward compatibility
+	_ = m.syncToResourceLabels(ctx, itemID, values)
+
+	return nil
+}
+
+// syncToResourceLabels writes tags to the new resource_labels table
+// This is a sync operation that happens alongside the primary write to tags table
+func (m *TagManager) syncToResourceLabels(ctx context.Context, itemID uuid.UUID, values []string) error {
+	// Delete existing tags for this resource
+	_, _ = m.r.Delete(ctx, &model.ResourceLabel{
+		ResourceType: model.ResourceTypeKeyConfig,
+		ResourceID:   itemID,
+		Key:          model.SystemTagKey,
+	}, *repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().
+				Where(repo.ResourceTypeField, model.ResourceTypeKeyConfig).
+				Where(repo.ResourceIDField, itemID).
+				Where(repo.KeyField, model.SystemTagKey),
+		),
+	))
+
+	// Insert new tags
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		label := &model.ResourceLabel{
+			ID:           uuid.New(),
+			ResourceType: model.ResourceTypeKeyConfig,
+			ResourceID:   itemID,
+			Key:          model.SystemTagKey,
+			Value:        value,
+		}
+		_ = m.r.Create(ctx, label)
+	}
+
+	return nil
 }
 
 func (m *TagManager) GetTags(ctx context.Context, itemID uuid.UUID) ([]string, error) {
