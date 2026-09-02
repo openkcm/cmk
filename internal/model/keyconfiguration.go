@@ -16,15 +16,15 @@ import (
 type KeyConfiguration struct {
 	AutoTimeModel
 
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Name         string    `gorm:"type:varchar(255);not null;unique"`
-	Description  string    `gorm:"type:text"`
-	AdminGroupID uuid.UUID `gorm:"type:uuid;not null"`
-	AdminGroup   Group     `gorm:"foreignKey:AdminGroupID"`
-	CreatorID    string    `gorm:"type:varchar(255);not null"`
-	PrimaryKeyID *uuid.UUID
-	TotalKeys    int `gorm:"->;-:migration"`
-	TotalSystems int `gorm:"->;-:migration"`
+	ID           uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	Name         string     `gorm:"type:varchar(255);not null;unique"`
+	Description  string     `gorm:"type:text"`
+	AdminGroupID uuid.UUID  `gorm:"type:uuid;not null"`
+	AdminGroup   Group      `gorm:"foreignKey:AdminGroupID"`
+	CreatorID    string     `gorm:"type:varchar(255);not null"`
+	PrimaryKeyID *uuid.UUID `gorm:"type:uuid"`
+	TotalKeys    int        `gorm:"->;-:migration"`
+	TotalSystems int        `gorm:"->;-:migration"`
 
 	creatorName string `gorm:"-:all"`
 }
