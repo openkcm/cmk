@@ -519,30 +519,31 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 	})
 
 	// Create two key configs with different admin groups
-	primaryKeyID1 := uuid.New()
-	primaryKeyID2 := uuid.New()
+	keyConfigID1 := uuid.New()
+	keyConfigID2 := uuid.New()
+
+	// Create keys for both configs
+	key1 := testutils.NewKey(func(k *model.Key) {
+		k.ID = keyConfigID1
+		k.KeyConfigurationID = keyConfigID1
+	})
+
+	key2 := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID2
+	})
 
 	keyConfig1 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = &primaryKeyID1
+		k.PrimaryKeyID = &key1.ID
+		k.ID = keyConfigID1
 		k.AdminGroupID = group.ID
 		k.AdminGroup = *group
 	})
 
 	keyConfig2 := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = &primaryKeyID2
+		k.PrimaryKeyID = &key2.ID
+		k.ID = keyConfigID2
 		k.AdminGroupID = nonAdminGroup.ID
 		k.AdminGroup = *nonAdminGroup
-	})
-
-	// Create keys for both configs
-	key1 := testutils.NewKey(func(k *model.Key) {
-		k.ID = primaryKeyID1
-		k.KeyConfigurationID = keyConfig1.ID
-	})
-
-	key2 := testutils.NewKey(func(k *model.Key) {
-		k.ID = primaryKeyID2
-		k.KeyConfigurationID = keyConfig2.ID
 	})
 
 	adminCtx := testutils.CreateCtxWithTenant(tenant)
@@ -551,7 +552,7 @@ func TestGetRecoveryActionAuthorisation(t *testing.T) {
 	nonAdminCtx := testutils.CreateCtxWithTenant(tenant)
 	nonAdminCtx = testutils.InjectBusinessUserDataIntoContext(nonAdminCtx, "non-admin-user", []string{"non-admin-group"})
 
-	testutils.CreateTestEntities(adminCtx, t, r, keyConfig1, keyConfig2, key1, key2)
+	testutils.CreateTestEntities(adminCtx, t, r, key1, key2, keyConfig1, keyConfig2)
 
 	t.Run("SYSTEM_UNLINK: admin can retry and cancel", func(t *testing.T) {
 		sys := testutils.NewSystem(func(s *model.System) {
@@ -814,7 +815,10 @@ func TestSendRecoveryAction(t *testing.T) {
 		assert.ErrorIs(t, err, repo.ErrNotFound)
 	})
 
-	primaryKeyID := uuid.New()
+	keyConfigID := uuid.New()
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+	})
 	testGroup := testutils.NewGroup(
 		func(g *model.Group) {
 			g.IAMIdentifier = "test-group4"
@@ -822,12 +826,13 @@ func TestSendRecoveryAction(t *testing.T) {
 	)
 	keyConfig := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = &primaryKeyID
+			k.ID = keyConfigID
+			k.PrimaryKeyID = &key.ID
 			k.AdminGroupID = testGroup.ID
 			k.AdminGroup = *testGroup
 		},
 	)
-	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
 	t.Run("Should error on retry with system status not failed", func(t *testing.T) {
 		groupIdentifier := uuid.NewString()
@@ -962,9 +967,7 @@ func TestSelectEvent(t *testing.T) {
 
 	t.Run("Should LINK if new system", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(
-			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = new(uuid.New())
-			},
+			func(k *model.KeyConfiguration) {},
 		)
 
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
@@ -976,23 +979,19 @@ func TestSelectEvent(t *testing.T) {
 
 	t.Run("Should send SWITCH if the old key config doesnt match new key config", func(t *testing.T) {
 		// given
-		oldKeyConfig := testutils.NewKeyConfig(
-			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = new(uuid.New())
-			},
-		)
-		newKeyConfig := testutils.NewKeyConfig(
-			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = new(uuid.New())
-			},
-		)
-		testutils.CreateTestEntities(ctx, t, r, oldKeyConfig, newKeyConfig)
+		oldKeyConfigID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = oldKeyConfigID
+		})
+		oldKeyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = &key.ID
+		})
+		newKeyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, key, oldKeyConfig, newKeyConfig)
 
-		system := testutils.NewSystem(
-			func(s *model.System) {
-				s.KeyConfigurationID = new(oldKeyConfig.ID)
-			},
-		)
+		system := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &oldKeyConfig.ID
+		})
 
 		// when
 		event, err := m.SelectEvent(ctx, system, newKeyConfig)
@@ -1006,14 +1005,13 @@ func TestSelectEvent(t *testing.T) {
 		// given
 		keyConfig := testutils.NewKeyConfig(
 			func(k *model.KeyConfiguration) {
-				k.PrimaryKeyID = new(uuid.New())
 			},
 		)
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
 		system := testutils.NewSystem(
 			func(s *model.System) {
-				s.KeyConfigurationID = new(keyConfig.ID)
+				s.KeyConfigurationID = &keyConfig.ID
 			},
 		)
 
@@ -1032,7 +1030,14 @@ func TestLinkSystemAction(t *testing.T) {
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
 	r := sql.NewRepository(db)
 
-	key := testutils.NewKey(func(_ *model.Key) {})
+	keyConfigID := uuid.New()
+	keyConfigID2 := uuid.New()
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+	})
+	key2 := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID2
+	})
 	testGroup := testutils.NewGroup(
 		func(g *model.Group) {
 			g.IAMIdentifier = "test-group"
@@ -1041,13 +1046,15 @@ func TestLinkSystemAction(t *testing.T) {
 	keyConfig := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
 			k.PrimaryKeyID = &key.ID
+			k.ID = keyConfigID
 			k.AdminGroupID = testGroup.ID
 			k.AdminGroup = *testGroup
 		},
 	)
 	keyConfig2 := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = new(uuid.New())
+			k.ID = keyConfigID2
+			k.PrimaryKeyID = &key2.ID
 			k.AdminGroupID = testGroup.ID
 			k.AdminGroup = *testGroup
 		},
@@ -1073,7 +1080,7 @@ func TestLinkSystemAction(t *testing.T) {
 		),
 	}
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, keyConfig2, key)
+	testutils.CreateTestEntities(ctx, t, r, key, key2, keyConfig, keyConfig2)
 
 	for i := range allSystems {
 		testutils.CreateTestEntities(ctx, t, r, allSystems[i])
@@ -1163,11 +1170,14 @@ func TestLinkSystemAction(t *testing.T) {
 		{
 			name: "Should fail link pkey disabled",
 			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
+				keyConfigID := uuid.New()
 				key := testutils.NewKey(func(k *model.Key) {
 					k.State = cmkapi.KeyStateDISABLED
+					k.KeyConfigurationID = keyConfigID
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
-					kc.PrimaryKeyID = new(key.ID)
+					kc.ID = keyConfigID
+					kc.PrimaryKeyID = &key.ID
 					kc.AdminGroupID = group.ID
 					kc.AdminGroup = *group
 				}), key
@@ -1176,10 +1186,13 @@ func TestLinkSystemAction(t *testing.T) {
 		{
 			name: "Should fail link pkey forbidden",
 			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
+				keyConfigID := uuid.New()
 				key := testutils.NewKey(func(k *model.Key) {
 					k.State = cmkapi.KeyStateFORBIDDEN
+					k.KeyConfigurationID = keyConfigID
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+					kc.ID = keyConfigID
 					kc.PrimaryKeyID = new(key.ID)
 					kc.AdminGroupID = group.ID
 					kc.AdminGroup = *group
@@ -1189,10 +1202,13 @@ func TestLinkSystemAction(t *testing.T) {
 		{
 			name: "Should fail link pkey unknown",
 			setupKeyConfig: func(group *model.Group) (*model.KeyConfiguration, *model.Key) {
+				keyConfigID := uuid.New()
 				key := testutils.NewKey(func(k *model.Key) {
 					k.State = cmkapi.KeyStateUNKNOWN
+					k.KeyConfigurationID = keyConfigID
 				})
 				return testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+					kc.ID = keyConfigID
 					kc.PrimaryKeyID = new(key.ID)
 					kc.AdminGroupID = group.ID
 					kc.AdminGroup = *group
@@ -1221,7 +1237,7 @@ func TestLinkSystemAction(t *testing.T) {
 				},
 			)
 
-			testutils.CreateTestEntities(ctx, t, r, system, keyConfig, key)
+			testutils.CreateTestEntities(ctx, t, r, system, key, keyConfig)
 			_, err := m.LinkSystemAction(
 				ctx, system.ID, cmkapi.SystemPatch{
 					KeyConfigurationID: keyConfig.ID,
@@ -1272,9 +1288,14 @@ func TestUnlinkSystemAction(t *testing.T) {
 		},
 	)
 
+	keyConfigID := uuid.New()
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+	})
 	keyConfig := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = new(uuid.New())
+			k.ID = keyConfigID
+			k.PrimaryKeyID = &key.ID
 			k.AdminGroupID = testGroup.ID
 			k.AdminGroup = *testGroup
 		},
@@ -1282,7 +1303,7 @@ func TestUnlinkSystemAction(t *testing.T) {
 	region := regionpb.Region_REGION_EU.String()
 	sysType := systems.SystemTypeSYSTEM
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
 	t.Run("Should delete system link - state failed", func(t *testing.T) {
 		systemUnderTest := &model.System{

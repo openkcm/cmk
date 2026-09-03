@@ -757,18 +757,23 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthBusinessUserDataKC(authClient))
-
+	keyConfigID := uuid.New()
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyConfigurationID = keyConfig.ID
+		k.KeyConfigurationID = keyConfigID
 		k.KeyType = cmkapi.KeyTypeHYOK
 	})
+	keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+		kc.ID = keyConfigID
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
-	pKeyID := uuid.New()
+	keyConfigWSysID := uuid.New()
+	pkey := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigWSysID
+	})
 	keyConfigWSys := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = new(pKeyID)
+			k.ID = keyConfigWSysID
+			k.PrimaryKeyID = &pkey.ID
 		},
 		testutils.WithAuthBusinessUserDataKC(authClient),
 	)
@@ -776,22 +781,18 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		s.KeyConfigurationID = new(keyConfigWSys.ID)
 		s.Status = cmkapi.SystemStatusCONNECTED
 	})
-	pkey := testutils.NewKey(func(k *model.Key) {
-		k.KeyConfigurationID = keyConfigWSys.ID
-		k.ID = pKeyID
-	})
 
 	testutils.CreateTestEntities(
 		ctx,
 		t,
 		r,
 		key,
+		pkey,
 		keyConfig,
 		keystore,
 		keystoreDefaultCert,
 		keystoreKeyMgmtCert,
 		keyConfigWSys,
-		pkey,
 		sys,
 	)
 
@@ -918,9 +919,26 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
-	keyID := uuid.New()
+	validMgmtData, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+	assert.NoError(t, err)
+
+	providerKeyBYOK, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.BYOK,
+	})
+	assert.NoError(t, err)
+
+	keyConfigID := uuid.New()
+	key := testutils.NewKey(func(k *model.Key) {
+		k.CryptoAccessData = cryptoData
+		k.ManagementAccessData = validMgmtData
+		k.KeyConfigurationID = keyConfigID
+		k.Provider = providerTest
+		k.NativeID = &providerKeyBYOK.KeyID
+	})
+
 	kc := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = new(keyID)
+		k.ID = keyConfigID
+		k.PrimaryKeyID = &key.ID
 	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	sysFailed := testutils.NewSystem(func(sys *model.System) {
@@ -933,23 +951,6 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		sys.KeyConfigurationID = new(kc.ID)
 		sys.Region = regionNonEditable
 		sys.Status = cmkapi.SystemStatusCONNECTED
-	})
-
-	validMgmtData, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
-	assert.NoError(t, err)
-
-	providerKeyBYOK, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
-		KeyType: keymanagement.BYOK,
-	})
-	assert.NoError(t, err)
-
-	key := testutils.NewKey(func(k *model.Key) {
-		k.ID = keyID
-		k.CryptoAccessData = cryptoData
-		k.ManagementAccessData = validMgmtData
-		k.KeyConfigurationID = kc.ID
-		k.Provider = providerTest
-		k.NativeID = &providerKeyBYOK.KeyID
 	})
 
 	hyokKey := testutils.NewKey(func(k *model.Key) {
@@ -973,10 +974,10 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		ctx,
 		t,
 		r,
-		kc,
 		key,
 		hyokKey,
 		hyokKeyInvalidMgmt,
+		kc,
 		keystore,
 		keystoreDefaultCert,
 		keystoreKeyMgmtCert,
@@ -1222,14 +1223,12 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
-	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthBusinessUserDataKC(authClient))
-
+	keyConfigID := uuid.New()
 	// Create a BYOK key and import params in the database
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStatePENDINGIMPORT
-		k.KeyConfigurationID = kc.ID
+		k.KeyConfigurationID = keyConfigID
 	})
 
 	importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
@@ -1240,15 +1239,19 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 	byokEnabled := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStateENABLED
-		k.KeyConfigurationID = kc.ID
+		k.KeyConfigurationID = keyConfigID
 	})
 
 	sysManagedKey := testutils.NewKey(func(_ *model.Key) {})
 
 	hyokKey := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = cmkapi.KeyTypeHYOK
-		k.KeyConfigurationID = kc.ID
+		k.KeyConfigurationID = keyConfigID
 	})
+
+	kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+		kc.ID = keyConfigID
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(
 		ctx,

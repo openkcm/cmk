@@ -700,11 +700,11 @@ func (km *KeyManager) persistCreatedKey(
 	keyResp *keymanagement.GetKeyResponse,
 ) error {
 	return km.repo.Transaction(ctx, func(ctx context.Context) error {
-		if err := km.setPrimaryIfFirstKey(ctx, key); err != nil {
-			return errs.Wrap(ErrUpdatePrimary, err)
-		}
 		if err := km.repo.Create(ctx, key); err != nil {
 			return errs.Wrap(ErrCreateKeyDB, err)
+		}
+		if err := km.setPrimaryIfFirstKey(ctx, key); err != nil {
+			return errs.Wrap(ErrUpdatePrimary, err)
 		}
 		if key.KeyType == constants.KeyTypeHYOK && keyResp != nil {
 			if err := km.syncKeyVersions(ctx, provider, key); err != nil {
@@ -1286,7 +1286,10 @@ func (km *KeyManager) reenableProviderKey(ctx context.Context, key *model.Key) e
 }
 
 func (km *KeyManager) setPrimaryIfFirstKey(ctx context.Context, key *model.Key) error {
-	compositeKey := repo.NewCompositeKey().Where(repo.KeyConfigIDField, key.KeyConfigurationID)
+	// If only key in keyConfig make it primary
+	compositeKey := repo.NewCompositeKey().
+		Where(repo.KeyConfigIDField, key.KeyConfigurationID).
+		Where(repo.IDField, key.ID, repo.NotEq)
 	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey))
 
 	exist, err := km.repo.First(
