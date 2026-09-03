@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -73,6 +74,7 @@ func TestCommands(t *testing.T) {
 			errChan := make(chan error, 1)
 
 			go func() {
+				cmd.SetContext(context.Background())
 				errChan <- cmd.RunE(cmd, []string{})
 			}()
 
