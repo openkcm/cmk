@@ -14,5 +14,15 @@ func GetMigrations() []*goose.Migration {
 			&goose.GoFunc{RunTx: upClampWorkflowConfigBounds},
 			&goose.GoFunc{RunTx: downClampWorkflowConfigBounds},
 		),
+		goose.NewGoMigration(
+			3,
+			&goose.GoFunc{RunTx: upRepairKeystoreConfigShape},
+			&goose.GoFunc{RunTx: downRepairKeystoreConfigShape},
+		),
+		goose.NewGoMigration(
+			4,
+			&goose.GoFunc{RunTx: upFlattenTenantConfigs},
+			&goose.GoFunc{RunTx: downFlattenTenantConfigs},
+		),
 	}
 }
