@@ -47,6 +47,11 @@ func (m *TagManager) DeleteTags(ctx context.Context, itemID uuid.UUID) error {
 }
 
 func (m *TagManager) SetTags(ctx context.Context, itemID uuid.UUID, values []string) error {
+	// Special case: single empty string means delete all tags
+	if len(values) == 1 && values[0] == "" {
+		return m.DeleteTags(ctx, itemID)
+	}
+
 	bytes, err := json.Marshal(values)
 	if err != nil {
 		return err
