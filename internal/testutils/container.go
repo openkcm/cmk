@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/modules/rabbitmq"
@@ -36,10 +36,10 @@ func StartRabbitMQ(
 		"rabbitmq:4.2-alpine",
 		options...,
 	)
-	assert.NoError(tb, err)
+	require.NoError(tb, err)
 
 	url, err := service.AmqpURL(tb.Context())
-	assert.NoError(tb, err)
+	require.NoError(tb, err)
 
 	return url
 }
@@ -81,14 +81,14 @@ func StartPostgresSQL(
 		"postgres:16-alpine",
 		options...,
 	)
-	assert.NoError(tb, err)
+	require.NoError(tb, err)
 
 	if cfg != nil {
 		p, err := service.MappedPort(tb.Context(), "5432")
-		assert.NoError(tb, err)
+		require.NoError(tb, err)
 
 		host, err := service.Host(tb.Context())
-		assert.NoError(tb, err)
+		require.NoError(tb, err)
 
 		cfg.Port = p.Port()
 		cfg.Name = name
@@ -132,16 +132,16 @@ func StartRedis(
 		"redis:7",
 		options...,
 	)
-	redisContainer.TLSConfig()
+	require.NoError(tb, err)
 
-	assert.NoError(tb, err)
+	redisContainer.TLSConfig()
 
 	if cfg != nil {
 		port, err := redisContainer.MappedPort(tb.Context(), "6379")
-		assert.NoError(tb, err)
+		require.NoError(tb, err)
 
 		host, err := redisContainer.Host(tb.Context())
-		assert.NoError(tb, err)
+		require.NoError(tb, err)
 
 		cfg.TaskQueue.Port = port.Port()
 		cfg.TaskQueue.Host = commoncfg.SourceRef{
