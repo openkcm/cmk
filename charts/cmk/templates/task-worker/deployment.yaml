@@ -89,6 +89,11 @@ spec:
             - name: {{ include "cmk.name" . }}-task-worker-config-volume
               mountPath: /etc/cmk
               readOnly: true
+          {{- if .Values.config.featureFlags.enabled }}
+            - name: feature-flags-volume
+              mountPath: /etc/featureflags
+              readOnly: true
+          {{- end }}
           {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -98,6 +103,11 @@ spec:
             sources:
               - configMap:
                   name: {{ include "cmk.name" . }}-task-worker-config
+      {{- if .Values.config.featureFlags.enabled }}
+        - name: feature-flags-volume
+          configMap:
+            name: {{ .Values.featureFlagsConfigMap }}
+      {{- end }}
       {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}

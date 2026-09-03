@@ -23,6 +23,7 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/errs"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	cmkflags "github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	notifierclient "github.com/openkcm/cmk/internal/notifier/client"
@@ -62,6 +63,7 @@ func NewTaskWorker() *cobra.Command {
 	return cmd
 }
 
+//nolint:cyclop
 func runTaskWorker(ctx context.Context, cfg *config.Config) error {
 	err := commoncfg.UpdateConfigVersion(&cfg.BaseConfig, BuildInfo)
 	if err != nil {
@@ -79,6 +81,12 @@ func runTaskWorker(ctx context.Context, cfg *config.Config) error {
 	}
 
 	statusserver.StartStatusServer(ctx, cfg)
+
+	// Feature flag provider initialisation
+	err = cmkflags.Init(cfg.FeatureFlags)
+	if err != nil {
+		return oops.In("main").Wrap(err)
+	}
 
 	cron, err := async.New(cfg)
 	if err != nil {
@@ -165,7 +173,8 @@ func registerTasks(
 	cmkAuditor := auditor.New(ctx, cfg)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	certManager := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, certManager)
+	tenantConfigManager := manager.NewTenantConfigManager(
+		authzRepo, svcRegistry, cfg, certManager, cmkflags.NewClient())
 	tagManager := manager.NewTagManager(authzRepo)
 	keyConfigManager := manager.NewKeyConfigManager(
 		authzRepo,

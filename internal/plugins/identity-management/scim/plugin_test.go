@@ -57,11 +57,12 @@ const (
 		`"totalResults":0,"itemsPerPage":1,"startIndex":0}`
 )
 
-func setupTest(t *testing.T, url string, groupFilterAttribute, userFilterAttribute, groupMembersAttribute string, allowSearchUsersByGroup bool) *scim.Plugin {
+//nolint:unparam
+func setupTest(t *testing.T, url string, groupFilterAttribute, userFilterAttribute, groupMembersAttribute string) *scim.Plugin {
 	t.Helper()
 
 	p := scim.NewPlugin()
-	p.SetTestClient(t, url, groupFilterAttribute, userFilterAttribute, groupMembersAttribute, allowSearchUsersByGroup)
+	p.SetTestClient(t, url, groupFilterAttribute, userFilterAttribute, groupMembersAttribute)
 	assert.NotNil(t, p)
 
 	return p
@@ -121,7 +122,7 @@ func TestGetAllGroups(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := setupTest(t, tt.serverUrl, "", "", "", true)
+			p := setupTest(t, tt.serverUrl, "", "", "")
 
 			responseMsg, err := p.GetAllGroups(t.Context(),
 				&idmangv1.GetAllGroupsRequest{})
@@ -151,83 +152,58 @@ func TestGetAllGroups(t *testing.T) {
 
 func TestGetUsersForGroup(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bodyBytes, err := io.ReadAll(r.Body)
-		assert.NoError(t, err)
-
-		// Quick and dirty mock server filtering. Fine since we aren't testing server here
-		reqStr := string(bodyBytes)
-		if strings.Contains(reqStr, NonExistentField) {
-			_, err = w.Write([]byte(EmptyResponse))
-		} else {
-			_, err = w.Write([]byte(ListUsersResponse))
+		switch {
+		case strings.Contains(r.URL.Path, "/Groups/"):
+			_, err := w.Write([]byte(GetGroupResponse))
+			assert.NoError(t, err)
+		case strings.Contains(r.URL.Path, "/Users/"):
+			_, err := w.Write([]byte(ListUsersResponse))
+			assert.NoError(t, err)
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-
-		assert.NoError(t, err)
-
-		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
+	errGetUsersForGroup := scim.ErrGetUsersForGroup
+
 	tests := []struct {
-		name                 string
-		serverUrl            string
-		groupFilterAttribute string
-		groupFilterValue     string
-		testNumUsers         int
-		testUserEmail        string
-		testUserName         string
-		testUserID           string
-		testExpectedError    *error
+		name              string
+		serverUrl         string
+		groupFilterValue  string
+		testNumUsers      int
+		testUserEmail     string
+		testUserName      string
+		testUserID        string
+		testExpectedError *error
 	}{
 		{
-			name:                 "Bad Server",
-			serverUrl:            "badurl",
-			groupFilterAttribute: "displayName",
-			groupFilterValue:     "None",
-			testNumUsers:         0,
-			testUserEmail:        "",
-			testUserName:         "",
-			testUserID:           "",
-			testExpectedError:    &client.ErrListUsers,
+			name:              "Bad Server",
+			serverUrl:         "badurl",
+			groupFilterValue:  "None",
+			testNumUsers:      0,
+			testExpectedError: &errGetUsersForGroup,
 		},
 		{
-			name:                 "Good request",
-			serverUrl:            server.URL,
-			groupFilterAttribute: "displayName",
-			groupFilterValue:     "None",
-			testNumUsers:         1,
-			testUserEmail:        "cloud.analyst@example.com",
-			testUserName:         "cloudanalyst",
-			testUserID:           "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-			testExpectedError:    nil,
+			name:             "Good request",
+			serverUrl:        server.URL,
+			groupFilterValue: "None",
+			testNumUsers:     1,
+			testUserEmail:    "cloud.analyst@example.com",
+			testUserName:     "cloudanalyst",
+			testUserID:       "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
 		},
 		{
-			name:                 "Non-existent filter value",
-			serverUrl:            server.URL,
-			groupFilterAttribute: "displayName",
-			groupFilterValue:     "",
-			testNumUsers:         0,
-			testUserEmail:        "",
-			testUserName:         "",
-			testUserID:           "",
-			testExpectedError:    &scim.ErrNoID,
-		},
-		{
-			name:                 "Non-existent filter attribute",
-			serverUrl:            server.URL,
-			groupFilterAttribute: NonExistentField,
-			groupFilterValue:     "None",
-			testNumUsers:         0,
-			testUserEmail:        "",
-			testUserName:         "",
-			testUserID:           "",
-			testExpectedError:    nil,
+			name:              "Empty group ID",
+			serverUrl:         server.URL,
+			groupFilterValue:  "",
+			testExpectedError: &scim.ErrNoID,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := setupTest(t, tt.serverUrl, tt.groupFilterAttribute, "", "", true)
+			p := setupTest(t, tt.serverUrl, "", "", "")
 
 			request := idmangv1.GetUsersForGroupRequest{}
 			if tt.groupFilterValue != "" {
@@ -334,7 +310,7 @@ func TestGetGroupsForUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := setupTest(t, tt.serverUrl, "", tt.userFilterAttribute, "", true)
+			p := setupTest(t, tt.serverUrl, "", tt.userFilterAttribute, "")
 
 			userFilterValue := idmangv1.GetGroupsForUserRequest{}
 			if tt.userFilterValue != "" {
@@ -395,7 +371,7 @@ func TestGetGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := setupTest(t, tt.serverUrl, "", "", "", true)
+			p := setupTest(t, tt.serverUrl, "", "", "")
 
 			resp, err := p.GetGroup(
 				t.Context(),
@@ -447,7 +423,7 @@ func TestGetUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := setupTest(t, tt.serverUrl, "", "", "", true)
+			p := setupTest(t, tt.serverUrl, "", "", "")
 
 			resp, err := p.GetUser(
 				t.Context(),
@@ -471,11 +447,10 @@ func TestGetUser(t *testing.T) {
 }
 
 func TestNewPlugin(t *testing.T) {
-	p := setupTest(t, "", "", "", "", true)
+	p := setupTest(t, "", "", "", "")
 	assert.NotNil(t, p)
 }
 
-//nolint:cyclop
 func TestCreateParams(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		authContextYAML := `
@@ -488,11 +463,10 @@ headerFields:
 			Host:        embeddedSourceRef("https://example.com"),
 			AuthContext: embeddedSourceRef(authContextYAML),
 			Params: config.Params{
-				GroupAttribute:          embeddedSourceRef("groups"),
-				UserAttribute:           embeddedSourceRef("users"),
-				GroupMembersAttribute:   embeddedSourceRef("members"),
-				ListMethod:              embeddedSourceRef("GET"),
-				AllowSearchUsersByGroup: embeddedSourceRef("true"),
+				GroupAttribute:        embeddedSourceRef("groups"),
+				UserAttribute:         embeddedSourceRef("users"),
+				GroupMembersAttribute: embeddedSourceRef("members"),
+				ListMethod:            embeddedSourceRef("GET"),
 			},
 		}
 
@@ -504,30 +478,8 @@ headerFields:
 		if params.BaseHost != "https://example.com" {
 			t.Errorf("BaseHost mismatch: %s", params.BaseHost)
 		}
-		if !params.AllowSearchUsersByGroup {
-			t.Errorf("AllowSearchUsersByGroup expected true")
-		}
 		if params.AuthContext.BasePath != "/api" {
 			t.Errorf("AuthContext not parsed correctly")
-		}
-	})
-
-	t.Run("invalid boolean", func(t *testing.T) {
-		cfg := &config.Config{
-			Host:        embeddedSourceRef("https://example.com"),
-			AuthContext: embeddedSourceRef(`hostField: host`),
-			Params: config.Params{
-				GroupAttribute:          embeddedSourceRef("groups"),
-				UserAttribute:           embeddedSourceRef("users"),
-				GroupMembersAttribute:   embeddedSourceRef("members"),
-				ListMethod:              embeddedSourceRef("GET"),
-				AllowSearchUsersByGroup: embeddedSourceRef("not-a-bool"),
-			},
-		}
-
-		params, err := scim.CreateParams(cfg)
-		if err == nil || params != nil {
-			t.Fatal("expected error due to invalid boolean")
 		}
 	})
 
@@ -535,11 +487,10 @@ headerFields:
 		cfg := &config.Config{
 			Host: embeddedSourceRef("https://example.com"),
 			Params: config.Params{
-				GroupAttribute:          embeddedSourceRef("groups"),
-				UserAttribute:           embeddedSourceRef("users"),
-				GroupMembersAttribute:   embeddedSourceRef("members"),
-				ListMethod:              embeddedSourceRef("GET"),
-				AllowSearchUsersByGroup: embeddedSourceRef("true"),
+				GroupAttribute:        embeddedSourceRef("groups"),
+				UserAttribute:         embeddedSourceRef("users"),
+				GroupMembersAttribute: embeddedSourceRef("members"),
+				ListMethod:            embeddedSourceRef("GET"),
 			},
 		}
 
@@ -631,12 +582,10 @@ func TestGetUsersForGroupUsingGroupMembers(t *testing.T) {
 		case strings.Contains(r.URL.Path, "/Groups/"):
 			_, err := w.Write([]byte(GetGroupResponse))
 			assert.NoError(t, err)
-			w.WriteHeader(http.StatusOK)
 
-		case strings.Contains(r.URL.Path, "/Users/"):
-			_, err := w.Write([]byte(GetUserResponse))
+		case strings.Contains(r.URL.Path, "/Users"):
+			_, err := w.Write([]byte(ListUsersResponse))
 			assert.NoError(t, err)
-			w.WriteHeader(http.StatusOK)
 
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -667,7 +616,7 @@ func TestGetUsersForGroupUsingGroupMembers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := setupTest(t, tt.serverUrl, "", "", tt.groupID, false)
+			p := setupTest(t, tt.serverUrl, "", "", "members")
 
 			resp, err := p.GetUsersForGroup(
 				t.Context(),

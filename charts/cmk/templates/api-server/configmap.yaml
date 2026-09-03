@@ -21,6 +21,9 @@ data:
     featureGates:
       {{- toYaml .featureGates | nindent 6 }}
 
+    featureFlags:
+      {{- toYaml .featureFlags | nindent 6 }}
+
     http:
       address: :{{ .http.port }}
       swaggerEnabled: {{ .http.swaggerEnabled | default false }}

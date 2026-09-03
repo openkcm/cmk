@@ -47,7 +47,7 @@ func TestWorkflowCleanup_AuthzPolicy(t *testing.T) {
 		Database: dbCfg,
 	}
 
-	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, nil)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, nil, nil)
 	userManager := manager.NewUserManager(authzRepo, nil)
 	wfManager := manager.NewWorkflowManager(
 		authzRepo,
