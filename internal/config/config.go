@@ -23,6 +23,8 @@ var (
 	ErrAMQPEmptyTarget   = errors.New("AMQP target must be specified")
 	ErrAMQPEmptySource   = errors.New("AMQP source must be specified")
 	ErrTargetEmptyRegion = errors.New("target region must be specified")
+
+	ErrTenantLimitsSystemsBelowMinimum = errors.New("tenant limits systems must be at least 1")
 )
 
 // Config holds all application configuration parameters
@@ -51,6 +53,7 @@ type Config struct {
 	Landscape    Landscape    `yaml:"landscape"`
 	Workflow     Workflow     `yaml:"workflow"`
 	Keys         Keys         `yaml:"keys"`
+	Tenant       Tenant       `yaml:"tenant"`
 }
 
 type ContextModels struct {
@@ -69,6 +72,11 @@ func (c *Config) Validate() error {
 	}
 
 	err = c.CryptoLayer.Validate()
+	if err != nil {
+		return errs.Wrap(ErrConfigurationValuesError, err)
+	}
+
+	err = c.Tenant.Validate()
 	if err != nil {
 		return errs.Wrap(ErrConfigurationValuesError, err)
 	}
@@ -390,4 +398,20 @@ type Workflow struct {
 type Keys struct {
 	PendingRegistrationTimeout time.Duration `yaml:"pendingRegistrationTimeout" default:"15m"`
 	PendingCreationTimeout     time.Duration `yaml:"pendingCreationTimeout"     default:"15m"`
+}
+
+const MinTenantLimitSystems = 1
+
+// Tenant holds per-tenant resource limits.
+type Tenant struct {
+	SystemLimit int `yaml:"systemLimit" default:"50"`
+}
+
+// Validate checks that tenant limits are within acceptable bounds.
+func (tl *Tenant) Validate() error {
+	if tl.SystemLimit < MinTenantLimitSystems {
+		return ErrTenantLimitsSystemsBelowMinimum
+	}
+
+	return nil
 }

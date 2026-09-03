@@ -849,6 +849,9 @@ config:
     interval: 10m
     supportedRegions: []
 
+  tenant:
+    systemLimit: 50
+
   # Key state timeout configuration
   keys:
     # Timeout for PENDING_REGISTRATION keys before transitioning to FORBIDDEN
