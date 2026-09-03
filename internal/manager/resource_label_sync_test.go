@@ -44,7 +44,7 @@ func TestTagManagerDoubleWrite(t *testing.T) {
 	assert.Len(t, resourceLabels, 3)
 
 	// Verify tag values match
-	var syncedValues []string
+	syncedValues := make([]string, 0, len(resourceLabels))
 	for _, rl := range resourceLabels {
 		syncedValues = append(syncedValues, rl.Value)
 	}
