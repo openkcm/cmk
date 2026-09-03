@@ -247,6 +247,9 @@ tenantManager:
     target: "cmk.global.tenants"
     source: "cmk.emea.tenants"
 
+tenant:
+  systemLimit: 50
+
 provisioning:
   initKeystoreConfig:
     enabled: false

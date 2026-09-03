@@ -99,6 +99,20 @@ func TestValidateScheduler(t *testing.T) {
 	})
 }
 
+func TestValidateTenantLimits(t *testing.T) {
+	t.Run("Should successfully validate minimum", func(t *testing.T) {
+		tl := config.Tenant{SystemLimit: config.MinTenantLimitSystems}
+		assert.NoError(t, tl.Validate())
+	})
+
+	t.Run("Should fail validation for Systems below minimum", func(t *testing.T) {
+		tl := config.Tenant{SystemLimit: 0}
+		err := tl.Validate()
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, config.ErrTenantLimitsSystemsBelowMinimum)
+	})
+}
+
 func TestValidateTenantManager(t *testing.T) {
 	mutator := testutils.NewMutator(func() config.TenantManager {
 		return config.TenantManager{
