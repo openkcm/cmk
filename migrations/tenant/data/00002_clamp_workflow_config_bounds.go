@@ -9,30 +9,14 @@ import (
 // fall outside the hard limits defined in constants/workflow.go. This must
 // run after schema migration 00019 adds the corresponding CHECK constraints.
 func upClampWorkflowConfigBounds(ctx context.Context, tx *sql.Tx) error {
-	// Guard: skip if tenant_configs or the key/value columns no longer exist.
-	// Protects against future schema evolution where this table or its columns
-	// may have been restructured or removed, and a fresh DB setup runs all
-	// historical data migrations.
-	var tableExists, keyColExists, valueColExists bool
-	err := tx.QueryRowContext(ctx, `
-		SELECT
-			EXISTS (
-				SELECT 1 FROM information_schema.tables
-				WHERE table_name = 'tenant_configs'
-			),
-			EXISTS (
-				SELECT 1 FROM information_schema.columns
-				WHERE table_name = 'tenant_configs' AND column_name = 'key'
-			),
-			EXISTS (
-				SELECT 1 FROM information_schema.columns
-				WHERE table_name = 'tenant_configs' AND column_name = 'value'
-			)
-	`).Scan(&tableExists, &keyColExists, &valueColExists)
+	// Skip unless value is still a jsonb column. The clamp casts value as jsonb,
+	// which the flattened (text value) schema no longer supports; a fresh DB
+	// setup replays all historical data migrations against the contracted shape.
+	jsonb, err := jsonbValueColumnExists(ctx, tx)
 	if err != nil {
 		return err
 	}
-	if !tableExists || !keyColExists || !valueColExists {
+	if !jsonb {
 		return nil
 	}
 

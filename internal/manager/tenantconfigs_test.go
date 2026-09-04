@@ -122,10 +122,10 @@ func TestGetDefaultKeystore(t *testing.T) {
 
 	t.Run("Config Exists", func(t *testing.T) {
 		// Arrange
-		configManager, db, tenant := SetupTenantConfigManager(t)
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
 
-		tenantConfigRepo := sql.NewRepository(db)
-		ksConfigJSON, err := json.Marshal(&model.KeystoreConfig{
+		err := configManager.SetDefaultKeystore(ctx, &model.KeystoreConfig{
 			RoleManagementConfig: model.ManagementConfig{
 				LocalityID: testutils.TestLocalityID,
 				CommonName: testutils.TestDefaultKeystoreCommonName,
@@ -138,16 +138,8 @@ func TestGetDefaultKeystore(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		conf := &model.LegacyTenantConfig{
-			Key:   constants.DefaultKeyStore,
-			Value: string(ksConfigJSON),
-		}
-
-		err = tenantConfigRepo.Set(testutils.CreateCtxWithTenant(tenant), conf, *repo.NewQuery())
-		assert.NoError(t, err)
-
 		// Act
-		keystore, err := configManager.GetDefaultKeystoreConfig(testutils.CreateCtxWithTenant(tenant))
+		keystore, err := configManager.GetDefaultKeystoreConfig(ctx)
 
 		// Assert
 		assert.NoError(t, err)
@@ -482,14 +474,14 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: new(10),
-			MaxExpiryPeriodDays:     new(10),
+			DefaultExpiryPeriodDays: new(7),
+			MaxExpiryPeriodDays:     new(7),
 		})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, 10, result.DefaultExpiryPeriodDays)
-		assert.Equal(t, 10, result.MaxExpiryPeriodDays)
+		assert.Equal(t, 7, result.DefaultExpiryPeriodDays)
+		assert.Equal(t, 7, result.MaxExpiryPeriodDays)
 	})
 
 	t.Run("Should fail when minimumApprovals is less than 2", func(t *testing.T) {
@@ -765,14 +757,13 @@ func setupTenantConfigManagerWithCerts(
 	return tenantConfigManager, db, tenants[0]
 }
 
-// storeKsConfig marshals ks and persists it as the tenant's default keystore config.
+// storeKsConfig persists ks as the tenant's default keystore config (flat rows).
 func storeKsConfig(t *testing.T, db *multitenancy.DB, tenant string, ks *model.KeystoreConfig) {
 	t.Helper()
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	b, err := json.Marshal(ks)
-	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(b)}, *repo.NewQuery()))
+	m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), &config.Config{}, nil, nil)
+	require.NoError(t, m.SetDefaultKeystore(ctx, ks))
 }
 
 func TestEnsureKeystoreProvisioned(t *testing.T) {
@@ -1034,32 +1025,6 @@ func TestNeedsDefaultKeystoreProvisioning(t *testing.T) {
 	})
 }
 
-// TestGetWorkflowConfig_LegacyFallback covers the dual-read fallback: when a
-// tenant has only the legacy JSON blob (no flat rows yet), GetWorkflowConfig
-// must still return the correct config.
-func TestGetWorkflowConfig_LegacyFallback(t *testing.T) {
-	m, db, tenant := SetupTenantConfigManager(t)
-	r := sql.NewRepository(db)
-	ctx := testutils.CreateCtxWithTenant(tenant)
-
-	wc := &model.WorkflowConfig{
-		Enabled:                 true,
-		MinimumApprovals:        3,
-		RetentionPeriodDays:     45,
-		DefaultExpiryPeriodDays: 10,
-		MaxExpiryPeriodDays:     20,
-	}
-	bytes, err := json.Marshal(wc)
-	assert.NoError(t, err)
-
-	err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.WorkflowConfigKey, Value: string(bytes)}, *repo.NewQuery())
-	assert.NoError(t, err)
-
-	got, err := m.GetWorkflowConfig(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, wc, got)
-}
-
 // TestSetWorkflowConfig_FlatRoundTrip verifies SetWorkflowConfig writes flat
 // rows and GetWorkflowConfig reads them back without consulting the legacy blob.
 func TestSetWorkflowConfig_FlatRoundTrip(t *testing.T) {
@@ -1069,9 +1034,12 @@ func TestSetWorkflowConfig_FlatRoundTrip(t *testing.T) {
 	wc := &model.WorkflowConfig{
 		Enabled:                 true,
 		MinimumApprovals:        2,
+		MaxApprovals:            constants.MaxMinimumApprovals,
 		RetentionPeriodDays:     30,
+		MinRetentionPeriodDays:  constants.MinRetentionPeriodDays,
+		MaxRetentionPeriodDays:  constants.MaxRetentionPeriodDays,
 		DefaultExpiryPeriodDays: 7,
-		MaxExpiryPeriodDays:     14,
+		MaxExpiryPeriodDays:     7,
 	}
 
 	stored, err := m.SetWorkflowConfig(ctx, wc)
@@ -1081,31 +1049,6 @@ func TestSetWorkflowConfig_FlatRoundTrip(t *testing.T) {
 	got, err := m.GetWorkflowConfig(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, wc, got)
-}
-
-// TestGetDefaultKeystoreConfig_LegacyFallback covers the dual-read fallback for
-// the default keystore config.
-func TestGetDefaultKeystoreConfig_LegacyFallback(t *testing.T) {
-	m, db, tenant := SetupTenantConfigManager(t)
-	r := sql.NewRepository(db)
-	ctx := testutils.CreateCtxWithTenant(tenant)
-
-	ks := &model.KeystoreConfig{
-		RoleManagementConfig: model.ManagementConfig{
-			LocalityID: "loc-1",
-			CommonName: "cn-1",
-		},
-	}
-	bytes, err := json.Marshal(ks)
-	assert.NoError(t, err)
-
-	err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(bytes)}, *repo.NewQuery())
-	assert.NoError(t, err)
-
-	got, err := m.GetDefaultKeystoreConfig(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, ks.RoleManagementConfig.LocalityID, got.RoleManagementConfig.LocalityID)
-	assert.Equal(t, ks.RoleManagementConfig.CommonName, got.RoleManagementConfig.CommonName)
 }
 
 // TestSetDefaultKeystore_ClearsOmittedOptionalFields ensures whole-object

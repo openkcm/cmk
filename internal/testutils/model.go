@@ -308,9 +308,11 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 
 func NewWorkflowConfig(m func(*model.WorkflowConfig)) *model.WorkflowConfig {
 	wc := &model.WorkflowConfig{
-		Enabled:             true,
-		MinimumApprovals:    1,
-		RetentionPeriodDays: 30,
+		Enabled:                 true,
+		MinimumApprovals:        constants.DefaultMinimumApprovalCount,
+		RetentionPeriodDays:     constants.DefaultRetentionPeriodDays,
+		DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
+		MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
 	}
 	if m != nil {
 		m(wc)
