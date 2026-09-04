@@ -2,7 +2,7 @@
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS resource_labels (
     id UUID PRIMARY KEY,
-    resource_type TEXT NOT NULL CHECK (resource_type IN ('key_configuration')),
+    resource_type TEXT NOT NULL CHECK (resource_type IN ('key_configuration','key')),
     resource_id UUID NOT NULL,
     key TEXT NOT NULL,
     value TEXT NOT NULL,

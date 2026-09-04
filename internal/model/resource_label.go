@@ -13,8 +13,10 @@ import (
 type ResourceType string
 
 const (
-	// ResourceTypeKeyConfig represents a key configuration resource
+	// ResourceTypeKeyConfig represents a key configuration resource (e.g. tags)
 	ResourceTypeKeyConfig ResourceType = "key_configuration"
+	// ResourceTypeKey represents a crypto key resource (e.g. key labels)
+	ResourceTypeKey ResourceType = "key"
 )
 
 // SystemTagKey is the reserved key for system tags

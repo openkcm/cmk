@@ -168,7 +168,7 @@ func (m *LabelManager) GetKeyLabels(
 // syncDeleteResourceLabel removes a label from the resource_labels table
 func (m *LabelManager) syncDeleteResourceLabel(ctx context.Context, keyID uuid.UUID, labelName string) {
 	ck := repo.NewCompositeKey().
-		Where(repo.ResourceTypeField, model.ResourceTypeKeyConfig).
+		Where(repo.ResourceTypeField, model.ResourceTypeKey).
 		Where(repo.ResourceIDField, keyID).
 		Where(repo.KeyField, labelName)
 
@@ -183,7 +183,7 @@ func (m *LabelManager) syncCreateResourceLabel(ctx context.Context, keyID uuid.U
 	}
 	resourceLabel := &model.ResourceLabel{
 		ID:           uuid.New(),
-		ResourceType: model.ResourceTypeKeyConfig,
+		ResourceType: model.ResourceTypeKey,
 		ResourceID:   keyID,
 		Key:          label.Key,
 		Value:        label.Value,
@@ -200,7 +200,7 @@ func (m *LabelManager) syncUpdateResourceLabel(ctx context.Context, keyID uuid.U
 	// Find existing resource label
 	rl := &model.ResourceLabel{}
 	ck := repo.NewCompositeKey().
-		Where(repo.ResourceTypeField, model.ResourceTypeKeyConfig).
+		Where(repo.ResourceTypeField, model.ResourceTypeKey).
 		Where(repo.ResourceIDField, keyID).
 		Where(repo.KeyField, label.Key)
 
