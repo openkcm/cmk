@@ -1081,7 +1081,8 @@ func TestDelete(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfigWSystems, sys, keyFailSystems)
 
-	// A primary PENDING_IMPORT BYOK key with a connected system: deletion bypasses the check.
+	// A primary PENDING_IMPORT BYOK key with a connected system is safeguarded: a primary key
+	// in this state is a key reverted after material deletion, so deletion is rejected.
 	pendingImportPrimaryID := uuid.New()
 	keyConfigPendingPrimary := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = new(pendingImportPrimaryID)
@@ -1137,9 +1138,9 @@ func TestDelete(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "Should delete primary PENDING_IMPORT BYOK key despite connected systems",
+			name:    "Should fail on delete primary PENDING_IMPORT BYOK key with connected systems",
 			keyID:   pendingImportPrimaryKey.ID,
-			wantErr: false,
+			wantErr: true,
 		},
 		{
 			name:    "Should fail on delete ENABLED BYOK primary with connected systems",
