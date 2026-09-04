@@ -422,14 +422,14 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
 			MinimumApprovals:    new(3),
-			RetentionPeriodDays: new(60),
+			RetentionPeriodDays: new(30),
 		})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
 		assert.True(t, result.Enabled)
 		assert.Equal(t, 3, result.MinimumApprovals)
-		assert.Equal(t, 60, result.RetentionPeriodDays)
+		assert.Equal(t, 30, result.RetentionPeriodDays)
 		assert.Equal(t, 7, result.DefaultExpiryPeriodDays)
 	})
 
@@ -439,12 +439,26 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			RetentionPeriodDays: new(29),
+			RetentionPeriodDays: new(0),
 		})
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.ErrorIs(t, err, manager.ErrRetentionLessThanMinimum)
+	})
+
+	t.Run("Should fail when retention period exceeds maximum", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			RetentionPeriodDays: new(31),
+		})
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrRetentionExceedsMaximum)
 	})
 
 	t.Run("Should fail when defaultExpiryPeriodDays exceeds maxExpiryPeriodDays", func(t *testing.T) {
@@ -490,6 +504,20 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.ErrorIs(t, err, manager.ErrMinimumApprovalsTooLow)
+	})
+
+	t.Run("Should fail when minimumApprovals exceeds maximum", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			MinimumApprovals: new(6),
+		})
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrMinimumApprovalsTooHigh)
 	})
 
 	t.Run("Should succeed when minimumApprovals equals 2", func(t *testing.T) {
@@ -583,14 +611,14 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
 				MinimumApprovals:    new(5),
-				RetentionPeriodDays: new(90),
+				RetentionPeriodDays: new(30),
 			})
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
 			assert.True(t, result.Enabled)
 			assert.Equal(t, 5, result.MinimumApprovals)
-			assert.Equal(t, 90, result.RetentionPeriodDays)
+			assert.Equal(t, 30, result.RetentionPeriodDays)
 		})
 
 		t.Run("ROLE_TEST can update Enabled with other fields simultaneously", func(t *testing.T) {
@@ -602,14 +630,14 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
 				Enabled:             new(true),
 				MinimumApprovals:    new(4),
-				RetentionPeriodDays: new(60),
+				RetentionPeriodDays: new(30),
 			})
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
 			assert.True(t, result.Enabled)
 			assert.Equal(t, 4, result.MinimumApprovals)
-			assert.Equal(t, 60, result.RetentionPeriodDays)
+			assert.Equal(t, 30, result.RetentionPeriodDays)
 		})
 
 		t.Run("Setting same Enabled value does not trigger role validation", func(t *testing.T) {
