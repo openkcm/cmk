@@ -1764,8 +1764,8 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 	)
 
 	// Create workflow config
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 	testutils.CreateTestEntities(ctx, t, r, group)
+	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 
 	t.Run("should delete expired terminal workflow", func(t *testing.T) {
 		// Create old terminal workflow (should be deleted)
@@ -2085,9 +2085,13 @@ func setupEligibilityTest(
 	wm, r, tenantID := SetupWorkflowManager(t, cfg, testplugins.WithIdentityManagement(idmPlugin))
 	ctx := testutils.CreateCtxWithTenant(tenantID)
 
-	// Create tenant workflow config with minimum approvals matching approver count
+	// minimum_approvals is DB-constrained to [2,5]; the per-workflow
+	// MinimumApprovalCount below carries approverCount, so clamp the stored
+	// config into range and let the fallback default cover out-of-range counts.
 	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
-		wc.MinimumApprovals = approverCount
+		if approverCount >= constants.DefaultMinimumApprovalCount && approverCount <= constants.MaxMinimumApprovals {
+			wc.MinimumApprovals = approverCount
+		}
 	}))
 
 	// Create key admin group
