@@ -11,9 +11,17 @@ import (
 var errFlatRowColumnsMissing = errors.New("flatten backfill needs the type and value_text columns; run schema first")
 
 // upFlattenTenantConfigs backfills flat rows into value_text from the legacy
-// WORKFLOW_CONFIG and DEFAULT_KEYSTORE blobs. Legacy blobs stay until the
-// cleanup release drops them.
+// WORKFLOW_CONFIG and DEFAULT_KEYSTORE blobs. Skips unless value is still a
+// jsonb column, since the flattened schema no longer needs the backfill.
 func upFlattenTenantConfigs(ctx context.Context, tx *sql.Tx) error {
+	jsonb, err := jsonbValueColumnExists(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !jsonb {
+		return nil
+	}
+
 	ready, err := flatRowColumnsExist(ctx, tx)
 	if err != nil {
 		return err
