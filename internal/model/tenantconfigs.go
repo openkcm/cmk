@@ -41,8 +41,17 @@ type WorkflowConfig struct {
 	// MinimumApprovals is the minimum number of approvals required for a workflow
 	MinimumApprovals int
 
+	// MaxApprovals is the hard upper limit for MinimumApprovals
+	MaxApprovals int
+
 	// RetentionPeriodDays is the number of days to retain workflow data
 	RetentionPeriodDays int
+
+	// MinRetentionPeriodDays is the hard lower limit for RetentionPeriodDays
+	MinRetentionPeriodDays int
+
+	// MaxRetentionPeriodDays is the hard upper limit for RetentionPeriodDays
+	MaxRetentionPeriodDays int
 
 	// DefaultExpiryPeriodDays is the default number of days after which pending workflows will expire
 	DefaultExpiryPeriodDays int

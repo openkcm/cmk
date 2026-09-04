@@ -14,7 +14,10 @@ func WorkflowConfigToAPI(config *model.WorkflowConfig) *cmkapi.TenantWorkflowCon
 	return &cmkapi.TenantWorkflowConfiguration{
 		Enabled:                 new(config.Enabled),
 		MinimumApprovals:        new(config.MinimumApprovals),
+		MaxApprovals:            new(config.MaxApprovals),
 		RetentionPeriodDays:     new(config.RetentionPeriodDays),
+		MinRetentionPeriodDays:  new(config.MinRetentionPeriodDays),
+		MaxRetentionPeriodDays:  new(config.MaxRetentionPeriodDays),
 		DefaultExpiryPeriodDays: new(config.DefaultExpiryPeriodDays),
 		MaxExpiryPeriodDays:     new(config.MaxExpiryPeriodDays),
 	}
