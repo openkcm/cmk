@@ -85,7 +85,7 @@ func IsUnavailableKeyState(state cmkapi.KeyState) bool {
 }
 
 // IsPendingImportBYOK reports whether the key is a BYOK key still awaiting material import.
-// Such a key carries no material and binds no system, so deletion skips the workflow and connected-systems checks.
+// Such a key cannot be enabled or disabled, so its state updates skip the workflow gate.
 func IsPendingImportBYOK(key *model.Key) bool {
 	return key != nil && key.KeyType == cmkapi.KeyTypeBYOK && key.State == cmkapi.KeyStatePENDINGIMPORT
 }
@@ -714,9 +714,10 @@ func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key
 }
 
 // checkConnectedSystems rejects deletion of a primary key whose config still has connected
-// systems. A PENDING_IMPORT BYOK key is exempt: it binds no system.
+// systems. Non-primary keys are exempt: a never-imported PENDING_IMPORT placeholder is never
+// primary, while a key reverted to PENDING_IMPORT stays primary and is safeguarded here.
 func (km *KeyManager) checkConnectedSystems(ctx context.Context, key *model.Key) error {
-	if !key.IsPrimary || IsPendingImportBYOK(key) {
+	if !key.IsPrimary {
 		return nil
 	}
 
