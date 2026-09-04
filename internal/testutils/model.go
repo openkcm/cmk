@@ -1,19 +1,24 @@
 package testutils
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"strconv"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jxskiss/base62"
 	"github.com/openkcm/orbital"
+	"github.com/stretchr/testify/require"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/repo"
 )
 
 const (
@@ -301,23 +306,34 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 	return new(mut(m))
 }
 
-func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
-	retentionPeriodDays := 30
-	wc := model.WorkflowConfig{
+func NewWorkflowConfig(m func(*model.WorkflowConfig)) *model.WorkflowConfig {
+	wc := &model.WorkflowConfig{
 		Enabled:             true,
 		MinimumApprovals:    1,
-		RetentionPeriodDays: retentionPeriodDays,
+		RetentionPeriodDays: 30,
 	}
-	//nolint:errchkjson
-	configValue, _ := json.Marshal(wc)
-	mut := NewMutator(func() model.TenantConfig {
-		return model.TenantConfig{
-			Key:   constants.WorkflowConfigKey,
-			Value: configValue,
-		}
-	})
+	if m != nil {
+		m(wc)
+	}
 
-	return new(mut(m))
+	return wc
+}
+
+func WriteWorkflowConfig(ctx context.Context, tb testing.TB, r repo.Repo, wc *model.WorkflowConfig) {
+	tb.Helper()
+
+	const wfType = "workflow"
+	rows := []*model.TenantConfig{
+		{Key: "enabled", Value: strconv.FormatBool(wc.Enabled), Type: wfType},
+		{Key: "minimum_approvals", Value: strconv.Itoa(wc.MinimumApprovals), Type: wfType},
+		{Key: "retention_period_days", Value: strconv.Itoa(wc.RetentionPeriodDays), Type: wfType},
+		{Key: "default_expiry_period_days", Value: strconv.Itoa(wc.DefaultExpiryPeriodDays), Type: wfType},
+		{Key: "max_expiry_period_days", Value: strconv.Itoa(wc.MaxExpiryPeriodDays), Type: wfType},
+	}
+	query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
+	for _, row := range rows {
+		require.NoError(tb, r.Set(ctx, row, *query))
+	}
 }
 
 // NewDefaultWorkflowConfig creates a default WorkflowConfig for testing

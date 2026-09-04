@@ -154,7 +154,7 @@ func seedDefaultKeystore(t *testing.T, r repo.Repo, ctx context.Context) {
 	ksConf := testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {})
 	ksConfBytes, err := json.Marshal(ksConf)
 	require.NoError(t, err)
-	err = r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksConfBytes}, *repo.NewQuery())
+	err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksConfBytes)}, *repo.NewQuery())
 	require.NoError(t, err)
 }
 

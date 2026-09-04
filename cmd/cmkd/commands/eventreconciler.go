@@ -17,7 +17,9 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	cmkflags "github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/log"
+	"github.com/openkcm/cmk/internal/manager"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	runcmd "github.com/openkcm/cmk/utils/cmd"
@@ -98,7 +100,17 @@ func runEventReconciler(ctx context.Context, cfg *config.Config) error {
 		return oops.In("event-reconciler").Wrapf(err, "Failed injecting authz role")
 	}
 
-	reconciler, err := eventprocessor.NewCryptoReconciler(ctx, cfg, authzRepo, svcRegistry, clientsFactory)
+	// Feature flag provider initialisation
+	err = cmkflags.Init(cfg.FeatureFlags)
+	if err != nil {
+		return oops.In("event-reconciler").Wrap(err)
+	}
+
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, nil, cmkflags.NewClient())
+
+	reconciler, err := eventprocessor.NewCryptoReconciler(
+		ctx, cfg, authzRepo, svcRegistry, clientsFactory, tenantConfigManager,
+	)
 	if err != nil {
 		return oops.In("event-reconciler").Wrapf(err, "Failed to create crypto reconciler")
 	}
