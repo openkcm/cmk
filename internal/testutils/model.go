@@ -13,7 +13,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/multitenancy"
 )
 
 const (
@@ -269,11 +268,9 @@ func NewWorkflowApprover(m func(approver *model.WorkflowApprover)) *model.Workfl
 func NewKeyLabel(m func(l *model.KeyLabel)) *model.KeyLabel {
 	mut := NewMutator(func() model.KeyLabel {
 		return model.KeyLabel{
-			BaseLabel: model.BaseLabel{
-				ID:    uuid.New(),
-				Value: uuid.NewString(),
-				Key:   uuid.NewString(),
-			},
+			ID:    uuid.New(),
+			Value: uuid.NewString(),
+			Key:   uuid.NewString(),
 		}
 	})
 
@@ -285,16 +282,14 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 	schema := "_" + base62.EncodeToString([]byte(tenantID))
 	mut := NewMutator(func() model.Tenant {
 		return model.Tenant{
-			TenantModel: multitenancy.TenantModel{
-				SchemaName: schema,
-				DomainURL:  tenantID,
-			},
-			ID:        tenantID,
-			Status:    "STATUS_ACTIVE",
-			Role:      "ROLE_LIVE",
-			OwnerID:   tenantID + "-owner-id",
-			OwnerType: "owner-type",
-			Name:      tenantID,
+			SchemaName: schema,
+			DomainURL:  tenantID,
+			ID:         tenantID,
+			Status:     "STATUS_ACTIVE",
+			Role:       "ROLE_LIVE",
+			OwnerID:    tenantID + "-owner-id",
+			OwnerType:  "owner-type",
+			Name:       tenantID,
 		}
 	})
 

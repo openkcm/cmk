@@ -28,11 +28,9 @@ func TestTransformKeyVersion_ToAPI(t *testing.T) {
 
 	modelKeyVersionMut := testutils.NewMutator(func() model.KeyVersion {
 		return model.KeyVersion{
-			ID:    versionID,
-			KeyID: key1.ID,
-			AutoTimeModel: model.AutoTimeModel{
-				CreatedAt: now,
-			},
+			ID:        versionID,
+			KeyID:     key1.ID,
+			CreatedAt: now,
 			RotatedAt: now,
 			NativeID:  "arn:aws:kms:us-west-2:111122223333:alias/my-key-alias",
 		}

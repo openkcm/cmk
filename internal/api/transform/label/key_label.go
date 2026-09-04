@@ -30,12 +30,10 @@ func FromAPI(keyUUID cmkapi.KeyIDPath, apiKeyLabel cmkapi.Label) (*model.KeyLabe
 	}
 
 	return &model.KeyLabel{
-		BaseLabel: model.BaseLabel{
-			ID:         uuid.New(),
-			ResourceID: keyUUID,
-			Key:        apiKeyLabel.Key,
-			Value:      *labelValue,
-		},
+		ID:         uuid.New(),
+		ResourceID: keyUUID,
+		Key:        apiKeyLabel.Key,
+		Value:      *labelValue,
 	}, nil
 }
 

@@ -100,10 +100,8 @@ func TestKeystorePoolMonitorCallback(t *testing.T) {
 	addToKeystorePool(t, dbRepo, 5)
 
 	daemon.MonitorKeystorePoolSize(t.Context(), &config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name: "test-app",
-			},
+		Application: commoncfg.Application{
+			Name: "test-app",
 		},
 		Database: dbConf,
 		KeystorePool: config.KeystorePool{
@@ -165,10 +163,8 @@ func TestKeystorePoolFillPercentageMetric(t *testing.T) {
 	addToKeystorePool(t, dbRepo, 3)
 
 	daemon.MonitorKeystorePoolSize(t.Context(), &config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name: "test-app",
-			},
+		Application: commoncfg.Application{
+			Name: "test-app",
 		},
 		Database: dbConf,
 		KeystorePool: config.KeystorePool{

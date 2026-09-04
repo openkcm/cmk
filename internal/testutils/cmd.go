@@ -61,17 +61,15 @@ func CreateTestConfigFile(t *testing.T) *config.Config {
 	require.NoError(t, err, "failed to get free port")
 
 	cfg := &config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name: "test",
-			},
-			Status: commoncfg.Status{
-				Enabled: true,
-				Address: fmt.Sprintf("localhost:%d", port),
-			},
-			Logger: commoncfg.Logger{
-				Level: "error",
-			},
+		Application: commoncfg.Application{
+			Name: "test",
+		},
+		Status: commoncfg.Status{
+			Enabled: true,
+			Address: fmt.Sprintf("localhost:%d", port),
+		},
+		Logger: commoncfg.Logger{
+			Level: "error",
 		},
 		Database: dbCfg,
 		Certificates: config.Certificates{

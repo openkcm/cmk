@@ -1,6 +1,6 @@
 module github.com/openkcm/cmk
 
-go 1.26.5
+go 1.27.0
 
 require (
 	buf.build/go/protovalidate v1.4.0

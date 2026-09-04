@@ -42,11 +42,9 @@ func buildCfg(t *testing.T) []byte {
 			Address: "localhost:8082",
 		},
 
-		BaseConfig: commoncfg.BaseConfig{
-			Logger: commoncfg.Logger{
-				Format: "json",
-				Level:  "info",
-			},
+		Logger: commoncfg.Logger{
+			Format: "json",
+			Level:  "info",
 		},
 		ConfigurableContext: commoncfg.SourceRef{
 			Source: commoncfg.EmbeddedSourceValue,

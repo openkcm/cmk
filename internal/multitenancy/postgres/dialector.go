@@ -7,8 +7,6 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	gormmigrator "gorm.io/gorm/migrator"
-
 	"github.com/openkcm/cmk/internal/multitenancy/driver"
 	"github.com/openkcm/cmk/internal/multitenancy/gmterrors"
 	"github.com/openkcm/cmk/internal/multitenancy/logext"
@@ -89,13 +87,9 @@ func New(config Config, opts ...Option) gorm.Dialector {
 func (dialector Dialector) Migrator(db *gorm.DB) gorm.Migrator {
 	return &Migrator{
 		postgres.Migrator{
-			Migrator: gormmigrator.Migrator{
-				Config: gormmigrator.Config{
-					DB:                          db,
-					Dialector:                   dialector,
-					CreateIndexAfterCreateTable: true,
-				},
-			},
+			DB:                          db,
+			Dialector:                   dialector,
+			CreateIndexAfterCreateTable: true,
 		},
 		dialector,
 	}

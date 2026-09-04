@@ -31,40 +31,32 @@ func TestTransformLabel_FromAPI(t *testing.T) {
 
 	tcs := []labelsTransformerFromAPITestCase{
 		{
-			labelsTransformerTestCase: labelsTransformerTestCase{
-				name:        "Valid_KeyID_And_Labels_From_API_Request",
-				expectedErr: nil,
-			},
+			name:               "Valid_KeyID_And_Labels_From_API_Request",
+			expectedErr:        nil,
 			inputKeyID:         uuid.New(),
 			inputLabelName:     "foo",
 			inputLabelValuePtr: new("bar"),
 			expectedLabelValue: "bar",
 		},
 		{
-			labelsTransformerTestCase: labelsTransformerTestCase{
-				name:        "Label_Value_As_Empty_String",
-				expectedErr: nil,
-			},
+			name:               "Label_Value_As_Empty_String",
+			expectedErr:        nil,
 			inputKeyID:         uuid.New(),
 			inputLabelName:     "foo",
 			inputLabelValuePtr: new(""),
 			expectedLabelValue: "",
 		},
 		{
-			labelsTransformerTestCase: labelsTransformerTestCase{
-				name:        "Label_Value_As_nil",
-				expectedErr: nil,
-			},
+			name:               "Label_Value_As_nil",
+			expectedErr:        nil,
 			inputKeyID:         uuid.New(),
 			inputLabelName:     "foo",
 			inputLabelValuePtr: nil,
 			expectedLabelValue: "",
 		},
 		{
-			labelsTransformerTestCase: labelsTransformerTestCase{
-				name:        "Label_Name_As_Empty_String",
-				expectedErr: errs.Wrapf(apierrors.ErrNameFieldMissingProperty, "label name"),
-			},
+			name:               "Label_Name_As_Empty_String",
+			expectedErr:        errs.Wrapf(apierrors.ErrNameFieldMissingProperty, "label name"),
 			inputKeyID:         uuid.New(),
 			inputLabelName:     "",
 			inputLabelValuePtr: new("bar"),
@@ -102,13 +94,11 @@ func TestTransformLabel_ToAPI(t *testing.T) {
 	// PREPARE
 	labelGen := func(labelName, labelValue string) *model.KeyLabel {
 		return &model.KeyLabel{
-			BaseLabel: model.BaseLabel{
-				ID:         uuid.New(),
-				Key:        labelName,
-				Value:      labelValue,
-				ResourceID: uuid.New(),
-			},
-			CryptoKey: model.Key{},
+			ID:         uuid.New(),
+			Key:        labelName,
+			Value:      labelValue,
+			ResourceID: uuid.New(),
+			CryptoKey:  model.Key{},
 		}
 	}
 
@@ -122,35 +112,27 @@ func TestTransformLabel_ToAPI(t *testing.T) {
 
 	tcs := []labelTransformerToAPITestCase{
 		{
-			labelsTransformerTestCase: labelsTransformerTestCase{
-				name:        "Valid_DB_Model_Label_Name_And_Value",
-				expectedErr: nil,
-			},
+			name:               "Valid_DB_Model_Label_Name_And_Value",
+			expectedErr:        nil,
 			inputLabelModel:    labelGen("foo", "bar"),
 			expectedLabelName:  "foo",
 			expectedLabelValue: "bar",
 		},
 		{
-			labelsTransformerTestCase: labelsTransformerTestCase{
-				name:        "DB_Model_Label_With_Empty_Label_Value",
-				expectedErr: nil,
-			},
+			name:               "DB_Model_Label_With_Empty_Label_Value",
+			expectedErr:        nil,
 			inputLabelModel:    labelGen("foo", ""),
 			expectedLabelName:  "foo",
 			expectedLabelValue: "",
 		},
 		{
-			labelsTransformerTestCase: labelsTransformerTestCase{
-				name:        "Nil_DB_Model_Label",
-				expectedErr: sanitise.ErrNilPtr,
-			},
+			name:            "Nil_DB_Model_Label",
+			expectedErr:     sanitise.ErrNilPtr,
 			inputLabelModel: nil,
 		},
 		{
-			labelsTransformerTestCase: labelsTransformerTestCase{
-				name:        "DB_Model_Label_With_Empty_Label_Name",
-				expectedErr: errs.Wrapf(label.ErrInvalidLabelDBModelField, "label name"),
-			},
+			name:            "DB_Model_Label_With_Empty_Label_Name",
+			expectedErr:     errs.Wrapf(label.ErrInvalidLabelDBModelField, "label name"),
 			inputLabelModel: labelGen("", "bar"),
 		},
 	}
