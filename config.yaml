@@ -281,3 +281,16 @@ audit:
     region: "eu10"
     appImage: "cmk:latest"
     appVersion: "1.0.0"
+
+# Landscape configuration
+landscape:
+  name: local-dev
+  uiBaseUrl: http://localhost:3000
+  region: local
+  # Maximum number of key versions to retain per provider
+  # Default: 5 versions per key
+  # Set to -1 for unlimited (no eviction)
+  maxKeyVersions:
+    AWS: 10       # Keep up to 10 versions for AWS keys
+    GCP: 5        # Keep up to 5 versions for GCP keys
+    FORTANIX: -1  # Keep all versions for FORTANIX keys (unlimited)
