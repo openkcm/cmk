@@ -781,7 +781,8 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		k.ID = pKeyID
 	})
 
-	// A primary PENDING_IMPORT BYOK key with a connected system: deletion bypasses the workflow and dependency checks.
+	// A primary PENDING_IMPORT BYOK key with a connected system: a primary key in this state is
+	// a reverted key, so deletion is safeguarded by both the dependency and workflow checks.
 	pendingPKeyID := uuid.New()
 	keyConfigPendingPKey := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
@@ -859,9 +860,14 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 			workflowEnable: true,
 		},
 		{
-			name:           "Should 204 on primary PENDING_IMPORT BYOK delete despite connected system and workflow",
+			name:           "Should 400 on primary PENDING_IMPORT BYOK delete with connected system",
 			keyID:          pendingPKey.ID,
-			expectedStatus: http.StatusNoContent,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Should 400 on primary PENDING_IMPORT BYOK delete when workflow is required",
+			keyID:          pendingPKey.ID,
+			expectedStatus: http.StatusBadRequest,
 			workflowEnable: true,
 		},
 	}

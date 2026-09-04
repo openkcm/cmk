@@ -249,11 +249,8 @@ func (c *APIController) isPrimaryKeyDeletion(
 		return false, err
 	}
 
-	// A PENDING_IMPORT BYOK key deletes without a workflow, even when primary.
-	if manager.IsPendingImportBYOK(key) {
-		return false, nil
-	}
-
+	// A never-imported placeholder is never primary and skips the workflow; a reverted
+	// PENDING_IMPORT key stays primary and is gated like any other primary deletion.
 	if key.IsPrimary {
 		return true, nil
 	}
