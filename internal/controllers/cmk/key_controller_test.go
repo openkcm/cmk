@@ -782,7 +782,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		s.Status = cmkapi.SystemStatusCONNECTED
 	})
 
-	// A primary PENDING_IMPORT BYOK key with a connected system: deletion bypasses the workflow and dependency checks.
+	// Primary PENDING_IMPORT BYOK key with a connected system: a reverted key, deletion safeguarded.
 	pendingPKeyID := uuid.New()
 	keyConfigPendingPKey := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
@@ -818,8 +818,8 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		keystoreKeyMgmtCert,
 		keyConfigWSys,
 		sys,
-		keyConfigPendingPKey,
 		pendingPKey,
+		keyConfigPendingPKey,
 		pendingSys,
 	)
 
@@ -860,9 +860,14 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 			workflowEnable: true,
 		},
 		{
-			name:           "Should 204 on primary PENDING_IMPORT BYOK delete despite connected system and workflow",
+			name:           "Should 400 on primary PENDING_IMPORT BYOK delete with connected system",
 			keyID:          pendingPKey.ID,
-			expectedStatus: http.StatusNoContent,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Should 400 on primary PENDING_IMPORT BYOK delete when workflow is required",
+			keyID:          pendingPKey.ID,
+			expectedStatus: http.StatusBadRequest,
 			workflowEnable: true,
 		},
 	}
@@ -993,7 +998,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		k.Provider = providerTest
 	})
 
-	// A primary PENDING_IMPORT BYOK key: enable/disable bypasses the workflow gate and returns the state error.
+	// Primary PENDING_IMPORT BYOK key: enable/disable bypasses the workflow gate, returns state error.
 	pendingKeyID := uuid.New()
 	pendingKC := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = new(pendingKeyID)
@@ -1014,8 +1019,8 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		hyokKey,
 		hyokKeyInvalidMgmt,
 		kc,
-		pendingKC,
 		pendingKey,
+		pendingKC,
 		keystore,
 		keystoreDefaultCert,
 		keystoreKeyMgmtCert,

@@ -249,11 +249,6 @@ func (c *APIController) isPrimaryKeyDeletion(
 		return false, err
 	}
 
-	// A PENDING_IMPORT BYOK key deletes without a workflow, even when primary.
-	if manager.IsPendingImportBYOK(key) {
-		return false, nil
-	}
-
 	if key.IsPrimary {
 		return true, nil
 	}
