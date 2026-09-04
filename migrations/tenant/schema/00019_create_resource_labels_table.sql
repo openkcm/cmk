@@ -6,8 +6,8 @@ CREATE TABLE IF NOT EXISTS resource_labels (
     resource_id UUID NOT NULL,
     key TEXT NOT NULL,
     value TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
 );
 
 -- Partial unique index for labels: one value per (resource_type, resource_id, key) when key != 'system.tag'

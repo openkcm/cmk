@@ -33,8 +33,8 @@ type ResourceLabel struct {
 }
 
 // TableName returns the table name for ResourceLabel
-func (ResourceLabel) TableName() string {
-	return "resource_labels"
+func (m ResourceLabel) TableName() string {
+	return string(m.TableResourceType())
 }
 
 // IsSharedModel returns false since ResourceLabel is tenant-scoped

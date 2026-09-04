@@ -177,6 +177,10 @@ func (m *LabelManager) syncDeleteResourceLabel(ctx context.Context, keyID uuid.U
 
 // syncCreateResourceLabel writes a new label to the resource_labels table
 func (m *LabelManager) syncCreateResourceLabel(ctx context.Context, keyID uuid.UUID, label *model.KeyLabel) {
+	// Avoid overwriting tag rows if a KeyLabel ever uses the reserved key
+	if label.Key == model.SystemTagKey {
+		return
+	}
 	resourceLabel := &model.ResourceLabel{
 		ID:           uuid.New(),
 		ResourceType: model.ResourceTypeKeyConfig,
@@ -189,6 +193,10 @@ func (m *LabelManager) syncCreateResourceLabel(ctx context.Context, keyID uuid.U
 
 // syncUpdateResourceLabel updates a label in the resource_labels table
 func (m *LabelManager) syncUpdateResourceLabel(ctx context.Context, keyID uuid.UUID, label *model.KeyLabel) {
+	// Avoid overwriting tag rows if a KeyLabel ever uses the reserved key
+	if label.Key == model.SystemTagKey {
+		return
+	}
 	// Find existing resource label
 	rl := &model.ResourceLabel{}
 	ck := repo.NewCompositeKey().

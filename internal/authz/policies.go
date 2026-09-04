@@ -98,6 +98,7 @@ var RepoResourceTypeActions = map[RepoResourceType][]RepoAction{
 	RepoResourceTypeKeystore:         repoActionList,
 	RepoResourceTypeKeyversion:       repoActionList,
 	RepoResourceTypeKeyLabel:         repoActionList,
+	RepoResourceTypeResourceLabel:    repoActionList,
 	RepoResourceTypeSystem:           repoActionList,
 	RepoResourceTypeSystemProperty:   repoActionList,
 	RepoResourceTypeTag:              repoActionList,
