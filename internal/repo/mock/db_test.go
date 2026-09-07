@@ -1,7 +1,6 @@
 package mock_test
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -955,8 +954,8 @@ func TestUpdate(t *testing.T) {
 			name: "Update Tenant config Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				keyID := uuid.New().String()
-				key := model.TenantConfig{Key: keyID, Value: json.RawMessage("test1")}
-				newKey := model.TenantConfig{Key: keyID, Value: json.RawMessage("test2")}
+				key := model.TenantConfig{Key: keyID, Value: "test1"}
+				newKey := model.TenantConfig{Key: keyID, Value: "test2"}
 				getKey := model.TenantConfig{Key: keyID}
 
 				return key, newKey, getKey
@@ -973,8 +972,8 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "Update Tenant config Failure",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
-				key := model.TenantConfig{Key: uuid.New().String(), Value: json.RawMessage("test1")}
-				newKey := model.TenantConfig{Key: uuid.New().String(), Value: json.RawMessage("test2")}
+				key := model.TenantConfig{Key: uuid.New().String(), Value: "test1"}
+				newKey := model.TenantConfig{Key: uuid.New().String(), Value: "test2"}
 				getKey := model.TenantConfig{Key: uuid.New().String()}
 
 				return key, newKey, getKey
@@ -1155,7 +1154,7 @@ func TestDelete(t *testing.T) {
 			name: "Delete TenantConfig Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				id := uuid.New().String()
-				data := model.TenantConfig{Key: id, Value: json.RawMessage("test1")}
+				data := model.TenantConfig{Key: id, Value: "test1"}
 				dataToDelete := model.TenantConfig{Key: id}
 				getData := model.TenantConfig{Key: id}
 
