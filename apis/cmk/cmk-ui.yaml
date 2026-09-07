@@ -1722,24 +1722,43 @@ components:
         minimumApprovals:
           description: The minimum number of approvals required for a workflow
           type: integer
-          minimum: 1
+          minimum: 2
+          maximum: 5
           example: 2
+        maxApprovals:
+          description: The hard upper limit for the minimum approvals setting
+          type: integer
+          readOnly: true
+          example: 5
         retentionPeriodDays:
           description: |
             The number of days to retain completed, failed, revoked, or expired workflow
           type: integer
-          minimum: 2
+          minimum: 7
+          maximum: 30
+          example: 30
+        minRetentionPeriodDays:
+          description: The hard lower limit for the retention period setting
+          type: integer
+          readOnly: true
+          example: 7
+        maxRetentionPeriodDays:
+          description: The hard upper limit for the retention period setting
+          type: integer
+          readOnly: true
           example: 30
         defaultExpiryPeriodDays:
           description: The default number of days before a workflow expires
           type: integer
           minimum: 1
+          maximum: 7
           example: 7
         maxExpiryPeriodDays:
           description: The maximum number of days that can be set for workflow expiry
           type: integer
           minimum: 1
-          example: 30
+          maximum: 7
+          example: 7
     BYOKKeystore:
       type: object
       properties:

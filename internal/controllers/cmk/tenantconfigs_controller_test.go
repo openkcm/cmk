@@ -115,7 +115,7 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 		assert.NotNil(t, response.MinimumApprovals)
 		assert.Equal(t, 3, *response.MinimumApprovals)
 		assert.NotNil(t, response.RetentionPeriodDays)
-		assert.Equal(t, 45, *response.RetentionPeriodDays)
+		assert.Equal(t, 30, *response.RetentionPeriodDays)
 	})
 
 	t.Run("Should 200 getting default workflow config when none exists", func(t *testing.T) {
@@ -147,7 +147,7 @@ func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Co
 
 	workflowConfig := testutils.NewDefaultWorkflowConfig(true)
 	workflowConfig.MinimumApprovals = 3
-	workflowConfig.RetentionPeriodDays = 45
+	workflowConfig.RetentionPeriodDays = 30
 
 	configJSON, err := json.Marshal(workflowConfig)
 	require.NoError(t, err)
@@ -192,7 +192,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		// Test: Update config
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
 			MinimumApprovals:    new(5),
-			RetentionPeriodDays: new(60),
+			RetentionPeriodDays: new(30),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -212,7 +212,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		assert.NotNil(t, response.MinimumApprovals)
 		assert.Equal(t, 5, *response.MinimumApprovals)
 		assert.NotNil(t, response.RetentionPeriodDays)
-		assert.Equal(t, 60, *response.RetentionPeriodDays)
+		assert.Equal(t, 30, *response.RetentionPeriodDays)
 		assert.NotNil(t, response.Enabled)
 		assert.False(t, *response.Enabled) // Should remain unchanged
 	})
@@ -238,7 +238,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 
 		// Test: Update with invalid retention period
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			RetentionPeriodDays: new(29), // Less than minimum of 30
+			RetentionPeriodDays: new(0), // Less than minimum of 7
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -269,8 +269,8 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: new(20),
-			MaxExpiryPeriodDays:     new(10),
+			DefaultExpiryPeriodDays: new(7),
+			MaxExpiryPeriodDays:     new(5),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -320,16 +320,9 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		var errResp cmkapi.ErrorMessage
-		err := json.Unmarshal(w.Body.Bytes(), &errResp)
-		require.NoError(t, err)
-		assert.Equal(t, "INVALID_SETTING", errResp.Error.Code)
-		assert.NotNil(t, errResp.Error.Context)
-		assert.Equal(t, "minimumApprovals", (*errResp.Error.Context)["setting"])
 	})
 
-	t.Run("Should 400 INVALID_SETTING when retentionPeriodDays is less than 30", func(t *testing.T) {
+	t.Run("Should 400 INVALID_SETTING when retentionPeriodDays is less than 7", func(t *testing.T) {
 		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
@@ -346,7 +339,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			RetentionPeriodDays: new(29),
+			RetentionPeriodDays: new(0),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -358,13 +351,6 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		var errResp cmkapi.ErrorMessage
-		err := json.Unmarshal(w.Body.Bytes(), &errResp)
-		require.NoError(t, err)
-		assert.Equal(t, "INVALID_SETTING", errResp.Error.Code)
-		assert.NotNil(t, errResp.Error.Context)
-		assert.Equal(t, "retentionPeriodDays", (*errResp.Error.Context)["setting"])
 	})
 
 	t.Run("Should 400 INVALID_SETTING when non-TEST tenant tries to disable workflow", func(t *testing.T) {

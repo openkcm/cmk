@@ -596,6 +596,72 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   17,
 		},
+		{
+			name:      "Should up tenant/00018_add_pending_registration_key_state.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   18,
+		},
+		{
+			name:      "Should down tenant/00018_add_pending_registration_key_state.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   18,
+		},
+		{
+			name:      "Should up tenant/00019_add_workflow_config_constraints.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   19,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					cases := []struct {
+						name string
+						sql  string
+					}{
+						{
+							name: "minimumApprovals below min (1)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"minimumApprovals": 1}')`,
+						},
+						{
+							name: "minimumApprovals above max (6)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"minimumApprovals": 6}')`,
+						},
+						{
+							name: "retentionPeriodDays below min (6)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"retentionPeriodDays": 6}')`,
+						},
+						{
+							name: "retentionPeriodDays above max (31)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"retentionPeriodDays": 31}')`,
+						},
+						{
+							name: "maxExpiryPeriodDays below min (0)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"maxExpiryPeriodDays": 0}')`,
+						},
+						{
+							name: "maxExpiryPeriodDays above max (8)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"maxExpiryPeriodDays": 8}')`,
+						},
+					}
+					for _, c := range cases {
+						err := con.Transaction(func(tx *multitenancy.DB) error {
+							return tx.Exec(c.sql).Error
+						})
+						assert.ErrorContains(t, err, "violates check constraint",
+							"%s: insert with out-of-bounds value should be rejected", c.name)
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00019_add_workflow_config_constraints.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   19,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -746,6 +812,77 @@ func TestDataMigrations(t *testing.T) {
 			target:        db.TenantTarget,
 			version:       1,
 			schemaVersion: new(int64(10)),
+			downgrade:     true,
+		},
+		{
+			name:          "Should skip data migration 00002 if tenant_configs table does not exist",
+			target:        db.TenantTarget,
+			version:       2,
+			schemaVersion: new(int64(0)),
+		},
+		{
+			name:          "Should clamp out-of-bounds workflow config values",
+			target:        db.TenantTarget,
+			version:       2,
+			schemaVersion: new(int64(18)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					// Single WORKFLOW_CONFIG row with all fields out of bounds.
+					// key is the PRIMARY KEY so only one row per key is allowed.
+					err := db.Exec(`INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"minimumApprovals": 1, "retentionPeriodDays": 31, "maxExpiryPeriodDays": 8}'::jsonb)`).Error
+					assert.NoError(t, err)
+
+					// Non-WORKFLOW_CONFIG row should not be touched by the migration.
+					err = db.Exec(`INSERT INTO tenant_configs (key, value) VALUES ('OTHER_CONFIG', '{"minimumApprovals": 1}'::jsonb)`).Error
+					assert.NoError(t, err)
+
+					return nil
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					// Verify each field was clamped to its boundary value.
+					cases := []struct {
+						desc  string
+						field string
+						want  int
+					}{
+						// minimumApprovals: 1 → clamped to 2 (min)
+						{"minimumApprovals clamped from 1 to 2", "minimumApprovals", 2},
+						// retentionPeriodDays: 31 → clamped to 30 (max)
+						{"retentionPeriodDays clamped from 31 to 30", "retentionPeriodDays", 30},
+						// maxExpiryPeriodDays: 8 → clamped to 7 (max)
+						{"maxExpiryPeriodDays clamped from 8 to 7", "maxExpiryPeriodDays", 7},
+					}
+					for _, c := range cases {
+						var got int
+						err := db.Raw(
+							`SELECT (value->>?)::int FROM tenant_configs WHERE key = 'WORKFLOW_CONFIG'`,
+							c.field,
+						).Scan(&got).Error
+						assert.NoError(t, err)
+						assert.Equal(t, c.want, got, c.desc)
+					}
+
+					// non-WORKFLOW_CONFIG row should be untouched
+					var count int
+					err := db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE key = 'OTHER_CONFIG' AND (value->>'minimumApprovals')::int = 1`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 1, count, "non-WORKFLOW_CONFIG row should not be touched")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should migrate down 00002",
+			target:        db.TenantTarget,
+			version:       2,
+			schemaVersion: new(int64(19)),
 			downgrade:     true,
 		},
 	}
