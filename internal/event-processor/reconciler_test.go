@@ -75,14 +75,12 @@ func setupTestInstance(
 		Landscape: config.Landscape{
 			Region: uuid.NewString(),
 		},
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name: "event-processor",
-			},
-			Telemetry: commoncfg.Telemetry{
-				Traces: commoncfg.Trace{
-					Enabled: true,
-				},
+		Application: commoncfg.Application{
+			Name: "event-processor",
+		},
+		Telemetry: commoncfg.Telemetry{
+			Traces: commoncfg.Trace{
+				Enabled: true,
 			},
 		},
 	}
@@ -1836,9 +1834,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 		Landscape: config.Landscape{
 			Region: uuid.NewString(),
 		},
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{Name: "event-processor"},
-		},
+		Application: commoncfg.Application{Name: "event-processor"},
 		CryptoLayer: config.CryptoLayer{
 			CertX509Trusts: commoncfg.SourceRef{
 				Source: commoncfg.EmbeddedSourceValue,
@@ -2026,11 +2022,9 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 
 	rabbitMQURL := testutils.StartRabbitMQ(t)
 	cfg := &config.Config{
-		Database:  dbCfg,
-		Landscape: config.Landscape{Region: uuid.NewString()},
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{Name: "event-processor"},
-		},
+		Database:    dbCfg,
+		Landscape:   config.Landscape{Region: uuid.NewString()},
+		Application: commoncfg.Application{Name: "event-processor"},
 		CryptoLayer: config.CryptoLayer{
 			CertX509Trusts: commoncfg.SourceRef{
 				Source: commoncfg.EmbeddedSourceValue,
@@ -2168,11 +2162,9 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		)
 		rabbitMQURL := testutils.StartRabbitMQ(t)
 		cfg := &config.Config{
-			Database:  dbCfg,
-			Landscape: config.Landscape{Region: uuid.NewString()},
-			BaseConfig: commoncfg.BaseConfig{
-				Application: commoncfg.Application{Name: "event-processor"},
-			},
+			Database:    dbCfg,
+			Landscape:   config.Landscape{Region: uuid.NewString()},
+			Application: commoncfg.Application{Name: "event-processor"},
 		}
 		cfg.EventProcessor.Targets = []config.Target{{
 			Region: region,

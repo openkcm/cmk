@@ -48,11 +48,9 @@ func buildCfg(t *testing.T) *config.Config {
 		},
 
 		Database: dbCfg,
-		BaseConfig: commoncfg.BaseConfig{
-			Logger: commoncfg.Logger{
-				Format: "json",
-				Level:  "info",
-			},
+		Logger: commoncfg.Logger{
+			Format: "json",
+			Level:  "info",
 		},
 		ConfigurableContext: commoncfg.SourceRef{
 			Source: commoncfg.EmbeddedSourceValue,
@@ -72,11 +70,9 @@ func TestRunFunctionWithSigHandling(t *testing.T) {
 
 		// Create a minimal valid config so LoadConfig succeeds
 		cfg := &config.Config{
-			BaseConfig: commoncfg.BaseConfig{
-				Logger: commoncfg.Logger{
-					Format: "json",
-					Level:  "info",
-				},
+			Logger: commoncfg.Logger{
+				Format: "json",
+				Level:  "info",
 			},
 		}
 		bytes, err := yaml.Marshal(cfg)

@@ -112,20 +112,18 @@ func createConfigurations(
 	amqpCfg config.AMQP,
 ) *config.Config {
 	return &config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name:        "tenant-manager-test",
-				Environment: "test",
-			},
-			Logger: commoncfg.Logger{
-				Level:  "debug",
-				Format: "text",
-			},
-			Telemetry: commoncfg.Telemetry{
-				Logs:    commoncfg.Log{Enabled: false},
-				Traces:  commoncfg.Trace{Enabled: false},
-				Metrics: commoncfg.Metric{Enabled: false},
-			},
+		Application: commoncfg.Application{
+			Name:        "tenant-manager-test",
+			Environment: "test",
+		},
+		Logger: commoncfg.Logger{
+			Level:  "debug",
+			Format: "text",
+		},
+		Telemetry: commoncfg.Telemetry{
+			Logs:    commoncfg.Log{Enabled: false},
+			Traces:  commoncfg.Trace{Enabled: false},
+			Metrics: commoncfg.Metric{Enabled: false},
 		},
 		Database: dbConfig,
 		Services: config.Services{

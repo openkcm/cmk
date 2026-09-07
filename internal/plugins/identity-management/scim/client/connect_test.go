@@ -48,14 +48,12 @@ const (
 
 var (
 	ExpectedUser = client.User{
-		BaseResource: client.BaseResource{
-			ID:         "d1a6888d-7fd5-4c3f-ae33-177b24aae627",
-			ExternalID: "",
-			Meta:       struct{}{},
-			Schemas: []string{
-				"urn:ietf:params:scim:schemas:core:2.0:User",
-				"urn:ietf:params:scim:schemas:extension:sap:2.0:User",
-			},
+		ID:         "d1a6888d-7fd5-4c3f-ae33-177b24aae627",
+		ExternalID: "",
+		Meta:       struct{}{},
+		Schemas: []string{
+			"urn:ietf:params:scim:schemas:core:2.0:User",
+			"urn:ietf:params:scim:schemas:extension:sap:2.0:User",
 		},
 		UserName:    "cloudanalyst",
 		Name:        struct{}{},
@@ -77,14 +75,12 @@ var (
 		UserType: "employee",
 	}
 	ExpectedGroup = client.Group{
-		BaseResource: client.BaseResource{
-			ID:         "16e720aa-a009-4949-9bf9-847fb0660522",
-			ExternalID: "",
-			Meta:       struct{}{},
-			Schemas: []string{
-				"urn:ietf:params:scim:schemas:core:2.0:Group",
-				"urn:sap:cloud:scim:schemas:extension:custom:2.0:Group",
-			},
+		ID:         "16e720aa-a009-4949-9bf9-847fb0660522",
+		ExternalID: "",
+		Meta:       struct{}{},
+		Schemas: []string{
+			"urn:ietf:params:scim:schemas:core:2.0:Group",
+			"urn:sap:cloud:scim:schemas:extension:custom:2.0:Group",
 		},
 		DisplayName: "KeyAdmin",
 		Members: []client.MultiValuedAttribute{

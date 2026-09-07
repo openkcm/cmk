@@ -8,7 +8,6 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/utils/base62"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -44,13 +43,11 @@ func NewCreateTenantCmd() *cobra.Command {
 			}
 
 			tenant := &model.Tenant{
-				ID:     id,
-				Status: model.TenantStatus(status),
-				Role:   model.TenantRole(role),
-				TenantModel: multitenancy.TenantModel{
-					DomainURL:  encodedSchemaName,
-					SchemaName: encodedSchemaName,
-				},
+				ID:         id,
+				Status:     model.TenantStatus(status),
+				Role:       model.TenantRole(role),
+				DomainURL:  encodedSchemaName,
+				SchemaName: encodedSchemaName,
 			}
 
 			err = f.tm.CreateTenant(ctx, tenant)

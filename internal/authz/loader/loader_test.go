@@ -10,7 +10,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/multitenancy"
 	repomock "github.com/openkcm/cmk/internal/repo/mock"
 	"github.com/openkcm/cmk/internal/testutils"
 )
@@ -54,12 +53,10 @@ func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(ts.tenantID)
 		err := r.Create(
 			ctx, &model.Tenant{
-				TenantModel: multitenancy.TenantModel{
-					DomainURL:  "",
-					SchemaName: "",
-				},
-				ID:     ts.tenantID,
-				Status: "Test",
+				DomainURL:  "",
+				SchemaName: "",
+				ID:         ts.tenantID,
+				Status:     "Test",
 			},
 		)
 		assert.NoError(t, err, "Failed to create tenantID %s", ts.tenantID)

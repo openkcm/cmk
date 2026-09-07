@@ -1758,24 +1758,20 @@ func TestTenantOperatorTracing(t *testing.T) {
 	require.NoError(t, err)
 	dbConn, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true},
 		testutils.WithInitTenants(model.Tenant{
-			ID:   tenantID,
-			Name: "test-tenant-01",
-			TenantModel: multitenancy.TenantModel{
-				DomainURL:  schemaName + ".example.com",
-				SchemaName: schemaName,
-			},
+			ID:         tenantID,
+			Name:       "test-tenant-01",
+			DomainURL:  schemaName + ".example.com",
+			SchemaName: schemaName,
 		}))
 
 	cfg := &config.Config{
 		Database: dbCfg,
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name: "tenant-operator",
-			},
-			Telemetry: commoncfg.Telemetry{
-				Traces: commoncfg.Trace{
-					Enabled: true,
-				},
+		Application: commoncfg.Application{
+			Name: "tenant-operator",
+		},
+		Telemetry: commoncfg.Telemetry{
+			Traces: commoncfg.Trace{
+				Enabled: true,
 			},
 		},
 	}

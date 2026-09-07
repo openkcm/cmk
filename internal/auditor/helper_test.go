@@ -16,7 +16,7 @@ var errLogsNotFound = errors.New("logs not found")
 
 func createTestAuditor(endpoint string) *auditor.Auditor {
 	cfg := config.Config{
-		BaseConfig: commoncfg.BaseConfig{Audit: commoncfg.Audit{Endpoint: endpoint}},
+		Audit: commoncfg.Audit{Endpoint: endpoint},
 	}
 
 	return auditor.New(context.Background(), &cfg)

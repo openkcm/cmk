@@ -20,14 +20,12 @@ import (
 
 var (
 	cfgWithTracing = &config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name: "test-app",
-			},
-			Telemetry: commoncfg.Telemetry{
-				Traces: commoncfg.Trace{
-					Enabled: true,
-				},
+		Application: commoncfg.Application{
+			Name: "test-app",
+		},
+		Telemetry: commoncfg.Telemetry{
+			Traces: commoncfg.Trace{
+				Enabled: true,
 			},
 		},
 	}

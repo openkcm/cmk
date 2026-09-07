@@ -43,10 +43,8 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 	})
 
 	cfg := config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Audit: commoncfg.Audit{
-				Endpoint: "http://localhost:4318/v1/logs",
-			},
+		Audit: commoncfg.Audit{
+			Endpoint: "http://localhost:4318/v1/logs",
 		},
 		Database: dbCfg,
 	}
