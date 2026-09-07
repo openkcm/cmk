@@ -15,12 +15,14 @@ import (
 
 var GetPluginAlgorithm = getPluginAlgorithm
 
+var BuildWorkflowConfigFromRows = buildWorkflowConfigFromRows
+
+var BuildKeystoreConfigFromRows = buildKeystoreConfigFromRows
+
+var ValidateWorkflowConfig = validateWorkflowConfig
+
 func (m *TenantConfigManager) GetTenantConfigsHyokKeystore(ctx context.Context) HYOKKeystore {
 	return m.getTenantConfigsHyokKeystore(ctx)
-}
-
-func (m *TenantConfigManager) SetDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error {
-	return m.setDefaultKeystore(ctx, keystore)
 }
 
 func (m *SystemInformation) SetClient(systemInformation systeminformation.SystemInformation) {
