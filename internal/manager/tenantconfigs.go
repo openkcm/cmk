@@ -298,10 +298,10 @@ func (m *TenantConfigManager) IsBYOKAllowed(ctx context.Context) bool {
 }
 
 // IsHYOKAllowed checks whether HYOK is enabled for the given provider.
-// When featureFlags is not configured it returns true for backward compatibility
+// When feature flags are not configured it returns true for backward compatibility
 // (HYOK was ungated before feature flags were introduced).
 func (m *TenantConfigManager) IsHYOKAllowed(ctx context.Context, provider string) bool {
-	if m.flags == nil {
+	if !m.featureFlagsConfigured() {
 		return true
 	}
 
@@ -354,9 +354,9 @@ func (m *TenantConfigManager) getStoredDefaultKeystoreConfig(
 }
 
 // isBYOKAllowed checks whether BYOK is enabled for the default keystore provider.
-// When featureFlags is not configured it falls back to the legacy allow-byok feature gate.
+// When feature flags are not configured it falls back to the legacy allow-byok feature gate.
 func (m *TenantConfigManager) isBYOKAllowed(ctx context.Context) bool {
-	if m.flags == nil {
+	if !m.featureFlagsConfigured() {
 		if m.cfg == nil {
 			return false
 		}
@@ -374,6 +374,19 @@ func (m *TenantConfigManager) isBYOKAllowed(ctx context.Context) bool {
 	}
 
 	return enabled
+}
+
+// featureFlagsConfigured reports whether the OpenFeature provider has actually been
+// initialised for this deployment. It mirrors the guard in featureflags.Init: a flag
+// client must be present AND the deployment config must have feature flags enabled.
+//
+// This matters because featureflags.NewClient always returns a non-nil client, even
+// when no provider is registered. Without this check a client would be present but
+// every flag lookup would resolve to its default (false), silently disabling HYOK and
+// BYOK for all providers. When this returns false we instead fall back to legacy
+// behaviour: HYOK ungated and BYOK governed by the allow-byok feature gate.
+func (m *TenantConfigManager) featureFlagsConfigured() bool {
+	return m.flags != nil && m.cfg != nil && m.cfg.FeatureFlags.Enabled
 }
 
 // byokFeatureFlagKey returns the feature gate key for BYOK on the given provider.
