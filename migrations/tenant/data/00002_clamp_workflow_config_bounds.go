@@ -8,7 +8,7 @@ import (
 // upClampWorkflowConfigBounds clamps any existing WORKFLOW_CONFIG rows that
 // fall outside the hard limits defined in constants/workflow.go. This must
 // run after schema migration 00019 adds the corresponding CHECK constraints.
-func upClampWorkflowConfigBounds(ctx context.Context, tx *sql.Tx) error {
+func upClampWorkflowConfigBounds(ctx context.Context, tx *sql.Tx) error { //nolint:funlen
 	// Guard: skip if tenant_configs or the key/value columns no longer exist.
 	// Protects against future schema evolution where this table or its columns
 	// may have been restructured or removed, and a fresh DB setup runs all
