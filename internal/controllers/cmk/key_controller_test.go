@@ -52,17 +52,21 @@ func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *tes
 	keyStorage := testutils.NewTestSigningKeyStorage(t)
 
 	pluginOp := testplugins.NewTestKeyManagement(true, true)
-	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Registry: testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp)),
-		Config: config.Config{
-			Database: dbCfg,
-			CryptoLayer: config.CryptoLayer{
-				CertX509Trusts: commoncfg.SourceRef{
-					Source: commoncfg.EmbeddedSourceValue,
-					Value:  "[]",
-				},
+	apiCfg := config.Config{
+		Database: dbCfg,
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  "[]",
 			},
 		},
+	}
+	// Feature flags must be enabled for the injected flag values to be evaluated;
+	// otherwise the manager falls back to legacy behaviour (HYOK ungated, BYOK via feature gate).
+	apiCfg.FeatureFlags.Enabled = true
+	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Registry: testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp)),
+		Config:   apiCfg,
 		Flags: testutils.NewTestFlagClient(map[string]bool{
 			"enable_byok_" + strings.ToLower(testplugins.Name): true,
 			"enable_hyok_" + strings.ToLower(testplugins.Name): true,

@@ -27,15 +27,19 @@ func startAPIAndDBForKey(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, strin
 	dbConfig := testutils.TestDBConfig{}
 	db, tenants, _ := testutils.NewTestDB(t, dbConfig)
 
-	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config: config.Config{
-			CryptoLayer: config.CryptoLayer{
-				CertX509Trusts: commoncfg.SourceRef{
-					Source: commoncfg.EmbeddedSourceValue,
-					Value:  "[]",
-				},
+	apiCfg := config.Config{
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  "[]",
 			},
 		},
+	}
+	// Feature flags must be enabled for the injected flag values to be evaluated;
+	// otherwise the manager falls back to legacy behaviour (HYOK ungated, BYOK via feature gate).
+	apiCfg.FeatureFlags.Enabled = true
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Config: apiCfg,
 		Flags: testutils.NewTestFlagClient(map[string]bool{
 			"enable_byok_test": true,
 			"enable_hyok_test": true,

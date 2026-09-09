@@ -54,3 +54,14 @@ func Init(cfg commoncfg.FeatureFlags) error {
 	}
 	return nil
 }
+
+// Configured reports whether feature flags are active for this deployment: a
+// non-nil client is present AND the deployment enabled feature flags. It mirrors
+// the guard in Init.
+//
+// This matters because NewClient always returns a non-nil client, even when no
+// provider is registered. Callers must check the config flag too before trusting
+// flag lookups; otherwise every lookup resolves to its default value.
+func Configured(client Client, cfg commoncfg.FeatureFlags) bool {
+	return client != nil && cfg.Enabled
+}

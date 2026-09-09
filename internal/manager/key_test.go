@@ -84,6 +84,9 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 			},
 		},
 	}
+	// Feature flags must be enabled for the injected flag values to be evaluated;
+	// otherwise the manager falls back to legacy behaviour (HYOK ungated, BYOK via feature gate).
+	cfg.FeatureFlags.Enabled = true
 
 	cmkAuditor := auditor.New(ctx, cfg)
 
@@ -1396,6 +1399,9 @@ func TestKeyRotationTime(t *testing.T) {
 			},
 		},
 	}
+	// Feature flags must be enabled for the injected flag values to be evaluated;
+	// otherwise the manager falls back to legacy behaviour (HYOK ungated, BYOK via feature gate).
+	cfg.FeatureFlags.Enabled = true
 
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
 	assert.NoError(t, err)
@@ -2265,6 +2271,9 @@ func SetupKeyTestWithAsyncClient(
 			},
 		},
 	}
+	// Feature flags must be enabled for the injected flag values to be evaluated;
+	// otherwise the manager falls back to legacy behaviour (HYOK ungated, BYOK via feature gate).
+	cfg.FeatureFlags.Enabled = true
 
 	cmkAuditor := auditor.New(ctx, cfg)
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)

@@ -298,10 +298,10 @@ func (m *TenantConfigManager) IsBYOKAllowed(ctx context.Context) bool {
 }
 
 // IsHYOKAllowed checks whether HYOK is enabled for the given provider.
-// When featureFlags is not configured it returns true for backward compatibility
+// When feature flags are not configured it returns true for backward compatibility
 // (HYOK was ungated before feature flags were introduced).
 func (m *TenantConfigManager) IsHYOKAllowed(ctx context.Context, provider string) bool {
-	if m.flags == nil {
+	if !m.featureFlagsConfigured() {
 		return true
 	}
 
@@ -354,9 +354,9 @@ func (m *TenantConfigManager) getStoredDefaultKeystoreConfig(
 }
 
 // isBYOKAllowed checks whether BYOK is enabled for the default keystore provider.
-// When featureFlags is not configured it falls back to the legacy allow-byok feature gate.
+// When feature flags are not configured it falls back to the legacy allow-byok feature gate.
 func (m *TenantConfigManager) isBYOKAllowed(ctx context.Context) bool {
-	if m.flags == nil {
+	if !m.featureFlagsConfigured() {
 		if m.cfg == nil {
 			return false
 		}
@@ -374,6 +374,13 @@ func (m *TenantConfigManager) isBYOKAllowed(ctx context.Context) bool {
 	}
 
 	return enabled
+}
+
+// featureFlagsConfigured reports whether feature flags are active for this
+// deployment. When it returns false, callers fall back to legacy behaviour:
+// HYOK ungated and BYOK governed by the allow-byok feature gate.
+func (m *TenantConfigManager) featureFlagsConfigured() bool {
+	return m.cfg != nil && featureflags.Configured(m.flags, m.cfg.FeatureFlags)
 }
 
 // byokFeatureFlagKey returns the feature gate key for BYOK on the given provider.
