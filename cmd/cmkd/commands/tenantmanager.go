@@ -149,7 +149,7 @@ func createTenantManager(
 	tagm := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, eventFactory, cfg)
 
-	sys := manager.NewSystemManager(ctx, r, authzLoader, clients, eventFactory, svcRegistry, cfg, kcm, um)
+	sys := manager.NewSystemManager(ctx, r, authzLoader, clients, eventFactory, svcRegistry, cfg, kcm, um, nil)
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,

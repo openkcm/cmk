@@ -6,6 +6,7 @@ import (
 
 const (
 	TypeSystemsTask        = "sys:refresh"
+	TypeSystemRoleBackfill = "sys:role-backfill"
 	TypeCertificateTask    = "cert:rotate"
 	TypeHYOKSync           = "key:sync"
 	TypePendingStateSync   = "key:pending-state-sync"

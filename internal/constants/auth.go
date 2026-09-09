@@ -26,6 +26,7 @@ const (
 	InternalTaskPendingStateSyncRole   InternalRole = "INTERNAL_TASK_PENDING_STATE_SYNC"
 	InternalTaskKeystorePoolRole       InternalRole = "INTERNAL_TASK_KEYSTORE_POOL"
 	InternalTaskSystemRefreshRole      InternalRole = "INTERNAL_TASK_SYSTEM_REFRESH"
+	InternalTaskSystemRoleBackfillRole InternalRole = "INTERNAL_TASK_SYSTEM_ROLE_BACKFILL"
 	InternalTaskTenantRefreshRole      InternalRole = "INTERNAL_TASK_TENANT_REFRESH"
 	InternalTaskSendNotificationRole   InternalRole = "INTERNAL_TASK_SEND_NOTIFICATION"
 

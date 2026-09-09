@@ -78,6 +78,7 @@ func New(
 		config,
 		keyConfigManager,
 		userManager,
+		asyncClient,
 	)
 	groupManager := NewGroupManager(repo, svcRegistry, userManager)
 

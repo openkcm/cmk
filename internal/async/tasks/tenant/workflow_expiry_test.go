@@ -126,7 +126,7 @@ func setupWorkflowExpiry(t *testing.T) (*manager.WorkflowManager, repo.Repo, str
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
 	systemManager := manager.NewSystemManager(
-		t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager,
+		t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager, nil,
 	)
 
 	keyManager := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager,

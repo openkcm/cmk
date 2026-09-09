@@ -16,6 +16,7 @@ import (
 	regionpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
@@ -85,6 +86,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 		&cfg,
 		keyConfigManager,
 		userManager,
+		nil,
 	)
 
 	return systemManager, db, tenants[0]
@@ -1590,4 +1592,93 @@ func TestGetFilters(t *testing.T) {
 		assert.Contains(t, *filters.KeyConfigurationName, keyConfig1.Name)
 		assert.Contains(t, *filters.KeyConfigurationName, keyConfig2.Name)
 	})
+}
+
+func TestRefreshSystemsEnqueuesRoleBackfill(t *testing.T) {
+	logger := testutils.SetupLoggerWithBuffer()
+	systemService := systems.NewFakeService(logger)
+	_, grpcClient := testutils.NewGRPCSuite(
+		t,
+		func(s *grpc.Server) {
+			systemgrpc.RegisterServiceServer(s, systemService)
+		},
+	)
+
+	clientsFactory, err := clients.NewFactory(
+		config.Services{
+			Registry: &commoncfg.GRPCClient{
+				Enabled: true,
+				Address: grpcClient.Target(),
+				SecretRef: &commoncfg.SecretRef{
+					Type: commoncfg.InsecureSecretType,
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, clientsFactory.Close())
+	})
+
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		WithOrbital:    true,
+		CreateDatabase: true,
+	})
+	tenant := tenants[0]
+
+	// Configure role keys as optional properties so an empty role after
+	// enrichment is detectable. The test SIS plugin returns empty metadata, so
+	// the role stays empty and a backfill must be enqueued.
+	cfg := config.Config{
+		Audit:    commoncfg.Audit{Endpoint: "http://localhost:4318/v1/logs"},
+		Database: dbCfg,
+		ContextModels: config.ContextModels{
+			System: config.System{
+				OptionalProperties: map[string]config.SystemProperty{
+					model.SystemPropertyRoleName: {Optional: true},
+					model.SystemPropertyRoleID:   {Optional: true},
+				},
+			},
+		},
+	}
+
+	svcRegistry := testutils.NewTestPlugins()
+	r := sql.NewRepository(db)
+	userManager := manager.NewUserManager(r, auditor.New(t.Context(), &cfg))
+	keyConfigManager := manager.NewKeyConfigManager(r,
+		manager.NewCertificateManager(t.Context(), r, svcRegistry, &cfg),
+		userManager, manager.NewTagManager(r), nil, nil, &cfg)
+
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), &cfg, r)
+	require.NoError(t, err)
+
+	asyncMock := &async.MockClient{}
+
+	m := manager.NewSystemManager(
+		t.Context(), r, nil,
+		clientsFactory,
+		eventFactory, svcRegistry,
+		&cfg,
+		keyConfigManager,
+		userManager,
+		asyncMock,
+	)
+
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
+
+	externalID := uuid.NewString()
+	region := regionpb.Region_REGION_US.String()
+	registerSystem(
+		ctx, t, systemService, externalID, region, string(systems.SystemTypeSUBACCOUNT),
+		func(req *systemgrpc.RegisterSystemRequest) {
+			req.TenantId = tenant
+		},
+	)
+
+	m.RefreshSystemsData(ctx)
+
+	assert.Equal(t, 1, asyncMock.EnqueueCallCount, "a role backfill task should be enqueued for the empty-role subaccount")
+	require.NotNil(t, asyncMock.LastTask)
+	assert.Equal(t, config.TypeSystemRoleBackfill, asyncMock.LastTask.Type())
 }

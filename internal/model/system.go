@@ -20,8 +20,10 @@ import (
 type SystemType string
 
 const (
-	SystemTypeSYSTEM     SystemType = "SYSTEM"
-	SystemTypeSUBACCOUNT SystemType = "SUBACCOUNT"
+	SystemTypeSYSTEM       SystemType = "SYSTEM"
+	SystemTypeSUBACCOUNT   SystemType = "SUBACCOUNT"
+	SystemPropertyRoleName            = "roleName"
+	SystemPropertyRoleID              = "roleID"
 )
 
 var ErrInvalidSystemType = fmt.Errorf("%w: invalid system type", ErrValidation)
@@ -117,6 +119,22 @@ func (m *System) UpdateSystemProperties(
 	}
 
 	return updated, nil
+}
+
+// HasEmptyRole reports whether a configured role property key is missing or
+// empty. Role keys absent from the config are ignored.
+func (m *System) HasEmptyRole(cfg *config.System) bool {
+	for _, key := range []string{SystemPropertyRoleName, SystemPropertyRoleID} {
+		if _, configured := cfg.OptionalProperties[key]; !configured {
+			continue
+		}
+
+		if m.Properties[key] == "" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // AfterSave is ran before any creating/updating the system

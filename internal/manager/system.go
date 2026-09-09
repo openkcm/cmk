@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/openkcm/orbital"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,6 +18,7 @@ import (
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
+	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/authz"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/clients"
@@ -29,8 +32,14 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
+	asyncUtils "github.com/openkcm/cmk/utils/async"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
+)
+
+const (
+	roleBackfillInitialDelay = time.Minute
+	roleBackfillMaxRetry     = 5
 )
 
 type System interface {
@@ -54,6 +63,7 @@ type SystemManager struct {
 	registry         registry.Service
 	eventFactory     *eventprocessor.EventFactory
 	sisClient        *SystemInformation
+	asyncClient      async.Client
 	KeyConfigManager *KeyConfigManager
 	ContextModelsCfg config.System
 	user             User
@@ -145,12 +155,14 @@ func NewSystemManager(
 	cfg *config.Config,
 	keyConfigManager *KeyConfigManager,
 	user User,
+	asyncClient async.Client,
 ) *SystemManager {
 	manager := &SystemManager{
 		repo:             repository,
 		eventFactory:     eventFactory,
 		KeyConfigManager: keyConfigManager,
 		user:             user,
+		asyncClient:      asyncClient,
 	}
 
 	if clientsFactory != nil {
@@ -624,7 +636,50 @@ func (m *SystemManager) createSystemIfNotExists(ctx context.Context, newSystem *
 		log.Warn(ctx, "SIS Update Failed", log.ErrorAttr(err))
 	}
 
+	m.enqueueRoleBackfillIfEmpty(ctx, newSystem)
+
 	return nil
+}
+
+// enqueueRoleBackfillIfEmpty schedules a delayed backfill when enrichment left
+// the role empty. Errors are non-fatal; the hourly refresh is the backstop.
+func (m *SystemManager) enqueueRoleBackfillIfEmpty(ctx context.Context, system *model.System) {
+	if m.asyncClient == nil {
+		log.Warn(ctx, "Skipping system role backfill: async client not configured",
+			slog.String("externalID", system.Identifier))
+		return
+	}
+
+	enriched, err := repo.GetSystemByIDWithProperties(ctx, m.repo, system.ID, repo.NewQuery())
+	if err != nil {
+		log.Warn(ctx, "Could not read system properties to check role", log.ErrorAttr(err))
+		return
+	}
+
+	if !enriched.HasEmptyRole(&m.ContextModelsCfg) {
+		return
+	}
+
+	payload := asyncUtils.NewTaskPayload(ctx, []byte(system.Identifier))
+	payloadBytes, err := payload.ToBytes()
+	if err != nil {
+		log.Error(ctx, "Failed to serialize system role backfill payload", err)
+		return
+	}
+
+	task := asynq.NewTask(config.TypeSystemRoleBackfill, payloadBytes)
+
+	info, err := m.asyncClient.Enqueue(task,
+		asynq.ProcessIn(roleBackfillInitialDelay),
+		asynq.MaxRetry(roleBackfillMaxRetry))
+	if err != nil {
+		log.Error(ctx, "Failed to enqueue system role backfill task", err)
+		return
+	}
+
+	log.Info(ctx, "Enqueued system role backfill task",
+		slog.String("taskId", info.ID),
+		slog.String("externalID", system.Identifier))
 }
 
 func (m *SystemManager) removeSystemsNotInRegistry(ctx context.Context, registrySystems []*model.System) error {

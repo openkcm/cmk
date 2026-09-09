@@ -80,6 +80,28 @@ func (m *SystemInformation) UpdateSystemByExternalID(ctx context.Context, extern
 	return m.updateSystem(ctx, sys)
 }
 
+// HasEmptyRoleByExternalID reports whether the system's configured role
+// properties are still empty after enrichment.
+func (m *SystemInformation) HasEmptyRoleByExternalID(ctx context.Context, externalID string) (bool, error) {
+	sys := &model.System{Identifier: externalID}
+
+	_, err := m.repo.First(ctx, sys, *repo.NewQuery())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, errs.Wrap(ErrNoSystem, err)
+		}
+
+		return false, errs.Wrap(ErrGettingSystem, err)
+	}
+
+	sys, err = repo.GetSystemByIDWithProperties(ctx, m.repo, sys.ID, repo.NewQuery())
+	if err != nil {
+		return false, errs.Wrap(err, repo.ErrSystemProperties)
+	}
+
+	return sys.HasEmptyRole(m.systemCfg), nil
+}
+
 func (m *SystemInformation) updateSystem(ctx context.Context, system *model.System) error {
 	ctx = model.LogInjectSystem(ctx, system)
 
@@ -124,6 +146,10 @@ func (m *SystemInformation) updateSystem(ctx context.Context, system *model.Syst
 		if err != nil {
 			return errs.Wrap(ErrUpdatingSystem, err)
 		}
+	}
+
+	if system.HasEmptyRole(m.systemCfg) {
+		log.Debug(ctx, "System role still empty after enrichment")
 	}
 
 	return nil

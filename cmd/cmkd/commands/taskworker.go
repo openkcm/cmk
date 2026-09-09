@@ -207,6 +207,7 @@ func registerTasks(
 		cfg,
 		keyConfigManager,
 		userManager,
+		cron.Client(),
 	)
 	groupManager := manager.NewGroupManager(authzRepo, svcRegistry, userManager)
 	workflowManager := manager.NewWorkflowManager(
@@ -233,6 +234,7 @@ func registerTasks(
 		tenantTask.NewTenantNameRefresher(authzRepo, f.Registry()),
 		tenantTask.NewHYOKSync(keyManager, authzRepo),
 		tasks.NewPendingStateSync(keyManager, authzRepo),
+		tasks.NewSystemRoleBackfill(sis, authzRepo),
 	}
 
 	cron.RegisterTasks(ctx, taskHandlers)

@@ -77,6 +77,7 @@ func NewCommandFactory(
 		cfg,
 		kcm,
 		um,
+		nil,
 	)
 
 	km := manager.NewKeyManager(

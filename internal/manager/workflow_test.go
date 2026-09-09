@@ -78,7 +78,7 @@ func SetupWorkflowManager(
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
-	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
+	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager, nil)
 
 	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil)
 	m := manager.NewWorkflowManager(

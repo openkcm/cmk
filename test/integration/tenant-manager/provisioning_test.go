@@ -73,6 +73,7 @@ func (s *DBSuite) SetupSuite() {
 		cfg,
 		kcm,
 		um,
+		nil,
 	)
 
 	km := manager.NewKeyManager(

@@ -128,6 +128,7 @@ func createManagers(
 		cfg,
 		kcm,
 		um,
+		nil,
 	)
 
 	km := manager.NewKeyManager(
