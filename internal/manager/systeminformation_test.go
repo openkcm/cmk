@@ -3,6 +3,7 @@ package manager_test
 import (
 	"context"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/openkcm/plugin-sdk/api"
@@ -86,13 +87,20 @@ func fakeDataReturned(m map[string]func(ID string) map[string]string) func(ID st
 type PredictedResponseMock struct {
 	ResponseFunc  func(ID string) map[string]string
 	noResponseIDs []string
+
+	mu      sync.Mutex
+	visited []string
 }
 
-func (e PredictedResponseMock) ServiceInfo() api.Info {
+func (e *PredictedResponseMock) ServiceInfo() api.Info {
 	panic("implement me")
 }
 
-func (e PredictedResponseMock) GetSystemInfo(_ context.Context, req *systeminformation.GetSystemInfoRequest) (*systeminformation.GetSystemInfoResponse, error) {
+func (e *PredictedResponseMock) GetSystemInfo(_ context.Context, req *systeminformation.GetSystemInfoRequest) (*systeminformation.GetSystemInfoResponse, error) {
+	e.mu.Lock()
+	e.visited = append(e.visited, req.ID)
+	e.mu.Unlock()
+
 	if slices.Contains(e.noResponseIDs, req.ID) {
 		return &systeminformation.GetSystemInfoResponse{}, nil
 	}
@@ -193,7 +201,7 @@ func TestUpdateSystems(t *testing.T) {
 	thirdSystem := createSystemForTestsWithEmptyExternalData()
 	testutils.CreateTestEntities(ctx, t, r, firstSystem, secondSystem, thirdSystem)
 
-	si.SetClient(PredictedResponseMock{
+	si.SetClient(&PredictedResponseMock{
 		ResponseFunc: fakeDataReturned(map[string]func(ID string) map[string]string{
 			firstSystem.Identifier:  roleFakeData,
 			secondSystem.Identifier: externalNameFakeData,
@@ -279,7 +287,7 @@ func TestUpdateSystemByExternalID(t *testing.T) {
 	system := createSystemForTestsWithEmptyExternalData()
 	testutils.CreateTestEntities(ctx, t, r, system)
 
-	si.SetClient(PredictedResponseMock{ResponseFunc: allFakeData})
+	si.SetClient(&PredictedResponseMock{ResponseFunc: allFakeData})
 
 	err := si.UpdateSystemByExternalID(ctx, system.Identifier)
 	assert.NoError(t, err)
@@ -299,7 +307,7 @@ func TestUpdateSystemByExternalIDReplace(t *testing.T) {
 	system := createSystemForTests()
 	testutils.CreateTestEntities(ctx, t, r, system)
 
-	si.SetClient(PredictedResponseMock{ResponseFunc: roleFakeData})
+	si.SetClient(&PredictedResponseMock{ResponseFunc: roleFakeData})
 
 	err := si.UpdateSystemByExternalID(ctx, system.Identifier)
 	assert.NoError(t, err)
@@ -309,4 +317,32 @@ func TestUpdateSystemByExternalIDReplace(t *testing.T) {
 	assert.Equal(t, fakeData(system.Identifier, "system-role-id"), sys.Properties[SystemRoleID])
 	assert.Equal(t, "givenExternalName", sys.Properties[SystemName])
 	assert.Equal(t, "givenSystemRole", sys.Properties[SystemRole])
+}
+
+// A failing system must not abort the sweep: every system is still visited and
+// the error is surfaced.
+func TestUpdateSystemsContinuesAfterFailure(t *testing.T) {
+	si, db, tenant := SetupSystemInfoManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	firstSystem := createSystemForTestsWithEmptyExternalData()
+	secondSystem := createSystemForTestsWithEmptyExternalData()
+	testutils.CreateTestEntities(ctx, t, r, firstSystem, secondSystem)
+
+	// Force every property Patch to fail so both systems error.
+	forced := testutils.NewDBErrorForced(db, ErrForced).WithUpdate()
+	forced.Register()
+	t.Cleanup(forced.Unregister)
+
+	mock := &PredictedResponseMock{ResponseFunc: allFakeData}
+	si.SetClient(mock)
+
+	err := si.UpdateSystems(ctx)
+	assert.Error(t, err)
+
+	assert.ElementsMatch(t,
+		[]string{firstSystem.Identifier, secondSystem.Identifier},
+		mock.visited,
+	)
 }
