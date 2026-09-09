@@ -287,6 +287,7 @@ var RepoBusinessPolicies = RolePolicies[constants.BusinessRole, RepoResourceType
 						RepoActionCount,
 						RepoActionCreate, // For setting keystore config
 						RepoActionUpdate, // For setting keystore config
+						RepoActionDelete, // Keystore write replaces rows (delete + insert)
 					},
 				},
 				{
@@ -354,7 +355,6 @@ var RepoBusinessPolicies = RolePolicies[constants.BusinessRole, RepoResourceType
 						RepoActionCount,
 						RepoActionCreate,
 						RepoActionUpdate,
-						RepoActionDelete,
 					},
 				},
 			},

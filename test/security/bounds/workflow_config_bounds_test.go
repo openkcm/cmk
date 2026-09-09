@@ -24,9 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/constants"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 )
@@ -54,11 +51,7 @@ func setupBoundsTest(t *testing.T) (cmkapi.ServeMux, string, http.Header) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 	// Seed a valid baseline workflow config so PATCH merges against known state.
-	workflowCfg := testutils.NewDefaultWorkflowConfig(true)
-	cfgJSON, err := json.Marshal(workflowCfg)
-	require.NoError(t, err)
-	err = r.Set(ctx, &model.TenantConfig{Key: constants.WorkflowConfigKey, Value: cfgJSON}, *repo.NewQuery())
-	require.NoError(t, err)
+	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewDefaultWorkflowConfig(true))
 
 	businessUserData := &auth.ClientData{
 		Identifier: authClient.Identifier,
