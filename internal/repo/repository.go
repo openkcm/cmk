@@ -292,11 +292,14 @@ type BatchProcessOptions struct {
 // ProcessInBatchWithOptions retrieves and processes records in batches based on the provided query parameters.
 // It iterates through all matching records using pagination to avoid loading large datasets into memory.
 // The processFunc is called on the records, allowing custom processing logic.
-// Processing stops immediately if processFunc returns an error.
+// By default processing stops immediately if processFunc returns an error; see IgnoreFailMode below.
 //
 // Options:
 //   - DeleteMode: When true, assumes items are being deleted during processing and keeps offset at 0
 //     to avoid skipping records. This ensures all items are processed even as the total count decreases.
+//   - IgnoreFailMode: When true, a processFunc error does not stop the batch loop; processing
+//     continues through the remaining records and the last error encountered is returned at the end.
+//     When false (default), the first processFunc error is returned immediately.
 func ProcessInBatchWithOptions[T Resource](
 	ctx context.Context,
 	repo Repo,
