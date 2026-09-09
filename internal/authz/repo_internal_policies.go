@@ -405,9 +405,12 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 				},
 				{
 					Type: RepoResourceTypeSystem,
+					// First+Update: refresh reads a system and persists roles.
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionList,
+						RepoActionFirst,
+						RepoActionUpdate,
 					},
 				},
 				{
