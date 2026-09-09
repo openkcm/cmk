@@ -22,7 +22,7 @@ require (
 	github.com/open-feature/go-sdk v1.18.0
 	github.com/openkcm/api-sdk v0.19.3
 	github.com/openkcm/common-sdk v1.19.1
-	github.com/openkcm/orbital v0.6.1
+	github.com/openkcm/orbital v0.6.2
 	github.com/openkcm/plugin-sdk v0.15.0
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.28.0
