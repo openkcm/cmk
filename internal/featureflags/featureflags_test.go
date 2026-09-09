@@ -53,3 +53,39 @@ func TestInit_Enabled_BadFilePath(t *testing.T) {
 	err := featureflags.Init(cfg)
 	require.Error(t, err)
 }
+
+func TestConfigured(t *testing.T) {
+	client := featureflags.NewClient()
+
+	tests := []struct {
+		name   string
+		client featureflags.Client
+		cfg    commoncfg.FeatureFlags
+		want   bool
+	}{
+		{
+			name:   "client present and enabled",
+			client: client,
+			cfg:    commoncfg.FeatureFlags{Enabled: true},
+			want:   true,
+		},
+		{
+			name:   "client present but disabled",
+			client: client,
+			cfg:    commoncfg.FeatureFlags{Enabled: false},
+			want:   false,
+		},
+		{
+			name:   "nil client even when enabled",
+			client: nil,
+			cfg:    commoncfg.FeatureFlags{Enabled: true},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, featureflags.Configured(tt.client, tt.cfg))
+		})
+	}
+}

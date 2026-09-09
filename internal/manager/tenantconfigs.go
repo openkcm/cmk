@@ -376,17 +376,11 @@ func (m *TenantConfigManager) isBYOKAllowed(ctx context.Context) bool {
 	return enabled
 }
 
-// featureFlagsConfigured reports whether the OpenFeature provider has actually been
-// initialised for this deployment. It mirrors the guard in featureflags.Init: a flag
-// client must be present AND the deployment config must have feature flags enabled.
-//
-// This matters because featureflags.NewClient always returns a non-nil client, even
-// when no provider is registered. Without this check a client would be present but
-// every flag lookup would resolve to its default (false), silently disabling HYOK and
-// BYOK for all providers. When this returns false we instead fall back to legacy
-// behaviour: HYOK ungated and BYOK governed by the allow-byok feature gate.
+// featureFlagsConfigured reports whether feature flags are active for this
+// deployment. When it returns false, callers fall back to legacy behaviour:
+// HYOK ungated and BYOK governed by the allow-byok feature gate.
 func (m *TenantConfigManager) featureFlagsConfigured() bool {
-	return m.flags != nil && m.cfg != nil && m.cfg.FeatureFlags.Enabled
+	return m.cfg != nil && featureflags.Configured(m.flags, m.cfg.FeatureFlags)
 }
 
 // byokFeatureFlagKey returns the feature gate key for BYOK on the given provider.
