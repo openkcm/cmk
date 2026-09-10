@@ -30,7 +30,7 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 					wf.State = model.WorkflowStateWaitConfirmation
 					wf.ActionType = model.WorkflowActionTypeDelete
 					wf.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
-					wf.Approvers = []model.WorkflowApprover{
+					wf.Tasks = []model.WorkflowTask{
 						*testutils.NewWorkflowApprover(func(a *model.WorkflowApprover) {
 							a.Approved = sqlNullBoolNull
 						}),
@@ -50,7 +50,7 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 					wf.State = model.WorkflowStateWaitConfirmation
 					wf.ActionType = model.WorkflowActionTypeUpdatePrimary
 					wf.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
-					wf.Approvers = []model.WorkflowApprover{
+					wf.Tasks = []model.WorkflowTask{
 						*testutils.NewWorkflowApprover(func(a *model.WorkflowApprover) {
 							a.Approved = sqlNullBoolNull
 						}),

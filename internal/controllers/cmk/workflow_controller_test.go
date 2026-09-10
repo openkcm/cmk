@@ -93,7 +93,7 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 	})
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{{UserID: authClient.Identifier}}
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: authClient.Identifier, AssigneeRole: model.AssigneeRoleApprover}}
 		w.State = model.WorkflowStateWaitApproval
 		w.ArtifactType = model.WorkflowArtifactTypeKey
 		w.ActionType = model.WorkflowActionTypeDelete
@@ -112,7 +112,7 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 		w.ArtifactType = model.WorkflowArtifactTypeKey
 		w.ArtifactID = key2.ID
 		w.ArtifactName = &key2.Name
-		w.Approvers = []model.WorkflowApprover{{UserID: uuid.NewString()}}
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: uuid.NewString(), AssigneeRole: model.AssigneeRoleApprover}}
 		w.Parameters = "DISABLED"
 	})
 	workflow2ApproverGroups := testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
@@ -123,21 +123,27 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 
 	wfID := uuid.New()
 	workflow3 := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{
+		w.Tasks = []model.WorkflowTask{
 			{
-				UserID:     authClient.Identifier,
-				Approved:   sql.NullBool{Bool: true, Valid: true},
-				WorkflowID: wfID,
+				ID:           uuid.New(),
+				UserID:       authClient.Identifier,
+				AssigneeRole: model.AssigneeRoleApprover,
+				Approved:     sql.NullBool{Bool: true, Valid: true},
+				WorkflowID:   wfID,
 			},
 			{
-				UserID:     uuid.NewString(),
-				Approved:   sql.NullBool{Bool: false, Valid: true},
-				WorkflowID: wfID,
+				ID:           uuid.New(),
+				UserID:       uuid.NewString(),
+				AssigneeRole: model.AssigneeRoleApprover,
+				Approved:     sql.NullBool{Bool: false, Valid: true},
+				WorkflowID:   wfID,
 			},
 			{
-				UserID:     uuid.NewString(),
-				Approved:   sql.NullBool{Bool: false, Valid: false},
-				WorkflowID: wfID,
+				ID:           uuid.New(),
+				UserID:       uuid.NewString(),
+				AssigneeRole: model.AssigneeRoleApprover,
+				Approved:     sql.NullBool{Bool: false, Valid: false},
+				WorkflowID:   wfID,
 			},
 		}
 		w.ID = wfID
@@ -174,7 +180,7 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 
 	// Register all approver IDs so GetUser lookups succeed in detailed workflow responses
 	for _, wf := range []*model.Workflow{workflow, workflow2, workflow3} {
-		for _, approver := range wf.Approvers {
+		for _, approver := range wf.Tasks {
 			idmPlugin.PutUser(identitymanagement.User{ID: approver.UserID})
 		}
 	}
@@ -1060,22 +1066,22 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 	idmPlugin.PutGroup(keyAdminAuthClient.Group.IAMIdentifier, keyAdminAuthClient.Group.IAMIdentifier)
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: user2ID, AssigneeRole: model.AssigneeRoleApprover}}
 		w.InitiatorID = user1ID
 	})
 
 	workflow2 := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: userID, AssigneeRole: model.AssigneeRoleApprover}}
 		w.InitiatorID = user1ID
 	})
 
 	workflow3 := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: user2ID, AssigneeRole: model.AssigneeRoleApprover}}
 		w.InitiatorID = userID
 	})
 
 	workflow4 := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: user2ID, AssigneeRole: model.AssigneeRoleApprover}}
 		w.InitiatorID = userID
 	})
 
@@ -1297,9 +1303,9 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			ArtifactType: "KEY",
 			ArtifactID:   uuid.New(),
 			ActionType:   "DELETE",
-			Approvers: []model.WorkflowApprover{
-				{UserID: approverID01, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
-				{UserID: approverID02, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), UserID: approverID01, AssigneeRole: model.AssigneeRoleApprover, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
+				{ID: uuid.New(), UserID: approverID02, AssigneeRole: model.AssigneeRoleApprover, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
 			},
 		}
 	})
@@ -1352,9 +1358,9 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			name: "TestWorkflowControllerTransitionWorkflow_Approve_As_Second_Approver",
 			workflow: wfMutator(func(w *model.Workflow) {
 				w.State = model.WorkflowStateWaitApproval
-				w.Approvers = []model.WorkflowApprover{
-					{UserID: approverID01, Approved: sql.NullBool{Bool: true, Valid: true}, WorkflowID: workflowID},
-					{UserID: approverID02, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
+				w.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), UserID: approverID01, AssigneeRole: model.AssigneeRoleApprover, Approved: sql.NullBool{Bool: true, Valid: true}, WorkflowID: workflowID},
+					{ID: uuid.New(), UserID: approverID02, AssigneeRole: model.AssigneeRoleApprover, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
 				}
 			}),
 			workflowID: workflowID.String(),
@@ -1484,7 +1490,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			testutils.CreateTestEntities(ctx, t, r, &tt.workflow)
 
 			defer func() {
-				for _, approver := range tt.workflow.Approvers {
+				for _, approver := range tt.workflow.Tasks {
 					testutils.DeleteTestEntities(ctx, t, r, &approver)
 				}
 
