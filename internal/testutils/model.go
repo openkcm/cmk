@@ -219,7 +219,7 @@ func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 			ArtifactType:         model.WorkflowArtifactTypeKey,
 			ArtifactID:           uuid.New(),
 			ActionType:           model.WorkflowActionTypeDelete,
-			Approvers:            []model.WorkflowApprover{{UserID: uuid.NewString()}},
+			Tasks:                []model.WorkflowTask{{ID: uuid.New(), UserID: uuid.NewString(), AssigneeRole: model.AssigneeRoleApprover}},
 			MinimumApprovalCount: 1, // Default to 1 to match single approver
 		}
 	})
@@ -255,10 +255,12 @@ func NewEvent(m func(*model.Event)) *model.Event {
 func NewWorkflowApprover(m func(approver *model.WorkflowApprover)) *model.WorkflowApprover {
 	mut := NewMutator(func() model.WorkflowApprover {
 		return model.WorkflowApprover{
-			WorkflowID: uuid.New(),
-			UserID:     uuid.NewString(),
-			Workflow:   model.Workflow{},
-			Approved:   sql.NullBool{},
+			ID:           uuid.New(),
+			WorkflowID:   uuid.New(),
+			UserID:       uuid.NewString(),
+			AssigneeRole: model.AssigneeRoleApprover,
+			Workflow:     model.Workflow{},
+			Approved:     sql.NullBool{},
 		}
 	})
 
