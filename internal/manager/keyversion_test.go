@@ -1,6 +1,7 @@
 package manager_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -305,7 +306,7 @@ func TestUpdateVersions(t *testing.T) {
 func setupEvictionTest(
 	t *testing.T,
 	maxVersionsConfig map[string]int,
-) (context.Context, *manager.KeyVersionManager, repo.Repo, uuid.UUID, uuid.UUID) {
+) (context.Context, *manager.KeyVersionManager, repo.Repo, uuid.UUID) {
 	t.Helper()
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
@@ -346,12 +347,12 @@ func setupEvictionTest(
 		}),
 	)
 
-	return ctx, kvm, r, keyConfig.ID, tenant
+	return ctx, kvm, r, keyConfig.ID
 }
 
 func TestVersionEviction(t *testing.T) {
 	t.Run("Should evict oldest versions when limit exceeded", func(t *testing.T) {
-		ctx, kvm, r, keyConfigID, _ := setupEvictionTest(t, map[string]int{"AWS": 5})
+		ctx, kvm, r, keyConfigID := setupEvictionTest(t, map[string]int{"AWS": 5})
 
 		keyID := uuid.New()
 		key := testutils.NewKey(func(k *model.Key) {
