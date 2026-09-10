@@ -50,7 +50,7 @@ const (
 	RepoResourceTypeTenant           RepoResourceType = RepoResourceType(constants.TenantTable)
 	RepoResourceTypeTenantconfig     RepoResourceType = RepoResourceType(constants.TenantconfigTable)
 	RepoResourceTypeWorkflow         RepoResourceType = RepoResourceType(constants.WorkflowTable)
-	RepoResourceTypeWorkflowApprover RepoResourceType = RepoResourceType(constants.WorkflowApproverTable)
+	RepoResourceTypeWorkflowApprover RepoResourceType = RepoResourceType(constants.WorkflowTaskTable)
 
 	RepoActionList   RepoAction = "list"
 	RepoActionFirst  RepoAction = "first"

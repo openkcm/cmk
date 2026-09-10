@@ -314,8 +314,9 @@ func (l *Lifecycle) CanExpire() bool {
 func (l *Lifecycle) GetAllApprovers(ctx context.Context) ([]*model.WorkflowApprover, error) {
 	var allApprovers []*model.WorkflowApprover
 
-	ck := repo.NewCompositeKey().Where(
-		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID)
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID).
+		Where(repo.AssigneeRoleField, model.AssigneeRoleApprover)
 
 	err := l.Repository.List(
 		ctx,
@@ -396,9 +397,10 @@ func (l *Lifecycle) validateActorGroupMembership(transition Transition) error {
 
 // validateUserIsApprover validates that the user is an approver of the workflow
 func (l *Lifecycle) validateUserIsApprover(ctx context.Context) (bool, error) {
-	ck := repo.NewCompositeKey().Where(
-		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID).Where(
-		fmt.Sprintf("%s_%s", repo.UserField, repo.IDField), l.ActorID)
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID).
+		Where(fmt.Sprintf("%s_%s", repo.UserField, repo.IDField), l.ActorID).
+		Where(repo.AssigneeRoleField, model.AssigneeRoleApprover)
 
 	count, err := l.Repository.Count(
 		ctx,
@@ -607,8 +609,9 @@ func (l *Lifecycle) getNumberOfApprovers(ctx context.Context) (int, error) {
 		return -1, errs.Wrap(ErrListApprovers, err)
 	}
 
-	ck := repo.NewCompositeKey().Where(
-		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID)
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID).
+		Where(repo.AssigneeRoleField, model.AssigneeRoleApprover)
 
 	count, err := l.Repository.Count(
 		ctx,

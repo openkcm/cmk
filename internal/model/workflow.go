@@ -36,7 +36,7 @@ type Workflow struct {
 	State            WorkflowState        `gorm:"type:varchar(50);not null"`
 	InitiatorID      string               `gorm:"type:varchar(255);not null"`
 	initiatorName    string               `gorm:"-:all"`
-	Approvers        []WorkflowApprover   `gorm:"foreignKey:WorkflowID"`
+	Tasks            []WorkflowTask       `gorm:"foreignKey:WorkflowID"`
 	ApproverGroupIDs json.RawMessage      `gorm:"type:jsonb"`
 	ArtifactType     WorkflowArtifactType `gorm:"type:varchar(50);not null"`
 	ArtifactID       uuid.UUID            `gorm:"type:uuid;not null"`
@@ -70,8 +70,8 @@ func (m Workflow) CheckAuthz(ctx context.Context,
 }
 
 func (m Workflow) BeforeDelete(tx *gorm.DB) error {
-	// Delete all associated workflow approvers
-	return tx.Where(WorkflowID+" = ?", m.ID).Delete(&WorkflowApprover{}).Error
+	// Delete all associated workflow tasks
+	return tx.Where(WorkflowID+" = ?", m.ID).Delete(&WorkflowTask{}).Error
 }
 
 func (m *Workflow) BeforeSave(tx *gorm.DB) error {
@@ -214,34 +214,46 @@ func (m Workflow) buildDefaultDescription(
 }
 
 //nolint:recvcheck
-type WorkflowApprover struct {
-	WorkflowID uuid.UUID `gorm:"type:uuid;primaryKey"`
-	UserID     string    `gorm:"type:varchar(255);primaryKey"`
-	userName   string    `gorm:"-:all"`
+type AssigneeRole string
+
+const (
+	AssigneeRoleApprover  AssigneeRole = "APPROVER"
+	AssigneeRoleInitiator AssigneeRole = "INITIATOR"
+)
+
+//nolint:recvcheck
+type WorkflowTask struct {
+	ID           uuid.UUID    `gorm:"type:uuid;primaryKey"`
+	WorkflowID   uuid.UUID    `gorm:"type:uuid;not null"`
+	UserID       string       `gorm:"type:varchar(255);not null"`
+	userName     string       `gorm:"-:all"`
+	AssigneeRole AssigneeRole `gorm:"type:varchar(50);not null;default:'APPROVER'"`
+	CreatedAt    time.Time    `gorm:"not null"`
+	CompletedAt  *time.Time
 
 	Workflow Workflow     `gorm:"foreignKey:WorkflowID"`
 	Approved sql.NullBool `gorm:"default:null"`
 }
 
 // TableResourceType return the authz resource type
-func (m WorkflowApprover) TableResourceType() authz.RepoResourceType {
+func (m WorkflowTask) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeWorkflowApprover
 }
 
-func (m WorkflowApprover) TableName() string {
-	return string(m.TableResourceType())
+func (m WorkflowTask) TableName() string {
+	return constants.WorkflowTaskTable
 }
 
-func (WorkflowApprover) IsSharedModel() bool { return false }
+func (WorkflowTask) IsSharedModel() bool { return false }
 
-func (m WorkflowApprover) CheckAuthz(ctx context.Context,
+func (m WorkflowTask) CheckAuthz(ctx context.Context,
 	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
-func (m *WorkflowApprover) GetUserName(
+func (m *WorkflowTask) GetUserName(
 	ctx context.Context,
 	identityManager identitymanagement.IdentityManagement,
 ) (string, error) {
@@ -256,6 +268,30 @@ func (m *WorkflowApprover) GetUserName(
 	m.userName = name
 	return name, nil
 }
+
+// WorkflowApprover is a deprecated alias; use WorkflowTask.
+type WorkflowApprover = WorkflowTask
+
+// WorkflowTaskView is a read-only GORM model backed by the workflow_task_view DB view.
+type WorkflowTaskView struct {
+	ID            uuid.UUID            `gorm:"type:uuid;primaryKey"`
+	WorkflowID    uuid.UUID            `gorm:"type:uuid"`
+	UserID        string               `gorm:"type:varchar(255)"`
+	Approved      sql.NullBool
+	AssigneeRole  AssigneeRole         `gorm:"type:varchar(50)"`
+	CreatedAt     time.Time
+	CompletedAt   *time.Time
+	WorkflowState WorkflowState        `gorm:"type:varchar(50)"`
+	ArtifactType  WorkflowArtifactType `gorm:"type:varchar(50)"`
+	ArtifactID    uuid.UUID            `gorm:"type:uuid"`
+	ArtifactName  *string              `gorm:"type:varchar(255)"`
+	ActionType    WorkflowActionType   `gorm:"type:varchar(50)"`
+	InitiatorID   string               `gorm:"type:varchar(255)"`
+	ExpiryDate    *time.Time
+}
+
+func (WorkflowTaskView) TableName() string   { return constants.WorkflowTaskViewTable }
+func (WorkflowTaskView) IsSharedModel() bool { return false }
 
 var (
 	ErrInvalidWorkflowState                  = fmt.Errorf("%w: invalid workflow state", ErrValidation)
