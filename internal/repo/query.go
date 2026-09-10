@@ -49,6 +49,7 @@ const (
 	WorkflowIDField     QueryField = "workflow_id"
 	GroupIDField        QueryField = "group_id"
 	ApprovedField       QueryField = "approved"
+	AssigneeRoleField   QueryField = "assignee_role"
 	ArtifactTypeField   QueryField = "artifact_type"
 	ArtifactIDField     QueryField = "artifact_id"
 	ActionTypeField     QueryField = "action_type"
