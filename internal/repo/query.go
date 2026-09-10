@@ -37,6 +37,7 @@ const (
 	KeyConfigIDField    QueryField = "key_configuration_id"
 	AdminGroupIDField   QueryField = "admin_group_id"
 	ResourceIDField     QueryField = "resource_id"
+	ResourceTypeField   QueryField = "resource_type"
 	IsPrimaryField      QueryField = "is_primary"
 	VersionField        QueryField = "version"
 	NativeIDField       QueryField = "native_id"
@@ -70,6 +71,7 @@ const (
 	UnderWorkflowField  QueryField = "under_workflow"
 	DataField           QueryField = "data"
 	Name                QueryField = "name"
+	ValueField          QueryField = "value"
 
 	ArtifactNameField      QueryField = "artifact_name"
 	ParamResourceNameField QueryField = "parameters_resource_name"

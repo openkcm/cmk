@@ -12,6 +12,7 @@ const (
 	KeystoreTable         = publicTablePreFix + "keystore_pool"
 	KeyVersionTable       = "key_versions"
 	KeyLabelTable         = "key_labels"
+	ResourceLabelTable    = "resource_labels"
 	SystemTable           = "systems"
 	SystemPropertyTable   = "systems_properties"
 	TagTable              = "tags"
