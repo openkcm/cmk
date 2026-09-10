@@ -799,7 +799,8 @@ func TestDataMigrations(t *testing.T) {
 					}
 
 					for _, w := range wfs {
-						err := db.Create(w).Error
+						// Omit Tasks: at schema v10, workflow_tasks does not exist yet
+						err := db.Omit("Tasks").Create(w).Error
 						assert.NoError(t, err)
 					}
 

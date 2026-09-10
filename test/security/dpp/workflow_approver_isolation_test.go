@@ -126,7 +126,7 @@ func TestWorkflowApproverIsolation(t *testing.T) {
 		w.ActionType = model.WorkflowActionTypeDelete
 		w.ArtifactType = model.WorkflowArtifactTypeKey
 		w.ArtifactID = key.ID
-		w.Approvers = nil
+		w.Tasks = nil
 	})
 	err = r.Create(ctxSys, wf)
 	require.NoError(t, err)

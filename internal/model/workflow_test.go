@@ -29,8 +29,8 @@ func TestWorkflowTable(t *testing.T) {
 }
 
 func TestWorkflowApproversTable(t *testing.T) {
-	t.Run("Should have table name workflow_approvers", func(t *testing.T) {
-		expectedTableName := "workflow_approvers"
+	t.Run("Should have table name workflow_tasks", func(t *testing.T) {
+		expectedTableName := "workflow_tasks"
 
 		tableName := model.WorkflowApprover{}.TableName()
 
@@ -40,6 +40,16 @@ func TestWorkflowApproversTable(t *testing.T) {
 	t.Run("Should be a tenant table", func(t *testing.T) {
 		assert.False(t, model.WorkflowApprover{}.IsSharedModel())
 	})
+}
+
+func TestWorkflowTask_TableName(t *testing.T) {
+	task := model.WorkflowTask{}
+	assert.Equal(t, "workflow_tasks", task.TableName())
+}
+
+func TestWorkflowTaskView_TableName(t *testing.T) {
+	view := model.WorkflowTaskView{}
+	assert.Equal(t, "workflow_task_view", view.TableName())
 }
 
 func TestWorkflow_Description(t *testing.T) {
