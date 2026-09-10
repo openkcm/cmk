@@ -1,6 +1,7 @@
 package manager_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -39,12 +40,24 @@ func setupKeyVersionManager(t *testing.T) (*manager.KeyVersionManager, repo.Repo
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
 	cmkAuditor := auditor.New(ctx, &cfg)
 
+	// Create a test landscape config with default limits
+	landscapeConfig := &config.Landscape{
+		Name:   "test",
+		Region: "test-region",
+		MaxKeyVersions: map[string]int{
+			"AWS":      5,
+			"GCP":      5,
+			"FORTANIX": 5,
+		},
+	}
+
 	kvm := manager.NewKeyVersionManager(
 		r,
 		svcRegistry,
 		tenantConfigManager,
 		certManager,
 		cmkAuditor,
+		landscapeConfig,
 	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -286,5 +299,574 @@ func TestUpdateVersions(t *testing.T) {
 		assert.Equal(t, "v1", allVersions[0].NativeID)
 		assert.False(t, allVersions[0].RotatedAt.Before(before), "RotatedAt should be >= before")
 		assert.False(t, allVersions[0].RotatedAt.After(after), "RotatedAt should be <= after")
+	})
+}
+
+func TestVersionEviction(t *testing.T) {
+	t.Run("Should evict oldest versions when limit exceeded", func(t *testing.T) {
+		db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+		tenant := tenants[0]
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		svcRegistry := testutils.NewTestPlugins()
+		cfg := config.Config{}
+
+		certManager := manager.NewCertificateManager(
+			ctx, r, svcRegistry,
+			&config.Config{
+				Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+			})
+		tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+		cmkAuditor := auditor.New(ctx, &cfg)
+
+		landscapeConfig := &config.Landscape{
+			Name:   "test",
+			Region: "test-region",
+			MaxKeyVersions: map[string]int{
+				"AWS": 5,
+			},
+		}
+
+		kvm := manager.NewKeyVersionManager(
+			r, svcRegistry, tenantConfigManager, certManager, cmkAuditor, landscapeConfig,
+		)
+
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig,
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeRoleManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName
+			}),
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeKeyManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+			}),
+		)
+
+		keyID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = keyConfig.ID
+			k.Provider = "AWS"
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		var versions []keymanagement.KeyVersion
+		for i := 1; i <= 10; i++ {
+			creationTime := time.Date(2024, 1, i, 10, 0, 0, 0, time.UTC)
+			versions = append(versions, keymanagement.KeyVersion{
+				ID:           fmt.Sprintf("v%d", i),
+				CreationTime: &creationTime,
+			})
+		}
+
+		err := kvm.UpdateVersions(ctx, keyID, versions)
+		require.NoError(t, err)
+
+		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
+			Skip:  0,
+			Top:   100,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 5, count, "Should keep only 5 most recent versions")
+		assert.Len(t, allVersions, 5)
+
+		assert.Equal(t, "v10", allVersions[0].NativeID, "Most recent version should be v10")
+		assert.Equal(t, "v9", allVersions[1].NativeID)
+		assert.Equal(t, "v8", allVersions[2].NativeID)
+		assert.Equal(t, "v7", allVersions[3].NativeID)
+		assert.Equal(t, "v6", allVersions[4].NativeID, "Oldest kept version should be v6")
+	})
+
+	t.Run("Should not evict when under limit", func(t *testing.T) {
+		db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+		tenant := tenants[0]
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		svcRegistry := testutils.NewTestPlugins()
+		cfg := config.Config{}
+
+		certManager := manager.NewCertificateManager(
+			ctx, r, svcRegistry,
+			&config.Config{
+				Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+			})
+		tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+		cmkAuditor := auditor.New(ctx, &cfg)
+
+		landscapeConfig := &config.Landscape{
+			Name:   "test",
+			Region: "test-region",
+			MaxKeyVersions: map[string]int{
+				"AWS": 5,
+			},
+		}
+
+		kvm := manager.NewKeyVersionManager(
+			r, svcRegistry, tenantConfigManager, certManager, cmkAuditor, landscapeConfig,
+		)
+
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig,
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeRoleManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName
+			}),
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeKeyManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+			}),
+		)
+
+		keyID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = keyConfig.ID
+			k.Provider = "AWS"
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		var versions []keymanagement.KeyVersion
+		for i := 1; i <= 3; i++ {
+			creationTime := time.Date(2024, 1, i, 10, 0, 0, 0, time.UTC)
+			versions = append(versions, keymanagement.KeyVersion{
+				ID:           fmt.Sprintf("v%d", i),
+				CreationTime: &creationTime,
+			})
+		}
+
+		err := kvm.UpdateVersions(ctx, keyID, versions)
+		require.NoError(t, err)
+
+		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
+			Skip:  0,
+			Top:   100,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 3, count, "Should keep all 3 versions")
+		assert.Len(t, allVersions, 3)
+	})
+
+	t.Run("Should not evict when unlimited (-1)", func(t *testing.T) {
+		db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+		tenant := tenants[0]
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		svcRegistry := testutils.NewTestPlugins()
+		cfg := config.Config{}
+
+		certManager := manager.NewCertificateManager(
+			ctx, r, svcRegistry,
+			&config.Config{
+				Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+			})
+		tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+		cmkAuditor := auditor.New(ctx, &cfg)
+
+		landscapeConfig := &config.Landscape{
+			Name:   "test",
+			Region: "test-region",
+			MaxKeyVersions: map[string]int{
+				"FORTANIX": -1, // Unlimited
+			},
+		}
+
+		kvm := manager.NewKeyVersionManager(
+			r, svcRegistry, tenantConfigManager, certManager, cmkAuditor, landscapeConfig,
+		)
+
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig,
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeRoleManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName
+			}),
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeKeyManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+			}),
+		)
+
+		keyID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = keyConfig.ID
+			k.Provider = "FORTANIX"
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		var versions []keymanagement.KeyVersion
+		for i := 1; i <= 20; i++ {
+			creationTime := time.Date(2024, 1, i, 10, 0, 0, 0, time.UTC)
+			versions = append(versions, keymanagement.KeyVersion{
+				ID:           fmt.Sprintf("v%d", i),
+				CreationTime: &creationTime,
+			})
+		}
+
+		err := kvm.UpdateVersions(ctx, keyID, versions)
+		require.NoError(t, err)
+
+		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
+			Skip:  0,
+			Top:   100,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 20, count, "Should keep all 20 versions with unlimited config")
+		assert.Len(t, allVersions, 20)
+	})
+
+	t.Run("Should enforce limits independently per provider", func(t *testing.T) {
+		db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+		tenant := tenants[0]
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		svcRegistry := testutils.NewTestPlugins()
+		cfg := config.Config{}
+
+		certManager := manager.NewCertificateManager(
+			ctx, r, svcRegistry,
+			&config.Config{
+				Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+			})
+		tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+		cmkAuditor := auditor.New(ctx, &cfg)
+
+		landscapeConfig := &config.Landscape{
+			Name:   "test",
+			Region: "test-region",
+			MaxKeyVersions: map[string]int{
+				"AWS": 5,
+				"GCP": 3,
+			},
+		}
+
+		kvm := manager.NewKeyVersionManager(
+			r, svcRegistry, tenantConfigManager, certManager, cmkAuditor, landscapeConfig,
+		)
+
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig,
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeRoleManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName
+			}),
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeKeyManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+			}),
+		)
+
+		awsKeyID := uuid.New()
+		awsKey := testutils.NewKey(func(k *model.Key) {
+			k.ID = awsKeyID
+			k.KeyConfigurationID = keyConfig.ID
+			k.Provider = "AWS"
+		})
+		testutils.CreateTestEntities(ctx, t, r, awsKey)
+
+		var awsVersions []keymanagement.KeyVersion
+		for i := 1; i <= 10; i++ {
+			creationTime := time.Date(2024, 1, i, 10, 0, 0, 0, time.UTC)
+			awsVersions = append(awsVersions, keymanagement.KeyVersion{
+				ID:           fmt.Sprintf("aws-v%d", i),
+				CreationTime: &creationTime,
+			})
+		}
+		err := kvm.UpdateVersions(ctx, awsKeyID, awsVersions)
+		require.NoError(t, err)
+
+		gcpKeyID := uuid.New()
+		gcpKey := testutils.NewKey(func(k *model.Key) {
+			k.ID = gcpKeyID
+			k.KeyConfigurationID = keyConfig.ID
+			k.Provider = "GCP"
+		})
+		testutils.CreateTestEntities(ctx, t, r, gcpKey)
+
+		var gcpVersions []keymanagement.KeyVersion
+		for i := 1; i <= 10; i++ {
+			creationTime := time.Date(2024, 1, i, 10, 0, 0, 0, time.UTC)
+			gcpVersions = append(gcpVersions, keymanagement.KeyVersion{
+				ID:           fmt.Sprintf("gcp-v%d", i),
+				CreationTime: &creationTime,
+			})
+		}
+		err = kvm.UpdateVersions(ctx, gcpKeyID, gcpVersions)
+		require.NoError(t, err)
+
+		awsAllVersions, awsCount, err := kvm.GetKeyVersions(ctx, awsKeyID, repo.Pagination{
+			Skip:  0,
+			Top:   100,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 5, awsCount, "AWS key should have 5 versions")
+		assert.Len(t, awsAllVersions, 5)
+
+		gcpAllVersions, gcpCount, err := kvm.GetKeyVersions(ctx, gcpKeyID, repo.Pagination{
+			Skip:  0,
+			Top:   100,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 3, gcpCount, "GCP key should have 3 versions")
+		assert.Len(t, gcpAllVersions, 3)
+	})
+
+	t.Run("Should keep primary version (most recent)", func(t *testing.T) {
+		db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+		tenant := tenants[0]
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		svcRegistry := testutils.NewTestPlugins()
+		cfg := config.Config{}
+
+		certManager := manager.NewCertificateManager(
+			ctx, r, svcRegistry,
+			&config.Config{
+				Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+			})
+		tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+		cmkAuditor := auditor.New(ctx, &cfg)
+
+		landscapeConfig := &config.Landscape{
+			Name:   "test",
+			Region: "test-region",
+			MaxKeyVersions: map[string]int{
+				"AWS": 3,
+			},
+		}
+
+		kvm := manager.NewKeyVersionManager(
+			r, svcRegistry, tenantConfigManager, certManager, cmkAuditor, landscapeConfig,
+		)
+
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig,
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeRoleManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName
+			}),
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeKeyManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+			}),
+		)
+
+		keyID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = keyConfig.ID
+			k.Provider = "AWS"
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		var versions []keymanagement.KeyVersion
+		for i := 1; i <= 6; i++ {
+			creationTime := time.Date(2024, 1, i, 10, 0, 0, 0, time.UTC)
+			versions = append(versions, keymanagement.KeyVersion{
+				ID:           fmt.Sprintf("v%d", i),
+				CreationTime: &creationTime,
+			})
+		}
+
+		err := kvm.UpdateVersions(ctx, keyID, versions)
+		require.NoError(t, err)
+
+		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
+			Skip:  0,
+			Top:   100,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 3, count, "Should keep 3 most recent versions")
+		assert.Len(t, allVersions, 3)
+
+		primaryVersion, err := kvm.GetLatestVersion(ctx, keyID)
+		require.NoError(t, err)
+		assert.Equal(t, "v6", primaryVersion.NativeID, "Primary version should be v6 (most recent)")
+		assert.Equal(t, "v6", allVersions[0].NativeID, "Primary should be first in list")
+		assert.Equal(t, primaryVersion.ID, allVersions[0].ID, "Primary should match latest")
+	})
+
+	t.Run("Should restore previously evicted version on re-addition", func(t *testing.T) {
+		db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+		tenant := tenants[0]
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		svcRegistry := testutils.NewTestPlugins()
+		cfg := config.Config{}
+
+		certManager := manager.NewCertificateManager(
+			ctx, r, svcRegistry,
+			&config.Config{
+				Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+			})
+		tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+		cmkAuditor := auditor.New(ctx, &cfg)
+
+		landscapeConfig := &config.Landscape{
+			Name:   "test",
+			Region: "test-region",
+			MaxKeyVersions: map[string]int{
+				"AWS": 3,
+			},
+		}
+
+		kvm := manager.NewKeyVersionManager(
+			r, svcRegistry, tenantConfigManager, certManager, cmkAuditor, landscapeConfig,
+		)
+
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig,
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeRoleManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName
+			}),
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeKeyManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+			}),
+		)
+
+		keyID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = keyConfig.ID
+			k.Provider = "AWS"
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		var initialVersions []keymanagement.KeyVersion
+		for i := 1; i <= 5; i++ {
+			creationTime := time.Date(2024, 1, i, 10, 0, 0, 0, time.UTC)
+			initialVersions = append(initialVersions, keymanagement.KeyVersion{
+				ID:           fmt.Sprintf("v%d", i),
+				CreationTime: &creationTime,
+			})
+		}
+
+		err := kvm.UpdateVersions(ctx, keyID, initialVersions)
+		require.NoError(t, err)
+
+		versionsAfterEviction, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
+			Skip:  0,
+			Top:   100,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 3, count, "Should have evicted to 3 versions")
+
+		foundV1 := false
+		for _, v := range versionsAfterEviction {
+			if v.NativeID == "v1" {
+				foundV1 = true
+			}
+		}
+		assert.False(t, foundV1, "v1 should have been evicted")
+
+		var reAddVersions []keymanagement.KeyVersion
+		for i := 1; i <= 5; i++ {
+			creationTime := time.Date(2024, 1, i, 10, 0, 0, 0, time.UTC)
+			reAddVersions = append(reAddVersions, keymanagement.KeyVersion{
+				ID:           fmt.Sprintf("v%d", i),
+				CreationTime: &creationTime,
+			})
+		}
+
+		err = kvm.UpdateVersions(ctx, keyID, reAddVersions)
+		require.NoError(t, err)
+
+		versionsAfterReAdd, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
+			Skip:  0,
+			Top:   100,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 3, count, "Should still have 3 versions after re-add")
+
+		foundV1AfterReAdd := false
+		for _, v := range versionsAfterReAdd {
+			if v.NativeID == "v1" {
+				foundV1AfterReAdd = true
+			}
+		}
+		assert.False(t, foundV1AfterReAdd, "v1 should be evicted again as it's still the oldest")
+		assert.Equal(t, "v5", versionsAfterReAdd[0].NativeID, "v5 should be most recent")
+		assert.Equal(t, "v4", versionsAfterReAdd[1].NativeID)
+		assert.Equal(t, "v3", versionsAfterReAdd[2].NativeID)
+	})
+
+	t.Run("Should handle nil landscape config gracefully", func(t *testing.T) {
+		db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+		tenant := tenants[0]
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		svcRegistry := testutils.NewTestPlugins()
+		cfg := config.Config{}
+
+		certManager := manager.NewCertificateManager(
+			ctx, r, svcRegistry,
+			&config.Config{
+				Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+			})
+		tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+		cmkAuditor := auditor.New(ctx, &cfg)
+
+		kvm := manager.NewKeyVersionManager(
+			r, svcRegistry, tenantConfigManager, certManager, cmkAuditor, nil,
+		)
+
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig,
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeRoleManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName
+			}),
+			testutils.NewCertificate(func(c *model.Certificate) {
+				c.Purpose = model.CertificatePurposeKeyManagement
+				c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+			}),
+		)
+
+		keyID := uuid.New()
+		key := testutils.NewKey(func(k *model.Key) {
+			k.ID = keyID
+			k.KeyConfigurationID = keyConfig.ID
+			k.Provider = "AWS"
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		var versions []keymanagement.KeyVersion
+		for i := 1; i <= 10; i++ {
+			creationTime := time.Date(2024, 1, i, 10, 0, 0, 0, time.UTC)
+			versions = append(versions, keymanagement.KeyVersion{
+				ID:           fmt.Sprintf("v%d", i),
+				CreationTime: &creationTime,
+			})
+		}
+
+		err := kvm.UpdateVersions(ctx, keyID, versions)
+		require.NoError(t, err, "Should not crash with nil config")
+
+		allVersions, count, err := kvm.GetKeyVersions(ctx, keyID, repo.Pagination{
+			Skip:  0,
+			Top:   100,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 10, count, "Should keep all versions when config is nil")
+		assert.Len(t, allVersions, 10)
 	})
 }

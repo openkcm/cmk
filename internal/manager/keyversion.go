@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/openkcm/cmk/internal/auditor"
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
@@ -27,7 +30,8 @@ type KeyVersion interface {
 type KeyVersionManager struct {
 	ProviderConfigManager
 
-	cmkAuditor *auditor.Auditor
+	cmkAuditor      *auditor.Auditor
+	landscapeConfig *config.Landscape
 }
 
 func NewKeyVersionManager(
@@ -36,6 +40,7 @@ func NewKeyVersionManager(
 	tenantConfigs *TenantConfigManager,
 	certManager *CertificateManager,
 	cmkAuditor *auditor.Auditor,
+	landscapeConfig *config.Landscape,
 ) *KeyVersionManager {
 	return &KeyVersionManager{
 		ProviderConfigManager: *NewProviderConfigManager(
@@ -46,7 +51,8 @@ func NewKeyVersionManager(
 			nil,
 			repo,
 		),
-		cmkAuditor: cmkAuditor,
+		cmkAuditor:      cmkAuditor,
+		landscapeConfig: landscapeConfig,
 	}
 }
 
@@ -182,7 +188,8 @@ func (kvm *KeyVersionManager) UpdateVersions(
 			}
 		} else {
 			// This only runs on inserts without keystore provided time as time is always set either on the keystore or manually
-			k.CreationTime = new(time.Now().UTC())
+			now := time.Now().UTC()
+			k.CreationTime = &now
 			err := kvm.repo.Create(ctx, &model.KeyVersion{
 				ID:        uuid.New(),
 				NativeID:  k.ID,
@@ -195,5 +202,98 @@ func (kvm *KeyVersionManager) UpdateVersions(
 			}
 		}
 	}
+
+	// Enforce version limits after upserting all versions
+	if err := kvm.enforceVersionLimitForKey(ctx, keyID); err != nil {
+		// Log warning but don't fail - versions were already saved
+		log.Warn(ctx, "Failed to enforce version limit", log.ErrorAttr(err),
+			slog.String("keyId", keyID.String()))
+	}
+
+	return nil
+}
+
+// enforceVersionLimitForKey enforces the configured version limit for a specific key.
+// It retrieves the key's provider, checks the landscape configuration for the limit,
+// and deletes the oldest non-primary versions if the count exceeds the limit.
+//
+// The primary version (most recent by RotatedAt) is always preserved.
+// A limit of -1 (UnlimitedKeyVersions) means no eviction is performed.
+//
+// This method logs warnings on failures but does not return errors to avoid
+// rolling back version upserts that have already succeeded.
+func (kvm *KeyVersionManager) enforceVersionLimitForKey(
+	ctx context.Context,
+	keyID uuid.UUID,
+) error {
+	// 1. Get key to determine provider
+	key := &model.Key{ID: keyID}
+	found, err := kvm.repo.First(ctx, key, *repo.NewQuery())
+	if err != nil || !found {
+		return fmt.Errorf("failed to get key for version limit enforcement: %w", err)
+	}
+
+	// 2. Get max versions for this provider from landscape config, if not available, skip enforcement
+	if kvm.landscapeConfig == nil {
+		// No config available - skip enforcement
+		log.Debug(ctx, "Landscape config not available, skipping version limit enforcement",
+			slog.String("keyId", keyID.String()))
+		return nil
+	}
+
+	maxVersions := kvm.landscapeConfig.GetMaxVersionsForProvider(key.Provider)
+	if maxVersions == config.UnlimitedKeyVersions {
+		// Unlimited versions - no eviction
+		return nil
+	}
+
+	// 3. Get all current versions ordered by RotatedAt DESC (most recent first)
+	allVersions, _, err := kvm.GetKeyVersions(
+		ctx,
+		keyID,
+		repo.Pagination{Top: 10000, Skip: 0, Count: true}, // High limit to get all versions
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get versions for limit enforcement: %w", err)
+	}
+
+	// 4. Check if eviction is needed
+	if len(allVersions) <= maxVersions {
+		// Within limit - nothing to do
+		return nil
+	}
+
+	// 5. Delete oldest versions (beyond limit)
+	// allVersions is already ordered by RotatedAt DESC, CreatedAt DESC
+	// Keep first maxVersions (most recent), delete the rest
+	versionsToDelete := allVersions[maxVersions:]
+
+	log.Info(ctx, "Evicting old key versions",
+		slog.String("keyId", keyID.String()),
+		slog.String("provider", key.Provider),
+		slog.Int("currentCount", len(allVersions)),
+		slog.Int("limit", maxVersions),
+		slog.Int("toDelete", len(versionsToDelete)))
+
+	deletedCount := 0
+	for _, v := range versionsToDelete {
+		_, err := kvm.repo.Delete(ctx, v, *repo.NewQuery())
+		if err != nil {
+			log.Error(ctx, "Failed to delete version during eviction", err,
+				slog.String("versionId", v.ID.String()),
+				slog.String("nativeId", v.NativeID),
+				slog.String("keyId", keyID.String()))
+			// Continue with others - partial eviction is better than none
+			continue
+		}
+		deletedCount++
+	}
+
+	if deletedCount > 0 {
+		log.Info(ctx, "Successfully evicted key versions",
+			slog.String("keyId", keyID.String()),
+			slog.Int("deletedCount", deletedCount))
+	}
+
 	return nil
 }

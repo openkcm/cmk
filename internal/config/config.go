@@ -410,7 +410,7 @@ func (l *Landscape) GetMaxVersionsForProvider(provider string) int {
 	return DefaultMaxKeyVersions
 }
 
-// Validate checks the Landscape configuration values.
+// Validate checks the Landscape configuration values (currently only MaxKeyVersions is validated).
 // Ensures that MaxKeyVersions values are either -1 (unlimited) or >= 1.
 func (l *Landscape) Validate() error {
 	if l.MaxKeyVersions == nil {

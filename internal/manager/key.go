@@ -112,7 +112,7 @@ func NewKeyManager(
 	asyncClient async.Client,
 	cfg *config.Config,
 ) *KeyManager {
-	keyVersionManager := NewKeyVersionManager(repo, svcRegistry, tenantConfigs, certManager, cmkAuditor)
+	keyVersionManager := NewKeyVersionManager(repo, svcRegistry, tenantConfigs, certManager, cmkAuditor, &cfg.Landscape)
 
 	var (
 		pendingRegTimeout time.Duration
