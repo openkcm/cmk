@@ -83,7 +83,9 @@ func New(
 
 	return &Manager{
 		Keys:          keyManager,
-		KeyVersions:   NewKeyVersionManager(repo, svcRegistry, tenantConfigManager, certManager, cmkAuditor, &config.Landscape),
+		KeyVersions: NewKeyVersionManager(
+		repo, svcRegistry, tenantConfigManager, certManager, cmkAuditor, &config.Landscape,
+	),
 		TenantConfigs: tenantConfigManager,
 		System:        systemManager,
 		KeyConfig:     keyConfigManager,

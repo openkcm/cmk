@@ -302,52 +302,61 @@ func TestUpdateVersions(t *testing.T) {
 	})
 }
 
+func setupEvictionTest(
+	t *testing.T,
+	maxVersionsConfig map[string]int,
+) (context.Context, *manager.KeyVersionManager, repo.Repo, uuid.UUID, uuid.UUID) {
+	t.Helper()
+
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	tenant := tenants[0]
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	svcRegistry := testutils.NewTestPlugins()
+	cfg := config.Config{}
+
+	certManager := manager.NewCertificateManager(
+		ctx, r, svcRegistry,
+		&config.Config{
+			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+		})
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+	cmkAuditor := auditor.New(ctx, &cfg)
+
+	landscapeConfig := &config.Landscape{
+		Name:           "test",
+		Region:         "test-region",
+		MaxKeyVersions: maxVersionsConfig,
+	}
+
+	kvm := manager.NewKeyVersionManager(
+		r, svcRegistry, tenantConfigManager, certManager, cmkAuditor, landscapeConfig,
+	)
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	testutils.CreateTestEntities(ctx, t, r, keyConfig,
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeRoleManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName
+		}),
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeKeyManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+		}),
+	)
+
+	return ctx, kvm, r, keyConfig.ID, tenant
+}
+
 func TestVersionEviction(t *testing.T) {
 	t.Run("Should evict oldest versions when limit exceeded", func(t *testing.T) {
-		db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
-		tenant := tenants[0]
-		ctx := testutils.CreateCtxWithTenant(tenant)
-		r := sql.NewRepository(db)
-
-		svcRegistry := testutils.NewTestPlugins()
-		cfg := config.Config{}
-
-		certManager := manager.NewCertificateManager(
-			ctx, r, svcRegistry,
-			&config.Config{
-				Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
-			})
-		tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
-		cmkAuditor := auditor.New(ctx, &cfg)
-
-		landscapeConfig := &config.Landscape{
-			Name:   "test",
-			Region: "test-region",
-			MaxKeyVersions: map[string]int{
-				"AWS": 5,
-			},
-		}
-
-		kvm := manager.NewKeyVersionManager(
-			r, svcRegistry, tenantConfigManager, certManager, cmkAuditor, landscapeConfig,
-		)
-
-		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
-		testutils.CreateTestEntities(ctx, t, r, keyConfig,
-			testutils.NewCertificate(func(c *model.Certificate) {
-				c.Purpose = model.CertificatePurposeRoleManagement
-				c.CommonName = testutils.TestDefaultKeystoreCommonName
-			}),
-			testutils.NewCertificate(func(c *model.Certificate) {
-				c.Purpose = model.CertificatePurposeKeyManagement
-				c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
-			}),
-		)
+		ctx, kvm, r, keyConfigID, _ := setupEvictionTest(t, map[string]int{"AWS": 5})
 
 		keyID := uuid.New()
 		key := testutils.NewKey(func(k *model.Key) {
 			k.ID = keyID
-			k.KeyConfigurationID = keyConfig.ID
+			k.KeyConfigurationID = keyConfigID
 			k.Provider = "AWS"
 		})
 		testutils.CreateTestEntities(ctx, t, r, key)

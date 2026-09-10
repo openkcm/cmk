@@ -264,13 +264,24 @@ func (kvm *KeyVersionManager) enforceVersionLimitForKey(
 	}
 
 	// 5. Delete oldest versions (beyond limit)
+	return kvm.deleteExcessVersions(ctx, keyID, key.Provider, allVersions, maxVersions)
+}
+
+// deleteExcessVersions removes the oldest versions beyond the configured limit.
+func (kvm *KeyVersionManager) deleteExcessVersions(
+	ctx context.Context,
+	keyID uuid.UUID,
+	provider string,
+	allVersions []*model.KeyVersion,
+	maxVersions int,
+) error {
 	// allVersions is already ordered by RotatedAt DESC, CreatedAt DESC
 	// Keep first maxVersions (most recent), delete the rest
 	versionsToDelete := allVersions[maxVersions:]
 
 	log.Info(ctx, "Evicting old key versions",
 		slog.String("keyId", keyID.String()),
-		slog.String("provider", key.Provider),
+		slog.String("provider", provider),
 		slog.Int("currentCount", len(allVersions)),
 		slog.Int("limit", maxVersions),
 		slog.Int("toDelete", len(versionsToDelete)))
