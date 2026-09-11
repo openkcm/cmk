@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
@@ -18,6 +19,7 @@ var (
 	ErrNonDefinedTaskType              = errors.New("task type is unknown")
 	ErrRepeatedTaskType                = errors.New("task type is specified more than once")
 	ErrCNPrefixLength                  = errors.New("certificate common name prefix cannot exceed 24 characters")
+	ErrInvalidMaxKeyVersions           = errors.New("maxKeyVersions must be either -1 (unlimited) or >= 1")
 
 	ErrAMQPEmptyURL      = errors.New("AMQP URL must be specified")
 	ErrAMQPEmptyTarget   = errors.New("AMQP target must be specified")
@@ -69,6 +71,11 @@ func (c *Config) Validate() error {
 	}
 
 	err = c.CryptoLayer.Validate()
+	if err != nil {
+		return errs.Wrap(ErrConfigurationValuesError, err)
+	}
+
+	err = c.Landscape.Validate()
 	if err != nil {
 		return errs.Wrap(ErrConfigurationValuesError, err)
 	}
@@ -375,9 +382,50 @@ type KeystorePool struct {
 }
 
 type Landscape struct {
-	Name      string `yaml:"name"`
-	UIBaseUrl string `yaml:"uiBaseUrl"`
-	Region    string `yaml:"region"`
+	Name           string         `yaml:"name"`
+	UIBaseUrl      string         `yaml:"uiBaseUrl"`
+	Region         string         `yaml:"region"`
+	MaxKeyVersions map[string]int `yaml:"maxKeyVersions"` // Provider -> max versions limit
+}
+
+const (
+	// DefaultMaxKeyVersions is the default limit for key versions per key if not configured
+	DefaultMaxKeyVersions = 5
+	// UnlimitedKeyVersions indicates no version limit (all versions are retained)
+	UnlimitedKeyVersions = -1
+)
+
+// GetMaxVersionsForProvider returns the maximum number of versions to retain for a given provider.
+// Returns the configured limit for the provider, or DefaultMaxKeyVersions (5) if not configured.
+// A return value of -1 (UnlimitedKeyVersions) means no limit is enforced.
+func (l *Landscape) GetMaxVersionsForProvider(provider string) int {
+	if l.MaxKeyVersions == nil {
+		return DefaultMaxKeyVersions
+	}
+
+	if limit, ok := l.MaxKeyVersions[provider]; ok {
+		return limit
+	}
+
+	return DefaultMaxKeyVersions
+}
+
+// Validate checks the Landscape configuration values (currently only MaxKeyVersions is validated).
+// Ensures that MaxKeyVersions values are either -1 (unlimited) or >= 1.
+func (l *Landscape) Validate() error {
+	if l.MaxKeyVersions == nil {
+		return nil // No configuration provided, will use defaults
+	}
+
+	for provider, limit := range l.MaxKeyVersions {
+		if limit != UnlimitedKeyVersions && limit < 1 {
+			return errs.Wrapf(ErrInvalidMaxKeyVersions,
+				fmt.Sprintf("provider %s has invalid maxKeyVersions value %d (must be -1 or >= 1)",
+					provider, limit))
+		}
+	}
+
+	return nil
 }
 
 type Workflow struct {
