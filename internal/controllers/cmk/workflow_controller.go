@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	wfTransform "github.com/openkcm/cmk/internal/api/transform/workflow"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	wfTransform "github.com/openkcm/cmk/internal/api/cmk/transform/workflow"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"

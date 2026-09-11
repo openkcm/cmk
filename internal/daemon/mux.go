@@ -6,8 +6,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/write"
+	"github.com/openkcm/cmk/internal/api/cmk/write"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/authz"
 )
@@ -28,7 +27,7 @@ func WithSwaggerUI(swagger *openapi3.T) ServeMuxOption {
 		swaggerBaseURL := strings.TrimSuffix(m.BaseURL, "/{tenant}")
 		pattern := "GET " + swaggerBaseURL + "/swagger"
 		m.httpServeMux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-			html, err := cmkapi.SwaggerUI(swagger)
+			html, err := SwaggerUI(swagger)
 			if err != nil {
 				e := apierrors.APIErrorMapper.Transform(r.Context(), err)
 				write.ErrorResponse(r.Context(), w, e)

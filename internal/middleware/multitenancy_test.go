@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	cmkhandlers "github.com/openkcm/cmk/internal/handlers/cmk"
 	"github.com/openkcm/cmk/internal/middleware"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -45,7 +46,7 @@ func TestMultiTenancyMiddleware(t *testing.T) {
 			})
 
 			// Wrap handler with middleware
-			middlewareFunc := middleware.InjectMultiTenancy()
+			middlewareFunc := middleware.InjectMultiTenancy(cmkhandlers.ResponseErrorHandlerFunc())
 			wrappedHandler := middlewareFunc(handler)
 
 			// Create a new HTTP server

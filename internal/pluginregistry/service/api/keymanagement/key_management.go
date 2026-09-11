@@ -6,7 +6,7 @@ import (
 
 	"github.com/openkcm/plugin-sdk/api"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 )
 
