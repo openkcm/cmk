@@ -350,6 +350,7 @@ func setupEvictionTest(
 	return ctx, kvm, r, keyConfig.ID
 }
 
+//nolint:cyclop // The table-like subtests cover distinct version eviction configurations.
 func TestVersionEviction(t *testing.T) {
 	t.Run("Should evict oldest versions when limit exceeded", func(t *testing.T) {
 		ctx, kvm, r, keyConfigID := setupEvictionTest(t, map[string]int{"AWS": 5})
