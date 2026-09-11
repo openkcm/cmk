@@ -3,9 +3,9 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/clientcertificates"
-	"github.com/openkcm/cmk/internal/api/transform/keyconfiguration"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/clientcertificates"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/keyconfiguration"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"

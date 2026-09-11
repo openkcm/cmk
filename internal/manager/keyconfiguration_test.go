@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	authz_repo "github.com/openkcm/cmk/internal/authz/repo"

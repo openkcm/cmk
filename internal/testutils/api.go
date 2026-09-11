@@ -20,7 +20,7 @@ import (
 
 	md "github.com/oapi-codegen/nethttp-middleware"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
@@ -30,7 +30,7 @@ import (
 	"github.com/openkcm/cmk/internal/daemon"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/featureflags"
-	"github.com/openkcm/cmk/internal/handlers"
+	cmkhandlers "github.com/openkcm/cmk/internal/handlers/cmk"
 	"github.com/openkcm/cmk/internal/middleware"
 	"github.com/openkcm/cmk/internal/multitenancy"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
@@ -144,8 +144,8 @@ func startAPIServer(
 		controller,
 		[]cmkapi.StrictMiddlewareFunc{},
 		cmkapi.StrictHTTPServerOptions{
-			RequestErrorHandlerFunc:  handlers.RequestErrorHandlerFunc(),
-			ResponseErrorHandlerFunc: handlers.ResponseErrorHandlerFunc(),
+			RequestErrorHandlerFunc:  cmkhandlers.RequestErrorHandlerFunc(),
+			ResponseErrorHandlerFunc: cmkhandlers.ResponseErrorHandlerFunc(),
 		},
 	)
 
@@ -160,7 +160,7 @@ func startAPIServer(
 
 	mws := []cmkapi.MiddlewareFunc{
 		md.OapiRequestValidatorWithOptions(swagger, &md.Options{
-			ErrorHandlerWithOpts:  handlers.OAPIValidatorHandler,
+			ErrorHandlerWithOpts:  cmkhandlers.OAPIValidatorHandler,
 			SilenceServersWarning: true,
 			Options: openapi3filter.Options{
 				AuthenticationFunc:    openapi3filter.NoopAuthenticationFunc,
@@ -175,7 +175,7 @@ func startAPIServer(
 		middleware.AuthzMiddleware(controller),
 		middleware.LoggingMiddleware(),
 		middleware.PanicRecoveryMiddleware(),
-		middleware.InjectMultiTenancy(),
+		middleware.InjectMultiTenancy(cmkhandlers.ResponseErrorHandlerFunc()),
 		middleware.InjectRequestID(),
 	)
 
@@ -188,7 +188,7 @@ func startAPIServer(
 		cmkapi.StdHTTPServerOptions{
 			BaseRouter:       r,
 			BaseURL:          constants.BasePath,
-			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
+			ErrorHandlerFunc: cmkhandlers.ParamsErrorHandler(),
 			Middlewares:      mws,
 		})
 

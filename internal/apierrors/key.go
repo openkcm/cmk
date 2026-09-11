@@ -6,10 +6,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/api/transform/key/hyokkey"
-	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
+	"github.com/openkcm/cmk/internal/api/cmk/transform"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/hyokkey"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/keyshared"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"

@@ -3,11 +3,11 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/importparams"
-	keyTransform "github.com/openkcm/cmk/internal/api/transform/key"
-	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/importparams"
+	keyTransform "github.com/openkcm/cmk/internal/api/cmk/transform/key"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/keyshared"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"

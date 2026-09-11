@@ -12,7 +12,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 
-	"github.com/openkcm/cmk/internal/api/write"
+	"github.com/openkcm/cmk/internal/api/cmk/write"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"

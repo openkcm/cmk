@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/system"
-	wfWorkflow "github.com/openkcm/cmk/internal/api/transform/workflow"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/system"
+	wfWorkflow "github.com/openkcm/cmk/internal/api/cmk/transform/workflow"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
