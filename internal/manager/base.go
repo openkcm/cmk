@@ -82,8 +82,10 @@ func New(
 	groupManager := NewGroupManager(repo, svcRegistry, userManager)
 
 	return &Manager{
-		Keys:          keyManager,
-		KeyVersions:   NewKeyVersionManager(repo, svcRegistry, tenantConfigManager, certManager, cmkAuditor),
+		Keys: keyManager,
+		KeyVersions: NewKeyVersionManager(
+			repo, svcRegistry, tenantConfigManager, certManager, cmkAuditor, &config.Landscape,
+		),
 		TenantConfigs: tenantConfigManager,
 		System:        systemManager,
 		KeyConfig:     keyConfigManager,
