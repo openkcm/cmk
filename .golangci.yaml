@@ -28,6 +28,7 @@ linters:
     - wrapcheck
     - wsl
     - wsl_v5
+    - gomodguard
   settings:
     paralleltest:
       ignore-missing: true

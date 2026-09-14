@@ -30,6 +30,7 @@ import (
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	stduuid "uuid"
 
 	"github.com/openkcm/cmk/internal/clients/registry/tenants"
 	"github.com/openkcm/cmk/internal/config"
@@ -107,7 +108,7 @@ func TestTenantProvisioning_AuthzPolicy(t *testing.T) {
 		data, err := createValidTenantData(tenantID, "us-east-1", "authz-test-tenant")
 		require.NoError(t, err)
 
-		req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), data)
+		req := buildRequest(stduuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), data)
 		resp := orbital.ExecuteHandler(ctx, op.HandleCreateTenant, req)
 
 		// First invocation reaches probe.Check (First on Group) then
@@ -138,7 +139,7 @@ func TestTenantProvisioning_AuthzPolicy(t *testing.T) {
 		data, err := proto.Marshal(authProto)
 		require.NoError(t, err)
 
-		req := buildRequest(uuid.New(), authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String(), data)
+		req := buildRequest(stduuid.New(), authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String(), data)
 		resp := orbital.ExecuteHandler(ctx, op.HandleApplyTenantAuth, req)
 
 		assert.Empty(t, resp.ErrorMessage,

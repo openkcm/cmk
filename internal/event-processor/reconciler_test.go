@@ -25,6 +25,7 @@ import (
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	stduuid "uuid"
 
 	"github.com/openkcm/cmk/internal/api/cmkapi"
 	"github.com/openkcm/cmk/internal/clients"
@@ -1618,7 +1619,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 	}
 
 	// Helper to create a failed task in Orbital database
-	createFailedTask := func(t *testing.T, jobID uuid.UUID, errorMessage string) {
+	createFailedTask := func(t *testing.T, jobID stduuid.UUID, errorMessage string) {
 		t.Helper()
 		// Insert directly into orbital.tasks table with all required fields
 		now := time.Now().Unix()
@@ -1665,7 +1666,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 
 		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
 			WithExternalID(eventID)
-		job.ID = uuid.New() // Set unique job ID for test
+		job.ID = stduuid.New() // Set unique job ID for test
 
 		// Create a failed task in Orbital with version mismatch error
 		createFailedTask(t, job.ID, "KEY_VERSION_MISMATCH:Version mismatch detected")
@@ -1697,7 +1698,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 
 		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
 			WithExternalID(eventID)
-		job.ID = uuid.New() // Set unique job ID for test
+		job.ID = stduuid.New() // Set unique job ID for test
 
 		// Create a failed task in Orbital with error message
 		createFailedTask(t, job.ID, "SOME_OTHER_ERROR:Something went wrong")
