@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	ctr "github.com/openkcm/cmk/internal/controllers/cmk"
 	"github.com/openkcm/cmk/internal/daemon"
 )

@@ -10,7 +10,7 @@ import (
 
 	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"

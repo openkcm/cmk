@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openkcm/cmk/internal/api/write"
+	"github.com/openkcm/cmk/internal/api/cmk/write"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"

@@ -9,11 +9,17 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 )
 
-func spanNameFormatter(operation string, r *http.Request) string {
-	return operation + ":" + extractPattern(r.Pattern, constants.BasePath)
+func spanNameFormatter(basePath string) func(string, *http.Request) string {
+	return func(operation string, r *http.Request) string {
+		return operation + ":" + extractPattern(r.Pattern, basePath)
+	}
 }
 
 func TracingMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
+	return TracingMiddlewareWithBasePath(cfg, constants.BasePath)
+}
+
+func TracingMiddlewareWithBasePath(cfg *config.Config, basePath string) func(http.Handler) http.Handler {
 	if !cfg.Telemetry.Traces.Enabled {
 		return func(next http.Handler) http.Handler {
 			return next
@@ -21,6 +27,10 @@ func TracingMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 	}
 
 	return func(next http.Handler) http.Handler {
-		return otelhttp.NewHandler(next, cfg.Application.Name, otelhttp.WithSpanNameFormatter(spanNameFormatter))
+		return otelhttp.NewHandler(
+			next,
+			cfg.Application.Name,
+			otelhttp.WithSpanNameFormatter(spanNameFormatter(basePath)),
+		)
 	}
 }

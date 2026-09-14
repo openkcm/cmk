@@ -10,7 +10,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"

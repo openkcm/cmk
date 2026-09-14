@@ -1,0 +1,176 @@
+package key
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"time"
+
+	"github.com/google/uuid"
+
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/byok"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/hyokkey"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/keyshared"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/transformer"
+	"github.com/openkcm/cmk/internal/apierrors"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/utils/sanitise"
+)
+
+var (
+	ErrInvalidKeyType           = errors.New("invalid key type")
+	ErrDeserializeKeyAccessData = errors.New("error deserializing key access data from model to API")
+)
+
+// FromAPI converts a cmkapi.Key to a model.Key.
+func FromAPI(ctx context.Context, apiKey cmkapi.Key, tf transformer.ProviderTransformer) (*model.Key, error) {
+	if apiKey.Name == "" {
+		return nil, apierrors.ErrNameFieldMissingProperty
+	}
+
+	if apiKey.Type == "" {
+		return nil, apierrors.ErrTypeFieldMissingProperty
+	}
+
+	if apiKey.KeyConfigurationID == uuid.Nil {
+		return nil, apierrors.ErrKeyConfigurationFieldMissingProperty
+	}
+
+	dbKey, err := getKeyModel(ctx, tf, apiKey)
+	if err != nil {
+		return nil, errs.Wrap(keyshared.ErrFromAPI, err)
+	}
+
+	dbKey.Name = apiKey.Name
+	dbKey.KeyType = apiKey.Type
+	dbKey.KeyConfigurationID = apiKey.KeyConfigurationID
+
+	if apiKey.Description != nil {
+		dbKey.Description = *apiKey.Description
+	}
+
+	now := time.Now()
+	dbKey.ID = uuid.New()
+	dbKey.CreatedAt = now
+	dbKey.UpdatedAt = now
+
+	if apiKey.Enabled == nil || *apiKey.Enabled {
+		dbKey.State = cmkapi.KeyStateENABLED
+	} else {
+		dbKey.State = cmkapi.KeyStateDISABLED
+	}
+
+	return dbKey, nil
+}
+
+// ToAPI converts a model.Key to a cmkapi.Key
+func ToAPI(k model.Key) (*cmkapi.Key, error) {
+	err := sanitise.Sanitize(&k)
+	if err != nil {
+		return nil, err
+	}
+
+	var apiKey cmkapi.Key
+
+	apiKey.Id = &k.ID
+
+	if k.Algorithm != "" {
+		algorithm := k.Algorithm
+		apiKey.Algorithm = &algorithm
+	}
+
+	if k.Region != "" {
+		apiKey.Region = &k.Region
+	}
+
+	apiKey.Name = k.Name
+	if k.Description != "" {
+		apiKey.Description = &k.Description
+	}
+
+	state := k.State
+	apiKey.State = &state
+	apiKey.UnderWorkflow = &k.UnderWorkflow
+
+	apiKey.Metadata = &cmkapi.KeyMetadata{
+		CreatedAt: &k.CreatedAt,
+		UpdatedAt: &k.UpdatedAt,
+	}
+
+	apiKey.KeyConfigurationID = k.KeyConfigurationID
+	apiKey.Type = k.KeyType
+
+	if k.KeyType == cmkapi.KeyTypeHYOK {
+		accessDetails, err := getAccessDetailsFromModel(k)
+		if err != nil {
+			return nil, err
+		}
+
+		apiKey.AccessDetails = accessDetails
+		apiKey.NativeID = k.NativeID
+		if k.Provider != "" {
+			apiKey.Provider = &k.Provider
+		}
+	}
+
+	apiKey.IsPrimary = &k.IsPrimary
+
+	if len(k.ErrorDetail) > 0 {
+		var detail cmkapi.KeyErrorDetail
+		if err := json.Unmarshal(k.ErrorDetail, &detail); err != nil {
+			return nil, errs.Wrap(ErrDeserializeKeyAccessData, err)
+		}
+		apiKey.ErrorDetail = &detail
+	}
+
+	return &apiKey, nil
+}
+
+func getKeyModel(ctx context.Context, tf transformer.ProviderTransformer, apiKey cmkapi.Key) (*model.Key, error) {
+	var selectedProvider func(
+		ctx context.Context, apikey cmkapi.Key, transformer transformer.ProviderTransformer,
+	) (*model.Key, error)
+
+	switch apiKey.Type {
+	case cmkapi.KeyTypeBYOK:
+		selectedProvider = byok.FromCmkAPIKey
+	case cmkapi.KeyTypeHYOK:
+		selectedProvider = hyokkey.FromCmkAPIKey
+	default:
+		return nil, ErrInvalidKeyType
+	}
+
+	return selectedProvider(ctx, apiKey, tf)
+}
+
+func getAccessDetailsFromModel(k model.Key) (*cmkapi.KeyAccessDetails, error) {
+	var crypto map[string]cmkapi.KeyAccessDetailsRegion
+
+	management := cmkapi.KeyAccessDetailsRegion{}
+	err := management.UnmarshalJSON(k.ManagementAccessData)
+	if err != nil {
+		return nil, errs.Wrap(ErrDeserializeKeyAccessData, err)
+	}
+
+	err = json.Unmarshal(k.CryptoAccessData, &crypto)
+	if err != nil {
+		return nil, errs.Wrap(ErrDeserializeKeyAccessData, err)
+	}
+
+	for region, editable := range k.EditableRegions {
+		regionValues, ok := crypto[region]
+		if !ok {
+			// Skip regions that don't exist in crypto access data
+			continue
+		}
+		regionValues.IsEditable = &editable
+		crypto[region] = regionValues
+	}
+
+	return &cmkapi.KeyAccessDetails{
+		Management: new(management),
+		Crypto:     new(crypto),
+	}, nil
+}

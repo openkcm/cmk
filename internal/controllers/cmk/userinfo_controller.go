@@ -3,7 +3,7 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 )
 
 func (c *APIController) GetUserInfo(

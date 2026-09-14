@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/authz"
 )
 

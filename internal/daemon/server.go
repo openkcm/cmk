@@ -15,7 +15,7 @@ import (
 
 	commonmiddleware "github.com/openkcm/common-sdk/pkg/middleware"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
@@ -25,7 +25,7 @@ import (
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/featureflags"
-	"github.com/openkcm/cmk/internal/handlers"
+	cmkhandlers "github.com/openkcm/cmk/internal/handlers/cmk"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/middleware"
 	"github.com/openkcm/cmk/internal/multitenancy"
@@ -188,21 +188,21 @@ func createHTTPServer(
 			ctr,
 			[]cmkapi.StrictMiddlewareFunc{},
 			cmkapi.StrictHTTPServerOptions{
-				RequestErrorHandlerFunc:  handlers.RequestErrorHandlerFunc(),
-				ResponseErrorHandlerFunc: handlers.ResponseErrorHandlerFunc(),
+				RequestErrorHandlerFunc:  cmkhandlers.RequestErrorHandlerFunc(),
+				ResponseErrorHandlerFunc: cmkhandlers.ResponseErrorHandlerFunc(),
 			},
 		),
 		cmkapi.StdHTTPServerOptions{
 			BaseURL:          constants.BasePath,
 			BaseRouter:       baseRouter,
-			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
+			ErrorHandlerFunc: cmkhandlers.ParamsErrorHandler(),
 			Middlewares: []cmkapi.MiddlewareFunc{ // Middlewares are applied from last to first
 				middleware.AuthzMiddleware(ctr),
 				middleware.BusinessUserDataMiddleware(signingKeyStorage, cfg.ClientData.AuthContextFields, ctr.Manager.User),
 				middleware.OAPIMiddleware(swagger),
 				middleware.LoggingMiddleware(),
 				middleware.PanicRecoveryMiddleware(),
-				middleware.InjectMultiTenancy(),
+				middleware.InjectMultiTenancy(cmkhandlers.ResponseErrorHandlerFunc()),
 				middleware.InjectRequestID(),
 				middleware.TracingMiddleware(cfg),
 				// RequestBodyLimitMiddleware runs before TracingMiddleware to cap body size
