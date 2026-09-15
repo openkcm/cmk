@@ -25,6 +25,7 @@ var (
 	ErrTargetEmptyRegion = errors.New("target region must be specified")
 
 	ErrTenantLimitsSystemsBelowMinimum = errors.New("tenant limits systems must be at least 1")
+	ErrTenantLimitsKeyBelowMinimum     = errors.New("tenant limits keys must be at least 1")
 )
 
 // Config holds all application configuration parameters
@@ -400,17 +401,21 @@ type Keys struct {
 	PendingCreationTimeout     time.Duration `yaml:"pendingCreationTimeout"     default:"15m"`
 }
 
-const MinTenantLimitSystems = 1
+const MinTenantLimit = 1
 
 // Tenant holds per-tenant resource limits.
 type Tenant struct {
 	SystemLimit int `yaml:"systemLimit" default:"50"`
+	KeyLimit    int `yaml:"keyLimit" default:"10"`
 }
 
 // Validate checks that tenant limits are within acceptable bounds.
 func (tl *Tenant) Validate() error {
-	if tl.SystemLimit < MinTenantLimitSystems {
+	if tl.SystemLimit < MinTenantLimit {
 		return ErrTenantLimitsSystemsBelowMinimum
+	}
+	if tl.KeyLimit < MinTenantLimit {
+		return ErrTenantLimitsKeyBelowMinimum
 	}
 
 	return nil

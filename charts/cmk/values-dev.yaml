@@ -337,7 +337,6 @@ config:
 # Name of an existing ConfigMap containing flags.yaml at key "flags.yaml".
 # Required when config.featureFlags.enabled is true.
 featureFlagsConfigMap:
-
   http:
     port: 8081
 
@@ -817,6 +816,10 @@ featureFlagsConfigMap:
         technicalName: us-east-1
       - name: United States (Ohio)
         technicalName: us-east-2
+
+  tenant:
+    systemLimit: 50
+    keyLimit: 10
 
   landscape:
     name: Local
