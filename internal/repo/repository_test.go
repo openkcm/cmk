@@ -1,6 +1,7 @@
 package repo_test
 
 import (
+	"errors"
 	"sync"
 	"testing"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 )
+
+var errProcessFailed = errors.New("process failed")
 
 func TestConcurrency(t *testing.T) {
 	tenantCount := 10
@@ -245,6 +248,61 @@ func TestProcessInBatchWithOptionsDeleteMode(t *testing.T) {
 		// Verify
 		assert.NoError(t, err)
 		assert.Equal(t, 1, processCallCount, "processFunc should be called once even with no data")
+	})
+}
+
+func TestProcessInBatchWithOptionsIgnoreFailMode(t *testing.T) {
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
+	tenant := tenants[0]
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	seed := func(t *testing.T, total int) {
+		t.Helper()
+		for range total {
+			item := &testutils.TestModel{
+				ID:   uuid.New(),
+				Name: "ignorefail_test_" + uuid.NewString(),
+			}
+			assert.NoError(t, r.Create(ctx, item))
+		}
+	}
+
+	t.Run("continues through all batches and returns the error when IgnoreFailMode is enabled", func(t *testing.T) {
+		total := 5
+		seed(t, total)
+
+		batchCount := 0
+		processFunc := func(_ []*testutils.TestModel) error {
+			batchCount++
+			return errProcessFailed
+		}
+
+		err := repo.ProcessInBatchWithOptions[testutils.TestModel](
+			ctx, r, repo.NewQuery(), 2,
+			repo.BatchProcessOptions{IgnoreFailMode: true},
+			processFunc,
+		)
+
+		assert.ErrorIs(t, err, errProcessFailed)
+		assert.Equal(t, 3, batchCount, "should process every batch (2+2+1) despite each failing")
+	})
+
+	t.Run("stops on the first failing batch by default", func(t *testing.T) {
+		batchCount := 0
+		processFunc := func(_ []*testutils.TestModel) error {
+			batchCount++
+			return errProcessFailed
+		}
+
+		err := repo.ProcessInBatchWithOptions[testutils.TestModel](
+			ctx, r, repo.NewQuery(), 2,
+			repo.BatchProcessOptions{},
+			processFunc,
+		)
+
+		assert.ErrorIs(t, err, errProcessFailed)
+		assert.Equal(t, 1, batchCount, "should stop after the first failing batch")
 	})
 }
 

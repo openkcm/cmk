@@ -15,7 +15,7 @@ point (`cmd/`) that injects each role at runtime.
 | [cmd/task-worker](#cmdtask-worker) | Partial ¹ |
 | [cmd/task-worker and cmd/task-scheduler](#cmdtask-worker-and-cmdtask-scheduler) | Complete |
 | [cmd/tenant-manager and cmd/operator](#cmdtenant-manager-and-cmdoperator) | Complete |
-| [cmd/tenant-manager-cli](#cmdtenant-manager-cli) | Complete |
+| [cmd/cmkctl (tenant-manager-cli)](#cmdcmkctl-tenant-manager-cli) | Complete |
 | [cmd/event-reconciler](#cmdevent-reconciler) | Partial ³ ⁴ |
 | [cmd/api-server](#cmdapi-server) | Partial ² |
 
@@ -100,16 +100,21 @@ of keystore plugin dependencies while confirming Count is permitted.
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
 | Count, List | System | `SystemInformationManager.UpdateSystems` | ✓ |
+| First, Update | System | `SystemInformationManager.UpdateSystems` → `updateSystem` | ✓ |
 | Count, List | KeyConfiguration | `SystemInformationManager.UpdateSystems` | – |
 | Count, List | Event | `SystemInformationManager.UpdateSystems` | – |
 | Count, List | SystemProperty | `SystemInformationManager.UpdateSystems` | – |
 | Update | SystemProperty | `SystemInformationManager.UpdateSystems` | – |
 
 **Test:** `internal/authz/policy_tests/system_refresh_test.go`
-`TestSystemRefresh_AuthzPolicy/InternalTaskSystemRefreshRole_allows_Count_and_List_on_System`
+`TestSystemRefresh_AuthzPolicy/allows_Count_and_List_on_System`
+`TestSystemRefresh_AuthzPolicy/allows_First_and_Update_on_System`
 
-No systems are seeded. `UpdateSystems` calls `ProcessInBatch` → Count+List on
-System → empty batch → clean exit.
+The first sub-test seeds no systems: `UpdateSystems` calls `ProcessInBatch` →
+Count+List on System → empty batch → clean exit. The second seeds one system and a
+plugin that returns a role property, so `updateSystem` reaches First
+(`GetSystemByIDWithProperties`) and Update (`Patch`); the persisted property is
+asserted, confirming both operations are permitted.
 
 ---
 
@@ -261,7 +266,7 @@ in `internal/manager/tenant_test.go`.
 
 ---
 
-## cmd/tenant-manager-cli
+## cmd/cmkctl (tenant-manager-cli)
 
 ### `InternalTenantCLIRole`
 
@@ -270,14 +275,15 @@ in `internal/manager/tenant_test.go`.
 | List, First, Create, Delete, Update | Tenant | `TenantManager` (all CRUD ops) | ✓ |
 | Create | Group | `GroupManager.CreateGroup` | ✓ |
 
-**Test:** `cmd/tenant-manager-cli/cli_test.go` (`TestCLISuite`)
+**Test:** `cmd/cmkctl/commands/tenantmanagercli/commands/*_test.go`
+(`createtenantcmd_test.go`, `deletetenantcmd_test.go`, `gettenantcmd_test.go`,
+`listtenantscmd_test.go`, `updatetenantcmd_test.go`)
 
-Wires real `authzRepo` and injects `InternalTenantCLIRole` in
-`SetupSuite` and in each helper that calls `TenantManager` or `GroupManager`
-directly. The suite exercises `CreateTenant` (Create on Tenant), `ListTenants`
-(List on Tenant), `GetTenant` (First on Tenant), `UpdateTenant` (Update on Tenant),
-`DeleteTenant` (Delete on Tenant), and `CreateDefaultGroups` (Create on Group) —
-covering every permission in the policy.
+Shared setup (`commands/testutils.go`, `SetupCommandTest`) wires a real `authzRepo`
+via `NewCommandFactory`, injects `InternalTenantCLIRole`, and runs each command
+end-to-end against a test DB. Together the commands cover every permission: Create,
+List, First, Update, Delete on Tenant, and Create on Group (reached by the
+create-tenant command via `CreateDefaultGroups`).
 
 ---
 
