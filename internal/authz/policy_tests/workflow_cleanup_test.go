@@ -25,9 +25,9 @@ import (
 //
 // CleanupTerminalWorkflows calls GetWorkflowConfig (First on TenantConfig). When no
 // config exists, GetWorkflowConfig falls back to SetWorkflowConfig which reads the
-// tenant (First on Tenant) and then upserts the default config (Set = Delete+Create
+// tenant (First on Tenant) and then upserts the default config (Set = Update+Create
 // on TenantConfig). No TenantConfig is seeded so the full fallback path is exercised
-// under the authz repo, confirming all three TenantConfig permissions are granted.
+// under the authz repo, confirming all TenantConfig permissions are granted.
 func TestWorkflowCleanup_AuthzPolicy(t *testing.T) {
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
@@ -67,7 +67,7 @@ func TestWorkflowCleanup_AuthzPolicy(t *testing.T) {
 
 	// No TenantConfig is seeded. GetWorkflowConfig will call repo.First (not found),
 	// then fall through to SetWorkflowConfig → repo.GetTenant (Tenant:First) → repo.Set
-	// (TenantConfig:Delete+Create). All three operations must be permitted by the policy.
+	// (TenantConfig:Update+Create). All operations must be permitted by the policy.
 
 	t.Run("InternalTaskWorkflowCleanupRole allows Count, List, Delete on Workflow", func(t *testing.T) {
 		logger, buf := testutils.NewLogBuffer()
@@ -77,5 +77,13 @@ func TestWorkflowCleanup_AuthzPolicy(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotContains(t, buf.String(), `"allowed":false`,
 			"unexpected authz denial: %s", buf.String())
+	})
+
+	// ProcessTask swallows CleanupTerminalWorkflows errors, so drive the upsert
+	// fallback directly to assert the Set (Update+Create) path is permitted.
+	t.Run("InternalTaskWorkflowCleanupRole allows Set (upsert) on TenantConfig", func(t *testing.T) {
+		wc, err := tenantConfigManager.GetWorkflowConfig(ctx)
+		assert.NoError(t, err)
+		assert.NotNil(t, wc)
 	})
 }
