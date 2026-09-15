@@ -15,8 +15,6 @@ package constants
 // manager validation, and database CHECK constraints) and are covered by
 // security tests. Do not widen these bounds without a security review.
 const (
-	WorkflowConfigKey = "WORKFLOW_CONFIG"
-
 	DefaultMinimumApprovalCount = 2
 	MaxMinimumApprovals         = 5
 
