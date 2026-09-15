@@ -10,6 +10,14 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 )
 
+// Keystore status constants
+const (
+	KeystoreStatusPendingActivation = "PENDING_ACTIVATION" // Account created, waiting to become ACTIVE
+	KeystoreStatusActive            = "ACTIVE"             // Fully configured and ready to use
+	KeystoreStatusFailed            = "FAILED"             // Creation/configuration failed permanently
+	KeystoreStatusOrphaned          = "ORPHANED"           // Stale, needs cleanup
+)
+
 // Keystore is an internal entity of pool item that should be persisted.
 type Keystore struct {
 	AutoTimeModel
@@ -17,6 +25,7 @@ type Keystore struct {
 	ID       uuid.UUID       `gorm:"type:uuid;primaryKey"`
 	Provider string          `gorm:"type:varchar(50);not null"`
 	Config   json.RawMessage `gorm:"type:jsonb;not null;unique"`
+	Status   string          `gorm:"type:varchar(50);not null;default:'ACTIVE'"`
 }
 
 // TableResourceType return the authz resource type
