@@ -249,6 +249,7 @@ tenantManager:
 
 tenant:
   systemLimit: 50
+  keyLimit: 10
 
 provisioning:
   initKeystoreConfig:
