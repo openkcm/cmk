@@ -189,17 +189,28 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 }
 
 func (pmc *ProviderConfigManager) FillKeystorePool(ctx context.Context, size int) error {
-	count, err := pmc.keystorePool.Count(ctx)
+	activeCount, err := pmc.keystorePool.Count(ctx)
 	if err != nil {
 		return errs.Wrap(ErrCountKeystorePool, err)
 	}
 
+	pendingCount, err := pmc.keystorePool.CountPending(ctx)
+	if err != nil {
+		return errs.Wrap(ErrCountKeystorePool, err)
+	}
+
+	// Total includes both active and pending keystores
+	totalCount := activeCount + pendingCount
+
 	log.Debug(ctx, "Filling keystore pool",
-		slog.Int("currentSize", count),
+		slog.Int("activeCount", activeCount),
+		slog.Int("pendingCount", pendingCount),
+		slog.Int("totalCount", totalCount),
 		slog.Int("targetSize", size),
 	)
 
-	for i := count; i < size; i++ {
+	// Only create new keystores if needed
+	for i := totalCount; i < size; i++ {
 		provider, config, err := pmc.CreateKeystore(ctx)
 		if err != nil {
 			return err
