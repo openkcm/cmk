@@ -2,8 +2,7 @@ package testutils
 
 import (
 	"context"
-
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/openkcm/cmk/internal/authz"
 )

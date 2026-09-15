@@ -14,6 +14,7 @@ import (
 
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	regionpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
+	stduuid "uuid"
 
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
@@ -934,7 +935,7 @@ func TestSendRecoveryAction(t *testing.T) {
 			err = db.WithTenant(
 				ctx, "orbital", func(tx *multitenancy.DB) error {
 					job := orbital.Job{
-						ID:         uuid.New(),
+						ID:         stduuid.New(),
 						ExternalID: system.ID.String(),
 						Data:       []byte("{}"),
 						Type:       tt.eventType.String(),
