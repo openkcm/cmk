@@ -27,7 +27,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	stduuid "uuid"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"

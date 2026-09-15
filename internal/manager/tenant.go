@@ -11,7 +11,7 @@ import (
 
 	pb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/db"

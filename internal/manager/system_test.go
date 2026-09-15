@@ -16,7 +16,7 @@ import (
 	regionpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 	stduuid "uuid"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
