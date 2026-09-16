@@ -18,7 +18,6 @@ includes:
       SINGLE_DOCKER_FILE_IDENTIFIER: 'full-base'
 
       IMG_COMPONENTS: 'cmk-full-base cmk-full-plugins cmkd cmkctl'
-      CLI_COMPONENTS: './cmd/cmkctl:cmkctl'
 
       COMPOSITE_COMPONENTS:
         - COMPONENT_NAME: cmk-full-plugins
