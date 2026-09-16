@@ -34,6 +34,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
@@ -133,6 +134,7 @@ func setupTestInstance(
 	eventProcessor, err := eventprocessor.NewCryptoReconciler(
 		t.Context(), cfg, r,
 		svcRegistry, clientsFactory,
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil),
 	)
 	assert.NoError(t, err)
 
@@ -1867,7 +1869,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory)
+	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
 	require.NoError(t, err)
 	rec.DisableAuditLog()
 	t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
@@ -1889,7 +1891,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	}
 	ksBytes, err := json.Marshal(ksConfig)
 	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
+	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) {
@@ -2054,7 +2056,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory)
+	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
 	require.NoError(t, err)
 	rec.DisableAuditLog()
 	t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
@@ -2080,7 +2082,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 	}
 	ksBytes, err := json.Marshal(ksConfig)
 	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
+	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) { s.Region = region })
@@ -2188,7 +2190,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory)
+		rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
 		require.NoError(t, err)
 		rec.DisableAuditLog()
 		t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
@@ -2245,7 +2247,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		}
 		ksBytes, err := json.Marshal(ksConfig)
 		require.NoError(t, err)
-		require.NoError(t, inst.r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
+		require.NoError(t, inst.r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 
@@ -2272,7 +2274,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		}
 		ksBytes, err := json.Marshal(ksConfig)
 		require.NoError(t, err)
-		require.NoError(t, inst.r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
+		require.NoError(t, inst.r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 
