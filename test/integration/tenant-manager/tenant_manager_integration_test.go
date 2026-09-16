@@ -23,6 +23,7 @@ import (
 
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	stduuid "uuid"
 
 	"github.com/openkcm/cmk/internal/clients/registry/tenants"
 	"github.com/openkcm/cmk/internal/config"
@@ -389,7 +390,7 @@ func (env *testEnv) sendAMQPMessage(t *testing.T, message any) {
 	}
 
 	taskRequest := orbital.TaskRequest{
-		TaskID:       uuid.New(),
+		TaskID:       stduuid.New(),
 		Type:         taskType,
 		Data:         data,
 		WorkingState: []byte(""),

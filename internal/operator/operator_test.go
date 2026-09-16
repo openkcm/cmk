@@ -30,6 +30,7 @@ import (
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 	slogctx "github.com/veqryn/slog-context"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	stduuid "uuid"
 
 	"github.com/openkcm/cmk/internal/auditor"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
@@ -184,7 +185,7 @@ func createInvalidOperatorRequest(
 
 	invalidData := []byte("invalid-proto")
 	taskReq := orbital.TaskRequest{
-		TaskID:        uuid.New(),
+		TaskID:        stduuid.New(),
 		Type:          taskType,
 		Data:          invalidData,
 		TaskCreatedAt: time.Now().UnixNano(),
@@ -319,7 +320,7 @@ func TestHandleCreateTenant(t *testing.T) {
 			wantErr:    false,
 			setup: func() {
 				// Create tenant first to simulate second probe
-				req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), validData)
+				req := buildRequest(stduuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), validData)
 				resp := orbital.ExecuteHandler(ctx, testConfig.TenantOperator.HandleCreateTenant, req)
 				assert.Empty(t, resp.ErrorMessage, "Expected no error on first tenant creation")
 			},
@@ -334,7 +335,7 @@ func TestHandleCreateTenant(t *testing.T) {
 			wantErr:    false,
 			setup: func() {
 				// First create the tenant schema and groups
-				req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), validData)
+				req := buildRequest(stduuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), validData)
 				resp := orbital.ExecuteHandler(ctx, testConfig.TenantOperator.HandleCreateTenant, req)
 				assert.Empty(t, resp.ErrorMessage, "Expected no error on tenant creation")
 
@@ -377,7 +378,7 @@ func TestHandleCreateTenant(t *testing.T) {
 			tt.name, func(t *testing.T) {
 				tt.setup()
 
-				req := buildRequest(uuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), tt.data)
+				req := buildRequest(stduuid.New(), tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(), tt.data)
 				resp := orbital.ExecuteHandler(ctx, testConfig.TenantOperator.HandleCreateTenant, req)
 
 				if tt.wantErr {
@@ -446,7 +447,7 @@ func TestSetErrorState(t *testing.T) {
 				operator.SetErrorState(ctx, resp, tt.err, "some working state")
 			}
 
-			resp := orbital.ExecuteHandler(ctx, handler, orbital.TaskRequest{TaskID: uuid.New()})
+			resp := orbital.ExecuteHandler(ctx, handler, orbital.TaskRequest{TaskID: stduuid.New()})
 
 			assert.Equal(t, tt.wantStatus, resp.Status, "Unexpected task status")
 			assert.Equal(t, tt.wantReconcile, resp.ReconcileAfterSec, "Unexpected reconcile interval")
@@ -482,7 +483,7 @@ func TestHandleCreateTenantConcurrent(t *testing.T) {
 	validData, err := createValidTenantData(validTenantID, "", "")
 	require.NoError(t, err)
 
-	taskID := uuid.New()
+	taskID := stduuid.New()
 
 	var (
 		wg          sync.WaitGroup
@@ -599,7 +600,7 @@ func TestHandleApplyAuth_InvalidData(t *testing.T) {
 				}()
 
 				taskReq := orbital.TaskRequest{
-					TaskID: uuid.New(),
+					TaskID: stduuid.New(),
 					Type:   taskType,
 					Data:   tt.data,
 				}
@@ -654,7 +655,7 @@ func TestHandleApplyAuth_IssuerUpdate(t *testing.T) {
 			assert.NoError(t, err)
 
 			taskReq := orbital.TaskRequest{
-				TaskID: uuid.New(),
+				TaskID: stduuid.New(),
 				Type:   taskType,
 				Data:   data,
 			}
@@ -757,7 +758,7 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				assert.NoError(t, err)
 
 				taskReq := orbital.TaskRequest{
-					TaskID: uuid.New(),
+					TaskID: stduuid.New(),
 					Type:   taskType,
 					Data:   data,
 				}
@@ -857,7 +858,7 @@ func TestHandleRemoveAuth_InvalidData(t *testing.T) {
 				}()
 
 				taskReq := orbital.TaskRequest{
-					TaskID: uuid.New(),
+					TaskID: stduuid.New(),
 					Type:   taskType,
 					Data:   tt.data,
 				}
@@ -957,7 +958,7 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 				assert.NoError(t, err)
 
 				taskReq := orbital.TaskRequest{
-					TaskID: uuid.New(),
+					TaskID: stduuid.New(),
 					Type:   taskType,
 					Data:   data,
 				}
@@ -1085,7 +1086,7 @@ func TestHandleBlockTenant(t *testing.T) {
 			assert.NoError(t, err)
 
 			taskReq := orbital.TaskRequest{
-				TaskID: uuid.New(),
+				TaskID: stduuid.New(),
 				Type:   taskType,
 				Data:   data,
 			}
@@ -1212,7 +1213,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 			assert.NoError(t, err)
 
 			taskReq := orbital.TaskRequest{
-				TaskID: uuid.New(),
+				TaskID: stduuid.New(),
 				Type:   taskType,
 				Data:   data,
 			}
@@ -1336,7 +1337,7 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 			assert.NoError(t, err)
 
 			taskReq := orbital.TaskRequest{
-				TaskID:        uuid.New(),
+				TaskID:        stduuid.New(),
 				Type:          taskType,
 				Data:          data,
 				TaskCreatedAt: time.Now().UnixNano(),
@@ -1488,7 +1489,7 @@ func TestHandleTerminateTenant(t *testing.T) {
 			assert.NoError(t, err)
 
 			taskReq := orbital.TaskRequest{
-				TaskID:        uuid.New(),
+				TaskID:        stduuid.New(),
 				Type:          taskType,
 				Data:          data,
 				TaskCreatedAt: time.Now().UnixNano(),
@@ -1576,7 +1577,7 @@ func TestHandleTerminateTenantTimeout(t *testing.T) {
 
 	// Task was created 2 hours ago — exceeds the 1h timeout set in cfg.
 	taskReq := orbital.TaskRequest{
-		TaskID:        uuid.New(),
+		TaskID:        stduuid.New(),
 		Type:          tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String(),
 		Data:          data,
 		TaskCreatedAt: time.Now().Add(-2 * time.Hour).UnixNano(),
@@ -1800,7 +1801,7 @@ func TestTenantOperatorTracing(t *testing.T) {
 	}()
 
 	taskReq := orbital.TaskRequest{
-		TaskID: uuid.New(),
+		TaskID: stduuid.New(),
 		Type:   tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String(),
 		Data:   validData,
 	}
@@ -1898,7 +1899,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 }
 
 // buildRequest creates a properly structured task request with TaskID
-func buildRequest(taskID uuid.UUID, actionType string, data []byte) orbital.TaskRequest {
+func buildRequest(taskID stduuid.UUID, actionType string, data []byte) orbital.TaskRequest {
 	return orbital.TaskRequest{
 		TaskID:        taskID,
 		Type:          actionType,

@@ -28,6 +28,7 @@ linters:
     - wrapcheck
     - wsl
     - wsl_v5
+    - gomodguard
   settings:
     paralleltest:
       ignore-missing: true
@@ -95,7 +96,10 @@ formatters:
   enable:
     - gci
     - gofmt
-    - goimports
+    # goimports is intentionally disabled: it classifies the aliased stdlib
+    # `stduuid "uuid"` (Go 1.27 std uuid, used by orbital) as standard and
+    # fights gci's `alias` section indefinitely. gci + gofmt cover import
+    # ordering and formatting on their own.
   settings:
     gci:
       sections:
