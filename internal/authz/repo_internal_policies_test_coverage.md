@@ -15,7 +15,7 @@ point (`cmd/`) that injects each role at runtime.
 | [cmd/task-worker](#cmdtask-worker) | Partial ¹ |
 | [cmd/task-worker and cmd/task-scheduler](#cmdtask-worker-and-cmdtask-scheduler) | Complete |
 | [cmd/tenant-manager and cmd/operator](#cmdtenant-manager-and-cmdoperator) | Complete |
-| [cmd/tenant-manager-cli](#cmdtenant-manager-cli) | Complete |
+| [cmd/cmkctl (tenant-manager-cli)](#cmdcmkctl-tenant-manager-cli) | Complete |
 | [cmd/event-reconciler](#cmdevent-reconciler) | Partial ³ ⁴ |
 | [cmd/api-server](#cmdapi-server) | Partial ² |
 
@@ -100,16 +100,21 @@ of keystore plugin dependencies while confirming Count is permitted.
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
 | Count, List | System | `SystemInformationManager.UpdateSystems` | ✓ |
+| First, Update | System | `SystemInformationManager.UpdateSystems` → `updateSystem` | ✓ |
 | Count, List | KeyConfiguration | `SystemInformationManager.UpdateSystems` | – |
 | Count, List | Event | `SystemInformationManager.UpdateSystems` | – |
 | Count, List | SystemProperty | `SystemInformationManager.UpdateSystems` | – |
 | Update | SystemProperty | `SystemInformationManager.UpdateSystems` | – |
 
 **Test:** `internal/authz/policy_tests/system_refresh_test.go`
-`TestSystemRefresh_AuthzPolicy/InternalTaskSystemRefreshRole_allows_Count_and_List_on_System`
+`TestSystemRefresh_AuthzPolicy/allows_Count_and_List_on_System`
+`TestSystemRefresh_AuthzPolicy/allows_First_and_Update_on_System`
 
-No systems are seeded. `UpdateSystems` calls `ProcessInBatch` → Count+List on
-System → empty batch → clean exit.
+The first sub-test seeds no systems: `UpdateSystems` calls `ProcessInBatch` →
+Count+List on System → empty batch → clean exit. The second seeds one system and a
+plugin that returns a role property, so `updateSystem` reaches First
+(`GetSystemByIDWithProperties`) and Update (`Patch`); the persisted property is
+asserted, confirming both operations are permitted.
 
 ---
 
@@ -133,7 +138,7 @@ call is reached and exercised.
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
 | First | Tenant | `WorkflowProcessor.ProcessTask` | ✓ |
-| First | TenantConfig | `WorkflowProcessor.ProcessTask` | ✓ |
+| First, List | TenantConfig | `WorkflowProcessor.ProcessTask` (flat-row read + legacy fallback) | ✓ |
 | First | Workflow | `WorkflowManager.AutoAssignApprovers` | ✓ |
 | Update | Workflow | `WorkflowManager.AutoAssignApprovers` | – |
 | Create, Delete, Count, List | WorkflowApprover | `WorkflowManager.AutoAssignApprovers` | – |
@@ -168,7 +173,7 @@ permitted by the policy.
 
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
-| First | TenantConfig | `WorkflowManager.CleanupTerminalWorkflows` → `GetWorkflowConfig` | ✓ |
+| First, List | TenantConfig | `WorkflowManager.CleanupTerminalWorkflows` → `GetWorkflowConfig` (flat-row read + legacy fallback) | ✓ |
 | Delete, Create | TenantConfig | `SetWorkflowConfig` → `repo.Set` (upsert when no config exists) | ✓ |
 | First | Tenant | `SetWorkflowConfig` → `repo.GetTenant` (to pick default config) | ✓ |
 | Count, List | Workflow | `WorkflowManager.CleanupTerminalWorkflows` | ✓ |
@@ -261,7 +266,7 @@ in `internal/manager/tenant_test.go`.
 
 ---
 
-## cmd/tenant-manager-cli
+## cmd/cmkctl (tenant-manager-cli)
 
 ### `InternalTenantCLIRole`
 
@@ -270,14 +275,15 @@ in `internal/manager/tenant_test.go`.
 | List, First, Create, Delete, Update | Tenant | `TenantManager` (all CRUD ops) | ✓ |
 | Create | Group | `GroupManager.CreateGroup` | ✓ |
 
-**Test:** `cmd/tenant-manager-cli/cli_test.go` (`TestCLISuite`)
+**Test:** `cmd/cmkctl/commands/tenantmanagercli/commands/*_test.go`
+(`createtenantcmd_test.go`, `deletetenantcmd_test.go`, `gettenantcmd_test.go`,
+`listtenantscmd_test.go`, `updatetenantcmd_test.go`)
 
-Wires real `authzRepo` and injects `InternalTenantCLIRole` in
-`SetupSuite` and in each helper that calls `TenantManager` or `GroupManager`
-directly. The suite exercises `CreateTenant` (Create on Tenant), `ListTenants`
-(List on Tenant), `GetTenant` (First on Tenant), `UpdateTenant` (Update on Tenant),
-`DeleteTenant` (Delete on Tenant), and `CreateDefaultGroups` (Create on Group) —
-covering every permission in the policy.
+Shared setup (`commands/testutils.go`, `SetupCommandTest`) wires a real `authzRepo`
+via `NewCommandFactory`, injects `InternalTenantCLIRole`, and runs each command
+end-to-end against a test DB. Together the commands cover every permission: Create,
+List, First, Update, Delete on Tenant, and Create on Group (reached by the
+create-tenant command via `CreateDefaultGroups`).
 
 ---
 
@@ -293,8 +299,8 @@ covering every permission in the policy.
 | First, Count, List | System | `KeyTaskInfoResolver.getRegionsByKeyID`, `SystemTaskInfoResolver.loadTenantAndSystem` | ✓ / – |
 | Update | System | system event handlers → `updateSystem` | – |
 | First | Certificate | `CryptoAccessDataSyncer.getRoleManagementCert` | ✓ |
-| First | TenantConfig | `CryptoAccessDataSyncer.getDefaultKeystoreConfig` | ✓ |
-| Delete, Create | TenantConfig | `CryptoAccessDataSyncer.setDefaultKeystoreConfig` (via `repo.Set`) | ✓ |
+| First, List | TenantConfig | `CryptoAccessDataSyncer.getDefaultKeystoreConfig` (via `TenantConfigManager` flat-row read + legacy fallback) | ✓ |
+| Delete, Create | TenantConfig | `CryptoAccessDataSyncer.setDefaultKeystoreConfig` (via `TenantConfigManager.SetDefaultKeystore`) | ✓ |
 | Update | Event | `updateEventError` → `r.Patch` on Event | ✓ |
 | Delete | Event | `cleanUpEvent` → `r.Delete` on Event | ✓ |
 
@@ -308,9 +314,9 @@ A key configuration, a HYOK key, and a CONNECTED system sharing the same `KeyCon
 
 Two additional sub-tests cover `CryptoAccessDataSyncer`:
 
-- **TenantConfig:First (read path):** A DEFAULT_KEYSTORE `TenantConfig` is seeded with a crypto cert entry whose subject already matches what the syncer computes for the test tenant. `SyncAndGetCryptoAccessData` under `InternalEventReconcilerRole` reads the config (TenantConfig:First), finds the cert is up-to-date, and returns without invoking the plugin or writing back. Confirms First on TenantConfig is permitted.
+- **TenantConfig read (flat-row read path):** A DEFAULT_KEYSTORE `TenantConfig` is seeded with a crypto cert entry whose subject already matches what the syncer computes for the test tenant. `SyncAndGetCryptoAccessData` under `InternalEventReconcilerRole` reads the config via `TenantConfigManager.GetStoredDefaultKeystoreConfig` (TenantConfig:List with First fallback to the legacy blob), finds the cert is up-to-date, and returns without invoking the plugin or writing back. Confirms List and First on TenantConfig are permitted.
 
-- **Certificate:First and TenantConfig:Set (grant-trust path):** A DEFAULT_KEYSTORE `TenantConfig` with no existing crypto entries and a role-management `Certificate` are seeded. `SyncAndGetCryptoAccessData` reads the config (TenantConfig:First), fetches the role-management cert (Certificate:First), calls `GrantTrust` on the `TestKeystoreManagement` plugin, then writes the updated config back (TenantConfig:Set = Delete+Create). Confirms all three operations are permitted by the policy.
+- **Certificate:First and TenantConfig:Set (grant-trust path):** A DEFAULT_KEYSTORE `TenantConfig` with no existing crypto entries and a role-management `Certificate` are seeded. `SyncAndGetCryptoAccessData` reads the config, fetches the role-management cert (Certificate:First), calls `GrantTrust` on the `TestKeystoreManagement` plugin, then writes the updated config back via `TenantConfigManager.SetDefaultKeystore` (Delete+Create on TenantConfig). Confirms all operations are permitted by the policy.
 
 ---
 

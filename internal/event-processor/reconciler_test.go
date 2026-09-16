@@ -25,6 +25,7 @@ import (
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	stduuid "uuid"
 
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/clients"
@@ -33,6 +34,7 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
@@ -132,6 +134,7 @@ func setupTestInstance(
 	eventProcessor, err := eventprocessor.NewCryptoReconciler(
 		t.Context(), cfg, r,
 		svcRegistry, clientsFactory,
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil),
 	)
 	assert.NoError(t, err)
 
@@ -1618,7 +1621,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 	}
 
 	// Helper to create a failed task in Orbital database
-	createFailedTask := func(t *testing.T, jobID uuid.UUID, errorMessage string) {
+	createFailedTask := func(t *testing.T, jobID stduuid.UUID, errorMessage string) {
 		t.Helper()
 		// Insert directly into orbital.tasks table with all required fields
 		now := time.Now().Unix()
@@ -1665,7 +1668,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 
 		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
 			WithExternalID(eventID)
-		job.ID = uuid.New() // Set unique job ID for test
+		job.ID = stduuid.New() // Set unique job ID for test
 
 		// Create a failed task in Orbital with version mismatch error
 		createFailedTask(t, job.ID, "KEY_VERSION_MISMATCH:Version mismatch detected")
@@ -1697,7 +1700,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 
 		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
 			WithExternalID(eventID)
-		job.ID = uuid.New() // Set unique job ID for test
+		job.ID = stduuid.New() // Set unique job ID for test
 
 		// Create a failed task in Orbital with error message
 		createFailedTask(t, job.ID, "SOME_OTHER_ERROR:Something went wrong")
@@ -1866,7 +1869,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory)
+	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
 	require.NoError(t, err)
 	rec.DisableAuditLog()
 	t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
@@ -1888,7 +1891,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	}
 	ksBytes, err := json.Marshal(ksConfig)
 	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
+	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) {
@@ -2053,7 +2056,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory)
+	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
 	require.NoError(t, err)
 	rec.DisableAuditLog()
 	t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
@@ -2079,7 +2082,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 	}
 	ksBytes, err := json.Marshal(ksConfig)
 	require.NoError(t, err)
-	require.NoError(t, r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
+	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) { s.Region = region })
@@ -2187,7 +2190,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory)
+		rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
 		require.NoError(t, err)
 		rec.DisableAuditLog()
 		t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
@@ -2244,7 +2247,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		}
 		ksBytes, err := json.Marshal(ksConfig)
 		require.NoError(t, err)
-		require.NoError(t, inst.r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
+		require.NoError(t, inst.r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 
@@ -2271,7 +2274,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		}
 		ksBytes, err := json.Marshal(ksConfig)
 		require.NoError(t, err)
-		require.NoError(t, inst.r.Set(ctx, &model.TenantConfig{Key: constants.DefaultKeyStore, Value: ksBytes}, *repo.NewQuery()))
+		require.NoError(t, inst.r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 

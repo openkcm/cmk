@@ -54,15 +54,21 @@ func NewSystemInformationManager(
 }
 
 func (m *SystemInformation) UpdateSystems(ctx context.Context) error {
-	return repo.ProcessInBatch(ctx, m.repo, repo.NewQuery(), repo.DefaultLimit, func(systems []*model.System) error {
-		for _, sys := range systems {
-			err := m.updateSystem(ctx, sys)
-			if err != nil {
-				return err
+	// IgnoreFailMode: one failing system must not abort the whole sweep.
+	opts := repo.BatchProcessOptions{IgnoreFailMode: true}
+
+	return repo.ProcessInBatchWithOptions(
+		ctx, m.repo, repo.NewQuery(), repo.DefaultLimit, opts,
+		func(systems []*model.System) error {
+			var errs error
+			for _, sys := range systems {
+				if err := m.updateSystem(ctx, sys); err != nil {
+					errs = errors.Join(errs, err)
+				}
 			}
-		}
-		return nil
-	})
+			return errs
+		},
+	)
 }
 
 func (m *SystemInformation) UpdateSystemByExternalID(ctx context.Context, externalID string) error {
