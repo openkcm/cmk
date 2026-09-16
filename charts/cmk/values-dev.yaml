@@ -820,6 +820,7 @@ featureFlagsConfigMap:
   tenant:
     systemLimit: 50
     keyLimit: 10
+    keyConfigLimit: 5
 
   landscape:
     name: Local

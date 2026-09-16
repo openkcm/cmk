@@ -24,8 +24,9 @@ var (
 	ErrAMQPEmptySource   = errors.New("AMQP source must be specified")
 	ErrTargetEmptyRegion = errors.New("target region must be specified")
 
-	ErrTenantLimitsSystemsBelowMinimum = errors.New("tenant limits systems must be at least 1")
-	ErrTenantLimitsKeyBelowMinimum     = errors.New("tenant limits keys must be at least 1")
+	ErrTenantLimitsSystemsBelowMinimum   = errors.New("tenant limits systems must be at least 1")
+	ErrTenantLimitsKeyBelowMinimum       = errors.New("tenant limits keys must be at least 1")
+	ErrTenantLimitsKeyConfigBelowMinimum = errors.New("tenant limits key configs must be at least 1")
 )
 
 // Config holds all application configuration parameters
@@ -405,8 +406,9 @@ const MinTenantLimit = 1
 
 // Tenant holds per-tenant resource limits.
 type Tenant struct {
-	SystemLimit int `yaml:"systemLimit" default:"50"`
-	KeyLimit    int `yaml:"keyLimit" default:"10"`
+	SystemLimit    int `yaml:"systemLimit" default:"50"`
+	KeyLimit       int `yaml:"keyLimit" default:"10"`
+	KeyConfigLimit int `yaml:"keyConfigLimit" default:"5"`
 }
 
 // Validate checks that tenant limits are within acceptable bounds.
@@ -416,6 +418,9 @@ func (tl *Tenant) Validate() error {
 	}
 	if tl.KeyLimit < MinTenantLimit {
 		return ErrTenantLimitsKeyBelowMinimum
+	}
+	if tl.KeyConfigLimit < MinTenantLimit {
+		return ErrTenantLimitsKeyConfigBelowMinimum
 	}
 
 	return nil

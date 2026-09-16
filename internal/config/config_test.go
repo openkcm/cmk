@@ -101,7 +101,7 @@ func TestValidateScheduler(t *testing.T) {
 
 func TestValidateTenantLimits(t *testing.T) {
 	t.Run("Should successfully validate minimum", func(t *testing.T) {
-		tl := config.Tenant{SystemLimit: config.MinTenantLimit, KeyLimit: config.MinTenantLimit}
+		tl := config.Tenant{SystemLimit: config.MinTenantLimit, KeyLimit: config.MinTenantLimit, KeyConfigLimit: config.MinTenantLimit}
 		assert.NoError(t, tl.Validate())
 	})
 
@@ -117,6 +117,13 @@ func TestValidateTenantLimits(t *testing.T) {
 		err := tl.Validate()
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, config.ErrTenantLimitsKeyBelowMinimum)
+	})
+
+	t.Run("Should fail validation for Key Configs below minimum", func(t *testing.T) {
+		tl := config.Tenant{SystemLimit: config.MinTenantLimit, KeyLimit: config.MinTenantLimit, KeyConfigLimit: 0}
+		err := tl.Validate()
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, config.ErrTenantLimitsKeyConfigBelowMinimum)
 	})
 }
 
@@ -144,7 +151,9 @@ func TestValidateConfig(t *testing.T) {
 				Value:  string(bytes),
 			}},
 			Tenant: config.Tenant{
-				SystemLimit: config.MinTenantLimit,
+				SystemLimit:    config.MinTenantLimit,
+				KeyLimit:       config.MinTenantLimit,
+				KeyConfigLimit: config.MinTenantLimit,
 			},
 		}
 

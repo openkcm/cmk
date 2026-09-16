@@ -852,6 +852,7 @@ config:
   tenant:
     systemLimit: 50
     keyLimit: 10
+    keyConfigLimit: 5
 
   # Key state timeout configuration
   keys:
