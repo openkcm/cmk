@@ -8,7 +8,6 @@ includes:
     vars:
       CODE_DIRS: '{{.ROOT_DIR}}/cmd/... {{.ROOT_DIR}}/internal/... {{.ROOT_DIR}}/apis/... {{.ROOT_DIR}}/test/... {{.ROOT_DIR}}/utils/... {{.ROOT_DIR}}/migrations/...'
       COMPONENTS: 'cmkd cmkctl'
-
       CHART_COMPONENTS: 'cmk'
       SKIP_VALIDATION_TESTS: 'true'
       OVERWRITE_COMPONENTS: 'true'
