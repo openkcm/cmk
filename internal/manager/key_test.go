@@ -1571,6 +1571,82 @@ func TestKeyRotationTime(t *testing.T) {
 	})
 }
 
+func TestIsNewKeyVersion(t *testing.T) {
+	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+
+	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+	require.NoError(t, err)
+
+	t.Run("returns false when no existing versions", func(t *testing.T) {
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.ManagementAccessData = hyokInfo
+			k.Provider = providerTest
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		got, err := km.IsNewKeyVersion(ctx, key, &keymanagement.GetKeyVersionsResponse{
+			Versions: []keymanagement.KeyVersion{{ID: "v1"}},
+		})
+
+		require.NoError(t, err)
+		assert.False(t, got)
+	})
+
+	t.Run("returns err on db failure", func(t *testing.T) {
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.ManagementAccessData = hyokInfo
+			k.Provider = providerTest
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		canceledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		_, err := km.IsNewKeyVersion(canceledCtx, key, &keymanagement.GetKeyVersionsResponse{
+			Versions: []keymanagement.KeyVersion{{ID: "v1"}},
+		})
+
+		assert.Error(t, err)
+	})
+
+	t.Run("returns true when latest version ID matches response", func(t *testing.T) {
+		key := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
+
+		versions, _, err := repo.ListAndCount(
+			ctx, r, repo.Pagination{Skip: 0, Top: 1, Count: true},
+			model.KeyVersion{},
+			repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where("key_id", key.ID),
+			)),
+		)
+		require.NoError(t, err)
+		require.Len(t, versions, 1)
+
+		got, err := km.IsNewKeyVersion(ctx, key, &keymanagement.GetKeyVersionsResponse{
+			Versions: []keymanagement.KeyVersion{{ID: versions[0].NativeID}},
+		})
+
+		require.NoError(t, err)
+		assert.True(t, got)
+	})
+
+	t.Run("returns false when version ID does not match", func(t *testing.T) {
+		key := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
+
+		got, err := km.IsNewKeyVersion(ctx, key, &keymanagement.GetKeyVersionsResponse{
+			Versions: []keymanagement.KeyVersion{{ID: "different-version-id"}},
+		})
+
+		require.NoError(t, err)
+		assert.False(t, got)
+	})
+}
+
 func TestHandleSystemsOnKeyRotation(t *testing.T) {
 	km, r, ctx, keyConfig, _ := SetupKeyTest(t)
 
@@ -1616,17 +1692,19 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, r, primaryKey, nonPrimaryKey, system1, system2)
 
-	t.Run("primary key rotation triggers SYSTEM_KEY_ROTATE events", func(t *testing.T) {
-		// Simulate rotation detection by calling handleNewKeyVersion
-		// First, setup plugin to return a new version
+	t.Run("primary key rotation triggers SYSTEM_KEY_ROTATE events on new version", func(t *testing.T) {
 		rotationTime := time.Now().UTC()
 
-		// Count events before
+		// Seed an existing version so isNewKeyVersion returns true (NativeID matches response).
+		existingVersion := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
+			kv.KeyID = primaryKey.ID
+			kv.NativeID = "new-version-id"
+		})
+		testutils.CreateTestEntities(ctx, t, r, existingVersion)
+
 		eventsBefore, err := countEvents(ctx, r, eventprocessor.JobTypeSystemKeyRotate.String())
 		require.NoError(t, err)
 
-		// Trigger rotation by creating a new version via the internal method
-		// We'll use the exported method from export_test.go
 		err = km.ExportedHandleNewKeyVersion(ctx, primaryKey, &keymanagement.GetKeyVersionsResponse{
 			Versions: []keymanagement.KeyVersion{
 				{
