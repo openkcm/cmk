@@ -29,5 +29,10 @@ func GetMigrations() []*goose.Migration {
 			&goose.GoFunc{RunTx: upFlattenKeystoreSubBlobs},
 			&goose.GoFunc{RunTx: downFlattenKeystoreSubBlobs},
 		),
+		goose.NewGoMigration(
+			6,
+			&goose.GoFunc{RunTx: upWorkflowKeyConfigurationsTable},
+			&goose.GoFunc{RunTx: downWorkflowKeyConfigurationsTable},
+		),
 	}
 }

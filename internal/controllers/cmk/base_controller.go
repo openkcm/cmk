@@ -23,6 +23,7 @@ type APIController struct {
 	Repository    repo.Repo
 	Manager       *manager.Manager
 	config        *config.Config
+	flags         featureflags.Client
 	AuthzLoader   *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction]
 }
 
@@ -57,6 +58,7 @@ func NewAPIController(
 		Manager: manager.New(ctx, r, authzRepoLoader, config, clientsFactory,
 			svcRegistry, eventFactory, asyncClient, migrator, flags),
 		config:        config,
+		flags:         flags,
 		pluginCatalog: svcRegistry,
 		AuthzLoader:   authzAPILoader,
 	}
