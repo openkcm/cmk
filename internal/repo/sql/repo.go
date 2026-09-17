@@ -525,8 +525,8 @@ func applyQuery(db *gorm.DB, resource repo.Resource, query repo.Query) (*gorm.DB
 
 	if len(query.Joins) > 0 {
 		for _, join := range query.Joins {
-			sql, args := join.JoinStatement()
-			db = db.Joins(sql, args...)
+			sql := join.JoinStatement()
+			db = db.Joins(sql)
 		}
 	}
 
