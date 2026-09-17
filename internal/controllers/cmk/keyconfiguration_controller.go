@@ -3,11 +3,15 @@ package cmk
 import (
 	"context"
 
+	"github.com/open-feature/go-sdk/openfeature"
+
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/api/cmk/transform/clientcertificates"
 	"github.com/openkcm/cmk/internal/api/cmk/transform/keyconfiguration"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/featureflags"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/odata"
@@ -19,12 +23,19 @@ var getKeyConfigsOrderSchema = odata.OrderToRepoMap{
 	"createdBy": {DBName: repo.CreatorIDField},
 }
 
+const flagKeyConfigExtendedMetadata = "key_config_extended_metadata"
+
 // GetKeyConfigurations returns the key configurations
 func (c *APIController) GetKeyConfigurations(
 	ctx context.Context,
 	r cmkapi.GetKeyConfigurationsRequestObject,
 ) (cmkapi.GetKeyConfigurationsResponseObject, error) {
 	expand := r.Params.ExpandGroup != nil && *r.Params.ExpandGroup
+
+	extendedMetadata := true
+	if featureflags.Configured(c.flags, c.config.FeatureFlags) {
+		extendedMetadata, _ = c.flags.BooleanValue(ctx, flagKeyConfigExtendedMetadata, true, openfeature.EvaluationContext{})
+	}
 
 	params := odata.New(
 		odata.WithPagination(r.Params.Skip, r.Params.Top, r.Params.Count),
@@ -34,7 +45,14 @@ func (c *APIController) GetKeyConfigurations(
 		return nil, errs.Wrap(apierrors.ErrBadOdataOrderby, err)
 	}
 
-	keyConfigs, total, err := c.Manager.KeyConfig.GetKeyConfigurations(ctx, params, expand)
+	filter := manager.KeyConfigFilter{
+		Pagination:       params.GetPagination(),
+		Expand:           expand,
+		ExtendedMetadata: extendedMetadata,
+		Params:           params,
+	}
+
+	keyConfigs, total, err := c.Manager.KeyConfig.GetKeyConfigurations(ctx, filter)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGettingKeyConfig, err)
 	}
@@ -118,7 +136,7 @@ func (c *APIController) GetKeyConfigurationByID(
 	ctx context.Context,
 	request cmkapi.GetKeyConfigurationByIDRequestObject,
 ) (cmkapi.GetKeyConfigurationByIDResponseObject, error) {
-	keyConfig, err := c.Manager.KeyConfig.GetKeyConfigurationByID(ctx, request.KeyConfigurationID)
+	keyConfig, err := c.Manager.KeyConfig.GetKeyConfigurationByID(ctx, request.KeyConfigurationID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +167,7 @@ func (c *APIController) UpdateKeyConfigurationByID(
 		}
 
 		if required {
-			kc, err := c.Manager.KeyConfig.GetKeyConfigurationByID(ctx, request.KeyConfigurationID)
+			kc, err := c.Manager.KeyConfig.GetKeyConfigurationByID(ctx, request.KeyConfigurationID, false)
 			if err != nil {
 				return nil, err
 			}

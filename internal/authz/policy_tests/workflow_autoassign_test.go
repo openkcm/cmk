@@ -38,7 +38,7 @@ import (
 // the error is NOT an authz error — confirming the policy covered all repo access up
 // to that point.
 //
-// Note: addApproversAndGroupAssociations calls Set(WorkflowApproverGroup) which checks
+// Note: addDBAssociations calls Set(WorkflowApproverGroup) which checks
 // Delete+Create on "workflows" (WorkflowApproverGroup.TableResourceType returns Workflow).
 // HandleTerminalWorkflow calls Patch on System to clear UnderWorkflow, requiring Update
 // on "systems". All three permissions are granted to InternalTaskWorkflowApproversRole.
