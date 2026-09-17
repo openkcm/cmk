@@ -478,21 +478,6 @@ func TestHYOKRegistrationCertificateSubject(t *testing.T) {
 	})
 }
 
-func TestSetFirstKeyPrimary(t *testing.T) {
-	km, r, ctx, keyConfig, _ := SetupKeyTest(t)
-
-	t.Run("Should set first key as primary", func(t *testing.T) {
-		createdKey1 := createTestSystemManagedKey(t, km, r, ctx, keyConfig.ID)
-
-		_ = createTestSystemManagedKey(t, km, r, ctx, keyConfig.ID)
-
-		resKeyConfig := &model.KeyConfiguration{ID: keyConfig.ID, AdminGroup: model.Group{ID: uuid.New()}}
-		_, err := r.First(ctx, resKeyConfig, *repo.NewQuery())
-		assert.NoError(t, err)
-		assert.Equal(t, createdKey1.ID, *resKeyConfig.PrimaryKeyID)
-	})
-}
-
 func TestEditableCryptoData(t *testing.T) {
 	km, r, ctx, _, _ := SetupKeyTest(t)
 

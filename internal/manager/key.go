@@ -559,9 +559,6 @@ func (km *KeyManager) syncPendingRegistrationKey(ctx context.Context, key *model
 
 	// Auth succeeded and key validated — persist final state and set primary if first key.
 	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
-		if err := km.setPrimaryIfFirstKey(ctx, key); err != nil {
-			return errs.Wrap(ErrUpdatePrimary, err)
-		}
 		_, err := km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
 		if err != nil {
 			return errs.Wrap(ErrUpdateKeyDB, err)
@@ -661,9 +658,6 @@ func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key
 	// Persist the updated key (NativeID and State set by createManagedProviderKey)
 	// and set primary if this is the first key for the configuration.
 	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
-		if err := km.setPrimaryIfFirstKey(ctx, key); err != nil {
-			return errs.Wrap(ErrUpdatePrimary, err)
-		}
 		_, err := km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
 		if err != nil {
 			return errs.Wrap(ErrUpdateKeyDB, err)
@@ -700,9 +694,6 @@ func (km *KeyManager) persistCreatedKey(
 	keyResp *keymanagement.GetKeyResponse,
 ) error {
 	return km.repo.Transaction(ctx, func(ctx context.Context) error {
-		if err := km.setPrimaryIfFirstKey(ctx, key); err != nil {
-			return errs.Wrap(ErrUpdatePrimary, err)
-		}
 		if err := km.repo.Create(ctx, key); err != nil {
 			return errs.Wrap(ErrCreateKeyDB, err)
 		}
@@ -1280,40 +1271,6 @@ func (km *KeyManager) reenableProviderKey(ctx context.Context, key *model.Key) e
 
 	if wasProviderError {
 		return errs.Wrap(ErrFailedToDisableProviderKey, err)
-	}
-
-	return nil
-}
-
-func (km *KeyManager) setPrimaryIfFirstKey(ctx context.Context, key *model.Key) error {
-	compositeKey := repo.NewCompositeKey().Where(repo.KeyConfigIDField, key.KeyConfigurationID)
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(compositeKey))
-
-	exist, err := km.repo.First(
-		ctx,
-		&model.Key{},
-		*query,
-	)
-	if err != nil && !errors.Is(err, repo.ErrNotFound) {
-		return err
-	}
-
-	// Update keyconfig primaryKey
-	if !exist {
-		if key.State == cmkapi.KeyStatePENDINGCREATION || key.State == cmkapi.KeyStatePENDINGREGISTRATION {
-			return nil // Not primary yet; skip until provisioning/registration completes
-		}
-		if key.State == cmkapi.KeyStateDISABLED {
-			return ErrKeyIsNotEnabled
-		}
-		keyConfig := &model.KeyConfiguration{
-			ID:           key.KeyConfigurationID,
-			PrimaryKeyID: &key.ID,
-		}
-		_, err := km.repo.Patch(ctx, keyConfig, *repo.NewQuery())
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil
