@@ -58,6 +58,14 @@ func (f *fakeTenantClient) TerminateTenant(_ context.Context, _ *tenantv1.Termin
 	panic("not implemented")
 }
 
+func (m *fakeTenantClient) GetTenantConfig(ctx context.Context, in *tenantv1.GetTenantConfigRequest, opts ...grpc.CallOption) (*tenantv1.GetTenantConfigResponse, error) {
+	panic("not implemented")
+}
+
+func (m *fakeTenantClient) UpdateTenantConfig(ctx context.Context, in *tenantv1.UpdateTenantConfigRequest, opts ...grpc.CallOption) (*tenantv1.UpdateTenantConfigResponse, error) {
+	panic("not implemented")
+}
+
 func (f *fakeTenantClient) SetTenantLabels(_ context.Context, _ *tenantv1.SetTenantLabelsRequest, _ ...grpc.CallOption) (*tenantv1.SetTenantLabelsResponse, error) {
 	panic("not implemented")
 }
