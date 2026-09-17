@@ -171,6 +171,7 @@ func TestSchemaMigrations(t *testing.T) {
 		target          db.MigrationTarget
 		downgrade       bool
 		version         int64
+		setupData       func(t *testing.T) func(db *multitenancy.DB) error
 		assertMigration func(t *testing.T) func(db *multitenancy.DB) error
 	}{
 		{
@@ -708,6 +709,184 @@ func TestSchemaMigrations(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:      "Should up tenant/00021_drop_legacy_tenant_config_blobs.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   21,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					// A flat row plus a straggler blob left by an old binary.
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('enabled', 'true', 'workflow');
+						 INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('WORKFLOW_CONFIG', '{"MinimumApprovals":9}'::jsonb, '')`,
+					).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					// Straggler captured into a flat row before the blob was dropped.
+					var minApprovals string
+					err := db.Raw(
+						`SELECT value FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'minimum_approvals'`,
+					).Scan(&minApprovals).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "9", minApprovals)
+
+					// Legacy blob rows removed.
+					var blobCount int
+					err = db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE length("type") = 0`,
+					).Scan(&blobCount).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 0, blobCount, "legacy blob rows must be removed")
+
+					// value_text renamed to value; legacy value column gone.
+					var valueExists, valueTextExists bool
+					err = db.Raw(`
+						SELECT
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value'),
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value_text')
+					`).Row().Scan(&valueExists, &valueTextExists)
+					assert.NoError(t, err)
+					assert.True(t, valueExists, "value column must exist")
+					assert.False(t, valueTextExists, "value_text column must be renamed away")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00021_drop_legacy_tenant_config_blobs.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   21,
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					// value_text restored, legacy value (jsonb) column back.
+					var valueTextExists, valueExists bool
+					var valueTextNullable string
+					err := db.Raw(`
+						SELECT
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value_text'),
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value'),
+							COALESCE((SELECT is_nullable FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value_text'), 'YES')
+					`).Row().Scan(&valueTextExists, &valueExists, &valueTextNullable)
+					assert.NoError(t, err)
+					assert.True(t, valueTextExists, "value_text column must be restored")
+					assert.True(t, valueExists, "legacy value column must be restored")
+					assert.Equal(t, "YES", valueTextNullable, "value_text must be nullable again")
+
+					// Primary key back to (key); the (key, type) unique index restored.
+					var pkCols string
+					err = db.Raw(`
+						SELECT string_agg(a.attname, ',' ORDER BY array_position(i.indkey, a.attnum))
+						FROM pg_index i
+						JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey)
+						WHERE i.indrelid = 'tenant_configs'::regclass AND i.indisprimary
+					`).Scan(&pkCols).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "key", pkCols, "primary key must be restored to (key)")
+
+					var keyTypeIndexExists bool
+					err = db.Raw(`
+						SELECT EXISTS (SELECT 1 FROM pg_indexes
+							WHERE tablename = 'tenant_configs' AND indexname = 'idx_tenant_configs_key_type')
+					`).Row().Scan(&keyTypeIndexExists)
+					assert.NoError(t, err)
+					assert.True(t, keyTypeIndexExists, "idx_tenant_configs_key_type must be restored")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should up tenant/00022_add_workflow_config_flat_constraints.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   22,
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					// Each probe runs in its own savepoint so a rejected insert
+					// does not poison the shared assertion transaction.
+					probe := func(sql string) error {
+						return db.Transaction(func(tx *multitenancy.DB) error {
+							return tx.Exec(sql).Error
+						})
+					}
+
+					// New out-of-bounds workflow rows are rejected.
+					err := probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('minimum_approvals', '6', 'workflow')`)
+					assert.Error(t, err, "minimum_approvals above 5 must be rejected")
+
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('retention_period_days', '31', 'workflow')`)
+					assert.Error(t, err, "retention_period_days above 30 must be rejected")
+
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('max_expiry_period_days', '8', 'workflow')`)
+					assert.Error(t, err, "max_expiry_period_days above 7 must be rejected")
+
+					// A non-numeric workflow value is rejected cleanly, not thrown.
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('minimum_approvals', 'abc', 'workflow')`)
+					assert.Error(t, err, "non-numeric workflow value must be rejected")
+
+					// In-bounds workflow rows are accepted.
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('retention_period_days', '30', 'workflow')`)
+					assert.NoError(t, err, "retention_period_days within bounds must be accepted")
+
+					// Non-workflow rows with non-numeric values must not trip the
+					// cast guard (the CASE prevents value::int on these rows).
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('minimum_approvals', 'not-a-number', 'other')`)
+					assert.NoError(t, err, "non-workflow rows must be unaffected by the cast guard")
+
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('management_access_data', '{"url":"https://x"}', 'default_keystore')`)
+					assert.NoError(t, err, "default_keystore blob rows must be unaffected")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00022_add_workflow_config_flat_constraints.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   22,
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					// With the constraint gone, an out-of-bounds row is accepted.
+					err := db.Exec(
+						`INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('minimum_approvals', '6', 'workflow')`,
+					).Error
+					assert.NoError(t, err, "constraint must be dropped")
+
+					return nil
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -728,6 +907,11 @@ func TestSchemaMigrations(t *testing.T) {
 				Target:  tt.target,
 				Version: new(setupVersion),
 			})
+
+			if tt.setupData != nil {
+				err := dbCon.WithTenant(t.Context(), tenant, tt.setupData(t))
+				assert.NoError(t, err)
+			}
 
 			var migrateVersion int64
 			if tt.downgrade {
@@ -1170,4 +1354,23 @@ func TestFlattenBackfillFailsWhenSchemaMissing(t *testing.T) {
 
 	// Version 4 must remain unapplied so it retries after the schema migration.
 	assertVersion(t, dbCon, 3, db.DataMigrationTable, tenant)
+}
+
+// TestFlattenBackfillNoOpsWhenContracted verifies the backfill no-ops (rather
+// than errors) when run after the cleanup contract (00021) has flattened the
+// schema, so a tenant onboarded post-expand still records version 4.
+func TestFlattenBackfillNoOpsWhenContracted(t *testing.T) {
+	dbCon, m, tenant := setupDataMigration(t, DataMigrationSetup{
+		Target:        db.TenantTarget,
+		SchemaVersion: new(int64(21)), // after the cleanup contract (00021)
+		Version:       3,              // repair applied, flatten (4) pending
+	})
+
+	_, err := m.MigrateTo(t.Context(), db.Migration{
+		Type:   db.DataMigration,
+		Target: db.TenantTarget,
+	}, 4)
+	assert.NoError(t, err, "backfill must no-op when the schema is already flattened")
+
+	assertVersion(t, dbCon, 4, db.DataMigrationTable, tenant)
 }
