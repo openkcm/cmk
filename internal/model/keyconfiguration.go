@@ -16,15 +16,24 @@ import (
 type KeyConfiguration struct {
 	AutoTimeModel
 
-	ID           uuid.UUID  `gorm:"type:uuid;primaryKey"`
-	Name         string     `gorm:"type:varchar(255);not null;unique"`
-	Description  string     `gorm:"type:text"`
-	AdminGroupID uuid.UUID  `gorm:"type:uuid;not null"`
-	AdminGroup   Group      `gorm:"foreignKey:AdminGroupID"`
-	CreatorID    string     `gorm:"type:varchar(255);not null"`
-	PrimaryKeyID *uuid.UUID `gorm:"type:uuid"`
-	TotalKeys    int        `gorm:"->;-:migration"`
-	TotalSystems int        `gorm:"->;-:migration"`
+	ID             uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	Name           string     `gorm:"type:varchar(255);not null;unique"`
+	Description    string     `gorm:"type:text"`
+	AdminGroupID   uuid.UUID  `gorm:"type:uuid;not null"`
+	AdminGroup     Group      `gorm:"foreignKey:AdminGroupID"`
+	CreatorID      string     `gorm:"type:varchar(255);not null"`
+	PrimaryKeyID   *uuid.UUID `gorm:"type:uuid"`
+	PrimaryKeyData *Key       `gorm:"foreignKey:PrimaryKeyID;references:ID;-:migration"`
+	TotalKeys      int        `gorm:"->;-:migration"`
+	TotalSystems   int        `gorm:"->;-:migration"`
+
+	// Extended metadata counts — populated via joined query when extendedMetadata=true, not persisted
+	SystemsConnected  int `gorm:"->;-:migration"`
+	SystemsFailed     int `gorm:"->;-:migration"`
+	SystemsProcessing int `gorm:"->;-:migration"`
+	SystemsConnecting int `gorm:"->;-:migration"`
+
+	PendingApprovals int `gorm:"->;-:migration"`
 
 	creatorName string `gorm:"-:all"`
 }

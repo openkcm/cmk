@@ -2360,6 +2360,12 @@ components:
           type: boolean
           example: true
           readOnly: true
+        primaryKeyStatus:
+          description: The state of the primary key. Null if there is no primary key.
+          readOnly: true
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/KeyState"
         metadata:
           $ref: "#/components/schemas/KeyConfigurationMetadata"
       additionalProperties: false
@@ -2489,6 +2495,41 @@ components:
           type: integer
           minimum: 0
           example: 1
+        pendingApprovals:
+          description: Total count of active (non-terminal) workflows related to this key configuration.
+          readOnly: true
+          type: integer
+          minimum: 0
+        systemsByStatus:
+          readOnly: true
+          allOf:
+            - $ref: "#/components/schemas/KeyConfigurationSystemsByStatus"
+    KeyConfigurationSystemsByStatus:
+      description: Counts of systems associated with this key configuration, broken down by status
+      type: object
+      readOnly: true
+      properties:
+        connected:
+          description: Number of systems with CONNECTED status
+          type: integer
+          minimum: 0
+          example: 3
+        failed:
+          description: Number of systems with FAILED status
+          type: integer
+          minimum: 0
+          example: 0
+        processing:
+          description: Number of systems with PROCESSING status
+          type: integer
+          minimum: 0
+          example: 0
+        connecting:
+          description: Number of systems being connected to this key configuration via TargetKeyConfigurationID
+          type: integer
+          minimum: 0
+          example: 2
+      additionalProperties: false
     UserInfo:
       type: object
       required:

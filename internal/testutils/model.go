@@ -346,3 +346,15 @@ func NewDefaultWorkflowConfig(enabled bool) *model.WorkflowConfig {
 		MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
 	}
 }
+
+func NewWorkflowKeyConfiguration(m func(*model.WorkflowKeyConfiguration)) *model.WorkflowKeyConfiguration {
+	mut := NewMutator(func() model.WorkflowKeyConfiguration {
+		return model.WorkflowKeyConfiguration{
+			ID:                 uuid.New(),
+			WorkflowID:         uuid.New(),
+			KeyConfigurationID: uuid.New(),
+		}
+	})
+
+	return new(mut(m))
+}
