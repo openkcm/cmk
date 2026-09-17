@@ -720,6 +720,73 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   21,
 		},
+		{
+			name:      "Should up tenant/00022_add_wf_key_configurations_table.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   22,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					var exists bool
+					err := con.Raw(`
+						SELECT EXISTS (
+							SELECT 1 FROM information_schema.tables
+							WHERE table_name = 'workflow_key_configurations'
+						)
+					`).Scan(&exists).Error
+					assert.NoError(t, err)
+					assert.True(t, exists, "workflow_key_configurations table must exist")
+
+					// Verify FK constraints work: insert without a valid workflow_id must fail.
+					err = con.Transaction(func(tx *multitenancy.DB) error {
+						return tx.Exec(`
+							INSERT INTO workflow_key_configurations (id, workflow_id, key_configuration_id)
+							VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid())
+						`).Error
+					})
+					assert.ErrorContains(t, err, "violates foreign key constraint",
+						"insert with non-existent workflow_id must be rejected")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00022_add_wf_key_configurations_table.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   22,
+		},
+		{
+			name:      "Should up tenant/00023_add_pending_approvals_indexes.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   23,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					indexes := []string{"idx_workflows_state", "idx_wkc_kc_wf"}
+					for _, idx := range indexes {
+						var exists bool
+						err := con.Raw(`
+							SELECT EXISTS (
+								SELECT 1 FROM pg_indexes WHERE indexname = ?
+							)
+						`, idx).Scan(&exists).Error
+						assert.NoError(t, err)
+						assert.True(t, exists, "index %s must exist", idx)
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00023_add_pending_approvals_indexes.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   23,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
