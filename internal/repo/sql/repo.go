@@ -240,6 +240,43 @@ func (r *ResourceRepository) Delete(
 	return result.RowsAffected > 0, nil
 }
 
+// PopKeystore atomically removes and returns one keystore from the pool.
+// It uses a single FOR UPDATE SKIP LOCKED locking query to ensure
+// that only one record is removed at a time and that other transactions
+// can still access the remaining records.
+func (r *ResourceRepository) PopKeystore(ctx context.Context) (*model.Keystore, error) {
+	ks := &model.Keystore{}
+
+	err := r.WithTenant(ctx, ks, func(tx *multitenancy.DB) error {
+		result := tx.WithContext(ctx).Raw(`
+			DELETE FROM keystore_pool
+			WHERE id = (
+				SELECT id FROM keystore_pool
+				ORDER BY created_at DESC
+				LIMIT 1
+				FOR UPDATE SKIP LOCKED
+			)
+			RETURNING *
+		`).Scan(ks)
+
+		if result.Error != nil {
+			log.Error(ctx, "error popping keystore from pool", result.Error)
+			return errs.Wrap(repo.ErrDeleteResource, result.Error)
+		}
+
+		if result.RowsAffected == 0 {
+			return repo.ErrNotFound
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return ks, nil
+}
+
 // First fill given Resource with data, if found. Given Resource is used as query data.
 // It will find the resource with the primary key as the where condition by omition
 func (r *ResourceRepository) First(

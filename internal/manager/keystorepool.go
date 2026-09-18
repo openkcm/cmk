@@ -2,7 +2,6 @@ package manager
 
 import (
 	"context"
-	"sync"
 
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
@@ -12,21 +11,16 @@ import (
 // Pool stores available configurations.
 type Pool struct {
 	repo repo.Repo
-	mx   sync.Mutex
 }
 
 // NewPool creates a new instance of Pool.
 func NewPool(repo repo.Repo) *Pool {
 	return &Pool{
 		repo: repo,
-		mx:   sync.Mutex{},
 	}
 }
 
 func (c *Pool) Count(ctx context.Context) (int, error) {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
 	count, err := c.repo.Count(ctx, &model.Keystore{}, *repo.NewQuery())
 	if err != nil {
 		return 0, err
@@ -37,9 +31,6 @@ func (c *Pool) Count(ctx context.Context) (int, error) {
 
 // Add `KeystoreConfiguration` to the pool.
 func (c *Pool) Add(ctx context.Context, ks *model.Keystore) (*model.Keystore, error) {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
 	err := c.repo.Create(ctx, ks)
 	if err != nil {
 		return nil, errs.Wrap(ErrCouldNotSaveConfiguration, err)
@@ -48,24 +39,12 @@ func (c *Pool) Add(ctx context.Context, ks *model.Keystore) (*model.Keystore, er
 	return ks, nil
 }
 
-// Pop `KeystoreConfiguration` from the pool and return it.
+// Pop removes one `KeystoreConfiguration` from the pool and returns it.
+// The operation is atomic at the database level
 func (c *Pool) Pop(ctx context.Context) (*model.Keystore, error) {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	ks := &model.Keystore{}
-
-	_, err := c.repo.First(ctx, ks, *repo.NewQuery().Order(repo.OrderField{
-		Field:     repo.CreatedField,
-		Direction: repo.Desc,
-	}))
+	ks, err := c.repo.PopKeystore(ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrPoolIsDrained, err)
-	}
-
-	_, err = c.repo.Delete(ctx, ks, *repo.NewQuery())
-	if err != nil {
-		return nil, errs.Wrap(ErrCouldNotRemoveConfiguration, err)
 	}
 
 	return ks, nil

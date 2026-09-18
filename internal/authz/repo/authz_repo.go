@@ -6,6 +6,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/authz"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -153,6 +154,19 @@ func (r *AuthzRepo) GetFilterOptions(
 		return err
 	}
 	return r.repo.GetFilterOptions(ctx, resource, columns, query)
+}
+
+func (r *AuthzRepo) PopKeystore(ctx context.Context) (*model.Keystore, error) {
+	ks := &model.Keystore{}
+	err := r.checkResourceAuthZ(ctx, ks, authz.RepoActionFirst)
+	if err != nil {
+		return nil, err
+	}
+	err = r.checkResourceAuthZ(ctx, ks, authz.RepoActionDelete)
+	if err != nil {
+		return nil, err
+	}
+	return r.repo.PopKeystore(ctx)
 }
 
 func (r *AuthzRepo) checkResourceAuthZ(

@@ -37,7 +37,9 @@ func TestPool_Add(t *testing.T) {
 
 func TestPool_Pop(t *testing.T) {
 	t.Run("should get first available Configuration from repo", func(t *testing.T) {
-		db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+		db, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
+			CreateDatabase: true,
+		})
 
 		testRepo := sql.NewRepository(db)
 		testPool := manager.NewPool(testRepo)

@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -205,6 +206,15 @@ func (r *InMemoryRepository) GetFilterOptions(
 	query repo.Query,
 ) error {
 	return nil
+}
+
+func (r *InMemoryRepository) PopKeystore(ctx context.Context) (*model.Keystore, error) {
+	tenantDB, err := r.WithTenant(ctx, &model.Keystore{})
+	if err != nil {
+		return nil, err
+	}
+
+	return tenantDB.PopKeystoreConfiguration()
 }
 
 func assignList(result any, list []repo.Resource) error {
