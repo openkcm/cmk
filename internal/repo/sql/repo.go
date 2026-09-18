@@ -515,6 +515,12 @@ func applyQuery(db *gorm.DB, resource repo.Resource, query repo.Query) (*gorm.DB
 		}
 	}
 
+	if len(query.RawJoins) > 0 {
+		for _, raw := range query.RawJoins {
+			db = db.Joins(raw)
+		}
+	}
+
 	if len(query.CompositeKeyGroup) > 0 {
 		baseQuery := db.Session(&gorm.Session{NewDB: true})
 

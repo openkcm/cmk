@@ -473,7 +473,7 @@ func (w *WorkflowManager) AutoAssignApprovers(
 		return nil, err
 	}
 
-	err = w.addApproversAndGroupAssociations(ctx, workflow.InitiatorID, workflow, approvers, groups)
+	err = w.addDBAssociations(ctx, workflow.InitiatorID, workflow, approvers, groups, keyConfigs)
 	if err != nil {
 		return nil, errs.Wrap(ErrAddApproversDB, err)
 	}
@@ -1418,16 +1418,17 @@ func (w *WorkflowManager) getWorkflowLifecycleWithEligibility(
 	return workflowLifecycle, nil
 }
 
-// addApproversAndGroupAssociations adds the specified approvers to the workflow
-// and associates the approver groups with the workflow.
+// addDBAssociations adds the specified approvers to the workflow,
+// associates the approver groups with the workflow, and records the related key configurations.
 // Then, it transitions the workflow to the next state.
 // This is wrapped in a transaction to ensure that DB state is consistent
-func (w *WorkflowManager) addApproversAndGroupAssociations(
+func (w *WorkflowManager) addDBAssociations(
 	ctx context.Context,
 	userID string,
 	workflow *model.Workflow,
 	approvers []*model.WorkflowApprover,
 	groups []*model.Group,
+	keyConfigs []*model.KeyConfiguration,
 ) error {
 	err := w.repo.Transaction(ctx, func(ctx context.Context) error {
 		workflowLifecycle, err := w.getWorkflowLifecycle(ctx, workflow, userID)
@@ -1450,6 +1451,17 @@ func (w *WorkflowManager) addApproversAndGroupAssociations(
 				ID:         uuid.New(),
 				WorkflowID: workflow.ID,
 				GroupID:    g.ID,
+			}, *repo.NewQuery())
+			if err != nil {
+				return err
+			}
+		}
+
+		for _, kc := range keyConfigs {
+			err := w.repo.Set(ctx, model.WorkflowKeyConfiguration{
+				ID:                 uuid.New(),
+				WorkflowID:         workflow.ID,
+				KeyConfigurationID: kc.ID,
 			}, *repo.NewQuery())
 			if err != nil {
 				return err
@@ -1728,7 +1740,7 @@ func (w *WorkflowManager) getKeyConfigurationsFromArtifact(
 
 	switch workflow.ArtifactType {
 	case model.WorkflowArtifactTypeKeyConfiguration:
-		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, workflow.ArtifactID)
+		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, workflow.ArtifactID, false)
 		if err != nil {
 			return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
 		}
@@ -1772,7 +1784,7 @@ func (w *WorkflowManager) getKeyConfigFromSystem(
 			return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
 		}
 
-		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, *system.KeyConfigurationID)
+		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, *system.KeyConfigurationID, false)
 		if err != nil {
 			return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
 		}
@@ -1791,7 +1803,7 @@ func (w *WorkflowManager) getKeyConfigFromSystem(
 				fmt.Sprintf("invalid key configuration ID in workflow parameters: %v", err))
 		}
 
-		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, keyConfigID)
+		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, keyConfigID, false)
 		if err != nil {
 			return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
 		}
@@ -1813,7 +1825,7 @@ func (w *WorkflowManager) getKeyConfigFromKey(
 		return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
 	}
 
-	keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, key.KeyConfigurationID)
+	keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, key.KeyConfigurationID, false)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
 	}
@@ -2102,7 +2114,7 @@ func (w *WorkflowManager) populateArtifact(
 		workflow.ArtifactName = new(key.Name)
 
 	case model.WorkflowArtifactTypeKeyConfiguration:
-		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, workflow.ArtifactID)
+		keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, workflow.ArtifactID, false)
 		if err != nil {
 			return err
 		}
@@ -2155,7 +2167,7 @@ func (w *WorkflowManager) populateParametersResource(
 				return err
 			}
 
-			keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, keyConfigID)
+			keyConfig, err := w.keyConfigurationManager.GetKeyConfigurationByID(ctx, keyConfigID, false)
 			if err != nil {
 				return err
 			}

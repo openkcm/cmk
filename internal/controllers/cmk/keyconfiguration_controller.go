@@ -28,7 +28,7 @@ func (c *APIController) GetKeyConfigurations(
 
 	expand := r.Params.ExpandGroup != nil && *r.Params.ExpandGroup
 
-	filter := manager.KeyConfigFilter{Pagination: pagination, Expand: expand}
+	filter := manager.KeyConfigFilter{Pagination: pagination, Expand: expand, ExtendedMetadata: true}
 
 	keyConfigs, total, err := c.Manager.KeyConfig.GetKeyConfigurations(ctx, filter)
 	if err != nil {
@@ -114,7 +114,7 @@ func (c *APIController) GetKeyConfigurationByID(
 	ctx context.Context,
 	request cmkapi.GetKeyConfigurationByIDRequestObject,
 ) (cmkapi.GetKeyConfigurationByIDResponseObject, error) {
-	keyConfig, err := c.Manager.KeyConfig.GetKeyConfigurationByID(ctx, request.KeyConfigurationID)
+	keyConfig, err := c.Manager.KeyConfig.GetKeyConfigurationByID(ctx, request.KeyConfigurationID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (c *APIController) UpdateKeyConfigurationByID(
 		}
 
 		if required {
-			kc, err := c.Manager.KeyConfig.GetKeyConfigurationByID(ctx, request.KeyConfigurationID)
+			kc, err := c.Manager.KeyConfig.GetKeyConfigurationByID(ctx, request.KeyConfigurationID, false)
 			if err != nil {
 				return nil, err
 			}
