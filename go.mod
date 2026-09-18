@@ -20,13 +20,13 @@ require (
 	github.com/oapi-codegen/nethttp-middleware v1.2.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/open-feature/go-sdk v1.18.0
-	github.com/openkcm/api-sdk v0.19.4
+	github.com/openkcm/api-sdk v0.20.0
 	github.com/openkcm/common-sdk v1.19.2
 	github.com/openkcm/orbital v0.6.2
 	github.com/openkcm/plugin-sdk v0.15.1
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.28.0
-	github.com/samber/oops v1.23.1
+	github.com/samber/oops v1.23.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.44.0
@@ -45,7 +45,7 @@ require (
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
-	gorm.io/driver/postgres v1.6.2
+	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 	gorm.io/plugin/dbresolver v1.6.2
 )
