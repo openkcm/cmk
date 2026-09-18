@@ -42,10 +42,15 @@ func TestAPIController_GetTenantKeystores(t *testing.T) {
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
+	keyConfigID := uuid.New()
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+	})
 	keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
-		k.PrimaryKeyID = new(uuid.New())
+		k.ID = keyConfigID
+		k.PrimaryKeyID = &key.ID
 	}, testutils.WithAuthBusinessUserDataKC(authClient))
-	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
 	businessUserData := &auth.ClientData{
 		Identifier: authClient.Identifier,

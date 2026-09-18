@@ -708,6 +708,18 @@ func TestSchemaMigrations(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:      "Should up tenant/00021_add_primary_key_id_fkey.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   21,
+		},
+		{
+			name:      "Should down tenant/00021_add_primary_key_id_fkey.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   21,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
