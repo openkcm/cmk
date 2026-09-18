@@ -530,6 +530,19 @@ func (db *InMemoryDB) Update(resource repo.Resource) error {
 	return ErrResourceNotFound
 }
 
+func (db *InMemoryDB) PopKeystoreConfiguration() (*model.Keystore, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	for id, ks := range db.Data.KeystoreConfiguration {
+		ksCopy := ks
+		delete(db.Data.KeystoreConfiguration, id)
+		return &ksCopy, nil
+	}
+
+	return nil, ErrKeystoreConfigurationNotFound
+}
+
 func (db *InMemoryDB) getWorkflow(resource repo.Resource) (repo.Resource, error) {
 	resourceWorkflow, err := GetModelFromInterface[model.Workflow](resource)
 	if err != nil {
