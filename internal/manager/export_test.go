@@ -120,7 +120,15 @@ func (km *KeyManager) ExportedHandleNewKeyVersion(
 	key *model.Key,
 	keyResp *keymanagement.GetKeyVersionsResponse,
 ) error {
-	return km.handleNewKeyVersion(ctx, key, keyResp)
+	return km.handleKeyVersions(ctx, key, keyResp)
+}
+
+func (km *KeyManager) IsNewKeyVersion(
+	ctx context.Context,
+	key *model.Key,
+	keyResp *keymanagement.GetKeyVersionsResponse,
+) (bool, error) {
+	return km.isNewKeyVersion(ctx, key, keyResp)
 }
 
 // CreateKeyRetryDelay exposes the package-level retry delay so tests can set it to
