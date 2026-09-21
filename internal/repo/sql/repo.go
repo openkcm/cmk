@@ -262,6 +262,7 @@ func (r *ResourceRepository) First(
 			}
 
 			db = applyPagination(db, query)
+			db = applyLocking(db, query)
 
 			res = db.First(resource)
 
@@ -472,6 +473,14 @@ func (r *ResourceRepository) getSchemaFromCtx(ctx context.Context) (string, erro
 	}
 
 	return existingTenant.SchemaName, nil
+}
+
+// apply locking on the db query
+func applyLocking(db *gorm.DB, query repo.Query) *gorm.DB {
+	if query.Lock == repo.LockForUpdateSkipLocked {
+		return db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+	}
+	return db
 }
 
 // apply update operations on the db action
