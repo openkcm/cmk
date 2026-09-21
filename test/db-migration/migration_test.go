@@ -172,6 +172,7 @@ func TestSchemaMigrations(t *testing.T) {
 		downgrade       bool
 		version         int64
 		assertMigration func(t *testing.T) func(db *multitenancy.DB) error
+		setupData       func(t *testing.T) func(db *multitenancy.DB) error
 	}{
 		{
 			name:      "Should up shared/00001_init_shared.sql",
@@ -713,6 +714,26 @@ func TestSchemaMigrations(t *testing.T) {
 			downgrade: false,
 			target:    db.TenantTarget,
 			version:   21,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					groupID := uuid.New()
+					if err := db.Exec(`INSERT INTO "group" (id, name, description, role, iam_identifier) VALUES (?, 'g', 'd', 'r', 'i')`, groupID).Error; err != nil {
+						return err
+					}
+					return db.Exec(`INSERT INTO key_configurations (created_at, updated_at, id, name, admin_group_id, creator_id, primary_key_id) VALUES (now(), now(), '00000000-0000-0000-0000-000000000021', 'kc-orphan', ?, 'c', ?)`, groupID, uuid.New().String()).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					var primaryKeyID *string
+					err := db.Raw(`SELECT primary_key_id FROM key_configurations WHERE id = '00000000-0000-0000-0000-000000000021'`).Scan(&primaryKeyID).Error
+					assert.NoError(t, err)
+					assert.Nil(t, primaryKeyID, "orphaned primary_key_id must be nulled by migration 21")
+					return nil
+				}
+			},
 		},
 		{
 			name:      "Should down tenant/00021_add_primary_key_id_fkey.sql",
@@ -740,6 +761,11 @@ func TestSchemaMigrations(t *testing.T) {
 				Target:  tt.target,
 				Version: new(setupVersion),
 			})
+
+			if tt.setupData != nil {
+				err := dbCon.WithTenant(t.Context(), tenant, tt.setupData(t))
+				assert.NoError(t, err)
+			}
 
 			var migrateVersion int64
 			if tt.downgrade {
