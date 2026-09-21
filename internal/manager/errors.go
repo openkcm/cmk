@@ -174,12 +174,11 @@ var (
 
 	ErrEmptyTenantID = errors.New("tenantID cannot be empty")
 
-	ErrPoolIsDrained               = errors.New("pool is drained")
-	ErrCouldNotSaveConfiguration   = errors.New("could not save configuration")
-	ErrCouldNotRemoveConfiguration = errors.New("could not remove configuration")
-	ErrOnboardingInProgress        = errors.New("another onboarding is already in progress")
-	ErrCreatingGroups              = errors.New("creating user groups for existing tenant")
-	ErrInvalidGroupType            = errors.New("invalid group type")
+	ErrPoolIsDrained             = errors.New("pool is drained")
+	ErrCouldNotSaveConfiguration = errors.New("could not save configuration")
+	ErrOnboardingInProgress      = errors.New("another onboarding is already in progress")
+	ErrCreatingGroups            = errors.New("creating user groups for existing tenant")
+	ErrInvalidGroupType          = errors.New("invalid group type")
 
 	ErrSchemaNameLength = errors.New("schema name length must be between 3 and 63 characters")
 	ErrCreatingTenant   = errors.New("creating tenant failed")

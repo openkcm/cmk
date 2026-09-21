@@ -104,6 +104,14 @@ const (
 	AvgFunc   AggregateFunction = "AVG"
 )
 
+// LockMode defines the row-level locking mode for SELECT queries in a database transaction.
+type LockMode string
+
+const (
+	// LockForUpdateSkipLocked skips rows already locked by another transaction.
+	LockForUpdateSkipLocked LockMode = "FOR UPDATE SKIP LOCKED"
+)
+
 // QueryMapper can just be a struct of filter values (for eg) for simple case (eg internal system user)
 // In API controllers might want to have mapping from odata (for eg)
 type QueryMapper interface {
@@ -189,6 +197,11 @@ type Query struct {
 	Limit int
 
 	Offset int
+
+	// Lock specifies the row-level locking mode for SELECT queries.
+	// Rows locked by another transaction are skipped rather than waited on.
+	// Must be used inside a transaction to be effective.
+	Lock LockMode
 
 	// CompositeKeys form the where part of the Query
 	CompositeKeyGroup []CompositeKeyGroup
@@ -512,5 +525,12 @@ func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {
 
 func (q *Query) Order(orderFields ...OrderField) *Query {
 	q.OrderFields = append(q.OrderFields, orderFields...)
+	return q
+}
+
+// WithLock sets the row-level locking mode for the query.
+// Must be called within a transaction to have effect.
+func (q *Query) WithLock(mode LockMode) *Query {
+	q.Lock = mode
 	return q
 }
