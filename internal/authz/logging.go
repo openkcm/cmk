@@ -22,8 +22,8 @@ func LogDecision[TUser UserRequest, TResourceTypeName, TAction comparable](
 
 	if isAllowed { // Allow
 		logFn = log.Info
-	} else { // Deny
-		// send audit log for unauthorized requests
+	} else if !request.User.IsInternal() {
+		// send audit log for unauthorized requests from non-internal users
 		err := auditor.SendCmkUnauthorizedRequestAuditLog(ctx,
 			request.GetResourceTypeNameString(), request.GetActionString())
 		if err != nil {
