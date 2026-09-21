@@ -19,6 +19,7 @@ var (
 type UserRequest interface {
 	IsEmpty() bool
 	IsValidContext(ctx context.Context) error
+	IsInternal() bool
 }
 
 type InternalUserRequest struct {
@@ -27,6 +28,10 @@ type InternalUserRequest struct {
 
 func (u InternalUserRequest) IsEmpty() bool {
 	return u.Role == ""
+}
+
+func (u InternalUserRequest) IsInternal() bool {
+	return true
 }
 
 func (r InternalUserRequest) IsValidContext(ctx context.Context) error {
@@ -49,6 +54,10 @@ type BusinessUserRequest struct {
 
 func (u BusinessUserRequest) IsEmpty() bool {
 	return u.UserName == "" || len(u.Groups) == 0
+}
+
+func (u BusinessUserRequest) IsInternal() bool {
+	return false
 }
 
 func (r BusinessUserRequest) IsValidContext(ctx context.Context) error {
