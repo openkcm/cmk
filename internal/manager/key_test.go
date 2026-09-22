@@ -2543,6 +2543,38 @@ func TestCreateHYOKPendingRegistration(t *testing.T) {
 		assert.Nil(t, result)
 		assert.ErrorIs(t, err, manager.ErrInvalidKeyState, "disabled key must be rejected synchronously")
 	})
+
+	t.Run("rejects when provider key is in PENDING_IMPORT state", func(t *testing.T) {
+		pendingPlugin := testplugins.NewTestKeyManagement(true, false)
+		pendingPlugin.KeyStore["mock-key/pending-import-key"] = &testplugins.KeyRecord{
+			KeyID:  "mock-key/pending-import-key",
+			Status: testplugins.PendingImportKeyStatus,
+		}
+
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, pendingPlugin))
+		seedDefaultKeystore(t, r, ctx)
+
+		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+		require.NoError(t, err)
+		cryptoAccessData := model.KeyAccessData{"crypto-1": {AdditionalProperties: map[string]any{"someKey": "someValue"}}}
+		cryptoBytes, err := json.Marshal(cryptoAccessData)
+		require.NoError(t, err)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.NativeID = new("mock-key/pending-import-key")
+			k.ManagementAccessData = hyokInfo
+			k.Provider = providerTest
+			k.CryptoAccessData = cryptoBytes
+		})
+
+		result, err := km.Create(ctx, key)
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrInvalidKeyState)
+	})
 }
 
 func TestUpdateKeyPendingRegistrationGuard(t *testing.T) {
