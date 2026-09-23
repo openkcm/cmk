@@ -1102,6 +1102,13 @@ func (km *KeyManager) registerHYOKKey(
 		return nil, errs.Wrap(ErrKeyRegistration, err)
 	}
 
+	if cmkapi.KeyState(keyResp.Status) != cmkapi.KeyStateENABLED {
+		return nil, errs.Wrapf(
+			ErrInvalidKeyState,
+			keyResp.Status+" for HYOK registration",
+		)
+	}
+
 	if keyResp.KeyAlgorithm != keymanagement.AES256 {
 		return nil, errs.Wrapf(
 			ErrUnsupportedKeyAlgorithm,
@@ -1110,13 +1117,6 @@ func (km *KeyManager) registerHYOKKey(
 	}
 
 	key.Algorithm = cmkapi.KeyAlgorithmAES256
-
-	if cmkapi.KeyState(keyResp.Status) != cmkapi.KeyStateENABLED {
-		return nil, errs.Wrapf(
-			ErrInvalidKeyState,
-			keyResp.Status+" for HYOK registration",
-		)
-	}
 
 	key.State = cmkapi.KeyStateENABLED
 

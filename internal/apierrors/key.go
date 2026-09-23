@@ -147,6 +147,14 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrUnsupportedKeyAlgorithm},
+		ExposedError: &APIError{
+			Code:    "REGISTER_KEY_UNSUPPORTED_ALGORITHM",
+			Message: "Key algorithm is not supported for HYOK registration",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrCreateKey, gorm.ErrRecordNotFound},
 		ExposedError: &APIError{
 			Code:    "KEY_CONFIGURATION_NOT_FOUND",
