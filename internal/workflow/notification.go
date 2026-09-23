@@ -39,7 +39,7 @@ func GetNotificationRecipients(
 ) ([]string, error) {
 	switch transition {
 	case TransitionCreate:
-		return GetApproverUserNames(ctx, workflow.Approvers, idm)
+		return GetApproverUserNames(ctx, approverTasksOnly(workflow.Tasks), idm)
 
 	case TransitionApprove, TransitionReject:
 		initiatorName, err := workflow.GetInitiatorName(ctx, idm)
@@ -55,7 +55,7 @@ func GetNotificationRecipients(
 	case TransitionConfirm, TransitionRevoke:
 		decidedApprovers := make([]model.WorkflowApprover, 0)
 
-		for _, approver := range workflow.Approvers {
+		for _, approver := range approverTasksOnly(workflow.Tasks) {
 			if approver.Approved.Valid {
 				decidedApprovers = append(decidedApprovers, approver)
 			}
@@ -66,4 +66,15 @@ func GetNotificationRecipients(
 	default:
 		return []string{}, nil
 	}
+}
+
+// approverTasksOnly returns only tasks with AssigneeRoleApprover.
+func approverTasksOnly(tasks []model.WorkflowTask) []model.WorkflowTask {
+	result := make([]model.WorkflowTask, 0, len(tasks))
+	for _, t := range tasks {
+		if t.AssigneeRole == model.AssigneeRoleApprover {
+			result = append(result, t)
+		}
+	}
+	return result
 }

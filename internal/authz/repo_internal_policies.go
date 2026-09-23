@@ -212,8 +212,9 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					},
 				},
 				{
-					Type: RepoResourceTypeWorkflowApprover,
+					Type: RepoResourceTypeWorkflowTask,
 					Actions: []RepoAction{
+						RepoActionFirst,
 						RepoActionCreate,
 						RepoActionUpdate,
 						RepoActionCount,

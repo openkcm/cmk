@@ -18,5 +18,6 @@ const (
 	TenantTable           = publicTablePreFix + "tenants"
 	TenantconfigTable     = "tenant_configs"
 	WorkflowTable         = "workflows"
-	WorkflowApproverTable = "workflow_approvers"
+	WorkflowTaskTable     = "workflow_tasks"
+	WorkflowTaskViewTable = "workflow_task_view"
 )

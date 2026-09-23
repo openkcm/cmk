@@ -56,3 +56,4 @@ cmd/clientData/*.txt
 build_version.json
 
 /*plugins/
+.claude/
