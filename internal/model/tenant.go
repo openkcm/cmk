@@ -2,26 +2,39 @@ package model
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/multitenancy"
 )
+
+var ErrInvalidSystemLimitOverride = fmt.Errorf("%w: system limit override must be >= 1", ErrValidation)
 
 type Tenant struct {
 	multitenancy.TenantModel
 
-	ID        string       `gorm:"type:varchar(255);not null;unique"`
-	Name      string       `gorm:"type:varchar(255)"`
-	Status    TenantStatus `gorm:"type:varchar(50);not null"`
-	OwnerType string       `gorm:"type:varchar(50);not null;default:''"`
-	OwnerID   string       `gorm:"type:varchar(255);not null;default:''"`
-	IssuerURL string       `gorm:"type:varchar(255);not null;default:''"`
-	Role      TenantRole   `gorm:"type:varchar(50);not null;default:''"`
+	ID                  string       `gorm:"type:varchar(255);not null;unique"`
+	Name                string       `gorm:"type:varchar(255)"`
+	Status              TenantStatus `gorm:"type:varchar(50);not null"`
+	OwnerType           string       `gorm:"type:varchar(50);not null;default:''"`
+	OwnerID             string       `gorm:"type:varchar(255);not null;default:''"`
+	IssuerURL           string       `gorm:"type:varchar(255);not null;default:''"`
+	Role                TenantRole   `gorm:"type:varchar(50);not null;default:''"`
+	SystemLimitOverride *int         `gorm:"type:integer"`
 }
 
 // Validate validates given tenant data.
 func (m Tenant) Validate() error {
-	return ValidateAll(m.Status, m.Role)
+	if err := ValidateAll(m.Status, m.Role); err != nil {
+		return err
+	}
+
+	if m.SystemLimitOverride != nil && *m.SystemLimitOverride < config.MinTenantLimit {
+		return ErrInvalidSystemLimitOverride
+	}
+
+	return nil
 }
 
 // TableResourceType return the authz resource type

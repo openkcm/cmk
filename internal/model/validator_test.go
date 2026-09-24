@@ -52,6 +52,7 @@ func TestValidationErrorsWrapErrValidation(t *testing.T) {
 		"ErrInvalidWorkflowState":        model.ErrInvalidWorkflowState,
 		"ErrInvalidWorkflowArtifactType": model.ErrInvalidWorkflowArtifactType,
 		"ErrInvalidWorkflowActionType":   model.ErrInvalidWorkflowActionType,
+		"ErrInvalidSystemLimitOverride":  model.ErrInvalidSystemLimitOverride,
 	}
 
 	for name, err := range validationErrs {
@@ -68,6 +69,7 @@ func TestValidationErrorsWrapErrValidation(t *testing.T) {
 	assert.NotErrorIs(t, model.ErrInvalidName, model.ErrInvalidIAMIdentifier)
 	assert.NotErrorIs(t, model.ErrInvalidTenantRole, model.ErrInvalidTenantStatus)
 	assert.NotErrorIs(t, model.ErrInvalidWorkflowState, model.ErrInvalidWorkflowActionType)
+	assert.NotErrorIs(t, model.ErrInvalidSystemLimitOverride, model.ErrInvalidTenantStatus)
 
 	// A non-validation error must not be classified as a validation failure.
 	assert.NotErrorIs(t, errUnrelated, model.ErrValidation)
