@@ -99,6 +99,87 @@ func TestValidateScheduler(t *testing.T) {
 	})
 }
 
+func TestValidateTenantLimits(t *testing.T) {
+	t.Run("Should successfully validate minimum", func(t *testing.T) {
+		tl := config.Tenant{SystemLimit: config.MinTenantLimit, KeyLimit: config.MinTenantLimit, KeyConfigLimit: config.MinTenantLimit}
+		assert.NoError(t, tl.Validate())
+	})
+
+	t.Run("Should fail validation for Systems below minimum", func(t *testing.T) {
+		tl := config.Tenant{SystemLimit: 0, KeyLimit: config.MinTenantLimit}
+		err := tl.Validate()
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, config.ErrTenantLimitsSystemsBelowMinimum)
+	})
+
+	t.Run("Should fail validation for Keys below minimum", func(t *testing.T) {
+		tl := config.Tenant{SystemLimit: config.MinTenantLimit, KeyLimit: 0}
+		err := tl.Validate()
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, config.ErrTenantLimitsKeyBelowMinimum)
+	})
+
+	t.Run("Should fail validation for Key Configs below minimum", func(t *testing.T) {
+		tl := config.Tenant{SystemLimit: config.MinTenantLimit, KeyLimit: config.MinTenantLimit, KeyConfigLimit: 0}
+		err := tl.Validate()
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, config.ErrTenantLimitsKeyConfigBelowMinimum)
+	})
+}
+
+func TestValidateConfig(t *testing.T) {
+	cryptoCerts := []config.CryptoCert{
+		{
+			Name: "crypto-1",
+			Subject: config.CryptoCertSubject{
+				CommonNamePrefix: "test_",
+			},
+			RootCA: "test",
+		},
+	}
+
+	bytes, err := yaml.Marshal(cryptoCerts)
+	assert.NoError(t, err)
+
+	t.Run("Should validate", func(t *testing.T) {
+		cfg := config.Config{
+			Certificates: config.Certificates{
+				ValidityDays: config.MinCertificateValidityDays,
+			},
+			CryptoLayer: config.CryptoLayer{CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  string(bytes),
+			}},
+			Tenant: config.Tenant{
+				SystemLimit:    config.MinTenantLimit,
+				KeyLimit:       config.MinTenantLimit,
+				KeyConfigLimit: config.MinTenantLimit,
+			},
+		}
+
+		err = cfg.Validate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("Should error on invalid tenant config", func(t *testing.T) {
+		cfg := config.Config{
+			Certificates: config.Certificates{
+				ValidityDays: config.MinCertificateValidityDays,
+			},
+			CryptoLayer: config.CryptoLayer{CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  string(bytes),
+			}},
+			Tenant: config.Tenant{
+				SystemLimit: 0,
+			},
+		}
+
+		err = cfg.Validate()
+		assert.ErrorIs(t, err, config.ErrTenantLimitsSystemsBelowMinimum)
+	})
+}
+
 func TestValidateTenantManager(t *testing.T) {
 	mutator := testutils.NewMutator(func() config.TenantManager {
 		return config.TenantManager{
