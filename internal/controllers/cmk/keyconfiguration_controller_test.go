@@ -99,7 +99,7 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 	keyConfig3 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
 		testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, key, keyConfig2, key2, keyConfig3)
+	testutils.CreateTestEntities(ctx, t, r, key, key2, keyConfig, keyConfig2, keyConfig3)
 	clientData := &auth.ClientData{
 		Identifier: authClient.Identifier,
 		Groups:     []string{authClient.Group.IAMIdentifier},
@@ -173,7 +173,7 @@ func TestKeyConfigurationGetConfigurationsWithGroups(t *testing.T) {
 		k.ID = keyConfigID
 		k.PrimaryKeyID = &key.ID
 	}, testutils.WithAuthBusinessUserDataKC(authClient), testutils.WithIDMPluginKC(idmPlugin))
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
 	t.Run("Should get keyConfig", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{

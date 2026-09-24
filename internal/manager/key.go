@@ -1102,6 +1102,13 @@ func (km *KeyManager) registerHYOKKey(
 		return nil, errs.Wrap(ErrKeyRegistration, err)
 	}
 
+	if cmkapi.KeyState(keyResp.Status) != cmkapi.KeyStateENABLED {
+		return nil, errs.Wrapf(
+			ErrInvalidKeyState,
+			keyResp.Status+" for HYOK registration",
+		)
+	}
+
 	if keyResp.KeyAlgorithm != keymanagement.AES256 {
 		return nil, errs.Wrapf(
 			ErrUnsupportedKeyAlgorithm,
@@ -1110,13 +1117,6 @@ func (km *KeyManager) registerHYOKKey(
 	}
 
 	key.Algorithm = cmkapi.KeyAlgorithmAES256
-
-	if cmkapi.KeyState(keyResp.Status) != cmkapi.KeyStateENABLED {
-		return nil, errs.Wrapf(
-			ErrInvalidKeyState,
-			keyResp.Status+" for HYOK registration",
-		)
-	}
 
 	key.State = cmkapi.KeyStateENABLED
 
@@ -1598,22 +1598,48 @@ func (km *KeyManager) syncKeyVersions(
 		return ErrNoKeyVersionsFound
 	}
 
-	return km.handleNewKeyVersion(ctx, key, keyResp)
+	return km.handleKeyVersions(ctx, key, keyResp)
 }
 
-func (km *KeyManager) handleNewKeyVersion(
+// If it's the first key version it's not considered a new key version
+func (km *KeyManager) isNewKeyVersion(
+	ctx context.Context,
+	key *model.Key,
+	keyResp *keymanagement.GetKeyVersionsResponse,
+) (bool, error) {
+	versions, _, err := km.keyVersionManager.GetKeyVersions(ctx, key.ID, repo.Pagination{Top: 1})
+	if err != nil {
+		return false, err
+	}
+
+	if len(versions) < 1 {
+		return false, nil
+	}
+
+	return keyResp.Versions[0].ID == versions[0].NativeID, nil
+}
+
+func (km *KeyManager) handleKeyVersions(
 	ctx context.Context,
 	key *model.Key,
 	keyResp *keymanagement.GetKeyVersionsResponse,
 ) error {
-	// New version detected - create it
-	err := km.keyVersionManager.UpdateVersions(
+	isNewVersion, err := km.isNewKeyVersion(ctx, key, keyResp)
+	if err != nil {
+		return err
+	}
+
+	err = km.keyVersionManager.UpdateVersions(
 		ctx,
 		key.ID,
 		keyResp.Versions,
 	)
 	if err != nil {
 		return err
+	}
+
+	if !isNewVersion {
+		return nil
 	}
 
 	log.Debug(

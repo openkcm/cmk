@@ -170,8 +170,13 @@ func (s *TestKeyManagement) GetKey(
 		return nil, keymanagement.ErrHYOKKeyNotFound
 	}
 
+	algo := keymanagement.AES256
+	if record.Status == PendingImportKeyStatus {
+		algo = keymanagement.UnspecifiedKeyAlgorithm
+	}
+
 	resp := &keymanagement.GetKeyResponse{
-		KeyAlgorithm: keymanagement.AES256,
+		KeyAlgorithm: algo,
 		Status:       record.Status,
 		RotationTime: record.RotationTime,
 	}

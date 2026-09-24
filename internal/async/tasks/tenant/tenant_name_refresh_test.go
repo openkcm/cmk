@@ -43,6 +43,14 @@ func (m *MockTenantRegistry) ListTenants(ctx context.Context, in *tenantv1.ListT
 	panic("not implemented")
 }
 
+func (m *MockTenantRegistry) GetTenantConfig(ctx context.Context, in *tenantv1.GetTenantConfigRequest, opts ...grpc.CallOption) (*tenantv1.GetTenantConfigResponse, error) {
+	panic("not implemented")
+}
+
+func (m *MockTenantRegistry) UpdateTenantConfig(ctx context.Context, in *tenantv1.UpdateTenantConfigRequest, opts ...grpc.CallOption) (*tenantv1.UpdateTenantConfigResponse, error) {
+	panic("not implemented")
+}
+
 func (m *MockTenantRegistry) GetTenant(ctx context.Context, in *tenantv1.GetTenantRequest, opts ...grpc.CallOption) (*tenantv1.GetTenantResponse, error) {
 	if m.authzLoader != nil {
 		// We test for unauthz in this case

@@ -208,7 +208,7 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceR
 		w.KeyConfigurationID = new(uuid.MustParse(keyConfigID))
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, key, key2, system)
+	testutils.CreateTestEntities(ctx, t, r, key, key2, keyConfig, system)
 }
 
 func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux,
