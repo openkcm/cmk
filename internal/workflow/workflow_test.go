@@ -101,9 +101,9 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			ID:          uuid.New(),
 			State:       model.WorkflowStateInitial,
 			InitiatorID: userID01,
-			Approvers: []model.WorkflowApprover{
-				{UserID: userID02, Approved: sqlNullBoolNull},
-				{UserID: userID03, Approved: sqlNullBoolNull},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 			},
 			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID01,
@@ -136,8 +136,8 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			name: "create from initial not enough approvers",
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = model.WorkflowStateInitial
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolNull},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
 				}
 			}),
 			actorID:    userID01,
@@ -496,9 +496,9 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolNull},
-					{UserID: userID03, Approved: sqlNullBoolTrue},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolTrue},
 				}
 			}),
 			actorID:       userID02,
@@ -511,10 +511,10 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID01, Approved: sqlNullBoolNull},
-					{UserID: userID02, Approved: sqlNullBoolNull},
-					{UserID: userID03, Approved: sqlNullBoolTrue},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID01, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolTrue},
 				}
 			}),
 			actorID:       userID02,
@@ -527,11 +527,11 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID01, Approved: sqlNullBoolNull},
-					{UserID: userID02, Approved: sqlNullBoolNull},
-					{UserID: userID03, Approved: sqlNullBoolNull},
-					{UserID: userID04, Approved: sqlNullBoolNull},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID01, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID04, Approved: sqlNullBoolNull},
 				}
 			}),
 			actorID:    userID02,
@@ -545,10 +545,10 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID01, Approved: sqlNullBoolNull},
-					{UserID: userID02, Approved: sqlNullBoolNull},
-					{UserID: userID03, Approved: sqlNullBoolNull},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID01, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 				}
 			}),
 			actorID:    userID02,
@@ -561,8 +561,8 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			name: "approve from wait approval not approver",
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = model.WorkflowStateWaitApproval
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolTrue},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolTrue},
 				}
 			}),
 			actorID:    userID01,
@@ -587,9 +587,9 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolFalse},
-					{UserID: userID03, Approved: sqlNullBoolTrue},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolFalse},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolTrue},
 				}
 			}),
 			actorID:       userID02,
@@ -602,8 +602,8 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			workflow: wfMutator(func(wf *model.Workflow) {
 				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolFalse},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolFalse},
 				}
 			}),
 			actorID:    userID01,
@@ -1086,9 +1086,9 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 			ID:          uuid.New(),
 			State:       model.WorkflowStateInitial,
 			InitiatorID: userID01,
-			Approvers: []model.WorkflowApprover{
-				{UserID: userID02, Approved: sqlNullBoolNull},
-				{UserID: userID03, Approved: sqlNullBoolNull},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 			},
 			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID01,
@@ -1212,9 +1212,9 @@ func TestAvailableBusinessUserTransitions(t *testing.T) {
 			ID:          uuid.New(),
 			State:       model.WorkflowStateWaitApproval,
 			InitiatorID: userID01,
-			Approvers: []model.WorkflowApprover{
-				{UserID: userID02, Approved: sqlNullBoolNull},
-				{UserID: userID03, Approved: sqlNullBoolNull},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 			},
 			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID01,
@@ -1247,8 +1247,8 @@ func TestAvailableBusinessUserTransitions(t *testing.T) {
 			name: "approver in wait approval gets approve and reject",
 			workflow: wfMutator(func(wf *model.Workflow) {
 				// ensure actor is an approver and has not voted yet
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolNull},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
 				}
 			}),
 			actorID:  userID02,
@@ -1309,9 +1309,9 @@ func TestGetApprovalSummary(t *testing.T) {
 			ID:          uuid.New(),
 			State:       model.WorkflowStateWaitApproval,
 			InitiatorID: userID01,
-			Approvers: []model.WorkflowApprover{
-				{UserID: userID02, Approved: sqlNullBoolNull},
-				{UserID: userID03, Approved: sqlNullBoolNull},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 			},
 			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID01,
@@ -1341,9 +1341,9 @@ func TestGetApprovalSummary(t *testing.T) {
 		{
 			name: "one approved one pending",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolTrue},
-					{UserID: userID03, Approved: sqlNullBoolNull},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolTrue},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 				}
 			}),
 			minimumApproverCount: 2,
@@ -1355,9 +1355,9 @@ func TestGetApprovalSummary(t *testing.T) {
 		{
 			name: "one approved one rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolTrue},
-					{UserID: userID03, Approved: sqlNullBoolFalse},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolTrue},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolFalse},
 				}
 			}),
 			minimumApproverCount: 2,
@@ -1370,7 +1370,7 @@ func TestGetApprovalSummary(t *testing.T) {
 			name: "no approvers and custom target",
 			workflow: func() model.Workflow {
 				wf := wfMutator(func(w *model.Workflow) {
-					w.Approvers = []model.WorkflowApprover{}
+					w.Tasks = []model.WorkflowTask{}
 				})
 				return wf
 			}(),

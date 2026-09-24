@@ -27,9 +27,9 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 			ID:          systemID01,
 			State:       model.WorkflowStateInitial,
 			InitiatorID: userID01,
-			Approvers: []model.WorkflowApprover{
-				{UserID: userID02, Approved: sqlNullBoolNull},
-				{UserID: userID03, Approved: sqlNullBoolNull},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), UserID: userID02, AssigneeRole: model.AssigneeRoleApprover, Approved: sqlNullBoolNull},
+				{ID: uuid.New(), UserID: userID03, AssigneeRole: model.AssigneeRoleApprover, Approved: sqlNullBoolNull},
 			},
 			ArtifactType: model.WorkflowArtifactTypeSystem,
 			ArtifactID:   systemID01,

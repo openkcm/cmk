@@ -643,7 +643,7 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 			ArtifactType: model.WorkflowArtifactTypeSystem,
 			ArtifactID:   system.ID,
 			ActionType:   model.WorkflowActionTypeLink,
-			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+			Tasks:        []model.WorkflowTask{{ID: uuid.New(), UserID: uuid.NewString()}},
 			Parameters:   keyConfig.ID.String(),
 		}
 		res, err := m.CreateWorkflow(ctxSys, expected)
@@ -686,7 +686,7 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 				ArtifactType: model.WorkflowArtifactTypeSystem,
 				ArtifactID:   system.ID,
 				ActionType:   model.WorkflowActionTypeLink,
-				Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+				Tasks:        []model.WorkflowTask{{ID: uuid.New(), UserID: uuid.NewString()}},
 				Parameters:   keyConfig.ID.String(),
 			}
 			res, err := m.CreateWorkflow(ctxSys, expected)
@@ -748,11 +748,11 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
-		idmPlugin.PutUser(identitymanagement.User{ID: wf.Approvers[0].UserID})
+		idmPlugin.PutUser(identitymanagement.User{ID: wf.Tasks[0].UserID})
 		ctx = cmkcontext.InjectBusinessUserData(
 			cmkcontext.CreateTenantContext(t.Context(), tenant),
 			&auth.ClientData{
-				Identifier: wf.Approvers[0].UserID,
+				Identifier: wf.Tasks[0].UserID,
 			},
 			nil,
 		)
@@ -779,11 +779,11 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		idmPlugin.PutUser(identitymanagement.User{ID: wf.InitiatorID})
-		idmPlugin.PutUser(identitymanagement.User{ID: wf.Approvers[0].UserID})
+		idmPlugin.PutUser(identitymanagement.User{ID: wf.Tasks[0].UserID})
 		ctx = cmkcontext.InjectBusinessUserData(
 			cmkcontext.CreateTenantContext(t.Context(), tenant),
 			&auth.ClientData{
-				Identifier: wf.Approvers[0].UserID,
+				Identifier: wf.Tasks[0].UserID,
 			},
 			nil,
 		)
@@ -960,7 +960,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 			w.State = model.WorkflowStateInitial
 			w.ActionType = model.WorkflowActionTypeDelete
 			w.ArtifactType = model.WorkflowArtifactTypeKey
-			w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
+			w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: allWorkflowUserID}}
 			w.InitiatorID = userID
 			w.CreatedAt = baseTime.Add(-3 * time.Hour)
 			w.UpdatedAt = baseTime.Add(-3 * time.Hour)
@@ -973,7 +973,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 			w.ActionType = model.WorkflowActionTypeDelete
 			w.ArtifactType = model.WorkflowArtifactTypeKey
 			w.ArtifactID = uuid.New()
-			w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+			w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: userID}}
 			w.InitiatorID = allWorkflowUserID
 			w.CreatedAt = baseTime.Add(-2 * time.Hour)
 			w.UpdatedAt = baseTime.Add(-2 * time.Hour)
@@ -985,7 +985,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 			w.State = model.WorkflowStateRejected
 			w.ActionType = model.WorkflowActionTypeDelete
 			w.ArtifactType = model.WorkflowArtifactTypeKey
-			w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+			w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: userID}}
 			w.InitiatorID = allWorkflowUserID
 			w.CreatedAt = baseTime.Add(-1 * time.Hour)
 			w.UpdatedAt = baseTime.Add(-1 * time.Hour)
@@ -997,7 +997,7 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 			w.State = model.WorkflowStateInitial
 			w.ActionType = model.WorkflowActionTypeUpdateState
 			w.ArtifactType = model.WorkflowArtifactTypeKey
-			w.Approvers = []model.WorkflowApprover{{UserID: allWorkflowUserID}}
+			w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: allWorkflowUserID}}
 			w.InitiatorID = userID
 			w.CreatedAt = baseTime
 			w.UpdatedAt = baseTime
@@ -1269,8 +1269,11 @@ func TestWorkflowManager_ListApprovers(t *testing.T) {
 					assert.NoError(t, err)
 					assert.NotNil(t, approvers)
 
+					require.Len(t, approvers, len(wf.Tasks))
 					for i := range approvers {
-						assert.Equal(t, wf.Approvers[i], *approvers[i])
+						assert.Equal(t, wf.Tasks[i].ID, approvers[i].ID)
+						assert.Equal(t, wf.Tasks[i].UserID, approvers[i].UserID)
+						assert.Equal(t, wf.Tasks[i].AssigneeRole, approvers[i].AssigneeRole)
 					}
 				}
 			},
@@ -1341,7 +1344,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactID = key.ID
 				w.ArtifactType = model.WorkflowArtifactTypeKey
 				w.ActionType = model.WorkflowActionTypeDelete
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			approversCount: 2,
 			approverGroups: 1,
@@ -1352,7 +1355,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactID = uuid.New()
 				w.ArtifactType = model.WorkflowArtifactTypeKey
 				w.ActionType = model.WorkflowActionTypeDelete
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			expectErr:  true,
 			errMessage: repo.ErrNotFound,
@@ -1364,7 +1367,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactType = model.WorkflowArtifactTypeKey
 				w.ActionType = model.WorkflowActionTypeUpdateState
 				w.Parameters = "DISABLED"
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			approversCount: 2,
 			approverGroups: 1,
@@ -1375,7 +1378,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactID = keyConfigs[0].ID
 				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
 				w.ActionType = model.WorkflowActionTypeDelete
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			approversCount: 2,
 			approverGroups: 1,
@@ -1386,7 +1389,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactID = uuid.New()
 				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
 				w.ActionType = model.WorkflowActionTypeDelete
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			expectErr:  true,
 			errMessage: repo.ErrNotFound,
@@ -1398,7 +1401,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
 				w.ActionType = model.WorkflowActionTypeUpdatePrimary
 				w.Parameters = uuid.NewString()
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			approversCount: 2,
 			approverGroups: 1,
@@ -1410,7 +1413,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactType = model.WorkflowArtifactTypeSystem
 				w.ActionType = model.WorkflowActionTypeLink
 				w.Parameters = keyConfigs[0].ID.String()
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			approversCount: 2,
 			approverGroups: 1,
@@ -1422,7 +1425,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactType = model.WorkflowArtifactTypeSystem
 				w.ActionType = model.WorkflowActionTypeLink
 				w.Parameters = uuid.NewString()
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			expectErr:  true,
 			errMessage: repo.ErrNotFound,
@@ -1433,7 +1436,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactID = systems[1].ID
 				w.ArtifactType = model.WorkflowArtifactTypeSystem
 				w.ActionType = model.WorkflowActionTypeUnlink
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			approversCount: 2,
 			approverGroups: 1,
@@ -1444,7 +1447,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactID = uuid.New()
 				w.ArtifactType = model.WorkflowArtifactTypeSystem
 				w.ActionType = model.WorkflowActionTypeUnlink
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			expectErr:  true,
 			errMessage: repo.ErrNotFound,
@@ -1456,7 +1459,7 @@ func TestWorkflowManager_AutoAddApprover(t *testing.T) {
 				w.ArtifactType = model.WorkflowArtifactTypeSystem
 				w.ActionType = model.WorkflowActionTypeSwitch
 				w.Parameters = keyConfigs[1].ID.String()
-				w.Approvers = nil
+				w.Tasks = nil
 			},
 			approversCount: 4,
 			approverGroups: 2,
@@ -1986,7 +1989,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 			func(w *model.Workflow) {
 				w.State = model.WorkflowStateSuccessful
 				w.CreatedAt = time.Now().AddDate(0, 0, -31)
-				w.Approvers = nil // No approvers
+				w.Tasks = nil // No approvers
 				w.InitiatorID = userID
 			},
 		)
@@ -2143,8 +2146,10 @@ func setupEligibilityTest(
 	var scimMembers []string
 	for i := 0; i < approverCount && i < len(approverIDs); i++ {
 		approver := &model.WorkflowApprover{
-			WorkflowID: wf.ID,
-			UserID:     approverIDs[i],
+			ID:           uuid.New(),
+			WorkflowID:   wf.ID,
+			UserID:       approverIDs[i],
+			AssigneeRole: model.AssigneeRoleApprover,
 		}
 		testutils.CreateTestEntities(ctx, t, r, approver)
 
@@ -2299,8 +2304,10 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 		// Create a third approver
 		approver3ID := "00000000-0000-0000-0000-100000000004"
 		approver3 := &model.WorkflowApprover{
-			WorkflowID: wf.ID,
-			UserID:     approver3ID,
+			ID:           uuid.New(),
+			WorkflowID:   wf.ID,
+			UserID:       approver3ID,
+			AssigneeRole: model.AssigneeRoleApprover,
 		}
 		testutils.CreateTestEntities(ctx, t, r, approver3)
 
@@ -2456,8 +2463,10 @@ func TestWorkflowApproverEligibility(t *testing.T) {
 
 		// Manually create workflow approvers (simulating they were added before removal)
 		approver := &model.WorkflowApprover{
-			WorkflowID: wf.ID,
-			UserID:     approver1ID,
+			ID:           uuid.New(),
+			WorkflowID:   wf.ID,
+			UserID:       approver1ID,
+			AssigneeRole: model.AssigneeRoleApprover,
 		}
 		testutils.CreateTestEntities(ctx, t, r, approver)
 
@@ -2849,9 +2858,9 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 			w.ActionType = model.WorkflowActionTypeDelete
 			w.ArtifactType = model.WorkflowArtifactTypeKey
 			w.InitiatorID = initiatorID
-			w.Approvers = []model.WorkflowApprover{
-				{UserID: approverID},
-				{UserID: approverID2},
+			w.Tasks = []model.WorkflowTask{
+				{ID: uuid.New(), UserID: approverID},
+				{ID: uuid.New(), UserID: approverID2},
 			}
 		})
 		_, err := createTestWorkflow(testutils.CreateCtxWithTenant(tenant), r, wf)
@@ -3074,6 +3083,198 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 		assert.NoError(t, err)
 		for _, w := range workflows {
 			assert.NotEqual(t, wf.ID, w.ID, "Unrelated user should not see INITIAL workflow")
+		}
+	})
+}
+
+func TestWorkflowManager_InitiatorTaskRowCreated(t *testing.T) {
+	const (
+		approverSCIMID  = "scim-approver-group-id"
+		approverGroupID = "kms-key-admins-001"
+		approverUserID  = "approver-user-id-001"
+		initiatorUserID = "initiator-user-id-001"
+	)
+
+	idmPlugin := testplugins.NewTestIdentityManagement(
+		testplugins.WithGroups(map[string]string{
+			approverGroupID: approverSCIMID,
+		}),
+		testplugins.WithGroupMembership(map[string][]string{
+			approverSCIMID: {approverUserID},
+		}),
+		testplugins.WithUsers([]identitymanagement.User{
+			{ID: approverUserID, Name: "approver@example.com"},
+		}),
+	)
+
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{}, testplugins.WithIdentityManagement(idmPlugin))
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, initiatorUserID, []string{approverGroupID})
+
+	createAuditorGroup(ctx, t, r)
+
+	// Create admin group registered in SCIM
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.Name = approverGroupID
+		g.IAMIdentifier = approverGroupID
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(ctx, t, r, group)
+
+	// Create key config and key that reference the admin group
+	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+		c.AdminGroup = *group
+		c.AdminGroupID = group.ID
+	})
+	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+	})
+	testutils.CreateTestEntities(ctx, t, r, key)
+
+	// Create workflow with initiator set explicitly
+	wf := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.State = model.WorkflowStateInitial
+		w.ArtifactType = model.WorkflowArtifactTypeKey
+		w.ArtifactID = key.ID
+		w.ActionType = model.WorkflowActionTypeDelete
+		w.InitiatorID = initiatorUserID
+		w.Tasks = nil
+	})
+	err := r.Create(ctx, wf)
+	require.NoError(t, err)
+
+	_, err = m.AutoAssignApprovers(ctx, wf.ID)
+	require.NoError(t, err)
+
+	tasks, _, err := m.ListWorkflowTasks(ctx, wf.ID, repo.Pagination{Top: 10, Count: true})
+	require.NoError(t, err)
+	var initiatorTask *model.WorkflowTask
+	for i := range tasks {
+		if tasks[i].AssigneeRole == model.AssigneeRoleInitiator {
+			initiatorTask = tasks[i]
+		}
+	}
+	require.NotNil(t, initiatorTask, "INITIATOR task row must exist after auto-assign")
+	assert.Equal(t, initiatorUserID, initiatorTask.UserID)
+	assert.Equal(t, wf.ID, initiatorTask.WorkflowID)
+	assert.False(t, initiatorTask.Approved.Valid, "INITIATOR decision should be unset initially")
+	assert.Nil(t, initiatorTask.CompletedAt, "INITIATOR CompletedAt should be nil initially")
+}
+
+func TestWorkflowManager_ListWorkflowTaskViews(t *testing.T) {
+	const (
+		approverSCIMID  = "scim-task-view-group"
+		approverGroupID = "kms-task-view-admins"
+		approverUserID  = "task-view-approver-id"
+		initiatorUserID = "task-view-initiator-id"
+	)
+
+	idmPlugin := testplugins.NewTestIdentityManagement(
+		testplugins.WithGroups(map[string]string{
+			approverGroupID: approverSCIMID,
+		}),
+		testplugins.WithGroupMembership(map[string][]string{
+			approverSCIMID: {approverUserID},
+		}),
+		testplugins.WithUsers([]identitymanagement.User{
+			{ID: approverUserID, Name: "approver@example.com"},
+			{ID: initiatorUserID, Name: "initiator@example.com"},
+		}),
+	)
+
+	m, r, tenant := SetupWorkflowManager(t, &config.Config{}, testplugins.WithIdentityManagement(idmPlugin))
+	initiatorCtx := testutils.InjectBusinessUserDataIntoContext(
+		testutils.CreateCtxWithTenant(tenant),
+		initiatorUserID,
+		[]string{approverGroupID},
+	)
+
+	createAuditorGroup(initiatorCtx, t, r)
+
+	group := testutils.NewGroup(func(g *model.Group) {
+		g.Name = approverGroupID
+		g.IAMIdentifier = approverGroupID
+		g.Role = constants.KeyAdminRole
+	})
+	testutils.CreateTestEntities(initiatorCtx, t, r, group)
+
+	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+		c.AdminGroup = *group
+		c.AdminGroupID = group.ID
+	})
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+	})
+	testutils.CreateTestEntities(initiatorCtx, t, r, keyConfig, key)
+
+	workflowCfg := testutils.NewWorkflowConfig(func(_ *model.WorkflowConfig) {})
+	testutils.WriteWorkflowConfig(initiatorCtx, t, r, workflowCfg)
+
+	// Create and auto-assign a workflow so task rows exist in the view.
+	wf := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.State = model.WorkflowStateInitial
+		w.ArtifactType = model.WorkflowArtifactTypeKey
+		w.ArtifactID = key.ID
+		w.ActionType = model.WorkflowActionTypeDelete
+		w.InitiatorID = initiatorUserID
+		w.Tasks = nil
+	})
+	require.NoError(t, r.Create(initiatorCtx, wf))
+	_, err := m.AutoAssignApprovers(initiatorCtx, wf.ID)
+	require.NoError(t, err)
+
+	t.Run("should return all task rows without workflow ID filter", func(t *testing.T) {
+		views, count, err := m.ListWorkflowTaskViews(initiatorCtx, manager.WorkflowFilter{
+			Top:   10,
+			Count: true,
+		})
+		require.NoError(t, err)
+		assert.Positive(t, count)
+		assert.NotEmpty(t, views)
+
+		// All returned rows must belong to the workflow we created.
+		for _, v := range views {
+			assert.Equal(t, wf.ID, v.WorkflowID)
+		}
+	})
+
+	t.Run("should include both INITIATOR and APPROVER rows", func(t *testing.T) {
+		views, _, err := m.ListWorkflowTaskViews(initiatorCtx, manager.WorkflowFilter{Top: 10})
+		require.NoError(t, err)
+
+		roles := make(map[model.AssigneeRole]bool)
+		for _, v := range views {
+			roles[v.AssigneeRole] = true
+		}
+		assert.True(t, roles[model.AssigneeRoleInitiator], "INITIATOR row must appear in view")
+		assert.True(t, roles[model.AssigneeRoleApprover], "APPROVER row must appear in view")
+	})
+
+	t.Run("should expose workflow fields from the joined view", func(t *testing.T) {
+		views, _, err := m.ListWorkflowTaskViews(initiatorCtx, manager.WorkflowFilter{Top: 10})
+		require.NoError(t, err)
+		require.NotEmpty(t, views)
+
+		for _, v := range views {
+			assert.Equal(t, model.WorkflowStateWaitApproval, v.WorkflowState)
+			assert.Equal(t, model.WorkflowArtifactTypeKey, v.ArtifactType)
+			assert.Equal(t, model.WorkflowActionTypeDelete, v.ActionType)
+			assert.Equal(t, initiatorUserID, v.InitiatorID)
+		}
+	})
+
+	t.Run("should filter by artifact type", func(t *testing.T) {
+		views, count, err := m.ListWorkflowTaskViews(initiatorCtx, manager.WorkflowFilter{
+			ArtifactType: model.WorkflowArtifactTypeKey,
+			Top:          10,
+			Count:        true,
+		})
+		require.NoError(t, err)
+		assert.Positive(t, count)
+		for _, v := range views {
+			assert.Equal(t, model.WorkflowArtifactTypeKey, v.ArtifactType)
 		}
 	})
 }

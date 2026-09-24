@@ -128,7 +128,7 @@ var RepoBusinessPolicies = RolePolicies[constants.BusinessRole, RepoResourceType
 					},
 				},
 				{
-					Type: RepoResourceTypeWorkflowApprover,
+					Type: RepoResourceTypeWorkflowTask,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
@@ -302,7 +302,7 @@ var RepoBusinessPolicies = RolePolicies[constants.BusinessRole, RepoResourceType
 					},
 				},
 				{
-					Type: RepoResourceTypeWorkflowApprover,
+					Type: RepoResourceTypeWorkflowTask,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,

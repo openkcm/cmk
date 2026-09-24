@@ -50,7 +50,7 @@ const (
 	RepoResourceTypeTenant           RepoResourceType = RepoResourceType(constants.TenantTable)
 	RepoResourceTypeTenantconfig     RepoResourceType = RepoResourceType(constants.TenantconfigTable)
 	RepoResourceTypeWorkflow         RepoResourceType = RepoResourceType(constants.WorkflowTable)
-	RepoResourceTypeWorkflowApprover RepoResourceType = RepoResourceType(constants.WorkflowApproverTable)
+	RepoResourceTypeWorkflowTask     RepoResourceType = RepoResourceType(constants.WorkflowTaskTable)
 
 	RepoActionList   RepoAction = "list"
 	RepoActionFirst  RepoAction = "first"
@@ -103,7 +103,7 @@ var RepoResourceTypeActions = map[RepoResourceType][]RepoAction{
 	RepoResourceTypeTenant:           repoActionList,
 	RepoResourceTypeTenantconfig:     repoActionList,
 	RepoResourceTypeWorkflow:         repoActionList,
-	RepoResourceTypeWorkflowApprover: repoActionList,
+	RepoResourceTypeWorkflowTask:     repoActionList,
 }
 
 var APIResourceTypeActions = map[APIResourceType][]APIAction{

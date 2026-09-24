@@ -65,7 +65,7 @@ func (s *WorkflowAssignMock) AutoAssignApprovers(
 	}
 	for _, testAction := range allowedWorkflowApproversTestActions {
 		isAllowed, err := authz.CheckAuthz(ctx, s.authzLoader.AuthzHandler,
-			authz.RepoResourceTypeWorkflowApprover, testAction)
+			authz.RepoResourceTypeWorkflowTask, testAction)
 		if err != nil {
 			return nil, err
 		}

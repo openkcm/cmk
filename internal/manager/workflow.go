@@ -69,6 +69,15 @@ type Workflow interface {
 		decisionMade bool,
 		pagination repo.Pagination,
 	) ([]*model.WorkflowApprover, int, error)
+	ListWorkflowTasks(
+		ctx context.Context,
+		id uuid.UUID,
+		pagination repo.Pagination,
+	) ([]*model.WorkflowTask, int, error)
+	ListWorkflowTaskViews(
+		ctx context.Context,
+		params repo.QueryMapper,
+	) ([]*model.WorkflowTaskView, int, error)
 	GetWorkflowAvailableTransitions(ctx context.Context, workflow *model.Workflow) ([]wf.Transition, error)
 	GetWorkflowApprovalSummary(ctx context.Context, workflow *model.Workflow) (*wf.ApprovalSummary, error)
 	GetWorkflowApproverGroups(ctx context.Context, workflow *model.Workflow) ([]*model.Group, error)
@@ -441,7 +450,8 @@ func (w *WorkflowManager) ListWorkflowApprovers(
 	}
 
 	ck := repo.NewCompositeKey().
-		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), id)
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), id).
+		Where(repo.AssigneeRoleField, model.AssigneeRoleApprover)
 
 	if decisionMade {
 		ck = ck.Where(repo.ApprovedField, repo.NotNull)
@@ -450,6 +460,31 @@ func (w *WorkflowManager) ListWorkflowApprovers(
 	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
 
 	return repo.ListAndCount(ctx, w.repo, pagination, model.WorkflowApprover{}, query)
+}
+
+func (w *WorkflowManager) ListWorkflowTasks(
+	ctx context.Context,
+	id uuid.UUID,
+	pagination repo.Pagination,
+) ([]*model.WorkflowTask, int, error) {
+	if _, _, err := w.GetWorkflowByID(ctx, id); err != nil {
+		return nil, 0, err
+	}
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), id)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+	return repo.ListAndCount(ctx, w.repo, pagination, model.WorkflowTask{}, query)
+}
+
+// ListWorkflowTaskViews queries workflow_task_view without a workflow ID filter,
+// allowing cross-workflow task lookups (e.g. by user or state).
+func (w *WorkflowManager) ListWorkflowTaskViews(
+	ctx context.Context,
+	params repo.QueryMapper,
+) ([]*model.WorkflowTaskView, int, error) {
+	pagination := params.GetPagination()
+	query := params.GetQuery(ctx)
+	return repo.ListAndCount(ctx, w.repo, pagination, model.WorkflowTaskView{}, query)
 }
 
 func (w *WorkflowManager) AutoAssignApprovers(
@@ -654,7 +689,7 @@ func (w *WorkflowManager) TransitionWorkflow(
 	_, err = w.repo.First(
 		ctx,
 		workflow,
-		*repo.NewQuery().Preload(repo.Preload{"Approvers"}),
+		*repo.NewQuery().Preload(repo.Preload{"Tasks"}),
 	)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetWorkflowDB, err)
@@ -1445,6 +1480,10 @@ func (w *WorkflowManager) addApproversAndGroupAssociations(
 			}
 		}
 
+		if err := w.ensureInitiatorTask(ctx, workflow.ID, userID); err != nil {
+			return errs.Wrap(ErrAddApproversDB, err)
+		}
+
 		for _, g := range groups {
 			err := w.repo.Set(ctx, model.WorkflowApproverGroup{
 				ID:         uuid.New(),
@@ -1507,21 +1546,9 @@ func (w *WorkflowManager) applyTransition(
 		eligibleApproverIDs := w.fetchEligibilityForVote(ctx, workflow, transition)
 		capturedEligibleApproverIDs = eligibleApproverIDs
 
-		// Create lifecycle with eligibility filtering (if available)
-		workflowLifecycle, err := w.getWorkflowLifecycleWithEligibility(ctx, workflow, userID, eligibleApproverIDs)
+		workflowLifecycle, err := w.buildAndValidateLifecycle(ctx, workflow, userID, eligibleApproverIDs, transition)
 		if err != nil {
 			return err
-		}
-
-		// Resolve actor's approver group membership for the lifecycle guard
-		workflowLifecycle.ActorApproverGroupIDs, err = w.resolveActorApproverGroupIDs(ctx, workflow)
-		if err != nil {
-			return err
-		}
-
-		validateErr := workflowLifecycle.ValidateActor(ctx, transition)
-		if validateErr != nil {
-			return errs.Wrap(ErrValidateActor, validateErr)
 		}
 
 		// For approve/reject transitions, fetch approver and check eligibility once
@@ -1531,6 +1558,14 @@ func (w *WorkflowManager) applyTransition(
 			approver, err = w.fetchAndValidateApprover(ctx, workflow, userID)
 			if err != nil {
 				return err
+			}
+		}
+
+		if transition == wf.TransitionConfirm {
+			var err error
+			approver, err = w.fetchInitiatorTask(ctx, workflow.ID, userID)
+			if err != nil && !errors.Is(err, repo.ErrNotFound) {
+				return errs.Wrap(ErrCheckWorkflowEligibility, err)
 			}
 		}
 
@@ -1561,6 +1596,30 @@ func (w *WorkflowManager) applyTransition(
 	}
 
 	return nil
+}
+
+func (w *WorkflowManager) buildAndValidateLifecycle(
+	ctx context.Context,
+	workflow *model.Workflow,
+	userID string,
+	eligibleApproverIDs map[string]bool,
+	transition wf.Transition,
+) (*wf.Lifecycle, error) {
+	workflowLifecycle, err := w.getWorkflowLifecycleWithEligibility(ctx, workflow, userID, eligibleApproverIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	workflowLifecycle.ActorApproverGroupIDs, err = w.resolveActorApproverGroupIDs(ctx, workflow)
+	if err != nil {
+		return nil, err
+	}
+
+	if validateErr := workflowLifecycle.ValidateActor(ctx, transition); validateErr != nil {
+		return nil, errs.Wrap(ErrValidateActor, validateErr)
+	}
+
+	return workflowLifecycle, nil
 }
 
 // fetchEligibilityForVote fetches eligible approver IDs for approve/reject transitions.
@@ -1649,7 +1708,8 @@ func (w *WorkflowManager) fetchAndValidateApprover(
 ) (*model.WorkflowApprover, error) {
 	ck := repo.NewCompositeKey().
 		Where(fmt.Sprintf("%s_%s", repo.UserField, repo.IDField), userID).
-		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), workflow.ID)
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), workflow.ID).
+		Where(repo.AssigneeRoleField, model.AssigneeRoleApprover)
 
 	approver := &model.WorkflowApprover{}
 	_, err := w.repo.First(ctx, approver, *repo.NewQuery().
@@ -1673,8 +1733,10 @@ func (w *WorkflowManager) updateApproverDecision(
 	approver *model.WorkflowApprover,
 	approved bool,
 ) error {
+	now := time.Now()
 	err := w.repo.Transaction(ctx, func(ctx context.Context) error {
 		approver.Approved = sql.NullBool{Bool: approved, Valid: true}
+		approver.CompletedAt = &now
 
 		_, err := w.repo.Patch(ctx, approver, *repo.NewQuery())
 		if err != nil {
@@ -1688,6 +1750,52 @@ func (w *WorkflowManager) updateApproverDecision(
 	}
 
 	return nil
+}
+
+// ensureInitiatorTask is idempotent — safe to call on retry.
+func (w *WorkflowManager) ensureInitiatorTask(ctx context.Context, workflowID uuid.UUID, userID string) error {
+	_, err := w.fetchInitiatorTask(ctx, workflowID, userID)
+	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+		return err
+	}
+	if errors.Is(err, repo.ErrNotFound) {
+		initiatorTask := &model.WorkflowTask{
+			ID:           uuid.New(),
+			WorkflowID:   workflowID,
+			UserID:       userID,
+			AssigneeRole: model.AssigneeRoleInitiator,
+			CreatedAt:    time.Now(),
+		}
+		if err := w.repo.Set(ctx, initiatorTask, *repo.NewQuery()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// fetchInitiatorTask retrieves the INITIATOR task row for the given workflow and user.
+// Returns nil (not an error) when no such row exists, to handle workflows created before
+// INITIATOR task tracking was introduced.
+func (w *WorkflowManager) fetchInitiatorTask(
+	ctx context.Context,
+	workflowID uuid.UUID,
+	userID string,
+) (*model.WorkflowTask, error) {
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), workflowID).
+		Where(fmt.Sprintf("%s_%s", repo.UserField, repo.IDField), userID).
+		Where(repo.AssigneeRoleField, model.AssigneeRoleInitiator)
+
+	task := &model.WorkflowTask{}
+	_, err := w.repo.First(ctx, task, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
+	if errors.Is(err, repo.ErrNotFound) {
+		return nil, repo.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return task, nil
 }
 
 func (w *WorkflowManager) checkPermissionToCreateWorkflow(
@@ -1874,7 +1982,10 @@ func (w *WorkflowManager) getApproversAndGroupsFromKeyConfigs(
 			}
 
 			approverMap[userID] = model.WorkflowApprover{
-				UserID: userID,
+				ID:           uuid.New(),
+				UserID:       userID,
+				AssigneeRole: model.AssigneeRoleApprover,
+				CreatedAt:    time.Now(),
 			}
 		}
 	}
