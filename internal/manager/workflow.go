@@ -69,9 +69,13 @@ type Workflow interface {
 		decisionMade bool,
 		pagination repo.Pagination,
 	) ([]*model.WorkflowApprover, int, error)
+	ListWorkflowTasks(
+		ctx context.Context,
+		id uuid.UUID,
+		pagination repo.Pagination,
+	) ([]*model.WorkflowTask, int, error)
 	ListWorkflowTaskViews(
 		ctx context.Context,
-		workflowID *uuid.UUID,
 		params repo.QueryMapper,
 	) ([]*model.WorkflowTaskView, int, error)
 	GetWorkflowAvailableTransitions(ctx context.Context, workflow *model.Workflow) ([]wf.Transition, error)
@@ -458,24 +462,28 @@ func (w *WorkflowManager) ListWorkflowApprovers(
 	return repo.ListAndCount(ctx, w.repo, pagination, model.WorkflowApprover{}, query)
 }
 
-// ListWorkflowTaskViews queries workflow_task_view. When workflowID is non-nil the
-// workflow is validated to exist and results are scoped to it; otherwise all tasks
-// across all workflows are returned, filtered by params.
+func (w *WorkflowManager) ListWorkflowTasks(
+	ctx context.Context,
+	id uuid.UUID,
+	pagination repo.Pagination,
+) ([]*model.WorkflowTask, int, error) {
+	if _, _, err := w.GetWorkflowByID(ctx, id); err != nil {
+		return nil, 0, err
+	}
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), id)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+	return repo.ListAndCount(ctx, w.repo, pagination, model.WorkflowTask{}, query)
+}
+
+// ListWorkflowTaskViews queries workflow_task_view without a workflow ID filter,
+// allowing cross-workflow task lookups (e.g. by user or state).
 func (w *WorkflowManager) ListWorkflowTaskViews(
 	ctx context.Context,
-	workflowID *uuid.UUID,
 	params repo.QueryMapper,
 ) ([]*model.WorkflowTaskView, int, error) {
 	pagination := params.GetPagination()
 	query := params.GetQuery(ctx)
-	if workflowID != nil {
-		if _, _, err := w.GetWorkflowByID(ctx, *workflowID); err != nil {
-			return nil, 0, err
-		}
-		ck := repo.NewCompositeKey().
-			Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), *workflowID)
-		query = query.Where(repo.NewCompositeKeyGroup(ck))
-	}
 	return repo.ListAndCount(ctx, w.repo, pagination, model.WorkflowTaskView{}, query)
 }
 

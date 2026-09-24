@@ -3148,9 +3148,9 @@ func TestWorkflowManager_InitiatorTaskRowCreated(t *testing.T) {
 	_, err = m.AutoAssignApprovers(ctx, wf.ID)
 	require.NoError(t, err)
 
-	tasks, _, err := m.ListWorkflowTaskViews(ctx, &wf.ID, manager.WorkflowFilter{Top: 10, Count: true})
+	tasks, _, err := m.ListWorkflowTasks(ctx, wf.ID, repo.Pagination{Top: 10, Count: true})
 	require.NoError(t, err)
-	var initiatorTask *model.WorkflowTaskView
+	var initiatorTask *model.WorkflowTask
 	for i := range tasks {
 		if tasks[i].AssigneeRole == model.AssigneeRoleInitiator {
 			initiatorTask = tasks[i]
@@ -3226,7 +3226,7 @@ func TestWorkflowManager_ListWorkflowTaskViews(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("should return all task rows without workflow ID filter", func(t *testing.T) {
-		views, count, err := m.ListWorkflowTaskViews(initiatorCtx, nil, manager.WorkflowFilter{
+		views, count, err := m.ListWorkflowTaskViews(initiatorCtx, manager.WorkflowFilter{
 			Top:   10,
 			Count: true,
 		})
@@ -3241,7 +3241,7 @@ func TestWorkflowManager_ListWorkflowTaskViews(t *testing.T) {
 	})
 
 	t.Run("should include both INITIATOR and APPROVER rows", func(t *testing.T) {
-		views, _, err := m.ListWorkflowTaskViews(initiatorCtx, nil, manager.WorkflowFilter{Top: 10})
+		views, _, err := m.ListWorkflowTaskViews(initiatorCtx, manager.WorkflowFilter{Top: 10})
 		require.NoError(t, err)
 
 		roles := make(map[model.AssigneeRole]bool)
@@ -3253,7 +3253,7 @@ func TestWorkflowManager_ListWorkflowTaskViews(t *testing.T) {
 	})
 
 	t.Run("should expose workflow fields from the joined view", func(t *testing.T) {
-		views, _, err := m.ListWorkflowTaskViews(initiatorCtx, nil, manager.WorkflowFilter{Top: 10})
+		views, _, err := m.ListWorkflowTaskViews(initiatorCtx, manager.WorkflowFilter{Top: 10})
 		require.NoError(t, err)
 		require.NotEmpty(t, views)
 
@@ -3266,7 +3266,7 @@ func TestWorkflowManager_ListWorkflowTaskViews(t *testing.T) {
 	})
 
 	t.Run("should filter by artifact type", func(t *testing.T) {
-		views, count, err := m.ListWorkflowTaskViews(initiatorCtx, nil, manager.WorkflowFilter{
+		views, count, err := m.ListWorkflowTaskViews(initiatorCtx, manager.WorkflowFilter{
 			ArtifactType: model.WorkflowArtifactTypeKey,
 			Top:          10,
 			Count:        true,
