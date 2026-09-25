@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -332,6 +333,55 @@ func WriteWorkflowConfig(ctx context.Context, tb testing.TB, r repo.Repo, wc *mo
 	query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
 	for _, row := range rows {
 		require.NoError(tb, r.Set(ctx, row, *query))
+	}
+}
+
+// WriteKeystoreConfig persists a KeystoreConfig as fully-flattened scalar rows
+// under type = "default_keystore" with hierarchical keys.
+func WriteKeystoreConfig(ctx context.Context, tb testing.TB, r repo.Repo, ks *model.KeystoreConfig) {
+	tb.Helper()
+
+	const (
+		t        = "default_keystore"
+		adPrefix = "access_data/"
+	)
+
+	query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
+
+	writeMgmt := func(mc model.ManagementConfig, keyPrefix string) {
+		rows := make([]*model.TenantConfig, 0, 2+len(mc.AccessData))
+		rows = append(rows,
+			&model.TenantConfig{Key: keyPrefix + "locality_id", Value: mc.LocalityID, Type: t},
+			&model.TenantConfig{Key: keyPrefix + "common_name", Value: mc.CommonName, Type: t},
+		)
+		for k, v := range mc.AccessData {
+			rows = append(rows, &model.TenantConfig{
+				Key: keyPrefix + adPrefix + k, Value: fmt.Sprint(v), Type: t,
+			})
+		}
+		for _, row := range rows {
+			require.NoError(tb, r.Set(ctx, row, *query))
+		}
+	}
+
+	writeMgmt(ks.RoleManagementConfig, "role_mgmt/")
+	writeMgmt(ks.KeyManagementConfig, "key_mgmt/")
+
+	for landscape, cfg := range ks.CryptoAccessData {
+		require.NoError(tb, r.Set(ctx, &model.TenantConfig{
+			Key: "crypto/" + landscape + "/subject", Value: cfg.Subject, Type: t,
+		}, *query))
+		for k, v := range cfg.AccessData {
+			require.NoError(tb, r.Set(ctx, &model.TenantConfig{
+				Key: "crypto/" + landscape + "/" + adPrefix + k, Value: fmt.Sprint(v), Type: t,
+			}, *query))
+		}
+	}
+
+	for _, reg := range ks.SupportedRegions {
+		require.NoError(tb, r.Set(ctx, &model.TenantConfig{
+			Key: "supported_region/" + reg.TechnicalName + "/name", Value: reg.Name, Type: t,
+		}, *query))
 	}
 }
 
