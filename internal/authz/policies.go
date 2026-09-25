@@ -35,22 +35,23 @@ type (
 // These are linked to table names, so will require a migration if changed.
 // Having this linkage ensures that tables are more coupled to the authz resource identifiers
 const (
-	RepoResourceTypeCertificate      RepoResourceType = RepoResourceType(constants.CertificateTable)
-	RepoResourceTypeEvent            RepoResourceType = RepoResourceType(constants.EventTable)
-	RepoResourceTypeGroup            RepoResourceType = RepoResourceType(constants.GroupTable)
-	RepoResourceTypeImportparam      RepoResourceType = RepoResourceType(constants.ImportparamTable)
-	RepoResourceTypeKey              RepoResourceType = RepoResourceType(constants.KeyTable)
-	RepoResourceTypeKeyconfiguration RepoResourceType = RepoResourceType(constants.KeyconfigurationTable)
-	RepoResourceTypeKeystore         RepoResourceType = RepoResourceType(constants.KeystoreTable)
-	RepoResourceTypeKeyversion       RepoResourceType = RepoResourceType(constants.KeyVersionTable)
-	RepoResourceTypeKeyLabel         RepoResourceType = RepoResourceType(constants.KeyLabelTable)
-	RepoResourceTypeSystem           RepoResourceType = RepoResourceType(constants.SystemTable)
-	RepoResourceTypeSystemProperty   RepoResourceType = RepoResourceType(constants.SystemPropertyTable)
-	RepoResourceTypeTag              RepoResourceType = RepoResourceType(constants.TagTable)
-	RepoResourceTypeTenant           RepoResourceType = RepoResourceType(constants.TenantTable)
-	RepoResourceTypeTenantconfig     RepoResourceType = RepoResourceType(constants.TenantconfigTable)
-	RepoResourceTypeWorkflow         RepoResourceType = RepoResourceType(constants.WorkflowTable)
-	RepoResourceTypeWorkflowTask     RepoResourceType = RepoResourceType(constants.WorkflowTaskTable)
+	RepoResourceTypeCertificate              RepoResourceType = RepoResourceType(constants.CertificateTable)
+	RepoResourceTypeEvent                    RepoResourceType = RepoResourceType(constants.EventTable)
+	RepoResourceTypeGroup                    RepoResourceType = RepoResourceType(constants.GroupTable)
+	RepoResourceTypeImportparam              RepoResourceType = RepoResourceType(constants.ImportparamTable)
+	RepoResourceTypeKey                      RepoResourceType = RepoResourceType(constants.KeyTable)
+	RepoResourceTypeKeyconfiguration         RepoResourceType = RepoResourceType(constants.KeyconfigurationTable)
+	RepoResourceTypeKeystore                 RepoResourceType = RepoResourceType(constants.KeystoreTable)
+	RepoResourceTypeKeyversion               RepoResourceType = RepoResourceType(constants.KeyVersionTable)
+	RepoResourceTypeKeyLabel                 RepoResourceType = RepoResourceType(constants.KeyLabelTable)
+	RepoResourceTypeSystem                   RepoResourceType = RepoResourceType(constants.SystemTable)
+	RepoResourceTypeSystemProperty           RepoResourceType = RepoResourceType(constants.SystemPropertyTable)
+	RepoResourceTypeTag                      RepoResourceType = RepoResourceType(constants.TagTable)
+	RepoResourceTypeTenant                   RepoResourceType = RepoResourceType(constants.TenantTable)
+	RepoResourceTypeTenantconfig             RepoResourceType = RepoResourceType(constants.TenantconfigTable)
+	RepoResourceTypeWorkflow                 RepoResourceType = RepoResourceType(constants.WorkflowTable)
+	RepoResourceTypeWorkflowTask             RepoResourceType = RepoResourceType(constants.WorkflowTaskTable)
+	RepoResourceTypeWorkflowKeyConfiguration RepoResourceType = RepoResourceType(constants.WorkflowKeyConfigurationTable)
 
 	RepoActionList   RepoAction = "list"
 	RepoActionFirst  RepoAction = "first"
@@ -88,22 +89,23 @@ var repoActionList = []RepoAction{
 }
 
 var RepoResourceTypeActions = map[RepoResourceType][]RepoAction{
-	RepoResourceTypeCertificate:      repoActionList,
-	RepoResourceTypeEvent:            repoActionList,
-	RepoResourceTypeGroup:            repoActionList,
-	RepoResourceTypeImportparam:      repoActionList,
-	RepoResourceTypeKey:              repoActionList,
-	RepoResourceTypeKeyconfiguration: repoActionList,
-	RepoResourceTypeKeystore:         repoActionList,
-	RepoResourceTypeKeyversion:       repoActionList,
-	RepoResourceTypeKeyLabel:         repoActionList,
-	RepoResourceTypeSystem:           repoActionList,
-	RepoResourceTypeSystemProperty:   repoActionList,
-	RepoResourceTypeTag:              repoActionList,
-	RepoResourceTypeTenant:           repoActionList,
-	RepoResourceTypeTenantconfig:     repoActionList,
-	RepoResourceTypeWorkflow:         repoActionList,
-	RepoResourceTypeWorkflowTask:     repoActionList,
+	RepoResourceTypeCertificate:              repoActionList,
+	RepoResourceTypeEvent:                    repoActionList,
+	RepoResourceTypeGroup:                    repoActionList,
+	RepoResourceTypeImportparam:              repoActionList,
+	RepoResourceTypeKey:                      repoActionList,
+	RepoResourceTypeKeyconfiguration:         repoActionList,
+	RepoResourceTypeKeystore:                 repoActionList,
+	RepoResourceTypeKeyversion:               repoActionList,
+	RepoResourceTypeKeyLabel:                 repoActionList,
+	RepoResourceTypeSystem:                   repoActionList,
+	RepoResourceTypeSystemProperty:           repoActionList,
+	RepoResourceTypeTag:                      repoActionList,
+	RepoResourceTypeTenant:                   repoActionList,
+	RepoResourceTypeTenantconfig:             repoActionList,
+	RepoResourceTypeWorkflow:                 repoActionList,
+	RepoResourceTypeWorkflowTask:             repoActionList,
+	RepoResourceTypeWorkflowKeyConfiguration: repoActionList,
 }
 
 var APIResourceTypeActions = map[APIResourceType][]APIAction{

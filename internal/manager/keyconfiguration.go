@@ -37,7 +37,9 @@ type KeyConfigurationAPI interface {
 	GetKeyConfigurations(ctx context.Context, filter KeyConfigFilter) ([]*model.KeyConfiguration, int, error)
 	PostKeyConfigurations(ctx context.Context, key *model.KeyConfiguration) (*model.KeyConfiguration, error)
 	DeleteKeyConfigurationByID(ctx context.Context, keyConfigID uuid.UUID) error
-	GetKeyConfigurationByID(ctx context.Context, keyConfigID uuid.UUID) (*model.KeyConfiguration, error)
+	GetKeyConfigurationByID(
+		ctx context.Context, keyConfigID uuid.UUID, extendedMetadata bool,
+	) (*model.KeyConfiguration, error)
 	UpdateKeyConfigurationByID(
 		ctx context.Context,
 		keyConfigID uuid.UUID,
@@ -58,8 +60,9 @@ type KeyConfigManager struct {
 }
 
 type KeyConfigFilter struct {
-	Expand     bool
-	Pagination repo.Pagination
+	Expand           bool
+	ExtendedMetadata bool
+	Pagination       repo.Pagination
 }
 
 func NewKeyConfigManager(
@@ -109,9 +112,17 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 	ctx context.Context,
 	filter KeyConfigFilter,
 ) ([]*model.KeyConfiguration, int, error) {
-	query := getKeyConfigWithTotalsQuery()
+	var query *repo.Query
+	if filter.ExtendedMetadata {
+		query = getKeyConfigWithExtendedMetadataQuery()
+	} else {
+		query = getKeyConfigWithTotalsQuery()
+	}
 	if filter.Expand {
 		query.Preload(repo.Preload{"AdminGroup"})
+	}
+	if filter.ExtendedMetadata {
+		query.Preload(repo.Preload{"PrimaryKeyData"})
 	}
 
 	hasNoGroups, err := m.applyIAMGroupFilter(ctx, query)
@@ -124,7 +135,12 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 		return []*model.KeyConfiguration{}, 0, nil
 	}
 
-	return repo.ListAndCount(ctx, m.r, filter.Pagination, model.KeyConfiguration{}, query)
+	keyConfigs, total, err := repo.ListAndCount(ctx, m.r, filter.Pagination, model.KeyConfiguration{}, query)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return keyConfigs, total, nil
 }
 
 func (m *KeyConfigManager) PostKeyConfigurations(
@@ -209,6 +225,7 @@ func (m *KeyConfigManager) DeleteKeyConfigurationByID(
 func (m *KeyConfigManager) GetKeyConfigurationByID(
 	ctx context.Context,
 	keyConfigID uuid.UUID,
+	extendedMetadata bool,
 ) (*model.KeyConfiguration, error) {
 	keyConfig := &model.KeyConfiguration{
 		ID: keyConfigID,
@@ -219,7 +236,16 @@ func (m *KeyConfigManager) GetKeyConfigurationByID(
 		return nil, err
 	}
 
-	query := getKeyConfigWithTotalsQuery().Preload(repo.Preload{"AdminGroup"})
+	var query *repo.Query
+	if extendedMetadata {
+		query = getKeyConfigWithExtendedMetadataQuery()
+	} else {
+		query = getKeyConfigWithTotalsQuery()
+	}
+	query.Preload(repo.Preload{"AdminGroup"})
+	if extendedMetadata {
+		query.Preload(repo.Preload{"PrimaryKeyData"})
+	}
 	_, err = m.r.First(ctx, keyConfig, *query)
 	if err != nil {
 		return nil, errs.Wrap(ErrGettingKeyConfigByID, err)
@@ -373,6 +399,87 @@ func getKeyConfigWithTotalsQuery() *repo.Query {
 				Alias: repo.KeyconfigTotalKeys,
 			},
 		},
+	)
+}
+
+// getKeyConfigWithExtendedMetadataQuery extends the totals query with additional LEFT JOINs
+// to compute systems-by-status counts in a single query.
+// The systems join from getKeyConfigWithTotalsQuery is reused for status counts.
+func getKeyConfigWithExtendedMetadataQuery() *repo.Query {
+	query := getKeyConfigWithTotalsQuery()
+	applySystemStatusCounts(query)
+	applyPendingApprovalsJoin(query)
+	return query
+}
+
+// applySystemStatusCounts adds CASE-WHEN selects for each system status and the connecting join.
+func applySystemStatusCounts(query *repo.Query) {
+	sysTable := model.System{}.TableName()
+
+	sysCounts := []struct {
+		status cmkapi.SystemStatus
+		alias  repo.QueryField
+	}{
+		{cmkapi.SystemStatusCONNECTED, repo.KeyconfigSystemsConnected},
+		{cmkapi.SystemStatusFAILED, repo.KeyconfigSystemsFailed},
+		{cmkapi.SystemStatusPROCESSING, repo.KeyconfigSystemsProcessing},
+	}
+
+	for _, sc := range sysCounts {
+		query.Select(
+			repo.NewSelectField(repo.IDField,
+				repo.QueryFunction{Function: repo.CountFunc, Distinct: true},
+				repo.WithCaseWhen(repo.CaseWhenClause{
+					Table:     sysTable,
+					Field:     repo.StatusField,
+					Value:     string(sc.status),
+					ThenField: repo.IDField,
+				}),
+			).SetAlias(sc.alias),
+		)
+	}
+
+	// Connecting: systems whose target_key_configuration_id points to this key config
+	const sysConnAlias = "s_conn"
+	query.Join(repo.LeftJoin, repo.JoinCondition{
+		Table:     model.KeyConfiguration{},
+		Field:     repo.IDField,
+		JoinTable: model.System{},
+		JoinField: repo.TargetKeyConfigIDField,
+		Alias:     sysConnAlias,
+	})
+	query.Select(
+		repo.NewSelectField(
+			fmt.Sprintf(`"%s".%s`, sysConnAlias, repo.IDField),
+			repo.QueryFunction{Function: repo.CountFunc, Distinct: true},
+		).SetAlias(repo.KeyconfigSystemsConnecting),
+	)
+}
+
+// applyPendingApprovalsJoin adds the LATERAL join for pending workflow approvals.
+// The subquery is materialised once by the planner and joined rather than re-scanned per KC.
+func applyPendingApprovalsJoin(query *repo.Query) {
+	nonTerminalStates := make([]string, len(model.WorkflowNonTerminalStates))
+	for i, s := range model.WorkflowNonTerminalStates {
+		nonTerminalStates[i] = string(s)
+	}
+
+	query.LateralJoin(repo.LateralJoin{
+		Alias:       "pa",
+		SelectField: repo.KeyconfigPendingApprovals,
+		FromTable:   model.WorkflowKeyConfiguration{},
+		JoinTable:   model.Workflow{},
+		JoinField:   repo.WorkflowIDField,
+		FilterField: repo.KeyConfigIDField,
+		FilterTable: model.KeyConfiguration{},
+		StateField:  repo.StateField,
+		States:      nonTerminalStates,
+	})
+	query.Select(
+		repo.NewSelectField(
+			"pa."+repo.KeyconfigPendingApprovals,
+			repo.QueryFunction{Function: repo.MinFunc},
+		).SetAlias(repo.KeyconfigPendingApprovals),
 	)
 }
 

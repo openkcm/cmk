@@ -165,6 +165,7 @@ func TestMissingSchemaScripts(t *testing.T) {
 	})
 }
 
+//nolint:cyclop
 func TestSchemaMigrations(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -741,6 +742,85 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   21,
 		},
+		{
+			name:      "Should up tenant/00022_refactor_workflow_approvers_to_tasks.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   22,
+		},
+		{
+			name:      "Should down tenant/00022_refactor_workflow_approvers_to_tasks.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   22,
+		},
+		{
+			name:      "Should up tenant/00023_add_wf_key_configurations_table.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   23,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					var exists bool
+					err := con.Raw(`
+						SELECT EXISTS (
+							SELECT 1 FROM information_schema.tables
+							WHERE table_name = 'workflow_key_configurations'
+						)
+					`).Scan(&exists).Error
+					assert.NoError(t, err)
+					assert.True(t, exists, "workflow_key_configurations table must exist")
+
+					// Verify FK constraints work: insert without a valid workflow_id must fail.
+					err = con.Transaction(func(tx *multitenancy.DB) error {
+						return tx.Exec(`
+							INSERT INTO workflow_key_configurations (id, workflow_id, key_configuration_id)
+							VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid())
+						`).Error
+					})
+					assert.ErrorContains(t, err, "violates foreign key constraint",
+						"insert with non-existent workflow_id must be rejected")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00023_add_wf_key_configurations_table.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   23,
+		},
+		{
+			name:      "Should up tenant/00024_add_pending_approvals_indexes.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   24,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					indexes := []string{"idx_workflows_state", "idx_wkc_kc_wf"}
+					for _, idx := range indexes {
+						var exists bool
+						err := con.Raw(`
+							SELECT EXISTS (
+								SELECT 1 FROM pg_indexes WHERE indexname = ?
+							)
+						`, idx).Scan(&exists).Error
+						assert.NoError(t, err)
+						assert.True(t, exists, "index %s must exist", idx)
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00024_add_pending_approvals_indexes.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   24,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -786,6 +866,378 @@ func TestSchemaMigrations(t *testing.T) {
 	}
 }
 
+func setupDataMigration0001(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+
+	return func(db *multitenancy.DB) error {
+		groupID1 := uuid.New()
+		groupID2 := uuid.New()
+		groupID3 := uuid.New()
+		groups := []*model.Group{
+			testutils.NewGroup(func(g *model.Group) { g.ID = groupID1 }),
+			testutils.NewGroup(func(g *model.Group) { g.ID = groupID2 }),
+			testutils.NewGroup(func(g *model.Group) { g.ID = groupID3 }),
+		}
+		for _, g := range groups {
+			assert.NoError(t, db.Create(g).Error)
+		}
+
+		wfs := []*model.Workflow{
+			testutils.NewWorkflow(func(w *model.Workflow) {
+				w.ApproverGroupIDs = json.RawMessage(fmt.Sprintf(`["%s", "%s"]`, groupID1, groupID2))
+				w.InitiatorID = "user-1"
+			}),
+			testutils.NewWorkflow(func(w *model.Workflow) {
+				w.ApproverGroupIDs = json.RawMessage(fmt.Sprintf(`["%s"]`, groupID3))
+				w.InitiatorID = "user-2"
+			}),
+			testutils.NewWorkflow(func(w *model.Workflow) { w.InitiatorID = "user-3" }),
+		}
+		for _, w := range wfs {
+			// Omit Tasks: at schema v10, workflow_tasks does not exist yet
+			assert.NoError(t, db.Omit("Tasks").Create(w).Error)
+		}
+		return nil
+	}
+}
+
+func assertDataMigration0001(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+
+	return func(db *multitenancy.DB) error {
+		var count int
+		assert.NoError(t, db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups`).Scan(&count).Error)
+		assert.Equal(t, 3, count)
+
+		var workflow1ID string
+		assert.NoError(t, db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-1'`).Scan(&workflow1ID).Error)
+		assert.NoError(t, db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow1ID).Scan(&count).Error)
+		assert.Equal(t, 2, count)
+
+		var workflow2ID string
+		assert.NoError(t, db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-2'`).Scan(&workflow2ID).Error)
+		assert.NoError(t, db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow2ID).Scan(&count).Error)
+		assert.Equal(t, 1, count)
+
+		var workflow3ID string
+		assert.NoError(t, db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-3'`).Scan(&workflow3ID).Error)
+		assert.NoError(t, db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow3ID).Scan(&count).Error)
+		assert.Equal(t, 0, count)
+
+		return nil
+	}
+}
+
+func setupDataMigration0002(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		// Single WORKFLOW_CONFIG row with all fields out of bounds.
+		// key is the PRIMARY KEY so only one row per key is allowed.
+		err := db.Exec(`INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"minimumApprovals": 1, "retentionPeriodDays": 31, "maxExpiryPeriodDays": 8}'::jsonb)`).Error
+		assert.NoError(t, err)
+		// Non-WORKFLOW_CONFIG row should not be touched by the migration.
+		err = db.Exec(`INSERT INTO tenant_configs (key, value) VALUES ('OTHER_CONFIG', '{"minimumApprovals": 1}'::jsonb)`).Error
+		assert.NoError(t, err)
+		return nil
+	}
+}
+
+func assertDataMigration0002(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		// Verify each field was clamped to its boundary value.
+		cases := []struct {
+			desc  string
+			field string
+			want  int
+		}{
+			{"minimumApprovals clamped from 1 to 2", "minimumApprovals", 2},
+			{"retentionPeriodDays clamped from 31 to 30", "retentionPeriodDays", 30},
+			{"maxExpiryPeriodDays clamped from 8 to 7", "maxExpiryPeriodDays", 7},
+		}
+		for _, c := range cases {
+			var got int
+			err := db.Raw(`SELECT (value->>?)::int FROM tenant_configs WHERE key = 'WORKFLOW_CONFIG'`, c.field).Scan(&got).Error
+			assert.NoError(t, err)
+			assert.Equal(t, c.want, got, c.desc)
+		}
+
+		// non-WORKFLOW_CONFIG row should be untouched
+		var count int
+		err := db.Raw(`SELECT COUNT(*) FROM tenant_configs WHERE key = 'OTHER_CONFIG' AND (value->>'minimumApprovals')::int = 1`).Scan(&count).Error
+		assert.NoError(t, err)
+		assert.Equal(t, 1, count, "non-WORKFLOW_CONFIG row should not be touched")
+		return nil
+	}
+}
+
+func setupDataMigration0003(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		return db.Exec(
+			`INSERT INTO tenant_configs ("key", value, "type") VALUES ('DEFAULT_KEYSTORE', '{"localityId":"loc-1","commonName":"cn-1"}', '')`,
+		).Error
+	}
+}
+
+func assertDataMigration0003(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		var locality string
+		err := db.Raw(
+			`SELECT value::jsonb -> 'roleManagementConfig' ->> 'localityId' FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
+		).Scan(&locality).Error
+		assert.NoError(t, err)
+		assert.Equal(t, "loc-1", locality)
+
+		var hasLegacyShape bool
+		err = db.Raw(`SELECT value::jsonb ? 'localityId' FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`).Scan(&hasLegacyShape).Error
+		assert.NoError(t, err)
+		assert.False(t, hasLegacyShape, "flat keystore shape must be rewritten to nested")
+		return nil
+	}
+}
+
+func setupDataMigration0003Down(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		return db.Exec(
+			`INSERT INTO tenant_configs ("key", value, "type") VALUES ('DEFAULT_KEYSTORE', '{"roleManagementConfig":{"localityId":"loc-1","commonName":"cn-1"}}', '')`,
+		).Error
+	}
+}
+
+func assertDataMigration0003Down(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		var locality string
+		err := db.Raw(`SELECT value::jsonb ->> 'localityId' FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`).Scan(&locality).Error
+		assert.NoError(t, err)
+		assert.Equal(t, "loc-1", locality, "repair down must restore the flat keystore shape")
+		return nil
+	}
+}
+
+func setupDataMigration0004(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		return db.Exec(
+			`INSERT INTO tenant_configs ("key", value, "type") VALUES
+				('WORKFLOW_CONFIG', '{"Enabled":true,"MinimumApprovals":2,"RetentionPeriodDays":30,"DefaultExpiryPeriodDays":7,"MaxExpiryPeriodDays":14}', ''),
+				('DEFAULT_KEYSTORE', '{"roleManagementConfig":{"localityId":"loc-1","commonName":"cn-1"}}', '')`,
+		).Error
+	}
+}
+
+func assertDataMigration0004(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		var count int
+
+		assert.NoError(t, db.Raw(`SELECT COUNT(*) FROM tenant_configs WHERE "type" = 'workflow'`).Scan(&count).Error)
+		assert.Equal(t, 5, count, "all 5 workflow keys must be flattened")
+
+		var enabled string
+		assert.NoError(t, db.Raw(`SELECT value_text FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'enabled'`).Scan(&enabled).Error)
+		assert.Equal(t, "true", enabled)
+
+		var minApprovals string
+		assert.NoError(t, db.Raw(`SELECT value_text FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'minimum_approvals'`).Scan(&minApprovals).Error)
+		assert.Equal(t, "2", minApprovals)
+
+		assert.NoError(t, db.Raw(`SELECT COUNT(*) FROM tenant_configs WHERE "type" = 'default_keystore'`).Scan(&count).Error)
+		assert.Equal(t, 2, count, "locality_id and common_name must be flattened")
+
+		var locality string
+		assert.NoError(t, db.Raw(`SELECT value_text FROM tenant_configs WHERE "type" = 'default_keystore' AND "key" = 'locality_id'`).Scan(&locality).Error)
+		assert.Equal(t, "loc-1", locality)
+
+		// Legacy blobs are preserved as a read-time fallback for unmigrated tenants.
+		assert.NoError(t, db.Raw(`SELECT COUNT(*) FROM tenant_configs WHERE length("type") = 0`).Scan(&count).Error)
+		assert.Equal(t, 2, count, "legacy blobs must remain")
+		return nil
+	}
+}
+
+func setupDataMigration0004Down(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		return db.Exec(
+			`INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+				('enabled', 'true', 'workflow'),
+				('minimum_approvals', '2', 'workflow')`,
+		).Error
+	}
+}
+
+func assertDataMigration0004Down(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		var count int
+		err := db.Raw(`SELECT COUNT(*) FROM tenant_configs WHERE length("type") > 0`).Scan(&count).Error
+		assert.NoError(t, err)
+		assert.Equal(t, 0, count, "flatten down must remove flat rows")
+		return nil
+	}
+}
+
+func setupDataMigration0005KeyConfiguration(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		kcID := uuid.New()
+		groupID := uuid.New()
+		if err := db.Exec(`INSERT INTO "group" (id, name, description, role, iam_identifier) VALUES (?, 'admin', 'd', 'r', ?)`, groupID, groupID.String()).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(
+			`INSERT INTO key_configurations (created_at, updated_at, id, name, admin_group_id, creator_id) VALUES (now(), now(), ?, 'kc-1', ?, 'u')`,
+			kcID, groupID,
+		).Error; err != nil {
+			return err
+		}
+		return db.Exec(
+			`INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type)
+			 VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'KEY_CONFIGURATION', ?, 'DELETE')`,
+			kcID,
+		).Error
+	}
+}
+
+func setupDataMigration0005Key(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		groupID := uuid.New()
+		if err := db.Exec(`INSERT INTO "group" (id, name, description, role, iam_identifier) VALUES (?, 'admin', 'd', 'r', ?)`, groupID, groupID.String()).Error; err != nil {
+			return err
+		}
+		kcID := uuid.New()
+		if err := db.Exec(
+			`INSERT INTO key_configurations (created_at, updated_at, id, name, admin_group_id, creator_id) VALUES (now(), now(), ?, 'kc-key', ?, 'u')`,
+			kcID, groupID,
+		).Error; err != nil {
+			return err
+		}
+		keyID := uuid.New()
+		if err := db.Exec(
+			`INSERT INTO keys (created_at, updated_at, id, key_configuration_id, name, key_type, algorithm, provider, region, state)
+			 VALUES (now(), now(), ?, ?, 'k', 'BYOK', 'AES256', 'p', 'r', 'ENABLED')`,
+			keyID, kcID,
+		).Error; err != nil {
+			return err
+		}
+		return db.Exec(
+			`INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type)
+			 VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'KEY', ?, 'DELETE')`,
+			keyID,
+		).Error
+	}
+}
+
+func setupDataMigration0005SystemUnlinkSwitch(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		groupID := uuid.New()
+		if err := db.Exec(`INSERT INTO "group" (id, name, description, role, iam_identifier) VALUES (?, 'admin', 'd', 'r', ?)`, groupID, groupID.String()).Error; err != nil {
+			return err
+		}
+		kcID := uuid.New()
+		if err := db.Exec(
+			`INSERT INTO key_configurations (created_at, updated_at, id, name, admin_group_id, creator_id) VALUES (now(), now(), ?, 'kc-sys', ?, 'u')`,
+			kcID, groupID,
+		).Error; err != nil {
+			return err
+		}
+		sysID := uuid.New()
+		if err := db.Exec(
+			`INSERT INTO systems (id, identifier, region, type, status, key_configuration_id) VALUES (?, 'sys-1', 'r', 'SYSTEM', 'CONNECTED', ?)`,
+			sysID, kcID,
+		).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(
+			`INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type)
+			 VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'SYSTEM', ?, 'UNLINK')`,
+			sysID,
+		).Error; err != nil {
+			return err
+		}
+		// SWITCH workflow
+		return db.Exec(
+			`INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type)
+			 VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'SYSTEM', ?, 'SWITCH')`,
+			sysID,
+		).Error
+	}
+}
+
+func setupDataMigration0005SystemLink(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		groupID := uuid.New()
+		if err := db.Exec(`INSERT INTO "group" (id, name, description, role, iam_identifier) VALUES (?, 'admin', 'd', 'r', ?)`, groupID, groupID.String()).Error; err != nil {
+			return err
+		}
+		kcID := uuid.New()
+		if err := db.Exec(
+			`INSERT INTO key_configurations (created_at, updated_at, id, name, admin_group_id, creator_id) VALUES (now(), now(), ?, 'kc-link', ?, 'u')`,
+			kcID, groupID,
+		).Error; err != nil {
+			return err
+		}
+		sysID := uuid.New()
+		if err := db.Exec(`INSERT INTO systems (id, identifier, region, type, status) VALUES (?, 'sys-link', 'r', 'SYSTEM', 'CONNECTED')`, sysID).Error; err != nil {
+			return err
+		}
+		return db.Exec(
+			`INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type, parameters)
+			 VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'SYSTEM', ?, 'LINK', ?)`,
+			sysID, kcID.String(),
+		).Error
+	}
+}
+
+func setupDataMigration0005Down(t *testing.T) func(db *multitenancy.DB) error {
+	t.Helper()
+	return func(db *multitenancy.DB) error {
+		groupID := uuid.New()
+		if err := db.Exec(`INSERT INTO "group" (id, name, description, role, iam_identifier) VALUES (?, 'admin', 'd', 'r', ?)`, groupID, groupID.String()).Error; err != nil {
+			return err
+		}
+		kcID := uuid.New()
+		if err := db.Exec(
+			`INSERT INTO key_configurations (created_at, updated_at, id, name, admin_group_id, creator_id) VALUES (now(), now(), ?, 'kc-down', ?, 'u')`,
+			kcID, groupID,
+		).Error; err != nil {
+			return err
+		}
+		wfID := uuid.New()
+		if err := db.Exec(
+			`INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type)
+			 VALUES (now(), now(), ?, 'INITIAL', 'u', 'KEY_CONFIGURATION', ?, 'DELETE')`,
+			wfID, kcID,
+		).Error; err != nil {
+			return err
+		}
+		return db.Exec(
+			`INSERT INTO workflow_key_configurations (id, workflow_id, key_configuration_id) VALUES (gen_random_uuid(), ?, ?)`,
+			wfID, kcID,
+		).Error
+	}
+}
+
+func assertWorkflowKeyConfigCount(want int, msg string) func(t *testing.T) func(db *multitenancy.DB) error {
+	return func(t *testing.T) func(db *multitenancy.DB) error {
+		t.Helper()
+		return func(db *multitenancy.DB) error {
+			var count int
+			err := db.Raw(`SELECT COUNT(*) FROM workflow_key_configurations`).Scan(&count).Error
+			assert.NoError(t, err)
+			assert.Equal(t, want, count, msg)
+			return nil
+		}
+	}
+}
+
 func TestDataMigrations(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -803,94 +1255,12 @@ func TestDataMigrations(t *testing.T) {
 			schemaVersion: new(int64(9)),
 		},
 		{
-			name:          "Should migrate up workflow approvers to workflow_approver_groups table",
-			target:        db.TenantTarget,
-			version:       1,
-			schemaVersion: new(int64(10)),
-			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-
-				return func(db *multitenancy.DB) error {
-					var count int
-
-					err := db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups`).Scan(&count).Error
-					assert.NoError(t, err)
-					assert.Equal(t, 3, count)
-
-					var workflow1ID string
-					err = db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-1'`).Scan(&workflow1ID).Error
-					assert.NoError(t, err)
-
-					err = db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow1ID).Scan(&count).Error
-					assert.NoError(t, err)
-					assert.Equal(t, 2, count)
-
-					var workflow2ID string
-					err = db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-2'`).Scan(&workflow2ID).Error
-					assert.NoError(t, err)
-
-					err = db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow2ID).Scan(&count).Error
-					assert.NoError(t, err)
-					assert.Equal(t, 1, count)
-
-					var workflow3ID string
-					err = db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-3'`).Scan(&workflow3ID).Error
-					assert.NoError(t, err)
-
-					err = db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow3ID).Scan(&count).Error
-					assert.NoError(t, err)
-					assert.Equal(t, 0, count)
-
-					return nil
-				}
-			},
-			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-
-				return func(db *multitenancy.DB) error {
-					groupID1 := uuid.New()
-					groupID2 := uuid.New()
-					groupID3 := uuid.New()
-					groups := []*model.Group{
-						testutils.NewGroup(func(g *model.Group) {
-							g.ID = groupID1
-						}),
-						testutils.NewGroup(func(g *model.Group) {
-							g.ID = groupID2
-						}),
-						testutils.NewGroup(func(g *model.Group) {
-							g.ID = groupID3
-						}),
-					}
-
-					for _, g := range groups {
-						err := db.Create(g).Error
-						assert.NoError(t, err)
-					}
-
-					wfs := []*model.Workflow{
-						testutils.NewWorkflow(func(w *model.Workflow) {
-							w.ApproverGroupIDs = json.RawMessage(fmt.Sprintf(`["%s", "%s"]`, groupID1, groupID2))
-							w.InitiatorID = "user-1"
-						}),
-						testutils.NewWorkflow(func(w *model.Workflow) {
-							w.ApproverGroupIDs = json.RawMessage(fmt.Sprintf(`["%s"]`, groupID3))
-							w.InitiatorID = "user-2"
-						}),
-						testutils.NewWorkflow(func(w *model.Workflow) {
-							w.InitiatorID = "user-3"
-						}),
-					}
-
-					for _, w := range wfs {
-						// Omit Tasks: at schema v10, workflow_tasks does not exist yet
-						err := db.Omit("Tasks").Create(w).Error
-						assert.NoError(t, err)
-					}
-
-					return nil
-				}
-			},
+			name:            "Should migrate up workflow approvers to workflow_approver_groups table",
+			target:          db.TenantTarget,
+			version:         1,
+			schemaVersion:   new(int64(10)),
+			setupData:       setupDataMigration0001,
+			assertMigration: assertDataMigration0001,
 		},
 		{
 			name:          "Should migrate down 0001",
@@ -906,166 +1276,28 @@ func TestDataMigrations(t *testing.T) {
 			schemaVersion: new(int64(0)),
 		},
 		{
-			name:          "Should clamp out-of-bounds workflow config values",
-			target:        db.TenantTarget,
-			version:       2,
-			schemaVersion: new(int64(18)),
-			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-				return func(db *multitenancy.DB) error {
-					// Single WORKFLOW_CONFIG row with all fields out of bounds.
-					// key is the PRIMARY KEY so only one row per key is allowed.
-					err := db.Exec(`INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"minimumApprovals": 1, "retentionPeriodDays": 31, "maxExpiryPeriodDays": 8}'::jsonb)`).Error
-					assert.NoError(t, err)
-
-					// Non-WORKFLOW_CONFIG row should not be touched by the migration.
-					err = db.Exec(`INSERT INTO tenant_configs (key, value) VALUES ('OTHER_CONFIG', '{"minimumApprovals": 1}'::jsonb)`).Error
-					assert.NoError(t, err)
-
-					return nil
-				}
-			},
-			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-				return func(db *multitenancy.DB) error {
-					// Verify each field was clamped to its boundary value.
-					cases := []struct {
-						desc  string
-						field string
-						want  int
-					}{
-						// minimumApprovals: 1 → clamped to 2 (min)
-						{"minimumApprovals clamped from 1 to 2", "minimumApprovals", 2},
-						// retentionPeriodDays: 31 → clamped to 30 (max)
-						{"retentionPeriodDays clamped from 31 to 30", "retentionPeriodDays", 30},
-						// maxExpiryPeriodDays: 8 → clamped to 7 (max)
-						{"maxExpiryPeriodDays clamped from 8 to 7", "maxExpiryPeriodDays", 7},
-					}
-					for _, c := range cases {
-						var got int
-						err := db.Raw(
-							`SELECT (value->>?)::int FROM tenant_configs WHERE key = 'WORKFLOW_CONFIG'`,
-							c.field,
-						).Scan(&got).Error
-						assert.NoError(t, err)
-						assert.Equal(t, c.want, got, c.desc)
-					}
-
-					// non-WORKFLOW_CONFIG row should be untouched
-					var count int
-					err := db.Raw(
-						`SELECT COUNT(*) FROM tenant_configs WHERE key = 'OTHER_CONFIG' AND (value->>'minimumApprovals')::int = 1`,
-					).Scan(&count).Error
-					assert.NoError(t, err)
-					assert.Equal(t, 1, count, "non-WORKFLOW_CONFIG row should not be touched")
-
-					return nil
-				}
-			},
+			name:            "Should clamp out-of-bounds workflow config values",
+			target:          db.TenantTarget,
+			version:         2,
+			schemaVersion:   new(int64(18)),
+			setupData:       setupDataMigration0002,
+			assertMigration: assertDataMigration0002,
 		},
 		{
-			name:          "Should repair keystore config shape into nested roleManagementConfig",
-			target:        db.TenantTarget,
-			version:       3,
-			schemaVersion: new(int64(20)),
-			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-
-				return func(db *multitenancy.DB) error {
-					var locality string
-					err := db.Raw(
-						`SELECT value::jsonb -> 'roleManagementConfig' ->> 'localityId'
-						 FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
-					).Scan(&locality).Error
-					assert.NoError(t, err)
-					assert.Equal(t, "loc-1", locality)
-
-					var hasLegacyShape bool
-					err = db.Raw(
-						`SELECT value::jsonb ? 'localityId' FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
-					).Scan(&hasLegacyShape).Error
-					assert.NoError(t, err)
-					assert.False(t, hasLegacyShape, "flat keystore shape must be rewritten to nested")
-
-					return nil
-				}
-			},
-			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-
-				return func(db *multitenancy.DB) error {
-					return db.Exec(
-						`INSERT INTO tenant_configs ("key", value, "type") VALUES
-							('DEFAULT_KEYSTORE', '{"localityId":"loc-1","commonName":"cn-1"}', '')`,
-					).Error
-				}
-			},
+			name:            "Should repair keystore config shape into nested roleManagementConfig",
+			target:          db.TenantTarget,
+			version:         3,
+			schemaVersion:   new(int64(20)),
+			setupData:       setupDataMigration0003,
+			assertMigration: assertDataMigration0003,
 		},
 		{
-			name:          "Should flatten tenant_configs legacy blobs into typed flat rows",
-			target:        db.TenantTarget,
-			version:       4,
-			schemaVersion: new(int64(20)),
-			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-
-				return func(db *multitenancy.DB) error {
-					var count int
-
-					err := db.Raw(
-						`SELECT COUNT(*) FROM tenant_configs WHERE "type" = 'workflow'`,
-					).Scan(&count).Error
-					assert.NoError(t, err)
-					assert.Equal(t, 5, count, "all 5 workflow keys must be flattened")
-
-					var enabled string
-					err = db.Raw(
-						`SELECT value_text FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'enabled'`,
-					).Scan(&enabled).Error
-					assert.NoError(t, err)
-					assert.Equal(t, "true", enabled)
-
-					var minApprovals string
-					err = db.Raw(
-						`SELECT value_text FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'minimum_approvals'`,
-					).Scan(&minApprovals).Error
-					assert.NoError(t, err)
-					assert.Equal(t, "2", minApprovals)
-
-					err = db.Raw(
-						`SELECT COUNT(*) FROM tenant_configs WHERE "type" = 'default_keystore'`,
-					).Scan(&count).Error
-					assert.NoError(t, err)
-					assert.Equal(t, 2, count, "locality_id and common_name must be flattened")
-
-					var locality string
-					err = db.Raw(
-						`SELECT value_text FROM tenant_configs WHERE "type" = 'default_keystore' AND "key" = 'locality_id'`,
-					).Scan(&locality).Error
-					assert.NoError(t, err)
-					assert.Equal(t, "loc-1", locality)
-
-					// Legacy blobs are preserved as a read-time fallback for unmigrated tenants.
-					err = db.Raw(
-						`SELECT COUNT(*) FROM tenant_configs WHERE length("type") = 0`,
-					).Scan(&count).Error
-					assert.NoError(t, err)
-					assert.Equal(t, 2, count, "legacy blobs must remain")
-
-					return nil
-				}
-			},
-			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-
-				return func(db *multitenancy.DB) error {
-					return db.Exec(
-						`INSERT INTO tenant_configs ("key", value, "type") VALUES
-							('WORKFLOW_CONFIG', '{"Enabled":true,"MinimumApprovals":2,"RetentionPeriodDays":30,"DefaultExpiryPeriodDays":7,"MaxExpiryPeriodDays":14}', ''),
-							('DEFAULT_KEYSTORE', '{"roleManagementConfig":{"localityId":"loc-1","commonName":"cn-1"}}', '')`,
-					).Error
-				}
-			},
+			name:            "Should flatten tenant_configs legacy blobs into typed flat rows",
+			target:          db.TenantTarget,
+			version:         4,
+			schemaVersion:   new(int64(20)),
+			setupData:       setupDataMigration0004,
+			assertMigration: assertDataMigration0004,
 		},
 		{
 			name:          "Should migrate down 00002",
@@ -1075,67 +1307,70 @@ func TestDataMigrations(t *testing.T) {
 			downgrade:     true,
 		},
 		{
-			name:          "Should migrate down repair keystore config shape",
-			target:        db.TenantTarget,
-			version:       3,
-			schemaVersion: new(int64(20)),
-			downgrade:     true,
-			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-
-				return func(db *multitenancy.DB) error {
-					return db.Exec(
-						`INSERT INTO tenant_configs ("key", value, "type") VALUES
-							('DEFAULT_KEYSTORE', '{"roleManagementConfig":{"localityId":"loc-1","commonName":"cn-1"}}', '')`,
-					).Error
-				}
-			},
-			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-
-				return func(db *multitenancy.DB) error {
-					var locality string
-					err := db.Raw(
-						`SELECT value::jsonb ->> 'localityId' FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
-					).Scan(&locality).Error
-					assert.NoError(t, err)
-					assert.Equal(t, "loc-1", locality, "repair down must restore the flat keystore shape")
-
-					return nil
-				}
-			},
+			name:            "Should migrate down repair keystore config shape",
+			target:          db.TenantTarget,
+			version:         3,
+			schemaVersion:   new(int64(20)),
+			downgrade:       true,
+			setupData:       setupDataMigration0003Down,
+			assertMigration: assertDataMigration0003Down,
 		},
 		{
-			name:          "Should migrate down flatten tenant_configs",
+			name:            "Should migrate down flatten tenant_configs",
+			target:          db.TenantTarget,
+			version:         4,
+			schemaVersion:   new(int64(20)),
+			downgrade:       true,
+			setupData:       setupDataMigration0004Down,
+			assertMigration: assertDataMigration0004Down,
+		},
+		{
+			name:          "Should skip data migration 00005 if workflow_key_configurations table does not exist",
 			target:        db.TenantTarget,
-			version:       4,
-			schemaVersion: new(int64(20)),
-			downgrade:     true,
-			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-
-				return func(db *multitenancy.DB) error {
-					return db.Exec(
-						`INSERT INTO tenant_configs ("key", value_text, "type") VALUES
-							('enabled', 'true', 'workflow'),
-							('minimum_approvals', '2', 'workflow')`,
-					).Error
-				}
-			},
-			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
-				t.Helper()
-
-				return func(db *multitenancy.DB) error {
-					var count int
-					err := db.Raw(
-						`SELECT COUNT(*) FROM tenant_configs WHERE length("type") > 0`,
-					).Scan(&count).Error
-					assert.NoError(t, err)
-					assert.Equal(t, 0, count, "flatten down must remove flat rows")
-
-					return nil
-				}
-			},
+			version:       5,
+			schemaVersion: new(int64(22)), // before schema 23 that creates the table
+		},
+		{
+			name:            "Should populate workflow_key_configurations from KEY_CONFIGURATION workflows",
+			target:          db.TenantTarget,
+			version:         5,
+			schemaVersion:   new(int64(23)),
+			setupData:       setupDataMigration0005KeyConfiguration,
+			assertMigration: assertWorkflowKeyConfigCount(1, "one row must be inserted for the KEY_CONFIGURATION workflow"),
+		},
+		{
+			name:            "Should populate workflow_key_configurations from KEY workflows",
+			target:          db.TenantTarget,
+			version:         5,
+			schemaVersion:   new(int64(23)),
+			setupData:       setupDataMigration0005Key,
+			assertMigration: assertWorkflowKeyConfigCount(1, "one row must be inserted for the KEY workflow"),
+		},
+		{
+			name:          "Should populate workflow_key_configurations from SYSTEM UNLINK/SWITCH workflows with key_configuration_id",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(23)),
+			setupData:     setupDataMigration0005SystemUnlinkSwitch,
+			// Each workflow gets one row (ON CONFLICT prevents duplicates even if SWITCH appears in both queries)
+			assertMigration: assertWorkflowKeyConfigCount(2, "one row per SYSTEM UNLINK/SWITCH workflow"),
+		},
+		{
+			name:            "Should populate workflow_key_configurations from SYSTEM LINK/SWITCH workflows with parameters uuid",
+			target:          db.TenantTarget,
+			version:         5,
+			schemaVersion:   new(int64(23)),
+			setupData:       setupDataMigration0005SystemLink,
+			assertMigration: assertWorkflowKeyConfigCount(1, "one row must be inserted for the SYSTEM LINK workflow"),
+		},
+		{
+			name:            "Should migrate down 00005 — clears workflow_key_configurations rows",
+			target:          db.TenantTarget,
+			version:         5,
+			schemaVersion:   new(int64(23)),
+			downgrade:       true,
+			setupData:       setupDataMigration0005Down,
+			assertMigration: assertWorkflowKeyConfigCount(0, "down migration must delete all workflow_key_configurations rows"),
 		},
 	}
 	for _, tt := range tests {
