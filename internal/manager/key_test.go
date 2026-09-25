@@ -880,7 +880,7 @@ func TestList(t *testing.T) {
 func TestUpdate(t *testing.T) {
 	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
 	km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
-	createdKey := createTestSystemManagedKey(t, km, r, ctx, keyConfig.ID)
+	createdKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED, keyProviderPlugin)
 
 	tests := []struct {
 		name     string
@@ -955,6 +955,15 @@ func TestUpdate(t *testing.T) {
 		})
 	}
 
+	t.Run("Should allow disabling an ENABLED BYOK key", func(t *testing.T) {
+		// The guard must not block enable/disable on a BYOK key that already holds material.
+		enabledBYOK := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED, keyProviderPlugin)
+
+		updated, err := km.UpdateKey(ctx, enabledBYOK.ID, cmkapi.KeyPatch{Enabled: new(false)})
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.KeyStateDISABLED, updated.State)
+	})
+
 	t.Run("Should allow adding more crypto regions with uneditable ones", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 		testutils.CreateTestEntities(ctx, t, r, keyConfig)
@@ -1020,6 +1029,31 @@ func TestUpdate(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "patchValue", someKeyVal)
 	})
+
+	t.Run("Should reject enable/disable on a PENDING_IMPORT key", func(t *testing.T) {
+		freshKeyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, freshKeyConfig)
+		localCtx := testutils.InjectBusinessUserDataIntoContext(
+			ctx, uuid.NewString(), []string{freshKeyConfig.AdminGroup.IAMIdentifier},
+		)
+
+		byokKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = freshKeyConfig.ID
+			k.KeyType = constants.KeyTypeBYOK
+			k.State = cmkapi.KeyStatePENDINGIMPORT
+		})
+		created, err := km.Create(localCtx, byokKey)
+		require.NoError(t, err)
+
+		for _, enabled := range []bool{true, false} {
+			_, err := km.UpdateKey(localCtx, created.ID, cmkapi.KeyPatch{Enabled: new(enabled)})
+			assert.ErrorIs(t, err, manager.ErrPendingImportStateNotEditable)
+
+			unchanged, getErr := km.Get(localCtx, created.ID)
+			assert.NoError(t, getErr)
+			assert.Equal(t, cmkapi.KeyStatePENDINGIMPORT, unchanged.State)
+		}
+	})
 }
 
 func TestDelete(t *testing.T) {
@@ -1049,6 +1083,46 @@ func TestDelete(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, r, keyFailSystems, keyConfigWSystems, sys)
 
+	// Primary PENDING_IMPORT BYOK key with a connected system: a reverted key, deletion rejected.
+	pendingImportPrimaryID := uuid.New()
+	keyConfigPendingPrimary := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.PrimaryKeyID = new(pendingImportPrimaryID)
+		// Reuse the authorized admin group so the test's business user can delete this key.
+		k.AdminGroup = keyConfig.AdminGroup
+	})
+	pendingSys := testutils.NewSystem(func(s *model.System) {
+		s.KeyConfigurationID = new(keyConfigPendingPrimary.ID)
+	})
+	pendingProviderKey, err := keyProviderPlugin.CreateKey(ctx, &keymanagement.CreateKeyRequest{KeyType: keymanagement.BYOK})
+	require.NoError(t, err)
+	pendingImportPrimaryKey := testutils.NewKey(func(k *model.Key) {
+		k.ID = pendingImportPrimaryID
+		k.KeyConfigurationID = keyConfigPendingPrimary.ID
+		k.KeyType = constants.KeyTypeBYOK
+		k.State = cmkapi.KeyStatePENDINGIMPORT
+		k.NativeID = &pendingProviderKey.KeyID
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, pendingImportPrimaryKey, keyConfigPendingPrimary, pendingSys)
+
+	// Regression guard: an ENABLED primary key with a connected system must still be rejected,
+	// not just PENDING_IMPORT ones.
+	enabledPrimaryID := uuid.New()
+	keyConfigEnabledPrimary := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.PrimaryKeyID = new(enabledPrimaryID)
+	})
+	enabledSys := testutils.NewSystem(func(s *model.System) {
+		s.KeyConfigurationID = new(keyConfigEnabledPrimary.ID)
+	})
+	enabledPrimaryKey := testutils.NewKey(func(k *model.Key) {
+		k.ID = enabledPrimaryID
+		k.KeyConfigurationID = keyConfigEnabledPrimary.ID
+		k.KeyType = constants.KeyTypeBYOK
+		k.State = cmkapi.KeyStateENABLED
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, enabledPrimaryKey, keyConfigEnabledPrimary, enabledSys)
+
 	tests := []struct {
 		name      string
 		key       *model.Key
@@ -1070,6 +1144,16 @@ func TestDelete(t *testing.T) {
 			key:       createdPrimaryKey,
 			wantErr:   false,
 			isPrimary: true,
+		},
+		{
+			name:    "Should fail on delete primary PENDING_IMPORT BYOK key with connected systems",
+			key:     pendingImportPrimaryKey,
+			wantErr: true,
+		},
+		{
+			name:    "Should fail on delete ENABLED BYOK primary with connected systems",
+			key:     enabledPrimaryKey,
+			wantErr: true,
 		},
 		{
 			name:    "DeleteExistingBYOKKey",
@@ -1103,6 +1187,54 @@ func TestDelete(t *testing.T) {
 			}
 		})
 	}
+
+	// Deleting a primary key must clear the config's PrimaryKeyID.
+	t.Run("Primary key deletion clears PrimaryKeyID", func(t *testing.T) {
+		primaryID := uuid.New()
+		danglingConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = new(primaryID)
+			k.AdminGroup = keyConfig.AdminGroup
+		})
+		primaryKey := testutils.NewKey(func(k *model.Key) {
+			k.ID = primaryID
+			k.KeyConfigurationID = danglingConfig.ID
+			// No provider-side key to remove; keep the test focused on clearing the FK pointer.
+			k.NativeID = nil
+		})
+		testutils.CreateTestEntities(ctx, t, r, primaryKey, danglingConfig)
+
+		// Precondition: the config genuinely points at the key we are about to delete.
+		before := &model.KeyConfiguration{ID: danglingConfig.ID}
+		_, err := r.First(ctx, before, *repo.NewQuery())
+		require.NoError(t, err)
+		require.NotNil(t, before.PrimaryKeyID)
+		require.Equal(t, primaryID, *before.PrimaryKeyID)
+
+		err = km.Delete(ctx, primaryKey.ID)
+		require.NoError(t, err)
+
+		after := &model.KeyConfiguration{ID: danglingConfig.ID}
+		_, err = r.First(ctx, after, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Nil(t, after.PrimaryKeyID)
+	})
+
+	// A PENDING_IMPORT BYOK key with no native ID deletes cleanly: no provider call, no nil deref.
+	t.Run("Should delete BYOK key with missing NativeID cleanly", func(t *testing.T) {
+		noNativeIDKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = constants.KeyTypeBYOK
+			k.State = cmkapi.KeyStatePENDINGIMPORT
+			k.NativeID = nil
+		})
+		testutils.CreateTestEntities(ctx, t, r, noNativeIDKey)
+
+		err := km.Delete(ctx, noNativeIDKey.ID)
+		require.NoError(t, err)
+
+		_, err = km.Get(ctx, noNativeIDKey.ID)
+		assert.Error(t, err)
+	})
 }
 
 func TestGetImportParams(t *testing.T) {
