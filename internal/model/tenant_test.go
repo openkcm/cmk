@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	pb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
+
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -41,4 +43,39 @@ func TestTenantsTable(t *testing.T) {
 		})
 		assert.NoError(t, err)
 	})
+}
+
+func TestTenantValidate(t *testing.T) {
+	validStatus := model.TenantStatus(pb.Status_STATUS_ACTIVE.String())
+	validRole := model.TenantRole(pb.Role_ROLE_LIVE.String())
+	limit := func(v int) *int { return &v }
+
+	tests := map[string]struct {
+		override  *int
+		expectErr error
+	}{
+		"no override":        {override: nil},
+		"override at min":    {override: limit(1)},
+		"override above min": {override: limit(50)},
+		"override zero":      {override: limit(0), expectErr: model.ErrInvalidSystemLimitOverride},
+		"override negative":  {override: limit(-1), expectErr: model.ErrInvalidSystemLimitOverride},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			tenant := model.Tenant{
+				Status:              validStatus,
+				Role:                validRole,
+				SystemLimitOverride: test.override,
+			}
+
+			err := tenant.Validate()
+			if test.expectErr != nil {
+				assert.ErrorIs(t, err, test.expectErr)
+				assert.ErrorIs(t, err, model.ErrValidation)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

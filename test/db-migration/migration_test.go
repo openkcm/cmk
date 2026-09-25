@@ -251,6 +251,46 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.SharedTarget,
 			version:   5,
 		},
+		{
+			name:      "Should up shared/00006_add_system_limit_override.sql",
+			downgrade: false,
+			target:    db.SharedTarget,
+			version:   6,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					var isNullable string
+					err := con.Raw(`
+						SELECT is_nullable FROM information_schema.columns
+						WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'system_limit_override'
+					`).Scan(&isNullable).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "YES", isNullable, "system_limit_override column must exist and be nullable")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down shared/00006_add_system_limit_override.sql",
+			downgrade: true,
+			target:    db.SharedTarget,
+			version:   6,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					var exists bool
+					err := con.Raw(`
+						SELECT EXISTS (SELECT 1 FROM information_schema.columns
+							WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'system_limit_override')
+					`).Scan(&exists).Error
+					assert.NoError(t, err)
+					assert.False(t, exists, "system_limit_override column must be dropped")
+
+					return nil
+				}
+			},
+		},
 
 		{
 			name:      "Should up tenant/00001_init_shared.sql",
