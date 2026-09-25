@@ -148,6 +148,7 @@ func NewKeyManager(
 	}
 }
 
+//nolint:cyclop
 func (km *KeyManager) Create(
 	ctx context.Context,
 	key *model.Key,
@@ -176,6 +177,16 @@ func (km *KeyManager) Create(
 	// Initialize provider
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
+		// GrantTrust(CRYPTO) may still be pending (null cryptoAccessData or a new crypto cert
+		// added after initial provisioning). Fall into PENDING_CREATION so the sync worker
+		// retries out-of-band rather than blocking or failing the HTTP request.
+		if key.KeyType == constants.KeyTypeBYOK && errors.Is(err, ErrGrantTrustFailed) {
+			log.Info(ctx, "Crypto trust grant pending during key creation, deferring to async worker",
+				log.ErrorAttr(err))
+			// ctx may already be canceled (e.g. gateway timeout killed the request context
+			// while GrantTrust was in flight). Use a detached context so the DB write succeeds.
+			return km.savePendingBYOKKey(context.WithoutCancel(ctx), key)
+		}
 		return nil, errs.Wrap(ErrFailedToInitProvider, err)
 	}
 
@@ -716,16 +727,22 @@ func (km *KeyManager) createPendingBYOKKeyIfNeeded(ctx context.Context, key *mod
 	if !needsProvisioning {
 		return false, nil
 	}
+	saved, err := km.savePendingBYOKKey(ctx, key)
+	return saved != nil, err
+}
+
+// savePendingBYOKKey persists the key in PENDING_CREATION and enqueues a sync.
+func (km *KeyManager) savePendingBYOKKey(ctx context.Context, key *model.Key) (*model.Key, error) {
 	key.State = cmkapi.KeyStatePENDINGCREATION
 	key.NativeID = nil // not yet created in provider
 	if err := km.repo.Transaction(ctx, func(ctx context.Context) error {
 		return km.repo.Create(ctx, key)
 	}); err != nil {
-		return false, errs.Wrap(ErrCreateKeyDB, err)
+		return nil, errs.Wrap(ErrCreateKeyDB, err)
 	}
 	km.sendCreateAuditLog(ctx, key)
 	km.enqueuePendingStateSync(ctx, key)
-	return true, nil
+	return key, nil
 }
 
 func (km *KeyManager) createPendingRegistrationHYOKKey(ctx context.Context, key *model.Key) (*model.Key, error) {
