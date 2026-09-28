@@ -1137,6 +1137,104 @@ func TestDataMigrations(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:          "Should flatten default_keystore sub-blob rows into hierarchical flat rows",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('locality_id',
+							 'loc-role',
+							 'default_keystore'),
+							('common_name',
+							 'cn-role',
+							 'default_keystore'),
+							('management_access_data',
+							 '{"paramA":"val-a","paramB":"val-b"}',
+							 'default_keystore'),
+							('key_management_config',
+							 '{"localityId":"loc-key","commonName":"cn-key","accessData":{"paramC":"val-c"}}',
+							 'default_keystore'),
+							('crypto_access_data',
+							 '{"landscape-a":{"subject":"/CN=cert","accessData":{"paramD":"val-d"}}}',
+							 'default_keystore'),
+							('supported_regions',
+							 '[{"name":"region-name-a","technicalName":"region-a"}]',
+							 'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value_text"`
+					}
+					var rows []row
+					err := db.Raw(
+						`SELECT "key", value_text FROM tenant_configs WHERE "type" = 'default_keystore'`,
+					).Scan(&rows).Error
+					assert.NoError(t, err)
+
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+
+					assert.Equal(t, "loc-role", byKey["role_mgmt/locality_id"])
+					assert.Equal(t, "cn-role", byKey["role_mgmt/common_name"])
+					assert.Equal(t, "val-a", byKey["role_mgmt/access_data/paramA"])
+					assert.Equal(t, "val-b", byKey["role_mgmt/access_data/paramB"])
+					assert.Equal(t, "loc-key", byKey["key_mgmt/locality_id"])
+					assert.Equal(t, "cn-key", byKey["key_mgmt/common_name"])
+					assert.Equal(t, "val-c", byKey["key_mgmt/access_data/paramC"])
+					assert.Equal(t, "/CN=cert", byKey["crypto/landscape-a/subject"])
+					assert.Equal(t, "val-d", byKey["crypto/landscape-a/access_data/paramD"])
+					assert.Equal(t, "region-name-a", byKey["supported_region/region-a/name"])
+
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should migrate down flatten default_keystore sub-blobs",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			downgrade:     true,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('role_mgmt/locality_id', 'loc-role', 'default_keystore'),
+							('key_mgmt/locality_id',  'loc-key',  'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					var count int
+					err := db.Raw(`
+						SELECT COUNT(*) FROM tenant_configs
+						WHERE "type" = 'default_keystore'
+						  AND (   "key" LIKE 'role_mgmt/%'
+						       OR "key" LIKE 'key_mgmt/%'
+						       OR "key" LIKE 'crypto/%'
+						       OR "key" LIKE 'supported_region/%')
+					`).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 0, count, "down migration must remove hierarchical flat rows")
+					return nil
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

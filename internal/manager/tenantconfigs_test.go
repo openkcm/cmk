@@ -1229,6 +1229,69 @@ func TestSetDefaultKeystore_ClearsOmittedOptionalFields(t *testing.T) {
 	assert.Empty(t, got.SupportedRegions)
 }
 
+// TestSetDefaultKeystore_FlatRoundTrip writes a full KeystoreConfig (including
+// AccessData, CryptoAccessData and SupportedRegions) and reads it back,
+// verifying all fields survive the flat-row roundtrip.
+func TestSetDefaultKeystore_FlatRoundTrip(t *testing.T) {
+	m, _, tenant := SetupTenantConfigManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	ks := &model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-role",
+			CommonName: "role-mgmt-cn",
+			AccessData: model.KeystoreAccessData{
+				"paramA": "role-val-a",
+				"paramB": "role-val-b",
+				"paramC": "role-val-c",
+			},
+		},
+		KeyManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-key",
+			CommonName: "key-mgmt-cn",
+			AccessData: model.KeystoreAccessData{
+				"paramA": "key-val-a",
+				"paramB": "key-val-b",
+				"paramC": "key-val-c",
+			},
+		},
+		CryptoAccessData: map[string]model.CryptoConfig{
+			"landscape-a": {
+				Subject: "/CN=crypto-cert",
+				AccessData: model.KeystoreAccessData{
+					"paramA": "crypto-val-a",
+				},
+			},
+		},
+		SupportedRegions: []config.Region{
+			{Name: "region-name-a", TechnicalName: "region-a"},
+			{Name: "Europe (Ireland)", TechnicalName: "eu-west-1"},
+		},
+	}
+
+	require.NoError(t, m.SetDefaultKeystore(ctx, ks))
+
+	got, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	assert.Equal(t, ks.RoleManagementConfig.LocalityID, got.RoleManagementConfig.LocalityID)
+	assert.Equal(t, ks.RoleManagementConfig.CommonName, got.RoleManagementConfig.CommonName)
+	assert.Equal(t, ks.RoleManagementConfig.AccessData["paramA"], got.RoleManagementConfig.AccessData["paramA"])
+	assert.Equal(t, ks.RoleManagementConfig.AccessData["paramB"], got.RoleManagementConfig.AccessData["paramB"])
+	assert.Equal(t, ks.RoleManagementConfig.AccessData["paramC"], got.RoleManagementConfig.AccessData["paramC"])
+
+	assert.Equal(t, ks.KeyManagementConfig.LocalityID, got.KeyManagementConfig.LocalityID)
+	assert.Equal(t, ks.KeyManagementConfig.CommonName, got.KeyManagementConfig.CommonName)
+	assert.Equal(t, ks.KeyManagementConfig.AccessData["paramA"], got.KeyManagementConfig.AccessData["paramA"])
+
+	require.Contains(t, got.CryptoAccessData, "landscape-a")
+	assert.Equal(t, ks.CryptoAccessData["landscape-a"].Subject, got.CryptoAccessData["landscape-a"].Subject)
+	assert.Equal(t, ks.CryptoAccessData["landscape-a"].AccessData["paramA"], got.CryptoAccessData["landscape-a"].AccessData["paramA"])
+
+	require.Len(t, got.SupportedRegions, 2)
+}
+
 // TestGetStoredDefaultKeystoreConfig_IncompleteRows verifies incomplete flat
 // rows are reported as not found.
 func TestGetStoredDefaultKeystoreConfig_IncompleteRows(t *testing.T) {
@@ -1236,8 +1299,8 @@ func TestGetStoredDefaultKeystoreConfig_IncompleteRows(t *testing.T) {
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	// common_name missing -> incomplete.
-	err := r.Set(ctx, &model.TenantConfig{Key: "locality_id", Value: "loc-1", Type: "default_keystore"}, *repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField))
+	// locality_id present but common_name missing -> incomplete.
+	err := r.Set(ctx, &model.TenantConfig{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"}, *repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField))
 	assert.NoError(t, err)
 
 	_, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
@@ -1245,24 +1308,20 @@ func TestGetStoredDefaultKeystoreConfig_IncompleteRows(t *testing.T) {
 	assert.False(t, found, "incomplete keystore rows must be reported as not found")
 }
 
-// TestGetStoredDefaultKeystoreConfig_MalformedRow verifies a flat row with
-// invalid JSON surfaces an unmarshal error.
-func TestGetStoredDefaultKeystoreConfig_MalformedRow(t *testing.T) {
+// TestGetStoredDefaultKeystoreConfig_UnknownTypeIgnored verifies that rows with
+// unknown types are silently ignored and the result is not-found (no error).
+func TestGetStoredDefaultKeystoreConfig_UnknownTypeIgnored(t *testing.T) {
 	m, db, tenant := SetupTenantConfigManager(t)
 	r := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	rows := []*model.TenantConfig{
-		{Key: "locality_id", Value: "loc-1", Type: "default_keystore"},
-		{Key: "common_name", Value: "cn-1", Type: "default_keystore"},
-		{Key: "crypto_access_data", Value: "{not-valid-json", Type: "default_keystore"},
-	}
-	for _, row := range rows {
-		assert.NoError(t, r.Set(ctx, row, *repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)))
-	}
+	// Write rows under an unrecognised key prefix; should not surface as a config.
+	err := r.Set(ctx, &model.TenantConfig{Key: "unknown_prefix/locality_id", Value: "loc-1", Type: "default_keystore"}, *repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField))
+	assert.NoError(t, err)
 
-	_, _, err := m.GetStoredDefaultKeystoreConfig(ctx)
-	assert.Error(t, err, "malformed sub-blob must surface an unmarshal error")
+	_, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
+	assert.NoError(t, err)
+	assert.False(t, found)
 }
 
 func TestBuildWorkflowConfigFromRows(t *testing.T) {
@@ -1317,8 +1376,8 @@ func TestBuildWorkflowConfigFromRows(t *testing.T) {
 func TestBuildKeystoreConfigFromRows(t *testing.T) {
 	t.Run("identity fields build config", func(t *testing.T) {
 		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
-			{Key: "locality_id", Value: "loc-1", Type: "default_keystore"},
-			{Key: "common_name", Value: "cn-1", Type: "default_keystore"},
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/common_name", Value: "cn-1", Type: "default_keystore"},
 		})
 		require.NoError(t, err)
 		assert.True(t, found)
@@ -1328,29 +1387,66 @@ func TestBuildKeystoreConfigFromRows(t *testing.T) {
 
 	t.Run("missing identity returns not found", func(t *testing.T) {
 		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
-			{Key: "locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
 		})
 		require.NoError(t, err)
 		assert.False(t, found)
 		assert.Nil(t, ks)
 	})
 
-	jsonKeys := []string{
-		"management_access_data",
-		"key_management_config",
-		"crypto_access_data",
-		"supported_regions",
-	}
-	for _, key := range jsonKeys {
-		t.Run("invalid json for "+key+" returns error", func(t *testing.T) {
-			ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
-				{Key: key, Value: "{not-json", Type: "default_keystore"},
-			})
-			require.Error(t, err)
-			assert.False(t, found)
-			assert.Nil(t, ks)
+	t.Run("access_data fields populate AccessData map", func(t *testing.T) {
+		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/common_name", Value: "cn-1", Type: "default_keystore"},
+			{Key: "role_mgmt/access_data/paramA", Value: "val-a", Type: "default_keystore"},
+			{Key: "role_mgmt/access_data/paramB", Value: "val-b", Type: "default_keystore"},
 		})
-	}
+		require.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "val-a", ks.RoleManagementConfig.AccessData["paramA"])
+		assert.Equal(t, "val-b", ks.RoleManagementConfig.AccessData["paramB"])
+	})
+
+	t.Run("key_mgmt rows populate KeyManagementConfig", func(t *testing.T) {
+		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/common_name", Value: "cn-1", Type: "default_keystore"},
+			{Key: "key_mgmt/locality_id", Value: "loc-km", Type: "default_keystore"},
+			{Key: "key_mgmt/common_name", Value: "cn-km", Type: "default_keystore"},
+			{Key: "key_mgmt/access_data/paramA", Value: "km-val-a", Type: "default_keystore"},
+		})
+		require.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "loc-km", ks.KeyManagementConfig.LocalityID)
+		assert.Equal(t, "cn-km", ks.KeyManagementConfig.CommonName)
+		assert.Equal(t, "km-val-a", ks.KeyManagementConfig.AccessData["paramA"])
+	})
+
+	t.Run("crypto rows populate CryptoAccessData", func(t *testing.T) {
+		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/common_name", Value: "cn-1", Type: "default_keystore"},
+			{Key: "crypto/landscape-a/subject", Value: "/CN=cert", Type: "default_keystore"},
+			{Key: "crypto/landscape-a/access_data/paramA", Value: "crypto-val", Type: "default_keystore"},
+		})
+		require.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "/CN=cert", ks.CryptoAccessData["landscape-a"].Subject)
+		assert.Equal(t, "crypto-val", ks.CryptoAccessData["landscape-a"].AccessData["paramA"])
+	})
+
+	t.Run("region rows populate SupportedRegions", func(t *testing.T) {
+		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/common_name", Value: "cn-1", Type: "default_keystore"},
+			{Key: "supported_region/region-a/name", Value: "region-name-a", Type: "default_keystore"},
+		})
+		require.NoError(t, err)
+		assert.True(t, found)
+		require.Len(t, ks.SupportedRegions, 1)
+		assert.Equal(t, "region-a", ks.SupportedRegions[0].TechnicalName)
+		assert.Equal(t, "region-name-a", ks.SupportedRegions[0].Name)
+	})
 }
 
 func TestValidateWorkflowConfig(t *testing.T) {

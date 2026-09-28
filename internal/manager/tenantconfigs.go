@@ -55,16 +55,27 @@ const (
 	workflowKeyMaxExpiryPeriodDays     = "max_expiry_period_days"
 )
 
-// Flat-row keys for default keystore config under type = "default_keystore".
-// LocalityID, CommonName and AccessData mirror RoleManagementConfig fields;
-// KeyManagementConfig and CryptoAccessData are stored as single JSON sub-blobs.
+// Key prefixes and suffixes for fully-flattened default_keystore rows (type = "default_keystore").
+//
+//	role_mgmt/locality_id                   — RoleManagementConfig.LocalityID
+//	role_mgmt/common_name                   — RoleManagementConfig.CommonName
+//	role_mgmt/access_data/<k>               — RoleManagementConfig.AccessData
+//	key_mgmt/locality_id                    — KeyManagementConfig.LocalityID
+//	key_mgmt/common_name                    — KeyManagementConfig.CommonName
+//	key_mgmt/access_data/<k>                — KeyManagementConfig.AccessData
+//	crypto/<landscape>/subject              — CryptoAccessData[landscape].Subject
+//	crypto/<landscape>/access_data/<k>      — CryptoAccessData[landscape].AccessData
+//	supported_region/<technicalName>/name   — SupportedRegions[].Name
 const (
-	keystoreKeyLocalityID           = "locality_id"
-	keystoreKeyCommonName           = "common_name"
-	keystoreKeyManagementAccessData = "management_access_data"
-	keystoreKeyKeyManagementConfig  = "key_management_config"
-	keystoreKeyCryptoAccessData     = "crypto_access_data"
-	keystoreKeySupportedRegions     = "supported_regions"
+	keystoreKeyRoleMgmtPrefix        = "role_mgmt/"
+	keystoreKeyKeyMgmtPrefix         = "key_mgmt/"
+	keystoreKeyCryptoPrefix          = "crypto/"
+	keystoreKeySupportedRegionPrefix = "supported_region/"
+	keystoreKeyLocalityIDSuffix      = "locality_id"
+	keystoreKeyCommonNameSuffix      = "common_name"
+	keystoreKeyAccessDataPrefix      = "access_data/"
+	keystoreKeyCryptoSubjectSuffix   = "subject"
+	keystoreKeyRegionNameSuffix      = "name"
 )
 
 var (
@@ -570,15 +581,15 @@ func (m *TenantConfigManager) writeWorkflowConfigFlatRows(
 func (m *TenantConfigManager) getKeystoreConfigFromFlatRows(
 	ctx context.Context,
 ) (*model.KeystoreConfig, bool, error) {
-	configs, err := m.listConfigsByType(ctx, tenantConfigTypeDefaultKeystore)
+	rows, err := m.listConfigsByType(ctx, tenantConfigTypeDefaultKeystore)
 	if err != nil {
 		return nil, false, err
 	}
-	if len(configs) == 0 {
+	if len(rows) == 0 {
 		return nil, false, nil
 	}
 
-	return buildKeystoreConfigFromRows(configs)
+	return buildKeystoreConfigFromRows(rows)
 }
 
 // buildKeystoreConfigFromRows returns found=false when required identity fields
@@ -587,8 +598,15 @@ func buildKeystoreConfigFromRows(configs []model.TenantConfig) (*model.KeystoreC
 	ks := &model.KeystoreConfig{}
 
 	for _, c := range configs {
-		if err := applyKeystoreConfigField(ks, c.Key, c.Value); err != nil {
-			return nil, false, err
+		switch {
+		case strings.HasPrefix(c.Key, keystoreKeyRoleMgmtPrefix):
+			applyManagementConfigField(&ks.RoleManagementConfig, strings.TrimPrefix(c.Key, keystoreKeyRoleMgmtPrefix), c.Value)
+		case strings.HasPrefix(c.Key, keystoreKeyKeyMgmtPrefix):
+			applyManagementConfigField(&ks.KeyManagementConfig, strings.TrimPrefix(c.Key, keystoreKeyKeyMgmtPrefix), c.Value)
+		case strings.HasPrefix(c.Key, keystoreKeyCryptoPrefix):
+			applyCryptoRow(ks, strings.TrimPrefix(c.Key, keystoreKeyCryptoPrefix), c.Value)
+		case strings.HasPrefix(c.Key, keystoreKeySupportedRegionPrefix):
+			applyRegionRow(ks, strings.TrimPrefix(c.Key, keystoreKeySupportedRegionPrefix), c.Value)
 		}
 	}
 
@@ -599,89 +617,18 @@ func buildKeystoreConfigFromRows(configs []model.TenantConfig) (*model.KeystoreC
 	return ks, true, nil
 }
 
-//nolint:cyclop // simple switch over a fixed set of keys
-func applyKeystoreConfigField(ks *model.KeystoreConfig, key, value string) error {
-	switch key {
-	case keystoreKeyLocalityID:
-		ks.RoleManagementConfig.LocalityID = value
-	case keystoreKeyCommonName:
-		ks.RoleManagementConfig.CommonName = value
-	case keystoreKeyManagementAccessData:
-		var ad model.KeystoreAccessData
-		if err := json.Unmarshal([]byte(value), &ad); err != nil {
-			return errs.Wrap(ErrUnmarshalConfig, err)
-		}
-		ks.RoleManagementConfig.AccessData = ad
-	case keystoreKeyKeyManagementConfig:
-		if err := json.Unmarshal([]byte(value), &ks.KeyManagementConfig); err != nil {
-			return errs.Wrap(ErrUnmarshalConfig, err)
-		}
-	case keystoreKeyCryptoAccessData:
-		if err := json.Unmarshal([]byte(value), &ks.CryptoAccessData); err != nil {
-			return errs.Wrap(ErrUnmarshalConfig, err)
-		}
-	case keystoreKeySupportedRegions:
-		if err := json.Unmarshal([]byte(value), &ks.SupportedRegions); err != nil {
-			return errs.Wrap(ErrUnmarshalConfig, err)
-		}
-	}
-
-	return nil
-}
-
-// writeKeystoreConfigFlatRows replaces the default-keystore flat rows
-// (delete + insert in one tx) so omitted optional fields don't leave stale
-// rows behind — matching the legacy blob's whole-object replace semantics.
+// writeKeystoreConfigFlatRows replaces all fully-flattened keystore rows in a
+// single transaction so omitted optional fields don't leave stale rows behind.
 func (m *TenantConfigManager) writeKeystoreConfigFlatRows(
 	ctx context.Context,
 	ks *model.KeystoreConfig,
 ) error {
-	t := tenantConfigTypeDefaultKeystore
-	rows := []model.TenantConfig{
-		{Key: keystoreKeyLocalityID, Value: ks.RoleManagementConfig.LocalityID, Type: t},
-		{Key: keystoreKeyCommonName, Value: ks.RoleManagementConfig.CommonName, Type: t},
-	}
+	rows := managementConfigToRows(ks.RoleManagementConfig, keystoreKeyRoleMgmtPrefix)
+	rows = append(rows, managementConfigToRows(ks.KeyManagementConfig, keystoreKeyKeyMgmtPrefix)...)
+	rows = append(rows, cryptoAccessDataToRows(ks.CryptoAccessData)...)
+	rows = append(rows, supportedRegionsToRows(ks.SupportedRegions)...)
 
-	if ks.RoleManagementConfig.AccessData != nil {
-		adBytes, err := json.Marshal(ks.RoleManagementConfig.AccessData)
-		if err != nil {
-			return errs.Wrap(ErrMarshalConfig, err)
-		}
-		rows = append(rows, model.TenantConfig{
-			Key: keystoreKeyManagementAccessData, Value: string(adBytes), Type: t,
-		})
-	}
-
-	// KeyManagementConfig is stored as a single JSON sub-blob.
-	kmBytes, err := json.Marshal(ks.KeyManagementConfig)
-	if err != nil {
-		return errs.Wrap(ErrMarshalConfig, err)
-	}
-	rows = append(rows, model.TenantConfig{
-		Key: keystoreKeyKeyManagementConfig, Value: string(kmBytes), Type: t,
-	})
-
-	if ks.CryptoAccessData != nil {
-		cdBytes, err := json.Marshal(ks.CryptoAccessData)
-		if err != nil {
-			return errs.Wrap(ErrMarshalConfig, err)
-		}
-		rows = append(rows, model.TenantConfig{
-			Key: keystoreKeyCryptoAccessData, Value: string(cdBytes), Type: t,
-		})
-	}
-
-	if ks.SupportedRegions != nil {
-		regBytes, err := json.Marshal(ks.SupportedRegions)
-		if err != nil {
-			return errs.Wrap(ErrMarshalConfig, err)
-		}
-		rows = append(rows, model.TenantConfig{
-			Key: keystoreKeySupportedRegions, Value: string(regBytes), Type: t,
-		})
-	}
-
-	return m.replaceRowsByType(ctx, t, rows)
+	return m.replaceKeystoreRows(ctx, rows)
 }
 
 func (m *TenantConfigManager) getWorkflowConfigFromLegacyBlob(
@@ -763,29 +710,6 @@ func (m *TenantConfigManager) setRows(ctx context.Context, rows []model.TenantCo
 		query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
 		for i := range rows {
 			if err := m.repo.Set(ctx, &rows[i], *query); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-// replaceRowsByType deletes all rows of the given type and inserts the
-// provided rows in a single transaction.
-func (m *TenantConfigManager) replaceRowsByType(
-	ctx context.Context,
-	configType string,
-	rows []model.TenantConfig,
-) error {
-	return m.repo.Transaction(ctx, func(ctx context.Context) error {
-		ck := repo.NewCompositeKey().Where(repo.TypeField, configType)
-		query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
-		if _, err := m.repo.Delete(ctx, &model.TenantConfig{}, *query); err != nil {
-			return err
-		}
-		setQuery := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
-		for i := range rows {
-			if err := m.repo.Set(ctx, &rows[i], *setQuery); err != nil {
 				return err
 			}
 		}
@@ -1071,4 +995,176 @@ func (m *TenantConfigManager) getKeystoreManagementClient() (keystoremanagement.
 	}
 
 	return nil, errs.Wrapf(ErrGetDefaultKeystore, "no default keystore management client found")
+}
+
+// applyManagementConfigField applies a single prefix-stripped flat row to a ManagementConfig.
+// Key "locality_id" or "common_name" maps to identity fields; "access_data/<k>" populates AccessData.
+func applyManagementConfigField(mc *model.ManagementConfig, key, value string) {
+	switch key {
+	case keystoreKeyLocalityIDSuffix:
+		mc.LocalityID = value
+	case keystoreKeyCommonNameSuffix:
+		mc.CommonName = value
+	default:
+		if strings.HasPrefix(key, keystoreKeyAccessDataPrefix) {
+			if mc.AccessData == nil {
+				mc.AccessData = make(model.KeystoreAccessData)
+			}
+			mc.AccessData[strings.TrimPrefix(key, keystoreKeyAccessDataPrefix)] = jsonStringValue(value)
+		}
+	}
+}
+
+// applyCryptoRow applies a prefix-stripped flat row to KeystoreConfig.CryptoAccessData.
+// Key format: "<region>/subject" or "<region>/access_data/<field>".
+func applyCryptoRow(ks *model.KeystoreConfig, key, value string) {
+	region, remainder, ok := strings.Cut(key, "/")
+	if !ok {
+		return
+	}
+
+	if ks.CryptoAccessData == nil {
+		ks.CryptoAccessData = make(map[string]model.CryptoConfig)
+	}
+	entry := ks.CryptoAccessData[region]
+
+	switch {
+	case remainder == keystoreKeyCryptoSubjectSuffix:
+		entry.Subject = value
+	case strings.HasPrefix(remainder, keystoreKeyAccessDataPrefix):
+		if entry.AccessData == nil {
+			entry.AccessData = make(model.KeystoreAccessData)
+		}
+		entry.AccessData[strings.TrimPrefix(remainder, keystoreKeyAccessDataPrefix)] = jsonStringValue(value)
+	}
+
+	ks.CryptoAccessData[region] = entry
+}
+
+// applyRegionRow applies a prefix-stripped flat row to KeystoreConfig.SupportedRegions.
+// Key format: "<technicalName>/name".
+func applyRegionRow(ks *model.KeystoreConfig, key, value string) {
+	technicalName, suffix, ok := strings.Cut(key, "/")
+	if !ok || suffix != keystoreKeyRegionNameSuffix {
+		return
+	}
+	ks.SupportedRegions = append(ks.SupportedRegions, config.Region{
+		Name:          value,
+		TechnicalName: technicalName,
+	})
+}
+
+// managementConfigToRows converts a ManagementConfig to flat rows.
+// keyPrefix is one of keystoreKeyRoleMgmtPrefix or keystoreKeyKeyMgmtPrefix.
+func managementConfigToRows(mc model.ManagementConfig, keyPrefix string) []model.TenantConfig {
+	t := tenantConfigTypeDefaultKeystore
+	rows := make([]model.TenantConfig, 0, 2+len(mc.AccessData))
+	rows = append(rows,
+		model.TenantConfig{Key: keyPrefix + keystoreKeyLocalityIDSuffix, Value: mc.LocalityID, Type: t},
+		model.TenantConfig{Key: keyPrefix + keystoreKeyCommonNameSuffix, Value: mc.CommonName, Type: t},
+	)
+	for k, v := range mc.AccessData {
+		rows = append(rows, model.TenantConfig{
+			Key:   keyPrefix + keystoreKeyAccessDataPrefix + k,
+			Value: mustJSONValue(v),
+			Type:  t,
+		})
+	}
+	return rows
+}
+
+// cryptoAccessDataToRows converts a CryptoAccessData map to flat rows.
+// Key format: "crypto/<landscape>/subject" and "crypto/<landscape>/access_data/<field>".
+func cryptoAccessDataToRows(cad map[string]model.CryptoConfig) []model.TenantConfig {
+	var rows []model.TenantConfig
+	for landscape, cfg := range cad {
+		rows = append(rows, model.TenantConfig{
+			Key:   keystoreKeyCryptoPrefix + landscape + "/" + keystoreKeyCryptoSubjectSuffix,
+			Value: cfg.Subject,
+			Type:  tenantConfigTypeDefaultKeystore,
+		})
+		for k, v := range cfg.AccessData {
+			rows = append(rows, model.TenantConfig{
+				Key:   keystoreKeyCryptoPrefix + landscape + "/" + keystoreKeyAccessDataPrefix + k,
+				Value: mustJSONValue(v),
+				Type:  tenantConfigTypeDefaultKeystore,
+			})
+		}
+	}
+	return rows
+}
+
+// supportedRegionsToRows converts a slice of Regions to flat rows.
+// Key format: "supported_region/<technicalName>/name".
+func supportedRegionsToRows(regions []config.Region) []model.TenantConfig {
+	rows := make([]model.TenantConfig, 0, len(regions))
+	for _, r := range regions {
+		rows = append(rows, model.TenantConfig{
+			Key:   keystoreKeySupportedRegionPrefix + r.TechnicalName + "/" + keystoreKeyRegionNameSuffix,
+			Value: r.Name,
+			Type:  tenantConfigTypeDefaultKeystore,
+		})
+	}
+	return rows
+}
+
+// replaceKeystoreRows deletes all fully-flattened default_keystore rows (those
+// with a known hierarchical prefix) and inserts the provided rows, all in one
+// transaction. Legacy sub-blob rows (e.g. management_access_data) are left intact.
+func (m *TenantConfigManager) replaceKeystoreRows(ctx context.Context, rows []model.TenantConfig) error {
+	return m.repo.Transaction(ctx, func(ctx context.Context) error {
+		existing, err := m.listConfigsByType(ctx, tenantConfigTypeDefaultKeystore)
+		if err != nil {
+			return err
+		}
+		for _, row := range existing {
+			if !isHierarchicalKeystoreKey(row.Key) {
+				continue
+			}
+			ck := repo.NewCompositeKey().
+				Where(repo.KeyField, row.Key).
+				Where(repo.TypeField, tenantConfigTypeDefaultKeystore)
+			query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+			if _, err := m.repo.Delete(ctx, &model.TenantConfig{}, *query); err != nil {
+				return err
+			}
+		}
+		setQuery := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
+		for i := range rows {
+			if err := m.repo.Set(ctx, &rows[i], *setQuery); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// mustJSONValue encodes v as a JSON value string. If marshalling fails it falls
+// back to fmt.Sprint so a string is always returned.
+func mustJSONValue(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return string(b)
+}
+
+// jsonStringValue decodes a JSON-encoded scalar back to its native Go type.
+// If s is not valid JSON it is returned as-is (plain string), preserving
+// backwards compatibility with rows written before this encoding was introduced.
+func jsonStringValue(s string) any {
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return s
+	}
+	return v
+}
+
+// isHierarchicalKeystoreKey reports whether a default_keystore row key belongs
+// to the fully-flattened shape (as opposed to legacy sub-blob keys).
+func isHierarchicalKeystoreKey(key string) bool {
+	return strings.HasPrefix(key, keystoreKeyRoleMgmtPrefix) ||
+		strings.HasPrefix(key, keystoreKeyKeyMgmtPrefix) ||
+		strings.HasPrefix(key, keystoreKeyCryptoPrefix) ||
+		strings.HasPrefix(key, keystoreKeySupportedRegionPrefix)
 }
