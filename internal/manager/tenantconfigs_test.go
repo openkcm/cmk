@@ -1492,3 +1492,72 @@ func TestValidateWorkflowConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestGetEffectiveSystemsLimit(t *testing.T) {
+	t.Run("returns cluster default when no override is stored", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 42}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
+
+		limit, err := m.GetEffectiveSystemsLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 42, limit)
+	})
+
+	t.Run("returns tenant override when stored in DB", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   "systems_override",
+			Value: "99",
+			Type:  "limits",
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
+
+		limit, err := m.GetEffectiveSystemsLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 99, limit)
+	})
+
+	t.Run("returns zero when cfg is nil and no override stored", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		limit, err := m.GetEffectiveSystemsLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, limit)
+	})
+
+	t.Run("returns error when override is negative", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   "systems_override",
+			Value: "-1",
+			Type:  "limits",
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		_, err = m.GetEffectiveSystemsLimit(ctx)
+
+		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
+	})
+}

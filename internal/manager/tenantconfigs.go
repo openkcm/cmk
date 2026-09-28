@@ -44,7 +44,11 @@ const (
 const (
 	tenantConfigTypeWorkflow        = "workflow"
 	tenantConfigTypeDefaultKeystore = "default_keystore"
+	tenantConfigTypeLimits          = "limits"
 )
+
+// Flat-row key for tenant limit overrides under type = "limits".
+const limitsKeySystemsOverride = "systems_override"
 
 // Flat-row keys for workflow config under type = "workflow".
 const (
@@ -117,6 +121,7 @@ var (
 	ErrGetKeystoreFromPool      = errors.New("failed to get keystore config from pool")
 	ErrGetWorkflowConfig        = errors.New("failed to get workflow config")
 	ErrSetWorkflowConfig        = errors.New("failed to set workflow config")
+	ErrGetTenantLimits          = errors.New("failed to get tenant limits")
 	ErrRetentionLessThanMinimum = errors.New("retention is less than the minimum allowed (" +
 		strconv.Itoa(constants.MinRetentionPeriodDays) + " days)")
 	ErrRetentionExceedsMaximum = errors.New("retention exceeds the maximum allowed (" +
@@ -138,6 +143,31 @@ type TenantKeystores struct {
 	BYOK      model.KeystoreConfig
 	AllowBYOK bool
 	HYOK      HYOKKeystore
+}
+
+// GetEffectiveSystemsLimit returns the per-tenant override for the systems limit when one is
+// stored in tenant_configs, otherwise falls back to the cluster default from cfg.
+func (m *TenantConfigManager) GetEffectiveSystemsLimit(ctx context.Context) (int, error) {
+	configs, err := m.listConfigsByType(ctx, tenantConfigTypeLimits)
+	if err != nil {
+		return 0, errs.Wrap(ErrGetTenantLimits, err)
+	}
+	for _, c := range configs {
+		if c.Key == limitsKeySystemsOverride {
+			v, parseErr := strconv.Atoi(c.Value)
+			if parseErr != nil {
+				return 0, errs.Wrap(ErrGetTenantLimits, parseErr)
+			}
+			if v < 0 {
+				return 0, fmt.Errorf("%w: systems_override must be non-negative, got %d", ErrGetTenantLimits, v)
+			}
+			return v, nil
+		}
+	}
+	if m.cfg != nil {
+		return m.cfg.Tenant.SystemLimit, nil
+	}
+	return 0, nil
 }
 
 // GetWorkflowConfig reads flat rows first, falling back to the legacy JSON

@@ -55,6 +55,12 @@ type KeyConfigManager struct {
 	cmkAuditor   *auditor.Auditor
 	cfg          *config.Config
 	eventFactory *eventprocessor.EventFactory
+	tenantCfg    TenantConfigs
+}
+
+// TenantConfigs is the subset of TenantConfigManager used by KeyConfigManager.
+type TenantConfigs interface {
+	GetEffectiveSystemsLimit(ctx context.Context) (int, error)
 }
 
 type KeyConfigFilter struct {
@@ -70,6 +76,7 @@ func NewKeyConfigManager(
 	cmkAuditor *auditor.Auditor,
 	eventFactory *eventprocessor.EventFactory,
 	cfg *config.Config,
+	tenantCfg TenantConfigs,
 ) *KeyConfigManager {
 	return &KeyConfigManager{
 		r:            repository,
@@ -79,6 +86,7 @@ func NewKeyConfigManager(
 		tagManager:   tagManager,
 		eventFactory: eventFactory,
 		cfg:          cfg,
+		tenantCfg:    tenantCfg,
 	}
 }
 
@@ -102,7 +110,44 @@ func (m *KeyConfigManager) CanConnectSystems(
 	if pKey.State != cmkapi.KeyStateENABLED {
 		return false, ErrConnectSystemNoPrimaryKey
 	}
+
 	return true, nil
+}
+
+// EnforceSystemLimit checks the per-tenant system limit for a key configuration and returns
+// ErrSystemLimitExceeded when the count is at or above the limit. It locks the
+// key_configuration row FOR UPDATE to serialize concurrent link requests within the
+// same transaction. Must be called inside a transaction.
+func (m *KeyConfigManager) EnforceSystemLimit(ctx context.Context, keyConfigID uuid.UUID) error {
+	if m.tenantCfg == nil {
+		return nil
+	}
+	limit, err := m.tenantCfg.GetEffectiveSystemsLimit(ctx)
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
+		return nil
+	}
+	if _, err = m.r.First(ctx, &model.KeyConfiguration{ID: keyConfigID},
+		*repo.NewQuery().WithLock(repo.LockForUpdate)); err != nil {
+		return errs.Wrap(ErrGettingKeyConfigByID, err)
+	}
+	count, err := m.r.Count(
+		ctx,
+		&model.System{},
+		*repo.NewQuery().
+			Where(repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where(repo.KeyConfigIDField, keyConfigID),
+			)),
+	)
+	if err != nil {
+		return errs.Wrap(repo.ErrGetResource, err)
+	}
+	if count >= limit {
+		return ErrSystemLimitExceeded
+	}
+	return nil
 }
 
 func (m *KeyConfigManager) GetKeyConfigurations(

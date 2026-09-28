@@ -74,7 +74,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 	)
 	userManager := manager.NewUserManager(r, auditor.New(t.Context(), &cfg))
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, nil, nil, &cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, nil, nil, &cfg, nil)
 
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), &cfg, r)
 	require.NoError(t, err)

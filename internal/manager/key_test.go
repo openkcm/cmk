@@ -104,7 +104,7 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 		}))
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
 	km := manager.NewKeyManager(
 		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor, nil, nil,
@@ -1413,7 +1413,7 @@ func TestKeyRotationTime(t *testing.T) {
 		}))
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
 	km := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil)
 
 	// Create test data
@@ -2514,7 +2514,7 @@ func SetupKeyTestWithAsyncClient(
 		}))
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
 	km := manager.NewKeyManager(
 		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor, asyncClient, nil,

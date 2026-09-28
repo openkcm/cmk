@@ -87,7 +87,7 @@ func setupTenantManager(t *testing.T, authzRole *constants.InternalRole, opts ..
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := testutils.NewUserManager()
 	tagManager := manager.NewTagManager(r)
-	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, eventFactory, cfg)
+	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
 	mappingService := mapping.NewFakeService()
 	_, grpcClient := testutils.NewGRPCSuite(

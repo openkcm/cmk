@@ -197,4 +197,12 @@ var system = []errs.ExposedErrors[*APIError]{
 			Status:  http.StatusNotFound,
 		},
 	},
+	{
+		InternalErrorChain: []error{manager.ErrSystemLimitExceeded},
+		ExposedError: &APIError{
+			Code:    "SYSTEM_LIMIT_EXCEEDED",
+			Message: "The system limit for this key configuration has been reached",
+			Status:  http.StatusConflict,
+		},
+	},
 }
