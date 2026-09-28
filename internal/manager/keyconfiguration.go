@@ -133,13 +133,17 @@ func (m *KeyConfigManager) EnforceSystemLimit(ctx context.Context, keyConfigID u
 		*repo.NewQuery().WithLock(repo.LockForUpdate)); err != nil {
 		return errs.Wrap(ErrGettingKeyConfigByID, err)
 	}
+	// Count systems already linked (key_configuration_id) and in-flight
+	// (target_key_configuration_id) to prevent TOCTOU over-limit when the
+	// event processor sets key_configuration_id asynchronously.
+	orCK := repo.NewCompositeKey().
+		Where(repo.KeyConfigIDField, keyConfigID).
+		Where(repo.TargetKeyConfigIDField, keyConfigID)
+	orCK.IsStrict = false
 	count, err := m.r.Count(
 		ctx,
 		&model.System{},
-		*repo.NewQuery().
-			Where(repo.NewCompositeKeyGroup(
-				repo.NewCompositeKey().Where(repo.KeyConfigIDField, keyConfigID),
-			)),
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(orCK)),
 	)
 	if err != nil {
 		return errs.Wrap(repo.ErrGetResource, err)

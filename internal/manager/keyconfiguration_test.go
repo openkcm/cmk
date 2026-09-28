@@ -1290,4 +1290,24 @@ func TestCanConnectSystemsLimit(t *testing.T) {
 		err := m.EnforceSystemLimit(ctx, keyConfig.ID)
 		assert.NoError(t, err)
 	})
+
+	t.Run("blocks when in-flight system targets the key config", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfigWithEnabledKey(t, ctx, r)
+
+		// System with target_key_configuration_id set (event in flight, not yet linked)
+		inFlight := &model.System{
+			ID:                       uuid.New(),
+			Identifier:               uuid.NewString(),
+			Type:                     model.SystemTypeSYSTEM,
+			TargetKeyConfigurationID: &keyConfig.ID,
+		}
+		testutils.CreateTestEntities(ctx, t, r, inFlight)
+
+		err := m.EnforceSystemLimit(ctx, keyConfig.ID)
+		assert.ErrorIs(t, err, manager.ErrSystemLimitExceeded)
+	})
 }
