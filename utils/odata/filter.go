@@ -1,7 +1,6 @@
 package odata
 
 import (
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,10 +13,6 @@ import (
 type Type string
 
 const (
-	None = ""
-	And  = "and"
-	Or   = "or"
-
 	Eq = "eq"
 	Ne = "ne"
 	Gt = "gt"
@@ -82,10 +77,7 @@ func NewFilter(filter *string, filterToRepoMap FilterToRepoMap) (*Filter, error)
 		return nil, ErrFilterNotToSpec
 	}
 
-	// Separate everything into a slice element, mainting matching '' as one token
-	// e.g. ["a","eq","'1'","and","b","eq","'2'"]
-	tokeniser := regexp.MustCompile(`'(?:[^']|'')*'|\S+`)
-	tokens := tokeniser.FindAllString(*filter, -1)
+	tokens := tokenise(*filter)
 
 	items, err := buildFilterItems(tokens)
 	if err != nil {
@@ -242,27 +234,6 @@ func isSupportedOperation(op string) bool {
 		Le,
 	}
 	return slices.Contains(reserved, op)
-}
-
-func isReserved(token string) bool {
-	reserved := []string{
-		None,
-		And,
-		Or,
-	}
-	return slices.Contains(reserved, token) || isSupportedOperation(token)
-}
-
-func unquote(tok string) (string, error) {
-	if len(tok) < 2 || tok[0] != '\'' {
-		return tok, nil
-	}
-
-	if tok[len(tok)-1] != '\'' {
-		return "", ErrFilterNotToSpec // opened quote, never closed
-	}
-
-	return strings.ReplaceAll(tok[1:len(tok)-1], "''", "'"), nil
 }
 
 func convertToRepoValue(value string, typ Type) (any, error) {

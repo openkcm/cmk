@@ -14,7 +14,9 @@ type OData struct {
 	search *string
 
 	repoToFilterMap FilterToRepoMap
-	loadedFilter    *Filter
+	searchFields    []repo.QueryField
+
+	loadedFilter *Filter
 }
 
 type Option func(*OData)
@@ -34,9 +36,10 @@ func WithFilter(filter *string, repoToFilterMap FilterToRepoMap) Option {
 	}
 }
 
-func WithSearch(filter *string) Option {
+func WithSearch(search *string, fields ...repo.QueryField) Option {
 	return func(o *OData) {
-		o.search = filter
+		o.search = search
+		o.searchFields = fields
 	}
 }
 
@@ -60,10 +63,12 @@ func (o *OData) GetFilter() (repo.QueryFilter, error) {
 	if o.loadedFilter != nil {
 		return o.loadedFilter, nil
 	}
+
 	f, err := NewFilter(o.filter, o.repoToFilterMap)
 	if err != nil {
 		return nil, err
 	}
+
 	o.loadedFilter = f
 	return f, nil
 }

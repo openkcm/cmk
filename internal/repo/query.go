@@ -22,6 +22,7 @@ const (
 	NotEqual    ComparisonOp = "!="
 	GreaterThan ComparisonOp = ">"
 	LessThan    ComparisonOp = "<"
+	Contains    ComparisonOp = "ILIKE"
 
 	Desc OrderDirection = "desc"
 	Asc  OrderDirection = "asc"
