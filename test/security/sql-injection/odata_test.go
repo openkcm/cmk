@@ -35,21 +35,15 @@ func makeExpectedQuery(fields []string, values []any) *repo.Query {
 func TestOdata_ForSqlInjection(t *testing.T) {
 	tests := []struct {
 		name          string
-		filterSchema  odata.FilterSchema
+		filterMap     odata.FilterToRepoMap
 		filterString  string
 		expectedQuery *repo.Query
 		expectedError error
 	}{
 		{
 			name: "attempted injection for int type",
-			filterSchema: odata.FilterSchema{
-				Entries: []odata.FilterSchemaEntry{
-					{
-						FilterName: "test", FilterType: odata.Int,
-						DBName:        "testDB",
-						ValueModifier: nil, ValueValidator: nil,
-					},
-				},
+			filterMap: odata.FilterToRepoMap{
+				"test": {Type: odata.Int, DBName: "testDB"},
 			},
 			filterString:  "test eq 1 OR 1=1",
 			expectedQuery: nil,
@@ -57,29 +51,17 @@ func TestOdata_ForSqlInjection(t *testing.T) {
 		},
 		{
 			name: "attempted injection for string type quoted",
-			filterSchema: odata.FilterSchema{
-				Entries: []odata.FilterSchemaEntry{
-					{
-						FilterName: "test", FilterType: odata.String,
-						DBName:        "testDB",
-						ValueModifier: nil, ValueValidator: nil,
-					},
-				},
+			filterMap: odata.FilterToRepoMap{
+				"test": {Type: odata.String, DBName: "testDB"},
 			},
 			filterString:  "test eq '1 OR 1=1'",
-			expectedQuery: makeExpectedQuery([]string{"testDB"}, []any{"1 OR 1=1"}),
+			expectedQuery: makeExpectedQuery([]string{"test"}, []any{"1 OR 1=1"}),
 			expectedError: nil,
 		},
 		{
 			name: "attempted injection for string type part quoted",
-			filterSchema: odata.FilterSchema{
-				Entries: []odata.FilterSchemaEntry{
-					{
-						FilterName: "test", FilterType: odata.String,
-						DBName:        "testDB",
-						ValueModifier: nil, ValueValidator: nil,
-					},
-				},
+			filterMap: odata.FilterToRepoMap{
+				"test": {Type: odata.String, DBName: "testDB"},
 			},
 			filterString:  "test eq '1' OR 1=1",
 			expectedQuery: nil,
@@ -93,12 +75,16 @@ func TestOdata_ForSqlInjection(t *testing.T) {
 	// Also see the repo tests.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fieldMap := odata.NewQueryOdataMapper(tt.filterSchema)
-			err := fieldMap.ParseFilter(&tt.filterString)
-			assert.Equal(t, tt.expectedError, err)
+			filter, err := odata.NewFilter(&tt.filterString, tt.filterMap)
 
+			var query *repo.Query
 			if err == nil {
-				assert.Equal(t, tt.expectedQuery, fieldMap.GetQuery(t.Context()))
+				query, err = filter.GetQuery()
+			}
+
+			assert.Equal(t, tt.expectedError, err)
+			if tt.expectedError == nil {
+				assert.Equal(t, tt.expectedQuery, query)
 			}
 		})
 	}

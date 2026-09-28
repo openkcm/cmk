@@ -34,7 +34,7 @@ import (
 )
 
 type System interface {
-	GetAllSystems(ctx context.Context, params repo.QueryMapper) ([]*model.System, int, error)
+	GetAllSystems(ctx context.Context, params repo.Params) ([]*model.System, int, error)
 	GetSystemByID(ctx context.Context, keyConfigID uuid.UUID) (*model.System, error)
 	RefreshSystemsData(ctx context.Context) bool
 	UnmapSystemFromRegistry(ctx context.Context, system *model.System) error
@@ -68,8 +68,6 @@ type SystemFilter struct {
 	Count       bool
 }
 
-var _ repo.QueryMapper = (*SystemFilter)(nil) // Assert interface impl
-
 func (s SystemFilter) GetPagination() repo.Pagination {
 	return repo.Pagination{
 		Skip:  s.Skip,
@@ -78,7 +76,11 @@ func (s SystemFilter) GetPagination() repo.Pagination {
 	}
 }
 
-func (s SystemFilter) GetQuery(_ context.Context) *repo.Query {
+func (s SystemFilter) GetFilter() (repo.QueryFilter, error) {
+	return s, nil
+}
+
+func (s SystemFilter) GetQuery() (*repo.Query, error) {
 	query := repo.NewQuery()
 
 	ck := repo.NewCompositeKey()
@@ -104,34 +106,28 @@ func (s SystemFilter) GetQuery(_ context.Context) *repo.Query {
 		Direction: repo.Asc,
 	})
 
-	return query
+	return query, nil
 }
 
-func (s SystemFilter) GetUUID(field repo.QueryField) (uuid.UUID, error) {
-	if field != repo.KeyConfigIDField {
-		return uuid.Nil, ErrIncompatibleQueryField
-	}
-
-	if s.KeyConfigID == uuid.Nil {
-		return uuid.Nil, nil
-	}
-
-	return s.KeyConfigID, nil
-}
-
-func (s SystemFilter) GetString(field repo.QueryField) (string, error) {
-	var val string
-
+func (s SystemFilter) GetFieldValues(field string) ([]any, error) {
 	switch field {
+	case repo.KeyConfigIDField:
+		if s.KeyConfigID != uuid.Nil {
+			return []any{s.KeyConfigID}, nil
+		}
 	case repo.RegionField:
-		val = s.Region
+		if s.Region != "" {
+			return []any{s.Region}, nil
+		}
 	case repo.TypeField:
-		val = s.Type
+		if s.Type != "" {
+			return []any{s.Type}, nil
+		}
 	default:
-		return "", ErrIncompatibleQueryField
+		return nil, ErrIncompatibleQueryField
 	}
 
-	return val, nil
+	return nil, nil
 }
 
 func NewSystemManager(
@@ -174,14 +170,19 @@ func NewSystemManager(
 
 func (m *SystemManager) GetAllSystems(
 	ctx context.Context,
-	params repo.QueryMapper,
+	params repo.Params,
 ) ([]*model.System, int, error) {
-	keyConfigID, err := params.GetUUID(repo.KeyConfigIDField)
+	filter, err := params.GetFilter()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	keyConfigIDs, err := repo.GetFilterFieldValues[uuid.UUID](filter, repo.KeyConfigIDField)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrQuerySystemList, err)
 	}
 
-	if keyConfigID != uuid.Nil {
+	for _, keyConfigID := range keyConfigIDs {
 		_, err := m.repo.First(
 			ctx,
 			&model.KeyConfiguration{ID: keyConfigID},
@@ -192,8 +193,12 @@ func (m *SystemManager) GetAllSystems(
 		}
 	}
 
-	query := params.GetQuery(ctx)
+	query, err := filter.GetQuery()
+	if err != nil {
+		return nil, 0, err
+	}
 	pagination := params.GetPagination()
+
 	systems, count, err := repo.ListAndCountSystemWithProperties(ctx, m.repo, pagination, query)
 	if err != nil {
 		return nil, 0, errs.Wrap(ErrQuerySystemList, err)

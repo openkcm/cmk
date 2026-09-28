@@ -374,7 +374,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 			filter:              "status eq '" + longStr + "'",
 			expectedStatus:      http.StatusBadRequest,
 			expectedSystemCount: 0,
-			expectedErrorCode:   "BAD_REQUEST",
+			expectedErrorCode:   "ODATA_INVALID_FIELD_VALUE",
 		},
 		{
 			name:                "GetAllSystems_FilterByRegion_Success",
@@ -387,7 +387,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 			filter:              "region eq '" + longStr + "'",
 			expectedStatus:      http.StatusBadRequest,
 			expectedSystemCount: 0,
-			expectedErrorCode:   "BAD_REQUEST",
+			expectedErrorCode:   "ODATA_INVALID_FIELD_VALUE",
 		},
 		{
 			name:           "GetAllSystemsDbError",

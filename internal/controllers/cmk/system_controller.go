@@ -18,57 +18,49 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-var getSystemsSchema = odata.FilterSchema{
-	Entries: []odata.FilterSchemaEntry{
-		{
-			FilterName: "keyConfigurationID",
-			FilterType: odata.UUID,
-			DBName:     repo.KeyConfigIDField,
-		},
-		{
-			FilterName: "keyConfigurationName",
-			FilterType: odata.String,
-			DBQuery: func(query *repo.Query, entry any) *repo.Query {
-				return query.Join(repo.LeftJoin, repo.JoinCondition{
-					JoinTable: &model.KeyConfiguration{},
-					JoinField: repo.IDField,
-					Table:     &model.System{},
-					Field:     repo.KeyConfigIDField,
-				}).Where(
-					repo.NewCompositeKeyGroup(
-						repo.NewCompositeKey().Where(
-							fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), repo.Name), entry,
-						),
+var getSystemsSchema = odata.FilterToRepoMap{
+	"keyConfigurationID": odata.FilterToRepoItem{
+		Type:   odata.UUID,
+		DBName: repo.KeyConfigIDField,
+	},
+	"keyConfigurationName": odata.FilterToRepoItem{
+		Type: odata.String,
+		DBQuery: func(query *repo.Query, entry any) *repo.Query {
+			return query.Join(repo.LeftJoin, repo.JoinCondition{
+				JoinTable: &model.KeyConfiguration{},
+				JoinField: repo.IDField,
+				Table:     &model.System{},
+				Field:     repo.KeyConfigIDField,
+			}).Where(
+				repo.NewCompositeKeyGroup(
+					repo.NewCompositeKey().Where(
+						fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), repo.Name), entry,
 					),
-				)
-			},
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+				),
+			)
 		},
-		{
-			FilterName: "targetKeyConfigurationID",
-			FilterType: odata.UUID,
-			DBName:     repo.TargetKeyConfigIDField,
-		},
-		{
-			FilterName:     "region",
-			FilterType:     odata.String,
-			DBName:         repo.RegionField,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
-		},
-		{
-			FilterName:     "type",
-			FilterType:     odata.String,
-			DBName:         repo.TypeField,
-			ValueModifier:  odata.ToUpper,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
-		},
-		{
-			FilterName:     "status",
-			FilterType:     odata.String,
-			DBName:         repo.StatusField,
-			ValueModifier:  odata.ToUpper,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
-		},
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+	},
+	"targetKeyConfigurationID": odata.FilterToRepoItem{
+		Type:   odata.UUID,
+		DBName: repo.TargetKeyConfigIDField,
+	},
+	"region": odata.FilterToRepoItem{
+		Type:           odata.String,
+		DBName:         repo.RegionField,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+	},
+	"type": odata.FilterToRepoItem{
+		Type:           odata.String,
+		DBName:         repo.TypeField,
+		ValueModifier:  odata.ToUpper,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+	},
+	"status": odata.FilterToRepoItem{
+		Type:           odata.String,
+		DBName:         repo.StatusField,
+		ValueModifier:  odata.ToUpper,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
 	},
 }
 
@@ -77,16 +69,17 @@ func (c *APIController) GetAllSystems(ctx context.Context,
 ) (cmkapi.GetAllSystemsResponseObject, error) {
 	refreshed := c.Manager.System.RefreshSystemsData(ctx)
 
-	queryMapper := odata.NewQueryOdataMapper(getSystemsSchema)
+	odataParams := odata.New(
+		odata.WithPagination(request.Params.Skip, request.Params.Top, request.Params.Count),
+		odata.WithFilter(request.Params.Filter, getSystemsSchema),
+	)
 
-	err := queryMapper.ParseFilter(request.Params.Filter)
+	_, err := odataParams.GetFilter()
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
 	}
 
-	queryMapper.SetPaging(request.Params.Skip, request.Params.Top, request.Params.Count)
-
-	systems, total, err := c.Manager.System.GetAllSystems(ctx, queryMapper)
+	systems, total, err := c.Manager.System.GetAllSystems(ctx, odataParams)
 	if err != nil {
 		return nil, err
 	}

@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 var ErrMultipleOperationsProvided = errors.New("multiple operations provided")
@@ -113,12 +112,36 @@ const (
 	LockForUpdateSkipLocked LockMode = "FOR UPDATE SKIP LOCKED"
 )
 
-// QueryMapper can just be a struct of filter values (for eg) for simple case (eg internal system user)
-// In API controllers might want to have mapping from odata (for eg)
-type QueryMapper interface {
-	GetQuery(ctx context.Context) *Query
-	GetUUID(field QueryField) (uuid.UUID, error)
+type QueryFilter interface {
+	GetQuery() (*Query, error)
+	GetFieldValues(field string) ([]any, error)
+}
+
+type Params interface {
 	GetPagination() Pagination
+	GetFilter() (QueryFilter, error)
+}
+
+// GetFilterFieldValues returns the values for the given field from the filter,
+// type-asserted to T.
+func GetFilterFieldValues[T any](f QueryFilter, field string) ([]T, error) {
+	raw, err := f.GetFieldValues(field)
+	if err != nil {
+		return nil, errs.Wrap(ErrFieldValueTypeMismatch, err)
+	}
+
+	out := make([]T, 0, len(raw))
+
+	for _, v := range raw {
+		tv, ok := v.(T)
+		if !ok {
+			return nil, ErrFieldValueTypeMismatch
+		}
+
+		out = append(out, tv)
+	}
+
+	return out, nil
 }
 
 type Key struct {
