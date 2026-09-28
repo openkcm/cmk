@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/api/cmk/transform/system"
@@ -16,6 +17,10 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/odata"
 	"github.com/openkcm/cmk/utils/ptr"
+)
+
+const (
+	SystemExternalNamePropertyKey = "NAME"
 )
 
 var getSystemsSchema = odata.FilterToRepoMap{
@@ -69,10 +74,27 @@ func (c *APIController) GetAllSystems(ctx context.Context,
 ) (cmkapi.GetAllSystemsResponseObject, error) {
 	refreshed := c.Manager.System.RefreshSystemsData(ctx)
 
-	odataParams := odata.New(
+	opts := []odata.Option{
 		odata.WithPagination(request.Params.Skip, request.Params.Top, request.Params.Count),
 		odata.WithFilter(request.Params.Filter, getSystemsSchema),
-	)
+		odata.WithSearch(request.Params.Search, repo.IdentifierField, repo.RegionField),
+	}
+
+	if propertyKey, ok := c.getSystemExternalNameKey(); ok {
+		opts = append(opts, odata.WithSearchJoins(odata.SearchJoinField{
+			Column: "sp_ext.value",
+			Join: repo.JoinCondition{
+				Table:     &model.System{},
+				Field:     repo.IDField,
+				JoinTable: &model.SystemProperty{},
+				JoinField: repo.IDField,
+				Alias:     "sp_ext",
+				OnFilters: []repo.JoinOnFilter{{Field: repo.KeyField, Value: propertyKey}},
+			},
+		}))
+	}
+
+	odataParams := odata.New(opts...)
 
 	_, err := odataParams.GetFilter()
 	if err != nil {
@@ -281,4 +303,14 @@ func (c *APIController) handleSystemUnderWorkflow(
 			wfWorkflow.WithDetailed(ctx, approvers, idm, approverGroups, transitions, approvalSummary),
 		),
 	)
+}
+
+func (c *APIController) getSystemExternalNameKey() (string, bool) {
+	for propertyName, definition := range c.config.ContextModels.System.OptionalProperties {
+		if strings.ToUpper(definition.DisplayName) == SystemExternalNamePropertyKey {
+			return propertyName, true
+		}
+	}
+
+	return "", false
 }

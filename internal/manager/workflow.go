@@ -147,6 +147,10 @@ func (w WorkflowFilter) GetFilter() (repo.QueryFilter, error) {
 	return w, nil
 }
 
+func (w WorkflowFilter) GetSearch() (repo.QuerySearch, error) {
+	return w, nil
+}
+
 func (w WorkflowFilter) GetQuery() (*repo.Query, error) {
 	query := repo.NewQuery()
 

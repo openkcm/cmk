@@ -170,6 +170,8 @@ func ListAndCountSystemWithProperties(
 	var systems []*model.System
 	var count int
 
+	// Need to check here, with odata we might use filters that did not get a join yet
+	// so this would error
 	systems, count, err := ListAndCount(ctx, r, pagination, model.System{}, query)
 	if err != nil {
 		return nil, 0, err

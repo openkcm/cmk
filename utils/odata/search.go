@@ -1,8 +1,6 @@
 package odata
 
 import (
-	"fmt"
-
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -11,14 +9,23 @@ type SearchItem struct {
 	Value       string
 }
 
-type Search struct {
-	Items  []SearchItem
-	Fields []repo.QueryField
+type SearchJoinField struct {
+	Column string
+	Join   repo.JoinCondition
 }
 
-func NewSearch(search *string, fields ...repo.QueryField) (*Search, error) {
-	f := &Search{Fields: fields}
-	if search == nil || len(*search) == 0 || len(fields) == 0 {
+type Search struct {
+	Items      []SearchItem
+	Fields     []repo.QueryField
+	JoinFields []SearchJoinField
+}
+
+// This currently does not support nested operations ()
+// If needed in the future the data structure needs to be swap from a slice to a tree
+// As this is not a simple implementation it was skipped for now
+func NewSearch(search *string, fields []repo.QueryField, joinFields []SearchJoinField) (*Search, error) {
+	f := &Search{Fields: fields, JoinFields: joinFields}
+	if search == nil || len(*search) == 0 || (len(fields) == 0 && len(joinFields) == 0) {
 		return f, nil
 	}
 
@@ -35,8 +42,12 @@ func NewSearch(search *string, fields ...repo.QueryField) (*Search, error) {
 
 func (f *Search) GetQuery() (*repo.Query, error) {
 	query := repo.NewQuery()
-	if len(f.Items) == 0 || len(f.Fields) == 0 {
+	if len(f.Items) == 0 || (len(f.Fields) == 0 && len(f.JoinFields) == 0) {
 		return query, nil
+	}
+
+	for _, jf := range f.JoinFields {
+		query.Join(repo.LeftJoin, jf.Join)
 	}
 
 	for _, item := range f.Items {
@@ -45,7 +56,20 @@ func (f *Search) GetQuery() (*repo.Query, error) {
 
 		for _, field := range f.Fields {
 			ck.Conds = append(ck.Conds, repo.Condition{
-				Field: fmt.Sprintf("CAST(%s AS TEXT)", field),
+				Field: field,
+				Value: repo.CompositeKeyEntry{
+					Key: repo.Key{
+						// Between % to act as wildcard
+						Value:     "%" + item.Value + "%",
+						Operation: repo.Contains,
+					},
+				},
+			})
+		}
+
+		for _, jf := range f.JoinFields {
+			ck.Conds = append(ck.Conds, repo.Condition{
+				Field: jf.Column,
 				Value: repo.CompositeKeyEntry{
 					Key: repo.Key{
 						// Between % to act as wildcard

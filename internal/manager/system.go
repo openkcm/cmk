@@ -80,6 +80,10 @@ func (s SystemFilter) GetFilter() (repo.QueryFilter, error) {
 	return s, nil
 }
 
+func (s SystemFilter) GetSearch() (repo.QuerySearch, error) {
+	return s, nil
+}
+
 func (s SystemFilter) GetQuery() (*repo.Query, error) {
 	query := repo.NewQuery()
 
@@ -193,10 +197,23 @@ func (m *SystemManager) GetAllSystems(
 		}
 	}
 
-	query, err := filter.GetQuery()
+	filterQuery, err := filter.GetQuery()
 	if err != nil {
 		return nil, 0, err
 	}
+
+	search, err := params.GetSearch()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	searchQuery, err := search.GetQuery()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	query := filterQuery.Merge(searchQuery)
+
 	pagination := params.GetPagination()
 
 	systems, count, err := repo.ListAndCountSystemWithProperties(ctx, m.repo, pagination, query)

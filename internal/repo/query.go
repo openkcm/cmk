@@ -118,9 +118,14 @@ type QueryFilter interface {
 	GetFieldValues(field string) ([]any, error)
 }
 
+type QuerySearch interface {
+	GetQuery() (*Query, error)
+}
+
 type Params interface {
 	GetPagination() Pagination
 	GetFilter() (QueryFilter, error)
+	GetSearch() (QuerySearch, error)
 }
 
 // GetFilterFieldValues returns the values for the given field from the filter,
@@ -258,12 +263,20 @@ type Query struct {
 
 type JoinType string
 
+// JoinOnFilter is an extra constant predicate appended to a join's ON clause,
+// e.g. AND "alias".key = 'externalName'.
+type JoinOnFilter struct {
+	Field string
+	Value string
+}
+
 type JoinCondition struct {
 	Table     table
 	Field     string
 	JoinTable table
 	JoinField string
 	Alias     string
+	OnFilters []JoinOnFilter
 }
 type JoinClause struct {
 	OnCondition JoinCondition
@@ -287,6 +300,12 @@ func (r *JoinClause) JoinStatement() string {
 		r.OnCondition.Field,
 		joinTableName,
 		r.OnCondition.JoinField)
+
+	// Append any constant ON predicates, e.g. AND "alias".key = 'externalName'.
+	for _, f := range r.OnCondition.OnFilters {
+		escaped := strings.ReplaceAll(f.Value, "'", "''")
+		statement += fmt.Sprintf(` AND "%s".%s = '%s'`, joinTableName, f.Field, escaped)
+	}
 
 	return statement
 }
@@ -480,6 +499,19 @@ func (ckg *CompositeKeyGroup) String() string {
 
 func (q *Query) Where(conds ...CompositeKeyGroup) *Query {
 	q.CompositeKeyGroup = append(q.CompositeKeyGroup, conds...)
+	return q
+}
+
+func (q *Query) Merge(other *Query) *Query {
+	if other == nil {
+		return q
+	}
+
+	q.Where(other.CompositeKeyGroup...)
+	for _, j := range other.Joins {
+		q.Join(j.Type, j.OnCondition)
+	}
+
 	return q
 }
 

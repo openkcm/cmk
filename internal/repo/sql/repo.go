@@ -184,6 +184,8 @@ func (r *ResourceRepository) List(
 				return err
 			}
 
+			db = db.Debug()
+
 			db, err = applyOrder(db, query)
 			if err != nil {
 				return err

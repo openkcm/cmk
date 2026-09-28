@@ -76,7 +76,7 @@ func TestSearchParse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := odata.NewSearch(&tt.search, "name")
+			s, err := odata.NewSearch(&tt.search, []repo.QueryField{"name"}, nil)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, s.Items)
 		})
@@ -96,7 +96,7 @@ func TestSearchParseEmpty(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := odata.NewSearch(tt.search, tt.fields...)
+			s, err := odata.NewSearch(tt.search, tt.fields, nil)
 			assert.NoError(t, err)
 			assert.Nil(t, s.Items)
 		})
@@ -115,7 +115,7 @@ func TestSearchParseErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := odata.NewSearch(&tt.search, "name")
+			_, err := odata.NewSearch(&tt.search, []repo.QueryField{"name"}, nil)
 			assert.ErrorIs(t, err, odata.ErrFilterNotToSpec)
 		})
 	}
@@ -162,7 +162,7 @@ func TestSearchGetQuery(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := odata.NewSearch(&tt.search, tt.fields...)
+			s, err := odata.NewSearch(&tt.search, tt.fields, nil)
 			assert.NoError(t, err)
 
 			got, err := s.GetQuery()
@@ -184,7 +184,7 @@ func TestSearchGetQueryEmpty(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := odata.NewSearch(tt.search, tt.fields...)
+			s, err := odata.NewSearch(tt.search, tt.fields, nil)
 			assert.NoError(t, err)
 
 			got, err := s.GetQuery()
