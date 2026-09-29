@@ -249,12 +249,6 @@ func TestFilterGetQueryErrors(t *testing.T) {
 			wantErr: odata.ErrFilterInvalidValue,
 		},
 		{
-			name:    "unsupported operation",
-			filter:  "age ge 42",
-			schema:  odata.FilterToRepoMap{"age": {Type: odata.Int, DBName: "age_db"}},
-			wantErr: odata.ErrFilterOperationNotSupported,
-		},
-		{
 			name:    "unsupported type",
 			filter:  "x eq '1'",
 			schema:  odata.FilterToRepoMap{"x": {DBName: "x_db"}},

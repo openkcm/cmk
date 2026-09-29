@@ -129,7 +129,7 @@ func (f *Filter) GetQuery() (*repo.Query, error) {
 			return nil, err
 		}
 
-		op, err := covertToRepoOperation(e.Operation)
+		op, err := convertToRepoOperation(e.Operation)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +163,7 @@ func buildQuery(oDataItem FilterItem, value any, op repo.ComparisonOp, repoEntry
 	query.Where(ckg)
 }
 
-func covertToRepoOperation(op string) (repo.ComparisonOp, error) {
+func convertToRepoOperation(op string) (repo.ComparisonOp, error) {
 	switch op {
 	case "eq":
 		return repo.Equal, nil
@@ -173,6 +173,10 @@ func covertToRepoOperation(op string) (repo.ComparisonOp, error) {
 		return repo.GreaterThan, nil
 	case "lt":
 		return repo.LessThan, nil
+	case "ge":
+		return repo.GreaterThanOrEqual, nil
+	case "le":
+		return repo.LessThanOrEqual, nil
 	}
 	return "", ErrFilterOperationNotSupported
 }

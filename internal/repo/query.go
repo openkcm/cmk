@@ -18,11 +18,13 @@ type (
 )
 
 const (
-	Equal       ComparisonOp = "="
-	NotEqual    ComparisonOp = "!="
-	GreaterThan ComparisonOp = ">"
-	LessThan    ComparisonOp = "<"
-	Contains    ComparisonOp = "ILIKE"
+	Equal              ComparisonOp = "="
+	NotEqual           ComparisonOp = "!="
+	GreaterThan        ComparisonOp = ">"
+	LessThan           ComparisonOp = "<"
+	GreaterThanOrEqual ComparisonOp = ">="
+	LessThanOrEqual    ComparisonOp = "<="
+	Contains           ComparisonOp = "ILIKE"
 
 	Desc OrderDirection = "desc"
 	Asc  OrderDirection = "asc"
@@ -283,7 +285,7 @@ type JoinClause struct {
 	Type        JoinType
 }
 
-func (r *JoinClause) JoinStatement() string {
+func (r *JoinClause) JoinStatement() (string, []any) {
 	joinTableName := r.OnCondition.JoinTable.TableName()
 	joinTableRef := fmt.Sprintf(`"%s"`, joinTableName)
 
@@ -301,15 +303,15 @@ func (r *JoinClause) JoinStatement() string {
 		joinTableName,
 		r.OnCondition.JoinField)
 
-	// Append any constant ON predicates, e.g. AND "alias".key = 'externalName'.
-	var statementSb305 strings.Builder
+	args := make([]any, 0, len(r.OnCondition.OnFilters))
+	var joinConditions strings.Builder
 	for _, f := range r.OnCondition.OnFilters {
-		escaped := strings.ReplaceAll(f.Value, "'", "''")
-		fmt.Fprintf(&statementSb305, ` AND "%s".%s = '%s'`, joinTableName, f.Field, escaped)
+		fmt.Fprintf(&joinConditions, ` AND "%s".%s = ?`, joinTableName, f.Field)
+		args = append(args, f.Value)
 	}
-	statement += statementSb305.String()
+	statement += joinConditions.String()
 
-	return statement
+	return statement, args
 }
 
 type Preload []string
@@ -572,7 +574,7 @@ func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {
 		Type:        joinType,
 		OnCondition: onCondition,
 	}
-	joinKey := joinClause.JoinStatement()
+	joinKey, _ := joinClause.JoinStatement()
 
 	if !q.joinsSet[joinKey] {
 		q.Joins = append(q.Joins, joinClause)
