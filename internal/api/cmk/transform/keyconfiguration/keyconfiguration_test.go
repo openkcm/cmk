@@ -37,7 +37,7 @@ func (m *mockKeyConfigManager) DeleteKeyConfigurationByID(_ context.Context, _ u
 	return nil
 }
 
-func (m *mockKeyConfigManager) GetKeyConfigurationByID(_ context.Context, _ uuid.UUID) (*model.KeyConfiguration, error) {
+func (m *mockKeyConfigManager) GetKeyConfigurationByID(_ context.Context, _ uuid.UUID, _ bool) (*model.KeyConfiguration, error) {
 	return &model.KeyConfiguration{}, nil
 }
 
@@ -153,6 +153,7 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 
 	apiKeyConfigMut := testutils.NewMutator(func() cmkapi.KeyConfiguration {
 		connect := false
+		zero := 0
 
 		return cmkapi.KeyConfiguration{
 			Id:           &id,
@@ -160,12 +161,19 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 			Description:  &description,
 			AdminGroupID: adminGroupID,
 			Metadata: &cmkapi.KeyConfigurationMetadata{
-				CreatedAt:    new(time.Time{}),
-				UpdatedAt:    new(time.Time{}),
-				CreatorID:    &creatorID,
-				CreatorName:  &creatorName,
-				TotalKeys:    new(0),
-				TotalSystems: new(0),
+				CreatedAt:        new(time.Time{}),
+				UpdatedAt:        new(time.Time{}),
+				CreatorID:        &creatorID,
+				CreatorName:      &creatorName,
+				TotalKeys:        new(0),
+				TotalSystems:     new(0),
+				PendingApprovals: &zero,
+				SystemsByStatus: &cmkapi.KeyConfigurationSystemsByStatus{
+					Connected:  &zero,
+					Failed:     &zero,
+					Processing: &zero,
+					Connecting: &zero,
+				},
 			},
 			CanConnectSystems: &connect,
 		}
@@ -211,12 +219,48 @@ func TestTransformKeyConfiguration_ToAPI(t *testing.T) {
 		})
 	}
 
-	t.Run("Should have nil creator id and name on invalid creator id", func(t *testing.T) {
+	t.Run("nil creator id and name on invalid creator", func(t *testing.T) {
 		apiConf, err := keyconfiguration.ToAPI(t.Context(), testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
 			kc.CreatorID = uuid.Nil.String()
 		}), &mockKeyConfigManager{}, nil)
 		assert.NoError(t, err)
 		assert.Nil(t, apiConf.Metadata.CreatorID)
 		assert.Nil(t, apiConf.Metadata.CreatorName)
+	})
+
+	t.Run("extended metadata fields populated", func(t *testing.T) {
+		ctx := cmkcontext.InjectBusinessUserData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+		pending := 3
+
+		conf := modelKeyConfigMut(func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = &primaryKeyID
+			k.PrimaryKeyData = &model.Key{ID: primaryKeyID, State: cmkapi.KeyStateENABLED}
+			k.SystemsConnected = 2
+			k.SystemsFailed = 0
+			k.SystemsProcessing = 1
+			k.SystemsConnecting = 4
+			k.PendingApprovals = pending
+		})
+
+		apiConf, err := keyconfiguration.ToAPI(ctx, &conf, &mockKeyConfigManager{}, idm)
+		assert.NoError(t, err)
+		assert.NotNil(t, apiConf.PrimaryKeyStatus)
+		assert.Equal(t, cmkapi.KeyStateENABLED, *apiConf.PrimaryKeyStatus)
+		assert.NotNil(t, apiConf.Metadata.SystemsByStatus)
+		assert.Equal(t, 2, *apiConf.Metadata.SystemsByStatus.Connected)
+		assert.Equal(t, 0, *apiConf.Metadata.SystemsByStatus.Failed)
+		assert.Equal(t, 1, *apiConf.Metadata.SystemsByStatus.Processing)
+		assert.Equal(t, 4, *apiConf.Metadata.SystemsByStatus.Connecting)
+		assert.NotNil(t, apiConf.Metadata.PendingApprovals)
+		assert.Equal(t, pending, *apiConf.Metadata.PendingApprovals)
+	})
+
+	t.Run("nil PrimaryKeyStatus when no primary key data", func(t *testing.T) {
+		ctx := cmkcontext.InjectBusinessUserData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+		conf := modelKeyConfigMut(func(k *model.KeyConfiguration) { k.PrimaryKeyData = nil })
+		apiConf, err := keyconfiguration.ToAPI(ctx, &conf, &mockKeyConfigManager{}, idm)
+		assert.NoError(t, err)
+		assert.Nil(t, apiConf.PrimaryKeyStatus)
+		assert.NotNil(t, apiConf.Metadata.SystemsByStatus)
 	})
 }
