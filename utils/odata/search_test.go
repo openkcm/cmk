@@ -1,7 +1,6 @@
 package odata_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,7 +22,7 @@ func buildSearchQuery(fields []string, terms ...wantTerm) *repo.Query {
 
 		for _, field := range fields {
 			ck.Conds = append(ck.Conds, repo.Condition{
-				Field: fmt.Sprintf("CAST(%s AS TEXT)", field),
+				Field: field,
 				Value: repo.CompositeKeyEntry{Key: repo.Key{
 					Value:     "%" + term.value + "%",
 					Operation: repo.Contains,

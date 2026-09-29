@@ -81,7 +81,7 @@ func (o *OData) GetFilter() (repo.QueryFilter, error) {
 	return f, nil
 }
 
-func (o *OData) GetSearch() (repo.QuerySearch, error) {
+func (o *OData) GetSearch() (repo.QueryGetter, error) {
 	if o.loadedSearch != nil {
 		return o.loadedSearch, nil
 	}

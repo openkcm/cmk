@@ -98,7 +98,7 @@ func TestFilterParse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f, err := odata.NewFilter(&tt.filter, nil)
 			assert.NoError(t, err)
-			assert.Equal(t, f.Items, tt.want)
+			assert.Equal(t, tt.want, f.Items)
 		})
 	}
 }

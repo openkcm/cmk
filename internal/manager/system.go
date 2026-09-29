@@ -80,7 +80,7 @@ func (s SystemFilter) GetFilter() (repo.QueryFilter, error) {
 	return s, nil
 }
 
-func (s SystemFilter) GetSearch() (repo.QuerySearch, error) {
+func (s SystemFilter) GetSearch() (repo.QueryGetter, error) {
 	return s, nil
 }
 

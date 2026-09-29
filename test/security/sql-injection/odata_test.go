@@ -55,7 +55,7 @@ func TestOdata_ForSqlInjection(t *testing.T) {
 				"test": {Type: odata.String, DBName: "testDB"},
 			},
 			filterString:  "test eq '1 OR 1=1'",
-			expectedQuery: makeExpectedQuery([]string{"test"}, []any{"1 OR 1=1"}),
+			expectedQuery: makeExpectedQuery([]string{"testDB"}, []any{"1 OR 1=1"}),
 			expectedError: nil,
 		},
 		{

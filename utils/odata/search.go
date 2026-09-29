@@ -20,6 +20,7 @@ type Search struct {
 	JoinFields []SearchJoinField
 }
 
+// NewSearch does not support nested OData operations ()
 // This currently does not support nested operations ()
 // If needed in the future the data structure needs to be swap from a slice to a tree
 // As this is not a simple implementation it was skipped for now
@@ -96,7 +97,7 @@ func buildSearchItems(tokens []string) ([]SearchItem, error) {
 	logic := ""
 	i := 0
 
-	// If there is an even ammount of tokens it's invalid for search
+	// If there is an even amount of tokens it's invalid for search
 	// as it's built on VALUE loop([COND VALUE]).
 	if len(tokens)%2 == 0 {
 		return nil, ErrFilterNotToSpec

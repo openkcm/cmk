@@ -147,7 +147,7 @@ func (w WorkflowFilter) GetFilter() (repo.QueryFilter, error) {
 	return w, nil
 }
 
-func (w WorkflowFilter) GetSearch() (repo.QuerySearch, error) {
+func (w WorkflowFilter) GetSearch() (repo.QueryGetter, error) {
 	return w, nil
 }
 
@@ -192,6 +192,9 @@ func (w WorkflowFilter) GetQuery() (*repo.Query, error) {
 	return query, nil
 }
 
+// GetFieldValues searches the filters and returns the values for a field
+//
+//nolint:cyclop
 func (w WorkflowFilter) GetFieldValues(field string) ([]any, error) {
 	switch field {
 	case repo.ArtifactIDField:

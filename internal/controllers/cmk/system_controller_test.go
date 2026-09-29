@@ -509,7 +509,7 @@ func TestGetSystems_Search(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodGet,
-				Endpoint: fmt.Sprintf("/systems?$count=true&$search=%s", tt.search),
+				Endpoint: "/systems?$count=true&$search=" + tt.search,
 				Tenant:   tenant,
 				Headers:  headers,
 			})

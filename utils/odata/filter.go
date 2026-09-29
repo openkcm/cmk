@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -63,7 +64,7 @@ type FilterToRepoItem struct {
 	ValueValidator RepoValueValidator
 }
 
-// This currently does not support nested operations ()
+// NewFilter does not support nested OData operations ()
 // If needed in the future the data structure needs to be swap from a slice to a tree
 // As this is not a simple implementation it was skipped for now
 func NewFilter(filter *string, filterToRepoMap FilterToRepoMap) (*Filter, error) {
@@ -136,27 +137,30 @@ func (f *Filter) GetQuery() (*repo.Query, error) {
 		if repoEntry.DBQuery != nil {
 			query = repoEntry.DBQuery(query, value)
 		} else {
-			ck := repo.NewCompositeKey()
-			entry := repo.CompositeKeyEntry{
-				Key: repo.Key{
-					Value:     value,
-					Operation: op,
-				},
-			}
-			cond := repo.Condition{
-				Field: repoEntry.DBName,
-				Value: entry,
-			}
-			ck.Conds = append(ck.Conds, cond)
-			ckg := repo.NewCompositeKeyGroup(ck)
-			if e.Conditional == "or" {
-				ckg.IsStrict = false
-			}
-			query.Where(ckg)
+			buildQuery(e, value, op, repoEntry, query)
 		}
-
 	}
 	return query, nil
+}
+
+func buildQuery(oDataItem FilterItem, value any, op repo.ComparisonOp, repoEntry FilterToRepoItem, query *repo.Query) {
+	ck := repo.NewCompositeKey()
+	entry := repo.CompositeKeyEntry{
+		Key: repo.Key{
+			Value:     value,
+			Operation: op,
+		},
+	}
+	cond := repo.Condition{
+		Field: repoEntry.DBName,
+		Value: entry,
+	}
+	ck.Conds = append(ck.Conds, cond)
+	ckg := repo.NewCompositeKeyGroup(ck)
+	if oDataItem.Conditional == "or" {
+		ckg.IsStrict = false
+	}
+	query.Where(ckg)
 }
 
 func covertToRepoOperation(op string) (repo.ComparisonOp, error) {

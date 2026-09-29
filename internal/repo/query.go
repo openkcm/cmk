@@ -114,18 +114,18 @@ const (
 )
 
 type QueryFilter interface {
-	GetQuery() (*Query, error)
+	QueryGetter
 	GetFieldValues(field string) ([]any, error)
 }
 
-type QuerySearch interface {
+type QueryGetter interface {
 	GetQuery() (*Query, error)
 }
 
 type Params interface {
 	GetPagination() Pagination
 	GetFilter() (QueryFilter, error)
-	GetSearch() (QuerySearch, error)
+	GetSearch() (QueryGetter, error)
 }
 
 // GetFilterFieldValues returns the values for the given field from the filter,
@@ -302,10 +302,12 @@ func (r *JoinClause) JoinStatement() string {
 		r.OnCondition.JoinField)
 
 	// Append any constant ON predicates, e.g. AND "alias".key = 'externalName'.
+	var statementSb305 strings.Builder
 	for _, f := range r.OnCondition.OnFilters {
 		escaped := strings.ReplaceAll(f.Value, "'", "''")
-		statement += fmt.Sprintf(` AND "%s".%s = '%s'`, joinTableName, f.Field, escaped)
+		fmt.Fprintf(&statementSb305, ` AND "%s".%s = '%s'`, joinTableName, f.Field, escaped)
 	}
+	statement += statementSb305.String()
 
 	return statement
 }
