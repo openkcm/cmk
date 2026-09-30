@@ -83,3 +83,17 @@ func (p *Plugin) RemoveTrust(
 ) (*keystoremanagementv1.RemoveTrustResponse, error) {
 	return &keystoremanagementv1.RemoveTrustResponse{}, nil
 }
+
+func (p *Plugin) GetKeystoreStatus(
+	_ context.Context,
+	_ *keystoremanagementv1.GetKeystoreStatusRequest,
+) (*keystoremanagementv1.GetKeystoreStatusResponse, error) {
+	return &keystoremanagementv1.GetKeystoreStatusResponse{}, nil
+}
+
+func (p *Plugin) FinalizeKeystoreSetup(
+	_ context.Context,
+	_ *keystoremanagementv1.FinalizeKeystoreSetupRequest,
+) (*keystoremanagementv1.FinalizeKeystoreSetupResponse, error) {
+	return &keystoremanagementv1.FinalizeKeystoreSetupResponse{}, nil
+}

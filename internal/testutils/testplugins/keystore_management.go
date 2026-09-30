@@ -73,3 +73,17 @@ func (s *TestKeystoreManagement) RemoveTrust(
 ) (*keystoremanagement.RemoveTrustResponse, error) {
 	return &keystoremanagement.RemoveTrustResponse{}, nil
 }
+
+func (s *TestKeystoreManagement) GetKeystoreStatus(
+	_ context.Context,
+	_ *keystoremanagement.GetKeystoreStatusRequest,
+) (*keystoremanagement.GetKeystoreStatusResponse, error) {
+	return &keystoremanagement.GetKeystoreStatusResponse{}, nil
+}
+
+func (s *TestKeystoreManagement) FinalizeKeystoreSetup(
+	_ context.Context,
+	_ *keystoremanagement.FinalizeKeystoreSetupRequest,
+) (*keystoremanagement.FinalizeKeystoreSetupResponse, error) {
+	return &keystoremanagement.FinalizeKeystoreSetupResponse{}, nil
+}

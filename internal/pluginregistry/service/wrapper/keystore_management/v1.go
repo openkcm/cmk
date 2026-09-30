@@ -56,36 +56,114 @@ func (v1 *V1) CreateKeystore(
 		return nil, err
 	}
 
-	resp := &keystoremanagement.CreateKeystoreResponse{}
-	if mc := grpcResp.GetRoleManagementConfig(); mc != nil {
-		resp.RoleManagementConfig = keystoremanagement.ManagementConfig{
-			LocalityID: mc.GetLocalityId(),
-			CommonName: mc.GetCommonName(),
-		}
-		if mc.GetAccessData() != nil {
-			resp.RoleManagementConfig.AccessData = common.KeystoreConfig{
-				Values: mc.GetAccessData().GetValues().AsMap(),
-			}
-		}
+	resp := &keystoremanagement.CreateKeystoreResponse{
+		RoleManagementConfig: managementConfigFromProto(grpcResp.GetRoleManagementConfig()),
+		KeyManagementConfig:  managementConfigFromProto(grpcResp.GetKeyManagementConfig()),
+		SupportedRegions:     regionsFromProto(grpcResp.GetSupportedRegions()),
+		Status:               creationStatusFromProto(grpcResp.Status),
+		AccountID:            grpcResp.GetAccountId(),
+		ErrorMessage:         grpcResp.GetErrorMessage(),
 	}
-	if mc := grpcResp.GetKeyManagementConfig(); mc != nil {
-		resp.KeyManagementConfig = keystoremanagement.ManagementConfig{
-			LocalityID: mc.GetLocalityId(),
-			CommonName: mc.GetCommonName(),
-		}
-		if mc.GetAccessData() != nil {
-			resp.KeyManagementConfig.AccessData = common.KeystoreConfig{
-				Values: mc.GetAccessData().GetValues().AsMap(),
-			}
-		}
+
+	return resp, nil
+}
+
+func (v1 *V1) GetKeystoreStatus(
+	ctx context.Context,
+	req *keystoremanagement.GetKeystoreStatusRequest,
+) (*keystoremanagement.GetKeystoreStatusResponse, error) {
+	in := &grpckeystoremanagementv1.GetKeystoreStatusRequest{
+		AccountId: req.AccountID,
 	}
-	for _, r := range grpcResp.GetSupportedRegions() {
-		resp.SupportedRegions = append(resp.SupportedRegions, config.Region{
-			Name:          r.GetName(),
-			TechnicalName: r.GetTechnicalName(),
+	if err := protovalidate.Validate(in); err != nil {
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
+	}
+
+	grpcResp, err := v1.KeystoreProviderPluginClient.GetKeystoreStatus(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+
+	return &keystoremanagement.GetKeystoreStatusResponse{
+		Status:       creationStatusFromProto(grpcResp.Status),
+		ErrorMessage: grpcResp.GetErrorMessage(),
+	}, nil
+}
+
+func (v1 *V1) FinalizeKeystoreSetup(
+	ctx context.Context,
+	req *keystoremanagement.FinalizeKeystoreSetupRequest,
+) (*keystoremanagement.FinalizeKeystoreSetupResponse, error) {
+	value, err := structpb.NewStruct(req.Values)
+	if err != nil {
+		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+	}
+
+	in := &grpckeystoremanagementv1.FinalizeKeystoreSetupRequest{
+		AccountId: req.AccountID,
+		Values:    value,
+	}
+	if err := protovalidate.Validate(in); err != nil {
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
+	}
+
+	grpcResp, err := v1.KeystoreProviderPluginClient.FinalizeKeystoreSetup(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+
+	return &keystoremanagement.FinalizeKeystoreSetupResponse{
+		RoleManagementConfig: managementConfigFromProto(grpcResp.GetRoleManagementConfig()),
+		KeyManagementConfig:  managementConfigFromProto(grpcResp.GetKeyManagementConfig()),
+		SupportedRegions:     regionsFromProto(grpcResp.GetSupportedRegions()),
+		Status:               creationStatusFromProto(grpcResp.Status),
+		ErrorMessage:         grpcResp.GetErrorMessage(),
+	}, nil
+}
+
+func managementConfigFromProto(mc *grpckeystoremanagementv1.ManagementConfig) keystoremanagement.ManagementConfig {
+	if mc == nil {
+		return keystoremanagement.ManagementConfig{}
+	}
+
+	cfg := keystoremanagement.ManagementConfig{
+		LocalityID: mc.GetLocalityId(),
+		CommonName: mc.GetCommonName(),
+	}
+	if mc.GetAccessData() != nil && mc.GetAccessData().GetValues() != nil {
+		cfg.AccessData = common.KeystoreConfig{Values: mc.GetAccessData().GetValues().AsMap()}
+	}
+
+	return cfg
+}
+
+func regionsFromProto(regions []*grpckeystoremanagementv1.SupportedRegion) []config.Region {
+	out := make([]config.Region, 0, len(regions))
+	for _, region := range regions {
+		out = append(out, config.Region{
+			Name:          region.GetName(),
+			TechnicalName: region.GetTechnicalName(),
 		})
 	}
-	return resp, nil
+
+	return out
+}
+
+func creationStatusFromProto(status *grpckeystoremanagementv1.KeystoreCreationStatus) keystoremanagement.CreationStatus {
+	if status == nil {
+		return ""
+	}
+
+	switch *status {
+	case grpckeystoremanagementv1.KeystoreCreationStatus_KEYSTORE_CREATION_STATUS_ACTIVE:
+		return keystoremanagement.CreationStatusActive
+	case grpckeystoremanagementv1.KeystoreCreationStatus_KEYSTORE_CREATION_STATUS_PENDING_ACTIVATION:
+		return keystoremanagement.CreationStatusPendingActivation
+	case grpckeystoremanagementv1.KeystoreCreationStatus_KEYSTORE_CREATION_STATUS_FAILED:
+		return keystoremanagement.CreationStatusFailed
+	default:
+		return ""
+	}
 }
 
 func (v1 *V1) DeleteKeystore(

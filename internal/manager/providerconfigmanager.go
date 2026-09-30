@@ -38,6 +38,7 @@ var (
 	ErrGetDefaultKeystoreCertificate = errors.New("failed to get default keystore certificate")
 	ErrAddConfigToPool               = errors.New("failed to add keystore configuration to pool")
 	ErrCountKeystorePool             = errors.New("failed to get keystore pool size")
+	ErrListPendingKeystores          = errors.New("failed to list pending keystores")
 	ErrGrantTrustFailed              = errors.New("failed to grant trust to certificate")
 )
 
@@ -188,7 +189,17 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 	return providerCfg, nil
 }
 
+// pendingKeystoreConfig is the JSON stored while a keystore waits for activation.
+type pendingKeystoreConfig struct {
+	AccountID string         `json:"accountId"`
+	Values    map[string]any `json:"values"`
+}
+
 func (pmc *ProviderConfigManager) FillKeystorePool(ctx context.Context, size int) error {
+	if err := pmc.reconcilePendingKeystores(ctx); err != nil {
+		return err
+	}
+
 	activeCount, err := pmc.keystorePool.Count(ctx)
 	if err != nil {
 		return errs.Wrap(ErrCountKeystorePool, err)
@@ -199,7 +210,6 @@ func (pmc *ProviderConfigManager) FillKeystorePool(ctx context.Context, size int
 		return errs.Wrap(ErrCountKeystorePool, err)
 	}
 
-	// Total includes both active and pending keystores
 	totalCount := activeCount + pendingCount
 
 	log.Debug(ctx, "Filling keystore pool",
@@ -209,55 +219,254 @@ func (pmc *ProviderConfigManager) FillKeystorePool(ctx context.Context, size int
 		slog.Int("targetSize", size),
 	)
 
-	// Only create new keystores if needed
 	for i := totalCount; i < size; i++ {
-		provider, config, err := pmc.CreateKeystore(ctx)
+		req := &keystoremanagement.CreateKeystoreRequest{Values: map[string]any{}}
+		provider, resp, err := pmc.CreateKeystore(ctx, req)
 		if err != nil {
 			return err
 		}
 
-		err = pmc.AddKeystoreToPool(ctx, provider, config)
+		err = pmc.persistCreatedKeystore(ctx, provider, resp, req.Values)
 		if err != nil {
 			return err
 		}
 	}
 
-	log.Debug(ctx, "Keystore Pool Filled",
-		slog.Int("newSize", size),
+	log.Debug(ctx, "Keystore pool fill finished",
+		slog.Int("targetSize", size),
 	)
 
 	return nil
 }
 
-func (pmc *ProviderConfigManager) CreateKeystore(ctx context.Context) (string, map[string]any, error) {
+func (pmc *ProviderConfigManager) reconcilePendingKeystores(ctx context.Context) error {
+	pending, err := pmc.keystorePool.GetPending(ctx)
+	if err != nil {
+		return errs.Wrap(ErrListPendingKeystores, err)
+	}
+
+	for _, ks := range pending {
+		err := pmc.reconcilePendingKeystore(ctx, ks)
+		if err != nil {
+			log.Error(ctx, "Skipping pending keystore reconciliation", err,
+				slog.String("keystoreID", ks.ID.String()),
+			)
+		}
+	}
+
+	return nil
+}
+
+func (pmc *ProviderConfigManager) reconcilePendingKeystore(ctx context.Context, ks *model.Keystore) error {
+	var record pendingKeystoreConfig
+	if err := json.Unmarshal(ks.Config, &record); err != nil || record.AccountID == "" {
+		log.Error(ctx, "Pending keystore is missing account id", ErrInvalidKeystore,
+			slog.String("keystoreID", ks.ID.String()),
+		)
+		ks.Status = model.KeystoreStatusFailed
+
+		return pmc.keystorePool.Update(ctx, ks)
+	}
+
+	client, err := pmc.keystoreManagementClient(ks.Provider)
+	if err != nil {
+		return err
+	}
+
+	statusResp, err := client.GetKeystoreStatus(ctx, &keystoremanagement.GetKeystoreStatusRequest{
+		AccountID: record.AccountID,
+	})
+	if err != nil {
+		return err
+	}
+
+	switch statusResp.Status {
+	case keystoremanagement.CreationStatusPendingActivation, "":
+		return nil
+	case keystoremanagement.CreationStatusFailed:
+		ks.Status = model.KeystoreStatusFailed
+		return pmc.keystorePool.Update(ctx, ks)
+	case keystoremanagement.CreationStatusActive:
+		return pmc.finalizePendingKeystore(ctx, ks, client, record)
+	default:
+		return nil
+	}
+}
+
+func (pmc *ProviderConfigManager) finalizePendingKeystore(
+	ctx context.Context,
+	ks *model.Keystore,
+	client keystoremanagement.KeystoreManagement,
+	record pendingKeystoreConfig,
+) error {
+	values := record.Values
+	if values == nil {
+		values = map[string]any{}
+	}
+
+	resp, err := client.FinalizeKeystoreSetup(ctx, &keystoremanagement.FinalizeKeystoreSetupRequest{
+		AccountID: record.AccountID,
+		Values:    values,
+	})
+	if err != nil {
+		return err
+	}
+
+	if resp.Status == keystoremanagement.CreationStatusFailed ||
+		(resp.Status == "" && resp.ErrorMessage != "") {
+		log.Error(ctx, "Finalizing keystore setup failed", ErrCreateKeystore,
+			slog.String("keystoreID", ks.ID.String()),
+			slog.String("accountID", record.AccountID),
+			slog.String("errorMessage", resp.ErrorMessage),
+		)
+		ks.Status = model.KeystoreStatusFailed
+
+		return pmc.keystorePool.Update(ctx, ks)
+	}
+
+	if resp.Status != "" && resp.Status != keystoremanagement.CreationStatusActive {
+		return nil
+	}
+
+	raw, err := json.Marshal(resp.ToKeystoreConfig().Values)
+	if err != nil {
+		return errs.Wrap(ErrMarshalConfig, err)
+	}
+
+	ks.Config = raw
+	ks.Status = model.KeystoreStatusActive
+
+	return pmc.keystorePool.Update(ctx, ks)
+}
+
+func (pmc *ProviderConfigManager) CreateKeystore(
+	ctx context.Context,
+	req *keystoremanagement.CreateKeystoreRequest,
+) (string, *keystoremanagement.CreateKeystoreResponse, error) {
+	if req == nil {
+		req = &keystoremanagement.CreateKeystoreRequest{}
+	}
+	if req.Values == nil {
+		req.Values = map[string]any{}
+	}
+
 	provider, err := pmc.GetDefaultKeystoreFromCatalog()
 	if err != nil {
 		return "", nil, err
 	}
 
-	keystoreManagements, err := pmc.svcRegistry.KeystoreManagements()
+	client, err := pmc.keystoreManagementClient(provider)
 	if err != nil {
-		return "", nil, errs.Wrapf(ErrPluginNotFound, provider)
+		return "", nil, err
 	}
 
-	client, ok := keystoreManagements[provider]
-	if !ok {
-		return "", nil, errs.Wrapf(ErrPluginNotFound, provider)
-	}
-
-	resp, err := client.CreateKeystore(ctx, &keystoremanagement.CreateKeystoreRequest{})
+	resp, err := client.CreateKeystore(ctx, req)
 	if err != nil {
 		return "", nil, errs.Wrapf(ErrCreateKeystore, fmt.Sprintf("provider: %s, error: %v", provider, err))
 	}
 
-	return provider, resp.ToKeystoreConfig().Values, nil
+	// Plugins that omit status are treated as immediately active.
+	if resp.Status == "" {
+		resp.Status = keystoremanagement.CreationStatusActive
+	}
+
+	return provider, resp, nil
+}
+
+func (pmc *ProviderConfigManager) persistCreatedKeystore(
+	ctx context.Context,
+	provider string,
+	resp *keystoremanagement.CreateKeystoreResponse,
+	values map[string]any,
+) error {
+	switch resp.Status {
+	case keystoremanagement.CreationStatusActive:
+		return pmc.AddKeystoreToPool(ctx, provider, model.KeystoreStatusActive, resp.ToKeystoreConfig().Values)
+	case keystoremanagement.CreationStatusPendingActivation:
+		if resp.AccountID == "" {
+			log.Error(ctx, "Skipping pending keystore without account id", ErrCreateKeystore,
+				slog.String("provider", provider),
+			)
+
+			return nil
+		}
+
+		return pmc.AddKeystoreToPool(
+			ctx,
+			provider,
+			model.KeystoreStatusPendingActivation,
+			newPendingKeystoreConfig(resp.AccountID, values).asMap(),
+		)
+	case keystoremanagement.CreationStatusFailed:
+		log.Error(ctx, "Keystore creation failed", ErrCreateKeystore,
+			slog.String("provider", provider),
+			slog.String("accountID", resp.AccountID),
+			slog.String("errorMessage", resp.ErrorMessage),
+		)
+		if resp.AccountID == "" {
+			return nil
+		}
+
+		return pmc.AddKeystoreToPool(
+			ctx,
+			provider,
+			model.KeystoreStatusFailed,
+			newPendingKeystoreConfig(resp.AccountID, values).asMap(),
+		)
+	default:
+		log.Error(ctx, "Skipping keystore with unknown creation status", ErrCreateKeystore,
+			slog.String("provider", provider),
+			slog.String("status", string(resp.Status)),
+		)
+
+		return nil
+	}
+}
+
+func newPendingKeystoreConfig(accountID string, values map[string]any) pendingKeystoreConfig {
+	if values == nil {
+		values = map[string]any{}
+	}
+
+	return pendingKeystoreConfig{
+		AccountID: accountID,
+		Values:    values,
+	}
+}
+
+func (c pendingKeystoreConfig) asMap() map[string]any {
+	return map[string]any{
+		"accountId": c.AccountID,
+		"values":    c.Values,
+	}
+}
+
+func (pmc *ProviderConfigManager) keystoreManagementClient(
+	provider string,
+) (keystoremanagement.KeystoreManagement, error) {
+	keystoreManagements, err := pmc.svcRegistry.KeystoreManagements()
+	if err != nil {
+		return nil, errs.Wrapf(ErrPluginNotFound, provider)
+	}
+
+	client, ok := keystoreManagements[provider]
+	if !ok {
+		return nil, errs.Wrapf(ErrPluginNotFound, provider)
+	}
+
+	return client, nil
 }
 
 func (pmc *ProviderConfigManager) AddKeystoreToPool(
 	ctx context.Context,
 	provider string,
+	status string,
 	config map[string]any,
 ) error {
+	if config == nil {
+		config = map[string]any{}
+	}
+
 	ksConfig, err := json.Marshal(config)
 	if err != nil {
 		return errs.Wrap(ErrMarshalConfig, err)
@@ -267,6 +476,7 @@ func (pmc *ProviderConfigManager) AddKeystoreToPool(
 		ID:       uuid.New(),
 		Provider: provider,
 		Config:   ksConfig,
+		Status:   status,
 	})
 	if err != nil {
 		return errs.Wrap(ErrAddConfigToPool, err)

@@ -16,6 +16,16 @@ const (
 	TrustTypeCrypto     TrustType = "CRYPTO"
 )
 
+// CreationStatus is the keystore creation state reported by a provider plugin.
+// An empty status means the plugin did not set the field.
+type CreationStatus string
+
+const (
+	CreationStatusActive            CreationStatus = "ACTIVE"
+	CreationStatusPendingActivation CreationStatus = "PENDING_ACTIVATION"
+	CreationStatusFailed            CreationStatus = "FAILED"
+)
+
 type ManagementConfig struct {
 	// V1 Fields
 	LocalityID string
@@ -30,6 +40,8 @@ type KeystoreManagement interface {
 	DeleteKeystore(ctx context.Context, req *DeleteKeystoreRequest) (*DeleteKeystoreResponse, error)
 	GrantTrust(ctx context.Context, req *GrantTrustRequest) (*GrantTrustResponse, error)
 	RemoveTrust(ctx context.Context, req *RemoveTrustRequest) (*RemoveTrustResponse, error)
+	GetKeystoreStatus(ctx context.Context, req *GetKeystoreStatusRequest) (*GetKeystoreStatusResponse, error)
+	FinalizeKeystoreSetup(ctx context.Context, req *FinalizeKeystoreSetupRequest) (*FinalizeKeystoreSetupResponse, error)
 }
 
 type CreateKeystoreRequest struct {
@@ -42,24 +54,61 @@ type CreateKeystoreResponse struct {
 	RoleManagementConfig ManagementConfig
 	KeyManagementConfig  ManagementConfig
 	SupportedRegions     []config.Region
+	Status               CreationStatus
+	AccountID            string
+	ErrorMessage         string
 }
 
 func (c *CreateKeystoreResponse) ToKeystoreConfig() common.KeystoreConfig {
+	return keystoreConfigFromManagement(c.RoleManagementConfig, c.KeyManagementConfig, c.SupportedRegions)
+}
+
+func keystoreConfigFromManagement(
+	role ManagementConfig,
+	key ManagementConfig,
+	regions []config.Region,
+) common.KeystoreConfig {
 	return common.KeystoreConfig{
 		Values: map[string]any{
 			"roleManagementConfig": map[string]any{
-				"localityID": c.RoleManagementConfig.LocalityID,
-				"commonName": c.RoleManagementConfig.CommonName,
-				"accessData": c.RoleManagementConfig.AccessData.Values,
+				"localityID": role.LocalityID,
+				"commonName": role.CommonName,
+				"accessData": role.AccessData.Values,
 			},
 			"keyManagementConfig": map[string]any{
-				"localityID": c.KeyManagementConfig.LocalityID,
-				"commonName": c.KeyManagementConfig.CommonName,
-				"accessData": c.KeyManagementConfig.AccessData.Values,
+				"localityID": key.LocalityID,
+				"commonName": key.CommonName,
+				"accessData": key.AccessData.Values,
 			},
-			"supportedRegions": c.SupportedRegions,
+			"supportedRegions": regions,
 		},
 	}
+}
+
+type GetKeystoreStatusRequest struct {
+	AccountID string
+}
+
+type GetKeystoreStatusResponse struct {
+	Status       CreationStatus
+	ErrorMessage string
+}
+
+type FinalizeKeystoreSetupRequest struct {
+	AccountID string
+	Values    map[string]any
+}
+
+type FinalizeKeystoreSetupResponse struct {
+	RoleManagementConfig ManagementConfig
+	KeyManagementConfig  ManagementConfig
+	SupportedRegions     []config.Region
+	Status               CreationStatus
+	ErrorMessage         string
+}
+
+func (c *FinalizeKeystoreSetupResponse) ToKeystoreConfig() common.KeystoreConfig {
+	return keystoreConfigFromManagement(c.RoleManagementConfig, c.KeyManagementConfig, c.SupportedRegions)
 }
 
 type DeleteKeystoreRequest struct {

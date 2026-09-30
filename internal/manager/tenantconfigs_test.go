@@ -781,6 +781,18 @@ func (c *capturingKeystoreManagement) RemoveTrust(
 	return c.inner.RemoveTrust(ctx, req)
 }
 
+func (c *capturingKeystoreManagement) GetKeystoreStatus(
+	ctx context.Context, req *keystoremanagement.GetKeystoreStatusRequest,
+) (*keystoremanagement.GetKeystoreStatusResponse, error) {
+	return c.inner.GetKeystoreStatus(ctx, req)
+}
+
+func (c *capturingKeystoreManagement) FinalizeKeystoreSetup(
+	ctx context.Context, req *keystoremanagement.FinalizeKeystoreSetupRequest,
+) (*keystoremanagement.FinalizeKeystoreSetupResponse, error) {
+	return c.inner.FinalizeKeystoreSetup(ctx, req)
+}
+
 // grantCallsOfType returns GrantTrust calls matching the given TrustType.
 func (c *capturingKeystoreManagement) grantCallsOfType(
 	trustType keystoremanagement.TrustType,

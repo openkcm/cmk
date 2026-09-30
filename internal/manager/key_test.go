@@ -2142,6 +2142,18 @@ func (f *failingGrantTrustKeystoreManagement) RemoveTrust(
 	return testplugins.NewTestKeystoreManagement().RemoveTrust(ctx, req)
 }
 
+func (f *failingGrantTrustKeystoreManagement) GetKeystoreStatus(
+	ctx context.Context, req *keystoremanagement.GetKeystoreStatusRequest,
+) (*keystoremanagement.GetKeystoreStatusResponse, error) {
+	return testplugins.NewTestKeystoreManagement().GetKeystoreStatus(ctx, req)
+}
+
+func (f *failingGrantTrustKeystoreManagement) FinalizeKeystoreSetup(
+	ctx context.Context, req *keystoremanagement.FinalizeKeystoreSetupRequest,
+) (*keystoremanagement.FinalizeKeystoreSetupResponse, error) {
+	return testplugins.NewTestKeystoreManagement().FinalizeKeystoreSetup(ctx, req)
+}
+
 // cancelingGrantTrustKeystoreManagement cancels the context inside GrantTrust before returning,
 // simulating a gateway timeout that fires while the RPC is in flight.
 type cancelingGrantTrustKeystoreManagement struct {
@@ -2179,6 +2191,18 @@ func (c *cancelingGrantTrustKeystoreManagement) RemoveTrust(
 	ctx context.Context, req *keystoremanagement.RemoveTrustRequest,
 ) (*keystoremanagement.RemoveTrustResponse, error) {
 	return testplugins.NewTestKeystoreManagement().RemoveTrust(ctx, req)
+}
+
+func (c *cancelingGrantTrustKeystoreManagement) GetKeystoreStatus(
+	ctx context.Context, req *keystoremanagement.GetKeystoreStatusRequest,
+) (*keystoremanagement.GetKeystoreStatusResponse, error) {
+	return testplugins.NewTestKeystoreManagement().GetKeystoreStatus(ctx, req)
+}
+
+func (c *cancelingGrantTrustKeystoreManagement) FinalizeKeystoreSetup(
+	ctx context.Context, req *keystoremanagement.FinalizeKeystoreSetupRequest,
+) (*keystoremanagement.FinalizeKeystoreSetupResponse, error) {
+	return testplugins.NewTestKeystoreManagement().FinalizeKeystoreSetup(ctx, req)
 }
 
 func TestUpdateKeyPendingCreationGuard(t *testing.T) {
