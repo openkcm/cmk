@@ -704,17 +704,17 @@ func (km *KeyManager) persistCreatedKey(
 	key *model.Key,
 	keyResp *keymanagement.GetKeyResponse,
 ) error {
-	return km.repo.Transaction(ctx, func(ctx context.Context) error {
-		if err := km.repo.Create(ctx, key); err != nil {
-			return errs.Wrap(ErrCreateKeyDB, err)
+	if err := km.repo.Create(ctx, key); err != nil {
+		return errs.Wrap(ErrCreateKeyDB, err)
+	}
+
+	if key.KeyType == constants.KeyTypeHYOK && keyResp != nil {
+		if err := km.syncKeyVersions(ctx, provider, key); err != nil {
+			log.Warn(ctx, "Failed to sync key versions on HYOK key creation", log.ErrorAttr(err))
 		}
-		if key.KeyType == constants.KeyTypeHYOK && keyResp != nil {
-			if err := km.syncKeyVersions(ctx, provider, key); err != nil {
-				return errs.Wrap(ErrCreateKeyVersionDB, err)
-			}
-		}
-		return nil
-	})
+	}
+
+	return nil
 }
 
 // createPendingBYOKKeyIfNeeded persists the key in PENDING_CREATION when tenant provisioning
