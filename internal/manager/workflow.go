@@ -31,7 +31,6 @@ import (
 	wf "github.com/openkcm/cmk/internal/workflow"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
 	cmkContext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/odata"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -60,7 +59,7 @@ type WorkflowEligibility struct {
 
 type Workflow interface {
 	CheckWorkflow(ctx context.Context, workflow *model.Workflow) (WorkflowStatus, error)
-	GetWorkflows(ctx context.Context, params repo.QueryMapper) ([]*model.Workflow, int, error)
+	GetWorkflows(ctx context.Context, params repo.Params) ([]*model.Workflow, int, error)
 	CreateWorkflow(ctx context.Context, workflow *model.Workflow) (*model.Workflow, error)
 	GetWorkflowByID(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, *WorkflowEligibility, error)
 	ListWorkflowApprovers(
@@ -76,7 +75,7 @@ type Workflow interface {
 	) ([]*model.WorkflowTask, int, error)
 	ListWorkflowTaskViews(
 		ctx context.Context,
-		params repo.QueryMapper,
+		params repo.Params,
 	) ([]*model.WorkflowTaskView, int, error)
 	GetWorkflowAvailableTransitions(ctx context.Context, workflow *model.Workflow) ([]wf.Transition, error)
 	GetWorkflowApprovalSummary(ctx context.Context, workflow *model.Workflow) (*wf.ApprovalSummary, error)
@@ -144,83 +143,15 @@ type WorkflowFilter struct {
 	Count                  bool
 }
 
-var _ repo.QueryMapper = (*WorkflowFilter)(nil) // Assert interface impl
-
-// validateFilterEnums casts raw OData strings to typed workflow enums and
-// rejects unknown non-empty values.
-func validateFilterEnums(
-	state, artifactType, actionType string,
-) (model.WorkflowState, model.WorkflowArtifactType, model.WorkflowActionType, error) {
-	wfState := model.WorkflowState(state)
-	if state != "" && !wfState.Valid() {
-		return "", "", "", fmt.Errorf("%w: %q", model.ErrInvalidWorkflowState, state)
-	}
-	wfArtifactType := model.WorkflowArtifactType(artifactType)
-	if artifactType != "" && !wfArtifactType.Valid() {
-		return "", "", "", fmt.Errorf("%w: %q", model.ErrInvalidWorkflowArtifactType, artifactType)
-	}
-	wfActionType := model.WorkflowActionType(actionType)
-	if actionType != "" && !wfActionType.Valid() {
-		return "", "", "", fmt.Errorf("%w: %q", model.ErrInvalidWorkflowActionType, actionType)
-	}
-	return wfState, wfArtifactType, wfActionType, nil
+func (w WorkflowFilter) GetFilter() (repo.QueryFilter, error) {
+	return w, nil
 }
 
-func NewWorkflowFilterFromOData(queryMapper odata.QueryOdataMapper) (*WorkflowFilter, error) {
-	skipPtr, topPtr, countPtr := queryMapper.GetPaging()
-	skip := ptr.GetPtrOrDefault(skipPtr, constants.DefaultSkip)
-	top := ptr.GetPtrOrDefault(topPtr, constants.DefaultTop)
-	count := ptr.GetSafeDeref(countPtr)
-
-	state, err := queryMapper.GetString(repo.StateField)
-	if err != nil {
-		return nil, err
-	}
-
-	artifactType, err := queryMapper.GetString(repo.ArtifactTypeField)
-	if err != nil {
-		return nil, err
-	}
-
-	artifactID, err := queryMapper.GetUUID(repo.ArtifactIDField)
-	if err != nil {
-		return nil, err
-	}
-
-	artifactName, err := queryMapper.GetString(repo.ArtifactNameField)
-	if err != nil {
-		return nil, err
-	}
-
-	actionType, err := queryMapper.GetString(repo.ActionTypeField)
-	if err != nil {
-		return nil, err
-	}
-
-	parametersResourceName, err := queryMapper.GetString(repo.ParamResourceNameField)
-	if err != nil {
-		return nil, err
-	}
-
-	wfState, wfArtifactType, wfActionType, err := validateFilterEnums(state, artifactType, actionType)
-	if err != nil {
-		return nil, err
-	}
-
-	return &WorkflowFilter{
-		State:                  wfState,
-		ArtifactType:           wfArtifactType,
-		ArtifactID:             artifactID,
-		ArtifactName:           artifactName,
-		ParametersResourceName: parametersResourceName,
-		ActionType:             wfActionType,
-		Skip:                   skip,
-		Top:                    top,
-		Count:                  count,
-	}, nil
+func (w WorkflowFilter) GetSearch() (repo.QueryGetter, error) {
+	return w, nil
 }
 
-func (w WorkflowFilter) GetQuery(_ context.Context) *repo.Query {
+func (w WorkflowFilter) GetQuery() (*repo.Query, error) {
 	query := repo.NewQuery()
 
 	ck := repo.NewCompositeKey()
@@ -258,20 +189,43 @@ func (w WorkflowFilter) GetQuery(_ context.Context) *repo.Query {
 		Direction: repo.Desc,
 	})
 
-	return query
+	return query, nil
 }
 
-func (w WorkflowFilter) GetUUID(field repo.QueryField) (uuid.UUID, error) {
-	var id uuid.UUID
-
+// GetFieldValues searches the filters and returns the values for a field
+//
+//nolint:cyclop
+func (w WorkflowFilter) GetFieldValues(field string) ([]any, error) {
 	switch field {
 	case repo.ArtifactIDField:
-		id = w.ArtifactID
+		if w.ArtifactID != uuid.Nil {
+			return []any{w.ArtifactID}, nil
+		}
+	case repo.StateField:
+		if w.State != "" {
+			return []any{w.State.String()}, nil
+		}
+	case repo.ArtifactTypeField:
+		if w.ArtifactType != "" {
+			return []any{w.ArtifactType.String()}, nil
+		}
+	case repo.ActionTypeField:
+		if w.ActionType != "" {
+			return []any{w.ActionType.String()}, nil
+		}
+	case repo.ArtifactNameField:
+		if w.ArtifactName != "" {
+			return []any{w.ArtifactName}, nil
+		}
+	case repo.ParamResourceNameField:
+		if w.ParametersResourceName != "" {
+			return []any{w.ParametersResourceName}, nil
+		}
 	default:
-		return uuid.Nil, ErrIncompatibleQueryField
+		return nil, ErrIncompatibleQueryField
 	}
 
-	return id, nil
+	return nil, nil
 }
 
 func (w WorkflowFilter) GetPagination() repo.Pagination {
@@ -282,33 +236,21 @@ func (w WorkflowFilter) GetPagination() repo.Pagination {
 	}
 }
 
-func (w WorkflowFilter) GetString(field repo.QueryField) (string, error) {
-	var val string
-
-	switch field {
-	case repo.StateField:
-		val = w.State.String()
-	case repo.ArtifactTypeField:
-		val = w.ArtifactType.String()
-	case repo.ActionTypeField:
-		val = w.ActionType.String()
-	case repo.ArtifactNameField:
-		val = w.ArtifactName
-	case repo.ParamResourceNameField:
-		val = w.ParametersResourceName
-	default:
-		return "", ErrIncompatibleQueryField
-	}
-
-	return val, nil
-}
-
 func (w *WorkflowManager) GetWorkflows(
 	ctx context.Context,
-	params repo.QueryMapper,
+	params repo.Params,
 ) ([]*model.Workflow, int, error) {
-	pagination := params.GetPagination()
-	return w.getWorkflows(ctx, pagination, params.GetQuery(ctx))
+	filter, err := params.GetFilter()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	query, err := filter.GetQuery()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return w.getWorkflows(ctx, params.GetPagination(), query)
 }
 
 func (w *WorkflowManager) WorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
@@ -480,10 +422,18 @@ func (w *WorkflowManager) ListWorkflowTasks(
 // allowing cross-workflow task lookups (e.g. by user or state).
 func (w *WorkflowManager) ListWorkflowTaskViews(
 	ctx context.Context,
-	params repo.QueryMapper,
+	params repo.Params,
 ) ([]*model.WorkflowTaskView, int, error) {
 	pagination := params.GetPagination()
-	query := params.GetQuery(ctx)
+	filter, err := params.GetFilter()
+	if err != nil {
+		return nil, 0, err
+	}
+	query, err := filter.GetQuery()
+	if err != nil {
+		return nil, 0, err
+	}
+
 	return repo.ListAndCount(ctx, w.repo, pagination, model.WorkflowTaskView{}, query)
 }
 

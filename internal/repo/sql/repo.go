@@ -520,7 +520,8 @@ func applyQuery(db *gorm.DB, resource repo.Resource, query repo.Query) (*gorm.DB
 
 	if len(query.Joins) > 0 {
 		for _, join := range query.Joins {
-			db = db.Joins(join.JoinStatement())
+			sql, args := join.JoinStatement()
+			db = db.Joins(sql, args...)
 		}
 	}
 
@@ -594,7 +595,7 @@ func handleCompositeKey(db *gorm.DB, resource repo.Resource, compositeKey repo.C
 
 func applyFieldCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool) *gorm.DB {
 	switch key.Operation {
-	case repo.GreaterThan, repo.LessThan, repo.NotEqual:
+	case repo.GreaterThan, repo.LessThan, repo.NotEqual, repo.Contains, repo.GreaterThanOrEqual, repo.LessThanOrEqual:
 		return applyCondition(tx, field, string(key.Operation), key.Value, isStrict)
 	case repo.Equal:
 		return applyFieldEqualCondition(tx, field, key, isStrict)

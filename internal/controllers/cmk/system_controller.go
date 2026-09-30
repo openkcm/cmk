@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/api/cmk/transform/system"
@@ -18,57 +19,53 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-var getSystemsSchema = odata.FilterSchema{
-	Entries: []odata.FilterSchemaEntry{
-		{
-			FilterName: "keyConfigurationID",
-			FilterType: odata.UUID,
-			DBName:     repo.KeyConfigIDField,
-		},
-		{
-			FilterName: "keyConfigurationName",
-			FilterType: odata.String,
-			DBQuery: func(query *repo.Query, entry any) *repo.Query {
-				return query.Join(repo.LeftJoin, repo.JoinCondition{
-					JoinTable: &model.KeyConfiguration{},
-					JoinField: repo.IDField,
-					Table:     &model.System{},
-					Field:     repo.KeyConfigIDField,
-				}).Where(
-					repo.NewCompositeKeyGroup(
-						repo.NewCompositeKey().Where(
-							fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), repo.Name), entry,
-						),
+const (
+	SystemExternalNamePropertyKey = "NAME"
+)
+
+var getSystemsSchema = odata.FilterToRepoMap{
+	"keyConfigurationID": odata.FilterToRepoItem{
+		Type:   odata.UUID,
+		DBName: repo.KeyConfigIDField,
+	},
+	"keyConfigurationName": odata.FilterToRepoItem{
+		Type: odata.String,
+		DBQuery: func(query *repo.Query, entry any) *repo.Query {
+			return query.Join(repo.LeftJoin, repo.JoinCondition{
+				JoinTable: &model.KeyConfiguration{},
+				JoinField: repo.IDField,
+				Table:     &model.System{},
+				Field:     repo.KeyConfigIDField,
+			}).Where(
+				repo.NewCompositeKeyGroup(
+					repo.NewCompositeKey().Where(
+						fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), repo.Name), entry,
 					),
-				)
-			},
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+				),
+			)
 		},
-		{
-			FilterName: "targetKeyConfigurationID",
-			FilterType: odata.UUID,
-			DBName:     repo.TargetKeyConfigIDField,
-		},
-		{
-			FilterName:     "region",
-			FilterType:     odata.String,
-			DBName:         repo.RegionField,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
-		},
-		{
-			FilterName:     "type",
-			FilterType:     odata.String,
-			DBName:         repo.TypeField,
-			ValueModifier:  odata.ToUpper,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
-		},
-		{
-			FilterName:     "status",
-			FilterType:     odata.String,
-			DBName:         repo.StatusField,
-			ValueModifier:  odata.ToUpper,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
-		},
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+	},
+	"targetKeyConfigurationID": odata.FilterToRepoItem{
+		Type:   odata.UUID,
+		DBName: repo.TargetKeyConfigIDField,
+	},
+	"region": odata.FilterToRepoItem{
+		Type:           odata.String,
+		DBName:         repo.RegionField,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+	},
+	"type": odata.FilterToRepoItem{
+		Type:           odata.String,
+		DBName:         repo.TypeField,
+		ValueModifier:  odata.ToUpper,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+	},
+	"status": odata.FilterToRepoItem{
+		Type:           odata.String,
+		DBName:         repo.StatusField,
+		ValueModifier:  odata.ToUpper,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
 	},
 }
 
@@ -77,16 +74,34 @@ func (c *APIController) GetAllSystems(ctx context.Context,
 ) (cmkapi.GetAllSystemsResponseObject, error) {
 	refreshed := c.Manager.System.RefreshSystemsData(ctx)
 
-	queryMapper := odata.NewQueryOdataMapper(getSystemsSchema)
+	opts := []odata.Option{
+		odata.WithPagination(request.Params.Skip, request.Params.Top, request.Params.Count),
+		odata.WithFilter(request.Params.Filter, getSystemsSchema),
+		odata.WithSearch(request.Params.Search, repo.IdentifierField, repo.RegionField),
+	}
 
-	err := queryMapper.ParseFilter(request.Params.Filter)
+	if propertyKey, ok := c.getSystemExternalNameKey(); ok {
+		opts = append(opts, odata.WithSearchJoins(odata.SearchJoinField{
+			Column: "sp_ext.value",
+			Join: repo.JoinCondition{
+				Table:     &model.System{},
+				Field:     repo.IDField,
+				JoinTable: &model.SystemProperty{},
+				JoinField: repo.IDField,
+				Alias:     "sp_ext",
+				OnFilters: []repo.JoinOnFilter{{Field: repo.KeyField, Value: propertyKey}},
+			},
+		}))
+	}
+
+	odataParams := odata.New(opts...)
+
+	_, err := odataParams.GetFilter()
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
 	}
 
-	queryMapper.SetPaging(request.Params.Skip, request.Params.Top, request.Params.Count)
-
-	systems, total, err := c.Manager.System.GetAllSystems(ctx, queryMapper)
+	systems, total, err := c.Manager.System.GetAllSystems(ctx, odataParams)
 	if err != nil {
 		return nil, err
 	}
@@ -288,4 +303,14 @@ func (c *APIController) handleSystemUnderWorkflow(
 			wfWorkflow.WithDetailed(ctx, approvers, idm, approverGroups, transitions, approvalSummary),
 		),
 	)
+}
+
+func (c *APIController) getSystemExternalNameKey() (string, bool) {
+	for propertyName, definition := range c.config.ContextModels.System.OptionalProperties {
+		if strings.ToUpper(definition.DisplayName) == SystemExternalNamePropertyKey {
+			return propertyName, true
+		}
+	}
+
+	return "", false
 }

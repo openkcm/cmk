@@ -56,52 +56,44 @@ func (c *APIController) CheckWorkflow(
 	return response, nil
 }
 
-var GetWorkflowsSchema = odata.FilterSchema{
-	Entries: []odata.FilterSchemaEntry{
-		{
-			FilterName: "artifactId",
-			FilterType: odata.UUID,
-			DBName:     repo.ArtifactIDField,
+var getWorkflowsSchema = odata.FilterToRepoMap{
+	"artifactId": {
+		Type:   odata.UUID,
+		DBName: repo.ArtifactIDField,
+	},
+	"artifactType": {
+		Type:   odata.String,
+		DBName: repo.ArtifactTypeField,
+		ValueValidator: func(s string) bool {
+			return model.WorkflowArtifactType(s).Valid()
 		},
-		{
-			FilterName: "artifactType",
-			FilterType: odata.String,
-			DBName:     repo.ArtifactTypeField,
-			ValueValidator: func(s string) bool {
-				return model.WorkflowArtifactType(s).Valid()
-			},
-			ValueModifier: odata.ToUpper,
+		ValueModifier: odata.ToUpper,
+	},
+	"artifactName": {
+		Type:           odata.String,
+		DBName:         repo.ArtifactNameField,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthName),
+	},
+	"parametersResourceName": {
+		Type:           odata.String,
+		DBName:         repo.ParamResourceNameField,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthName),
+	},
+	"actionType": {
+		Type:   odata.String,
+		DBName: repo.ActionTypeField,
+		ValueValidator: func(s string) bool {
+			return model.WorkflowActionType(s).Valid()
 		},
-		{
-			FilterName:     "artifactName",
-			FilterType:     odata.String,
-			DBName:         repo.ArtifactNameField,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthName),
+		ValueModifier: odata.ToUpper,
+	},
+	"state": {
+		Type:   odata.String,
+		DBName: repo.StateField,
+		ValueValidator: func(s string) bool {
+			return model.WorkflowState(s).Valid()
 		},
-		{
-			FilterName:     "parametersResourceName",
-			FilterType:     odata.String,
-			DBName:         repo.ParamResourceNameField,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthName),
-		},
-		{
-			FilterName: "actionType",
-			FilterType: odata.String,
-			DBName:     repo.ActionTypeField,
-			ValueValidator: func(s string) bool {
-				return model.WorkflowActionType(s).Valid()
-			},
-			ValueModifier: odata.ToUpper,
-		},
-		{
-			FilterName: "state",
-			FilterType: odata.String,
-			DBName:     repo.StateField,
-			ValueValidator: func(s string) bool {
-				return model.WorkflowState(s).Valid()
-			},
-			ValueModifier: odata.ToUpper,
-		},
+		ValueModifier: odata.ToUpper,
 	},
 }
 
@@ -110,21 +102,16 @@ func (c *APIController) GetWorkflows(
 	ctx context.Context,
 	request cmkapi.GetWorkflowsRequestObject,
 ) (cmkapi.GetWorkflowsResponseObject, error) {
-	odataQueryMapper := odata.NewQueryOdataMapper(GetWorkflowsSchema)
-
-	err := odataQueryMapper.ParseFilter(request.Params.Filter)
+	odataParams := odata.New(
+		odata.WithPagination(request.Params.Skip, request.Params.Top, request.Params.Count),
+		odata.WithFilter(request.Params.Filter, getWorkflowsSchema),
+	)
+	_, err := odataParams.GetFilter()
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
 	}
 
-	odataQueryMapper.SetPaging(request.Params.Skip, request.Params.Top, request.Params.Count)
-
-	workflowQueryMapper, err := manager.NewWorkflowFilterFromOData(*odataQueryMapper)
-	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
-	}
-
-	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, workflowQueryMapper)
+	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, odataParams)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetWorkflow, err)
 	}
