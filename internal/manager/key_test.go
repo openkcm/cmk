@@ -1020,6 +1020,50 @@ func TestUpdate(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "patchValue", someKeyVal)
 	})
+
+	t.Run("Should set certificate subject from config when adding a region matching a cert", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig)
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		// Key starts with no crypto regions, so patching "crypto-1" (which has a
+		// configured cert) goes through newCryptoRegion and sets the subject.
+		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+		require.NoError(t, err)
+		keyProvider, err := keyProviderPlugin.CreateKey(ctx, &keymanagement.CreateKeyRequest{KeyType: keymanagement.HYOK})
+		require.NoError(t, err)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.NativeID = &keyProvider.KeyID
+			k.ManagementAccessData = hyokInfo
+			k.Provider = providerTest
+			k.CryptoAccessData = []byte("{}")
+		})
+		createdKey, err := km.Create(ctx, key)
+		require.NoError(t, err)
+
+		keyPatch := cmkapi.KeyPatch{
+			AccessDetails: &cmkapi.KeyAccessDetails{
+				Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
+					"crypto-1": {
+						AdditionalProperties: map[string]any{"key": "value"},
+					},
+				},
+			},
+		}
+		res, err := km.UpdateKey(ctx, createdKey.ID, keyPatch)
+		require.NoError(t, err)
+
+		cryptoData := res.GetCryptoAccessData()
+		require.Contains(t, cryptoData, "crypto-1")
+		require.NotNil(t, cryptoData["crypto-1"].CertificateSubject)
+		assert.Equal(t,
+			"CN=test_tenant0,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE",
+			*cryptoData["crypto-1"].CertificateSubject,
+		)
+	})
 }
 
 func TestDelete(t *testing.T) {
