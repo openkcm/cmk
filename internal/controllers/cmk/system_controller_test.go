@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -374,7 +375,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 			filter:              "status eq '" + longStr + "'",
 			expectedStatus:      http.StatusBadRequest,
 			expectedSystemCount: 0,
-			expectedErrorCode:   "BAD_REQUEST",
+			expectedErrorCode:   "ODATA_INVALID_FIELD_VALUE",
 		},
 		{
 			name:                "GetAllSystems_FilterByRegion_Success",
@@ -387,7 +388,7 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 			filter:              "region eq '" + longStr + "'",
 			expectedStatus:      http.StatusBadRequest,
 			expectedSystemCount: 0,
-			expectedErrorCode:   "BAD_REQUEST",
+			expectedErrorCode:   "ODATA_INVALID_FIELD_VALUE",
 		},
 		{
 			name:           "GetAllSystemsDbError",
@@ -434,6 +435,97 @@ func TestAPIController_GetAllSystems(t *testing.T) {
 				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
 				assert.Equal(t, tt.expectedErrorCode, response.Error.Code)
 			}
+		})
+	}
+}
+
+func TestGetSystems_Search(t *testing.T) {
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{
+		Config: config.Config{
+			ContextModels: config.ContextModels{
+				System: config.System{
+					// Property whose DisplayName is "Name" is used as the
+					// searchable external name (see getSystemExternalName).
+					OptionalProperties: map[string]config.SystemProperty{
+						"externalName": {DisplayName: "Name"},
+					},
+				},
+			},
+		},
+	})
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthBusinessUserDataKC(authClient))
+
+	systemA := testutils.NewSystem(func(s *model.System) {
+		s.Properties = map[string]string{"externalName": "alpha-system"}
+	})
+	systemB := testutils.NewSystem(func(s *model.System) {
+		s.Properties = map[string]string{"externalName": "beta-system"}
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, systemA, systemB)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
+
+	tests := []struct {
+		name            string
+		search          string
+		expectedCount   int
+		expectedSystems []string
+	}{
+		{
+			name:            "Should search by identifier",
+			search:          strings.Split(systemA.Identifier, "-")[0],
+			expectedCount:   1,
+			expectedSystems: []string{systemA.Identifier},
+		},
+		{
+			name:            "Should search by external name",
+			search:          "alpha-system",
+			expectedCount:   1,
+			expectedSystems: []string{systemA.Identifier},
+		},
+		{
+			name:            "Should search by region",
+			search:          systemB.Region[1:3],
+			expectedCount:   1,
+			expectedSystems: []string{systemB.Identifier},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+				Method:   http.MethodGet,
+				Endpoint: "/systems?$count=true&$search=" + tt.search,
+				Tenant:   tenant,
+				Headers:  headers,
+			})
+
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			response := testutils.GetJSONBody[cmkapi.SystemList](t, w)
+			assert.Equal(t, tt.expectedCount, *response.Count)
+			assert.Len(t, response.Value, tt.expectedCount)
+
+			identifiers := make([]string, 0, len(response.Value))
+			for _, sys := range response.Value {
+				identifiers = append(identifiers, *sys.Identifier)
+			}
+
+			assert.ElementsMatch(t, tt.expectedSystems, identifiers)
 		})
 	}
 }

@@ -894,24 +894,24 @@ func newGetWorkflowsFilter(
 	}
 }
 
-func TestWorkflowFilter_GetUUID(t *testing.T) {
+func TestWorkflowFilter_GetFieldValues(t *testing.T) {
 	u := uuid.New()
 	filter := manager.WorkflowFilter{
 		ArtifactID: u,
 	}
 
 	// Should return ArtifactID for repo.ArtifactIDField
-	id, err := filter.GetUUID(repo.ArtifactIDField)
+	vals, err := filter.GetFieldValues(repo.ArtifactIDField)
 	assert.NoError(t, err)
-	assert.Equal(t, u, id)
+	assert.Equal(t, []any{u}, vals)
 
 	// Should return error for unsupported field
-	id, err = filter.GetUUID(repo.StateField)
+	vals, err = filter.GetFieldValues("unsupported")
 	assert.Error(t, err)
-	assert.Equal(t, uuid.Nil, id)
+	assert.Nil(t, vals)
 }
 
-func TestWorkflowFilter_GetString(t *testing.T) {
+func TestWorkflowFilter_GetFieldValues_Strings(t *testing.T) {
 	filter := manager.WorkflowFilter{
 		State:        "INITIAL",
 		ArtifactType: model.WorkflowArtifactTypeKey,
@@ -919,22 +919,22 @@ func TestWorkflowFilter_GetString(t *testing.T) {
 	}
 
 	// Should return correct values for supported fields
-	val, err := filter.GetString(repo.StateField)
+	vals, err := filter.GetFieldValues(repo.StateField)
 	assert.NoError(t, err)
-	assert.Equal(t, "INITIAL", val)
+	assert.Equal(t, []any{"INITIAL"}, vals)
 
-	val, err = filter.GetString(repo.ArtifactTypeField)
+	vals, err = filter.GetFieldValues(repo.ArtifactTypeField)
 	assert.NoError(t, err)
-	assert.Equal(t, "KEY", val)
+	assert.Equal(t, []any{"KEY"}, vals)
 
-	val, err = filter.GetString(repo.ActionTypeField)
+	vals, err = filter.GetFieldValues(repo.ActionTypeField)
 	assert.NoError(t, err)
-	assert.Equal(t, "DELETE", val)
+	assert.Equal(t, []any{"DELETE"}, vals)
 
-	// Should return error for unsupported field
-	val, err = filter.GetString(repo.ArtifactIDField)
-	assert.Error(t, err)
-	assert.Empty(t, val)
+	// Should return empty (no error) for supported-but-unset field
+	vals, err = filter.GetFieldValues(repo.ArtifactIDField)
+	assert.NoError(t, err)
+	assert.Nil(t, vals)
 }
 
 func TestWorkfowManager_GetWorkflows(t *testing.T) {

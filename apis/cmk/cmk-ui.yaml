@@ -702,6 +702,7 @@ paths:
         - $ref: "#/components/parameters/topPath"
         - $ref: "#/components/parameters/countPath"
         - $ref: "#/components/parameters/filterSystems"
+        - $ref: "#/components/parameters/searchSystems"
       responses:
         "200":
           description: Systems retrieved
@@ -1400,7 +1401,26 @@ components:
         - Equal (eq), on the following attributes: keyConfigurationId, keyConfigurationName, region, role, status and type, targetKeyConfigurationID.
         - Logical AND (and).
 
+        OData parenthesis are not supported at the moment!
+
         Example: region eq eu
+      schema:
+        type: string
+        maxLength: 500
+    searchSystems:
+      name: "$search"
+      in: query
+      description: |
+        Search Query to apply to the results.
+
+        The following operators are supported:
+
+        - The search is applied on the following attributes: externalName, identifier, region.
+        - Logical AND (and), OR (or).
+
+        OData parenthesis are not supported at the moment!
+
+        Example: EU
       schema:
         type: string
         maxLength: 500

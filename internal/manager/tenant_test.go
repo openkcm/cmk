@@ -469,7 +469,7 @@ func (s *mockSystemManager) UnlinkSystemAction(context.Context, uuid.UUID, strin
 	return s.unlinkErr
 }
 
-func (s *mockSystemManager) GetAllSystems(context.Context, repo.QueryMapper) ([]*model.System, int, error) {
+func (s *mockSystemManager) GetAllSystems(context.Context, repo.Params) ([]*model.System, int, error) {
 	panic("not implemented")
 }
 

@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 var ErrMultipleOperationsProvided = errors.New("multiple operations provided")
@@ -19,10 +18,13 @@ type (
 )
 
 const (
-	Equal       ComparisonOp = "="
-	NotEqual    ComparisonOp = "!="
-	GreaterThan ComparisonOp = ">"
-	LessThan    ComparisonOp = "<"
+	Equal              ComparisonOp = "="
+	NotEqual           ComparisonOp = "!="
+	GreaterThan        ComparisonOp = ">"
+	LessThan           ComparisonOp = "<"
+	GreaterThanOrEqual ComparisonOp = ">="
+	LessThanOrEqual    ComparisonOp = "<="
+	Contains           ComparisonOp = "ILIKE"
 
 	Desc OrderDirection = "desc"
 	Asc  OrderDirection = "asc"
@@ -115,12 +117,41 @@ const (
 	LockForUpdateSkipLocked LockMode = "FOR UPDATE SKIP LOCKED"
 )
 
-// QueryMapper can just be a struct of filter values (for eg) for simple case (eg internal system user)
-// In API controllers might want to have mapping from odata (for eg)
-type QueryMapper interface {
-	GetQuery(ctx context.Context) *Query
-	GetUUID(field QueryField) (uuid.UUID, error)
+type QueryFilter interface {
+	QueryGetter
+	GetFieldValues(field string) ([]any, error)
+}
+
+type QueryGetter interface {
+	GetQuery() (*Query, error)
+}
+
+type Params interface {
 	GetPagination() Pagination
+	GetFilter() (QueryFilter, error)
+	GetSearch() (QueryGetter, error)
+}
+
+// GetFilterFieldValues returns the values for the given field from the filter,
+// type-asserted to T.
+func GetFilterFieldValues[T any](f QueryFilter, field string) ([]T, error) {
+	raw, err := f.GetFieldValues(field)
+	if err != nil {
+		return nil, errs.Wrap(ErrFieldValueTypeMismatch, err)
+	}
+
+	out := make([]T, 0, len(raw))
+
+	for _, v := range raw {
+		tv, ok := v.(T)
+		if !ok {
+			return nil, ErrFieldValueTypeMismatch
+		}
+
+		out = append(out, tv)
+	}
+
+	return out, nil
 }
 
 type Key struct {
@@ -236,19 +267,27 @@ type Query struct {
 
 type JoinType string
 
+// JoinOnFilter is an extra constant predicate appended to a join's ON clause,
+// e.g. AND "alias".key = 'externalName'.
+type JoinOnFilter struct {
+	Field string
+	Value string
+}
+
 type JoinCondition struct {
 	Table     table
 	Field     string
 	JoinTable table
 	JoinField string
 	Alias     string
+	OnFilters []JoinOnFilter
 }
 type JoinClause struct {
 	OnCondition JoinCondition
 	Type        JoinType
 }
 
-func (r *JoinClause) JoinStatement() string {
+func (r *JoinClause) JoinStatement() (string, []any) {
 	joinTableName := r.OnCondition.JoinTable.TableName()
 	joinTableRef := fmt.Sprintf(`"%s"`, joinTableName)
 
@@ -266,7 +305,15 @@ func (r *JoinClause) JoinStatement() string {
 		joinTableName,
 		r.OnCondition.JoinField)
 
-	return statement
+	args := make([]any, 0, len(r.OnCondition.OnFilters))
+	var joinConditions strings.Builder
+	for _, f := range r.OnCondition.OnFilters {
+		fmt.Fprintf(&joinConditions, ` AND "%s".%s = ?`, joinTableName, f.Field)
+		args = append(args, f.Value)
+	}
+	statement += joinConditions.String()
+
+	return statement, args
 }
 
 type Preload []string
@@ -461,6 +508,19 @@ func (q *Query) Where(conds ...CompositeKeyGroup) *Query {
 	return q
 }
 
+func (q *Query) Merge(other *Query) *Query {
+	if other == nil {
+		return q
+	}
+
+	q.Where(other.CompositeKeyGroup...)
+	for _, j := range other.Joins {
+		q.Join(j.Type, j.OnCondition)
+	}
+
+	return q
+}
+
 func (q *Query) Preload(model Preload) *Query {
 	q.PreloadModel = append(q.PreloadModel, model...)
 	return q
@@ -516,7 +576,7 @@ func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {
 		Type:        joinType,
 		OnCondition: onCondition,
 	}
-	joinKey := joinClause.JoinStatement()
+	joinKey, _ := joinClause.JoinStatement()
 
 	if !q.joinsSet[joinKey] {
 		q.Joins = append(q.Joins, joinClause)

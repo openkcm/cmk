@@ -19,7 +19,7 @@ import (
 )
 
 type WorkflowExpiryUpdater interface {
-	GetWorkflows(ctx context.Context, params repo.QueryMapper) ([]*model.Workflow, int, error)
+	GetWorkflows(ctx context.Context, params repo.Params) ([]*model.Workflow, int, error)
 	ExpireWorkflow(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, error)
 	WorkflowCanExpire(ctx context.Context, workflow *model.Workflow) (bool, error)
 }

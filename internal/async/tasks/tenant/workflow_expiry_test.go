@@ -46,13 +46,22 @@ type WorkflowExpiryMock struct {
 }
 
 func (s *WorkflowExpiryMock) GetWorkflows(ctx context.Context,
-	params repo.QueryMapper,
+	params repo.Params,
 ) ([]*model.Workflow, int, error) {
 	if s.getErr != nil {
 		return nil, 0, s.getErr
 	}
 
-	query := params.GetQuery(ctx)
+	filter, err := params.GetFilter()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	query, err := filter.GetQuery()
+	if err != nil {
+		return nil, 0, err
+	}
+
 	return repo.ListAndCount(ctx, s.repo, params.GetPagination(), model.Workflow{}, query)
 }
 
