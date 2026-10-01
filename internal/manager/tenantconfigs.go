@@ -50,6 +50,9 @@ const (
 // LimitsKeySystemsOverride Flat-row key for tenant limit overrides under type = "limits".
 const LimitsKeySystemsOverride = "systems_override"
 
+// LimitsKeyKeysOverride Flat-row key for tenant key limit overrides under type = "limits".
+const LimitsKeyKeysOverride = "keys_override"
+
 // Flat-row keys for workflow config under type = "workflow".
 const (
 	workflowKeyEnabled                 = "enabled"
@@ -166,6 +169,31 @@ func (m *TenantConfigManager) GetEffectiveSystemsLimit(ctx context.Context) (int
 	}
 	if m.cfg != nil {
 		return m.cfg.Tenant.SystemLimit, nil
+	}
+	return 0, nil
+}
+
+// GetEffectiveKeysLimit returns the per-tenant override for the key limit when one is
+// stored in tenant_configs, otherwise falls back to the cluster default from cfg.
+func (m *TenantConfigManager) GetEffectiveKeysLimit(ctx context.Context) (int, error) {
+	configs, err := m.listConfigsByType(ctx, TenantConfigTypeLimits)
+	if err != nil {
+		return 0, errs.Wrap(ErrGetTenantLimits, err)
+	}
+	for _, c := range configs {
+		if c.Key == LimitsKeyKeysOverride {
+			v, parseErr := strconv.Atoi(c.Value)
+			if parseErr != nil {
+				return 0, errs.Wrap(ErrGetTenantLimits, parseErr)
+			}
+			if v < 0 {
+				return 0, fmt.Errorf("%w: keys_override must be non-negative, got %d", ErrGetTenantLimits, v)
+			}
+			return v, nil
+		}
+	}
+	if m.cfg != nil {
+		return m.cfg.Tenant.KeyLimit, nil
 	}
 	return 0, nil
 }
