@@ -73,7 +73,7 @@ func SetupWorkflowManager(
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
-	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, nil, cfg)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, nil, cfg, nil)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)

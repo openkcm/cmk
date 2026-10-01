@@ -184,6 +184,7 @@ func registerTasks(
 		cmkAuditor,
 		eventFactory,
 		cfg,
+		tenantConfigManager,
 	)
 	keyManager := manager.NewKeyManager(
 		authzRepo,

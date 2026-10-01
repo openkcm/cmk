@@ -375,6 +375,10 @@ func (m *SystemManager) LinkSystemAction(
 				return err
 			}
 
+			if err = m.KeyConfigManager.EnforceSystemLimit(ctx, keyConfig.ID); err != nil {
+				return err
+			}
+
 			if system.Status == cmkapi.SystemStatusPROCESSING || system.Status == cmkapi.SystemStatusFAILED {
 				return ErrLinkSystemProcessingOrFailed
 			}

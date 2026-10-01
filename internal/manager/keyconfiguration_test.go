@@ -1,6 +1,7 @@
 package manager_test
 
 import (
+	"context"
 	"crypto/x509/pkix"
 	"encoding/json"
 	"slices"
@@ -104,7 +105,7 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
 	assert.NoError(t, err)
 
-	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg)
+	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
 	return m, db, tenants[0]
 }
@@ -1177,5 +1178,136 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 			certs[model.CertificatePurposeCrypto][0].Subject.CommonName, cryptoSubject.CommonNamePrefix)
 		assert.Equal(t, TestCertURL,
 			certs[model.CertificatePurposeCrypto][0].RootCA)
+	})
+}
+
+// SetupKeyConfigManagerWithLimit creates a KeyConfigManager wired with a TenantConfigManager
+// that uses the given systemLimit as the cluster default.
+func SetupKeyConfigManagerWithLimit(t *testing.T, systemLimit int) (*manager.KeyConfigManager, *multitenancy.DB, string) {
+	t.Helper()
+
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		WithOrbital: true,
+	})
+	r := sql.NewRepository(db)
+
+	cfg := &config.Config{
+		Certificates: config.Certificates{
+			RootCertURL:  TestCertURL,
+			ValidityDays: config.MinCertificateValidityDays,
+		},
+		Database: dbCfg,
+		Tenant:   config.Tenant{SystemLimit: systemLimit},
+	}
+
+	cmkAuditor := auditor.New(t.Context(), cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
+	assert.NoError(t, err)
+
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(), r, &config.Config{})
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
+	tagManager := manager.NewTagManager(authzRepo)
+	tenantCfgManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil)
+
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
+	assert.NoError(t, err)
+
+	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, tenantCfgManager)
+
+	return m, db, tenants[0]
+}
+
+func TestCanConnectSystemsLimit(t *testing.T) {
+	makeKeyConfigWithEnabledKey := func(t *testing.T, ctx context.Context, r *sql.ResourceRepository) *model.KeyConfiguration {
+		t.Helper()
+		group := testutils.NewGroup(func(_ *model.Group) {})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.AdminGroupID = group.ID
+		})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateENABLED
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		// Create keyConfig first (no PrimaryKeyID yet), then key, then set PrimaryKeyID.
+		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, key)
+		keyConfig.PrimaryKeyID = &key.ID
+		_, err := r.Patch(ctx, keyConfig, *repo.NewQuery())
+		assert.NoError(t, err)
+		return keyConfig
+	}
+
+	t.Run("allows connection when count is below limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithLimit(t, 2)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfigWithEnabledKey(t, ctx, r)
+
+		err := m.EnforceSystemLimit(ctx, keyConfig.ID)
+		assert.NoError(t, err)
+	})
+
+	t.Run("blocks connection when count equals limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfigWithEnabledKey(t, ctx, r)
+
+		// Add one system to reach the limit
+		existingSystem := &model.System{
+			ID:                 uuid.New(),
+			Identifier:         uuid.NewString(),
+			Type:               model.SystemTypeSYSTEM,
+			KeyConfigurationID: &keyConfig.ID,
+		}
+		testutils.CreateTestEntities(ctx, t, r, existingSystem)
+
+		err := m.EnforceSystemLimit(ctx, keyConfig.ID)
+		assert.ErrorIs(t, err, manager.ErrSystemLimitExceeded)
+	})
+
+	t.Run("does not block when limit is zero", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithLimit(t, 0)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfigWithEnabledKey(t, ctx, r)
+
+		// Add many systems — should still be fine with limit=0
+		for range 5 {
+			sys := &model.System{
+				ID:                 uuid.New(),
+				Identifier:         uuid.NewString(),
+				Type:               model.SystemTypeSYSTEM,
+				KeyConfigurationID: &keyConfig.ID,
+			}
+			testutils.CreateTestEntities(ctx, t, r, sys)
+		}
+
+		err := m.EnforceSystemLimit(ctx, keyConfig.ID)
+		assert.NoError(t, err)
+	})
+
+	t.Run("blocks when in-flight system targets the key config", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfigWithEnabledKey(t, ctx, r)
+
+		// System with target_key_configuration_id set (event in flight, not yet linked)
+		inFlight := &model.System{
+			ID:                       uuid.New(),
+			Identifier:               uuid.NewString(),
+			Type:                     model.SystemTypeSYSTEM,
+			TargetKeyConfigurationID: &keyConfig.ID,
+		}
+		testutils.CreateTestEntities(ctx, t, r, inFlight)
+
+		err := m.EnforceSystemLimit(ctx, keyConfig.ID)
+		assert.ErrorIs(t, err, manager.ErrSystemLimitExceeded)
 	})
 }

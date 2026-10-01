@@ -147,6 +147,8 @@ func (r *ResourceRepository) Count(
 				return err
 			}
 
+			db = applyLocking(db, query)
+
 			res := db.Count(&count)
 			if res.Error != nil {
 				log.Error(ctx, "error counting resources", res.Error)
@@ -477,7 +479,10 @@ func (r *ResourceRepository) getSchemaFromCtx(ctx context.Context) (string, erro
 
 // apply locking on the db query
 func applyLocking(db *gorm.DB, query repo.Query) *gorm.DB {
-	if query.Lock == repo.LockForUpdateSkipLocked {
+	switch query.Lock {
+	case repo.LockForUpdate:
+		return db.Clauses(clause.Locking{Strength: "UPDATE"})
+	case repo.LockForUpdateSkipLocked:
 		return db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 	}
 	return db

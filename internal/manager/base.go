@@ -55,7 +55,8 @@ func New(
 	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config, certManager, flags)
 	userManager := NewUserManager(repo, cmkAuditor)
 	tagManager := NewTagManager(repo)
-	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager, tagManager, cmkAuditor, eventFactory, config)
+	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager,
+		tagManager, cmkAuditor, eventFactory, config, tenantConfigManager)
 	keyManager := NewKeyManager(
 		repo,
 		svcRegistry,

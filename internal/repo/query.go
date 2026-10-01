@@ -111,6 +111,8 @@ const (
 type LockMode string
 
 const (
+	// LockForUpdate locks selected rows for update, blocking concurrent transactions.
+	LockForUpdate LockMode = "FOR UPDATE"
 	// LockForUpdateSkipLocked skips rows already locked by another transaction.
 	LockForUpdateSkipLocked LockMode = "FOR UPDATE SKIP LOCKED"
 )
