@@ -475,6 +475,40 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 		require.NotNil(t, response.Systems)
 		assert.Equal(t, 5, *response.Systems)
 	})
+
+	t.Run("Should return 500 when systems limit override is not a valid integer", func(t *testing.T) {
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+
+		// Seed a non-integer value so strconv.Atoi fails inside GetEffectiveSystemsLimit.
+		tc := &model.TenantConfig{
+			Key:   manager.LimitsKeySystemsOverride,
+			Value: "not-a-number",
+			Type:  manager.TenantConfigTypeLimits,
+		}
+		err := r.Create(ctx, tc)
+		require.NoError(t, err)
+
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		require.True(t, ok)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/tenantConfigurations/limits",
+			Tenant:   tenant,
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
 }
 
 func setupSystemsLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context.Context, limit int) {
