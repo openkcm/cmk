@@ -51,3 +51,15 @@ func (c *APIController) UpdateTenantWorkflowConfiguration(
 	apiConfig := tenantconfigs.WorkflowConfigToAPI(savedConfig)
 	return cmkapi.UpdateTenantWorkflowConfiguration200JSONResponse(*apiConfig), nil
 }
+
+func (c *APIController) GetTenantLimits(
+	ctx context.Context,
+	_ cmkapi.GetTenantLimitsRequestObject,
+) (cmkapi.GetTenantLimitsResponseObject, error) {
+	limit, err := c.Manager.TenantConfigs.GetEffectiveSystemsLimit(ctx)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGetTenantLimits, err)
+	}
+
+	return cmkapi.GetTenantLimits200JSONResponse(*tenantconfigs.LimitsToAPI(limit)), nil
+}

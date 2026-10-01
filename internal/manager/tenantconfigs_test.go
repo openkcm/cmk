@@ -1514,9 +1514,9 @@ func TestGetEffectiveSystemsLimit(t *testing.T) {
 		r := sql.NewRepository(db)
 
 		err := r.Set(ctx, &model.TenantConfig{
-			Key:   "systems_override",
+			Key:   manager.LimitsKeySystemsOverride,
 			Value: "99",
-			Type:  "limits",
+			Type:  manager.TenantConfigTypeLimits,
 		}, *repo.NewQuery())
 		require.NoError(t, err)
 
@@ -1548,9 +1548,9 @@ func TestGetEffectiveSystemsLimit(t *testing.T) {
 		r := sql.NewRepository(db)
 
 		err := r.Set(ctx, &model.TenantConfig{
-			Key:   "systems_override",
+			Key:   manager.LimitsKeySystemsOverride,
 			Value: "-1",
-			Type:  "limits",
+			Type:  manager.TenantConfigTypeLimits,
 		}, *repo.NewQuery())
 		require.NoError(t, err)
 

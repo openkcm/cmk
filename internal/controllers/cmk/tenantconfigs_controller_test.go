@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,7 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
@@ -401,6 +404,122 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		assert.NotNil(t, errResp.Error.Context)
 		assert.Equal(t, "enabled", (*errResp.Error.Context)["setting"])
 	})
+}
+
+func TestAPIController_GetTenantLimits(t *testing.T) {
+	t.Run("Should return cluster default system limit when no tenant override", func(t *testing.T) {
+		cfg := testutils.TestAPIServerConfig{
+			Config: config.Config{
+				Tenant: config.Tenant{SystemLimit: 50},
+			},
+		}
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, cfg)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		require.True(t, ok)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/tenantConfigurations/limits",
+			Tenant:   tenant,
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var response cmkapi.TenantLimits
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+		require.NotNil(t, response.Systems)
+		assert.Equal(t, 50, *response.Systems)
+	})
+
+	t.Run("Should return tenant override when systems limit is stored", func(t *testing.T) {
+		cfg := testutils.TestAPIServerConfig{
+			Config: config.Config{
+				Tenant: config.Tenant{SystemLimit: 50},
+			},
+		}
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, cfg)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+
+		setupSystemsLimitOverride(t, r, ctx, 5)
+
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		require.True(t, ok)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/tenantConfigurations/limits",
+			Tenant:   tenant,
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var response cmkapi.TenantLimits
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+		require.NotNil(t, response.Systems)
+		assert.Equal(t, 5, *response.Systems)
+	})
+
+	t.Run("Should return 500 when systems limit override is not a valid integer", func(t *testing.T) {
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+
+		// Seed a non-integer value so strconv.Atoi fails inside GetEffectiveSystemsLimit.
+		tc := &model.TenantConfig{
+			Key:   manager.LimitsKeySystemsOverride,
+			Value: "not-a-number",
+			Type:  manager.TenantConfigTypeLimits,
+		}
+		err := r.Create(ctx, tc)
+		require.NoError(t, err)
+
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		require.True(t, ok)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/tenantConfigurations/limits",
+			Tenant:   tenant,
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+func setupSystemsLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context.Context, limit int) {
+	t.Helper()
+	tc := &model.TenantConfig{
+		Key:   manager.LimitsKeySystemsOverride,
+		Value: strconv.Itoa(limit),
+		Type:  manager.TenantConfigTypeLimits,
+	}
+	err := r.Create(ctx, tc)
+	require.NoError(t, err)
 }
 
 func setupDefaultWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Context) {
