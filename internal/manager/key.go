@@ -1709,6 +1709,13 @@ func (km *KeyManager) handleKeyVersions(
 	key *model.Key,
 	keyResp *keymanagement.GetKeyVersionsResponse,
 ) error {
+	if !km.tenantConfigs.IsKeyRotateDetectionEnabled(ctx, key.Provider) {
+		log.Info(ctx, "key rotation detection disabled by feature flag, skipping",
+			slog.String("keyID", key.ID.String()),
+			slog.String("provider", key.Provider))
+		return nil
+	}
+
 	isNewVersion, err := km.isNewKeyVersion(ctx, key, keyResp)
 	if err != nil {
 		return err
