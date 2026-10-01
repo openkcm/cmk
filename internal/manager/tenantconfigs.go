@@ -44,11 +44,11 @@ const (
 const (
 	tenantConfigTypeWorkflow        = "workflow"
 	tenantConfigTypeDefaultKeystore = "default_keystore"
-	tenantConfigTypeLimits          = "limits"
+	TenantConfigTypeLimits          = "limits"
 )
 
-// Flat-row key for tenant limit overrides under type = "limits".
-const limitsKeySystemsOverride = "systems_override"
+// LimitsKeySystemsOverride Flat-row key for tenant limit overrides under type = "limits".
+const LimitsKeySystemsOverride = "systems_override"
 
 // Flat-row keys for workflow config under type = "workflow".
 const (
@@ -148,12 +148,12 @@ type TenantKeystores struct {
 // GetEffectiveSystemsLimit returns the per-tenant override for the systems limit when one is
 // stored in tenant_configs, otherwise falls back to the cluster default from cfg.
 func (m *TenantConfigManager) GetEffectiveSystemsLimit(ctx context.Context) (int, error) {
-	configs, err := m.listConfigsByType(ctx, tenantConfigTypeLimits)
+	configs, err := m.listConfigsByType(ctx, TenantConfigTypeLimits)
 	if err != nil {
 		return 0, errs.Wrap(ErrGetTenantLimits, err)
 	}
 	for _, c := range configs {
-		if c.Key == limitsKeySystemsOverride {
+		if c.Key == LimitsKeySystemsOverride {
 			v, parseErr := strconv.Atoi(c.Value)
 			if parseErr != nil {
 				return 0, errs.Wrap(ErrGetTenantLimits, parseErr)

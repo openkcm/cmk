@@ -690,6 +690,30 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
+  /tenantConfigurations/limits:
+    get:
+      tags:
+        - Tenant Configurations
+      summary: Get tenant limits
+      operationId: GetTenantLimits
+      description: |
+        Retrieves the effective limits configured for the tenant.
+        Values reflect tenant-specific overrides when configured, otherwise cluster defaults.
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantLimits"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
   /systems:
     get:
       tags:
@@ -1723,6 +1747,14 @@ components:
             - LIVE
             - TEST
             - TRIAL
+    TenantLimits:
+      type: object
+      properties:
+        systems:
+          description: Maximum number of systems allowed per key configuration
+          type: integer
+          readOnly: true
+          example: 50
     TenantKeystore:
       type: object
       required:

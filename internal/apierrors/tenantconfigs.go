@@ -12,6 +12,7 @@ var (
 	ErrGetDefaultKeystore = errors.New("failed to get default keystore")
 	ErrGetWorkflowConfig  = errors.New("failed to get workflow config")
 	ErrSetWorkflowConfig  = errors.New("failed to set workflow config")
+	ErrGetTenantLimits    = errors.New("failed to get tenant limits")
 )
 
 var tenantconfig = []errs.ExposedErrors[*APIError]{
@@ -80,6 +81,14 @@ var tenantconfig = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "SET_WORKFLOW_CONFIG",
 			Message: "Failed to update workflow configuration",
+			Status:  http.StatusInternalServerError,
+		},
+	},
+	{
+		InternalErrorChain: []error{ErrGetTenantLimits},
+		ExposedError: &APIError{
+			Code:    "GET_TENANT_LIMITS",
+			Message: "Failed to get tenant limits",
 			Status:  http.StatusInternalServerError,
 		},
 	},

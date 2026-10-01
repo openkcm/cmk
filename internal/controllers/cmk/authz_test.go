@@ -259,6 +259,10 @@ func authzEndpoints() []testutils.AuthzTestEndpoint {
 			Endpoint: "/tenantConfigurations/workflow",
 			Body:     `{"enabled": true}`,
 		},
+		{
+			Method:   http.MethodGet,
+			Endpoint: "/tenantConfigurations/limits",
+		},
 
 		// --- Tenant Info ---
 		{
