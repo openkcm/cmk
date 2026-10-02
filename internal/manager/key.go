@@ -1265,7 +1265,7 @@ func (km *KeyManager) newCryptoRegion(
 	var certName string
 	for _, cert := range cryptoCerts {
 		if cert.Name == region {
-			certName = region
+			certName = cert.Subject.String()
 			break
 		}
 	}

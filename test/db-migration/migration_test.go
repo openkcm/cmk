@@ -4,12 +4,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/model"
@@ -786,7 +790,32 @@ func TestSchemaMigrations(t *testing.T) {
 	}
 }
 
+//nolint:gocognit,cyclop
 func TestDataMigrations(t *testing.T) {
+	cryptoCerts := []config.CryptoCert{
+		{
+			Name: "eu-1",
+			Subject: config.CryptoCertSubject{
+				Locality:           []string{"Locality"},
+				OrganizationalUnit: []string{"OU1", "OU2"},
+				Organization:       []string{"Org"},
+				Country:            []string{"Country"},
+				CommonNamePrefix:   "test_",
+			},
+			RootCA: "https://example.com/root.crt",
+		},
+		{
+			Name: "us-1",
+			Subject: config.CryptoCertSubject{
+				Locality:           []string{"Locality"},
+				OrganizationalUnit: []string{"OU1", "OU2"},
+				Organization:       []string{"Org"},
+				Country:            []string{"Country"},
+				CommonNamePrefix:   "test_",
+			},
+			RootCA: "https://example.com/root.crt",
+		},
+	}
 	tests := []struct {
 		name            string
 		target          db.MigrationTarget
@@ -1231,6 +1260,97 @@ func TestDataMigrations(t *testing.T) {
 					`).Scan(&count).Error
 					assert.NoError(t, err)
 					assert.Equal(t, 0, count, "down migration must remove hierarchical flat rows")
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should replace certificate subject with value region for proper subject",
+			target:        db.TenantTarget,
+			version:       6,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				t.Chdir(t.TempDir())
+
+				certBytes, err := yaml.Marshal(cryptoCerts)
+				require.NoError(t, err)
+
+				cfg := &config.Config{
+					CryptoLayer: config.CryptoLayer{
+						CertX509Trusts: commoncfg.SourceRef{
+							Source: commoncfg.EmbeddedSourceValue,
+							Value:  string(certBytes),
+						},
+					},
+					Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+				}
+
+				data, err := yaml.Marshal(cfg)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile("config.yaml", data, 0o600))
+
+				keyAccessData := model.KeyAccessData{
+					// certificateSubject == region: placeholder that must be replaced.
+					"eu-1": cmkapi.KeyAccessDetailsRegion{
+						CertificateSubject: new("eu-1"),
+						IsEditable:         new(false),
+					},
+					// certificateSubject != region: already set, must be left untouched.
+					"us-1": cmkapi.KeyAccessDetailsRegion{
+						CertificateSubject: new("valid-cert-subject"),
+						IsEditable:         new(true),
+					},
+				}
+				seed, err := json.Marshal(keyAccessData)
+				require.NoError(t, err)
+
+				//nolint:dupword
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO keys
+							(created_at, updated_at, id, key_configuration_id, name,
+							 key_type, algorithm, provider, region, crypto_access_data)
+						VALUES (now(), now(), gen_random_uuid(), gen_random_uuid(), ?, 'HYOK', 'AES256', 'noop', 'eu-1', ?::jsonb)
+					`, "k1", string(seed)).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var tenantID string
+					if err := db.Raw(
+						`SELECT id FROM public.tenants WHERE schema_name = current_schema()`,
+					).Scan(&tenantID).Error; err != nil {
+						return err
+					}
+					wantSubject := model.NewClientCertificate(cryptoCerts[0], tenantID).Subject.String()
+
+					var raw []byte
+					if err := db.Raw(`SELECT crypto_access_data FROM keys WHERE name = 'k1'`).Scan(&raw).Error; err != nil {
+						return err
+					}
+
+					var res model.KeyAccessData
+					require.NoError(t, json.Unmarshal(raw, &res))
+
+					// Region key unchanged; nested certificateSubject replaced.
+					eu, ok := res["eu-1"]
+					require.True(t, ok, "eu-1 entry must still exist")
+					require.NotNil(t, eu.CertificateSubject)
+					assert.Equal(t, wantSubject, *eu.CertificateSubject,
+						"placeholder subject (== region) must be replaced with the cert subject")
+					require.NotNil(t, eu.IsEditable)
+					assert.False(t, *eu.IsEditable, "other fields must be preserved")
+
+					// us-1's subject differed from the region, so it stays untouched.
+					us, ok := res["us-1"]
+					require.True(t, ok, "us-1 entry must still exist")
+					require.NotNil(t, us.CertificateSubject)
+					assert.Equal(t, "valid-cert-subject", *us.CertificateSubject,
+						"entries whose subject != region must be left untouched")
+
 					return nil
 				}
 			},
