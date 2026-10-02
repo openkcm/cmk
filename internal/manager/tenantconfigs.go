@@ -48,11 +48,11 @@ const (
 	TenantConfigTypeLimits          = "limits"
 )
 
-// LimitsKeySystemsOverride and LimitsKeyKeysOverride are the flat-row keys for tenant limit
-// overrides under type = "limits".
+// Flat-row keys for tenant limit overrides under type = "limits".
 const (
-	LimitsKeySystemsOverride = "systems_override"
-	LimitsKeyKeysOverride    = "keys_override"
+	LimitsKeySystemsOverride    = "systems_override"
+	LimitsKeyKeysOverride       = "keys_override"
+	LimitsKeyKeyConfigsOverride = "key_configs_override"
 )
 
 // Flat-row keys for workflow config under type = "workflow".
@@ -200,6 +200,31 @@ func (m *TenantConfigManager) GetEffectiveSystemsLimit(ctx context.Context) (int
 func (m *TenantConfigManager) GetEffectiveKeysLimit(ctx context.Context) (int, error) {
 	_, keys, err := m.GetEffectiveLimits(ctx)
 	return keys, err
+}
+
+// GetEffectiveKeyConfigsLimit returns the per-tenant override for the key configuration limit when
+// one is stored in tenant_configs, otherwise falls back to the cluster default from cfg.
+func (m *TenantConfigManager) GetEffectiveKeyConfigsLimit(ctx context.Context) (int, error) {
+	configs, err := m.listConfigsByType(ctx, TenantConfigTypeLimits)
+	if err != nil {
+		return 0, errs.Wrap(ErrGetTenantLimits, err)
+	}
+	for _, c := range configs {
+		if c.Key == LimitsKeyKeyConfigsOverride {
+			v, parseErr := strconv.Atoi(c.Value)
+			if parseErr != nil {
+				return 0, errs.Wrap(ErrGetTenantLimits, parseErr)
+			}
+			if v < 0 {
+				return 0, fmt.Errorf("%w: key_configs_override must be non-negative, got %d", ErrGetTenantLimits, v)
+			}
+			return v, nil
+		}
+	}
+	if m.cfg != nil {
+		return m.cfg.Tenant.KeyConfigLimit, nil
+	}
+	return 0, nil
 }
 
 // GetWorkflowConfig reads flat rows first, falling back to the legacy JSON
