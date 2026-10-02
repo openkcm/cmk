@@ -20,7 +20,7 @@ require (
 	github.com/oapi-codegen/nethttp-middleware v1.2.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/open-feature/go-sdk v1.19.0
-	github.com/openkcm/api-sdk v0.21.0
+	github.com/openkcm/api-sdk v0.22.0
 	github.com/openkcm/common-sdk v1.19.4
 	github.com/openkcm/orbital v0.6.2
 	github.com/openkcm/plugin-sdk v0.15.1
@@ -35,7 +35,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.44.0
 	github.com/veqryn/slog-context v0.9.0
 	github.com/zeebo/assert v1.3.1
-	go.opentelemetry.io/collector/pdata v1.67.0
+	go.opentelemetry.io/collector/pdata v1.68.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
@@ -160,7 +160,7 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/errs/v2 v2.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/featuregate v1.67.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.68.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.20.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.71.0 // indirect
