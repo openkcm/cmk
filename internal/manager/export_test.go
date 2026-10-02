@@ -145,3 +145,9 @@ var PendingCreationTimeout = &pendingCreationTimeout
 var PendingRegistrationTimeout = &pendingRegistrationTimeout
 
 const DefaultKeystoreCertInfix = defaultKeystoreCertInfix
+
+var ExtractErrorDetailMessage = extractErrorDetailMessage
+
+func (km *KeyManager) UpdatePendingKeyErrorDetail(ctx context.Context, key *model.Key, code, reason, msg string) error {
+	return km.updatePendingKeyErrorDetail(ctx, key, code, reason, msg)
+}
