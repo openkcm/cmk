@@ -62,6 +62,7 @@ type KeyConfigManager struct {
 type TenantConfigs interface {
 	GetEffectiveSystemsLimit(ctx context.Context) (int, error)
 	GetEffectiveKeysLimit(ctx context.Context) (int, error)
+	GetEffectiveKeyConfigsLimit(ctx context.Context) (int, error)
 }
 
 type KeyConfigFilter struct {
@@ -192,6 +193,40 @@ func (m *KeyConfigManager) EnforceKeyLimit(ctx context.Context, keyConfigID uuid
 	return nil
 }
 
+// EnforceKeyConfigLimit checks the per-tenant key configuration limit and returns
+// ErrKeyConfigLimitExceeded when the count is at or above the limit. It locks the
+// tenant row FOR UPDATE to serialize concurrent creates for the same tenant, since a
+// per-tenant count has no single parent key_configuration row to lock. Must be called
+// inside a transaction.
+func (m *KeyConfigManager) EnforceKeyConfigLimit(ctx context.Context) error {
+	if m.tenantCfg == nil {
+		return nil
+	}
+	limit, err := m.tenantCfg.GetEffectiveKeyConfigsLimit(ctx)
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
+		return nil
+	}
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err = m.r.First(ctx, &model.Tenant{ID: tenantID},
+		*repo.NewQuery().WithLock(repo.LockForUpdate)); err != nil {
+		return err
+	}
+	count, err := m.r.Count(ctx, &model.KeyConfiguration{}, *repo.NewQuery())
+	if err != nil {
+		return errs.Wrap(repo.ErrGetResource, err)
+	}
+	if count >= limit {
+		return ErrKeyConfigLimitExceeded
+	}
+	return nil
+}
+
 func (m *KeyConfigManager) GetKeyConfigurations(
 	ctx context.Context,
 	filter KeyConfigFilter,
@@ -246,9 +281,17 @@ func (m *KeyConfigManager) PostKeyConfigurations(
 		return nil, ErrNameCannotBeEmpty
 	}
 
-	err = m.r.Create(ctx, keyConfiguration)
+	err = m.r.Transaction(ctx, func(ctx context.Context) error {
+		if err := m.EnforceKeyConfigLimit(ctx); err != nil {
+			return err
+		}
+		if err := m.r.Create(ctx, keyConfiguration); err != nil {
+			return errs.Wrap(ErrCreateKeyConfiguration, err)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, errs.Wrap(ErrCreateKeyConfiguration, err)
+		return nil, err
 	}
 
 	return keyConfiguration, nil

@@ -150,6 +150,7 @@ var (
 	ErrUnsuportedWorkflow        = errors.New("workflow artifact type and action type set is not supported")
 	ErrSystemLimitExceeded       = errors.New("system limit exceeded for key configuration")
 	ErrKeyLimitExceeded          = errors.New("key limit exceeded for key configuration")
+	ErrKeyConfigLimitExceeded    = errors.New("key configuration limit exceeded for tenant")
 
 	ErrUpdateNonBYOKKeyStatus = errors.New("key status update is only supported for byok")
 	ErrAlreadyPrimaryKey      = errors.New("key is already primary key")
