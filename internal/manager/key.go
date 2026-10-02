@@ -185,6 +185,12 @@ func (km *KeyManager) Create(
 		}
 	}
 
+	// Enforce key limit before any provider interaction so a limit violation never
+	// orphans a key that was provisioned in the external keystore.
+	if err := km.keyConfigManager.EnforceKeyLimit(ctx, key.KeyConfigurationID); err != nil {
+		return nil, err
+	}
+
 	// Initialize provider
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
@@ -752,7 +758,12 @@ func (km *KeyManager) persistCreatedKey(
 	key *model.Key,
 	keyResp *keymanagement.GetKeyResponse,
 ) error {
-	if err := km.repo.Create(ctx, key); err != nil {
+	if err := km.repo.Transaction(ctx, func(ctx context.Context) error {
+		if err := km.keyConfigManager.EnforceKeyLimit(ctx, key.KeyConfigurationID); err != nil {
+			return err
+		}
+		return km.repo.Create(ctx, key)
+	}); err != nil {
 		return errs.Wrap(ErrCreateKeyDB, err)
 	}
 
@@ -784,6 +795,9 @@ func (km *KeyManager) savePendingBYOKKey(ctx context.Context, key *model.Key) (*
 	key.State = cmkapi.KeyStatePENDINGCREATION
 	key.NativeID = nil // not yet created in provider
 	if err := km.repo.Transaction(ctx, func(ctx context.Context) error {
+		if err := km.keyConfigManager.EnforceKeyLimit(ctx, key.KeyConfigurationID); err != nil {
+			return err
+		}
 		return km.repo.Create(ctx, key)
 	}); err != nil {
 		return nil, errs.Wrap(ErrCreateKeyDB, err)
@@ -797,6 +811,9 @@ func (km *KeyManager) createPendingRegistrationHYOKKey(ctx context.Context, key 
 	key.State = cmkapi.KeyStatePENDINGREGISTRATION
 	key.Algorithm = cmkapi.KeyAlgorithmAES256
 	if err := km.repo.Transaction(ctx, func(ctx context.Context) error {
+		if err := km.keyConfigManager.EnforceKeyLimit(ctx, key.KeyConfigurationID); err != nil {
+			return err
+		}
 		return km.repo.Create(ctx, key)
 	}); err != nil {
 		return nil, errs.Wrap(ErrCreateKeyDB, err)

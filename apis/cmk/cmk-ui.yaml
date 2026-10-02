@@ -1755,6 +1755,11 @@ components:
           type: integer
           readOnly: true
           example: 50
+        keys:
+          description: Maximum number of keys allowed per key configuration
+          type: integer
+          readOnly: true
+          example: 10
     TenantKeystore:
       type: object
       required:

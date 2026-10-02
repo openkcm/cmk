@@ -2773,6 +2773,94 @@ func TestCreateHYOKPendingRegistration(t *testing.T) {
 	})
 }
 
+func TestCreateHYOKPendingRegistration_KeyLimitEnforced(t *testing.T) {
+	// Build a KeyManager with a key limit of 1 wired through the KeyConfigManager.
+	invalidInfo, err := json.Marshal(map[string]string{"AccountID": "bad", "UserID": "bad"})
+	require.NoError(t, err)
+	cryptoAccessData := model.KeyAccessData{"crypto-1": {AdditionalProperties: map[string]any{"someKey": "someValue"}}}
+	cryptoBytes, err := json.Marshal(cryptoAccessData)
+	require.NoError(t, err)
+
+	db, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		WithOrbital:    true,
+	})
+	tenant := tenants[0]
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	svcRegistry := testutils.NewTestPlugins()
+	cryptoCertsBytes, marshalErr := yaml.Marshal([]config.CryptoCert{{
+		Name:   "crypto-1",
+		RootCA: "https://example.com/root.crt",
+		Subject: config.CryptoCertSubject{
+			CommonNamePrefix: "test_",
+			Country:          []string{"DE"},
+			Organization:     []string{"TestOrg"},
+		},
+	}})
+	require.NoError(t, marshalErr)
+
+	cfg := &config.Config{
+		Database: dbConf,
+		Certificates: config.Certificates{
+			ValidityDays: config.MinCertificateValidityDays,
+		},
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  string(cryptoCertsBytes),
+			},
+		},
+		Tenant: config.Tenant{KeyLimit: 1},
+	}
+	cfg.FeatureFlags.Enabled = true
+
+	cmkAuditor := auditor.New(ctx, cfg)
+	eventFactory, factoryErr := eventprocessor.NewEventFactory(ctx, cfg, r)
+	require.NoError(t, factoryErr)
+
+	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
+		newTestFlags(map[string]bool{
+			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+		}))
+	userManager := manager.NewUserManager(r, cmkAuditor)
+	tagManager := manager.NewTagManager(r)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, tenantConfigManager)
+
+	km := manager.NewKeyManager(
+		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor, nil, nil,
+	)
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, tenantDefaultCert)
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+	makeHYOKKey := func(name string) *model.Key {
+		return testutils.NewKey(func(k *model.Key) {
+			k.Name = name
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.NativeID = new("mock-key/11111111")
+			k.ManagementAccessData = invalidInfo
+			k.Provider = testplugins.Name
+			k.CryptoAccessData = cryptoBytes
+		})
+	}
+
+	// First PENDING_REGISTRATION key creation should succeed.
+	result, err := km.Create(ctx, makeHYOKKey("hyok-one"))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, cmkapi.KeyStatePENDINGREGISTRATION, result.State)
+
+	// Second must be rejected because the limit (1) is reached.
+	_, err = km.Create(ctx, makeHYOKKey("hyok-two"))
+	assert.ErrorIs(t, err, manager.ErrKeyLimitExceeded)
+}
+
 func TestUpdateKeyPendingRegistrationGuard(t *testing.T) {
 	km, r, ctx, keyConfig, _ := SetupKeyTest(t)
 

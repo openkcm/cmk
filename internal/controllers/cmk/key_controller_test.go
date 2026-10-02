@@ -16,6 +16,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
@@ -1602,4 +1603,86 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
+}
+
+func TestKeyControllerPostKeys_KeyLimitExceeded(t *testing.T) {
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+	})
+
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	apiCfg := config.Config{
+		Database: dbCfg,
+		Tenant:   config.Tenant{KeyLimit: 1},
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  "[]",
+			},
+		},
+	}
+	apiCfg.FeatureFlags.Enabled = true
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Registry: testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp)),
+		Config:   apiCfg,
+		Flags: testutils.NewTestFlagClient(map[string]bool{
+			"enable_byok_" + strings.ToLower(testplugins.Name): true,
+		}),
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
+	})
+	tenant := tenants[0]
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	businessUserData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	require.True(t, ok)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthBusinessUserDataKC(authClient))
+	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
+	testutils.CreateTestEntities(ctx, t, r, tenantDefaultCert, keyConfig, keystore, keystoreDefaultCert, keystoreKeyMgmtCert)
+
+	makeKeyBody := func(name string) map[string]any {
+		return map[string]any{
+			"name":               name,
+			"type":               cmkapi.KeyTypeBYOK,
+			"keyConfigurationID": keyConfig.ID,
+			"provider":           providerTest,
+			"algorithm":          cmkapi.KeyAlgorithmAES256,
+			"region":             "us-west-2",
+		}
+	}
+
+	// First key creation should succeed.
+	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+		Method:   http.MethodPost,
+		Endpoint: "/keys",
+		Tenant:   tenant,
+		Body:     testutils.WithJSON(t, makeKeyBody("key-one")),
+		Headers:  headers,
+	})
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	// Second key creation must be rejected because the limit (1) is reached.
+	w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+		Method:   http.MethodPost,
+		Endpoint: "/keys",
+		Tenant:   tenant,
+		Body:     testutils.WithJSON(t, makeKeyBody("key-two")),
+		Headers:  headers,
+	})
+	assert.Equal(t, http.StatusConflict, w.Code)
+
+	var response cmkapi.ErrorMessage
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, "KEY_LIMIT_EXCEEDED", response.Error.Code)
 }
