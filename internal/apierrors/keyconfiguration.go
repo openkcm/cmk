@@ -141,6 +141,14 @@ var keyConfiguration = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{manager.ErrKeyConfigLimitExceeded},
+		ExposedError: &APIError{
+			Code:    "KEY_CONFIG_LIMIT_EXCEEDED",
+			Message: "The key configuration limit for this tenant has been reached",
+			Status:  http.StatusConflict,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrGetClientCertificates},
 		ExposedError: &APIError{
 			Code:    "GET_CLIENT_CERTIFICATES",
