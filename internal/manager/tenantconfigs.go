@@ -150,30 +150,35 @@ type TenantKeystores struct {
 	HYOK      HYOKKeystore
 }
 
-// GetEffectiveLimits returns both the systems and keys limits in a single DB fetch.
-func (m *TenantConfigManager) GetEffectiveLimits(ctx context.Context) (int, int, error) {
+// GetEffectiveLimits returns the systems, keys and key-configuration limits in a single DB fetch.
+func (m *TenantConfigManager) GetEffectiveLimits(ctx context.Context) (int, int, int, error) {
 	configs, err := m.listConfigsByType(ctx, TenantConfigTypeLimits)
 	if err != nil {
-		return 0, 0, errs.Wrap(ErrGetTenantLimits, err)
+		return 0, 0, 0, errs.Wrap(ErrGetTenantLimits, err)
 	}
-	systems, keys := 0, 0
+	systems, keys, keyConfigs := 0, 0, 0
 	if m.cfg != nil {
 		systems = m.cfg.Tenant.SystemLimit
 		keys = m.cfg.Tenant.KeyLimit
+		keyConfigs = m.cfg.Tenant.KeyConfigLimit
 	}
 	for _, c := range configs {
 		switch c.Key {
 		case LimitsKeySystemsOverride:
 			if systems, err = parseLimitOverride(c.Value, LimitsKeySystemsOverride); err != nil {
-				return 0, 0, err
+				return 0, 0, 0, err
 			}
 		case LimitsKeyKeysOverride:
 			if keys, err = parseLimitOverride(c.Value, LimitsKeyKeysOverride); err != nil {
-				return 0, 0, err
+				return 0, 0, 0, err
+			}
+		case LimitsKeyKeyConfigsOverride:
+			if keyConfigs, err = parseLimitOverride(c.Value, LimitsKeyKeyConfigsOverride); err != nil {
+				return 0, 0, 0, err
 			}
 		}
 	}
-	return systems, keys, nil
+	return systems, keys, keyConfigs, nil
 }
 
 // parseLimitOverride parses a string limit override value and validates it is non-negative.
@@ -191,40 +196,22 @@ func parseLimitOverride(value, key string) (int, error) {
 // GetEffectiveSystemsLimit returns the per-tenant override for the systems limit when one is
 // stored in tenant_configs, otherwise falls back to the cluster default from cfg.
 func (m *TenantConfigManager) GetEffectiveSystemsLimit(ctx context.Context) (int, error) {
-	systems, _, err := m.GetEffectiveLimits(ctx)
+	systems, _, _, err := m.GetEffectiveLimits(ctx)
 	return systems, err
 }
 
 // GetEffectiveKeysLimit returns the per-tenant override for the keys limit when one is
 // stored in tenant_configs, otherwise falls back to the cluster default from cfg.
 func (m *TenantConfigManager) GetEffectiveKeysLimit(ctx context.Context) (int, error) {
-	_, keys, err := m.GetEffectiveLimits(ctx)
+	_, keys, _, err := m.GetEffectiveLimits(ctx)
 	return keys, err
 }
 
 // GetEffectiveKeyConfigsLimit returns the per-tenant override for the key configuration limit when
 // one is stored in tenant_configs, otherwise falls back to the cluster default from cfg.
 func (m *TenantConfigManager) GetEffectiveKeyConfigsLimit(ctx context.Context) (int, error) {
-	configs, err := m.listConfigsByType(ctx, TenantConfigTypeLimits)
-	if err != nil {
-		return 0, errs.Wrap(ErrGetTenantLimits, err)
-	}
-	for _, c := range configs {
-		if c.Key == LimitsKeyKeyConfigsOverride {
-			v, parseErr := strconv.Atoi(c.Value)
-			if parseErr != nil {
-				return 0, errs.Wrap(ErrGetTenantLimits, parseErr)
-			}
-			if v < 0 {
-				return 0, fmt.Errorf("%w: key_configs_override must be non-negative, got %d", ErrGetTenantLimits, v)
-			}
-			return v, nil
-		}
-	}
-	if m.cfg != nil {
-		return m.cfg.Tenant.KeyConfigLimit, nil
-	}
-	return 0, nil
+	_, _, keyConfigs, err := m.GetEffectiveLimits(ctx)
+	return keyConfigs, err
 }
 
 // GetWorkflowConfig reads flat rows first, falling back to the legacy JSON

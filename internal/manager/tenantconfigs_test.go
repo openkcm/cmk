@@ -1499,14 +1499,15 @@ func TestGetEffectiveLimits(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
 
-		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10}}
+		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10, KeyConfigLimit: 5}}
 		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
 
-		systems, keys, err := m.GetEffectiveLimits(ctx)
+		systems, keys, keyConfigs, err := m.GetEffectiveLimits(ctx)
 
 		require.NoError(t, err)
 		assert.Equal(t, 50, systems)
 		assert.Equal(t, 10, keys)
+		assert.Equal(t, 5, keyConfigs)
 	})
 
 	t.Run("returns both overrides from DB in a single fetch", func(t *testing.T) {
@@ -1524,15 +1525,40 @@ func TestGetEffectiveLimits(t *testing.T) {
 			Value: "7",
 			Type:  manager.TenantConfigTypeLimits,
 		}, *repo.NewQuery()))
+		require.NoError(t, r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeyKeyConfigsOverride,
+			Value: "33",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery()))
 
-		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10}}
+		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10, KeyConfigLimit: 5}}
 		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
 
-		systems, keys, err := m.GetEffectiveLimits(ctx)
+		systems, keys, keyConfigs, err := m.GetEffectiveLimits(ctx)
 
 		require.NoError(t, err)
 		assert.Equal(t, 99, systems)
 		assert.Equal(t, 7, keys)
+		assert.Equal(t, 33, keyConfigs)
+	})
+
+	t.Run("returns error when an override is invalid", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeyKeyConfigsOverride,
+			Value: "abc",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		_, _, _, err = m.GetEffectiveLimits(ctx)
+
+		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
 	})
 }
 
