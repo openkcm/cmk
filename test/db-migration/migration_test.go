@@ -745,6 +745,18 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   21,
 		},
+		{
+			name:      "Should up tenant/00023_add_system_grouping.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   23,
+		},
+		{
+			name:      "Should down tenant/00023_add_system_grouping.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   23,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
