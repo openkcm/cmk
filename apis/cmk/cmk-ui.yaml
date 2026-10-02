@@ -2165,6 +2165,10 @@ components:
           description: Stable machine-readable error code identifying the failure cause.
           type: string
           example: PROVISIONING_TIMEOUT
+        errorReason:
+          description: Provider-specific reason code returned by the keystore.
+          type: string
+          example: AUTHENTICATION_ERROR
         errorMessage:
           description: Human-readable description of the failure.
           type: string

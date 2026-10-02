@@ -162,7 +162,7 @@ func (s *TestKeyManagement) GetKey(
 	if cfg["authType"] == "AUTH_TYPE_CERTIFICATE" &&
 		(cfg["AccountID"] != ValidKeystoreAccountInfo["AccountID"] ||
 			cfg["UserID"] != ValidKeystoreAccountInfo["UserID"]) {
-		return nil, keymanagement.ErrProviderAuthenticationFailed
+		return nil, &keymanagement.ProviderAuthError{Reason: "DENIED_BY_POLICY"}
 	}
 
 	record, exists := s.KeyStore[req.Parameters.KeyID]

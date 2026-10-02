@@ -2758,6 +2758,11 @@ func TestSyncPendingRegistrationKey(t *testing.T) {
 
 		key := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGREGISTRATION)
 
+		// Simulate a prior failed retry that wrote error_detail.
+		errDetail := km.UpdatePendingKeyErrorDetail(ctx, key, "REGISTRATION_AUTH_FAILED", "CANNOT_ASSUME_ROLE",
+			"Authentication to the external keystore failed; the key will retry automatically.")
+		require.NoError(t, errDetail)
+
 		syncErr := km.SyncPendingRegistrationKey(ctx, key.ID)
 
 		require.NoError(t, syncErr)
@@ -2767,6 +2772,7 @@ func TestSyncPendingRegistrationKey(t *testing.T) {
 		require.True(t, found)
 		assert.Equal(t, cmkapi.KeyStateENABLED, dbKey.State,
 			"key should transition to ENABLED when auth succeeds")
+		assert.Nil(t, dbKey.ErrorDetail, "error_detail must be cleared on successful registration")
 	})
 
 	t.Run("transitions key to ERROR when key not found in keystore", func(t *testing.T) {
@@ -2832,6 +2838,13 @@ func TestSyncPendingRegistrationKey(t *testing.T) {
 		require.True(t, found)
 		assert.Equal(t, cmkapi.KeyStatePENDINGREGISTRATION, dbKey.State,
 			"state must remain PENDING_REGISTRATION while auth is still failing")
+
+		// New assertions:
+		assert.NotNil(t, dbKey.ErrorDetail,
+			"error_detail must be written on auth failure for real-time user feedback")
+		msg := manager.ExtractErrorDetailMessage(dbKey.ErrorDetail)
+		assert.Equal(t, "DENIED_BY_POLICY", msg,
+			"error_detail message must be the provider reason code, not the sentinel string")
 	})
 
 	t.Run("transitions key to FORBIDDEN on timeout", func(t *testing.T) {
@@ -2855,6 +2868,38 @@ func TestSyncPendingRegistrationKey(t *testing.T) {
 			"key should transition to FORBIDDEN after timeout")
 		assert.NotNil(t, dbKey.ErrorDetail, "error detail should be populated on timeout")
 	})
+
+	t.Run("FORBIDDEN timeout message includes last known auth error", func(t *testing.T) {
+		original := *manager.PendingRegistrationTimeout
+		*manager.PendingRegistrationTimeout = time.Nanosecond
+		t.Cleanup(func() { *manager.PendingRegistrationTimeout = original })
+
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t)
+
+		key := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGREGISTRATION)
+
+		// Pre-populate error_detail to simulate a prior failed retry.
+		errDetail := km.UpdatePendingKeyErrorDetail(ctx, key, "REGISTRATION_AUTH_FAILED", "CANNOT_ASSUME_ROLE",
+			"Authentication to the external keystore failed; the key will retry automatically.")
+		require.NoError(t, errDetail)
+		// Reload key so key.ErrorDetail is populated in memory before sync reads it.
+		_, reloadErr := r.First(ctx, key, *repo.NewQuery())
+		require.NoError(t, reloadErr)
+
+		time.Sleep(time.Millisecond)
+		syncErr := km.SyncPendingRegistrationKey(ctx, key.ID)
+
+		require.NoError(t, syncErr)
+		dbKey := &model.Key{ID: key.ID}
+		found, fErr := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, fErr)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStateFORBIDDEN, dbKey.State)
+
+		reason := manager.ExtractErrorDetailMessage(dbKey.ErrorDetail)
+		assert.Equal(t, "CANNOT_ASSUME_ROLE", reason,
+			"errorReason must carry the last known provider reason code")
+	})
 }
 
 func TestSyncPendingRegistrationKeyEdgeCases(t *testing.T) {
@@ -2874,6 +2919,66 @@ func TestSyncPendingRegistrationKeyEdgeCases(t *testing.T) {
 		err := km.SyncPendingRegistrationKey(ctx, key.ID)
 
 		require.NoError(t, err, "non-PENDING_REGISTRATION key should be a no-op")
+	})
+}
+
+func TestExtractErrorDetailMessage(t *testing.T) {
+	t.Run("returns ErrorReason from valid JSON", func(t *testing.T) {
+		code := "SOME_CODE"
+		reason := "CANNOT_ASSUME_ROLE"
+		msg := "some human-readable message"
+		now := time.Now().UTC()
+		detail := cmkapi.KeyErrorDetail{
+			ErrorCode:      &code,
+			ErrorReason:    &reason,
+			ErrorMessage:   &msg,
+			ErrorTimestamp: &now,
+		}
+		b, err := json.Marshal(detail)
+		require.NoError(t, err)
+
+		got := manager.ExtractErrorDetailMessage(b)
+		assert.Equal(t, reason, got)
+	})
+
+	t.Run("returns empty string for nil input", func(t *testing.T) {
+		assert.Empty(t, manager.ExtractErrorDetailMessage(nil))
+	})
+
+	t.Run("returns empty string for invalid JSON", func(t *testing.T) {
+		assert.Empty(t, manager.ExtractErrorDetailMessage([]byte("not json")))
+	})
+
+	t.Run("returns empty string when ErrorReason field is nil", func(t *testing.T) {
+		ptr := func(s string) *string { return &s }
+		detail := cmkapi.KeyErrorDetail{ErrorCode: ptr("CODE"), ErrorMessage: ptr("some message")}
+		b, err := json.Marshal(detail)
+		require.NoError(t, err)
+		assert.Empty(t, manager.ExtractErrorDetailMessage(b))
+	})
+}
+
+func TestUpdatePendingKeyErrorDetail(t *testing.T) {
+	t.Run("writes error_detail to DB without changing state", func(t *testing.T) {
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t)
+
+		key := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGREGISTRATION)
+
+		err := km.UpdatePendingKeyErrorDetail(ctx, key, "REGISTRATION_AUTH_FAILED", "DENIED_BY_POLICY",
+			"Authentication to the external keystore failed; the key will retry automatically.")
+		require.NoError(t, err)
+
+		dbKey := &model.Key{ID: key.ID}
+		found, dbErr := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, dbErr)
+		require.True(t, found)
+
+		assert.Equal(t, cmkapi.KeyStatePENDINGREGISTRATION, dbKey.State,
+			"state must not change")
+		assert.NotNil(t, dbKey.ErrorDetail, "error_detail must be written")
+
+		reason := manager.ExtractErrorDetailMessage(dbKey.ErrorDetail)
+		assert.Equal(t, "DENIED_BY_POLICY", reason)
 	})
 }
 

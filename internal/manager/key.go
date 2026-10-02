@@ -84,6 +84,17 @@ func IsUnavailableKeyState(state cmkapi.KeyState) bool {
 	return slices.Contains(UnavailableKeyStates, state)
 }
 
+// keyRegistrationAuthError carries a provider-specific reason string (e.g. "DENIED_BY_POLICY")
+// while remaining matchable via errors.Is(err, ErrKeyRegistrationAuthFailed).
+type keyRegistrationAuthError struct {
+	reason string
+}
+
+func (e keyRegistrationAuthError) Error() string { return e.reason }
+func (e keyRegistrationAuthError) Is(target error) bool {
+	return target == ErrKeyRegistrationAuthFailed
+}
+
 type KeyManager struct {
 	ProviderConfigManager
 
@@ -530,7 +541,6 @@ func (km *KeyManager) Detach(ctx context.Context, key *model.Key) error {
 	})
 }
 
-//nolint:cyclop // state machine requires multiple condition branches
 func (km *KeyManager) syncPendingRegistrationKey(ctx context.Context, key *model.Key) error {
 	ctx = model.LogInjectKey(ctx, key)
 	elapsed := time.Since(key.CreatedAt)
@@ -543,7 +553,8 @@ func (km *KeyManager) syncPendingRegistrationKey(ctx context.Context, key *model
 
 	if elapsed > timeout {
 		log.Error(ctx, "PENDING_REGISTRATION key timed out, transitioning to FORBIDDEN", ErrProvisioningTimeout)
-		if err := km.transitionPendingKeyToForbidden(ctx, key); err != nil {
+		lastErrMsg := extractErrorDetailMessage(key.ErrorDetail)
+		if err := km.transitionPendingKeyToForbidden(ctx, key, lastErrMsg); err != nil {
 			return err
 		}
 		km.metrics.RecordTransition(ctx, string(key.KeyType), "PENDING_REGISTRATION", "FORBIDDEN", "timeout")
@@ -562,14 +573,28 @@ func (km *KeyManager) syncPendingRegistrationKey(ctx context.Context, key *model
 	if err != nil {
 		if errors.Is(err, ErrKeyRegistrationAuthFailed) {
 			log.Debug(ctx, "Auth still failing for PENDING_REGISTRATION key, will retry")
+			if pErr := km.updatePendingKeyErrorDetail(ctx, key, "REGISTRATION_AUTH_FAILED", err.Error(),
+				"Authentication to the external keystore failed; the key will retry automatically."); pErr != nil {
+				log.Warn(ctx, "failed to update error detail for PENDING_REGISTRATION key", log.ErrorAttr(pErr))
+			}
 			return err // retryable: Asynq retries on non-nil error
 		}
 		// Static validation failed (invalid state, unsupported algorithm, key not found, etc.) → ERROR
 		return km.transitionPendingKeyToError(ctx, key, "REGISTRATION_FAILED", err.Error())
 	}
 
+	// Clear any error detail from prior failed retries.
+	key.ErrorDetail = nil
+
+	return km.completePendingRegistration(ctx, provider, key)
+}
+
+// completePendingRegistration persists the newly-enabled key state and fires
+// downstream notifications. Extracted to keep syncPendingRegistrationKey within
+// the funlen limit.
+func (km *KeyManager) completePendingRegistration(ctx context.Context, provider *ProviderConfig, key *model.Key) error {
 	// Auth succeeded and key validated — persist final state and set primary if first key.
-	err = km.repo.Transaction(ctx, func(ctx context.Context) error {
+	err := km.repo.Transaction(ctx, func(ctx context.Context) error {
 		_, err := km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
 		if err != nil {
 			return errs.Wrap(ErrUpdateKeyDB, err)
@@ -599,18 +624,25 @@ func (km *KeyManager) syncPendingRegistrationKey(ctx context.Context, key *model
 	return nil
 }
 
-func (km *KeyManager) transitionPendingKeyToForbidden(ctx context.Context, key *model.Key) error {
+func buildKeyErrorDetail(code, reason, msg string) (json.RawMessage, error) {
 	now := time.Now().UTC()
-	code := "REGISTRATION_TIMEOUT"
-	msg := "HYOK key registration timed out; authentication to the external keystore" +
-		" did not succeed within the allowed window"
 	detail := cmkapi.KeyErrorDetail{
 		ErrorCode:      &code,
 		ErrorMessage:   &msg,
 		ErrorTimestamp: &now,
 	}
+	if reason != "" {
+		detail.ErrorReason = &reason
+	}
+	return json.Marshal(detail)
+}
 
-	detailBytes, err := json.Marshal(detail)
+func (km *KeyManager) transitionPendingKeyToForbidden(ctx context.Context, key *model.Key, lastErrMsg string) error {
+	code := "REGISTRATION_TIMEOUT"
+	msg := "HYOK key registration timed out; authentication to the external keystore" +
+		" did not succeed within the allowed window"
+
+	detailBytes, err := buildKeyErrorDetail(code, lastErrMsg, msg)
 	if err != nil {
 		return err
 	}
@@ -623,6 +655,22 @@ func (km *KeyManager) transitionPendingKeyToForbidden(ctx context.Context, key *
 		return errs.Wrap(ErrUpdateKeyDB, err)
 	}
 	return nil
+}
+
+// extractErrorDetailMessage reads the ErrorReason field from a serialised
+// KeyErrorDetail blob. Returns "" if the input is nil, unparseable, or has no reason.
+func extractErrorDetailMessage(detail json.RawMessage) string {
+	if detail == nil {
+		return ""
+	}
+	var d cmkapi.KeyErrorDetail
+	if err := json.Unmarshal(detail, &d); err != nil {
+		return ""
+	}
+	if d.ErrorReason == nil {
+		return ""
+	}
+	return *d.ErrorReason
 }
 
 func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key) error {
@@ -858,15 +906,24 @@ func (km *KeyManager) enqueuePendingStateSync(ctx context.Context, key *model.Ke
 		slog.String("keyId", key.ID.String()))
 }
 
-func (km *KeyManager) transitionPendingKeyToError(ctx context.Context, key *model.Key, code, msg string) error {
-	now := time.Now().UTC()
-	detail := cmkapi.KeyErrorDetail{
-		ErrorCode:      &code,
-		ErrorMessage:   &msg,
-		ErrorTimestamp: &now,
+func (km *KeyManager) updatePendingKeyErrorDetail(ctx context.Context, key *model.Key, code, reason, msg string) error {
+	detailBytes, err := buildKeyErrorDetail(code, reason, msg)
+	if err != nil {
+		return err
 	}
 
-	detailBytes, err := json.Marshal(detail)
+	key.ErrorDetail = detailBytes
+
+	_, err = km.repo.Patch(ctx, key, *repo.NewQuery().UpdateAll(true))
+	if err != nil {
+		return errs.Wrap(ErrUpdateKeyDB, err)
+	}
+
+	return nil
+}
+
+func (km *KeyManager) transitionPendingKeyToError(ctx context.Context, key *model.Key, code, msg string) error {
+	detailBytes, err := buildKeyErrorDetail(code, "", msg)
 	if err != nil {
 		return err
 	}
@@ -1108,10 +1165,7 @@ func (km *KeyManager) registerHYOKKey(
 		},
 	})
 	if err != nil {
-		if errors.Is(err, keymanagement.ErrProviderAuthenticationFailed) {
-			return nil, ErrKeyRegistrationAuthFailed
-		}
-		return nil, errs.Wrap(ErrKeyRegistration, err)
+		return nil, wrapProviderAuthError(err)
 	}
 
 	err = km.addCertificateSubjectToCryptoData(ctx, key)
@@ -1152,6 +1206,20 @@ func (km *KeyManager) registerHYOKKey(
 	)
 
 	return keyResp, nil
+}
+
+// wrapProviderAuthError converts a GetKey error into a keyRegistrationAuthError (when auth
+// failed) or a wrapped ErrKeyRegistration (for all other errors).
+func wrapProviderAuthError(err error) error {
+	if errors.Is(err, keymanagement.ErrProviderAuthenticationFailed) {
+		var authErr *keymanagement.ProviderAuthError
+		reason := ErrKeyRegistrationAuthFailed.Error()
+		if errors.As(err, &authErr) && authErr.Reason != "" {
+			reason = authErr.Reason
+		}
+		return keyRegistrationAuthError{reason: reason}
+	}
+	return errs.Wrap(ErrKeyRegistration, err)
 }
 
 func (km *KeyManager) addCertificateSubjectToCryptoData(ctx context.Context, key *model.Key) error {

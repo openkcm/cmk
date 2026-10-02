@@ -45,6 +45,9 @@ func convertGRPCError(err error) error {
 
 	switch {
 	case keystoreErrs.IsStatus(err, keystoreErrs.StatusProviderAuthenticationError):
+		if reason, _ := keystoreErrs.GetDetails(err); reason != "" {
+			return &keymanagement.ProviderAuthError{Reason: reason}
+		}
 		return keymanagement.ErrProviderAuthenticationFailed
 	case keystoreErrs.IsStatus(err, keystoreErrs.StatusKeyNotFound):
 		return keymanagement.ErrHYOKKeyNotFound
