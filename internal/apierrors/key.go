@@ -440,4 +440,12 @@ var key = []errs.ExposedErrors[*APIError]{
 			Status:  http.StatusBadRequest,
 		},
 	},
+	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyLimitExceeded},
+		ExposedError: &APIError{
+			Code:    "KEY_LIMIT_EXCEEDED",
+			Message: "The key limit for this key configuration has been reached",
+			Status:  http.StatusConflict,
+		},
+	},
 }

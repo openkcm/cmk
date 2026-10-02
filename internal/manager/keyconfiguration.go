@@ -61,6 +61,7 @@ type KeyConfigManager struct {
 // TenantConfigs is the subset of TenantConfigManager used by KeyConfigManager.
 type TenantConfigs interface {
 	GetEffectiveSystemsLimit(ctx context.Context) (int, error)
+	GetEffectiveKeysLimit(ctx context.Context) (int, error)
 }
 
 type KeyConfigFilter struct {
@@ -150,6 +151,43 @@ func (m *KeyConfigManager) EnforceSystemLimit(ctx context.Context, keyConfigID u
 	}
 	if count >= limit {
 		return ErrSystemLimitExceeded
+	}
+	return nil
+}
+
+// EnforceKeyLimit checks the per-tenant key limit for a key configuration and returns
+// ErrKeyLimitExceeded when the count is at or above the limit. It locks the
+// key_configuration row FOR UPDATE to serialize concurrent create requests.
+func (m *KeyConfigManager) EnforceKeyLimit(ctx context.Context, keyConfigID uuid.UUID) error {
+	if m.tenantCfg == nil {
+		return nil
+	}
+	limit, err := m.tenantCfg.GetEffectiveKeysLimit(ctx)
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
+		return nil
+	}
+	if _, err = m.r.First(ctx, &model.KeyConfiguration{ID: keyConfigID},
+		*repo.NewQuery().WithLock(repo.LockForUpdate)); err != nil {
+		return errs.Wrap(ErrGettingKeyConfigByID, err)
+	}
+	count, err := m.r.Count(
+		ctx,
+		&model.Key{},
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().
+				Where(repo.KeyConfigIDField, keyConfigID).
+				Where(repo.StateField, cmkapi.KeyStateDELETED, repo.NotEq).
+				Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq),
+		)),
+	)
+	if err != nil {
+		return errs.Wrap(repo.ErrGetResource, err)
+	}
+	if count >= limit {
+		return ErrKeyLimitExceeded
 	}
 	return nil
 }

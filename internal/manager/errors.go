@@ -149,6 +149,7 @@ var (
 	ErrNotAllSystemsConnected    = errors.New("keyconfig contains systems not connected")
 	ErrUnsuportedWorkflow        = errors.New("workflow artifact type and action type set is not supported")
 	ErrSystemLimitExceeded       = errors.New("system limit exceeded for key configuration")
+	ErrKeyLimitExceeded          = errors.New("key limit exceeded for key configuration")
 
 	ErrUpdateNonBYOKKeyStatus = errors.New("key status update is only supported for byok")
 	ErrAlreadyPrimaryKey      = errors.New("key is already primary key")
