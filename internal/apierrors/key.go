@@ -413,6 +413,14 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{manager.ErrImportKeyMaterialsToProvider, keymanagement.ErrImportKeyMaterialFailed},
+		ExposedError: &APIError{
+			Code:    "INVALID_WRAPPED_KEY_MATERIAL",
+			Message: "Key material decryption failed: invalid or incorrectly wrapped key material.",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrDefaultKeystoreNotFound},
 		ExposedError: &APIError{
 			Code:    "DEFAULT_KEYSTORE_NOT_FOUND",

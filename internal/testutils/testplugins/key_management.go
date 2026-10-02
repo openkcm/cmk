@@ -62,6 +62,7 @@ type TestKeyManagement struct {
 	IsDefault            bool
 	validRegions         map[string]bool // if non-nil, ValidateKey rejects regions not in this set
 	validNativeIDPattern *regexp.Regexp  // if non-nil, ExtractKeyRegion rejects non-matching native IDs
+	importKeyMaterialErr error
 }
 
 var _ keymanagement.KeyManagement = (*TestKeyManagement)(nil)
@@ -93,6 +94,11 @@ func (s *TestKeyManagement) WithValidRegions(regions ...string) *TestKeyManageme
 // returning an error for non-matching IDs.
 func (s *TestKeyManagement) WithValidNativeIDPattern(pattern string) *TestKeyManagement {
 	s.validNativeIDPattern = regexp.MustCompile(pattern)
+	return s
+}
+
+func (s *TestKeyManagement) WithImportKeyMaterialErr(err error) *TestKeyManagement {
+	s.importKeyMaterialErr = err
 	return s
 }
 
@@ -263,6 +269,9 @@ func (s *TestKeyManagement) ImportKeyMaterial(
 	ctx context.Context,
 	req *keymanagement.ImportKeyMaterialRequest,
 ) (*keymanagement.ImportKeyMaterialResponse, error) {
+	if s.importKeyMaterialErr != nil {
+		return nil, s.importKeyMaterialErr
+	}
 	if req.Parameters.KeyID != "" {
 		err := s.updateKeyStatus(req.Parameters.KeyID, EnabledKeyStatus)
 		if err != nil {

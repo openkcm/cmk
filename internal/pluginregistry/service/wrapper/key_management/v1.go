@@ -3,6 +3,7 @@ package key_management
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -53,6 +54,8 @@ func convertGRPCError(err error) error {
 		return keymanagement.ErrHYOKKeyNotFound
 	case keystoreErrs.IsStatus(err, keystoreErrs.StatusKeyGenericErr):
 		return keymanagement.ErrGenericGetKeyError
+	case keystoreErrs.IsStatus(err, keystoreErrs.StatusImportKeyMaterialFailed):
+		return errors.Join(keymanagement.ErrImportKeyMaterialFailed, err)
 	default:
 		return err
 	}
