@@ -1711,3 +1711,91 @@ func TestGetEffectiveSystemsLimit(t *testing.T) {
 		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
 	})
 }
+
+func TestGetEffectiveKeyConfigsLimit(t *testing.T) {
+	t.Run("returns cluster default when no override is stored", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		cfg := &config.Config{Tenant: config.Tenant{KeyConfigLimit: 42}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
+
+		limit, err := m.GetEffectiveKeyConfigsLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 42, limit)
+	})
+
+	t.Run("returns tenant override when stored in DB", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeyKeyConfigsOverride,
+			Value: "99",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		cfg := &config.Config{Tenant: config.Tenant{KeyConfigLimit: 50}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
+
+		limit, err := m.GetEffectiveKeyConfigsLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 99, limit)
+	})
+
+	t.Run("returns zero when cfg is nil and no override stored", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		limit, err := m.GetEffectiveKeyConfigsLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, limit)
+	})
+
+	t.Run("returns error when override is negative", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeyKeyConfigsOverride,
+			Value: "-1",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		_, err = m.GetEffectiveKeyConfigsLimit(ctx)
+
+		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
+	})
+
+	t.Run("returns error when override is not a number", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeyKeyConfigsOverride,
+			Value: "abc",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		_, err = m.GetEffectiveKeyConfigsLimit(ctx)
+
+		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
+	})
+}
