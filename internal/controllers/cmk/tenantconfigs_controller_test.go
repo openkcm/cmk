@@ -410,7 +410,7 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 	t.Run("Should return cluster default system limit when no tenant override", func(t *testing.T) {
 		cfg := testutils.TestAPIServerConfig{
 			Config: config.Config{
-				Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10},
+				Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10, KeyConfigLimit: 5},
 			},
 		}
 		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, cfg)
@@ -440,6 +440,8 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 		assert.Equal(t, 50, *response.Systems)
 		require.NotNil(t, response.Keys)
 		assert.Equal(t, 10, *response.Keys)
+		require.NotNil(t, response.KeyConfigurations)
+		assert.Equal(t, 5, *response.KeyConfigurations)
 	})
 
 	t.Run("Should return tenant override when systems limit is stored", func(t *testing.T) {
@@ -478,6 +480,42 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 		assert.Equal(t, 5, *response.Systems)
 	})
 
+	t.Run("Should return tenant override when key config limit is stored", func(t *testing.T) {
+		cfg := testutils.TestAPIServerConfig{
+			Config: config.Config{
+				Tenant: config.Tenant{KeyConfigLimit: 5},
+			},
+		}
+		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, cfg)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
+
+		setupKeyConfigsLimitOverride(t, r, ctx, 42)
+
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		require.True(t, ok)
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/tenantConfigurations/limits",
+			Tenant:   tenant,
+			Headers:  headers,
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var response cmkapi.TenantLimits
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+		require.NotNil(t, response.KeyConfigurations)
+		assert.Equal(t, 42, *response.KeyConfigurations)
+	})
+
 	t.Run("Should return 500 when systems limit override is not a valid integer", func(t *testing.T) {
 		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
@@ -485,7 +523,7 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
-		// Seed a non-integer value so strconv.Atoi fails inside GetEffectiveSystemsLimit.
+		// Seed a non-integer value so override parsing fails inside GetEffectiveLimits.
 		tc := &model.TenantConfig{
 			Key:   manager.LimitsKeySystemsOverride,
 			Value: "not-a-number",
@@ -564,6 +602,17 @@ func setupKeysLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context
 	t.Helper()
 	tc := &model.TenantConfig{
 		Key:   manager.LimitsKeyKeysOverride,
+		Value: strconv.Itoa(limit),
+		Type:  manager.TenantConfigTypeLimits,
+	}
+	err := r.Create(ctx, tc)
+	require.NoError(t, err)
+}
+
+func setupKeyConfigsLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context.Context, limit int) {
+	t.Helper()
+	tc := &model.TenantConfig{
+		Key:   manager.LimitsKeyKeyConfigsOverride,
 		Value: strconv.Itoa(limit),
 		Type:  manager.TenantConfigTypeLimits,
 	}
