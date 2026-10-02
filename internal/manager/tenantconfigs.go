@@ -33,8 +33,9 @@ const (
 	// when constructing the BYOK key-management CN, keeping it under the X.509 64-char limit.
 	defaultKeystoreCertInfix = "byok-"
 
-	byokFeatureFlagPrefix = "enable_byok_"
-	hyokFeatureFlagPrefix = "enable_hyok_"
+	byokFeatureFlagPrefix      = "enable_byok_"
+	hyokFeatureFlagPrefix      = "enable_hyok_"
+	keyRotateFeatureFlagPrefix = "detect_hyok_rotation_"
 
 	// allowBYOKFeatureGateKey is the legacy feature gate key, used when featureFlags is not configured.
 	allowBYOKFeatureGateKey = "allow-byok"
@@ -398,6 +399,21 @@ func (m *TenantConfigManager) IsHYOKAllowed(ctx context.Context, provider string
 	return enabled
 }
 
+// IsKeyRotateDetectionEnabled checks whether key rotation detection is enabled for the given provider.
+// When feature flags are not configured it returns true for backward compatibility.
+func (m *TenantConfigManager) IsKeyRotateDetectionEnabled(ctx context.Context, provider string) bool {
+	if !m.featureFlagsConfigured() {
+		return true
+	}
+
+	enabled, err := m.flags.BooleanValue(ctx, keyRotateFlagKey(provider), false, openfeature.EvaluationContext{})
+	if err != nil {
+		return false
+	}
+
+	return enabled
+}
+
 // GetStoredDefaultKeystoreConfig reads the stored default keystore without
 // pool fallback. Reads flat rows first, falling back to the legacy JSON blob.
 func (m *TenantConfigManager) GetStoredDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, bool, error) {
@@ -472,6 +488,11 @@ func byokFeatureFlagKey(provider string) string {
 // hyokFeatureFlagKey returns the feature gate key for HYOK on the given provider.
 func hyokFeatureFlagKey(provider string) string {
 	return hyokFeatureFlagPrefix + strings.ToLower(provider)
+}
+
+// keyRotateFlagKey returns the feature flag key for key rotation detection on the given provider.
+func keyRotateFlagKey(provider string) string {
+	return keyRotateFeatureFlagPrefix + strings.ToLower(provider)
 }
 
 // getDefaultProvider returns the name of the plugin tagged as DEFAULT_KEYSTORE.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -99,8 +100,9 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
 		newTestFlags(map[string]bool{
-			"enable_byok_" + strings.ToLower(testplugins.Name): true,
-			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+			"enable_byok_" + strings.ToLower(testplugins.Name):          true,
+			"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
+			"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
 		}))
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
@@ -132,6 +134,106 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	)
 
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+	return km, r, ctx, keyConfig, ks
+}
+
+func setupKeyTestWithFlags(t *testing.T, flagOverrides map[string]bool, opts ...testplugins.RegistryOption) (
+	*manager.KeyManager,
+	repo.Repo,
+	context.Context,
+	*model.KeyConfiguration,
+	*model.Keystore,
+) {
+	t.Helper()
+
+	db, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		WithOrbital:    true,
+	})
+	tenant := tenants[0]
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	svcRegistry := testutils.NewTestPlugins(opts...)
+	cryptoCerts := []config.CryptoCert{
+		{
+			Name: "crypto-1",
+			Subject: config.CryptoCertSubject{
+				Locality:           []string{"Berlin"},
+				OrganizationalUnit: []string{"OU1", "OU2"},
+				Organization:       []string{"TestOrg"},
+				Country:            []string{"DE"},
+				CommonNamePrefix:   "test_",
+			},
+			RootCA: "https://example.com/root.crt",
+		},
+	}
+	cryptoCertsBytes, err := yaml.Marshal(cryptoCerts)
+	require.NoError(t, err)
+
+	cfg := &config.Config{
+		Database: dbConf,
+		Certificates: config.Certificates{
+			ValidityDays: config.MinCertificateValidityDays,
+		},
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  string(cryptoCertsBytes),
+			},
+		},
+	}
+	cfg.FeatureFlags.Enabled = true
+
+	cmkAuditor := auditor.New(ctx, cfg)
+
+	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
+	assert.NoError(t, err)
+
+	flags := map[string]bool{
+		"enable_byok_" + strings.ToLower(testplugins.Name):          true,
+		"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
+		"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
+	}
+	maps.Copy(flags, flagOverrides)
+
+	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, newTestFlags(flags))
+	userManager := manager.NewUserManager(r, cmkAuditor)
+	tagManager := manager.NewTagManager(r)
+	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager,
+		cmkAuditor, eventFactory, cfg, nil)
+
+	km := manager.NewKeyManager(
+		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager,
+		eventFactory, cmkAuditor, nil, nil,
+	)
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
+
+	ks := testutils.NewKeystore(func(_ *model.Keystore) {})
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		r,
+		keyConfig,
+		tenantDefaultCert,
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeRoleManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName
+		}),
+		testutils.NewCertificate(func(c *model.Certificate) {
+			c.Purpose = model.CertificatePurposeKeyManagement
+			c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+		}),
+		ks,
+	)
+
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(),
+		[]string{keyConfig.AdminGroup.IAMIdentifier},
+	)
 
 	return km, r, ctx, keyConfig, ks
 }
@@ -1452,8 +1554,9 @@ func TestKeyRotationTime(t *testing.T) {
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
 		newTestFlags(map[string]bool{
-			"enable_byok_" + strings.ToLower(testplugins.Name): true,
-			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+			"enable_byok_" + strings.ToLower(testplugins.Name):          true,
+			"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
+			"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
 		}))
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
@@ -1847,6 +1950,58 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 
 		// No new events created (no systems to notify)
 		assert.Equal(t, eventsBefore, eventsAfter)
+	})
+
+	t.Run("rotation detection disabled by feature flag", func(t *testing.T) {
+		kmNoRotate, rNoRotate, ctxNoRotate, keyConfigNoRotate, _ := setupKeyTestWithFlags(t,
+			map[string]bool{"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): false},
+		)
+
+		hyokInfoNoRotate, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+		require.NoError(t, err)
+
+		primaryKeyNoRotate := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfigNoRotate.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.Algorithm = cmkapi.KeyAlgorithmAES256
+			k.Provider = testplugins.Name
+			k.Region = testRegionUSEast1
+			k.NativeID = new("primary-key-no-rotate")
+			k.ManagementAccessData = hyokInfoNoRotate
+			k.IsPrimary = true
+		})
+		sysNoRotate := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfigNoRotate.ID
+			s.Status = cmkapi.SystemStatusCONNECTED
+		})
+		testutils.CreateTestEntities(ctxNoRotate, t, rNoRotate, primaryKeyNoRotate, sysNoRotate)
+
+		keyConfigNoRotate.PrimaryKeyID = &primaryKeyNoRotate.ID
+		_, err = rNoRotate.Patch(ctxNoRotate, keyConfigNoRotate, *repo.NewQuery())
+		require.NoError(t, err)
+
+		rotationTime := time.Now().UTC()
+		existingVersion := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
+			kv.KeyID = primaryKeyNoRotate.ID
+			kv.NativeID = "flagged-version-id"
+		})
+		testutils.CreateTestEntities(ctxNoRotate, t, rNoRotate, existingVersion)
+
+		eventsBefore, err := countEvents(ctxNoRotate, rNoRotate, eventprocessor.JobTypeSystemKeyRotate.String())
+		require.NoError(t, err)
+
+		err = kmNoRotate.ExportedHandleNewKeyVersion(ctxNoRotate, primaryKeyNoRotate, &keymanagement.GetKeyVersionsResponse{
+			Versions: []keymanagement.KeyVersion{
+				{ID: "flagged-version-id", CreationTime: &rotationTime},
+			},
+		})
+		require.NoError(t, err)
+
+		eventsAfter, err := countEvents(ctxNoRotate, rNoRotate, eventprocessor.JobTypeSystemKeyRotate.String())
+		require.NoError(t, err)
+
+		assert.Equal(t, eventsBefore, eventsAfter,
+			"rotation detection disabled: no SYSTEM_KEY_ROTATE events should be created")
 	})
 }
 
@@ -2553,8 +2708,9 @@ func SetupKeyTestWithAsyncClient(
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
 		newTestFlags(map[string]bool{
-			"enable_byok_" + strings.ToLower(testplugins.Name): true,
-			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+			"enable_byok_" + strings.ToLower(testplugins.Name):          true,
+			"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
+			"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
 		}))
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
