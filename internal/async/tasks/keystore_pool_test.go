@@ -21,6 +21,8 @@ import (
 var allowedKeystorePoolActions = []authz.RepoAction{
 	authz.RepoActionCreate,
 	authz.RepoActionCount,
+	authz.RepoActionList,
+	authz.RepoActionUpdate,
 }
 
 type KeystorePoolFillerMock struct {

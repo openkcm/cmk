@@ -384,10 +384,14 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 			ID: constants.InternalTaskKeystorePoolPolicy,
 			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
+					// Pool fill counts the pool, lists pending rows, creates the
+					// shortfall, and updates a row when it becomes active or fails.
 					Type: RepoResourceTypeKeystore,
 					Actions: []RepoAction{
 						RepoActionCount,
 						RepoActionCreate,
+						RepoActionList,
+						RepoActionUpdate,
 					},
 				},
 			},

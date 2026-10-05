@@ -26,9 +26,9 @@ import (
 // grants exactly the repo access that ProviderConfigManager.FillKeystorePool requires,
 // without the manager being mocked out.
 //
-// With pool size set to 0, FillKeystorePool only calls Pool.Count (Count on Keystore)
-// then exits without creating any keystores — keeping the test free of keystore plugin
-// dependencies while still exercising the authz layer.
+// With pool size set to 0, FillKeystorePool lists pending rows and counts the pool,
+// then exits without creating or updating keystores. That exercises List and Count
+// without a keystore plugin. Create and Update stay covered by the role's allowed actions.
 func TestKeystorePool_AuthzPolicy(t *testing.T) {
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
@@ -49,7 +49,7 @@ func TestKeystorePool_AuthzPolicy(t *testing.T) {
 	)
 	cfg := &config.Config{
 		Database: dbCfg,
-		// Size 0: FillKeystorePool calls Count then immediately returns — no Create needed.
+		// Size 0: FillKeystorePool lists pending rows and counts, then returns.
 		KeystorePool: config.KeystorePool{Size: 0},
 	}
 
@@ -78,7 +78,7 @@ func TestKeystorePool_AuthzPolicy(t *testing.T) {
 	filler := tasks.NewKeystorePoolFiller(keyManager, authzRepo, cfg.KeystorePool)
 	task := asynq.NewTask(config.TypeKeystorePool, nil)
 
-	t.Run("InternalTaskKeystorePoolRole allows Count on Keystore", func(t *testing.T) {
+	t.Run("InternalTaskKeystorePoolRole allows List and Count on Keystore", func(t *testing.T) {
 		logger, buf := testutils.NewLogBuffer()
 		slog.SetDefault(logger)
 
