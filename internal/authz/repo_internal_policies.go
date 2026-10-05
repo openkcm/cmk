@@ -358,11 +358,12 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					},
 				},
 				{
-					// TenantConfig: read stored keystore config (First) and write it back after
-					// provisioning (Set = upsert: Create on insert, Update on conflict).
+					// TenantConfig: read stored keystore config (First and List for flat-row
+					// format) and write it back after provisioning (Set = upsert: Create on insert, Update on conflict).
 					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionFirst,
+						RepoActionList,
 						RepoActionDelete,
 						RepoActionCreate,
 						RepoActionUpdate,

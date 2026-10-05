@@ -95,6 +95,24 @@ of keystore plugin dependencies while confirming Count is permitted.
 
 ---
 
+### `InternalTaskPendingStateSyncRole`
+
+| Permission | Resource | Required by | Tested |
+|---|---|---|---|
+| First, Count, List, Update, Create | Key | `KeyManager.SyncPendingCreationKey` / `SyncPendingRegistrationKey` | – |
+| First | KeyVersion | `KeyManager.SyncPendingCreationKey` → `Get` | – |
+| First, Update | KeyConfiguration | `KeyManager.SyncPendingCreationKey` → `setPrimaryIfFirstKey` | – |
+| First, Count, Create, Update | Certificate | `KeyManager.SyncPendingCreationKey` → `GetOrInitProvider` | – |
+| First, **List**, Delete, Create, Update | TenantConfig | `KeyManager.SyncPendingCreationKey` → `GetOrInitProvider` → `GetDefaultKeystoreConfig` → `listConfigsByType` | ✓ |
+| First, Delete | Keystore | `ProviderConfigManager.initDefaultKeystoreFromPool` (pool pop on first init) | – |
+
+**Test:** `internal/authz/policy_tests/pending_state_sync_test.go`
+`TestPendingStateSync_AuthzPolicy/InternalTaskPendingStateSyncRole_allows_TenantConfig:List_in_BYOK_provisioning_path`
+
+A BYOK key in `PENDING_CREATION` is seeded with no stored keystore config. `SyncPendingCreationKey` traverses `GetOrInitProvider` → `GetDefaultKeystoreConfig` → `GetStoredDefaultKeystoreConfig` → `listConfigsByType` (TenantConfig:List + legacy First fallback), finds no stored config, then falls back to the keystore pool (empty, ErrPoolIsDrained). The test asserts no `"allowed":false` denial appears in logs, confirming `TenantConfig:List` is permitted.
+
+---
+
 ### `InternalTaskSystemRefreshRole`
 
 | Permission | Resource | Required by | Tested |
