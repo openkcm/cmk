@@ -84,6 +84,7 @@ FROM tenant_configs,
      LATERAL jsonb_each_text(value_text::jsonb) AS kv(ad_key, ad_value)
 WHERE "type" = 'default_keystore'
   AND "key" = 'management_access_data'
+  AND jsonb_typeof(value_text::jsonb) = 'object'
 ON CONFLICT ("key") DO NOTHING
 `
 
@@ -95,6 +96,7 @@ FROM tenant_configs,
      LATERAL (VALUES ('localityId', 'locality_id'), ('commonName', 'common_name')) AS m(source_key, target_key)
 WHERE "type" = 'default_keystore'
   AND "key" = 'key_management_config'
+  AND jsonb_typeof(value_text::jsonb) = 'object'
   AND value_text::jsonb ? source_key
 ON CONFLICT ("key") DO NOTHING
 `
@@ -107,6 +109,7 @@ FROM tenant_configs,
      LATERAL jsonb_each_text(COALESCE(value_text::jsonb -> 'accessData', '{}')) AS kv(ad_key, ad_value)
 WHERE "type" = 'default_keystore'
   AND "key" = 'key_management_config'
+  AND jsonb_typeof(value_text::jsonb) = 'object'
 ON CONFLICT ("key") DO NOTHING
 `
 
@@ -125,6 +128,7 @@ FROM tenant_configs,
      ) AS fields(field_key, field_value)
 WHERE "type" = 'default_keystore'
   AND "key" = 'crypto_access_data'
+  AND jsonb_typeof(value_text::jsonb) = 'object'
 ON CONFLICT ("key") DO NOTHING
 `
 
@@ -136,6 +140,7 @@ FROM tenant_configs,
      LATERAL jsonb_array_elements(value_text::jsonb) AS r(region)
 WHERE "type" = 'default_keystore'
   AND "key" = 'supported_regions'
+  AND jsonb_typeof(value_text::jsonb) = 'array'
   AND (region ->> 'technicalName') IS NOT NULL
 ON CONFLICT ("key") DO NOTHING
 `
