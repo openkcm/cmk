@@ -1234,9 +1234,15 @@ func mustJSONValue(v any) string {
 // jsonStringValue decodes a JSON-encoded scalar back to its native Go type.
 // If s is not valid JSON it is returned as-is (plain string), preserving
 // backwards compatibility with rows written before this encoding was introduced.
+// Numeric JSON values (float64) are returned as the original string because
+// fields like projectNumber are stored as numeric strings but must stay strings
+// for correct structpb serialization (GetStringValue vs GetNumberValue).
 func jsonStringValue(s string) any {
 	var v any
 	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return s
+	}
+	if _, isNum := v.(float64); isNum {
 		return s
 	}
 	return v
