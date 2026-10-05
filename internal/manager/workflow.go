@@ -184,11 +184,6 @@ func (w WorkflowFilter) GetQuery() (*repo.Query, error) {
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
 	}
 
-	query = query.Order(repo.OrderField{
-		Field:     repo.CreatedField,
-		Direction: repo.Desc,
-	})
-
 	return query, nil
 }
 
@@ -249,6 +244,12 @@ func (w *WorkflowManager) GetWorkflows(
 	if err != nil {
 		return nil, 0, err
 	}
+
+	// Sort by created date descending by default
+	query = query.Order(repo.OrderField{
+		Field:     repo.CreatedField,
+		Direction: repo.Desc,
+	})
 
 	return w.getWorkflows(ctx, params.GetPagination(), query)
 }

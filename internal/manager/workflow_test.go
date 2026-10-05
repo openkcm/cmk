@@ -1173,6 +1173,41 @@ func TestWorkfowManager_GetWorkflows(t *testing.T) {
 		assert.Equal(t, workflow2.ID, workflows[2].ID, "Third workflow should be workflow2")
 		assert.Equal(t, workflow1.ID, workflows[3].ID, "Fourth workflow should be workflow1 (oldest)")
 	})
+
+	t.Run("Should return workflows ordered by created time descending for approver-group user", func(t *testing.T) {
+		ctx := testutils.InjectBusinessUserDataIntoContext(
+			ctx,
+			allWorkflowUserID,
+			[]string{group.IAMIdentifier},
+		)
+
+		workflows, count, err := m.GetWorkflows(ctx, manager.WorkflowFilter{})
+		assert.NoError(t, err)
+		assert.Equal(t, 4, count)
+		assert.Len(t, workflows, 4)
+
+		assert.Equal(t, workflow4.ID, workflows[0].ID, "First workflow should be workflow4 (newest)")
+		assert.Equal(t, workflow3.ID, workflows[1].ID, "Second workflow should be workflow3")
+		assert.Equal(t, workflow2.ID, workflows[2].ID, "Third workflow should be workflow2")
+		assert.Equal(t, workflow1.ID, workflows[3].ID, "Fourth workflow should be workflow1 (oldest)")
+	})
+
+	t.Run("Should return filtered workflows ordered by created time descending", func(t *testing.T) {
+		ctx := testutils.InjectBusinessUserDataIntoContext(
+			ctx,
+			userID,
+			[]string{group.IAMIdentifier},
+		)
+
+		workflows, count, err := m.GetWorkflows(ctx, manager.WorkflowFilter{State: model.WorkflowStateInitial})
+		assert.NoError(t, err)
+		assert.Equal(t, 3, count)
+		assert.Len(t, workflows, 3)
+
+		assert.Equal(t, workflow4.ID, workflows[0].ID, "First workflow should be workflow4 (newest initial)")
+		assert.Equal(t, workflow2.ID, workflows[1].ID, "Second workflow should be workflow2")
+		assert.Equal(t, workflow1.ID, workflows[2].ID, "Third workflow should be workflow1 (oldest initial)")
+	})
 }
 
 func TestWorkflowManager_GetApproversGroupsFromLegacyField(t *testing.T) {

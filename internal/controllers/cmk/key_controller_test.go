@@ -1608,9 +1608,24 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		provider.WithImportKeyMaterialErr(keymanagement.ErrImportKeyMaterialFailed)
 		defer provider.WithImportKeyMaterialErr(nil)
 
+		keyForImport := testutils.NewKey(func(k *model.Key) {
+			k.KeyType = cmkapi.KeyTypeBYOK
+			k.State = cmkapi.KeyStatePENDINGIMPORT
+			k.NativeID = &providerKey.KeyID
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		decryptionErrorImportParams := model.ImportParams{
+			KeyID:              keyForImport.ID,
+			PublicKeyPEM:       "test-public-key",
+			WrappingAlg:        "CKM_RSA_AES_KEY_WRAP",
+			HashFunction:       "SHA256",
+			ProviderParameters: paramsJSON,
+		}
+		testutils.CreateTestEntities(ctx, t, r, keyForImport, &decryptionErrorImportParams)
+
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodPost,
-			Endpoint: fmt.Sprintf("/keys/%s/importKeyMaterial", key.ID.String()),
+			Endpoint: fmt.Sprintf("/keys/%s/importKeyMaterial", keyForImport.ID.String()),
 			Tenant:   tenant,
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),

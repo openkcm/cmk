@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
@@ -1045,6 +1046,60 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWorkflowControllerListWorkflows_OrderedByCreatedAtDesc(t *testing.T) {
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := cmksql.NewRepository(db)
+
+	auditorAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithAuditorRole())
+
+	baseTime := time.Now()
+
+	wf1 := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.State = model.WorkflowStateInitial
+		w.ActionType = model.WorkflowActionTypeDelete
+		w.ArtifactType = model.WorkflowArtifactTypeKey
+		w.ArtifactID = uuid.New()
+		w.CreatedAt = baseTime.Add(-2 * time.Hour)
+		w.UpdatedAt = baseTime.Add(-2 * time.Hour)
+	})
+	wf2 := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.State = model.WorkflowStateInitial
+		w.ActionType = model.WorkflowActionTypeDelete
+		w.ArtifactType = model.WorkflowArtifactTypeKey
+		w.ArtifactID = uuid.New()
+		w.CreatedAt = baseTime.Add(-1 * time.Hour)
+		w.UpdatedAt = baseTime.Add(-1 * time.Hour)
+	})
+	wf3 := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.State = model.WorkflowStateInitial
+		w.ActionType = model.WorkflowActionTypeDelete
+		w.ArtifactType = model.WorkflowArtifactTypeKey
+		w.ArtifactID = uuid.New()
+		w.CreatedAt = baseTime
+		w.UpdatedAt = baseTime
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, wf1, wf2, wf3)
+
+	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+		Method:   http.MethodGet,
+		Endpoint: "/workflows",
+		Tenant:   tenant,
+		Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, auditorAuthClient.GetClientMap()),
+	})
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	response := testutils.GetJSONBody[cmkapi.WorkflowList](t, w)
+	assert.Len(t, response.Value, 3)
+
+	assert.Equal(t, wf3.ID, *response.Value[0].Id, "First result should be the newest workflow")
+	assert.Equal(t, wf2.ID, *response.Value[1].Id, "Second result should be the middle workflow")
+	assert.Equal(t, wf1.ID, *response.Value[2].Id, "Third result should be the oldest workflow")
 }
 
 func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
