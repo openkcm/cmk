@@ -178,6 +178,11 @@ func (m *migrator) migrateTenants(
 		for _, t := range tenants {
 			iRes, err := m.runMigration(ctx, migration, t.SchemaName, f)
 			if err != nil {
+				log.Error(
+					ctx, "Migration failed for tenant", err,
+					slog.String("TenantID", t.ID),
+					slog.String("Schema", t.SchemaName),
+				)
 				return err
 			}
 			res[t.ID] = iRes
