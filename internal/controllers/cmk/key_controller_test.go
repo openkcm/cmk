@@ -1603,6 +1603,27 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
+
+	t.Run("ImportKeyMaterialFailedDecryptionError", func(t *testing.T) {
+		provider.WithImportKeyMaterialErr(keymanagement.ErrImportKeyMaterialFailed)
+		defer provider.WithImportKeyMaterialErr(nil)
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: fmt.Sprintf("/keys/%s/importKeyMaterial", key.ID.String()),
+			Tenant:   tenant,
+			Body: testutils.WithJSON(t, cmkapi.KeyImport{
+				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
+			}),
+			Headers: headers,
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+		assert.Equal(t, "INVALID_WRAPPED_KEY_MATERIAL", response.Error.Code)
+		assert.Equal(t, "Key material decryption failed: invalid or incorrectly wrapped key material.", response.Error.Message)
+	})
 }
 
 func TestKeyControllerPostKeys_KeyLimitExceeded(t *testing.T) {
