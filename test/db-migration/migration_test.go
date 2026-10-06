@@ -1231,6 +1231,177 @@ func TestDataMigrations(t *testing.T) {
 			},
 		},
 		{
+			// Regression: crypto_access_data stored as JSON null must not cause
+			// "cannot call jsonb_each_text on a non-object" (SQLSTATE 22023).
+			name:          "Should not error when crypto_access_data is JSON null",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('locality_id',           'loc-1',                                    'default_keystore'),
+							('common_name',           'cn-1',                                     'default_keystore'),
+							('management_access_data','{"roleArn":"role-arn-1"}',                 'default_keystore'),
+							('key_management_config', '{"accessData":null,"commonName":"","localityId":""}', 'default_keystore'),
+							('crypto_access_data',    'null',                                     'default_keystore'),
+							('supported_regions',     '[{"name":"Region A","technicalName":"region-a"}]', 'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value_text"`
+					}
+					var rows []row
+					err := db.Raw(`SELECT "key", value_text FROM tenant_configs WHERE "type" = 'default_keystore'`).Scan(&rows).Error
+					assert.NoError(t, err)
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+					assert.Equal(t, "loc-1", byKey["role_mgmt/locality_id"])
+					assert.Equal(t, "cn-1", byKey["role_mgmt/common_name"])
+					assert.Equal(t, "role-arn-1", byKey["role_mgmt/access_data/roleArn"])
+					assert.Equal(t, "Region A", byKey["supported_region/region-a/name"])
+					for k := range byKey {
+						assert.NotContains(t, k, "crypto/", "null crypto_access_data must produce no crypto/ rows")
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should not error when management_access_data is JSON null",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('locality_id',           'loc-1',                                         'default_keystore'),
+							('common_name',           'cn-1',                                          'default_keystore'),
+							('management_access_data','null',                                          'default_keystore'),
+							('key_management_config', '{"accessData":null,"commonName":"","localityId":""}', 'default_keystore'),
+							('crypto_access_data',    'null',                                          'default_keystore'),
+							('supported_regions',     '[{"name":"Region A","technicalName":"region-a"}]', 'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value_text"`
+					}
+					var rows []row
+					err := db.Raw(`SELECT "key", value_text FROM tenant_configs WHERE "type" = 'default_keystore'`).Scan(&rows).Error
+					assert.NoError(t, err)
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+					assert.Equal(t, "loc-1", byKey["role_mgmt/locality_id"])
+					assert.Equal(t, "Region A", byKey["supported_region/region-a/name"])
+					for k := range byKey {
+						assert.NotContains(t, k, "role_mgmt/access_data/", "null management_access_data must produce no role_mgmt/access_data/ rows")
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should not error when key_management_config accessData is JSON null",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('locality_id',           'loc-1',                                         'default_keystore'),
+							('common_name',           'cn-1',                                          'default_keystore'),
+							('management_access_data','{"roleArn":"role-arn-1"}',                      'default_keystore'),
+							('key_management_config', '{"accessData":null,"commonName":"cn-key","localityId":"loc-key"}', 'default_keystore'),
+							('crypto_access_data',    'null',                                          'default_keystore'),
+							('supported_regions',     '[{"name":"Region A","technicalName":"region-a"}]', 'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value_text"`
+					}
+					var rows []row
+					err := db.Raw(`SELECT "key", value_text FROM tenant_configs WHERE "type" = 'default_keystore'`).Scan(&rows).Error
+					assert.NoError(t, err)
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+					assert.Equal(t, "loc-key", byKey["key_mgmt/locality_id"])
+					assert.Equal(t, "cn-key", byKey["key_mgmt/common_name"])
+					for k := range byKey {
+						assert.NotContains(t, k, "key_mgmt/access_data/", "null key_management_config.accessData must produce no key_mgmt/access_data/ rows")
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should not error when crypto entry accessData is JSON null",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('locality_id',           'loc-1',                                         'default_keystore'),
+							('common_name',           'cn-1',                                          'default_keystore'),
+							('management_access_data','{"roleArn":"role-arn-1"}',                      'default_keystore'),
+							('key_management_config', '{"accessData":null,"commonName":"","localityId":""}', 'default_keystore'),
+							('crypto_access_data',    '{"landscape-a":{"subject":"/CN=cert","accessData":null}}', 'default_keystore'),
+							('supported_regions',     '[{"name":"Region A","technicalName":"region-a"}]', 'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value_text"`
+					}
+					var rows []row
+					err := db.Raw(`SELECT "key", value_text FROM tenant_configs WHERE "type" = 'default_keystore'`).Scan(&rows).Error
+					assert.NoError(t, err)
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+					assert.Equal(t, "/CN=cert", byKey["crypto/landscape-a/subject"])
+					for k := range byKey {
+						assert.NotContains(t, k, "crypto/landscape-a/access_data/", "null crypto accessData must produce no access_data/ rows")
+					}
+					return nil
+				}
+			},
+		},
+		{
 			name:          "Should migrate down flatten default_keystore sub-blobs",
 			target:        db.TenantTarget,
 			version:       5,
