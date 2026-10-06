@@ -127,6 +127,7 @@ var (
 	ErrGetWorkflowConfig        = errors.New("failed to get workflow config")
 	ErrSetWorkflowConfig        = errors.New("failed to set workflow config")
 	ErrGetTenantLimits          = errors.New("failed to get tenant limits")
+	ErrSetTenantLimits          = errors.New("failed to set tenant limits")
 	ErrRetentionLessThanMinimum = errors.New("retention is less than the minimum allowed (" +
 		strconv.Itoa(constants.MinRetentionPeriodDays) + " days)")
 	ErrRetentionExceedsMaximum = errors.New("retention exceeds the maximum allowed (" +
@@ -198,6 +199,19 @@ func parseLimitOverride(value, key string) (int, error) {
 		return 0, fmt.Errorf("%w: %s must be non-negative, got %d", ErrGetTenantLimits, key, v)
 	}
 	return v, nil
+}
+
+// SetLimitOverrides upserts the systems, keys, and key-config limit overrides for the current tenant.
+func (m *TenantConfigManager) SetLimitOverrides(ctx context.Context, systems, keys, keyConfigs int) error {
+	rows := []model.TenantConfig{
+		{Key: LimitsKeySystemsOverride, Value: strconv.Itoa(systems), Type: TenantConfigTypeLimits},
+		{Key: LimitsKeyKeysOverride, Value: strconv.Itoa(keys), Type: TenantConfigTypeLimits},
+		{Key: LimitsKeyKeyConfigsOverride, Value: strconv.Itoa(keyConfigs), Type: TenantConfigTypeLimits},
+	}
+	if err := m.setRows(ctx, rows); err != nil {
+		return errs.Wrap(ErrSetTenantLimits, err)
+	}
+	return nil
 }
 
 // GetWorkflowConfig reads flat rows first, falling back to the legacy JSON

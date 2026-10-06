@@ -1601,3 +1601,36 @@ func TestGetEffectiveLimits(t *testing.T) {
 		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
 	})
 }
+
+func TestSetLimitOverrides(t *testing.T) {
+	cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10, KeyConfigLimit: 5}}
+
+	t.Run("persists overrides read back via GetEffectiveLimits", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
+
+		require.NoError(t, m.SetLimitOverrides(ctx, 99, 7, 33))
+
+		limits, err := m.GetEffectiveLimits(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 99, limits.Systems)
+		assert.Equal(t, 7, limits.Keys)
+		assert.Equal(t, 33, limits.KeyConfigs)
+	})
+
+	t.Run("re-writing overwrites the previous values", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
+
+		require.NoError(t, m.SetLimitOverrides(ctx, 99, 7, 33))
+		require.NoError(t, m.SetLimitOverrides(ctx, 1, 2, 3))
+
+		limits, err := m.GetEffectiveLimits(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, limits.Systems)
+		assert.Equal(t, 2, limits.Keys)
+		assert.Equal(t, 3, limits.KeyConfigs)
+	})
+}

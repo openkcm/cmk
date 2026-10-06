@@ -93,6 +93,7 @@ func TestTenantProvisioning_AuthzPolicy(t *testing.T) {
 		clientFactory,
 		tenantManager,
 		groupManager,
+		nil,
 		authzRepo,
 	)
 	require.NoError(t, err)
