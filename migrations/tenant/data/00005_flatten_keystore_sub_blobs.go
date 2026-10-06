@@ -80,11 +80,14 @@ ON CONFLICT ("key") DO NOTHING
 const populateRoleMgmtAccessDataSQL = `
 INSERT INTO tenant_configs ("key", value_text, "type")
 SELECT 'role_mgmt/access_data/' || ad_key, ad_value, 'default_keystore'
-FROM tenant_configs,
-     LATERAL jsonb_each_text(value_text::jsonb) AS kv(ad_key, ad_value)
-WHERE "type" = 'default_keystore'
-  AND "key" = 'management_access_data'
-  AND jsonb_typeof(value_text::jsonb) = 'object'
+FROM (
+  SELECT value_text
+  FROM tenant_configs
+  WHERE "type" = 'default_keystore'
+    AND "key" = 'management_access_data'
+    AND jsonb_typeof(value_text::jsonb) = 'object'
+) AS src,
+     LATERAL jsonb_each_text(src.value_text::jsonb) AS kv(ad_key, ad_value)
 ON CONFLICT ("key") DO NOTHING
 `
 
@@ -105,11 +108,15 @@ ON CONFLICT ("key") DO NOTHING
 const populateKeyMgmtAccessDataSQL = `
 INSERT INTO tenant_configs ("key", value_text, "type")
 SELECT 'key_mgmt/access_data/' || ad_key, ad_value, 'default_keystore'
-FROM tenant_configs,
-     LATERAL jsonb_each_text(COALESCE(value_text::jsonb -> 'accessData', '{}')) AS kv(ad_key, ad_value)
-WHERE "type" = 'default_keystore'
-  AND "key" = 'key_management_config'
-  AND jsonb_typeof(value_text::jsonb) = 'object'
+FROM (
+  SELECT value_text
+  FROM tenant_configs
+  WHERE "type" = 'default_keystore'
+    AND "key" = 'key_management_config'
+    AND jsonb_typeof(value_text::jsonb) = 'object'
+) AS src,
+     LATERAL jsonb_each_text(COALESCE(NULLIF(src.value_text::jsonb -> 'accessData', 'null'::jsonb), '{}'))
+       AS kv(ad_key, ad_value)
 ON CONFLICT ("key") DO NOTHING
 `
 
@@ -117,18 +124,22 @@ ON CONFLICT ("key") DO NOTHING
 const populateCryptoAccessDataSQL = `
 INSERT INTO tenant_configs ("key", value_text, "type")
 SELECT 'crypto/' || landscape || '/' || field_key, field_value, 'default_keystore'
-FROM tenant_configs,
-     LATERAL jsonb_each(value_text::jsonb) AS landscapes(landscape, landscape_val),
+FROM (
+  SELECT value_text
+  FROM tenant_configs
+  WHERE "type" = 'default_keystore'
+    AND "key" = 'crypto_access_data'
+    AND jsonb_typeof(value_text::jsonb) = 'object'
+) AS src,
+     LATERAL jsonb_each(src.value_text::jsonb) AS landscapes(landscape, landscape_val),
      LATERAL (
        SELECT 'subject' AS field_key, landscape_val ->> 'subject' AS field_value
          WHERE landscape_val ? 'subject'
        UNION ALL
        SELECT 'access_data/' || ad_key, ad_value
-       FROM jsonb_each_text(COALESCE(landscape_val -> 'accessData', '{}')) AS a(ad_key, ad_value)
+       FROM jsonb_each_text(COALESCE(NULLIF(landscape_val -> 'accessData', 'null'::jsonb), '{}'))
+         AS a(ad_key, ad_value)
      ) AS fields(field_key, field_value)
-WHERE "type" = 'default_keystore'
-  AND "key" = 'crypto_access_data'
-  AND jsonb_typeof(value_text::jsonb) = 'object'
 ON CONFLICT ("key") DO NOTHING
 `
 
@@ -136,11 +147,14 @@ ON CONFLICT ("key") DO NOTHING
 const populateSupportedRegionsSQL = `
 INSERT INTO tenant_configs ("key", value_text, "type")
 SELECT 'supported_region/' || (region ->> 'technicalName') || '/name', region ->> 'name', 'default_keystore'
-FROM tenant_configs,
-     LATERAL jsonb_array_elements(value_text::jsonb) AS r(region)
-WHERE "type" = 'default_keystore'
-  AND "key" = 'supported_regions'
-  AND jsonb_typeof(value_text::jsonb) = 'array'
-  AND (region ->> 'technicalName') IS NOT NULL
+FROM (
+  SELECT value_text
+  FROM tenant_configs
+  WHERE "type" = 'default_keystore'
+    AND "key" = 'supported_regions'
+    AND jsonb_typeof(value_text::jsonb) = 'array'
+) AS src,
+     LATERAL jsonb_array_elements(src.value_text::jsonb) AS r(region)
+WHERE (region ->> 'technicalName') IS NOT NULL
 ON CONFLICT ("key") DO NOTHING
 `
