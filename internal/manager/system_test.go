@@ -375,6 +375,23 @@ func TestGetAllSystemsOrderByIdentifier(t *testing.T) {
 		assert.Equal(t, "system-alpha", allSystems[0].Identifier)
 		assert.Equal(t, "system-bravo", allSystems[1].Identifier)
 	})
+
+	t.Run("Should get all systems ordered by identifier ascending for second user", func(t *testing.T) {
+		ctx2 := testutils.InjectBusinessUserDataIntoContext(ctx, "other-user", []string{"test-group"})
+		filter := manager.SystemFilter{
+			Skip:  constants.DefaultSkip,
+			Top:   constants.DefaultTop,
+			Count: true,
+		}
+		allSystems, total, err := m.GetAllSystems(ctx2, filter)
+		assert.NoError(t, err)
+		assert.Equal(t, 3, total)
+		require.Len(t, allSystems, 3)
+
+		assert.Equal(t, "system-alpha", allSystems[0].Identifier, "First result should be system-alpha")
+		assert.Equal(t, "system-bravo", allSystems[1].Identifier, "Second result should be system-bravo")
+		assert.Equal(t, "system-charlie", allSystems[2].Identifier, "Third result should be system-charlie")
+	})
 }
 
 func TestGetSystemByID(t *testing.T) {

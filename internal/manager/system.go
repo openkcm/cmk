@@ -105,11 +105,6 @@ func (s SystemFilter) GetQuery() (*repo.Query, error) {
 		query = query.Where(repo.NewCompositeKeyGroup(ck))
 	}
 
-	query = query.Order(repo.OrderField{
-		Field:     repo.IdentifierField,
-		Direction: repo.Asc,
-	})
-
 	return query, nil
 }
 
@@ -213,6 +208,12 @@ func (m *SystemManager) GetAllSystems(
 	}
 
 	query := filterQuery.Merge(searchQuery)
+
+	// Sort by identifier ascending by default
+	query = query.Order(repo.OrderField{
+		Field:     repo.IdentifierField,
+		Direction: repo.Asc,
+	})
 
 	pagination := params.GetPagination()
 
