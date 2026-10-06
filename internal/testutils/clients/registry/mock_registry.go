@@ -3,6 +3,7 @@ package registry
 import (
 	mappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
+	tenantconfiggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant_config/v1"
 
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
@@ -10,9 +11,10 @@ import (
 
 // MockServiceStruct is a mock implementation that can be used for testing purposes.
 type MockServiceStruct struct {
-	SystemClient  systems.ServiceClient
-	TenantClient  tenantgrpc.ServiceClient
-	MappingClient mappinggrpc.ServiceClient
+	SystemClient       systems.ServiceClient
+	TenantClient       tenantgrpc.ServiceClient
+	MappingClient      mappinggrpc.ServiceClient
+	TenantConfigClient tenantconfiggrpc.ServiceClient
 }
 
 var _ registry.Service = (*MockServiceStruct)(nil)
@@ -39,6 +41,10 @@ func (rs *MockServiceStruct) Tenant() tenantgrpc.ServiceClient {
 
 func (rs *MockServiceStruct) Mapping() mappinggrpc.ServiceClient {
 	return rs.MappingClient
+}
+
+func (rs *MockServiceStruct) TenantConfig() tenantconfiggrpc.ServiceClient {
+	return rs.TenantConfigClient
 }
 
 func (rs *MockServiceStruct) Close() error {
