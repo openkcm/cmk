@@ -45,6 +45,7 @@ func authzEndpoints() []testutils.AuthzTestEndpoint {
 	systemID := uuid.New().String()
 	workflowID := uuid.New().String()
 	groupID := uuid.New().String()
+	systemGroupID := uuid.New().String()
 
 	return []testutils.AuthzTestEndpoint{
 		// --- Keys ---
@@ -175,6 +176,17 @@ func authzEndpoints() []testutils.AuthzTestEndpoint {
 		{
 			Method:   http.MethodGet,
 			Endpoint: "/systems/" + systemID + "/recoveryActions",
+		},
+
+		// --- System Groups ---
+		{
+			Method:   http.MethodGet,
+			Endpoint: "/systemGroups",
+		},
+		{
+			Method:   http.MethodPatch,
+			Endpoint: "/systemGroups/" + systemGroupID,
+			Body:     `{"name": "` + "test" + `"}`,
 		},
 
 		// --- Workflows ---

@@ -31,6 +31,8 @@ tags:
     description: Workflow management
   - name: Systems
     description: System management
+  - name: System Groups
+    description: System Group management
   - name: Tenants
     description: Tenant management
   - name: Groups
@@ -915,7 +917,73 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
+  /systemGroups:
+    get:
+      tags:
+        - System Groups
+      summary: Retrieve all System Groups
+      description: |
+        Retrieve all System Groups. When `$expand=systems` is set, each group embeds its
+        member Systems. Ungrouped Systems are returned under a virtual `root` group
 
+        Each group includes a warnCoverage flag, true when the group
+        contains at least one `CONNECTED` and at least one `DISCONNECTED` System
+      operationId: getAllSystemGroups
+      parameters:
+        - $ref: "#/components/parameters/skipPath"
+        - $ref: "#/components/parameters/topPath"
+        - $ref: "#/components/parameters/countPath"
+        - $ref: "#/components/parameters/expandSystems"
+      responses:
+        "200":
+          description: System Groups retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemGroupList"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /systemGroups/{systemGroupID}:
+    patch:
+      tags:
+        - System Groups
+      summary: Update a System Group
+      description: Update a System Group's metadata
+      operationId: updateSystemGroup
+      parameters:
+        - $ref: "#/components/parameters/systemGroupIDPath"
+      requestBody:
+        description: System Group patch request body
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/SystemGroupPatch"
+      responses:
+        "200":
+          description: System Group updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemGroup"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
   /workflows/check:
     post:
       tags:
@@ -1339,6 +1407,15 @@ components:
         type: string
         example: 12345678-90ab-cdef-1234-567890abcdef
         format: uuid
+    systemGroupIDPath:
+      name: systemGroupID
+      in: path
+      required: true
+      description: The ID of a System Group
+      schema:
+        type: string
+        example: 12345678-90ab-cdef-1234-567890abcdef
+        format: uuid
     keyVersionNumberPath:
       name: version
       in: path
@@ -1414,6 +1491,18 @@ components:
     #
     # Queries
     #
+    expandSystems:
+      name: "$expand"
+      in: query
+      required: false
+      description: |
+        Expand related entities inline. Supports `systems` to embed each group's member Systems.
+
+        Example: $expand=systems
+      schema:
+        type: string
+        enum:
+          - systems
     filterSystems:
       name: "$filter"
       in: query
@@ -1584,6 +1673,80 @@ components:
       properties:
         keyConfigurationID:
           $ref: "#/components/schemas/KeyConfigurationID"
+    SystemGroupList:
+      type: object
+      required:
+        - value
+      properties:
+        count:
+          description: The total number of System Groups
+          type: integer
+          minimum: 0
+          example: 2
+        value:
+          type: array
+          items:
+            $ref: "#/components/schemas/SystemGroup"
+    SystemGroup:
+      description: |
+        A System Group. Ungrouped Systems are returned under a virtual `root` group whose `id`
+        is null/empty and on which no actions are allowed.
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          description: |
+            The ID of the System Group. Null/empty for the virtual `root` group.
+          type: string
+          format: uuid
+          nullable: true
+          readOnly: true
+          example: 12345678-90ab-cdef-1234-567890abcdef
+        name:
+          description: Name of the System Group
+          type: string
+          maxLength: 255
+          example: Production
+        description:
+          description: Description of the System Group
+          type: string
+          maxLength: 1024
+          example: Production systems grouping
+        suppressWarning:
+          description: Flag indicating whether coverage warnings are suppressed for this group
+          type: boolean
+          default: false
+        warnCoverage:
+          description: |
+            Computed at query time. True when the group has at least one CONNECTED and at least one
+            DISCONNECTED System, the tenant warning is enabled, and `suppressWarning` is not set.
+          type: boolean
+          readOnly: true
+        systems:
+          description: Member Systems, present only when $expand=systems is requested
+          type: array
+          items:
+            $ref: "#/components/schemas/System"
+    SystemGroupPatch:
+      description: A patch for updating a System Group. Not allowed on the virtual `root` group.
+      type: object
+      properties:
+        name:
+          description: Name of the System Group
+          type: string
+          maxLength: 255
+          example: new-system-group-name
+        description:
+          description: Description of the System Group
+          type: string
+          maxLength: 1024
+          example: Updated description
+        suppressWarning:
+          description: Flag indicating whether coverage warnings are suppressed for this group
+          type: boolean
+      additionalProperties: false
     SystemRecoveryAction:
       description: System possible actions
       type: object

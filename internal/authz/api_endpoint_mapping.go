@@ -135,6 +135,16 @@ var RestrictionsByAPI = map[string]Restricted{
 		APIAction:           APIActionSystemModifyLink,
 	},
 
+	// SystemGroups endpoints
+	"GET /systemGroups": {
+		APIResourceTypeName: APIResourceTypeSystemGroup,
+		APIAction:           APIActionRead,
+	},
+	"PATCH /systemGroups/{systemGroupID}": {
+		APIResourceTypeName: APIResourceTypeSystemGroup,
+		APIAction:           APIActionUpdate,
+	},
+
 	// Workflows endpoints
 	"POST /workflows": {
 		APIResourceTypeName: APIResourceTypeWorkFlow,

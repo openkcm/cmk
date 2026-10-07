@@ -2,7 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS system_groups (
 	id uuid NOT NULL,
-	name varchar(255) NOT NULL,
+	name varchar(255) NOT NULL UNIQUE,
 	description varchar(255) NULL,
 	suppress_warning boolean NOT NULL DEFAULT false,
 	CONSTRAINT system_groups_pkey PRIMARY KEY (id)

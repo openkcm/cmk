@@ -45,6 +45,7 @@ const (
 	RepoResourceTypeKeyversion       RepoResourceType = RepoResourceType(constants.KeyVersionTable)
 	RepoResourceTypeKeyLabel         RepoResourceType = RepoResourceType(constants.KeyLabelTable)
 	RepoResourceTypeSystem           RepoResourceType = RepoResourceType(constants.SystemTable)
+	RepoResourceTypeSystemGroup      RepoResourceType = RepoResourceType(constants.SystemGroupTable)
 	RepoResourceTypeSystemProperty   RepoResourceType = RepoResourceType(constants.SystemPropertyTable)
 	RepoResourceTypeTag              RepoResourceType = RepoResourceType(constants.TagTable)
 	RepoResourceTypeTenant           RepoResourceType = RepoResourceType(constants.TenantTable)
@@ -62,6 +63,7 @@ const (
 	APIResourceTypeKeyConfiguration APIResourceType = "KeyConfiguration"
 	APIResourceTypeKey              APIResourceType = "Key"
 	APIResourceTypeSystem           APIResourceType = "System"
+	APIResourceTypeSystemGroup      APIResourceType = "SystemGroup"
 	APIResourceTypeWorkFlow         APIResourceType = "Workflow"
 	APIResourceTypeUserGroup        APIResourceType = "UserGroup"
 	APIResourceTypeTenant           APIResourceType = "Tenant"
@@ -99,6 +101,7 @@ var RepoResourceTypeActions = map[RepoResourceType][]RepoAction{
 	RepoResourceTypeKeyLabel:         repoActionList,
 	RepoResourceTypeSystem:           repoActionList,
 	RepoResourceTypeSystemProperty:   repoActionList,
+	RepoResourceTypeSystemGroup:      repoActionList,
 	RepoResourceTypeTag:              repoActionList,
 	RepoResourceTypeTenant:           repoActionList,
 	RepoResourceTypeTenantconfig:     repoActionList,
@@ -123,6 +126,10 @@ var APIResourceTypeActions = map[APIResourceType][]APIAction{
 	APIResourceTypeSystem: {
 		APIActionRead,
 		APIActionSystemModifyLink,
+	},
+	APIResourceTypeSystemGroup: {
+		APIActionRead,
+		APIActionUpdate,
 	},
 	APIResourceTypeWorkFlow: {
 		APIActionRead,
