@@ -88,7 +88,7 @@ func checkBusinessUserAuthz[
 	}
 
 	log.Debug(
-		ctx, "checking authorization request:", slog.String("user", user.UserName),
+		ctx, "checking authorization request",
 		slog.String("resourceType", fmt.Sprintf("%v", resourceType)),
 		slog.String("action", fmt.Sprintf("%v", action)),
 	)
