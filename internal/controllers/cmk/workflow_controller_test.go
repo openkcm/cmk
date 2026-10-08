@@ -9,39 +9,64 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmksql "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
+
+func signedHeadersFromClientMapWorkflow(
+	t *testing.T,
+	keyStorage *testutils.TestSigningKeyStorage,
+	clientMap map[any]any,
+) http.Header {
+	t.Helper()
+	businessUserData, ok := clientMap[constants.BusinessUserData].(*auth.ClientData)
+	if !ok {
+		t.Fatalf("client data should be present in client map")
+	}
+	privateKey, keyOK := keyStorage.GetPrivateKey(0)
+	if !keyOK {
+		t.Fatalf("test key should exist")
+	}
+	return testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+}
 
 var errMockInternalError = errors.New("internal error")
 
-func startAPIWorkflows(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIWorkflows(
+	t *testing.T,
+	idmPlugin identitymanagement.IdentityManagement,
+) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+
 	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Config:  config.Config{Database: dbCfg},
-		Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
+		Config:                   config.Config{Database: dbCfg},
+		Registry:                 testutils.NewTestPlugins(testplugins.WithIdentityManagement(idmPlugin)),
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
 	})
 
-	return db, sv, tenants[0]
+	return db, sv, tenants[0], keyStorage
 }
 
 var (
@@ -53,16 +78,13 @@ var (
 )
 
 func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
-	authClient testutils.AuthClientData,
+	authClient testutils.AuthBusinessUserData, idmPlugin *testplugins.TestIdentityManagement,
 ) []*model.Workflow {
 	tb.Helper()
 
-	groupIDsBytes, err := json.Marshal([]uuid.UUID{authClient.Group.ID})
-	assert.NoError(tb, err)
-
 	system := testutils.NewSystem(func(w *model.System) {})
 	keyConfig := testutils.NewKeyConfig(func(w *model.KeyConfiguration) {
-	}, testutils.WithAuthClientDataKC(authClient))
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
@@ -72,67 +94,106 @@ func createTestWorkflows(ctx context.Context, tb testing.TB, r repo.Repo,
 	})
 
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{{UserID: authClient.Identifier}}
-		w.ApproverGroupIDs = groupIDsBytes
-		w.State = wfMechanism.StateWaitApproval.String()
-		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
-		w.ActionType = wfMechanism.ActionTypeDelete.String()
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: authClient.Identifier, AssigneeRole: model.AssigneeRoleApprover}}
+		w.State = model.WorkflowStateWaitApproval
+		w.ArtifactType = model.WorkflowArtifactTypeKey
+		w.ActionType = model.WorkflowActionTypeDelete
 		w.ArtifactID = key.ID
 		w.ArtifactName = &key.Name
 	})
+	workflowApproverGroups := testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+		wag.WorkflowID = workflow.ID
+		wag.GroupID = authClient.Group.ID
+	})
+	idmPlugin.PutUser(identitymanagement.User{ID: workflow.InitiatorID})
 
 	workflow2 := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.State = wfMechanism.StateRevoked.String()
-		w.ActionType = wfMechanism.ActionTypeUpdateState.String()
-		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
+		w.State = model.WorkflowStateRevoked
+		w.ActionType = model.WorkflowActionTypeUpdateState
+		w.ArtifactType = model.WorkflowArtifactTypeKey
 		w.ArtifactID = key2.ID
 		w.ArtifactName = &key2.Name
-		w.Approvers = []model.WorkflowApprover{{UserID: uuid.NewString()}}
-		w.ApproverGroupIDs = groupIDsBytes
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: uuid.NewString(), AssigneeRole: model.AssigneeRoleApprover}}
 		w.Parameters = "DISABLED"
 	})
+	workflow2ApproverGroups := testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+		wag.WorkflowID = workflow2.ID
+		wag.GroupID = authClient.Group.ID
+	})
+	idmPlugin.PutUser(identitymanagement.User{ID: workflow2.InitiatorID})
 
 	wfID := uuid.New()
 	workflow3 := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{
+		w.Tasks = []model.WorkflowTask{
 			{
-				UserID:     authClient.Identifier,
-				Approved:   sql.NullBool{Bool: true, Valid: true},
-				WorkflowID: wfID,
+				ID:           uuid.New(),
+				UserID:       authClient.Identifier,
+				AssigneeRole: model.AssigneeRoleApprover,
+				Approved:     sql.NullBool{Bool: true, Valid: true},
+				WorkflowID:   wfID,
 			},
 			{
-				UserID:     uuid.NewString(),
-				Approved:   sql.NullBool{Bool: false, Valid: true},
-				WorkflowID: wfID,
+				ID:           uuid.New(),
+				UserID:       uuid.NewString(),
+				AssigneeRole: model.AssigneeRoleApprover,
+				Approved:     sql.NullBool{Bool: false, Valid: true},
+				WorkflowID:   wfID,
 			},
 			{
-				UserID:     uuid.NewString(),
-				Approved:   sql.NullBool{Bool: false, Valid: false},
-				WorkflowID: wfID,
+				ID:           uuid.New(),
+				UserID:       uuid.NewString(),
+				AssigneeRole: model.AssigneeRoleApprover,
+				Approved:     sql.NullBool{Bool: false, Valid: false},
+				WorkflowID:   wfID,
 			},
 		}
 		w.ID = wfID
-		w.ApproverGroupIDs = groupIDsBytes
-		w.State = wfMechanism.StateWaitApproval.String()
-		w.ActionType = wfMechanism.ActionTypeLink.String()
-		w.ArtifactType = wfMechanism.ArtifactTypeSystem.String()
+		w.State = model.WorkflowStateWaitApproval
+		w.ActionType = model.WorkflowActionTypeLink
+		w.ArtifactType = model.WorkflowArtifactTypeSystem
 		w.ArtifactID = system.ID
 		w.ArtifactName = &system.Identifier
 		w.Parameters = keyConfig.ID.String()
 		w.ParametersResourceName = &keyConfig.Name
-		w.ParametersResourceType = ptr.PointTo(wfMechanism.ParametersResourceTypeKeyConfiguration.String())
+		w.ParametersResourceType = new(model.WorkflowParametersResourceTypeKeyConfiguration)
 	})
+	workflow3ApproverGroups := testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+		wag.WorkflowID = workflow3.ID
+		wag.GroupID = authClient.Group.ID
+	})
+	idmPlugin.PutUser(identitymanagement.User{ID: workflow3.InitiatorID})
 
-	testutils.CreateTestEntities(ctx, tb, r, key, key2, system, keyConfig, workflow, workflow2, workflow3)
+	testutils.CreateTestEntities(
+		ctx,
+		tb,
+		r,
+		key,
+		key2,
+		system,
+		keyConfig,
+		workflow,
+		workflowApproverGroups,
+		workflow2,
+		workflow2ApproverGroups,
+		workflow3,
+		workflow3ApproverGroups,
+	)
+
+	// Register all approver IDs so GetUser lookups succeed in detailed workflow responses
+	for _, wf := range []*model.Workflow{workflow, workflow2, workflow3} {
+		for _, approver := range wf.Tasks {
+			idmPlugin.PutUser(identitymanagement.User{ID: approver.UserID})
+		}
+	}
 
 	return []*model.Workflow{workflow, workflow2, workflow3}
 }
 
 func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceRepository,
-	ctx context.Context, authClient testutils.AuthClientData,
+	ctx context.Context, authClient testutils.AuthBusinessUserData, idmPlugin *testplugins.TestIdentityManagement,
 ) {
 	t.Helper()
-	createTestWorkflows(ctx, t, r, authClient)
+	createTestWorkflows(ctx, t, r, authClient, idmPlugin)
 
 	key := testutils.NewKey(func(k *model.Key) {
 		k.ID = uuid.MustParse(key1ID)
@@ -142,7 +203,7 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceR
 	keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 		c.ID = uuid.MustParse(keyConfigID)
 		c.PrimaryKeyID = &key.ID
-	}, testutils.WithAuthClientDataKC(authClient))
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	key2 := testutils.NewKey(func(k *model.Key) {
 		k.ID = uuid.MustParse(key2ID)
@@ -151,30 +212,32 @@ func setupTestWorkflowControllerCreateWorkflow(t *testing.T, r *cmksql.ResourceR
 
 	system := testutils.NewSystem(func(w *model.System) {
 		w.ID = uuid.MustParse(systemID)
-		w.KeyConfigurationID = ptr.PointTo(uuid.MustParse(keyConfigID))
+		w.KeyConfigurationID = new(uuid.MustParse(keyConfigID))
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, key, key2, system)
+	testutils.CreateTestEntities(ctx, t, r, key, key2, keyConfig, system)
 }
 
-func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux, authClient testutils.AuthClientData) {
+func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux,
+	headers http.Header,
+) {
 	// Do a dummy check to ensure that the config is created. We need this for any
 	// tests simulating a DB failure, otherwise the config creation will hit the
 	// simulated error.
 	t.Helper()
 
 	wf := cmkapi.Workflow{
-		ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
+		ActionType:   cmkapi.WorkflowActionType(model.WorkflowActionTypeUnlink),
 		ArtifactID:   uuid.MustParse(systemID),
-		ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeSystem),
+		ArtifactType: cmkapi.WorkflowArtifactType(model.WorkflowArtifactTypeSystem),
 	}
 
 	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-		Method:            http.MethodPost,
-		Endpoint:          "/workflows/check",
-		Tenant:            tenant,
-		Body:              testutils.WithJSON(t, wf),
-		AdditionalContext: authClient.GetClientMap(),
+		Method:   http.MethodPost,
+		Endpoint: "/workflows/check",
+		Tenant:   tenant,
+		Body:     testutils.WithJSON(t, wf),
+		Headers:  headers,
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
@@ -182,25 +245,45 @@ func forceConfig(t *testing.T, tenant string, sv cmkapi.ServeMux, authClient tes
 
 func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 	t.Run("should 200 with valid and canCreate as true", func(t *testing.T) {
-		db, sv, tenant := startAPIWorkflows(t)
+		idmPlugin := testplugins.NewTestIdentityManagement()
+		db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		r := cmksql.NewRepository(db)
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient)
+
+		// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
+		groupSCIMID := uuid.NewString()
+		idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
+		// Add test users to the group (at least 2 required for minimum approval count)
+		idmPlugin.PutGroupMembers(groupSCIMID, []string{
+			"00000000-0000-0000-0000-100000000001", // user1 from default IDM users
+			"00000000-0000-0000-0000-100000000002", // user2 from default IDM users
+		})
+
+		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
+
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		wf := cmkapi.Workflow{
-			ActionType:   cmkapi.WorkflowActionType(wfMechanism.ActionTypeUnlink),
+			ActionType:   cmkapi.WorkflowActionType(model.WorkflowActionTypeUnlink),
 			ArtifactID:   uuid.MustParse(systemID),
-			ArtifactType: cmkapi.WorkflowArtifactType(wfMechanism.ArtifactTypeSystem),
+			ArtifactType: cmkapi.WorkflowArtifactType(model.WorkflowArtifactTypeSystem),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPost,
-			Endpoint:          "/workflows/check",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, wf),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPost,
+			Endpoint: "/workflows/check",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, wf),
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -214,20 +297,21 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 	})
 
 	t.Run("Should 200 with valid and canCreate as false on wf system connect invalid key state", func(t *testing.T) {
-		db, sv, tenant := startAPIWorkflows(t)
+		idmPlugin := testplugins.NewTestIdentityManagement()
+		db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 		r := cmksql.NewRepository(db)
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient)
+		setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
 
 		key := testutils.NewKey(func(k *model.Key) {
-			k.State = string(cmkapi.KeyStateUNKNOWN)
+			k.State = cmkapi.KeyStateUNKNOWN
 		})
 
 		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
 			c.PrimaryKeyID = &key.ID
-		}, testutils.WithAuthClientDataKC(authClient))
+		}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 		system := testutils.NewSystem(func(w *model.System) {
 			w.KeyConfigurationID = &keyConfig.ID
@@ -235,19 +319,28 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 
 		testutils.CreateTestEntities(ctx, t, r, key, keyConfig, system)
 
+		businessUserData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{authClient.Group.IAMIdentifier},
+		}
+
+		privateKey, ok := keyStorage.GetPrivateKey(0)
+		assert.True(t, ok, "test key should exist")
+		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
 		wf := cmkapi.Workflow{
 			ActionType:   cmkapi.WorkflowActionTypeEnumLINK,
 			ArtifactID:   system.ID,
 			ArtifactType: cmkapi.WorkflowArtifactTypeEnumSYSTEM,
-			Parameters:   ptr.PointTo(keyConfig.ID.String()),
+			Parameters:   new(keyConfig.ID.String()),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPost,
-			Endpoint:          "/workflows/check",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, wf),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPost,
+			Endpoint: "/workflows/check",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, wf),
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -258,6 +351,58 @@ func TestWorkflowControllerCheckWorkflow(t *testing.T) {
 		assert.False(t, *res.CanCreate)
 		assert.True(t, *res.Required)
 		assert.Equal(t, manager.ErrConnectSystemNoPrimaryKey.Error(), *res.Details)
+	})
+
+	t.Run("Should 200 with insufficient approvers error", func(t *testing.T) {
+		idmPlugin := testplugins.NewTestIdentityManagement()
+		db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := cmksql.NewRepository(db)
+
+		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+		// Register the authClient's group in the IDM plugin with only 1 member (insufficient)
+		groupSCIMID := uuid.NewString()
+		idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
+		// Add only 1 user to the group (insufficient for minimum approval count of 2)
+		idmPlugin.PutGroupMembers(groupSCIMID, []string{
+			"00000000-0000-0000-0000-100000000001", // only one user
+		})
+
+		// Create a system to unlink via workflow
+		key := testutils.NewKey(func(k *model.Key) {})
+		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.PrimaryKeyID = &key.ID
+		}, testutils.WithAuthBusinessUserDataKC(authClient))
+		system := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = &keyConfig.ID
+			s.Status = cmkapi.SystemStatusCONNECTED
+		})
+		testutils.CreateTestEntities(ctx, t, r, key, keyConfig, system)
+
+		wf := cmkapi.Workflow{
+			ActionType:   cmkapi.WorkflowActionTypeEnumUNLINK,
+			ArtifactID:   system.ID,
+			ArtifactType: cmkapi.WorkflowArtifactType(model.WorkflowArtifactTypeSystem),
+		}
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: "/workflows/check",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, wf),
+			Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap()),
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		res := testutils.GetJSONBody[cmkapi.CheckWorkflow200JSONResponse](t, w)
+		assert.False(t, *res.Exists)
+		assert.True(t, *res.Valid)
+		assert.False(t, *res.CanCreate) // Cannot create due to insufficient approvers
+		assert.True(t, *res.Required)
+		assert.NotNil(t, res.Details)
+		assert.Equal(t, apierrors.WorkflowGroupNotSufficientMembers, *res.Details)
 	})
 }
 
@@ -313,9 +458,9 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 			extraResource: []repo.Resource{
 				testutils.NewWorkflow(func(w *model.Workflow) {
 					w.ArtifactID = uuid.MustParse(systemID)
-					w.ArtifactType = wfMechanism.ArtifactTypeSystem.String()
-					w.ActionType = wfMechanism.ActionTypeUnlink.String()
-					w.State = wfMechanism.StateExecuting.String()
+					w.ArtifactType = model.WorkflowArtifactTypeSystem
+					w.ActionType = model.WorkflowActionTypeUnlink
+					w.State = model.WorkflowStateExecuting
 					w.Parameters = keyConfigID
 				}),
 			},
@@ -356,30 +501,101 @@ func TestWorkflowControllerCreateWorkflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db, sv, tenant := startAPIWorkflows(t)
+			idmPlugin := testplugins.NewTestIdentityManagement()
+			db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 			r := cmksql.NewRepository(db)
 
 			authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient)
+
+			// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
+			groupSCIMID := uuid.NewString()
+			idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
+			// Add test users to the group (at least 2 required for minimum approval count)
+			idmPlugin.PutGroupMembers(groupSCIMID, []string{
+				"00000000-0000-0000-0000-100000000001", // user1 from default IDM users
+				"00000000-0000-0000-0000-100000000002", // user2 from default IDM users
+			})
+
+			idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
+			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
+
+			businessUserData := &auth.ClientData{
+				Identifier: authClient.Identifier,
+				Groups:     []string{authClient.Group.IAMIdentifier},
+			}
+
+			privateKey, ok := keyStorage.GetPrivateKey(0)
+			assert.True(t, ok, "test key should exist")
+			headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 			if tt.sideEffect != nil {
-				forceConfig(t, tenant, sv, authClient)
+				forceConfig(t, tenant, sv, headers)
 				teardown := tt.sideEffect(db)
 				defer teardown()
 			}
 
 			testutils.CreateTestEntities(ctx, t, cmksql.NewRepository(db), tt.extraResource...)
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/workflows",
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, tt.request),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "/workflows",
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, tt.request),
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code, w.Body.String())
 		})
 	}
+}
+
+func TestWorkflowControllerCreateWorkflow_InsufficientApprovers(t *testing.T) {
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := cmksql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	// Register user first
+	idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
+
+	// Register the authClient's group in the IDM plugin with only 1 member (insufficient)
+	groupSCIMID := uuid.NewString()
+	idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
+	// Add only 1 member (initiator) - insufficient for minimumApprovals=2
+	idmPlugin.PutGroupMembers(groupSCIMID, []string{
+		authClient.Identifier,
+	})
+
+	setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
+
+	requestBody := `{
+		"actionType":"UNLINK",
+		"artifactID":"` + systemID + `",
+		"artifactType":"SYSTEM"
+	}`
+
+	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+		Method:   http.MethodPost,
+		Endpoint: "/workflows",
+		Tenant:   tenant,
+		Body:     testutils.WithString(t, requestBody),
+		Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap()),
+	})
+
+	// Verify HTTP 400 error response
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	// Parse error response
+	var errResponse cmkapi.ErrorMessage
+	err := json.Unmarshal(w.Body.Bytes(), &errResponse)
+	assert.NoError(t, err)
+
+	// Verify error code
+	assert.Equal(t, apierrors.WorkflowGroupNotSufficientMembers, errResponse.Error.Code)
+
+	// Verify context fields are present
+	assert.NotNil(t, errResponse.Error.Context, "error context should be present")
 }
 
 func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
@@ -406,40 +622,71 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 	// Test allowed scenarios
 	for _, request := range requests {
 		t.Run("TestWorkflowControllerCheckCreateWorkflowAuthz_InKAGroup", func(t *testing.T) {
-			db, sv, tenant := startAPIWorkflows(t)
+			idmPlugin := testplugins.NewTestIdentityManagement()
+			db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 			r := cmksql.NewRepository(db)
 
 			keyAdminAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient)
+
+			// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
+			groupSCIMID := uuid.NewString()
+			idmPlugin.PutGroup(keyAdminAuthClient.Group.IAMIdentifier, groupSCIMID)
+			// Add test users to the group (at least 2 required for minimum approval count)
+			idmPlugin.PutGroupMembers(groupSCIMID, []string{
+				"00000000-0000-0000-0000-100000000001", // user1 from default IDM users
+				"00000000-0000-0000-0000-100000000002", // user2 from default IDM users
+			})
+
+			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient, idmPlugin)
+
+			businessUserData := &auth.ClientData{
+				Identifier: keyAdminAuthClient.Identifier,
+				Groups:     []string{keyAdminAuthClient.Group.IAMIdentifier},
+			}
+
+			privateKey, ok := keyStorage.GetPrivateKey(0)
+			assert.True(t, ok, "test key should exist")
+			headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/workflows/check",
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, request),
-				AdditionalContext: keyAdminAuthClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "/workflows/check",
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, request),
+				Headers:  headers,
 			})
 			assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 			w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/workflows",
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, request),
-				AdditionalContext: keyAdminAuthClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "/workflows",
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, request),
+				Headers:  headers,
 			})
 			assert.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 		})
 	}
 
 	// Test forbidden scenarios
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
 	keyAdminAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-	setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient)
+
+	// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
+	groupSCIMID := uuid.NewString()
+	idmPlugin.PutGroup(keyAdminAuthClient.Group.IAMIdentifier, groupSCIMID)
+	// Add test users to the group (at least 2 required for minimum approval count)
+	idmPlugin.PutGroupMembers(groupSCIMID, []string{
+		"00000000-0000-0000-0000-100000000001", // user1 from default IDM users
+		"00000000-0000-0000-0000-100000000002", // user2 from default IDM users
+	})
+
+	setupTestWorkflowControllerCreateWorkflow(t, r, ctx, keyAdminAuthClient, idmPlugin)
 
 	keyAdmin2AuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 	tenantAdminAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
@@ -469,20 +716,20 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 		for _, request := range requests {
 			t.Run(tt.name, func(t *testing.T) {
 				w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          "/workflows/check",
-					Tenant:            tenant,
-					Body:              testutils.WithString(t, request),
-					AdditionalContext: tt.clientMap,
+					Method:   http.MethodPost,
+					Endpoint: "/workflows/check",
+					Tenant:   tenant,
+					Body:     testutils.WithString(t, request),
+					Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, tt.clientMap),
 				})
 				assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
 
 				w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          "/workflows",
-					Tenant:            tenant,
-					Body:              testutils.WithString(t, request),
-					AdditionalContext: tt.clientMap,
+					Method:   http.MethodPost,
+					Endpoint: "/workflows",
+					Tenant:   tenant,
+					Body:     testutils.WithString(t, request),
+					Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, tt.clientMap),
 				})
 				assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
 			})
@@ -545,30 +792,48 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 
 	for _, tt := range tests2 {
 		t.Run(tt.name, func(t *testing.T) {
-			db, sv, tenant := startAPIWorkflows(t)
+			idmPlugin := testplugins.NewTestIdentityManagement()
+			db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 			r := cmksql.NewRepository(db)
 
 			authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient)
+			// Register the authClient's group in the IDM plugin so CheckWorkflow can auto-assign approvers
+			groupSCIMID := uuid.NewString()
+			idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
+			// Add test users to the group (at least 2 required for minimum approval count)
+			idmPlugin.PutGroupMembers(groupSCIMID, []string{
+				"00000000-0000-0000-0000-100000000001", // user1 from default IDM users
+				"00000000-0000-0000-0000-100000000002", // user2 from default IDM users
+			})
+
+			idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
+			setupTestWorkflowControllerCreateWorkflow(t, r, ctx, authClient, idmPlugin)
+			businessUserData := &auth.ClientData{
+				Identifier: authClient.Identifier,
+				Groups:     []string{authClient.Group.IAMIdentifier},
+			}
+			privateKey, ok := keyStorage.GetPrivateKey(0)
+			assert.True(t, ok, "test key should exist")
+			headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 			testutils.CreateTestEntities(ctx, t, r, keyConfigWithoutUser)
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/workflows/check",
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, tt.request),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "/workflows/check",
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, tt.request),
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedCheckStatus, w.Code, w.Body.String())
 
 			w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "/workflows",
-				Tenant:            tenant,
-				Body:              testutils.WithString(t, tt.request),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "/workflows",
+				Tenant:   tenant,
+				Body:     testutils.WithString(t, tt.request),
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedCreateStatus, w.Code, w.Body.String())
 		})
@@ -576,29 +841,24 @@ func TestWorkflowControllerCheckCreateWorkflowAuthz(t *testing.T) {
 }
 
 func TestWorkflowControllerGetByID(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement(
+		testplugins.WithGroups(map[string]string{}),
+		testplugins.WithGroupMembership(map[string][]string{}),
+	)
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
-	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole(),
-		testutils.WithIdentifier(userID))
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole(), testutils.WithIdentifier(userID))
 
-	workflows := createTestWorkflows(ctx, t, r, authClient)
+	// Register the authClient's group with the test identity management plugin
+	// so eligibility checks can query group membership
+	testGroupSCIMID := authClient.Group.IAMIdentifier + "-SCIM"
+	idmPlugin.PutUser(identitymanagement.User{ID: authClient.Identifier})
+	idmPlugin.PutGroup(authClient.Group.IAMIdentifier, testGroupSCIMID)
+	idmPlugin.PutGroupMembers(testGroupSCIMID, []string{authClient.Identifier})
 
-	groupIDsBytes, err := json.Marshal([]uuid.UUID{uuid.New()})
-	assert.NoError(t, err)
-
-	workflowWithDeletedGroup := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.ActionType = wfMechanism.ActionTypeUpdateState.String()
-		w.State = wfMechanism.StateWaitApproval.String()
-		w.ArtifactType = wfMechanism.ArtifactTypeKey.String()
-		w.ArtifactID = workflows[1].ArtifactID
-		w.ArtifactName = workflows[1].ArtifactName
-		w.Approvers = []model.WorkflowApprover{{UserID: userID}}
-		w.ApproverGroupIDs = groupIDsBytes
-		w.Parameters = "DISABLED"
-	})
-	testutils.CreateTestEntities(ctx, t, r, workflowWithDeletedGroup)
+	workflows := createTestWorkflows(ctx, t, r, authClient, idmPlugin)
 
 	tests := []struct {
 		name              string
@@ -633,13 +893,6 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:              "TestWorkflowControllerGetByID_DeletedGroup",
-			workflowID:        workflowWithDeletedGroup.ID.String(),
-			userID:            workflowWithDeletedGroup.InitiatorID,
-			expectedStatus:    http.StatusOK,
-			approverGroupName: "NOT_AVAILABLE",
-		},
-		{
 			name: "TestWorkflowControllerGetByID_InternalError",
 			sideEffect: func() func() {
 				errForced := testutils.NewDBErrorForced(db, errMockInternalError)
@@ -664,34 +917,32 @@ func TestWorkflowControllerGetByID(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: "/workflows/" + tt.workflowID,
 				Tenant:   tenant,
-				AdditionalContext: authClient.GetClientMap(
-					testutils.WithOverriddenIdentifier(tt.userID)),
+				Headers: signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap(
+					testutils.WithOverriddenIdentifier(tt.userID))),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusOK {
-				response := testutils.GetJSONBody[cmkapi.DetailedWorkflow](t, w)
+				response := testutils.GetJSONBody[cmkapi.Workflow](t, w)
 				assert.Equal(t, tt.workflowID, response.Id.String())
 				assert.Equal(t, tt.userID, response.InitiatorID)
 				assert.NotNil(t, response.ArtifactName)
 				assert.NotEmpty(t, response.AvailableTransitions)
 				assert.NotNil(t, response.ApprovalSummary)
-				if tt.approverGroupName != "" {
-					assert.Equal(t, tt.approverGroupName, response.ApproverGroups[0].Name)
-				}
 			}
 		})
 	}
 }
 
 func TestWorkflowControllerListWorkflows(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
 	keyAdminAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-	workflows := createTestWorkflows(ctx, t, r, keyAdminAuthClient)
+	workflows := createTestWorkflows(ctx, t, r, keyAdminAuthClient, idmPlugin)
 
 	auditorAuthClient := testutils.NewAuthClient(ctx, t, r,
 		testutils.WithAuditorRole(), testutils.WithIdentifier(keyAdminAuthClient.Identifier))
@@ -774,10 +1025,10 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          path,
-				Tenant:            tenant,
-				AdditionalContext: tt.clientMap,
+				Method:   http.MethodGet,
+				Endpoint: path,
+				Tenant:   tenant,
+				Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, tt.clientMap),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -797,8 +1048,63 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 	}
 }
 
+func TestWorkflowControllerListWorkflows_OrderedByCreatedAtDesc(t *testing.T) {
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := cmksql.NewRepository(db)
+
+	auditorAuthClient := testutils.NewAuthClient(ctx, t, r, testutils.WithAuditorRole())
+
+	baseTime := time.Now()
+
+	wf1 := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.State = model.WorkflowStateInitial
+		w.ActionType = model.WorkflowActionTypeDelete
+		w.ArtifactType = model.WorkflowArtifactTypeKey
+		w.ArtifactID = uuid.New()
+		w.CreatedAt = baseTime.Add(-2 * time.Hour)
+		w.UpdatedAt = baseTime.Add(-2 * time.Hour)
+	})
+	wf2 := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.State = model.WorkflowStateInitial
+		w.ActionType = model.WorkflowActionTypeDelete
+		w.ArtifactType = model.WorkflowArtifactTypeKey
+		w.ArtifactID = uuid.New()
+		w.CreatedAt = baseTime.Add(-1 * time.Hour)
+		w.UpdatedAt = baseTime.Add(-1 * time.Hour)
+	})
+	wf3 := testutils.NewWorkflow(func(w *model.Workflow) {
+		w.State = model.WorkflowStateInitial
+		w.ActionType = model.WorkflowActionTypeDelete
+		w.ArtifactType = model.WorkflowArtifactTypeKey
+		w.ArtifactID = uuid.New()
+		w.CreatedAt = baseTime
+		w.UpdatedAt = baseTime
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, wf1, wf2, wf3)
+
+	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+		Method:   http.MethodGet,
+		Endpoint: "/workflows",
+		Tenant:   tenant,
+		Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, auditorAuthClient.GetClientMap()),
+	})
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	response := testutils.GetJSONBody[cmkapi.WorkflowList](t, w)
+	assert.Len(t, response.Value, 3)
+
+	assert.Equal(t, wf3.ID, *response.Value[0].Id, "First result should be the newest workflow")
+	assert.Equal(t, wf2.ID, *response.Value[1].Id, "Second result should be the middle workflow")
+	assert.Equal(t, wf1.ID, *response.Value[2].Id, "Third result should be the oldest workflow")
+}
+
 func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -810,33 +1116,61 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 	user1ID := uuid.NewString()
 	user2ID := uuid.NewString()
 
+	idmPlugin.PutUser(identitymanagement.User{ID: user1ID})
+	idmPlugin.PutUser(identitymanagement.User{ID: userID})
+	idmPlugin.PutGroup(keyAdminAuthClient.Group.IAMIdentifier, keyAdminAuthClient.Group.IAMIdentifier)
+
 	workflow := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: user2ID, AssigneeRole: model.AssigneeRoleApprover}}
 		w.InitiatorID = user1ID
 	})
 
 	workflow2 := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{{UserID: userID}}
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: userID, AssigneeRole: model.AssigneeRoleApprover}}
 		w.InitiatorID = user1ID
 	})
 
 	workflow3 := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: user2ID, AssigneeRole: model.AssigneeRoleApprover}}
 		w.InitiatorID = userID
 	})
 
 	workflow4 := testutils.NewWorkflow(func(w *model.Workflow) {
-		w.Approvers = []model.WorkflowApprover{{UserID: user2ID}}
+		w.Tasks = []model.WorkflowTask{{ID: uuid.New(), UserID: user2ID, AssigneeRole: model.AssigneeRoleApprover}}
 		w.InitiatorID = userID
 	})
 
 	allWorkflows := []*model.Workflow{workflow, workflow2, workflow3, workflow4}
 
-	testutils.CreateTestEntities(ctx, t, r, workflow, workflow2, workflow3, workflow4)
+	testutils.CreateTestEntities(
+		ctx,
+		t,
+		r,
+		workflow,
+		workflow2,
+		workflow3,
+		workflow4,
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.WorkflowID = workflow.ID
+			wag.GroupID = keyAdminAuthClient.Group.ID
+		}),
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.WorkflowID = workflow2.ID
+			wag.GroupID = keyAdminAuthClient.Group.ID
+		}),
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.WorkflowID = workflow3.ID
+			wag.GroupID = keyAdminAuthClient.Group.ID
+		}),
+		testutils.NewWorkflowApproverGroup(func(wag *model.WorkflowApproverGroup) {
+			wag.WorkflowID = workflow4.ID
+			wag.GroupID = keyAdminAuthClient.Group.ID
+		}),
+	)
 
 	tests := []struct {
 		name             string
-		authClient       testutils.AuthClientData
+		authClient       testutils.AuthBusinessUserData
 		allowedWorkflows []*model.Workflow
 	}{
 		{
@@ -854,10 +1188,10 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/workflows?$count=true",
-				Tenant:            tenant,
-				AdditionalContext: tt.authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: "/workflows?$count=true",
+				Tenant:   tenant,
+				Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, tt.authClient.GetClientMap()),
 			})
 
 			assert.Equal(t, http.StatusOK, w.Code)
@@ -866,10 +1200,10 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 
 			for _, wf := range allWorkflows {
 				w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-					Method:            http.MethodGet,
-					Endpoint:          "/workflows/" + wf.ID.String(),
-					Tenant:            tenant,
-					AdditionalContext: tt.authClient.GetClientMap(),
+					Method:   http.MethodGet,
+					Endpoint: "/workflows/" + wf.ID.String(),
+					Tenant:   tenant,
+					Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, tt.authClient.GetClientMap()),
 				})
 
 				containsFunc := func(allowedWf *model.Workflow) bool {
@@ -887,7 +1221,8 @@ func TestWorkflowControllerGetWorkflowsAuthz(t *testing.T) {
 }
 
 func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
@@ -895,6 +1230,7 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 
 	for range totalRecordCount {
 		workflow := testutils.NewWorkflow(func(_ *model.Workflow) {})
+		idmPlugin.PutUser(identitymanagement.User{ID: workflow.InitiatorID})
 		testutils.CreateTestEntities(ctx, t, r, workflow)
 	}
 
@@ -976,10 +1312,10 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          tt.query,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: tt.query,
+				Tenant:   tenant,
+				Headers:  signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap()),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -999,29 +1335,32 @@ func TestWorkflowControllerListWorkflowsWithPagination(t *testing.T) {
 }
 
 func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-	createTestWorkflows(ctx, t, r, authClient)
+	createTestWorkflows(ctx, t, r, authClient, idmPlugin)
 
 	workflowID := uuid.New()
 	initiatorID := uuid.NewString()
 	approverID01 := uuid.NewString()
 	approverID02 := uuid.NewString()
 
+	idmPlugin.PutUser(identitymanagement.User{ID: initiatorID})
+
 	wfMutator := testutils.NewMutator(func() model.Workflow {
 		return model.Workflow{
 			ID:           workflowID,
-			State:        wfMechanism.StateInitial.String(),
+			State:        model.WorkflowStateInitial,
 			InitiatorID:  initiatorID,
 			ArtifactType: "KEY",
 			ArtifactID:   uuid.New(),
 			ActionType:   "DELETE",
-			Approvers: []model.WorkflowApprover{
-				{UserID: approverID01, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
-				{UserID: approverID02, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), UserID: approverID01, AssigneeRole: model.AssigneeRoleApprover, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
+				{ID: uuid.New(), UserID: approverID02, AssigneeRole: model.AssigneeRoleApprover, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
 			},
 		}
 	})
@@ -1033,7 +1372,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		actorID        string
 		request        string
 		expectedStatus int
-		expectedState  string
+		expectedState  model.WorkflowState
 	}{
 		{
 			name:       "TestWorkflowControllerTransitionWorkflow_Approve_From_Initial",
@@ -1048,19 +1387,19 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Approve_As_Initiator",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 			}),
 			workflowID: workflowID.String(),
 			request: `{
 				"transition": "APPROVE"
 			}`,
 			actorID:        initiatorID,
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Approve_As_First_Approver",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1068,15 +1407,15 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			}`,
 			actorID:        approverID01,
 			expectedStatus: http.StatusOK,
-			expectedState:  wfMechanism.StateWaitApproval.String(),
+			expectedState:  model.WorkflowStateWaitApproval,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Approve_As_Second_Approver",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
-				w.Approvers = []model.WorkflowApprover{
-					{UserID: approverID01, Approved: sql.NullBool{Bool: true, Valid: true}, WorkflowID: workflowID},
-					{UserID: approverID02, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
+				w.State = model.WorkflowStateWaitApproval
+				w.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), UserID: approverID01, AssigneeRole: model.AssigneeRoleApprover, Approved: sql.NullBool{Bool: true, Valid: true}, WorkflowID: workflowID},
+					{ID: uuid.New(), UserID: approverID02, AssigneeRole: model.AssigneeRoleApprover, Approved: repo.SQLNullBoolNull, WorkflowID: workflowID},
 				}
 			}),
 			workflowID: workflowID.String(),
@@ -1085,7 +1424,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			}`,
 			actorID:        approverID02,
 			expectedStatus: http.StatusOK,
-			expectedState:  wfMechanism.StateWaitConfirmation.String(),
+			expectedState:  model.WorkflowStateWaitConfirmation,
 		},
 		{
 			name:       "TestWorkflowControllerTransitionWorkflow_Reject_From_Initial",
@@ -1100,19 +1439,19 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Reject_As_Initiator",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 			}),
 			workflowID: workflowID.String(),
 			request: `{
 				"transition": "REJECT"
 			}`,
 			actorID:        initiatorID,
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Revoke",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1120,12 +1459,12 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			}`,
 			actorID:        initiatorID,
 			expectedStatus: http.StatusOK,
-			expectedState:  wfMechanism.StateRevoked.String(),
+			expectedState:  model.WorkflowStateRevoked,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Revoke_From_Revoked",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateRevoked.String()
+				w.State = model.WorkflowStateRevoked
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1137,7 +1476,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Confirm",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitConfirmation.String()
+				w.State = model.WorkflowStateWaitConfirmation
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1145,24 +1484,24 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			}`,
 			actorID:        initiatorID,
 			expectedStatus: http.StatusOK,
-			expectedState:  wfMechanism.StateFailed.String(),
+			expectedState:  model.WorkflowStateFailed,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Confirm_As_Approver",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitConfirmation.String()
+				w.State = model.WorkflowStateWaitConfirmation
 			}),
 			workflowID: workflowID.String(),
 			request: `{
 				"transition": "CONFIRM"
 			}`,
 			actorID:        approverID01,
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name: "TestWorkflowControllerTransitionWorkflow_Confirm_From_Wait_Approval",
 			workflow: wfMutator(func(w *model.Workflow) {
-				w.State = wfMechanism.StateWaitApproval.String()
+				w.State = model.WorkflowStateWaitApproval
 			}),
 			workflowID: workflowID.String(),
 			request: `{
@@ -1206,7 +1545,7 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 			testutils.CreateTestEntities(ctx, t, r, &tt.workflow)
 
 			defer func() {
-				for _, approver := range tt.workflow.Approvers {
+				for _, approver := range tt.workflow.Tasks {
 					testutils.DeleteTestEntities(ctx, t, r, &approver)
 				}
 
@@ -1218,8 +1557,8 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 				Endpoint: fmt.Sprintf("/workflows/%s/state", tt.workflowID),
 				Tenant:   tenant,
 				Body:     testutils.WithString(t, tt.request),
-				AdditionalContext: authClient.GetClientMap(
-					testutils.WithOverriddenIdentifier(tt.actorID)),
+				Headers: signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap(
+					testutils.WithOverriddenIdentifier(tt.actorID))),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -1239,12 +1578,13 @@ func TestWorkflowControllerTransitionWorkflow(t *testing.T) {
 }
 
 func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
-	db, sv, tenant := startAPIWorkflows(t)
+	idmPlugin := testplugins.NewTestIdentityManagement()
+	db, sv, tenant, keyStorage := startAPIWorkflows(t, idmPlugin)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := cmksql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithAuditorRole())
-	workflows := createTestWorkflows(ctx, t, r, authClient)
+	workflows := createTestWorkflows(ctx, t, r, authClient, idmPlugin)
 
 	tests := []struct {
 		name           string
@@ -1315,8 +1655,8 @@ func TestWorkflowControllerListWorkflows_WithFilters(t *testing.T) {
 				Method:   http.MethodGet,
 				Endpoint: tt.query,
 				Tenant:   tenant,
-				AdditionalContext: authClient.GetClientMap(
-					testutils.WithOverriddenIdentifier(userID)),
+				Headers: signedHeadersFromClientMapWorkflow(t, keyStorage, authClient.GetClientMap(
+					testutils.WithOverriddenIdentifier(userID))),
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)

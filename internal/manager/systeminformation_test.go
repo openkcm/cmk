@@ -3,18 +3,16 @@ package manager_test
 import (
 	"context"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/openkcm/plugin-sdk/api"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
-
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/wrapper/system_information"
 	"github.com/openkcm/cmk/internal/repo"
@@ -39,14 +37,9 @@ func SetupSystemInfoManager(t *testing.T) (
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	dbRepository := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(
-		testplugins.NewSystemInformation(),
-	)
-
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &config.Config{Plugins: psCfg}, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 	systemManager, err := manager.NewSystemInformationManager(
-		dbRepository,
+		dbRepository, nil,
 		svcRegistry,
 		&config.System{
 			OptionalProperties: map[string]config.SystemProperty{
@@ -94,13 +87,20 @@ func fakeDataReturned(m map[string]func(ID string) map[string]string) func(ID st
 type PredictedResponseMock struct {
 	ResponseFunc  func(ID string) map[string]string
 	noResponseIDs []string
+
+	mu      sync.Mutex
+	visited []string
 }
 
-func (e PredictedResponseMock) ServiceInfo() api.Info {
+func (e *PredictedResponseMock) ServiceInfo() api.Info {
 	panic("implement me")
 }
 
-func (e PredictedResponseMock) GetSystemInfo(_ context.Context, req *systeminformation.GetSystemInfoRequest) (*systeminformation.GetSystemInfoResponse, error) {
+func (e *PredictedResponseMock) GetSystemInfo(_ context.Context, req *systeminformation.GetSystemInfoRequest) (*systeminformation.GetSystemInfoResponse, error) {
+	e.mu.Lock()
+	e.visited = append(e.visited, req.ID)
+	e.mu.Unlock()
+
 	if slices.Contains(e.noResponseIDs, req.ID) {
 		return &systeminformation.GetSystemInfoResponse{}, nil
 	}
@@ -136,42 +136,33 @@ func createSystemForTests() *model.System {
 func TestNewSystemInformationManager(t *testing.T) {
 	tests := []struct {
 		name          string
-		plugins       []catalog.BuiltInPlugin
+		opts          []testplugins.RegistryOption
 		expectedError error
 	}{
 		{
 			name:          "NoPluginInCatalog",
-			plugins:       []catalog.BuiltInPlugin{},
+			opts:          []testplugins.RegistryOption{testplugins.WithNoSystemInformation()},
 			expectedError: system_information.ErrNotConfigured,
 		},
 		{
 			name:          "ValidPluginInCatalog",
-			plugins:       []catalog.BuiltInPlugin{testplugins.NewSystemInformation()},
+			opts:          nil,
 			expectedError: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ps, psCfg := testutils.NewTestPlugins(
-				tt.plugins...,
-			)
-			cfg := config.Config{
-				Plugins: psCfg,
-				ContextModels: config.ContextModels{
-					System: config.System{
-						OptionalProperties: map[string]config.SystemProperty{
-							SystemRole:   {},
-							SystemRoleID: {},
-							SystemName:   {},
-						},
-					},
+			svcRegistry := testutils.NewTestPlugins(tt.opts...)
+			cfg := config.System{
+				OptionalProperties: map[string]config.SystemProperty{
+					SystemRole:   {},
+					SystemRoleID: {},
+					SystemName:   {},
 				},
 			}
-			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-			assert.NoError(t, err)
 
-			_, err = manager.NewSystemInformationManager(nil, svcRegistry, &cfg.ContextModels.System)
+			_, err := manager.NewSystemInformationManager(nil, nil, svcRegistry, &cfg)
 			if tt.expectedError != nil {
 				assert.ErrorIs(t, err, tt.expectedError)
 			} else {
@@ -210,7 +201,7 @@ func TestUpdateSystems(t *testing.T) {
 	thirdSystem := createSystemForTestsWithEmptyExternalData()
 	testutils.CreateTestEntities(ctx, t, r, firstSystem, secondSystem, thirdSystem)
 
-	si.SetClient(PredictedResponseMock{
+	si.SetClient(&PredictedResponseMock{
 		ResponseFunc: fakeDataReturned(map[string]func(ID string) map[string]string{
 			firstSystem.Identifier:  roleFakeData,
 			secondSystem.Identifier: externalNameFakeData,
@@ -296,7 +287,7 @@ func TestUpdateSystemByExternalID(t *testing.T) {
 	system := createSystemForTestsWithEmptyExternalData()
 	testutils.CreateTestEntities(ctx, t, r, system)
 
-	si.SetClient(PredictedResponseMock{ResponseFunc: allFakeData})
+	si.SetClient(&PredictedResponseMock{ResponseFunc: allFakeData})
 
 	err := si.UpdateSystemByExternalID(ctx, system.Identifier)
 	assert.NoError(t, err)
@@ -316,7 +307,7 @@ func TestUpdateSystemByExternalIDReplace(t *testing.T) {
 	system := createSystemForTests()
 	testutils.CreateTestEntities(ctx, t, r, system)
 
-	si.SetClient(PredictedResponseMock{ResponseFunc: roleFakeData})
+	si.SetClient(&PredictedResponseMock{ResponseFunc: roleFakeData})
 
 	err := si.UpdateSystemByExternalID(ctx, system.Identifier)
 	assert.NoError(t, err)
@@ -326,4 +317,32 @@ func TestUpdateSystemByExternalIDReplace(t *testing.T) {
 	assert.Equal(t, fakeData(system.Identifier, "system-role-id"), sys.Properties[SystemRoleID])
 	assert.Equal(t, "givenExternalName", sys.Properties[SystemName])
 	assert.Equal(t, "givenSystemRole", sys.Properties[SystemRole])
+}
+
+// A failing system must not abort the sweep: every system is still visited and
+// the error is surfaced.
+func TestUpdateSystemsContinuesAfterFailure(t *testing.T) {
+	si, db, tenant := SetupSystemInfoManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	r := sql.NewRepository(db)
+
+	firstSystem := createSystemForTestsWithEmptyExternalData()
+	secondSystem := createSystemForTestsWithEmptyExternalData()
+	testutils.CreateTestEntities(ctx, t, r, firstSystem, secondSystem)
+
+	// Force every property Patch to fail so both systems error.
+	forced := testutils.NewDBErrorForced(db, ErrForced).WithUpdate()
+	forced.Register()
+	t.Cleanup(forced.Unregister)
+
+	mock := &PredictedResponseMock{ResponseFunc: allFakeData}
+	si.SetClient(mock)
+
+	err := si.UpdateSystems(ctx)
+	assert.Error(t, err)
+
+	assert.ElementsMatch(t,
+		[]string{firstSystem.Identifier, secondSystem.Identifier},
+		mock.visited,
+	)
 }

@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
@@ -19,7 +19,8 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	sqlRepo "github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -39,24 +40,20 @@ var (
 	sqlNullBoolFalse = sql.NullBool{Bool: false, Valid: true}
 )
 
-func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, string) {
+func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, string, *testplugins.TestKeyManagement) {
 	t.Helper()
-
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
 
 	dbCon, tenants, dbConf := testutils.NewTestDB(t, testutils.TestDBConfig{CreateDatabase: true})
 	cfg := config.Config{
-		Plugins:  psCfg,
 		Database: dbConf,
 	}
 	tenant := tenants[0]
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	svcRegistry, err := cmkpluginregistry.New(ctx, &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	svcRegistry := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp))
 
 	logger := testutils.SetupLoggerWithBuffer()
-
 	systemService := systems.NewFakeService(logger)
 	_, grpcClient := testutils.NewGRPCSuite(t,
 		func(s *grpc.Server) {
@@ -83,59 +80,64 @@ func SetupWorkflowManager(t *testing.T) (*manager.Manager, *multitenancy.DB, str
 
 	ksConfig := testutils.NewKeystore(func(_ *model.Keystore) {})
 	keystoreDefaultCert := testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeystoreDefault
+		c.Purpose = model.CertificatePurposeRoleManagement
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
 	})
-	testutils.CreateTestEntities(ctx, t, r, ksConfig, keystoreDefaultCert)
+	keystoreKeyMgmtCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeKeyManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
+	})
+	testutils.CreateTestEntities(ctx, t, r, ksConfig, keystoreDefaultCert, keystoreKeyMgmtCert)
 
 	migrator, err := db.NewMigrator(r, &cfg)
 	assert.NoError(t, err)
 
-	return manager.New(ctx, r, &cfg, clientsFactory, svcRegistry, eventFactory, nil, migrator), dbCon, tenants[0]
+	return manager.New(ctx, r, nil, &cfg, clientsFactory, svcRegistry, eventFactory, nil, migrator, nil), dbCon, tenants[0], pluginOp
 }
 
 func TestWorkflowLifecycleTransitions(t *testing.T) {
 	wfMutator := testutils.NewMutator(func() model.Workflow {
 		return model.Workflow{
 			ID:          uuid.New(),
-			State:       workflow.StateInitial.String(),
+			State:       model.WorkflowStateInitial,
 			InitiatorID: userID01,
-			Approvers: []model.WorkflowApprover{
-				{UserID: userID02, Approved: sqlNullBoolNull},
-				{UserID: userID03, Approved: sqlNullBoolNull},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 			},
-			ArtifactType: workflow.ArtifactTypeKey.String(),
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID01,
-			ActionType:   workflow.ActionTypeUpdateState.String(),
+			ActionType:   model.WorkflowActionTypeUpdateState,
 			Parameters:   "DISABLED",
 		}
 	})
 
 	tests := []struct {
-		name          string
-		workflow      model.Workflow
-		actorID       string
-		transition    workflow.Transition
-		expectErr     bool
-		errMessage    string         // If expectErr is true, this is the expected error message
-		expectedState workflow.State // If expectErr is false, this is the expected state after the transition
+		name                   string
+		workflow               model.Workflow
+		actorID                string
+		transition             workflow.Transition
+		expectErr              bool
+		errMessage             string                // If expectErr is true, this is the expected error message
+		expectedState          model.WorkflowState   // If expectErr is false, this is the expected state after the transition
+		mutateBeforeTransition func(*model.Workflow) // Optional: inject an invalid enum value before the transition runs.
 	}{
 		{
 			name: "create from initial",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateInitial.String()
+				wf.State = model.WorkflowStateInitial
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionCreate,
 			expectErr:     false,
-			expectedState: workflow.StateWaitApproval,
+			expectedState: model.WorkflowStateWaitApproval,
 		},
 		{
 			name: "create from initial not enough approvers",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateInitial.String()
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolNull},
+				wf.State = model.WorkflowStateInitial
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
 				}
 			}),
 			actorID:    userID01,
@@ -146,7 +148,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "revoke from initial",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateInitial.String()
+				wf.State = model.WorkflowStateInitial
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionRevoke,
@@ -156,7 +158,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "reject from initial",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateInitial.String()
+				wf.State = model.WorkflowStateInitial
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionReject,
@@ -166,7 +168,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "approve from initial",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateInitial.String()
+				wf.State = model.WorkflowStateInitial
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionApprove,
@@ -176,7 +178,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "confirm from initial",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateInitial.String()
+				wf.State = model.WorkflowStateInitial
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionConfirm,
@@ -186,7 +188,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "expire from initial",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateInitial.String()
+				wf.State = model.WorkflowStateInitial
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExpire,
@@ -196,7 +198,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "execute from initial",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateInitial.String()
+				wf.State = model.WorkflowStateInitial
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExecute,
@@ -206,7 +208,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "fail from initial",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateInitial.String()
+				wf.State = model.WorkflowStateInitial
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionFail,
@@ -216,7 +218,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "create from revoked",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRevoked.String()
+				wf.State = model.WorkflowStateRevoked
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionCreate,
@@ -227,7 +229,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "approve from revoked",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRevoked.String()
+				wf.State = model.WorkflowStateRevoked
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionApprove,
@@ -238,7 +240,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "reject from revoked",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRevoked.String()
+				wf.State = model.WorkflowStateRevoked
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionReject,
@@ -249,7 +251,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "revoke from revoked",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRevoked.String()
+				wf.State = model.WorkflowStateRevoked
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionRevoke,
@@ -260,7 +262,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "expire from revoked",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRevoked.String()
+				wf.State = model.WorkflowStateRevoked
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExpire,
@@ -270,7 +272,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "confirm from revoked",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRevoked.String()
+				wf.State = model.WorkflowStateRevoked
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionConfirm,
@@ -281,7 +283,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "execute from revoked",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRevoked.String()
+				wf.State = model.WorkflowStateRevoked
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExecute,
@@ -291,7 +293,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "fail from revoked",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRevoked.String()
+				wf.State = model.WorkflowStateRevoked
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionFail,
@@ -301,7 +303,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "create from rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRejected.String()
+				wf.State = model.WorkflowStateRejected
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionCreate,
@@ -311,7 +313,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "approve from rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRejected.String()
+				wf.State = model.WorkflowStateRejected
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionApprove,
@@ -321,7 +323,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "reject from rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRejected.String()
+				wf.State = model.WorkflowStateRejected
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionReject,
@@ -331,7 +333,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "revoke from rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRejected.String()
+				wf.State = model.WorkflowStateRejected
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionRevoke,
@@ -341,7 +343,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "expire from rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRejected.String()
+				wf.State = model.WorkflowStateRejected
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExpire,
@@ -351,7 +353,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "confirm from rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRejected.String()
+				wf.State = model.WorkflowStateRejected
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionConfirm,
@@ -361,7 +363,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "execute from rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRejected.String()
+				wf.State = model.WorkflowStateRejected
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExecute,
@@ -371,7 +373,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "fail from rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRejected.String()
+				wf.State = model.WorkflowStateRejected
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionFail,
@@ -381,7 +383,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "create from expired",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExpired.String()
+				wf.State = model.WorkflowStateExpired
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionCreate,
@@ -391,7 +393,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "approve from expired",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExpired.String()
+				wf.State = model.WorkflowStateExpired
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionApprove,
@@ -401,7 +403,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "reject from expired",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExpired.String()
+				wf.State = model.WorkflowStateExpired
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionReject,
@@ -411,7 +413,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "revoke from expired",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExpired.String()
+				wf.State = model.WorkflowStateExpired
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionRevoke,
@@ -421,7 +423,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "expire from expired",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExpired.String()
+				wf.State = model.WorkflowStateExpired
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExpire,
@@ -431,7 +433,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "confirm from expired",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExpired.String()
+				wf.State = model.WorkflowStateExpired
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionConfirm,
@@ -441,7 +443,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "execute from expired",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExpired.String()
+				wf.State = model.WorkflowStateExpired
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExecute,
@@ -451,7 +453,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "fail from expired",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExpired.String()
+				wf.State = model.WorkflowStateExpired
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionFail,
@@ -461,7 +463,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "create from wait approval",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionCreate,
@@ -472,95 +474,95 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "revoke from wait approval",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionRevoke,
 			expectErr:     false,
-			expectedState: workflow.StateRevoked,
+			expectedState: model.WorkflowStateRevoked,
 		},
 		{
 			name: "approve from wait approval not final",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 			}),
 			actorID:       userID02,
 			transition:    workflow.TransitionApprove,
 			expectErr:     false,
-			expectedState: workflow.StateWaitApproval,
+			expectedState: model.WorkflowStateWaitApproval,
 		},
 		{
 			name: "approve from wait approval final",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolNull},
-					{UserID: userID03, Approved: sqlNullBoolTrue},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolTrue},
 				}
 			}),
 			actorID:       userID02,
 			transition:    workflow.TransitionApprove,
 			expectErr:     false,
-			expectedState: workflow.StateWaitConfirmation,
+			expectedState: model.WorkflowStateWaitConfirmation,
 		},
 		{
 			name: "approve from wait approval reach threshold",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID01, Approved: sqlNullBoolNull},
-					{UserID: userID02, Approved: sqlNullBoolNull},
-					{UserID: userID03, Approved: sqlNullBoolTrue},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID01, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolTrue},
 				}
 			}),
 			actorID:       userID02,
 			transition:    workflow.TransitionApprove,
 			expectErr:     false,
-			expectedState: workflow.StateWaitConfirmation,
+			expectedState: model.WorkflowStateWaitConfirmation,
 		},
 		{
 			name: "reject from wait approval first rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID01, Approved: sqlNullBoolNull},
-					{UserID: userID02, Approved: sqlNullBoolNull},
-					{UserID: userID03, Approved: sqlNullBoolNull},
-					{UserID: userID04, Approved: sqlNullBoolNull},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID01, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID04, Approved: sqlNullBoolNull},
 				}
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionReject,
 			expectErr:  false,
 			// Still in wait approval as other 3 approvers can still approve to meet threshold (2)
-			expectedState: workflow.StateWaitApproval,
+			expectedState: model.WorkflowStateWaitApproval,
 		},
 		{
 			name: "reject from wait approval early rejected, impossible to approve",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID01, Approved: sqlNullBoolNull},
-					{UserID: userID02, Approved: sqlNullBoolNull},
-					{UserID: userID03, Approved: sqlNullBoolNull},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID01, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 				}
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionReject,
 			expectErr:  false,
 			// Now rejected as even if all others approve, threshold (2) cannot be met
-			expectedState: workflow.StateRejected,
+			expectedState: model.WorkflowStateRejected,
 		},
 		{
 			name: "approve from wait approval not approver",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolTrue},
+				wf.State = model.WorkflowStateWaitApproval
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolTrue},
 				}
 			}),
 			actorID:    userID01,
@@ -572,7 +574,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "confirm from wait approval",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionConfirm,
@@ -583,25 +585,25 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "reject from wait approval",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolFalse},
-					{UserID: userID03, Approved: sqlNullBoolTrue},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolFalse},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolTrue},
 				}
 			}),
 			actorID:       userID02,
 			transition:    workflow.TransitionReject,
 			expectErr:     false,
-			expectedState: workflow.StateRejected,
+			expectedState: model.WorkflowStateRejected,
 		},
 		{
 			name: "reject from wait approval not approver",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 				// Set all approvers
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolFalse},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolFalse},
 				}
 			}),
 			actorID:    userID01,
@@ -613,7 +615,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "expire from wait approval",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExpire,
@@ -623,7 +625,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "execute from wait approval",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExecute,
@@ -633,7 +635,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "fail from wait approval",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionFail,
@@ -643,7 +645,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "create from wait confirmation",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionCreate,
@@ -654,17 +656,17 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "revoke from wait confirmation",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionRevoke,
 			expectErr:     false,
-			expectedState: workflow.StateRevoked,
+			expectedState: model.WorkflowStateRevoked,
 		},
 		{
 			name: "approve from wait confirmation",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionApprove,
@@ -675,7 +677,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "reject from wait confirmation",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionReject,
@@ -686,7 +688,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "expire from wait confirmation",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExpire,
@@ -696,50 +698,54 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "confirm from wait confirmation",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
 			expectErr:     false,
-			expectedState: workflow.StateSuccessful,
+			expectedState: model.WorkflowStateSuccessful,
 		},
 		{
 			name: "confirm from wait confirmation wrong artifact type",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
-				wf.ArtifactType = "SOMETHING"
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
+			mutateBeforeTransition: func(wf *model.Workflow) {
+				wf.ArtifactType = "SOMETHING"
+			},
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
 			expectErr:     false,
-			expectedState: workflow.StateFailed,
+			expectedState: model.WorkflowStateFailed,
 		},
 		{
 			name: "confirm from wait confirmation wrong action type",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
-				wf.ActionType = "DOSTUFF"
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
+			mutateBeforeTransition: func(wf *model.Workflow) {
+				wf.ActionType = "DOSTUFF"
+			},
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
 			expectErr:     false,
-			expectedState: workflow.StateFailed,
+			expectedState: model.WorkflowStateFailed,
 		},
 		{
 			name: "confirm from wait confirmation wrong parameters",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 				wf.Parameters = "WRONG"
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
 			expectErr:     false,
-			expectedState: workflow.StateFailed,
+			expectedState: model.WorkflowStateFailed,
 		},
 		{
 			name: "confirm from wait confirmation wrong as approver",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionConfirm,
@@ -750,7 +756,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "execute from wait confirmation",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExecute,
@@ -760,7 +766,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "fail from wait confirmation",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionFail,
@@ -770,7 +776,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "create from executing",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExecuting.String()
+				wf.State = model.WorkflowStateExecuting
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionCreate,
@@ -780,7 +786,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "approve from executing",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExecuting.String()
+				wf.State = model.WorkflowStateExecuting
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionApprove,
@@ -790,7 +796,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "reject from executing",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExecuting.String()
+				wf.State = model.WorkflowStateExecuting
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionReject,
@@ -800,7 +806,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "revoke from executing",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExecuting.String()
+				wf.State = model.WorkflowStateExecuting
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionRevoke,
@@ -810,7 +816,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "expire from executing",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExecuting.String()
+				wf.State = model.WorkflowStateExecuting
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExpire,
@@ -820,7 +826,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "confirm from executing",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExecuting.String()
+				wf.State = model.WorkflowStateExecuting
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionConfirm,
@@ -830,7 +836,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "execute from executing",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExecuting.String()
+				wf.State = model.WorkflowStateExecuting
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExecute,
@@ -840,7 +846,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "fail from executing",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExecuting.String()
+				wf.State = model.WorkflowStateExecuting
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionFail,
@@ -850,7 +856,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "create from successful",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateSuccessful.String()
+				wf.State = model.WorkflowStateSuccessful
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionCreate,
@@ -860,7 +866,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "approve from successful",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateSuccessful.String()
+				wf.State = model.WorkflowStateSuccessful
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionApprove,
@@ -870,7 +876,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "reject from successful",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateSuccessful.String()
+				wf.State = model.WorkflowStateSuccessful
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionReject,
@@ -880,7 +886,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "revoke from successful",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateSuccessful.String()
+				wf.State = model.WorkflowStateSuccessful
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionRevoke,
@@ -890,7 +896,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "expire from successful",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateSuccessful.String()
+				wf.State = model.WorkflowStateSuccessful
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExpire,
@@ -900,7 +906,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "confirm from successful",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateSuccessful.String()
+				wf.State = model.WorkflowStateSuccessful
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionConfirm,
@@ -910,7 +916,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "execute from successful",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateSuccessful.String()
+				wf.State = model.WorkflowStateSuccessful
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExecute,
@@ -920,7 +926,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "fail from successful",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateSuccessful.String()
+				wf.State = model.WorkflowStateSuccessful
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionFail,
@@ -930,7 +936,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "create from failed",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateFailed.String()
+				wf.State = model.WorkflowStateFailed
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionCreate,
@@ -940,7 +946,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "approve from failed",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateFailed.String()
+				wf.State = model.WorkflowStateFailed
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionApprove,
@@ -950,7 +956,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "reject from failed",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateFailed.String()
+				wf.State = model.WorkflowStateFailed
 			}),
 			actorID:    userID02,
 			transition: workflow.TransitionReject,
@@ -960,7 +966,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "revoked from failed",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateFailed.String()
+				wf.State = model.WorkflowStateFailed
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionRevoke,
@@ -970,7 +976,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "expire from failed",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateFailed.String()
+				wf.State = model.WorkflowStateFailed
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExpire,
@@ -980,7 +986,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "confirm from failed",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateFailed.String()
+				wf.State = model.WorkflowStateFailed
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionConfirm,
@@ -990,7 +996,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "execute from failed",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateFailed.String()
+				wf.State = model.WorkflowStateFailed
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionExecute,
@@ -1000,7 +1006,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		{
 			name: "fail from failed",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateFailed.String()
+				wf.State = model.WorkflowStateFailed
 			}),
 			actorID:    userID01,
 			transition: workflow.TransitionFail,
@@ -1009,7 +1015,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		},
 	}
 
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, provider := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -1019,7 +1025,10 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 	}
 	err := r.Create(ctx, keyConf)
 	assert.NoError(t, err)
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConf.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConf.AdminGroup.IAMIdentifier})
+
+	providerKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{KeyType: keymanagement.BYOK})
+	assert.NoError(t, err)
 
 	testutils.CreateTestEntities(
 		ctx,
@@ -1028,6 +1037,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 		testutils.NewKey(func(k *model.Key) {
 			k.ID = artifactID01
 			k.KeyConfigurationID = keyConf.ID
+			k.NativeID = &providerKey.KeyID
 		}),
 	)
 
@@ -1039,7 +1049,18 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 
 			// Act
 			lifecycle := workflow.NewLifecycle(&tt.workflow, mgr.Keys, mgr.KeyConfig, mgr.System, r, tt.actorID, 2)
-			transitionErr := lifecycle.ApplyTransition(ctx, tt.transition)
+
+			if tt.mutateBeforeTransition != nil {
+				// Inject an invalid enum value to verify the FSM falls through
+				// to FAILED and the Valuer rejects the value on persistence.
+				tt.mutateBeforeTransition(&tt.workflow)
+				transitionErr := lifecycle.ValidateAndApplyTransition(ctx, tt.transition)
+				assert.ErrorIs(t, transitionErr, workflow.ErrUpdateWorkflowState)
+				assert.Equal(t, tt.expectedState, tt.workflow.State)
+				return
+			}
+
+			transitionErr := lifecycle.ValidateAndApplyTransition(ctx, tt.transition)
 
 			// Verify
 			// Retrieve workflow from database again to get most up-to-date representation
@@ -1053,7 +1074,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 			} else {
 				assert.NoError(t, transitionErr)
 				assert.True(t, ok)
-				assert.Equal(t, tt.expectedState.String(), wf.State)
+				assert.Equal(t, tt.expectedState, wf.State)
 			}
 		})
 	}
@@ -1063,15 +1084,15 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 	wfMutator := testutils.NewMutator(func() model.Workflow {
 		return model.Workflow{
 			ID:          uuid.New(),
-			State:       workflow.StateInitial.String(),
+			State:       model.WorkflowStateInitial,
 			InitiatorID: userID01,
-			Approvers: []model.WorkflowApprover{
-				{UserID: userID02, Approved: sqlNullBoolNull},
-				{UserID: userID03, Approved: sqlNullBoolNull},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 			},
-			ArtifactType: workflow.ArtifactTypeKey.String(),
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID01,
-			ActionType:   workflow.ActionTypeUpdateState.String(),
+			ActionType:   model.WorkflowActionTypeUpdateState,
 			Parameters:   "DISABLED",
 		}
 	})
@@ -1084,7 +1105,7 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 		{
 			name: "TestWorkflowLifecycleExpiration_FromInitial",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateInitial.String()
+				wf.State = model.WorkflowStateInitial
 			}),
 			expectErr:  true,
 			errMessage: "failed to execute transition EXPIRE: event EXPIRE inappropriate in current state INITIAL",
@@ -1092,7 +1113,7 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 		{
 			name: "TestWorkflowLifecycleExpiration_FromRevoked",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRevoked.String()
+				wf.State = model.WorkflowStateRevoked
 			}),
 			expectErr:  true,
 			errMessage: "failed to execute transition EXPIRE: event EXPIRE inappropriate in current state REVOKED",
@@ -1100,7 +1121,7 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 		{
 			name: "TestWorkflowLifecycleExpiration_FromRejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRejected.String()
+				wf.State = model.WorkflowStateRejected
 			}),
 			expectErr:  true,
 			errMessage: "failed to execute transition EXPIRE: event EXPIRE inappropriate in current state REJECTED",
@@ -1108,7 +1129,7 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 		{
 			name: "TestWorkflowLifecycleExpiration_FromExpired",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExpired.String()
+				wf.State = model.WorkflowStateExpired
 			}),
 			expectErr:  true,
 			errMessage: "failed to execute transition EXPIRE: event EXPIRE inappropriate in current state EXPIRED",
@@ -1116,28 +1137,28 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 		{
 			name: "TestWorkflowLifecycleExpiration_FromWaitApproval",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitApproval.String()
+				wf.State = model.WorkflowStateWaitApproval
 			}),
 			expectErr: false,
 		},
 		{
 			name: "TestWorkflowLifecycleExpiration_FromWaitConfirmation",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			expectErr: false,
 		},
 		{
 			name: "TestWorkflowLifecycleExpiration_FromExecuting",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateExecuting.String()
+				wf.State = model.WorkflowStateExecuting
 			}),
 			expectErr: false,
 		},
 		{
 			name: "TestWorkflowLifecycleExpiration_FromSuccessful",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateSuccessful.String()
+				wf.State = model.WorkflowStateSuccessful
 			}),
 			expectErr:  true,
 			errMessage: "failed to execute transition EXPIRE: event EXPIRE inappropriate in current state SUCCESSFUL",
@@ -1145,14 +1166,14 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 		{
 			name: "TestWorkflowLifecycleExpiration_FromFailed",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateFailed.String()
+				wf.State = model.WorkflowStateFailed
 			}),
 			expectErr:  true,
 			errMessage: "failed to execute transition EXPIRE: event EXPIRE inappropriate in current state FAILED",
 		},
 	}
 
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -1179,7 +1200,7 @@ func TestWorkflowLifecycleExpiration(t *testing.T) {
 			} else {
 				assert.NoError(t, transitionErr)
 				assert.True(t, ok)
-				assert.Equal(t, workflow.StateExpired.String(), wf.State)
+				assert.Equal(t, model.WorkflowStateExpired, wf.State)
 			}
 		})
 	}
@@ -1189,15 +1210,15 @@ func TestAvailableBusinessUserTransitions(t *testing.T) {
 	wfMutator := testutils.NewMutator(func() model.Workflow {
 		return model.Workflow{
 			ID:          uuid.New(),
-			State:       workflow.StateWaitApproval.String(),
+			State:       model.WorkflowStateWaitApproval,
 			InitiatorID: userID01,
-			Approvers: []model.WorkflowApprover{
-				{UserID: userID02, Approved: sqlNullBoolNull},
-				{UserID: userID03, Approved: sqlNullBoolNull},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 			},
-			ArtifactType: workflow.ArtifactTypeKey.String(),
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID01,
-			ActionType:   workflow.ActionTypeUpdateState.String(),
+			ActionType:   model.WorkflowActionTypeUpdateState,
 			Parameters:   "DISABLED",
 		}
 	})
@@ -1217,7 +1238,7 @@ func TestAvailableBusinessUserTransitions(t *testing.T) {
 		{
 			name: "initiator in wait confirmation gets revoke and confirm",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:  userID01,
 			expected: []workflow.Transition{workflow.TransitionRevoke, workflow.TransitionConfirm},
@@ -1226,8 +1247,8 @@ func TestAvailableBusinessUserTransitions(t *testing.T) {
 			name: "approver in wait approval gets approve and reject",
 			workflow: wfMutator(func(wf *model.Workflow) {
 				// ensure actor is an approver and has not voted yet
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolNull},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
 				}
 			}),
 			actorID:  userID02,
@@ -1242,14 +1263,14 @@ func TestAvailableBusinessUserTransitions(t *testing.T) {
 		{
 			name: "revoked state returns empty",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateRevoked.String()
+				wf.State = model.WorkflowStateRevoked
 			}),
 			actorID:  userID01,
 			expected: []workflow.Transition{},
 		},
 	}
 
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
@@ -1286,15 +1307,15 @@ func TestGetApprovalSummary(t *testing.T) {
 	wfMutator := testutils.NewMutator(func() model.Workflow {
 		return model.Workflow{
 			ID:          uuid.New(),
-			State:       workflow.StateWaitApproval.String(),
+			State:       model.WorkflowStateWaitApproval,
 			InitiatorID: userID01,
-			Approvers: []model.WorkflowApprover{
-				{UserID: userID02, Approved: sqlNullBoolNull},
-				{UserID: userID03, Approved: sqlNullBoolNull},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolNull},
+				{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 			},
-			ArtifactType: workflow.ArtifactTypeKey.String(),
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   artifactID01,
-			ActionType:   workflow.ActionTypeUpdateState.String(),
+			ActionType:   model.WorkflowActionTypeUpdateState,
 			Parameters:   "DISABLED",
 		}
 	})
@@ -1320,9 +1341,9 @@ func TestGetApprovalSummary(t *testing.T) {
 		{
 			name: "one approved one pending",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolTrue},
-					{UserID: userID03, Approved: sqlNullBoolNull},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolTrue},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolNull},
 				}
 			}),
 			minimumApproverCount: 2,
@@ -1334,9 +1355,9 @@ func TestGetApprovalSummary(t *testing.T) {
 		{
 			name: "one approved one rejected",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.Approvers = []model.WorkflowApprover{
-					{UserID: userID02, Approved: sqlNullBoolTrue},
-					{UserID: userID03, Approved: sqlNullBoolFalse},
+				wf.Tasks = []model.WorkflowTask{
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID02, Approved: sqlNullBoolTrue},
+					{ID: uuid.New(), AssigneeRole: model.AssigneeRoleApprover, UserID: userID03, Approved: sqlNullBoolFalse},
 				}
 			}),
 			minimumApproverCount: 2,
@@ -1349,7 +1370,7 @@ func TestGetApprovalSummary(t *testing.T) {
 			name: "no approvers and custom target",
 			workflow: func() model.Workflow {
 				wf := wfMutator(func(w *model.Workflow) {
-					w.Approvers = []model.WorkflowApprover{}
+					w.Tasks = []model.WorkflowTask{}
 				})
 				return wf
 			}(),
@@ -1361,7 +1382,7 @@ func TestGetApprovalSummary(t *testing.T) {
 		},
 	}
 
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
@@ -1398,4 +1419,64 @@ func TestGetApprovalSummary(t *testing.T) {
 			assert.Equal(t, tt.expectedTargetScore, got.TargetScore)
 		})
 	}
+}
+
+// TestWorkflowEnumValuerRejectsUnknown verifies the workflow enum Valuer
+// rejects unknown values at repo write time.
+func TestWorkflowEnumValuerRejectsUnknown(t *testing.T) {
+	_, db, tenant, _ := SetupWorkflowManager(t)
+	r := sqlRepo.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	tests := []struct {
+		name    string
+		mutate  func(*model.Workflow)
+		wantErr error
+	}{
+		{
+			name:    "unknown state",
+			mutate:  func(w *model.Workflow) { w.State = model.WorkflowState("BOGUS") },
+			wantErr: model.ErrInvalidWorkflowState,
+		},
+		{
+			name:    "unknown artifact type",
+			mutate:  func(w *model.Workflow) { w.ArtifactType = model.WorkflowArtifactType("SOMETHING") },
+			wantErr: model.ErrInvalidWorkflowArtifactType,
+		},
+		{
+			name:    "unknown action type",
+			mutate:  func(w *model.Workflow) { w.ActionType = model.WorkflowActionType("DOSTUFF") },
+			wantErr: model.ErrInvalidWorkflowActionType,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wf := testutils.NewWorkflow(tt.mutate)
+			err := r.Create(ctx, wf)
+			assert.ErrorIs(t, err, tt.wantErr)
+		})
+	}
+}
+
+// TestKeyEnumValuerRejectsUnknown verifies the KeyState Valuer rejects
+// unknown values at repo write time.
+func TestKeyEnumValuerRejectsUnknown(t *testing.T) {
+	_, db, tenant, _ := SetupWorkflowManager(t)
+	r := sqlRepo.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	keyConf := &model.KeyConfiguration{
+		ID:         uuid.New(),
+		AdminGroup: *testutils.NewGroup(func(_ *model.Group) {}),
+		CreatorID:  uuid.NewString(),
+	}
+	assert.NoError(t, r.Create(ctx, keyConf))
+
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConf.ID
+		k.State = cmkapi.KeyState("BOGUS")
+	})
+	err := r.Create(ctx, key)
+	assert.ErrorIs(t, err, cmkapi.ErrInvalidKeyState)
 }

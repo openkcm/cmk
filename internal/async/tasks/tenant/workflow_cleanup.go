@@ -7,6 +7,8 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -37,7 +39,15 @@ func NewWorkflowCleaner(
 }
 
 func (wc *WorkflowCleaner) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	return wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
+	err := wc.workflowRemoval.CleanupTerminalWorkflows(ctx)
+	if err != nil {
+		wc.logError(ctx, err)
+	}
+	return nil
+}
+
+func (wc *WorkflowCleaner) Role() constants.InternalRole {
+	return constants.InternalTaskWorkflowCleanupRole
 }
 
 func (wc *WorkflowCleaner) TenantQuery() *repo.Query {
@@ -50,4 +60,10 @@ func (wc *WorkflowCleaner) FanOutFunc() async.FanOutFunc {
 
 func (wc *WorkflowCleaner) TaskType() string {
 	return config.TypeWorkflowCleanup
+}
+
+func (wc *WorkflowCleaner) logError(ctx context.Context, err error) {
+	// Returned errors are retries in batch processor
+	// If we don't want a retry we just log here and return nil
+	log.Error(ctx, "Error during workflow cleanup batch processing", err)
 }

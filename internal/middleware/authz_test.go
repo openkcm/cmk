@@ -8,8 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/authz"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/config"
@@ -18,6 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/middleware"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	repomock "github.com/openkcm/cmk/internal/repo/mock"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -57,10 +56,10 @@ func TestAuthzMiddleware_NoRestriction(t *testing.T) {
 
 func TestAuthzMiddleware_RestrictionExists(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant("tenant1")
-	// Inject clientData2: identifier and groups
+	// Inject businessUserData2: identifier and groups
 	identifier := "group1a" // must match a group in allowlist
 	groups := []string{"group1a", "group1b"}
-	ctx = testutils.InjectClientDataIntoContext(ctx, identifier, groups)
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, identifier, groups)
 	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 	loader := SetupAuthzLoaderWithAllowList(t)
@@ -84,7 +83,7 @@ func TestAuthzMiddleware_RestrictionExists(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/cmk/v1/{tenant}/keys", nil)
 	req.Pattern = "GET /cmk/v1/{tenant}/keys"
-	// Attach context with tenant ID and clientData
+	// Attach context with tenant ID and businessUserData
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
@@ -180,7 +179,7 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 	tests := []struct {
 		name           string
 		method         string
-		groupRole      constants.Role
+		groupRole      constants.BusinessRole
 		expectedStatus int
 	}{
 		// GET tests - all roles can read
@@ -229,7 +228,7 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 			groupIdentifier := "test-group-" + string(tt.groupRole)
 
 			ctx := testutils.CreateCtxWithTenant(tenantID)
-			ctx = testutils.InjectClientDataIntoContext(ctx, groupIdentifier, []string{groupIdentifier})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, groupIdentifier, []string{groupIdentifier})
 			ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 			loader := setupAuthzLoaderWithRole(t, tenantID, groupIdentifier, tt.groupRole)
@@ -267,7 +266,8 @@ func TestAuthzMiddleware_TenantWorkflowConfiguration(t *testing.T) {
 
 // Helper function to setup authz loader with a specific role
 func setupAuthzLoaderWithRole(t *testing.T, tenantID, groupIdentifier string,
-	role constants.Role) *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
+	role constants.BusinessRole,
+) *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction] {
 	t.Helper()
 
 	r := repomock.NewInMemoryRepository()
@@ -302,7 +302,7 @@ func setupAuthzLoaderWithRole(t *testing.T, tenantID, groupIdentifier string,
 }
 
 // Go
-func SetupAuthzLoaderWithAllowList(t *testing.T) *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction] {
+func SetupAuthzLoaderWithAllowList(t *testing.T) *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction] {
 	t.Helper()
 
 	r := repomock.NewInMemoryRepository()
@@ -345,4 +345,71 @@ func SetupAuthzLoaderWithAllowList(t *testing.T) *authz_loader.AuthzLoader[authz
 	loader := authz_loader.NewAPIAuthzLoader(ctx, r, cfg)
 
 	return loader
+}
+
+func TestExtractPattern(t *testing.T) {
+	basePath := constants.BasePath
+
+	tests := []struct {
+		name     string
+		pattern  string
+		expected string
+	}{
+		{
+			name:     "Standard pattern with method",
+			pattern:  "GET /cmk/v1/{tenant}/keys",
+			expected: "GET /keys",
+		},
+		{
+			name:     "Pattern without method",
+			pattern:  "/cmk/v1/{tenant}/keys",
+			expected: "/keys",
+		},
+		{
+			name:     "Pattern with duplicate base path (bypass attempt)",
+			pattern:  "GET /cmk/v1/{tenant}/cmk/v1/{tenant}/keys",
+			expected: "GET /cmk/v1/{tenant}/keys",
+		},
+		{
+			name:     "Pattern with swagger endpoint",
+			pattern:  "GET /cmk/v1/{tenant}/swagger",
+			expected: "GET /swagger",
+		},
+		{
+			name:     "POST method",
+			pattern:  "POST /cmk/v1/{tenant}/keys",
+			expected: "POST /keys",
+		},
+		{
+			name:     "DELETE method with path parameter",
+			pattern:  "DELETE /cmk/v1/{tenant}/keys/{keyID}",
+			expected: "DELETE /keys/{keyID}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := middleware.ExtractPatternForTest(tt.pattern, basePath)
+			if result != tt.expected {
+				t.Errorf("extractPattern(%q, %q) = %q, want %q", tt.pattern, basePath, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractPattern_PreventsBypass(t *testing.T) {
+	basePath := constants.BasePath
+
+	// Test that duplicate base paths don't bypass the extraction
+	maliciousPattern := "GET /cmk/v1/{tenant}/cmk/v1/{tenant}/keys"
+	result := middleware.ExtractPatternForTest(maliciousPattern, basePath)
+
+	// The result should still contain the second base path, not matching any authz entry
+	if result != "GET /cmk/v1/{tenant}/keys" {
+		t.Errorf("extractPattern should prevent bypass, got %q", result)
+	}
+
+	if result == "GET /keys" {
+		t.Error("Should not bypass by removing multiple base paths")
+	}
 }

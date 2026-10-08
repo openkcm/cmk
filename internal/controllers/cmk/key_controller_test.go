@@ -8,50 +8,77 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
+	"github.com/openkcm/common-sdk/pkg/auth"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var (
 	keystore            = testutils.NewKeystore(func(_ *model.Keystore) {})
 	keystoreDefaultCert = testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeKeystoreDefault
+		c.Purpose = model.CertificatePurposeRoleManagement
 		c.CommonName = testutils.TestDefaultKeystoreCommonName
+	})
+	keystoreKeyMgmtCert = testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeKeyManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName + "-key-mgmt"
 	})
 )
 
-func startAPIKeys(t *testing.T, plugins ...catalog.BuiltInPlugin) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIKeys(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage, *testplugins.TestKeyManagement) {
 	t.Helper()
 
 	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
 	})
 
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	apiCfg := config.Config{
+		Database: dbCfg,
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  "[]",
+			},
+		},
+	}
+	// Feature flags must be enabled for the injected flag values to be evaluated;
+	// otherwise the manager falls back to legacy behaviour (HYOK ungated, BYOK via feature gate).
+	apiCfg.FeatureFlags.Enabled = true
 	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
-		Plugins: plugins,
-		Config:  config.Config{Database: dbCfg},
-	}), tenants[0]
+		Registry: testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp)),
+		Config:   apiCfg,
+		Flags: testutils.NewTestFlagClient(map[string]bool{
+			"enable_byok_" + strings.ToLower(testplugins.Name): true,
+			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+		}),
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
+	}), tenants[0], keyStorage, pluginOp
 }
 
 func TestKeyControllerGetKeys(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	nativeID := "arn:aws:kms:us-west-2:111122223333:alias/<alias-name>"
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
@@ -59,7 +86,7 @@ func TestKeyControllerGetKeys(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 	key1 := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
 	})
@@ -75,6 +102,15 @@ func TestKeyControllerGetKeys(t *testing.T) {
 		key2,
 		key3,
 	)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name           string
@@ -113,10 +149,10 @@ func TestKeyControllerGetKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          tt.query,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: tt.query,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -137,14 +173,14 @@ func TestKeyControllerGetKeys(t *testing.T) {
 }
 
 func TestKeyControllerGetKeysPagination(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -154,6 +190,15 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 		})
 		testutils.CreateTestEntities(ctx, t, r, key)
 	}
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name               string
@@ -239,10 +284,10 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          tt.query,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: tt.query,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -261,7 +306,7 @@ func TestKeyControllerGetKeysPagination(t *testing.T) {
 }
 
 func TestKeyControllerPostKeys(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	r := sql.NewRepository(db)
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
@@ -269,7 +314,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
 
 	testutils.CreateTestEntities(
@@ -280,14 +325,15 @@ func TestKeyControllerPostKeys(t *testing.T) {
 		keyConfig,
 		keystore,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 	)
 
-	SystemManagedRequest := map[string]any{
+	BYOKRequest := map[string]any{
 		"name":               "test-key",
-		"type":               string(cmkapi.KeyTypeBYOK),
+		"type":               cmkapi.KeyTypeBYOK,
 		"keyConfigurationID": keyConfig.ID,
 		"provider":           providerTest,
-		"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+		"algorithm":          cmkapi.KeyAlgorithmAES256,
 		"region":             "us-west-2",
 		"description":        "test key",
 		"enabled":            true,
@@ -295,7 +341,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 
 	HYOKRequest := map[string]any{
 		"name":               "hyok-key",
-		"type":               string(cmkapi.KeyTypeHYOK),
+		"type":               cmkapi.KeyTypeHYOK,
 		"keyConfigurationID": keyConfig.ID,
 		"enabled":            true,
 		"nativeID":           "arn:aws:kms:eu-west-2:399521560603:key/03e6b16b-f0c8-4699-8ef9-8947871924d3",
@@ -319,7 +365,7 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	requestMut := testutils.NewMutator(func() map[string]any {
 		// Create a copy of the base map
 		baseMap := make(map[string]any)
-		maps.Copy(baseMap, SystemManagedRequest)
+		maps.Copy(baseMap, BYOKRequest)
 
 		return baseMap
 	})
@@ -343,6 +389,15 @@ func TestKeyControllerPostKeys(t *testing.T) {
 
 		return baseMap
 	})
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name            string
@@ -466,11 +521,11 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPost,
-				Endpoint:          "keys",
-				Tenant:            tenant,
-				Body:              testutils.WithJSON(t, tt.inputMap),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPost,
+				Endpoint: "keys",
+				Tenant:   tenant,
+				Body:     testutils.WithJSON(t, tt.inputMap),
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -486,84 +541,147 @@ func TestKeyControllerPostKeys(t *testing.T) {
 	}
 }
 
-func TestKeyControllerPostKeysDrainedKeystorePool(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
+func TestKeyControllerPostKeysBYOKPendingCreation(t *testing.T) {
+	// When no DEFAULT_KEYSTORE tenant config exists, BYOK key creation is deferred:
+	// the key is persisted in PENDING_CREATION state and the async sync worker completes
+	// provisioning once the keystore pool is filled. This replaces the old synchronous
+	// KEYSTORE_POOL_DRAINED 503 behaviour.
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
-	t.Run("Should fail to create key if keystore pool is drained", func(t *testing.T) {
-		// Arrange
-		sysManagedKey := map[string]any{
-			"name":               "test-key",
-			"type":               string(cmkapi.KeyTypeBYOK),
-			"keyConfigurationID": keyConfig.ID,
-			"algorithm":          string(cmkapi.KeyAlgorithmAES256),
-			"region":             "us-west-2",
-			"description":        "test key",
-			"enabled":            true,
-		}
-		// Act
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPost,
-			Endpoint:          "keys",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, sysManagedKey),
-			AdditionalContext: authClient.GetClientMap(),
-		})
-		// Assert
-		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "KEYSTORE_POOL_DRAINED", response.Error.Code)
-	})
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
 
-	t.Run("Should fail to create BYOK key if keystore pool is drained", func(t *testing.T) {
-		// Arrange
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
+
+	t.Run("Should create BYOK key in PENDING_CREATION when keystore not yet provisioned", func(t *testing.T) {
+		// Arrange: no DEFAULT_KEYSTORE config seeded — provisioning is pending
 		byokKey := map[string]any{
 			"name":               "test-key",
-			"type":               string(cmkapi.KeyTypeBYOK),
+			"type":               cmkapi.KeyTypeBYOK,
 			"keyConfigurationID": keyConfig.ID,
-			"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+			"algorithm":          cmkapi.KeyAlgorithmAES256,
 			"region":             "us-west-2",
 			"description":        "test key",
 			"enabled":            true,
 		}
 		// Act
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPost,
-			Endpoint:          "keys",
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, byokKey),
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodPost,
+			Endpoint: "keys",
+			Tenant:   tenant,
+			Body:     testutils.WithJSON(t, byokKey),
+			Headers:  headers,
 		})
 		// Assert
-		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+		assert.Equal(t, http.StatusCreated, w.Code)
+		response := testutils.GetJSONBody[cmkapi.Key](t, w)
+		if assert.NotNil(t, response.State) {
+			assert.Equal(t, cmkapi.KeyStatePENDINGCREATION, *response.State)
+		}
+	})
+}
+
+func TestKeyControllerPostKeysInvalidKeyAttribute(t *testing.T) {
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+	})
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+	tenant := tenants[0]
+
+	km := testplugins.NewTestKeyManagement(true, true).WithValidRegions("us-east-1")
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Registry: testutils.NewTestPlugins(testplugins.WithKeyManagement(providerTest, km)),
+		Config: config.Config{
+			Database: dbCfg,
+			CryptoLayer: config.CryptoLayer{
+				CertX509Trusts: commoncfg.SourceRef{
+					Source: commoncfg.EmbeddedSourceValue,
+					Value:  "[]",
+				},
+			},
+		},
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
+	})
+
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthBusinessUserDataKC(authClient))
+	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
+	testutils.CreateTestEntities(ctx, t, r, tenantDefaultCert, keyConfig,
+		keystore, keystoreDefaultCert, keystoreKeyMgmtCert)
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}, privateKey, 0)
+
+	t.Run("POST BYOK key with unsupported region", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: "keys",
+			Tenant:   tenant,
+			Body: testutils.WithJSON(t, map[string]any{
+				"name":               "byok-bad-region",
+				"type":               string(cmkapi.KeyTypeBYOK),
+				"keyConfigurationID": keyConfig.ID,
+				"provider":           providerTest,
+				"algorithm":          string(cmkapi.KeyAlgorithmAES256),
+				"region":             "eu-west-1",
+			}),
+			Headers: headers,
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
 		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "KEYSTORE_POOL_DRAINED", response.Error.Code)
+		assert.Equal(t, "INVALID_KEY_ATTRIBUTE", response.Error.Code)
+		assert.NotNil(t, response.Error.Context)
+		assert.Contains(t, *response.Error.Context, "reason")
 	})
 }
 
 func TestKeyControllerGetKeysKeyID(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	r := sql.NewRepository(db)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 	// Create a key in the database
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name           string
@@ -594,10 +712,10 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/keys/" + tt.keyID,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: "/keys/" + tt.keyID,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -609,11 +727,17 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 	}
 
 	t.Run("Should fail to get when no group permission", func(t *testing.T) {
+		notAllowedClientData := &auth.ClientData{
+			Identifier: authClient.Identifier,
+			Groups:     []string{uuid.NewString()},
+		}
+		headersNotAllowed := testutils.NewSignedBusinessUserDataHeaders(t, notAllowedClientData, privateKey, 0)
+
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          "/keys/" + key.ID.String(),
-			Tenant:            tenant,
-			AdditionalContext: testutils.GetInvalidClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: "/keys/" + key.ID.String(),
+			Tenant:   tenant,
+			Headers:  headersNotAllowed,
 		})
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
@@ -623,27 +747,40 @@ func TestKeyControllerGetKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	// Create workflow config with workflows DISABLED by default
+	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+		wc.Enabled = false // Disable workflow requirement
+	}))
+
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
-	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
-
+	keyConfigID := uuid.New()
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyConfigurationID = keyConfig.ID
+		k.KeyConfigurationID = keyConfigID
+		k.KeyType = cmkapi.KeyTypeHYOK
 	})
+	keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+		kc.ID = keyConfigID
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
-	keyConfigWSys := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
-	sys := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfigWSys.ID)
-	})
+	keyConfigWSysID := uuid.New()
 	pkey := testutils.NewKey(func(k *model.Key) {
-		k.IsPrimary = true
-		k.KeyConfigurationID = keyConfigWSys.ID
+		k.KeyConfigurationID = keyConfigWSysID
+	})
+	keyConfigWSys := testutils.NewKeyConfig(
+		func(k *model.KeyConfiguration) {
+			k.ID = keyConfigWSysID
+			k.PrimaryKeyID = &pkey.ID
+		},
+		testutils.WithAuthBusinessUserDataKC(authClient),
+	)
+	sys := testutils.NewSystem(func(s *model.System) {
+		s.KeyConfigurationID = new(keyConfigWSys.ID)
+		s.Status = cmkapi.SystemStatusCONNECTED
 	})
 
 	testutils.CreateTestEntities(
@@ -651,18 +788,29 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		t,
 		r,
 		key,
+		pkey,
 		keyConfig,
 		keystore,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 		keyConfigWSys,
-		pkey,
 		sys,
 	)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name           string
 		keyID          uuid.UUID
 		expectedStatus int
+		workflowEnable bool
 	}{
 		{
 			name:           "T300KeyDELETEByIdSuccess",
@@ -679,15 +827,28 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 			keyID:          pkey.ID,
 			expectedStatus: http.StatusBadRequest,
 		},
+		{
+			name:           "Should 400 on pkey delete and workflow is required",
+			keyID:          pkey.ID,
+			expectedStatus: http.StatusBadRequest,
+			workflowEnable: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.workflowEnable {
+				// Enable workflow by re-upserting the config
+				testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+					wc.Enabled = true // Enable workflow requirement
+				}))
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodDelete,
-				Endpoint:          "/keys/" + tt.keyID.String(),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodDelete,
+				Endpoint: "/keys/" + tt.keyID.String(),
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -716,10 +877,10 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		)
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodDelete,
-			Endpoint:          "/keys/" + key2.ID.String(),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodDelete,
+			Endpoint: "/keys/" + key2.ID.String(),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
@@ -729,40 +890,73 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 }
 
 func TestKeyControllerUpdateKey(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
+	db, sv, tenant, keyStorage, provider := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
+
+	// Create workflow config with workflows DISABLED by default
+	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+		wc.Enabled = false // Disable workflow requirement by default
+	}))
 
 	regionEditable := "region1"
 	regionNonEditable := "region2"
 
 	cryptoData, err := json.Marshal(model.KeyAccessData{
-		regionEditable:    map[string]any{},
-		regionNonEditable: map[string]any{},
+		regionEditable:    cmkapi.KeyAccessDetailsRegion{},
+		regionNonEditable: cmkapi.KeyAccessDetailsRegion{},
 	})
 	assert.NoError(t, err)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
-	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+	validMgmtData, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+	assert.NoError(t, err)
+
+	providerKeyBYOK, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.BYOK,
+	})
+	assert.NoError(t, err)
+
+	keyConfigID := uuid.New()
+	key := testutils.NewKey(func(k *model.Key) {
+		k.CryptoAccessData = cryptoData
+		k.ManagementAccessData = validMgmtData
+		k.KeyConfigurationID = keyConfigID
+		k.Provider = providerTest
+		k.NativeID = &providerKeyBYOK.KeyID
+	})
+
+	kc := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+		k.ID = keyConfigID
+		k.PrimaryKeyID = &key.ID
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	sysFailed := testutils.NewSystem(func(sys *model.System) {
-		sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+		sys.KeyConfigurationID = new(kc.ID)
 		sys.Region = regionEditable
 		sys.Status = cmkapi.SystemStatusFAILED
 	})
 
 	sys := testutils.NewSystem(func(sys *model.System) {
-		sys.KeyConfigurationID = ptr.PointTo(kc.ID)
+		sys.KeyConfigurationID = new(kc.ID)
 		sys.Region = regionNonEditable
 		sys.Status = cmkapi.SystemStatusCONNECTED
 	})
 
-	key := testutils.NewKey(func(k *model.Key) {
+	hyokKey := testutils.NewKey(func(k *model.Key) {
 		k.IsPrimary = true
+		k.KeyType = cmkapi.KeyTypeHYOK
 		k.CryptoAccessData = cryptoData
-		k.ManagementAccessData = json.RawMessage("{\"test\":\"test\"}")
+		k.ManagementAccessData = validMgmtData
+		k.KeyConfigurationID = kc.ID
+		k.Provider = providerTest
+	})
+
+	hyokKeyInvalidMgmt := testutils.NewKey(func(k *model.Key) {
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.CryptoAccessData = cryptoData
+		k.ManagementAccessData = json.RawMessage("{\"wrong\":\"data\"}")
 		k.KeyConfigurationID = kc.ID
 		k.Provider = providerTest
 	})
@@ -772,28 +966,50 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		t,
 		r,
 		key,
+		hyokKey,
+		hyokKeyInvalidMgmt,
 		kc,
 		keystore,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
+		testutils.NewCertificate(func(_ *model.Certificate) {}),
 		sysFailed,
 		sys,
 	)
 
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
+
+	notAllowedClientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{uuid.NewString()},
+	}
+	headersNotAllowed := testutils.NewSignedBusinessUserDataHeaders(t, notAllowedClientData, privateKey, 0)
+
 	tests := []struct {
-		name           string
-		keyID          string
-		input          cmkapi.KeyPatch
-		expectedStatus int
-		expectedName   string
-		expectedDesc   string
+		name              string
+		keyID             string
+		input             cmkapi.KeyPatch
+		headers           http.Header
+		expectedStatus    int
+		expectedName      string
+		expectedDesc      string
+		expectedErrorCode string
+		workflowEnable    bool
 	}{
 		{
 			name:  "T400KeyUPDATESuccess",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusOK,
 			expectedName:   "updated-key",
@@ -803,9 +1019,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T400KeyUPDATESuccessDisable",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(false),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(false),
 			},
 			expectedStatus: http.StatusOK,
 			expectedName:   "updated-key",
@@ -815,9 +1031,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T400KeyUPDATESuccessEnable",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusOK,
 			expectedName:   "updated-key",
@@ -827,9 +1043,9 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T401KeyUPDATEInvalidId",
 			keyID: "invalid-key-id",
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedName:   "",
@@ -839,21 +1055,11 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "T402KeyUPDATENotFound",
 			keyID: uuid.New().String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-key"),
+				Enabled:     new(true),
 			},
 			expectedStatus: http.StatusNotFound,
-			expectedName:   "",
-			expectedDesc:   "",
-		},
-		{
-			name:  "Should error on unmark primary key",
-			keyID: key.ID.String(),
-			input: cmkapi.KeyPatch{
-				IsPrimary: ptr.PointTo(false),
-			},
-			expectedStatus: http.StatusForbidden,
 			expectedName:   "",
 			expectedDesc:   "",
 		},
@@ -861,69 +1067,122 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			name:  "Should code 403 on management role update",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				IsPrimary: ptr.PointTo(false),
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Management: &map[string]any{
-						"a": "b",
+					Management: &cmkapi.KeyAccessDetailsRegion{
+						AdditionalProperties: map[string]any{
+							"a": "b",
+						},
 					},
 				},
 			},
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:  "Should code 403 on non editable crypto region",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						regionNonEditable: {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 					},
 				},
 			},
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:  "Should 200 on valid crypto access data update",
-			keyID: key.ID.String(),
+			keyID: hyokKey.ID.String(),
 			input: cmkapi.KeyPatch{
-				Description: ptr.PointTo("updated description"),
-				Name:        ptr.PointTo("updated-key"),
-				Enabled:     ptr.PointTo(true),
+				Description: new("updated description"),
+				Name:        new("updated-hyok-key"),
 				AccessDetails: &cmkapi.KeyAccessDetails{
-					Crypto: &map[string]map[string]any{
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
 						regionEditable: {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 						"new-region": {
-							"key": "value",
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
 						},
 					},
 				},
 			},
 			expectedStatus: http.StatusOK,
-			expectedName:   "updated-key",
+			expectedName:   "updated-hyok-key",
 			expectedDesc:   "updated description",
 		},
 		{
-			name:  "Should 403 when update primary key and workflow is required",
+			name:  "Should 400 when update primary key and workflow is required",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
-				IsPrimary: ptr.PointTo(true),
+				IsPrimary: new(true),
 			},
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusBadRequest,
+			workflowEnable: true,
+		},
+		{
+			name:  "Should 400 on byok state update and workflow is required",
+			keyID: key.ID.String(),
+			input: cmkapi.KeyPatch{
+				Enabled:   new(true),
+				IsPrimary: new(true),
+			},
+			expectedStatus: http.StatusBadRequest,
+			workflowEnable: true,
+		},
+		{
+			name:              "should not update when no group permission",
+			keyID:             key.ID.String(),
+			input:             cmkapi.KeyPatch{Name: new("new-name")},
+			headers:           headersNotAllowed,
+			expectedStatus:    http.StatusForbidden,
+			expectedErrorCode: "FORBIDDEN",
+		},
+		{
+			name:  "Should 400 INVALID_ACCESS_DATA on invalid crypto",
+			keyID: hyokKeyInvalidMgmt.ID.String(),
+			input: cmkapi.KeyPatch{
+				AccessDetails: &cmkapi.KeyAccessDetails{
+					Crypto: &map[string]cmkapi.KeyAccessDetailsRegion{
+						regionEditable: {
+							AdditionalProperties: map[string]any{
+								"key": "value",
+							},
+						},
+					},
+				},
+			},
+			expectedStatus:    http.StatusBadRequest,
+			expectedErrorCode: "INVALID_ACCESS_DATA",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.workflowEnable {
+				// Enable workflow by re-upserting the config
+				testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+					wc.Enabled = true // Enable workflow requirement
+				}))
+			}
+			reqHeaders := headers
+			if tt.headers != nil {
+				reqHeaders = tt.headers
+			}
+
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPatch,
-				Endpoint:          "/keys/" + tt.keyID,
-				Tenant:            tenant,
-				Body:              testutils.WithJSON(t, tt.input),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPatch,
+				Endpoint: "/keys/" + tt.keyID,
+				Tenant:   tenant,
+				Body:     testutils.WithJSON(t, tt.input),
+				Headers:  reqHeaders,
 			})
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -933,33 +1192,28 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 				assert.Equal(t, tt.expectedName, response.Name)
 				assert.Equal(t, tt.expectedDesc, *response.Description)
 			}
+
+			if tt.expectedErrorCode != "" {
+				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+				assert.Equal(t, tt.expectedErrorCode, response.Error.Code)
+			}
 		})
 	}
-
-	t.Run("should not update when no group permission", func(t *testing.T) {
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodPatch,
-			Endpoint:          "/keys/" + key.ID.String(),
-			Tenant:            tenant,
-			Body:              testutils.WithJSON(t, cmkapi.KeyPatch{Name: ptr.PointTo("new-name")}),
-			AdditionalContext: testutils.GetInvalidClientMap(),
-		})
-
-		assert.Equal(t, http.StatusForbidden, w.Code)
-		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
-		assert.Equal(t, "FORBIDDEN", response.Error.Code)
-	})
 }
 
 func TestKeyControllerGetImportParams(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t)
+	db, sv, tenant, keyStorage, _ := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfigID := uuid.New()
 	// Create a BYOK key and import params in the database
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.State = string(cmkapi.KeyStatePENDINGIMPORT)
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.State = cmkapi.KeyStatePENDINGIMPORT
+		k.KeyConfigurationID = keyConfigID
 	})
 
 	importParams := testutils.NewImportParams(func(ip *model.ImportParams) {
@@ -968,41 +1222,52 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 	})
 
 	byokEnabled := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.State = string(cmkapi.KeyStateENABLED)
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.State = cmkapi.KeyStateENABLED
+		k.KeyConfigurationID = keyConfigID
 	})
 
 	sysManagedKey := testutils.NewKey(func(_ *model.Key) {})
 
 	hyokKey := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeHYOK)
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.KeyConfigurationID = keyConfigID
 	})
 
-	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
-
-	kc := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+	kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+		kc.ID = keyConfigID
+	}, testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(
 		ctx,
 		t,
 		r,
+		kc,
 		key,
 		byokEnabled,
 		sysManagedKey,
 		hyokKey,
 		importParams,
 		keystore,
-		kc,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 	)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("GetImportParamsSuccess", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", key.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/importParams", key.ID.String()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -1016,10 +1281,10 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	t.Run("GetImportParamsInvalidKeyTypeHYOK", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", hyokKey.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/importParams", hyokKey.ID.String()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -1028,15 +1293,16 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 		assert.Equal(t, "INVALID_ACTION_FOR_KEY_TYPE", response.Error.Code)
 		assert.Equal(
 			t, "The action cannot be performed for the key type. Only BYOK keys can get import parameters.",
-			response.Error.Message)
+			response.Error.Message,
+		)
 	})
 
 	t.Run("GetImportParamsInvalidKeyState", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", byokEnabled.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/importParams", byokEnabled.ID.String()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1050,10 +1316,10 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	t.Run("GetImportParamsInvalidId", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          "/keys/a/importParams",
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: "/keys/a/importParams",
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1061,10 +1327,10 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 
 	t.Run("GetImportParamsNotFound", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", uuid.New()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/importParams", uuid.New()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
@@ -1076,29 +1342,35 @@ func TestKeyControllerGetImportParams(t *testing.T) {
 		defer forced.Unregister()
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:            http.MethodGet,
-			Endpoint:          fmt.Sprintf("/keys/%s/importParams", key.ID.String()),
-			Tenant:            tenant,
-			AdditionalContext: authClient.GetClientMap(),
+			Method:   http.MethodGet,
+			Endpoint: fmt.Sprintf("/keys/%s/importParams", key.ID.String()),
+			Tenant:   tenant,
+			Headers:  headers,
 		})
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
 
 func TestKeyControllerImportKeyMaterial(t *testing.T) {
-	db, sv, tenant := startAPIKeys(t, testplugins.NewKeystoreOperator())
+	db, sv, tenant, keyStorage, provider := startAPIKeys(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
+
+	providerKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
 
 	key := testutils.NewKey(func(k *model.Key) {
-		k.KeyType = string(cmkapi.KeyTypeBYOK)
-		k.State = string(cmkapi.KeyStatePENDINGIMPORT)
-		k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-1234-567890abcdef")
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.State = cmkapi.KeyStatePENDINGIMPORT
+		k.NativeID = &providerKey.KeyID
+		k.KeyConfigurationID = keyConfig.ID
 	})
 
 	paramsJSON, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
@@ -1121,7 +1393,17 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 		&importParams,
 		keystore,
 		keystoreDefaultCert,
+		keystoreKeyMgmtCert,
 	)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	t.Run("ImportKeyMaterialSuccess", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -1131,7 +1413,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusCreated, w.Code)
@@ -1145,7 +1427,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: "",
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -1163,7 +1445,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: "non-base64-key-material",
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1176,9 +1458,10 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	t.Run("ImportKeyMaterialFailedNoImportParams", func(t *testing.T) {
 		byokNoImportParams := testutils.NewKey(func(k *model.Key) {
 			k.Name = "byok-no-import-params"
-			k.KeyType = string(cmkapi.KeyTypeBYOK)
-			k.State = string(cmkapi.KeyStatePENDINGIMPORT)
-			k.NativeID = ptr.PointTo("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-6789-567890abcdef")
+			k.KeyType = cmkapi.KeyTypeBYOK
+			k.State = cmkapi.KeyStatePENDINGIMPORT
+			k.NativeID = new("arn:aws:kms:us-west-2:123456789012:key/12345678-90ab-cdef-6789-567890abcdef")
+			k.KeyConfigurationID = keyConfig.ID
 		})
 		testutils.CreateTestEntities(ctx, t, r, byokNoImportParams)
 
@@ -1189,7 +1472,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1202,7 +1485,8 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	t.Run("ImportKeyMaterialFailedInvalidKeyTypeHYOK", func(t *testing.T) {
 		hyokKey := testutils.NewKey(func(k *model.Key) {
 			k.Name = "hyok-key"
-			k.KeyType = string(cmkapi.KeyTypeHYOK)
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.KeyConfigurationID = keyConfig.ID
 		})
 
 		params := model.ImportParams{
@@ -1211,7 +1495,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			WrappingAlg:        "CKM_RSA_AES_KEY_WRAP",
 			HashFunction:       "SHA256",
 			ProviderParameters: paramsJSON,
-			Expires:            ptr.PointTo(time.Now().Add(1 * time.Hour)),
+			Expires:            new(time.Now().Add(1 * time.Hour)),
 		}
 
 		testutils.CreateTestEntities(ctx, t, r, hyokKey, &params)
@@ -1222,7 +1506,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		// Assert
@@ -1240,8 +1524,9 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 	t.Run("ImportKeyMaterialFailedInvalidKeyState", func(t *testing.T) {
 		// Prepare
 		byokEnabled := testutils.NewKey(func(k *model.Key) {
-			k.KeyType = string(cmkapi.KeyTypeBYOK)
-			k.State = string(cmkapi.KeyStateENABLED)
+			k.KeyType = cmkapi.KeyTypeBYOK
+			k.State = cmkapi.KeyStateENABLED
+			k.KeyConfigurationID = keyConfig.ID
 		})
 
 		testutils.CreateTestEntities(ctx, t, r, byokEnabled)
@@ -1253,7 +1538,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		// Assert
@@ -1272,7 +1557,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1290,7 +1575,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
@@ -1313,9 +1598,127 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 			Body: testutils.WithJSON(t, cmkapi.KeyImport{
 				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
 			}),
-			AdditionalContext: authClient.GetClientMap(),
+			Headers: headers,
 		})
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
+
+	t.Run("ImportKeyMaterialFailedDecryptionError", func(t *testing.T) {
+		provider.WithImportKeyMaterialErr(keymanagement.ErrImportKeyMaterialFailed)
+		defer provider.WithImportKeyMaterialErr(nil)
+
+		keyForImport := testutils.NewKey(func(k *model.Key) {
+			k.KeyType = cmkapi.KeyTypeBYOK
+			k.State = cmkapi.KeyStatePENDINGIMPORT
+			k.NativeID = &providerKey.KeyID
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		decryptionErrorImportParams := model.ImportParams{
+			KeyID:              keyForImport.ID,
+			PublicKeyPEM:       "test-public-key",
+			WrappingAlg:        "CKM_RSA_AES_KEY_WRAP",
+			HashFunction:       "SHA256",
+			ProviderParameters: paramsJSON,
+		}
+		testutils.CreateTestEntities(ctx, t, r, keyForImport, &decryptionErrorImportParams)
+
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodPost,
+			Endpoint: fmt.Sprintf("/keys/%s/importKeyMaterial", keyForImport.ID.String()),
+			Tenant:   tenant,
+			Body: testutils.WithJSON(t, cmkapi.KeyImport{
+				WrappedKeyMaterial: base64.StdEncoding.EncodeToString([]byte("test-wrapped-key-material")),
+			}),
+			Headers: headers,
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+		assert.Equal(t, "INVALID_WRAPPED_KEY_MATERIAL", response.Error.Code)
+		assert.Equal(t, "Key material decryption failed: invalid or incorrectly wrapped key material.", response.Error.Message)
+	})
+}
+
+func TestKeyControllerPostKeys_KeyLimitExceeded(t *testing.T) {
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+	})
+
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	apiCfg := config.Config{
+		Database: dbCfg,
+		Tenant:   config.Tenant{KeyLimit: 1},
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  "[]",
+			},
+		},
+	}
+	apiCfg.FeatureFlags.Enabled = true
+	sv := testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		Registry: testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp)),
+		Config:   apiCfg,
+		Flags: testutils.NewTestFlagClient(map[string]bool{
+			"enable_byok_" + strings.ToLower(testplugins.Name): true,
+		}),
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
+	})
+	tenant := tenants[0]
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+	businessUserData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	require.True(t, ok)
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthBusinessUserDataKC(authClient))
+	tenantDefaultCert := testutils.NewCertificate(func(_ *model.Certificate) {})
+	testutils.CreateTestEntities(ctx, t, r, tenantDefaultCert, keyConfig, keystore, keystoreDefaultCert, keystoreKeyMgmtCert)
+
+	makeKeyBody := func(name string) map[string]any {
+		return map[string]any{
+			"name":               name,
+			"type":               cmkapi.KeyTypeBYOK,
+			"keyConfigurationID": keyConfig.ID,
+			"provider":           providerTest,
+			"algorithm":          cmkapi.KeyAlgorithmAES256,
+			"region":             "us-west-2",
+		}
+	}
+
+	// First key creation should succeed.
+	w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+		Method:   http.MethodPost,
+		Endpoint: "/keys",
+		Tenant:   tenant,
+		Body:     testutils.WithJSON(t, makeKeyBody("key-one")),
+		Headers:  headers,
+	})
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	// Second key creation must be rejected because the limit (1) is reached.
+	w = testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+		Method:   http.MethodPost,
+		Endpoint: "/keys",
+		Tenant:   tenant,
+		Body:     testutils.WithJSON(t, makeKeyBody("key-two")),
+		Headers:  headers,
+	})
+	assert.Equal(t, http.StatusConflict, w.Code)
+
+	var response cmkapi.ErrorMessage
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, "KEY_LIMIT_EXCEEDED", response.Error.Code)
 }

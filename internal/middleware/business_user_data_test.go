@@ -1,0 +1,658 @@
+package middleware_test
+
+import (
+	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/openkcm/common-sdk/pkg/auth"
+	"github.com/openkcm/common-sdk/pkg/commonfs/loader"
+	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/apierrors"
+	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/middleware"
+	"github.com/openkcm/cmk/internal/testutils"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
+)
+
+// testData holds test setup data
+type testData struct {
+	privateKeys        map[int]*rsa.PrivateKey
+	signingKeysPath    string
+	config             *config.Config
+	signingKeysStorage keyvalue.ReadOnlyStringToBytesStorage
+	signingKeysLoader  *loader.Loader
+}
+
+// testScenario defines a test case scenario
+type testScenario struct {
+	name           string
+	setupFunc      func(t *testing.T, td *testData) (businessUserData, signature string)
+	expectError    bool
+	expectHttpCode int
+}
+
+// mockRoleGetter is a minimal mock implementation of manager.GroupManager for testing
+// It can be configured to return specific roles for role validation testing
+type mockRoleGetter struct {
+	roles []constants.BusinessRole
+	err   error
+}
+
+func (m *mockRoleGetter) GetRoleFromIAM(
+	ctx context.Context,
+	groups []string,
+) (constants.BusinessRole, error) {
+	if _, err := cmkcontext.ExtractBusinessUserDataIdentifier(ctx); err != nil {
+		return "", fmt.Errorf("authz check failed: no identity in context: %w", err)
+	}
+	if m.err != nil {
+		return "", m.err
+	}
+
+	if len(m.roles) > 1 {
+		return "", manager.ErrMultipleRolesInGroups
+	}
+
+	if len(m.roles) == 0 {
+		return "", nil
+	}
+
+	return m.roles[0], nil
+}
+
+// setupTestEnvironment creates keys, files, and returns test data
+func setupTestEnvironment(t *testing.T) *testData {
+	t.Helper()
+
+	td := &testData{
+		privateKeys: make(map[int]*rsa.PrivateKey),
+	}
+
+	tmpdir := t.TempDir()
+	td.signingKeysPath = tmpdir
+
+	// Generate 3 key pairs for testing also in case of key rotation
+	// Explicitly using RS256 (RSA keys, SHA-256 for signing)
+	for keyID := range 3 {
+		privateKey, err := rsa.GenerateKey(rand.Reader, 2048) // RS256: RSA key
+		require.NoError(t, err, "failed to generate private key")
+
+		td.privateKeys[keyID] = privateKey
+
+		// Write public key to file (RS256 public key)
+		pubASN1, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+		require.NoError(t, err, "failed to marshal public key")
+
+		pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubASN1})
+		keyFile := filepath.Join(tmpdir, strconv.Itoa(keyID)+".pem")
+
+		err = os.WriteFile(keyFile, pubPEM, 0o600)
+		require.NoError(t, err, "failed to write public key file")
+	}
+
+	td.config = &config.Config{
+		ClientData: config.ClientData{
+			SigningKeysPath: td.signingKeysPath,
+		},
+	}
+
+	// Create and initialize the Loader
+	memoryStorage := keyvalue.NewMemoryStorage[string, []byte]()
+	signingKeysLoader, err := loader.Create(
+		loader.OnPath(td.signingKeysPath),
+		loader.WithExtension("pem"),
+		loader.WithKeyIDType(loader.FileNameWithoutExtension),
+		loader.WithStorage(memoryStorage),
+	)
+	require.NoError(t, err, "failed to create the signing keys loader")
+
+	td.signingKeysStorage = memoryStorage
+
+	err = signingKeysLoader.Start()
+	require.NoError(t, err, "failed to load signing keys")
+
+	td.signingKeysLoader = signingKeysLoader
+
+	defer func() {
+		err := signingKeysLoader.Close()
+		require.NoError(t, err, "failed to stop watcher")
+	}()
+
+	return td
+}
+
+// createValidBusinessUserData creates properly encoded and signed client data
+func (td *testData) createValidBusinessUserData(t *testing.T, keyID int) (string, string, error) {
+	t.Helper()
+
+	privateKey := td.privateKeys[keyID]
+	if privateKey == nil {
+		return "", "", os.ErrNotExist
+	}
+
+	businessUserData := auth.ClientData{
+		Identifier:         "test-identifier",
+		Type:               "test-type",
+		Email:              "test@example.com",
+		Region:             "test-region",
+		Groups:             []string{"group1", "group2"},
+		KeyID:              strconv.Itoa(keyID),
+		SignatureAlgorithm: auth.SignatureAlgorithmRS256, // Explicitly RS256
+		CreatedAt:          time.Now(),
+		AuthContext: map[string]string{
+			"client_id":        "test-client-id",
+			"issuer":           "https://example-issuer.com",
+			"multitenancy_ref": "some-ref",
+			"other_field":      "other-value",
+			"irrelevant":       "should-be-ignored",
+		},
+		TTL: 1 * time.Minute,
+	}
+
+	jsonBytes, err := json.Marshal(businessUserData)
+	if err != nil {
+		return "", "", err
+	}
+
+	b64data := base64.RawURLEncoding.EncodeToString(jsonBytes)
+
+	// Sign the data using RS256 (RSA + SHA-256)
+	hash := crypto.SHA256.New()
+	hash.Write([]byte(b64data))
+	digest := hash.Sum(nil)
+
+	sigBytes, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, digest)
+	if err != nil {
+		return "", "", err
+	}
+
+	b64sig := base64.RawURLEncoding.EncodeToString(sigBytes)
+
+	return b64data, b64sig, nil
+}
+
+// createCustomBusinessUserData creates client data with custom fields and signs it
+func (td *testData) createCustomBusinessUserData(t *testing.T, businessUserData auth.ClientData) (string, string) {
+	t.Helper()
+
+	privateKey := td.privateKeys[0]
+	require.NotNil(t, privateKey, "private key not found for keyID %d", 0)
+
+	jsonBytes, err := json.Marshal(businessUserData)
+	require.NoError(t, err)
+
+	b64data := base64.RawURLEncoding.EncodeToString(jsonBytes)
+	// Sign the data using RS256 (RSA + SHA-256)
+	hash := crypto.SHA256.New()
+	hash.Write([]byte(b64data))
+	digest := hash.Sum(nil)
+	sigBytes, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, digest)
+	require.NoError(t, err)
+
+	b64sig := base64.RawURLEncoding.EncodeToString(sigBytes)
+
+	return b64data, b64sig
+}
+
+func getTestScenarios() []testScenario {
+	return []testScenario{
+		{
+			name: "valid_key_0",
+			setupFunc: func(t *testing.T, td *testData) (string, string) {
+				t.Helper()
+				data, sig, err := td.createValidBusinessUserData(t, 0)
+				require.NoError(t, err)
+
+				return data, sig
+			},
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name: "valid_key_1",
+			setupFunc: func(t *testing.T, td *testData) (string, string) {
+				t.Helper()
+				data, sig, err := td.createValidBusinessUserData(t, 1)
+				require.NoError(t, err)
+
+				return data, sig
+			},
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name: "valid_key_2",
+			setupFunc: func(t *testing.T, td *testData) (string, string) {
+				t.Helper()
+				data, sig, err := td.createValidBusinessUserData(t, 2)
+				require.NoError(t, err)
+
+				return data, sig
+			},
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name: "no_client_data_header",
+			setupFunc: func(_ *testing.T, _ *testData) (string, string) {
+				return "", "" // No headers set
+			},
+			expectError:    true,
+			expectHttpCode: http.StatusInternalServerError,
+		},
+		{
+			name: "missing_signature_header",
+			setupFunc: func(t *testing.T, td *testData) (string, string) {
+				t.Helper()
+				data, _, err := td.createValidBusinessUserData(t, 0)
+				require.NoError(t, err)
+
+				return data, "" // No signature
+			},
+			expectError:    true,
+			expectHttpCode: http.StatusInternalServerError,
+		},
+		{
+			name: "malformed_base64",
+			setupFunc: func(_ *testing.T, _ *testData) (string, string) {
+				return "not_base64!!", ""
+			},
+			expectError:    true,
+			expectHttpCode: http.StatusInternalServerError,
+		},
+		{
+			name: "malformed_json",
+			setupFunc: func(_ *testing.T, _ *testData) (string, string) {
+				return base64.RawURLEncoding.EncodeToString([]byte("not_json")), ""
+			},
+			expectError:    true,
+			expectHttpCode: http.StatusInternalServerError,
+		},
+		{
+			name: "signature_mismatch",
+			setupFunc: func(t *testing.T, td *testData) (string, string) {
+				t.Helper()
+				// Create data with different content than signature
+				wrongData, _, err := td.createValidBusinessUserData(t, 0)
+				require.NoError(t, err)
+
+				// Create signature for different data
+				_, correctSig, err := td.createValidBusinessUserData(t, 0)
+				require.NoError(t, err)
+
+				// Modify the data slightly to make signature invalid
+				return wrongData[:len(wrongData)-5] + "XXXXX", correctSig
+			},
+			expectError:    true,
+			expectHttpCode: http.StatusInternalServerError,
+		},
+		{
+			name: "public_key_missing",
+			setupFunc: func(t *testing.T, td *testData) (string, string) {
+				t.Helper()
+				// Use keyID that doesn't exist
+				td.privateKeys[99] = td.privateKeys[0] // Fake key for signing
+				data, sig, err := td.createValidBusinessUserData(t, 99)
+				require.NoError(t, err)
+				delete(td.privateKeys, 99) // Remove it
+
+				return data, sig
+			},
+			expectError:    true,
+			expectHttpCode: http.StatusInternalServerError,
+		},
+		{
+			name: "unsupported_algorithm",
+			setupFunc: func(t *testing.T, td *testData) (string, string) {
+				t.Helper()
+
+				businessUserData := auth.ClientData{
+					Identifier:         "test-identifier",
+					Type:               "test-type",
+					Email:              "test@example.com",
+					Region:             "test-region",
+					AuthContext:        map[string]string{"issuer": "test-issuer"},
+					Groups:             []string{"group1", "group2"},
+					KeyID:              "0",
+					SignatureAlgorithm: "UNSUPPORTED",
+				}
+
+				return td.createCustomBusinessUserData(t, businessUserData)
+			},
+			expectError:    true,
+			expectHttpCode: http.StatusInternalServerError,
+		},
+		{
+			name: "missing_keyid",
+			setupFunc: func(t *testing.T, td *testData) (string, string) {
+				t.Helper()
+
+				businessUserData := auth.ClientData{
+					Identifier:         "test-identifier",
+					Type:               "test-type",
+					Email:              "test@example.com",
+					Region:             "test-region",
+					AuthContext:        map[string]string{"issuer": "test-issuer"},
+					Groups:             []string{"group1", "group2"},
+					SignatureAlgorithm: auth.SignatureAlgorithmRS256, // KeyID is missing
+				}
+
+				return td.createCustomBusinessUserData(t, businessUserData)
+			},
+			expectError:    true,
+			expectHttpCode: http.StatusInternalServerError,
+		},
+	}
+}
+
+func TestBusinessUserDataMiddleware(t *testing.T) {
+	td := setupTestEnvironment(t)
+	scenarios := getTestScenarios()
+	authContextFields := []string{"client_id", "issuer", "multitenancy_ref"}
+	roleGetter := &mockRoleGetter{} // Empty roles for basic tests
+
+	for _, scenario := range scenarios {
+		t.Run(
+			scenario.name, func(t *testing.T) {
+				// Set up the test scenario
+				businessUserData, signature := scenario.setupFunc(t, td)
+
+				// Create middleware
+				middlewareFunc := middleware.BusinessUserDataMiddleware(
+					td.signingKeysStorage, authContextFields, roleGetter,
+				)
+
+				// Create test handler
+				var businessUserDataFromContext *auth.ClientData
+
+				testHandler := http.HandlerFunc(
+					func(w http.ResponseWriter, r *http.Request) {
+						if !scenario.expectError {
+							// Extract client data from context using the new approach
+							var err error
+
+							businessUserDataFromContext, err = cmkcontext.ExtractBusinessUserData(r.Context())
+							if err != nil {
+								businessUserDataFromContext = nil
+							}
+						}
+
+						w.WriteHeader(http.StatusOK)
+					},
+				)
+
+				// Apply middleware
+				handler := middlewareFunc(testHandler)
+
+				// Create request
+				req := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+				if businessUserData != "" {
+					req.Header.Set(auth.HeaderClientData, businessUserData)
+				}
+
+				if signature != "" {
+					req.Header.Set(auth.HeaderClientDataSignature, signature)
+				}
+
+				// Execute request
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, req)
+
+				// Assertions
+				assert.Equal(t, scenario.expectHttpCode, w.Result().StatusCode)
+
+				if scenario.expectError {
+					// For error cases, context should not be populated with client data
+					assert.Nil(t, businessUserDataFromContext)
+
+					// Also verify that extracting from a fresh context returns an error
+					req := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+					ctx := req.Context()
+					_, err := cmkcontext.ExtractBusinessUserData(ctx)
+					assert.Error(t, err)
+				} else {
+					// For successful cases, verify context is properly populated with client data
+					require.NotNil(t, businessUserDataFromContext)
+					assert.Equal(t, "test@example.com", businessUserDataFromContext.Email)
+					assert.Equal(t, []string{"group1", "group2"}, businessUserDataFromContext.Groups)
+					assert.Equal(t, "test-region", businessUserDataFromContext.Region)
+					assert.Equal(t, "test-type", businessUserDataFromContext.Type)
+					assert.Equal(t, "test-identifier", businessUserDataFromContext.Identifier)
+					assert.Equal(t, auth.SignatureAlgorithmRS256, businessUserDataFromContext.SignatureAlgorithm)
+					assert.Equal(
+						t, map[string]string{
+							"client_id":        "test-client-id",
+							"issuer":           "https://example-issuer.com",
+							"multitenancy_ref": "some-ref",
+						}, businessUserDataFromContext.AuthContext,
+					)
+				}
+			},
+		)
+	}
+}
+
+func TestBusinessUserDataMiddleware_RoleValidation(t *testing.T) {
+	td := setupTestEnvironment(t)
+	authContextFields := []string{"client_id", "issuer", "multitenancy_ref"}
+
+	testCases := []struct {
+		name            string
+		roles           []constants.BusinessRole
+		clientGroups    []string
+		apiPath         string
+		expectError     bool
+		expectHttpCode  int
+		expectErrorCode string
+	}{
+		{
+			name:           "single_role_key_admin",
+			roles:          []constants.BusinessRole{constants.KeyAdminRole},
+			clientGroups:   []string{"group1", "group2"},
+			apiPath:        "/keys",
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name:           "single_role_tenant_admin",
+			roles:          []constants.BusinessRole{constants.TenantAdminRole},
+			clientGroups:   []string{"group1", "group2"},
+			apiPath:        "/keys",
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name:           "single_role_tenant_auditor",
+			roles:          []constants.BusinessRole{constants.TenantAuditorRole},
+			clientGroups:   []string{"group1", "group2"},
+			apiPath:        "/keys",
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name:            "mixed_roles_key_admin_and_tenant_admin",
+			roles:           []constants.BusinessRole{constants.KeyAdminRole, constants.TenantAdminRole},
+			clientGroups:    []string{"group1", "group2"},
+			apiPath:         "/keys",
+			expectError:     true,
+			expectHttpCode:  http.StatusForbidden,
+			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
+		},
+		{
+			name:            "mixed_roles_key_admin_and_tenant_auditor",
+			roles:           []constants.BusinessRole{constants.KeyAdminRole, constants.TenantAuditorRole},
+			clientGroups:    []string{"group1", "group2"},
+			apiPath:         "/keys",
+			expectError:     true,
+			expectHttpCode:  http.StatusForbidden,
+			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
+		},
+		{
+			name:            "mixed_roles_tenant_admin_and_tenant_auditor",
+			roles:           []constants.BusinessRole{constants.TenantAdminRole, constants.TenantAuditorRole},
+			clientGroups:    []string{"group1", "group2"},
+			apiPath:         "/keys",
+			expectError:     true,
+			expectHttpCode:  http.StatusForbidden,
+			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
+		},
+		{
+			name:           "single_group_no_validation_needed",
+			roles:          []constants.BusinessRole{},
+			clientGroups:   []string{"group1"},
+			apiPath:        "/keys",
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name:           "no_groups_access_denied",
+			roles:          []constants.BusinessRole{},
+			clientGroups:   []string{},
+			apiPath:        "/keys",
+			expectError:    false,
+			expectHttpCode: http.StatusForbidden,
+		},
+		// Allowed API test cases
+		{
+			name:           "allowed_api_succeeds_with_mixed_roles",
+			roles:          []constants.BusinessRole{constants.KeyAdminRole, constants.TenantAdminRole},
+			clientGroups:   []string{"group1", "group2"},
+			apiPath:        "/userInfo",
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+		{
+			name:            "allowed_api_fails_with_no_groups",
+			roles:           []constants.BusinessRole{},
+			clientGroups:    []string{},
+			apiPath:         "/userInfo",
+			expectError:     false,
+			expectHttpCode:  http.StatusForbidden,
+			expectErrorCode: "ZERO_ROLES_NOT_ALLOWED",
+		},
+		{
+			name:            "non_allowed_api_fails_with_mixed_roles",
+			roles:           []constants.BusinessRole{constants.KeyAdminRole, constants.TenantAdminRole},
+			clientGroups:    []string{"group1", "group2"},
+			apiPath:         "/keys",
+			expectError:     true,
+			expectHttpCode:  http.StatusForbidden,
+			expectErrorCode: apierrors.MultipleRolesInGroupsCode,
+		},
+		{
+			// Regression test: GetRoleFromIAM is called after the identity is injected
+			// into the context, so the authz-aware repo check has a proper identity to work with.
+			name:           "multiple_groups_single_role_succeeds_without_identity_in_context",
+			roles:          []constants.BusinessRole{constants.KeyAdminRole},
+			clientGroups:   []string{"group1", "group2"},
+			apiPath:        "/keys",
+			expectError:    false,
+			expectHttpCode: http.StatusOK,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(
+			tc.name, func(t *testing.T) {
+				// Create mock group manager with predefined roles
+				mockGroupMgr := &mockRoleGetter{roles: tc.roles}
+
+				// Create client data with the specified groups
+				businessUserData := auth.ClientData{
+					Identifier:         "test-identifier",
+					Type:               "test-type",
+					Email:              "test@example.com",
+					Region:             "test-region",
+					Groups:             tc.clientGroups,
+					KeyID:              "0",
+					SignatureAlgorithm: auth.SignatureAlgorithmRS256,
+					CreatedAt:          time.Now(),
+					AuthContext: map[string]string{
+						"client_id":        "test-client-id",
+						"issuer":           "https://example-issuer.com",
+						"multitenancy_ref": "some-ref",
+					},
+					TTL: 1 * time.Minute,
+				}
+
+				businessUserDataStr, signature := td.createCustomBusinessUserData(t, businessUserData)
+
+				// Create middleware
+				middlewareFunc := middleware.BusinessUserDataMiddleware(
+					td.signingKeysStorage, authContextFields, mockGroupMgr,
+				)
+
+				// Create test handler
+				var businessUserDataFromContext *auth.ClientData
+				testHandler := http.HandlerFunc(
+					func(w http.ResponseWriter, r *http.Request) {
+						if !tc.expectError {
+							var err error
+							businessUserDataFromContext, err = cmkcontext.ExtractBusinessUserData(r.Context())
+							if err != nil {
+								businessUserDataFromContext = nil
+							}
+						}
+						w.WriteHeader(http.StatusOK)
+					},
+				)
+
+				// Apply middleware
+				handler := middlewareFunc(testHandler)
+
+				// Use apiPath from test case, default to /keys if not specified
+				apiPath := tc.apiPath
+				if apiPath == "" {
+					apiPath = "/keys"
+				}
+
+				// Create request (all test scenarios use GET)
+				req := httptest.NewRequest(http.MethodGet, constants.BasePath+apiPath, nil)
+				req.Pattern = "GET " + constants.BasePath + apiPath
+				req.Header.Set(auth.HeaderClientData, businessUserDataStr)
+				req.Header.Set(auth.HeaderClientDataSignature, signature)
+
+				// Execute request
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, req)
+
+				// Assertions
+				assert.Equal(t, tc.expectHttpCode, w.Result().StatusCode)
+				if tc.expectErrorCode != "" {
+					response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
+					assert.Equal(t, tc.expectErrorCode, response.Error.Code)
+				}
+
+				if tc.expectError {
+					// For error cases, context should not be populated with client data
+					require.Nil(t, businessUserDataFromContext)
+				} else
+				// For successful cases, verify context is properly populated with client data
+				if len(tc.clientGroups) > 0 {
+					require.NotNil(t, businessUserDataFromContext)
+					assert.Equal(t, tc.clientGroups, businessUserDataFromContext.Groups)
+				}
+			},
+		)
+	}
+}

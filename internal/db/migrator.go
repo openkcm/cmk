@@ -178,6 +178,11 @@ func (m *migrator) migrateTenants(
 		for _, t := range tenants {
 			iRes, err := m.runMigration(ctx, migration, t.SchemaName, f)
 			if err != nil {
+				log.Error(
+					ctx, "Migration failed for tenant", err,
+					slog.String("TenantID", t.ID),
+					slog.String("Schema", t.SchemaName),
+				)
 				return err
 			}
 			res[t.ID] = iRes
@@ -210,6 +215,7 @@ func (m *migrator) runMigration(
 			return nil, err
 		}
 
+		//nolint:gosec // DDL cannot be parameterized; schema is validated and quoted above
 		query := "CREATE SCHEMA IF NOT EXISTS " + quoteSchema(schema)
 
 		// NOSONAR is required here because DDL statements cannot be parameterized.

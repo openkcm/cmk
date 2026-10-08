@@ -25,7 +25,7 @@ type KeyLabel struct {
 }
 
 // TableResourceType return the authz resource type
-func (m KeyLabel) TableResourceType() authz.RepoResourceTypeName {
+func (m KeyLabel) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeKeyLabel
 }
 
@@ -38,7 +38,8 @@ func (KeyLabel) IsSharedModel() bool {
 }
 
 func (m KeyLabel) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }

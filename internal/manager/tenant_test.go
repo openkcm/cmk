@@ -12,11 +12,15 @@ import (
 	"google.golang.org/grpc/status"
 
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
+	pb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -26,19 +30,36 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/clients/registry/mapping"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	*manager.TenantManager,
-	repo.Repo, []string,
+	repo.Repo, *config.Config, []string,
+) {
+	t.Helper()
+	return setupTenantManager(t, nil, opts...)
+}
+
+// SetupTenantManagerWithAuthz builds the manager graph on an AuthzRepo for the
+// given role, so authz is enforced through the full offboarding chain.
+func SetupTenantManagerWithAuthz(
+	t *testing.T,
+	role constants.InternalRole,
+	opts ...testutils.TestDBConfigOpt,
+) (*manager.TenantManager, repo.Repo, *config.Config, []string) {
+	t.Helper()
+	return setupTenantManager(t, &role, opts...)
+}
+
+func setupTenantManager(t *testing.T, authzRole *constants.InternalRole, opts ...testutils.TestDBConfigOpt) (
+	*manager.TenantManager,
+	repo.Repo, *config.Config, []string,
 ) {
 	t.Helper()
 
 	dbCon, tenants, dbCfg := testutils.NewTestDB(
 		t, testutils.TestDBConfig{
 			CreateDatabase: true,
-			WithOrbital:    true,
 		}, opts...,
 	)
 
@@ -47,7 +68,13 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	}
 	ctx := t.Context()
 
-	r := sql.NewRepository(dbCon)
+	// rawRepo seeds without authz; the manager graph uses r (authz-wrapped when a role is set).
+	rawRepo := sql.NewRepository(dbCon)
+	var r repo.Repo = rawRepo
+	if authzRole != nil {
+		authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, rawRepo, cfg)
+		r = authz_repo.NewAuthzRepo(rawRepo, authzRepoLoader)
+	}
 
 	svcRegistry, err := cmkpluginregistry.New(ctx, cfg)
 	assert.NoError(t, err)
@@ -60,10 +87,11 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := testutils.NewUserManager()
 	tagManager := manager.NewTagManager(r)
-	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, cfg)
+	kcm := manager.NewKeyConfigManager(r, cm, um, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
 	mappingService := mapping.NewFakeService()
-	_, grpcClient := testutils.NewGRPCSuite(t,
+	_, grpcClient := testutils.NewGRPCSuite(
+		t,
 		func(s *grpc.Server) {
 			mappingv1.RegisterServiceServer(s, mappingService)
 		},
@@ -83,6 +111,7 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	sys := manager.NewSystemManager(
 		ctx,
 		r,
+		nil,
 		clientsFactory,
 		eventFactory,
 		svcRegistry,
@@ -94,32 +123,34 @@ func SetupTenantManager(t *testing.T, opts ...testutils.TestDBConfigOpt) (
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, nil),
+		manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil),
 		kcm,
 		um,
 		cm,
 		eventFactory,
 		cmkAuditor,
+		nil,
+		nil,
 	)
 
 	migrator := testutils.NewMigrator()
 
 	m := manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator)
 
-	return m, r, tenants
+	return m, rawRepo, cfg, tenants
 }
 
 func TestTenantManager(t *testing.T) {
 	nTenants := 10
-	m, r, tenants := SetupTenantManager(t, testutils.WithGenerateTenants(nTenants))
+	m, r, _, tenants := SetupTenantManager(t, testutils.WithGenerateTenants(nTenants))
 
 	t.Run("Should get tenant info", func(t *testing.T) {
 		tenant := tenants[5]
 		tenantModel, err := m.GetTenant(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Equal(t, tenant, tenantModel.ID)
-	},
-	)
+	})
+
 	t.Run("Should list tenants", func(t *testing.T) {
 		tenantsModel, _, err := m.ListTenantInfo(t.Context(), nil, repo.Pagination{})
 		assert.NoError(t, err)
@@ -127,8 +158,22 @@ func TestTenantManager(t *testing.T) {
 		for i := range nTenants {
 			assert.Equal(t, tenants[i], tenantsModel[i].ID)
 		}
-	},
-	)
+	})
+
+	t.Run("Should only list active tenants", func(t *testing.T) {
+		m, r, _, _ := SetupTenantManager(t)
+
+		err := r.Create(t.Context(), testutils.NewTenant(func(t *model.Tenant) {
+			t.Status = model.TenantStatus(pb.Status_STATUS_BLOCKED.String())
+		}))
+		assert.NoError(t, err)
+
+		tenantsModel, count, err := m.ListTenantInfo(t.Context(), nil, repo.Pagination{Count: true})
+		assert.NoError(t, err)
+		assert.Len(t, tenantsModel, 1)
+		assert.Equal(t, 1, count)
+	})
+
 	t.Run("Should delete tenant", func(t *testing.T) {
 		tenant := testutils.NewTenant(
 			func(t *model.Tenant) {
@@ -149,8 +194,8 @@ func TestTenantManager(t *testing.T) {
 		count, err := r.Count(ctx, &model.System{}, *repo.NewQuery())
 		assert.ErrorIs(t, err, repo.ErrTenantNotFound)
 		assert.Equal(t, 0, count)
-	},
-	)
+	})
+
 	t.Run("Should not error on delete non existing tenant", func(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(uuid.NewString())
 		_, err := m.GetTenant(ctx)
@@ -158,12 +203,25 @@ func TestTenantManager(t *testing.T) {
 
 		err = m.DeleteTenant(ctx)
 		assert.NoError(t, err)
-	},
-	)
+	})
+}
+
+// Run the offboarding process with an internal user context to test authorization checks
+func runOffboardTenant(
+	t *testing.T,
+	ctx context.Context,
+	m *manager.TenantManager,
+) (manager.OffboardingResult, error) {
+	t.Helper()
+
+	ctx, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantProvisioningRole)
+	assert.NoError(t, err)
+
+	return m.OffboardTenant(ctx)
 }
 
 func TestOffboardTenant(t *testing.T) {
-	m, r, tenants := SetupTenantManager(t)
+	m, r, _, tenants := SetupTenantManagerWithAuthz(t, constants.InternalTenantProvisioningRole)
 
 	keyConfigID := uuid.New()
 	key := testutils.NewKey(
@@ -173,16 +231,34 @@ func TestOffboardTenant(t *testing.T) {
 	)
 	keyConfig := testutils.NewKeyConfig(
 		func(k *model.KeyConfiguration) {
-			k.PrimaryKeyID = ptr.PointTo(key.ID)
+			k.PrimaryKeyID = new(key.ID)
 			k.ID = keyConfigID
 		},
 	)
 
-	ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
-	testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
+	tenantBaseCtx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
+	ctx := testutils.InjectBusinessUserDataIntoContext(tenantBaseCtx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+	testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
 	t.Run("Should return success", func(t *testing.T) {
+		m, r, _, tenants := SetupTenantManagerWithAuthz(t, constants.InternalTenantProvisioningRole)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
+
+		keyID := uuid.New()
+		keyConfig := testutils.NewKeyConfig(
+			func(k *model.KeyConfiguration) {
+				k.PrimaryKeyID = new(keyID)
+			},
+		)
+		key := testutils.NewKey(
+			func(k *model.Key) {
+				k.KeyConfigurationID = keyConfig.ID
+				k.State = cmkapi.KeyStateDETACHED
+				k.ID = keyID
+			},
+		)
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
 		testutils.CreateTestEntities(
 			ctx, t, r,
 			testutils.NewSystem(
@@ -191,30 +267,27 @@ func TestOffboardTenant(t *testing.T) {
 					s.KeyConfigurationID = nil
 				},
 			),
-			testutils.NewKey(
-				func(k *model.Key) {
-					k.KeyConfigurationID = keyConfig.ID
-					k.IsPrimary = true
-					k.State = string(cmkapi.KeyStateDETACHED)
-				},
-			),
+			key,
+			keyConfig,
 		)
-		result, err := m.OffboardTenant(ctx)
+		ctx = cmkcontext.CreateTenantContext(t.Context(), tenants[0])
+		result, err := runOffboardTenant(t, ctx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingSuccess, result.Status)
 	})
 
 	t.Run("Should return in processing on processing systems", func(t *testing.T) {
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
 		disconnectAllExistingSystems(t, ctx, r)
 		testutils.CreateTestEntities(
 			ctx, t, r, testutils.NewSystem(
 				func(s *model.System) {
 					s.Status = cmkapi.SystemStatusPROCESSING
-					s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+					s.KeyConfigurationID = new(keyConfig.ID)
 				},
 			),
 		)
-		result, err := m.OffboardTenant(ctx)
+		result, err := runOffboardTenant(t, ctx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 	})
@@ -224,50 +297,56 @@ func TestOffboardTenant(t *testing.T) {
 		system := testutils.NewSystem(
 			func(s *model.System) {
 				s.Status = cmkapi.SystemStatusCONNECTED
-				s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+				s.KeyConfigurationID = new(keyConfig.ID)
 			},
 		)
 		testutils.CreateTestEntities(ctx, t, r, system)
-		result, err := m.OffboardTenant(ctx)
+		result, err := runOffboardTenant(t, tenantBaseCtx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 
-		_, err = r.First(ctx, system, *repo.NewQuery())
+		_, err = r.First(tenantBaseCtx, system, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, cmkapi.SystemStatusPROCESSING, system.Status)
 	})
 
 	t.Run("Should return in processing on keys that havent been processed", func(t *testing.T) {
 		disconnectAllExistingSystems(t, ctx, r)
+		keyID := uuid.New()
+		keyConfig := testutils.NewKeyConfig(
+			func(k *model.KeyConfiguration) {
+				k.PrimaryKeyID = new(key.ID)
+			},
+		)
 		key := testutils.NewKey(
 			func(k *model.Key) {
 				k.KeyConfigurationID = keyConfig.ID
-				k.IsPrimary = true
-				k.State = string(cmkapi.KeyStateENABLED)
+				k.State = cmkapi.KeyStateENABLED
+				k.ID = keyID
 			},
 		)
-		testutils.CreateTestEntities(ctx, t, r, key)
+		testutils.CreateTestEntities(ctx, t, r, key, keyConfig)
 
-		result, err := m.OffboardTenant(ctx)
+		result, err := runOffboardTenant(t, tenantBaseCtx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 
-		_, err = r.First(ctx, key, *repo.NewQuery())
+		_, err = r.First(tenantBaseCtx, key, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateDETACHING), key.State)
+		assert.Equal(t, cmkapi.KeyStateDETACHING, key.State)
 	})
 
 	t.Run("returns error when unlinking connected systems fails", func(t *testing.T) {
 		disconnectAllExistingSystems(t, ctx, r)
 		system := testutils.NewSystem(func(s *model.System) {
 			s.Status = cmkapi.SystemStatusCONNECTED
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
 		testutils.CreateTestEntities(ctx, t, r, system)
 
 		mockSys := &mockSystemManager{unlinkErr: manager.ErrGettingSystemByID}
 		m.SetSystemForTests(mockSys)
-		_, err := m.OffboardTenant(ctx)
+		_, err := runOffboardTenant(t, tenantBaseCtx, m)
 		assert.Error(t, err)
 	})
 
@@ -282,7 +361,7 @@ func TestOffboardTenant(t *testing.T) {
 		mockSys := &mockSystemManager{unmapErr: status.Error(codes.Internal, "internal")}
 		m.SetSystemForTests(mockSys)
 
-		result, err := m.OffboardTenant(ctx)
+		result, err := runOffboardTenant(t, tenantBaseCtx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingContinueAndWait, result.Status)
 	})
@@ -293,14 +372,14 @@ func TestOffboardTenant(t *testing.T) {
 		mockSys := &mockSystemManager{unmapErr: status.Error(codes.InvalidArgument, "invalid argument")}
 		m.SetSystemForTests(mockSys)
 
-		result, err := m.OffboardTenant(ctx)
+		result, err := runOffboardTenant(t, tenantBaseCtx, m)
 		assert.NoError(t, err)
 		assert.Equal(t, manager.OffboardingFailed, result.Status)
 	})
 }
 
 func TestGetTenantByID(t *testing.T) {
-	m, _, tenants := SetupTenantManager(t, testutils.WithGenerateTenants(1))
+	m, _, _, tenants := SetupTenantManager(t, testutils.WithGenerateTenants(1))
 	tenant := tenants[0]
 
 	tests := []struct {
@@ -321,18 +400,19 @@ func TestGetTenantByID(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := t.Context()
+		t.Run(
+			tt.name, func(t *testing.T) {
+				ctx := t.Context()
 
-			result, err := m.GetTenantByID(ctx, tt.tenantID)
-			if tt.wantErr {
-				assert.Error(t, err)
-				return
-			}
+				result, err := m.GetTenantByID(ctx, tt.tenantID)
+				if tt.wantErr {
+					assert.Error(t, err)
+					return
+				}
 
-			assert.NoError(t, err)
-			assert.Equal(t, tt.tenantID, result.ID)
-		},
+				assert.NoError(t, err)
+				assert.Equal(t, tt.tenantID, result.ID)
+			},
 		)
 	}
 }
@@ -389,9 +469,10 @@ func (s *mockSystemManager) UnlinkSystemAction(context.Context, uuid.UUID, strin
 	return s.unlinkErr
 }
 
-func (s *mockSystemManager) GetAllSystems(context.Context, repo.QueryMapper) ([]*model.System, int, error) {
+func (s *mockSystemManager) GetAllSystems(context.Context, repo.Params) ([]*model.System, int, error) {
 	panic("not implemented")
 }
+
 func (s *mockSystemManager) GetSystemByID(context.Context, uuid.UUID) (*model.System, error) {
 	panic("not implemented")
 }
@@ -400,14 +481,20 @@ func (s *mockSystemManager) RefreshSystemsData(context.Context) bool { return tr
 func (s *mockSystemManager) LinkSystemAction(context.Context, uuid.UUID, cmkapi.SystemPatch) (*model.System, error) {
 	panic("not implemented")
 }
+
 func (s *mockSystemManager) GetRecoveryActions(context.Context, uuid.UUID) (cmkapi.SystemRecoveryAction, error) {
 	panic("not implemented")
 }
+
 func (s *mockSystemManager) SendRecoveryActions(
 	context.Context,
 	uuid.UUID,
 	cmkapi.SystemRecoveryActionBodyAction,
 ) error {
+	panic("not implemented")
+}
+
+func (s *mockSystemManager) GetFilters(context.Context) (cmkapi.SystemFilters, error) {
 	panic("not implemented")
 }
 

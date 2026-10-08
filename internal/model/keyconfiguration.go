@@ -16,21 +16,21 @@ import (
 type KeyConfiguration struct {
 	AutoTimeModel
 
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Name         string    `gorm:"type:varchar(255);not null;unique"`
-	Description  string    `gorm:"type:text"`
-	AdminGroupID uuid.UUID `gorm:"type:uuid;not null"`
-	AdminGroup   Group     `gorm:"foreignKey:AdminGroupID"`
-	CreatorID    string    `gorm:"type:varchar(255);not null"`
-	PrimaryKeyID *uuid.UUID
-	TotalKeys    int `gorm:"->;-:migration"`
-	TotalSystems int `gorm:"->;-:migration"`
+	ID           uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	Name         string     `gorm:"type:varchar(255);not null;unique"`
+	Description  string     `gorm:"type:text"`
+	AdminGroupID uuid.UUID  `gorm:"type:uuid;not null"`
+	AdminGroup   Group      `gorm:"foreignKey:AdminGroupID"`
+	CreatorID    string     `gorm:"type:varchar(255);not null"`
+	PrimaryKeyID *uuid.UUID `gorm:"type:uuid"`
+	TotalKeys    int        `gorm:"->;-:migration"`
+	TotalSystems int        `gorm:"->;-:migration"`
 
 	creatorName string `gorm:"-:all"`
 }
 
 // TableResourceType return the authz resource type
-func (m KeyConfiguration) TableResourceType() authz.RepoResourceTypeName {
+func (m KeyConfiguration) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeKeyconfiguration
 }
 
@@ -44,7 +44,7 @@ func (KeyConfiguration) IsSharedModel() bool {
 }
 
 func (m KeyConfiguration) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
@@ -62,5 +62,10 @@ func (kc *KeyConfiguration) GetCreatorName(
 		return kc.creatorName, nil
 	}
 
-	return identity.GetUserName(ctx, identityManager, kc.CreatorID)
+	name, err := identity.GetUserName(ctx, identityManager, kc.CreatorID)
+	if err != nil {
+		return "", err
+	}
+	kc.creatorName = name
+	return name, nil
 }

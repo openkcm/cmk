@@ -69,3 +69,17 @@ func (p *Plugin) DeleteKeystore(
 ) (*keystoremanagementv1.DeleteKeystoreResponse, error) {
 	return &keystoremanagementv1.DeleteKeystoreResponse{}, nil
 }
+
+func (p *Plugin) GrantTrust(
+	_ context.Context,
+	_ *keystoremanagementv1.GrantTrustRequest,
+) (*keystoremanagementv1.GrantTrustResponse, error) {
+	return &keystoremanagementv1.GrantTrustResponse{}, nil
+}
+
+func (p *Plugin) RemoveTrust(
+	_ context.Context,
+	_ *keystoremanagementv1.RemoveTrustRequest,
+) (*keystoremanagementv1.RemoveTrustResponse, error) {
+	return &keystoremanagementv1.RemoveTrustResponse{}, nil
+}

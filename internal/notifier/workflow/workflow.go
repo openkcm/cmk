@@ -119,7 +119,7 @@ func (w *Creator) createWorkflowApprovedTask(
 ) (*asynq.Task, error) {
 	// Only send email notification when minimum approvals threshold is met (WAIT_CONFIRMATION state)
 	// Do not send for partial approvals (WAIT_APPROVAL state)
-	if wf.State(data.Workflow.State) != wf.StateWaitConfirmation {
+	if data.Workflow.State != model.WorkflowStateWaitConfirmation {
 		return nil, nil
 	}
 
@@ -163,8 +163,8 @@ func (w *Creator) createWorkflowConfirmedTask(
 ) (*asynq.Task, error) {
 	var subject, message, actionText string
 
-	switch wf.State(data.Workflow.State) {
-	case wf.StateSuccessful:
+	switch data.Workflow.State {
+	case model.WorkflowStateSuccessful:
 		subject = fmt.Sprintf(
 			"Workflow Successful - %s %s",
 			data.Workflow.ActionType,
@@ -174,7 +174,7 @@ func (w *Creator) createWorkflowConfirmedTask(
 		message = "The workflow has been confirmed and completed successfully."
 		actionText = "No further action required. You can view the details in the CMK portal."
 
-	case wf.StateFailed:
+	case model.WorkflowStateFailed:
 		subject = fmt.Sprintf(
 			"Workflow Failed - %s %s",
 			data.Workflow.ActionType,

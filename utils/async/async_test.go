@@ -64,10 +64,10 @@ func TestTaskPayload_InjectContext(t *testing.T) {
 	assert.Equal(t, "tenant-ctx", tenantID)
 }
 
-func TestTaskPayload_InjectContextWithClientData(t *testing.T) {
+func TestTaskPayload_InjectContextWithBusinessData(t *testing.T) {
 	payload := asyncUtils.TaskPayload{
 		TenantID: "tenant-ctx",
-		ClientData: auth.ClientData{
+		BusinessData: auth.ClientData{
 			Identifier: "user-456",
 			Email:      "bob@example.com",
 			GivenName:  "Bob",
@@ -90,9 +90,9 @@ func TestTaskPayload_InjectContextWithClientData(t *testing.T) {
 	ctx := context.Background()
 	ctx = parsedPayload.InjectContext(ctx)
 
-	clientData, err := ctxUtils.ExtractClientData(ctx)
+	businessUserData, err := ctxUtils.ExtractBusinessUserData(ctx)
 	assert.NoError(t, err)
-	assert.Equal(t, payload.ClientData, *clientData)
+	assert.Equal(t, payload.BusinessData, *businessUserData)
 }
 
 func TestTenantListPayload(t *testing.T) {

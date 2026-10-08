@@ -79,7 +79,7 @@ var defaultMapper = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "ACTION_REQUIRE_WORKFLOW",
 			Message: "Action requires a workflow",
-			Status:  http.StatusForbidden,
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{

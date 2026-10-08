@@ -2,18 +2,13 @@ package cmk
 
 import (
 	"context"
-	"encoding/json"
-	"log/slog"
-	"slices"
+	"errors"
 
-	"github.com/google/uuid"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	wfTransform "github.com/openkcm/cmk/internal/api/transform/workflow"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	wfTransform "github.com/openkcm/cmk/internal/api/cmk/transform/workflow"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
@@ -50,61 +45,55 @@ func (c *APIController) CheckWorkflow(
 	}
 
 	if status.ErrDetails != nil {
-		response.Details = ptr.PointTo(status.ErrDetails.Error())
+		// Extract error code for the details field
+		if errors.Is(status.ErrDetails, wfMechanism.ErrWorkflowGroupNotSufficientMembers) {
+			response.Details = new(apierrors.WorkflowGroupNotSufficientMembers)
+		} else {
+			response.Details = new(status.ErrDetails.Error())
+		}
 	}
 
 	return response, nil
 }
 
-var getWorkflowsSchema = odata.FilterSchema{
-	Entries: []odata.FilterSchemaEntry{
-		{
-			FilterName: "artifactId",
-			FilterType: odata.UUID,
-			DBName:     repo.ArtifactIDField,
+var getWorkflowsSchema = odata.FilterToRepoMap{
+	"artifactId": {
+		Type:   odata.UUID,
+		DBName: repo.ArtifactIDField,
+	},
+	"artifactType": {
+		Type:   odata.String,
+		DBName: repo.ArtifactTypeField,
+		ValueValidator: func(s string) bool {
+			return model.WorkflowArtifactType(s).Valid()
 		},
-		{
-			FilterName: "artifactType",
-			FilterType: odata.String,
-			DBName:     repo.ArtifactTypeField,
-			ValueValidator: func(s string) bool {
-				return slices.Contains(wfMechanism.ArtifactTypes,
-					wfMechanism.ArtifactType(s))
-			},
-			ValueModifier: odata.ToUpper,
+		ValueModifier: odata.ToUpper,
+	},
+	"artifactName": {
+		Type:           odata.String,
+		DBName:         repo.ArtifactNameField,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthName),
+	},
+	"parametersResourceName": {
+		Type:           odata.String,
+		DBName:         repo.ParamResourceNameField,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthName),
+	},
+	"actionType": {
+		Type:   odata.String,
+		DBName: repo.ActionTypeField,
+		ValueValidator: func(s string) bool {
+			return model.WorkflowActionType(s).Valid()
 		},
-		{
-			FilterName:     "artifactName",
-			FilterType:     odata.String,
-			DBName:         repo.ArtifactNameField,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthName),
+		ValueModifier: odata.ToUpper,
+	},
+	"state": {
+		Type:   odata.String,
+		DBName: repo.StateField,
+		ValueValidator: func(s string) bool {
+			return model.WorkflowState(s).Valid()
 		},
-		{
-			FilterName:     "parametersResourceName",
-			FilterType:     odata.String,
-			DBName:         repo.ParamResourceNameField,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthName),
-		},
-		{
-			FilterName: "actionType",
-			FilterType: odata.String,
-			DBName:     repo.ActionTypeField,
-			ValueValidator: func(s string) bool {
-				return slices.Contains(wfMechanism.ActionTypes,
-					wfMechanism.ActionType(s))
-			},
-			ValueModifier: odata.ToUpper,
-		},
-		{
-			FilterName: "state",
-			FilterType: odata.String,
-			DBName:     repo.StateField,
-			ValueValidator: func(s string) bool {
-				return slices.Contains(wfMechanism.States,
-					wfMechanism.State(s))
-			},
-			ValueModifier: odata.ToUpper,
-		},
+		ValueModifier: odata.ToUpper,
 	},
 }
 
@@ -113,21 +102,16 @@ func (c *APIController) GetWorkflows(
 	ctx context.Context,
 	request cmkapi.GetWorkflowsRequestObject,
 ) (cmkapi.GetWorkflowsResponseObject, error) {
-	odataQueryMapper := odata.NewQueryOdataMapper(getWorkflowsSchema)
-
-	err := odataQueryMapper.ParseFilter(request.Params.Filter)
+	odataParams := odata.New(
+		odata.WithPagination(request.Params.Skip, request.Params.Top, request.Params.Count),
+		odata.WithFilter(request.Params.Filter, getWorkflowsSchema),
+	)
+	_, err := odataParams.GetFilter()
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
 	}
 
-	odataQueryMapper.SetPaging(request.Params.Skip, request.Params.Top, request.Params.Count)
-
-	workflowQueryMapper, err := manager.NewWorkflowFilterFromOData(*odataQueryMapper)
-	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
-	}
-
-	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, workflowQueryMapper)
+	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, odataParams)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetWorkflow, err)
 	}
@@ -140,7 +124,7 @@ func (c *APIController) GetWorkflows(
 	}
 
 	for i, dbWorkflow := range workflows {
-		apiWorkflow, err := wfTransform.ToAPI(ctx, *dbWorkflow, idm)
+		apiWorkflow, err := wfTransform.ToAPI(ctx, *dbWorkflow, nil, nil, idm) // No eligibility check for list view
 		if err != nil {
 			return nil, errs.Wrap(apierrors.ErrGetWorkflow, err)
 		}
@@ -175,14 +159,15 @@ func (c *APIController) CreateWorkflow(ctx context.Context,
 
 	workflow, err = c.Manager.Workflow.CreateWorkflow(ctx, workflow)
 	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrCreateWorkflow, err)
+		return nil, err
 	}
-
 	idm, err := c.pluginCatalog.IdentityManagement()
 	if err != nil {
 		return nil, err
 	}
-	returnAPIWorkflow, err := wfTransform.ToAPI(ctx, *workflow, idm)
+	returnAPIWorkflow, err := wfTransform.ToAPI(ctx, *workflow,
+		nil, nil,
+		idm) // No eligibility check for create response
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowToAPI, err)
 	}
@@ -193,9 +178,24 @@ func (c *APIController) CreateWorkflow(ctx context.Context,
 func (c *APIController) GetWorkflowByID(ctx context.Context,
 	request cmkapi.GetWorkflowByIDRequestObject,
 ) (cmkapi.GetWorkflowByIDResponseObject, error) {
-	workflow, err := c.Manager.Workflow.GetWorkflowByID(ctx, request.WorkflowID)
+	workflow, eligibility, err := c.Manager.Workflow.GetWorkflowByID(
+		ctx, request.WorkflowID,
+	)
+
+	// Handle eligibility check errors gracefully - don't fail the entire request
+	// Instead, pass the error to transform layer to show as ERROR in additionalInfo
+	var eligibilityErr error
+
 	if err != nil {
-		return nil, err
+		// Check if this is an eligibility check error (SCIM/IAM failure)
+		if errs.IsAnyError(err, manager.ErrCheckWorkflowEligibility) {
+			// SCIM/IAM failure - show error to user
+			// This includes both: plugin not configured (when workflow needs it) and real SCIM failures
+			eligibilityErr = err
+		} else {
+			// Other errors should fail the request
+			return nil, err
+		}
 	}
 
 	pagination := repo.Pagination{}
@@ -206,7 +206,7 @@ func (c *APIController) GetWorkflowByID(ctx context.Context,
 	}
 
 	// Expand approver groups
-	approverGroups, err := c.getApproverGroups(ctx, workflow)
+	approverGroups, err := c.Manager.Workflow.GetWorkflowApproverGroups(ctx, workflow)
 	if err != nil {
 		return nil, err
 	}
@@ -227,14 +227,14 @@ func (c *APIController) GetWorkflowByID(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	apiWorkflow, err := wfTransform.ToAPIDetailed(
+
+	apiWorkflow, err := wfTransform.ToAPI(
 		ctx,
 		*workflow,
-		approvers,
-		approverGroups,
-		transitions,
-		approvalSummary,
+		eligibility,
+		eligibilityErr,
 		idm,
+		wfTransform.WithDetailed(ctx, approvers, idm, approverGroups, transitions, approvalSummary),
 	)
 	if err != nil {
 		return nil, err
@@ -257,51 +257,16 @@ func (c *APIController) TransitionWorkflow(
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrWorkflowCannotTransition, err)
 	}
-
 	idm, err := c.pluginCatalog.IdentityManagement()
 	if err != nil {
 		return nil, err
 	}
-	apiWorkflow, err := wfTransform.ToAPI(ctx, *workflow, idm)
+	apiWorkflow, err := wfTransform.ToAPI(ctx,
+		*workflow, nil, nil,
+		idm) // No eligibility check for transition response
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowToAPI, err)
 	}
 
 	return cmkapi.TransitionWorkflow200JSONResponse(*apiWorkflow), nil
-}
-
-func (c *APIController) getApproverGroups(
-	ctx context.Context,
-	workflow *model.Workflow,
-) ([]*model.Group, error) {
-	var IDs []uuid.UUID
-
-	if workflow.ApproverGroupIDs == nil {
-		return []*model.Group{}, nil
-	}
-
-	err := json.Unmarshal(workflow.ApproverGroupIDs, &IDs)
-	if err != nil {
-		return nil, err
-	}
-
-	groups := make([]*model.Group, 0, len(IDs))
-	for _, id := range IDs {
-		group, err := c.Manager.Group.GetGroupByID(ctx, id)
-		if err != nil {
-			log.Warn(ctx, "failed to expand workflow approver group", slog.Any("error", err))
-
-			// Return a placeholder group if the group cannot be found. We can still make use of the ID.
-			groups = append(groups, &model.Group{
-				ID:   id,
-				Name: "NOT_AVAILABLE",
-				Role: constants.KeyAdminRole,
-			})
-			continue
-		}
-
-		groups = append(groups, group)
-	}
-
-	return groups, nil
 }

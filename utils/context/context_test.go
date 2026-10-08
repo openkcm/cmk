@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
@@ -70,11 +69,11 @@ func TestCreateTenantCtx(t *testing.T) {
 	)
 }
 
-func TestExtractClientData(t *testing.T) {
+func TestExtractBusinessUserData(t *testing.T) {
 	t.Run(
 		"Should return error if no client data in context", func(t *testing.T) {
-			_, err := cmkcontext.ExtractClientData(context.TODO())
-			assert.ErrorIs(t, err, cmkcontext.ErrExtractClientData)
+			_, err := cmkcontext.ExtractBusinessUserData(context.TODO())
+			assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 		},
 	)
 
@@ -87,45 +86,45 @@ func TestExtractClientData(t *testing.T) {
 				Region:     "region",
 				Type:       "type",
 			}
-			ctx := context.WithValue(context.TODO(), constants.ClientData, expected)
-			clientData, err := cmkcontext.ExtractClientData(ctx)
+			ctx := context.WithValue(context.TODO(), constants.BusinessUserData, expected)
+			businessUserData, err := cmkcontext.ExtractBusinessUserData(ctx)
 			assert.NoError(t, err)
-			assert.Equal(t, expected, clientData)
+			assert.Equal(t, expected, businessUserData)
 		},
 	)
 }
 
-func TestExtractClientDataIdentifier(t *testing.T) {
+func TestExtractBusinessUserDataIdentifier(t *testing.T) {
 	t.Run(
 		"Should return error if no client data in context", func(t *testing.T) {
-			_, err := cmkcontext.ExtractClientDataIdentifier(context.TODO())
-			assert.ErrorIs(t, err, cmkcontext.ErrExtractClientData)
+			_, err := cmkcontext.ExtractBusinessUserDataIdentifier(context.TODO())
+			assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 		},
 	)
 
 	t.Run(
 		"Should extract client data identifier from context", func(t *testing.T) {
 			expected := "identifier"
-			clientData := &auth.ClientData{
+			businessUserData := &auth.ClientData{
 				Identifier: expected,
 				Email:      "email",
 				Groups:     []string{"group1", "group2"},
 				Region:     "region",
 				Type:       "type",
 			}
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectClientData(clientData, nil))
-			identifier, err := cmkcontext.ExtractClientDataIdentifier(ctx)
+			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectBusinessUserData(businessUserData, nil))
+			identifier, err := cmkcontext.ExtractBusinessUserDataIdentifier(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, expected, identifier)
 		},
 	)
 }
 
-func TestExtractClientDataGroups(t *testing.T) {
+func TestExtractBusinessUserDataGroups(t *testing.T) {
 	t.Run(
 		"Should return error if no client data in context", func(t *testing.T) {
-			_, err := cmkcontext.ExtractClientDataGroups(context.TODO())
-			assert.ErrorIs(t, err, cmkcontext.ErrExtractClientData)
+			_, err := cmkcontext.ExtractBusinessUserDataGroups(context.TODO())
+			assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 		},
 	)
 
@@ -133,33 +132,33 @@ func TestExtractClientDataGroups(t *testing.T) {
 		"Should extract client data groups from context", func(t *testing.T) {
 			expected := []string{"group1", "group2"}
 
-			clientData := &auth.ClientData{
+			businessUserData := &auth.ClientData{
 				Identifier: "identifier",
 				Email:      "email",
 				Groups:     []string{"group1", "group2"},
 				Region:     "region",
 				Type:       "type",
 			}
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectClientData(clientData, nil))
-			groups, err := cmkcontext.ExtractClientDataGroups(ctx)
+			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectBusinessUserData(businessUserData, nil))
+			groups, err := cmkcontext.ExtractBusinessUserDataGroups(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, expected, groups)
 		},
 	)
 }
 
-func TestExtractClientDataIssuer(t *testing.T) {
+func TestExtractBusinessUserDataIssuer(t *testing.T) {
 	t.Run(
 		"Should return error if no client data in context", func(t *testing.T) {
-			_, err := cmkcontext.ExtractClientDataIssuer(context.TODO())
-			assert.ErrorIs(t, err, cmkcontext.ErrExtractClientDataAuthContext)
+			_, err := cmkcontext.ExtractBusinessUserDataIssuer(context.TODO())
+			assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserDataAuthContext)
 		},
 	)
 
 	t.Run(
 		"Should extract client data issuer from context", func(t *testing.T) {
 			expected := "issuer"
-			clientData := &auth.ClientData{
+			businessUserData := &auth.ClientData{
 				Identifier:  "identifier",
 				Email:       "email",
 				Groups:      []string{"group1", "group2"},
@@ -167,25 +166,25 @@ func TestExtractClientDataIssuer(t *testing.T) {
 				Type:        "type",
 				AuthContext: map[string]string{"issuer": expected},
 			}
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectClientData(clientData, []string{"issuer"}))
-			issuer, err := cmkcontext.ExtractClientDataIssuer(ctx)
+			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectBusinessUserData(businessUserData, []string{"issuer"}))
+			issuer, err := cmkcontext.ExtractBusinessUserDataIssuer(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, expected, issuer)
 		},
 	)
 }
 
-func TestExtractClientDataAuthContextField(t *testing.T) {
+func TestExtractBusinessUserDataAuthContextField(t *testing.T) {
 	t.Run(
 		"Should return error if no client data in context", func(t *testing.T) {
-			_, err := cmkcontext.ExtractClientDataAuthContextField(context.TODO(), "issuer")
-			assert.ErrorIs(t, err, cmkcontext.ErrExtractClientDataAuthContext)
+			_, err := cmkcontext.ExtractBusinessUserDataAuthContextField(context.TODO(), "issuer")
+			assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserDataAuthContext)
 		},
 	)
 
 	t.Run(
 		"Should return error if field not found in auth context", func(t *testing.T) {
-			clientData := &auth.ClientData{
+			businessUserData := &auth.ClientData{
 				Identifier:  "identifier",
 				Email:       "email",
 				Groups:      []string{"group1", "group2"},
@@ -193,15 +192,15 @@ func TestExtractClientDataAuthContextField(t *testing.T) {
 				Type:        "type",
 				AuthContext: map[string]string{"foo": "bar"},
 			}
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectClientData(clientData, []string{"issuer"}))
-			_, err := cmkcontext.ExtractClientDataAuthContextField(ctx, "issuer")
-			assert.ErrorIs(t, err, cmkcontext.ErrExtractClientDataAuthContext)
+			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectBusinessUserData(businessUserData, []string{"issuer"}))
+			_, err := cmkcontext.ExtractBusinessUserDataAuthContextField(ctx, "issuer")
+			assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserDataAuthContext)
 		},
 	)
 
 	t.Run(
 		"Should return error if field value is empty", func(t *testing.T) {
-			clientData := &auth.ClientData{
+			businessUserData := &auth.ClientData{
 				Identifier:  "identifier",
 				Email:       "email",
 				Groups:      []string{"group1", "group2"},
@@ -209,9 +208,9 @@ func TestExtractClientDataAuthContextField(t *testing.T) {
 				Type:        "type",
 				AuthContext: map[string]string{"issuer": ""},
 			}
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectClientData(clientData, nil))
-			_, err := cmkcontext.ExtractClientDataAuthContextField(ctx, "issuer")
-			assert.ErrorIs(t, err, cmkcontext.ErrExtractClientDataAuthContext)
+			ctx := cmkcontext.New(context.TODO(), cmkcontext.WithInjectBusinessUserData(businessUserData, nil))
+			_, err := cmkcontext.ExtractBusinessUserDataAuthContextField(ctx, "issuer")
+			assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserDataAuthContext)
 		},
 	)
 
@@ -219,7 +218,7 @@ func TestExtractClientDataAuthContextField(t *testing.T) {
 		"Should extract specific field from client data auth context", func(t *testing.T) {
 			expectedIssuer := "test-issuer"
 			expectedAudience := "test-audience"
-			clientData := &auth.ClientData{
+			businessUserData := &auth.ClientData{
 				Identifier: "identifier",
 				Email:      "email",
 				Groups:     []string{"group1", "group2"},
@@ -232,31 +231,31 @@ func TestExtractClientDataAuthContextField(t *testing.T) {
 				},
 			}
 			ctx := cmkcontext.New(context.TODO(),
-				cmkcontext.WithInjectClientData(clientData, []string{"issuer", "audience"}))
+				cmkcontext.WithInjectBusinessUserData(businessUserData, []string{"issuer", "audience"}))
 
-			issuer, err := cmkcontext.ExtractClientDataAuthContextField(ctx, "issuer")
+			issuer, err := cmkcontext.ExtractBusinessUserDataAuthContextField(ctx, "issuer")
 			assert.NoError(t, err)
 			assert.Equal(t, expectedIssuer, issuer)
 
-			audience, err := cmkcontext.ExtractClientDataAuthContextField(ctx, "audience")
+			audience, err := cmkcontext.ExtractBusinessUserDataAuthContextField(ctx, "audience")
 			assert.NoError(t, err)
 			assert.Equal(t, expectedAudience, audience)
 		},
 	)
 }
 
-func TestExtractClientDataAuthContext(t *testing.T) {
+func TestExtractBusinessUserDataAuthContext(t *testing.T) {
 	t.Run(
 		"Should return error if no client data in context", func(t *testing.T) {
-			_, err := cmkcontext.ExtractClientDataAuthContext(context.TODO())
-			assert.ErrorIs(t, err, cmkcontext.ErrExtractClientData)
+			_, err := cmkcontext.ExtractBusinessUserDataAuthContext(context.TODO())
+			assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 		},
 	)
 
 	t.Run(
 		"Should extract client data AuthContext from context", func(t *testing.T) {
 			expected := map[string]string{"issuer": "issuer", "foo": "bar"}
-			clientData := &auth.ClientData{
+			businessUserData := &auth.ClientData{
 				Identifier:  "identifier",
 				Email:       "email",
 				Groups:      []string{"group1", "group2"},
@@ -265,21 +264,10 @@ func TestExtractClientDataAuthContext(t *testing.T) {
 				AuthContext: expected,
 			}
 			ctx := cmkcontext.New(context.TODO(),
-				cmkcontext.WithInjectClientData(clientData, []string{"issuer", "foo"}))
-			authContext, err := cmkcontext.ExtractClientDataAuthContext(ctx)
+				cmkcontext.WithInjectBusinessUserData(businessUserData, []string{"issuer", "foo"}))
+			authContext, err := cmkcontext.ExtractBusinessUserDataAuthContext(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, expected, authContext)
-		},
-	)
-}
-
-func TestInjectSystemUser(t *testing.T) {
-	t.Run(
-		"Should inject system user client data into context", func(t *testing.T) {
-			ctx := cmkcontext.New(context.TODO(), cmkcontext.InjectSystemUser)
-			clientData, err := cmkcontext.ExtractClientData(ctx)
-			assert.NoError(t, err)
-			assert.Equal(t, uuid.Max.String(), clientData.Identifier)
 		},
 	)
 }

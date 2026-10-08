@@ -1,6 +1,7 @@
 package manager_test
 
 import (
+	"context"
 	"crypto/x509/pkix"
 	"encoding/json"
 	"slices"
@@ -10,23 +11,26 @@ import (
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
+	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var (
@@ -42,7 +46,7 @@ var (
 	})
 	CreatorName   = "bob@"
 	CreatorID     = uuid.NewString()
-	cryptoSubject = manager.ClientCertificateSubject{
+	cryptoSubject = config.CryptoCertSubject{
 		Locality:           []string{},
 		OrganizationalUnit: []string{},
 		Organization:       []string{},
@@ -55,10 +59,12 @@ var (
 func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenancy.DB, string) {
 	t.Helper()
 
-	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		WithOrbital: true,
+	})
 	r := sql.NewRepository(db)
 
-	cryptoCerts := []manager.ClientCertificate{
+	cryptoCerts := []config.CryptoCert{
 		{
 			Name:    "crypto-1",
 			Subject: cryptoSubject,
@@ -80,17 +86,27 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 				Value:  string(bytes),
 			},
 		},
+		Database: dbCfg,
 	}
 	cmkAuditor := auditor.New(t.Context(), cfg)
 
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
-	userManager := manager.NewUserManager(r, cmkAuditor)
-	tagManager := manager.NewTagManager(r)
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 
-	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, cfg)
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+		r, &config.Config{})
+
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+
+	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
+	tagManager := manager.NewTagManager(authzRepo)
+
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
+	assert.NoError(t, err)
+
+	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
 	return m, db, tenants[0]
 }
@@ -124,11 +140,14 @@ func TestGetKeyConfigurations(t *testing.T) {
 	}
 
 	t.Run("Should get key configuration - IAM filter", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
 		)
+
+		ctxWithGroups = cmkcontext.InjectRequestID(ctxWithGroups, uuid.NewString())
+
 		pagination := repo.Pagination{
 			Skip:  constants.DefaultSkip,
 			Top:   constants.DefaultTop,
@@ -155,11 +174,14 @@ func TestGetKeyConfigurations(t *testing.T) {
 			g.Role = constants.TenantAuditorRole
 		})
 
-		ctx := testutils.InjectClientDataIntoContext(
+		ctx := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAuditorGroupIAM, "some_other_group"},
 		)
+
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
+
 		testutils.CreateTestEntities(ctx, t, r, auditorGroup)
 		pagination := repo.Pagination{
 			Skip:  constants.DefaultSkip,
@@ -173,11 +195,14 @@ func TestGetKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should get 0 key configuration - no access", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{"group-no-access", "some_other_group"},
 		)
+
+		ctxWithGroups = cmkcontext.InjectRequestID(ctxWithGroups, uuid.NewString())
+
 		pagination := repo.Pagination{
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
@@ -188,7 +213,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should get 0 key configuration - empty IAMGroups", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{},
@@ -215,7 +240,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, adminGroup2, keyConfig2)
 
 		// Create context with user's IAM groups including only adminGroup2
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{adminGroupName2, "some_other_group"},
@@ -246,8 +271,13 @@ func TestGetKeyConfigurations(t *testing.T) {
 
 	t.Run("Should get user keyconfig count", func(t *testing.T) {
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
-		groupA := testutils.NewGroup(func(_ *model.Group) {})
+		testKeyAdminGroupIAM := "KMS_test_auditor_group2"
+		groupA := testutils.NewGroup(func(g *model.Group) {
+			g.IAMIdentifier = testKeyAdminGroupIAM
+			g.Role = constants.KeyAdminRole
+		})
 		groupB := testutils.NewGroup(func(_ *model.Group) {})
 		testutils.CreateTestEntities(ctx, t, r, groupA, groupB)
 		kcCount := 10
@@ -274,7 +304,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			}
 		}
 
-		ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{groupA.IAMIdentifier})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{groupA.IAMIdentifier})
 		_, count, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Pagination: repo.Pagination{Count: true}})
 		assert.NoError(t, err)
 		assert.Equal(t, kcCount, count)
@@ -295,26 +325,30 @@ func TestTotalSystemAndKey(t *testing.T) {
 		})
 
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 		sys := &model.System{
 			ID:                 uuid.New(),
 			Identifier:         uuid.NewString(),
+			Type:               model.SystemTypeSYSTEM,
 			KeyConfigurationID: &keyConfig.ID,
 		}
 
 		key1 := &model.Key{
 			ID:                 uuid.New(),
 			Name:               uuid.NewString(),
+			KeyType:            cmkapi.KeyTypeBYOK,
+			Algorithm:          cmkapi.KeyAlgorithmAES256,
 			KeyConfigurationID: keyConfig.ID,
-			IsPrimary:          false,
 		}
 
 		key2 := &model.Key{
 			ID:                 uuid.New(),
 			Name:               uuid.NewString(),
+			KeyType:            cmkapi.KeyTypeBYOK,
+			Algorithm:          cmkapi.KeyAlgorithmAES256,
 			KeyConfigurationID: keyConfig.ID,
-			IsPrimary:          false,
 		}
 
 		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, sys, key1, key2)
@@ -339,11 +373,13 @@ func TestTotalSystemAndKey(t *testing.T) {
 		sys := &model.System{
 			ID:                 uuid.New(),
 			Identifier:         uuid.NewString(),
+			Type:               model.SystemTypeSYSTEM,
 			KeyConfigurationID: &keyConfig.ID,
 		}
 
 		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, sys)
 
@@ -371,7 +407,8 @@ func TestKeyConfigurationsWithGroupID(t *testing.T) {
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 
@@ -412,7 +449,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.CreatorID = CreatorID
 		})
 
-		ctx := testutils.InjectClientDataIntoContext(
+		ctx := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, keyConfig.AdminGroup.IAMIdentifier},
@@ -434,7 +471,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.Name = "  "
 		})
 
-		ctx := testutils.InjectClientDataIntoContext(
+		ctx := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, keyConfig.AdminGroup.IAMIdentifier},
@@ -456,7 +493,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.CreatorID = CreatorID
 		})
 
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{wrongRoleGroup.IAMIdentifier},
@@ -477,7 +514,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 			c.AdminGroup = *wrongRoleGroup
 		})
 
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{wrongRoleGroup.IAMIdentifier},
@@ -488,7 +525,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should allow creation when user belongs to admin group", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
@@ -506,7 +543,7 @@ func TestPostKeyConfigurations(t *testing.T) {
 	})
 
 	t.Run("Should deny creation when user does not belong to admin group", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{"KMS_different_group", "some_other_group"},
@@ -530,11 +567,11 @@ func TestPostKeyConfigurations(t *testing.T) {
 		})
 
 		_, err := m.PostKeyConfigurations(ctxWithoutGroups, keyConfig)
-		assert.ErrorIs(t, err, cmkcontext.ErrExtractClientData)
+		assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 	})
 
 	t.Run("Should deny creation when empty groups in context", func(t *testing.T) {
-		ctxWithEmptyGroups := testutils.InjectClientDataIntoContext(
+		ctxWithEmptyGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{},
@@ -566,7 +603,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 	expected := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
 
 	testutils.CreateTestEntities(ctx, t, r, expected)
 
@@ -581,14 +618,12 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 		assert.Equal(t, expected.Name, actual.Name)
 	})
 
-	t.Run("Should allow access when system is system user", func(t *testing.T) {
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
-			ctx,
-			constants.SystemUser.String(),
-			[]string{},
-		)
+	t.Run("Should allow access when internal user", func(t *testing.T) {
+		ctxSys, err := cmkcontext.BusinessToInternalContext(ctx,
+			constants.InternalTaskWorkflowApproversRole)
+		assert.NoError(t, err)
 
-		actual, err := m.GetKeyConfigurationByID(ctxWithGroups, keyConfigWithAdminGroup.ID)
+		actual, err := m.GetKeyConfigurationByID(ctxSys, keyConfigWithAdminGroup.ID)
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfigWithAdminGroup.ID, actual.ID)
 		assert.Equal(t, keyConfigWithAdminGroup.Name, actual.Name)
@@ -596,7 +631,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 
 	t.Run("Should allow access when user belongs to admin group", func(t *testing.T) {
 		// Create context with user's IAM groups including the admin group
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
@@ -616,7 +651,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 		})
 		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
 
-		ctx := testutils.InjectClientDataIntoContext(
+		ctx := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAuditorGroupIAM, "some_other_group"},
@@ -630,7 +665,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 
 	t.Run("Should deny access when user does not belong to admin group", func(t *testing.T) {
 		// Create context with user's IAM groups NOT including the admin group
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{"KMS_different_group", "some_other_group"},
@@ -645,11 +680,11 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 		ctxWithoutGroups := testutils.CreateCtxWithTenant(tenant)
 
 		_, err := m.GetKeyConfigurationByID(ctxWithoutGroups, expected.ID)
-		assert.ErrorIs(t, err, cmkcontext.ErrExtractClientData)
+		assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 	})
 	t.Run("Should deny access when empty groups in context", func(t *testing.T) {
 		// Test with empty groups slice - should work as before
-		ctxWithEmptyGroups := testutils.InjectClientDataIntoContext(
+		ctxWithEmptyGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{},
@@ -675,7 +710,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 	})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
 
 	testutils.CreateTestEntities(ctx, t, r, key, expected, adminGroup, keyConfigWithAdminGroup)
 
@@ -684,8 +719,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Name:        ptr.PointTo("test-name"),
-				Description: ptr.PointTo("test-description"),
+				Name:        new("test-name"),
+				Description: new("test-description"),
 			},
 		)
 		assert.NoError(t, err)
@@ -702,8 +737,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Description: ptr.PointTo("test-description"),
-				Name:        ptr.PointTo(""),
+				Description: new("test-description"),
+				Name:        new(""),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrNameCannotBeEmpty)
@@ -714,8 +749,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Description: ptr.PointTo("test-description"),
-				Name:        ptr.PointTo("   "),
+				Description: new("test-description"),
+				Name:        new("   "),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrNameCannotBeEmpty)
@@ -726,8 +761,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			uuid.New(),
 			cmkapi.KeyConfigurationPatch{
-				Description: ptr.PointTo("test-description"),
-				Name:        ptr.PointTo("test-name"),
+				Description: new("test-description"),
+				Name:        new("test-name"),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
@@ -744,8 +779,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctx,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Description: ptr.PointTo("test-description"),
-				Name:        ptr.PointTo("test-name"),
+				Description: new("test-description"),
+				Name:        new("test-name"),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrUpdateKeyConfiguration)
@@ -753,7 +788,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 
 	t.Run("Should allow update when user belongs to admin group", func(t *testing.T) {
 		// Create context with proper client data including user's IAM groups
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
@@ -763,8 +798,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctxWithGroups,
 			keyConfigWithAdminGroup.ID,
 			cmkapi.KeyConfigurationPatch{
-				Name:        ptr.PointTo("updated-name"),
-				Description: ptr.PointTo("updated-description"),
+				Name:        new("updated-name"),
+				Description: new("updated-description"),
 			},
 		)
 		assert.NoError(t, err)
@@ -775,7 +810,7 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 
 	t.Run("Should deny update when user does not belongs to admin group", func(t *testing.T) {
 		// Create context with proper client data with user's IAM groups NOT including the admin group
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{"KMS_different_group", "some_other_group"},
@@ -785,8 +820,8 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctxWithGroups,
 			keyConfigWithAdminGroup.ID,
 			cmkapi.KeyConfigurationPatch{
-				Name:        ptr.PointTo("updated-name"),
-				Description: ptr.PointTo("updated-description"),
+				Name:        new("updated-name"),
+				Description: new("updated-description"),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
@@ -799,16 +834,16 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctxWithoutGroups,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Name:        ptr.PointTo("backward-compat-name"),
-				Description: ptr.PointTo("backward-compat-description"),
+				Name:        new("backward-compat-name"),
+				Description: new("backward-compat-description"),
 			},
 		)
-		assert.ErrorIs(t, err, cmkcontext.ErrExtractClientData)
+		assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 	})
 
 	t.Run("Should deny update when empty groups in context", func(t *testing.T) {
 		// Test with empty groups slice - should work as before
-		ctxWithEmptyGroups := testutils.InjectClientDataIntoContext(
+		ctxWithEmptyGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{},
@@ -818,11 +853,162 @@ func TestUpdateKeyConfigurations(t *testing.T) {
 			ctxWithEmptyGroups,
 			expected.ID,
 			cmkapi.KeyConfigurationPatch{
-				Name:        ptr.PointTo("empty-groups-name"),
-				Description: ptr.PointTo("empty-groups-description"),
+				Name:        new("empty-groups-name"),
+				Description: new("empty-groups-description"),
 			},
 		)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
+	})
+
+	t.Run("Should update primary key and existing events", func(t *testing.T) {
+		keyConfigID := uuid.New()
+
+		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfigID
+		})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfigID
+		})
+
+		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.ID = keyConfigID
+			k.PrimaryKeyID = &oldPrimaryKey.ID
+		})
+
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = new(keyConfig.ID)
+		})
+
+		data := eventprocessor.SystemActionJobData{
+			KeyIDTo: oldPrimaryKey.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		event := &model.Event{
+			Identifier: uuid.NewString(),
+			Type:       proto.TaskType_SYSTEM_SWITCH.String(),
+			Data:       dataBytes,
+		}
+
+		testutils.CreateTestEntities(ctx, t, r, oldPrimaryKey, key, keyConfig, sys, event)
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		keyConfig, err = m.UpdateKeyConfigurationByID(
+			ctx,
+			keyConfig.ID,
+			cmkapi.KeyConfigurationPatch{
+				PrimaryKeyID: new(key.ID),
+			},
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, key.ID, *keyConfig.PrimaryKeyID)
+
+		_, err = r.First(ctx, event, *repo.NewQuery())
+		assert.NoError(t, err)
+		jobData, err := eventprocessor.GetSystemJobData(event)
+		assert.NoError(t, err)
+		assert.Equal(t, key.ID.String(), jobData.KeyIDTo)
+	})
+
+	t.Run("Should error on set primary on target disabled key", func(t *testing.T) {
+		keyConfigID := uuid.New()
+		sourceKey := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateENABLED
+			k.KeyConfigurationID = keyConfigID
+		})
+
+		targetKey := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateDISABLED
+			k.KeyConfigurationID = keyConfigID
+		})
+
+		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.ID = keyConfigID
+			k.PrimaryKeyID = &sourceKey.ID
+		})
+		testutils.CreateTestEntities(ctx, t, r, sourceKey, keyConfig, targetKey)
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		_, err := m.UpdateKeyConfigurationByID(
+			ctx,
+			keyConfig.ID,
+			cmkapi.KeyConfigurationPatch{
+				PrimaryKeyID: new(targetKey.ID),
+			},
+		)
+		assert.ErrorIs(t, err, manager.ErrKeyIsNotEnabled)
+	})
+
+	t.Run("Should error on set primary on source disabled key", func(t *testing.T) {
+		keyConfigID := uuid.New()
+		sourceKey := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateDISABLED
+			k.KeyConfigurationID = keyConfigID
+		})
+
+		targetKey := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateENABLED
+			k.KeyConfigurationID = keyConfigID
+		})
+		keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+			k.PrimaryKeyID = &sourceKey.ID
+		})
+		testutils.CreateTestEntities(ctx, t, r, sourceKey, keyConfig, targetKey)
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		_, err := m.UpdateKeyConfigurationByID(
+			ctx,
+			keyConfig.ID,
+			cmkapi.KeyConfigurationPatch{
+				PrimaryKeyID: new(targetKey.ID),
+			},
+		)
+		assert.ErrorIs(t, err, manager.ErrKeyIsNotEnabled)
+	})
+
+	t.Run("Should use old pkey on switch event when system updating", func(t *testing.T) {
+		keyConfigID := uuid.New()
+		oldPrimaryKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfigID
+		})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfigID
+		})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.PrimaryKeyID = &oldPrimaryKey.ID
+		})
+
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.KeyConfigurationID = new(keyConfig.ID)
+		})
+
+		testutils.CreateTestEntities(ctx, t, r, oldPrimaryKey, key, keyConfig, sys)
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		_, err := m.UpdateKeyConfigurationByID(ctx, keyConfig.ID, cmkapi.KeyConfigurationPatch{
+			PrimaryKeyID: new(key.ID),
+		})
+
+		assert.NoError(t, err)
+
+		orbitalCtx := cmkcontext.CreateTenantContext(ctx, "orbital")
+		jobFromDB := &testutils.OrbitalJob{}
+		_, err = r.First(
+			orbitalCtx,
+			jobFromDB,
+			*repo.NewQuery().Where(
+				repo.NewCompositeKeyGroup(
+					repo.NewCompositeKey().Where("external_id", sys.ID.String()),
+				),
+			),
+		)
+		assert.NoError(t, err)
+
+		data := &eventprocessor.SystemActionJobData{}
+		err = json.Unmarshal(jobFromDB.Data, data)
+		assert.NoError(t, err)
+		assert.Equal(t, oldPrimaryKey.ID.String(), data.KeyIDFrom)
 	})
 }
 
@@ -835,7 +1021,8 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 	})
 
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{expected.AdminGroup.IAMIdentifier})
+	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
 
 	bytes, err := json.Marshal(&[]string{"tag1"})
 	assert.NoError(t, err)
@@ -856,7 +1043,8 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 			*repo.NewQuery().Where(
 				repo.NewCompositeKeyGroup(
 					repo.NewCompositeKey().Where(
-						repo.IDField, expected.ID),
+						repo.IDField, expected.ID,
+					),
 				),
 			),
 		)
@@ -871,18 +1059,30 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 	t.Run("Should error on delete key configuration on connected systems", func(t *testing.T) {
 		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 		sys := testutils.NewSystem(func(s *model.System) {
-			s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+			s.KeyConfigurationID = new(keyConfig.ID)
 		})
-		ctx := testutils.InjectClientDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
 
 		testutils.CreateTestEntities(ctx, t, r, keyConfig, sys)
 		err := m.DeleteKeyConfigurationByID(ctx, keyConfig.ID)
-		assert.ErrorIs(t, err, manager.ErrDeleteKeyConfiguration)
+		assert.ErrorIs(t, err, manager.ErrConnectedSystemToKeyConfig)
+	})
+
+	t.Run("Should error on delete key configuration on connected keys", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		ctx := testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConfig.AdminGroup.IAMIdentifier})
+
+		testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
+		err := m.DeleteKeyConfigurationByID(ctx, keyConfig.ID)
+		assert.ErrorIs(t, err, manager.ErrConnectedKeysToKeyConfig)
 	})
 
 	t.Run("Should allow access when user belongs to admin group", func(t *testing.T) {
 		// Create context with proper client data including user's IAM groups
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{testAdminGroupIAM, "some_other_group"},
@@ -898,7 +1098,7 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, keyConfigForDelete)
 
 		// Create context with proper client data with user's IAM groups NOT including the admin group
-		ctxWithGroups := testutils.InjectClientDataIntoContext(
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{"KMS_different_group", "some_other_group"},
@@ -914,7 +1114,7 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 		testutils.CreateTestEntities(ctx, t, r, keyConfigForDelete)
 
 		// Test with empty groups slice - should work as before
-		ctxWithEmptyGroups := testutils.InjectClientDataIntoContext(
+		ctxWithEmptyGroups := testutils.InjectBusinessUserDataIntoContext(
 			ctx,
 			"example-user",
 			[]string{},
@@ -958,7 +1158,7 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 
 		_, privateKey, err = certManager.RequestNewCertificate(ctx, privateKey,
 			model.RequestCertArgs{
-				CertPurpose: model.CertificatePurposeTenantDefault,
+				CertPurpose: model.CertificatePurposeHYOKManagement,
 				Supersedes:  nil,
 				CommonName:  "MyCert",
 				Locality:    []string{"LOCAL/CMK"},
@@ -968,16 +1168,295 @@ func TestTenantConfigManager_GetCertificates(t *testing.T) {
 		certs, err := m.GetClientCertificates(ctx)
 
 		assert.NoError(t, err)
-		assert.Len(t, certs[model.CertificatePurposeTenantDefault], 1)
+		assert.Len(t, certs[model.CertificatePurposeHYOKManagement], 1)
 		assert.Len(t, certs[model.CertificatePurposeCrypto], 1)
-		assert.Equal(t, manager.NewClientCertificateSubjectFromPKIX(tenantSubjectPKIX),
-			certs[model.CertificatePurposeTenantDefault][0].Subject)
+		assert.Equal(t, model.ToCertificateSubjectFromPKIX(tenantSubjectPKIX),
+			certs[model.CertificatePurposeHYOKManagement][0].Subject)
 		assert.Equal(t, TestCertURL,
-			certs[model.CertificatePurposeTenantDefault][0].RootCA)
+			certs[model.CertificatePurposeHYOKManagement][0].RootCA)
 
 		assert.Contains(t,
 			certs[model.CertificatePurposeCrypto][0].Subject.CommonName, cryptoSubject.CommonNamePrefix)
 		assert.Equal(t, TestCertURL,
 			certs[model.CertificatePurposeCrypto][0].RootCA)
+	})
+}
+
+// SetupKeyConfigManagerWithLimit creates a KeyConfigManager wired with a TenantConfigManager
+// that uses the given systemLimit as the cluster default.
+func SetupKeyConfigManagerWithLimit(t *testing.T, systemLimit int) (*manager.KeyConfigManager, *multitenancy.DB, string) {
+	t.Helper()
+
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		WithOrbital: true,
+	})
+	r := sql.NewRepository(db)
+
+	cfg := &config.Config{
+		Certificates: config.Certificates{
+			RootCertURL:  TestCertURL,
+			ValidityDays: config.MinCertificateValidityDays,
+		},
+		Database: dbCfg,
+		Tenant:   config.Tenant{SystemLimit: systemLimit},
+	}
+
+	cmkAuditor := auditor.New(t.Context(), cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
+	assert.NoError(t, err)
+
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(), r, &config.Config{})
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
+	tagManager := manager.NewTagManager(authzRepo)
+	tenantCfgManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil)
+
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
+	assert.NoError(t, err)
+
+	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, tenantCfgManager)
+
+	return m, db, tenants[0]
+}
+
+func TestCanConnectSystemsLimit(t *testing.T) {
+	makeKeyConfigWithEnabledKey := func(t *testing.T, ctx context.Context, r *sql.ResourceRepository) *model.KeyConfiguration {
+		t.Helper()
+		group := testutils.NewGroup(func(_ *model.Group) {})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.AdminGroupID = group.ID
+		})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.State = cmkapi.KeyStateENABLED
+			k.KeyConfigurationID = keyConfig.ID
+		})
+		// Create keyConfig first (no PrimaryKeyID yet), then key, then set PrimaryKeyID.
+		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, key)
+		keyConfig.PrimaryKeyID = &key.ID
+		_, err := r.Patch(ctx, keyConfig, *repo.NewQuery())
+		assert.NoError(t, err)
+		return keyConfig
+	}
+
+	t.Run("allows connection when count is below limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithLimit(t, 2)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfigWithEnabledKey(t, ctx, r)
+
+		err := m.EnforceSystemLimit(ctx, keyConfig.ID)
+		assert.NoError(t, err)
+	})
+
+	t.Run("blocks connection when count equals limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfigWithEnabledKey(t, ctx, r)
+
+		// Add one system to reach the limit
+		existingSystem := &model.System{
+			ID:                 uuid.New(),
+			Identifier:         uuid.NewString(),
+			Type:               model.SystemTypeSYSTEM,
+			KeyConfigurationID: &keyConfig.ID,
+		}
+		testutils.CreateTestEntities(ctx, t, r, existingSystem)
+
+		err := m.EnforceSystemLimit(ctx, keyConfig.ID)
+		assert.ErrorIs(t, err, manager.ErrSystemLimitExceeded)
+	})
+
+	t.Run("does not block when limit is zero", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithLimit(t, 0)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfigWithEnabledKey(t, ctx, r)
+
+		// Add many systems — should still be fine with limit=0
+		for range 5 {
+			sys := &model.System{
+				ID:                 uuid.New(),
+				Identifier:         uuid.NewString(),
+				Type:               model.SystemTypeSYSTEM,
+				KeyConfigurationID: &keyConfig.ID,
+			}
+			testutils.CreateTestEntities(ctx, t, r, sys)
+		}
+
+		err := m.EnforceSystemLimit(ctx, keyConfig.ID)
+		assert.NoError(t, err)
+	})
+
+	t.Run("blocks when in-flight system targets the key config", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfigWithEnabledKey(t, ctx, r)
+
+		// System with target_key_configuration_id set (event in flight, not yet linked)
+		inFlight := &model.System{
+			ID:                       uuid.New(),
+			Identifier:               uuid.NewString(),
+			Type:                     model.SystemTypeSYSTEM,
+			TargetKeyConfigurationID: &keyConfig.ID,
+		}
+		testutils.CreateTestEntities(ctx, t, r, inFlight)
+
+		err := m.EnforceSystemLimit(ctx, keyConfig.ID)
+		assert.ErrorIs(t, err, manager.ErrSystemLimitExceeded)
+	})
+}
+
+// SetupKeyConfigManagerWithKeyLimit creates a KeyConfigManager wired with a TenantConfigManager
+// that uses the given keyLimit as the cluster default.
+func SetupKeyConfigManagerWithKeyLimit(t *testing.T, keyLimit int) (*manager.KeyConfigManager, *multitenancy.DB, string) {
+	t.Helper()
+
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		WithOrbital: true,
+	})
+	r := sql.NewRepository(db)
+
+	cfg := &config.Config{
+		Certificates: config.Certificates{
+			RootCertURL:  TestCertURL,
+			ValidityDays: config.MinCertificateValidityDays,
+		},
+		Database: dbCfg,
+		Tenant:   config.Tenant{KeyLimit: keyLimit},
+	}
+
+	cmkAuditor := auditor.New(t.Context(), cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
+	require.NoError(t, err)
+
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(), r, &config.Config{})
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
+	tagManager := manager.NewTagManager(authzRepo)
+	tenantCfgManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil)
+
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
+	require.NoError(t, err)
+
+	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, tenantCfgManager)
+
+	return m, db, tenants[0]
+}
+
+func TestEnforceKeyLimit(t *testing.T) {
+	makeKeyConfig := func(t *testing.T, ctx context.Context, r *sql.ResourceRepository) *model.KeyConfiguration {
+		t.Helper()
+		group := testutils.NewGroup(func(_ *model.Group) {})
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.AdminGroupID = group.ID
+		})
+		testutils.CreateTestEntities(ctx, t, r, group, keyConfig)
+		return keyConfig
+	}
+
+	t.Run("allows creation when count is below limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyLimit(t, 2)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfig(t, ctx, r)
+
+		err := m.EnforceKeyLimit(ctx, keyConfig.ID)
+		assert.NoError(t, err)
+	})
+
+	t.Run("blocks creation when count equals limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfig(t, ctx, r)
+
+		existingKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.State = cmkapi.KeyStateENABLED
+		})
+		testutils.CreateTestEntities(ctx, t, r, existingKey)
+
+		err := m.EnforceKeyLimit(ctx, keyConfig.ID)
+		assert.ErrorIs(t, err, manager.ErrKeyLimitExceeded)
+	})
+
+	t.Run("does not block when limit is zero", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyLimit(t, 0)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfig(t, ctx, r)
+
+		for range 5 {
+			k := testutils.NewKey(func(k *model.Key) {
+				k.KeyConfigurationID = keyConfig.ID
+				k.State = cmkapi.KeyStateENABLED
+			})
+			testutils.CreateTestEntities(ctx, t, r, k)
+		}
+
+		err := m.EnforceKeyLimit(ctx, keyConfig.ID)
+		assert.NoError(t, err)
+	})
+
+	t.Run("counts pending and active keys toward limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfig(t, ctx, r)
+
+		pendingKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.State = cmkapi.KeyStatePENDINGCREATION
+		})
+		testutils.CreateTestEntities(ctx, t, r, pendingKey)
+
+		err := m.EnforceKeyLimit(ctx, keyConfig.ID)
+		assert.ErrorIs(t, err, manager.ErrKeyLimitExceeded)
+	})
+
+	t.Run("does not count deleted keys toward limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfig(t, ctx, r)
+
+		deletedKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.State = cmkapi.KeyStateDELETED
+		})
+		testutils.CreateTestEntities(ctx, t, r, deletedKey)
+
+		err := m.EnforceKeyLimit(ctx, keyConfig.ID)
+		assert.NoError(t, err)
+	})
+
+	t.Run("does not count detached keys toward limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		keyConfig := makeKeyConfig(t, ctx, r)
+
+		detachedKey := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.State = cmkapi.KeyStateDETACHED
+		})
+		testutils.CreateTestEntities(ctx, t, r, detachedKey)
+
+		err := m.EnforceKeyLimit(ctx, keyConfig.ID)
+		assert.NoError(t, err)
 	})
 }

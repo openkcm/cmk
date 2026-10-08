@@ -1,21 +1,25 @@
 package dbmigration_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type GooseVersion struct {
@@ -105,16 +109,15 @@ func assertVersion(t *testing.T, dbCon *multitenancy.DB, version int64, versionT
 
 func TestMissingSchemaScripts(t *testing.T) {
 	gooseMigrated, gooseTenant, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
-		CreateDatabase:      true,
-		WithIsolatedService: true,
+		CreateDatabase: true,
 	})
 
 	// There is no current support to create a tenant if shared version is set to 0
 	// due to missing tenant table. Tenant must be created on a different step
 	gormMigrated, _, _ := testutils.NewTestDB(t, testutils.TestDBConfig{
 		CreateDatabase: true,
-		SharedVersion:  ptr.PointTo(int64(0)),
-		TenantVersion:  ptr.PointTo(int64(0)),
+		SharedVersion:  new(int64(0)),
+		TenantVersion:  new(int64(0)),
 	}, testutils.WithGenerateTenants(0))
 
 	assert.NoError(t, gormMigrated.MigrateSharedModels(t.Context()))
@@ -173,6 +176,7 @@ func TestSchemaMigrations(t *testing.T) {
 		downgrade       bool
 		version         int64
 		assertMigration func(t *testing.T) func(db *multitenancy.DB) error
+		setupData       func(t *testing.T) func(db *multitenancy.DB) error
 	}{
 		{
 			name:      "Should up shared/00001_init_shared.sql",
@@ -350,40 +354,396 @@ func TestSchemaMigrations(t *testing.T) {
 			version:   5,
 		},
 		{
-			name:      "Should up tenant/00006_refactor_key_version_table.sql",
-			downgrade: false,
+			name:      "Should up tenant/00006_refactor_key_version.sql",
+			downgrade: true,
 			target:    db.TenantTarget,
 			version:   6,
 		},
 		{
-			name:      "Should down tenant/00006_refactor_key_version_table.sql",
+			name:      "Should down tenant/00006_refactor_key_version.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
 			version:   6,
 		},
 		{
 			name:      "Should up tenant/00007_delete_user_names.sql",
-			downgrade: true,
+			downgrade: false,
 			target:    db.TenantTarget,
-			version:   5,
+			version:   7,
 		},
 		{
 			name:      "Should down tenant/00007_delete_user_names.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
-			version:   5,
+			version:   7,
 		},
 		{
-			name:      "Should up tenant/00006_delete_user_names.sql",
+			name:      "Should up tenant/00008_add_minimum_approval_count.sql",
 			downgrade: false,
 			target:    db.TenantTarget,
-			version:   6,
+			version:   8,
 		},
 		{
-			name:      "Should down tenant/00006_delete_user_names.sql",
+			name:      "Should down tenant/00008_add_minimum_approval_count.sql",
 			downgrade: true,
 			target:    db.TenantTarget,
-			version:   6,
+			version:   8,
+		},
+		{
+			name:      "Should up tenant/00009_add_under_workflow_column_to_system.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   9,
+		},
+		{
+			name:      "Should down tenant/00009_add_under_workflow_column_to_system.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   9,
+		},
+		{
+			name:      "Should up tenant/00010_add_wf_approver_groups_table.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   10,
+		},
+		{
+			name:      "Should down tenant/00010_add_wf_approver_groups_table.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   10,
+		},
+		{
+			name:      "Should up tenant/00011_delete_key_primary.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   11,
+		},
+		{
+			name:      "Should down tenant/00011_delete_key_primary.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   11,
+		},
+		{
+			name:      "Should up tenant/00012_add_enum_check_constraints.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   12,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					cases := []struct {
+						name string
+						sql  string
+					}{
+						{
+							name: "workflows.state",
+							sql:  `INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type) VALUES (now(), now(), gen_random_uuid(), 'BOGUS', 'u', 'KEY', gen_random_uuid(), 'DELETE')`,
+						},
+						{
+							name: "workflows.action_type",
+							sql:  `INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type) VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'KEY', gen_random_uuid(), 'BOGUS')`,
+						},
+						{
+							name: "workflows.artifact_type",
+							sql:  `INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type) VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'BOGUS', gen_random_uuid(), 'DELETE')`,
+						},
+						{
+							name: "keys.state",
+							sql:  `INSERT INTO keys (created_at, updated_at, id, key_configuration_id, name, key_type, algorithm, provider, region, state) VALUES (now(), now(), gen_random_uuid(), '00000000-0000-0000-0000-000000000001'::uuid, 'n', 't', 'a', 'p', 'r', 'BOGUS')`,
+						},
+						{
+							name: "systems.status",
+							sql:  `INSERT INTO systems (id, identifier, region, type, status) VALUES (gen_random_uuid(), 'i', 'r', 't', 'BOGUS')`,
+						},
+					}
+					for _, c := range cases {
+						// Wrap each insert in its own transaction so a CHECK
+						// violation rolls back without aborting the others.
+						err := con.Transaction(func(tx *multitenancy.DB) error {
+							return tx.Exec(c.sql).Error
+						})
+						assert.ErrorContains(t, err, "violates check constraint",
+							"%s: insert with invalid value should be rejected by CHECK", c.name)
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00012_add_enum_check_constraints.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   12,
+		},
+		{
+			name:      "Should up tenant/00013_add_under_workflow_column_to_key.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   13,
+		},
+		{
+			name:      "Should down tenant/00013_add_under_workflow_column_to_key.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   13,
+		},
+		{
+			name:      "Should up tenant/00014_add_system_target_keyconfig.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   14,
+		},
+		{
+			name:      "Should down tenant/00014_add_system_target_keyconfig.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   14,
+		},
+		{
+			name:      "Should up tenant/00015_add_more_enum_check_constraints.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   15,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					// Seed a valid keys row so import_params inserts satisfy the FK.
+					keyID := uuid.New()
+					seedErr := con.Transaction(func(tx *multitenancy.DB) error {
+						return tx.Exec(`INSERT INTO keys (created_at, updated_at, id, key_configuration_id, name, key_type, algorithm, provider, region, state) VALUES (now(), now(), ?, gen_random_uuid(), 'seed-key', 'BYOK', 'AES256', 'TEST', 'us-east-1', 'ENABLED')`, keyID).Error
+					})
+					require.NoError(t, seedErr, "failed to seed valid keys row")
+
+					cases := []struct {
+						name string
+						sql  string
+						args []any
+					}{
+						{
+							name: "keys.key_type",
+							sql:  `INSERT INTO keys (created_at, updated_at, id, key_configuration_id, name, key_type, algorithm, provider, region, state) VALUES (now(), now(), ?, ?, 'n', 'BOGUS', 'AES256', 'p', 'r', 'ENABLED')`,
+							args: []any{uuid.New(), uuid.New()},
+						},
+						{
+							name: "keys.algorithm",
+							sql:  `INSERT INTO keys (created_at, updated_at, id, key_configuration_id, name, key_type, algorithm, provider, region, state) VALUES (now(), now(), ?, ?, 'n', 'BYOK', 'BOGUS', 'p', 'r', 'ENABLED')`,
+							args: []any{uuid.New(), uuid.New()},
+						},
+						{
+							name: "import_params.wrapping_alg",
+							sql:  `INSERT INTO import_params (created_at, updated_at, key_id, wrapping_alg, hash_function, public_key_pem) VALUES (now(), now(), ?, 'BOGUS', 'SHA256', 'pem')`,
+							args: []any{keyID},
+						},
+						{
+							name: "import_params.hash_function",
+							sql:  `INSERT INTO import_params (created_at, updated_at, key_id, wrapping_alg, hash_function, public_key_pem) VALUES (now(), now(), ?, 'CKM_RSA_AES_KEY_WRAP', 'BOGUS', 'pem')`,
+							args: []any{keyID},
+						},
+						{
+							name: "workflows.parameters_resource_type",
+							sql:  `INSERT INTO workflows (created_at, updated_at, id, state, initiator_id, artifact_type, artifact_id, action_type, parameters_resource_type) VALUES (now(), now(), gen_random_uuid(), 'INITIAL', 'u', 'KEY', gen_random_uuid(), 'DELETE', 'BOGUS')`,
+						},
+						{
+							name: "systems.type",
+							sql:  `INSERT INTO systems (id, identifier, region, type, status) VALUES (gen_random_uuid(), 'i', 'r', 'BOGUS', 'CONNECTED')`,
+						},
+						{
+							name: "certificates.state",
+							sql:  `INSERT INTO certificates (id, fingerprint, common_name, state, creation_date, expiration_date) VALUES (gen_random_uuid(), 'fp', 'cn', 'BOGUS', now(), now())`,
+						},
+						{
+							name: "certificates.purpose",
+							sql:  `INSERT INTO certificates (id, fingerprint, common_name, purpose, creation_date, expiration_date) VALUES (gen_random_uuid(), 'fp', 'cn', 'BOGUS', now(), now())`,
+						},
+					}
+					for _, c := range cases {
+						// Wrap each insert in its own transaction so a CHECK
+						// violation rolls back without aborting the others.
+						err := con.Transaction(func(tx *multitenancy.DB) error {
+							return tx.Exec(c.sql, c.args...).Error
+						})
+						assert.ErrorContains(t, err, "violates check constraint",
+							"%s: insert with invalid value should be rejected by CHECK", c.name)
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00015_add_more_enum_check_constraints.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   15,
+		},
+		{
+			name:      "Should up tenant/00016_add_pending_creation_key_state.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   16,
+		},
+		{
+			name:      "Should down tenant/00016_add_pending_creation_key_state.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   16,
+		},
+		{
+			name:      "Should up tenant/00017_add_status_to_keyversions.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   17,
+		},
+		{
+			name:      "Should down tenant/00017_add_status_to_keyversions.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   17,
+		},
+		{
+			name:      "Should up tenant/00018_add_pending_registration_key_state.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   18,
+		},
+		{
+			name:      "Should down tenant/00018_add_pending_registration_key_state.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   18,
+		},
+		{
+			name:      "Should up tenant/00019_add_workflow_config_constraints.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   19,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					cases := []struct {
+						name string
+						sql  string
+					}{
+						{
+							name: "minimumApprovals below min (1)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"minimumApprovals": 1}')`,
+						},
+						{
+							name: "minimumApprovals above max (6)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"minimumApprovals": 6}')`,
+						},
+						{
+							name: "retentionPeriodDays below min (6)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"retentionPeriodDays": 6}')`,
+						},
+						{
+							name: "retentionPeriodDays above max (31)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"retentionPeriodDays": 31}')`,
+						},
+						{
+							name: "maxExpiryPeriodDays below min (0)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"maxExpiryPeriodDays": 0}')`,
+						},
+						{
+							name: "maxExpiryPeriodDays above max (8)",
+							sql:  `INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"maxExpiryPeriodDays": 8}')`,
+						},
+					}
+					for _, c := range cases {
+						err := con.Transaction(func(tx *multitenancy.DB) error {
+							return tx.Exec(c.sql).Error
+						})
+						assert.ErrorContains(t, err, "violates check constraint",
+							"%s: insert with out-of-bounds value should be rejected", c.name)
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00019_add_workflow_config_constraints.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   19,
+		},
+		{
+			name:      "Should up tenant/00020_flatten_tenant_configs.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   20,
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var typeExists, valueTextExists bool
+					err := db.Raw(`
+						SELECT
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'type'),
+							EXISTS (SELECT 1 FROM information_schema.columns
+								WHERE table_name = 'tenant_configs' AND column_name = 'value_text')
+					`).Row().Scan(&typeExists, &valueTextExists)
+					assert.NoError(t, err)
+					assert.True(t, typeExists, "type column must be added")
+					assert.True(t, valueTextExists, "value_text column must be added")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00020_flatten_tenant_configs.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   20,
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var valueTextExists bool
+					err := db.Raw(`
+						SELECT EXISTS (SELECT 1 FROM information_schema.columns
+							WHERE table_name = 'tenant_configs' AND column_name = 'value_text')
+					`).Row().Scan(&valueTextExists)
+					assert.NoError(t, err)
+					assert.False(t, valueTextExists, "value_text column must be dropped")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should up tenant/00021_add_primary_key_id_fkey.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   21,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					groupID := uuid.New()
+					if err := db.Exec(`INSERT INTO "group" (id, name, description, role, iam_identifier) VALUES (?, 'g', 'd', 'r', 'i')`, groupID).Error; err != nil {
+						return err
+					}
+					return db.Exec(`INSERT INTO key_configurations (created_at, updated_at, id, name, admin_group_id, creator_id, primary_key_id) VALUES (now(), now(), '00000000-0000-0000-0000-000000000021', 'kc-orphan', ?, 'c', ?)`, groupID, uuid.New().String()).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					var primaryKeyID *string
+					err := db.Raw(`SELECT primary_key_id FROM key_configurations WHERE id = '00000000-0000-0000-0000-000000000021'`).Scan(&primaryKeyID).Error
+					assert.NoError(t, err)
+					assert.Nil(t, primaryKeyID, "orphaned primary_key_id must be nulled by migration 21")
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00021_add_primary_key_id_fkey.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   21,
 		},
 	}
 	for _, tt := range tests {
@@ -403,8 +763,13 @@ func TestSchemaMigrations(t *testing.T) {
 
 			dbCon, m, tenant := setupSchemaMigration(t, SchemaMigrationSetup{
 				Target:  tt.target,
-				Version: ptr.PointTo(setupVersion),
+				Version: new(setupVersion),
 			})
+
+			if tt.setupData != nil {
+				err := dbCon.WithTenant(t.Context(), tenant, tt.setupData(t))
+				assert.NoError(t, err)
+			}
 
 			var migrateVersion int64
 			if tt.downgrade {
@@ -425,7 +790,32 @@ func TestSchemaMigrations(t *testing.T) {
 	}
 }
 
+//nolint:gocognit,cyclop
 func TestDataMigrations(t *testing.T) {
+	cryptoCerts := []config.CryptoCert{
+		{
+			Name: "eu-1",
+			Subject: config.CryptoCertSubject{
+				Locality:           []string{"Locality"},
+				OrganizationalUnit: []string{"OU1", "OU2"},
+				Organization:       []string{"Org"},
+				Country:            []string{"Country"},
+				CommonNamePrefix:   "test_",
+			},
+			RootCA: "https://example.com/root.crt",
+		},
+		{
+			Name: "us-1",
+			Subject: config.CryptoCertSubject{
+				Locality:           []string{"Locality"},
+				OrganizationalUnit: []string{"OU1", "OU2"},
+				Organization:       []string{"Org"},
+				Country:            []string{"Country"},
+				CommonNamePrefix:   "test_",
+			},
+			RootCA: "https://example.com/root.crt",
+		},
+	}
 	tests := []struct {
 		name            string
 		target          db.MigrationTarget
@@ -433,15 +823,724 @@ func TestDataMigrations(t *testing.T) {
 		schemaVersion   *int64
 		assertMigration func(t *testing.T) func(db *multitenancy.DB) error
 		setupData       func(t *testing.T) func(db *multitenancy.DB) error
-	}{}
+		downgrade       bool
+	}{
+		{
+			name:          "Should skip data migration if workflow approvers column does not exists",
+			target:        db.TenantTarget,
+			version:       1,
+			schemaVersion: new(int64(9)),
+		},
+		{
+			name:          "Should migrate up workflow approvers to workflow_approver_groups table",
+			target:        db.TenantTarget,
+			version:       1,
+			schemaVersion: new(int64(10)),
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var count int
+
+					err := db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups`).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 3, count)
+
+					var workflow1ID string
+					err = db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-1'`).Scan(&workflow1ID).Error
+					assert.NoError(t, err)
+
+					err = db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow1ID).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 2, count)
+
+					var workflow2ID string
+					err = db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-2'`).Scan(&workflow2ID).Error
+					assert.NoError(t, err)
+
+					err = db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow2ID).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 1, count)
+
+					var workflow3ID string
+					err = db.Raw(`SELECT id FROM workflows WHERE initiator_id = 'user-3'`).Scan(&workflow3ID).Error
+					assert.NoError(t, err)
+
+					err = db.Raw(`SELECT COUNT(*) FROM workflow_approver_groups WHERE workflow_id = ?`, workflow3ID).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 0, count)
+
+					return nil
+				}
+			},
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					groupID1 := uuid.New()
+					groupID2 := uuid.New()
+					groupID3 := uuid.New()
+					groups := []*model.Group{
+						testutils.NewGroup(func(g *model.Group) {
+							g.ID = groupID1
+						}),
+						testutils.NewGroup(func(g *model.Group) {
+							g.ID = groupID2
+						}),
+						testutils.NewGroup(func(g *model.Group) {
+							g.ID = groupID3
+						}),
+					}
+
+					for _, g := range groups {
+						err := db.Create(g).Error
+						assert.NoError(t, err)
+					}
+
+					wfs := []*model.Workflow{
+						testutils.NewWorkflow(func(w *model.Workflow) {
+							w.ApproverGroupIDs = json.RawMessage(fmt.Sprintf(`["%s", "%s"]`, groupID1, groupID2))
+							w.InitiatorID = "user-1"
+						}),
+						testutils.NewWorkflow(func(w *model.Workflow) {
+							w.ApproverGroupIDs = json.RawMessage(fmt.Sprintf(`["%s"]`, groupID3))
+							w.InitiatorID = "user-2"
+						}),
+						testutils.NewWorkflow(func(w *model.Workflow) {
+							w.InitiatorID = "user-3"
+						}),
+					}
+
+					for _, w := range wfs {
+						// Omit Tasks: at schema v10, workflow_tasks does not exist yet
+						err := db.Omit("Tasks").Create(w).Error
+						assert.NoError(t, err)
+					}
+
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should migrate down 0001",
+			target:        db.TenantTarget,
+			version:       1,
+			schemaVersion: new(int64(10)),
+			downgrade:     true,
+		},
+		{
+			name:          "Should skip data migration 00002 if tenant_configs table does not exist",
+			target:        db.TenantTarget,
+			version:       2,
+			schemaVersion: new(int64(0)),
+		},
+		{
+			name:          "Should clamp out-of-bounds workflow config values",
+			target:        db.TenantTarget,
+			version:       2,
+			schemaVersion: new(int64(18)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					// Single WORKFLOW_CONFIG row with all fields out of bounds.
+					// key is the PRIMARY KEY so only one row per key is allowed.
+					err := db.Exec(`INSERT INTO tenant_configs (key, value) VALUES ('WORKFLOW_CONFIG', '{"minimumApprovals": 1, "retentionPeriodDays": 31, "maxExpiryPeriodDays": 8}'::jsonb)`).Error
+					assert.NoError(t, err)
+
+					// Non-WORKFLOW_CONFIG row should not be touched by the migration.
+					err = db.Exec(`INSERT INTO tenant_configs (key, value) VALUES ('OTHER_CONFIG', '{"minimumApprovals": 1}'::jsonb)`).Error
+					assert.NoError(t, err)
+
+					return nil
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					// Verify each field was clamped to its boundary value.
+					cases := []struct {
+						desc  string
+						field string
+						want  int
+					}{
+						// minimumApprovals: 1 → clamped to 2 (min)
+						{"minimumApprovals clamped from 1 to 2", "minimumApprovals", 2},
+						// retentionPeriodDays: 31 → clamped to 30 (max)
+						{"retentionPeriodDays clamped from 31 to 30", "retentionPeriodDays", 30},
+						// maxExpiryPeriodDays: 8 → clamped to 7 (max)
+						{"maxExpiryPeriodDays clamped from 8 to 7", "maxExpiryPeriodDays", 7},
+					}
+					for _, c := range cases {
+						var got int
+						err := db.Raw(
+							`SELECT (value->>?)::int FROM tenant_configs WHERE key = 'WORKFLOW_CONFIG'`,
+							c.field,
+						).Scan(&got).Error
+						assert.NoError(t, err)
+						assert.Equal(t, c.want, got, c.desc)
+					}
+
+					// non-WORKFLOW_CONFIG row should be untouched
+					var count int
+					err := db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE key = 'OTHER_CONFIG' AND (value->>'minimumApprovals')::int = 1`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 1, count, "non-WORKFLOW_CONFIG row should not be touched")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should repair keystore config shape into nested roleManagementConfig",
+			target:        db.TenantTarget,
+			version:       3,
+			schemaVersion: new(int64(20)),
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var locality string
+					err := db.Raw(
+						`SELECT value::jsonb -> 'roleManagementConfig' ->> 'localityId'
+						 FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
+					).Scan(&locality).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "loc-1", locality)
+
+					var hasLegacyShape bool
+					err = db.Raw(
+						`SELECT value::jsonb ? 'localityId' FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
+					).Scan(&hasLegacyShape).Error
+					assert.NoError(t, err)
+					assert.False(t, hasLegacyShape, "flat keystore shape must be rewritten to nested")
+
+					return nil
+				}
+			},
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('DEFAULT_KEYSTORE', '{"localityId":"loc-1","commonName":"cn-1"}', '')`,
+					).Error
+				}
+			},
+		},
+		{
+			name:          "Should flatten tenant_configs legacy blobs into typed flat rows",
+			target:        db.TenantTarget,
+			version:       4,
+			schemaVersion: new(int64(20)),
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var count int
+
+					err := db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE "type" = 'workflow'`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 5, count, "all 5 workflow keys must be flattened")
+
+					var enabled string
+					err = db.Raw(
+						`SELECT value_text FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'enabled'`,
+					).Scan(&enabled).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "true", enabled)
+
+					var minApprovals string
+					err = db.Raw(
+						`SELECT value_text FROM tenant_configs WHERE "type" = 'workflow' AND "key" = 'minimum_approvals'`,
+					).Scan(&minApprovals).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "2", minApprovals)
+
+					err = db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE "type" = 'default_keystore'`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 2, count, "locality_id and common_name must be flattened")
+
+					var locality string
+					err = db.Raw(
+						`SELECT value_text FROM tenant_configs WHERE "type" = 'default_keystore' AND "key" = 'locality_id'`,
+					).Scan(&locality).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "loc-1", locality)
+
+					// Legacy blobs are preserved as a read-time fallback for unmigrated tenants.
+					err = db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE length("type") = 0`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 2, count, "legacy blobs must remain")
+
+					return nil
+				}
+			},
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('WORKFLOW_CONFIG', '{"Enabled":true,"MinimumApprovals":2,"RetentionPeriodDays":30,"DefaultExpiryPeriodDays":7,"MaxExpiryPeriodDays":14}', ''),
+							('DEFAULT_KEYSTORE', '{"roleManagementConfig":{"localityId":"loc-1","commonName":"cn-1"}}', '')`,
+					).Error
+				}
+			},
+		},
+		{
+			name:          "Should migrate down 00002",
+			target:        db.TenantTarget,
+			version:       2,
+			schemaVersion: new(int64(18)),
+			downgrade:     true,
+		},
+		{
+			name:          "Should migrate down repair keystore config shape",
+			target:        db.TenantTarget,
+			version:       3,
+			schemaVersion: new(int64(20)),
+			downgrade:     true,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('DEFAULT_KEYSTORE', '{"roleManagementConfig":{"localityId":"loc-1","commonName":"cn-1"}}', '')`,
+					).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var locality string
+					err := db.Raw(
+						`SELECT value::jsonb ->> 'localityId' FROM tenant_configs WHERE "key" = 'DEFAULT_KEYSTORE'`,
+					).Scan(&locality).Error
+					assert.NoError(t, err)
+					assert.Equal(t, "loc-1", locality, "repair down must restore the flat keystore shape")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should migrate down flatten tenant_configs",
+			target:        db.TenantTarget,
+			version:       4,
+			schemaVersion: new(int64(20)),
+			downgrade:     true,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					return db.Exec(
+						`INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('enabled', 'true', 'workflow'),
+							('minimum_approvals', '2', 'workflow')`,
+					).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var count int
+					err := db.Raw(
+						`SELECT COUNT(*) FROM tenant_configs WHERE length("type") > 0`,
+					).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 0, count, "flatten down must remove flat rows")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should flatten default_keystore sub-blob rows into hierarchical flat rows",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('locality_id',
+							 'loc-role',
+							 'default_keystore'),
+							('common_name',
+							 'cn-role',
+							 'default_keystore'),
+							('management_access_data',
+							 '{"paramA":"val-a","paramB":"val-b"}',
+							 'default_keystore'),
+							('key_management_config',
+							 '{"localityId":"loc-key","commonName":"cn-key","accessData":{"paramC":"val-c"}}',
+							 'default_keystore'),
+							('crypto_access_data',
+							 '{"landscape-a":{"subject":"/CN=cert","accessData":{"paramD":"val-d"}}}',
+							 'default_keystore'),
+							('supported_regions',
+							 '[{"name":"region-name-a","technicalName":"region-a"}]',
+							 'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value_text"`
+					}
+					var rows []row
+					err := db.Raw(
+						`SELECT "key", value_text FROM tenant_configs WHERE "type" = 'default_keystore'`,
+					).Scan(&rows).Error
+					assert.NoError(t, err)
+
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+
+					assert.Equal(t, "loc-role", byKey["role_mgmt/locality_id"])
+					assert.Equal(t, "cn-role", byKey["role_mgmt/common_name"])
+					assert.Equal(t, "val-a", byKey["role_mgmt/access_data/paramA"])
+					assert.Equal(t, "val-b", byKey["role_mgmt/access_data/paramB"])
+					assert.Equal(t, "loc-key", byKey["key_mgmt/locality_id"])
+					assert.Equal(t, "cn-key", byKey["key_mgmt/common_name"])
+					assert.Equal(t, "val-c", byKey["key_mgmt/access_data/paramC"])
+					assert.Equal(t, "/CN=cert", byKey["crypto/landscape-a/subject"])
+					assert.Equal(t, "val-d", byKey["crypto/landscape-a/access_data/paramD"])
+					assert.Equal(t, "region-name-a", byKey["supported_region/region-a/name"])
+
+					return nil
+				}
+			},
+		},
+		{
+			// Regression: crypto_access_data stored as JSON null must not cause
+			// "cannot call jsonb_each_text on a non-object" (SQLSTATE 22023).
+			name:          "Should not error when crypto_access_data is JSON null",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('locality_id',           'loc-1',                                    'default_keystore'),
+							('common_name',           'cn-1',                                     'default_keystore'),
+							('management_access_data','{"roleArn":"role-arn-1"}',                 'default_keystore'),
+							('key_management_config', '{"accessData":null,"commonName":"","localityId":""}', 'default_keystore'),
+							('crypto_access_data',    'null',                                     'default_keystore'),
+							('supported_regions',     '[{"name":"Region A","technicalName":"region-a"}]', 'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value_text"`
+					}
+					var rows []row
+					err := db.Raw(`SELECT "key", value_text FROM tenant_configs WHERE "type" = 'default_keystore'`).Scan(&rows).Error
+					assert.NoError(t, err)
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+					assert.Equal(t, "loc-1", byKey["role_mgmt/locality_id"])
+					assert.Equal(t, "cn-1", byKey["role_mgmt/common_name"])
+					assert.Equal(t, "role-arn-1", byKey["role_mgmt/access_data/roleArn"])
+					assert.Equal(t, "Region A", byKey["supported_region/region-a/name"])
+					for k := range byKey {
+						assert.NotContains(t, k, "crypto/", "null crypto_access_data must produce no crypto/ rows")
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should not error when management_access_data is JSON null",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('locality_id',           'loc-1',                                         'default_keystore'),
+							('common_name',           'cn-1',                                          'default_keystore'),
+							('management_access_data','null',                                          'default_keystore'),
+							('key_management_config', '{"accessData":null,"commonName":"","localityId":""}', 'default_keystore'),
+							('crypto_access_data',    'null',                                          'default_keystore'),
+							('supported_regions',     '[{"name":"Region A","technicalName":"region-a"}]', 'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value_text"`
+					}
+					var rows []row
+					err := db.Raw(`SELECT "key", value_text FROM tenant_configs WHERE "type" = 'default_keystore'`).Scan(&rows).Error
+					assert.NoError(t, err)
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+					assert.Equal(t, "loc-1", byKey["role_mgmt/locality_id"])
+					assert.Equal(t, "Region A", byKey["supported_region/region-a/name"])
+					for k := range byKey {
+						assert.NotContains(t, k, "role_mgmt/access_data/", "null management_access_data must produce no role_mgmt/access_data/ rows")
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should not error when key_management_config accessData is JSON null",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('locality_id',           'loc-1',                                         'default_keystore'),
+							('common_name',           'cn-1',                                          'default_keystore'),
+							('management_access_data','{"roleArn":"role-arn-1"}',                      'default_keystore'),
+							('key_management_config', '{"accessData":null,"commonName":"cn-key","localityId":"loc-key"}', 'default_keystore'),
+							('crypto_access_data',    'null',                                          'default_keystore'),
+							('supported_regions',     '[{"name":"Region A","technicalName":"region-a"}]', 'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value_text"`
+					}
+					var rows []row
+					err := db.Raw(`SELECT "key", value_text FROM tenant_configs WHERE "type" = 'default_keystore'`).Scan(&rows).Error
+					assert.NoError(t, err)
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+					assert.Equal(t, "loc-key", byKey["key_mgmt/locality_id"])
+					assert.Equal(t, "cn-key", byKey["key_mgmt/common_name"])
+					for k := range byKey {
+						assert.NotContains(t, k, "key_mgmt/access_data/", "null key_management_config.accessData must produce no key_mgmt/access_data/ rows")
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should not error when crypto entry accessData is JSON null",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('locality_id',           'loc-1',                                         'default_keystore'),
+							('common_name',           'cn-1',                                          'default_keystore'),
+							('management_access_data','{"roleArn":"role-arn-1"}',                      'default_keystore'),
+							('key_management_config', '{"accessData":null,"commonName":"","localityId":""}', 'default_keystore'),
+							('crypto_access_data',    '{"landscape-a":{"subject":"/CN=cert","accessData":null}}', 'default_keystore'),
+							('supported_regions',     '[{"name":"Region A","technicalName":"region-a"}]', 'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value_text"`
+					}
+					var rows []row
+					err := db.Raw(`SELECT "key", value_text FROM tenant_configs WHERE "type" = 'default_keystore'`).Scan(&rows).Error
+					assert.NoError(t, err)
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+					assert.Equal(t, "/CN=cert", byKey["crypto/landscape-a/subject"])
+					for k := range byKey {
+						assert.NotContains(t, k, "crypto/landscape-a/access_data/", "null crypto accessData must produce no access_data/ rows")
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should migrate down flatten default_keystore sub-blobs",
+			target:        db.TenantTarget,
+			version:       5,
+			schemaVersion: new(int64(20)),
+			downgrade:     true,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value_text, "type") VALUES
+							('role_mgmt/locality_id', 'loc-role', 'default_keystore'),
+							('key_mgmt/locality_id',  'loc-key',  'default_keystore')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					var count int
+					err := db.Raw(`
+						SELECT COUNT(*) FROM tenant_configs
+						WHERE "type" = 'default_keystore'
+						  AND (   "key" LIKE 'role_mgmt/%'
+						       OR "key" LIKE 'key_mgmt/%'
+						       OR "key" LIKE 'crypto/%'
+						       OR "key" LIKE 'supported_region/%')
+					`).Scan(&count).Error
+					assert.NoError(t, err)
+					assert.Equal(t, 0, count, "down migration must remove hierarchical flat rows")
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should replace certificate subject with value region for proper subject",
+			target:        db.TenantTarget,
+			version:       6,
+			schemaVersion: new(int64(20)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				t.Chdir(t.TempDir())
+
+				certBytes, err := yaml.Marshal(cryptoCerts)
+				require.NoError(t, err)
+
+				cfg := &config.Config{
+					CryptoLayer: config.CryptoLayer{
+						CertX509Trusts: commoncfg.SourceRef{
+							Source: commoncfg.EmbeddedSourceValue,
+							Value:  string(certBytes),
+						},
+					},
+					Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
+				}
+
+				data, err := yaml.Marshal(cfg)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile("config.yaml", data, 0o600))
+
+				keyAccessData := model.KeyAccessData{
+					// certificateSubject == region: placeholder that must be replaced.
+					"eu-1": cmkapi.KeyAccessDetailsRegion{
+						CertificateSubject: new("eu-1"),
+						IsEditable:         new(false),
+					},
+					// certificateSubject != region: already set, must be left untouched.
+					"us-1": cmkapi.KeyAccessDetailsRegion{
+						CertificateSubject: new("valid-cert-subject"),
+						IsEditable:         new(true),
+					},
+				}
+				seed, err := json.Marshal(keyAccessData)
+				require.NoError(t, err)
+
+				//nolint:dupword
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO keys
+							(created_at, updated_at, id, key_configuration_id, name,
+							 key_type, algorithm, provider, region, crypto_access_data)
+						VALUES (now(), now(), gen_random_uuid(), gen_random_uuid(), ?, 'HYOK', 'AES256', 'noop', 'eu-1', ?::jsonb)
+					`, "k1", string(seed)).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(db *multitenancy.DB) error {
+					var tenantID string
+					if err := db.Raw(
+						`SELECT id FROM public.tenants WHERE schema_name = current_schema()`,
+					).Scan(&tenantID).Error; err != nil {
+						return err
+					}
+					wantSubject := model.NewClientCertificate(cryptoCerts[0], tenantID).Subject.String()
+
+					var raw []byte
+					if err := db.Raw(`SELECT crypto_access_data FROM keys WHERE name = 'k1'`).Scan(&raw).Error; err != nil {
+						return err
+					}
+
+					var res model.KeyAccessData
+					require.NoError(t, json.Unmarshal(raw, &res))
+
+					// Region key unchanged; nested certificateSubject replaced.
+					eu, ok := res["eu-1"]
+					require.True(t, ok, "eu-1 entry must still exist")
+					require.NotNil(t, eu.CertificateSubject)
+					assert.Equal(t, wantSubject, *eu.CertificateSubject,
+						"placeholder subject (== region) must be replaced with the cert subject")
+					require.NotNil(t, eu.IsEditable)
+					assert.False(t, *eu.IsEditable, "other fields must be preserved")
+
+					// us-1's subject differed from the region, so it stays untouched.
+					us, ok := res["us-1"]
+					require.True(t, ok, "us-1 entry must still exist")
+					require.NotNil(t, us.CertificateSubject)
+					assert.Equal(t, "valid-cert-subject", *us.CertificateSubject,
+						"entries whose subject != region must be left untouched")
+
+					return nil
+				}
+			},
+		},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			migration := db.Migration{
-				Type:   db.DataMigration,
-				Target: tt.target,
+				Downgrade: tt.downgrade,
+				Type:      db.DataMigration,
+				Target:    tt.target,
 			}
 
-			setupVersion := tt.version - 1
+			var setupVersion int64
+			if tt.downgrade {
+				setupVersion = tt.version
+			} else {
+				setupVersion = tt.version - 1
+			}
 
 			dbCon, m, tenant := setupDataMigration(t, DataMigrationSetup{
 				Target:        tt.target,
@@ -454,7 +1553,12 @@ func TestDataMigrations(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			migrateVersion := tt.version
+			var migrateVersion int64
+			if tt.downgrade {
+				migrateVersion = tt.version - 1
+			} else {
+				migrateVersion = tt.version
+			}
 
 			_, err := m.MigrateTo(t.Context(), migration, migrateVersion)
 			assert.NoError(t, err)
@@ -466,4 +1570,32 @@ func TestDataMigrations(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFlattenBackfillFailsWhenSchemaMissing verifies the backfill errors (rather
+// than no-ops) when run before the flatten schema, so goose retries it instead of
+// marking it applied and skipping the backfill permanently.
+func TestFlattenBackfillFailsWhenSchemaMissing(t *testing.T) {
+	dbCon, m, tenant := setupDataMigration(t, DataMigrationSetup{
+		Target:        db.TenantTarget,
+		SchemaVersion: new(int64(17)), // before flatten schema (00020)
+		Version:       3,              // repair applied, flatten (4) pending
+	})
+
+	err := dbCon.WithTenant(t.Context(), tenant, func(db *multitenancy.DB) error {
+		return db.Exec(
+			`INSERT INTO tenant_configs ("key", value) VALUES
+				('WORKFLOW_CONFIG', '{"Enabled":true,"MinimumApprovals":2,"RetentionPeriodDays":30,"DefaultExpiryPeriodDays":7,"MaxExpiryPeriodDays":14}')`,
+		).Error
+	})
+	assert.NoError(t, err)
+
+	_, err = m.MigrateTo(t.Context(), db.Migration{
+		Type:   db.DataMigration,
+		Target: db.TenantTarget,
+	}, 4)
+	assert.Error(t, err, "backfill must fail when the flatten schema is absent")
+
+	// Version 4 must remain unapplied so it retries after the schema migration.
+	assertVersion(t, dbCon, 3, db.DataMigrationTable, tenant)
 }

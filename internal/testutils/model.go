@@ -1,22 +1,24 @@
 package testutils
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"strconv"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jxskiss/base62"
 	"github.com/openkcm/orbital"
+	"github.com/stretchr/testify/require"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/internal/repo"
 )
 
 const (
@@ -54,11 +56,12 @@ func NewSystem(m func(*model.System)) *model.System {
 			ID:         uuid.New(),
 			Identifier: uuid.NewString(),
 			Region:     uuid.NewString(),
+			Type:       model.SystemTypeSYSTEM,
 			Properties: make(map[string]string),
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 type KeyConfigOpt func(*model.KeyConfiguration)
@@ -81,7 +84,7 @@ func NewKeyConfig(m func(*model.KeyConfiguration),
 		return keyConfig
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewTag(m func(*model.Tag)) *model.Tag {
@@ -92,21 +95,22 @@ func NewTag(m func(*model.Tag)) *model.Tag {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewKey(m func(*model.Key)) *model.Key {
 	mut := NewMutator(func() model.Key {
 		return model.Key{
-			ID:       uuid.New(),
-			KeyType:  constants.KeyTypeBYOK,
-			Name:     uuid.NewString(),
-			State:    string(cmkapi.KeyStateENABLED),
-			NativeID: ptr.PointTo(uuid.NewString()),
+			ID:        uuid.New(),
+			KeyType:   cmkapi.KeyTypeBYOK,
+			Algorithm: cmkapi.KeyAlgorithmAES256,
+			Name:      uuid.NewString(),
+			State:     cmkapi.KeyStateENABLED,
+			NativeID:  new(uuid.NewString()),
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewKeyVersion(m func(*model.KeyVersion)) *model.KeyVersion {
@@ -120,7 +124,7 @@ func NewKeyVersion(m func(*model.KeyVersion)) *model.KeyVersion {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewGroup(m func(*model.Group)) *model.Group {
@@ -133,26 +137,36 @@ func NewGroup(m func(*model.Group)) *model.Group {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewKeystoreConfig(m func(*model.KeystoreConfig)) *model.KeystoreConfig {
 	mut := NewMutator(func() model.KeystoreConfig {
 		return model.KeystoreConfig{
-			LocalityID: TestLocalityID,
-			CommonName: TestDefaultKeystoreCommonName,
-			ManagementAccessData: map[string]any{
-				"roleArn":        TestRoleArn,
-				"trustAnchorArn": TestTrustAnchorArn,
-				"profileArn":     TestProfileArn,
-				"AccountID":      ValidKeystoreAccountInfo["AccountID"],
-				"UserID":         ValidKeystoreAccountInfo["UserID"],
+			RoleManagementConfig: model.ManagementConfig{
+				LocalityID: TestLocalityID,
+				CommonName: TestDefaultKeystoreCommonName,
+				AccessData: model.KeystoreAccessData{
+					"roleArn":        TestRoleArn,
+					"trustAnchorArn": TestTrustAnchorArn,
+					"profileArn":     TestProfileArn,
+					"AccountID":      ValidKeystoreAccountInfo["AccountID"],
+					"UserID":         ValidKeystoreAccountInfo["UserID"],
+				},
+			},
+			KeyManagementConfig: model.ManagementConfig{
+				LocalityID: TestLocalityID,
+				CommonName: TestDefaultKeystoreCommonName + "-key-mgmt",
+				AccessData: model.KeystoreAccessData{
+					"AccountID": ValidKeystoreAccountInfo["AccountID"],
+					"UserID":    ValidKeystoreAccountInfo["UserID"],
+				},
 			},
 			SupportedRegions: SupportedRegions,
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewKeystore(m func(*model.Keystore)) *model.Keystore {
@@ -167,7 +181,7 @@ func NewKeystore(m func(*model.Keystore)) *model.Keystore {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewCertificate(m func(*model.Certificate)) *model.Certificate {
@@ -175,7 +189,7 @@ func NewCertificate(m func(*model.Certificate)) *model.Certificate {
 	mut := NewMutator(func() model.Certificate {
 		return model.Certificate{
 			ID:             uuid.New(),
-			Purpose:        model.CertificatePurposeTenantDefault,
+			Purpose:        model.CertificatePurposeHYOKManagement,
 			CommonName:     TestTenantCertCommonName,
 			State:          model.CertificateStateActive,
 			CreationDate:   now,
@@ -185,7 +199,7 @@ func NewCertificate(m func(*model.Certificate)) *model.Certificate {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewImportParams(m func(*model.ImportParams)) *model.ImportParams {
@@ -194,28 +208,43 @@ func NewImportParams(m func(*model.ImportParams)) *model.ImportParams {
 			KeyID:              uuid.New(),
 			WrappingAlg:        "CKM_RSA_AES_KEY_WRAP",
 			HashFunction:       "SHA256",
-			Expires:            ptr.PointTo(time.Now().Add(1 * time.Hour)),
+			Expires:            new(time.Now().Add(1 * time.Hour)),
 			ProviderParameters: json.RawMessage{},
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewWorkflow(m func(*model.Workflow)) *model.Workflow {
 	mut := NewMutator(func() model.Workflow {
 		return model.Workflow{
 			ID:           uuid.New(),
-			State:        wfMechanism.StateInitial.String(),
+			State:        model.WorkflowStateInitial,
 			InitiatorID:  uuid.NewString(),
-			ArtifactType: wfMechanism.ArtifactTypeKey.String(),
+			ArtifactType: model.WorkflowArtifactTypeKey,
 			ArtifactID:   uuid.New(),
-			ActionType:   wfMechanism.ActionTypeDelete.String(),
-			Approvers:    []model.WorkflowApprover{{UserID: uuid.NewString()}},
+			ActionType:   model.WorkflowActionTypeDelete,
+			Tasks: []model.WorkflowTask{{
+				ID: uuid.New(), UserID: uuid.NewString(), AssigneeRole: model.AssigneeRoleApprover,
+			}},
+			MinimumApprovalCount: 1, // Default to 1 to match single approver
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
+}
+
+func NewWorkflowApproverGroup(m func(*model.WorkflowApproverGroup)) *model.WorkflowApproverGroup {
+	mut := NewMutator(func() model.WorkflowApproverGroup {
+		return model.WorkflowApproverGroup{
+			ID:         uuid.New(),
+			WorkflowID: uuid.New(),
+			GroupID:    uuid.New(),
+		}
+	})
+
+	return new(mut(m))
 }
 
 func NewEvent(m func(*model.Event)) *model.Event {
@@ -228,34 +257,34 @@ func NewEvent(m func(*model.Event)) *model.Event {
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewWorkflowApprover(m func(approver *model.WorkflowApprover)) *model.WorkflowApprover {
 	mut := NewMutator(func() model.WorkflowApprover {
 		return model.WorkflowApprover{
-			WorkflowID: uuid.New(),
-			UserID:     uuid.NewString(),
-			Workflow:   model.Workflow{},
-			Approved:   sql.NullBool{},
+			ID:           uuid.New(),
+			WorkflowID:   uuid.New(),
+			UserID:       uuid.NewString(),
+			AssigneeRole: model.AssigneeRoleApprover,
+			Workflow:     model.Workflow{},
+			Approved:     sql.NullBool{},
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewKeyLabel(m func(l *model.KeyLabel)) *model.KeyLabel {
 	mut := NewMutator(func() model.KeyLabel {
 		return model.KeyLabel{
-			BaseLabel: model.BaseLabel{
-				ID:    uuid.New(),
-				Value: uuid.NewString(),
-				Key:   uuid.NewString(),
-			},
+			ID:    uuid.New(),
+			Value: uuid.NewString(),
+			Key:   uuid.NewString(),
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
 func NewTenant(m func(t *model.Tenant)) *model.Tenant {
@@ -263,39 +292,97 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 	schema := "_" + base62.EncodeToString([]byte(tenantID))
 	mut := NewMutator(func() model.Tenant {
 		return model.Tenant{
-			TenantModel: multitenancy.TenantModel{
-				SchemaName: schema,
-				DomainURL:  tenantID,
-			},
-			ID:        tenantID,
-			Status:    "STATUS_ACTIVE",
-			Role:      "ROLE_LIVE",
-			OwnerID:   tenantID + "-owner-id",
-			OwnerType: "owner-type",
-			Name:      tenantID,
+			SchemaName: schema,
+			DomainURL:  tenantID,
+			ID:         tenantID,
+			Status:     "STATUS_ACTIVE",
+			Role:       "ROLE_LIVE",
+			OwnerID:    tenantID + "-owner-id",
+			OwnerType:  "owner-type",
+			Name:       tenantID,
 		}
 	})
 
-	return ptr.PointTo(mut(m))
+	return new(mut(m))
 }
 
-func NewWorkflowConfig(m func(m *model.TenantConfig)) *model.TenantConfig {
-	retentionPeriodDays := 30
-	wc := model.WorkflowConfig{
+func NewWorkflowConfig(m func(*model.WorkflowConfig)) *model.WorkflowConfig {
+	wc := &model.WorkflowConfig{
 		Enabled:             true,
 		MinimumApprovals:    1,
-		RetentionPeriodDays: retentionPeriodDays,
+		RetentionPeriodDays: 30,
 	}
-	//nolint:errchkjson
-	configValue, _ := json.Marshal(wc)
-	mut := NewMutator(func() model.TenantConfig {
-		return model.TenantConfig{
-			Key:   constants.WorkflowConfigKey,
-			Value: configValue,
-		}
-	})
+	if m != nil {
+		m(wc)
+	}
 
-	return ptr.PointTo(mut(m))
+	return wc
+}
+
+func WriteWorkflowConfig(ctx context.Context, tb testing.TB, r repo.Repo, wc *model.WorkflowConfig) {
+	tb.Helper()
+
+	const wfType = "workflow"
+	rows := []*model.TenantConfig{
+		{Key: "enabled", Value: strconv.FormatBool(wc.Enabled), Type: wfType},
+		{Key: "minimum_approvals", Value: strconv.Itoa(wc.MinimumApprovals), Type: wfType},
+		{Key: "retention_period_days", Value: strconv.Itoa(wc.RetentionPeriodDays), Type: wfType},
+		{Key: "default_expiry_period_days", Value: strconv.Itoa(wc.DefaultExpiryPeriodDays), Type: wfType},
+		{Key: "max_expiry_period_days", Value: strconv.Itoa(wc.MaxExpiryPeriodDays), Type: wfType},
+	}
+	query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
+	for _, row := range rows {
+		require.NoError(tb, r.Set(ctx, row, *query))
+	}
+}
+
+// WriteKeystoreConfig persists a KeystoreConfig as fully-flattened scalar rows
+// under type = "default_keystore" with hierarchical keys.
+func WriteKeystoreConfig(ctx context.Context, tb testing.TB, r repo.Repo, ks *model.KeystoreConfig) {
+	tb.Helper()
+
+	const (
+		t        = "default_keystore"
+		adPrefix = "access_data/"
+	)
+
+	query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
+
+	writeMgmt := func(mc model.ManagementConfig, keyPrefix string) {
+		rows := make([]*model.TenantConfig, 0, 2+len(mc.AccessData))
+		rows = append(rows,
+			&model.TenantConfig{Key: keyPrefix + "locality_id", Value: mc.LocalityID, Type: t},
+			&model.TenantConfig{Key: keyPrefix + "common_name", Value: mc.CommonName, Type: t},
+		)
+		for k, v := range mc.AccessData {
+			rows = append(rows, &model.TenantConfig{
+				Key: keyPrefix + adPrefix + k, Value: fmt.Sprint(v), Type: t,
+			})
+		}
+		for _, row := range rows {
+			require.NoError(tb, r.Set(ctx, row, *query))
+		}
+	}
+
+	writeMgmt(ks.RoleManagementConfig, "role_mgmt/")
+	writeMgmt(ks.KeyManagementConfig, "key_mgmt/")
+
+	for landscape, cfg := range ks.CryptoAccessData {
+		require.NoError(tb, r.Set(ctx, &model.TenantConfig{
+			Key: "crypto/" + landscape + "/subject", Value: cfg.Subject, Type: t,
+		}, *query))
+		for k, v := range cfg.AccessData {
+			require.NoError(tb, r.Set(ctx, &model.TenantConfig{
+				Key: "crypto/" + landscape + "/" + adPrefix + k, Value: fmt.Sprint(v), Type: t,
+			}, *query))
+		}
+	}
+
+	for _, reg := range ks.SupportedRegions {
+		require.NoError(tb, r.Set(ctx, &model.TenantConfig{
+			Key: "supported_region/" + reg.TechnicalName + "/name", Value: reg.Name, Type: t,
+		}, *query))
+	}
 }
 
 // NewDefaultWorkflowConfig creates a default WorkflowConfig for testing

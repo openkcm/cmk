@@ -2,8 +2,7 @@ package testutils
 
 import (
 	"context"
-
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/openkcm/cmk/internal/authz"
 )
@@ -28,7 +27,8 @@ func (OrbitalJob) IsSharedModel() bool {
 }
 
 func (OrbitalJob) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return true, nil
 }

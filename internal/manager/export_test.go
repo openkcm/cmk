@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"crypto/rsa"
-	"time"
 
 	"github.com/openkcm/cmk/internal/async"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
@@ -16,12 +15,14 @@ import (
 
 var GetPluginAlgorithm = getPluginAlgorithm
 
-func (m *TenantConfigManager) GetTenantConfigsHyokKeystore() HYOKKeystore {
-	return m.getTenantConfigsHyokKeystore()
-}
+var BuildWorkflowConfigFromRows = buildWorkflowConfigFromRows
 
-func (m *TenantConfigManager) SetDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error {
-	return m.setDefaultKeystore(ctx, keystore)
+var BuildKeystoreConfigFromRows = buildKeystoreConfigFromRows
+
+var ValidateWorkflowConfig = validateWorkflowConfig
+
+func (m *TenantConfigManager) GetTenantConfigsHyokKeystore(ctx context.Context) HYOKKeystore {
+	return m.getTenantConfigsHyokKeystore(ctx)
 }
 
 func (m *SystemInformation) SetClient(systemInformation systeminformation.SystemInformation) {
@@ -52,8 +53,9 @@ func (m *CertificateManager) GetDefaultKeystoreClientCert(
 	ctx context.Context,
 	localityID string,
 	commonName string,
+	purpose model.CertificatePurpose,
 ) (*model.Certificate, error) {
-	return m.getDefaultKeystoreClientCert(ctx, localityID, commonName)
+	return m.getDefaultKeystoreClientCert(ctx, localityID, commonName, purpose)
 }
 
 func (m *CertificateManager) GetDefaultHYOKClientCert(
@@ -90,6 +92,14 @@ func (w *WorkflowManager) SetAsyncClient(client async.Client) {
 	w.asyncClient = client
 }
 
+func (w *WorkflowManager) ValidateApproverCount(
+	ctx context.Context,
+	workflow *model.Workflow,
+	minimumApprovals int,
+) (bool, error) {
+	return w.validateApproverCount(ctx, workflow, minimumApprovals)
+}
+
 func (m *TenantManager) UnmapSystemErrorCanContinue(ctx context.Context, err error) OffboardingStatus {
 	return m.unmapSystemErrorCanContinue(ctx, err)
 }
@@ -98,11 +108,46 @@ func (m *TenantManager) SetSystemForTests(sys System) {
 	m.sys = sys
 }
 
+func (w *WorkflowManager) GetApproverGroupsFromLegacyField(
+	ctx context.Context,
+	workflow *model.Workflow,
+) ([]*model.Group, error) {
+	return w.getApproverGroupsFromLegacyField(ctx, workflow)
+}
+
 func (km *KeyManager) ExportedHandleNewKeyVersion(
 	ctx context.Context,
 	key *model.Key,
-	keyResp *keymanagement.GetKeyResponse,
-	rotationTime *time.Time,
+	keyResp *keymanagement.GetKeyVersionsResponse,
 ) error {
-	return km.handleNewKeyVersion(ctx, key, keyResp, rotationTime)
+	return km.handleKeyVersions(ctx, key, keyResp)
+}
+
+func (km *KeyManager) IsNewKeyVersion(
+	ctx context.Context,
+	key *model.Key,
+	keyResp *keymanagement.GetKeyVersionsResponse,
+) (bool, error) {
+	return km.isNewKeyVersion(ctx, key, keyResp)
+}
+
+// CreateKeyRetryDelay exposes the package-level retry delay so tests can set it to
+// zero and avoid real waits.
+var CreateKeyRetryDelay = &createKeyRetryDelay
+
+// CreateKeyMaxDelay exposes the package-level max delay so tests can zero it alongside CreateKeyRetryDelay.
+var CreateKeyMaxDelay = &createKeyMaxDelay
+
+// PendingCreationTimeout exposes the package-level pending creation timeout so tests can override it.
+var PendingCreationTimeout = &pendingCreationTimeout
+
+// PendingRegistrationTimeout exposes the package-level pending registration timeout so tests can override it.
+var PendingRegistrationTimeout = &pendingRegistrationTimeout
+
+const DefaultKeystoreCertInfix = defaultKeystoreCertInfix
+
+var ExtractErrorDetailMessage = extractErrorDetailMessage
+
+func (km *KeyManager) UpdatePendingKeyErrorDetail(ctx context.Context, key *model.Key, code, reason, msg string) error {
+	return km.updatePendingKeyErrorDetail(ctx, key, code, reason, msg)
 }

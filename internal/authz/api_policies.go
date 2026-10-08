@@ -4,145 +4,62 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 )
 
-type (
-	APIAction           string
-	APIResourceTypeName string
-	APIResourceType     struct {
-		ID         APIResourceTypeName
-		APIActions []APIAction
-	}
-)
-
-// all resource types which are used in policies
-const (
-	APIResourceTypeKeyConfiguration APIResourceTypeName = "KeyConfiguration"
-	APIResourceTypeKey              APIResourceTypeName = "Key"
-	APIResourceTypeSystem           APIResourceTypeName = "System"
-	APIResourceTypeWorkFlow         APIResourceTypeName = "Workflow"
-	APIResourceTypeUserGroup        APIResourceTypeName = "UserGroup"
-	APIResourceTypeTenant           APIResourceTypeName = "Tenant"
-	APIResourceTypeTenantSettings   APIResourceTypeName = "TenantSettings"
-	APIResourceTypeEvent            APIResourceTypeName = "Event"
-	APIResourceTypeImportParams     APIResourceTypeName = "ImportParams"
-	APIResourceTypeKeyStoreConfig   APIResourceTypeName = "KeyStoreConfig"
-)
-
-// all actions which are used in policies which can be performed on resource types
-const (
-	APIActionRead             APIAction = "read"
-	APIActionCreate           APIAction = "create"
-	APIActionUpdate           APIAction = "update"
-	APIActionDelete           APIAction = "delete"
-	APIActionKeyRotate        APIAction = "KeyRotate"
-	APIActionSystemModifyLink APIAction = "ModifySystemLink"
-)
-
-var APIResourceTypeActions = map[APIResourceTypeName][]APIAction{
-	APIResourceTypeKeyConfiguration: {
-		APIActionRead,
-		APIActionCreate,
-		APIActionDelete,
-		APIActionUpdate,
-	},
-	APIResourceTypeKey: {
-		APIActionRead,
-		APIActionCreate,
-		APIActionDelete,
-		APIActionUpdate,
-		APIActionKeyRotate,
-	},
-	APIResourceTypeSystem: {
-		APIActionRead,
-		APIActionSystemModifyLink,
-	},
-	APIResourceTypeWorkFlow: {
-		APIActionRead,
-		APIActionCreate,
-		APIActionDelete,
-		APIActionUpdate,
-	},
-	APIResourceTypeTenantSettings: {
-		APIActionRead,
-		APIActionUpdate,
-	},
-	APIResourceTypeUserGroup: {
-		APIActionRead,
-		APIActionCreate,
-		APIActionDelete,
-		APIActionUpdate,
-	},
-	APIResourceTypeTenant: {
-		APIActionRead,
-		APIActionUpdate,
-	},
-}
-
-var APIRolePolicies = make(map[constants.Role][]BasePolicy[APIResourceTypeName, APIAction])
-
-type policies struct {
-	Roles    []constants.Role
-	Policies []BasePolicy[APIResourceTypeName, APIAction]
-}
-
-var PolicyData = policies{
-	Roles: []constants.Role{
-		constants.KeyAdminRole, constants.TenantAdminRole, constants.TenantAuditorRole,
-	},
-	Policies: []BasePolicy[APIResourceTypeName, APIAction]{
-		NewPolicy(
-			"AuditorPolicy",
-			constants.TenantAuditorRole,
-			[]BaseResourceType[APIResourceTypeName, APIAction]{
+var APIPolicies = RolePolicies[constants.BusinessRole, APIResourceType, APIAction]{
+	constants.TenantAuditorRole: {
+		{
+			ID: constants.AuditorPolicy,
+			ResourceTypes: []Resource[APIResourceType, APIAction]{
 				{
-					ID: APIResourceTypeKeyConfiguration,
+					Type: APIResourceTypeKeyConfiguration,
 					Actions: []APIAction{
 						APIActionRead,
 					},
 				},
 				{
-					ID: APIResourceTypeKey,
+					Type: APIResourceTypeKey,
 					Actions: []APIAction{
 						APIActionRead,
 					},
 				},
 				{
-					ID: APIResourceTypeSystem,
+					Type: APIResourceTypeSystem,
 					Actions: []APIAction{
 						APIActionRead,
 					},
 				},
 				{
-					ID: APIResourceTypeWorkFlow,
+					Type: APIResourceTypeWorkFlow,
 					Actions: []APIAction{
 						APIActionRead,
 					},
 				},
 				{
-					ID: APIResourceTypeTenantSettings,
+					Type: APIResourceTypeTenantSettings,
 					Actions: []APIAction{
 						APIActionRead,
 					},
 				},
 				{
-					ID: APIResourceTypeUserGroup,
+					Type: APIResourceTypeUserGroup,
 					Actions: []APIAction{
 						APIActionRead,
 					},
 				},
 				{
-					ID: APIResourceTypeTenant,
+					Type: APIResourceTypeTenant,
 					Actions: []APIAction{
 						APIActionRead,
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"KeyAdminPolicy",
-			constants.KeyAdminRole,
-			[]BaseResourceType[APIResourceTypeName, APIAction]{
+		},
+	},
+	constants.KeyAdminRole: {
+		{
+			ID: constants.KeyAdminPolicy,
+			ResourceTypes: []Resource[APIResourceType, APIAction]{
 				{
-					ID: APIResourceTypeKeyConfiguration,
+					Type: APIResourceTypeKeyConfiguration,
 					Actions: []APIAction{
 						APIActionRead,
 						APIActionCreate,
@@ -151,7 +68,7 @@ var PolicyData = policies{
 					},
 				},
 				{
-					ID: APIResourceTypeKey,
+					Type: APIResourceTypeKey,
 					Actions: []APIAction{
 						APIActionRead,
 						APIActionCreate,
@@ -161,13 +78,13 @@ var PolicyData = policies{
 					},
 				},
 				{
-					ID: APIResourceTypeUserGroup,
+					Type: APIResourceTypeUserGroup,
 					Actions: []APIAction{
 						APIActionRead,
 					},
 				},
 				{
-					ID: APIResourceTypeSystem,
+					Type: APIResourceTypeSystem,
 					Actions: []APIAction{
 						APIActionSystemModifyLink,
 						APIActionRead,
@@ -175,7 +92,7 @@ var PolicyData = policies{
 					},
 				},
 				{
-					ID: APIResourceTypeWorkFlow,
+					Type: APIResourceTypeWorkFlow,
 					Actions: []APIAction{
 						APIActionRead,
 						APIActionCreate,
@@ -184,49 +101,42 @@ var PolicyData = policies{
 					},
 				},
 				{
-					ID: APIResourceTypeTenantSettings,
+					Type: APIResourceTypeTenantSettings,
 					Actions: []APIAction{
 						APIActionRead,
 					},
 				},
 			},
-		),
-		NewPolicy(
-			"TenantAdminPolicy",
-			constants.TenantAdminRole,
-			[]BaseResourceType[APIResourceTypeName, APIAction]{
-				{
-					ID: APIResourceTypeTenant,
-					Actions: []APIAction{
-						APIActionRead,
-						APIActionUpdate,
-					},
-				},
-				{
-					ID: APIResourceTypeUserGroup,
-					Actions: []APIAction{
-						APIActionRead,
-						APIActionCreate,
-						APIActionDelete,
-						APIActionUpdate,
-					},
-				},
-				{
-					ID: APIResourceTypeTenantSettings,
-					Actions: []APIAction{
-						APIActionRead,
-						APIActionUpdate,
-					},
-				},
-			},
-		),
+		},
 	},
-}
-
-func init() {
-	// Index policies by role for fast lookup
-	APIRolePolicies = make(map[constants.Role][]BasePolicy[APIResourceTypeName, APIAction])
-	for _, policy := range PolicyData.Policies {
-		APIRolePolicies[policy.Role] = append(APIRolePolicies[policy.Role], policy)
-	}
+	constants.TenantAdminRole: {
+		{
+			ID: constants.TenantAdminPolicy,
+			ResourceTypes: []Resource[APIResourceType, APIAction]{
+				{
+					Type: APIResourceTypeTenant,
+					Actions: []APIAction{
+						APIActionRead,
+						APIActionUpdate,
+					},
+				},
+				{
+					Type: APIResourceTypeUserGroup,
+					Actions: []APIAction{
+						APIActionRead,
+						APIActionCreate,
+						APIActionDelete,
+						APIActionUpdate,
+					},
+				},
+				{
+					Type: APIResourceTypeTenantSettings,
+					Actions: []APIAction{
+						APIActionRead,
+						APIActionUpdate,
+					},
+				},
+			},
+		},
+	},
 }

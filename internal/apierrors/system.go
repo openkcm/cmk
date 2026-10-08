@@ -33,7 +33,7 @@ var system = []errs.ExposedErrors[*APIError]{
 		InternalErrorChain: []error{eventprocessor.ErrNoPreviousEvent},
 		ExposedError: &APIError{
 			Code:    "NO_PREVIOUS_SYSTEM_STATE",
-			Message: "failed to cancel action",
+			Message: "no previous state for selected system",
 			Status:  http.StatusBadRequest,
 		},
 	},
@@ -195,6 +195,14 @@ var system = []errs.ExposedErrors[*APIError]{
 			Code:    "KEY_CONFIGURATION_NOT_FOUND",
 			Message: "Key configuration not found or insufficient access permissions",
 			Status:  http.StatusNotFound,
+		},
+	},
+	{
+		InternalErrorChain: []error{manager.ErrSystemLimitExceeded},
+		ExposedError: &APIError{
+			Code:    "SYSTEM_LIMIT_EXCEEDED",
+			Message: "The system limit for this key configuration has been reached",
+			Status:  http.StatusConflict,
 		},
 	},
 }

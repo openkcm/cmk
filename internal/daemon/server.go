@@ -13,9 +13,9 @@ import (
 	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 	"github.com/samber/oops"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
+	commonmiddleware "github.com/openkcm/common-sdk/pkg/middleware"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
@@ -24,9 +24,11 @@ import (
 	"github.com/openkcm/cmk/internal/controllers/cmk"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/handlers"
+	"github.com/openkcm/cmk/internal/featureflags"
+	cmkhandlers "github.com/openkcm/cmk/internal/handlers/cmk"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/middleware"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
@@ -172,6 +174,13 @@ func createHTTPServer(
 		return nil, oops.In(ServerLogDomain).Wrapf(err, "setup swagger")
 	}
 
+	var baseRouter *ServeMux
+	if cfg.HTTP.SwaggerEnabled {
+		baseRouter = NewServeMux(constants.BasePath, WithSwaggerUI(swagger))
+	} else {
+		baseRouter = NewServeMux(constants.BasePath)
+	}
+
 	// Middlewares run in a FILO. Last middleware on the slice is the first one ran
 	// First middleware to run should be the InjectRequestID
 	httpHandler := cmkapi.HandlerWithOptions(
@@ -179,23 +188,32 @@ func createHTTPServer(
 			ctr,
 			[]cmkapi.StrictMiddlewareFunc{},
 			cmkapi.StrictHTTPServerOptions{
-				RequestErrorHandlerFunc:  handlers.RequestErrorHandlerFunc(),
-				ResponseErrorHandlerFunc: handlers.ResponseErrorHandlerFunc(),
+				RequestErrorHandlerFunc:  cmkhandlers.RequestErrorHandlerFunc(),
+				ResponseErrorHandlerFunc: cmkhandlers.ResponseErrorHandlerFunc(),
 			},
 		),
 		cmkapi.StdHTTPServerOptions{
 			BaseURL:          constants.BasePath,
-			BaseRouter:       NewServeMux(constants.BasePath),
-			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
+			BaseRouter:       baseRouter,
+			ErrorHandlerFunc: cmkhandlers.ParamsErrorHandler(),
 			Middlewares: []cmkapi.MiddlewareFunc{ // Middlewares are applied from last to first
 				middleware.AuthzMiddleware(ctr),
-				middleware.ClientDataMiddleware(signingKeyStorage, cfg.ClientData.AuthContextFields, ctr.Manager.User),
+				middleware.BusinessUserDataMiddleware(signingKeyStorage, cfg.ClientData.AuthContextFields, ctr.Manager.User),
 				middleware.OAPIMiddleware(swagger),
 				middleware.LoggingMiddleware(),
 				middleware.PanicRecoveryMiddleware(),
-				middleware.InjectMultiTenancy(),
+				middleware.InjectMultiTenancy(cmkhandlers.ResponseErrorHandlerFunc()),
 				middleware.InjectRequestID(),
 				middleware.TracingMiddleware(cfg),
+				// RequestBodyLimitMiddleware runs before TracingMiddleware to cap body size
+				// before any part of the stack reads it.
+				middleware.RequestBodyLimitMiddleware(),
+				// SecurityHeadersMiddleware is last in the slice so it runs first (FILO order).
+				// Security headers must be set before any other middleware runs to ensure
+				// they appear on every response, including error responses.
+				commonmiddleware.SecurityHeadersMiddleware(map[string]string{
+					"Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none';",
+				}),
 			},
 		},
 	)
@@ -228,23 +246,25 @@ func makeController(
 		log.Error(ctx, "Failed to load plugin", err)
 	}
 
-	authzAPILoader := authz_loader.NewAPIAuthzLoader(ctx, r, cfg)
-	if authzAPILoader.AuthzHandler == nil {
-		return nil, oops.In(ServerLogDomain).Wrapf(err, "no authz handler")
-	}
-
 	authzRepoLoader := authz_loader.NewRepoAuthzLoader(ctx, r, cfg)
 	if authzRepoLoader.AuthzHandler == nil {
-		return nil, oops.In(ServerLogDomain).Wrapf(err, "no authz handler")
+		return nil, oops.In(ServerLogDomain).Wrapf(err, "no repo authz handler")
 	}
 
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
+	authzAPILoader := authz_loader.NewAPIAuthzLoader(ctx, r, cfg)
+	if authzAPILoader.AuthzHandler == nil {
+		return nil, oops.In(ServerLogDomain).Wrapf(err, "no api authz handler")
+	}
+
 	controller := cmk.NewAPIController(ctx, authzRepo, cfg, clientsFactory,
-		migrator, svcRegistry, authzAPILoader)
+		migrator, svcRegistry, authzRepoLoader, authzAPILoader, featureflags.NewClient())
 
 	authzAPILoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
 	authzRepoLoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
+
+	svcRegistry.WatchPlugins(ctx)
 
 	return controller, nil
 }

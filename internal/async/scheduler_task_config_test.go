@@ -7,7 +7,6 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func TestGetConfigs(t *testing.T) {
@@ -17,14 +16,14 @@ func TestGetConfigs(t *testing.T) {
 
 		config.PeriodicTasks = map[string]config.Task{
 			"task1": {
-				Enabled:  ptr.PointTo(true),
+				Enabled:  new(true),
 				Cronspec: "*/1 * * * *",
-				Retries:  ptr.PointTo(3),
+				Retries:  new(3),
 			},
 			"task2": {
-				Enabled:  ptr.PointTo(false),
+				Enabled:  new(false),
 				Cronspec: "*/5 * * * *",
-				Retries:  ptr.PointTo(0),
+				Retries:  new(0),
 			},
 		}
 
@@ -45,14 +44,14 @@ func TestGetConfigs(t *testing.T) {
 
 		config.PeriodicTasks = map[string]config.Task{
 			"task1": {
-				Enabled:  ptr.PointTo(true),
+				Enabled:  new(true),
 				Cronspec: "1 * * * *",
-				Retries:  ptr.PointTo(10),
+				Retries:  new(10),
 			},
 			"task2": {
-				Enabled:  ptr.PointTo(true),
+				Enabled:  new(true),
 				Cronspec: "*/5 * * * *",
-				Retries:  ptr.PointTo(0),
+				Retries:  new(0),
 			},
 		}
 
@@ -62,15 +61,15 @@ func TestGetConfigs(t *testing.T) {
 					Tasks: []config.Task{
 						{
 							TaskType: "task1",
-							Enabled:  ptr.PointTo(true),
+							Enabled:  new(true),
 							Cronspec: "30 * * * *",
-							Retries:  ptr.PointTo(1),
+							Retries:  new(1),
 						},
 						{
 							TaskType: "task2",
-							Enabled:  ptr.PointTo(false),
+							Enabled:  new(false),
 							Cronspec: "30 * * * *",
-							Retries:  ptr.PointTo(1),
+							Retries:  new(1),
 						},
 					},
 				},
@@ -90,9 +89,9 @@ func TestGetConfigs(t *testing.T) {
 
 		config.PeriodicTasks = map[string]config.Task{
 			"task1": {
-				Enabled:  ptr.PointTo(true),
+				Enabled:  new(true),
 				Cronspec: "1 * * * *",
-				Retries:  ptr.PointTo(3),
+				Retries:  new(3),
 			},
 		}
 

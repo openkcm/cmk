@@ -8,16 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 func TestRepo_WithTenant(t *testing.T) {
@@ -42,7 +41,7 @@ func TestRepo_WithTenant(t *testing.T) {
 		err := r.WithTenant(t.Context(), model.Key{}, func(_ *multitenancy.DB) error {
 			return nil
 		})
-		assert.ErrorIs(t, err, nethttp.ErrTenantInvalid)
+		assert.ErrorIs(t, err, cmkcontext.ErrTenantInvalid)
 	})
 }
 
@@ -314,7 +313,7 @@ func TestRepo_Set(t *testing.T) {
 
 	t.Run("Should create if empty ", func(t *testing.T) {
 		m := testutils.TestModel{ID: uuid.New(), Name: "test"}
-		err := r.Set(ctx, &m)
+		err := r.Set(ctx, &m, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		res := &testutils.TestModel{ID: m.ID}
@@ -330,7 +329,7 @@ func TestRepo_Set(t *testing.T) {
 		assert.NoError(t, err)
 
 		m.Name = "updated"
-		err = r.Set(ctx, &m)
+		err = r.Set(ctx, &m, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		res := &testutils.TestModel{ID: m.ID}
@@ -379,4 +378,26 @@ func TestRepo_Transaction(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, ok)
 	})
+}
+
+func TestRepo_GetFilterOptions(t *testing.T) {
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	r := sql.NewRepository(db)
+
+	ctx := testutils.CreateCtxWithTenant(tenants[0])
+	item1 := &testutils.TestModel{ID: uuid.New(), Name: "item1"}
+	item2 := &testutils.TestModel{ID: uuid.New(), Name: "item2"}
+
+	testutils.CreateTestEntities(ctx, t, r, item1, item2)
+
+	var names []string
+	err := r.GetFilterOptions(ctx, testutils.TestModel{}, []repo.Filter{
+		{
+			Values: &names,
+			Column: "name",
+		},
+	}, *repo.NewQuery())
+	assert.NoError(t, err)
+	assert.Contains(t, names, "item1")
+	assert.Contains(t, names, "item2")
 }

@@ -4,8 +4,6 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
-
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -29,7 +27,7 @@ func (r *InMemoryRepository) WithTenant(
 	resource repo.Resource,
 ) (*InMemoryDB, error) {
 	if resource.IsSharedModel() {
-		ctx = context.WithValue(ctx, nethttp.TenantKey, "public")
+		ctx = context.WithValue(ctx, cmkcontext.TenantKey, "public")
 	}
 
 	tenant, err := cmkcontext.ExtractTenantID(ctx)
@@ -147,6 +145,7 @@ func (r *InMemoryRepository) Patch(
 func (r *InMemoryRepository) Set(
 	ctx context.Context,
 	resource repo.Resource,
+	_ repo.Query,
 ) error {
 	tenantDB, err := r.WithTenant(ctx, resource)
 	if err != nil {
@@ -199,9 +198,18 @@ func (r *InMemoryRepository) OffboardTenant(_ context.Context, schemaName string
 	return nil
 }
 
+func (r *InMemoryRepository) GetFilterOptions(
+	ctx context.Context,
+	resource repo.Resource,
+	columns []repo.Filter,
+	query repo.Query,
+) error {
+	return nil
+}
+
 func assignList(result any, list []repo.Resource) error {
 	resultVal := reflect.ValueOf(result)
-	if resultVal.Kind() != reflect.Ptr {
+	if resultVal.Kind() != reflect.Pointer {
 		return ErrMustPointerToSlice
 	}
 

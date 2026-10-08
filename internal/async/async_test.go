@@ -15,9 +15,9 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type MockTenantTask struct{}
@@ -28,6 +28,10 @@ func (t *MockTenantTask) ProcessTask(_ context.Context, _ *asynq.Task) error {
 
 func (t *MockTenantTask) TaskType() string {
 	return config.TypeHYOKSync
+}
+
+func (t *MockTenantTask) Role() constants.InternalRole {
+	return constants.InternalTaskHYOKSyncRole
 }
 
 func (t *MockTenantTask) FanOutFunc() async.FanOutFunc {
@@ -267,12 +271,12 @@ func TestGetFanOutOpts(t *testing.T) {
 			TaskQueue: defaultCfg,
 			Tasks: []config.Task{
 				{
-					Enabled:  ptr.PointTo(true),
+					Enabled:  new(true),
 					Cronspec: "* * * * *",
 					TaskType: config.TypeWorkflowCleanup,
 				},
 				{
-					Enabled:  ptr.PointTo(true),
+					Enabled:  new(true),
 					Cronspec: "* * * * *",
 					TaskType: config.TypeWorkflowExpire,
 					FanOutTask: &config.FanOutTask{
@@ -280,7 +284,7 @@ func TestGetFanOutOpts(t *testing.T) {
 					},
 				},
 				{
-					Enabled:  ptr.PointTo(true),
+					Enabled:  new(true),
 					Cronspec: "* * * * *",
 					TaskType: config.TypeKeystorePool,
 					FanOutTask: &config.FanOutTask{
@@ -288,7 +292,7 @@ func TestGetFanOutOpts(t *testing.T) {
 					},
 				},
 				{
-					Enabled:  ptr.PointTo(true),
+					Enabled:  new(true),
 					Cronspec: "* * * * *",
 					TaskType: config.TypeHYOKSync,
 				},
@@ -331,7 +335,7 @@ func TestRegisterTasks(t *testing.T) {
 			TaskQueue: defaultCfg,
 			Tasks: []config.Task{
 				{
-					Enabled:  ptr.PointTo(true),
+					Enabled:  new(true),
 					Cronspec: "* * * * *",
 					TaskType: config.TypeHYOKSync,
 					FanOutTask: &config.FanOutTask{

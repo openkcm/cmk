@@ -8,7 +8,7 @@ import (
 
 	"github.com/openkcm/orbital"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
@@ -108,7 +108,7 @@ func (h *KeyDetachJobHandler) HandleJobConfirm(
 		return nil, fmt.Errorf("failed to get key by ID %s: %w", data.KeyID, err)
 	}
 
-	if key.State != string(cmkapi.KeyStateDETACHING) {
+	if key.State != cmkapi.KeyStateDETACHING {
 		return orbital.CancelJobConfirmer(fmt.Sprintf("key %s is not in detaching status", key.ID)), nil
 	}
 
@@ -184,7 +184,7 @@ func (h *KeyDetachJobHandler) terminate(
 		return nil, err
 	}
 
-	key.State = string(targetState)
+	key.State = targetState
 	err = updateKey(ctx, h.repo, key)
 	if err != nil {
 		return nil, err

@@ -16,28 +16,34 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"gopkg.in/yaml.v3"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
+	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	stduuid "uuid"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	eventProto "github.com/openkcm/cmk/internal/event-processor/proto"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/clients/registry/mapping"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const testProvider = "TEST"
@@ -49,7 +55,7 @@ type TestInstance struct {
 	fakeService   *systems.FakeService
 	reconciler    *eventprocessor.CryptoReconciler
 	traceRecorder *tracetest.SpanRecorder
-	pluginOp      *testplugins.KeystoreOperator
+	pluginOp      *testplugins.TestKeyManagement
 }
 
 func setupTestInstance(
@@ -63,23 +69,20 @@ func setupTestInstance(
 	})
 	r := sql.NewRepository(db)
 
-	pluginOp := testplugins.NewKeystoreOperatorInstance()
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewKeystoreOperatorFromInstance(pluginOp))
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	svcRegistry := testutils.NewTestPlugins(testplugins.WithKeyManagement(testplugins.Name, pluginOp))
 
 	cfg := &config.Config{
 		Database: dbCfg,
-		Plugins:  psCfg,
 		Landscape: config.Landscape{
 			Region: uuid.NewString(),
 		},
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name: "event-processor",
-			},
-			Telemetry: commoncfg.Telemetry{
-				Traces: commoncfg.Trace{
-					Enabled: true,
-				},
+		Application: commoncfg.Application{
+			Name: "event-processor",
+		},
+		Telemetry: commoncfg.Telemetry{
+			Traces: commoncfg.Trace{
+				Enabled: true,
 			},
 		},
 	}
@@ -99,13 +102,11 @@ func setupTestInstance(
 		}
 	}
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
-
 	logger := testutils.SetupLoggerWithBuffer()
 	systemService := systems.NewFakeService(logger)
 	mappingService := mapping.NewFakeService()
-	_, grpcClient := testutils.NewGRPCSuite(t,
+	_, grpcClient := testutils.NewGRPCSuite(
+		t,
 		func(s *grpc.Server) {
 			systemgrpc.RegisterServiceServer(s, systemService)
 			mappingv1.RegisterServiceServer(s, mappingService)
@@ -133,6 +134,7 @@ func setupTestInstance(
 	eventProcessor, err := eventprocessor.NewCryptoReconciler(
 		t.Context(), cfg, r,
 		svcRegistry, clientsFactory,
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil),
 	)
 	assert.NoError(t, err)
 
@@ -185,6 +187,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-connected",
 		Region:             "region-connected",
+		Type:               model.SystemTypeSYSTEM,
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusCONNECTED,
 	}
@@ -192,6 +195,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-disconnected",
 		Region:             "region-disconnected",
+		Type:               model.SystemTypeSYSTEM,
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusDISCONNECTED,
 	}
@@ -199,6 +203,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-targetless",
 		Region:             "region-targetless",
+		Type:               model.SystemTypeSYSTEM,
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusCONNECTED,
 	}
@@ -206,6 +211,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:         uuid.New(),
 		Identifier: "system-keyless",
 		Region:     "region-keyless",
+		Type:       model.SystemTypeSYSTEM,
 		Status:     cmkapi.SystemStatusCONNECTED,
 	}
 
@@ -269,6 +275,8 @@ func TestResolveKeyTasks(t *testing.T) {
 					ID:                 keyID,
 					KeyConfigurationID: keyConfigID,
 					Name:               uuid.NewString(),
+					KeyType:            cmkapi.KeyTypeBYOK,
+					Algorithm:          cmkapi.KeyAlgorithmAES256,
 				})
 				assert.NoError(t, err)
 
@@ -326,6 +334,8 @@ func TestResolveKeyTasks(t *testing.T) {
 						ID:                 keyID,
 						KeyConfigurationID: uuid.New(),
 						Name:               uuid.NewString(),
+						KeyType:            cmkapi.KeyTypeBYOK,
+						Algorithm:          cmkapi.KeyAlgorithmAES256,
 					})
 					assert.NoError(t, err)
 
@@ -358,6 +368,8 @@ func TestResolveKeyTasks(t *testing.T) {
 						ID:                 keyID,
 						KeyConfigurationID: uuid.New(),
 						Name:               uuid.NewString(),
+						KeyType:            cmkapi.KeyTypeBYOK,
+						Algorithm:          cmkapi.KeyAlgorithmAES256,
 					})
 					assert.NoError(t, err)
 
@@ -406,25 +418,33 @@ func TestResolveSystemTasks(t *testing.T) {
 		s.Region = region
 	})
 
+	// Populate test plugin with keys so GetKey works
+	fromNative, err := instance.pluginOp.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
+	toNative, err := instance.pluginOp.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	assert.NoError(t, err)
+
 	keyFrom := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.NativeID = ptr.PointTo("key-from-native-id")
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.NativeID = &fromNative.KeyID
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value1"}}`)
 	})
 
 	keyTo := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.NativeID = ptr.PointTo("key-to-native-id")
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.NativeID = &toNative.KeyID
 		k.CryptoAccessData = []byte(`{"test-region":{"keyX":"value2"}}`)
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyFrom, keyTo)
-
-	// Populate test plugin with keys so GetKey works
-	instance.pluginOp.HandleKeyRecord("key-from-native-id", testplugins.EnabledKeyStatus)
-	instance.pluginOp.HandleKeyRecord("key-to-native-id", testplugins.EnabledKeyStatus)
 
 	t.Run("should return correct task info for", func(t *testing.T) {
 		tests := []struct {
@@ -692,11 +712,8 @@ func TestVersionInfoPropagation(t *testing.T) {
 	// Test constants
 	const (
 		testRegion       = "test-region"
-		keyWithVersionID = "key-with-version"
-		keyWithoutVerID  = "key-without-version"
+		initialVersionID = "version0"
 		testRoleArn      = "arn:aws:iam::123:role/test"
-		initialVersionID = "version-abc-123"
-		updatedVersionID = "version-xyz-456"
 	)
 
 	// given
@@ -712,39 +729,45 @@ func TestVersionInfoPropagation(t *testing.T) {
 		s.Region = testRegion
 	})
 
-	keyWithVersion := testutils.NewKey(func(k *model.Key) {
+	// Setup plugin handlers (required for TransformCryptoAccessData)
+	keyWithVersionIDOnDBProvider, err := instance.pluginOp.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	require.NoError(t, err)
+	keyWithoutVersionIDOnDBProvider, err := instance.pluginOp.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
+		KeyType: keymanagement.HYOK,
+	})
+	require.NoError(t, err)
+
+	keyWithVersionOnDB := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.NativeID = ptr.PointTo(keyWithVersionID)
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.NativeID = &keyWithVersionIDOnDBProvider.KeyID
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
 	})
 
-	keyWithoutVersion := testutils.NewKey(func(k *model.Key) {
+	keyWithoutVersionOnDB := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfiguration.ID
 		k.Provider = testProvider
-		k.NativeID = ptr.PointTo(keyWithoutVerID)
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.NativeID = &keyWithoutVersionIDOnDBProvider.KeyID
 		k.CryptoAccessData = fmt.Appendf(nil, `{"%s":{"roleArn":"%s"}}`, testRegion, testRoleArn)
 		k.ManagementAccessData = []byte(`{"roleArn":"arn:aws:iam::123:role/admin"}`)
 	})
 
-	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyWithVersion, keyWithoutVersion)
+	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyWithVersionOnDB, keyWithoutVersionOnDB)
 
 	// Create key versions in DB for keyWithVersion only
 	kv := &model.KeyVersion{
 		ID:        uuid.New(),
-		KeyID:     keyWithVersion.ID,
-		NativeID:  initialVersionID,
+		KeyID:     keyWithVersionOnDB.ID,
+		NativeID:  keyWithVersionIDOnDBProvider.KeyID,
 		RotatedAt: time.Now(),
 	}
-	err := r.Create(ctx, kv)
+	err = r.Create(ctx, kv)
 	require.NoError(t, err)
-
-	// Setup plugin handlers (required for TransformCryptoAccessData)
-	instance.pluginOp.HandleKeyRecord(keyWithVersionID, testplugins.EnabledKeyStatus)
-	instance.pluginOp.SetKeyVersionInfo(keyWithVersionID, initialVersionID, "")
-
-	instance.pluginOp.HandleKeyRecord(keyWithoutVerID, testplugins.EnabledKeyStatus)
 
 	// Helper to resolve tasks and extract key access metadata
 	resolveAndExtractKeyAccessData := func(jobType string, keyID string) map[string]any {
@@ -779,32 +802,33 @@ func TestVersionInfoPropagation(t *testing.T) {
 	t.Run("should include version info in key_access_meta_data when available", func(t *testing.T) {
 		keyAccessData := resolveAndExtractKeyAccessData(
 			eventprocessor.JobTypeSystemLink.String(),
-			keyWithVersion.ID.String(),
+			keyWithVersionOnDB.ID.String(),
 		)
 
 		// Assert version info from DB key version is present
-		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
-		assert.Equal(t, initialVersionID, keyAccessData["versionIdentifier"])
+		assert.Equal(t, keyWithVersionIDOnDBProvider.KeyID, keyAccessData["keyID"])
+		assert.Equal(t, kv.NativeID, keyAccessData["versionIdentifier"])
 		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
 	})
 
 	t.Run("should handle keys without version info gracefully", func(t *testing.T) {
 		keyAccessData := resolveAndExtractKeyAccessData(
 			eventprocessor.JobTypeSystemLink.String(),
-			keyWithoutVersion.ID.String(),
+			keyWithoutVersionOnDB.ID.String(),
 		)
 
 		// Should have keyID and roleArn, but no version fields
-		assert.Equal(t, keyWithoutVerID, keyAccessData["keyID"])
+		assert.Equal(t, keyWithoutVersionIDOnDBProvider.KeyID, keyAccessData["keyID"])
 		assert.Equal(t, testRoleArn, keyAccessData["roleArn"])
 		assert.NotContains(t, keyAccessData, "versionIdentifier")
 	})
 
 	t.Run("should fetch fresh version info on every event creation", func(t *testing.T) {
 		// Simulate rotation by adding a newer key version in the DB
+		updatedVersionID := uuid.NewString()
 		kv := &model.KeyVersion{
 			ID:        uuid.New(),
-			KeyID:     keyWithVersion.ID,
+			KeyID:     keyWithVersionOnDB.ID,
 			NativeID:  updatedVersionID,
 			RotatedAt: time.Now().Add(time.Hour), // Later rotation
 		}
@@ -813,11 +837,11 @@ func TestVersionInfoPropagation(t *testing.T) {
 
 		keyAccessData := resolveAndExtractKeyAccessData(
 			eventprocessor.JobTypeSystemSwitch.String(),
-			keyWithVersion.ID.String(),
+			keyWithVersionOnDB.ID.String(),
 		)
 
 		// Assert the FRESH version info is present (not stale)
-		assert.Equal(t, keyWithVersionID, keyAccessData["keyID"])
+		assert.Equal(t, keyWithVersionIDOnDBProvider.KeyID, keyAccessData["keyID"])
 		assert.Equal(t, updatedVersionID, keyAccessData["versionIdentifier"])
 	})
 }
@@ -859,7 +883,7 @@ func TestConfirmJob(t *testing.T) {
 		kc := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {})
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = kc.ID
-			k.State = string(cmkapi.KeyStateDETACHING)
+			k.State = cmkapi.KeyStateDETACHING
 		})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		testutils.CreateTestEntities(ctx, t, r, kc, key)
@@ -1028,7 +1052,9 @@ func TestJobTermination(t *testing.T) {
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
-	system := testutils.NewSystem(func(_ *model.System) {})
+	system := testutils.NewSystem(func(s *model.System) {
+		s.TargetKeyConfigurationID = new(uuid.New())
+	})
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfig.ID
@@ -1051,10 +1077,11 @@ func TestJobTermination(t *testing.T) {
 	unlinkDataBytes, err := json.Marshal(unlinkJobData)
 	assert.NoError(t, err)
 
-	t.Run("Should update system key config ID on job termination", func(t *testing.T) {
+	t.Run("Should update system key config ID on job termination and clean target", func(t *testing.T) {
 		_, err := r.First(ctx, system, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Nil(t, system.KeyConfigurationID)
+		assert.NotNil(t, system.TargetKeyConfigurationID)
 
 		item := uuid.NewString()
 		terminateNewJob(t, eventProcessor, &model.Event{
@@ -1070,6 +1097,7 @@ func TestJobTermination(t *testing.T) {
 		_, err = r.First(ctx, systemAfterLink, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.NotNil(t, systemAfterLink.KeyConfigurationID)
+		assert.Nil(t, systemAfterLink.TargetKeyConfigurationID)
 
 		item = uuid.NewString()
 		terminateNewJob(t, eventProcessor, &model.Event{
@@ -1192,11 +1220,12 @@ func TestJobTermination(t *testing.T) {
 		assert.Equal(t, cmkapi.SystemStatusFAILED, sysAfter.Status)
 	})
 
-	t.Run("System switch to new key on successful SYSTEM_SWITCH job termination", func(t *testing.T) {
+	t.Run("System switch to new key on successful SYSTEM_SWITCH job termination and clean target", func(t *testing.T) {
+		keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 		sys := testutils.NewSystem(func(s *model.System) {
 			s.Status = cmkapi.SystemStatusPROCESSING
+			s.TargetKeyConfigurationID = &keyConfig2.ID
 		})
-		keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 		key2 := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig2.ID
 		})
@@ -1211,6 +1240,7 @@ func TestJobTermination(t *testing.T) {
 		}
 		dataBytes, err := json.Marshal(data)
 		assert.NoError(t, err)
+		assert.NotNil(t, sys.TargetKeyConfigurationID)
 
 		item := uuid.NewString()
 		terminateNewJob(t, eventProcessor, &model.Event{
@@ -1225,6 +1255,44 @@ func TestJobTermination(t *testing.T) {
 		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfig2.ID, *sysAfter.KeyConfigurationID)
+		assert.Nil(t, sysAfter.TargetKeyConfigurationID)
+		assert.Equal(t, cmkapi.SystemStatusCONNECTED, sysAfter.Status)
+	})
+
+	t.Run("System switch to new key on successful SYSTEM_SWITCH_NEW_PK job termination", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusPROCESSING
+		})
+		keyConfig2 := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		key2 := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig2.ID
+		})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig2, key2)
+		require.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
+
+		data := eventprocessor.SystemActionJobData{
+			TenantID:  tenant,
+			SystemID:  sys.ID.String(),
+			KeyIDFrom: key.ID.String(),
+			KeyIDTo:   key2.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventprocessor.JobTypeSystemSwitchNewPK.String(),
+			Data:       dataBytes,
+		}, true)
+
+		sysAfter := &model.System{
+			ID: sys.ID,
+		}
+		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, keyConfig2.ID, *sysAfter.KeyConfigurationID)
+		assert.Equal(t, cmkapi.SystemStatusCONNECTED, sysAfter.Status)
 	})
 
 	t.Run("System status on success SYSTEM_UNLINK_DECOMMISSION job termination", func(t *testing.T) {
@@ -1262,6 +1330,15 @@ func TestJobTermination(t *testing.T) {
 		})
 		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
 
+		// Register the system in the fake registry so we can verify the lock call.
+		_, err := systemService.RegisterSystem(ctx, &systemgrpc.RegisterSystemRequest{
+			ExternalId: sys.Identifier,
+			Region:     sys.Region,
+			Type:       string(sys.Type),
+			TenantId:   tenant,
+		})
+		assert.NoError(t, err)
+
 		data := eventprocessor.SystemActionJobData{
 			TenantID:  tenant,
 			SystemID:  sys.ID.String(),
@@ -1280,6 +1357,46 @@ func TestJobTermination(t *testing.T) {
 		sysAfter := &model.System{
 			ID: sys.ID,
 		}
+		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, cmkapi.SystemStatusDISCONNECTED, sysAfter.Status)
+
+		// Verify the system was set to STATUS_LOCKED in the registry.
+		resp, err := systemService.ListSystems(ctx, &systemgrpc.ListSystemsRequest{
+			ExternalId: sys.Identifier,
+			Region:     sys.Region,
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, typesv1.Status_STATUS_LOCKED, resp.GetSystems()[0].GetStatus())
+	})
+
+	t.Run("Termination still runs when registry lock fails on SYSTEM_UNLINK_DECOMMISSION", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {
+			s.Status = cmkapi.SystemStatusPROCESSING
+		})
+		assert.NoError(t, r.Create(testutils.CreateCtxWithTenant(tenant), sys))
+
+		// Force the registry's UpdateSystemStatus call to fail with a non-retryable error.
+		systemService.UpdateSystemStatusErr = status.Error(codes.Internal, "registry boom")
+		t.Cleanup(func() { systemService.UpdateSystemStatusErr = nil })
+
+		data := eventprocessor.SystemActionJobData{
+			TenantID:  tenant,
+			SystemID:  sys.ID.String(),
+			KeyIDFrom: key.ID.String(),
+		}
+		dataBytes, err := json.Marshal(data)
+		assert.NoError(t, err)
+
+		item := uuid.NewString()
+		terminateNewJob(t, eventProcessor, &model.Event{
+			Identifier: item,
+			Type:       eventprocessor.JobTypeSystemUnlinkDecommission.String(),
+			Data:       dataBytes,
+		}, false)
+
+		// Termination must continue despite the lock failure: the system ends DISCONNECTED.
+		sysAfter := &model.System{ID: sys.ID}
 		_, err = r.First(ctx, sysAfter, *repo.NewQuery())
 		assert.NoError(t, err)
 		assert.Equal(t, cmkapi.SystemStatusDISCONNECTED, sysAfter.Status)
@@ -1340,7 +1457,7 @@ func TestJobTermination(t *testing.T) {
 		}
 		_, err = r.First(ctx, keyAfter, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateDETACHED), keyAfter.State)
+		assert.Equal(t, cmkapi.KeyStateDETACHED, keyAfter.State)
 	})
 
 	t.Run("Should update key state to DETACHED on failed key detach job termination", func(t *testing.T) {
@@ -1368,7 +1485,7 @@ func TestJobTermination(t *testing.T) {
 		}
 		_, err = r.First(ctx, keyAfter, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateDETACHED), keyAfter.State)
+		assert.Equal(t, cmkapi.KeyStateDETACHED, keyAfter.State)
 	})
 
 	t.Run("Should update key state to UNKNOWN on canceled key detach job termination", func(t *testing.T) {
@@ -1397,7 +1514,7 @@ func TestJobTermination(t *testing.T) {
 		}
 		_, err = r.First(ctx, keyAfter, *repo.NewQuery())
 		assert.NoError(t, err)
-		assert.Equal(t, string(cmkapi.KeyStateUNKNOWN), keyAfter.State)
+		assert.Equal(t, cmkapi.KeyStateUNKNOWN, keyAfter.State)
 	})
 
 	t.Run("should add trace with correct attributes for JobDone", func(t *testing.T) {
@@ -1491,7 +1608,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 			Data:               dataBytes,
 			PreviousItemStatus: previousStatus,
 		}
-		err := r.Set(ctx, event)
+		err := r.Set(ctx, event, *repo.NewQuery())
 		assert.NoError(t, err)
 		return eventID
 	}
@@ -1504,7 +1621,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 	}
 
 	// Helper to create a failed task in Orbital database
-	createFailedTask := func(t *testing.T, jobID uuid.UUID, errorMessage string) {
+	createFailedTask := func(t *testing.T, jobID stduuid.UUID, errorMessage string) {
 		t.Helper()
 		// Insert directly into orbital.tasks table with all required fields
 		now := time.Now().Unix()
@@ -1546,12 +1663,12 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 			Type:       eventprocessor.JobTypeSystemKeyRotate.String(),
 			Data:       dataBytes,
 		}
-		err = r.Set(ctx, event)
+		err = r.Set(ctx, event, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
 			WithExternalID(eventID)
-		job.ID = uuid.New() // Set unique job ID for test
+		job.ID = stduuid.New() // Set unique job ID for test
 
 		// Create a failed task in Orbital with version mismatch error
 		createFailedTask(t, job.ID, "KEY_VERSION_MISMATCH:Version mismatch detected")
@@ -1583,7 +1700,7 @@ func TestSystemKeyRotateJobHandler(t *testing.T) {
 
 		job := orbital.NewJob(eventprocessor.JobTypeSystemKeyRotate.String(), dataBytes).
 			WithExternalID(eventID)
-		job.ID = uuid.New() // Set unique job ID for test
+		job.ID = stduuid.New() // Set unique job ID for test
 
 		// Create a failed task in Orbital with error message
 		createFailedTask(t, job.ID, "SOME_OTHER_ERROR:Something went wrong")
@@ -1663,8 +1780,7 @@ func TestWithOptions(t *testing.T) {
 	})
 }
 
-func terminateNewJob(
-	t *testing.T,
+func terminateNewJob(t *testing.T,
 	eventProcessor *eventprocessor.CryptoReconciler,
 	e *model.Event,
 	jobDone bool,
@@ -1691,4 +1807,493 @@ func terminateNewJob(
 	if err != nil {
 		t.Logf("Job termination returned error: %v", err)
 	}
+}
+
+func TestResolveSystemTasks_BYOK(t *testing.T) {
+	region := "byok-region"
+	certCfg := config.CryptoCert{
+		Name:    region,
+		Subject: config.CryptoCertSubject{CommonNamePrefix: "byok", OrganizationalUnit: []string{"abc"}},
+	}
+	certsYAML, err := yaml.Marshal([]config.CryptoCert{certCfg})
+	require.NoError(t, err)
+
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		WithOrbital:    true,
+	})
+	r := sql.NewRepository(db)
+	tenant := tenants[0]
+
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	svcRegistry := testutils.NewTestPlugins(
+		testplugins.WithKeyManagement(testplugins.Name, pluginOp),
+		testplugins.WithKeystoreManagement(testplugins.Name, testplugins.NewTestKeystoreManagement()),
+	)
+
+	rabbitMQURL := testutils.StartRabbitMQ(t)
+	cfg := &config.Config{
+		Database: dbCfg,
+		Landscape: config.Landscape{
+			Region: uuid.NewString(),
+		},
+		Application: commoncfg.Application{Name: "event-processor"},
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  string(certsYAML),
+			},
+		},
+	}
+	cfg.EventProcessor.Targets = []config.Target{{
+		Region: region,
+		AMQP:   config.AMQP{URL: rabbitMQURL, Target: region, Source: region},
+	}}
+
+	logger := testutils.SetupLoggerWithBuffer()
+	systemService := systems.NewFakeService(logger)
+	mappingService := mapping.NewFakeService()
+	_, grpcClient := testutils.NewGRPCSuite(t, func(s *grpc.Server) {
+		systemgrpc.RegisterServiceServer(s, systemService)
+		mappingv1.RegisterServiceServer(s, mappingService)
+	})
+
+	clientsFactory, err := clients.NewFactory(config.Services{
+		Registry: &commoncfg.GRPCClient{
+			Enabled: true,
+			Address: grpcClient.Target(),
+			SecretRef: &commoncfg.SecretRef{
+				Type: commoncfg.InsecureSecretType,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
+	require.NoError(t, err)
+	rec.DisableAuditLog()
+	t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
+
+	// Pre-seed DEFAULT_KEYSTORE with the cert already trusted so SyncAndGetCryptoAccessData
+	// skips GrantTrust (no role-management cert needed).
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	clientCert := model.NewClientCertificate(certCfg, tenant)
+	ksConfig := model.KeystoreConfig{
+		CryptoAccessData: map[string]model.CryptoConfig{
+			region: {
+				Subject: clientCert.Subject.String(),
+				AccessData: model.KeystoreAccessData{
+					"key1": "value1",
+					"key2": "value2",
+				},
+			},
+		},
+	}
+	ksBytes, err := json.Marshal(ksConfig)
+	require.NoError(t, err)
+	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
+
+	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	system := testutils.NewSystem(func(s *model.System) {
+		s.Region = region
+	})
+	keyFrom := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfiguration.ID
+		k.Provider = testProvider
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.NativeID = new("byok-key-from")
+	})
+	keyTo := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfiguration.ID
+		k.Provider = testProvider
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.NativeID = new("byok-key-to")
+	})
+	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, keyFrom, keyTo)
+
+	tests := []struct {
+		name     string
+		jobType  string
+		taskType string
+		data     func() []byte
+	}{
+		{
+			name:     "SYSTEM_LINK task",
+			jobType:  eventprocessor.JobTypeSystemLink.String(),
+			taskType: eventProto.TaskType_SYSTEM_LINK.String(),
+			data: func() []byte {
+				b, err := json.Marshal(eventprocessor.SystemActionJobData{
+					TenantID: tenant,
+					SystemID: system.ID.String(),
+					KeyIDTo:  keyTo.ID.String(),
+				})
+				require.NoError(t, err)
+				return b
+			},
+		},
+		{
+			name:     "SYSTEM_UNLINK task",
+			jobType:  eventprocessor.JobTypeSystemUnlink.String(),
+			taskType: eventProto.TaskType_SYSTEM_UNLINK.String(),
+			data: func() []byte {
+				b, err := json.Marshal(eventprocessor.SystemActionJobData{
+					TenantID:  tenant,
+					SystemID:  system.ID.String(),
+					KeyIDFrom: keyFrom.ID.String(),
+				})
+				require.NoError(t, err)
+				return b
+			},
+		},
+		{
+			name:     "SYSTEM_SWITCH task",
+			jobType:  eventprocessor.JobTypeSystemSwitch.String(),
+			taskType: eventProto.TaskType_SYSTEM_SWITCH.String(),
+			data: func() []byte {
+				b, err := json.Marshal(eventprocessor.SystemActionJobData{
+					TenantID:  tenant,
+					SystemID:  system.ID.String(),
+					KeyIDFrom: keyFrom.ID.String(),
+					KeyIDTo:   keyTo.ID.String(),
+				})
+				require.NoError(t, err)
+				return b
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			j := orbital.NewJob(tt.jobType, tt.data())
+			handler, err := rec.GetHandlerByJobType(tt.jobType)
+			require.NoError(t, err)
+
+			tasks, err := handler.ResolveTasks(ctx, j)
+
+			assert.NoError(t, err)
+			if assert.Len(t, tasks, 1) {
+				ti := tasks[0]
+				assert.Equal(t, tt.taskType, ti.Type)
+				assert.Equal(t, region, ti.Target)
+
+				var act eventProto.Data
+				assert.NoError(t, proto.Unmarshal(ti.Data, &act))
+				sa := act.GetSystemAction()
+				assert.NotNil(t, sa)
+				assert.Equal(t, system.Identifier, sa.GetSystemId())
+				assert.Equal(t, region, sa.GetSystemRegion())
+				assert.Equal(t, tenant, sa.GetTenantId())
+
+				// key_access_meta_data must be present and contain the syncer's output.
+				assert.NotEmpty(t, sa.GetKeyAccessMetaData())
+				var keyAccessData map[string]any
+				assert.NoError(t, json.Unmarshal(sa.GetKeyAccessMetaData(), &keyAccessData))
+				assert.Equal(t, "CN=byoktenant0,OU=abc", keyAccessData["certificateSubject"])
+				assert.Equal(t, "value1", keyAccessData["key1"])
+				assert.Equal(t, "value2", keyAccessData["key2"])
+			}
+		})
+	}
+}
+
+// TestResolveSystemTasks_BYOK_GrantTrust verifies that when a BYOK system-link
+// is resolved and the crypto cert has not yet been trusted (no entry in
+// DEFAULT_KEYSTORE CryptoAccessData), the syncer calls GrantTrust on the
+// keystore-management plugin and the resulting access data reaches the task payload.
+func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
+	region := "byok-grant-region"
+
+	certCfg := config.CryptoCert{
+		Name:    region,
+		Subject: config.CryptoCertSubject{CommonNamePrefix: "byok-grant", OrganizationalUnit: []string{"abc"}},
+	}
+	certsYAML, err := yaml.Marshal([]config.CryptoCert{certCfg})
+	require.NoError(t, err)
+
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		CreateDatabase: true,
+		WithOrbital:    true,
+	})
+	r := sql.NewRepository(db)
+	tenant := tenants[0]
+
+	pluginOp := testplugins.NewTestKeyManagement(true, true)
+	svcRegistry := testutils.NewTestPlugins(
+		testplugins.WithKeyManagement(testplugins.Name, pluginOp),
+		testplugins.WithKeystoreManagement(testplugins.Name, testplugins.NewTestKeystoreManagement()),
+	)
+
+	rabbitMQURL := testutils.StartRabbitMQ(t)
+	cfg := &config.Config{
+		Database:    dbCfg,
+		Landscape:   config.Landscape{Region: uuid.NewString()},
+		Application: commoncfg.Application{Name: "event-processor"},
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  string(certsYAML),
+			},
+		},
+	}
+	cfg.EventProcessor.Targets = []config.Target{{
+		Region: region,
+		AMQP:   config.AMQP{URL: rabbitMQURL, Target: region, Source: region},
+	}}
+
+	logger := testutils.SetupLoggerWithBuffer()
+	systemService := systems.NewFakeService(logger)
+	mappingService := mapping.NewFakeService()
+	_, grpcClient := testutils.NewGRPCSuite(t, func(s *grpc.Server) {
+		systemgrpc.RegisterServiceServer(s, systemService)
+		mappingv1.RegisterServiceServer(s, mappingService)
+	})
+	clientsFactory, err := clients.NewFactory(config.Services{
+		Registry: &commoncfg.GRPCClient{
+			Enabled:   true,
+			Address:   grpcClient.Target(),
+			SecretRef: &commoncfg.SecretRef{Type: commoncfg.InsecureSecretType},
+		},
+	})
+	require.NoError(t, err)
+
+	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
+	require.NoError(t, err)
+	rec.DisableAuditLog()
+	t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
+
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+	// Compute the cert subject the way model.NewClientCertificate does.
+	clientCert := model.NewClientCertificate(certCfg, tenant)
+	certSubject := clientCert.Subject.String()
+
+	// Pre-seed DEFAULT_KEYSTORE with CryptoAccessData already provisioned
+	// (simulating manager enrollment). The event-processor reads this directly.
+	ksConfig := model.KeystoreConfig{
+		CryptoAccessData: map[string]model.CryptoConfig{
+			region: {
+				Subject: certSubject,
+				AccessData: model.KeystoreAccessData{
+					"trustedSubject": certSubject,
+					"trustedRegion":  region,
+				},
+			},
+		},
+	}
+	ksBytes, err := json.Marshal(ksConfig)
+	require.NoError(t, err)
+	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
+
+	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+	system := testutils.NewSystem(func(s *model.System) { s.Region = region })
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfiguration.ID
+		k.Provider = testProvider
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.NativeID = new("byok-grant-key")
+	})
+	testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, key)
+
+	jobData, err := json.Marshal(eventprocessor.SystemActionJobData{
+		TenantID: tenant,
+		SystemID: system.ID.String(),
+		KeyIDTo:  key.ID.String(),
+	})
+	require.NoError(t, err)
+
+	j := orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), jobData)
+	handler, err := rec.GetHandlerByJobType(eventprocessor.JobTypeSystemLink.String())
+	require.NoError(t, err)
+
+	tasks, err := handler.ResolveTasks(ctx, j)
+
+	// CryptoAccessData is read from the stored keystore config.
+	// TransformCryptoAccessData adds keyID, so key_access_meta_data must be present.
+	assert.NoError(t, err)
+	if assert.Len(t, tasks, 1) {
+		assert.Equal(t, region, tasks[0].Target)
+
+		var act eventProto.Data
+		assert.NoError(t, proto.Unmarshal(tasks[0].Data, &act))
+		sa := act.GetSystemAction()
+		assert.NotNil(t, sa)
+		assert.NotEmpty(t, sa.GetKeyAccessMetaData())
+
+		var keyAccessData map[string]any
+		assert.NoError(t, json.Unmarshal(sa.GetKeyAccessMetaData(), &keyAccessData))
+		// TransformCryptoAccessData injects the native key ID.
+		assert.Equal(t, "byok-grant-key", keyAccessData["keyID"])
+		// Validate access data read from stored keystore config.
+		assert.Equal(t, "CN=byok-granttenant0,OU=abc", keyAccessData["certificateSubject"])
+		assert.Equal(t, "CN=byok-granttenant0,OU=abc", keyAccessData["trustedSubject"])
+		assert.Equal(t, "byok-grant-region", keyAccessData["trustedRegion"])
+	}
+}
+
+// TestGetCryptoAccessDataFromConfig verifies the behavior of getCryptoAccessDataFromConfig,
+// which is exercised via ResolveTasks for BYOK keys.
+//
+// Covered cases:
+//   - keystore not enrolled → ResolveTasks returns error containing "keystore not enrolled"
+//   - CryptoAccessData empty → ResolveTasks returns error containing "no crypto access data"
+//   - CryptoAccessData present → certificateSubject key is injected into each region's map
+func TestGetCryptoAccessDataFromConfig(t *testing.T) {
+	const region = "cfg-test-region"
+
+	// setupBYOKReconciler creates a CryptoReconciler with an isolated DB and a BYOK
+	// key/system pair. The returned ctx is tenant-scoped. The caller stores any
+	// TenantConfig (or none) before calling ResolveTasks.
+	type byokInstance struct {
+		r      repo.Repo
+		rec    *eventprocessor.CryptoReconciler
+		tenant string
+		system *model.System
+		key    *model.Key
+	}
+
+	setupBYOKReconciler := func(t *testing.T) (byokInstance, context.Context) {
+		t.Helper()
+		db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+			CreateDatabase: true,
+			WithOrbital:    true,
+		})
+		r := sql.NewRepository(db)
+		tenant := tenants[0]
+
+		svcRegistry := testutils.NewTestPlugins(
+			testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, true)),
+		)
+		rabbitMQURL := testutils.StartRabbitMQ(t)
+		cfg := &config.Config{
+			Database:    dbCfg,
+			Landscape:   config.Landscape{Region: uuid.NewString()},
+			Application: commoncfg.Application{Name: "event-processor"},
+		}
+		cfg.EventProcessor.Targets = []config.Target{{
+			Region: region,
+			AMQP:   config.AMQP{URL: rabbitMQURL, Target: region, Source: region},
+		}}
+
+		logger := testutils.SetupLoggerWithBuffer()
+		systemService := systems.NewFakeService(logger)
+		mappingService := mapping.NewFakeService()
+		_, grpcClient := testutils.NewGRPCSuite(t, func(s *grpc.Server) {
+			systemgrpc.RegisterServiceServer(s, systemService)
+			mappingv1.RegisterServiceServer(s, mappingService)
+		})
+		clientsFactory, err := clients.NewFactory(config.Services{
+			Registry: &commoncfg.GRPCClient{
+				Enabled:   true,
+				Address:   grpcClient.Target(),
+				SecretRef: &commoncfg.SecretRef{Type: commoncfg.InsecureSecretType},
+			},
+		})
+		require.NoError(t, err)
+
+		rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
+		require.NoError(t, err)
+		rec.DisableAuditLog()
+		t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
+
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+		keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+		system := testutils.NewSystem(func(s *model.System) { s.Region = region })
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfiguration.ID
+			k.Provider = testProvider
+			k.KeyType = cmkapi.KeyTypeBYOK
+			k.NativeID = new("byok-cfg-test-key")
+		})
+		testutils.CreateTestEntities(ctx, t, r, keyConfiguration, system, key)
+
+		return byokInstance{r: r, rec: rec, tenant: tenant, system: system, key: key}, ctx
+	}
+
+	// resolveTasksForBYOK is a helper that fires a SYSTEM_LINK ResolveTasks for the
+	// instance's BYOK key and system.
+	resolveTasksForBYOK := func(t *testing.T, ctx context.Context, inst byokInstance) ([]orbital.TaskInfo, error) {
+		t.Helper()
+		jobData, err := json.Marshal(eventprocessor.SystemActionJobData{
+			TenantID: inst.tenant,
+			SystemID: inst.system.ID.String(),
+			KeyIDTo:  inst.key.ID.String(),
+		})
+		require.NoError(t, err)
+		j := orbital.NewJob(eventprocessor.JobTypeSystemLink.String(), jobData)
+		handler, err := inst.rec.GetHandlerByJobType(eventprocessor.JobTypeSystemLink.String())
+		require.NoError(t, err)
+		return handler.ResolveTasks(ctx, j)
+	}
+
+	t.Run("errors when keystore not enrolled (no TenantConfig stored)", func(t *testing.T) {
+		inst, ctx := setupBYOKReconciler(t)
+
+		// No TenantConfig stored → getCryptoAccessDataFromConfig should report the tenant
+		// has no enrolled keystore.
+		tasks, err := resolveTasksForBYOK(t, ctx, inst)
+
+		assert.Error(t, err)
+		assert.Empty(t, tasks)
+		assert.Contains(t, err.Error(), "keystore not enrolled")
+	})
+
+	t.Run("errors when CryptoAccessData is empty", func(t *testing.T) {
+		inst, ctx := setupBYOKReconciler(t)
+
+		// Store a TenantConfig with an empty CryptoAccessData map.
+		ksConfig := model.KeystoreConfig{
+			CryptoAccessData: map[string]model.CryptoConfig{},
+		}
+		ksBytes, err := json.Marshal(ksConfig)
+		require.NoError(t, err)
+		require.NoError(t, inst.r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
+
+		tasks, err := resolveTasksForBYOK(t, ctx, inst)
+
+		assert.Error(t, err)
+		assert.Empty(t, tasks)
+		assert.Contains(t, err.Error(), "no crypto access data provisioned")
+	})
+
+	t.Run("injects CertificateSubjectKey into key_access_meta_data for BYOK key", func(t *testing.T) {
+		inst, ctx := setupBYOKReconciler(t)
+
+		const testSubject = "CN=byok-cfg-test-cert,OU=test"
+
+		// Store a TenantConfig with CryptoAccessData populated, keyed by the region.
+		ksConfig := model.KeystoreConfig{
+			CryptoAccessData: map[string]model.CryptoConfig{
+				region: {
+					Subject: testSubject,
+					AccessData: model.KeystoreAccessData{
+						"someProviderKey": "someProviderValue",
+					},
+				},
+			},
+		}
+		ksBytes, err := json.Marshal(ksConfig)
+		require.NoError(t, err)
+		require.NoError(t, inst.r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksBytes)}, *repo.NewQuery()))
+
+		tasks, err := resolveTasksForBYOK(t, ctx, inst)
+
+		require.NoError(t, err)
+		require.Len(t, tasks, 1)
+
+		var act eventProto.Data
+		require.NoError(t, proto.Unmarshal(tasks[0].Data, &act))
+		sa := act.GetSystemAction()
+		require.NotNil(t, sa)
+
+		var keyAccessData map[string]any
+		require.NoError(t, json.Unmarshal(sa.GetKeyAccessMetaData(), &keyAccessData))
+
+		// TransformCryptoAccessData injects the native key ID.
+		assert.Equal(t, "byok-cfg-test-key", keyAccessData["keyID"])
+		// getCryptoAccessDataFromConfig must inject the certificateSubject field.
+		assert.Equal(t, testSubject, keyAccessData[model.CertificateSubjectKey])
+		// Original provider access data must be present too.
+		assert.Equal(t, "someProviderValue", keyAccessData["someProviderKey"])
+	})
 }

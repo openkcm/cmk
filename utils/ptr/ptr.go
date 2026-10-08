@@ -9,11 +9,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// PointTo creates a typed pointer of whatever you hand in as parameter
-func PointTo[T any](t T) *T {
-	return &t
-}
-
 // PanicIfDifferent - panics if arguments are of different type
 func PanicIfDifferent[T any](current, expected T) {
 	if reflect.ValueOf(current).Pointer() != reflect.ValueOf(expected).Pointer() {

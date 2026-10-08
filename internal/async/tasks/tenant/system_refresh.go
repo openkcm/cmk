@@ -9,6 +9,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -47,8 +48,9 @@ func (s *SystemsRefresher) ProcessTask(ctx context.Context, task *asynq.Task) er
 		return err
 	}
 
+	// Otherwise we log here and don't return an error for a retry
 	if err != nil {
-		log.Error(ctx, "Running Refresh System Task", err)
+		s.logError(ctx, err)
 	}
 	return nil
 }
@@ -63,6 +65,16 @@ func (s *SystemsRefresher) FanOutFunc() async.FanOutFunc {
 
 func (s *SystemsRefresher) TaskType() string {
 	return config.TypeSystemsTask
+}
+
+func (s *SystemsRefresher) Role() constants.InternalRole {
+	return constants.InternalTaskSystemRefreshRole
+}
+
+func (s *SystemsRefresher) logError(ctx context.Context, err error) {
+	// Returned errors are retries in batch processor
+	// If we don't want a retry we just log here and return nil
+	log.Error(ctx, "Error during system refresh batch processing", err)
 }
 
 // Checks if gRPC error is of the network type

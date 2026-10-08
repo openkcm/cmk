@@ -1,18 +1,15 @@
 package dialect
 
 import (
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	pg "github.com/bartventer/gorm-multitenancy/postgres/v8"
+	pg "github.com/openkcm/cmk/internal/multitenancy/postgres"
 )
 
 // NewFrom returns a postgres dialector.
 // Hint: `dsn` package contains utility to convert `config.DB` to DSN string that can be passed here.
 func NewFrom(dsn string) gorm.Dialector {
 	return pg.New(pg.Config{
-		Config: postgres.Config{
-			DSN: dsn,
-		},
+		DSN: dsn,
 	})
 }

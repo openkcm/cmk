@@ -2,6 +2,8 @@ package key_management
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -44,12 +46,55 @@ func convertGRPCError(err error) error {
 
 	switch {
 	case keystoreErrs.IsStatus(err, keystoreErrs.StatusProviderAuthenticationError):
+		if reason, _ := keystoreErrs.GetDetails(err); reason != "" {
+			return &keymanagement.ProviderAuthError{Reason: reason}
+		}
 		return keymanagement.ErrProviderAuthenticationFailed
 	case keystoreErrs.IsStatus(err, keystoreErrs.StatusKeyNotFound):
 		return keymanagement.ErrHYOKKeyNotFound
+	case keystoreErrs.IsStatus(err, keystoreErrs.StatusKeyGenericErr):
+		return keymanagement.ErrGenericGetKeyError
+	case keystoreErrs.IsStatus(err, keystoreErrs.StatusImportKeyMaterialFailed):
+		return errors.Join(keymanagement.ErrImportKeyMaterialFailed, err)
 	default:
 		return err
 	}
+}
+
+func (v1 *V1) GetKeyVersions(
+	ctx context.Context,
+	req *keymanagement.GetKeyVersionsRequest,
+) (*keymanagement.GetKeyVersionsResponse, error) {
+	value, err := structpb.NewStruct(req.Parameters.Config.Values)
+	if err != nil {
+		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+	}
+
+	in := &grpckeymanagerv1.GetKeyVersionsRequest{
+		Parameters: &grpckeymanagerv1.RequestParameters{
+			Config: &grpccommonv1.KeystoreInstanceConfig{
+				Values: value,
+			},
+			KeyId: req.Parameters.KeyID,
+		},
+	}
+	grpcResp, err := v1.KeystoreInstanceKeyOperationPluginClient.GetKeyVersions(ctx, in)
+	if err != nil {
+		return nil, convertGRPCError(err)
+	}
+
+	versions := make([]keymanagement.KeyVersion, 0, len(grpcResp.GetVersions()))
+	for _, v := range grpcResp.GetVersions() {
+		versions = append(versions, keymanagement.KeyVersion{
+			ID:           v.GetVersionId(),
+			CreationTime: new(v.GetCreationTime().AsTime()),
+			Status:       v.GetStatus(),
+		})
+	}
+
+	return &keymanagement.GetKeyVersionsResponse{
+		Versions: versions,
+	}, nil
 }
 
 func (v1 *V1) GetKey(ctx context.Context, req *keymanagement.GetKeyRequest) (*keymanagement.GetKeyResponse, error) {
@@ -265,7 +310,8 @@ func (v1 *V1) ImportKeyMaterial(
 			},
 			KeyId: req.Parameters.KeyID,
 		},
-		ImportParameters: importParams,
+		EncryptedKeyMaterial: req.EncryptedKeyMaterial,
+		ImportParameters:     importParams,
 	}
 	if err := protovalidate.Validate(in); err != nil {
 		return nil, fmt.Errorf(errFailedValidationMsg, err)
@@ -314,7 +360,15 @@ func (v1 *V1) ValidateKeyAccessData(
 	}
 	cryptoFlat := make(map[string]any, len(req.Crypto))
 	for k, v := range req.Crypto {
-		cryptoFlat[k] = v
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+		}
+		var regionMap map[string]any
+		if err := json.Unmarshal(b, &regionMap); err != nil {
+			return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+		}
+		cryptoFlat[k] = regionMap
 	}
 	crypto, err := structpb.NewStruct(cryptoFlat)
 	if err != nil {

@@ -12,15 +12,15 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
+	"github.com/openkcm/common-sdk/pkg/storage/keyvalue"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	md "github.com/oapi-codegen/nethttp-middleware"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
@@ -29,9 +29,11 @@ import (
 	"github.com/openkcm/cmk/internal/controllers/cmk"
 	"github.com/openkcm/cmk/internal/daemon"
 	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/handlers"
+	"github.com/openkcm/cmk/internal/featureflags"
+	cmkhandlers "github.com/openkcm/cmk/internal/handlers/cmk"
 	"github.com/openkcm/cmk/internal/middleware"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo/sql"
 )
 
@@ -39,10 +41,33 @@ const TestCertURL = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.cr
 
 const TestHostPrefix = "https://kms.test/cmk/v1/"
 
+// testFlagClient featureflags.Client for tests
+type testFlagClient struct{ values map[string]bool }
+
+func (s *testFlagClient) BooleanValue(
+	_ context.Context, flag string, def bool, _ openfeature.EvaluationContext,
+) (bool, error) {
+	if v, ok := s.values[flag]; ok {
+		return v, nil
+	}
+	return def, nil
+}
+
+// NewTestFlagClient returns a featureflags.Client that returns the given flag values.
+// Flags not in the map return the defaultValue passed to BooleanValue.
+func NewTestFlagClient(flags map[string]bool) featureflags.Client {
+	return &testFlagClient{values: flags}
+}
+
 type TestAPIServerConfig struct {
-	Plugins []catalog.BuiltInPlugin       // Plugins only set if needed
-	GRPCCon *commongrpc.DynamicClientConn // GRPCClient only set if needed
-	Config  config.Config
+	Registry serviceapi.Registry           // Registry is optional; defaults to testplugins.NewRegistry()
+	GRPCCon  *commongrpc.DynamicClientConn // GRPCClient only set if needed
+	Config   config.Config
+	// Flags is an optional feature flag client. Defaults to nil (all flags off).
+	Flags featureflags.Client
+	// Enable ClientDataMiddleware (default: false for backward compatibility).
+	EnableBusinessUserDataMW bool
+	SigningKeyStorage        keyvalue.ReadOnlyStringToBytesStorage // Optional: provide custom signing key storage
 }
 
 // NewAPIServer creates a new API server with the given database connection
@@ -50,13 +75,15 @@ func NewAPIServer(
 	tb testing.TB,
 	dbCon *multitenancy.DB,
 	testCfg TestAPIServerConfig,
-) cmkapi.ServeMux {
+) *daemon.ServeMux {
 	tb.Helper()
 
 	cfg := testCfg.Config
 
-	ps, psCfg := NewTestPlugins(testCfg.Plugins...)
-	cfg.Plugins = psCfg
+	svcRegistry := testCfg.Registry
+	if svcRegistry == nil {
+		svcRegistry = NewTestPlugins()
+	}
 
 	cfg.Certificates.RootCertURL = TestCertURL
 	if cfg.Database == (config.Database{}) {
@@ -100,26 +127,25 @@ func NewAPIServer(
 
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
-	svcRegistry, err := cmkpluginregistry.New(tb.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(tb, err)
+	controller := cmk.NewAPIController(tb.Context(), authzRepo, &cfg, factory,
+		migrator, svcRegistry, authzRepoLoader, authzAPILoader, testCfg.Flags)
 
-	controller := cmk.NewAPIController(tb.Context(), authzRepo, &cfg, factory, migrator, svcRegistry, authzAPILoader)
-
-	return startAPIServer(tb, controller)
+	return startAPIServer(tb, controller, testCfg)
 }
 
 func startAPIServer(
 	tb testing.TB,
 	controller *cmk.APIController,
-) cmkapi.ServeMux {
+	testCfg TestAPIServerConfig,
+) *daemon.ServeMux {
 	tb.Helper()
 
 	strictController := cmkapi.NewStrictHandlerWithOptions(
 		controller,
 		[]cmkapi.StrictMiddlewareFunc{},
 		cmkapi.StrictHTTPServerOptions{
-			RequestErrorHandlerFunc:  handlers.RequestErrorHandlerFunc(),
-			ResponseErrorHandlerFunc: handlers.ResponseErrorHandlerFunc(),
+			RequestErrorHandlerFunc:  cmkhandlers.RequestErrorHandlerFunc(),
+			ResponseErrorHandlerFunc: cmkhandlers.ResponseErrorHandlerFunc(),
 		},
 	)
 
@@ -134,29 +160,54 @@ func startAPIServer(
 
 	mws := []cmkapi.MiddlewareFunc{
 		md.OapiRequestValidatorWithOptions(swagger, &md.Options{
-			ErrorHandlerWithOpts:  handlers.OAPIValidatorHandler,
+			ErrorHandlerWithOpts:  cmkhandlers.OAPIValidatorHandler,
 			SilenceServersWarning: true,
 			Options: openapi3filter.Options{
 				AuthenticationFunc:    openapi3filter.NoopAuthenticationFunc,
 				IncludeResponseStatus: true,
 			},
 		}),
+	}
+
+	// Middlewares are applied from last to first.
+	// Keep Authz before ClientData in the slice so ClientData runs first at request time.
+	mws = append(mws,
 		middleware.AuthzMiddleware(controller),
 		middleware.LoggingMiddleware(),
 		middleware.PanicRecoveryMiddleware(),
-		middleware.InjectMultiTenancy(),
+		middleware.InjectMultiTenancy(cmkhandlers.ResponseErrorHandlerFunc()),
 		middleware.InjectRequestID(),
+	)
+
+	// Append after Authz in the slice so ClientData runs before Authz.
+	if testCfg.EnableBusinessUserDataMW {
+		mws = append(mws, newTestBusinessUserDataMiddleware(tb, testCfg))
 	}
 
 	cmkapi.HandlerWithOptions(strictController,
 		cmkapi.StdHTTPServerOptions{
 			BaseRouter:       r,
 			BaseURL:          constants.BasePath,
-			ErrorHandlerFunc: handlers.ParamsErrorHandler(),
+			ErrorHandlerFunc: cmkhandlers.ParamsErrorHandler(),
 			Middlewares:      mws,
 		})
 
 	return r
+}
+
+func newTestBusinessUserDataMiddleware(tb testing.TB, testCfg TestAPIServerConfig) cmkapi.MiddlewareFunc {
+	tb.Helper()
+
+	signingKeyStorage := testCfg.SigningKeyStorage
+	if signingKeyStorage == nil {
+		signingKeyStorage = NewTestSigningKeyStorage(tb)
+	}
+
+	return middleware.BusinessUserDataMiddleware(
+		signingKeyStorage,
+		[]string{"client_id", "issuer", "multitenancy_ref"},
+		NewTestRoleGetter(),
+	)
 }
 
 func GetTestURL(tb testing.TB, tenant, path string) string {
@@ -178,10 +229,10 @@ func GetTestURL(tb testing.TB, tenant, path string) string {
 type RequestOptions struct {
 	Method            string // HTTP Method
 	Endpoint          string
-	Tenant            string    // TenantID
-	Body              io.Reader // Only need to be set for POST/PATCH. Used with the WithString and WithJSON
-	Headers           map[string]string
-	AdditionalContext map[any]any
+	Tenant            string      // TenantID
+	Body              io.Reader   // Only need to be set for POST/PATCH. Used with the WithString and WithJSON
+	Headers           http.Header // Use this for authentication.
+	AdditionalContext map[any]any // Use this in case we want to inject some key-value pairs to the request context.
 }
 
 // WithString is a helper function that converts a string to an io.Reader.
@@ -222,14 +273,20 @@ func GetJSONBody[t any](tb testing.TB, w *httptest.ResponseRecorder) t {
 }
 
 // NewHTTPRequest builds an HTTP Request it sets default content-types for certain Methods
+//
+//nolint:cyclop
 func NewHTTPRequest(tb testing.TB, opt RequestOptions) *http.Request {
 	tb.Helper()
 
 	ctx := tb.Context()
 
-	//nolint: fatcontext
-	for k, v := range opt.AdditionalContext {
-		ctx = context.WithValue(ctx, k, v)
+	// Legacy support: inject AdditionalContext if provided and ClientDataMiddleware is not enabled
+	// When ClientDataMiddleware is enabled, AdditionalContext is ignored in favor of Headers
+	if len(opt.AdditionalContext) > 0 && opt.Headers == nil {
+		//nolint: fatcontext
+		for k, v := range opt.AdditionalContext {
+			ctx = context.WithValue(ctx, k, v)
+		}
 	}
 
 	r, err := http.NewRequestWithContext(
@@ -253,8 +310,13 @@ func NewHTTPRequest(tb testing.TB, opt RequestOptions) *http.Request {
 		assert.Fail(tb, "HTTP Method not supported!")
 	}
 
-	for k, v := range opt.Headers {
-		r.Header.Add(k, v)
+	// Apply provided headers
+	if opt.Headers != nil {
+		for key, values := range opt.Headers {
+			for _, value := range values {
+				r.Header.Add(key, value)
+			}
+		}
 	}
 
 	return r

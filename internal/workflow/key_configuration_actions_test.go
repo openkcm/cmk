@@ -14,24 +14,23 @@ import (
 )
 
 func TestWorkflowKeyConfigActions(t *testing.T) {
-	mgr, db, tenant := SetupWorkflowManager(t)
+	mgr, db, tenant, _ := SetupWorkflowManager(t)
 	r := sqlRepo.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	tests := []struct {
-		name          string
-		workflow      func(k *model.Key) *model.Workflow
-		transition    workflow.Transition
-		expectedState workflow.State
+		name     string
+		workflow func(kc *model.KeyConfiguration, k *model.Key) *model.Workflow
+		delete   bool
 	}{
 		{
 			name: "Delete key config",
-			workflow: func(k *model.Key) *model.Workflow {
+			workflow: func(kc *model.KeyConfiguration, k *model.Key) *model.Workflow {
 				return testutils.NewWorkflow(func(wf *model.Workflow) {
-					wf.State = workflow.StateWaitConfirmation.String()
-					wf.ActionType = workflow.ActionTypeUpdatePrimary.String()
-					wf.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
-					wf.Approvers = []model.WorkflowApprover{
+					wf.State = model.WorkflowStateWaitConfirmation
+					wf.ActionType = model.WorkflowActionTypeDelete
+					wf.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
+					wf.Tasks = []model.WorkflowTask{
 						*testutils.NewWorkflowApprover(func(a *model.WorkflowApprover) {
 							a.Approved = sqlNullBoolNull
 						}),
@@ -39,20 +38,19 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 							a.Approved = sqlNullBoolNull
 						}),
 					}
-					wf.Parameters = k.ID.String()
+					wf.ArtifactID = kc.ID
 				})
 			},
-			transition:    workflow.TransitionConfirm,
-			expectedState: workflow.StateSuccessful,
+			delete: true,
 		},
 		{
 			name: "Update primary key",
-			workflow: func(k *model.Key) *model.Workflow {
+			workflow: func(kc *model.KeyConfiguration, k *model.Key) *model.Workflow {
 				return testutils.NewWorkflow(func(wf *model.Workflow) {
-					wf.State = workflow.StateWaitConfirmation.String()
-					wf.ActionType = workflow.ActionTypeUpdatePrimary.String()
-					wf.ArtifactType = workflow.ArtifactTypeKeyConfiguration.String()
-					wf.Approvers = []model.WorkflowApprover{
+					wf.State = model.WorkflowStateWaitConfirmation
+					wf.ActionType = model.WorkflowActionTypeUpdatePrimary
+					wf.ArtifactType = model.WorkflowArtifactTypeKeyConfiguration
+					wf.Tasks = []model.WorkflowTask{
 						*testutils.NewWorkflowApprover(func(a *model.WorkflowApprover) {
 							a.Approved = sqlNullBoolNull
 						}),
@@ -60,39 +58,40 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 							a.Approved = sqlNullBoolNull
 						}),
 					}
+					wf.ArtifactID = kc.ID
 					wf.Parameters = k.ID.String()
 				})
 			},
-			transition:    workflow.TransitionConfirm,
-			expectedState: workflow.StateSuccessful,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
+			keyConfigID := uuid.New()
+			keyConfig := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
+				k.ID = keyConfigID
+			})
 			err := r.Create(ctx, keyConfig)
 			assert.NoError(t, err)
 
-			ctx := testutils.InjectClientDataIntoContext(
+			ctx := testutils.InjectBusinessUserDataIntoContext(
 				ctx,
 				uuid.NewString(),
 				[]string{keyConfig.AdminGroup.IAMIdentifier},
 			)
 
 			key := testutils.NewKey(func(k *model.Key) {
-				k.KeyConfigurationID = keyConfig.ID
 			})
-			err = r.Create(ctx, key)
-			assert.NoError(t, err)
+			if !tt.delete {
+				key.KeyConfigurationID = keyConfig.ID
+			}
 
-			wf := tt.workflow(key)
+			wf := tt.workflow(keyConfig, key)
 
-			err = r.Create(ctx, wf)
-			assert.NoError(t, err)
+			testutils.CreateTestEntities(ctx, t, r, key, wf)
 
 			lifecycle := workflow.NewLifecycle(wf, mgr.Keys, mgr.KeyConfig, mgr.System, r, wf.InitiatorID, 2)
-			err = lifecycle.ApplyTransition(ctx, tt.transition)
+			err = lifecycle.ValidateAndApplyTransition(ctx, workflow.TransitionConfirm)
 			assert.NoError(t, err)
 
 			wf = &model.Workflow{ID: wf.ID}
@@ -100,12 +99,7 @@ func TestWorkflowKeyConfigActions(t *testing.T) {
 			assert.NoError(t, err)
 			assert.True(t, ok)
 
-			keyConfig = &model.KeyConfiguration{ID: keyConfig.ID}
-			ok, err = r.First(ctx, keyConfig, *repo.NewQuery())
-			assert.True(t, ok)
-			assert.NoError(t, err)
-
-			assert.Equal(t, tt.expectedState.String(), wf.State)
+			assert.Equal(t, model.WorkflowStateSuccessful, wf.State)
 		})
 	}
 }

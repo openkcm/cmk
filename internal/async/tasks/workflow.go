@@ -9,16 +9,17 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
 )
 
 type WorkflowUpdater interface {
 	AutoAssignApprovers(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, error)
+	HandleTerminalWorkflow(ctx context.Context, workflow *model.Workflow) error
 }
 
 type WorkflowProcessor struct {
@@ -37,6 +38,7 @@ func NewWorkflowProcessor(
 }
 
 func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	log.InjectTask(ctx, task)
 	log.Info(ctx, "Started processing workflow auto assign task")
 
 	payload, err := asyncUtils.ParseTaskPayload(task.Payload())
@@ -78,10 +80,9 @@ func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) e
 		return errs.Wrap(ErrRunningTask, err)
 	}
 
-	log.InjectTask(ctx, task)
 	log.Info(ctx, "Auto assigned approvers to workflow",
 		slog.String("workflowId", workflow.ID.String()),
-		slog.String("status", workflow.State))
+		slog.String("status", workflow.State.String()))
 
 	return nil
 }
@@ -90,18 +91,32 @@ func (s *WorkflowProcessor) TaskType() string {
 	return config.TypeWorkflowAutoAssign
 }
 
+func (s *WorkflowProcessor) Role() constants.InternalRole {
+	return constants.InternalTaskWorkflowApproversRole
+}
+
 func (s *WorkflowProcessor) putWorkflowInFailedState(
 	ctx context.Context,
 	workflowID uuid.UUID,
 	failureReason string,
 ) error {
 	workflow := &model.Workflow{
-		ID:            workflowID,
-		State:         wfMechanism.StateFailed.String(),
-		FailureReason: failureReason,
+		ID: workflowID,
 	}
 
-	_, err := s.repo.Patch(ctx, workflow, *repo.NewQuery())
+	_, err := s.repo.First(ctx, workflow, *repo.NewQuery())
+	if err != nil {
+		return err
+	}
+	workflow.State = model.WorkflowStateFailed
+	workflow.FailureReason = failureReason
 
-	return err
+	return s.repo.Transaction(ctx, func(ctx context.Context) error {
+		_, err := s.repo.Patch(ctx, workflow, *repo.NewQuery())
+		if err != nil {
+			return err
+		}
+
+		return s.updater.HandleTerminalWorkflow(ctx, workflow)
+	})
 }

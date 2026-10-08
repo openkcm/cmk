@@ -4,15 +4,16 @@ run:
   concurrency: 4
   timeout: 10m
 
-
 linters:
   default: all
   disable:
     - depguard
     - exhaustruct
+    - exhaustruct_v5
     - ginkgolinter
     - gochecknoglobals
     - gochecknoinits
+    - goconst
     - godot
     - ireturn
     - interfacebloat
@@ -27,6 +28,7 @@ linters:
     - wrapcheck
     - wsl
     - wsl_v5
+    - gomodguard
   settings:
     paralleltest:
       ignore-missing: true
@@ -83,6 +85,9 @@ linters:
           - contextcheck
           - fatcontext
         path: (.+)workflow_test\.go
+      - linters:
+          - staticcheck
+        text: "SA1019.*The entire proto file kms/api/cmk/sessionmanager/oidcmapping/v1/oidcmapping.proto is marked as deprecated"
     paths:
       - third_party$
       - builtin$
@@ -91,7 +96,10 @@ formatters:
   enable:
     - gci
     - gofmt
-    - goimports
+    # goimports is intentionally disabled: it classifies the aliased stdlib
+    # `stduuid "uuid"` (Go 1.27 std uuid, used by orbital) as standard and
+    # fights gci's `alias` section indefinitely. gci + gofmt cover import
+    # ordering and formatting on their own.
   settings:
     gci:
       sections:

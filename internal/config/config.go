@@ -23,6 +23,10 @@ var (
 	ErrAMQPEmptyTarget   = errors.New("AMQP target must be specified")
 	ErrAMQPEmptySource   = errors.New("AMQP source must be specified")
 	ErrTargetEmptyRegion = errors.New("target region must be specified")
+
+	ErrTenantLimitsSystemsBelowMinimum   = errors.New("tenant limits systems must be at least 1")
+	ErrTenantLimitsKeyBelowMinimum       = errors.New("tenant limits keys must be at least 1")
+	ErrTenantLimitsKeyConfigBelowMinimum = errors.New("tenant limits key configs must be at least 1")
 )
 
 // Config holds all application configuration parameters
@@ -50,6 +54,8 @@ type Config struct {
 	KeystorePool KeystorePool `yaml:"keystorePool"`
 	Landscape    Landscape    `yaml:"landscape"`
 	Workflow     Workflow     `yaml:"workflow"`
+	Keys         Keys         `yaml:"keys"`
+	Tenant       Tenant       `yaml:"tenant"`
 }
 
 type ContextModels struct {
@@ -68,6 +74,11 @@ func (c *Config) Validate() error {
 	}
 
 	err = c.CryptoLayer.Validate()
+	if err != nil {
+		return errs.Wrap(ErrConfigurationValuesError, err)
+	}
+
+	err = c.Tenant.Validate()
 	if err != nil {
 		return errs.Wrap(ErrConfigurationValuesError, err)
 	}
@@ -93,27 +104,27 @@ const (
 	MaxCryptoCNPrefix          = 24
 )
 
+type CryptoCertSubject struct {
+	Locality           []string `yaml:"locality"`
+	OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
+	Organization       []string `yaml:"organization"`
+	Country            []string `yaml:"country"`
+	CommonNamePrefix   string   `yaml:"commonNamePrefix"`
+}
+
+type CryptoCert struct {
+	Name    string            `yaml:"name"`
+	RootCA  string            `yaml:"rootCA"` //nolint:tagliatelle
+	Subject CryptoCertSubject `yaml:"subject"`
+}
+
 func (c *CryptoLayer) Validate() error {
 	bytes, err := commoncfg.LoadValueFromSourceRef(c.CertX509Trusts)
 	if err != nil {
 		return err
 	}
 
-	type cryptoCertSubject struct {
-		Locality           []string `yaml:"locality"`
-		OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
-		Organization       []string `yaml:"organization"`
-		Country            []string `yaml:"country"`
-		CommonNamePrefix   string   `yaml:"commonNamePrefix"`
-	}
-
-	type cryptoCerts struct {
-		Name    string            `yaml:"name"`
-		RootCA  string            `yaml:"rootCA"` //nolint:tagliatelle
-		Subject cryptoCertSubject `yaml:"subject"`
-	}
-
-	var certs []*cryptoCerts
+	var certs []*CryptoCert
 
 	err = yaml.Unmarshal(bytes, &certs)
 	if err != nil {
@@ -254,11 +265,13 @@ type Services struct {
 type HTTPServer struct {
 	Address         string        `yaml:"address" default:":8080"`
 	ShutdownTimeout time.Duration `yaml:"shutdownTimeout" default:"5s"`
+	SwaggerEnabled  bool          `yaml:"swaggerEnabled" default:"false"`
 }
 
 type TenantManager struct {
-	SecretRef commoncfg.SecretRef `yaml:"secretRef"`
-	AMQP      AMQP                `yaml:"amqp"`
+	SecretRef          commoncfg.SecretRef `yaml:"secretRef"`
+	AMQP               AMQP                `yaml:"amqp"`
+	TerminationTimeout time.Duration       `yaml:"terminationTimeout" default:"48h"`
 }
 
 // Validate checks the TenantManager configuration values
@@ -361,13 +374,14 @@ type KeystoreConfigValue struct {
 }
 
 type Region struct {
-	Name          string `json:"name"`
-	TechnicalName string `json:"technicalName"`
+	Name          string `json:"name" yaml:"name"`
+	TechnicalName string `json:"technicalName" yaml:"technicalName"`
 }
 
 type KeystorePool struct {
-	Size     int           `yaml:"size" default:"5"`
-	Interval time.Duration `yaml:"interval" default:"1h"`
+	Size             int           `yaml:"size" default:"5"`
+	Interval         time.Duration `yaml:"interval" default:"1h"`
+	SupportedRegions []Region      `yaml:"supportedRegions" json:"supportedRegions"`
 }
 
 type Landscape struct {
@@ -381,4 +395,33 @@ type Workflow struct {
 	DefaultRetentionPeriodDays int `yaml:"defaultRetentionPeriodDays"`
 	DefaultExpiryPeriodDays    int `yaml:"defaultExpiryPeriodDays"`
 	DefaultMaxExpiryPeriodDays int `yaml:"defaultMaxExpiryPeriodDays"`
+}
+
+type Keys struct {
+	PendingRegistrationTimeout time.Duration `yaml:"pendingRegistrationTimeout" default:"15m"`
+	PendingCreationTimeout     time.Duration `yaml:"pendingCreationTimeout"     default:"15m"`
+}
+
+const MinTenantLimit = 1
+
+// Tenant holds per-tenant resource limits.
+type Tenant struct {
+	SystemLimit    int `yaml:"systemLimit" default:"50"`
+	KeyLimit       int `yaml:"keyLimit" default:"10"`
+	KeyConfigLimit int `yaml:"keyConfigLimit" default:"5"`
+}
+
+// Validate checks that tenant limits are within acceptable bounds.
+func (tl *Tenant) Validate() error {
+	if tl.SystemLimit < MinTenantLimit {
+		return ErrTenantLimitsSystemsBelowMinimum
+	}
+	if tl.KeyLimit < MinTenantLimit {
+		return ErrTenantLimitsKeyBelowMinimum
+	}
+	if tl.KeyConfigLimit < MinTenantLimit {
+		return ErrTenantLimitsKeyConfigBelowMinimum
+	}
+
+	return nil
 }

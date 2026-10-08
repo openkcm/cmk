@@ -3,26 +3,29 @@ package manager
 import (
 	"context"
 	"crypto/x509"
-	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"gopkg.in/yaml.v3"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/ptr"
+)
+
+const (
+	DefaultCertName = "hyok-default"
 )
 
 var (
@@ -40,16 +43,25 @@ type KeyConfigurationAPI interface {
 		keyConfigID uuid.UUID,
 		patchKeyConfig cmkapi.KeyConfigurationPatch,
 	) (*model.KeyConfiguration, error)
-	GetClientCertificates(ctx context.Context) (map[model.CertificatePurpose][]*ClientCertificate, error)
+	GetClientCertificates(ctx context.Context) (model.ClientCertificates, error)
+	CanConnectSystems(ctx context.Context, keyConfig *model.KeyConfiguration) (bool, error)
 }
 
 type KeyConfigManager struct {
-	repository repo.Repo
-	user       User
-	certs      *CertificateManager
-	tagManager Tags
-	cmkAuditor *auditor.Auditor
-	cfg        *config.Config
+	r            repo.Repo
+	user         User
+	certs        *CertificateManager
+	tagManager   Tags
+	cmkAuditor   *auditor.Auditor
+	cfg          *config.Config
+	eventFactory *eventprocessor.EventFactory
+	tenantCfg    TenantConfigs
+}
+
+// TenantConfigs is the subset of TenantConfigManager used by KeyConfigManager.
+type TenantConfigs interface {
+	GetEffectiveSystemsLimit(ctx context.Context) (int, error)
+	GetEffectiveKeysLimit(ctx context.Context) (int, error)
 }
 
 type KeyConfigFilter struct {
@@ -63,16 +75,121 @@ func NewKeyConfigManager(
 	user User,
 	tagManager Tags,
 	cmkAuditor *auditor.Auditor,
+	eventFactory *eventprocessor.EventFactory,
 	cfg *config.Config,
+	tenantCfg TenantConfigs,
 ) *KeyConfigManager {
 	return &KeyConfigManager{
-		repository: repository,
-		certs:      certManager,
-		user:       user,
-		cmkAuditor: cmkAuditor,
-		tagManager: tagManager,
-		cfg:        cfg,
+		r:            repository,
+		certs:        certManager,
+		user:         user,
+		cmkAuditor:   cmkAuditor,
+		tagManager:   tagManager,
+		eventFactory: eventFactory,
+		cfg:          cfg,
+		tenantCfg:    tenantCfg,
 	}
+}
+
+func (m *KeyConfigManager) CanConnectSystems(
+	ctx context.Context,
+	keyConfig *model.KeyConfiguration,
+) (bool, error) {
+	// Check if primary key exists
+	if !ptr.IsNotNilUUID(keyConfig.PrimaryKeyID) {
+		return false, ErrConnectSystemNoPrimaryKey
+	}
+
+	pKey := &model.Key{ID: *keyConfig.PrimaryKeyID}
+	_, err := m.r.First(ctx, pKey, *repo.NewQuery())
+	if err != nil {
+		return false, errs.Wrap(ErrGettingKeyByID, err)
+	}
+
+	// Pre-check System key state.
+	// Should fail if the key is not enabled
+	if pKey.State != cmkapi.KeyStateENABLED {
+		return false, ErrConnectSystemNoPrimaryKey
+	}
+
+	return true, nil
+}
+
+// EnforceSystemLimit checks the per-tenant system limit for a key configuration and returns
+// ErrSystemLimitExceeded when the count is at or above the limit. It locks the
+// key_configuration row FOR UPDATE to serialize concurrent link requests within the
+// same transaction. Must be called inside a transaction.
+func (m *KeyConfigManager) EnforceSystemLimit(ctx context.Context, keyConfigID uuid.UUID) error {
+	if m.tenantCfg == nil {
+		return nil
+	}
+	limit, err := m.tenantCfg.GetEffectiveSystemsLimit(ctx)
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
+		return nil
+	}
+	if _, err = m.r.First(ctx, &model.KeyConfiguration{ID: keyConfigID},
+		*repo.NewQuery().WithLock(repo.LockForUpdate)); err != nil {
+		return errs.Wrap(ErrGettingKeyConfigByID, err)
+	}
+	// Count systems already linked (key_configuration_id) and in-flight
+	// (target_key_configuration_id) to prevent TOCTOU over-limit when the
+	// event processor sets key_configuration_id asynchronously.
+	orCK := repo.NewCompositeKey().
+		Where(repo.KeyConfigIDField, keyConfigID).
+		Where(repo.TargetKeyConfigIDField, keyConfigID)
+	orCK.IsStrict = false
+	count, err := m.r.Count(
+		ctx,
+		&model.System{},
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(orCK)),
+	)
+	if err != nil {
+		return errs.Wrap(repo.ErrGetResource, err)
+	}
+	if count >= limit {
+		return ErrSystemLimitExceeded
+	}
+	return nil
+}
+
+// EnforceKeyLimit checks the per-tenant key limit for a key configuration and returns
+// ErrKeyLimitExceeded when the count is at or above the limit. It locks the
+// key_configuration row FOR UPDATE to serialize concurrent create requests.
+func (m *KeyConfigManager) EnforceKeyLimit(ctx context.Context, keyConfigID uuid.UUID) error {
+	if m.tenantCfg == nil {
+		return nil
+	}
+	limit, err := m.tenantCfg.GetEffectiveKeysLimit(ctx)
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
+		return nil
+	}
+	if _, err = m.r.First(ctx, &model.KeyConfiguration{ID: keyConfigID},
+		*repo.NewQuery().WithLock(repo.LockForUpdate)); err != nil {
+		return errs.Wrap(ErrGettingKeyConfigByID, err)
+	}
+	count, err := m.r.Count(
+		ctx,
+		&model.Key{},
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().
+				Where(repo.KeyConfigIDField, keyConfigID).
+				Where(repo.StateField, cmkapi.KeyStateDELETED, repo.NotEq).
+				Where(repo.StateField, cmkapi.KeyStateDETACHED, repo.NotEq),
+		)),
+	)
+	if err != nil {
+		return errs.Wrap(repo.ErrGetResource, err)
+	}
+	if count >= limit {
+		return ErrKeyLimitExceeded
+	}
+	return nil
 }
 
 func (m *KeyConfigManager) GetKeyConfigurations(
@@ -94,7 +211,7 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 		return []*model.KeyConfiguration{}, 0, nil
 	}
 
-	return repo.ListAndCount(ctx, m.repository, filter.Pagination, model.KeyConfiguration{}, query)
+	return repo.ListAndCount(ctx, m.r, filter.Pagination, model.KeyConfiguration{}, query)
 }
 
 func (m *KeyConfigManager) PostKeyConfigurations(
@@ -103,12 +220,13 @@ func (m *KeyConfigManager) PostKeyConfigurations(
 ) (*model.KeyConfiguration, error) {
 	var group model.Group
 
-	exist, err := m.repository.First(
+	exist, err := m.r.First(
 		ctx,
 		&group,
 		*repo.NewQuery().
 			Where(repo.NewCompositeKeyGroup(
-				repo.NewCompositeKey().Where(repo.IDField, keyConfiguration.AdminGroupID))),
+				repo.NewCompositeKey().Where(repo.IDField, keyConfiguration.AdminGroupID),
+			)),
 	)
 	keyConfiguration.AdminGroup = group
 	if err != nil || !exist {
@@ -128,7 +246,7 @@ func (m *KeyConfigManager) PostKeyConfigurations(
 		return nil, ErrNameCannotBeEmpty
 	}
 
-	err = m.repository.Create(ctx, keyConfiguration)
+	err = m.r.Create(ctx, keyConfiguration)
 	if err != nil {
 		return nil, errs.Wrap(ErrCreateKeyConfiguration, err)
 	}
@@ -147,7 +265,7 @@ func (m *KeyConfigManager) DeleteKeyConfigurationByID(
 		return err
 	}
 
-	exist, err := repo.HasConnectedSystems(ctx, m.repository, keyConfigID)
+	exist, err := repo.HasConnectedSystems(ctx, m.r, keyConfigID)
 	if err != nil {
 		return err
 	}
@@ -156,8 +274,17 @@ func (m *KeyConfigManager) DeleteKeyConfigurationByID(
 		return errs.Wrap(ErrDeleteKeyConfiguration, ErrConnectedSystemToKeyConfig)
 	}
 
-	return m.repository.Transaction(ctx, func(ctx context.Context) error {
-		_, err = m.repository.Delete(ctx, keyConfig, *repo.NewQuery())
+	exist, err = repo.HasConnectedKeys(ctx, m.r, keyConfigID)
+	if err != nil {
+		return err
+	}
+
+	if exist {
+		return errs.Wrap(ErrDeleteKeyConfiguration, ErrConnectedKeysToKeyConfig)
+	}
+
+	return m.r.Transaction(ctx, func(ctx context.Context) error {
+		_, err = m.r.Delete(ctx, keyConfig, *repo.NewQuery())
 		if err != nil {
 			return errs.Wrap(ErrDeleteKeyConfiguration, err)
 		}
@@ -180,7 +307,7 @@ func (m *KeyConfigManager) GetKeyConfigurationByID(
 	}
 
 	query := getKeyConfigWithTotalsQuery().Preload(repo.Preload{"AdminGroup"})
-	_, err = m.repository.First(ctx, keyConfig, *query)
+	_, err = m.r.First(ctx, keyConfig, *query)
 	if err != nil {
 		return nil, errs.Wrap(ErrGettingKeyConfigByID, err)
 	}
@@ -188,6 +315,10 @@ func (m *KeyConfigManager) GetKeyConfigurationByID(
 	return keyConfig, nil
 }
 
+// UpdateKeyConfigurationByID updates a keyconfig
+// In case there is an update to the primaryKey invoke system switch events
+//
+//nolint:cyclop
 func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 	ctx context.Context,
 	keyConfigID uuid.UUID,
@@ -202,7 +333,7 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 		return nil, err
 	}
 
-	_, err = m.repository.First(
+	_, err = m.r.First(
 		ctx,
 		keyConfig,
 		*repo.NewQuery(),
@@ -223,69 +354,31 @@ func (m *KeyConfigManager) UpdateKeyConfigurationByID(
 		keyConfig.Description = *patchKeyConfig.Description
 	}
 
-	_, err = m.repository.Patch(ctx, keyConfig, *repo.NewQuery())
+	err = m.r.Transaction(ctx, func(ctx context.Context) error {
+		if patchKeyConfig.PrimaryKeyID != nil {
+			err := m.handleUpdatePrimaryKey(ctx, keyConfig, *patchKeyConfig.PrimaryKeyID)
+			if err != nil {
+				return errs.Wrap(ErrUpdateKeyConfiguration, err)
+			}
+			keyConfig.PrimaryKeyID = patchKeyConfig.PrimaryKeyID
+		}
+
+		_, err = m.r.Patch(ctx, keyConfig, *repo.NewQuery())
+		if err != nil {
+			return errs.Wrap(ErrUpdateKeyConfiguration, err)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, errs.Wrap(ErrUpdateKeyConfiguration, err)
+		return nil, err
 	}
 
 	return keyConfig, nil
 }
 
-type ClientCertificate struct {
-	Name    string                   `yaml:"name"`
-	RootCA  string                   `yaml:"rootCA"` //nolint:tagliatelle
-	Subject ClientCertificateSubject `yaml:"subject"`
-}
-
-type ClientCertificateSubject struct {
-	Locality           []string `yaml:"locality"`
-	OrganizationalUnit []string `yaml:"organizationUnit"` //nolint:tagliatelle
-	Organization       []string `yaml:"organization"`
-	Country            []string `yaml:"country"`
-	CommonNamePrefix   string   `yaml:"commonNamePrefix"`
-	CommonName         string
-}
-
-func NewClientCertificateSubjectFromPKIX(subject pkix.Name) ClientCertificateSubject {
-	return ClientCertificateSubject{
-		Locality:           subject.Locality,
-		OrganizationalUnit: subject.OrganizationalUnit,
-		Organization:       subject.Organization,
-		Country:            subject.Country,
-		CommonName:         subject.CommonName,
-	}
-}
-
-// FormatSubjectWithSlashSeparatedOUs transforms the standard X.509 subject string
-// to combine multiple OUs with / separator instead of +
-func FormatSubjectWithSlashSeparatedOUs(subject ClientCertificateSubject) string {
-	s := pkix.Name{
-		Locality:           subject.Locality,
-		Country:            subject.Country,
-		Organization:       subject.Organization,
-		OrganizationalUnit: subject.OrganizationalUnit,
-		CommonName:         subject.CommonName,
-	}
-	if len(s.OrganizationalUnit) <= 1 {
-		return s.String() // Use standard format if 0 or 1 OU
-	}
-
-	// Get standard format
-	standardSubject := s.String()
-
-	// Replace OU=X+OU=Y+OU=Z with OU=X/Y/Z
-	combinedOU := "OU=" + strings.Join(s.OrganizationalUnit, "/")
-
-	// Build regex to match multiple OU entries
-	ouPattern := `OU=[^,+]+((\+OU=[^,+]+)+)`
-	re := regexp.MustCompile(ouPattern)
-
-	return re.ReplaceAllString(standardSubject, combinedOU)
-}
-
 // GetClientCertificates retrieves the client certificates
 func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
-	map[model.CertificatePurpose][]*ClientCertificate, error,
+	model.ClientCertificates, error,
 ) {
 	tenantDefaultCert, err := m.certs.getDefaultHYOKClientCert(ctx)
 	if err != nil {
@@ -294,20 +387,23 @@ func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 
 	defaultCerts := []*model.Certificate{tenantDefaultCert}
 
-	clientCerts := make(map[model.CertificatePurpose][]*ClientCertificate)
-	clientCerts[model.CertificatePurposeTenantDefault] = make([]*ClientCertificate, len(defaultCerts))
+	clientCerts := make(model.ClientCertificates)
+	clientCerts[model.CertificatePurposeHYOKManagement] = make([]*model.ClientCertificate, len(defaultCerts))
 
-	for i, certificate := range defaultCerts {
-		configCert, err := m.transformTenantDefaultCertificate(ctx, certificate.CertPEM,
-			m.cfg.Certificates.RootCertURL, ErrGetDefaultCerts)
+	for i := range defaultCerts {
+		configCert, err := m.transformTenantDefaultCertificate(
+			defaultCerts[i].CertPEM,
+			m.cfg.Certificates.RootCertURL,
+			ErrGetDefaultCerts,
+		)
 		if err != nil {
 			return nil, err
 		}
 
-		clientCerts[model.CertificatePurposeTenantDefault][i] = configCert
+		clientCerts[model.CertificatePurposeHYOKManagement][i] = configCert
 	}
 
-	cryptoCerts, err := m.getCryptoCertificates(ctx)
+	cryptoCerts, err := m.certs.getCryptoCertificates(ctx)
 	clientCerts[model.CertificatePurposeCrypto] = cryptoCerts
 
 	if err != nil {
@@ -317,9 +413,9 @@ func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 	return clientCerts, nil
 }
 
-func (m *KeyConfigManager) transformTenantDefaultCertificate(_ context.Context,
+func (m *KeyConfigManager) transformTenantDefaultCertificate(
 	certRaw, rootCertURL string, errParent error,
-) (*ClientCertificate, error) {
+) (*model.ClientCertificate, error) {
 	block, _ := pem.Decode([]byte(certRaw))
 	if block == nil {
 		return nil, errs.Wrap(errParent, ErrDecodingCert)
@@ -330,37 +426,11 @@ func (m *KeyConfigManager) transformTenantDefaultCertificate(_ context.Context,
 		return nil, errs.Wrap(errParent, err)
 	}
 
-	return &ClientCertificate{
+	return &model.ClientCertificate{
 		Name:    DefaultCertName,
 		RootCA:  rootCertURL,
-		Subject: NewClientCertificateSubjectFromPKIX(cert.Subject),
+		Subject: model.ToCertificateSubjectFromPKIX(cert.Subject),
 	}, nil
-}
-
-// getCryptoCertificates retrieves crypto certificates from config
-func (m *KeyConfigManager) getCryptoCertificates(ctx context.Context) ([]*ClientCertificate, error) {
-	bytes, err := commoncfg.LoadValueFromSourceRef(m.cfg.CryptoLayer.CertX509Trusts)
-	if err != nil {
-		return nil, errs.Wrap(ErrLoadCryptoCerts, err)
-	}
-
-	var cryptoCerts []*ClientCertificate
-
-	err = yaml.Unmarshal(bytes, &cryptoCerts)
-	if err != nil {
-		return nil, errs.Wrap(ErrUnmarshalCryptoCerts, err)
-	}
-
-	tenantID, err := cmkcontext.ExtractTenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, cert := range cryptoCerts {
-		cert.Subject.CommonName = cert.Subject.CommonNamePrefix + tenantID
-	}
-
-	return cryptoCerts, nil
 }
 
 func getKeyConfigWithTotalsQuery() *repo.Query {
@@ -400,7 +470,7 @@ func (m *KeyConfigManager) applyIAMGroupFilter(
 	ctx context.Context,
 	query *repo.Query,
 ) (bool, error) {
-	iamIdentifiers, err := cmkcontext.ExtractClientDataGroupsString(ctx)
+	iamIdentifiers, err := cmkcontext.ExtractBusinessUserDataGroupsString(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -436,4 +506,121 @@ func (m *KeyConfigManager) applyIAMGroupFilter(
 		Where(repo.NewCompositeKeyGroup(ck))
 
 	return false, nil
+}
+
+// Whenever Keyconfig PrimaryKey switches, systems need to send switch events
+// If systems had a previous switch event the event key needs to be updated for the retru
+//
+//nolint:funlen
+func (m *KeyConfigManager) handleUpdatePrimaryKey(
+	ctx context.Context,
+	keyConfig *model.KeyConfiguration,
+	primaryKeyID uuid.UUID,
+) error {
+	targetKey := &model.Key{ID: primaryKeyID, KeyConfigurationID: keyConfig.ID}
+	_, err := m.r.First(ctx, targetKey, *repo.NewQuery())
+	if err != nil {
+		return err
+	}
+	if err := validateKeyForPrimarySwitch(targetKey); err != nil {
+		return err
+	}
+
+	// Key is valid. If keyconfig has no existing key no need for further validations
+	if keyConfig.PrimaryKeyID == nil {
+		return nil
+	}
+
+	sourceKey := &model.Key{ID: *keyConfig.PrimaryKeyID}
+	_, err = m.r.First(ctx, sourceKey, *repo.NewQuery())
+	if err != nil {
+		return err
+	}
+	if err := validateKeyForPrimarySwitch(sourceKey); err != nil {
+		return err
+	}
+
+	err = m.updatePrimaryKeySystemEvents(
+		ctx,
+		ptr.GetSafeDeref(keyConfig.PrimaryKeyID).String(),
+		primaryKeyID.String(),
+	)
+	if err != nil {
+		return err
+	}
+
+	// Send system switches for systems in keyconfig
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(
+				repo.KeyConfigIDField, keyConfig.ID,
+			),
+		),
+	)
+	return repo.ProcessInBatch(
+		ctx,
+		m.r,
+		query,
+		repo.DefaultLimit,
+		func(systems []*model.System) error {
+			for _, s := range systems {
+				_, err := m.eventFactory.SystemSwitchNewPrimaryKey(
+					ctx,
+					s,
+					primaryKeyID.String(),
+					keyConfig.PrimaryKeyID.String(),
+				)
+				if err != nil {
+					return err
+				}
+			}
+
+			return nil
+		},
+	)
+}
+
+// updateOldPKeySystemEvents updates keyTo for system event retries
+// This can be done as now there is a new primary key and systems
+// can only be linked to primary keys, the previous keyTo needs now
+// updated the newly set primary key
+func (m *KeyConfigManager) updatePrimaryKeySystemEvents(ctx context.Context, oldPkey string, newPkey string) error {
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(
+				repo.JSONBField(repo.DataField, "keyIDTo"), oldPkey,
+			),
+		),
+	)
+	return repo.ProcessInBatch(ctx, m.r, query, repo.DefaultLimit, func(events []*model.Event) error {
+		for _, e := range events {
+			systemJobData, err := eventprocessor.GetSystemJobData(e)
+			if err != nil {
+				return err
+			}
+
+			systemJobData.KeyIDTo = newPkey
+			bytes, err := json.Marshal(systemJobData)
+			if err != nil {
+				return err
+			}
+
+			e.Data = bytes
+			_, err = m.r.Patch(ctx, e, *repo.NewQuery())
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func validateKeyForPrimarySwitch(key *model.Key) error {
+	if key.State == cmkapi.KeyStateDELETED || key.State == cmkapi.KeyStatePENDINGDELETION {
+		return ErrKeyIsDeleted
+	}
+	if key.State != cmkapi.KeyStateENABLED {
+		return ErrKeyIsNotEnabled
+	}
+	return nil
 }

@@ -2,42 +2,30 @@ package testplugins
 
 import (
 	"context"
-	"log/slog"
 
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
+	"github.com/openkcm/plugin-sdk/api"
 
-	systeminformationv1 "github.com/openkcm/plugin-sdk/proto/plugin/systeminformation/v1"
-	configv1 "github.com/openkcm/plugin-sdk/proto/service/common/config/v1"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
+	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 )
 
-type SystemInformation struct {
-	systeminformationv1.UnsafeSystemInformationServiceServer
-	configv1.UnsafeConfigServer
+type TestSystemInformation struct{}
+
+var _ systeminformation.SystemInformation = (*TestSystemInformation)(nil)
+
+func NewTestSystemInformation() *TestSystemInformation {
+	return &TestSystemInformation{}
 }
 
-func NewSystemInformation() catalog.BuiltInPlugin {
-	p := &SystemInformation{}
-	return catalog.MakeBuiltIn(
-		Name,
-		systeminformationv1.SystemInformationServicePluginServer(p),
-		configv1.ConfigServiceServer(p),
-	)
+func (s *TestSystemInformation) ServiceInfo() api.Info {
+	return testInfo{
+		configuredType: servicewrapper.SystemInformationServiceType,
+	}
 }
 
-func (p *SystemInformation) Configure(
+func (s *TestSystemInformation) GetSystemInfo(
 	_ context.Context,
-	req *configv1.ConfigureRequest,
-) (*configv1.ConfigureResponse, error) {
-	slog.Info("Configuring plugin")
-
-	return &configv1.ConfigureResponse{}, nil
-}
-
-func (p *SystemInformation) Get(
-	_ context.Context,
-	_ *systeminformationv1.GetRequest,
-) (
-	*systeminformationv1.GetResponse, error,
-) {
-	return &systeminformationv1.GetResponse{}, nil
+	_ *systeminformation.GetSystemInfoRequest,
+) (*systeminformation.GetSystemInfoResponse, error) {
+	return &systeminformation.GetSystemInfoResponse{}, nil
 }

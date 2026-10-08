@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/authz"
 )
 
@@ -14,16 +15,16 @@ import (
 type ImportParams struct {
 	AutoTimeModel
 
-	KeyID              uuid.UUID `gorm:"type:uuid;primaryKey"`
-	WrappingAlg        string    `gorm:"type:varchar(50);not null"`
-	HashFunction       string    `gorm:"type:varchar(50);not null"`
-	PublicKeyPEM       string    `gorm:"type:text;not null"`
+	KeyID              uuid.UUID                            `gorm:"type:uuid;primaryKey"`
+	WrappingAlg        cmkapi.WrappingAlgorithmName         `gorm:"type:varchar(50);not null"`
+	HashFunction       cmkapi.WrappingAlgorithmHashFunction `gorm:"type:varchar(50);not null"`
+	PublicKeyPEM       string                               `gorm:"type:text;not null"`
 	Expires            *time.Time
 	ProviderParameters json.RawMessage `gorm:"type:jsonb"`
 }
 
 // TableResourceType return the authz resource type
-func (m ImportParams) TableResourceType() authz.RepoResourceTypeName {
+func (m ImportParams) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeImportparam
 }
 
@@ -37,8 +38,9 @@ func (ImportParams) IsSharedModel() bool {
 }
 
 func (m ImportParams) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 

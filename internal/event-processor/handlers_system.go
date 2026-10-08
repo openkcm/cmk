@@ -8,7 +8,9 @@ import (
 
 	"github.com/openkcm/orbital"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
+
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients/registry"
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
@@ -84,6 +86,7 @@ func (h *SystemLinkJobHandler) HandleJobDoneEvent(ctx context.Context, job orbit
 	err = h.repo.Transaction(ctx, func(ctx context.Context) error {
 		system.Status = cmkapi.SystemStatusCONNECTED
 		system.KeyConfigurationID = &key.KeyConfigurationID
+		system.TargetKeyConfigurationID = nil
 		err = updateSystem(ctx, h.repo, system)
 		if err != nil {
 			return err
@@ -256,7 +259,9 @@ func (h *SystemSwitchJobHandler) HandleJobDoneEvent(ctx context.Context, job orb
 	}
 
 	err = h.repo.Transaction(ctx, func(ctx context.Context) error {
+		system.Status = cmkapi.SystemStatusCONNECTED
 		system.KeyConfigurationID = &key.KeyConfigurationID
+		system.TargetKeyConfigurationID = nil
 		err = updateSystem(ctx, h.repo, system)
 		if err != nil {
 			return err
@@ -343,9 +348,18 @@ func (h *SystemUnlinkDecommissionJobHandler) HandleJobFailedEvent(ctx context.Co
 		taskErrorMessage = "unknown error"
 	}
 
-	log.Warn(ctx, "System unlink decommission job failed, marking system as disconnected and cleaning up key claim",
+	log.Warn(
+		ctx,
+		"System unlink decommission job failed; locking system in registry, marking disconnected and cleaning key claim",
 		slog.String("errorMessage", taskErrorMessage),
 	)
+
+	// Set the system to STATUS_LOCKED in the registry so the broken key chain
+	// is visible to other resources. Failure here is logged but must not block
+	// tenant decommission — the termination flow continues regardless.
+	if lockErr := h.lockSystemInRegistry(ctx, job); lockErr != nil {
+		log.Error(ctx, "Failed to set system status to LOCKED in registry, continuing termination", lockErr)
+	}
 
 	_, _, err = h.terminate(ctx, job)
 	if err != nil {
@@ -376,6 +390,38 @@ func (h *SystemUnlinkDecommissionJobHandler) HandleJobCanceledEvent(ctx context.
 	if err != nil {
 		return err
 	}
+
+	return nil
+}
+
+// lockSystemInRegistry sets the system status to STATUS_LOCKED in the registry.
+// The registry's UpdateSystemStatus is naturally idempotent — calling it twice with
+// the same status is not an error.
+func (h *SystemUnlinkDecommissionJobHandler) lockSystemInRegistry(ctx context.Context, job orbital.Job) error {
+	ctx = log.InjectSystemEvent(ctx, job.Type)
+
+	data, err := unmarshalSystemJobData(job)
+	if err != nil {
+		return err
+	}
+
+	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
+	system, err := getSystemByID(ctx, h.repo, data.SystemID)
+	if err != nil {
+		return err
+	}
+
+	err = h.registry.System().ExtendedUpdateSystemStatus(ctx, systems.SystemFilter{
+		ExternalID: system.Identifier,
+		Region:     system.Region,
+	}, string(system.Type), typesv1.Status_STATUS_LOCKED)
+	if err != nil {
+		return errs.Wrap(ErrSettingSystemLockedStatus, err)
+	}
+
+	log.Info(ctx, "System status set to LOCKED in registry",
+		slog.String("systemIdentifier", system.Identifier),
+		slog.String("region", system.Region))
 
 	return nil
 }
@@ -699,12 +745,12 @@ func cleanUpEvent(ctx context.Context, r repo.Repo, job orbital.Job) error {
 	_, err := r.Delete(
 		ctx,
 		&model.Event{},
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(repo.NewCompositeKey().
-			Where(repo.IdentifierField, job.ExternalID).
-			Where(repo.TypeField, job.Type),
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().
+				Where(repo.IdentifierField, job.ExternalID).
+				Where(repo.TypeField, job.Type),
 		)),
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to clean up event for job %s: %w", job.ID, err)
 	}

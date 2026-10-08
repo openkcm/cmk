@@ -3,8 +3,8 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/tenantconfigs"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/tenantconfigs"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
 )
@@ -50,4 +50,15 @@ func (c *APIController) UpdateTenantWorkflowConfiguration(
 
 	apiConfig := tenantconfigs.WorkflowConfigToAPI(savedConfig)
 	return cmkapi.UpdateTenantWorkflowConfiguration200JSONResponse(*apiConfig), nil
+}
+
+func (c *APIController) GetTenantLimits(
+	ctx context.Context,
+	_ cmkapi.GetTenantLimitsRequestObject,
+) (cmkapi.GetTenantLimitsResponseObject, error) {
+	systemsLimit, keysLimit, err := c.Manager.TenantConfigs.GetEffectiveLimits(ctx)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGetTenantLimits, err)
+	}
+	return cmkapi.GetTenantLimits200JSONResponse(*tenantconfigs.LimitsToAPI(systemsLimit, keysLimit)), nil
 }

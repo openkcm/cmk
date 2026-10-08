@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openkcm/cmk/internal/api/write"
+	"github.com/openkcm/cmk/internal/api/cmk/write"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
@@ -14,6 +14,21 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
+
+// extractPattern removes the base path from a pattern using TrimPrefix to prevent bypass attacks.
+// Pattern format: "METHOD /path" or "/path"
+func extractPattern(pattern, basePath string) string {
+	if method, path, found := strings.Cut(pattern, " "); found {
+		trimmedPath := strings.TrimPrefix(path, basePath)
+		return method + " " + trimmedPath
+	}
+	return strings.TrimPrefix(pattern, basePath)
+}
+
+// ExtractPatternForTest is a test helper that exposes extractPattern for unit testing
+func ExtractPatternForTest(pattern, basePath string) string {
+	return extractPattern(pattern, basePath)
+}
 
 // AuthzMiddleware is a middleware that checks authorization for incoming requests
 
@@ -27,7 +42,7 @@ func AuthzMiddleware(
 				ctx := r.Context()
 
 				log.Debug(ctx, "request pattern", slog.String("pattern", r.Pattern))
-				pattern := strings.Replace(r.Pattern, constants.BasePath, "", 1)
+				pattern := extractPattern(r.Pattern, constants.BasePath)
 
 				// Check if the API is on the allow list
 				_, exists := authz.AllowListByAPI[pattern]
@@ -62,7 +77,7 @@ func AuthzMiddleware(
 
 				// If authorization fails, attempt to load the allow list for the tenant and check again
 				if !allowed {
-					tenantID, extractErr := cmkcontext.ExtractTenantID(ctx)
+					_, extractErr := cmkcontext.ExtractTenantID(ctx)
 					if extractErr != nil {
 						log.Debug(ctx, "ExtractTenantID error", log.ErrorAttr(extractErr))
 						write.ErrorResponse(
@@ -72,7 +87,7 @@ func AuthzMiddleware(
 						return
 					}
 
-					loadErr := ctr.AuthzLoader.LoadAllowList(ctx, tenantID)
+					loadErr := ctr.AuthzLoader.LoadTenantAllowedActions(ctx)
 					if loadErr != nil {
 						log.Debug(ctx, "LoadAllowList error", log.ErrorAttr(loadErr))
 						write.ErrorResponse(

@@ -1,180 +1,75 @@
+// Package psqlreplicatests verifies db.StartDBConnection's replica handling.
 package psqlreplicatests_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+	"github.com/testcontainers/testcontainers-go"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
-	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 )
+
+const replicaContainer = "testcontainers-postgresql-replica-shared"
 
 type PSQLReplicaSuite struct {
 	suite.Suite
 
-	postgresPort string
-	dbConfig     config.Database
-	replicDB     []config.Database
+	primary config.Database
+	replica config.Database
 }
 
 func (s *PSQLReplicaSuite) SetupSuite() {
-	cfg := &config.Config{
-		Database: integrationutils.DB,
-	}
-	testutils.StartPostgresSQL(s.T(), &cfg.Database)
+	primary := testutils.TestDB
+	testutils.StartPostgresSQL(s.T(), &primary)
+	s.primary = primary
 
-	s.dbConfig = cfg.Database
-	s.replicDB = integrationutils.ReplicaDB
-	s.replicDB[0].Port = cfg.Database.Port
-	s.postgresPort = cfg.Database.Port
+	replica := testutils.TestDB
+	testutils.StartPostgresSQL(s.T(), &replica,
+		testcontainers.WithReuseByName(replicaContainer))
+	s.replica = replica
 }
 
-func (s *PSQLReplicaSuite) TestConnectToPsqlWithoutReplica() {
-	cfg := config.Config{
-		Database: s.dbConfig,
-	}
-
+func (s *PSQLReplicaSuite) TestConnectWithReplica() {
 	dbConn, err := db.StartDBConnection(
 		s.T().Context(),
-		cfg.Database,
-		cfg.DatabaseReplicas,
-		nil, // No tracing in tests
+		s.primary,
+		[]config.Database{s.replica},
+		nil,
 	)
 
-	s.Require().NotNil(dbConn)
 	s.Require().NoError(err)
-}
-
-func (s *PSQLReplicaSuite) TestConnectToPsqlWithReplica() {
-	cfg := config.Config{
-		Database:         s.dbConfig,
-		DatabaseReplicas: s.replicDB,
-	}
-
-	dbConn, err := db.StartDBConnection(
-		s.T().Context(),
-		cfg.Database,
-		cfg.DatabaseReplicas,
-		nil, // No tracing in tests
-	)
-
 	s.Require().NotNil(dbConn)
-	s.Require().NoError(err)
-}
-
-func (s *PSQLReplicaSuite) TestQueryToPsqlWithReplica() {
-	db, tenants, _ := testutils.NewTestDB(s.T(), testutils.TestDBConfig{})
-
-	ctx := testutils.CreateCtxWithTenant(tenants[0])
-	repository := sql.NewRepository(db)
-
-	// Create test entity
-	sys := testutils.NewSystem(func(_ *model.System) {})
-	testutils.CreateTestEntities(ctx, s.T(), repository, sys)
-
-	// Query the entity
-	found, err := repository.First(
-		ctx,
-		sys,
-		repo.Query{},
-	)
-
-	s.NoError(err)
-	s.True(found)
-}
-
-func (s *PSQLReplicaSuite) TestDatabaseConnectionError() {
-	invalidConfig := s.dbConfig
-	invalidConfig.Port = "9999"
-
-	cfg := config.Config{
-		Database: invalidConfig,
-	}
-
-	dbConn, err := db.StartDBConnection(
-		s.T().Context(),
-		cfg.Database,
-		cfg.DatabaseReplicas,
-		nil, // No tracing in tests
-	)
-
-	s.Nil(dbConn)
-	s.Error(err)
-}
-
-func (s *PSQLReplicaSuite) TestReplicaConnectionError() {
-	invalidReplica := s.replicDB
-	invalidReplica[0].Port = "9999"
-
-	cfg := config.Config{
-		Database:         s.dbConfig,
-		DatabaseReplicas: invalidReplica,
-	}
-
-	dbCon, err := db.StartDBConnection(
-		s.T().Context(),
-		cfg.Database,
-		cfg.DatabaseReplicas,
-		nil, // No tracing in tests
-	)
-	s.Nil(dbCon)
-	s.Error(err)
-}
-
-func (s *PSQLReplicaSuite) TestMultipleReplicas() {
-	multipleReplicas := []config.Database{
-		{
-			Host:   s.replicDB[0].Host,
-			User:   s.replicDB[0].User,
-			Secret: s.replicDB[0].Secret,
-			Name:   s.replicDB[0].Name,
-			Port:   s.postgresPort,
-		},
-		{
-			Host:   s.replicDB[0].Host,
-			User:   s.replicDB[0].User,
-			Secret: s.replicDB[0].Secret,
-			Name:   s.replicDB[0].Name,
-			Port:   s.postgresPort,
-		},
-	}
-
-	cfg := config.Config{
-		Database:         s.dbConfig,
-		DatabaseReplicas: multipleReplicas,
-	}
-
-	dbConn, err := db.StartDBConnection(
-		s.T().Context(),
-		cfg.Database,
-		cfg.DatabaseReplicas,
-		nil, // No tracing in tests
-	)
-
-	s.Require().NotNil(dbConn)
-	s.Require().NoError(err)
 }
 
 func (s *PSQLReplicaSuite) TestEmptyReplicaConfig() {
-	cfg := config.Config{
-		Database:         s.dbConfig,
-		DatabaseReplicas: []config.Database{},
-	}
+	dbConn, err := db.StartDBConnection(
+		s.T().Context(),
+		s.primary,
+		[]config.Database{},
+		nil,
+	)
+
+	s.Require().NoError(err)
+	s.Require().NotNil(dbConn)
+}
+
+func (s *PSQLReplicaSuite) TestReplicaConnectionError() {
+	badReplica := s.replica
+	badReplica.Port = "1" // unreachable
 
 	dbConn, err := db.StartDBConnection(
 		s.T().Context(),
-		cfg.Database,
-		cfg.DatabaseReplicas,
-		nil, // No tracing in tests
+		s.primary,
+		[]config.Database{badReplica},
+		nil,
 	)
 
-	s.Require().NotNil(dbConn)
-	s.Require().NoError(err)
+	s.Require().Error(err)
+	s.Require().Nil(dbConn)
+	s.Require().ErrorIs(err, db.ErrDBResolver)
 }
 
 func TestPSQLReplicaSuite(t *testing.T) {

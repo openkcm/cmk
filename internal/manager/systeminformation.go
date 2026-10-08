@@ -7,11 +7,13 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/openkcm/cmk/internal/authz"
+	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/systeminformation"
 	"github.com/openkcm/cmk/internal/repo"
 )
@@ -24,15 +26,19 @@ var (
 )
 
 type SystemInformation struct {
-	repo      repo.Repo
-	systemCfg *config.System
+	repo        repo.Repo
+	systemCfg   *config.System
+	authzLoader *authz_loader.AuthzLoader[
+		authz.RepoResourceType, authz.RepoAction]
 
 	svc systeminformation.SystemInformation
 }
 
 func NewSystemInformationManager(
 	repo repo.Repo,
-	svcRegistry *cmkpluginregistry.Registry,
+	authzLoader *authz_loader.AuthzLoader[
+		authz.RepoResourceType, authz.RepoAction],
+	svcRegistry serviceapi.Registry,
 	systemCfg *config.System,
 ) (*SystemInformation, error) {
 	svc, err := svcRegistry.SystemInformation()
@@ -48,15 +54,21 @@ func NewSystemInformationManager(
 }
 
 func (m *SystemInformation) UpdateSystems(ctx context.Context) error {
-	return repo.ProcessInBatch(ctx, m.repo, repo.NewQuery(), repo.DefaultLimit, func(systems []*model.System) error {
-		for _, sys := range systems {
-			err := m.updateSystem(ctx, sys)
-			if err != nil {
-				return err
+	// IgnoreFailMode: one failing system must not abort the whole sweep.
+	opts := repo.BatchProcessOptions{IgnoreFailMode: true}
+
+	return repo.ProcessInBatchWithOptions(
+		ctx, m.repo, repo.NewQuery(), repo.DefaultLimit, opts,
+		func(systems []*model.System) error {
+			var errs error
+			for _, sys := range systems {
+				if err := m.updateSystem(ctx, sys); err != nil {
+					errs = errors.Join(errs, err)
+				}
 			}
-		}
-		return nil
-	})
+			return errs
+		},
+	)
 }
 
 func (m *SystemInformation) UpdateSystemByExternalID(ctx context.Context, externalID string) error {
@@ -81,7 +93,7 @@ func (m *SystemInformation) updateSystem(ctx context.Context, system *model.Syst
 
 	resp, err := m.svc.GetSystemInfo(ctx, &systeminformation.GetSystemInfoRequest{
 		ID:   system.Identifier,
-		Type: system.Type,
+		Type: string(system.Type),
 	})
 	if err != nil {
 		log.Warn(ctx, "Could not get information from SIS", log.ErrorAttr(err))
@@ -101,7 +113,16 @@ func (m *SystemInformation) updateSystem(ctx context.Context, system *model.Syst
 		return errs.Wrap(err, repo.ErrSystemProperties)
 	}
 
-	updated := system.UpdateSystemProperties(metadata, m.systemCfg)
+	var authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction]
+	if m.authzLoader != nil {
+		authzHandler = m.authzLoader.AuthzHandler
+	}
+	updated, err := system.UpdateSystemProperties(ctx, authzHandler,
+		metadata, m.systemCfg)
+	if err != nil {
+		return errs.Wrap(err, repo.ErrSystemProperties)
+	}
+
 	if updated {
 		log.Debug(ctx, "Update System with SIS Information", slog.Any("sisSystem", *system))
 

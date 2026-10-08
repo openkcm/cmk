@@ -9,11 +9,10 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	pg "github.com/bartventer/gorm-multitenancy/postgres/v8"
-
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
+	pg "github.com/openkcm/cmk/internal/multitenancy/postgres"
 )
 
 var ErrWrappingDialectorWithTracing = errors.New("error wrapping dialector with tracing")

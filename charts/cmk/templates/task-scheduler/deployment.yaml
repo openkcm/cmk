@@ -47,7 +47,7 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ template "cmk.image" (tuple .Values.image $.Chart.AppVersion) }}"
+          image: "{{ template "cmk.image" (tuple .Values.image) }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- with .Values.taskScheduler.image.command }}
           command: [ "{{- toYaml . }}" ]

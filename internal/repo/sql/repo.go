@@ -11,11 +11,10 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/violations"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -32,6 +31,7 @@ const dbCtxKey ctxKey = "transactionRepo"
 
 var (
 	ErrUnsupportedOrderDirective = errors.New("unsupported order directive")
+	ErrFilterValuesEmpty         = errors.New("filter must have a values field to populate")
 )
 
 // ResourceRepository represents the repository for managing Resource data.
@@ -146,6 +146,8 @@ func (r *ResourceRepository) Count(
 			if err != nil {
 				return err
 			}
+
+			db = applyLocking(db, query)
 
 			res := db.Count(&count)
 			if res.Error != nil {
@@ -262,6 +264,7 @@ func (r *ResourceRepository) First(
 			}
 
 			db = applyPagination(db, query)
+			db = applyLocking(db, query)
 
 			res = db.First(resource)
 
@@ -338,16 +341,32 @@ func (r *ResourceRepository) Patch(
 	return res.RowsAffected > 0, nil
 }
 
-// Set will create an item or update it if it already exists
-// It returns an error if there was an error during the operation
-func (r *ResourceRepository) Set(ctx context.Context, resource repo.Resource) error {
+// Set will create an item or update it if it already exists.
+// Uses query.ConflictColumns to specify which columns determine a conflict (default: primary key).
+// Uses query.UpdateFields.Fields to specify which columns to update on conflict (default: all).
+func (r *ResourceRepository) Set(ctx context.Context, resource repo.Resource, query repo.Query) error {
 	return r.WithTenant(
 		ctx, resource, func(tx *multitenancy.DB) error {
-			err := tx.Clauses(
-				clause.OnConflict{
-					UpdateAll: true,
-				},
-			).Create(resource).Error
+			onConflict := clause.OnConflict{UpdateAll: true}
+
+			if len(query.ConflictColumns) > 0 {
+				columns := make([]clause.Column, len(query.ConflictColumns))
+				for i, col := range query.ConflictColumns {
+					columns[i] = clause.Column{Name: col}
+				}
+
+				onConflict = clause.OnConflict{
+					Columns: columns,
+				}
+
+				if len(query.UpdateFields.Fields) > 0 {
+					onConflict.DoUpdates = clause.AssignmentColumns(query.UpdateFields.Fields)
+				} else {
+					onConflict.UpdateAll = true
+				}
+			}
+
+			err := tx.Clauses(onConflict).Create(resource).Error
 			if err != nil {
 				log.Error(ctx, "error setting the resource", err)
 				return errs.Wrap(repo.ErrSetResource, err)
@@ -356,6 +375,66 @@ func (r *ResourceRepository) Set(ctx context.Context, resource repo.Resource) er
 			return nil
 		},
 	)
+}
+
+// GetFilterOptions populates the filters slice with the possible values for each column
+func (r *ResourceRepository) GetFilterOptions(
+	ctx context.Context,
+	resource repo.Resource,
+	filters []repo.Filter,
+	query repo.Query,
+) error {
+	if len(filters) == 0 {
+		return nil
+	}
+
+	return r.WithTenant(ctx, resource, func(tx *multitenancy.DB) error {
+		parts := make([]any, 0, len(filters))
+		placeholders := make([]string, 0, len(filters))
+		columnMap := make(map[string]*[]string, len(filters))
+
+		db, err := applyQuery(tx.DB, resource, query)
+		if err != nil {
+			return err
+		}
+
+		for i := range filters {
+			if filters[i].Values == nil {
+				return ErrFilterValuesEmpty
+			}
+
+			col := filters[i].Column
+			columnMap[col] = filters[i].Values
+
+			q := db.Session(&gorm.Session{}).
+				Table(resource.TableName()).
+				Select("? AS column_name, "+col+"::text AS value", col).
+				Where(col + " IS NOT NULL").
+				Distinct()
+
+			parts = append(parts, q)
+			placeholders = append(placeholders, "?")
+		}
+
+		unionSQL := strings.Join(placeholders, " UNION ")
+
+		var results []struct {
+			ColumnName string `gorm:"column:column_name"`
+			Value      string `gorm:"column:value"`
+		}
+
+		if err := tx.Raw(unionSQL, parts...).Scan(&results).Error; err != nil {
+			return errs.Wrap(repo.ErrGetResource, err)
+		}
+
+		for _, row := range results {
+			if val, ok := columnMap[row.ColumnName]; ok {
+				*val = append(*val, row.Value)
+			}
+		}
+
+		return nil
+	})
 }
 
 // Transaction wraps a function inside a database transaction.
@@ -398,17 +477,27 @@ func (r *ResourceRepository) getSchemaFromCtx(ctx context.Context) (string, erro
 	return existingTenant.SchemaName, nil
 }
 
+// apply locking on the db query
+func applyLocking(db *gorm.DB, query repo.Query) *gorm.DB {
+	switch query.Lock {
+	case repo.LockForUpdate:
+		return db.Clauses(clause.Locking{Strength: "UPDATE"})
+	case repo.LockForUpdateSkipLocked:
+		return db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+	}
+	return db
+}
+
 // apply update operations on the db action
 //
 //nolint:unqueryvet
 func applyUpdateQuery(db *gorm.DB, query repo.Query) *gorm.DB {
 	if query.UpdateFields.All {
-		db = db.Select("*")
+		return db.Select("*")
 	}
 
-	if !query.UpdateFields.All && len(query.UpdateFields.Fields) > 0 {
-		sel := strings.Join(query.UpdateFields.Fields, ",")
-		db = db.Select(sel)
+	if len(query.UpdateFields.Fields) > 0 {
+		return db.Select(query.UpdateFields.Fields)
 	}
 
 	return db
@@ -436,7 +525,8 @@ func applyQuery(db *gorm.DB, resource repo.Resource, query repo.Query) (*gorm.DB
 
 	if len(query.Joins) > 0 {
 		for _, join := range query.Joins {
-			db = db.Joins(join.JoinStatement())
+			sql, args := join.JoinStatement()
+			db = db.Joins(sql, args...)
 		}
 	}
 
@@ -510,7 +600,7 @@ func handleCompositeKey(db *gorm.DB, resource repo.Resource, compositeKey repo.C
 
 func applyFieldCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool) *gorm.DB {
 	switch key.Operation {
-	case repo.GreaterThan, repo.LessThan, repo.NotEqual:
+	case repo.GreaterThan, repo.LessThan, repo.NotEqual, repo.Contains, repo.GreaterThanOrEqual, repo.LessThanOrEqual:
 		return applyCondition(tx, field, string(key.Operation), key.Value, isStrict)
 	case repo.Equal:
 		return applyFieldEqualCondition(tx, field, key, isStrict)
@@ -519,8 +609,14 @@ func applyFieldCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool)
 	return nil
 }
 
+//nolint:cyclop
 func applyFieldEqualCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool) *gorm.DB {
 	switch key.Value {
+	case repo.Null:
+		if isStrict {
+			return tx.Where(field + " IS NULL")
+		}
+		return tx.Or(field + " IS NULL")
 	case repo.NotNull:
 		return tx.Where(field + " IS NOT NULL")
 	case repo.NotEmpty:

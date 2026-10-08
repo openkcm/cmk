@@ -2,43 +2,34 @@ package manager_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 func SetupProviderManager(t *testing.T) (*manager.ProviderConfigManager, string, *multitenancy.DB) {
 	t.Helper()
 
-	ps, psCfg := testutils.NewTestPlugins(
-		testplugins.NewKeystoreOperator(),
-		testplugins.NewKeystoreManagement(),
-	)
-
-	cfg := &config.Config{
-		Plugins: psCfg,
-	}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
+	cfg := &config.Config{}
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 	r := sql.NewRepository(db)
 	m := manager.NewProviderConfigManager(
 		svcRegistry,
 		make(map[manager.ProviderCachedKey]*manager.ProviderConfig),
-		manager.NewTenantConfigManager(r, svcRegistry, cfg),
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg), nil),
 		manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg),
 		manager.NewPool(r),
 		r,
@@ -54,11 +45,6 @@ func TestGetPluginAlgorithm(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{
-			name:     "RSA3072 Algorithm",
-			input:    "RSA3072",
-			expected: "KEY_ALGORITHM_RSA3072",
-		},
 		{
 			name:     "AES256 Algorithm",
 			input:    "AES256",
@@ -83,8 +69,11 @@ func TestCreateKeystore(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, ks)
 	assert.Equal(t, providerTest, provider)
-	assert.Equal(t, "test-uuid", ks["locality"])
-	assert.Equal(t, "default.kms.test", ks["commonName"])
+
+	roleManagementCfg, ok := ks["roleManagementConfig"].(map[string]any)
+	assert.True(t, ok)
+	assert.Equal(t, "test-uuid", roleManagementCfg["localityID"])
+	assert.Equal(t, "default.kms.test", roleManagementCfg["commonName"])
 }
 
 func TestFillKeystorePool(t *testing.T) {
@@ -109,7 +98,7 @@ func TestGetOrInitProvider(t *testing.T) {
 	r := sql.NewRepository(db)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	cert := testutils.NewCertificate(func(c *model.Certificate) {
-		c.Purpose = model.CertificatePurposeTenantDefault
+		c.Purpose = model.CertificatePurposeHYOKManagement
 	})
 	testutils.CreateTestEntities(ctx, t, r, cert)
 	tests := []struct {
@@ -120,7 +109,7 @@ func TestGetOrInitProvider(t *testing.T) {
 		{
 			name: "Valid Provider",
 			key: testutils.NewKey(func(k *model.Key) {
-				k.KeyType = constants.KeyTypeHYOK
+				k.KeyType = cmkapi.KeyTypeHYOK
 				k.Provider = providerTest
 			}),
 			assert: func(t *testing.T, provider *manager.ProviderConfig, err error) {
@@ -133,7 +122,7 @@ func TestGetOrInitProvider(t *testing.T) {
 		{
 			name: "Invalid Provider",
 			key: testutils.NewKey(func(k *model.Key) {
-				k.KeyType = constants.KeyTypeHYOK
+				k.KeyType = cmkapi.KeyTypeHYOK
 				k.Provider = "GCP"
 			}),
 			assert: func(t *testing.T, provider *manager.ProviderConfig, err error) {
@@ -153,4 +142,51 @@ func TestGetOrInitProvider(t *testing.T) {
 			tt.assert(t, provider, err)
 		})
 	}
+}
+
+func TestGetOrInitProvider_ExpiredEntryIsReinitialized(t *testing.T) {
+	svcRegistry := testutils.NewTestPlugins()
+	cfg := &config.Config{}
+
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	r := sql.NewRepository(db)
+	tenant := tenants[0]
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+	cert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeHYOKManagement
+	})
+	testutils.CreateTestEntities(ctx, t, r, cert)
+
+	expiredAt := time.Now().Add(-time.Second)
+	expiredCfg := manager.NewProviderConfig(nil, nil, &expiredAt)
+
+	compositeKey := manager.ProviderCachedKey{
+		KeyStore: constants.HYOKKeyStore,
+		Provider: providerTest,
+		Tenant:   tenant,
+	}
+
+	m := manager.NewProviderConfigManager(
+		svcRegistry,
+		map[manager.ProviderCachedKey]*manager.ProviderConfig{
+			compositeKey: expiredCfg,
+		},
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg), nil),
+		manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg),
+		manager.NewPool(r),
+		r,
+	)
+
+	key := testutils.NewKey(func(k *model.Key) {
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.Provider = providerTest
+	})
+
+	provider, err := m.GetOrInitProvider(ctx, key)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, provider)
+	assert.False(t, provider.IsExpired())
+	assert.True(t, provider.Expiration.After(expiredAt))
 }

@@ -2,23 +2,20 @@ package scim
 
 import (
 	"log/slog"
+	"os"
 	"testing"
 
-	"github.com/magodo/slog2hclog"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/plugin-sdk/pkg/hclog2slog"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/plugins/identity-management/scim/client"
 )
 
 func getLogger() *slog.Logger {
-	logLevelPlugin := new(slog.LevelVar)
-	logLevelPlugin.Set(slog.LevelError)
-	return hclog2slog.New(slog2hclog.New(slog.Default(), logLevelPlugin))
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
-func (p *Plugin) SetTestClient(t *testing.T, host string, groupFilterAttribute, userFilterAttribute, groupMembersAttribute string, allowSearchUsersByGroup bool) {
+func (p *Plugin) SetTestClient(t *testing.T, host string, groupFilterAttribute, userFilterAttribute, groupMembersAttribute string) {
 	t.Helper()
 
 	secretRef := commoncfg.SecretRef{
@@ -40,10 +37,9 @@ func (p *Plugin) SetTestClient(t *testing.T, host string, groupFilterAttribute, 
 
 	p.scimClient = c
 	p.params = &Params{
-		BaseHost:                host,
-		GroupAttribute:          groupFilterAttribute,
-		UserAttribute:           userFilterAttribute,
-		GroupMembersAttribute:   groupMembersAttribute,
-		AllowSearchUsersByGroup: allowSearchUsersByGroup,
+		BaseHost:              host,
+		GroupAttribute:        groupFilterAttribute,
+		UserAttribute:         userFilterAttribute,
+		GroupMembersAttribute: groupMembersAttribute,
 	}
 }

@@ -63,3 +63,32 @@ func TestConfigReader_GetString(t *testing.T) {
 		assert.ErrorIs(t, err, structreader.ErrFieldEmpty)
 	})
 }
+
+func TestConfigReader_GetOptionalString(t *testing.T) {
+	config, err := structpb.NewStruct(map[string]any{
+		"key":   "value",
+		"empty": "",
+	})
+	assert.NoError(t, err)
+
+	reader, err := structreader.New(config)
+	assert.NoError(t, err)
+
+	t.Run("existing key", func(t *testing.T) {
+		value, ok := reader.GetOptionalString("key")
+		assert.True(t, ok)
+		assert.Equal(t, "value", value)
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		value, ok := reader.GetOptionalString("missing")
+		assert.False(t, ok)
+		assert.Empty(t, value)
+	})
+
+	t.Run("empty value", func(t *testing.T) {
+		value, ok := reader.GetOptionalString("empty")
+		assert.False(t, ok)
+		assert.Empty(t, value)
+	})
+}

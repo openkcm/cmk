@@ -6,10 +6,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/api/transform/key/hyokkey"
-	"github.com/openkcm/cmk/internal/api/transform/key/keyshared"
-	"github.com/openkcm/cmk/internal/api/transform/key/transformer"
+	"github.com/openkcm/cmk/internal/api/cmk/transform"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/hyokkey"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/keyshared"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
@@ -28,40 +28,41 @@ var (
 	ErrTransformKeyFromAPI                  = errors.New("failed to transform key from API")
 	ErrSetPrimaryKey                        = errors.New("failed to set primary key")
 	ErrDefaultKeystoreNotFound              = errors.New("default keystore not found")
-	ErrClientDataInvalid                    = errors.New("client data invalid")
+	ErrBusinessUserDataInvalid              = errors.New("client data invalid")
 )
 
 var key = []errs.ExposedErrors[*APIError]{
 	{
 		InternalErrorChain: []error{manager.ErrNonEditableCryptoRegionUpdate},
 		ExposedError: &APIError{
-			Code:    "FORBIDDEN_KEY_ACCESS_UPDATE",
+			Code:    "KEY_ACCESS_UPDATE_NOT_ALLOWED",
 			Message: "Crypto region is not editable",
-			Status:  http.StatusForbidden,
-		},
-	},
-	{
-		InternalErrorChain: []error{manager.ErrBadCryptoRegionData},
-		ExposedError: &APIError{
-			Code:    "BAD_CRYPTO_DETAILS",
-			Message: "Crypto details invalid",
 			Status:  http.StatusBadRequest,
 		},
 	},
 	{
+		InternalErrorChain: []error{manager.ErrCryptoDetailsUpdate, transformer.ErrGRPCInvalidAccessData},
+		ExposedError: &APIError{
+			Code:    "INVALID_ACCESS_DATA",
+			Message: "Invalid access data provided",
+			Status:  http.StatusBadRequest,
+		},
+		ContextGetter: errs.GetGRPCErrorContext,
+	},
+	{
 		InternalErrorChain: []error{manager.ErrCryptoRegionNotExists},
 		ExposedError: &APIError{
-			Code:    "FORBIDDEN_KEY_UPDATE",
+			Code:    "KEY_UPDATE_NOT_ALLOWED",
 			Message: "Crypto region does not exist",
-			Status:  http.StatusForbidden,
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{
 		InternalErrorChain: []error{manager.ErrManagementDetailsUpdate},
 		ExposedError: &APIError{
-			Code:    "FORBIDDEN_KEY_ACCESS_UPDATE",
+			Code:    "KEY_ACCESS_UPDATE_NOT_ALLOWED",
 			Message: "Management details cannot be updated",
-			Status:  http.StatusForbidden,
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{
@@ -78,14 +79,6 @@ var key = []errs.ExposedErrors[*APIError]{
 			Code:    "KEY_ID",
 			Message: "Failed to get Key by KeyID",
 			Status:  http.StatusInternalServerError,
-		},
-	},
-	{
-		InternalErrorChain: []error{manager.ErrPrimaryKeyUnmark},
-		ExposedError: &APIError{
-			Code:    "PRIMARY_KEY_UNMARK",
-			Message: "Primary key cannot be unmarked primary",
-			Status:  http.StatusForbidden,
 		},
 	},
 	{
@@ -121,12 +114,29 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrInvalidKeyState},
+		ExposedError: &APIError{
+			Code:    "REGISTER_KEY_INVALID_STATE",
+			Message: "Key must be in ENABLED state to be registered as HYOK",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyRegistration, keymanagement.ErrProviderAuthenticationFailed},
 		ExposedError: &APIError{
 			Code:    "REGISTER_KEY_AUTHENTICATION_FAILED",
 			Message: "Failed to authenticate with the keystore provider",
 			Status:  http.StatusBadRequest,
 		},
+	},
+	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyRegistration, keymanagement.ErrGenericGetKeyError},
+		ExposedError: &APIError{
+			Code:    "REGISTER_KEY_INVALID_PROVIDER_KEY",
+			Message: "Failed to get key from the keystore provider",
+			Status:  http.StatusBadRequest,
+		},
+		ContextGetter: errs.GetGRPCErrorContext,
 	},
 	{
 		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyRegistration, keymanagement.ErrHYOKKeyNotFound},
@@ -137,11 +147,35 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrUnsupportedKeyAlgorithm},
+		ExposedError: &APIError{
+			Code:    "REGISTER_KEY_UNSUPPORTED_ALGORITHM",
+			Message: "Key algorithm is not supported for HYOK registration",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrCreateKey, gorm.ErrRecordNotFound},
 		ExposedError: &APIError{
 			Code:    "KEY_CONFIGURATION_NOT_FOUND",
 			Message: "KeyConfiguration not found",
 			Status:  http.StatusNotFound,
+		},
+	},
+	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrBYOKNotAllowed},
+		ExposedError: &APIError{
+			Code:    "BYOK_NOT_ALLOWED",
+			Message: "BYOK is not enabled",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrHYOKNotAllowed},
+		ExposedError: &APIError{
+			Code:    "HYOK_NOT_ALLOWED",
+			Message: "HYOK is not enabled for this provider",
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{
@@ -241,6 +275,15 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{ErrTransformKeyFromAPI, transformer.ErrGRPCValidateKey},
+		ExposedError: &APIError{
+			Code:    "INVALID_KEY_ATTRIBUTE",
+			Message: "Invalid key attribute provided",
+			Status:  http.StatusBadRequest,
+		},
+		ContextGetter: errs.GetGRPCErrorContext,
+	},
+	{
 		InternalErrorChain: []error{ErrTransformKeyFromAPI, transformer.ErrGRPCInvalidAccessData},
 		ExposedError: &APIError{
 			Code:    "INVALID_ACCESS_DATA",
@@ -254,7 +297,23 @@ var key = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "KEY_IS_NOT_ENABLED",
 			Message: "key is not enabled",
-			Status:  http.StatusInternalServerError,
+			Status:  http.StatusConflict,
+		},
+	},
+	{
+		InternalErrorChain: []error{manager.ErrKeyIsDeleted},
+		ExposedError: &APIError{
+			Code:    "KEY_IS_DELETED",
+			Message: "key is deleted",
+			Status:  http.StatusNotFound,
+		},
+	},
+	{
+		InternalErrorChain: []error{manager.ErrKeyInPendingState},
+		ExposedError: &APIError{
+			Code:    "KEY_NOT_READY",
+			Message: "Operation not allowed: key is still being provisioned",
+			Status:  http.StatusConflict,
 		},
 	},
 	{
@@ -354,6 +413,14 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{manager.ErrImportKeyMaterialsToProvider, keymanagement.ErrImportKeyMaterialFailed},
+		ExposedError: &APIError{
+			Code:    "INVALID_WRAPPED_KEY_MATERIAL",
+			Message: "Key material decryption failed: invalid or incorrectly wrapped key material.",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrDefaultKeystoreNotFound},
 		ExposedError: &APIError{
 			Code:    "DEFAULT_KEYSTORE_NOT_FOUND",
@@ -374,11 +441,19 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{ErrClientDataInvalid},
+		InternalErrorChain: []error{ErrBusinessUserDataInvalid},
 		ExposedError: &APIError{
 			Code:    "INVALID_CLIENT_DATA",
 			Message: "The client data is invalid",
 			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		InternalErrorChain: []error{ErrCreateKey, manager.ErrKeyLimitExceeded},
+		ExposedError: &APIError{
+			Code:    "KEY_LIMIT_EXCEEDED",
+			Message: "The key limit for this key configuration has been reached",
+			Status:  http.StatusConflict,
 		},
 	},
 }

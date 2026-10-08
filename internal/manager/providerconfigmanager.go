@@ -12,32 +12,33 @@ import (
 
 	"github.com/google/uuid"
 
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
-	servicewrapper "github.com/openkcm/cmk/internal/pluginregistry/service/wrapper"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
-const DefaultProviderConfigCacheExpiration = 24 * time.Hour
+const (
+	DefaultProviderConfigCacheExpiration = 24 * time.Hour
+)
 
 var (
 	ErrCreateKeystore                = errors.New("failed to create keystore")
 	ErrInvalidKeystore               = errors.New("invalid keystore")
-	ErrCreateProtobufStruct          = errors.New("failed to create protobuf struct")
 	ErrGetTenantFromCtx              = errors.New("failed to get tenant from context")
 	ErrGetDefaultTenantCertificate   = errors.New("failed to get default tenant HYOK certificate")
 	ErrGetDefaultKeystoreCertificate = errors.New("failed to get default keystore certificate")
 	ErrAddConfigToPool               = errors.New("failed to add keystore configuration to pool")
 	ErrCountKeystorePool             = errors.New("failed to get keystore pool size")
+	ErrGrantTrustFailed              = errors.New("failed to grant trust to certificate")
 )
 
 type ProviderConfig struct {
@@ -52,7 +53,7 @@ func NewProviderConfig(
 	expiration *time.Time,
 ) *ProviderConfig {
 	if expiration == nil {
-		expiration = ptr.PointTo(time.Now().Add(DefaultProviderConfigCacheExpiration)) // Default expiration if nil
+		expiration = new(time.Now().Add(DefaultProviderConfigCacheExpiration)) // Default expiration if nil
 	}
 
 	return &ProviderConfig{
@@ -67,7 +68,7 @@ func (c ProviderConfig) IsExpired() bool {
 }
 
 type ProviderConfigManager struct {
-	svcRegistry   *cmkpluginregistry.Registry
+	svcRegistry   serviceapi.Registry
 	providers     map[ProviderCachedKey]*ProviderConfig
 	mu            sync.RWMutex
 	tenantConfigs *TenantConfigManager
@@ -77,7 +78,7 @@ type ProviderConfigManager struct {
 }
 
 func NewProviderConfigManager(
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	providers map[ProviderCachedKey]*ProviderConfig,
 	tenantConfigs *TenantConfigManager,
 	certs *CertificateManager,
@@ -97,7 +98,6 @@ func NewProviderConfigManager(
 
 const (
 	pluginAlgorithmPrefix = "KEY_ALGORITHM_"
-	pluginKeyTypePrefix   = "KEY_TYPE_"
 )
 
 // getPluginAlgorithm returns the plugin algorithm for the key
@@ -123,7 +123,7 @@ func (pmc *ProviderConfigManager) GetOrInitProvider(ctx context.Context, key *mo
 	}
 
 	keystoreName := constants.DefaultKeyStore
-	if key.KeyType == constants.KeyTypeHYOK {
+	if key.KeyType == cmkapi.KeyTypeHYOK {
 		keystoreName = constants.HYOKKeyStore
 	}
 
@@ -239,7 +239,7 @@ func (pmc *ProviderConfigManager) CreateKeystore(ctx context.Context) (string, m
 		return "", nil, errs.Wrapf(ErrCreateKeystore, fmt.Sprintf("provider: %s, error: %v", provider, err))
 	}
 
-	return provider, resp.Config.Values, nil
+	return provider, resp.ToKeystoreConfig().Values, nil
 }
 
 func (pmc *ProviderConfigManager) AddKeystoreToPool(
@@ -269,16 +269,16 @@ func (pmc *ProviderConfigManager) GetDefaultKeystoreFromCatalog() (string, error
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no plugin catalog available")
 	}
 
-	plugins := pmc.svcRegistry.LookupByType(servicewrapper.KeyManagementType)
-	if len(plugins) == 0 {
+	plugins, err := pmc.svcRegistry.KeyManagementList()
+	if err != nil || len(plugins) == 0 {
 		return "", errs.Wrapf(ErrGetDefaultKeystore, "no keystore plugins found in catalog")
 	}
 
 	providers := make([]string, 0)
 
 	for _, plugin := range plugins {
-		if pluginHelpers.HasTag(plugin.Info().Tags(), constants.DefaultKeyStore) {
-			providers = append(providers, plugin.Info().Name())
+		if pluginHelpers.HasTag(plugin.ServiceInfo().Tags(), constants.DefaultKeyStore) {
+			providers = append(providers, plugin.ServiceInfo().Name())
 		}
 	}
 
@@ -316,10 +316,11 @@ func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 		return nil, nil, err
 	}
 
-	cert, err := pmc.certs.getDefaultKeystoreClientCert(
+	keyManagementCert, err := pmc.certs.getDefaultKeystoreClientCert(
 		ctx,
-		ksConfig.LocalityID,
-		ksConfig.CommonName,
+		ksConfig.KeyManagementConfig.LocalityID,
+		ksConfig.KeyManagementConfig.CommonName,
+		model.CertificatePurposeKeyManagement,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -327,13 +328,13 @@ func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 
 	configMap := map[string]any{
 		"authType":   constants.AuthTypeCertificate,
-		"clientCert": cert.CertPEM,
-		"privateKey": cert.PrivateKeyPEM,
+		"clientCert": keyManagementCert.CertPEM,
+		"privateKey": keyManagementCert.PrivateKeyPEM,
 	}
 
-	maps.Copy(configMap, ksConfig.ManagementAccessData)
+	maps.Copy(configMap, ksConfig.KeyManagementConfig.AccessData)
 
-	return &common.KeystoreConfig{Values: configMap}, &cert.ExpirationDate, nil
+	return &common.KeystoreConfig{Values: configMap}, &keyManagementCert.ExpirationDate, nil
 }
 
 func (pmc *ProviderConfigManager) getHYOKKeystoreConfig(

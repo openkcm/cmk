@@ -2,7 +2,10 @@ openapi: "3.0.3"
 info:
   version: 1.0.0
   title: KMS
-  description: Key Management Service (KMS) API for managing Customer Managed Keys (CMKs). This API is designed for internal use only and is intended to be utilized by the UI.
+  description:
+    Key Management Service (KMS) API for managing Customer Managed Keys
+    (CMKs). This API is designed for internal use only and is intended to be
+    utilized by the UI.
 servers:
   - url: "{scheme}://{host}/cmk/v1/{tenant}"
     description: KMS API server
@@ -76,19 +79,27 @@ paths:
         - Keys
       summary: Create a new Key
       description: |
-        Generate and store a new Key or register a key from customer held keystore.
-        - For `Hold Your Own Key (HYOK)`, a native key identifier needs to be provided. In this case no new key
-        material is generated but the key is enrolled within KMS CMK.
+        Create a new cryptographic key. The API supports two key management models:
+
+        **BYOK (Bring Your Own Key)**
+        - Key material is imported into CMK-managed keystore
+
+        **HYOK (Hold Your Own Key)**
+        - Key remains in customer's keystore, CMK connects to it
+
+        Use the `type` field to specify which key model to use.
       requestBody:
-        description: Key request body
+        description: Key request body - see examples for BYOK and HYOK formats
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/Key"
             examples:
-              KeyRequest:
-                $ref: "#/components/examples/KeyRequest"
+              BYOKKeyRequest:
+                $ref: "#/components/examples/BYOKKeyRequest"
+              HYOKKeyRequest:
+                $ref: "#/components/examples/HYOKKeyRequest"
       responses:
         "201":
           description: Created
@@ -96,6 +107,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Key"
+              examples:
+                BYOKKeyResponse:
+                  $ref: "#/components/examples/BYOKKeyResponse"
+                HYOKKeyResponse:
+                  $ref: "#/components/examples/HYOKKeyResponse"
         "400":
           $ref: "#/components/responses/400"
         "403":
@@ -168,8 +184,8 @@ paths:
         - Keys
       summary: Delete an Key by its ID
       description:
-        Delete a specific Key by its ID. This operation will delete all Key Versions of this
-        Key and their corresponding key materials.
+        Delete a specific Key by its ID. This operation will delete all Key
+        Versions of this Key and their corresponding key materials.
       parameters:
         - $ref: "#/components/parameters/keyIDPath"
       responses:
@@ -325,7 +341,9 @@ paths:
               $ref: "#/components/schemas/LabelsPostOrPatch"
       responses:
         "204":
-          description: New Labels are attached or the values of the Labels are updated if they already exist.
+          description:
+            New Labels are attached or the values of the Labels are updated if
+            they already exist.
         "400":
           $ref: "#/components/responses/400"
         "403":
@@ -406,9 +424,10 @@ paths:
         - Key Configurations
       summary: Create a new Key Configuration
       description: >-
-        Create a new Key Configuration. Key Configurations contain information such as name, ID, creator, creation
-        datetime, responsible Users Group, and Tags. Additionally, they include information about Keys, including
-        a list of Keys and the primary Key.
+        Create a new Key Configuration. Key Configurations contain information
+        such as name, ID, creator, creation datetime, responsible Users Group,
+        and Tags. Additionally, they include information about Keys, including a
+        list of Keys and the primary Key.
       requestBody:
         description: Key Configuration request body
         required: true
@@ -671,6 +690,30 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
+  /tenantConfigurations/limits:
+    get:
+      tags:
+        - Tenant Configurations
+      summary: Get tenant limits
+      operationId: GetTenantLimits
+      description: |
+        Retrieves the effective limits configured for the tenant.
+        Values reflect tenant-specific overrides when configured, otherwise cluster defaults.
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantLimits"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
   /systems:
     get:
       tags:
@@ -683,6 +726,7 @@ paths:
         - $ref: "#/components/parameters/topPath"
         - $ref: "#/components/parameters/countPath"
         - $ref: "#/components/parameters/filterSystems"
+        - $ref: "#/components/parameters/searchSystems"
       responses:
         "200":
           description: Systems retrieved
@@ -694,6 +738,30 @@ paths:
           $ref: "#/components/responses/400"
         "403":
           $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /systems/filterOptions:
+    get:
+      tags:
+        - Systems
+      summary: Get System Filter Values
+      description: Get system possible values for filters
+      operationId: getFilters
+      responses:
+        "200":
+          description: System retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemFilters"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
         "429":
           $ref: "#/components/responses/429"
         "500":
@@ -960,7 +1028,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DetailedWorkflow"
+                $ref: "#/components/schemas/Workflow"
         "400":
           $ref: "#/components/responses/400"
         "403":
@@ -1008,7 +1076,8 @@ paths:
       tags:
         - Tenants
       summary: Get tenants with same issuer
-      description: Retrieves details of the tenants with the same issuer as the specified tenant.
+      description: Retrieves details of the tenants with the same issuer as the
+        specified tenant.
       parameters:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/topPath"
@@ -1274,7 +1343,9 @@ components:
       name: version
       in: path
       required: true
-      description: The Version of a Key. This can be the Version number, or if "latest" is specified, the action will be performed on the primary Key Version
+      description: The Version of a Key. This can be the Version number, or if
+        "latest" is specified, the action will be performed on the primary Key
+        Version
       schema:
         type: string
         maxLength: 6
@@ -1351,10 +1422,29 @@ components:
 
         The following operators are supported:
 
-        - Equal (eq), on the following attributes: keyConfigurationId, region, role, status and type.
+        - Equal (eq), on the following attributes: keyConfigurationId, keyConfigurationName, region, role, status and type, targetKeyConfigurationID.
         - Logical AND (and).
 
+        OData parenthesis are not supported at the moment!
+
         Example: region eq eu
+      schema:
+        type: string
+        maxLength: 500
+    searchSystems:
+      name: "$search"
+      in: query
+      description: |
+        Search Query to apply to the results.
+
+        The following operators are supported:
+
+        - The search is applied on the following attributes: externalName, identifier, region.
+        - Logical AND (and), OR (or).
+
+        OData parenthesis are not supported at the moment!
+
+        Example: EU
       schema:
         type: string
         maxLength: 500
@@ -1453,12 +1543,22 @@ components:
             - DISCONNECTED
             - PROCESSING
             - FAILED
+        underWorkflow:
+          description: Flag indicating whether the Key is under workflow
+          type: boolean
         keyConfigurationName:
           description: The name of the key configuration
           type: string
           maxLength: 255
           example: new-key-configuration-name
+        targetKeyConfigurationName:
+          description: The name of the target key configuration
+          type: string
+          maxLength: 255
+          example: new-key-configuration-name
         keyConfigurationID:
+          $ref: "#/components/schemas/KeyConfigurationID"
+        targetKeyConfigurationID:
           $ref: "#/components/schemas/KeyConfigurationID"
         metadata:
           $ref: "#/components/schemas/SystemMetadata"
@@ -1467,6 +1567,9 @@ components:
       type: object
       readOnly: true
       properties:
+        worfklow:
+          $ref: "#/components/schemas/Workflow"
+          description: Workflow associated with the System if it's state is UNDER_WORKFLOW
         errorCode:
           type: string
           description: The code of an error of a failed system
@@ -1507,14 +1610,33 @@ components:
           enum:
             - RETRY
             - CANCEL
+    SystemFilters:
+      description: System Filters
+      type: object
+      properties:
+        region:
+          type: array
+          items:
+            type: string
+          description: List of existing system regions
+        type:
+          type: array
+          items:
+            type: string
+          description: List of existing system types
+        keyConfigurationName:
+          type: array
+          items:
+            type: string
+          description: List of existing system key configurations
     ClientCertificates:
       type: object
       properties:
         tenantDefault:
-          $ref: "#/components/schemas/TenantDefaultCertificateList"
+          $ref: "#/components/schemas/CertificateList"
         crypto:
-          $ref: "#/components/schemas/CryptoCertificateList"
-    TenantDefaultCertificateList:
+          $ref: "#/components/schemas/CertificateList"
+    CertificateList:
       type: object
       required:
         - value
@@ -1527,36 +1649,8 @@ components:
         value:
           type: array
           items:
-            $ref: "#/components/schemas/TenantDefaultCertificate"
-    TenantDefaultCertificate:
-      description: A Tenant Default Certificate
-      type: object
-      required:
-        - name
-        - rootCA
-        - subject
-      properties:
-        name:
-          $ref: "#/components/schemas/ClientCertName"
-        rootCA:
-          $ref: "#/components/schemas/ClientCertRootCA"
-        subject:
-          $ref: "#/components/schemas/ClientCertSubject"
-    CryptoCertificateList:
-      type: object
-      required:
-        - value
-      properties:
-        count:
-          description: The total number of Crypto Certificates
-          type: integer
-          minimum: 0
-          example: 2
-        value:
-          type: array
-          items:
-            $ref: "#/components/schemas/CryptoCertificate"
-    CryptoCertificate:
+            $ref: "#/components/schemas/Certificate"
+    Certificate:
       description: A Crypto Certificate
       type: object
       required:
@@ -1565,11 +1659,53 @@ components:
         - subject
       properties:
         name:
-          $ref: "#/components/schemas/ClientCertName"
+          description: The name of the crypto client using this Client Certificate
+          type: string
+          maxLength: 4096
+          example: "crypto-01"
         rootCA:
-          $ref: "#/components/schemas/ClientCertRootCA"
+          description: The root CA for the certificate
+          type: string
+          maxLength: 4096
+          example: "http://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
         subject:
-          $ref: "#/components/schemas/ClientCertSubject"
+          $ref: "#/components/schemas/CertificateSubject"
+    CertificateSubject:
+      description: Certificate subject
+      type: object
+      required:
+        - CN
+        - OU
+        - L
+        - O
+        - C
+      properties:
+        CN:
+          description: Certificate Common Name
+          type: string
+          example: 01234
+        OU:
+          description: Certificate Organizational Unit
+          type: array
+          items:
+            type: string
+            maxLength: 50
+            description: Organizational Unit
+            example:
+              - EXAMPLE
+              - Canary
+        L:
+          description: Certificate Locality
+          type: string
+          example: DE
+        O:
+          description: Certificate Organization
+          type: string
+          example: Company Example
+        C:
+          description: Certificate Country
+          type: string
+          example: DE
     KeyList:
       type: object
       required:
@@ -1611,6 +1747,19 @@ components:
             - LIVE
             - TEST
             - TRIAL
+    TenantLimits:
+      type: object
+      properties:
+        systems:
+          description: Maximum number of systems allowed per key configuration
+          type: integer
+          readOnly: true
+          example: 50
+        keys:
+          description: Maximum number of keys allowed per key configuration
+          type: integer
+          readOnly: true
+          example: 10
     TenantKeystore:
       type: object
       required:
@@ -1630,24 +1779,43 @@ components:
         minimumApprovals:
           description: The minimum number of approvals required for a workflow
           type: integer
-          minimum: 1
+          minimum: 2
+          maximum: 5
           example: 2
+        maxApprovals:
+          description: The hard upper limit for the minimum approvals setting
+          type: integer
+          readOnly: true
+          example: 5
         retentionPeriodDays:
           description: |
             The number of days to retain completed, failed, revoked, or expired workflow
           type: integer
-          minimum: 2
+          minimum: 7
+          maximum: 30
+          example: 30
+        minRetentionPeriodDays:
+          description: The hard lower limit for the retention period setting
+          type: integer
+          readOnly: true
+          example: 7
+        maxRetentionPeriodDays:
+          description: The hard upper limit for the retention period setting
+          type: integer
+          readOnly: true
           example: 30
         defaultExpiryPeriodDays:
           description: The default number of days before a workflow expires
           type: integer
           minimum: 1
+          maximum: 7
           example: 7
         maxExpiryPeriodDays:
           description: The maximum number of days that can be set for workflow expiry
           type: integer
           minimum: 1
-          example: 30
+          maximum: 7
+          example: 7
     BYOKKeystore:
       type: object
       properties:
@@ -1671,7 +1839,9 @@ components:
         technicalName:
           type: string
           maxLength: 50
-          description: The technical region name used for API calls, if different from the display name
+          description:
+            The technical region name used for API calls, if different from the
+            display name
           example: eu-central-1
     HYOKKeystore:
       type: object
@@ -1723,7 +1893,8 @@ components:
           maxLength: 4096
           example: This group represents a Tenant Administrator
     GroupIAMIdentifier:
-      description: Reference of the Group in the customer's Identity & Access Management (IAM) provider
+      description: Reference of the Group in the customer's Identity & Access
+        Management (IAM) provider
       type: string
       maxLength: 128
       example: KMS_Tenant1Administrator_tenant1-id
@@ -1827,7 +1998,9 @@ components:
           maxLength: 4096
           example: This Key is used for DB key store encryption.
         isPrimary:
-          description: Flag indicating whether this Key is the primary (default) key for its associated key configuration.
+          description:
+            Flag indicating whether this Key is the primary (default) key for
+            its associated key configuration.
           type: boolean
         enabled:
           description: Flag indicating whether the Key is enabled
@@ -1845,6 +2018,11 @@ components:
           $ref: "#/components/schemas/KeyMetadata"
         state:
           $ref: "#/components/schemas/KeyState"
+        underWorkflow:
+          description: Flag indicating whether the Key is under workflow
+          type: boolean
+        errorDetail:
+          $ref: "#/components/schemas/KeyErrorDetail"
     KeyID:
       description: The ID of the Key
       type: string
@@ -1895,7 +2073,9 @@ components:
           description: Flag indicating whether the Key is enabled
           type: boolean
         isPrimary:
-          description: Flag indicating whether this Key is the primary (default) key for its associated key configuration.
+          description:
+            Flag indicating whether this Key is the primary (default) key for
+            its associated key configuration.
           type: boolean
         accessDetails:
           $ref: "#/components/schemas/KeyAccessDetails"
@@ -1919,12 +2099,15 @@ components:
       format: date-time
       example: "2024-09-30T21:02:00Z"
     UpdatedAt:
-      description: The datetime of when the object was last updated, enabled, or disabled (RFC3339 format)
+      description: The datetime of when the object was last updated, enabled, or
+        disabled (RFC3339 format)
       type: string
       format: date-time
       example: "2020-09-30T21:02:00Z"
     RotatedAt:
-      description: The datetime of when the key version was rotated (became current version) (RFC3339 format)
+      description:
+        The datetime of when the key version was rotated (became current
+        version) (RFC3339 format)
       type: string
       format: date-time
       example: "2026-04-08T10:30:00Z"
@@ -1937,21 +2120,6 @@ components:
       type: string
       maxLength: 255
       example: bob@example.com
-    ClientCertName:
-      description: The name of the crypto client using this Client Certificate
-      type: string
-      maxLength: 4096
-      example: "crypto-01"
-    ClientCertRootCA:
-      description: The root CA for the certificate
-      type: string
-      maxLength: 4096
-      example: "http://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
-    ClientCertSubject:
-      description: The subject of the certificate
-      type: string
-      maxLength: 4096
-      example: "C=DE,O=EXAMPLE,OU=EXAMPLE,OU=Canary,OU=xxyyzz,L=abcd,CN=01234"
     KeyPrimaryVersion:
       description: The number of the primary Key Version
       type: integer
@@ -1964,30 +2132,62 @@ components:
       example: 1
     KeyState:
       description:
-        Indicates the current state of the Key/Key Version. In addition to ENABLED and DISABLED states,
-        the states PENDING_DELETION, DELETED, FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys and Versions
-        are in UNKNOWN state if the authentication to the customer key fails due to any reason or when key detach has previously failed.
-        FORBIDDEN state is for when a HYOK customer key permission is not granted to the system.
-        DETACHING/DETACHED state is applicable for keys that have been marked with a detach call on tenant termination.
+        Indicates the current state of the Key/Key Version. In addition to
+        ENABLED and DISABLED states, the states PENDING_DELETION, DELETED,
+        FORBIDDEN and UNKNOWN are applicable only to customer held keys. Keys
+        and Versions are in UNKNOWN state if the authentication to the customer
+        key fails due to any reason or when key detach has previously failed.
+        FORBIDDEN state is for when a HYOK customer key permission is not
+        granted to the system. DETACHING/DETACHED state is applicable for keys
+        that have been marked with a detach call on tenant termination.
+        PENDING_CREATION is a transient state for BYOK keys where provider-side
+        prerequisites are still being set up. PENDING_REGISTRATION is a
+        transient state for HYOK keys where the initial authentication to the
+        external keystore failed and an async retry loop is driving the key to
+        ENABLED/DISABLED or FORBIDDEN on timeout. ERROR is a terminal failure
+        state for keys that could not be provisioned within the timeout.
       type: string
       readOnly: true
       enum:
         - ENABLED
         - DISABLED
-        - PENDING_DELETION
+        - PENDING_CREATION
+        - PENDING_REGISTRATION
         - PENDING_IMPORT
+        - PENDING_DELETION
         - DELETED
         - UNKNOWN
         - FORBIDDEN
         - DETACHING
         - DETACHED
+        - ERROR
+    KeyErrorDetail:
+      description: Structured error detail recorded when a key transitions to ERROR or FORBIDDEN state.
+      type: object
+      readOnly: true
+      properties:
+        errorCode:
+          description: Stable machine-readable error code identifying the failure cause.
+          type: string
+          example: PROVISIONING_TIMEOUT
+        errorReason:
+          description: Provider-specific reason code returned by the keystore.
+          type: string
+          example: AUTHENTICATION_ERROR
+        errorMessage:
+          description: Human-readable description of the failure.
+          type: string
+          example: Key provisioning timed out. Delete this key and re-create it once the issue is resolved.
+        errorTimestamp:
+          description: When the error transition occurred (RFC 3339).
+          type: string
+          format: date-time
+          example: "2026-07-01T10:00:00Z"
     KeyAlgorithm:
       description: The algorithm of the Key
       type: string
       enum:
         - AES256
-        - RSA3072
-        - RSA4096
       example: AES256
     KeyProvider:
       description: |
@@ -2075,12 +2275,13 @@ components:
     KeyRotationBody:
       type: object
       description:
-        Additional request body that is required for rotation of customer held keys.
-        Must not be provided for non-customer held keys.
+        Additional request body that is required for rotation of customer
+        held keys. Must not be provided for non-customer held keys.
       properties:
         nativeID:
-          description: The native identifier of the key to register.
-            For AWS, this is either the key ID or the full key ARN.
+          description:
+            The native identifier of the key to register. For AWS, this is
+            either the key ID or the full key ARN.
           type: string
           maxLength: 255
           example: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
@@ -2093,19 +2294,26 @@ components:
         management:
           description: Access details for management operations.
           type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/KeyAccessDetailsRegion"
         crypto:
           description: |
-            Access details for cryptographic operations. Follows the following format:
-            "region-1": {
-                "key1": "value1",
-                "key2": "value3",
-                "isEditable": bool // true if system on this region failed to connect
-            },
+            Access details for cryptographic operations. Map of region ID to region values
           type: object
           additionalProperties:
-            type: object
-            additionalProperties: true
+            $ref: "#/components/schemas/KeyAccessDetailsRegion"
+    KeyAccessDetailsRegion:
+      type: object
+      properties:
+        certificateSubject:
+          type: string
+          description: Certificate subject for this region
+          example: "CN=tenant123,OU=OU1/OU2,O=TestOrg,L=Berlin,C=DE"
+          readOnly: true
+        isEditable:
+          type: boolean
+          description: Is true if systems on the region failed to connect or there are no systems connected/attempting
+          readOnly: true
+      additionalProperties: true
     ImportParams:
       type: object
       description: Import parameters for Bring Your Own Key (BYOK) scenario.
@@ -2194,7 +2402,9 @@ components:
           maxLength: 4096
           example: This Key Configuration is used for connecting with Systems in Europe.
         adminGroupID:
-          description: The ID of the Group of Users responsible for managing the Key Configuration
+          description:
+            The ID of the Group of Users responsible for managing the Key
+            Configuration
           type: string
           format: uuid
           example: 12345678-90ab-cdef-1234-567890abcdef
@@ -2239,6 +2449,11 @@ components:
           type: string
           maxLength: 4096
           example: This Key Configuration is used for connecting with Systems in Europe.
+        primaryKeyID:
+          description: The ID of the primary key of the configuration
+          type: string
+          format: uuid
+          example: 12345678-90ab-cdef-1234-567890abcdef
       additionalProperties: false
     KeyConfigurationKeyAdd:
       type: object
@@ -2400,6 +2615,8 @@ components:
       type: string
       enum:
         - SYSTEM
+        - KEY
+        - KEY_CONFIGURATION
       example: SYSTEM
     WorkflowParametersResourceTypeEnum:
       type: string
@@ -2412,6 +2629,9 @@ components:
         - LINK
         - UNLINK
         - SWITCH
+        - DELETE
+        - UPDATE_PRIMARY
+        - UPDATE_STATE
       example: LINK
     WorkflowState:
       $ref: "#/components/schemas/WorkflowStateEnum"
@@ -2486,6 +2706,8 @@ components:
             SYSTEM + LINK: key configuration ID
             SYSTEM + SWITCH: new key configuration ID
             SYSTEM + UNLINK: needs no parameters
+            KEY + UPDATE_STATE: "ENABLED" or "DISABLED"
+            KEY + DELETE: needs no parameters
             KEY_CONFIGURATION + UPDATE_PRIMARY: new key ID
         expiresAt:
           description: The datetime of when the workflow expires (RFC3339 format)
@@ -2558,35 +2780,32 @@ components:
           example: example_key_configuration_name
         parametersResourceType:
           $ref: "#/components/schemas/WorkflowParametersResourceType"
-    DetailedWorkflow:
-      allOf:
-        - $ref: "#/components/schemas/Workflow"
-        - type: object
-          readOnly: true
-          required:
-            - approverGroups
-            - decisions
-            - availableTransitions
-            - approvalSummary
-          description: Detailed Workflow including system metadata
-          properties:
-            approverGroups:
-              description: The list of Groups responsible for approving the Workflow
-              type: array
-              items:
-                $ref: "#/components/schemas/Group"
-            decisions:
-              description: The list of decisions made by the approvers
-              type: array
-              items:
-                $ref: "#/components/schemas/WorkflowApprover"
-            availableTransitions:
-              description: The list of available transitions for the Workflow
-              type: array
-              items:
-                $ref: "#/components/schemas/WorkflowTransitionValue"
-            approvalSummary:
-              $ref: "#/components/schemas/WorkflowApprovalSummary"
+        approverGroups:
+          description:
+            The list of Groups responsible for approving the Workflow (only
+            populated in detailed responses)
+          type: array
+          items:
+            $ref: "#/components/schemas/Group"
+        decisions:
+          description:
+            The list of decisions made by the approvers (only populated in
+            detailed responses)
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowApprover"
+        availableTransitions:
+          description:
+            The list of available transitions for the Workflow (only populated
+            in detailed responses)
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowTransitionValue"
+        approvalSummary:
+          description:
+            Summary of the approval decisions (only populated in detailed
+            responses)
+          $ref: "#/components/schemas/WorkflowApprovalSummary"
     WorkflowMetadata:
       readOnly: true
       type: object
@@ -2595,6 +2814,12 @@ components:
           $ref: "#/components/schemas/CreatedAt"
         updatedAt:
           $ref: "#/components/schemas/UpdatedAt"
+        additionalInfo:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowAdditionalInfo"
+          description: Optional informational messages or warnings about the workflow
+          readOnly: true
     WorkflowTransition:
       type: object
       required:
@@ -2655,6 +2880,37 @@ components:
           description: The target score required for approval.
           type: integer
           example: 2
+    WorkflowAdditionalInfo:
+      type: object
+      description: Additional informational message or warning about a workflow
+      readOnly: true
+      required:
+        - code
+        - severity
+        - message
+      properties:
+        code:
+          type: string
+          description: Machine-readable code identifying the type of information
+          enum:
+            - INSUFFICIENT_APPROVERS
+            - WORKFLOW_ELIGIBILITY_CHECK_FAILED
+            - INITIATOR_INELIGIBLE
+          example: "INSUFFICIENT_APPROVERS"
+        severity:
+          type: string
+          description: Severity level of the information
+          enum:
+            - WARNING
+            - INFO
+            - ERROR
+          example: "WARNING"
+        message:
+          type: string
+          description: Human-readable message explaining the information
+          example:
+            "The number of eligible approvers is currently insufficient to meet the
+            minimum approval criteria."
     #
     # Labels
     #
@@ -2680,7 +2936,9 @@ components:
       required:
         - count
         - value
-      description: A complete list of the Labels associated with a Key along with the count of Labels.
+      description:
+        A complete list of the Labels associated with a Key along with the
+        count of Labels.
       example:
         count: 5
         value:
@@ -2749,15 +3007,17 @@ components:
       properties:
         code:
           description:
-            Technical code of the api_errors, used to identify the api_errors condition. This value is stable and
-            can be used to handle specific api_errors cases.
+            Technical code of the api_errors, used to identify the api_errors
+            condition. This value is stable and can be used to handle specific
+            api_errors cases.
           type: string
           example: UNKNOWN_ERROR
         message:
           description:
-            Human readable message describing the reason and context of the api_errors, as well as possible
-            instructions to resolve it. This value is subject to changes over time and must not be used to handle code
-            logic decisions.
+            Human readable message describing the reason and context of the
+            api_errors, as well as possible instructions to resolve it. This
+            value is subject to changes over time and must not be used to handle
+            code logic decisions.
           type: string
           example: The request cannot be processed
         context:
@@ -2773,10 +3033,10 @@ components:
   responses:
     "400":
       description: >-
-        The 400 (Bad Request) status code indicates that the server cannot
-        or will not process the request due to something that is perceived
-        to be a client error (e.g., malformed request syntax, invalid request
-        message framing, or deceptive request routing).
+        The 400 (Bad Request) status code indicates that the server cannot or
+        will not process the request due to something that is perceived to be a
+        client error (e.g., malformed request syntax, invalid request message
+        framing, or deceptive request routing).
       content:
         application/json:
           schema:
@@ -2903,7 +3163,9 @@ components:
         Retry-After:
           schema:
             type: integer
-          description: Indicates how long (in seconds) the client should wait before retrying the request.
+          description:
+            Indicates how long (in seconds) the client should wait before
+            retrying the request.
 
     #
     # Server Errors
@@ -2946,26 +3208,95 @@ components:
                   message: Requested feature is not implemented.
                   id: 635e791c-7ea2-4fd8-9be6-3bab61b2e779
   examples:
-    KeyRequest:
+    BYOKKeyRequest:
+      summary: Create a BYOK (Bring Your Own Key) key
+      description: |
+        BYOK key creation request. The key material will be imported into CMK-managed keystore, initially with status PENDING_IMPORT.
+        Region is required to specify where the key will be created.
       value:
-        name: example_key_name
-        type: HYOK
-        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
-        description: This key is used for DB key store encryption.
-        enabled: true
-        algorithm: AES256
-        provider: AWS
-        region: eu-central-1
-    AWSBYOKRequest:
-      value:
-        name: byok_key_name
+        name: byok_example_key
         type: BYOK
         keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
-        description: This key is used for DB key store encryption.
+        description: BYOK key for database encryption
         algorithm: AES256
-        provider: AWS
         region: eu-central-1
+    HYOKKeyRequest:
+      summary: Create a HYOK (Hold Your Own Key) key
+      description: |
+        HYOK key creation request. The key remains in customer's keystore.
+        NativeID is the customer-provided key identifier, and accessDetails configure
+        how CMK connects to the customer's keystore.
+      value:
+        name: hyok_example_key
+        type: HYOK
+        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
+        description: HYOK key connected to customer AWS KMS
+        nativeID: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+        provider: AWS
+        accessDetails:
+          management:
+            accessAccountID: "111122223333"
+            accessUserID: "arn:aws:iam::111122223333:user/cmk-service"
+            endpoint: "https://kms.us-east-2.amazonaws.com"
+          crypto:
+            us-east-2:
+              accessAccountID: "111122223333"
+              accessUserID: "arn:aws:iam::111122223333:user/cmk-crypto"
+              endpoint: "https://kms.us-east-2.amazonaws.com"
     SystemPatchUpdatingLink:
       value:
         keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
         retry: false
+    BYOKKeyResponse:
+      summary: BYOK key creation response
+      description: |
+        Response after creating a BYOK key. Key is in PENDING_IMPORT state until key material is imported.
+      value:
+        id: 98765432-10fe-dcba-9876-543210fedcba
+        name: byok_example_key
+        type: BYOK
+        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
+        description: BYOK key for database encryption
+        algorithm: AES256
+        region: eu-central-1
+        isPrimary: false
+        enabled: false
+        state: PENDING_IMPORT
+        underWorkflow: false
+        metadata:
+          createdAt: "2026-07-31T10:30:00Z"
+          updatedAt: "2026-07-31T10:30:00Z"
+    HYOKKeyResponse:
+      summary: HYOK key creation response
+      description: |
+        Response after registering a HYOK key. Key is ENABLED if successfully connected to customer keystore.
+      value:
+        id: 98765432-10fe-dcba-9876-543210fedcba
+        name: hyok_example_key
+        type: HYOK
+        keyConfigurationID: 12345678-90ab-cdef-1234-567890abcdef
+        description: HYOK key connected to customer AWS KMS
+        algorithm: AES256
+        provider: AWS
+        isPrimary: false
+        enabled: true
+        nativeID: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+        state: ENABLED
+        region: eu-central-1
+        underWorkflow: false
+        accessDetails:
+          management:
+            accessAccountID: "111122223333"
+            accessUserID: "arn:aws:iam::111122223333:user/cmk-service"
+            endpoint: "https://kms.us-east-2.amazonaws.com"
+          crypto:
+            us-east-2:
+              accessAccountID: "111122223333"
+              accessUserID: "arn:aws:iam::111122223333:user/cmk-crypto"
+              endpoint: "https://kms.us-east-2.amazonaws.com"
+              isEditable: false
+        metadata:
+          createdAt: "2026-07-31T10:30:00Z"
+          updatedAt: "2026-07-31T10:30:00Z"
+          totalVersions: 1
+          primaryVersion: 1

@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 var ErrMultipleOperationsProvided = errors.New("multiple operations provided")
@@ -19,15 +18,19 @@ type (
 )
 
 const (
-	Equal       ComparisonOp = "="
-	NotEqual    ComparisonOp = "!="
-	GreaterThan ComparisonOp = ">"
-	LessThan    ComparisonOp = "<"
+	Equal              ComparisonOp = "="
+	NotEqual           ComparisonOp = "!="
+	GreaterThan        ComparisonOp = ">"
+	LessThan           ComparisonOp = "<"
+	GreaterThanOrEqual ComparisonOp = ">="
+	LessThanOrEqual    ComparisonOp = "<="
+	Contains           ComparisonOp = "ILIKE"
 
 	Desc OrderDirection = "desc"
 	Asc  OrderDirection = "asc"
 
 	IDField             QueryField = "id"
+	KeyIDField          QueryField = "key_id"
 	TypeField           QueryField = "type"
 	RegionField         QueryField = "region"
 	IdentifierField     QueryField = "identifier"
@@ -45,7 +48,10 @@ const (
 	UserField           QueryField = "user"
 	ParametersField     QueryField = "parameters"
 	WorkflowField       QueryField = "workflow"
+	WorkflowIDField     QueryField = "workflow_id"
+	GroupIDField        QueryField = "group_id"
 	ApprovedField       QueryField = "approved"
+	AssigneeRoleField   QueryField = "assignee_role"
 	ArtifactTypeField   QueryField = "artifact_type"
 	ArtifactIDField     QueryField = "artifact_id"
 	ActionTypeField     QueryField = "action_type"
@@ -60,9 +66,11 @@ const (
 	ExpirationDateField QueryField = "expiration_date"
 	CreationDateField   QueryField = "creation_date"
 	CreatedField        QueryField = "created_at"
+	UpdatedField        QueryField = "updated_at"
 	RotatedField        QueryField = "rotated_at"
 	IssuerURLField      QueryField = "issuer_url"
 	IAMIdField          QueryField = "iam_identifier"
+	UnderWorkflowField  QueryField = "under_workflow"
 	DataField           QueryField = "data"
 	Name                QueryField = "name"
 
@@ -71,10 +79,13 @@ const (
 
 	// KeyconfigTotalSystems and KeyconfigTotalKeys are used as aliases in JOIN operations,
 	// typically in combination with the tableName to reference aggregated fields.
-	KeyconfigTotalSystems QueryField = "total_systems"
-	KeyconfigTotalKeys    QueryField = "total_keys"
-	SystemKeyconfigName   QueryField = "key_configuration_name"
+	KeyconfigTotalSystems     QueryField = "total_systems"
+	KeyconfigTotalKeys        QueryField = "total_keys"
+	SystemKeyconfigName       QueryField = "key_configuration_name"
+	SystemTargetKeyconfigName QueryField = "target_key_configuration_name"
+	TargetKeyConfigIDField    QueryField = "target_key_configuration_id"
 
+	Null      QueryFieldValue = "null"
 	NotNull   QueryFieldValue = "not_null"
 	NotEmpty  QueryFieldValue = "not_empty"
 	Empty     QueryFieldValue = "empty"
@@ -96,12 +107,51 @@ const (
 	AvgFunc   AggregateFunction = "AVG"
 )
 
-// QueryMapper can just be a struct of filter values (for eg) for simple case (eg internal system user)
-// In API controllers might want to have mapping from odata (for eg)
-type QueryMapper interface {
-	GetQuery(ctx context.Context) *Query
-	GetUUID(field QueryField) (uuid.UUID, error)
+// LockMode defines the row-level locking mode for SELECT queries in a database transaction.
+type LockMode string
+
+const (
+	// LockForUpdate locks selected rows for update, blocking concurrent transactions.
+	LockForUpdate LockMode = "FOR UPDATE"
+	// LockForUpdateSkipLocked skips rows already locked by another transaction.
+	LockForUpdateSkipLocked LockMode = "FOR UPDATE SKIP LOCKED"
+)
+
+type QueryFilter interface {
+	QueryGetter
+	GetFieldValues(field string) ([]any, error)
+}
+
+type QueryGetter interface {
+	GetQuery() (*Query, error)
+}
+
+type Params interface {
 	GetPagination() Pagination
+	GetFilter() (QueryFilter, error)
+	GetSearch() (QueryGetter, error)
+}
+
+// GetFilterFieldValues returns the values for the given field from the filter,
+// type-asserted to T.
+func GetFilterFieldValues[T any](f QueryFilter, field string) ([]T, error) {
+	raw, err := f.GetFieldValues(field)
+	if err != nil {
+		return nil, errs.Wrap(ErrFieldValueTypeMismatch, err)
+	}
+
+	out := make([]T, 0, len(raw))
+
+	for _, v := range raw {
+		tv, ok := v.(T)
+		if !ok {
+			return nil, ErrFieldValueTypeMismatch
+		}
+
+		out = append(out, tv)
+	}
+
+	return out, nil
 }
 
 type Key struct {
@@ -182,6 +232,11 @@ type Query struct {
 
 	Offset int
 
+	// Lock specifies the row-level locking mode for SELECT queries.
+	// Rows locked by another transaction are skipped rather than waited on.
+	// Must be used inside a transaction to be effective.
+	Lock LockMode
+
 	// CompositeKeys form the where part of the Query
 	CompositeKeyGroup []CompositeKeyGroup
 
@@ -193,12 +248,16 @@ type Query struct {
 	// If this is not provided, only non-zero values are updated
 	UpdateFields Update
 
+	// ConflictColumns specifies which columns define the upsert conflict for Set.
+	// When empty, Set defaults to conflict on the primary key with update all.
+	ConflictColumns []QueryField
+
 	// Used whenever a custom select is desired
 	// By default, if this is not provided select all fields
 	SelectFields []*SelectField
 
-	// Joins stores the JOIN clauses for the query.
-	Joins []JoinClause
+	Joins    []JoinClause
+	joinsSet map[string]bool
 
 	// Used to aggregate columns. Use on GroupBy
 	Group []QueryField
@@ -208,27 +267,53 @@ type Query struct {
 
 type JoinType string
 
+// JoinOnFilter is an extra constant predicate appended to a join's ON clause,
+// e.g. AND "alias".key = 'externalName'.
+type JoinOnFilter struct {
+	Field string
+	Value string
+}
+
 type JoinCondition struct {
 	Table     table
 	Field     string
 	JoinTable table
 	JoinField string
+	Alias     string
+	OnFilters []JoinOnFilter
 }
 type JoinClause struct {
 	OnCondition JoinCondition
 	Type        JoinType
 }
 
-func (r *JoinClause) JoinStatement() string {
-	statement := fmt.Sprintf(`%s JOIN "%s" ON "%s".%s = "%s".%s`,
+func (r *JoinClause) JoinStatement() (string, []any) {
+	joinTableName := r.OnCondition.JoinTable.TableName()
+	joinTableRef := fmt.Sprintf(`"%s"`, joinTableName)
+
+	// If alias is provided, use "table_name" AS "alias"
+	if r.OnCondition.Alias != "" {
+		joinTableRef = fmt.Sprintf(`"%s" AS "%s"`, joinTableName, r.OnCondition.Alias)
+		joinTableName = r.OnCondition.Alias
+	}
+
+	statement := fmt.Sprintf(`%s JOIN %s ON "%s".%s = "%s".%s`,
 		r.Type,
-		r.OnCondition.JoinTable.TableName(),
+		joinTableRef,
 		r.OnCondition.Table.TableName(),
 		r.OnCondition.Field,
-		r.OnCondition.JoinTable.TableName(),
+		joinTableName,
 		r.OnCondition.JoinField)
 
-	return statement
+	args := make([]any, 0, len(r.OnCondition.OnFilters))
+	var joinConditions strings.Builder
+	for _, f := range r.OnCondition.OnFilters {
+		fmt.Fprintf(&joinConditions, ` AND "%s".%s = ?`, joinTableName, f.Field)
+		args = append(args, f.Value)
+	}
+	statement += joinConditions.String()
+
+	return statement, args
 }
 
 type Preload []string
@@ -306,11 +391,18 @@ type OrderField struct {
 	Direction OrderDirection
 }
 
+// Filter maps a struct field to a DB column for GetFilterOptions
+type Filter struct {
+	Values *[]string
+	Column string
+}
+
 // NewQuery creates and returns a new empty query.
 func NewQuery() *Query {
 	return &Query{
 		CompositeKeyGroup: make([]CompositeKeyGroup, 0),
 		Joins:             make([]JoinClause, 0),
+		joinsSet:          make(map[string]bool),
 		UpdateFields: Update{
 			Fields: make([]QueryField, 0),
 			All:    false,
@@ -416,6 +508,19 @@ func (q *Query) Where(conds ...CompositeKeyGroup) *Query {
 	return q
 }
 
+func (q *Query) Merge(other *Query) *Query {
+	if other == nil {
+		return q
+	}
+
+	q.Where(other.CompositeKeyGroup...)
+	for _, j := range other.Joins {
+		q.Join(j.Type, j.OnCondition)
+	}
+
+	return q
+}
+
 func (q *Query) Preload(model Preload) *Query {
 	q.PreloadModel = append(q.PreloadModel, model...)
 	return q
@@ -433,6 +538,11 @@ func (q *Query) UpdateAll(b bool) *Query {
 
 func (q *Query) Update(fields ...QueryField) *Query {
 	q.UpdateFields.Fields = append(q.UpdateFields.Fields, fields...)
+	return q
+}
+
+func (q *Query) OnConflict(columns ...QueryField) *Query {
+	q.ConflictColumns = columns
 	return q
 }
 
@@ -455,22 +565,35 @@ func (q *Query) SetOffset(offset int) *Query {
 
 type table interface {
 	TableName() string
-	TableResourceType() authz.RepoResourceTypeName
+	TableResourceType() authz.RepoResourceType
 	CheckAuthz(ctx context.Context,
-		authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+		authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 		action authz.RepoAction) (bool, error)
 }
 
 func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {
-	q.Joins = append(q.Joins, JoinClause{
+	joinClause := JoinClause{
 		Type:        joinType,
 		OnCondition: onCondition,
-	})
+	}
+	joinKey, _ := joinClause.JoinStatement()
+
+	if !q.joinsSet[joinKey] {
+		q.Joins = append(q.Joins, joinClause)
+		q.joinsSet[joinKey] = true
+	}
 
 	return q
 }
 
 func (q *Query) Order(orderFields ...OrderField) *Query {
 	q.OrderFields = append(q.OrderFields, orderFields...)
+	return q
+}
+
+// WithLock sets the row-level locking mode for the query.
+// Must be called within a transaction to have effect.
+func (q *Query) WithLock(mode LockMode) *Query {
+	q.Lock = mode
 	return q
 }

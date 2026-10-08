@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -19,17 +19,22 @@ import (
 )
 
 // startAPIKeyConfigTags starts the API server and returns a DB connection and a mux for testing
-func startAPIKeyConfigTags(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIKeyConfigTags(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
 	t.Helper()
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
-	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{}), tenants[0]
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+
+	return db, testutils.NewAPIServer(t, db, testutils.TestAPIServerConfig{
+		EnableBusinessUserDataMW: true,
+		SigningKeyStorage:        keyStorage,
+	}), tenants[0], keyStorage
 }
 
 // TestGetTagsForKeyConfiguration tests retrieving tags for a key configuration
 func TestGetTagsForKeyConfiguration(t *testing.T) {
-	db, sv, tenant := startAPIKeyConfigTags(t)
+	db, sv, tenant, keyStorage := startAPIKeyConfigTags(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
@@ -40,13 +45,22 @@ func TestGetTagsForKeyConfiguration(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(*model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	tag := testutils.NewTag(func(t *model.Tag) {
 		t.ID = keyConfig.ID
 		t.Values = bytes
 	})
 	testutils.CreateTestEntities(ctx, t, r, keyConfig, tag)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name              string
@@ -91,10 +105,10 @@ func TestGetTagsForKeyConfiguration(t *testing.T) {
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          url,
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: url,
+				Tenant:   tenant,
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -114,16 +128,25 @@ func TestGetTagsForKeyConfiguration(t *testing.T) {
 
 // TestAddTagsToKeyConfiguration tests adding tags to a key configuration
 func TestAddTagsToKeyConfiguration(t *testing.T) {
-	db, sv, tenant := startAPIKeyConfigTags(t)
+	db, sv, tenant, keyStorage := startAPIKeyConfigTags(t)
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	r := sql.NewRepository(db)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
 
 	tests := []struct {
 		name              string
@@ -152,11 +175,11 @@ func TestAddTagsToKeyConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-				Method:            http.MethodPut,
-				Endpoint:          fmt.Sprintf("/keyConfigurations/%s/tags", tt.keyConfigID),
-				Tenant:            tenant,
-				Body:              testutils.WithJSON(t, tt.requestBody),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPut,
+				Endpoint: fmt.Sprintf("/keyConfigurations/%s/tags", tt.keyConfigID),
+				Tenant:   tenant,
+				Body:     testutils.WithJSON(t, tt.requestBody),
+				Headers:  headers,
 			})
 			assert.Equal(t, tt.expectedStatus, w.Code)
 

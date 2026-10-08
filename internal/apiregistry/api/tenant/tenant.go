@@ -74,7 +74,6 @@ type RegisterTenantResponse struct {
 }
 
 type ListTenantsRequest struct {
-	ID        string
 	Name      string
 	Region    string
 	OwnerID   string

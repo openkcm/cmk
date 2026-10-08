@@ -2,53 +2,99 @@ package authz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
-func CheckAuthz[TResourceTypeName, TAction comparable](
+var (
+	ErrAuthzDecision           = errors.New("error making authorization decision")
+	ErrAuthzUnauthorized       = errors.New("action authorized")
+	ErrExtractBusinessUserData = errors.New("error extracting client data from context")
+	ErrExtractInternalUserData = errors.New("error extracting internal data from context")
+)
+
+func CheckAuthz[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
 	ctx context.Context,
-	authzHandler *Handler[TResourceTypeName, TAction],
-	resourceType TResourceTypeName,
-	action TAction,
+	authzHandler *Handler[Resource, Action],
+	resourceType Resource,
+	action Action,
 ) (bool, error) {
-	if cmkcontext.IsSystemUser(ctx) {
-		return true, nil
+	userType, err := cmkcontext.ExtractUserType(ctx)
+	if err != nil {
+		return false, errs.Wrap(ErrAuthzDecision, err)
 	}
 
+	var allowed bool
+	switch userType {
+	case string(constants.BusinessUser):
+		allowed, err = checkBusinessUserAuthz(ctx, authzHandler, resourceType, action)
+		if err != nil {
+			return false, errs.Wrap(ErrAuthzDecision, err)
+		}
+	case string(constants.InternalUser):
+		allowed, err = checkInternalUserAuthz(ctx, authzHandler, resourceType, action)
+		if err != nil {
+			return false, errs.Wrap(ErrAuthzDecision, err)
+		}
+	default:
+		return false, errs.Wrap(ErrAuthzDecision, ErrNoAuthzForUserType)
+	}
+
+	if !allowed {
+		return false, errs.Wrap(ErrAuthzDecision, ErrAuthzUnauthorized)
+	}
+
+	return allowed, nil
+}
+
+func checkBusinessUserAuthz[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
+	ctx context.Context,
+	authzHandler *Handler[Resource, Action],
+	resourceType Resource,
+	action Action,
+) (bool, error) {
 	tenant, err := cmkcontext.ExtractTenantID(ctx)
 	if err != nil {
 		return false, errs.Wrap(ErrExtractTenantID, err)
 	}
 
-	identifier, err := cmkcontext.ExtractClientDataIdentifier(ctx)
+	identifier, err := cmkcontext.ExtractBusinessUserDataIdentifier(ctx)
 	if err != nil {
-		return false, errs.Wrap(ErrExtractClientData, err)
+		return false, errs.Wrap(ErrExtractBusinessUserData, err)
 	}
 
-	groups, err := cmkcontext.ExtractClientDataGroups(ctx)
+	groups, err := cmkcontext.ExtractBusinessUserDataGroups(ctx)
 	if err != nil {
-		return false, errs.Wrap(ErrExtractClientData, err)
+		return false, errs.Wrap(ErrExtractBusinessUserData, err)
 	}
 
-	user := User{
+	user := BusinessUserRequest{
+		TenantID: TenantID(tenant),
 		UserName: identifier,
 		Groups:   groups,
 	}
 
 	log.Debug(
-		ctx, "checking authorization request:", slog.String("user", user.UserName),
+		ctx, "checking authorization request",
 		slog.String("resourceType", fmt.Sprintf("%v", resourceType)),
 		slog.String("action", fmt.Sprintf("%v", action)),
 	)
 
 	authzRequest, err := NewRequest(
 		ctx,
-		TenantID(tenant),
 		user,
 		resourceType,
 		action,
@@ -57,14 +103,80 @@ func CheckAuthz[TResourceTypeName, TAction comparable](
 		return false, errs.Wrap(ErrCreateAuthzRequest, err)
 	}
 
-	allowed, err := authzHandler.IsAllowed(ctx, *authzRequest)
+	allowed, err := authzHandler.IsBusinessUserAllowed(ctx, *authzRequest)
 	if err != nil {
 		return allowed, errs.Wrap(ErrAuthzDecision, err)
 	}
 
-	if !allowed {
-		return allowed, ErrAuthzDecision
+	return allowed, nil
+}
+
+func checkInternalUserAuthz[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
+	ctx context.Context,
+	authzHandler *Handler[Resource, Action],
+	resourceType Resource,
+	action Action,
+) (bool, error) {
+	role, err := cmkcontext.ExtractInternalRole(ctx)
+	if err != nil {
+		return false, errs.Wrap(ErrExtractInternalUserData, err)
+	}
+
+	user := InternalUserRequest{
+		Role: role,
+	}
+
+	log.Debug(
+		ctx, "checking authorization request:", slog.String("user", string(user.Role)),
+		slog.String("resourceType", fmt.Sprintf("%v", resourceType)),
+		slog.String("action", fmt.Sprintf("%v", action)),
+	)
+
+	authzRequest, err := NewRequest(
+		ctx,
+		user,
+		resourceType,
+		action,
+	)
+	if err != nil {
+		return false, errs.Wrap(ErrCreateAuthzRequest, err)
+	}
+
+	allowed, err := authzHandler.IsInternalUserAllowed(ctx, *authzRequest)
+	if err != nil {
+		return allowed, errs.Wrap(ErrAuthzDecision, err)
 	}
 
 	return allowed, nil
+}
+
+func CheckInternalUserRole(ctx context.Context, role constants.InternalRole) error {
+	ctxRole, err := cmkcontext.ExtractInternalRole(ctx)
+	if err != nil {
+		return errs.Wrap(ErrExtractInternalUserData, err)
+	}
+
+	if ctxRole != role {
+		return ErrAuthzUnauthorized
+	}
+
+	return nil
+}
+
+func CheckInternalUserRoles(ctx context.Context,
+	allowedRoles []constants.InternalRole,
+) error {
+	ctxRole, err := cmkcontext.ExtractInternalRole(ctx)
+	if err != nil {
+		return errs.Wrap(ErrExtractInternalUserData, err)
+	}
+
+	if !slices.Contains(allowedRoles, ctxRole) {
+		return ErrAuthzUnauthorized
+	}
+
+	return nil
 }

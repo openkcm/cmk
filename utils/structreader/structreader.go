@@ -27,6 +27,19 @@ func New(s *structpb.Struct) (*StructReader, error) {
 	return &StructReader{fields: s.GetFields()}, nil
 }
 
+// GetOptionalString returns the string value and true if the key exists and is non-empty, otherwise ("", false).
+func (r *StructReader) GetOptionalString(key string) (string, bool) {
+	value, ok := r.fields[key]
+	if !ok {
+		return "", false
+	}
+	strValue := value.GetStringValue()
+	if strValue == "" {
+		return "", false
+	}
+	return strValue, true
+}
+
 // GetString safely extracts string values from struct
 func (r *StructReader) GetString(key string) (string, error) {
 	value, ok := r.fields[key]

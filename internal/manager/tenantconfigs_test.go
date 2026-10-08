@@ -7,28 +7,54 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
+	"github.com/openkcm/plugin-sdk/api"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrForced = errors.New("forced")
 
-func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*manager.TenantConfigManager,
+// testFlagClient is a parallel-safe featureflags.Client for tests (T2 interface injection pattern).
+type testFlagClient struct{ values map[string]bool }
+
+func (s *testFlagClient) BooleanValue(_ context.Context, flag string, def bool, _ openfeature.EvaluationContext) (bool, error) {
+	if v, ok := s.values[flag]; ok {
+		return v, nil
+	}
+	return def, nil
+}
+
+// newTestFlags returns a testFlagClient with the given flag values.
+func newTestFlags(flags map[string]bool) featureflags.Client {
+	return &testFlagClient{values: flags}
+}
+
+// flagsEnabledCfg returns a config with feature flags enabled, so the manager
+// evaluates injected flag values instead of falling back to legacy behaviour.
+func flagsEnabledCfg() *config.Config {
+	c := &config.Config{}
+	c.FeatureFlags.Enabled = true
+	return c
+}
+
+func SetupTenantConfigManager(t *testing.T, opts ...testplugins.RegistryOption) (*manager.TenantConfigManager,
 	*multitenancy.DB, string,
 ) {
 	t.Helper()
@@ -36,25 +62,21 @@ func SetupTenantConfigManager(t *testing.T, plugins []catalog.BuiltInPlugin) (*m
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
 	r := sql.NewRepository(db)
-	ps, psCfg := testutils.NewTestPlugins(plugins...)
+	svcRegistry := testutils.NewTestPlugins(opts...)
 
 	cfg := &config.Config{
-		Plugins: psCfg,
 		Certificates: config.Certificates{
 			RootCertURL:  TestCertURL,
 			ValidityDays: config.MinCertificateValidityDays,
 		},
 	}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
-
-	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil)
 
 	return tenantManager, db, tenants[0]
 }
 
 // SetupTenantConfigManagerWithRole creates a test tenant with a specific role
-func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []catalog.BuiltInPlugin) (*manager.TenantConfigManager,
+func SetupTenantConfigManagerWithRole(t *testing.T, role string, opts ...testplugins.RegistryOption) (*manager.TenantConfigManager,
 	*multitenancy.DB, string,
 ) {
 	t.Helper()
@@ -62,18 +84,14 @@ func SetupTenantConfigManagerWithRole(t *testing.T, role string, plugins []catal
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{}, testutils.WithTenantRole(model.TenantRole(role)))
 
 	r := sql.NewRepository(db)
-	ps, psCfg := testutils.NewTestPlugins(plugins...)
-	cfg := config.Config{Plugins: psCfg}
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
-
-	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, nil)
+	svcRegistry := testutils.NewTestPlugins(opts...)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
 
 	return tenantManager, db, tenants[0]
 }
 
 func TestNewTenantConfigManager(t *testing.T) {
-	m, _, _ := SetupTenantConfigManager(t, nil)
+	m, _, _ := SetupTenantConfigManager(t)
 
 	assert.NotNil(t, m)
 }
@@ -82,7 +100,7 @@ func TestNewTenantConfigManager(t *testing.T) {
 func TestGetDefaultKeystore(t *testing.T) {
 	t.Run("DefaultKeystore tenant config not exists, get from pool", func(t *testing.T) {
 		// Arrange
-		configManager, db, tenant := SetupTenantConfigManager(t, nil)
+		configManager, db, tenant := SetupTenantConfigManager(t)
 		// Add a keystore configuration to the pool
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
@@ -91,7 +109,7 @@ func TestGetDefaultKeystore(t *testing.T) {
 		expectedLocalityID := uuid.NewString()
 		localKsConfig := testutils.NewKeystore(func(k *model.Keystore) {
 			keystoreConfig := testutils.NewKeystoreConfig(func(cfg *model.KeystoreConfig) {
-				cfg.LocalityID = expectedLocalityID
+				cfg.RoleManagementConfig.LocalityID = expectedLocalityID
 			})
 			configBytes, marshalErr := json.Marshal(keystoreConfig)
 			assert.NoError(t, marshalErr)
@@ -105,33 +123,35 @@ func TestGetDefaultKeystore(t *testing.T) {
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, keystore)
-		assert.Equal(t, expectedLocalityID, keystore.LocalityID)
-		assert.NotEmpty(t, keystore.CommonName)
-		assert.NotEmpty(t, keystore.ManagementAccessData)
+		assert.Equal(t, expectedLocalityID, keystore.RoleManagementConfig.LocalityID)
+		assert.NotEmpty(t, keystore.RoleManagementConfig.CommonName)
+		assert.NotEmpty(t, keystore.RoleManagementConfig.AccessData)
 	})
 
 	t.Run("Config Exists", func(t *testing.T) {
 		// Arrange
-		configManager, db, tenant := SetupTenantConfigManager(t, nil)
+		configManager, db, tenant := SetupTenantConfigManager(t)
 
 		tenantConfigRepo := sql.NewRepository(db)
 		ksConfigJSON, err := json.Marshal(&model.KeystoreConfig{
-			LocalityID: testutils.TestLocalityID,
-			CommonName: testutils.TestDefaultKeystoreCommonName,
-			ManagementAccessData: map[string]any{
-				"roleArn":        testutils.TestRoleArn,
-				"trustAnchorArn": testutils.TestTrustAnchorArn,
-				"profileArn":     testutils.TestProfileArn,
+			RoleManagementConfig: model.ManagementConfig{
+				LocalityID: testutils.TestLocalityID,
+				CommonName: testutils.TestDefaultKeystoreCommonName,
+				AccessData: model.KeystoreAccessData{
+					"roleArn":        testutils.TestRoleArn,
+					"trustAnchorArn": testutils.TestTrustAnchorArn,
+					"profileArn":     testutils.TestProfileArn,
+				},
 			},
 		})
 		assert.NoError(t, err)
 
-		conf := &model.TenantConfig{
+		conf := &model.LegacyTenantConfig{
 			Key:   constants.DefaultKeyStore,
-			Value: ksConfigJSON,
+			Value: string(ksConfigJSON),
 		}
 
-		err = tenantConfigRepo.Set(testutils.CreateCtxWithTenant(tenant), conf)
+		err = tenantConfigRepo.Set(testutils.CreateCtxWithTenant(tenant), conf, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		// Act
@@ -139,18 +159,18 @@ func TestGetDefaultKeystore(t *testing.T) {
 
 		// Assert
 		assert.NoError(t, err)
-		assert.Equal(t, testutils.TestLocalityID, keystore.LocalityID)
-		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.CommonName)
-		assert.Equal(t, testutils.TestRoleArn, keystore.ManagementAccessData["roleArn"])
-		assert.Equal(t, testutils.TestTrustAnchorArn, keystore.ManagementAccessData["trustAnchorArn"])
-		assert.Equal(t, testutils.TestProfileArn, keystore.ManagementAccessData["profileArn"])
+		assert.Equal(t, testutils.TestLocalityID, keystore.RoleManagementConfig.LocalityID)
+		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.RoleManagementConfig.CommonName)
+		assert.Equal(t, testutils.TestRoleArn, keystore.RoleManagementConfig.AccessData["roleArn"])
+		assert.Equal(t, testutils.TestTrustAnchorArn, keystore.RoleManagementConfig.AccessData["trustAnchorArn"])
+		assert.Equal(t, testutils.TestProfileArn, keystore.RoleManagementConfig.AccessData["profileArn"])
 	})
 }
 
 func TestSetDefaultKeystore(t *testing.T) {
 	t.Run("DefaultKeystore tenant config not exists, set default keystore", func(t *testing.T) {
 		// Arrange
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
 		// Act
@@ -164,16 +184,16 @@ func TestSetDefaultKeystore(t *testing.T) {
 		keystore, err := configManager.GetDefaultKeystoreConfig(ctx)
 		assert.NoError(t, err)
 
-		assert.Equal(t, testutils.TestLocalityID, keystore.LocalityID)
-		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.CommonName)
-		assert.Equal(t, testutils.TestRoleArn, keystore.ManagementAccessData["roleArn"])
-		assert.Equal(t, testutils.TestTrustAnchorArn, keystore.ManagementAccessData["trustAnchorArn"])
-		assert.Equal(t, testutils.TestProfileArn, keystore.ManagementAccessData["profileArn"])
+		assert.Equal(t, testutils.TestLocalityID, keystore.RoleManagementConfig.LocalityID)
+		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.RoleManagementConfig.CommonName)
+		assert.Equal(t, testutils.TestRoleArn, keystore.RoleManagementConfig.AccessData["roleArn"])
+		assert.Equal(t, testutils.TestTrustAnchorArn, keystore.RoleManagementConfig.AccessData["trustAnchorArn"])
+		assert.Equal(t, testutils.TestProfileArn, keystore.RoleManagementConfig.AccessData["profileArn"])
 	})
 
 	t.Run("Update existing default keystore config", func(t *testing.T) {
 		// Arrange
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		err := configManager.SetDefaultKeystore(
 			ctx,
@@ -188,9 +208,9 @@ func TestSetDefaultKeystore(t *testing.T) {
 
 		// Act
 		err = configManager.SetDefaultKeystore(ctx, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
-			kc.LocalityID = newLocalityID
-			kc.CommonName = testutils.TestDefaultKeystoreCommonName
-			kc.ManagementAccessData = map[string]any{
+			kc.RoleManagementConfig.LocalityID = newLocalityID
+			kc.RoleManagementConfig.CommonName = testutils.TestDefaultKeystoreCommonName
+			kc.RoleManagementConfig.AccessData = map[string]any{
 				"roleArn":        newRoleArn,
 				"trustAnchorArn": newTrustAnchorID,
 				"profileArn":     newProfileArn,
@@ -203,11 +223,11 @@ func TestSetDefaultKeystore(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, keystore)
 
-		assert.Equal(t, newLocalityID, keystore.LocalityID)
-		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.CommonName)
-		assert.Equal(t, newRoleArn, keystore.ManagementAccessData["roleArn"])
-		assert.Equal(t, newTrustAnchorID, keystore.ManagementAccessData["trustAnchorArn"])
-		assert.Equal(t, newProfileArn, keystore.ManagementAccessData["profileArn"])
+		assert.Equal(t, newLocalityID, keystore.RoleManagementConfig.LocalityID)
+		assert.Equal(t, testutils.TestDefaultKeystoreCommonName, keystore.RoleManagementConfig.CommonName)
+		assert.Equal(t, newRoleArn, keystore.RoleManagementConfig.AccessData["roleArn"])
+		assert.Equal(t, newTrustAnchorID, keystore.RoleManagementConfig.AccessData["trustAnchorArn"])
+		assert.Equal(t, newProfileArn, keystore.RoleManagementConfig.AccessData["profileArn"])
 	})
 }
 
@@ -216,51 +236,59 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 		name           string
 		expectedOutput []string
 		enabledPlugins bool
+		flags          map[string]bool
 	}{
 		{
-			name:           "Success - One HYOK provider",
+			name:           "Success - One HYOK provider with flag enabled",
 			expectedOutput: []string{"TEST"},
 			enabledPlugins: true,
+			flags:          map[string]bool{"enable_hyok_test": true},
+		},
+		{
+			name:           "Success - HYOK plugin present but flag disabled",
+			expectedOutput: []string{},
+			enabledPlugins: true,
+			flags:          map[string]bool{},
 		},
 		{
 			name:           "Success - No HYOK providers",
 			expectedOutput: []string{},
 			enabledPlugins: false,
+			flags:          map[string]bool{"enable_hyok_test": true},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := config.Config{}
-			var ps []catalog.BuiltInPlugin
-			var psCfg []catalog.PluginConfig
-			if tt.enabledPlugins {
-				ps, psCfg = testutils.NewTestPlugins(testplugins.NewKeystoreOperator())
-			}
+			svcRegistry := testutils.NewTestPlugins(
+				testplugins.WithKeyManagement(
+					testplugins.Name,
+					testplugins.NewTestKeyManagement(tt.enabledPlugins, false),
+				),
+			)
 
-			cfg.Plugins = psCfg
+			mgr := manager.NewTenantConfigManager(nil, svcRegistry, flagsEnabledCfg(), nil, newTestFlags(tt.flags))
 
-			svcRegistry, err := cmkpluginregistry.New(t.Context(), &cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-			assert.NoError(t, err)
-
-			mgr := manager.NewTenantConfigManager(nil, svcRegistry, nil)
-
-			result := mgr.GetTenantConfigsHyokKeystore()
+			result := mgr.GetTenantConfigsHyokKeystore(t.Context())
 			assert.ElementsMatch(t, tt.expectedOutput, result.Provider)
+			assert.IsNonDecreasing(t, result.Provider)
 		})
 	}
 }
 
 func TestGetTenantsKeystore(t *testing.T) {
 	t.Run("Should get tenant keystores with hyok", func(t *testing.T) {
-		m, _, tenant := SetupTenantConfigManager(t, []catalog.BuiltInPlugin{testplugins.NewKeystoreOperator()})
+		m, _, tenant := SetupTenantConfigManager(t,
+			testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, false)))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
+		// flags == nil → backward-compat: HYOK ungated, so provider is returned
 		assert.NotEmpty(t, res.HYOK)
 	})
 
 	t.Run("Should get tenant keystores with no hyok providers", func(t *testing.T) {
-		m, _, tenant := SetupTenantConfigManager(t, nil)
+		m, _, tenant := SetupTenantConfigManager(t,
+			testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(false, true)))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Empty(t, res.HYOK)
@@ -268,26 +296,175 @@ func TestGetTenantsKeystore(t *testing.T) {
 	})
 
 	t.Run("Should keep BYOK disabled when feature gate is missing", func(t *testing.T) {
-		m, _, tenant := SetupTenantConfigManager(t, nil)
+		m, _, tenant := SetupTenantConfigManager(t)
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.False(t, res.AllowBYOK)
 	})
 
-	t.Run("Should enable BYOK when allow-byok feature gate is true", func(t *testing.T) {
-		_, db, tenant := SetupTenantConfigManager(t, nil)
+	t.Run("Should enable BYOK when enable_byok_test flag is true", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
 		r := sql.NewRepository(db)
-		cfg := &config.Config{
-			BaseConfig: commoncfg.BaseConfig{
-				FeatureGates: commoncfg.FeatureGates{
-					"allow-byok": true,
-				},
-			},
-		}
-		m := manager.NewTenantConfigManager(r, nil, cfg)
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), flagsEnabledCfg(), nil,
+			newTestFlags(map[string]bool{"enable_byok_test": true}))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.True(t, res.AllowBYOK)
+	})
+
+	t.Run("BYOK allowed, no stored keystore: regions from config", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		r := sql.NewRepository(db)
+
+		cfg := &config.Config{
+			KeystorePool: config.KeystorePool{
+				SupportedRegions: testutils.SupportedRegions,
+			},
+		}
+		cfg.FeatureFlags.Enabled = true
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil,
+			newTestFlags(map[string]bool{"enable_byok_test": true}))
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.Equal(t, testutils.SupportedRegions, res.BYOK.SupportedRegions)
+	})
+
+	t.Run("BYOK disabled, no stored keystore", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		r := sql.NewRepository(db)
+		m := manager.NewTenantConfigManager(r, nil, &config.Config{}, nil, nil)
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.Nil(t, res.BYOK.SupportedRegions)
+	})
+
+	t.Run("BYOK allowed, no regions configured", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), flagsEnabledCfg(), nil,
+			newTestFlags(map[string]bool{"enable_byok_test": true}))
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.Nil(t, res.BYOK.SupportedRegions)
+	})
+
+	t.Run("stored keystore: regions from config", func(t *testing.T) {
+		configManager, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		err := configManager.SetDefaultKeystore(ctx, testutils.NewKeystoreConfig(func(k *model.KeystoreConfig) {
+			k.SupportedRegions = testutils.SupportedRegions
+		}))
+		assert.NoError(t, err)
+
+		cfg := &config.Config{
+			KeystorePool: config.KeystorePool{
+				SupportedRegions: testutils.SupportedRegions,
+			},
+		}
+		cfg.FeatureFlags.Enabled = true
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil,
+			newTestFlags(map[string]bool{"enable_byok_test": true}))
+		res, err := m.GetTenantsKeystores(ctx)
+		assert.NoError(t, err)
+		assert.Equal(t, testutils.SupportedRegions, res.BYOK.SupportedRegions)
+	})
+
+	t.Run("BYOK disabled when flag missing even with default provider plugin", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		// Registry has default keystore plugin but no flags set
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), nil, nil, nil)
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.False(t, res.AllowBYOK)
+	})
+
+	t.Run("HYOK providers returned only for enabled flags", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), flagsEnabledCfg(), nil,
+			newTestFlags(map[string]bool{"enable_hyok_test": true}))
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.True(t, res.HYOK.Allow)
+		assert.Contains(t, res.HYOK.Provider, testplugins.Name)
+	})
+
+	t.Run("HYOK empty when enable_hyok flag is absent", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		// Feature flags enabled but flag absent → BooleanValue returns defaultValue (false)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), flagsEnabledCfg(), nil, newTestFlags(map[string]bool{}))
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.Empty(t, res.HYOK.Provider)
+		assert.False(t, res.HYOK.Allow)
+	})
+}
+
+// TestFeatureFlagsDisabledFallback locks in the legacy behaviour that applies when
+// feature flags are not configured for the deployment (cfg.FeatureFlags.Enabled is
+// false, which is the case for chart versions that predate feature-flag support even
+// though featureflags.NewClient always returns a non-nil client). In that case HYOK is
+// ungated and BYOK is governed solely by the allow-byok feature gate; any injected flag
+// values are ignored. Once feature flags are enabled, the flags take precedence instead.
+func TestFeatureFlagsDisabledFallback(t *testing.T) {
+	hyokPlugin := testplugins.WithKeyManagement(testplugins.Name, testplugins.NewTestKeyManagement(true, false))
+
+	t.Run("HYOK stays enabled even though the flag would report false", func(t *testing.T) {
+		svcRegistry := testutils.NewTestPlugins(hyokPlugin)
+		// Feature flags disabled → fallback; flag client reports HYOK off but must be ignored.
+		m := manager.NewTenantConfigManager(nil, svcRegistry, &config.Config{}, nil,
+			newTestFlags(map[string]bool{"enable_hyok_test": false}))
+
+		res := m.GetTenantConfigsHyokKeystore(t.Context())
+		assert.True(t, res.Allow)
+		assert.Contains(t, res.Provider, testplugins.Name)
+	})
+
+	t.Run("HYOK stays enabled when the flag client is nil", func(t *testing.T) {
+		svcRegistry := testutils.NewTestPlugins(hyokPlugin)
+		m := manager.NewTenantConfigManager(nil, svcRegistry, &config.Config{}, nil, nil)
+
+		res := m.GetTenantConfigsHyokKeystore(t.Context())
+		assert.True(t, res.Allow)
+		assert.Contains(t, res.Provider, testplugins.Name)
+	})
+
+	t.Run("BYOK follows the allow-byok feature gate, ignoring the flag", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		cfg := &config.Config{}
+		cfg.FeatureGates = commoncfg.FeatureGates{"allow-byok": true}
+		// Gate on, flag off: while feature flags are disabled the gate wins.
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil,
+			newTestFlags(map[string]bool{"enable_byok_test": false}))
+
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.True(t, res.AllowBYOK)
+	})
+
+	t.Run("BYOK disabled when the allow-byok feature gate is off, ignoring the flag", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		cfg := &config.Config{}
+		cfg.FeatureGates = commoncfg.FeatureGates{"allow-byok": false}
+		// Gate off, flag on: the flag must be ignored while feature flags are disabled.
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil,
+			newTestFlags(map[string]bool{"enable_byok_test": true}))
+
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.False(t, res.AllowBYOK)
+	})
+
+	t.Run("feature flags enabled: BYOK flag takes precedence over the allow-byok gate", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		cfg := flagsEnabledCfg()
+		cfg.FeatureGates = commoncfg.FeatureGates{"allow-byok": true}
+		// Feature flags enabled → the flag (off) wins and the legacy gate (on) is ignored.
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil,
+			newTestFlags(map[string]bool{"enable_byok_test": false}))
+
+		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
+		assert.NoError(t, err)
+		assert.False(t, res.AllowBYOK)
 	})
 }
 
@@ -302,12 +479,12 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 	}
 
 	t.Run("Should update workflow config with partial update", func(t *testing.T) {
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: ptr.PointTo(3),
+			MinimumApprovals: new(3),
 		})
 
 		assert.NoError(t, err)
@@ -318,30 +495,30 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 	})
 
 	t.Run("Should update multiple fields at once", func(t *testing.T) {
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals:    ptr.PointTo(3),
-			RetentionPeriodDays: ptr.PointTo(60),
+			MinimumApprovals:    new(3),
+			RetentionPeriodDays: new(30),
 		})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
 		assert.True(t, result.Enabled)
 		assert.Equal(t, 3, result.MinimumApprovals)
-		assert.Equal(t, 60, result.RetentionPeriodDays)
+		assert.Equal(t, 30, result.RetentionPeriodDays)
 		assert.Equal(t, 7, result.DefaultExpiryPeriodDays)
 	})
 
 	t.Run("Should fail when retention period is less than minimum", func(t *testing.T) {
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			RetentionPeriodDays: ptr.PointTo(1),
+			RetentionPeriodDays: new(0),
 		})
 
 		assert.Error(t, err)
@@ -349,12 +526,99 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		assert.ErrorIs(t, err, manager.ErrRetentionLessThanMinimum)
 	})
 
+	t.Run("Should fail when retention period exceeds maximum", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			RetentionPeriodDays: new(31),
+		})
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrRetentionExceedsMaximum)
+	})
+
+	t.Run("Should fail when defaultExpiryPeriodDays exceeds maxExpiryPeriodDays", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			DefaultExpiryPeriodDays: new(15),
+			MaxExpiryPeriodDays:     new(10),
+		})
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrDefaultExpiryExceedsMax)
+	})
+
+	t.Run("Should succeed when defaultExpiryPeriodDays equals maxExpiryPeriodDays", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			DefaultExpiryPeriodDays: new(10),
+			MaxExpiryPeriodDays:     new(10),
+		})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, 10, result.DefaultExpiryPeriodDays)
+		assert.Equal(t, 10, result.MaxExpiryPeriodDays)
+	})
+
+	t.Run("Should fail when minimumApprovals is less than 2", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			MinimumApprovals: new(1),
+		})
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrMinimumApprovalsTooLow)
+	})
+
+	t.Run("Should fail when minimumApprovals exceeds maximum", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			MinimumApprovals: new(6),
+		})
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, manager.ErrMinimumApprovalsTooHigh)
+	})
+
+	t.Run("Should succeed when minimumApprovals equals 2", func(t *testing.T) {
+		configManager, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
+
+		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
+			MinimumApprovals: new(2),
+		})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, 2, result.MinimumApprovals)
+	})
+
 	t.Run("Should create default config when updating non-existent config", func(t *testing.T) {
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			Enabled: ptr.PointTo(true),
+			Enabled: new(true),
 		})
 
 		assert.NoError(t, err)
@@ -363,7 +627,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 	})
 
 	t.Run("Should handle nil update gracefully", func(t *testing.T) {
-		configManager, _, tenant := SetupTenantConfigManager(t, nil)
+		configManager, _, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
@@ -395,16 +659,16 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 				var tenant string
 
 				if tt.role == tenantpb.Role_ROLE_TEST.String() {
-					configManager, _, tenant = SetupTenantConfigManagerWithRole(t, tt.role, nil)
+					configManager, _, tenant = SetupTenantConfigManagerWithRole(t, tt.role)
 				} else {
-					configManager, _, tenant = SetupTenantConfigManager(t, nil)
+					configManager, _, tenant = SetupTenantConfigManager(t)
 				}
 
 				ctx := testutils.CreateCtxWithTenant(tenant)
 				setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(tt.initialState))
 
 				result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-					Enabled: ptr.PointTo(tt.targetState),
+					Enabled: new(tt.targetState),
 				})
 
 				if tt.shouldSucceed {
@@ -420,49 +684,49 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		}
 
 		t.Run("ROLE_LIVE can update other fields without changing Enabled", func(t *testing.T) {
-			configManager, _, tenant := SetupTenantConfigManager(t, nil)
+			configManager, _, tenant := SetupTenantConfigManager(t)
 			ctx := testutils.CreateCtxWithTenant(tenant)
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				MinimumApprovals:    ptr.PointTo(5),
-				RetentionPeriodDays: ptr.PointTo(90),
+				MinimumApprovals:    new(5),
+				RetentionPeriodDays: new(30),
 			})
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
 			assert.True(t, result.Enabled)
 			assert.Equal(t, 5, result.MinimumApprovals)
-			assert.Equal(t, 90, result.RetentionPeriodDays)
+			assert.Equal(t, 30, result.RetentionPeriodDays)
 		})
 
 		t.Run("ROLE_TEST can update Enabled with other fields simultaneously", func(t *testing.T) {
 			configManager, _, tenant := SetupTenantConfigManagerWithRole(t,
-				tenantpb.Role_ROLE_TEST.String(), nil)
+				tenantpb.Role_ROLE_TEST.String())
 			ctx := testutils.CreateCtxWithTenant(tenant)
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(false))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				Enabled:             ptr.PointTo(true),
-				MinimumApprovals:    ptr.PointTo(4),
-				RetentionPeriodDays: ptr.PointTo(60),
+				Enabled:             new(true),
+				MinimumApprovals:    new(4),
+				RetentionPeriodDays: new(30),
 			})
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
 			assert.True(t, result.Enabled)
 			assert.Equal(t, 4, result.MinimumApprovals)
-			assert.Equal(t, 60, result.RetentionPeriodDays)
+			assert.Equal(t, 30, result.RetentionPeriodDays)
 		})
 
 		t.Run("Setting same Enabled value does not trigger role validation", func(t *testing.T) {
-			configManager, _, tenant := SetupTenantConfigManager(t, nil)
+			configManager, _, tenant := SetupTenantConfigManager(t)
 			ctx := testutils.CreateCtxWithTenant(tenant)
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				Enabled:          ptr.PointTo(true),
-				MinimumApprovals: ptr.PointTo(3),
+				Enabled:          new(true),
+				MinimumApprovals: new(3),
 			})
 
 			assert.NoError(t, err)
@@ -470,5 +734,980 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			assert.True(t, result.Enabled)
 			assert.Equal(t, 3, result.MinimumApprovals)
 		})
+	})
+}
+
+// capturingKeystoreManagement wraps a TestKeystoreManagement and records every
+// GrantTrust call so tests can assert on the Subject and Type values passed.
+type capturingKeystoreManagement struct {
+	inner       *testplugins.TestKeystoreManagement
+	grantCalls  []*keystoremanagement.GrantTrustRequest
+	removeCalls []*keystoremanagement.RemoveTrustRequest
+}
+
+var _ keystoremanagement.KeystoreManagement = (*capturingKeystoreManagement)(nil)
+
+func newCapturingKeystoreManagement() *capturingKeystoreManagement {
+	return &capturingKeystoreManagement{inner: testplugins.NewTestKeystoreManagement()}
+}
+
+func (c *capturingKeystoreManagement) ServiceInfo() api.Info {
+	return c.inner.ServiceInfo()
+}
+
+func (c *capturingKeystoreManagement) CreateKeystore(
+	ctx context.Context, req *keystoremanagement.CreateKeystoreRequest,
+) (*keystoremanagement.CreateKeystoreResponse, error) {
+	return c.inner.CreateKeystore(ctx, req)
+}
+
+func (c *capturingKeystoreManagement) DeleteKeystore(
+	ctx context.Context, req *keystoremanagement.DeleteKeystoreRequest,
+) (*keystoremanagement.DeleteKeystoreResponse, error) {
+	return c.inner.DeleteKeystore(ctx, req)
+}
+
+func (c *capturingKeystoreManagement) GrantTrust(
+	ctx context.Context, req *keystoremanagement.GrantTrustRequest,
+) (*keystoremanagement.GrantTrustResponse, error) {
+	c.grantCalls = append(c.grantCalls, req)
+	return c.inner.GrantTrust(ctx, req)
+}
+
+func (c *capturingKeystoreManagement) RemoveTrust(
+	ctx context.Context, req *keystoremanagement.RemoveTrustRequest,
+) (*keystoremanagement.RemoveTrustResponse, error) {
+	c.removeCalls = append(c.removeCalls, req)
+	return c.inner.RemoveTrust(ctx, req)
+}
+
+// grantCallsOfType returns GrantTrust calls matching the given TrustType.
+func (c *capturingKeystoreManagement) grantCallsOfType(
+	trustType keystoremanagement.TrustType,
+) []*keystoremanagement.GrantTrustRequest {
+	var out []*keystoremanagement.GrantTrustRequest
+	for _, call := range c.grantCalls {
+		if call.Type == trustType {
+			out = append(out, call)
+		}
+	}
+	return out
+}
+
+// setupTenantConfigManagerWithCerts creates a TenantConfigManager backed by a
+// CertificateManager so that ensureKeystoreProvisioned is exercised.
+// It also pre-persists a role-management certificate so that
+// getDefaultKeystoreClientCert finds it without triggering IssueCertificate
+// (the test issuer returns an empty chain).
+// cfg is the config to use; if nil, a default is created.
+func setupTenantConfigManagerWithCerts(
+	t *testing.T,
+	cfg *config.Config,
+	opts ...testplugins.RegistryOption,
+) (*manager.TenantConfigManager, *multitenancy.DB, string) {
+	t.Helper()
+
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	r := sql.NewRepository(db)
+	svcRegistry := testutils.NewTestPlugins(opts...)
+
+	if cfg == nil {
+		cfg = &config.Config{
+			Certificates: config.Certificates{
+				RootCertURL:  testutils.TestCertURL,
+				ValidityDays: config.MinCertificateValidityDays,
+			},
+		}
+	}
+
+	// Ensure getCryptoCertificates returns an empty list (so syncCryptoAccessData
+	// exits early) without failing on "no credential found".
+	if cfg.CryptoLayer.CertX509Trusts.Source == "" {
+		cfg.CryptoLayer.CertX509Trusts = commoncfg.SourceRef{
+			Source: commoncfg.EmbeddedSourceValue,
+			Value:  "[]",
+		}
+	}
+
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, nil)
+
+	// Pre-persist a role-management cert so getDefaultKeystoreClientCert doesn't
+	// attempt to call IssueCertificate (the test stub returns an empty chain).
+	ctx := testutils.CreateCtxWithTenant(tenants[0])
+	roleManagementCert := testutils.NewCertificate(func(c *model.Certificate) {
+		c.Purpose = model.CertificatePurposeRoleManagement
+		c.CommonName = testutils.TestDefaultKeystoreCommonName
+	})
+	testutils.CreateTestEntities(ctx, t, r, roleManagementCert)
+
+	return tenantConfigManager, db, tenants[0]
+}
+
+// storeKsConfig marshals ks and persists it as the tenant's default keystore config.
+func storeKsConfig(t *testing.T, db *multitenancy.DB, tenant string, ks *model.KeystoreConfig) {
+	t.Helper()
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+	b, err := json.Marshal(ks)
+	require.NoError(t, err)
+	require.NoError(t, r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(b)}, *repo.NewQuery()))
+}
+
+func TestEnsureKeystoreProvisioned(t *testing.T) {
+	const testPrefix = "test_prefix_"
+
+	cfg := &config.Config{
+		Certificates: config.Certificates{
+			RootCertURL:             testutils.TestCertURL,
+			ValidityDays:            config.MinCertificateValidityDays,
+			DefaultTenantCertPrefix: testPrefix,
+		},
+	}
+
+	t.Run("skips GrantTrust(MANAGEMENT) when KeyManagementConfig already set", func(t *testing.T) {
+		// Arrange: create a keystore config that already has KeyManagementConfig.LocalityID set.
+		capture := newCapturingKeystoreManagement()
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Use a full ksConfig (both RoleManagementConfig and KeyManagementConfig set).
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {}))
+
+		// Act
+		_, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		// Assert: no MANAGEMENT GrantTrust call should have been made.
+		mgmtCalls := capture.grantCallsOfType(keystoremanagement.TrustTypeManagement)
+		assert.Empty(t, mgmtCalls, "expected no GrantTrust(MANAGEMENT) call when KeyManagementConfig already provisioned")
+	})
+
+	t.Run("calls GrantTrust(MANAGEMENT) with Subject=prefix+tenantID when KeyManagementConfig missing", func(t *testing.T) {
+		// Arrange: store a ksConfig with empty KeyManagementConfig (only RoleManagementConfig set).
+		capture := newCapturingKeystoreManagement()
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		ksWithoutKeyMgmt := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{} // clear it
+		})
+		storeKsConfig(t, db, tenant, ksWithoutKeyMgmt)
+
+		// Act
+		_, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		// Assert: exactly one MANAGEMENT call with Subject == prefix+tenantID.
+		mgmtCalls := capture.grantCallsOfType(keystoremanagement.TrustTypeManagement)
+		require.Len(t, mgmtCalls, 1)
+		assert.Equal(t, keystoremanagement.TrustTypeManagement, mgmtCalls[0].Type)
+		assert.Equal(t, testPrefix+manager.DefaultKeystoreCertInfix+tenant, mgmtCalls[0].Subject)
+	})
+
+	t.Run("stores KeyManagementConfig with correct CommonName after GrantTrust(MANAGEMENT)", func(t *testing.T) {
+		// Arrange
+		capture := newCapturingKeystoreManagement()
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		ksWithoutKeyMgmt := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{}
+		})
+		storeKsConfig(t, db, tenant, ksWithoutKeyMgmt)
+
+		// Act
+		result, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		// Assert: the returned config has the expected CommonName.
+		expectedCN := testPrefix + manager.DefaultKeystoreCertInfix + tenant
+		assert.Equal(t, expectedCN, result.KeyManagementConfig.CommonName)
+		assert.NotEmpty(t, result.KeyManagementConfig.LocalityID)
+	})
+}
+
+// cryptoCertCfg returns a *config.Config whose CryptoLayer contains one CryptoCert
+// with the given name and CN prefix, embedded as inline YAML.
+func cryptoCertCfg(name, cnPrefix string) *config.Config {
+	yamlVal := "- name: " + name + "\n  subject:\n    commonNamePrefix: " + cnPrefix + "\n"
+	return &config.Config{
+		Certificates: config.Certificates{
+			RootCertURL:             testutils.TestCertURL,
+			ValidityDays:            config.MinCertificateValidityDays,
+			DefaultTenantCertPrefix: "test_prefix_",
+		},
+		CryptoLayer: config.CryptoLayer{
+			CertX509Trusts: commoncfg.SourceRef{
+				Source: commoncfg.EmbeddedSourceValue,
+				Value:  yamlVal,
+			},
+		},
+	}
+}
+
+func TestSyncCryptoAccessData(t *testing.T) {
+	const (
+		certName = "crypto-cert-1"
+		cnPrefix = "crypto_"
+	)
+
+	t.Run("skips GrantTrust(CRYPTO) when subject already matches", func(t *testing.T) {
+		capture := newCapturingKeystoreManagement()
+		cfg := cryptoCertCfg(certName, cnPrefix)
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Pre-populate CryptoAccessData with the correct subject so no sync needed.
+		// The subject is formatted as pkix.Name.String(), e.g. "CN=crypto_<tenant>".
+		expectedSubject := "CN=" + cnPrefix + tenant
+		ksConfig := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.CryptoAccessData = map[string]model.CryptoConfig{
+				certName: {Subject: expectedSubject, AccessData: model.KeystoreAccessData{}},
+			}
+		})
+		storeKsConfig(t, db, tenant, ksConfig)
+
+		_, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		cryptoCalls := capture.grantCallsOfType(keystoremanagement.TrustTypeCrypto)
+		assert.Empty(t, cryptoCalls, "expected no GrantTrust(CRYPTO) call when subject already matches")
+		assert.Empty(t, capture.removeCalls, "expected no RemoveTrust call when subject already matches")
+	})
+
+	t.Run("calls GrantTrust(CRYPTO) when entry missing", func(t *testing.T) {
+		capture := newCapturingKeystoreManagement()
+		cfg := cryptoCertCfg(certName, cnPrefix)
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Store ksConfig with no CryptoAccessData.
+		ksConfig := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.CryptoAccessData = nil
+		})
+		storeKsConfig(t, db, tenant, ksConfig)
+
+		_, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		cryptoCalls := capture.grantCallsOfType(keystoremanagement.TrustTypeCrypto)
+		require.Len(t, cryptoCalls, 1, "expected exactly one GrantTrust(CRYPTO) call")
+		assert.Equal(t, keystoremanagement.TrustTypeCrypto, cryptoCalls[0].Type)
+		assert.Equal(t, "CN="+cnPrefix+tenant, cryptoCalls[0].Subject)
+		assert.Empty(t, capture.removeCalls, "expected no RemoveTrust call when entry is new")
+	})
+
+	t.Run("skips GrantTrust(CRYPTO) when entry already exists regardless of subject", func(t *testing.T) {
+		capture := newCapturingKeystoreManagement()
+		cfg := cryptoCertCfg(certName, cnPrefix)
+		m, db, tenant := setupTenantConfigManagerWithCerts(
+			t, cfg,
+			testplugins.WithKeystoreManagement(testplugins.Name, capture),
+		)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Store ksConfig with an existing entry (even with a different subject).
+		ksConfig := testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.CryptoAccessData = map[string]model.CryptoConfig{
+				certName: {Subject: "old_subject", AccessData: model.KeystoreAccessData{}},
+			}
+		})
+		storeKsConfig(t, db, tenant, ksConfig)
+
+		_, err := m.GetDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+
+		assert.Empty(t, capture.removeCalls, "expected no RemoveTrust call")
+		assert.Empty(t, capture.grantCallsOfType(keystoremanagement.TrustTypeCrypto), "expected no GrantTrust(CRYPTO) call when entry already exists")
+	})
+}
+
+func TestNeedsDefaultKeystoreProvisioning(t *testing.T) {
+	t.Run("returns true when no stored config exists", func(t *testing.T) {
+		// Arrange: fresh tenant with no stored keystore config
+		m, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.True(t, needed, "should need provisioning when no stored config exists")
+	})
+
+	t.Run("returns true when KeyManagementConfig.LocalityID is empty", func(t *testing.T) {
+		// Arrange: stored config exists but management role not yet provisioned
+		m, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		// Store a config with empty KeyManagementConfig.LocalityID
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{} // empty LocalityID
+		}))
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.True(t, needed, "should need provisioning when LocalityID is empty")
+	})
+
+	t.Run("returns true when LocalityID is set but AccessData is empty", func(t *testing.T) {
+		// Arrange: provider like GCP may set LocalityID before AccessData is returned by GrantTrust
+		m, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{
+				LocalityID: testutils.TestLocalityID,
+				CommonName: testutils.TestDefaultKeystoreCommonName,
+				// AccessData intentionally empty — access credentials not yet provisioned
+			}
+		}))
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.True(t, needed, "should need provisioning when AccessData is empty even if LocalityID is set")
+	})
+
+	t.Run("returns false when both LocalityID and AccessData are set", func(t *testing.T) {
+		// Arrange: fully provisioned config with both locality and access credentials
+		m, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		storeKsConfig(t, db, tenant, testutils.NewKeystoreConfig(func(kc *model.KeystoreConfig) {
+			kc.KeyManagementConfig = model.ManagementConfig{
+				LocalityID: testutils.TestLocalityID,
+				CommonName: testutils.TestDefaultKeystoreCommonName,
+				AccessData: model.KeystoreAccessData{"key": "value"},
+			}
+		}))
+
+		// Act
+		needed, err := m.NeedsDefaultKeystoreProvisioning(ctx)
+
+		// Assert
+		assert.NoError(t, err)
+		assert.False(t, needed, "should not need provisioning when LocalityID and AccessData are both set")
+	})
+}
+
+// TestGetWorkflowConfig_LegacyFallback covers the dual-read fallback: when a
+// tenant has only the legacy JSON blob (no flat rows yet), GetWorkflowConfig
+// must still return the correct config.
+func TestGetWorkflowConfig_LegacyFallback(t *testing.T) {
+	m, db, tenant := SetupTenantConfigManager(t)
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	wc := &model.WorkflowConfig{
+		Enabled:                 true,
+		MinimumApprovals:        3,
+		RetentionPeriodDays:     45,
+		DefaultExpiryPeriodDays: 10,
+		MaxExpiryPeriodDays:     20,
+	}
+	bytes, err := json.Marshal(wc)
+	assert.NoError(t, err)
+
+	err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.WorkflowConfigKey, Value: string(bytes)}, *repo.NewQuery())
+	assert.NoError(t, err)
+
+	got, err := m.GetWorkflowConfig(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, wc, got)
+}
+
+// TestSetWorkflowConfig_FlatRoundTrip verifies SetWorkflowConfig writes flat
+// rows and GetWorkflowConfig reads them back without consulting the legacy blob.
+func TestSetWorkflowConfig_FlatRoundTrip(t *testing.T) {
+	m, _, tenant := SetupTenantConfigManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	wc := &model.WorkflowConfig{
+		Enabled:                 true,
+		MinimumApprovals:        2,
+		RetentionPeriodDays:     30,
+		DefaultExpiryPeriodDays: 7,
+		MaxExpiryPeriodDays:     14,
+	}
+
+	stored, err := m.SetWorkflowConfig(ctx, wc)
+	assert.NoError(t, err)
+	assert.Equal(t, wc, stored)
+
+	got, err := m.GetWorkflowConfig(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, wc, got)
+}
+
+// TestGetDefaultKeystoreConfig_LegacyFallback covers the dual-read fallback for
+// the default keystore config.
+func TestGetDefaultKeystoreConfig_LegacyFallback(t *testing.T) {
+	m, db, tenant := SetupTenantConfigManager(t)
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	ks := &model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-1",
+			CommonName: "cn-1",
+		},
+	}
+	bytes, err := json.Marshal(ks)
+	assert.NoError(t, err)
+
+	err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(bytes)}, *repo.NewQuery())
+	assert.NoError(t, err)
+
+	got, err := m.GetDefaultKeystoreConfig(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, ks.RoleManagementConfig.LocalityID, got.RoleManagementConfig.LocalityID)
+	assert.Equal(t, ks.RoleManagementConfig.CommonName, got.RoleManagementConfig.CommonName)
+}
+
+// TestSetDefaultKeystore_ClearsOmittedOptionalFields ensures whole-object
+// replace semantics: optional fields present in a previous write must not
+// linger as stale flat rows after a subsequent write that omits them.
+func TestSetDefaultKeystore_ClearsOmittedOptionalFields(t *testing.T) {
+	m, _, tenant := SetupTenantConfigManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	full := &model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-1",
+			CommonName: "cn-1",
+			AccessData: model.KeystoreAccessData{"roleArn": "arn:initial"},
+		},
+		CryptoAccessData: map[string]model.CryptoConfig{
+			"cert-a": {Subject: "/CN=a", AccessData: model.KeystoreAccessData{"k": "v"}},
+		},
+		SupportedRegions: []config.Region{{Name: "eu-west-1", TechnicalName: "eu-west-1"}},
+	}
+	err := m.SetDefaultKeystore(ctx, full)
+	assert.NoError(t, err)
+
+	// Overwrite with a config that omits optional fields. Previous values must
+	// not bleed through.
+	minimal := &model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-2",
+			CommonName: "cn-2",
+		},
+	}
+	err = m.SetDefaultKeystore(ctx, minimal)
+	assert.NoError(t, err)
+
+	got, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "loc-2", got.RoleManagementConfig.LocalityID)
+	assert.Equal(t, "cn-2", got.RoleManagementConfig.CommonName)
+	assert.Nil(t, got.RoleManagementConfig.AccessData)
+	assert.Empty(t, got.CryptoAccessData)
+	assert.Empty(t, got.SupportedRegions)
+}
+
+// TestSetDefaultKeystore_FlatRoundTrip writes a full KeystoreConfig (including
+// AccessData, CryptoAccessData and SupportedRegions) and reads it back,
+// verifying all fields survive the flat-row roundtrip.
+func TestSetDefaultKeystore_FlatRoundTrip(t *testing.T) {
+	m, _, tenant := SetupTenantConfigManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	ks := &model.KeystoreConfig{
+		RoleManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-role",
+			CommonName: "role-mgmt-cn",
+			AccessData: model.KeystoreAccessData{
+				"paramA": "role-val-a",
+				"paramB": "role-val-b",
+				"paramC": "role-val-c",
+			},
+		},
+		KeyManagementConfig: model.ManagementConfig{
+			LocalityID: "loc-key",
+			CommonName: "key-mgmt-cn",
+			AccessData: model.KeystoreAccessData{
+				"paramA": "key-val-a",
+				"paramB": "key-val-b",
+				"paramC": "key-val-c",
+			},
+		},
+		CryptoAccessData: map[string]model.CryptoConfig{
+			"landscape-a": {
+				Subject: "/CN=crypto-cert",
+				AccessData: model.KeystoreAccessData{
+					"paramA": "crypto-val-a",
+				},
+			},
+		},
+		SupportedRegions: []config.Region{
+			{Name: "region-name-a", TechnicalName: "region-a"},
+			{Name: "Europe (Ireland)", TechnicalName: "eu-west-1"},
+		},
+	}
+
+	require.NoError(t, m.SetDefaultKeystore(ctx, ks))
+
+	got, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	assert.Equal(t, ks.RoleManagementConfig.LocalityID, got.RoleManagementConfig.LocalityID)
+	assert.Equal(t, ks.RoleManagementConfig.CommonName, got.RoleManagementConfig.CommonName)
+	assert.Equal(t, ks.RoleManagementConfig.AccessData["paramA"], got.RoleManagementConfig.AccessData["paramA"])
+	assert.Equal(t, ks.RoleManagementConfig.AccessData["paramB"], got.RoleManagementConfig.AccessData["paramB"])
+	assert.Equal(t, ks.RoleManagementConfig.AccessData["paramC"], got.RoleManagementConfig.AccessData["paramC"])
+
+	assert.Equal(t, ks.KeyManagementConfig.LocalityID, got.KeyManagementConfig.LocalityID)
+	assert.Equal(t, ks.KeyManagementConfig.CommonName, got.KeyManagementConfig.CommonName)
+	assert.Equal(t, ks.KeyManagementConfig.AccessData["paramA"], got.KeyManagementConfig.AccessData["paramA"])
+
+	require.Contains(t, got.CryptoAccessData, "landscape-a")
+	assert.Equal(t, ks.CryptoAccessData["landscape-a"].Subject, got.CryptoAccessData["landscape-a"].Subject)
+	assert.Equal(t, ks.CryptoAccessData["landscape-a"].AccessData["paramA"], got.CryptoAccessData["landscape-a"].AccessData["paramA"])
+
+	require.Len(t, got.SupportedRegions, 2)
+}
+
+// TestGetStoredDefaultKeystoreConfig_IncompleteRows verifies incomplete flat
+// rows are reported as not found.
+func TestGetStoredDefaultKeystoreConfig_IncompleteRows(t *testing.T) {
+	m, db, tenant := SetupTenantConfigManager(t)
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	// locality_id present but common_name missing -> incomplete.
+	err := r.Set(ctx, &model.TenantConfig{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"}, *repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField))
+	assert.NoError(t, err)
+
+	_, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
+	assert.NoError(t, err)
+	assert.False(t, found, "incomplete keystore rows must be reported as not found")
+}
+
+// TestGetStoredDefaultKeystoreConfig_UnknownTypeIgnored verifies that rows with
+// unknown types are silently ignored and the result is not-found (no error).
+func TestGetStoredDefaultKeystoreConfig_UnknownTypeIgnored(t *testing.T) {
+	m, db, tenant := SetupTenantConfigManager(t)
+	r := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	// Write rows under an unrecognised key prefix; should not surface as a config.
+	err := r.Set(ctx, &model.TenantConfig{Key: "unknown_prefix/locality_id", Value: "loc-1", Type: "default_keystore"}, *repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField))
+	assert.NoError(t, err)
+
+	_, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
+	assert.NoError(t, err)
+	assert.False(t, found)
+}
+
+func TestBuildWorkflowConfigFromRows(t *testing.T) {
+	completeRows := func() []model.TenantConfig {
+		return []model.TenantConfig{
+			{Key: "enabled", Value: "true", Type: "workflow"},
+			{Key: "minimum_approvals", Value: "3", Type: "workflow"},
+			{Key: "retention_period_days", Value: "20", Type: "workflow"},
+			{Key: "default_expiry_period_days", Value: "5", Type: "workflow"},
+			{Key: "max_expiry_period_days", Value: "7", Type: "workflow"},
+		}
+	}
+
+	t.Run("all keys present builds config", func(t *testing.T) {
+		wc, found, err := manager.BuildWorkflowConfigFromRows(completeRows())
+		require.NoError(t, err)
+		assert.True(t, found)
+		assert.True(t, wc.Enabled)
+		assert.Equal(t, 3, wc.MinimumApprovals)
+		assert.Equal(t, 20, wc.RetentionPeriodDays)
+		assert.Equal(t, 5, wc.DefaultExpiryPeriodDays)
+		assert.Equal(t, 7, wc.MaxExpiryPeriodDays)
+	})
+
+	t.Run("missing required key returns not found", func(t *testing.T) {
+		rows := completeRows()[:len(completeRows())-1]
+		wc, found, err := manager.BuildWorkflowConfigFromRows(rows)
+		require.NoError(t, err)
+		assert.False(t, found)
+		assert.Nil(t, wc)
+	})
+
+	invalidCases := map[string]string{
+		"enabled":                    "notabool",
+		"minimum_approvals":          "x",
+		"retention_period_days":      "x",
+		"default_expiry_period_days": "x",
+		"max_expiry_period_days":     "x",
+	}
+	for key, bad := range invalidCases {
+		t.Run("invalid "+key+" returns error", func(t *testing.T) {
+			wc, found, err := manager.BuildWorkflowConfigFromRows([]model.TenantConfig{
+				{Key: key, Value: bad, Type: "workflow"},
+			})
+			require.Error(t, err)
+			assert.False(t, found)
+			assert.Nil(t, wc)
+		})
+	}
+}
+
+func TestBuildKeystoreConfigFromRows(t *testing.T) {
+	t.Run("identity fields build config", func(t *testing.T) {
+		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/common_name", Value: "cn-1", Type: "default_keystore"},
+		})
+		require.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "loc-1", ks.RoleManagementConfig.LocalityID)
+		assert.Equal(t, "cn-1", ks.RoleManagementConfig.CommonName)
+	})
+
+	t.Run("missing identity returns not found", func(t *testing.T) {
+		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+		})
+		require.NoError(t, err)
+		assert.False(t, found)
+		assert.Nil(t, ks)
+	})
+
+	t.Run("access_data fields populate AccessData map", func(t *testing.T) {
+		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/common_name", Value: "cn-1", Type: "default_keystore"},
+			{Key: "role_mgmt/access_data/paramA", Value: "val-a", Type: "default_keystore"},
+			{Key: "role_mgmt/access_data/paramB", Value: "val-b", Type: "default_keystore"},
+		})
+		require.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "val-a", ks.RoleManagementConfig.AccessData["paramA"])
+		assert.Equal(t, "val-b", ks.RoleManagementConfig.AccessData["paramB"])
+	})
+
+	t.Run("key_mgmt rows populate KeyManagementConfig", func(t *testing.T) {
+		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/common_name", Value: "cn-1", Type: "default_keystore"},
+			{Key: "key_mgmt/locality_id", Value: "loc-km", Type: "default_keystore"},
+			{Key: "key_mgmt/common_name", Value: "cn-km", Type: "default_keystore"},
+			{Key: "key_mgmt/access_data/paramA", Value: "km-val-a", Type: "default_keystore"},
+		})
+		require.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "loc-km", ks.KeyManagementConfig.LocalityID)
+		assert.Equal(t, "cn-km", ks.KeyManagementConfig.CommonName)
+		assert.Equal(t, "km-val-a", ks.KeyManagementConfig.AccessData["paramA"])
+	})
+
+	t.Run("crypto rows populate CryptoAccessData", func(t *testing.T) {
+		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/common_name", Value: "cn-1", Type: "default_keystore"},
+			{Key: "crypto/landscape-a/subject", Value: "/CN=cert", Type: "default_keystore"},
+			{Key: "crypto/landscape-a/access_data/paramA", Value: "crypto-val", Type: "default_keystore"},
+		})
+		require.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "/CN=cert", ks.CryptoAccessData["landscape-a"].Subject)
+		assert.Equal(t, "crypto-val", ks.CryptoAccessData["landscape-a"].AccessData["paramA"])
+	})
+
+	t.Run("region rows populate SupportedRegions", func(t *testing.T) {
+		ks, found, err := manager.BuildKeystoreConfigFromRows([]model.TenantConfig{
+			{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"},
+			{Key: "role_mgmt/common_name", Value: "cn-1", Type: "default_keystore"},
+			{Key: "supported_region/region-a/name", Value: "region-name-a", Type: "default_keystore"},
+		})
+		require.NoError(t, err)
+		assert.True(t, found)
+		require.Len(t, ks.SupportedRegions, 1)
+		assert.Equal(t, "region-a", ks.SupportedRegions[0].TechnicalName)
+		assert.Equal(t, "region-name-a", ks.SupportedRegions[0].Name)
+	})
+}
+
+func TestValidateWorkflowConfig(t *testing.T) {
+	valid := func() *model.WorkflowConfig {
+		return &model.WorkflowConfig{
+			MinimumApprovals:        constants.DefaultMinimumApprovalCount,
+			RetentionPeriodDays:     constants.DefaultRetentionPeriodDays,
+			DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
+			MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
+		}
+	}
+
+	t.Run("valid config passes", func(t *testing.T) {
+		require.NoError(t, manager.ValidateWorkflowConfig(valid()))
+	})
+
+	tests := []struct {
+		name    string
+		mutate  func(*model.WorkflowConfig)
+		wantErr error
+	}{
+		{"retention below min", func(c *model.WorkflowConfig) {
+			c.RetentionPeriodDays = constants.MinRetentionPeriodDays - 1
+		}, manager.ErrRetentionLessThanMinimum},
+		{"retention above max", func(c *model.WorkflowConfig) {
+			c.RetentionPeriodDays = constants.MaxRetentionPeriodDays + 1
+		}, manager.ErrRetentionExceedsMaximum},
+		{"default expiry exceeds max", func(c *model.WorkflowConfig) {
+			c.DefaultExpiryPeriodDays = c.MaxExpiryPeriodDays + 1
+		}, manager.ErrDefaultExpiryExceedsMax},
+		{"minimum approvals too low", func(c *model.WorkflowConfig) {
+			c.MinimumApprovals = 1
+		}, manager.ErrMinimumApprovalsTooLow},
+		{"minimum approvals too high", func(c *model.WorkflowConfig) {
+			c.MinimumApprovals = constants.MaxMinimumApprovals + 1
+		}, manager.ErrMinimumApprovalsTooHigh},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := valid()
+			tt.mutate(c)
+			require.ErrorIs(t, manager.ValidateWorkflowConfig(c), tt.wantErr)
+		})
+	}
+}
+
+func TestGetEffectiveLimits(t *testing.T) {
+	t.Run("returns cluster defaults when no overrides stored", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
+
+		systems, keys, err := m.GetEffectiveLimits(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 50, systems)
+		assert.Equal(t, 10, keys)
+	})
+
+	t.Run("returns both overrides from DB in a single fetch", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		require.NoError(t, r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeySystemsOverride,
+			Value: "99",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery()))
+		require.NoError(t, r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeyKeysOverride,
+			Value: "7",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery()))
+
+		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
+
+		systems, keys, err := m.GetEffectiveLimits(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 99, systems)
+		assert.Equal(t, 7, keys)
+	})
+}
+
+func TestGetEffectiveKeysLimit(t *testing.T) {
+	t.Run("returns cluster default when no override is stored", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		cfg := &config.Config{Tenant: config.Tenant{KeyLimit: 10}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
+
+		limit, err := m.GetEffectiveKeysLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 10, limit)
+	})
+
+	t.Run("returns tenant override when stored in DB", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeyKeysOverride,
+			Value: "25",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		cfg := &config.Config{Tenant: config.Tenant{KeyLimit: 10}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
+
+		limit, err := m.GetEffectiveKeysLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 25, limit)
+	})
+
+	t.Run("returns zero when cfg is nil and no override stored", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		limit, err := m.GetEffectiveKeysLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, limit)
+	})
+
+	t.Run("returns error when override is negative", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeyKeysOverride,
+			Value: "-1",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		_, err = m.GetEffectiveKeysLimit(ctx)
+
+		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
+	})
+
+	t.Run("returns error when override is not a number", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeyKeysOverride,
+			Value: "abc",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		_, err = m.GetEffectiveKeysLimit(ctx)
+
+		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
+	})
+}
+
+func TestGetEffectiveSystemsLimit(t *testing.T) {
+	t.Run("returns cluster default when no override is stored", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 42}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
+
+		limit, err := m.GetEffectiveSystemsLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 42, limit)
+	})
+
+	t.Run("returns tenant override when stored in DB", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeySystemsOverride,
+			Value: "99",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
+
+		limit, err := m.GetEffectiveSystemsLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 99, limit)
+	})
+
+	t.Run("returns zero when cfg is nil and no override stored", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		limit, err := m.GetEffectiveSystemsLimit(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, limit)
+	})
+
+	t.Run("returns error when override is negative", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeySystemsOverride,
+			Value: "-1",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		_, err = m.GetEffectiveSystemsLimit(ctx)
+
+		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
+	})
+
+	t.Run("returns error when override is not a number", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		err := r.Set(ctx, &model.TenantConfig{
+			Key:   manager.LimitsKeySystemsOverride,
+			Value: "abc",
+			Type:  manager.TenantConfigTypeLimits,
+		}, *repo.NewQuery())
+		require.NoError(t, err)
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
+
+		_, err = m.GetEffectiveSystemsLimit(ctx)
+
+		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
 	})
 }

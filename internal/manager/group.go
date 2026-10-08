@@ -8,13 +8,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -22,13 +22,13 @@ import (
 
 type GroupManager struct {
 	repo        repo.Repo
-	svcRegistry *cmkpluginregistry.Registry
+	svcRegistry serviceapi.Registry
 	userManager User
 }
 
 func NewGroupManager(
 	repository repo.Repo,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	userManager User,
 ) *GroupManager {
 	return &GroupManager{
@@ -244,7 +244,7 @@ func (m *GroupManager) CheckIAMExistenceOfGroups(
 	ctx context.Context,
 	iamIdentifiers []string,
 ) ([]GroupIAMExistence, error) {
-	authCtx, err := cmkcontext.ExtractClientDataAuthContext(ctx)
+	authCtx, err := cmkcontext.ExtractBusinessUserDataAuthContext(ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrAutoAssignApprover, err)
 	}
@@ -311,10 +311,9 @@ func (m *GroupManager) isSupportedRole(group *model.Group) bool {
 }
 
 // applyIAMGroupFilter adds IAM filtering to query if user is not TenantAdmin.
-// SystemUser bypass filtering completely.
 // TenantAdmins see all groups, others only see their own groups.
 func (m *GroupManager) applyIAMGroupFilter(ctx context.Context, query *repo.Query) {
-	iamIdentifiers, err := cmkcontext.ExtractClientDataGroupsString(ctx)
+	iamIdentifiers, err := cmkcontext.ExtractBusinessUserDataGroupsString(ctx)
 	if err != nil {
 		log.Error(ctx, "failed to extract client data groups: %v", err)
 	}

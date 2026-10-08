@@ -7,47 +7,47 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openkcm/plugin-sdk/pkg/catalog"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
-func startAPIGroups(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string) {
+func startAPIGroups(t *testing.T) (*multitenancy.DB, cmkapi.ServeMux, string, *testutils.TestSigningKeyStorage) {
 	t.Helper()
 
 	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
 
+	keyStorage := testutils.NewTestSigningKeyStorage(t)
+
 	r := testutils.NewAPIServer(
 		t, db, testutils.TestAPIServerConfig{
-			Plugins: []catalog.BuiltInPlugin{testplugins.NewIdentityManagement()},
+			EnableBusinessUserDataMW: true,
+			SigningKeyStorage:        keyStorage,
 		},
 	)
 
-	return db, r, tenants[0]
+	return db, r, tenants[0], keyStorage
 }
 
 func TestGetGroups(t *testing.T) {
-	db, r, tenant := startAPIGroups(t)
+	db, r, tenant, keyStorage := startAPIGroups(t)
 	repo := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, repo, testutils.WithTenantAdminRole())
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run("Should code 200 on successful groups get", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(
 			t, r, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/groups",
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: "/groups",
+				Tenant:   tenant,
+				Headers:  headers,
 			},
 		)
 
@@ -60,7 +60,7 @@ func TestGetGroups(t *testing.T) {
 		assert.Len(t, response.Value, 1)
 	})
 
-	t.Run("Should code 403 on empty groups when no client data", func(t *testing.T) {
+	t.Run("Should code 500 on empty groups when no client data", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(
 			t, r, testutils.RequestOptions{
 				Method:   http.MethodGet,
@@ -69,7 +69,7 @@ func TestGetGroups(t *testing.T) {
 			},
 		)
 
-		assert.Equal(t, http.StatusForbidden, w.Code)
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
 	t.Run("Should code 500 on server failure", func(t *testing.T) {
@@ -80,10 +80,10 @@ func TestGetGroups(t *testing.T) {
 
 		w := testutils.MakeHTTPRequest(
 			t, r, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          "/groups",
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: "/groups",
+				Tenant:   tenant,
+				Headers:  headers,
 			},
 		)
 
@@ -92,11 +92,12 @@ func TestGetGroups(t *testing.T) {
 }
 
 func TestPostGroups(t *testing.T) {
-	db, r, tenant := startAPIGroups(t)
+	db, r, tenant, keyStorage := startAPIGroups(t)
 	rep := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, rep, testutils.WithTenantAdminRole())
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run(
 		"Should code 201 on successful group creation", func(t *testing.T) {
@@ -107,11 +108,11 @@ func TestPostGroups(t *testing.T) {
 
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          "/groups",
-					Tenant:            tenant,
-					Body:              testutils.WithJSON(t, group),
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPost,
+					Endpoint: "/groups",
+					Tenant:   tenant,
+					Body:     testutils.WithJSON(t, group),
+					Headers:  headers,
 				},
 			)
 
@@ -128,11 +129,11 @@ func TestPostGroups(t *testing.T) {
 
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          "/groups",
-					Tenant:            tenant,
-					Body:              testutils.WithJSON(t, group),
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPost,
+					Endpoint: "/groups",
+					Tenant:   tenant,
+					Body:     testutils.WithJSON(t, group),
+					Headers:  headers,
 				},
 			)
 
@@ -149,11 +150,11 @@ func TestPostGroups(t *testing.T) {
 
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          "/groups",
-					Tenant:            tenant,
-					Body:              testutils.WithJSON(t, group),
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPost,
+					Endpoint: "/groups",
+					Tenant:   tenant,
+					Body:     testutils.WithJSON(t, group),
+					Headers:  headers,
 				},
 			)
 
@@ -170,11 +171,11 @@ func TestPostGroups(t *testing.T) {
 
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          "/groups",
-					Tenant:            tenant,
-					Body:              testutils.WithJSON(t, group),
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPost,
+					Endpoint: "/groups",
+					Tenant:   tenant,
+					Body:     testutils.WithJSON(t, group),
+					Headers:  headers,
 				},
 			)
 
@@ -186,10 +187,10 @@ func TestPostGroups(t *testing.T) {
 		"Should code 400 on create group with invalid body", func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          "/groups",
-					Tenant:            tenant,
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPost,
+					Endpoint: "/groups",
+					Tenant:   tenant,
+					Headers:  headers,
 				},
 			)
 
@@ -199,20 +200,21 @@ func TestPostGroups(t *testing.T) {
 }
 
 func TestDeleteGroup(t *testing.T) {
-	db, r, tenant := startAPIGroups(t)
+	db, r, tenant, keyStorage := startAPIGroups(t)
 	repo := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, repo, testutils.WithTenantAdminRole())
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run(
 		"Should code 204 on successful group delete", func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodDelete,
-					Endpoint:          "/groups/" + authClient.GroupID,
-					Tenant:            tenant,
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodDelete,
+					Endpoint: "/groups/" + authClient.GroupID,
+					Tenant:   tenant,
+					Headers:  headers,
 				},
 			)
 
@@ -238,10 +240,10 @@ func TestDeleteGroup(t *testing.T) {
 		"Should code 404 on non-existing group delete", func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodDelete,
-					Endpoint:          fmt.Sprintf("/groups/%s", uuid.New()),
-					Tenant:            tenant,
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodDelete,
+					Endpoint: fmt.Sprintf("/groups/%s", uuid.New()),
+					Tenant:   tenant,
+					Headers:  headers,
 				},
 			)
 
@@ -258,10 +260,10 @@ func TestDeleteGroup(t *testing.T) {
 
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodDelete,
-					Endpoint:          fmt.Sprintf("/groups/%s", uuid.New()),
-					Tenant:            tenant,
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodDelete,
+					Endpoint: fmt.Sprintf("/groups/%s", uuid.New()),
+					Tenant:   tenant,
+					Headers:  headers,
 				},
 			)
 
@@ -270,19 +272,20 @@ func TestDeleteGroup(t *testing.T) {
 }
 
 func TestGetGroupID(t *testing.T) {
-	db, r, tenant := startAPIGroups(t)
+	db, r, tenant, keyStorage := startAPIGroups(t)
 	rep := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, rep, testutils.WithAuditorRole())
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run("Should code 200 successful get", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(
 			t, r, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          fmt.Sprintf("/groups/%s", authClient.Group.ID),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: fmt.Sprintf("/groups/%s", authClient.Group.ID),
+				Tenant:   tenant,
+				Headers:  headers,
 			},
 		)
 
@@ -304,10 +307,10 @@ func TestGetGroupID(t *testing.T) {
 	t.Run("Should code 404 on non existing group", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(
 			t, r, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          fmt.Sprintf("/groups/%s", uuid.New()),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: fmt.Sprintf("/groups/%s", uuid.New()),
+				Tenant:   tenant,
+				Headers:  headers,
 			},
 		)
 
@@ -322,10 +325,10 @@ func TestGetGroupID(t *testing.T) {
 
 		w := testutils.MakeHTTPRequest(
 			t, r, testutils.RequestOptions{
-				Method:            http.MethodGet,
-				Endpoint:          fmt.Sprintf("/groups/%s", uuid.New()),
-				Tenant:            tenant,
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodGet,
+				Endpoint: fmt.Sprintf("/groups/%s", uuid.New()),
+				Tenant:   tenant,
+				Headers:  headers,
 			},
 		)
 
@@ -334,24 +337,25 @@ func TestGetGroupID(t *testing.T) {
 }
 
 func TestUpdateGroup(t *testing.T) {
-	db, r, tenant := startAPIGroups(t)
+	db, r, tenant, keyStorage := startAPIGroups(t)
 	repo := sql.NewRepository(db)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, repo, testutils.WithTenantAdminRole())
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run("Should code 200 on successful group rename", func(t *testing.T) {
 		updateGroup := cmkapi.GroupPatch{
-			Name: ptr.PointTo("test"),
+			Name: new("test"),
 		}
 
 		w := testutils.MakeHTTPRequest(
 			t, r, testutils.RequestOptions{
-				Method:            http.MethodPatch,
-				Endpoint:          "/groups/" + authClient.GroupID,
-				Tenant:            tenant,
-				Body:              testutils.WithJSON(t, updateGroup),
-				AdditionalContext: authClient.GetClientMap(),
+				Method:   http.MethodPatch,
+				Endpoint: "/groups/" + authClient.GroupID,
+				Tenant:   tenant,
+				Body:     testutils.WithJSON(t, updateGroup),
+				Headers:  headers,
 			},
 		)
 
@@ -361,15 +365,15 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should code 400 on invalid group rename object", func(t *testing.T) {
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo(""),
+				Name: new(""),
 			}
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodPatch,
-					Endpoint:          "/groups/" + authClient.GroupID,
-					Tenant:            tenant,
-					Body:              testutils.WithJSON(t, updateGroup),
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPatch,
+					Endpoint: "/groups/" + authClient.GroupID,
+					Tenant:   tenant,
+					Body:     testutils.WithJSON(t, updateGroup),
+					Headers:  headers,
 				},
 			)
 
@@ -380,16 +384,16 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should code 400 on rename to protect group name", func(t *testing.T) {
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo(constants.TenantAdminGroup),
+				Name: new(constants.TenantAdminGroup),
 			}
 
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodPatch,
-					Endpoint:          "/groups/" + authClient.GroupID,
-					Tenant:            tenant,
-					Body:              testutils.WithJSON(t, updateGroup),
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPatch,
+					Endpoint: "/groups/" + authClient.GroupID,
+					Tenant:   tenant,
+					Body:     testutils.WithJSON(t, updateGroup),
+					Headers:  headers,
 				},
 			)
 
@@ -400,16 +404,16 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should code 404 on non existing group", func(t *testing.T) {
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo("test"),
+				Name: new("test"),
 			}
 
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodPatch,
-					Endpoint:          fmt.Sprintf("/groups/%s", uuid.New()),
-					Tenant:            tenant,
-					Body:              testutils.WithJSON(t, updateGroup),
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPatch,
+					Endpoint: fmt.Sprintf("/groups/%s", uuid.New()),
+					Tenant:   tenant,
+					Body:     testutils.WithJSON(t, updateGroup),
+					Headers:  headers,
 				},
 			)
 
@@ -425,16 +429,16 @@ func TestUpdateGroup(t *testing.T) {
 			defer forced.Unregister()
 
 			updateGroup := cmkapi.GroupPatch{
-				Name: ptr.PointTo("test"),
+				Name: new("test"),
 			}
 
 			w := testutils.MakeHTTPRequest(
 				t, r, testutils.RequestOptions{
-					Method:            http.MethodPatch,
-					Endpoint:          "/groups/" + authClient.GroupID,
-					Tenant:            tenant,
-					Body:              testutils.WithJSON(t, updateGroup),
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPatch,
+					Endpoint: "/groups/" + authClient.GroupID,
+					Tenant:   tenant,
+					Body:     testutils.WithJSON(t, updateGroup),
+					Headers:  headers,
 				},
 			)
 
@@ -442,13 +446,58 @@ func TestUpdateGroup(t *testing.T) {
 		})
 }
 
+func TestGetGroupsCount(t *testing.T) {
+	db, r, tenant, keyStorage := startAPIGroups(t)
+	repo := sql.NewRepository(db)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	authClient := testutils.NewAuthClient(ctx, t, repo, testutils.WithTenantAdminRole())
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
+
+	t.Run("count=true includes count", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(
+			t, r, testutils.RequestOptions{
+				Method:   http.MethodGet,
+				Endpoint: "/groups?$count=true",
+				Tenant:   tenant,
+				Headers:  headers,
+			},
+		)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.GroupList](t, w)
+		assert.Len(t, response.Value, 1)
+		assert.NotNil(t, response.Count)
+		assert.Equal(t, 1, *response.Count)
+	})
+
+	t.Run("count=false omits count", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(
+			t, r, testutils.RequestOptions{
+				Method:   http.MethodGet,
+				Endpoint: "/groups?$count=false",
+				Tenant:   tenant,
+				Headers:  headers,
+			},
+		)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		response := testutils.GetJSONBody[cmkapi.GroupList](t, w)
+		assert.Len(t, response.Value, 1)
+		assert.Nil(t, response.Count)
+	})
+}
+
 func TestCheckGroupsIAM(t *testing.T) {
-	db, sv, tenant := startAPIGroups(t)
+	db, sv, tenant, keyStorage := startAPIGroups(t)
 	r := sql.NewRepository(db)
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithAuditorRole())
+	headers := testutils.WithBusinessUserData(t, keyStorage, authClient)
 
 	t.Run(
 		"returns correct response on success", func(t *testing.T) {
@@ -457,11 +506,11 @@ func TestCheckGroupsIAM(t *testing.T) {
 			}
 			w := testutils.MakeHTTPRequest(
 				t, sv, testutils.RequestOptions{
-					Method:            http.MethodPost,
-					Endpoint:          "/groups/iamCheck",
-					Tenant:            tenant,
-					Body:              testutils.WithJSON(t, body),
-					AdditionalContext: authClient.GetClientMap(),
+					Method:   http.MethodPost,
+					Endpoint: "/groups/iamCheck",
+					Tenant:   tenant,
+					Body:     testutils.WithJSON(t, body),
+					Headers:  headers,
 				},
 			)
 			assert.Equal(t, http.StatusOK, w.Code)
@@ -471,15 +520,15 @@ func TestCheckGroupsIAM(t *testing.T) {
 			expected := cmkapi.CheckGroupsIAM200JSONResponse{
 				Value: []cmkapi.GroupIAMExistence{
 					{
-						IamIdentifier: ptr.PointTo("KMS_001"),
+						IamIdentifier: new("KMS_001"),
 						Exists:        true,
 					},
 					{
-						IamIdentifier: ptr.PointTo("KMS_002"),
+						IamIdentifier: new("KMS_002"),
 						Exists:        true,
 					},
 					{
-						IamIdentifier: ptr.PointTo("KMS_999"),
+						IamIdentifier: new("KMS_999"),
 						Exists:        false,
 					},
 				},

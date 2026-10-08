@@ -12,24 +12,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
-	"github.com/testcontainers/testcontainers-go"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
-	"github.com/openkcm/cmk/utils/ptr"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 const (
@@ -48,7 +46,7 @@ type TestModel struct {
 	UpdatedAt   time.Time
 }
 
-func (TestModel) TableResourceType() authz.RepoResourceTypeName {
+func (TestModel) TableResourceType() authz.RepoResourceType {
 	return RepoResourceTypeTest
 }
 
@@ -61,14 +59,14 @@ func (TestModel) IsSharedModel() bool {
 }
 
 func (m TestModel) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
 func CreateCtxWithTenant(tenant string) context.Context {
-	return context.WithValue(context.Background(), nethttp.TenantKey, tenant)
+	return context.WithValue(context.Background(), cmkcontext.TenantKey, tenant)
 }
 
 func WithTenantID(ctx context.Context, db *multitenancy.DB, tenantID string, fn func(tx *multitenancy.DB) error) error {
@@ -143,7 +141,7 @@ var (
 // By default, it uses TestDB configuration. Use opts to customize the setup.
 // This function is intended for use in unit tests.
 //
-//nolint:funlen,cyclop
+//nolint:funlen
 func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multitenancy.DB, []string, config.Database) {
 	tb.Helper()
 
@@ -168,22 +166,14 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 		o(&cfg)
 	}
 
-	if !cfg.WithIsolatedService {
-		oncePostgres.Do(func() {
-			StartPostgresSQL(tb, &cfg.dbCon, testcontainers.WithReuseByName(uuid.NewString()))
-			dbCfg = cfg.dbCon
-		})
-		cfg.dbCon = dbCfg
-	} else {
+	oncePostgres.Do(func() {
 		StartPostgresSQL(tb, &cfg.dbCon)
-	}
+		cfg.dbCon = NewIsolatedDB(tb, cfg.dbCon)
+		dbCfg = cfg.dbCon
+	})
+	cfg.dbCon = dbCfg
 
 	dbCon := newTestDBCon(tb, &cfg)
-
-	tb.Cleanup(func() {
-		sqlDB, _ := dbCon.DB.DB()
-		sqlDB.Close()
-	})
 
 	migrator, err := db.NewMigrator(sql.NewRepository(dbCon), &config.Config{Database: cfg.dbCon})
 	assert.NoError(tb, err)
@@ -204,6 +194,7 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 			CreateDBTenant(tb, dbCon, &tenant)
 			tenantIDs = append(tenantIDs, tenant.ID)
 		}
+		runMigration(tb, cfg, migrator, db.TenantTarget)
 
 		return dbCon, tenantIDs, cfg.dbCon
 	}
@@ -285,13 +276,13 @@ func runMigration(
 	// Not set, migrate to latest
 	if version == nil {
 		_, err := migrator.MigrateToLatest(tb.Context(), req)
-		assert.NoError(tb, err)
+		require.NoError(tb, err)
 		return
 	}
 
 	if *version != 0 {
 		_, err := migrator.MigrateTo(tb.Context(), req, *version)
-		assert.NoError(tb, err)
+		require.NoError(tb, err)
 	} else {
 		return
 	}
@@ -312,10 +303,10 @@ func CreateDBTenant(
 		assert.NoError(tb, err)
 	})
 
-	assert.NoError(tb, dbCon.Create(&tenant).Error)
+	require.NoError(tb, dbCon.Create(&tenant).Error)
 
-	assert.NoError(tb, dbCon.RegisterModels(tb.Context(), &TestModel{}))
-	assert.NoError(tb, dbCon.MigrateTenantModels(tb.Context(), tenant.ID))
+	require.NoError(tb, dbCon.RegisterModels(tb.Context(), &TestModel{}))
+	require.NoError(tb, dbCon.MigrateTenantModels(tb.Context(), tenant.ID))
 }
 
 // WithInitTenants creates the provided tenants on the DB
@@ -333,7 +324,7 @@ func WithGenerateTenants(count int) TestDBConfigOpt {
 		c.generateTenants = count
 		c.CreateDatabase = true
 		if count == 0 {
-			c.TenantVersion = ptr.PointTo(int64(0))
+			c.TenantVersion = new(int64(0))
 		}
 	}
 }
@@ -365,11 +356,6 @@ type TestDBConfig struct {
 	// - Shared Tables
 	// - Multiple Tenants
 	CreateDatabase bool
-
-	// If true create an isolated PSQL instance
-	// In most cases this should not be set as it will take a longer time
-	// as the container needs to build and startup
-	WithIsolatedService bool
 
 	// Shared schema version to migrate up to
 	// If it's nil migrate to latest version
@@ -424,9 +410,31 @@ func newTestDBCon(tb testing.TB, cfg *TestDBConfig) *multitenancy.DB {
 		[]config.Database{},
 		nil, // No tracing in tests
 	)
-	assert.NoError(tb, err)
+	require.NoError(tb, err)
+
+	tb.Cleanup(func() {
+		sqlDB, _ := con.DB.DB()
+		sqlDB.Close()
+	})
+
+	limitConnPool(tb, con)
 
 	return con
+}
+
+const maxTestConnsPerPool = 8
+
+// limitConnPool bounds the underlying database/sql pool of a test connection.
+func limitConnPool(tb testing.TB, con *multitenancy.DB) {
+	tb.Helper()
+
+	require.NotNil(tb, con, "cannot limit pool on a nil connection")
+
+	sqlDB, err := con.DB.DB()
+	require.NoError(tb, err)
+
+	sqlDB.SetMaxOpenConns(maxTestConnsPerPool)
+	sqlDB.SetMaxIdleConns(maxTestConnsPerPool)
 }
 
 // NewIsolatedDB creates a new database on a postgres instance and returns it
@@ -441,15 +449,18 @@ func NewIsolatedDB(tb testing.TB, cfg config.Database) config.Database {
 		[]config.Database{},
 		nil, // No tracing in tests
 	)
-	assert.NoError(tb, err)
+
+	require.NoError(tb, err)
 
 	tb.Cleanup(func() {
 		sqlDB, _ := con.DB.DB()
 		sqlDB.Close()
 	})
 
-	name := processNameForDB(tb.Name())
-	assert.NoError(tb, err)
+	limitConnPool(tb, con)
+
+	// Database names must be unique within a container. Add a random suffix.
+	name := uniqueDBName(tb.Name())
 
 	// No need to t.CleanUp as it only throws error on db error
 	err = con.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", name)).Error
@@ -460,6 +471,20 @@ func NewIsolatedDB(tb testing.TB, cfg config.Database) config.Database {
 	cfg.Name = name
 
 	return cfg
+}
+
+// uniqueDBName builds a unique database name from a test name by appending a random suffix.
+func uniqueDBName(testName string) string {
+	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	base := processNameForDB(testName)
+
+	// Reserve room for the "_" separator and the suffix within the limit.
+	maxBase := MaxPSQLSchemaName - 1 - len(suffix) - 1
+	if len(base) > maxBase {
+		base = base[:maxBase]
+	}
+
+	return base + "_" + suffix
 }
 
 type migrator struct{}

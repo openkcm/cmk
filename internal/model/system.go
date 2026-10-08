@@ -2,14 +2,45 @@ package model
 
 import (
 	"context"
+	"database/sql/driver"
+	"fmt"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/utils/enums"
 )
+
+// SystemType identifies the kind of registered system.
+//
+//nolint:recvcheck
+type SystemType string
+
+const (
+	SystemTypeSYSTEM     SystemType = "SYSTEM"
+	SystemTypeSUBACCOUNT SystemType = "SUBACCOUNT"
+)
+
+var ErrInvalidSystemType = fmt.Errorf("%w: invalid system type", ErrValidation)
+
+func (t SystemType) Valid() bool {
+	switch t {
+	case SystemTypeSYSTEM, SystemTypeSUBACCOUNT:
+		return true
+	}
+	return false
+}
+
+func (t SystemType) Value() (driver.Value, error) {
+	return enums.Value(t, ErrInvalidSystemType)
+}
+
+func (t *SystemType) Scan(src any) error {
+	return enums.Scan(src, t, ErrInvalidSystemType)
+}
 
 //nolint:recvcheck
 type System struct {
@@ -17,22 +48,25 @@ type System struct {
 
 	Identifier string `gorm:"type:varchar(255);not null;uniqueindex:region_sys,priority:2"`
 
-	Region               string            `gorm:"type:varchar(50);not null;uniqueindex:region_sys,priority:1"`
-	Type                 string            `gorm:"type:varchar(50);not null"`
-	KeyConfigurationID   *uuid.UUID        `gorm:"type:uuid"`
-	KeyConfigurationName *string           `gorm:"->;-:migration;column:key_configuration_name"`
-	Properties           map[string]string `gorm:"-:all"`
+	Region                     string            `gorm:"type:varchar(50);not null;uniqueindex:region_sys,priority:1"`
+	Type                       SystemType        `gorm:"type:varchar(50);not null"`
+	KeyConfigurationID         *uuid.UUID        `gorm:"type:uuid"`
+	TargetKeyConfigurationID   *uuid.UUID        `gorm:"type:uuid"`
+	KeyConfigurationName       *string           `gorm:"-"`
+	TargetKeyConfigurationName *string           `gorm:"-"`
+	Properties                 map[string]string `gorm:"-:all"`
 
 	// Status can be 'CONNECTED', 'DISCONNECTED', 'FAILED', or 'PROCESSING'
-	Status cmkapi.SystemStatus `gorm:"type:varchar(50);default:'DISCONNECTED'"`
+	Status        cmkapi.SystemStatus `gorm:"type:varchar(50);default:'DISCONNECTED'"`
+	UnderWorkflow bool                `gorm:"type:bool"`
 
 	// Only set for failed systems by the event table
-	ErrorCode    string `gorm:"->;-:migration;column:error_code"`
-	ErrorMessage string `gorm:"->;-:migration;column:error_message"`
+	ErrorCode    string `gorm:"-"`
+	ErrorMessage string `gorm:"-"`
 }
 
 // TableResourceType return the authz resource type
-func (m System) TableResourceType() authz.RepoResourceTypeName {
+func (m System) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeSystem
 }
 
@@ -46,17 +80,28 @@ func (System) IsSharedModel() bool {
 }
 
 func (m System) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
 // UpdateSystemProperties if they are set
 // and returns a bool if any field was updated
 func (m *System) UpdateSystemProperties(
+	ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	props map[string]string,
 	cfg *config.System,
-) bool {
+) (bool, error) {
+	if authzHandler != nil {
+		isAllowed, err := authz.CheckAuthz(ctx, authzHandler,
+			authz.RepoResourceTypeSystemProperty, authz.RepoActionUpdate)
+		if err != nil || !isAllowed {
+			return false, err
+		}
+	}
+
 	updated := false
 
 	for k, v := range props {
@@ -71,7 +116,7 @@ func (m *System) UpdateSystemProperties(
 		}
 	}
 
-	return updated
+	return updated, nil
 }
 
 // AfterSave is ran before any creating/updating the system
@@ -110,7 +155,7 @@ type SystemProperty struct {
 }
 
 // TableResourceType return the authz resource type
-func (m SystemProperty) TableResourceType() authz.RepoResourceTypeName {
+func (m SystemProperty) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeSystemProperty
 }
 
@@ -123,13 +168,19 @@ func (SystemProperty) IsSharedModel() bool {
 }
 
 func (m SystemProperty) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
 type JoinSystem struct {
 	System
+
+	KeyConfigurationName       *string `gorm:"column:key_configuration_name"`
+	TargetKeyConfigurationName *string `gorm:"column:target_key_configuration_name"`
+	ErrorCode                  string  `gorm:"column:error_code"`
+	ErrorMessage               string  `gorm:"column:error_message"`
 
 	Key   string `gorm:"type:varchar(255);primaryKey"`
 	Value string `gorm:"type:varchar(255)"`

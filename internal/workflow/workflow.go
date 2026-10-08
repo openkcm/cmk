@@ -7,15 +7,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/looplab/fsm"
 
+	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
-
-var SystemUserUUID = uuid.Max
-
-var SystemUserID = SystemUserUUID.String()
 
 type Lifecycle struct {
 	Workflow                *model.Workflow
@@ -26,14 +25,16 @@ type Lifecycle struct {
 	KeyConfigurationActions KeyConfigurationActions
 	SystemActions           SystemActions
 	MinimumApproverCount    int
+	EligibleApproverIDs     map[string]bool // Optional: if set, only these approvers count for voting
+	ActorApproverGroupIDs   []uuid.UUID     // Optional: if set, validates actor is still in approver groups
 }
 
-// convertEvent converts Transition and State types to string
+// convertEvent converts Transition and model.WorkflowState types to string
 // and creates an EventDesc object for the state machine.
 func convertEvent(
 	transition Transition,
-	sourceStates []State,
-	destinationState State,
+	sourceStates []model.WorkflowState,
+	destinationState model.WorkflowState,
 ) fsm.EventDesc {
 	src := make([]string, len(sourceStates))
 	for i, state := range sourceStates {
@@ -60,47 +61,51 @@ func NewLifecycle(workflow *model.Workflow,
 	minimumApproverCount int,
 ) *Lifecycle {
 	stateMachine := fsm.NewFSM(
-		workflow.State,
+		workflow.State.String(),
 		fsm.Events{
 			convertEvent(
 				TransitionCreate,
-				[]State{StateInitial},
-				StateWaitApproval,
+				[]model.WorkflowState{model.WorkflowStateInitial},
+				model.WorkflowStateWaitApproval,
 			),
 			convertEvent(
 				TransitionApprove,
-				[]State{StateWaitApproval},
-				StateWaitConfirmation,
+				[]model.WorkflowState{model.WorkflowStateWaitApproval},
+				model.WorkflowStateWaitConfirmation,
 			),
 			convertEvent(
 				TransitionReject,
-				[]State{StateWaitApproval},
-				StateRejected,
+				[]model.WorkflowState{model.WorkflowStateWaitApproval},
+				model.WorkflowStateRejected,
 			),
 			convertEvent(
 				TransitionRevoke,
-				[]State{StateWaitApproval, StateWaitConfirmation},
-				StateRevoked,
+				[]model.WorkflowState{model.WorkflowStateWaitApproval, model.WorkflowStateWaitConfirmation},
+				model.WorkflowStateRevoked,
 			),
 			convertEvent(
 				TransitionConfirm,
-				[]State{StateWaitConfirmation},
-				StateExecuting,
+				[]model.WorkflowState{model.WorkflowStateWaitConfirmation},
+				model.WorkflowStateExecuting,
 			),
 			convertEvent(
 				TransitionExpire,
-				[]State{StateWaitApproval, StateWaitConfirmation, StateExecuting},
-				StateExpired,
+				[]model.WorkflowState{
+					model.WorkflowStateWaitApproval,
+					model.WorkflowStateWaitConfirmation,
+					model.WorkflowStateExecuting,
+				},
+				model.WorkflowStateExpired,
 			),
 			convertEvent(
 				TransitionFail,
-				[]State{StateExecuting},
-				StateFailed,
+				[]model.WorkflowState{model.WorkflowStateExecuting},
+				model.WorkflowStateFailed,
 			),
 			convertEvent(
 				TransitionExecute,
-				[]State{StateExecuting},
-				StateSuccessful,
+				[]model.WorkflowState{model.WorkflowStateExecuting},
+				model.WorkflowStateSuccessful,
 			),
 		},
 		fsm.Callbacks{},
@@ -128,15 +133,20 @@ func (l *Lifecycle) CanTransition(transition Transition) bool {
 	return l.StateMachine.Can(transition.String())
 }
 
-// ApplyTransition wraps the execution of a transition in the state machine
+// ValidateAndApplyTransition wraps the execution of a transition in the state machine
 // triggered by user input
-func (l *Lifecycle) ApplyTransition(ctx context.Context, transition Transition) error {
-	// Validate the actor of the event
-	err := l.ValidateActor(ctx, transition)
-	if err != nil {
+func (l *Lifecycle) ValidateAndApplyTransition(ctx context.Context, transition Transition) error {
+	if err := l.ValidateActor(ctx, transition); err != nil {
 		return err
 	}
 
+	return l.ApplyTransition(ctx, transition)
+}
+
+// ApplyTransition applies a transition without actor validation.
+// Use only when the caller has already established authority through other
+// means and actor validation must be skipped (e.g. auto-reject after vote).
+func (l *Lifecycle) ApplyTransition(ctx context.Context, transition Transition) error {
 	// Perform pre-checks on the transition
 	skip, err := l.transitionPrecheck(ctx, transition)
 	if err != nil {
@@ -153,7 +163,7 @@ func (l *Lifecycle) ApplyTransition(ctx context.Context, transition Transition) 
 
 	// If the workflow is now in the EXECUTING state, execute the action
 	// and transition to next state based on the result
-	if l.StateMachine.Current() == StateExecuting.String() {
+	if l.StateMachine.Current() == model.WorkflowStateExecuting.String() {
 		// Transitioning to either SUCCESSFUL or FAILED does not require any validation
 		// because EXECUTING -> SUCCESSFUL and EXECUTING -> FAILED are
 		// guaranteed to be valid transitions.
@@ -166,7 +176,7 @@ func (l *Lifecycle) ApplyTransition(ctx context.Context, transition Transition) 
 	}
 
 	// Update the workflow state in the database
-	l.Workflow.State = l.StateMachine.Current()
+	l.Workflow.State = model.WorkflowState(l.StateMachine.Current())
 
 	_, err = l.Repository.Patch(ctx, l.Workflow, *repo.NewQuery())
 	if err != nil {
@@ -183,7 +193,7 @@ func (l *Lifecycle) Expire(ctx context.Context) error {
 		return errs.Wrap(NewTransitionError(TransitionExpire), err)
 	}
 
-	l.Workflow.State = l.StateMachine.Current()
+	l.Workflow.State = model.WorkflowState(l.StateMachine.Current())
 
 	_, err = l.Repository.Patch(ctx, l.Workflow, *repo.NewQuery())
 	if err != nil {
@@ -233,7 +243,7 @@ func (l *Lifecycle) AvailableBusinessUserTransitions(ctx context.Context) []Tran
 }
 
 func (l *Lifecycle) GetApprovalSummary(ctx context.Context) (*ApprovalSummary, error) {
-	allApprovers, err := l.getAllApprovers(ctx)
+	allApprovers, err := l.GetAllApprovers(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -259,6 +269,11 @@ func (l *Lifecycle) GetApprovalSummary(ctx context.Context) (*ApprovalSummary, e
 //
 //nolint:cyclop
 func (l *Lifecycle) ValidateActor(ctx context.Context, transition Transition) error {
+	// Check group membership for business user transitions
+	if err := l.validateActorGroupMembership(transition); err != nil {
+		return err
+	}
+
 	var (
 		valid bool
 		err   error
@@ -279,13 +294,12 @@ func (l *Lifecycle) ValidateActor(ctx context.Context, transition Transition) er
 		} else if !valid {
 			err = NewInvalidEventActorError(l.ActorID, "approver")
 		}
-	case TransitionExecute, TransitionFail, TransitionExpire:
-		valid, err = l.validateUserIsSystem(ctx)
-		if err != nil {
-			err = errs.Wrapf(err, "failed to validate automated transition")
-		} else if !valid {
-			err = ErrAutomatedTransition
-		}
+	case TransitionExpire:
+		err = l.validateInternalTransition(ctx,
+			constants.InternalTaskWorkflowExpirationRole)
+	case TransitionExecute, TransitionFail:
+		err = l.validateInternalTransition(ctx,
+			constants.InternalTaskWorkflowApproversRole)
 	default:
 		err = ErrInvalidWorkflowState
 	}
@@ -297,11 +311,61 @@ func (l *Lifecycle) CanExpire() bool {
 	return l.StateMachine.Can(TransitionExpire.String())
 }
 
-// validateUserIsSystem validates that the user is the SYSTEM user
-//
-//nolint:unparam
-func (l *Lifecycle) validateUserIsSystem(_ context.Context) (bool, error) {
-	return l.ActorID == SystemUserID, nil
+func (l *Lifecycle) GetAllApprovers(ctx context.Context) ([]*model.WorkflowApprover, error) {
+	var allApprovers []*model.WorkflowApprover
+
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID).
+		Where(repo.AssigneeRoleField, model.AssigneeRoleApprover)
+
+	err := l.Repository.List(
+		ctx,
+		model.WorkflowApprover{},
+		&allApprovers,
+		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
+	)
+	if err != nil {
+		return nil, errs.Wrap(ErrCheckApproverDecision, err)
+	}
+
+	return allApprovers, nil
+}
+
+// CheckInsufficientApprovers determines if eligible approvers can meet threshold.
+// Takes pre-fetched eligible list (no external calls) - pure business logic.
+func (l *Lifecycle) CheckInsufficientApprovers(
+	eligibleApprovers []*model.WorkflowApprover,
+) bool {
+	// Count current approvals and pending eligible approvers
+	currentApprovals := 0
+	eligiblePending := 0
+	for _, approver := range eligibleApprovers {
+		if !approver.Approved.Valid {
+			eligiblePending++
+		} else if approver.Approved.Bool {
+			currentApprovals++
+		}
+	}
+
+	// Insufficient if we cannot reach threshold even if all pending approve
+	maxPossibleApprovals := currentApprovals + eligiblePending
+	return maxPossibleApprovals < l.MinimumApproverCount
+}
+
+func (l *Lifecycle) validateInternalTransition(
+	ctx context.Context, role constants.InternalRole) error {
+	source, err := cmkcontext.ExtractUserType(ctx)
+	if err != nil {
+		return errs.Wrapf(err, "failed to validate automated transition")
+	} else if source == string(constants.BusinessUser) {
+		return ErrAutomatedTransition
+	}
+
+	err = authz.CheckInternalUserRole(ctx, role)
+	if err != nil {
+		return errs.Wrapf(err, "failed to validate automated transition")
+	}
+	return nil
 }
 
 // validateUserIsInitiator validates that the user is the initiator of the workflow
@@ -311,11 +375,32 @@ func (l *Lifecycle) validateUserIsInitiator(_ context.Context) (bool, error) {
 	return l.ActorID == l.Workflow.InitiatorID, nil
 }
 
+// validateActorGroupMembership checks if the actor is still a member of the workflow's approver groups.
+// Only applies to business user transitions (confirm, revoke, approve, reject).
+// If ActorApproverGroupIDs is nil, the check is skipped (no approver groups configured).
+func (l *Lifecycle) validateActorGroupMembership(transition Transition) error {
+	if l.ActorApproverGroupIDs == nil {
+		return nil
+	}
+
+	switch transition {
+	case TransitionConfirm, TransitionRevoke, TransitionApprove, TransitionReject:
+		if len(l.ActorApproverGroupIDs) == 0 {
+			return ErrUserRemovedFromApproverGroup
+		}
+	default:
+		// No group membership check for other transitions
+	}
+
+	return nil
+}
+
 // validateUserIsApprover validates that the user is an approver of the workflow
 func (l *Lifecycle) validateUserIsApprover(ctx context.Context) (bool, error) {
-	ck := repo.NewCompositeKey().Where(
-		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID).Where(
-		fmt.Sprintf("%s_%s", repo.UserField, repo.IDField), l.ActorID)
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID).
+		Where(fmt.Sprintf("%s_%s", repo.UserField, repo.IDField), l.ActorID).
+		Where(repo.AssigneeRoleField, model.AssigneeRoleApprover)
 
 	count, err := l.Repository.Count(
 		ctx,
@@ -396,16 +481,22 @@ func (l *Lifecycle) transitionExecute(ctx context.Context) error {
 
 func (l *Lifecycle) checkVotingScore(ctx context.Context, transition Transition) (bool, error) {
 	if l.StateMachine.Cannot(transition.String()) {
-		fsmErr := fsm.InvalidEventError{Event: transition.String(), State: l.Workflow.State}
+		fsmErr := fsm.InvalidEventError{Event: transition.String(), State: l.Workflow.State.String()}
 		return false, errs.Wrap(NewTransitionError(transition), fsmErr)
 	}
 
-	allApprovers, err := l.getAllApprovers(ctx)
+	allApprovers, err := l.GetAllApprovers(ctx)
 	if err != nil {
 		return false, err
 	}
 
-	counts, err := l.calculateVoteCounts(allApprovers, transition)
+	// Filter by eligible approvers if eligibility list is provided
+	approversToCount := allApprovers
+	if l.EligibleApproverIDs != nil {
+		approversToCount = l.filterEligibleApprovers(allApprovers)
+	}
+
+	counts, err := l.calculateVoteCounts(approversToCount, transition)
 	if err != nil {
 		return false, err
 	}
@@ -413,23 +504,22 @@ func (l *Lifecycle) checkVotingScore(ctx context.Context, transition Transition)
 	return l.shouldTransition(counts, transition)
 }
 
-func (l *Lifecycle) getAllApprovers(ctx context.Context) ([]*model.WorkflowApprover, error) {
-	var allApprovers []*model.WorkflowApprover
-
-	ck := repo.NewCompositeKey().Where(
-		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID)
-
-	err := l.Repository.List(
-		ctx,
-		model.WorkflowApprover{},
-		&allApprovers,
-		*repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)),
-	)
-	if err != nil {
-		return nil, errs.Wrap(ErrCheckApproverDecision, err)
+// filterEligibleApprovers filters approvers to only those who are:
+// 1. Currently eligible (in IAM groups), OR
+// 2. Already voted (their vote counts regardless of current eligibility)
+func (l *Lifecycle) filterEligibleApprovers(approvers []*model.WorkflowApprover) []*model.WorkflowApprover {
+	if l.EligibleApproverIDs == nil {
+		return approvers
 	}
 
-	return allApprovers, nil
+	filtered := make([]*model.WorkflowApprover, 0, len(approvers))
+	for _, approver := range approvers {
+		// Include if: currently eligible OR already voted
+		if l.EligibleApproverIDs[approver.UserID] || approver.Approved.Valid {
+			filtered = append(filtered, approver)
+		}
+	}
+	return filtered
 }
 
 type voteCounts struct {
@@ -519,8 +609,9 @@ func (l *Lifecycle) getNumberOfApprovers(ctx context.Context) (int, error) {
 		return -1, errs.Wrap(ErrListApprovers, err)
 	}
 
-	ck := repo.NewCompositeKey().Where(
-		fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID)
+	ck := repo.NewCompositeKey().
+		Where(fmt.Sprintf("%s_%s", repo.WorkflowField, repo.IDField), l.Workflow.ID).
+		Where(repo.AssigneeRoleField, model.AssigneeRoleApprover)
 
 	count, err := l.Repository.Count(
 		ctx,
@@ -538,19 +629,19 @@ func (l *Lifecycle) getNumberOfApprovers(ctx context.Context) (int, error) {
 type workflowHandlerFunc func(context.Context) error
 
 func (l *Lifecycle) executeWorkflowAction(ctx context.Context) error {
-	handlers := map[string]map[string]workflowHandlerFunc{
-		ArtifactTypeKey.String(): {
-			ActionTypeUpdateState.String(): l.updateKeyState,
-			ActionTypeDelete.String():      l.deleteKey,
+	handlers := map[model.WorkflowArtifactType]map[model.WorkflowActionType]workflowHandlerFunc{
+		model.WorkflowArtifactTypeKey: {
+			model.WorkflowActionTypeUpdateState: l.updateKeyState,
+			model.WorkflowActionTypeDelete:      l.deleteKey,
 		},
-		ArtifactTypeKeyConfiguration.String(): {
-			ActionTypeDelete.String():        l.deleteKeyConfiguration,
-			ActionTypeUpdatePrimary.String(): l.updatePrimaryKey,
+		model.WorkflowArtifactTypeKeyConfiguration: {
+			model.WorkflowActionTypeDelete:        l.deleteKeyConfiguration,
+			model.WorkflowActionTypeUpdatePrimary: l.updatePrimaryKey,
 		},
-		ArtifactTypeSystem.String(): {
-			ActionTypeLink.String():   l.systemLinkOrSwitch,
-			ActionTypeUnlink.String(): l.systemUnlink,
-			ActionTypeSwitch.String(): l.systemLinkOrSwitch,
+		model.WorkflowArtifactTypeSystem: {
+			model.WorkflowActionTypeLink:   l.systemLinkOrSwitch,
+			model.WorkflowActionTypeUnlink: l.systemUnlink,
+			model.WorkflowActionTypeSwitch: l.systemLinkOrSwitch,
 		},
 	}
 
@@ -558,7 +649,7 @@ func (l *Lifecycle) executeWorkflowAction(ctx context.Context) error {
 	if !ok {
 		return errs.Wrapf(
 			ErrWorkflowExecution,
-			"unknown artifact type "+l.Workflow.ArtifactType,
+			"unknown artifact type "+l.Workflow.ArtifactType.String(),
 		)
 	}
 
@@ -566,7 +657,7 @@ func (l *Lifecycle) executeWorkflowAction(ctx context.Context) error {
 	if !ok {
 		return errs.Wrapf(
 			ErrWorkflowExecution,
-			"unknown action type "+l.Workflow.ActionType,
+			"unknown action type "+l.Workflow.ActionType.String(),
 		)
 	}
 
@@ -577,10 +668,12 @@ func (l *Lifecycle) getInitiatorAvailableActions(_ context.Context) []Transition
 	var transitions []Transition
 
 	switch l.Workflow.State {
-	case StateWaitApproval.String():
+	case model.WorkflowStateWaitApproval:
 		transitions = append(transitions, TransitionRevoke)
-	case StateWaitConfirmation.String():
+	case model.WorkflowStateWaitConfirmation:
 		transitions = append(transitions, TransitionRevoke, TransitionConfirm)
+	default:
+		// initiator has no actions available in other states
 	}
 
 	return transitions
@@ -590,11 +683,11 @@ func (l *Lifecycle) getApproverAvailableActions(ctx context.Context) []Transitio
 	var transitions []Transition
 
 	// Approvers can only take actions in the WAIT_APPROVAL state
-	if l.Workflow.State != StateWaitApproval.String() {
+	if l.Workflow.State != model.WorkflowStateWaitApproval {
 		return transitions
 	}
 
-	approvers, err := l.getAllApprovers(ctx)
+	approvers, err := l.GetAllApprovers(ctx)
 	if err != nil {
 		log.Error(ctx, "failed to get approver available actions while getting available transitions", err)
 		return transitions

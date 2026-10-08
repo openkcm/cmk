@@ -32,9 +32,21 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Registry, er
 		o(buildInPlugins)
 	}
 
+	// Some configurations can be reused for plugins instead of having to re-implement in plugins' YAML configuration.
+	// This is done by injecting the required CMK configuration values into the plugin configuration.
+	overrides, err := buildCMKConfigOverrides(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build CMK config overrides: %w", err)
+	}
+
+	pluginConfigs, err := mergePluginConfigsWithCMKConfigs(cfg.Plugins, overrides)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge CMK configs into plugin configs: %w", err)
+	}
+
 	svcRepo, err := servicewrapper.CreateServiceRepository(ctx, catalog.Config{
 		Logger:        catalogLogger,
-		PluginConfigs: cfg.Plugins,
+		PluginConfigs: pluginConfigs,
 	}, buildInPlugins.Retrieve()...)
 	if err != nil {
 		catalogLogger.ErrorContext(ctx, "Error loading plugins", "error", err)

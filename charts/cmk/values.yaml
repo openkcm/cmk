@@ -66,8 +66,7 @@ tenantManager:
   # Component-specific resources override; falls back to global `resources`.
   resources: {}
 
-# tenant-manager-cli configuration
-tenantManagerCLI:
+cmkctl:
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
   image:
     # Setting the command
@@ -80,12 +79,12 @@ tenantManagerCLI:
     #  - --graceful-shutdown=2
     #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
 
-  # Enable the tenant-manager-cli deployment.
+  # Enable the cmkctl deployment.
   deploy: false
 
-  # tenant-manager-cli service configuration
+  # cmkctl service configuration
   service:
-    # Enable the tenant-manager-cli service
+    # Enable the cmkctl service
     enabled: false
 
   # This is for setting up pod topology spread constraints, more information can be found here:
@@ -142,43 +141,6 @@ taskWorker:
 
   # Component-specific resources override; falls back to global `resources`.
   resources: {}
-
-# task-cli configuration
-taskCLI:
-  # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
-  image:
-    # Setting the command
-    # +docs:property
-    command: ""
-
-    # Setting the arguments for the container
-    # +docs:property
-    args: []
-    #  - --graceful-shutdown=2
-    #  - --graceful-shutdown-message="Graceful shutdown in %d seconds"
-
-  # Enable the task-cli deployment.
-  deploy: false
-
-  # task-cli service configuration
-  service:
-    # Enable the task-cli service
-    enabled: false
-
-  # This is for setting up pod topology spread constraints, more information can be found here:
-  # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
-  topologySpreadConstraints: []
-
-  # Component-specific resources override; falls back to global `resources`.
-  resources: {}
-
-# db-migrator configuration
-dbMigrator:
-  image:
-    command: ""
-    args: []
-  # Enable the db-migrator job.
-  deploy: false
 
 # event-reconciler configuration
 eventReconciler:
@@ -419,8 +381,15 @@ config:
     disable-jwt-token-computation: false
     allow-byok: false
 
+  # Feature flags
+  featureFlags:
+    enabled: false
+    filePath: /etc/featureflags/flags.yaml
+    pollingInterval: 60s
+
   http:
     port: 8081
+    swaggerEnabled: false
 
   # Expose the status port
   status:
@@ -495,7 +464,7 @@ config:
             jwt-token: "*****"
   telemetry:
     logs:
-      enabled: false
+      enabled: true
       protocol: http # one of: http, grpc; Default is http
       # Host configuration example set as a value:
       # host:
@@ -601,7 +570,7 @@ config:
           source: embedded
           value: "unknown"
     traces:
-      enabled: false
+      enabled: true
       protocol: http # one of: http, grpc; Default is http
       # Host configuration example set as a value:
       # host:
@@ -828,6 +797,12 @@ config:
     # need maxReconcileCount = 18, as there is an exponential backoff for retries,
     # starting with 10s and limiting at 10240s.
 
+  # Tenant manager configuration
+  tenantManager:
+    # Maximum duration before a tenant termination job is failed.
+    # Default is 48h.
+    #terminationTimeout: "48h"
+
   audit:
     #endpoint: http://localhost:4043/logs
     #mtls:
@@ -867,11 +842,24 @@ config:
     # authContext: []
 
   # Keystore pool configuration
-  # keystorePool:
-  # Target number of keystores to keep in the pool
-  # size: 5
-  # Interval to report the size of the keystore pool
-  # interval: 10m
+  keystorePool:
+    # Target number of keystores to keep in the pool
+    size: 2
+    # Interval to report the size of the keystore pool
+    interval: 10m
+    supportedRegions: []
+
+  tenant:
+    systemLimit: 50
+    keyLimit: 10
+    keyConfigLimit: 5
+
+  # Key state timeout configuration
+  keys:
+    # Timeout for PENDING_REGISTRATION keys before transitioning to FORBIDDEN
+    pendingRegistrationTimeout: 15m
+    # Timeout for PENDING_CREATION keys before transitioning to ERROR
+    pendingCreationTimeout: 15m
 
   landscape:
     # name: one of Local, Staging, Canary, Production

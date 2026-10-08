@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -13,8 +14,8 @@ import (
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	"github.com/openkcm/cmk/utils/enums"
 	"github.com/openkcm/cmk/utils/identity"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 const WorkflowID = "workflow_id"
@@ -31,25 +32,27 @@ const WorkflowID = "workflow_id"
 type Workflow struct {
 	AutoTimeModel
 
-	ID                     uuid.UUID          `gorm:"type:uuid;primaryKey"`
-	State                  string             `gorm:"type:varchar(50);not null"`
-	InitiatorID            string             `gorm:"type:varchar(255);not null"`
-	initiatorName          string             `gorm:"-:all"`
-	Approvers              []WorkflowApprover `gorm:"foreignKey:WorkflowID"`
-	ApproverGroupIDs       json.RawMessage    `gorm:"type:jsonb"`
-	ArtifactType           string             `gorm:"type:varchar(50);not null"`
-	ArtifactID             uuid.UUID          `gorm:"type:uuid;not null"`
-	ArtifactName           *string            `gorm:"type:varchar(255)"` // Currently a snapshot at time of creation
-	ActionType             string             `gorm:"type:varchar(50);not null"`
-	Parameters             string             `gorm:"type:text"`
-	ParametersResourceName *string            `gorm:"type:varchar(255)"`
-	ParametersResourceType *string            `gorm:"type:varchar(50)"`
-	FailureReason          string             `gorm:"type:text"`
+	ID               uuid.UUID            `gorm:"type:uuid;primaryKey"`
+	State            WorkflowState        `gorm:"type:varchar(50);not null"`
+	InitiatorID      string               `gorm:"type:varchar(255);not null"`
+	initiatorName    string               `gorm:"-:all"`
+	Tasks            []WorkflowTask       `gorm:"foreignKey:WorkflowID"`
+	ApproverGroupIDs json.RawMessage      `gorm:"type:jsonb"`
+	ArtifactType     WorkflowArtifactType `gorm:"type:varchar(50);not null"`
+	ArtifactID       uuid.UUID            `gorm:"type:uuid;not null"`
+	// ArtifactName is currently a snapshot at time of creation
+	ArtifactName           *string                         `gorm:"type:varchar(255)"`
+	ActionType             WorkflowActionType              `gorm:"type:varchar(50);not null"`
+	Parameters             string                          `gorm:"type:text"`
+	ParametersResourceName *string                         `gorm:"type:varchar(255)"`
+	ParametersResourceType *WorkflowParametersResourceType `gorm:"type:varchar(50)"`
+	FailureReason          string                          `gorm:"type:text"`
 	ExpiryDate             *time.Time
+	MinimumApprovalCount   int `gorm:"type:integer;default:2"` // Snapshot of minimum approvals at creation time
 }
 
 // TableResourceType return the authz resource type
-func (m Workflow) TableResourceType() authz.RepoResourceTypeName {
+func (m Workflow) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeWorkflow
 }
 
@@ -60,20 +63,20 @@ func (m Workflow) TableName() string {
 func (Workflow) IsSharedModel() bool { return false }
 
 func (m Workflow) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
 func (m Workflow) BeforeDelete(tx *gorm.DB) error {
-	// Delete all associated workflow approvers
-	return tx.Where(WorkflowID+" = ?", m.ID).Delete(&WorkflowApprover{}).Error
+	// Delete all associated workflow tasks
+	return tx.Where(WorkflowID+" = ?", m.ID).Delete(&WorkflowTask{}).Error
 }
 
 func (m *Workflow) BeforeSave(tx *gorm.DB) error {
 	if m.ExpiryDate == nil {
-		m.ExpiryDate = ptr.PointTo(time.Now().AddDate(0, 0, constants.DefaultExpiryPeriodDays))
+		m.ExpiryDate = new(time.Now().AddDate(0, 0, constants.DefaultExpiryPeriodDays))
 	}
 	return nil
 }
@@ -88,7 +91,7 @@ func (m Workflow) Description(
 	var err error
 
 	switch m.ArtifactType {
-	case constants.WorkflowArtifactTypeSystem:
+	case WorkflowArtifactTypeSystem:
 		description, err = m.buildSystemDescription(ctx, idm)
 		if err != nil {
 			return "", err
@@ -121,7 +124,12 @@ func (w *Workflow) GetInitiatorName(
 		return w.initiatorName, nil
 	}
 
-	return identity.GetUserName(ctx, identityManager, w.InitiatorID)
+	name, err := identity.GetUserName(ctx, identityManager, w.InitiatorID)
+	if err != nil {
+		return "", err
+	}
+	w.initiatorName = name
+	return name, nil
 }
 
 // buildSystemDescription generates a description for SYSTEM artifact workflows
@@ -137,7 +145,8 @@ func (m Workflow) buildSystemDescription(
 		return "", err
 	}
 
-	description = fmt.Sprintf("%s requested approval to %s %s",
+	description = fmt.Sprintf(
+		"%s requested approval to %s %s",
 		initiatorName,
 		m.ActionType,
 		m.ArtifactType,
@@ -161,7 +170,7 @@ func (m Workflow) buildSystemDescription(
 // getParametersResourceType returns the parameters resource type or empty string if nil
 func (m Workflow) getParametersResourceType() string {
 	if m.ParametersResourceType != nil {
-		return *m.ParametersResourceType
+		return string(*m.ParametersResourceType)
 	}
 	return ""
 }
@@ -186,7 +195,8 @@ func (m Workflow) buildDefaultDescription(
 		return "", err
 	}
 
-	description := fmt.Sprintf("%s requested approval to %s %s",
+	description := fmt.Sprintf(
+		"%s requested approval to %s %s",
 		initiatorName,
 		m.ActionType,
 		m.ArtifactType,
@@ -203,35 +213,46 @@ func (m Workflow) buildDefaultDescription(
 	return description, nil
 }
 
+type AssigneeRole string
+
+const (
+	AssigneeRoleApprover  AssigneeRole = "APPROVER"
+	AssigneeRoleInitiator AssigneeRole = "INITIATOR"
+)
+
 //nolint:recvcheck
-type WorkflowApprover struct {
-	WorkflowID uuid.UUID `gorm:"type:uuid;primaryKey"`
-	UserID     string    `gorm:"type:varchar(255);primaryKey"`
-	userName   string    `gorm:"-:all"`
+type WorkflowTask struct {
+	ID           uuid.UUID    `gorm:"type:uuid;primaryKey"`
+	WorkflowID   uuid.UUID    `gorm:"type:uuid;not null"`
+	UserID       string       `gorm:"type:varchar(255);not null"`
+	userName     string       `gorm:"-:all"`
+	AssigneeRole AssigneeRole `gorm:"type:varchar(50);not null;default:'APPROVER'"`
+	CreatedAt    time.Time    `gorm:"not null"`
+	CompletedAt  *time.Time
 
 	Workflow Workflow     `gorm:"foreignKey:WorkflowID"`
 	Approved sql.NullBool `gorm:"default:null"`
 }
 
 // TableResourceType return the authz resource type
-func (m WorkflowApprover) TableResourceType() authz.RepoResourceTypeName {
-	return authz.RepoResourceTypeWorkflowApprover
+func (m WorkflowTask) TableResourceType() authz.RepoResourceType {
+	return authz.RepoResourceTypeWorkflowTask
 }
 
-func (m WorkflowApprover) TableName() string {
-	return string(m.TableResourceType())
+func (m WorkflowTask) TableName() string {
+	return constants.WorkflowTaskTable
 }
 
-func (WorkflowApprover) IsSharedModel() bool { return false }
+func (WorkflowTask) IsSharedModel() bool { return false }
 
-func (m WorkflowApprover) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+func (m WorkflowTask) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
-func (m *WorkflowApprover) GetUserName(
+func (m *WorkflowTask) GetUserName(
 	ctx context.Context,
 	identityManager identitymanagement.IdentityManagement,
 ) (string, error) {
@@ -239,5 +260,165 @@ func (m *WorkflowApprover) GetUserName(
 		return m.userName, nil
 	}
 
-	return identity.GetUserName(ctx, identityManager, m.UserID)
+	name, err := identity.GetUserName(ctx, identityManager, m.UserID)
+	if err != nil {
+		return "", err
+	}
+	m.userName = name
+	return name, nil
+}
+
+// WorkflowApprover is a deprecated alias; use WorkflowTask.
+type WorkflowApprover = WorkflowTask
+
+// WorkflowTaskView is a read-only GORM model backed by the workflow_task_view DB view.
+type WorkflowTaskView struct {
+	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
+	WorkflowID    uuid.UUID `gorm:"type:uuid"`
+	UserID        string    `gorm:"type:varchar(255)"`
+	Approved      sql.NullBool
+	AssigneeRole  AssigneeRole `gorm:"type:varchar(50)"`
+	CreatedAt     time.Time
+	CompletedAt   *time.Time
+	WorkflowState WorkflowState        `gorm:"type:varchar(50)"`
+	ArtifactType  WorkflowArtifactType `gorm:"type:varchar(50)"`
+	ArtifactID    uuid.UUID            `gorm:"type:uuid"`
+	ArtifactName  *string              `gorm:"type:varchar(255)"`
+	ActionType    WorkflowActionType   `gorm:"type:varchar(50)"`
+	InitiatorID   string               `gorm:"type:varchar(255)"`
+	ExpiryDate    *time.Time
+}
+
+func (WorkflowTaskView) TableName() string   { return constants.WorkflowTaskViewTable }
+func (WorkflowTaskView) IsSharedModel() bool { return false }
+func (m WorkflowTaskView) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, authz.RepoResourceTypeWorkflowTask, action)
+}
+
+var (
+	ErrInvalidWorkflowState                  = fmt.Errorf("%w: invalid workflow state", ErrValidation)
+	ErrInvalidWorkflowArtifactType           = fmt.Errorf("%w: invalid workflow artifact type", ErrValidation)
+	ErrInvalidWorkflowActionType             = fmt.Errorf("%w: invalid workflow action type", ErrValidation)
+	ErrInvalidWorkflowParametersResourceType = fmt.Errorf("%w: invalid workflow parameters resource type", ErrValidation)
+)
+
+//nolint:recvcheck
+type WorkflowState string
+
+//nolint:recvcheck
+type WorkflowArtifactType string
+
+//nolint:recvcheck
+type WorkflowActionType string
+
+//nolint:recvcheck
+type WorkflowParametersResourceType string
+
+const (
+	WorkflowStateInitial          WorkflowState = "INITIAL"
+	WorkflowStateRevoked          WorkflowState = "REVOKED"
+	WorkflowStateRejected         WorkflowState = "REJECTED"
+	WorkflowStateExpired          WorkflowState = "EXPIRED"
+	WorkflowStateWaitApproval     WorkflowState = "WAIT_APPROVAL"
+	WorkflowStateWaitConfirmation WorkflowState = "WAIT_CONFIRMATION"
+	WorkflowStateExecuting        WorkflowState = "EXECUTING"
+	WorkflowStateSuccessful       WorkflowState = "SUCCESSFUL"
+	WorkflowStateFailed           WorkflowState = "FAILED"
+
+	WorkflowArtifactTypeKey              WorkflowArtifactType = "KEY"
+	WorkflowArtifactTypeKeyConfiguration WorkflowArtifactType = "KEY_CONFIGURATION"
+	WorkflowArtifactTypeSystem           WorkflowArtifactType = "SYSTEM"
+
+	WorkflowActionTypeUpdateState   WorkflowActionType = "UPDATE_STATE"
+	WorkflowActionTypeUpdatePrimary WorkflowActionType = "UPDATE_PRIMARY"
+	WorkflowActionTypeLink          WorkflowActionType = "LINK"
+	WorkflowActionTypeUnlink        WorkflowActionType = "UNLINK"
+	WorkflowActionTypeSwitch        WorkflowActionType = "SWITCH"
+	WorkflowActionTypeDelete        WorkflowActionType = "DELETE"
+
+	WorkflowParametersResourceTypeKey              WorkflowParametersResourceType = "KEY"
+	WorkflowParametersResourceTypeKeyConfiguration WorkflowParametersResourceType = "KEY_CONFIGURATION"
+)
+
+var WorkflowNonTerminalStates = []WorkflowState{
+	WorkflowStateInitial, WorkflowStateWaitApproval, WorkflowStateWaitConfirmation, WorkflowStateExecuting,
+}
+
+var WorkflowTerminalStates = []WorkflowState{
+	WorkflowStateRevoked, WorkflowStateRejected, WorkflowStateExpired, WorkflowStateSuccessful, WorkflowStateFailed,
+}
+
+func (s WorkflowState) String() string                  { return string(s) }
+func (t WorkflowArtifactType) String() string           { return string(t) }
+func (t WorkflowActionType) String() string             { return string(t) }
+func (t WorkflowParametersResourceType) String() string { return string(t) }
+
+func (s WorkflowState) Valid() bool {
+	switch s {
+	case WorkflowStateInitial, WorkflowStateRevoked, WorkflowStateRejected, WorkflowStateExpired,
+		WorkflowStateWaitApproval, WorkflowStateWaitConfirmation, WorkflowStateExecuting,
+		WorkflowStateSuccessful, WorkflowStateFailed:
+		return true
+	}
+	return false
+}
+
+func (s WorkflowState) Value() (driver.Value, error) {
+	return enums.Value(s, ErrInvalidWorkflowState)
+}
+
+func (s *WorkflowState) Scan(src any) error {
+	return enums.Scan(src, s, ErrInvalidWorkflowState)
+}
+
+func (t WorkflowArtifactType) Valid() bool {
+	switch t {
+	case WorkflowArtifactTypeKey, WorkflowArtifactTypeKeyConfiguration, WorkflowArtifactTypeSystem:
+		return true
+	}
+	return false
+}
+
+func (t WorkflowArtifactType) Value() (driver.Value, error) {
+	return enums.Value(t, ErrInvalidWorkflowArtifactType)
+}
+
+func (t *WorkflowArtifactType) Scan(src any) error {
+	return enums.Scan(src, t, ErrInvalidWorkflowArtifactType)
+}
+
+func (t WorkflowActionType) Valid() bool {
+	switch t {
+	case WorkflowActionTypeUpdateState, WorkflowActionTypeUpdatePrimary,
+		WorkflowActionTypeLink, WorkflowActionTypeUnlink, WorkflowActionTypeSwitch, WorkflowActionTypeDelete:
+		return true
+	}
+	return false
+}
+
+func (t WorkflowActionType) Value() (driver.Value, error) {
+	return enums.Value(t, ErrInvalidWorkflowActionType)
+}
+
+func (t *WorkflowActionType) Scan(src any) error {
+	return enums.Scan(src, t, ErrInvalidWorkflowActionType)
+}
+
+func (t WorkflowParametersResourceType) Valid() bool {
+	switch t {
+	case WorkflowParametersResourceTypeKey, WorkflowParametersResourceTypeKeyConfiguration:
+		return true
+	}
+	return false
+}
+
+func (t WorkflowParametersResourceType) Value() (driver.Value, error) {
+	return enums.Value(t, ErrInvalidWorkflowParametersResourceType)
+}
+
+func (t *WorkflowParametersResourceType) Scan(src any) error {
+	return enums.Scan(src, t, ErrInvalidWorkflowParametersResourceType)
 }

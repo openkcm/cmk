@@ -3,44 +3,50 @@ package authz
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type TenantID string
 
-type Entity struct {
-	TenantID   TenantID
-	Role       constants.Role
-	UserGroups []string
-}
-type Handler[TResourceTypeName, TAction comparable] struct {
-	RolePolicies        map[constants.Role][]BasePolicy[TResourceTypeName, TAction]
-	resourceTypeActions map[TResourceTypeName][]TAction
-	validActions        map[TAction]struct{}
-	Entities            []Entity
-	AuthorizationData   AllowList[TResourceTypeName, TAction]
-	Auditor             *auditor.Auditor
+type BusinessUser struct {
+	TenantID TenantID
+	Groups   []string
 }
 
-const EmptyTenantID = TenantID("")
+type Entity[
+	Role constants.BusinessRole | constants.InternalRole,
+	User BusinessUser,
+] struct {
+	User User
+	Role Role
+}
+
+type Handler[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+] struct {
+	InternalUserAuthzData InternalUserAuthzData[Resource, Action]
+	BusinessUserAuthzData BusinessUserAuthzData[Resource, Action]
+
+	Auditor *auditor.Auditor
+
+	resourceActions map[Resource][]Action
+
+	mu *sync.Mutex
+}
 
 var (
 	ErrInvalidRequest        = errors.New("invalid request")
-	ErrEmptyRequest          = errors.New("empty request")
 	ErrAuthorizationDecision = errors.New("authorization decision error")
 	ErrAuthorizationDenied   = errors.New("authorization denied")
-	ErrWrongTenantID         = errors.New("wrong tenant ID in request")
 
-	ErrExtractClientData  = errors.New("error extracting client data from context")
 	ErrCreateAuthzRequest = errors.New("error creating authorization request")
 	ErrExtractTenantID    = errors.New("error extracting tenant ID from context")
-	ErrAuthzDecision      = errors.New("error making authorization decision")
 
 	ErrActionInvalid            = errors.New("action is invalid")
 	ErrResourceTypeInvalid      = errors.New("resource type is invalid")
@@ -49,116 +55,143 @@ var (
 
 var InfoAuthorizationPassed = "Authorization check passed"
 
-func NewAuthorizationHandler[TResourceTypeName, TAction comparable](
-	entities *[]Entity, auditor *auditor.Auditor,
-	rolePolicies map[constants.Role][]BasePolicy[TResourceTypeName, TAction],
-	resourceTypeActions map[TResourceTypeName][]TAction,
-) (
-	*Handler[TResourceTypeName, TAction], error) {
-	authorizationData := &AllowList[TResourceTypeName, TAction]{}
-
-	var err error
-
-	// Create authorization data from entities
-	if len(*entities) != 0 {
-		authorizationData, err = NewAuthorizationData(*entities, rolePolicies)
-		if err != nil {
-			return nil, err
-		}
+func NewAuthorizationHandler[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
+	auditor *auditor.Auditor,
+	internalUserPolicies RolePolicies[constants.InternalRole, Resource, Action],
+	businessUserPolicies RolePolicies[constants.BusinessRole, Resource, Action],
+	resourceActions map[Resource][]Action,
+	mu *sync.Mutex,
+) (*Handler[Resource, Action], error) {
+	internalUserAuthzData, err := NewInternalUserAuthzData(internalUserPolicies)
+	if err != nil {
+		return nil, err
 	}
 
-	validActions := map[TAction]struct{}{}
-
-	for _, actions := range resourceTypeActions {
-		for _, action := range actions {
-			validActions[action] = struct{}{}
-		}
+	businessUserAuthzData, err := NewBusinessUserAuthzData(businessUserPolicies)
+	if err != nil {
+		return nil, err
 	}
 
-	return &Handler[TResourceTypeName, TAction]{
-		RolePolicies:        rolePolicies,
-		resourceTypeActions: resourceTypeActions,
-		validActions:        validActions,
-		Entities:            *entities,
-		AuthorizationData:   *authorizationData,
-		Auditor:             auditor,
+	return &Handler[Resource, Action]{
+		resourceActions:       resourceActions,
+		BusinessUserAuthzData: *businessUserAuthzData,
+		InternalUserAuthzData: *internalUserAuthzData,
+		Auditor:               auditor,
+		mu:                    mu,
 	}, nil
 }
 
-// IsAllowed checks if the given User is allowed to perform the given Action on the given resource
-func (as *Handler[TResourceTypeName, TAction]) IsAllowed(ctx context.Context,
-	ar Request[TResourceTypeName, TAction]) (bool, error) {
-	// Check if the request data is filled
-	var emptyAction TAction
-	var emptyResourceTypeName TResourceTypeName
-	if ar.User.UserName == "" || ar.User.Groups == nil ||
-		ar.ResourceTypeName == emptyResourceTypeName || ar.Action == emptyAction {
-		// Deny
-		LogDecision(ctx, ar, as.Auditor, false, Reason(ErrEmptyRequest.Error()))
+func (as *Handler[Resource, Action]) ResetBusinessUserData() {
+	as.BusinessUserAuthzData.InitialiseAuthzKeys()
+}
 
-		return false, errs.Wrap(ErrInvalidRequest, ErrEmptyRequest)
-	}
+func (as *Handler[Resource, Action]) UpdateBusinessUserData(
+	user map[constants.BusinessRole]*BusinessUser,
+) error {
+	return as.BusinessUserAuthzData.AddUser(user)
+}
 
-	// Get the tenant from the context
-	tenant, err := cmkcontext.ExtractTenantID(ctx)
+// IsBusinessUserAllowed checks if the given Business User is allowed to perform
+// the given Action on the given Resource
+func (as *Handler[Resource, Action]) IsBusinessUserAllowed(
+	ctx context.Context,
+	request Request[BusinessUserRequest, Resource, Action],
+) (bool, error) {
+	// The AuthzKeys are updated by a background task
+	// This needs a mutex to be concurrent safe
+	as.mu.Lock()
+	defer as.mu.Unlock()
+
+	err := request.IsValidContext(ctx)
 	if err != nil {
-		// Deny
-		LogDecision(ctx, ar, as.Auditor, false, Reason(err.Error()))
-
-		return false, errs.Wrap(ErrValidation, err)
+		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
+		return false, errs.Wrap(ErrInvalidRequest, err)
 	}
 
-	if ar.TenantID != TenantID(tenant) {
-		// Deny
-		LogDecision(ctx, ar, as.Auditor, false, Reason(ErrWrongTenantID.Error()))
-
-		return false, errs.Wrap(ErrAuthorizationDecision, ErrWrongTenantID)
-	}
-
-	err = as.isValidResourceAction(ar)
+	err = as.isValidResourceAction(request.ResourceTypeName, request.Action)
 	if err != nil {
-		// Deny
-		LogDecision(ctx, ar, as.Auditor, false, Reason(ErrInvalidRequest.Error()))
-
+		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
 		return false, errs.Wrap(ErrInvalidRequest, ErrInvalidRequest)
 	}
 
-	for _, group := range ar.User.Groups {
-		reqData := AuthorizationKey[TResourceTypeName, TAction]{
-			TenantID:         ar.TenantID,
-			UserGroup:        group,
-			ResourceTypeName: ar.ResourceTypeName,
-			Action:           ar.Action,
+	for _, group := range request.User.Groups {
+		reqData := AuthorizationKey[BusinessUserCheck, Resource, Action]{
+			User: BusinessUserCheck{
+				TenantID: request.User.TenantID,
+				Group:    group,
+			},
+			ResourceType: request.ResourceTypeName,
+			Action:       request.Action,
 		}
-		_, ok := as.AuthorizationData.AuthzKeys[reqData]
+		_, ok := as.BusinessUserAuthzData.AuthzKeys[reqData]
 
 		if ok {
 			// Allow
-			LogDecision(ctx, ar, as.Auditor, true, Reason(InfoAuthorizationPassed))
+			LogDecision(ctx, request, as.Auditor, true, Reason(InfoAuthorizationPassed))
 			return true, nil
 		}
 	}
 
 	// If no matching policy is found, deny authorization
-	// Deny
-	LogDecision(ctx, ar, as.Auditor, false, Reason(ErrAuthorizationDecision.Error()))
+	LogDecision(ctx, request, as.Auditor, false, Reason(ErrAuthorizationDecision.Error()))
 
 	return false, errs.Wrap(ErrAuthorizationDecision, ErrAuthorizationDenied)
 }
 
-func (as *Handler[TResourceTypeName, TAction]) isValidResourceAction(
-	ar Request[TResourceTypeName, TAction]) error {
-	if _, exists := as.validActions[ar.Action]; !exists {
-		return errs.Wrapf(ErrActionInvalid, fmt.Sprintf("%v", ar.Action))
+// IsInternalUserAllowed checks if the given Business User is allowed to perform
+// the given Action on the given Resource
+func (as *Handler[Resource, Action]) IsInternalUserAllowed(
+	ctx context.Context,
+	request Request[InternalUserRequest, Resource, Action],
+) (bool, error) {
+	err := request.IsValidContext(ctx)
+	if err != nil {
+		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
+		return false, errs.Wrap(ErrInvalidRequest, err)
 	}
 
-	if actions, resourceExists := as.resourceTypeActions[ar.ResourceTypeName]; resourceExists {
-		if actionExists := slices.Contains(actions, ar.Action); !actionExists {
-			return errs.Wrapf(ErrActionInvalidForResource, fmt.Sprintf("%v", ar.Action))
-		}
-	} else {
-		return errs.Wrapf(ErrResourceTypeInvalid, fmt.Sprintf("%v", ar.ResourceTypeName))
+	err = as.isValidResourceAction(request.ResourceTypeName, request.Action)
+	if err != nil {
+		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
+		return false, errs.Wrap(ErrInvalidRequest, ErrInvalidRequest)
 	}
 
+	reqData := AuthorizationKey[InternalUserCheck, Resource, Action]{
+		User: InternalUserCheck{
+			Role: request.User.Role,
+		},
+		ResourceType: request.ResourceTypeName,
+		Action:       request.Action,
+	}
+	_, ok := as.InternalUserAuthzData.AuthzKeys[reqData]
+
+	if ok {
+		// Allow
+		LogDecision(ctx, request, as.Auditor, true, Reason(InfoAuthorizationPassed))
+		return true, nil
+	}
+
+	// If no matching policy is found, deny authorization
+	// Deny
+	LogDecision(ctx, request, as.Auditor, false, Reason(ErrAuthorizationDecision.Error()))
+
+	return false, errs.Wrap(ErrAuthorizationDecision, ErrAuthorizationDenied)
+}
+
+// isValidResourceAction checks if user can trigger action on resource
+func (as *Handler[Resource, Action]) isValidResourceAction(
+	resource Resource,
+	action Action,
+) error {
+	actions, ok := as.resourceActions[resource]
+	if !ok {
+		return errs.Wrapf(ErrResourceTypeInvalid, string(resource))
+	}
+	if !slices.Contains(actions, action) {
+		return errs.Wrapf(ErrActionInvalidForResource, string(action))
+	}
 	return nil
 }

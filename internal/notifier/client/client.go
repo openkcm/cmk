@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/openkcm/cmk/internal/log"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/notification"
 )
 
@@ -25,7 +25,7 @@ type Client struct {
 
 func New(
 	ctx context.Context,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 ) (*Client, error) {
 	svc, err := svcRegistry.Notification()
 	if err != nil {

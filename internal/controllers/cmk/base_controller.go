@@ -10,19 +10,20 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/db"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
+	"github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
 // APIController handles API requests related to CMK (Customer Managed Keys).
 type APIController struct {
-	pluginCatalog *cmkpluginregistry.Registry
+	pluginCatalog serviceapi.Registry
 	Repository    repo.Repo
 	Manager       *manager.Manager
 	config        *config.Config
-	AuthzLoader   *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction]
+	AuthzLoader   *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction]
 }
 
 // NewAPIController creates a new instance of APIController with the provided Repository.
@@ -33,8 +34,10 @@ func NewAPIController(
 	config *config.Config,
 	clientsFactory clients.Factory,
 	migrator db.Migrator,
-	svcRegistry *cmkpluginregistry.Registry,
-	authzLoader *authz_loader.AuthzLoader[authz.APIResourceTypeName, authz.APIAction],
+	svcRegistry serviceapi.Registry,
+	authzRepoLoader *authz_loader.AuthzLoader[authz.RepoResourceType, authz.RepoAction],
+	authzAPILoader *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction],
+	flags featureflags.Client,
 ) *APIController {
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, config, r)
 	if err != nil {
@@ -51,10 +54,10 @@ func NewAPIController(
 	}
 
 	return &APIController{
-		Manager: manager.New(ctx, r, config, clientsFactory, svcRegistry,
-			eventFactory, asyncClient, migrator),
+		Manager: manager.New(ctx, r, authzRepoLoader, config, clientsFactory,
+			svcRegistry, eventFactory, asyncClient, migrator, flags),
 		config:        config,
 		pluginCatalog: svcRegistry,
-		AuthzLoader:   authzLoader,
+		AuthzLoader:   authzAPILoader,
 	}
 }

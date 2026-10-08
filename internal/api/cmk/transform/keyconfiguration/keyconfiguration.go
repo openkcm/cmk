@@ -1,0 +1,109 @@
+package keyconfiguration
+
+import (
+	"context"
+	"errors"
+	"reflect"
+
+	"github.com/google/uuid"
+
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/api/cmk/transform"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/group"
+	"github.com/openkcm/cmk/internal/apierrors"
+	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	"github.com/openkcm/cmk/utils/sanitise"
+	"github.com/openkcm/cmk/utils/validator"
+)
+
+var ErrTransformKey = errors.New("err transform to key response")
+
+// FromAPI converts a KeyConfiguration api model to a KeyConfiguration db model.
+func FromAPI(apiConfig cmkapi.KeyConfiguration) (*model.KeyConfiguration, error) {
+	if apiConfig.Name == "" {
+		return nil, errs.Wrapf(apierrors.ErrNameFieldMissingProperty, "name")
+	}
+
+	if apiConfig.AdminGroupID == uuid.Nil {
+		return nil, errs.Wrapf(apierrors.ErrNameFieldMissingProperty, "adminGroupID")
+	}
+
+	err := validator.ValidateUUID(apiConfig.AdminGroupID.String())
+	if err != nil {
+		return nil, errs.Wrapf(transform.ErrAPIInvalidProperty, "adminGroupID must be UUID string")
+	}
+
+	dbConfig := &model.KeyConfiguration{
+		ID:           uuid.New(),
+		Name:         apiConfig.Name,
+		AdminGroupID: apiConfig.AdminGroupID,
+	}
+
+	if apiConfig.Description != nil {
+		dbConfig.Description = *apiConfig.Description
+	}
+
+	return dbConfig, nil
+}
+
+// ToAPI converts KeyConfiguration db model to a KeyConfiguration api model
+func ToAPI(
+	ctx context.Context,
+	k *model.KeyConfiguration,
+	kManager manager.KeyConfigurationAPI,
+	identityManager identitymanagement.IdentityManagement,
+) (*cmkapi.KeyConfiguration, error) {
+	err := sanitise.Sanitize(&k)
+	if err != nil {
+		return nil, err
+	}
+
+	apiConfig := &cmkapi.KeyConfiguration{
+		Id:           &k.ID,
+		Name:         k.Name,
+		AdminGroupID: k.AdminGroupID,
+		PrimaryKeyID: k.PrimaryKeyID,
+	}
+
+	if !reflect.ValueOf(k.AdminGroup).IsZero() {
+		adminGroup, err := group.ToAPI(k.AdminGroup)
+		if err != nil {
+			return nil, err
+		}
+
+		apiConfig.AdminGroup = adminGroup
+	}
+
+	if k.Description != "" {
+		apiConfig.Description = &k.Description
+	}
+
+	apiConfig.Metadata = &cmkapi.KeyConfigurationMetadata{
+		CreatedAt:    &k.CreatedAt,
+		UpdatedAt:    &k.UpdatedAt,
+		TotalKeys:    &k.TotalKeys,
+		TotalSystems: &k.TotalSystems,
+	}
+
+	if k.CreatorID != uuid.Nil.String() && k.CreatorID != "" {
+		name, err := k.GetCreatorName(ctx, identityManager)
+		if err != nil {
+			return nil, err
+		}
+
+		apiConfig.Metadata.CreatorID = &k.CreatorID
+		apiConfig.Metadata.CreatorName = &name
+	}
+
+	canConnectSystem, err := kManager.CanConnectSystems(ctx, k)
+	if errors.Is(err, manager.ErrGettingKeyByID) {
+		return nil, err
+	}
+
+	apiConfig.CanConnectSystems = &canConnectSystem
+
+	return apiConfig, nil
+}

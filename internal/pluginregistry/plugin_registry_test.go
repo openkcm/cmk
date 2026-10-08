@@ -12,7 +12,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 )
 
 func TestNew(t *testing.T) {
@@ -77,15 +76,7 @@ func TestNew(t *testing.T) {
 	}
 
 	t.Run("Should use custom builtin", func(t *testing.T) {
-		ps, pscfg := testutils.NewTestPlugins(testplugins.NewCertificateIssuer())
-		svcRegistry, err := cmkpluginregistry.New(
-			t.Context(),
-			&config.Config{
-				Plugins: pscfg,
-			},
-			cmkpluginregistry.WithBuiltInPlugins(ps),
-		)
-		require.NoError(t, err)
+		svcRegistry := testutils.NewTestPlugins()
 		res, err := svcRegistry.CertificateIssuer()
 		require.NoError(t, err)
 		require.Equal(t, "TEST", res.ServiceInfo().Name())

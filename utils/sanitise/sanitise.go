@@ -103,6 +103,15 @@ func sanitiseMap(v reflect.Value) error {
 	for _, key := range v.MapKeys() {
 		val := v.MapIndex(key)
 
+		// Unwrap interfaces to get the actual value
+		// This is needed because map[string]any wraps values in interface{}
+		for val.Kind() == reflect.Interface {
+			if val.IsNil() {
+				break
+			}
+			val = val.Elem()
+		}
+
 		// Call sanitize on temporary pointers
 		// as maps values cannot be directly changed
 		tmpKey := reflect.New(key.Type())

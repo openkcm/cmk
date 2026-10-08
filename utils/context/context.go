@@ -5,7 +5,6 @@ import (
 	"errors"
 	"maps"
 
-	"github.com/bartventer/gorm-multitenancy/middleware/nethttp/v8"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/auth"
 
@@ -13,11 +12,16 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 )
 
+const TenantKey = key("tenant")
+
 var (
-	ErrExtractTenantID              = errors.New("could not extract tenant ID from context")
-	ErrGetRequestID                 = errors.New("no requestID found in context")
-	ErrExtractClientData            = errors.New("could not extract client data from context")
-	ErrExtractClientDataAuthContext = errors.New("could not extract field from client data auth context")
+	ErrTenantInvalid                      = errors.New("invalid tenant or tenant not found")
+	ErrExtractTenantID                    = errors.New("could not extract tenant ID from context")
+	ErrGetRequestID                       = errors.New("no requestID found in context")
+	ErrExtractBusinessUserData            = errors.New("could not extract business data from context")
+	ErrExtractBusinessUserDataAuthContext = errors.New("could not extract field from business data auth context")
+	ErrExtractUserType                    = errors.New("could not extract user type from context")
+	ErrInvalidUserType                    = errors.New("invalid user type")
 )
 
 type Opt func(ctx context.Context) context.Context
@@ -35,9 +39,9 @@ func New(ctx context.Context, opts ...Opt) context.Context {
 }
 
 func ExtractTenantID(ctx context.Context) (string, error) {
-	tenantID, ok := ctx.Value(nethttp.TenantKey).(string)
+	tenantID, ok := ctx.Value(TenantKey).(string)
 	if !ok || tenantID == "" {
-		return "", errs.Wrap(ErrExtractTenantID, nethttp.ErrTenantInvalid)
+		return "", errs.Wrap(ErrExtractTenantID, ErrTenantInvalid)
 	}
 
 	return tenantID, nil
@@ -48,7 +52,7 @@ func CreateTenantContext(ctx context.Context, tenantSchema string) context.Conte
 		ctx = context.Background()
 	}
 
-	return context.WithValue(ctx, nethttp.TenantKey, tenantSchema)
+	return context.WithValue(ctx, TenantKey, tenantSchema)
 }
 
 func WithTenant(tenantSchema string) Opt {
@@ -77,115 +81,198 @@ func GetRequestID(ctx context.Context) (string, error) {
 	return requestID, nil
 }
 
-func InjectClientData(
+// User data
+
+func ExtractUserType(ctx context.Context) (string, error) {
+	userType, ok := ctx.Value(constants.UserType).(constants.UserTypeValue)
+	if !ok || userType == "" {
+		return "", ErrExtractUserType
+	}
+
+	return string(userType), nil
+}
+
+// Business User Data
+
+func InjectBusinessUserData(
 	ctx context.Context,
-	clientData *auth.ClientData,
+	businessUserData *auth.ClientData,
 	authContextFields []string,
 ) context.Context {
 	filteredAuthCtx := make(map[string]string)
 
 	for _, field := range authContextFields {
-		if value, exists := clientData.AuthContext[field]; exists {
+		if value, exists := businessUserData.AuthContext[field]; exists {
 			filteredAuthCtx[field] = value
 		}
 	}
 
-	clientData.AuthContext = filteredAuthCtx
-	ctx = context.WithValue(ctx, constants.ClientData, clientData)
+	businessUserData.AuthContext = filteredAuthCtx
+	ctx = context.WithValue(ctx, constants.UserType, constants.BusinessUser)
+	ctx = context.WithValue(ctx, constants.BusinessUserData, businessUserData)
 
 	return ctx
 }
 
-func WithInjectClientData(clientData *auth.ClientData, authContextFields []string) Opt {
+func WithInjectBusinessUserData(businessUserData *auth.ClientData, authContextFields []string) Opt {
 	return func(ctx context.Context) context.Context {
-		return InjectClientData(ctx, clientData, authContextFields)
+		return InjectBusinessUserData(ctx, businessUserData, authContextFields)
 	}
 }
 
-func ExtractClientData(ctx context.Context) (*auth.ClientData, error) {
-	clientData, ok := ctx.Value(constants.ClientData).(*auth.ClientData)
-	if !ok || clientData == nil {
-		return nil, ErrExtractClientData
+func ExtractBusinessUserData(ctx context.Context) (*auth.ClientData, error) {
+	// Note we don't check the user type here, as it's possible for internal users
+	// to be associated with business data. Eg for the case with workflow task handling
+	businessUserData, ok := ctx.Value(constants.BusinessUserData).(*auth.ClientData)
+	if !ok || businessUserData == nil {
+		return nil, ErrExtractBusinessUserData
 	}
 
-	return clientData, nil
+	return businessUserData, nil
 }
 
-func ExtractClientDataIdentifier(ctx context.Context) (string, error) {
-	clientData, err := ExtractClientData(ctx)
+func ExtractBusinessUserDataIdentifier(ctx context.Context) (string, error) {
+	businessUserData, err := ExtractBusinessUserData(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	return clientData.Identifier, nil
+	return businessUserData.Identifier, nil
 }
 
-func ExtractClientDataGroups(ctx context.Context) ([]string, error) {
-	clientData, err := ExtractClientData(ctx)
+func ExtractBusinessUserDataGroups(ctx context.Context) ([]string, error) {
+	businessUserData, err := ExtractBusinessUserData(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return clientData.Groups, nil
+	return businessUserData.Groups, nil
 }
 
-func ExtractClientDataGroupsString(ctx context.Context) ([]string, error) {
-	clientData, err := ExtractClientData(ctx)
+func ExtractBusinessUserDataGroupsString(ctx context.Context) ([]string, error) {
+	businessUserData, err := ExtractBusinessUserData(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return clientData.Groups, nil
+	return businessUserData.Groups, nil
 }
 
-func ExtractClientDataAuthContextField(ctx context.Context, field string) (string, error) {
-	clientData, err := ExtractClientData(ctx)
+func ExtractBusinessUserDataAuthContextField(ctx context.Context, field string) (string, error) {
+	businessUserData, err := ExtractBusinessUserData(ctx)
 	if err != nil {
-		return "", ErrExtractClientDataAuthContext
+		return "", ErrExtractBusinessUserDataAuthContext
 	}
 
-	value, ok := clientData.AuthContext[field]
+	value, ok := businessUserData.AuthContext[field]
 	if !ok || value == "" {
-		return "", ErrExtractClientDataAuthContext
+		return "", ErrExtractBusinessUserDataAuthContext
 	}
 
 	return value, nil
 }
 
-// ExtractClientDataIssuer extracts the issuer from client data auth context
-func ExtractClientDataIssuer(ctx context.Context) (string, error) {
-	return ExtractClientDataAuthContextField(ctx, "issuer")
+func ExtractBusinessUserDataIssuer(ctx context.Context) (string, error) {
+	return ExtractBusinessUserDataAuthContextField(ctx, "issuer")
 }
 
-func ExtractClientDataAuthContext(ctx context.Context) (map[string]string, error) {
-	clientData, err := ExtractClientData(ctx)
+func ExtractBusinessUserDataAuthContext(ctx context.Context) (map[string]string, error) {
+	businessUserData, err := ExtractBusinessUserData(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	authContext := maps.Clone(clientData.AuthContext)
+	authContext := maps.Clone(businessUserData.AuthContext)
 
 	return authContext, nil
 }
 
-func IsSystemUser(ctx context.Context) bool {
-	clientData, err := ExtractClientData(ctx)
-	if err != nil {
-		return false
-	}
+// Internal User Data
 
-	return clientData.Identifier == constants.SystemUser.String()
+func InjectInternalUserData(
+	ctx context.Context,
+	role constants.InternalRole,
+) (context.Context, error) {
+	userType, ok := ctx.Value(constants.UserType).(constants.UserTypeValue)
+	if ok && userType != constants.InternalUser {
+		// We don't want business users changing to internal
+		return ctx, ErrInvalidUserType
+	}
+	ctx = InjectRequestID(ctx, uuid.NewString())
+	ctx = context.WithValue(ctx, constants.UserType, constants.InternalUser)
+	ctx = context.WithValue(ctx, constants.InternalUserData, role)
+
+	return ctx, nil
 }
 
-func InjectSystemUser(ctx context.Context) context.Context {
-	clientData, err := ExtractClientData(ctx)
-	// Use zero values and system user
-	if err != nil || clientData == nil {
-		clientData = &auth.ClientData{}
+// ExtractUserIdentifier returns a string identifier for the caller regardless of user type.
+// For business users this is the IAM identifier; for internal users it is the role string.
+func ExtractUserIdentifier(ctx context.Context) (string, error) {
+	businessUserData, err := ExtractBusinessUserData(ctx)
+	if err == nil {
+		return businessUserData.Identifier, nil
 	}
 
-	clientDataCopy := *clientData
-	clientDataCopy.Identifier = uuid.Max.String()
+	internalRole, err := ExtractInternalRole(ctx)
+	if err != nil {
+		return "", err
+	}
 
-	return context.WithValue(ctx, constants.ClientData, &clientDataCopy)
+	return string(internalRole), nil
+}
+
+func ExtractInternalRole(ctx context.Context) (constants.InternalRole, error) {
+	userType, err := ExtractUserType(ctx)
+	if err != nil {
+		return "", err
+	}
+	if userType != string(constants.InternalUser) {
+		return "", ErrInvalidUserType
+	}
+	internalRole, ok := ctx.Value(constants.InternalUserData).(constants.InternalRole)
+	if !ok || internalRole == "" {
+		return "", ErrExtractBusinessUserData
+	}
+
+	return internalRole, nil
+}
+
+// User type context conversions
+
+func BusinessToInternalContext(
+	ctx context.Context,
+	role constants.InternalRole,
+) (context.Context, error) {
+	userType, ok := ctx.Value(constants.UserType).(constants.UserTypeValue)
+	if ok && userType != constants.BusinessUser {
+		return ctx, ErrInvalidUserType
+	}
+
+	tenantID, err := ExtractTenantID(ctx)
+	if err != nil {
+		return ctx, err
+	}
+
+	internalCtx := CreateTenantContext(context.TODO(), tenantID)
+	internalCtx, err = InjectInternalUserData(internalCtx, role)
+	if err != nil {
+		return ctx, err
+	}
+
+	requestID, err := GetRequestID(ctx)
+	if err == nil {
+		internalCtx = InjectRequestID(internalCtx, requestID)
+	}
+
+	return internalCtx, nil
+}
+
+// GetFromContext gets a value from context
+//
+//nolint:forcetypeassert
+func GetFromContext[T any](ctx context.Context, key any) T {
+	if val := ctx.Value(key); val != nil {
+		return val.(T)
+	}
+	return *new(T)
 }

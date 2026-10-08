@@ -6,10 +6,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -72,11 +71,9 @@ func TestCreateOrUpdateLabel(t *testing.T) {
 
 	expected := []*model.KeyLabel{
 		{
-			BaseLabel: model.BaseLabel{
-				ID:    uuid.New(),
-				Value: "test-1",
-				Key:   key.ID.String(),
-			},
+			ID:        uuid.New(),
+			Value:     "test-1",
+			Key:       key.ID.String(),
 			CryptoKey: *key,
 		},
 	}
