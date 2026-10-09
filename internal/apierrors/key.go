@@ -421,6 +421,14 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{keymanagement.ErrImportJobNotReady},
+		ExposedError: &APIError{
+			Code:    "IMPORT_JOB_NOT_READY",
+			Message: "Import job is not yet ready. Please retry GetImportParameters after a few seconds.",
+			Status:  http.StatusConflict,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrDefaultKeystoreNotFound},
 		ExposedError: &APIError{
 			Code:    "DEFAULT_KEYSTORE_NOT_FOUND",
