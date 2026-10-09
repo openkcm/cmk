@@ -47,7 +47,7 @@ spec:
           image: "{{ template "cmk.image" (tuple .Values.image $.Chart.AppVersion) }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
-            - "/bin/cmkd"
+            - {{ default "/cmkd" .Values.dbMigrator.image.command | quote }}
           args:
             - db-migrator
             - --target=all
