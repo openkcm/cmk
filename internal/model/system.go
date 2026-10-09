@@ -55,6 +55,7 @@ type System struct {
 	KeyConfigurationName       *string           `gorm:"-"`
 	TargetKeyConfigurationName *string           `gorm:"-"`
 	Properties                 map[string]string `gorm:"-:all"`
+	SystemGroupID              *uuid.UUID        `gorm:"type:uuid"`
 
 	// Status can be 'CONNECTED', 'DISCONNECTED', 'FAILED', or 'PROCESSING'
 	Status        cmkapi.SystemStatus `gorm:"type:varchar(50);default:'DISCONNECTED'"`
@@ -174,7 +175,7 @@ func (m SystemProperty) CheckAuthz(ctx context.Context,
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
-type JoinSystem struct {
+type JoinSystemAndProperties struct {
 	System
 
 	KeyConfigurationName       *string `gorm:"column:key_configuration_name"`

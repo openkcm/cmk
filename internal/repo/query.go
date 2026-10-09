@@ -73,6 +73,10 @@ const (
 	UnderWorkflowField  QueryField = "under_workflow"
 	DataField           QueryField = "data"
 	Name                QueryField = "name"
+	SystemGroupID       QueryField = "system_group_id"
+
+	DescriptionField     QueryField = "description"
+	SuppressWarningField QueryField = "suppress_warning"
 
 	ArtifactNameField      QueryField = "artifact_name"
 	ParamResourceNameField QueryField = "parameters_resource_name"

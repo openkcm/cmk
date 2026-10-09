@@ -64,6 +64,17 @@ func NewSystem(m func(*model.System)) *model.System {
 	return new(mut(m))
 }
 
+func NewSystemGroup(m func(*model.SystemGroup)) *model.SystemGroup {
+	mut := NewMutator(func() model.SystemGroup {
+		return model.SystemGroup{
+			ID:   uuid.New(),
+			Name: uuid.NewString(),
+		}
+	})
+
+	return new(mut(m))
+}
+
 type KeyConfigOpt func(*model.KeyConfiguration)
 
 func NewKeyConfig(m func(*model.KeyConfiguration),

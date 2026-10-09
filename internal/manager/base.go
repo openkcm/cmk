@@ -21,6 +21,7 @@ type Manager struct {
 	KeyVersions   *KeyVersionManager
 	TenantConfigs *TenantConfigManager
 	System        System
+	SystemGroup   SystemGroup
 	KeyConfig     KeyConfigurationAPI
 	Tags          Tags
 	Labels        Label
@@ -39,7 +40,7 @@ type Manager struct {
 //nolint:funlen
 func New(
 	ctx context.Context,
-	repo repo.Repo,
+	r repo.Repo,
 	authzLoader *authz_loader.AuthzLoader[
 		authz.RepoResourceType, authz.RepoAction],
 	config *config.Config,
@@ -51,14 +52,14 @@ func New(
 	flags featureflags.Client,
 ) *Manager {
 	cmkAuditor := auditor.New(ctx, config)
-	certManager := NewCertificateManager(ctx, repo, svcRegistry, config)
-	tenantConfigManager := NewTenantConfigManager(repo, svcRegistry, config, certManager, flags)
-	userManager := NewUserManager(repo, cmkAuditor)
-	tagManager := NewTagManager(repo)
-	keyConfigManager := NewKeyConfigManager(repo, certManager, userManager,
+	certManager := NewCertificateManager(ctx, r, svcRegistry, config)
+	tenantConfigManager := NewTenantConfigManager(r, svcRegistry, config, certManager, flags)
+	userManager := NewUserManager(r, cmkAuditor)
+	tagManager := NewTagManager(r)
+	keyConfigManager := NewKeyConfigManager(r, certManager, userManager,
 		tagManager, cmkAuditor, eventFactory, config, tenantConfigManager)
 	keyManager := NewKeyManager(
-		repo,
+		r,
 		svcRegistry,
 		tenantConfigManager,
 		keyConfigManager,
@@ -71,7 +72,7 @@ func New(
 	)
 	systemManager := NewSystemManager(
 		ctx,
-		repo,
+		r,
 		authzLoader,
 		clientsFactory,
 		eventFactory,
@@ -80,18 +81,19 @@ func New(
 		keyConfigManager,
 		userManager,
 	)
-	groupManager := NewGroupManager(repo, svcRegistry, userManager)
+	groupManager := NewGroupManager(r, svcRegistry, userManager)
 
 	return &Manager{
 		Keys:          keyManager,
-		KeyVersions:   NewKeyVersionManager(repo, svcRegistry, tenantConfigManager, certManager, cmkAuditor),
+		KeyVersions:   NewKeyVersionManager(r, svcRegistry, tenantConfigManager, certManager, cmkAuditor),
 		TenantConfigs: tenantConfigManager,
 		System:        systemManager,
+		SystemGroup:   NewSystemGroup(r),
 		KeyConfig:     keyConfigManager,
-		Tags:          NewTagManager(repo),
-		Labels:        NewLabelManager(repo),
+		Tags:          NewTagManager(r),
+		Labels:        NewLabelManager(r),
 		Workflow: NewWorkflowManager(
-			repo,
+			r,
 			svcRegistry,
 			keyManager,
 			keyConfigManager,
@@ -106,7 +108,7 @@ func New(
 		Group:        groupManager,
 		User:         userManager,
 
-		Tenant: NewTenantManager(repo, systemManager, keyManager, userManager, cmkAuditor, migrator),
+		Tenant: NewTenantManager(r, systemManager, keyManager, userManager, cmkAuditor, migrator),
 
 		Catalog:      svcRegistry,
 		EventFactory: eventFactory,
