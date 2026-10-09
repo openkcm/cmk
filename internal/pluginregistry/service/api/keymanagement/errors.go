@@ -7,6 +7,7 @@ var (
 	ErrHYOKKeyNotFound              = errors.New("HYOK provider key not found")
 	ErrGenericGetKeyError           = errors.New("failed to get key")
 	ErrImportKeyMaterialFailed      = errors.New("invalid or incorrectly wrapped key material")
+	ErrImportJobNotReady            = errors.New("import job is not yet ready")
 )
 
 // ProviderAuthError wraps ErrProviderAuthenticationFailed and carries the provider-specific
