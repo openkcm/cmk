@@ -8,6 +8,8 @@ import (
 	"github.com/openkcm/cmk/internal/authz"
 )
 
+const VirtualSystemGroup = "root"
+
 type SystemGroup struct {
 	ID              uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Name            string    `gorm:"type:varchar(255);not null;unique"`

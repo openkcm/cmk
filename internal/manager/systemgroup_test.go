@@ -89,7 +89,7 @@ func TestGetAllSystemGroups(t *testing.T) {
 		ids := getGroupIDsFromGroups(groups)
 		for i, id := range ids {
 			if id == uuid.Nil {
-				groups[i].Name = "root"
+				groups[i].Name = model.VirtualSystemGroup
 				assert.Contains(t, groups[i].Systems, orphan)
 			}
 		}

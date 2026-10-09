@@ -933,7 +933,7 @@ paths:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/topPath"
         - $ref: "#/components/parameters/countPath"
-        - $ref: "#/components/parameters/expandSystems"
+        - $ref: "#/components/parameters/expandSystemGroups"
       responses:
         "200":
           description: System Groups retrieved
@@ -1491,7 +1491,7 @@ components:
     #
     # Queries
     #
-    expandSystems:
+    expandSystemGroups:
       name: "$expand"
       in: query
       required: false

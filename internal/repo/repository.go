@@ -307,7 +307,7 @@ func ListSystemGroupsAndSystem(
 				group := row.SystemGroup
 				group.ID = gid
 				if gid == uuid.Nil {
-					group.Name = "root"
+					group.Name = model.VirtualSystemGroup
 				}
 				systemsGroupMap[gid] = &group
 			}
