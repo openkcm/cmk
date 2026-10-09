@@ -20,7 +20,7 @@ require (
 	github.com/oapi-codegen/nethttp-middleware v1.2.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/open-feature/go-sdk v1.19.0
-	github.com/openkcm/api-sdk v0.22.0
+	github.com/openkcm/api-sdk v0.23.0
 	github.com/openkcm/common-sdk v1.20.0
 	github.com/openkcm/orbital v0.6.2
 	github.com/openkcm/plugin-sdk v0.17.0
