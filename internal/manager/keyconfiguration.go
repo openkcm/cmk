@@ -60,8 +60,7 @@ type KeyConfigManager struct {
 
 // TenantConfigs is the subset of TenantConfigManager used by KeyConfigManager.
 type TenantConfigs interface {
-	GetEffectiveSystemsLimit(ctx context.Context) (int, error)
-	GetEffectiveKeysLimit(ctx context.Context) (int, error)
+	GetEffectiveLimits(ctx context.Context) (EffectiveLimits, error)
 }
 
 type KeyConfigFilter struct {
@@ -116,23 +115,22 @@ func (m *KeyConfigManager) CanConnectSystems(
 }
 
 // EnforceSystemLimit checks the per-tenant system limit for a key configuration and returns
-// ErrSystemLimitExceeded when the count is at or above the limit. It locks the
-// key_configuration row FOR UPDATE to serialize concurrent link requests within the
-// same transaction. Must be called inside a transaction.
+// ErrSystemLimitExceeded when the count is at or above the limit. Must be called inside a
+// transaction so the lock it takes holds until commit.
 func (m *KeyConfigManager) EnforceSystemLimit(ctx context.Context, keyConfigID uuid.UUID) error {
 	if m.tenantCfg == nil {
 		return nil
 	}
-	limit, err := m.tenantCfg.GetEffectiveSystemsLimit(ctx)
+	limits, err := m.tenantCfg.GetEffectiveLimits(ctx)
 	if err != nil {
 		return err
 	}
+	limit := limits.Systems
 	if limit <= 0 {
 		return nil
 	}
-	if _, err = m.r.First(ctx, &model.KeyConfiguration{ID: keyConfigID},
-		*repo.NewQuery().WithLock(repo.LockForUpdate)); err != nil {
-		return errs.Wrap(ErrGettingKeyConfigByID, err)
+	if err = m.lockKeyConfigForUpdate(ctx, keyConfigID); err != nil {
+		return err
 	}
 	// Count systems already linked (key_configuration_id) and in-flight
 	// (target_key_configuration_id) to prevent TOCTOU over-limit when the
@@ -156,22 +154,22 @@ func (m *KeyConfigManager) EnforceSystemLimit(ctx context.Context, keyConfigID u
 }
 
 // EnforceKeyLimit checks the per-tenant key limit for a key configuration and returns
-// ErrKeyLimitExceeded when the count is at or above the limit. It locks the
-// key_configuration row FOR UPDATE to serialize concurrent create requests.
+// ErrKeyLimitExceeded when the count is at or above the limit. Must be called inside a
+// transaction so the lock it takes holds until commit.
 func (m *KeyConfigManager) EnforceKeyLimit(ctx context.Context, keyConfigID uuid.UUID) error {
 	if m.tenantCfg == nil {
 		return nil
 	}
-	limit, err := m.tenantCfg.GetEffectiveKeysLimit(ctx)
+	limits, err := m.tenantCfg.GetEffectiveLimits(ctx)
 	if err != nil {
 		return err
 	}
+	limit := limits.Keys
 	if limit <= 0 {
 		return nil
 	}
-	if _, err = m.r.First(ctx, &model.KeyConfiguration{ID: keyConfigID},
-		*repo.NewQuery().WithLock(repo.LockForUpdate)); err != nil {
-		return errs.Wrap(ErrGettingKeyConfigByID, err)
+	if err = m.lockKeyConfigForUpdate(ctx, keyConfigID); err != nil {
+		return err
 	}
 	count, err := m.r.Count(
 		ctx,
@@ -188,6 +186,34 @@ func (m *KeyConfigManager) EnforceKeyLimit(ctx context.Context, keyConfigID uuid
 	}
 	if count >= limit {
 		return ErrKeyLimitExceeded
+	}
+	return nil
+}
+
+// EnforceKeyConfigLimit checks the per-tenant key configuration limit and returns
+// ErrKeyConfigLimitExceeded when the count is at or above the limit. Must be called inside
+// a transaction so the lock it takes holds until commit.
+func (m *KeyConfigManager) EnforceKeyConfigLimit(ctx context.Context) error {
+	if m.tenantCfg == nil {
+		return nil
+	}
+	limits, err := m.tenantCfg.GetEffectiveLimits(ctx)
+	if err != nil {
+		return err
+	}
+	limit := limits.KeyConfigs
+	if limit <= 0 {
+		return nil
+	}
+	if err = m.lockTenantForUpdate(ctx); err != nil {
+		return err
+	}
+	count, err := m.r.Count(ctx, &model.KeyConfiguration{}, *repo.NewQuery())
+	if err != nil {
+		return errs.Wrap(repo.ErrGetResource, err)
+	}
+	if count >= limit {
+		return ErrKeyConfigLimitExceeded
 	}
 	return nil
 }
@@ -246,9 +272,17 @@ func (m *KeyConfigManager) PostKeyConfigurations(
 		return nil, ErrNameCannotBeEmpty
 	}
 
-	err = m.r.Create(ctx, keyConfiguration)
+	err = m.r.Transaction(ctx, func(ctx context.Context) error {
+		if err := m.EnforceKeyConfigLimit(ctx); err != nil {
+			return err
+		}
+		if err := m.r.Create(ctx, keyConfiguration); err != nil {
+			return errs.Wrap(ErrCreateKeyConfiguration, err)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, errs.Wrap(ErrCreateKeyConfiguration, err)
+		return nil, err
 	}
 
 	return keyConfiguration, nil
@@ -411,6 +445,30 @@ func (m *KeyConfigManager) GetClientCertificates(ctx context.Context) (
 	}
 
 	return clientCerts, nil
+}
+
+// lockKeyConfigForUpdate FOR UPDATE-locks the key_configuration row to serialize
+// concurrent limit checks within the caller's transaction.
+func (m *KeyConfigManager) lockKeyConfigForUpdate(ctx context.Context, keyConfigID uuid.UUID) error {
+	if _, err := m.r.First(ctx, &model.KeyConfiguration{ID: keyConfigID},
+		*repo.NewQuery().WithLock(repo.LockForUpdate)); err != nil {
+		return errs.Wrap(ErrGettingKeyConfigByID, err)
+	}
+	return nil
+}
+
+// lockTenantForUpdate FOR UPDATE-locks the tenant row as the serialization token for
+// key-configuration creates, which have no parent key_configuration row to lock.
+func (m *KeyConfigManager) lockTenantForUpdate(ctx context.Context) error {
+	tenantID, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err = m.r.First(ctx, &model.Tenant{ID: tenantID},
+		*repo.NewQuery().WithLock(repo.LockForUpdate)); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *KeyConfigManager) transformTenantDefaultCertificate(
