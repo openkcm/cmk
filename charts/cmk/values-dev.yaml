@@ -4,7 +4,7 @@
 
 apiServer:
   image:
-    command: "/bin/cmkd"
+    command: "/cmkd"
     args:
       - api-server
 
@@ -15,7 +15,7 @@ apiServer:
 
 eventReconciler:
   image:
-    command: "/bin/cmkd"
+    command: "/cmkd"
     args:
       - event-reconciler
 
@@ -29,7 +29,7 @@ eventReconciler:
 
 tenantManager:
   image:
-    command: "/bin/cmkd"
+    command: "/cmkd"
     args:
       - tenant-manager
 
@@ -52,7 +52,7 @@ tenantManager:
 
 taskScheduler:
   image:
-    command: "/bin/cmkd"
+    command: "/cmkd"
     args:
       - task-scheduler
 
@@ -63,7 +63,7 @@ taskScheduler:
 
 taskWorker:
   image:
-    command: "/bin/cmkd"
+    command: "/cmkd"
     args:
       - task-worker
 
@@ -74,7 +74,7 @@ taskWorker:
 
 cmkctl:
   image:
-    command: "/bin/cmkctl"
+    command: "/cmkctl"
     args:
       - sleep
 
