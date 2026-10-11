@@ -63,6 +63,7 @@ func (m *LabelManager) DeleteLabel(
 		Where(repo.KeyField, labelName).
 		Where(repo.ResourceIDField, keyID)
 
+	// Primary delete: from labels table
 	ok, err := m.repository.Delete(
 		ctx,
 		label,
@@ -72,6 +73,9 @@ func (m *LabelManager) DeleteLabel(
 	if err != nil {
 		return false, errs.Wrap(ErrDeleteLabelDB, err)
 	}
+
+	// Double-write: delete from resource_labels (best-effort)
+	m.syncDeleteResourceLabel(ctx, keyID, labelName)
 
 	return ok, nil
 }
@@ -106,13 +110,18 @@ func (m *LabelManager) CreateOrUpdateLabel(
 					return errs.Wrap(ErrFetchLabel, err)
 				}
 
+				// Primary write: create in labels table
 				err := m.repository.Create(ctx, label)
 				if err != nil {
 					return errs.Wrap(ErrInsertLabel, err)
 				}
+
+				// Double-write: sync to resource_labels (best-effort)
+				m.syncCreateResourceLabel(ctx, keyID, label)
 			} else {
 				l.Value = label.Value
 
+				// Primary write: update in labels table
 				_, err := m.repository.Patch(
 					ctx,
 					l,
@@ -121,6 +130,9 @@ func (m *LabelManager) CreateOrUpdateLabel(
 				if err != nil {
 					return errs.Wrap(ErrUpdateLabelDB, err)
 				}
+
+				// Double-write: sync to resource_labels (best-effort)
+				m.syncUpdateResourceLabel(ctx, keyID, label)
 			}
 		}
 
@@ -151,4 +163,57 @@ func (m *LabelManager) GetKeyLabels(
 	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
 
 	return repo.ListAndCount(ctx, m.repository, pagination, model.KeyLabel{}, query)
+}
+
+// syncDeleteResourceLabel removes a label from the resource_labels table
+func (m *LabelManager) syncDeleteResourceLabel(ctx context.Context, keyID uuid.UUID, labelName string) {
+	ck := repo.NewCompositeKey().
+		Where(repo.ResourceTypeField, model.ResourceTypeKey).
+		Where(repo.ResourceIDField, keyID).
+		Where(repo.KeyField, labelName)
+
+	_, _ = m.repository.Delete(ctx, &model.ResourceLabel{}, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
+}
+
+// syncCreateResourceLabel writes a new label to the resource_labels table
+func (m *LabelManager) syncCreateResourceLabel(ctx context.Context, keyID uuid.UUID, label *model.KeyLabel) {
+	// Avoid overwriting tag rows if a KeyLabel ever uses the reserved key
+	if label.Key == model.SystemTagKey {
+		return
+	}
+	resourceLabel := &model.ResourceLabel{
+		ID:           uuid.New(),
+		ResourceType: model.ResourceTypeKey,
+		ResourceID:   keyID,
+		Key:          label.Key,
+		Value:        label.Value,
+	}
+	_ = m.repository.Create(ctx, resourceLabel)
+}
+
+// syncUpdateResourceLabel updates a label in the resource_labels table
+func (m *LabelManager) syncUpdateResourceLabel(ctx context.Context, keyID uuid.UUID, label *model.KeyLabel) {
+	// Avoid overwriting tag rows if a KeyLabel ever uses the reserved key
+	if label.Key == model.SystemTagKey {
+		return
+	}
+	// Find existing resource label
+	rl := &model.ResourceLabel{}
+	ck := repo.NewCompositeKey().
+		Where(repo.ResourceTypeField, model.ResourceTypeKey).
+		Where(repo.ResourceIDField, keyID).
+		Where(repo.KeyField, label.Key)
+
+	_, err := m.repository.First(ctx, rl, *repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck)))
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			// Doesn't exist, create it
+			m.syncCreateResourceLabel(ctx, keyID, label)
+		}
+		return
+	}
+
+	// Update value
+	rl.Value = label.Value
+	_, _ = m.repository.Patch(ctx, rl, *repo.NewQuery().UpdateAll(true))
 }

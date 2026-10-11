@@ -96,6 +96,14 @@ var RepoBusinessPolicies = RolePolicies[constants.BusinessRole, RepoResourceType
 					},
 				},
 				{
+					Type: RepoResourceTypeResourceLabel,
+					Actions: []RepoAction{
+						RepoActionList,
+						RepoActionFirst,
+						RepoActionCount,
+					},
+				},
+				{
 					Type: RepoResourceTypeTag,
 					Actions: []RepoAction{
 						RepoActionList,
@@ -251,6 +259,17 @@ var RepoBusinessPolicies = RolePolicies[constants.BusinessRole, RepoResourceType
 				},
 				{
 					Type: RepoResourceTypeSystemProperty,
+					Actions: []RepoAction{
+						RepoActionList,
+						RepoActionFirst,
+						RepoActionCount,
+						RepoActionCreate,
+						RepoActionUpdate,
+						RepoActionDelete,
+					},
+				},
+				{
+					Type: RepoResourceTypeResourceLabel,
 					Actions: []RepoAction{
 						RepoActionList,
 						RepoActionFirst,
