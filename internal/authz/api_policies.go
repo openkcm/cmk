@@ -28,6 +28,12 @@ var APIPolicies = RolePolicies[constants.BusinessRole, APIResourceType, APIActio
 					},
 				},
 				{
+					Type: APIResourceTypeSystemGroup,
+					Actions: []APIAction{
+						APIActionRead,
+					},
+				},
+				{
 					Type: APIResourceTypeWorkFlow,
 					Actions: []APIAction{
 						APIActionRead,
@@ -87,6 +93,13 @@ var APIPolicies = RolePolicies[constants.BusinessRole, APIResourceType, APIActio
 					Type: APIResourceTypeSystem,
 					Actions: []APIAction{
 						APIActionSystemModifyLink,
+						APIActionRead,
+						APIActionUpdate,
+					},
+				},
+				{
+					Type: APIResourceTypeSystemGroup,
+					Actions: []APIAction{
 						APIActionRead,
 						APIActionUpdate,
 					},

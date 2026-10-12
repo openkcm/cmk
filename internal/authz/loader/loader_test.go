@@ -70,7 +70,7 @@ func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {
 	cfg := &config.Config{}
 	am := authz_loader.NewAPIAuthzLoader(t.Context(), r, cfg)
 
-	numKeysPerTenant := 24
+	numKeysPerTenant := 26
 
 	// Load and check for each tenantID
 	for tIndex, ts := range tenants {
