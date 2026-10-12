@@ -13,6 +13,7 @@ const (
 	KeyVersionTable       = "key_versions"
 	KeyLabelTable         = "key_labels"
 	SystemTable           = "systems"
+	SystemGroupTable      = "system_groups"
 	SystemPropertyTable   = "systems_properties"
 	TagTable              = "tags"
 	TenantTable           = publicTablePreFix + "tenants"
