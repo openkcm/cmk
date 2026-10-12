@@ -358,7 +358,7 @@ featureFlagsConfigMap:
       value: |
         - name: crypto-1
           rootCA: "https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
-          subject: 
+          subject:
             locality:
               - eu10
             country:
@@ -593,7 +593,7 @@ featureFlagsConfigMap:
         data: /etc/cmk/migrations/tenant/data
     parameters:
       ssl:
-        mode: "disable"
+        mode: ""
         rootCert: ""
         cert: ""
         key: ""

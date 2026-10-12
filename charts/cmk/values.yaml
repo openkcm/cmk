@@ -422,7 +422,7 @@ config:
       value: |
         - name: crypto-1
           rootCA: "https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt"
-          subject: 
+          subject:
             locality:
               - eu10
             country:
@@ -657,10 +657,10 @@ config:
         data: /etc/cmk/migrations/tenant/data
     parameters:
       ssl:
-        mode: "verify-ca"
-        rootCert: /etc/credentials/db-root-cert.crt
-        cert: /etc/credentials/db-cert.crt
-        key: /etc/credentials/db-key.key
+        mode: ""
+        rootCert: ""
+        cert: ""
+        key: ""
 
   # Scheduler configuration
   scheduler:
