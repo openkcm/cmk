@@ -1138,14 +1138,14 @@ func (f *fakeTenantConfigClient) UpdateTenantConfig(
 }
 
 type fakeLimitWriter struct {
-	gotSystems, gotKeys, gotKeyConfigs int
-	called                             bool
-	err                                error
+	got    manager.LimitOverrides
+	called bool
+	err    error
 }
 
-func (f *fakeLimitWriter) SetLimitOverrides(_ context.Context, systems, keys, keyConfigs int) error {
+func (f *fakeLimitWriter) SetLimitOverrides(_ context.Context, o manager.LimitOverrides) error {
 	f.called = true
-	f.gotSystems, f.gotKeys, f.gotKeyConfigs = systems, keys, keyConfigs
+	f.got = o
 	return f.err
 }
 
@@ -1173,17 +1173,15 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 	}.Build()
 
 	tests := []struct {
-		name          string
-		data          []byte
-		configResp    *tenantconfiggrpc.GetTenantConfigResponse
-		configErr     error
-		writerErr     error
-		wantStatus    string
-		wantState     string
-		wantWritten   bool
-		wantSystems   int
-		wantKeys      int
-		wantKeyConfig int
+		name        string
+		data        []byte
+		configResp  *tenantconfiggrpc.GetTenantConfigResponse
+		configErr   error
+		writerErr   error
+		wantStatus  string
+		wantState   string
+		wantWritten bool
+		want        manager.LimitOverrides
 	}{
 		{
 			name:       "invalid task data fails the task",
@@ -1212,38 +1210,44 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 			wantState:  operator.WorkingStateTenantConfigFetchFailed,
 		},
 		{
-			name:          "pulled limits are persisted and the task completes",
-			data:          validData,
-			configResp:    configResp,
-			wantStatus:    string(orbital.TaskStatusDone),
-			wantWritten:   true,
-			wantSystems:   5,
-			wantKeys:      10,
-			wantKeyConfig: 3,
+			name:        "pulled limits are persisted and the task completes",
+			data:        validData,
+			configResp:  configResp,
+			wantStatus:  string(orbital.TaskStatusDone),
+			wantWritten: true,
+			want:        manager.LimitOverrides{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
 		},
 		{
-			name:          "validation write error fails the task",
-			data:          validData,
-			configResp:    configResp,
-			writerErr:     model.ErrValidation,
-			wantStatus:    string(orbital.TaskStatusFailed),
-			wantState:     operator.WorkingStateTenantConfigWriteFailed,
-			wantWritten:   true,
-			wantSystems:   5,
-			wantKeys:      10,
-			wantKeyConfig: 3,
+			name: "absent fields are cleared, present field persisted",
+			data: validData,
+			configResp: tenantconfiggrpc.GetTenantConfigResponse_builder{
+				Values: tenantconfiggrpc.TenantConfigurationValues_builder{
+					KeyLimit: proto.Int32(10),
+				}.Build(),
+			}.Build(),
+			wantStatus:  string(orbital.TaskStatusDone),
+			wantWritten: true,
+			want:        manager.LimitOverrides{Systems: nil, Keys: new(10), KeyConfigs: nil},
 		},
 		{
-			name:          "transient write error reconciles",
-			data:          validData,
-			configResp:    configResp,
-			writerErr:     assert.AnError,
-			wantStatus:    string(orbital.TaskStatusProcessing),
-			wantState:     operator.WorkingStateTenantConfigWriteFailed,
-			wantWritten:   true,
-			wantSystems:   5,
-			wantKeys:      10,
-			wantKeyConfig: 3,
+			name:        "validation write error fails the task",
+			data:        validData,
+			configResp:  configResp,
+			writerErr:   model.ErrValidation,
+			wantStatus:  string(orbital.TaskStatusFailed),
+			wantState:   operator.WorkingStateTenantConfigWriteFailed,
+			wantWritten: true,
+			want:        manager.LimitOverrides{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
+		},
+		{
+			name:        "transient write error reconciles",
+			data:        validData,
+			configResp:  configResp,
+			writerErr:   assert.AnError,
+			wantStatus:  string(orbital.TaskStatusProcessing),
+			wantState:   operator.WorkingStateTenantConfigWriteFailed,
+			wantWritten: true,
+			want:        manager.LimitOverrides{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
 		},
 	}
 
@@ -1282,9 +1286,7 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 			}
 			assert.Equal(t, tt.wantWritten, writer.called)
 			if tt.wantWritten {
-				assert.Equal(t, tt.wantSystems, writer.gotSystems)
-				assert.Equal(t, tt.wantKeys, writer.gotKeys)
-				assert.Equal(t, tt.wantKeyConfig, writer.gotKeyConfigs)
+				assert.Equal(t, tt.want, writer.got)
 			}
 		})
 	}

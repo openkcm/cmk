@@ -1604,13 +1604,14 @@ func TestGetEffectiveLimits(t *testing.T) {
 
 func TestSetLimitOverrides(t *testing.T) {
 	cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10, KeyConfigLimit: 5}}
+	ptr := func(v int) *int { return &v }
 
 	t.Run("persists overrides read back via GetEffectiveLimits", func(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
 
-		require.NoError(t, m.SetLimitOverrides(ctx, 99, 7, 33))
+		require.NoError(t, m.SetLimitOverrides(ctx, manager.LimitOverrides{Systems: ptr(99), Keys: ptr(7), KeyConfigs: ptr(33)}))
 
 		limits, err := m.GetEffectiveLimits(ctx)
 		require.NoError(t, err)
@@ -1624,13 +1625,28 @@ func TestSetLimitOverrides(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
 
-		require.NoError(t, m.SetLimitOverrides(ctx, 99, 7, 33))
-		require.NoError(t, m.SetLimitOverrides(ctx, 1, 2, 3))
+		require.NoError(t, m.SetLimitOverrides(ctx, manager.LimitOverrides{Systems: ptr(99), Keys: ptr(7), KeyConfigs: ptr(33)}))
+		require.NoError(t, m.SetLimitOverrides(ctx, manager.LimitOverrides{Systems: ptr(1), Keys: ptr(2), KeyConfigs: ptr(3)}))
 
 		limits, err := m.GetEffectiveLimits(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, 1, limits.Systems)
 		assert.Equal(t, 2, limits.Keys)
 		assert.Equal(t, 3, limits.KeyConfigs)
+	})
+
+	t.Run("nil fields clear their override and fall back to the cluster default", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
+
+		require.NoError(t, m.SetLimitOverrides(ctx, manager.LimitOverrides{Systems: ptr(99), Keys: ptr(7), KeyConfigs: ptr(33)}))
+		require.NoError(t, m.SetLimitOverrides(ctx, manager.LimitOverrides{Keys: ptr(7)}))
+
+		limits, err := m.GetEffectiveLimits(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 50, limits.Systems)
+		assert.Equal(t, 7, limits.Keys)
+		assert.Equal(t, 5, limits.KeyConfigs)
 	})
 }

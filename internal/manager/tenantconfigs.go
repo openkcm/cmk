@@ -201,14 +201,33 @@ func parseLimitOverride(value, key string) (int, error) {
 	return v, nil
 }
 
-// SetLimitOverrides upserts the systems, keys, and key-config limit overrides for the current tenant.
-func (m *TenantConfigManager) SetLimitOverrides(ctx context.Context, systems, keys, keyConfigs int) error {
-	rows := []model.TenantConfig{
-		{Key: LimitsKeySystemsOverride, Value: strconv.Itoa(systems), Type: TenantConfigTypeLimits},
-		{Key: LimitsKeyKeysOverride, Value: strconv.Itoa(keys), Type: TenantConfigTypeLimits},
-		{Key: LimitsKeyKeyConfigsOverride, Value: strconv.Itoa(keyConfigs), Type: TenantConfigTypeLimits},
-	}
-	if err := m.setRows(ctx, rows); err != nil {
+// LimitOverrides carries the per-tenant limit overrides to sync. A nil field removes
+// that override row, so the tenant falls back to the cluster default.
+type LimitOverrides struct {
+	Systems    *int
+	Keys       *int
+	KeyConfigs *int
+}
+
+// SetLimitOverrides reconciles the limit override rows to o in a single transaction:
+// a present value upserts its row, a nil value deletes it.
+func (m *TenantConfigManager) SetLimitOverrides(ctx context.Context, o LimitOverrides) error {
+	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
+		for _, p := range []struct {
+			key   string
+			value *int
+		}{
+			{LimitsKeySystemsOverride, o.Systems},
+			{LimitsKeyKeysOverride, o.Keys},
+			{LimitsKeyKeyConfigsOverride, o.KeyConfigs},
+		} {
+			if err := m.reconcileLimitOverride(ctx, p.key, p.value); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return errs.Wrap(ErrSetTenantLimits, err)
 	}
 	return nil
@@ -809,6 +828,21 @@ func (m *TenantConfigManager) setRows(ctx context.Context, rows []model.TenantCo
 		}
 		return nil
 	})
+}
+
+// reconcileLimitOverride must run inside a transaction.
+func (m *TenantConfigManager) reconcileLimitOverride(ctx context.Context, key string, value *int) error {
+	if value != nil {
+		row := model.TenantConfig{Key: key, Value: strconv.Itoa(*value), Type: TenantConfigTypeLimits}
+		query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
+		return m.repo.Set(ctx, &row, *query)
+	}
+	ck := repo.NewCompositeKey().
+		Where(repo.KeyField, key).
+		Where(repo.TypeField, TenantConfigTypeLimits)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+	_, err := m.repo.Delete(ctx, &model.TenantConfig{}, *query)
+	return err
 }
 
 // getDefaultWorkflowConfig returns default workflow config, checking deploymentConfig first,

@@ -98,7 +98,7 @@ type TenantOperator struct {
 // tenantConfigWriter is the subset of the tenant-config manager the operator uses to persist
 // limit overrides pulled from the registry.
 type tenantConfigWriter interface {
-	SetLimitOverrides(ctx context.Context, systems, keys, keyConfigs int) error
+	SetLimitOverrides(ctx context.Context, o manager.LimitOverrides) error
 }
 
 func NewTenantOperator(
@@ -460,9 +460,11 @@ func (o *TenantOperator) handleUpdateTenantConfig(
 
 	err = o.tcm.SetLimitOverrides(
 		tenantCtx,
-		int(values.GetSystemLimit()),
-		int(values.GetKeyLimit()),
-		int(values.GetKeyConfigLimit()),
+		manager.LimitOverrides{
+			Systems:    limitPtr(values.HasSystemLimit(), values.GetSystemLimit()),
+			Keys:       limitPtr(values.HasKeyLimit(), values.GetKeyLimit()),
+			KeyConfigs: limitPtr(values.HasKeyConfigLimit(), values.GetKeyConfigLimit()),
+		},
 	)
 	if err != nil {
 		setErrorState(ctx, resp, err, WorkingStateTenantConfigWriteFailed)
@@ -470,6 +472,16 @@ func (o *TenantOperator) handleUpdateTenantConfig(
 	}
 
 	resp.Complete()
+}
+
+// limitPtr returns a pointer to v when the registry field is present, nil otherwise.
+// A nil override clears the stored row rather than writing a zero limit.
+func limitPtr(present bool, v int32) *int {
+	if !present {
+		return nil
+	}
+	i := int(v)
+	return &i
 }
 
 // handleUnblockTenant is handler for Unblock Tenant task
