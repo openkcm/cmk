@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -27,6 +28,7 @@ import (
 	"github.com/openkcm/cmk/internal/multitenancy"
 	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
+	repoMock "github.com/openkcm/cmk/internal/repo/mock"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -592,6 +594,56 @@ func TestPostKeyConfigurations(t *testing.T) {
 
 		_, err := m.PostKeyConfigurations(ctx, keyConfig)
 		assert.ErrorIs(t, err, manager.ErrInvalidKeyAdminGroup)
+	})
+}
+
+func TestPostKeyConfigurationsKeyConfigLimit(t *testing.T) {
+	t.Run("Should allow creation when under key config limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyConfigLimit(t, 2)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+		testutils.CreateTestEntities(ctx, t, r, adminGroup)
+
+		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.AdminGroupID = adminGroup.ID
+			c.AdminGroup = *adminGroup
+			c.CreatorID = CreatorID
+		})
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
+			ctx,
+			"example-user",
+			[]string{testAdminGroupIAM, keyConfig.AdminGroup.IAMIdentifier},
+		)
+
+		actual, err := m.PostKeyConfigurations(ctxWithGroups, keyConfig)
+		assert.NoError(t, err)
+		assert.Equal(t, keyConfig.ID, actual.ID)
+	})
+
+	t.Run("Should block creation when key config limit reached", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyConfigLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+		testutils.CreateTestEntities(ctx, t, r, adminGroup)
+
+		existing := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.AdminGroupID = adminGroup.ID
+		})
+		testutils.CreateTestEntities(ctx, t, r, existing)
+
+		keyConfig := testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.AdminGroupID = adminGroup.ID
+			c.AdminGroup = *adminGroup
+			c.CreatorID = CreatorID
+		})
+		ctxWithGroups := testutils.InjectBusinessUserDataIntoContext(
+			ctx,
+			"example-user",
+			[]string{testAdminGroupIAM, keyConfig.AdminGroup.IAMIdentifier},
+		)
+
+		_, err := m.PostKeyConfigurations(ctxWithGroups, keyConfig)
+		assert.ErrorIs(t, err, manager.ErrKeyConfigLimitExceeded)
 	})
 }
 
@@ -1351,6 +1403,44 @@ func SetupKeyConfigManagerWithKeyLimit(t *testing.T, keyLimit int) (*manager.Key
 	return m, db, tenants[0]
 }
 
+// SetupKeyConfigManagerWithKeyConfigLimit creates a KeyConfigManager wired with a TenantConfigManager
+// that uses the given keyConfigLimit as the cluster default.
+func SetupKeyConfigManagerWithKeyConfigLimit(t *testing.T, keyConfigLimit int) (*manager.KeyConfigManager, *multitenancy.DB, string) {
+	t.Helper()
+
+	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+		WithOrbital: true,
+	})
+	r := sql.NewRepository(db)
+
+	cfg := &config.Config{
+		Certificates: config.Certificates{
+			RootCertURL:  TestCertURL,
+			ValidityDays: config.MinCertificateValidityDays,
+		},
+		Database: dbCfg,
+		Tenant:   config.Tenant{KeyConfigLimit: keyConfigLimit},
+	}
+
+	cmkAuditor := auditor.New(t.Context(), cfg)
+	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
+	require.NoError(t, err)
+
+	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(), r, &config.Config{})
+	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
+	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
+	tagManager := manager.NewTagManager(authzRepo)
+	tenantCfgManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil)
+
+	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
+	require.NoError(t, err)
+
+	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, tenantCfgManager)
+
+	return m, db, tenants[0]
+}
+
 func TestEnforceKeyLimit(t *testing.T) {
 	makeKeyConfig := func(t *testing.T, ctx context.Context, r *sql.ResourceRepository) *model.KeyConfiguration {
 		t.Helper()
@@ -1458,5 +1548,109 @@ func TestEnforceKeyLimit(t *testing.T) {
 
 		err := m.EnforceKeyLimit(ctx, keyConfig.ID)
 		assert.NoError(t, err)
+	})
+}
+
+func TestEnforceKeyConfigLimit(t *testing.T) {
+	seedKeyConfigs := func(t *testing.T, ctx context.Context, r *sql.ResourceRepository, n int) {
+		t.Helper()
+		for range n {
+			group := testutils.NewGroup(func(_ *model.Group) {})
+			keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+				kc.AdminGroupID = group.ID
+			})
+			testutils.CreateTestEntities(ctx, t, r, group, keyConfig)
+		}
+	}
+
+	t.Run("allows creation when count is below limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyConfigLimit(t, 2)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		seedKeyConfigs(t, ctx, r, 1)
+
+		err := m.EnforceKeyConfigLimit(ctx)
+		assert.NoError(t, err)
+	})
+
+	t.Run("blocks creation when count equals limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyConfigLimit(t, 1)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		seedKeyConfigs(t, ctx, r, 1)
+
+		err := m.EnforceKeyConfigLimit(ctx)
+		assert.ErrorIs(t, err, manager.ErrKeyConfigLimitExceeded)
+	})
+
+	t.Run("does not block when limit is zero", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyConfigLimit(t, 0)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		seedKeyConfigs(t, ctx, r, 5)
+
+		err := m.EnforceKeyConfigLimit(ctx)
+		assert.NoError(t, err)
+	})
+
+	t.Run("blocks creation when count exceeds limit", func(t *testing.T) {
+		m, db, tenant := SetupKeyConfigManagerWithKeyConfigLimit(t, 2)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		r := sql.NewRepository(db)
+
+		seedKeyConfigs(t, ctx, r, 3)
+
+		err := m.EnforceKeyConfigLimit(ctx)
+		assert.ErrorIs(t, err, manager.ErrKeyConfigLimitExceeded)
+	})
+}
+
+// fakeTenantConfigs returns fixed effective limits so enforcer error paths can be
+// exercised without a real TenantConfigManager.
+type fakeTenantConfigs struct {
+	limits manager.EffectiveLimits
+}
+
+func (f fakeTenantConfigs) GetEffectiveLimits(_ context.Context) (manager.EffectiveLimits, error) {
+	return f.limits, nil
+}
+
+// lockErrorRepo fails the FOR UPDATE lock read (First) while leaving Count at zero,
+// so each enforcer reaches and surfaces its lock error.
+type lockErrorRepo struct {
+	*repoMock.InMemoryRepository
+}
+
+var errSimulatedLock = errors.New("simulated lock failure")
+
+func (r *lockErrorRepo) First(_ context.Context, _ repo.Resource, _ repo.Query) (bool, error) {
+	return false, errSimulatedLock
+}
+
+func TestEnforceLimitLockErrors(t *testing.T) {
+	newManager := func() *manager.KeyConfigManager {
+		r := &lockErrorRepo{InMemoryRepository: repoMock.NewInMemoryRepository()}
+		tenantCfg := fakeTenantConfigs{limits: manager.EffectiveLimits{Systems: 1, Keys: 1, KeyConfigs: 1}}
+		return manager.NewKeyConfigManager(r, nil, nil, nil, nil, nil, nil, tenantCfg)
+	}
+
+	ctx := cmkcontext.CreateTenantContext(t.Context(), uuid.NewString())
+
+	t.Run("system limit surfaces lock error", func(t *testing.T) {
+		err := newManager().EnforceSystemLimit(ctx, uuid.New())
+		require.ErrorIs(t, err, errSimulatedLock)
+	})
+
+	t.Run("key limit surfaces lock error", func(t *testing.T) {
+		err := newManager().EnforceKeyLimit(ctx, uuid.New())
+		require.ErrorIs(t, err, errSimulatedLock)
+	})
+
+	t.Run("key config limit surfaces lock error", func(t *testing.T) {
+		err := newManager().EnforceKeyConfigLimit(ctx)
+		require.ErrorIs(t, err, errSimulatedLock)
 	})
 }

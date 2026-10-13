@@ -169,6 +169,13 @@ eventReconciler:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
   topologySpreadConstraints: []
 
+# db-migrator configuration
+dbMigrator:
+  image:
+    # Override the binary command. Defaults to /cmkd if not set.
+    # +docs:property
+    command: ""
+
 # Override the "name" value, which is used to annotate some of
 # the resources that are created by this Chart (using "app.kubernetes.io/name").
 # +docs:property

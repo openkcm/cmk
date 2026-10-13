@@ -56,6 +56,8 @@ func convertGRPCError(err error) error {
 		return keymanagement.ErrGenericGetKeyError
 	case keystoreErrs.IsStatus(err, keystoreErrs.StatusImportKeyMaterialFailed):
 		return errors.Join(keymanagement.ErrImportKeyMaterialFailed, err)
+	case keystoreErrs.IsStatus(err, keystoreErrs.StatusImportJobNotReady):
+		return keymanagement.ErrImportJobNotReady
 	default:
 		return err
 	}

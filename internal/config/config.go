@@ -96,6 +96,7 @@ type Certificates struct {
 	ValidityDays            int
 	RotationThresholdDays   int
 	DefaultTenantCertPrefix string
+	DisableHYOKCertAuth     bool `yaml:"disableHYOKCertAuth"` //nolint:tagliatelle
 }
 
 const (

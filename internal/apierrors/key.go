@@ -179,6 +179,14 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{ErrUpdateKey, manager.ErrPendingImportStateNotEditable},
+		ExposedError: &APIError{
+			Code:    "INVALID_KEY_STATE",
+			Message: "Key state cannot be changed while it is pending import",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{ErrUpdateKey},
 		ExposedError: &APIError{
 			Code:    "UPDATE_KEY",
@@ -418,6 +426,14 @@ var key = []errs.ExposedErrors[*APIError]{
 			Code:    "INVALID_WRAPPED_KEY_MATERIAL",
 			Message: "Key material decryption failed: invalid or incorrectly wrapped key material.",
 			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		InternalErrorChain: []error{keymanagement.ErrImportJobNotReady},
+		ExposedError: &APIError{
+			Code:    "IMPORT_JOB_NOT_READY",
+			Message: "Import job is not yet ready. Please retry GetImportParameters after a few seconds.",
+			Status:  http.StatusConflict,
 		},
 	},
 	{

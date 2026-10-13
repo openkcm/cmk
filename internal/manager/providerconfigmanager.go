@@ -340,16 +340,26 @@ func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 func (pmc *ProviderConfigManager) getHYOKKeystoreConfig(
 	ctx context.Context,
 ) (*common.KeystoreConfig, *time.Time, error) {
-	cert, err := pmc.certs.getDefaultHYOKClientCert(ctx)
-	if err != nil {
-		return nil, nil, err
+	var expirationDate *time.Time
+
+	configMap := map[string]any{}
+	if pmc.tenantConfigs.cfg != nil && pmc.tenantConfigs.cfg.Certificates.DisableHYOKCertAuth {
+		// If HYOK certificate authentication is disabled,
+		// the plugin will determine the authentication method based on its configuration.
+	} else {
+		// If HYOK certificate authentication is enabled, retrieve the default HYOK client certificate.
+		cert, err := pmc.certs.getDefaultHYOKClientCert(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		maps.Copy(configMap, map[string]any{
+			"authType":   constants.AuthTypeCertificate,
+			"clientCert": cert.CertPEM,
+			"privateKey": cert.PrivateKeyPEM,
+		})
+		expirationDate = &cert.ExpirationDate
 	}
 
-	configMap := map[string]any{
-		"authType":   constants.AuthTypeCertificate,
-		"clientCert": cert.CertPEM,
-		"privateKey": cert.PrivateKeyPEM,
-	}
-
-	return &common.KeystoreConfig{Values: configMap}, &cert.ExpirationDate, nil
+	return &common.KeystoreConfig{Values: configMap}, expirationDate, nil
 }
