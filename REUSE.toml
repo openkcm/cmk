@@ -8,3 +8,10 @@ path = "**"
 precedence = "closest"
 SPDX-FileCopyrightText = "2025 SAP SE or an SAP affiliate company and cmk contributors"
 SPDX-License-Identifier = "Apache-2.0"
+
+# Forked from github.com/bartventer/gorm-multitenancy (v8.9.0), trimmed and modified.
+[[annotations]]
+path = "internal/multitenancy/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2023 Bart Venter <bartventer@outlook.com>"
+SPDX-License-Identifier = "Apache-2.0"

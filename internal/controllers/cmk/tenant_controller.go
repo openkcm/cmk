@@ -3,13 +3,15 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
-	"github.com/openkcm/cmk/internal/api/transform/tenant"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/api/cmk/transform"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/tenant"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
@@ -23,14 +25,14 @@ func (c *APIController) GetTenants(
 		Count: ptr.GetSafeDeref(request.Params.Count),
 	}
 
-	currentTenant, err := c.Manager.Tenant.GetTenant(ctx)
+	issuer, err := cmkcontext.ExtractBusinessUserDataIssuer(ctx)
 	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrListTenants, err)
+		return nil, err
 	}
 
-	tenants, total, err := c.Manager.Tenant.ListTenantInfo(ctx, ptr.PointTo(currentTenant.IssuerURL), pagination)
+	tenants, total, err := c.Manager.Tenant.ListTenantInfo(ctx, &issuer, pagination)
 	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrListTenants, err)
+		return nil, errs.Wrap(manager.ErrListTenants, err)
 	}
 
 	values, err := transform.ToList(
@@ -46,7 +48,7 @@ func (c *APIController) GetTenants(
 	}
 
 	if pagination.Count {
-		response.Count = ptr.PointTo(total)
+		response.Count = new(total)
 	}
 
 	return cmkapi.GetTenants200JSONResponse(response), nil

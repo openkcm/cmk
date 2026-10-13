@@ -1,5 +1,5 @@
 package: cmkapi
-output: ./internal/api/cmkapi/cmkapi.go
+output: ./internal/api/cmk/generated/api.go
 generate:
   models: true
   std-http-server: true

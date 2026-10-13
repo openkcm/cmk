@@ -5,13 +5,18 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/internal/model"
 )
 
 type KeyConfigurationActions interface {
 	DeleteKeyConfigurationByID(ctx context.Context, keyConfigID uuid.UUID) error
+	UpdateKeyConfigurationByID(
+		ctx context.Context,
+		keyConfigID uuid.UUID,
+		patchKeyConfig cmkapi.KeyConfigurationPatch,
+	) (*model.KeyConfiguration, error)
 }
 
 func (l *Lifecycle) deleteKeyConfiguration(ctx context.Context) error {
@@ -29,7 +34,9 @@ func (l *Lifecycle) updatePrimaryKey(ctx context.Context) error {
 		return errs.Wrap(ErrWorkflowExecution, err)
 	}
 
-	_, err = l.KeyActions.UpdateKey(ctx, keyID, cmkapi.KeyPatch{IsPrimary: ptr.PointTo(true)})
+	_, err = l.KeyConfigurationActions.UpdateKeyConfigurationByID(ctx, l.Workflow.ArtifactID, cmkapi.KeyConfigurationPatch{
+		PrimaryKeyID: new(keyID),
+	})
 	if err != nil {
 		return errs.Wrap(ErrWorkflowExecution, err)
 	}

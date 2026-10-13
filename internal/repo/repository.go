@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/google/uuid"
 
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/authz"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
@@ -24,10 +26,11 @@ type Repo interface {
 	Delete(ctx context.Context, resource Resource, query Query) (bool, error)
 	First(ctx context.Context, resource Resource, query Query) (bool, error)
 	Patch(ctx context.Context, resource Resource, query Query) (bool, error)
-	Set(ctx context.Context, resource Resource) error
+	Set(ctx context.Context, resource Resource, query Query) error
 	Transaction(ctx context.Context, txFunc TransactionFunc) error
 	Count(ctx context.Context, resource Resource, query Query) (int, error)
 	OffboardTenant(ctx context.Context, tenantID string) error
+	GetFilterOptions(ctx context.Context, resource Resource, columns []Filter, query Query) error
 }
 
 // Resource defines the interface for Resource operations.
@@ -35,7 +38,7 @@ type Resource interface {
 	IsSharedModel() bool
 	TableName() string
 	CheckAuthz(ctx context.Context,
-		authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
+		authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 		action authz.RepoAction) (bool, error)
 }
 
@@ -100,6 +103,25 @@ func ToSharedModel[T LoadEntity](v *T, opts ...Opt[T]) (*T, error) {
 	return v, nil
 }
 
+func HasConnectedKeys(ctx context.Context, r Repo, keyConfigID uuid.UUID) (bool, error) {
+	count, err := r.Count(
+		ctx,
+		&model.Key{},
+		*NewQuery().Where(
+			NewCompositeKeyGroup(
+				NewCompositeKey().Where(
+					KeyConfigIDField, keyConfigID,
+				),
+			),
+		),
+	)
+	if err != nil {
+		return true, err
+	}
+
+	return count > 0, nil
+}
+
 func HasConnectedSystems(ctx context.Context, r Repo, keyConfigID uuid.UUID) (bool, error) {
 	count, err := r.Count(
 		ctx,
@@ -107,7 +129,8 @@ func HasConnectedSystems(ctx context.Context, r Repo, keyConfigID uuid.UUID) (bo
 		*NewQuery().Where(
 			NewCompositeKeyGroup(
 				NewCompositeKey().Where(
-					KeyConfigIDField, keyConfigID),
+					KeyConfigIDField, keyConfigID,
+				),
 			),
 		),
 	)
@@ -122,7 +145,8 @@ func GetSystemByIDWithProperties(ctx context.Context, r Repo, systemID uuid.UUID
 	query.Where(
 		NewCompositeKeyGroup(
 			NewCompositeKey().Where(
-				fmt.Sprintf("%s.%s", model.System{}.TableName(), IDField), systemID),
+				fmt.Sprintf("%s.%s", model.System{}.TableName(), IDField), systemID,
+			),
 		),
 	)
 
@@ -138,43 +162,36 @@ func GetSystemByIDWithProperties(ctx context.Context, r Repo, systemID uuid.UUID
 	return systems[0], nil
 }
 
-//nolint:funlen
-func ListAndCountSystemWithProperties(
-	ctx context.Context,
-	r Repo,
-	pagination Pagination,
-	query *Query,
-) ([]*model.System, int, error) {
-	var systems []*model.System
-	var count int
-
-	systems, count, err := ListAndCount(ctx, r, pagination, model.System{}, query)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	if len(systems) == 0 {
-		return []*model.System{}, count, nil
-	}
-
+// systemIDCompositeKey builds a non-strict composite key matching any of the
+// given systems by their table-qualified ID.
+func systemIDCompositeKey(systems []*model.System) CompositeKey {
 	ck := NewCompositeKey()
-
 	ck.IsStrict = false
 	for _, s := range systems {
 		ck = ck.Where(fmt.Sprintf("%s.%s", model.System{}.TableName(), IDField), s.ID)
 	}
 
-	loadQuery := query.
-		Join(LeftJoin, JoinCondition{
-			JoinTable: &model.SystemProperty{},
-			JoinField: IDField,
-			Table:     &model.System{},
-			Field:     IDField,
-		}).Join(LeftJoin, JoinCondition{
+	return ck
+}
+
+func buildSystemPropertiesQuery(query *Query, ck CompositeKey) *Query {
+	return query.Join(LeftJoin, JoinCondition{
+		JoinTable: &model.SystemProperty{},
+		JoinField: IDField,
+		Table:     &model.System{},
+		Field:     IDField,
+	}).Join(LeftJoin, JoinCondition{
 		JoinTable: &model.KeyConfiguration{},
 		JoinField: IDField,
 		Table:     &model.System{},
 		Field:     KeyConfigIDField,
+		Alias:     "key_config",
+	}).Join(LeftJoin, JoinCondition{
+		JoinTable: &model.KeyConfiguration{},
+		JoinField: IDField,
+		Table:     &model.System{},
+		Field:     TargetKeyConfigIDField,
+		Alias:     "target_key_config",
 	}).Join(LeftJoin, JoinCondition{
 		JoinTable: &model.Event{},
 		JoinField: IdentifierField,
@@ -191,9 +208,14 @@ func ListAndCountSystemWithProperties(
 		}),
 		// Get KeyConfigName with alias so it's injected into System KeyConfigName
 		NewSelectField(
-			fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), NameField),
+			fmt.Sprintf("%s.%s", "key_config", NameField),
 			QueryFunction{},
 		).SetAlias(SystemKeyconfigName),
+		// Get TargetKeyConfigName with alias so it's injected into System TargetKeyConfigurationName
+		NewSelectField(
+			fmt.Sprintf("%s.%s", "target_key_config", NameField),
+			QueryFunction{},
+		).SetAlias(SystemTargetKeyconfigName),
 		// Get ErrorMessage so it's injected into System ErrorMessage
 		NewSelectField(
 			fmt.Sprintf("%s.%s", model.Event{}.TableName(), ErrorMessageField),
@@ -207,26 +229,178 @@ func ListAndCountSystemWithProperties(
 	).Where(
 		NewCompositeKeyGroup(ck),
 	).SetOffset(0).SetLimit(DefaultLimit) // Reset offset and limit as this is for the join table
+}
+
+func populateSystemWithProperties(
+	systemsMap map[uuid.UUID]*model.System,
+	row *model.JoinSystemAndProperties,
+) *model.System {
+	sys, exists := systemsMap[row.ID]
+	if !exists {
+		sys = &row.System
+		sys.Properties = map[string]string{}
+		sys.KeyConfigurationName = row.KeyConfigurationName
+		sys.TargetKeyConfigurationName = row.TargetKeyConfigurationName
+		sys.ErrorCode = row.ErrorCode
+		sys.ErrorMessage = row.ErrorMessage
+		systemsMap[row.ID] = sys
+	}
+
+	if row.Key != "" {
+		sys.Properties[row.Key] = row.Value
+	}
+
+	return sys
+}
+
+//nolint:cyclop,funlen
+func ListSystemGroupsAndSystem(
+	ctx context.Context,
+	r Repo,
+	pagination Pagination,
+	query *Query,
+) ([]*model.SystemGroup, int, error) {
+	systems, count, err := ListAndCount(ctx, r, pagination, model.System{}, query)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(systems) == 0 {
+		return []*model.SystemGroup{}, count, nil
+	}
+
+	query = buildSystemPropertiesQuery(query, systemIDCompositeKey(systems))
+
+	query = query.Join(LeftJoin, JoinCondition{
+		JoinTable: &model.SystemGroup{},
+		JoinField: IDField,
+		Table:     &model.System{},
+		Field:     SystemGroupID,
+	}).Select(
+		NewSelectField(
+			fmt.Sprintf("%s.%s", model.SystemGroup{}.TableName(), NameField),
+			QueryFunction{},
+		).SetAlias("group_name"),
+		NewSelectField(
+			fmt.Sprintf("%s.%s", model.SystemGroup{}.TableName(), DescriptionField),
+			QueryFunction{},
+		).SetAlias("group_description"),
+		NewSelectField(
+			fmt.Sprintf("%s.%s", model.SystemGroup{}.TableName(), SuppressWarningField),
+			QueryFunction{},
+		).SetAlias("group_suppress_warning"),
+	)
+
+	systemsMap := map[uuid.UUID]*model.System{}
+	systemsGroupMap := map[uuid.UUID]*model.SystemGroup{}
+
+	err = ProcessInBatch(ctx, r, query, DefaultLimit, func(rows []*model.JoinSystemGroupsAndSystem) error {
+		for _, row := range rows {
+			sys := populateSystemWithProperties(systemsMap, &row.JoinSystemAndProperties)
+
+			gid := uuid.Nil
+			if sys.SystemGroupID != nil {
+				gid = *sys.SystemGroupID
+			}
+
+			if _, ok := systemsGroupMap[gid]; !ok {
+				group := row.SystemGroup
+				group.ID = gid
+				if gid == uuid.Nil {
+					group.Name = model.VirtualSystemGroup
+				}
+				systemsGroupMap[gid] = &group
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	for _, s := range systemsMap {
+		gid := uuid.Nil
+		if s.SystemGroupID != nil {
+			gid = *s.SystemGroupID
+		}
+		systemsGroupMap[gid].Systems = append(systemsGroupMap[gid].Systems, s)
+	}
+
+	if err := fillWarnCoverage(ctx, r, systemsGroupMap); err != nil {
+		return nil, 0, err
+	}
+
+	out := make([]*model.SystemGroup, 0, len(systemsGroupMap))
+	for _, g := range systemsGroupMap {
+		out = append(out, g)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID.String() > out[j].ID.String()
+	})
+	return out, count, nil
+}
+
+func fillWarnCoverage(ctx context.Context, r Repo, groups map[uuid.UUID]*model.SystemGroup) error {
+	warnExpr := fmt.Sprintf(
+		"bool_or(%s.%s = '%s') AND bool_or(%s.%s = '%s') AND NOT bool_or(COALESCE(%s.%s, false))",
+		model.System{}.TableName(), StatusField, cmkapi.SystemStatusCONNECTED,
+		model.System{}.TableName(), StatusField, cmkapi.SystemStatusDISCONNECTED,
+		model.SystemGroup{}.TableName(), SuppressWarningField,
+	)
+
+	query := NewQuery().
+		Join(LeftJoin, JoinCondition{
+			JoinTable: &model.SystemGroup{},
+			JoinField: IDField,
+			Table:     &model.System{},
+			Field:     SystemGroupID,
+		}).
+		Select(
+			NewSelectField(fmt.Sprintf("%s.%s", model.System{}.TableName(), SystemGroupID), QueryFunction{}),
+			NewSelectField(warnExpr, QueryFunction{}).SetAlias("warn_coverage"),
+		).
+		GroupBy(fmt.Sprintf("%s.%s", model.System{}.TableName(), SystemGroupID)).
+		Order(OrderField{Field: SystemGroupID, Direction: Asc})
+
+	return ProcessInBatch(ctx, r, query, DefaultLimit, func(rows []*model.SystemGroupCoverage) error {
+		for _, row := range rows {
+			gid := uuid.Nil
+			if row.SystemGroupID != nil {
+				gid = *row.SystemGroupID
+			}
+			group, ok := groups[gid]
+			if ok {
+				group.WarnCoverage = row.WarnCoverage
+			}
+		}
+
+		return nil
+	})
+}
+
+func ListAndCountSystemWithProperties(
+	ctx context.Context,
+	r Repo,
+	pagination Pagination,
+	query *Query,
+) ([]*model.System, int, error) {
+	systems, count, err := ListAndCount(ctx, r, pagination, model.System{}, query)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(systems) == 0 {
+		return []*model.System{}, count, nil
+	}
+
+	query = buildSystemPropertiesQuery(query, systemIDCompositeKey(systems))
 
 	systemsMap := map[uuid.UUID]*model.System{}
 
-	err = ProcessInBatch(ctx, r, loadQuery, DefaultLimit, func(rows []*model.JoinSystem) error {
+	err = ProcessInBatch(ctx, r, query, DefaultLimit, func(rows []*model.JoinSystemAndProperties) error {
 		for _, row := range rows {
-			sys, exists := systemsMap[row.ID]
-			if !exists {
-				sys = &row.System
-				sys.Properties = map[string]string{}
-				sys.KeyConfigurationName = row.KeyConfigurationName
-				sys.ErrorCode = row.ErrorCode
-				sys.ErrorMessage = row.ErrorMessage
-				systemsMap[row.ID] = sys
-			}
-
-			if row.Key == "" {
-				continue
-			}
-
-			sys.Properties[row.Key] = row.Value
+			populateSystemWithProperties(systemsMap, row)
 		}
 
 		return nil
@@ -250,17 +424,21 @@ func ListAndCountSystemWithProperties(
 type BatchProcessOptions struct {
 	// DeleteMode indicates that items are being deleted during processing.
 	// When true, the offset is not incremented to avoid skipping records.
-	DeleteMode bool
+	DeleteMode     bool
+	IgnoreFailMode bool
 }
 
 // ProcessInBatchWithOptions retrieves and processes records in batches based on the provided query parameters.
 // It iterates through all matching records using pagination to avoid loading large datasets into memory.
 // The processFunc is called on the records, allowing custom processing logic.
-// Processing stops immediately if processFunc returns an error.
+// By default processing stops immediately if processFunc returns an error; see IgnoreFailMode below.
 //
 // Options:
 //   - DeleteMode: When true, assumes items are being deleted during processing and keeps offset at 0
 //     to avoid skipping records. This ensures all items are processed even as the total count decreases.
+//   - IgnoreFailMode: When true, a processFunc error does not stop the batch loop; processing
+//     continues through the remaining records and the last error encountered is returned at the end.
+//     When false (default), the first processFunc error is returned immediately.
 func ProcessInBatchWithOptions[T Resource](
 	ctx context.Context,
 	repo Repo,
@@ -270,7 +448,7 @@ func ProcessInBatchWithOptions[T Resource](
 	processFunc func([]*T) error,
 ) error {
 	offset := 0
-
+	var lastError error
 	for {
 		var items []*T
 
@@ -283,7 +461,10 @@ func ProcessInBatchWithOptions[T Resource](
 
 		err = processFunc(items)
 		if err != nil {
-			return err
+			lastError = err
+			if !options.IgnoreFailMode {
+				return err
+			}
 		}
 
 		// No more items to process
@@ -307,7 +488,33 @@ func ProcessInBatchWithOptions[T Resource](
 		}
 	}
 
-	return nil
+	return lastError
+}
+
+func GetKeyConfigPrimaryKey(ctx context.Context, r Repo, keyConfigID uuid.UUID) (*uuid.UUID, error) {
+	keyConfig := &model.KeyConfiguration{
+		ID: keyConfigID,
+	}
+
+	_, err := r.First(
+		ctx,
+		keyConfig,
+		*NewQuery(),
+	)
+
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	return keyConfig.PrimaryKeyID, nil
+}
+
+func IsPrimaryKey(ctx context.Context, r Repo, key *model.Key) (bool, error) {
+	pkeyID, err := GetKeyConfigPrimaryKey(ctx, r, key.KeyConfigurationID)
+	if err != nil || pkeyID == nil {
+		return false, err
+	}
+
+	return *pkeyID == key.ID, nil
 }
 
 // ProcessInBatch retrieves and processes records in batches from the database based on the provided query parameters.

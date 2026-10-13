@@ -6,20 +6,6 @@ import (
 	"testing"
 )
 
-func CheckAllPluginsMissingFiles(t *testing.T) bool {
-	t.Helper()
-
-	return MissingFiles(t,
-		[]string{
-			PKIUAAConfigPath,
-			PKIServiceConfigPath,
-			NotificationUAAConfigPath,
-			NotificationEndpointsPath,
-			IdentityManagementConfigPath,
-		},
-	)
-}
-
 func MissingFiles(t *testing.T, requiredFiles []string) bool {
 	t.Helper()
 

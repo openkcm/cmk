@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 
@@ -14,8 +13,8 @@ import (
 )
 
 var (
-	ErrInvalidIAMIdentifier = errors.New("invalid group IAMIdentifier")
-	ErrInvalidName          = errors.New("invalid group name")
+	ErrInvalidIAMIdentifier = fmt.Errorf("%w: invalid group IAMIdentifier", ErrValidation)
+	ErrInvalidName          = fmt.Errorf("%w: invalid group name", ErrValidation)
 )
 
 const (
@@ -29,11 +28,11 @@ const (
 
 //nolint:recvcheck
 type Group struct {
-	ID            uuid.UUID      `gorm:"type:uuid;primaryKey"`
-	Name          string         `gorm:"type:varchar(64);not null;unique"`
-	Description   string         `gorm:"type:text"`
-	Role          constants.Role `gorm:"type:varchar(255);not null"`
-	IAMIdentifier string         `gorm:"type:varchar(128);not null;unique"`
+	ID            uuid.UUID              `gorm:"type:uuid;primaryKey"`
+	Name          string                 `gorm:"type:varchar(64);not null;unique"`
+	Description   string                 `gorm:"type:text"`
+	Role          constants.BusinessRole `gorm:"type:varchar(255);not null"`
+	IAMIdentifier string                 `gorm:"type:varchar(128);not null;unique"`
 }
 
 func NewIAMIdentifier(name string, tenantID string) string {
@@ -41,7 +40,7 @@ func NewIAMIdentifier(name string, tenantID string) string {
 }
 
 // TableResourceType return the authz resource type
-func (m Group) TableResourceType() authz.RepoResourceTypeName {
+func (m Group) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeGroup
 }
 
@@ -55,8 +54,9 @@ func (Group) IsSharedModel() bool {
 }
 
 func (m Group) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 

@@ -59,7 +59,7 @@ func LogInjectSystem(ctx context.Context, sys *System) context.Context {
 		slog.Group("systemData",
 			slog.String("id", sys.ID.String()),
 			slog.String("identifier", sys.Identifier),
-			slog.String("type", sys.Type),
+			slog.String("type", string(sys.Type)),
 			slog.String("region", sys.Region),
 		),
 	)

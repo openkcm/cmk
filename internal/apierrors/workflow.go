@@ -10,6 +10,8 @@ import (
 	workflowpkg "github.com/openkcm/cmk/internal/workflow"
 )
 
+const WorkflowGroupNotSufficientMembers = "WORKFLOW_GROUP_NOT_SUFFICIENT_MEMBERS"
+
 var (
 	ErrTransformWorkflowFromAPI = errors.New("failed to transform workflow from API")
 	ErrTransformWorkflowToAPI   = errors.New("failed to transform workflow to API")
@@ -18,6 +20,18 @@ var (
 	ErrAddApprovers             = errors.New("failed to add approvers to workflow")
 	ErrWorkflowCannotTransition = errors.New("workflow cannot transition to specified state")
 )
+
+// getInsufficientApproversContext extracts required and actual approver counts from structured error
+func getInsufficientApproversContext(err error) map[string]any {
+	if insufficientErr, ok := errors.AsType[*workflowpkg.InsufficientApproversError](err); ok {
+		return map[string]any{
+			"requiredApprovers":       insufficientErr.Required,
+			"actualEligibleApprovers": insufficientErr.Actual,
+		}
+	}
+
+	return nil
+}
 
 var workflow = []errs.ExposedErrors[*APIError]{
 	{
@@ -41,6 +55,14 @@ var workflow = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "GET_WORKFLOW",
 			Message: "failed to get workflow",
+			Status:  http.StatusInternalServerError,
+		},
+	},
+	{
+		InternalErrorChain: []error{manager.ErrCheckWorkflowEligibility},
+		ExposedError: &APIError{
+			Code:    "CHECK_WORKFLOW_ELIGIBILITY",
+			Message: "failed to check workflow eligibility from identity management",
 			Status:  http.StatusInternalServerError,
 		},
 	},
@@ -101,7 +123,7 @@ var workflow = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{ErrCreateWorkflow, manager.ErrOngoingWorkflowExist},
+		InternalErrorChain: []error{manager.ErrOngoingWorkflowExist},
 		ExposedError: &APIError{
 			Code:    "ONGOING_WORKFLOW",
 			Message: "ongoing workflow for artifact already exists",
@@ -177,7 +199,7 @@ var workflow = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "INVALID_EVENT_ACTOR",
 			Message: "invalid event actor",
-			Status:  http.StatusForbidden,
+			Status:  http.StatusBadRequest,
 		},
 	},
 	{
@@ -185,6 +207,14 @@ var workflow = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "INSUFFICIENT_APPROVER_COUNT",
 			Message: "insufficient approvers to transition to next state",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		InternalErrorChain: []error{workflowpkg.ErrApproverNoLongerEligible},
+		ExposedError: &APIError{
+			Code:    "APPROVER_NO_LONGER_ELIGIBLE",
+			Message: "approver has been removed from the admin group and cannot vote",
 			Status:  http.StatusBadRequest,
 		},
 	},
@@ -282,6 +312,23 @@ var workflow = []errs.ExposedErrors[*APIError]{
 			Code:    "GET_APPROVERS",
 			Message: "failed to get approvers",
 			Status:  http.StatusNotFound,
+		},
+	},
+	{
+		InternalErrorChain: []error{workflowpkg.ErrWorkflowGroupNotSufficientMembers},
+		ExposedError: &APIError{
+			Code:    WorkflowGroupNotSufficientMembers,
+			Message: "The responsible user group does not have enough members to meet the minimum approval criteria",
+			Status:  http.StatusBadRequest,
+		},
+		ContextGetter: getInsufficientApproversContext,
+	},
+	{
+		InternalErrorChain: []error{workflowpkg.ErrUserRemovedFromApproverGroup},
+		ExposedError: &APIError{
+			Code:    "WORKFLOW_USER_REMOVED_FROM_GROUP",
+			Message: "User is no longer a member of the workflow approver groups",
+			Status:  http.StatusBadRequest,
 		},
 	},
 }

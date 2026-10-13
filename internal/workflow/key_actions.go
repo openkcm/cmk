@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 )
@@ -30,7 +30,7 @@ func (l *Lifecycle) updateKeyState(ctx context.Context) error {
 
 	switch l.Workflow.Parameters {
 	case "ENABLED", "DISABLED":
-		dbKey.State = l.Workflow.Parameters
+		dbKey.State = cmkapi.KeyState(l.Workflow.Parameters)
 	default:
 		return errs.Wrapf(ErrWorkflowExecution,
 			"invalid key state "+l.Workflow.Parameters)

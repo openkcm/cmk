@@ -56,22 +56,59 @@ func NewAMQPClient(
 	}
 }
 
+// MockOperatorError is the failure the mock operator reports when a task is
+// marked failed. Code and Message are joined with a colon so the resulting
+// ErrorMessage matches the "CODE:message" contract ParseOrbitalError expects.
+// An empty Code yields a bare Message — useful for simulating legacy
+// unstructured failures.
+type MockOperatorError struct {
+	Code    string
+	Message string
+}
+
+// String renders the error in "CODE:message" form, or just Message when Code
+// is empty.
+func (e MockOperatorError) String() string {
+	if e.Code == "" {
+		return e.Message
+	}
+	return e.Code + ":" + e.Message
+}
+
 type TestMockAMQPOperator struct {
 	t            *testing.T
 	client       *amqp.Client
 	numReconcile int
 	success      bool
+	failureError MockOperatorError
 	close        chan struct{}
 	respCountMap map[string]int
 	mu           sync.RWMutex // Add mutex for thread safety
 }
+
+// MockOperatorOption configures TestMockAMQPOperator.
+type MockOperatorOption func(*mockOperatorConfig)
+
+type mockOperatorConfig struct {
+	failureError MockOperatorError
+}
+
+// WithFailureError overrides the default "simulated failure" message returned
+// when the operator is configured with success=false.
+func WithFailureError(e MockOperatorError) MockOperatorOption {
+	return func(c *mockOperatorConfig) {
+		c.failureError = e
+	}
+}
+
+var defaultFailureError = MockOperatorError{Message: "simulated failure"}
 
 func NewMockAMQPOperator(
 	t *testing.T,
 	numReconcile int,
 	success bool,
 	connConfig amqp.ConnectionInfo,
-	opts ...amqp.ClientOption,
+	opts ...MockOperatorOption,
 ) *TestMockAMQPOperator {
 	t.Helper()
 
@@ -79,15 +116,22 @@ func NewMockAMQPOperator(
 	// in the t.Cleanup method and cancel it independently
 	ctx := context.Background()
 
-	client, err := amqp.NewClient(ctx, codec.Proto{}, connConfig, opts...)
+	cfg := mockOperatorConfig{failureError: defaultFailureError}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	client, err := amqp.NewClient(ctx, codec.Proto{}, connConfig)
 	if err != nil {
 		require.NoError(t, err)
 	}
 
 	operator := TestMockAMQPOperator{
+		t:            t,
 		client:       client,
 		numReconcile: numReconcile,
 		success:      success,
+		failureError: cfg.failureError,
 		close:        make(chan struct{}),
 		respCountMap: make(map[string]int),
 	}
@@ -145,7 +189,7 @@ func (o *TestMockAMQPOperator) Start(ctx context.Context) {
 
 				if !o.success {
 					resp.Status = string(orbital.TaskStatusFailed)
-					resp.ErrorMessage = "simulated failure"
+					resp.ErrorMessage = o.failureError.String()
 				}
 
 				o.mu.Unlock() // Unlock before sending response

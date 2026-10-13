@@ -56,6 +56,13 @@ func (p *Plugin) Configure(
 	}, nil
 }
 
+func (p *Plugin) GetKeyVersions(
+	_ context.Context,
+	_ *keymanagementv1.GetKeyVersionsRequest,
+) (*keymanagementv1.GetKeyVersionsResponse, error) {
+	return &keymanagementv1.GetKeyVersionsResponse{}, nil
+}
+
 func (p *Plugin) GetKey(
 	_ context.Context,
 	_ *keymanagementv1.GetKeyRequest,

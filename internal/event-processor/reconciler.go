@@ -14,8 +14,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	_ "github.com/bartventer/gorm-multitenancy/postgres/v8"
-
 	goAmqp "github.com/Azure/go-amqp"
 	otelAttr "go.opentelemetry.io/otel/attribute"
 
@@ -25,7 +23,8 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	_ "github.com/openkcm/cmk/internal/multitenancy/postgres"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -45,6 +44,7 @@ var (
 	ErrKeyAccessMetadataNotFound = errors.New("key access metadata not found for system region")
 	ErrPluginNotFound            = errors.New("plugin not found for key provider")
 	ErrSettingKeyClaim           = errors.New("error setting key claim for system")
+	ErrSettingSystemLockedStatus = errors.New("error setting system status to locked")
 	ErrUnsupportedRegion         = errors.New("unsupported region")
 	ErrNoConnectedRegionsForKey  = errors.New("no connected regions found for key")
 	ErrNoTasksResolvedForJob     = errors.New("no tasks resolved for the job")
@@ -80,7 +80,7 @@ type CryptoReconciler struct {
 	manager       *orbital.Manager
 	targets       map[string]struct{}
 	initiators    []orbital.Initiator
-	svcRegistry   *cmkpluginregistry.Registry
+	svcRegistry   serviceapi.Registry
 	jobHandlerMap map[JobType]JobHandler
 	tracer        trace.Tracer
 }
@@ -92,8 +92,9 @@ func NewCryptoReconciler(
 	ctx context.Context,
 	cfg *config.Config,
 	repository repo.Repo,
-	svcRegistry *cmkpluginregistry.Registry,
+	svcRegistry serviceapi.Registry,
 	clientsFactory clients.Factory,
+	tenantConfigStore TenantConfigStore,
 	opts ...Option,
 ) (*CryptoReconciler, error) {
 	orbRepo, err := createOrbitalRepository(ctx, cfg.Database)
@@ -153,10 +154,11 @@ func NewCryptoReconciler(
 	reconciler.manager = manager
 
 	systemResolver := &SystemTaskInfoResolver{
-		repo:        repository,
-		svcRegistry: svcRegistry,
-		targets:     targetMap,
-		cfg:         cfg,
+		repo:              repository,
+		svcRegistry:       svcRegistry,
+		targets:           targetMap,
+		cfg:               cfg,
+		tenantConfigStore: tenantConfigStore,
 	}
 
 	keyResolver := &KeyTaskInfoResolver{

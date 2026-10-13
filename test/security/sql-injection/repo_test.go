@@ -7,8 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -263,7 +262,7 @@ func TestRepo_Set_ForInjection(t *testing.T) {
 		assert.NoError(t, err)
 
 		m.Name += attackString
-		err = r.Set(ctx, &m)
+		err = r.Set(ctx, &m, *repo.NewQuery())
 		assert.NoError(t, err)
 
 		// Check table still exists

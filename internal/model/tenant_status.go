@@ -1,13 +1,13 @@
 package model
 
 import (
-	"errors"
+	"fmt"
 
 	pb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 )
 
 var (
-	ErrInvalidTenantStatus = errors.New("tenant status is not valid")
+	ErrInvalidTenantStatus = fmt.Errorf("%w: tenant status is not valid", ErrValidation)
 
 	// validStatuses contains all valid tenant statuses. Calculated in the init().
 	validTenantStatuses = map[TenantStatus]struct{}{}

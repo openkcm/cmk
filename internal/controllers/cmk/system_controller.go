@@ -2,44 +2,70 @@ package cmk
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strings"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/system"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/system"
+	wfWorkflow "github.com/openkcm/cmk/internal/api/cmk/transform/workflow"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/manager"
+	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/utils/odata"
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-var getSystemsSchema = odata.FilterSchema{
-	Entries: []odata.FilterSchemaEntry{
-		{
-			FilterName: "keyConfigurationID",
-			FilterType: odata.UUID,
-			DBName:     repo.KeyConfigIDField,
+const (
+	SystemExternalNamePropertyKey = "NAME"
+)
+
+var getSystemsSchema = odata.FilterToRepoMap{
+	"keyConfigurationID": odata.FilterToRepoItem{
+		Type:   odata.UUID,
+		DBName: repo.KeyConfigIDField,
+	},
+	"keyConfigurationName": odata.FilterToRepoItem{
+		Type: odata.String,
+		DBQuery: func(query *repo.Query, entry any) *repo.Query {
+			return query.Join(repo.LeftJoin, repo.JoinCondition{
+				JoinTable: &model.KeyConfiguration{},
+				JoinField: repo.IDField,
+				Table:     &model.System{},
+				Field:     repo.KeyConfigIDField,
+			}).Where(
+				repo.NewCompositeKeyGroup(
+					repo.NewCompositeKey().Where(
+						fmt.Sprintf("%s.%s", model.KeyConfiguration{}.TableName(), repo.Name), entry,
+					),
+				),
+			)
 		},
-		{
-			FilterName:     "region",
-			FilterType:     odata.String,
-			DBName:         repo.RegionField,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
-		},
-		{
-			FilterName:     "type",
-			FilterType:     odata.String,
-			DBName:         repo.TypeField,
-			ValueModifier:  odata.ToUpper,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
-		},
-		{
-			FilterName:     "status",
-			FilterType:     odata.String,
-			DBName:         repo.StatusField,
-			ValueModifier:  odata.ToUpper,
-			ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
-		},
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+	},
+	"targetKeyConfigurationID": odata.FilterToRepoItem{
+		Type:   odata.UUID,
+		DBName: repo.TargetKeyConfigIDField,
+	},
+	"region": odata.FilterToRepoItem{
+		Type:           odata.String,
+		DBName:         repo.RegionField,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+	},
+	"type": odata.FilterToRepoItem{
+		Type:           odata.String,
+		DBName:         repo.TypeField,
+		ValueModifier:  odata.ToUpper,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
+	},
+	"status": odata.FilterToRepoItem{
+		Type:           odata.String,
+		DBName:         repo.StatusField,
+		ValueModifier:  odata.ToUpper,
+		ValueValidator: odata.MaxLengthValidator(constants.QueryMaxLengthSystem),
 	},
 }
 
@@ -48,16 +74,34 @@ func (c *APIController) GetAllSystems(ctx context.Context,
 ) (cmkapi.GetAllSystemsResponseObject, error) {
 	refreshed := c.Manager.System.RefreshSystemsData(ctx)
 
-	queryMapper := odata.NewQueryOdataMapper(getSystemsSchema)
+	opts := []odata.Option{
+		odata.WithPagination(request.Params.Skip, request.Params.Top, request.Params.Count),
+		odata.WithFilter(request.Params.Filter, getSystemsSchema),
+		odata.WithSearch(request.Params.Search, repo.IdentifierField, repo.RegionField),
+	}
 
-	err := queryMapper.ParseFilter(request.Params.Filter)
+	if propertyKey, ok := c.getSystemExternalNameKey(); ok {
+		opts = append(opts, odata.WithSearchJoins(odata.SearchJoinField{
+			Column: "sp_ext.value",
+			Join: repo.JoinCondition{
+				Table:     &model.System{},
+				Field:     repo.IDField,
+				JoinTable: &model.SystemProperty{},
+				JoinField: repo.IDField,
+				Alias:     "sp_ext",
+				OnFilters: []repo.JoinOnFilter{{Field: repo.KeyField, Value: propertyKey}},
+			},
+		}))
+	}
+
+	odataParams := odata.New(opts...)
+
+	_, err := odataParams.GetFilter()
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
 	}
 
-	queryMapper.SetPaging(request.Params.Skip, request.Params.Top, request.Params.Count)
-
-	systems, total, err := c.Manager.System.GetAllSystems(ctx, queryMapper)
+	systems, total, err := c.Manager.System.GetAllSystems(ctx, odataParams)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +122,7 @@ func (c *APIController) GetAllSystems(ctx context.Context,
 	}
 
 	if ptr.GetSafeDeref(request.Params.Count) {
-		response.Count = ptr.PointTo(total)
+		response.Count = new(total)
 	}
 
 	return response, nil
@@ -92,7 +136,13 @@ func (c *APIController) GetSystemByID(ctx context.Context,
 		return nil, err
 	}
 
-	systemResponse, err := system.ToAPI(*sys, &c.config.ContextModels.System)
+	var systemResponse *cmkapi.System
+	if sys.UnderWorkflow {
+		systemResponse, err = c.handleSystemUnderWorkflow(ctx, sys)
+	} else {
+		systemResponse, err = system.ToAPI(*sys, &c.config.ContextModels.System)
+	}
+
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformSystemToAPI, err)
 	}
@@ -169,4 +219,98 @@ func (c *APIController) UnlinkSystemAction(
 	}
 
 	return cmkapi.UnlinkSystemAction204Response(struct{}{}), nil
+}
+
+func (c *APIController) GetFilters(
+	ctx context.Context,
+	_ cmkapi.GetFiltersRequestObject,
+) (cmkapi.GetFiltersResponseObject, error) {
+	filters, err := c.Manager.System.GetFilters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cmkapi.GetFilters200JSONResponse(filters), nil
+}
+
+//nolint:funlen,cyclop
+func (c *APIController) handleSystemUnderWorkflow(
+	ctx context.Context,
+	sys *model.System,
+) (*cmkapi.System, error) {
+	workflows, _, err := c.Manager.Workflow.GetWorkflows(ctx, manager.WorkflowFilter{
+		ArtifactType: model.WorkflowArtifactTypeSystem,
+		ArtifactID:   sys.ID,
+	})
+	if err != nil || len(workflows) < 1 {
+		return nil, errs.Wrapf(err, "error finding workflow")
+	}
+	wf := workflows[0]
+
+	approvers, _, err := c.Manager.Workflow.ListWorkflowApprovers(ctx, wf.ID, true, repo.Pagination{})
+	if err != nil {
+		return nil, err
+	}
+	approverGroups, err := c.Manager.Workflow.GetWorkflowApproverGroups(ctx, wf)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := c.Manager.User.GetBusinessUserInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	isApprover := slices.ContainsFunc(approvers, func(e *model.WorkflowApprover) bool {
+		return e.UserID == user.Identifier
+	})
+
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+
+	if user.Identifier != wf.InitiatorID && !isApprover {
+		return system.ToAPI(
+			*sys,
+			&c.config.ContextModels.System,
+			system.WithWorkflow(
+				ctx,
+				wf,
+				idm,
+				wfWorkflow.WithDetailed(ctx, nil, idm, approverGroups, nil, nil),
+			),
+		)
+	}
+
+	transitions, err := c.Manager.Workflow.GetWorkflowAvailableTransitions(ctx, wf)
+	if err != nil {
+		return nil, err
+	}
+
+	approvalSummary, err := c.Manager.Workflow.GetWorkflowApprovalSummary(ctx, wf)
+	if err != nil {
+		return nil, err
+	}
+
+	return system.ToAPI(
+		*sys,
+		&c.config.ContextModels.System,
+		system.WithWorkflow(
+			ctx,
+			wf,
+			idm,
+			wfWorkflow.WithDetailed(ctx, approvers, idm, approverGroups, transitions, approvalSummary),
+		),
+	)
+}
+
+func (c *APIController) getSystemExternalNameKey() (string, bool) {
+	for propertyName, definition := range c.config.ContextModels.System.OptionalProperties {
+		if strings.ToUpper(definition.DisplayName) == SystemExternalNamePropertyKey {
+			return propertyName, true
+		}
+	}
+
+	return "", false
 }

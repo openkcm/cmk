@@ -7,14 +7,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 var ErrForced = errors.New("forced")
@@ -40,11 +38,11 @@ func TestAPIController_GetAllSystems_ForVerbTampering(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	system1 := testutils.NewSystem(func(_ *model.System) {})
 	system2 := testutils.NewSystem(func(s *model.System) {
-		s.KeyConfigurationID = ptr.PointTo(keyConfig.ID)
+		s.KeyConfigurationID = new(keyConfig.ID)
 	})
 
 	testutils.CreateTestEntities(

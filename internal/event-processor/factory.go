@@ -8,7 +8,7 @@ import (
 
 	"github.com/openkcm/orbital"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
@@ -89,8 +89,11 @@ func (f *EventFactory) GetLastEvent(
 			repo.NewCompositeKey().Where(repo.IdentifierField, cmkItemID)))
 
 	found, err := f.repo.First(ctx, job, query)
-	if err != nil || !found {
-		return nil, errs.Wrap(ErrNoPreviousEvent, err)
+	if !found {
+		return nil, ErrNoPreviousEvent
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return job, nil
@@ -147,7 +150,6 @@ func (f *EventFactory) SystemUnlinkDecommission(
 		_, err := f.repo.Patch(ctx, system, *repo.NewQuery().UpdateAll(true))
 		return err
 	})
-
 	if err != nil {
 		return orbital.Job{}, err
 	}
@@ -225,7 +227,7 @@ func (f *EventFactory) SystemKeyRotate(
 		Data:               job.Data,
 		Status:             job.Status,
 		PreviousItemStatus: string(system.Status),
-	})
+	}, *repo.NewQuery())
 	if err != nil {
 		log.Error(ctx, "failed to store event", err)
 	}
@@ -342,7 +344,7 @@ func (f *EventFactory) handleSystemStatus(
 		Data:               job.Data,
 		Status:             job.Status,
 		PreviousItemStatus: string(previousStatus),
-	})
+	}, *repo.NewQuery())
 	if err != nil {
 		log.Error(ctx, "failed to store event", err)
 	}

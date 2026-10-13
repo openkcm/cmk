@@ -3,5 +3,36 @@ package tenantdatamigrations
 import "github.com/pressly/goose/v3"
 
 func GetMigrations() []*goose.Migration {
-	return []*goose.Migration{}
+	return []*goose.Migration{
+		goose.NewGoMigration(
+			1,
+			&goose.GoFunc{RunTx: upWorkflowApproverGroupTable},
+			&goose.GoFunc{RunTx: downWorkflowApproverGroupTable},
+		),
+		goose.NewGoMigration(
+			2,
+			&goose.GoFunc{RunTx: upClampWorkflowConfigBounds},
+			&goose.GoFunc{RunTx: downClampWorkflowConfigBounds},
+		),
+		goose.NewGoMigration(
+			3,
+			&goose.GoFunc{RunTx: upRepairKeystoreConfigShape},
+			&goose.GoFunc{RunTx: downRepairKeystoreConfigShape},
+		),
+		goose.NewGoMigration(
+			4,
+			&goose.GoFunc{RunTx: upFlattenTenantConfigs},
+			&goose.GoFunc{RunTx: downFlattenTenantConfigs},
+		),
+		goose.NewGoMigration(
+			5,
+			&goose.GoFunc{RunTx: upFlattenKeystoreSubBlobs},
+			&goose.GoFunc{RunTx: downFlattenKeystoreSubBlobs},
+		),
+		goose.NewGoMigration(
+			6,
+			&goose.GoFunc{RunTx: upCryptoSubjectFromConfig},
+			&goose.GoFunc{RunTx: downCryptoSubjectFromConfig},
+		),
+	}
 }

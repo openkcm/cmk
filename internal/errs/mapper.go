@@ -3,8 +3,6 @@ package errs
 import (
 	"context"
 	"errors"
-
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type Error[T any] interface {
@@ -50,7 +48,7 @@ func (m *ErrorMapper[T]) Transform(ctx context.Context, internalErr error) T {
 
 	err = selected.ExposedError
 	if selected.ContextGetter != nil {
-		err.SetContext(ptr.PointTo(selected.ContextGetter(internalErr)))
+		err.SetContext(new(selected.ContextGetter(internalErr)))
 	}
 	return err
 }

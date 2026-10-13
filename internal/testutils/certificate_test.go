@@ -20,7 +20,7 @@ func TestCreateTestCertificate(t *testing.T) {
 			mutator: func(_ *model.Certificate) {},
 			validate: func(t *testing.T, cert *model.Certificate) {
 				t.Helper()
-				assert.Equal(t, model.CertificatePurposeTenantDefault, cert.Purpose)
+				assert.Equal(t, model.CertificatePurposeHYOKManagement, cert.Purpose)
 				assert.Equal(t, testutils.TestTenantCertCommonName, cert.CommonName)
 				assert.Equal(t, model.CertificateStateActive, cert.State)
 				assert.NotEmpty(t, cert.CertPEM)
@@ -35,7 +35,7 @@ func TestCreateTestCertificate(t *testing.T) {
 			validate: func(t *testing.T, cert *model.Certificate) {
 				t.Helper()
 				assert.Equal(t, "custom-fingerprint", cert.Fingerprint)
-				assert.Equal(t, model.CertificatePurposeTenantDefault, cert.Purpose)
+				assert.Equal(t, model.CertificatePurposeHYOKManagement, cert.Purpose)
 				assert.Equal(t, testutils.TestTenantCertCommonName, cert.CommonName)
 				assert.Equal(t, model.CertificateStateActive, cert.State)
 				assert.NotEmpty(t, cert.CertPEM)

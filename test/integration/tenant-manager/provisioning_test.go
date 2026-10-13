@@ -11,10 +11,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	"gorm.io/gorm"
 
-	_ "github.com/bartventer/gorm-multitenancy/postgres/v8"
-
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
@@ -22,10 +18,10 @@ import (
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	_ "github.com/openkcm/cmk/internal/multitenancy/postgres"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	integrationutils "github.com/openkcm/cmk/test/integration/integration_utils"
 	"github.com/openkcm/cmk/utils/base62"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -51,12 +47,8 @@ func (s *DBSuite) SetupSuite() {
 
 	ctx := s.T().Context()
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
-	cfg := &config.Config{
-		Plugins: psCfg,
-	}
-	svcRegistry, err := cmkpluginregistry.New(ctx, cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	s.NoError(err)
+	svcRegistry := testutils.NewTestPlugins()
+	cfg := &config.Config{}
 
 	f, err := clients.NewFactory(config.Services{})
 	s.NoError(err)
@@ -69,11 +61,12 @@ func (s *DBSuite) SetupSuite() {
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := manager.NewUserManager(r, cmkAuditor)
 	tagm := manager.NewTagManager(r)
-	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, cfg)
+	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, eventFactory, cfg, nil)
 
 	sys := manager.NewSystemManager(
 		ctx,
 		r,
+		nil,
 		f,
 		eventFactory,
 		svcRegistry,
@@ -85,12 +78,14 @@ func (s *DBSuite) SetupSuite() {
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, nil),
+		manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil),
 		kcm,
 		um,
 		cm,
 		eventFactory,
 		cmkAuditor,
+		nil,
+		nil,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)

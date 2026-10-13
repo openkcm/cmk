@@ -14,20 +14,16 @@ import (
 	"github.com/openkcm/plugin-sdk/api"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 type CertificateIssuerMock struct {
@@ -58,20 +54,13 @@ func SetupCertificateManager(
 
 	dbRepository := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewCertificateIssuer())
-	cfg := &config.Config{Plugins: psCfg}
-
-	catalog, err := cmkpluginregistry.New(
-		t.Context(),
-		cfg,
-		cmkpluginregistry.WithBuiltInPlugins(ps),
-	)
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
+	cfg := &config.Config{}
 
 	m := manager.NewCertificateManager(
 		t.Context(),
 		dbRepository,
-		catalog,
+		svcRegistry,
 		cfg,
 	)
 
@@ -145,19 +134,64 @@ func TestCertificateManager_RequestNewCertificate(t *testing.T) {
 			expectedErr:         false,
 		},
 		{
-			name:                "RequestNewCertificate Purpose Tenant Default Success",
+			name:                "RequestNewCertificate Purpose Generic Error on duplicate",
 			validationDateUnit:  certificateissuer.Days,
 			validationDateValue: 6,
-			purpose:             model.CertificatePurposeTenantDefault,
+			purpose:             model.CertificatePurposeGeneric,
+			request2time:        true,
+			statusCode:          http.StatusOK,
+			expectedErr:         true,
+		},
+		{
+			name:                "RequestNewCertificate Purpose HYOKManagement Success",
+			validationDateUnit:  certificateissuer.Days,
+			validationDateValue: 6,
+			purpose:             model.CertificatePurposeHYOKManagement,
 			request2time:        false,
 			statusCode:          http.StatusOK,
 			expectedErr:         false,
 		},
 		{
-			name:                "RequestNewCertificate Purpose Tenant Default Error not available",
+			name:                "RequestNewCertificate Purpose HYOKManagement Error not available",
 			validationDateUnit:  certificateissuer.Days,
 			validationDateValue: 6,
-			purpose:             model.CertificatePurposeTenantDefault,
+			purpose:             model.CertificatePurposeHYOKManagement,
+			request2time:        true,
+			statusCode:          http.StatusOK,
+			expectedErr:         true,
+		},
+		{
+			name:                "RequestNewCertificate Purpose RoleManagement Success",
+			validationDateUnit:  certificateissuer.Days,
+			validationDateValue: 6,
+			purpose:             model.CertificatePurposeRoleManagement,
+			request2time:        false,
+			statusCode:          http.StatusOK,
+			expectedErr:         false,
+		},
+		{
+			name:                "RequestNewCertificate Purpose RoleManagement Error on duplicate",
+			validationDateUnit:  certificateissuer.Days,
+			validationDateValue: 6,
+			purpose:             model.CertificatePurposeRoleManagement,
+			request2time:        true,
+			statusCode:          http.StatusOK,
+			expectedErr:         true,
+		},
+		{
+			name:                "RequestNewCertificate Purpose KeyManagement Success",
+			validationDateUnit:  certificateissuer.Days,
+			validationDateValue: 6,
+			purpose:             model.CertificatePurposeKeyManagement,
+			request2time:        false,
+			statusCode:          http.StatusOK,
+			expectedErr:         false,
+		},
+		{
+			name:                "RequestNewCertificate Purpose KeyManagement Error on duplicate",
+			validationDateUnit:  certificateissuer.Days,
+			validationDateValue: 6,
+			purpose:             model.CertificatePurposeKeyManagement,
 			request2time:        true,
 			statusCode:          http.StatusOK,
 			expectedErr:         true,
@@ -240,7 +274,7 @@ func TestRotateExpiredCertificates(t *testing.T) {
 
 		input, _, err := m.RequestNewCertificate(ctx, privateKey,
 			model.RequestCertArgs{
-				CertPurpose: model.CertificatePurposeTenantDefault,
+				CertPurpose: model.CertificatePurposeHYOKManagement,
 				Supersedes:  nil,
 				CommonName:  "MyCert",
 				Locality:    []string{"locality"},
@@ -259,6 +293,46 @@ func TestRotateExpiredCertificates(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.NotEqual(t, input, cert)
+	})
+
+	t.Run("Should not rotate expired GENERIC certs", func(t *testing.T) {
+		m, db, tenant := SetupCertificateManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		privateKey, err := crypto.GeneratePrivateKey(manager.DefaultKeyBitSize)
+		assert.NoError(t, err)
+
+		m.SetPrivateKeyGenerator(func() (*rsa.PrivateKey, error) {
+			return privateKey, nil
+		})
+
+		m.SetCertIssuerService(CertificateIssuerMock{NewCertificateChain: func() string {
+			return testutils.CreateCertificateChain(t, pkix.Name{
+				Locality:   []string{"test"},
+				CommonName: "test",
+			}, privateKey)
+		}})
+
+		genericCert, _, err := m.RequestNewCertificate(ctx, privateKey,
+			model.RequestCertArgs{
+				CertPurpose: model.CertificatePurposeGeneric,
+				CommonName:  "GenericCert",
+				Locality:    []string{"locality"},
+			})
+		assert.NoError(t, err)
+
+		genericCert.ExpirationDate = time.Now().AddDate(-1, 0, 0)
+		_, err = r.Patch(ctx, genericCert, *repo.NewQuery())
+		assert.NoError(t, err)
+
+		err = m.RotateExpiredCertificates(ctx)
+		assert.NoError(t, err)
+
+		// GENERIC cert should be unchanged — no new cert created in its place
+		count, err := r.Count(ctx, &model.Certificate{}, *repo.NewQuery())
+		assert.NoError(t, err)
+		assert.Equal(t, 1, count)
 	})
 }
 
@@ -285,14 +359,14 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 
 	origCert, _, err := m.RequestNewCertificate(ctx, privateKey,
 		model.RequestCertArgs{
-			CertPurpose: model.CertificatePurposeTenantDefault,
+			CertPurpose: model.CertificatePurposeHYOKManagement,
 			Supersedes:  nil,
 			CommonName:  "MyCert",
 			Locality:    []string{"locality"},
 		})
 	assert.NoError(t, err)
 
-	gotOrigCert, err := m.GetCertificate(ctx, ptr.PointTo(origCert.ID))
+	gotOrigCert, err := m.GetCertificate(ctx, new(origCert.ID))
 	assert.NoError(t, err)
 	assert.True(t, gotOrigCert.AutoRotate)
 
@@ -301,40 +375,40 @@ func TestCertificateManager_RotateCertificate(t *testing.T) {
 	// Do first rotation
 	rot1Cert, _, err := m.RotateCertificate(ctx,
 		model.RequestCertArgs{
-			CertPurpose: model.CertificatePurposeTenantDefault,
-			Supersedes:  ptr.PointTo(origCert.ID),
+			CertPurpose: model.CertificatePurposeHYOKManagement,
+			Supersedes:  new(origCert.ID),
 			CommonName:  "MyCert",
 			Locality:    []string{"locality"},
 		})
 	assert.NoError(t, err)
 
-	gotOrigCert2, err := m.GetCertificate(ctx, ptr.PointTo(origCert.ID))
+	gotOrigCert2, err := m.GetCertificate(ctx, new(origCert.ID))
 	assert.NoError(t, err)
 	assert.False(t, gotOrigCert2.AutoRotate)
 
-	gotRot1Cert, err := m.GetCertificate(ctx, ptr.PointTo(rot1Cert.ID))
+	gotRot1Cert, err := m.GetCertificate(ctx, new(rot1Cert.ID))
 	assert.NoError(t, err)
 	assert.True(t, gotRot1Cert.AutoRotate)
 
 	// Do second rotation
 	rot2Cert, _, err := m.RotateCertificate(ctx,
 		model.RequestCertArgs{
-			CertPurpose: model.CertificatePurposeTenantDefault,
-			Supersedes:  ptr.PointTo(rot1Cert.ID),
+			CertPurpose: model.CertificatePurposeHYOKManagement,
+			Supersedes:  new(rot1Cert.ID),
 			CommonName:  "MyCert",
 			Locality:    []string{"locality"},
 		})
 	assert.NoError(t, err)
 
-	gotOrigCert3, err := m.GetCertificate(ctx, ptr.PointTo(origCert.ID))
+	gotOrigCert3, err := m.GetCertificate(ctx, new(origCert.ID))
 	assert.NoError(t, err)
 	assert.False(t, gotOrigCert3.AutoRotate)
 
-	gotRot1Cert2, err := m.GetCertificate(ctx, ptr.PointTo(rot1Cert.ID))
+	gotRot1Cert2, err := m.GetCertificate(ctx, new(rot1Cert.ID))
 	assert.NoError(t, err)
 	assert.False(t, gotRot1Cert2.AutoRotate)
 
-	gotRot2Cert, err := m.GetCertificate(ctx, ptr.PointTo(rot2Cert.ID))
+	gotRot2Cert, err := m.GetCertificate(ctx, new(rot2Cert.ID))
 	assert.NoError(t, err)
 	assert.True(t, gotRot2Cert.AutoRotate)
 }
@@ -476,7 +550,7 @@ func TestRotateExpiredCertificates_LocalityAndCommonName(t *testing.T) {
 			// Issue original cert with the test-specific locality.
 			origCert, _, err := m.RequestNewCertificate(ctx, privateKey,
 				model.RequestCertArgs{
-					CertPurpose: model.CertificatePurposeTenantDefault,
+					CertPurpose: model.CertificatePurposeHYOKManagement,
 					CommonName:  commonName,
 					Locality:    []string{tt.originalLocality},
 				})
@@ -492,7 +566,7 @@ func TestRotateExpiredCertificates_LocalityAndCommonName(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Fetch the newly created rotated cert (latest by creation date).
-			rotatedCert, exists, err := m.GetCertificateByPurpose(ctx, model.CertificatePurposeTenantDefault)
+			rotatedCert, exists, err := m.GetCertificateByPurpose(ctx, model.CertificatePurposeHYOKManagement)
 			assert.NoError(t, err)
 			assert.True(t, exists)
 			assert.NotEqual(t, origCert.ID, rotatedCert.ID)
@@ -536,7 +610,7 @@ func TestGetDefaultHYOKClientCert_RotationLocality(t *testing.T) {
 			// Issue an original cert with the test-specific locality.
 			origCert, _, err := m.RequestNewCertificate(ctx, privateKey,
 				model.RequestCertArgs{
-					CertPurpose: model.CertificatePurposeTenantDefault,
+					CertPurpose: model.CertificatePurposeHYOKManagement,
 					CommonName:  "prefix-" + tenant,
 					Locality:    []string{tt.originalLocality},
 				})
@@ -567,17 +641,17 @@ func TestGetCertificateByPurpose(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	t.Run("Should return false on cert not exist", func(t *testing.T) {
-		_, exist, err := m.GetCertificateByPurpose(ctx, model.CertificatePurposeTenantDefault)
+		_, exist, err := m.GetCertificateByPurpose(ctx, model.CertificatePurposeHYOKManagement)
 		assert.NoError(t, err)
 		assert.False(t, exist)
 	})
 
 	t.Run("Should return true if cert exists", func(t *testing.T) {
 		cert := testutils.NewCertificate(func(c *model.Certificate) {
-			c.Purpose = model.CertificatePurposeTenantDefault
+			c.Purpose = model.CertificatePurposeHYOKManagement
 		})
 		testutils.CreateTestEntities(ctx, t, r, cert)
-		res, exist, err := m.GetCertificateByPurpose(ctx, model.CertificatePurposeTenantDefault)
+		res, exist, err := m.GetCertificateByPurpose(ctx, model.CertificatePurposeHYOKManagement)
 		assert.NoError(t, err)
 		assert.Equal(t, cert.ID, res.ID)
 		assert.True(t, exist)
@@ -608,7 +682,15 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 
 	t.Run("Should get default keystore certificate", func(t *testing.T) {
 		// Act
-		cert, err := m.GetDefaultKeystoreClientCert(ctx, "locality", "commonName")
+		cert, err := m.GetDefaultKeystoreClientCert(ctx, "locality", "commonName", model.CertificatePurposeRoleManagement)
+		// Assert
+		assert.NoError(t, err)
+		assert.NotNil(t, cert)
+	})
+
+	t.Run("Should get default keystore certificate with KeyManagement purpose", func(t *testing.T) {
+		// Act
+		cert, err := m.GetDefaultKeystoreClientCert(ctx, "locality", "commonName", model.CertificatePurposeKeyManagement)
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, cert)
@@ -616,7 +698,16 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 
 	t.Run("Failed to get default keystore certificate with out tenant ID", func(t *testing.T) {
 		// Act
-		cert, err := m.GetDefaultKeystoreClientCert(t.Context(), "locality", "commonName")
+		cert, err := m.GetDefaultKeystoreClientCert(t.Context(), "locality", "commonName", model.CertificatePurposeRoleManagement)
+		// Assert
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, manager.ErrGetDefaultKeystoreCertificate)
+		assert.Nil(t, cert)
+	})
+
+	t.Run("Failed to get default keystore certificate with unsupported purpose", func(t *testing.T) {
+		// Act
+		cert, err := m.GetDefaultKeystoreClientCert(ctx, "locality", "commonName", model.CertificatePurposeGeneric)
 		// Assert
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, manager.ErrGetDefaultKeystoreCertificate)
@@ -629,7 +720,7 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 		forced.Register()
 		defer forced.Unregister()
 		// Act
-		cert, err := m.GetDefaultKeystoreClientCert(ctx, "locality", "commonName")
+		cert, err := m.GetDefaultKeystoreClientCert(ctx, "locality", "commonName", model.CertificatePurposeRoleManagement)
 		// Assert
 		assert.Error(t, err)
 		assert.Nil(t, cert)
@@ -646,7 +737,7 @@ func TestCertificateManager_GetDefaultClientCert(t *testing.T) {
 	t.Run("Should rotate default HYOK certificate if invalid", func(t *testing.T) {
 		certTime := time.Now().Add(-1 * time.Hour)
 		oldCert := testutils.NewCertificate(func(c *model.Certificate) {
-			c.Purpose = model.CertificatePurposeTenantDefault
+			c.Purpose = model.CertificatePurposeHYOKManagement
 			c.CreationDate = certTime
 			c.ExpirationDate = certTime
 		})

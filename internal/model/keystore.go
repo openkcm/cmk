@@ -20,7 +20,7 @@ type Keystore struct {
 }
 
 // TableResourceType return the authz resource type
-func (m Keystore) TableResourceType() authz.RepoResourceTypeName {
+func (m Keystore) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeKeystore
 }
 
@@ -33,18 +33,30 @@ func (Keystore) IsSharedModel() bool {
 }
 
 func (m Keystore) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
-//nolint:tagliatelle
 type KeystoreConfig struct {
-	LocalityID           string             `yaml:"localityId" json:"localityId"`
-	CommonName           string             `yaml:"commonName" json:"commonName"`
-	ManagementAccessData KeystoreAccessData `yaml:"managementAccessData" json:"managementAccessData"`
-	SupportedRegions     []config.Region    `yaml:"supportedRegions" json:"supportedRegions"`
-	allowBYOK            bool               //nolint:unused
+	RoleManagementConfig ManagementConfig        `yaml:"roleManagementConfig" json:"roleManagementConfig"`
+	KeyManagementConfig  ManagementConfig        `yaml:"keyManagementConfig" json:"keyManagementConfig"`
+	CryptoAccessData     map[string]CryptoConfig `yaml:"cryptoAccessData" json:"cryptoAccessData"`
+	SupportedRegions     []config.Region         `yaml:"supportedRegions" json:"supportedRegions"`
+	allowBYOK            bool                    //nolint:unused
+}
+
+//nolint:tagliatelle
+type ManagementConfig struct {
+	LocalityID string             `yaml:"localityId" json:"localityId"`
+	CommonName string             `yaml:"commonName" json:"commonName"`
+	AccessData KeystoreAccessData `yaml:"accessData" json:"accessData"`
+}
+
+type CryptoConfig struct {
+	Subject    string             `yaml:"subject" json:"subject"`
+	AccessData KeystoreAccessData `yaml:"accessData" json:"accessData"`
 }
 
 type KeystoreAccessData map[string]any

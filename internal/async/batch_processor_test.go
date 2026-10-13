@@ -51,10 +51,11 @@ func TestBatchProcessor(t *testing.T) {
 	t.Run("Should continue executing tenants if one fails", func(t *testing.T) {
 		bp := async.NewBatchProcessor(r)
 		count := 0
-		err := bp.ProcessTenantsInBatch(t.Context(), task, func(ctx context.Context, _ *asynq.Task) error {
-			count++
-			return errors.New("err")
-		})
+		err := bp.ProcessTenantsInBatch(t.Context(), task,
+			func(ctx context.Context, _ *asynq.Task) error {
+				count++
+				return errors.New("err")
+			})
 		assert.NoError(t, err)
 		assert.Equal(t, tenantCount, count)
 	})

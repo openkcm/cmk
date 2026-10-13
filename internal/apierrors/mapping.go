@@ -26,6 +26,7 @@ var APIErrorMapper = errs.NewMapper(slices.Concat(
 	keyVersion,
 	workflow,
 	system,
+	systemgroup,
 	label,
 	tags,
 	key,

@@ -6,6 +6,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openkcm/cmk/internal/authz"
+	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	"github.com/openkcm/cmk/utils/identity"
 )
 
 // KeyConfiguration represents a key configuration in the database.
@@ -14,20 +16,21 @@ import (
 type KeyConfiguration struct {
 	AutoTimeModel
 
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Name         string    `gorm:"type:varchar(255);not null;unique"`
-	Description  string    `gorm:"type:text"`
-	AdminGroupID uuid.UUID `gorm:"type:uuid;not null"`
-	AdminGroup   Group     `gorm:"foreignKey:AdminGroupID"`
-	CreatorID    string    `gorm:"type:varchar(255);not null"`
-	CreatorName  string    `gorm:"type:varchar(255);not null"`
-	PrimaryKeyID *uuid.UUID
-	TotalKeys    int `gorm:"->;-:migration"`
-	TotalSystems int `gorm:"->;-:migration"`
+	ID           uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	Name         string     `gorm:"type:varchar(255);not null;unique"`
+	Description  string     `gorm:"type:text"`
+	AdminGroupID uuid.UUID  `gorm:"type:uuid;not null"`
+	AdminGroup   Group      `gorm:"foreignKey:AdminGroupID"`
+	CreatorID    string     `gorm:"type:varchar(255);not null"`
+	PrimaryKeyID *uuid.UUID `gorm:"type:uuid"`
+	TotalKeys    int        `gorm:"->;-:migration"`
+	TotalSystems int        `gorm:"->;-:migration"`
+
+	creatorName string `gorm:"-:all"`
 }
 
 // TableResourceType return the authz resource type
-func (m KeyConfiguration) TableResourceType() authz.RepoResourceTypeName {
+func (m KeyConfiguration) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeKeyconfiguration
 }
 
@@ -41,11 +44,28 @@ func (KeyConfiguration) IsSharedModel() bool {
 }
 
 func (m KeyConfiguration) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
 func (kc *KeyConfiguration) SetID(id uuid.UUID) {
 	kc.ID = id
+}
+
+func (kc *KeyConfiguration) GetCreatorName(
+	ctx context.Context,
+	identityManager identitymanagement.IdentityManagement,
+) (string, error) {
+	if kc.creatorName != "" {
+		return kc.creatorName, nil
+	}
+
+	name, err := identity.GetUserName(ctx, identityManager, kc.CreatorID)
+	if err != nil {
+		return "", err
+	}
+	kc.creatorName = name
+	return name, nil
 }

@@ -25,7 +25,7 @@ func createTestContextForAuthz() context.Context {
 
 func createTestAuditorForAuthz(endpoint string) *auditor.Auditor {
 	cfg := config.Config{
-		BaseConfig: commoncfg.BaseConfig{Audit: commoncfg.Audit{Endpoint: endpoint}},
+		Audit: commoncfg.Audit{Endpoint: endpoint},
 	}
 
 	return auditor.New(context.Background(), &cfg)

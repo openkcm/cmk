@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fullsailor/pkcs7"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/manager"
@@ -31,26 +30,11 @@ func CreateCertificateChain(
 	cert := CreateCertificatePEM(t, csr, pkey)
 	ca := CreateCACertificatePEM(t)
 
-	certChain := make([]byte, 0, len(cert)+len(ca))
-	certChain = append(certChain, cert...)
-	certChain = append(certChain, ca...)
+	chain := make([]byte, 0, len(cert)+len(ca))
+	chain = append(chain, cert...)
+	chain = append(chain, ca...)
 
-	var data []byte
-
-	for len(certChain) > 0 {
-		var block *pem.Block
-
-		block, certChain = pem.Decode(certChain)
-		data = append(data, block.Bytes...)
-	}
-
-	data, err := pkcs7.DegenerateCertificate(data)
-	assert.NoError(t, err)
-
-	return string(pem.EncodeToMemory(&pem.Block{
-		Type:  "PKCS7",
-		Bytes: data,
-	}))
+	return string(chain)
 }
 
 func CreateCertificatePEM(

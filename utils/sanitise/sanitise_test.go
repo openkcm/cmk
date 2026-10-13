@@ -177,3 +177,38 @@ func TestImportantValuesNotSanitised(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, output, input)
 }
+
+func TestSanitiseMapStringAny(t *testing.T) {
+	// Test map[string]any with interface-wrapped strings
+	// This reproduces the bug where interface-wrapped values in maps become unaddressable
+	type Config struct {
+		Data map[string]any
+	}
+
+	config := Config{
+		Data: map[string]any{
+			"field1": "value1<SCRIPT></SCRIPT>",
+			"field2": "value2<SCRIPT></SCRIPT>",
+			"field3": "value3<SCRIPT></SCRIPT>",
+		},
+	}
+
+	err := sanitise.Sanitize(&config)
+	assert.NoError(t, err)
+
+	// Verify all string values were sanitized
+	field1, ok := config.Data["field1"].(string)
+	assert.True(t, ok)
+	assert.NotContains(t, field1, "<SCRIPT>")
+	assert.Equal(t, "value1", field1)
+
+	field2, ok := config.Data["field2"].(string)
+	assert.True(t, ok)
+	assert.NotContains(t, field2, "<SCRIPT>")
+	assert.Equal(t, "value2", field2)
+
+	field3, ok := config.Data["field3"].(string)
+	assert.True(t, ok)
+	assert.NotContains(t, field3, "<SCRIPT>")
+	assert.Equal(t, "value3", field3)
+}

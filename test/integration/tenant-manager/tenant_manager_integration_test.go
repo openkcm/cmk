@@ -12,22 +12,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/orbital"
 	"github.com/openkcm/orbital/client/amqp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	stduuid "uuid"
 
 	"github.com/openkcm/cmk/internal/clients/registry/tenants"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -95,10 +96,10 @@ func setupInfrastructure(tb testing.TB) (
 	// Wait for gRPC servers to be ready
 	time.Sleep(1000 * time.Millisecond) // Give the servers time to start
 
-	multitenancyDB, _, dbConfig := testutils.NewTestDB(tb, testutils.TestDBConfig{
-		CreateDatabase:      true,
-		WithIsolatedService: true,
-	}, testutils.WithGenerateTenants(0), // Do not create tenants
+	multitenancyDB, _, dbConfig := testutils.NewTestDB(
+		tb, testutils.TestDBConfig{
+			CreateDatabase: true,
+		}, testutils.WithGenerateTenants(0), // Do not create tenants
 	)
 
 	return fakeTenantService, registryAddr, sessionManagerAddr, multitenancyDB, dbConfig
@@ -112,20 +113,18 @@ func createConfigurations(
 	amqpCfg config.AMQP,
 ) *config.Config {
 	return &config.Config{
-		BaseConfig: commoncfg.BaseConfig{
-			Application: commoncfg.Application{
-				Name:        "tenant-manager-test",
-				Environment: "test",
-			},
-			Logger: commoncfg.Logger{
-				Level:  "debug",
-				Format: "text",
-			},
-			Telemetry: commoncfg.Telemetry{
-				Logs:    commoncfg.Log{Enabled: false},
-				Traces:  commoncfg.Trace{Enabled: false},
-				Metrics: commoncfg.Metric{Enabled: false},
-			},
+		Application: commoncfg.Application{
+			Name:        "tenant-manager-test",
+			Environment: "test",
+		},
+		Logger: commoncfg.Logger{
+			Level:  "debug",
+			Format: "text",
+		},
+		Telemetry: commoncfg.Telemetry{
+			Logs:    commoncfg.Log{Enabled: false},
+			Traces:  commoncfg.Trace{Enabled: false},
+			Metrics: commoncfg.Metric{Enabled: false},
 		},
 		Database: dbConfig,
 		Services: config.Services{
@@ -391,7 +390,7 @@ func (env *testEnv) sendAMQPMessage(t *testing.T, message any) {
 	}
 
 	taskRequest := orbital.TaskRequest{
-		TaskID:       uuid.New(),
+		TaskID:       stduuid.New(),
 		Type:         taskType,
 		Data:         data,
 		WorkingState: []byte(""),

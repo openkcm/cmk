@@ -17,10 +17,11 @@ type KeyVersion struct {
 	NativeID  string    `gorm:"type:varchar(255);not null"`
 	KeyID     uuid.UUID `gorm:"type:uuid;not null;index"`
 	RotatedAt time.Time `gorm:"type:timestamptz;not null"` // Rotation timestamp (latest = current version)
+	Status    string    `gorm:"type:varchar(50);not null;default:'UNKNOWN'"`
 }
 
 // TableResourceType return the authz resource type
-func (m KeyVersion) TableResourceType() authz.RepoResourceTypeName {
+func (m KeyVersion) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeKeyversion
 }
 
@@ -34,7 +35,8 @@ func (KeyVersion) IsSharedModel() bool {
 }
 
 func (m KeyVersion) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }

@@ -11,6 +11,7 @@ import (
 	grpcidentitymanagementv1 "github.com/openkcm/plugin-sdk/proto/plugin/identity_management/v1"
 
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	"github.com/openkcm/cmk/utils/cache"
 )
 
 const (
@@ -20,6 +21,8 @@ const (
 type V1 struct {
 	plugin.Facade
 	grpcidentitymanagementv1.IdentityManagementServicePluginClient
+
+	UserCache *cache.TTLCache[string, identitymanagement.User] // key is userID
 }
 
 func (v1 *V1) Version() uint {
@@ -28,6 +31,38 @@ func (v1 *V1) Version() uint {
 
 func (v1 *V1) ServiceInfo() api.Info {
 	return v1.Info
+}
+
+func (v1 *V1) GetUser(
+	ctx context.Context,
+	req *identitymanagement.GetUserRequest,
+) (*identitymanagement.GetUserResponse, error) {
+	in := &grpcidentitymanagementv1.GetUserRequest{
+		UserId:      req.UserID,
+		AuthContext: AuthContextToGRPC(&req.AuthContext),
+	}
+	if err := protovalidate.Validate(in); err != nil {
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
+	}
+
+	user, ok := v1.UserCache.Get(req.UserID)
+	if ok {
+		return &identitymanagement.GetUserResponse{User: user}, nil
+	}
+
+	grpcResp, err := v1.IdentityManagementServicePluginClient.GetUser(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+
+	user = FromGRPCUser(grpcResp.GetUser())
+	if user != (identitymanagement.User{}) {
+		v1.UserCache.Set(req.UserID, user)
+	}
+
+	return &identitymanagement.GetUserResponse{
+		User: user,
+	}, nil
 }
 
 func (v1 *V1) GetGroup(

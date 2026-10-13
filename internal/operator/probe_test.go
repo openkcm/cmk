@@ -7,18 +7,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/operator"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
@@ -37,23 +34,19 @@ func SetupProbeTest(t *testing.T) (*manager.GroupManager, *manager.TenantManager
 
 	dbRepository := sql.NewRepository(db)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
-
 	cfg := &config.Config{
-		Plugins:  psCfg,
 		Database: cfgDB,
 	}
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg, cmkpluginregistry.WithBuiltInPlugins(ps))
-	assert.NoError(t, err)
+	var svcRegistry = testutils.NewTestPlugins()
 
-	tm, gm := createManagers(t, db, cfg, svcRegistry)
+	tm, gm, _ := createManagers(t, db, cfg, svcRegistry)
 
 	return gm, tm, db, dbRepository
 }
 
 func TestTenantProbe_Check(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
 	gm, tm, multitenancyDB, _ := SetupProbeTest(t)
 
 	tenantID1 := uuid.NewString()
@@ -162,7 +155,7 @@ func TestTenantProbe_Check(t *testing.T) {
 }
 
 func TestCheckTenantSchemaExistenceStatus(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
 	_, tm, multitenancyDB, _ := SetupProbeTest(t)
 
 	tenantID := uuid.NewString()
@@ -221,7 +214,10 @@ func TestCheckTenantSchemaExistenceStatus(t *testing.T) {
 }
 
 func TestCheckTenantGroupsExistenceStatus(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
+	ctx, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantProvisioningRole)
+	require.NoError(t, err, "Failed to inject client data for test")
+
 	gm, tm, _, repository := SetupProbeTest(t)
 	tenantID1 := uuid.NewString()
 	tenantID2 := uuid.NewString()
@@ -239,7 +235,7 @@ func TestCheckTenantGroupsExistenceStatus(t *testing.T) {
 		l.ID = tenantID2
 	})
 
-	err := tm.CreateTenant(ctx, tenantWithBothGroups)
+	err = tm.CreateTenant(ctx, tenantWithBothGroups)
 	require.NoError(t, err, "Failed to create tenant schema for test")
 
 	err = tm.CreateTenant(ctx, tenantWithNoGroups)
@@ -291,7 +287,7 @@ func TestCheckTenantGroupsExistenceStatus(t *testing.T) {
 }
 
 func TestSchemaExists(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
 	_, tm, multitenancyDB, _ := SetupProbeTest(t)
 
 	tenantID := uuid.NewString()
@@ -356,7 +352,10 @@ func TestSchemaExists(t *testing.T) {
 }
 
 func TestGroupExists(t *testing.T) {
-	ctx := t.Context()
+	ctx := createContext(t)
+	ctx, err := cmkcontext.InjectInternalUserData(ctx, constants.InternalTenantProvisioningRole)
+	require.NoError(t, err, "Failed to inject client data for test")
+
 	gm, tm, _, repository := SetupProbeTest(t)
 
 	tenantID1 := uuid.NewString()
@@ -374,7 +373,7 @@ func TestGroupExists(t *testing.T) {
 		l.ID = tenantID2
 	})
 
-	err := tm.CreateTenant(ctx, tenantWithGroups)
+	err = tm.CreateTenant(ctx, tenantWithGroups)
 	require.NoError(t, err, "Failed to create tenant schema for test")
 
 	err = tm.CreateTenant(ctx, tenantWithoutGroups)

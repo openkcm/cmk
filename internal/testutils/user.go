@@ -20,7 +20,7 @@ func NewUserManager() manager.User {
 func (u *user) NeedsGroupFiltering(
 	ctx context.Context,
 	action authz.APIAction,
-	resource authz.APIResourceTypeName,
+	resource authz.APIResourceType,
 ) (bool, error) {
 	return false, nil
 }
@@ -45,10 +45,10 @@ func (u *user) HasKeyConfigAccess(
 	return false, nil
 }
 
-func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.Role, error) {
+func (u *user) GetRoleFromIAM(ctx context.Context, iamIdentifiers []string) (constants.BusinessRole, error) {
 	return constants.KeyAdminRole, nil
 }
 
-func (u *user) GetUserInfo(ctx context.Context) (manager.UserInfo, error) {
-	return manager.UserInfo{}, nil
+func (u *user) GetBusinessUserInfo(ctx context.Context) (manager.BusinessUserInfo, error) {
+	return manager.BusinessUserInfo{}, nil
 }

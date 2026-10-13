@@ -8,6 +8,7 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/notifier/client"
 )
@@ -52,4 +53,8 @@ func (n *notificationSender) ProcessTask(ctx context.Context, task *asynq.Task) 
 
 func (n *notificationSender) TaskType() string {
 	return config.TypeSendNotifications
+}
+
+func (n *notificationSender) Role() constants.InternalRole {
+	return constants.InternalTaskSendNotificationRole
 }

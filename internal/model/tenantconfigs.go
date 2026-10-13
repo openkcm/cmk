@@ -2,19 +2,22 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/openkcm/cmk/internal/authz"
 )
 
-// TenantConfig represents a key in the database.
+// TenantConfig represents a flat config row in the database.
+// Key + Type form the composite key (Type groups related entries, e.g. "workflow").
+// Flat rows store their value in value_text; legacy jsonb blobs are read via
+// LegacyTenantConfig.
 type TenantConfig struct {
-	Key   string          `gorm:"type:varchar(255);primaryKey"`
-	Value json.RawMessage `gorm:"type:jsonb;not null"`
+	Key   string `gorm:"type:varchar(255);primaryKey"`
+	Value string `gorm:"column:value_text;type:text"`
+	Type  string `gorm:"type:varchar(255);primaryKey;default:''"`
 }
 
 // TableResourceType return the authz resource type
-func (m TenantConfig) TableResourceType() authz.RepoResourceTypeName {
+func (m TenantConfig) TableResourceType() authz.RepoResourceType {
 	return authz.RepoResourceTypeTenantconfig
 }
 
@@ -28,8 +31,36 @@ func (TenantConfig) IsSharedModel() bool {
 }
 
 func (m TenantConfig) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceTypeName, authz.RepoAction],
-	action authz.RepoAction) (bool, error) {
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
+	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
+}
+
+// LegacyTenantConfig reads the legacy jsonb value column, serving blob reads
+// during the flatten rollout until the cleanup release drops that column.
+type LegacyTenantConfig struct {
+	Key   string `gorm:"type:varchar(255);primaryKey"`
+	Value string `gorm:"column:value;type:jsonb"`
+	Type  string `gorm:"type:varchar(255);primaryKey;default:''"`
+}
+
+func (LegacyTenantConfig) TableResourceType() authz.RepoResourceType {
+	return authz.RepoResourceTypeTenantconfig
+}
+
+func (m LegacyTenantConfig) TableName() string {
+	return string(m.TableResourceType())
+}
+
+func (LegacyTenantConfig) IsSharedModel() bool {
+	return false
+}
+
+func (m LegacyTenantConfig) CheckAuthz(ctx context.Context,
+	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
+	action authz.RepoAction,
+) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
@@ -40,8 +71,17 @@ type WorkflowConfig struct {
 	// MinimumApprovals is the minimum number of approvals required for a workflow
 	MinimumApprovals int
 
+	// MaxApprovals is the hard upper limit for MinimumApprovals
+	MaxApprovals int
+
 	// RetentionPeriodDays is the number of days to retain workflow data
 	RetentionPeriodDays int
+
+	// MinRetentionPeriodDays is the hard lower limit for RetentionPeriodDays
+	MinRetentionPeriodDays int
+
+	// MaxRetentionPeriodDays is the hard upper limit for RetentionPeriodDays
+	MaxRetentionPeriodDays int
 
 	// DefaultExpiryPeriodDays is the default number of days after which pending workflows will expire
 	DefaultExpiryPeriodDays int

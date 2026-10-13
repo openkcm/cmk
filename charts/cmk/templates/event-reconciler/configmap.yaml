@@ -45,5 +45,7 @@ data:
     landscape:
       {{- toYaml .landscape | nindent 6 }}
 
+    cryptoLayer:
+      {{- toYaml .cryptoLayer | nindent 6 }}
     {{- end }}
 {{- end }}

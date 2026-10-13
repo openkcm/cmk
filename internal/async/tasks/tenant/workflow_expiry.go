@@ -10,21 +10,17 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	wfMechanism "github.com/openkcm/cmk/internal/workflow"
 )
 
 type WorkflowExpiryUpdater interface {
-	GetWorkflows(ctx context.Context, params repo.QueryMapper) ([]*model.Workflow, int, error)
-	TransitionWorkflow(
-		ctx context.Context,
-		workflowID uuid.UUID,
-		transition wfMechanism.Transition,
-	) (*model.Workflow, error)
+	GetWorkflows(ctx context.Context, params repo.Params) ([]*model.Workflow, int, error)
+	ExpireWorkflow(ctx context.Context, workflowID uuid.UUID) (*model.Workflow, error)
 	WorkflowCanExpire(ctx context.Context, workflow *model.Workflow) (bool, error)
 }
 
@@ -52,8 +48,10 @@ func NewWorkflowExpiryProcessor(
 func (w *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	wfs, _, err := w.updater.GetWorkflows(ctx, manager.WorkflowFilter{})
 	if err != nil {
-		return err
+		w.logError(ctx, err)
+		return nil
 	}
+
 	for _, wf := range wfs {
 		if wf.ExpiryDate == nil || time.Now().Before(*wf.ExpiryDate) {
 			continue
@@ -68,7 +66,7 @@ func (w *WorkflowExpiryProcessor) ProcessTask(ctx context.Context, task *asynq.T
 
 		if !canExpire {
 			log.Debug(ctx, "Workflow cannot be expired from current state, skipping",
-				slog.String("workflow_id", wf.ID.String()), slog.String("current_state", wf.State))
+				slog.String("workflow_id", wf.ID.String()), slog.String("current_state", wf.State.String()))
 			continue
 		}
 
@@ -85,6 +83,10 @@ func (w *WorkflowExpiryProcessor) TenantQuery() *repo.Query {
 	return repo.NewQuery()
 }
 
+func (w *WorkflowExpiryProcessor) Role() constants.InternalRole {
+	return constants.InternalTaskWorkflowExpirationRole
+}
+
 func (w *WorkflowExpiryProcessor) TaskType() string {
 	return config.TypeWorkflowExpire
 }
@@ -94,11 +96,17 @@ func (w *WorkflowExpiryProcessor) FanOutFunc() async.FanOutFunc {
 }
 
 func (w *WorkflowExpiryProcessor) expireWorkflow(ctx context.Context, workflowID uuid.UUID) error {
-	workflow, err := w.updater.TransitionWorkflow(ctx, workflowID, wfMechanism.TransitionExpire)
+	workflow, err := w.updater.ExpireWorkflow(ctx, workflowID)
 	if err != nil {
 		return errs.Wrapf(err, "Failed to expire workflow")
 	}
 	log.Info(ctx, "Expired workflow", slog.String("workflow_id", workflow.ID.String()))
 
 	return nil
+}
+
+func (w *WorkflowExpiryProcessor) logError(ctx context.Context, err error) {
+	// Returned errors are retries in batch processor
+	// If we don't want a retry we just log here and return nil
+	log.Error(ctx, "Error during workflow expiry batch processing", err)
 }

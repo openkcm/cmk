@@ -5,18 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/bartventer/gorm-multitenancy/v8/pkg/namespace"
 	"github.com/google/uuid"
 	"github.com/samber/oops"
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
+	"github.com/openkcm/cmk/internal/multitenancy/namespace"
 )
 
 var (

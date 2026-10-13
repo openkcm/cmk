@@ -8,13 +8,14 @@ import (
 	"github.com/openkcm/cmk/internal/constants"
 )
 
-// InjectClientDataIntoContext adds identifier, groups to the context for testing.
-func InjectClientDataIntoContext(ctx context.Context, identifier string, groups []string) context.Context {
-	clientData := &auth.ClientData{
+// InjectBusinessUserDataIntoContext adds identifier, groups to the context for testing.
+func InjectBusinessUserDataIntoContext(ctx context.Context, identifier string, groups []string) context.Context {
+	businessUserData := &auth.ClientData{
 		Identifier: identifier,
 		Groups:     groups,
 	}
-	ctx = context.WithValue(ctx, constants.ClientData, clientData)
+	ctx = context.WithValue(ctx, constants.UserType, constants.BusinessUser)
+	ctx = context.WithValue(ctx, constants.BusinessUserData, businessUserData)
 
 	return ctx
 }

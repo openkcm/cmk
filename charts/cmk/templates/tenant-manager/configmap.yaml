@@ -21,6 +21,9 @@ data:
     status:
       {{- toYaml .status | nindent 6 }}
 
+    featureFlags:
+      {{- toYaml .featureFlags | nindent 6 }}
+
     logger:
       {{- toYaml .logger | nindent 6 }}
 
@@ -37,6 +40,9 @@ data:
 
     tenantManager:
       {{- toYaml .tenantManager | nindent 6 }}
+
+    plugins:
+    {{ include "cmk.plugins" . | nindent 6 }}
 
     {{- end }}
 {{- end }}

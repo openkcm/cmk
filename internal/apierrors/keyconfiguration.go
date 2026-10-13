@@ -85,6 +85,22 @@ var keyConfiguration = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{manager.ErrDeleteKeyConfiguration, manager.ErrConnectedKeysToKeyConfig},
+		ExposedError: &APIError{
+			Code:    "DELETE_KEY_CONFIGURATION_WITH_KEYS",
+			Message: "cannot delete key configuration with existing keys",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		InternalErrorChain: []error{manager.ErrDeleteKeyConfiguration, manager.ErrConnectSystemNoPrimaryKey},
+		ExposedError: &APIError{
+			Code:    "DELETE_KEY_CONFIGURATION_WITH_SYSTEMS",
+			Message: "cannot delete key configuration with connected systems",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{manager.ErrNameCannotBeEmpty},
 		ExposedError: &APIError{
 			Code:    "INVALID_PROPERTY",
@@ -121,6 +137,14 @@ var keyConfiguration = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    UniqueError,
 			Message: "failed to create key configuration because of unique constraint",
+			Status:  http.StatusConflict,
+		},
+	},
+	{
+		InternalErrorChain: []error{manager.ErrKeyConfigLimitExceeded},
+		ExposedError: &APIError{
+			Code:    "KEY_CONFIG_LIMIT_EXCEEDED",
+			Message: "The key configuration limit for this tenant has been reached",
 			Status:  http.StatusConflict,
 		},
 	},

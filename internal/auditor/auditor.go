@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 
+	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/plog"
 
 	otlpaudit "github.com/openkcm/common-sdk/pkg/otlp/audit"
 
 	"github.com/openkcm/cmk/internal/config"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -61,10 +61,10 @@ func (a *Auditor) getEventMetadata(ctx context.Context) (otlpaudit.EventMetadata
 		requestID = ""
 	}
 
-	userInitID, err := cmkcontext.ExtractClientDataIdentifier(ctx)
+	userInitID, err := cmkcontext.ExtractUserIdentifier(ctx)
 	if err != nil {
-		// If no user context is available, use default max UUID
-		userInitID = constants.SystemUser.String()
+		// If no user context is available, use max uuid
+		userInitID = uuid.Max.String()
 	}
 
 	eventMetadata, err := otlpaudit.NewEventMetadata(userInitID, tenantID, requestID)

@@ -1,13 +1,13 @@
 package model
 
 import (
-	"errors"
+	"fmt"
 
 	pb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 )
 
 var (
-	ErrInvalidTenantRole = errors.New("tenant role is not valid")
+	ErrInvalidTenantRole = fmt.Errorf("%w: tenant role is not valid", ErrValidation)
 
 	// validTenantRoles contains all valid tenant roles. Calculated in the init().
 	validTenantRoles = map[TenantRole]struct{}{}

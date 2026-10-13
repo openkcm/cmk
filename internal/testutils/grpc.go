@@ -1,6 +1,7 @@
 package testutils
 
 import (
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
 
@@ -71,15 +73,15 @@ func NewGRPCSuite(
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	lc := net.ListenConfig{}
-	lis, err := lc.Listen(tb.Context(), "tcp", cfg.Address)
-	assert.NoError(tb, err)
+	lis, err := net.Listen("tcp", cfg.Address)
+	require.NoError(tb, err)
 
 	go func(lis net.Listener) {
 		defer wg.Done()
 
-		err = grpcServer.Serve(lis)
-		assert.NoError(tb, err)
+		if err := grpcServer.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			assert.NoError(tb, err)
+		}
 	}(lis)
 
 	grpcClient, err := commongrpc.NewDynamicClientConn(&cfg, DefaultThrottleInterval)

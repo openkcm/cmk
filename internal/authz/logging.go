@@ -14,15 +14,16 @@ type Reason string
 // It logs the request ID, tenant ID, resource type, action, decision, and reason.
 // The decision is logged as an Info log if it is "Allow", otherwise as a Warn log.
 // Additionally, it sends an audit log for unauthorized requests using the provided auditor.
-func LogDecision[TResourceTypeName, TAction comparable](
-	ctx context.Context, request Request[TResourceTypeName, TAction],
-	auditor *auditor.Auditor, isAllowed bool, reason Reason) {
+func LogDecision[TUser UserRequest, TResourceTypeName, TAction comparable](
+	ctx context.Context, request Request[TUser, TResourceTypeName, TAction],
+	auditor *auditor.Auditor, isAllowed bool, reason Reason,
+) {
 	logFn := log.Warn
 
 	if isAllowed { // Allow
 		logFn = log.Info
-	} else { // Deny
-		// send audit log for unauthorized requests
+	} else if !request.User.IsInternal() {
+		// send audit log for unauthorized requests from non-internal users
 		err := auditor.SendCmkUnauthorizedRequestAuditLog(ctx,
 			request.GetResourceTypeNameString(), request.GetActionString())
 		if err != nil {

@@ -3,9 +3,9 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform/clientcertificates"
-	"github.com/openkcm/cmk/internal/api/transform/keyconfiguration"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/clientcertificates"
+	"github.com/openkcm/cmk/internal/api/cmk/transform/keyconfiguration"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
@@ -35,10 +35,15 @@ func (c *APIController) GetKeyConfigurations(
 		return nil, errs.Wrap(apierrors.ErrGettingKeyConfig, err)
 	}
 
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+
 	values := make([]cmkapi.KeyConfiguration, len(keyConfigs))
 
 	for i, dbConfig := range keyConfigs {
-		apiConfig, err := keyconfiguration.ToAPI(*dbConfig)
+		apiConfig, err := keyconfiguration.ToAPI(ctx, dbConfig, c.Manager.KeyConfig, idm)
 		if err != nil {
 			return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationList, err)
 		}
@@ -51,7 +56,7 @@ func (c *APIController) GetKeyConfigurations(
 	}
 
 	if pagination.Count {
-		response.Count = ptr.PointTo(total)
+		response.Count = new(total)
 	}
 
 	return cmkapi.GetKeyConfigurations200JSONResponse(response), nil
@@ -67,20 +72,23 @@ func (c *APIController) PostKeyConfigurations(
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationFromAPI, err)
 	}
 
-	clientData, err := cmkcontext.ExtractClientData(ctx)
+	businessUserData, err := cmkcontext.ExtractBusinessUserData(ctx)
 	if err != nil {
-		return nil, errs.Wrap(err, apierrors.ErrClientDataInvalid)
+		return nil, errs.Wrap(err, apierrors.ErrBusinessUserDataInvalid)
 	}
 
-	keyConfig.CreatorID = clientData.Identifier
-	keyConfig.CreatorName = clientData.Email
+	keyConfig.CreatorID = businessUserData.Identifier
 
 	keyConfig, err = c.Manager.KeyConfig.PostKeyConfigurations(ctx, keyConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	response, err := keyconfiguration.ToAPI(*keyConfig)
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGettingKeyConfig, err)
+	}
+	response, err := keyconfiguration.ToAPI(ctx, keyConfig, c.Manager.KeyConfig, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationToAPI, err)
 	}
@@ -111,7 +119,11 @@ func (c *APIController) GetKeyConfigurationByID(
 		return nil, err
 	}
 
-	response, err := keyconfiguration.ToAPI(*keyConfig)
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+	response, err := keyconfiguration.ToAPI(ctx, keyConfig, c.Manager.KeyConfig, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationToAPI, err)
 	}
@@ -120,16 +132,38 @@ func (c *APIController) GetKeyConfigurationByID(
 }
 
 // UpdateKeyConfigurationByID updates a key configuration by ID
+//
+//nolint:nestif
 func (c *APIController) UpdateKeyConfigurationByID(
 	ctx context.Context,
 	request cmkapi.UpdateKeyConfigurationByIDRequestObject,
 ) (cmkapi.UpdateKeyConfigurationByIDResponseObject, error) {
+	if request.Body.PrimaryKeyID != nil {
+		required, err := c.Manager.Workflow.IsWorkflowRequired(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if required {
+			kc, err := c.Manager.KeyConfig.GetKeyConfigurationByID(ctx, request.KeyConfigurationID)
+			if err != nil {
+				return nil, err
+			}
+			if kc.PrimaryKeyID != nil && *kc.PrimaryKeyID != *request.Body.PrimaryKeyID {
+				return nil, apierrors.ErrActionRequireWorkflow
+			}
+		}
+	}
 	keyConfig, err := c.Manager.KeyConfig.UpdateKeyConfigurationByID(ctx, request.KeyConfigurationID, *request.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	response, err := keyconfiguration.ToAPI(*keyConfig)
+	idm, err := c.pluginCatalog.IdentityManagement()
+	if err != nil {
+		return nil, err
+	}
+	response, err := keyconfiguration.ToAPI(ctx, keyConfig, c.Manager.KeyConfig, idm)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformKeyConfigurationToAPI, err)
 	}

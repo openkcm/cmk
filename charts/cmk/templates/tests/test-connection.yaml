@@ -9,7 +9,7 @@ metadata:
 spec:
   containers:
     - name: wget
-      image: busybox
+      image: alpine
       command: ['wget']
       args: ['{{ include "cmk.fullname" . }}:{{ "8081" }}']
   restartPolicy: Never

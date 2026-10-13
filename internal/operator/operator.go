@@ -17,7 +17,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	goamqp "github.com/Azure/go-amqp"
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
@@ -30,8 +29,8 @@ import (
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
-	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/utils/base62"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
@@ -39,6 +38,8 @@ import (
 const (
 	reconcileAfterSecProcessing = 3 * time.Second
 	reconcileAfterSecError      = 15 * time.Second
+
+	defaultTerminationTimeout = 48 * time.Hour
 
 	operatorComponent       = "operator"
 	msgRegisteringHandler   = "registering handler"
@@ -62,12 +63,14 @@ const (
 	WorkingStateWaitingTenantOffboarding = "waiting for tenant offboarding to complete"
 	WorkingStateTenantOffboardingFailed  = "tenant offboarding failed"
 	WorkingStateTenantProbingFailed      = "tenant probing failed"
+	WorkingStateTenantTerminationTimeout = "tenant termination timed out"
 )
 
 var (
-	ErrInvalidData       = errors.New("invalid data")
-	ErrFailedResponse    = errors.New("failed response")
-	ErrTenantOffboarding = errors.New("tenant offboarding error")
+	ErrInvalidData        = errors.New("invalid data")
+	ErrFailedResponse     = errors.New("failed response")
+	ErrTenantOffboarding  = errors.New("tenant offboarding error")
+	ErrTerminationTimeout = errors.New("tenant termination timed out")
 
 	ErrInvalidTenantID  = errors.New("invalid tenant ID")
 	ErrInvalidAuthProps = errors.New("invalid authentication properties")
@@ -91,6 +94,7 @@ func NewTenantOperator(
 	clientsFactory clients.Factory,
 	tenantManager manager.Tenant,
 	groupManager *manager.GroupManager,
+	r repo.Repo,
 ) (*TenantOperator, error) {
 	if db == nil {
 		return nil, oops.Errorf("db is nil")
@@ -112,7 +116,9 @@ func NewTenantOperator(
 		return nil, oops.Errorf("sessionManagerClient is nil")
 	}
 
-	r := sql.NewRepository(db)
+	if cfg.TenantManager.TerminationTimeout == 0 {
+		cfg.TenantManager.TerminationTimeout = defaultTerminationTimeout
+	}
 
 	return &TenantOperator{
 		db:             db,
@@ -144,7 +150,12 @@ func (o *TenantOperator) RunOperator(ctx context.Context) error {
 	log.Info(ctx, "Tenant Manager is running and waiting for tenant operations")
 
 	// Start listener in goroutine
-	go operator.ListenAndRespond(ctx)
+	go func() {
+		err := operator.ListenAndRespond(ctx)
+		if err != nil {
+			log.Error(ctx, "Tenant Manager listener exited with error", err)
+		}
+	}()
 
 	// Block until context is cancelled
 	<-ctx.Done()
@@ -204,7 +215,7 @@ func (o *TenantOperator) handleCreateTenant(
 	if probeResult.SchemaStatus != SchemaExists {
 		err = o.createTenantSchema(ctx, tenant)
 		if err != nil {
-			setErrorStateAndContinue(ctx, resp, err, WorkingStateSchemaCreationFailed)
+			setErrorState(ctx, resp, err, WorkingStateSchemaCreationFailed)
 			return
 		}
 	}
@@ -213,7 +224,7 @@ func (o *TenantOperator) handleCreateTenant(
 	if probeResult.GroupsStatus != GroupsExist {
 		err = o.createTenantGroups(ctx, tenant)
 		if err != nil {
-			setErrorStateAndContinue(ctx, resp, err, WorkingStateGroupsCreationFailed)
+			setErrorState(ctx, resp, err, WorkingStateGroupsCreationFailed)
 			return
 		}
 	}
@@ -288,7 +299,7 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 				Issuer:     cfg.Issuer,
 				JwksUri:    &cfg.JwksURI,
 				Audiences:  cfg.Audiences,
-				ClientId:   &cfg.ClientID,
+				ClientId:   cfg.ClientID,
 				Properties: cfg.AdditionalProperties,
 			},
 		)
@@ -302,6 +313,38 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 
 		return nil
 	})
+}
+
+// handleRemoveTenantAuth is handler for Remove Tenant Auth task.
+// It removes the tenant's OIDC mapping on the session manager.
+func (o *TenantOperator) handleRemoveTenantAuth(
+	ctx context.Context,
+	req orbital.HandlerRequest,
+	resp *orbital.HandlerResponse,
+) {
+	authProto := &authgrpc.Auth{}
+
+	err := proto.Unmarshal(req.TaskData, authProto)
+	if err != nil {
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidData, err), WorkingStateInvalidTaskData)
+		return
+	}
+
+	tenantID := authProto.GetTenantId()
+	if tenantID == "" {
+		setErrorStateAndFail(ctx, resp, ErrInvalidTenantID, WorkingStateInvalidTaskData)
+		return
+	}
+
+	ctx = slogctx.With(ctx, "tenantId", tenantID)
+
+	hasErr := o.removeOIDCMapping(ctx, resp, tenantID)
+	if hasErr {
+		// removeOIDCMapping already set the response to fail or retry, so just return.
+		return
+	}
+
+	resp.Complete()
 }
 
 // handleBlockTenant is handler for Block Tenant task
@@ -324,7 +367,6 @@ func (o *TenantOperator) handleBlockTenant(
 			TenantId: tenantProto.GetId(),
 		},
 	)
-
 	if err != nil {
 		resp.ContinueAndWaitFor(reconcileAfterSecError)
 		return
@@ -359,7 +401,6 @@ func (o *TenantOperator) handleUnblockTenant(
 			TenantId: tenantProto.GetId(),
 		},
 	)
-
 	if err != nil {
 		setErrorStateAndContinue(ctx, resp, err, WorkingStateOIDCUnblockFailed)
 		return
@@ -380,6 +421,11 @@ func (o *TenantOperator) handleTerminateTenant(
 	req orbital.HandlerRequest,
 	resp *orbital.HandlerResponse,
 ) {
+	if time.Since(req.TaskCreatedAt) > o.cfg.TenantManager.TerminationTimeout {
+		setErrorStateAndFail(ctx, resp, ErrTerminationTimeout, WorkingStateTenantTerminationTimeout)
+		return
+	}
+
 	tenantProto := &tenantgrpc.Tenant{}
 
 	err := proto.Unmarshal(req.TaskData, tenantProto)
@@ -506,11 +552,32 @@ func setErrorStateAndFail(ctx context.Context, resp *orbital.HandlerResponse, er
 	resp.Fail(err.Error())
 }
 
-func (o *TenantOperator) injectSystemUser(
+// setErrorState transitions the task to a terminal failure state when the error is
+// irrecoverable (e.g. invalid input that will never succeed on retry), otherwise it
+// keeps reconciling. This prevents unbounded reconciliation loops on permanent errors.
+func setErrorState(ctx context.Context, resp *orbital.HandlerResponse, err error, state string) {
+	if isIrrecoverable(err) {
+		setErrorStateAndFail(ctx, resp, err, state)
+		return
+	}
+
+	setErrorStateAndContinue(ctx, resp, err, state)
+}
+
+// isIrrecoverable reports whether an error represents a permanent failure that
+// cannot be resolved by retrying, such as invalid tenant input propagated from
+// downstream validation. Retrying these would cause an infinite reconciliation loop.
+// All model-level validation errors wrap model.ErrValidation and are treated as terminal.
+func isIrrecoverable(err error) bool {
+	return errors.Is(err, model.ErrValidation)
+}
+
+func (o *TenantOperator) injectInternalUser(
 	next orbital.HandlerFunc,
 ) orbital.HandlerFunc {
 	return func(ctx context.Context, request orbital.HandlerRequest, response *orbital.HandlerResponse) {
-		ctx = cmkcontext.InjectSystemUser(ctx)
+		ctx, _ = cmkcontext.InjectInternalUserData(ctx,
+			constants.InternalTenantProvisioningRole)
 		next(ctx, request, response)
 	}
 }
@@ -535,15 +602,16 @@ func (o *TenantOperator) trace(
 // registerHandlers registers all task handlers with the orbital operator
 func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
 	handlers := map[string]orbital.HandlerFunc{
-		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():  o.handleCreateTenant,
-		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():      o.handleBlockTenant,
-		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():    o.handleUnblockTenant,
-		tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String():  o.handleTerminateTenant,
-		authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String(): o.handleApplyTenantAuth,
+		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():   o.handleCreateTenant,
+		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():       o.handleBlockTenant,
+		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():     o.handleUnblockTenant,
+		tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String():   o.handleTerminateTenant,
+		authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String():  o.handleApplyTenantAuth,
+		authgrpc.AuthAction_AUTH_ACTION_REMOVE_AUTH.String(): o.handleRemoveTenantAuth,
 	}
 
 	for action, handler := range handlers {
-		handler = o.injectSystemUser(handler)
+		handler = o.injectInternalUser(handler)
 		handler = o.trace(handler, action)
 
 		err := operator.RegisterHandler(action, handler)
@@ -603,16 +671,14 @@ func unmarshalTenantData(ctx context.Context, data []byte) (*model.Tenant, error
 
 	// Create a tenant model from the request data
 	return &model.Tenant{
-		ID:        tenantProto.GetId(),
-		Status:    model.TenantStatus(tenantgrpc.Status_STATUS_ACTIVE.String()),
-		OwnerType: tenantProto.GetOwnerType(),
-		OwnerID:   tenantProto.GetOwnerId(),
-		Name:      tenantProto.GetName(),
-		Role:      model.TenantRole(tenantProto.GetRole().String()),
-		TenantModel: multitenancy.TenantModel{
-			DomainURL:  encodedSchemaName,
-			SchemaName: encodedSchemaName,
-		},
+		ID:         tenantProto.GetId(),
+		Status:     model.TenantStatus(tenantgrpc.Status_STATUS_ACTIVE.String()),
+		OwnerType:  tenantProto.GetOwnerType(),
+		OwnerID:    tenantProto.GetOwnerId(),
+		Name:       tenantProto.GetName(),
+		Role:       model.TenantRole(tenantProto.GetRole().String()),
+		DomainURL:  encodedSchemaName,
+		SchemaName: encodedSchemaName,
 	}, nil
 }
 

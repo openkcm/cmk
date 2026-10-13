@@ -12,7 +12,6 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func WithTotalKeys(ctx context.Context, r repo.Repo) func(*model.KeyConfiguration) error {
@@ -75,7 +74,7 @@ func BenchmarkTotalKeyLoad(b *testing.B) {
 			assert.NoError(b, err)
 
 			err = r.Create(ctx, testutils.NewSystem(func(s *model.System) {
-				s.KeyConfigurationID = ptr.PointTo(keyConfigID)
+				s.KeyConfigurationID = new(keyConfigID)
 			}))
 			assert.NoError(b, err)
 		}

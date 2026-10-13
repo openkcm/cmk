@@ -91,11 +91,11 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
-Task CLI labels
+CMKCTL labels
 */}}
-{{- define "cmk.task-cli.labels" -}}
+{{- define "cmk.cmkctl.labels" -}}
 helm.sh/chart: {{ include "cmk.chart" . }}
-{{ include "cmk.task-cli.selectorLabels" . }}
+{{ include "cmk.cmkctl.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -109,18 +109,6 @@ Tenant Manager labels
 {{- define "cmk.tenant-manager.labels" -}}
 helm.sh/chart: {{ include "cmk.chart" . }}
 {{ include "cmk.tenant-manager.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- end }}
-
-{{/*
-Tenant Manager CLI labels
-*/}}
-{{- define "cmk.tenant-manager-cli.labels" -}}
-helm.sh/chart: {{ include "cmk.chart" . }}
-{{ include "cmk.tenant-manager-cli.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -185,12 +173,12 @@ app.kubernetes.io/component: {{ .Chart.Name }}-tenant-manager
 {{- end }}
 
 {{/*
-Tenant Manager CLI Selector labels
+CMKCTL CLI Selector labels
 */}}
-{{- define "cmk.tenant-manager-cli.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "cmk.name" . }}-tenant-manager-cli
-app.kubernetes.io/instance: {{ .Release.Name }}-tenant-manager-cli
-app.kubernetes.io/component: {{ .Chart.Name }}-tenant-manager-cli
+{{- define "cmk.cmkctl.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "cmk.name" . }}-cmkctl
+app.kubernetes.io/instance: {{ .Release.Name }}-cmkctl
+app.kubernetes.io/component: {{ .Chart.Name }}-cmkctl
 {{- end }}
 
 {{/*
@@ -219,12 +207,13 @@ Create the name of the service account to use
 
 {{/*
 Util function for generating the image URL based on the provided options.
+Either image.tag or image.digest must be set explicitly; no fallback to appVersion.
 */}}
 {{- define "cmk.image" -}}
-{{- $defaultTag := index . 1 -}}
 {{- with index . 0 -}}
+{{- if not (or .digest .tag) -}}{{ fail "Either image.tag or image.digest must be set" }}{{- end -}}
 {{- if .registry -}}{{ printf "%s/%s" .registry .repository }}{{- else -}}{{- .repository -}}{{- end -}}
-{{- if .digest -}}{{ printf "@%s" .digest }}{{- else -}}{{ printf ":%s" (default $defaultTag .tag) }}{{- end -}}
+{{- if .digest -}}{{ printf "@%s" .digest }}{{- else -}}{{ printf ":%s" .tag }}{{- end -}}
 {{- end }}
 {{- end }}
 

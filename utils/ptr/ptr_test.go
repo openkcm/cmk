@@ -78,7 +78,7 @@ func TestIsValidStrPtr(t *testing.T) {
 func TestGetSafeDeref(t *testing.T) {
 	t.Run("Should string on string pointer", func(t *testing.T) {
 		exepected := "test"
-		res := ptr.GetSafeDeref(ptr.PointTo(exepected))
+		res := ptr.GetSafeDeref(new(exepected))
 		assert.Equal(t, exepected, res)
 	})
 
@@ -91,7 +91,7 @@ func TestGetSafeDeref(t *testing.T) {
 
 	t.Run("Should number on number pointer", func(t *testing.T) {
 		expected := 5
-		res := ptr.GetSafeDeref(ptr.PointTo(expected))
+		res := ptr.GetSafeDeref(new(expected))
 		assert.Equal(t, expected, res)
 	})
 
@@ -104,8 +104,8 @@ func TestGetSafeDeref(t *testing.T) {
 }
 
 func TestIsNotNilUUID(t *testing.T) {
-	validUUID := ptr.PointTo(uuid.MustParse("123e4567-e89b-12d3-a456-426614174000"))
-	invalidUUID := ptr.PointTo(uuid.Nil)
+	validUUID := new(uuid.MustParse("123e4567-e89b-12d3-a456-426614174000"))
+	invalidUUID := new(uuid.Nil)
 	nilUUID := (*uuid.UUID)(nil)
 
 	tests := []struct {

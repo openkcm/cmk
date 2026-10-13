@@ -1,7 +1,6 @@
 package mock_test
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -120,7 +119,7 @@ func TestCreate(t *testing.T) {
 			name: "Create Label Success",
 			CreateModel: func() (any, repo.Resource) {
 				id := uuid.New()
-				data := model.KeyLabel{BaseLabel: model.BaseLabel{ID: id}}
+				data := model.KeyLabel{ID: id}
 
 				return id, data
 			},
@@ -425,22 +424,16 @@ func TestGetAll(t *testing.T) {
 			CreateModel: func() (int, repo.Resource, []repo.Resource) {
 				data := []model.KeyLabel{
 					{
-						BaseLabel: model.BaseLabel{
-							ID:    uuid.New(),
-							Value: "Value1",
-						},
+						ID:    uuid.New(),
+						Value: "Value1",
 					},
 					{
-						BaseLabel: model.BaseLabel{
-							ID:    uuid.New(),
-							Value: "Value2",
-						},
+						ID:    uuid.New(),
+						Value: "Value2",
 					},
 					{
-						BaseLabel: model.BaseLabel{
-							ID:    uuid.New(),
-							Value: "Value3",
-						},
+						ID:    uuid.New(),
+						Value: "Value3",
 					},
 				}
 
@@ -849,13 +842,13 @@ func TestUpdate(t *testing.T) {
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				id := uuid.New()
 				data := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: id, Value: "value1"},
+					ID: id, Value: "value1",
 				}
 				newData := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: id, Value: "value2"},
+					ID: id, Value: "value2",
 				}
 				getData := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: id},
+					ID: id,
 				}
 
 				return data, newData, getData
@@ -873,13 +866,13 @@ func TestUpdate(t *testing.T) {
 			name: "Update Key Label Failure",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				data := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: uuid.New(), Value: "value1"},
+					ID: uuid.New(), Value: "value1",
 				}
 				newData := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: uuid.New(), Value: "value2"},
+					ID: uuid.New(), Value: "value2",
 				}
 				getData := model.KeyLabel{
-					BaseLabel: model.BaseLabel{ID: uuid.New()},
+					ID: uuid.New(),
 				}
 
 				return data, newData, getData
@@ -961,8 +954,8 @@ func TestUpdate(t *testing.T) {
 			name: "Update Tenant config Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				keyID := uuid.New().String()
-				key := model.TenantConfig{Key: keyID, Value: json.RawMessage("test1")}
-				newKey := model.TenantConfig{Key: keyID, Value: json.RawMessage("test2")}
+				key := model.TenantConfig{Key: keyID, Value: "test1"}
+				newKey := model.TenantConfig{Key: keyID, Value: "test2"}
 				getKey := model.TenantConfig{Key: keyID}
 
 				return key, newKey, getKey
@@ -979,8 +972,8 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "Update Tenant config Failure",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
-				key := model.TenantConfig{Key: uuid.New().String(), Value: json.RawMessage("test1")}
-				newKey := model.TenantConfig{Key: uuid.New().String(), Value: json.RawMessage("test2")}
+				key := model.TenantConfig{Key: uuid.New().String(), Value: "test1"}
+				newKey := model.TenantConfig{Key: uuid.New().String(), Value: "test2"}
 				getKey := model.TenantConfig{Key: uuid.New().String()}
 
 				return key, newKey, getKey
@@ -1122,9 +1115,9 @@ func TestDelete(t *testing.T) {
 			name: "Delete Key Label Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				id := uuid.New()
-				data := model.KeyLabel{BaseLabel: model.BaseLabel{ID: id, Value: "test1"}}
-				dataToDelete := model.KeyLabel{BaseLabel: model.BaseLabel{ID: id}}
-				getData := model.KeyLabel{BaseLabel: model.BaseLabel{ID: id}}
+				data := model.KeyLabel{ID: id, Value: "test1"}
+				dataToDelete := model.KeyLabel{ID: id}
+				getData := model.KeyLabel{ID: id}
 
 				return data, dataToDelete, getData
 			},
@@ -1161,7 +1154,7 @@ func TestDelete(t *testing.T) {
 			name: "Delete TenantConfig Success",
 			CreateModel: func() (repo.Resource, repo.Resource, repo.Resource) {
 				id := uuid.New().String()
-				data := model.TenantConfig{Key: id, Value: json.RawMessage("test1")}
+				data := model.TenantConfig{Key: id, Value: "test1"}
 				dataToDelete := model.TenantConfig{Key: id}
 				getData := model.TenantConfig{Key: id}
 

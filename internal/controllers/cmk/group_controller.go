@@ -3,9 +3,9 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	"github.com/openkcm/cmk/internal/api/transform"
-	tfGroup "github.com/openkcm/cmk/internal/api/transform/group"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/api/cmk/transform"
+	tfGroup "github.com/openkcm/cmk/internal/api/cmk/transform/group"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -43,7 +43,7 @@ func (c *APIController) GetGroups(
 	}
 
 	if pagination.Count {
-		response.Count = ptr.PointTo(total)
+		response.Count = new(total)
 	}
 
 	return cmkapi.GetGroups200JSONResponse(response), err

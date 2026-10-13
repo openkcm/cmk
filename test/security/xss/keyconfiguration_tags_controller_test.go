@@ -7,10 +7,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/model"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -36,7 +35,7 @@ func TestAddTagsToKeyConfiguration_ForXSS(t *testing.T) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
-		testutils.WithAuthClientDataKC(authClient))
+		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	testutils.CreateTestEntities(ctx, t, r, keyConfig)
 

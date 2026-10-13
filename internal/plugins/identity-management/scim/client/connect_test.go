@@ -4,11 +4,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
-	"github.com/magodo/slog2hclog"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
-	"github.com/openkcm/plugin-sdk/pkg/hclog2slog"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/plugins/identity-management/scim/client"
@@ -49,14 +48,12 @@ const (
 
 var (
 	ExpectedUser = client.User{
-		BaseResource: client.BaseResource{
-			ID:         "d1a6888d-7fd5-4c3f-ae33-177b24aae627",
-			ExternalID: "",
-			Meta:       struct{}{},
-			Schemas: []string{
-				"urn:ietf:params:scim:schemas:core:2.0:User",
-				"urn:ietf:params:scim:schemas:extension:sap:2.0:User",
-			},
+		ID:         "d1a6888d-7fd5-4c3f-ae33-177b24aae627",
+		ExternalID: "",
+		Meta:       struct{}{},
+		Schemas: []string{
+			"urn:ietf:params:scim:schemas:core:2.0:User",
+			"urn:ietf:params:scim:schemas:extension:sap:2.0:User",
 		},
 		UserName:    "cloudanalyst",
 		Name:        struct{}{},
@@ -78,14 +75,12 @@ var (
 		UserType: "employee",
 	}
 	ExpectedGroup = client.Group{
-		BaseResource: client.BaseResource{
-			ID:         "16e720aa-a009-4949-9bf9-847fb0660522",
-			ExternalID: "",
-			Meta:       struct{}{},
-			Schemas: []string{
-				"urn:ietf:params:scim:schemas:core:2.0:Group",
-				"urn:sap:cloud:scim:schemas:extension:custom:2.0:Group",
-			},
+		ID:         "16e720aa-a009-4949-9bf9-847fb0660522",
+		ExternalID: "",
+		Meta:       struct{}{},
+		Schemas: []string{
+			"urn:ietf:params:scim:schemas:core:2.0:Group",
+			"urn:sap:cloud:scim:schemas:extension:custom:2.0:Group",
 		},
 		DisplayName: "KeyAdmin",
 		Members: []client.MultiValuedAttribute{
@@ -97,9 +92,7 @@ var (
 )
 
 func getLogger() *slog.Logger {
-	logLevelPlugin := new(slog.LevelVar)
-	logLevelPlugin.Set(slog.LevelError)
-	return hclog2slog.New(slog2hclog.New(slog.Default(), logLevelPlugin))
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
 func getServer(t *testing.T, responseStatus int, responseBody string) *httptest.Server {

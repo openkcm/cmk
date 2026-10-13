@@ -8,15 +8,19 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 )
 
-var (
-	ErrListTenants      = errors.New("failed to get tenants")
-	ErrTransformTenants = errors.New("failed to transform tenants to API")
-	ErrTenantIDInPath   = errors.New("tenant ID in path is not allowed")
-)
+var ErrTransformTenants = errors.New("failed to transform tenants to API")
 
 var tenants = []errs.ExposedErrors[*APIError]{
 	{
 		InternalErrorChain: []error{manager.ErrTenantNotAllowed},
+		ExposedError: &APIError{
+			Code:    "NO_TENANT_ACCESS",
+			Message: "User has no permission to access tenant",
+			Status:  http.StatusForbidden,
+		},
+	},
+	{
+		InternalErrorChain: []error{manager.ErrListTenants},
 		ExposedError: &APIError{
 			Code:    "NO_TENANT_ACCESS",
 			Message: "User has no permission to access tenant",

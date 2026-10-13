@@ -3,8 +3,8 @@ package cmk
 import (
 	"context"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
-	keylabel "github.com/openkcm/cmk/internal/api/transform/label"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	keylabel "github.com/openkcm/cmk/internal/api/cmk/transform/label"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"

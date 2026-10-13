@@ -13,10 +13,12 @@ const (
 	KeyVersionTable       = "key_versions"
 	KeyLabelTable         = "key_labels"
 	SystemTable           = "systems"
+	SystemGroupTable      = "system_groups"
 	SystemPropertyTable   = "systems_properties"
 	TagTable              = "tags"
 	TenantTable           = publicTablePreFix + "tenants"
 	TenantconfigTable     = "tenant_configs"
 	WorkflowTable         = "workflows"
-	WorkflowApproverTable = "workflow_approvers"
+	WorkflowTaskTable     = "workflow_tasks"
+	WorkflowTaskViewTable = "workflow_task_view"
 )

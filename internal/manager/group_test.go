@@ -6,20 +6,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
-	"github.com/openkcm/cmk/internal/testutils/testplugins"
-	"github.com/openkcm/cmk/utils/ptr"
 )
 
 func SetupGroupManager(t *testing.T) (*manager.GroupManager, *multitenancy.DB, string) {
@@ -31,18 +27,13 @@ func SetupGroupManager(t *testing.T) (*manager.GroupManager, *multitenancy.DB, s
 		},
 	)
 
-	ps, psCfg := testutils.NewTestPlugins(testplugins.NewIdentityManagement())
-
-	svcRegistry, err := cmkpluginregistry.New(
-		t.Context(), &config.Config{
-			Plugins: psCfg,
-		}, cmkpluginregistry.WithBuiltInPlugins(ps),
-	)
-	assert.NoError(t, err)
+	svcRegistry := testutils.NewTestPlugins()
 
 	dbRepository := sql.NewRepository(db)
 
-	m := manager.NewGroupManager(dbRepository, svcRegistry, manager.NewUserManager(dbRepository, auditor.New(t.Context(), &config.Config{})))
+	m := manager.NewGroupManager(dbRepository, svcRegistry,
+		manager.NewUserManager(dbRepository,
+			auditor.New(t.Context(), &config.Config{})))
 
 	return m, db, tenants[0]
 }
@@ -57,7 +48,7 @@ func TestGetGroups(t *testing.T) {
 			},
 		)
 		ctx := testutils.CreateCtxWithTenant(tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group1"})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group1"})
 		_, err := manager.CreateGroup(ctx, group)
 		assert.NoError(t, err)
 
@@ -78,7 +69,7 @@ func TestCreateGroup(t *testing.T) {
 			},
 		)
 		ctx := testutils.CreateCtxWithTenant(tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-create"})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-create"})
 		res, err := groupManager.CreateGroup(
 			ctx,
 			expected,
@@ -89,7 +80,7 @@ func TestCreateGroup(t *testing.T) {
 
 	t.Run("Should error on create group with duplicated name", func(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"duplicated-iam"})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"duplicated-iam"})
 		_, err := groupManager.CreateGroup(
 			ctx,
 			testutils.NewGroup(
@@ -114,7 +105,7 @@ func TestCreateGroup(t *testing.T) {
 
 	t.Run("Should error on create group with invalid role", func(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-role"})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-role"})
 		_, err := groupManager.CreateGroup(
 			ctx,
 			testutils.NewGroup(
@@ -134,7 +125,7 @@ func TestCreateGroup(t *testing.T) {
 		defer forced.Unregister()
 
 		ctx := testutils.CreateCtxWithTenant(tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-error"})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-error"})
 		res, err := groupManager.CreateGroup(
 			ctx,
 			testutils.NewGroup(
@@ -158,7 +149,7 @@ func TestDeleteGroupByID(t *testing.T) {
 				},
 			)
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-delete"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-delete"})
 			_, err := groupManager.CreateGroup(
 				ctx,
 				group,
@@ -173,7 +164,7 @@ func TestDeleteGroupByID(t *testing.T) {
 	t.Run(
 		"Should error on invalid non existing group id", func(t *testing.T) {
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
 			err := groupManager.DeleteGroupByID(ctx, uuid.New())
 			assert.Error(t, err)
 		},
@@ -188,7 +179,7 @@ func TestDeleteGroupByID(t *testing.T) {
 				},
 			)
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-auditor"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-auditor"})
 			_, err := groupManager.CreateGroup(
 				ctx,
 				group,
@@ -208,7 +199,7 @@ func TestDeleteGroupByID(t *testing.T) {
 				},
 			)
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-keyconfig"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-keyconfig"})
 			_, err := groupManager.CreateGroup(
 				ctx,
 				group,
@@ -244,7 +235,7 @@ func TestDeleteGroupByID(t *testing.T) {
 			)
 
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-error-delete"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-error-delete"})
 			_, err := groupManager.CreateGroup(
 				ctx,
 				group,
@@ -262,7 +253,7 @@ func TestGetGroupByID(t *testing.T) {
 	t.Run(
 		"Should get group", func(t *testing.T) {
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-getbyid"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-getbyid"})
 			expected, err := groupManager.CreateGroup(
 				ctx,
 				testutils.NewGroup(
@@ -282,7 +273,7 @@ func TestGetGroupByID(t *testing.T) {
 	t.Run(
 		"Should fail on get group", func(t *testing.T) {
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
 			group, err := groupManager.GetGroupByID(ctx, uuid.New())
 			assert.Nil(t, group)
 			assert.Error(t, err)
@@ -293,7 +284,7 @@ func TestGetGroupByID(t *testing.T) {
 func TestUpdateGroup(t *testing.T) {
 	groupManager, db, tenant := SetupGroupManager(t)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-admin"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-admin"})
 	reservedGroup, err := groupManager.CreateGroup(
 		ctx,
 		testutils.NewGroup(
@@ -308,7 +299,7 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should rename group", func(t *testing.T) {
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-update"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-update"})
 			expected, err := groupManager.CreateGroup(
 				ctx,
 				testutils.NewGroup(func(g *model.Group) {
@@ -317,7 +308,7 @@ func TestUpdateGroup(t *testing.T) {
 			)
 			assert.NoError(t, err)
 
-			patchGroup := cmkapi.GroupPatch{Name: ptr.PointTo("test-updated")}
+			patchGroup := cmkapi.GroupPatch{Name: new("test-updated")}
 			group, err := groupManager.UpdateGroup(ctx, expected.ID, patchGroup)
 			expected.Name = *patchGroup.Name
 			assert.Equal(t, expected, group)
@@ -327,7 +318,7 @@ func TestUpdateGroup(t *testing.T) {
 
 	t.Run("Should change IAMIdentifier", func(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"iam-identifier"})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"iam-identifier"})
 		expected, err := groupManager.CreateGroup(
 			ctx,
 			testutils.NewGroup(func(g *model.Group) {
@@ -336,7 +327,7 @@ func TestUpdateGroup(t *testing.T) {
 		)
 		assert.NoError(t, err)
 
-		patchGroup := cmkapi.GroupPatch{IAMIdentifier: ptr.PointTo("new-identifier")}
+		patchGroup := cmkapi.GroupPatch{IAMIdentifier: new("new-identifier")}
 		group, err := groupManager.UpdateGroup(ctx, expected.ID, patchGroup)
 		expected.IAMIdentifier = *patchGroup.IAMIdentifier
 		assert.Equal(t, expected, group)
@@ -347,7 +338,7 @@ func TestUpdateGroup(t *testing.T) {
 		group, err := groupManager.UpdateGroup(
 			ctx,
 			reservedGroup.ID,
-			cmkapi.GroupPatch{IAMIdentifier: ptr.PointTo("test")},
+			cmkapi.GroupPatch{IAMIdentifier: new("test")},
 		)
 		assert.Nil(t, group)
 		assert.Error(t, err)
@@ -356,7 +347,7 @@ func TestUpdateGroup(t *testing.T) {
 
 	t.Run("Should error on change IAMIdentifier with invalid values", func(t *testing.T) {
 		ctx := testutils.CreateCtxWithTenant(tenant)
-		ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"iam-identifier"})
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"iam-identifier"})
 		expected, err := groupManager.CreateGroup(
 			ctx,
 			testutils.NewGroup(func(g *model.Group) {
@@ -368,7 +359,7 @@ func TestUpdateGroup(t *testing.T) {
 		group, err := groupManager.UpdateGroup(
 			ctx,
 			expected.ID,
-			cmkapi.GroupPatch{IAMIdentifier: ptr.PointTo("!test!")},
+			cmkapi.GroupPatch{IAMIdentifier: new("!test!")},
 		)
 		assert.Nil(t, group)
 		assert.Error(t, err)
@@ -378,7 +369,7 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should error on rename group if name is empty", func(t *testing.T) {
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-empty"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-empty"})
 			expected, err := groupManager.CreateGroup(
 				ctx,
 				testutils.NewGroup(
@@ -389,7 +380,7 @@ func TestUpdateGroup(t *testing.T) {
 			)
 			assert.NoError(t, err)
 
-			patchGroup := cmkapi.GroupPatch{Name: ptr.PointTo("")}
+			patchGroup := cmkapi.GroupPatch{Name: new("")}
 			group, err := groupManager.UpdateGroup(ctx, expected.ID, patchGroup)
 			assert.Nil(t, group)
 			assert.Error(t, err)
@@ -400,11 +391,11 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should error on rename if group imanagerandatory", func(t *testing.T) {
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-admin"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-admin"})
 			group, err := groupManager.UpdateGroup(
 				ctx,
 				reservedGroup.ID,
-				cmkapi.GroupPatch{Name: ptr.PointTo("test")},
+				cmkapi.GroupPatch{Name: new("test")},
 			)
 			assert.Nil(t, group)
 			assert.Error(t, err)
@@ -415,11 +406,11 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should error on rename if new group name is reserved name", func(t *testing.T) {
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-admin"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-admin"})
 			group, err := groupManager.UpdateGroup(
 				ctx,
 				reservedGroup.ID,
-				cmkapi.GroupPatch{Name: ptr.PointTo(constants.TenantAdminGroup)},
+				cmkapi.GroupPatch{Name: new(constants.TenantAdminGroup)},
 			)
 			assert.Nil(t, group)
 			assert.Error(t, err)
@@ -430,11 +421,11 @@ func TestUpdateGroup(t *testing.T) {
 	t.Run(
 		"Should error on rename if does not exist", func(t *testing.T) {
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group"})
 			group, err := groupManager.UpdateGroup(
 				ctx,
 				uuid.New(),
-				cmkapi.GroupPatch{Name: ptr.PointTo("test")},
+				cmkapi.GroupPatch{Name: new("test")},
 			)
 			assert.Nil(t, group)
 			assert.Error(t, err)
@@ -449,7 +440,7 @@ func TestUpdateGroup(t *testing.T) {
 			defer forced.Unregister()
 
 			ctx := testutils.CreateCtxWithTenant(tenant)
-			ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"test-group-dberror"})
+			ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"test-group-dberror"})
 			expected, err := groupManager.CreateGroup(
 				ctx,
 				testutils.NewGroup(
@@ -463,7 +454,7 @@ func TestUpdateGroup(t *testing.T) {
 			group, err := groupManager.UpdateGroup(
 				ctx,
 				expected.ID,
-				cmkapi.GroupPatch{Name: ptr.PointTo("test")},
+				cmkapi.GroupPatch{Name: new("test")},
 			)
 			assert.Nil(t, group)
 			assert.Error(t, err)
@@ -474,7 +465,7 @@ func TestUpdateGroup(t *testing.T) {
 func TestCheckGroupIAMExistence(t *testing.T) {
 	m, _, tenant := SetupGroupManager(t)
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	ctx = testutils.InjectClientDataIntoContext(ctx, "test-user", []string{"KMS_001", "KMS_002", "KMS_003"})
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user", []string{"KMS_001", "KMS_002", "KMS_003"})
 
 	t.Run(
 		"Should confirm group IAM existence", func(t *testing.T) {

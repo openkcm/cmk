@@ -103,7 +103,7 @@ func TestAuthzScenarios(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := testutils.InjectClientDataIntoContext(
+			ctx := testutils.InjectBusinessUserDataIntoContext(
 				ctx, "testuser", []string{tt.group})
 
 			err := authzRepo.Create(ctx, &testutils.TestModel{

@@ -5,8 +5,7 @@ import (
 
 	"github.com/openkcm/orbital"
 
-	multitenancy "github.com/bartventer/gorm-multitenancy/v8"
-
+	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -24,6 +23,22 @@ func (o *TenantOperator) HandleApplyTenantAuth(
 	resp *orbital.HandlerResponse,
 ) {
 	o.handleApplyTenantAuth(ctx, req, resp)
+}
+
+func (o *TenantOperator) HandleRemoveTenantAuth(
+	ctx context.Context,
+	req orbital.HandlerRequest,
+	resp *orbital.HandlerResponse,
+) {
+	o.handleRemoveTenantAuth(ctx, req, resp)
+}
+
+func (o *TenantOperator) HandleTerminateTenant(
+	ctx context.Context,
+	req orbital.HandlerRequest,
+	resp *orbital.HandlerResponse,
+) {
+	o.handleTerminateTenant(ctx, req, resp)
 }
 
 func (o *TenantOperator) Trace(next orbital.HandlerFunc, name string) orbital.HandlerFunc {
@@ -60,4 +75,8 @@ func ParseCommaSeparatedValues(input string) []string {
 
 func ExtractOIDCConfig(properties map[string]string) (OIDCConfig, error) {
 	return extractOIDCConfig(properties)
+}
+
+func SetErrorState(ctx context.Context, resp *orbital.HandlerResponse, err error, state string) {
+	setErrorState(ctx, resp, err, state)
 }

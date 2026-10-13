@@ -3,15 +3,17 @@ package systems
 import (
 	"errors"
 	"strings"
+
+	"github.com/openkcm/cmk/internal/model"
 )
 
-// SystemType represents the type of the system.
-type SystemType string
+// SystemType aliases model.SystemType — the canonical definition (and
+// persisted Valuer/Scanner) lives in internal/model.
+type SystemType = model.SystemType
 
-// Defines values for SystemType.
 const (
-	SystemTypeSYSTEM     SystemType = "SYSTEM"
-	SystemTypeSUBACCOUNT SystemType = "SUBACCOUNT"
+	SystemTypeSYSTEM     = model.SystemTypeSYSTEM
+	SystemTypeSUBACCOUNT = model.SystemTypeSUBACCOUNT
 )
 
 var ErrUnsupportSystemType = errors.New("unsupported system type ")

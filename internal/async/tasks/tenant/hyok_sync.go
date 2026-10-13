@@ -7,6 +7,8 @@ import (
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
 )
 
@@ -36,12 +38,20 @@ func NewHYOKSync(
 	return h
 }
 
-func (h *HYOKSync) ProcessTask(ctx context.Context, _ *asynq.Task) error {
-	return h.hyokClient.SyncHYOKKeys(ctx)
+func (h *HYOKSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	err := h.hyokClient.SyncHYOKKeys(ctx)
+	if err != nil {
+		h.logError(ctx, err)
+	}
+	return nil
 }
 
 func (h *HYOKSync) TaskType() string {
 	return config.TypeHYOKSync
+}
+
+func (h *HYOKSync) Role() constants.InternalRole {
+	return constants.InternalTaskHYOKSyncRole
 }
 
 func (h *HYOKSync) FanOutFunc() async.FanOutFunc {
@@ -50,4 +60,10 @@ func (h *HYOKSync) FanOutFunc() async.FanOutFunc {
 
 func (h *HYOKSync) TenantQuery() *repo.Query {
 	return repo.NewQuery()
+}
+
+func (h *HYOKSync) logError(ctx context.Context, err error) {
+	// Returned errors are retries in batch processor
+	// If we don't want a retry we just log here and return nil
+	log.Error(ctx, "Error during hyok sync batch processing", err)
 }

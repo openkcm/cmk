@@ -11,25 +11,36 @@ import (
 
 	protoPkg "google.golang.org/protobuf/proto"
 
-	"github.com/openkcm/cmk/internal/api/cmkapi"
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/event-processor/proto"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/model"
-	cmkpluginregistry "github.com/openkcm/cmk/internal/pluginregistry"
+	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
+var (
+	ErrKeystoreNotEnrolled = errors.New("no crypto access data provisioned for tenant: keystore not enrolled")
+	ErrNoCryptoAccessData  = errors.New("no crypto access data provisioned for tenant")
+)
+
+// TenantConfigStore reads the default keystore config via flat rows.
+type TenantConfigStore interface {
+	GetStoredDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, bool, error)
+}
+
 // SystemTaskInfoResolver is responsible for resolving the necessary information to create a TaskInfo
 // for system-related tasks such as linking and unlinking systems.
 type SystemTaskInfoResolver struct {
-	repo        repo.Repo
-	targets     map[string]struct{}
-	svcRegistry *cmkpluginregistry.Registry
-	cfg         *config.Config
+	repo              repo.Repo
+	targets           map[string]struct{}
+	svcRegistry       serviceapi.Registry
+	cfg               *config.Config
+	tenantConfigStore TenantConfigStore
 }
 
 func (r *SystemTaskInfoResolver) Resolve(
@@ -138,7 +149,7 @@ func (r *SystemTaskInfoResolver) buildSystemActionTaskData(
 			SystemAction: &proto.SystemAction{
 				SystemId:          system.Identifier,
 				SystemRegion:      system.Region,
-				SystemType:        strings.ToLower(system.Type),
+				SystemType:        strings.ToLower(string(system.Type)),
 				KeyIdFrom:         data.KeyIDFrom,
 				KeyIdTo:           data.KeyIDTo,
 				KeyProvider:       strings.ToLower(key.Provider),
@@ -199,7 +210,7 @@ func (r *SystemTaskInfoResolver) selectKeyForTask(
 func (r *SystemTaskInfoResolver) fetchAndPopulateVersionInfo(
 	ctx context.Context,
 	key model.Key,
-) (map[string]map[string]any, error) {
+) (model.KeyAccessData, error) {
 	cryptoData := key.GetCryptoAccessData()
 
 	latestVersionID, err := getNewestKeyVersionNativeID(ctx, r.repo, key.ID.String())
@@ -215,14 +226,36 @@ func (r *SystemTaskInfoResolver) fetchAndPopulateVersionInfo(
 	}
 
 	for region := range cryptoData {
-		if cryptoData[region] == nil {
-			// Initialize map if it doesn't exist
-			cryptoData[region] = make(map[string]any)
-		}
-		cryptoData[region]["versionIdentifier"] = latestVersionID
+		regionValues := cryptoData[region]
+		regionValues.Set("versionIdentifier", latestVersionID)
+		cryptoData[region] = regionValues
 	}
 
 	return cryptoData, nil
+}
+
+func (r *SystemTaskInfoResolver) getCryptoAccessDataFromConfig(ctx context.Context) (model.KeyAccessData, error) {
+	ksConfig, found, err := r.tenantConfigStore.GetStoredDefaultKeystoreConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get default keystore config: %w", err)
+	}
+	if !found {
+		return nil, ErrKeystoreNotEnrolled
+	}
+
+	if len(ksConfig.CryptoAccessData) == 0 {
+		return nil, ErrNoCryptoAccessData
+	}
+
+	result := make(model.KeyAccessData)
+	for name, cryptoCfg := range ksConfig.CryptoAccessData {
+		result[name] = cmkapi.KeyAccessDetailsRegion{
+			CertificateSubject:   &cryptoCfg.Subject,
+			AdditionalProperties: cryptoCfg.AccessData,
+		}
+	}
+
+	return result, nil
 }
 
 func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
@@ -240,8 +273,15 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 		return nil, ErrPluginNotFound
 	}
 
-	// Fetch and populate version info
-	cryptoData, err := r.fetchAndPopulateVersionInfo(ctx, key)
+	var cryptoData model.KeyAccessData
+	// For HYOK keys, we need to fetch the latest version info and populate it into the crypto access data
+	// to support key rotation.
+	// For BYOK/managed keys, we need to sync crypto access data instead
+	if key.KeyType == cmkapi.KeyTypeHYOK {
+		cryptoData, err = r.fetchAndPopulateVersionInfo(ctx, key)
+	} else {
+		cryptoData, err = r.getCryptoAccessDataFromConfig(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +298,8 @@ func (r *SystemTaskInfoResolver) getKeyAccessMetadata(
 		&keymanagement.TransformCryptoAccessDataRequest{
 			NativeKeyID: *key.NativeID,
 			AccessData:  cryptoAccessDataBytes,
-		})
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

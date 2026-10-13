@@ -22,8 +22,8 @@ func LoadConfig(opts ...commoncfg.Option) (*Config, error) {
 		commoncfg.WithDefaults(defaultConfig),
 		commoncfg.WithPaths(
 			constants.DefaultConfigPath1,
-			constants.DefaultConfigPath2,
 			".",
+			constants.DefaultConfigPath2,
 		),
 	}, opts...)
 

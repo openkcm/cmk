@@ -237,10 +237,8 @@ func TestV1_ListTenants(t *testing.T) {
 			expectedError: apierrors.ErrInvalidLimit,
 		},
 		{
-			name: "tenant not found",
-			request: &tenantapi.ListTenantsRequest{
-				ID: "non-existent",
-			},
+			name:          "tenant not found",
+			request:       &tenantapi.ListTenantsRequest{},
 			mockError:     status.Error(codes.NotFound, "tenant not found"),
 			expectedError: apierrors.ErrTenantNotFound,
 		},

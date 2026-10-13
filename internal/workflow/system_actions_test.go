@@ -25,15 +25,15 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 	wfMutator := testutils.NewMutator(func() model.Workflow {
 		return model.Workflow{
 			ID:          systemID01,
-			State:       workflow.StateInitial.String(),
+			State:       model.WorkflowStateInitial,
 			InitiatorID: userID01,
-			Approvers: []model.WorkflowApprover{
-				{UserID: userID02, Approved: sqlNullBoolNull},
-				{UserID: userID03, Approved: sqlNullBoolNull},
+			Tasks: []model.WorkflowTask{
+				{ID: uuid.New(), UserID: userID02, AssigneeRole: model.AssigneeRoleApprover, Approved: sqlNullBoolNull},
+				{ID: uuid.New(), UserID: userID03, AssigneeRole: model.AssigneeRoleApprover, Approved: sqlNullBoolNull},
 			},
-			ArtifactType: workflow.ArtifactTypeSystem.String(),
+			ArtifactType: model.WorkflowArtifactTypeSystem,
 			ArtifactID:   systemID01,
-			ActionType:   workflow.ActionTypeLink.String(),
+			ActionType:   model.WorkflowActionTypeLink,
 			Parameters:   keyConfigID03.String(),
 		}
 	})
@@ -44,47 +44,47 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 		transition    workflow.Transition
 		expectErr     bool
 		errMessage    string
-		expectedState workflow.State
+		expectedState model.WorkflowState
 	}{
 		{
 			name: "workflow system link",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
+				wf.State = model.WorkflowStateWaitConfirmation
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
 			expectErr:     false,
-			expectedState: workflow.StateSuccessful,
+			expectedState: model.WorkflowStateSuccessful,
 		},
 		{
 			name: "workflow system switch",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
-				wf.ActionType = workflow.ActionTypeSwitch.String()
+				wf.State = model.WorkflowStateWaitConfirmation
+				wf.ActionType = model.WorkflowActionTypeSwitch
 				wf.Parameters = keyConfigID04.String()
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
 			expectErr:     false,
-			expectedState: workflow.StateSuccessful,
+			expectedState: model.WorkflowStateSuccessful,
 		},
 		{
 			name: "workflow system unlink",
 			workflow: wfMutator(func(wf *model.Workflow) {
-				wf.State = workflow.StateWaitConfirmation.String()
-				wf.ActionType = workflow.ActionTypeUnlink.String()
+				wf.State = model.WorkflowStateWaitConfirmation
+				wf.ActionType = model.WorkflowActionTypeUnlink
 				wf.Parameters = ""
 			}),
 			actorID:       userID01,
 			transition:    workflow.TransitionConfirm,
 			expectErr:     false,
-			expectedState: workflow.StateSuccessful,
+			expectedState: model.WorkflowStateSuccessful,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mgr, db, tenant := SetupWorkflowManager(t)
+			mgr, db, tenant, _ := SetupWorkflowManager(t)
 			r := sqlRepo.NewRepository(db)
 			ctx := testutils.CreateCtxWithTenant(tenant)
 
@@ -112,7 +112,7 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 				c.PrimaryKeyID = &key3.ID
 			})
 
-			ctx = testutils.InjectClientDataIntoContext(
+			ctx = testutils.InjectBusinessUserDataIntoContext(
 				ctx,
 				uuid.NewString(),
 				[]string{
@@ -123,13 +123,19 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 
 			testutils.CreateTestEntities(ctx, t, r, key3, key4, keyConfig, keyConfig3)
 
-			system := &model.System{ID: systemID01, KeyConfigurationID: &keyConfigID04}
+			system := &model.System{
+				ID:                 systemID01,
+				Identifier:         "test-system",
+				Region:             "us-west-2",
+				Type:               model.SystemTypeSYSTEM,
+				KeyConfigurationID: &keyConfigID04,
+			}
 			err = r.Create(ctx, system)
 			assert.NoError(t, err)
 
 			// Act
 			lifecycle := workflow.NewLifecycle(&tt.workflow, mgr.Keys, mgr.KeyConfig, mgr.System, r, tt.actorID, 2)
-			transitionErr := lifecycle.ApplyTransition(ctx, tt.transition)
+			transitionErr := lifecycle.ValidateAndApplyTransition(ctx, tt.transition)
 
 			// Verify
 			// Retrieve workflow and other resources from database again to get most up-to-date representation
@@ -144,7 +150,7 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 			assert.True(t, ok)
 
 			assert.NoError(t, transitionErr)
-			assert.Equal(t, tt.expectedState.String(), wf.State)
+			assert.Equal(t, tt.expectedState, wf.State)
 		})
 	}
 }
