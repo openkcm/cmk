@@ -201,15 +201,15 @@ func parseLimitOverride(value, key string) (int, error) {
 	return v, nil
 }
 
-// LimitOverrides carries the per-tenant limit overrides to sync. A nil field removes
-// that override row, so the tenant falls back to the cluster default.
+// LimitOverrides carries the per-tenant limit overrides to apply. A nil field
+// deletes that override row, so the tenant falls back to the cluster default.
 type LimitOverrides struct {
 	Systems    *int
 	Keys       *int
 	KeyConfigs *int
 }
 
-// SetLimitOverrides reconciles the limit override rows to o in a single transaction:
+// SetLimitOverrides applies the given overrides in a single transaction:
 // a present value upserts its row, a nil value deletes it.
 func (m *TenantConfigManager) SetLimitOverrides(ctx context.Context, o LimitOverrides) error {
 	err := m.repo.Transaction(ctx, func(ctx context.Context) error {

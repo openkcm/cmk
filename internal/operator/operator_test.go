@@ -1230,17 +1230,7 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 			want:        manager.LimitOverrides{Systems: nil, Keys: new(10), KeyConfigs: nil},
 		},
 		{
-			name:        "validation write error fails the task",
-			data:        validData,
-			configResp:  configResp,
-			writerErr:   model.ErrValidation,
-			wantStatus:  string(orbital.TaskStatusFailed),
-			wantState:   operator.WorkingStateTenantConfigWriteFailed,
-			wantWritten: true,
-			want:        manager.LimitOverrides{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
-		},
-		{
-			name:        "transient write error reconciles",
+			name:        "write error reconciles",
 			data:        validData,
 			configResp:  configResp,
 			writerErr:   assert.AnError,
