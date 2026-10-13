@@ -144,6 +144,99 @@ func TestGetOrInitProvider(t *testing.T) {
 	}
 }
 
+func TestGetOrInitProvider_HYOKAuthType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		disableHYOKCertAuth bool
+		setupCert           bool
+		expectAuthType      bool
+		expectedAuthType    string
+		expectCertFields    bool
+		expectExpiration    bool
+	}{
+		{
+			name:                "cert auth when DisableHYOKCertAuth is false",
+			disableHYOKCertAuth: false,
+			setupCert:           true,
+			expectAuthType:      true,
+			expectedAuthType:    constants.AuthTypeCertificate,
+			expectCertFields:    true,
+			expectExpiration:    true,
+		},
+		{
+			name:                "no authType set when DisableHYOKCertAuth is true (plugin decides)",
+			disableHYOKCertAuth: true,
+			setupCert:           false,
+			expectAuthType:      false,
+			expectCertFields:    false,
+			expectExpiration:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svcRegistry := testutils.NewTestPlugins()
+			cfg := &config.Config{}
+			cfg.Certificates.DisableHYOKCertAuth = tt.disableHYOKCertAuth
+
+			db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+			r := sql.NewRepository(db)
+			tenant := tenants[0]
+			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+
+			if tt.setupCert {
+				cert := testutils.NewCertificate(func(c *model.Certificate) {
+					c.Purpose = model.CertificatePurposeHYOKManagement
+				})
+				testutils.CreateTestEntities(ctx, t, r, cert)
+			}
+
+			m := manager.NewProviderConfigManager(
+				svcRegistry,
+				make(map[manager.ProviderCachedKey]*manager.ProviderConfig),
+				manager.NewTenantConfigManager(r, svcRegistry, cfg, manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg), nil),
+				manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg),
+				manager.NewPool(r),
+				r,
+			)
+
+			key := testutils.NewKey(func(k *model.Key) {
+				k.KeyType = cmkapi.KeyTypeHYOK
+				k.Provider = providerTest
+			})
+
+			provider, err := m.GetOrInitProvider(ctx, key)
+
+			assert.NoError(t, err)
+			assert.NotNil(t, provider)
+
+			authType, hasAuthType := provider.Config.Values["authType"]
+			assert.Equal(t, tt.expectAuthType, hasAuthType)
+			if tt.expectAuthType {
+				assert.Equal(t, tt.expectedAuthType, authType)
+			}
+
+			_, hasClientCert := provider.Config.Values["clientCert"]
+			_, hasPrivateKey := provider.Config.Values["privateKey"]
+			assert.Equal(t, tt.expectCertFields, hasClientCert)
+			assert.Equal(t, tt.expectCertFields, hasPrivateKey)
+
+			if tt.expectExpiration {
+				// Cert auth: expiration comes from the certificate
+				assert.True(t, provider.Expiration.After(time.Now()))
+			} else {
+				// No cert: expiration falls back to the default cache duration (~24h)
+				assert.True(t, provider.Expiration.After(time.Now()))
+				assert.True(t, provider.Expiration.Before(time.Now().Add(manager.DefaultProviderConfigCacheExpiration+time.Minute)))
+			}
+		})
+	}
+}
+
 func TestGetOrInitProvider_ExpiredEntryIsReinitialized(t *testing.T) {
 	svcRegistry := testutils.NewTestPlugins()
 	cfg := &config.Config{}
