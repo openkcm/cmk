@@ -78,7 +78,7 @@ spec:
               {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- with .Values.extraEnvsFrom }}
-          envFrom:
+          envFrom:Ï
           {{- . | toYaml | nindent 12 }}
           {{- end }}
           {{- with .Values.livenessProbe }}
@@ -89,7 +89,7 @@ spec:
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with (default .Values.resources.Values.eventReconciler.resources) }}
+          {{- with (default .Values.resources .Values.eventReconciler.resources) }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}

@@ -169,6 +169,9 @@ eventReconciler:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
   topologySpreadConstraints: []
 
+  # Component-specific resources override; falls back to global `resources`.
+  resources: {}
+
 # db-migrator configuration
 dbMigrator:
   image:
