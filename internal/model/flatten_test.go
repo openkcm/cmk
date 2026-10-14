@@ -14,8 +14,8 @@ type structNestedAndMaps struct {
 	Data        map[string]string `flatten:"data"`
 }
 
-func (w *structNestedAndMaps) FlattenKeyRoot() string { return "root" }
-func (w *structNestedAndMaps) Type() string           { return "root" }
+func (w structNestedAndMaps) FlattenKeyRoot() string { return "root" }
+func (w structNestedAndMaps) Type() string           { return "root" }
 
 type multinested struct {
 	Nested nested `flatten:"nested"`
@@ -31,7 +31,7 @@ type typedSample struct {
 	Name    string `flatten:"name"`
 }
 
-func (w *typedSample) FlattenKeyRoot() string { return "root" }
+func (w typedSample) FlattenKeyRoot() string { return "root" }
 
 // withSkip checks the "-" tag and unexported fields are ignored.
 type withSkip struct {
@@ -40,7 +40,7 @@ type withSkip struct {
 	unexported string
 }
 
-func (w *withSkip) FlattenKeyRoot() string { return "root" }
+func (w withSkip) FlattenKeyRoot() string { return "root" }
 
 // withPointer checks nil and non-nil pointer fields.
 type withPointer struct {
@@ -48,34 +48,34 @@ type withPointer struct {
 	Val string  `flatten:"val"`
 }
 
-func (w *withPointer) FlattenKeyRoot() string { return "root" }
+func (w withPointer) FlattenKeyRoot() string { return "root" }
 
 // emptyRoot checks FlattenKeyRoot() == "" yields unprefixed keys.
 type emptyRoot struct {
 	Name string `flatten:"name"`
 }
 
-func (w *emptyRoot) FlattenKeyRoot() string { return "" }
+func (w emptyRoot) FlattenKeyRoot() string { return "" }
 
 type withSlice struct {
 	Items []string `flatten:"items"`
 }
 
-func (w *withSlice) FlattenKeyRoot() string { return "root" }
+func (w withSlice) FlattenKeyRoot() string { return "root" }
 
 type missingTag struct {
 	Name string `flatten:"name"`
 	Oops string
 }
 
-func (w *missingTag) FlattenKeyRoot() string { return "root" }
+func (w missingTag) FlattenKeyRoot() string { return "root" }
 
 func TestFlatten(t *testing.T) {
 	tests := []struct {
-		name string
-		in   Flattable
-		want map[string]any // expected flat output; nil to skip the flat assertion
-		out  Flattable      // pointer target for the round trip; nil to skip it
+		name      string
+		in        Flattable
+		want      map[string]any // expected flat output; nil to skip the flat assertion
+		unflatten func(map[string]any) (Flattable, error)
 	}{
 		{
 			name: "nested structs and map",
@@ -92,7 +92,10 @@ func TestFlatten(t *testing.T) {
 				"root/data/a":                          "1",
 				"root/data/b":                          "2",
 			},
-			out: &structNestedAndMaps{},
+			unflatten: func(flat map[string]any) (Flattable, error) {
+				got, err := Unflatten[structNestedAndMaps](flat)
+				return &got, err
+			},
 		},
 		{
 			name: "preserves non-string types",
@@ -102,7 +105,10 @@ func TestFlatten(t *testing.T) {
 				"root/enabled": true,
 				"root/name":    "x",
 			},
-			out: &typedSample{},
+			unflatten: func(flat map[string]any) (Flattable, error) {
+				got, err := Unflatten[typedSample](flat)
+				return &got, err
+			},
 		},
 		{
 			// Skip/unexported are dropped, so this case has no round trip.
@@ -114,19 +120,28 @@ func TestFlatten(t *testing.T) {
 			name: "nil pointer skipped",
 			in:   &withPointer{Val: "v"},
 			want: map[string]any{"root/val": "v"},
-			out:  &withPointer{},
+			unflatten: func(flat map[string]any) (Flattable, error) {
+				got, err := Unflatten[withPointer](flat)
+				return &got, err
+			},
 		},
 		{
 			name: "non-nil pointer",
 			in:   &withPointer{Ptr: &nested{CommonName: "cn"}, Val: "v"},
 			want: map[string]any{"root/ptr/common_name": "cn", "root/val": "v"},
-			out:  &withPointer{},
+			unflatten: func(flat map[string]any) (Flattable, error) {
+				got, err := Unflatten[withPointer](flat)
+				return &got, err
+			},
 		},
 		{
 			name: "empty root yields unprefixed keys",
 			in:   &emptyRoot{Name: "x"},
 			want: map[string]any{"name": "x"},
-			out:  &emptyRoot{},
+			unflatten: func(flat map[string]any) (Flattable, error) {
+				got, err := Unflatten[emptyRoot](flat)
+				return &got, err
+			},
 		},
 	}
 
@@ -137,9 +152,10 @@ func TestFlatten(t *testing.T) {
 			if tt.want != nil {
 				assert.Equal(t, tt.want, flat)
 			}
-			if tt.out != nil {
-				require.NoError(t, Unflatten(flat, tt.out))
-				assert.Equal(t, tt.in, tt.out)
+			if tt.unflatten != nil {
+				got, err := tt.unflatten(flat)
+				require.NoError(t, err)
+				assert.Equal(t, tt.in, got)
 			}
 		})
 	}
@@ -170,7 +186,7 @@ func TestUnflattenIgnoresUnknownKeys(t *testing.T) {
 		"other/foo":        "foreign",
 	}
 
-	var got structNestedAndMaps
-	require.NoError(t, Unflatten(flat, &got))
+	got, err := Unflatten[structNestedAndMaps](flat)
+	require.NoError(t, err)
 	assert.Equal(t, "loc-1", got.LocalityID)
 }

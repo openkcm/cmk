@@ -99,11 +99,11 @@ type CryptoConfig struct {
 
 type KeystoreAccessData map[string]any
 
-func (c *KeystoreConfig) FlattenKeyRoot() string {
+func (c KeystoreConfig) FlattenKeyRoot() string {
 	return "keystore_config"
 }
 
-func (c *KeystoreConfig) Type() ConfigType {
+func (c KeystoreConfig) Type() ConfigType {
 	return TenantConfigTypeDefaultKeystore
 }
 
@@ -118,11 +118,11 @@ type WorkflowConfig struct {
 	MaxExpiryPeriodDays     int  `flatten:"max_expiry_period_days"`
 }
 
-func (c *WorkflowConfig) FlattenKeyRoot() string {
+func (c WorkflowConfig) FlattenKeyRoot() string {
 	return ""
 }
 
-func (c *WorkflowConfig) Type() ConfigType {
+func (c WorkflowConfig) Type() ConfigType {
 	return TenantConfigTypeWorkflow
 }
 
@@ -131,10 +131,10 @@ type SystemGroupConfig struct {
 	WarnCoverage bool `flatten:"warn_coverage"`
 }
 
-func (c *SystemGroupConfig) FlattenKeyRoot() string {
+func (c SystemGroupConfig) FlattenKeyRoot() string {
 	return ""
 }
 
-func (c *SystemGroupConfig) Type() ConfigType {
+func (c SystemGroupConfig) Type() ConfigType {
 	return TenantConfigTypeSystemGrouping
 }

@@ -15,7 +15,6 @@ func TestConfigFlattenRoundTrip(t *testing.T) {
 		name string
 		in   Flattable
 		want map[string]any
-		out  Flattable // fresh pointer of in's concrete type
 	}{
 		{
 			name: "KeystoreConfig",
@@ -44,7 +43,6 @@ func TestConfigFlattenRoundTrip(t *testing.T) {
 				"keystore_config/supported_region/eu-10/name":          "Europe",
 				"keystore_config/supported_region/eu-10/technicalName": "eu-10",
 			},
-			out: &KeystoreConfig{},
 		},
 		{
 			name: "WorkflowConfig",
@@ -68,7 +66,6 @@ func TestConfigFlattenRoundTrip(t *testing.T) {
 				"default_expiry_period_days": constants.DefaultExpiryPeriodDays,
 				"max_expiry_period_days":     constants.DefaultMaxExpiryPeriodDays,
 			},
-			out: &WorkflowConfig{},
 		},
 		{
 			name: "SystemGroupConfig",
@@ -77,7 +74,6 @@ func TestConfigFlattenRoundTrip(t *testing.T) {
 				"enabled":       true,
 				"warn_coverage": true,
 			},
-			out: &SystemGroupConfig{},
 		},
 	}
 
@@ -86,9 +82,57 @@ func TestConfigFlattenRoundTrip(t *testing.T) {
 			flat, err := Flatten(tt.in)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, flat)
-
-			require.NoError(t, Unflatten(flat, tt.out))
-			assert.Equal(t, tt.in, tt.out)
 		})
 	}
+}
+
+func TestConfigUnflattenRoundTrip(t *testing.T) {
+	t.Run("KeystoreConfig", func(t *testing.T) {
+		in := &KeystoreConfig{
+			RoleManagementConfig: ManagementConfig{
+				LocalityID: "loc-1",
+				CommonName: "cn-1",
+				AccessData: KeystoreAccessData{"projectId": "p-123"},
+			},
+			KeyManagementConfig: ManagementConfig{LocalityID: "loc-2"},
+			CryptoAccessData: map[string]CryptoConfig{
+				"prod": {Subject: "subj", AccessData: KeystoreAccessData{"token": "t-9"}},
+			},
+			SupportedRegions: map[string]config.Region{
+				"eu-10": {Name: "Europe", TechnicalName: "eu-10"},
+			},
+		}
+		flat, err := Flatten(in)
+		require.NoError(t, err)
+		got, err := Unflatten[KeystoreConfig](flat)
+		require.NoError(t, err)
+		assert.Equal(t, *in, got)
+	})
+
+	t.Run("WorkflowConfig", func(t *testing.T) {
+		in := &WorkflowConfig{
+			Enabled:                 true,
+			MinimumApprovals:        constants.DefaultMinimumApprovalCount,
+			MaxApprovals:            constants.MaxMinimumApprovals,
+			RetentionPeriodDays:     constants.DefaultRetentionPeriodDays,
+			MinRetentionPeriodDays:  constants.MinRetentionPeriodDays,
+			MaxRetentionPeriodDays:  constants.MaxRetentionPeriodDays,
+			DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
+			MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
+		}
+		flat, err := Flatten(in)
+		require.NoError(t, err)
+		got, err := Unflatten[WorkflowConfig](flat)
+		require.NoError(t, err)
+		assert.Equal(t, *in, got)
+	})
+
+	t.Run("SystemGroupConfig", func(t *testing.T) {
+		in := &SystemGroupConfig{Enabled: true, WarnCoverage: true}
+		flat, err := Flatten(in)
+		require.NoError(t, err)
+		got, err := Unflatten[SystemGroupConfig](flat)
+		require.NoError(t, err)
+		assert.Equal(t, *in, got)
+	})
 }
