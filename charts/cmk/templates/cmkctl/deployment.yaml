@@ -74,6 +74,21 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.hostIP
+            {{- with .Values.extraEnvs }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvsFrom }}
+          envFrom:
+          {{- . | toYaml | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with (default .Values.resources .Values.cmkctl.resources) }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -83,6 +98,11 @@ spec:
               mountPath: /etc/cmk/config.yaml
               subPath: config.yaml
               readOnly: true
+          {{- if .Values.config.featureFlags.enabled }}
+            - name: feature-flags-volume
+              mountPath: /etc/featureflags
+              readOnly: true
+          {{- end }}
           {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -92,6 +112,11 @@ spec:
             sources:
               - configMap:
                   name: {{ include "cmk.name" . }}-cmkctl-config
+      {{- if .Values.config.featureFlags.enabled }}
+        - name: feature-flags-volume
+          configMap:
+            name: {{ .Values.featureFlagsConfigMap }}
+      {{- end }}
       {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
