@@ -20,7 +20,7 @@ var (
 )
 
 type Flattable interface {
-	FlattenRoot() string
+	FlattenKeyRoot() string
 }
 
 // Flatten takes an item and returns all of it's fields as a map[string]any
@@ -32,7 +32,7 @@ type Flattable interface {
 // Only fields that are exported and do not have tag set as "-" are flatten
 func Flatten(item Flattable) (map[string]any, error) {
 	res := map[string]any{}
-	err := flatten(item.FlattenRoot(), reflect.ValueOf(item), res)
+	err := flatten(item.FlattenKeyRoot(), reflect.ValueOf(item), res)
 	return res, err
 }
 
@@ -44,8 +44,8 @@ func Unflatten(flatValues map[string]any, out Flattable) error {
 	for k, v := range flatValues {
 		key := strings.Split(k, "/")
 
-		if out.FlattenRoot() != "" {
-			if isOnRoot(key, out.FlattenRoot()) {
+		if out.FlattenKeyRoot() != "" {
+			if isOnRoot(key, out.FlattenKeyRoot()) {
 				key = key[1:]
 			}
 		}

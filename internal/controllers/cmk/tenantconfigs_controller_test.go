@@ -527,7 +527,7 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 		tc := &model.TenantConfig{
 			Key:   manager.LimitsKeySystemsOverride,
 			Value: "not-a-number",
-			Type:  manager.TenantConfigTypeLimits,
+			Type:  model.TenantConfigTypeLimits,
 		}
 		err := r.Create(ctx, tc)
 		require.NoError(t, err)
@@ -592,7 +592,7 @@ func setupSystemsLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx cont
 	tc := &model.TenantConfig{
 		Key:   manager.LimitsKeySystemsOverride,
 		Value: strconv.Itoa(limit),
-		Type:  manager.TenantConfigTypeLimits,
+		Type:  model.TenantConfigTypeLimits,
 	}
 	err := r.Create(ctx, tc)
 	require.NoError(t, err)
@@ -603,7 +603,7 @@ func setupKeysLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context
 	tc := &model.TenantConfig{
 		Key:   manager.LimitsKeyKeysOverride,
 		Value: strconv.Itoa(limit),
-		Type:  manager.TenantConfigTypeLimits,
+		Type:  model.TenantConfigTypeLimits,
 	}
 	err := r.Create(ctx, tc)
 	require.NoError(t, err)
@@ -614,7 +614,7 @@ func setupKeyConfigsLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx c
 	tc := &model.TenantConfig{
 		Key:   manager.LimitsKeyKeyConfigsOverride,
 		Value: strconv.Itoa(limit),
-		Type:  manager.TenantConfigTypeLimits,
+		Type:  model.TenantConfigTypeLimits,
 	}
 	err := r.Create(ctx, tc)
 	require.NoError(t, err)

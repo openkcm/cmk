@@ -56,7 +56,7 @@ func (c *APIController) GetTenantLimits(
 	ctx context.Context,
 	_ cmkapi.GetTenantLimitsRequestObject,
 ) (cmkapi.GetTenantLimitsResponseObject, error) {
-	limits, err := c.Manager.TenantConfigs.GetEffectiveLimits(ctx)
+	limits, err := c.Manager.TenantConfigs.GetTenantLimits(ctx)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetTenantLimits, err)
 	}

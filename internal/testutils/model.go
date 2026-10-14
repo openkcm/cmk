@@ -1,24 +1,19 @@
 package testutils
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-	"strconv"
-	"testing"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jxskiss/base62"
 	"github.com/openkcm/orbital"
-	"github.com/stretchr/testify/require"
 
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/model"
-	"github.com/openkcm/cmk/internal/repo"
 )
 
 const (
@@ -31,12 +26,27 @@ const (
 	TestProfileArn                = "arn:aws:rolesanywhere:eu-west-2:123456789012:profile/12345678-90ab-cdef-1234"
 )
 
-var SupportedRegions = []config.Region{
-	{Name: "Region 1", TechnicalName: "region-1"},
-	{Name: "Region 2", TechnicalName: "region-2"},
+var SupportedRegions = map[string]config.Region{
+	"region-1": {
+		Name:          "Region 1",
+		TechnicalName: "region-1",
+	},
+	"region-2": {
+		Name:          "Region 2",
+		TechnicalName: "region-2",
+	},
 }
 
-var SupportedRegionsMap = RegionsToMapSlice(SupportedRegions)
+func SupportedRegionsSlice() []config.Region {
+	res := make([]config.Region, 0, len(SupportedRegions))
+	for _, v := range SupportedRegions {
+		res = append(res, v)
+	}
+	sort.Slice(res, func(i, j int) bool {
+		return res[i].TechnicalName < res[j].TechnicalName
+	})
+	return res
+}
 
 func RegionsToMapSlice(regions []config.Region) []map[string]string {
 	result := make([]map[string]string, 0, len(regions))
@@ -330,74 +340,6 @@ func NewWorkflowConfig(m func(*model.WorkflowConfig)) *model.WorkflowConfig {
 	return wc
 }
 
-func WriteWorkflowConfig(ctx context.Context, tb testing.TB, r repo.Repo, wc *model.WorkflowConfig) {
-	tb.Helper()
-
-	const wfType = "workflow"
-	rows := []*model.TenantConfig{
-		{Key: "enabled", Value: strconv.FormatBool(wc.Enabled), Type: wfType},
-		{Key: "minimum_approvals", Value: strconv.Itoa(wc.MinimumApprovals), Type: wfType},
-		{Key: "retention_period_days", Value: strconv.Itoa(wc.RetentionPeriodDays), Type: wfType},
-		{Key: "default_expiry_period_days", Value: strconv.Itoa(wc.DefaultExpiryPeriodDays), Type: wfType},
-		{Key: "max_expiry_period_days", Value: strconv.Itoa(wc.MaxExpiryPeriodDays), Type: wfType},
-	}
-	query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
-	for _, row := range rows {
-		require.NoError(tb, r.Set(ctx, row, *query))
-	}
-}
-
-// WriteKeystoreConfig persists a KeystoreConfig as fully-flattened scalar rows
-// under type = "default_keystore" with hierarchical keys.
-func WriteKeystoreConfig(ctx context.Context, tb testing.TB, r repo.Repo, ks *model.KeystoreConfig) {
-	tb.Helper()
-
-	const (
-		t        = "default_keystore"
-		adPrefix = "access_data/"
-	)
-
-	query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
-
-	writeMgmt := func(mc model.ManagementConfig, keyPrefix string) {
-		rows := make([]*model.TenantConfig, 0, 2+len(mc.AccessData))
-		rows = append(rows,
-			&model.TenantConfig{Key: keyPrefix + "locality_id", Value: mc.LocalityID, Type: t},
-			&model.TenantConfig{Key: keyPrefix + "common_name", Value: mc.CommonName, Type: t},
-		)
-		for k, v := range mc.AccessData {
-			rows = append(rows, &model.TenantConfig{
-				Key: keyPrefix + adPrefix + k, Value: fmt.Sprint(v), Type: t,
-			})
-		}
-		for _, row := range rows {
-			require.NoError(tb, r.Set(ctx, row, *query))
-		}
-	}
-
-	writeMgmt(ks.RoleManagementConfig, "role_mgmt/")
-	writeMgmt(ks.KeyManagementConfig, "key_mgmt/")
-
-	for landscape, cfg := range ks.CryptoAccessData {
-		require.NoError(tb, r.Set(ctx, &model.TenantConfig{
-			Key: "crypto/" + landscape + "/subject", Value: cfg.Subject, Type: t,
-		}, *query))
-		for k, v := range cfg.AccessData {
-			require.NoError(tb, r.Set(ctx, &model.TenantConfig{
-				Key: "crypto/" + landscape + "/" + adPrefix + k, Value: fmt.Sprint(v), Type: t,
-			}, *query))
-		}
-	}
-
-	for _, reg := range ks.SupportedRegions {
-		require.NoError(tb, r.Set(ctx, &model.TenantConfig{
-			Key: "supported_region/" + reg.TechnicalName + "/name", Value: reg.Name, Type: t,
-		}, *query))
-	}
-}
-
-// NewDefaultWorkflowConfig creates a default WorkflowConfig for testing
-// with commonly used default values
 func NewDefaultWorkflowConfig(enabled bool) *model.WorkflowConfig {
 	return &model.WorkflowConfig{
 		Enabled:                 enabled,
