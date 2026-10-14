@@ -14,7 +14,8 @@ type structNestedAndMaps struct {
 	Data        map[string]string `flatten:"data"`
 }
 
-func (w *structNestedAndMaps) FlattenRoot() string { return "root" }
+func (w *structNestedAndMaps) FlattenKeyRoot() string { return "root" }
+func (w *structNestedAndMaps) Type() string           { return "root" }
 
 type multinested struct {
 	Nested nested `flatten:"nested"`
@@ -30,7 +31,7 @@ type typedSample struct {
 	Name    string `flatten:"name"`
 }
 
-func (w *typedSample) FlattenRoot() string { return "root" }
+func (w *typedSample) FlattenKeyRoot() string { return "root" }
 
 // withSkip checks the "-" tag and unexported fields are ignored.
 type withSkip struct {
@@ -39,7 +40,7 @@ type withSkip struct {
 	unexported string
 }
 
-func (w *withSkip) FlattenRoot() string { return "root" }
+func (w *withSkip) FlattenKeyRoot() string { return "root" }
 
 // withPointer checks nil and non-nil pointer fields.
 type withPointer struct {
@@ -47,27 +48,27 @@ type withPointer struct {
 	Val string  `flatten:"val"`
 }
 
-func (w *withPointer) FlattenRoot() string { return "root" }
+func (w *withPointer) FlattenKeyRoot() string { return "root" }
 
-// emptyRoot checks FlattenRoot() == "" yields unprefixed keys.
+// emptyRoot checks FlattenKeyRoot() == "" yields unprefixed keys.
 type emptyRoot struct {
 	Name string `flatten:"name"`
 }
 
-func (w *emptyRoot) FlattenRoot() string { return "" }
+func (w *emptyRoot) FlattenKeyRoot() string { return "" }
 
 type withSlice struct {
 	Items []string `flatten:"items"`
 }
 
-func (w *withSlice) FlattenRoot() string { return "root" }
+func (w *withSlice) FlattenKeyRoot() string { return "root" }
 
 type missingTag struct {
 	Name string `flatten:"name"`
 	Oops string
 }
 
-func (w *missingTag) FlattenRoot() string { return "root" }
+func (w *missingTag) FlattenKeyRoot() string { return "root" }
 
 func TestFlatten(t *testing.T) {
 	tests := []struct {

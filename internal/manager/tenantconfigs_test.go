@@ -318,7 +318,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 
 		cfg := &config.Config{
 			KeystorePool: config.KeystorePool{
-				SupportedRegions: testutils.SupportedRegions,
+				SupportedRegions: testutils.SupportedRegionsSlice(),
 			},
 		}
 		cfg.FeatureFlags.Enabled = true
@@ -344,7 +344,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 			newTestFlags(map[string]bool{"enable_byok_test": true}))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
-		assert.Nil(t, res.BYOK.SupportedRegions)
+		assert.Empty(t, res.BYOK.SupportedRegions)
 	})
 
 	t.Run("stored keystore: regions from config", func(t *testing.T) {
@@ -358,7 +358,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 
 		cfg := &config.Config{
 			KeystorePool: config.KeystorePool{
-				SupportedRegions: testutils.SupportedRegions,
+				SupportedRegions: testutils.SupportedRegionsSlice(),
 			},
 		}
 		cfg.FeatureFlags.Enabled = true
@@ -1203,7 +1203,7 @@ func TestSetDefaultKeystore_ClearsOmittedOptionalFields(t *testing.T) {
 		CryptoAccessData: map[string]model.CryptoConfig{
 			"cert-a": {Subject: "/CN=a", AccessData: model.KeystoreAccessData{"k": "v"}},
 		},
-		SupportedRegions: []config.Region{{Name: "eu-west-1", TechnicalName: "eu-west-1"}},
+		SupportedRegions: map[string]config.Region{"eu-west-1": {Name: "eu-west-1", TechnicalName: "eu-west-1"}},
 	}
 	err := m.SetDefaultKeystore(ctx, full)
 	assert.NoError(t, err)
@@ -1263,9 +1263,9 @@ func TestSetDefaultKeystore_FlatRoundTrip(t *testing.T) {
 				},
 			},
 		},
-		SupportedRegions: []config.Region{
-			{Name: "region-name-a", TechnicalName: "region-a"},
-			{Name: "Europe (Ireland)", TechnicalName: "eu-west-1"},
+		SupportedRegions: map[string]config.Region{
+			"region-a":  {Name: "region-name-a", TechnicalName: "region-a"},
+			"eu-west-1": {Name: "Europe (Ireland)", TechnicalName: "eu-west-1"},
 		},
 	}
 
@@ -1444,8 +1444,8 @@ func TestBuildKeystoreConfigFromRows(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, found)
 		require.Len(t, ks.SupportedRegions, 1)
-		assert.Equal(t, "region-a", ks.SupportedRegions[0].TechnicalName)
-		assert.Equal(t, "region-name-a", ks.SupportedRegions[0].Name)
+		assert.Equal(t, "region-a", ks.SupportedRegions["region-a"].TechnicalName)
+		assert.Equal(t, "region-name-a", ks.SupportedRegions["region-a"].Name)
 	})
 }
 
@@ -1502,7 +1502,7 @@ func TestGetEffectiveLimits(t *testing.T) {
 		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10, KeyConfigLimit: 5}}
 		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
 
-		limits, err := m.GetEffectiveLimits(ctx)
+		limits, err := m.GetTenantLimits(ctx)
 
 		require.NoError(t, err)
 		assert.Equal(t, 50, limits.Systems)
@@ -1517,7 +1517,7 @@ func TestGetEffectiveLimits(t *testing.T) {
 
 		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
 
-		limits, err := m.GetEffectiveLimits(ctx)
+		limits, err := m.GetTenantLimits(ctx)
 
 		require.NoError(t, err)
 		assert.Equal(t, 0, limits.Systems)
@@ -1533,23 +1533,23 @@ func TestGetEffectiveLimits(t *testing.T) {
 		require.NoError(t, r.Set(ctx, &model.TenantConfig{
 			Key:   manager.LimitsKeySystemsOverride,
 			Value: "99",
-			Type:  manager.TenantConfigTypeLimits,
+			Type:  model.TenantConfigTypeLimits,
 		}, *repo.NewQuery()))
 		require.NoError(t, r.Set(ctx, &model.TenantConfig{
 			Key:   manager.LimitsKeyKeysOverride,
 			Value: "7",
-			Type:  manager.TenantConfigTypeLimits,
+			Type:  model.TenantConfigTypeLimits,
 		}, *repo.NewQuery()))
 		require.NoError(t, r.Set(ctx, &model.TenantConfig{
 			Key:   manager.LimitsKeyKeyConfigsOverride,
 			Value: "33",
-			Type:  manager.TenantConfigTypeLimits,
+			Type:  model.TenantConfigTypeLimits,
 		}, *repo.NewQuery()))
 
 		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10, KeyConfigLimit: 5}}
 		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, nil)
 
-		limits, err := m.GetEffectiveLimits(ctx)
+		limits, err := m.GetTenantLimits(ctx)
 
 		require.NoError(t, err)
 		assert.Equal(t, 99, limits.Systems)
@@ -1570,13 +1570,13 @@ func TestGetEffectiveLimits(t *testing.T) {
 			err := r.Set(ctx, &model.TenantConfig{
 				Key:   key,
 				Value: "abc",
-				Type:  manager.TenantConfigTypeLimits,
+				Type:  model.TenantConfigTypeLimits,
 			}, *repo.NewQuery())
 			require.NoError(t, err)
 
 			m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
 
-			_, err = m.GetEffectiveLimits(ctx)
+			_, err = m.GetTenantLimits(ctx)
 
 			require.ErrorIs(t, err, manager.ErrGetTenantLimits)
 		})
@@ -1590,13 +1590,13 @@ func TestGetEffectiveLimits(t *testing.T) {
 		err := r.Set(ctx, &model.TenantConfig{
 			Key:   manager.LimitsKeyKeysOverride,
 			Value: "-1",
-			Type:  manager.TenantConfigTypeLimits,
+			Type:  model.TenantConfigTypeLimits,
 		}, *repo.NewQuery())
 		require.NoError(t, err)
 
 		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
 
-		_, err = m.GetEffectiveLimits(ctx)
+		_, err = m.GetTenantLimits(ctx)
 
 		require.ErrorIs(t, err, manager.ErrGetTenantLimits)
 	})
