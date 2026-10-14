@@ -28,7 +28,6 @@ import (
 	pluginHelpers "github.com/openkcm/cmk/utils/plugins"
 )
 
-
 const (
 	// defaultKeystoreCertInfix is inserted between the tenant cert prefix and the tenantID
 	// when constructing the BYOK key-management CN, keeping it under the X.509 64-char limit.
@@ -41,7 +40,6 @@ const (
 	// allowBYOKFeatureGateKey is the legacy feature gate key, used when featureFlags is not configured.
 	allowBYOKFeatureGateKey = "allow-byok"
 )
-
 
 // System Grouping Keys
 const (
@@ -94,7 +92,7 @@ var (
 )
 
 type TenantConfigManager struct {
-	r         repo.Repo
+	r            repo.Repo
 	svcRegistry  serviceapi.Registry
 	keystorePool *Pool
 	cfg          *config.Config
@@ -110,7 +108,7 @@ func NewTenantConfigManager(
 	flags featureflags.Client,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
-		r:         repo,
+		r:            repo,
 		svcRegistry:  svcRegistry,
 		keystorePool: NewPool(repo),
 		cfg:          deploymentConfig,
@@ -200,7 +198,7 @@ func parseLimitOverride(value, key string) (int, error) {
 	return v, nil
 }
 
-func (m *TenantConfigManager) SetTenantConfig(ctx context.Context, config model.TenantConfiguration) error{
+func (m *TenantConfigManager) SetTenantConfig(ctx context.Context, config model.TenantConfiguration) error {
 	flattened, err := model.Flatten(config)
 	if err != nil {
 		return err
@@ -216,8 +214,34 @@ func (m *TenantConfigManager) SetTenantConfig(ctx context.Context, config model.
 	return nil
 }
 
-func (m *TenantConfigManager) GetPropertiesByType[T any](ctx context.Context) (T,error){
-	return *new(T), nil
+// GetTenantConfigByType fetches from the DB properties related with a ConfigType
+// The Confifguration must implement the TenantConfiguration interface
+func (m *TenantConfigManager) GetTenantConfigByType[T model.TenantConfiguration](
+	ctx context.Context,
+) (*T,error) {
+	var res T
+	configs := []*model.TenantConfig{}
+
+	ck := repo.NewCompositeKey().Where(repo.TypeField, res.Type())
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+
+	if err := m.r.List(ctx, &model.TenantConfig{}, &configs, *query); err != nil {
+		// Preserve the same error contract as the legacy First-based path so that
+		// API error mappings keyed on repo.ErrGetResource keep working.
+		return nil, errs.Wrap(repo.ErrGetResource, err)
+	}
+
+	configMap := make(map[string]any, len(configs))
+	for _, c := range configs {
+		configMap[c.Key] = c.Value
+	}
+
+	res, err := model.Unflatten[T](configMap)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res, nil
 }
 
 // GetSystemGroupingConfig gets systemgrouping config out of tenant_config
@@ -246,15 +270,25 @@ func (m *TenantConfigManager) GetSystemGroupingConfig(ctx context.Context) (*mod
 // GetWorkflowConfig reads flat rows first, falling back to the legacy JSON
 // blob for tenants whose data migration has not yet completed.
 func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
-	wc, found, err := m.getWorkflowConfigFromFlatRows(ctx)
+	// wc, found, err := m.getWorkflowConfigFromFlatRows(ctx)
+	// if err != nil {
+	// 	return nil, errs.Wrap(ErrGetWorkflowConfig, err)
+	// }
+	// if found {
+	// 	return wc, nil
+	// }
+	//
+	wc, err := m.GetTenantConfigByType[model.WorkflowConfig](ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetWorkflowConfig, err)
 	}
-	if found {
+
+	if wc != nil {
 		return wc, nil
 	}
 
-	wc, found, err = m.getWorkflowConfigFromLegacyBlob(ctx)
+
+	wc, found, err := m.getWorkflowConfigFromLegacyBlob(ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetWorkflowConfig, err)
 	}

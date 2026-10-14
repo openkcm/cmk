@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/openkcm/cmk/internal/errs"
 )
 
 const tag = "flatten"
@@ -30,16 +31,17 @@ type Flattable interface {
 // This method does also not support slices, throwing UnsupportedField
 //
 // Only fields that are exported and do not have tag set as "-" are flatten
-func Flatten(item Flattable) (map[string]any, error) {
+func Flatten[T Flattable](item T) (map[string]any, error) {
 	res := map[string]any{}
 	err := flatten(item.FlattenKeyRoot(), reflect.ValueOf(item), res)
 	return res, err
 }
 
-// Unflatten takes a map[string]any, containing each flattenKey <root>/<field>... and transforms it into a struct
+// Unflatten takes a map[string]any, containing each flattenKey <root>/<field>... and transforms it into T.
 // The flattenKeys must map exactly into the struct that it's trying to be built. So this should only be used for
-// structures that were flatten using the Flatten() method
-func Unflatten(flatValues map[string]any, out Flattable) error {
+// structures that were flattened using the Flatten() method.
+func Unflatten[T Flattable](flatValues map[string]any) (T, error) {
+	var out T
 	res := map[string]any{}
 	for k, v := range flatValues {
 		key := strings.Split(k, "/")
@@ -55,16 +57,16 @@ func Unflatten(flatValues map[string]any, out Flattable) error {
 		}
 	}
 
-	dec, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: tag, Result: out})
+	dec, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: tag, Result: &out, WeaklyTypedInput: true})
 	if err != nil {
-		return ErrUnflattenDecoder
+		return out, errs.Wrap(ErrUnflattenDecoder, err)
 	}
 
 	err = dec.Decode(res)
 	if err != nil {
-		return ErrDecodeFlatten
+		return out, errs.Wrap(ErrDecodeFlatten, err)
 	}
-	return nil
+	return out, nil
 }
 
 func isOnRoot(flatKeys []string, root string) bool {
