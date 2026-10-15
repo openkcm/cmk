@@ -71,6 +71,7 @@ var (
 	ErrGetWorkflowConfig        = errors.New("failed to get workflow config")
 	ErrSetWorkflowConfig        = errors.New("failed to set workflow config")
 	ErrGetTenantLimits          = errors.New("failed to get tenant limits")
+	ErrSetTenantLimits          = errors.New("failed to set tenant limits")
 	ErrRetentionLessThanMinimum = errors.New("retention is less than the minimum allowed (" +
 		strconv.Itoa(constants.MinRetentionPeriodDays) + " days)")
 	ErrRetentionExceedsMaximum = errors.New("retention exceeds the maximum allowed (" +
@@ -151,14 +152,14 @@ func (m *TenantConfigManager) GetTenantLimits(ctx context.Context) (model.Tenant
 	}
 
 	if m.cfg != nil {
-		if configs.KeyConfigs == 0 {
-			configs.KeyConfigs = m.cfg.Tenant.KeyConfigLimit
+		if configs.KeyConfigs == nil {
+			configs.KeyConfigs = &m.cfg.Tenant.KeyConfigLimit
 		}
-		if configs.Systems == 0 {
-			configs.Systems = m.cfg.Tenant.SystemLimit
+		if configs.Systems == nil {
+			configs.Systems = &m.cfg.Tenant.SystemLimit
 		}
-		if configs.Keys == 0 {
-			configs.Keys = m.cfg.Tenant.KeyLimit
+		if configs.Keys == nil {
+			configs.Keys = &m.cfg.Tenant.KeyLimit
 		}
 	}
 

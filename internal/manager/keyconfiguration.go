@@ -125,7 +125,7 @@ func (m *KeyConfigManager) EnforceSystemLimit(ctx context.Context, keyConfigID u
 	if err != nil {
 		return err
 	}
-	limit := limits.Systems
+	limit := *limits.Systems
 	if limit <= 0 {
 		return nil
 	}
@@ -164,7 +164,7 @@ func (m *KeyConfigManager) EnforceKeyLimit(ctx context.Context, keyConfigID uuid
 	if err != nil {
 		return err
 	}
-	limit := limits.Keys
+	limit := *limits.Keys
 	if limit <= 0 {
 		return nil
 	}
@@ -201,7 +201,7 @@ func (m *KeyConfigManager) EnforceKeyConfigLimit(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	limit := limits.KeyConfigs
+	limit := *limits.KeyConfigs
 	if limit <= 0 {
 		return nil
 	}

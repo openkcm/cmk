@@ -462,9 +462,15 @@ func TestGetSystems_Search(t *testing.T) {
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	systemA := testutils.NewSystem(func(s *model.System) {
+		// Deterministic, non-overlapping regions: the "search by region" case
+		// below searches a 2-char substring of systemB's region and expects only
+		// systemB. With the default random-UUID region, that substring frequently
+		// also appeared in systemA's region, matching both (flaky).
+		s.Region = "alpha-region"
 		s.Properties = map[string]string{"externalName": "alpha-system"}
 	})
 	systemB := testutils.NewSystem(func(s *model.System) {
+		s.Region = "beta-region"
 		s.Properties = map[string]string{"externalName": "beta-system"}
 	})
 

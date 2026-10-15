@@ -1267,9 +1267,9 @@ func TestGetTenantLimits(t *testing.T) {
 		r := sql.NewRepository(db)
 
 		testutils.WriteTenantConfig(ctx, t, r, model.TenantLimits{
-			Systems:    99,
-			Keys:       7,
-			KeyConfigs: 33,
+			Systems:    new(99),
+			Keys:       new(7),
+			KeyConfigs: new(33),
 		})
 
 		cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10, KeyConfigLimit: 5}}
@@ -1281,5 +1281,53 @@ func TestGetTenantLimits(t *testing.T) {
 		assert.Equal(t, 99, limits.Systems)
 		assert.Equal(t, 7, limits.Keys)
 		assert.Equal(t, 33, limits.KeyConfigs)
+	})
+}
+
+func TestSetLimitOverrides(t *testing.T) {
+	cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10, KeyConfigLimit: 5}}
+
+	t.Run("persists overrides read back via GetEffectiveLimits", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
+
+		require.NoError(t, m.SetTenantConfig(ctx, model.TenantLimits{Systems: new(99), Keys: new(7), KeyConfigs: new(33)}))
+
+		limits, err := m.GetTenantLimits(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 99, limits.Systems)
+		assert.Equal(t, 7, limits.Keys)
+		assert.Equal(t, 33, limits.KeyConfigs)
+	})
+
+	t.Run("re-writing overwrites the previous values", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
+
+		require.NoError(t, m.SetTenantConfig(ctx, model.TenantLimits{Systems: new(99), Keys: new(7), KeyConfigs: new(33)}))
+		require.NoError(t, m.SetTenantConfig(ctx, model.TenantLimits{Systems: new(1), Keys: new(2), KeyConfigs: new(3)}))
+
+		limits, err := m.GetTenantLimits(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, limits.Systems)
+		assert.Equal(t, 2, limits.Keys)
+		assert.Equal(t, 3, limits.KeyConfigs)
+	})
+
+	t.Run("nil fields clear their override and fall back to the cluster default", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
+
+		require.NoError(t, m.SetTenantConfig(ctx, model.TenantLimits{Systems: new(99), Keys: new(7), KeyConfigs: new(33)}))
+		require.NoError(t, m.SetTenantConfig(ctx, model.TenantLimits{Keys: new(7)}))
+
+		limits, err := m.GetTenantLimits(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 50, limits.Systems)
+		assert.Equal(t, 7, limits.Keys)
+		assert.Equal(t, 5, limits.KeyConfigs)
 	})
 }

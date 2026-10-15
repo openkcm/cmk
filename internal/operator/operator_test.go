@@ -29,7 +29,8 @@ import (
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	tenantconfiggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant_config/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
 	slogctx "github.com/veqryn/slog-context"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
@@ -177,7 +178,7 @@ func createInvalidOperatorRequest(
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
-	op, err := operator.NewTenantOperator(unusedDB, cfg, operatorTarget, clientFactory, tenantManager, groupManager, authzRepo)
+	op, err := operator.NewTenantOperator(unusedDB, cfg, operatorTarget, clientFactory, tenantManager, groupManager, nil, authzRepo)
 	require.NoError(t, err)
 
 	go func() {
@@ -227,7 +228,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	t.Run(
 		"nil db", func(t *testing.T) {
-			op, err := operator.NewTenantOperator(nil, cfg, operatorTarget, clientFactory, tenantManager, groupManager, authzRepo)
+			op, err := operator.NewTenantOperator(nil, cfg, operatorTarget, clientFactory, tenantManager, groupManager, nil, authzRepo)
 			assert.Nil(t, op)
 			assert.Error(t, err)
 		},
@@ -236,7 +237,7 @@ func TestNewTenantOperator(t *testing.T) {
 	t.Run(
 		"nil amqp", func(t *testing.T) {
 			target := orbital.TargetOperator{}
-			op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory, tenantManager, groupManager, authzRepo)
+			op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory, tenantManager, groupManager, nil, authzRepo)
 			assert.Nil(t, op)
 			assert.Error(t, err)
 		},
@@ -244,7 +245,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	t.Run(
 		"nil factory client", func(t *testing.T) {
-			op, err := operator.NewTenantOperator(dbConn, cfg, operatorTarget, nil, tenantManager, groupManager, authzRepo)
+			op, err := operator.NewTenantOperator(dbConn, cfg, operatorTarget, nil, tenantManager, groupManager, nil, authzRepo)
 			assert.Nil(t, op)
 			assert.Error(t, err)
 		},
@@ -252,7 +253,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	t.Run(
 		"valid operator", func(t *testing.T) {
-			op, err := operator.NewTenantOperator(dbConn, cfg, operatorTarget, clientFactory, tenantManager, groupManager, authzRepo)
+			op, err := operator.NewTenantOperator(dbConn, cfg, operatorTarget, clientFactory, tenantManager, groupManager, nil, authzRepo)
 			require.NoError(t, err)
 			assert.NotNil(t, op)
 		},
@@ -593,7 +594,7 @@ func TestHandleApplyAuth_InvalidData(t *testing.T) {
 					Client: responder,
 				}
 				cfg := &config.Config{}
-				op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, nil, nil, nil)
+				op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, nil, nil, nil, nil)
 				require.NoError(t, err)
 
 				go func() {
@@ -639,7 +640,7 @@ func TestHandleApplyAuth_IssuerUpdate(t *testing.T) {
 				sessionmanager.NewMockService(unusedSMClient),
 			)
 
-			op, err := operator.NewTenantOperator(db, cfg, operatorTarget, clientFactory, nil, nil, sql.NewRepository(db))
+			op, err := operator.NewTenantOperator(db, cfg, operatorTarget, clientFactory, nil, nil, nil, sql.NewRepository(db))
 			require.NoError(t, err)
 
 			go func() {
@@ -678,7 +679,7 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 	tests := []struct {
 		name               string
 		expTaskResponse    orbital.TaskResponse
-		sessionManagerResp *oidcmappinggrpc.ApplyOIDCMappingResponse
+		sessionManagerResp *trustmappingv1.ApplyTrustMappingResponse
 		sessionManagerErr  error
 	}{
 		{
@@ -695,18 +696,18 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				Status:       string(orbital.TaskStatusFailed),
 				ErrorMessage: operator.ErrFailedApplyOIDC.Error(),
 			},
-			sessionManagerResp: &oidcmappinggrpc.ApplyOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.ApplyTrustMappingResponse_builder{
 				Success: false,
-			},
+			}.Build(),
 		},
 		{
 			name: "should return done task and update issuer when session manager applies successfully",
 			expTaskResponse: orbital.TaskResponse{
 				Status: string(orbital.TaskStatusDone),
 			},
-			sessionManagerResp: &oidcmappinggrpc.ApplyOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.ApplyTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 		},
 	}
 
@@ -735,7 +736,7 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 					registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 					sessionmanager.NewMockService(sessionManagerClient),
 				)
-				op, err := operator.NewTenantOperator(db, cfg, operatorTarget, clientFactory, nil, nil, r)
+				op, err := operator.NewTenantOperator(db, cfg, operatorTarget, clientFactory, nil, nil, nil, r)
 				require.NoError(t, err)
 
 				go func() {
@@ -766,15 +767,15 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				}
 
 				noOfCalls := 0
-				sessionManagerClient.MockApplyOIDCMapping = func(
+				sessionManagerClient.MockApplyTrustMapping = func(
 					_ context.Context,
-					req *oidcmappinggrpc.ApplyOIDCMappingRequest,
-				) (*oidcmappinggrpc.ApplyOIDCMappingResponse, error) {
+					req *trustmappingv1.ApplyTrustMappingRequest,
+				) (*trustmappingv1.ApplyTrustMappingResponse, error) {
 					assert.Equal(t, auth.GetTenantId(), req.GetTenantId())
-					assert.Equal(t, issuerURL, req.GetIssuer())
-					assert.Equal(t, jwksURI, req.GetJwksUri())
-					assert.Equal(t, []string{audiences}, req.GetAudiences())
-					assert.Equal(t, clientID, req.GetClientId())
+					assert.Equal(t, issuerURL, req.GetOidc().GetIssuer())
+					assert.Equal(t, jwksURI, req.GetOidc().GetJwksUri())
+					assert.Equal(t, []string{audiences}, req.GetOidc().GetAudiences())
+					assert.Equal(t, clientID, req.GetOidc().GetClientId())
 
 					noOfCalls++
 
@@ -851,7 +852,7 @@ func TestHandleRemoveAuth_InvalidData(t *testing.T) {
 					Client: responder,
 				}
 				cfg := &config.Config{}
-				op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, nil, nil, nil)
+				op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, nil, nil, nil, nil)
 				require.NoError(t, err)
 
 				go func() {
@@ -882,7 +883,7 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 	tests := []struct {
 		name               string
 		expTaskResponse    orbital.TaskResponse
-		sessionManagerResp *oidcmappinggrpc.RemoveOIDCMappingResponse
+		sessionManagerResp *trustmappingv1.RemoveTrustMappingResponse
 		sessionManagerErr  error
 	}{
 		{
@@ -891,9 +892,9 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 				Status:            string(orbital.TaskStatusProcessing),
 				ReconcileAfterSec: 15,
 			},
-			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.RemoveTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 			sessionManagerErr: assert.AnError,
 		},
 		{
@@ -902,9 +903,9 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 				Status:       string(orbital.TaskStatusFailed),
 				ErrorMessage: operator.ErrFailedResponse.Error(),
 			},
-			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.RemoveTrustMappingResponse_builder{
 				Success: false,
-			},
+			}.Build(),
 		},
 		{
 			// codes.Internal fails terminally (not retried) by design.
@@ -920,9 +921,9 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 			expTaskResponse: orbital.TaskResponse{
 				Status: string(orbital.TaskStatusDone),
 			},
-			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.RemoveTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 		},
 	}
 
@@ -945,7 +946,7 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 					registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
 					sessionmanager.NewMockService(sessionManagerClient),
 				)
-				op, err := operator.NewTenantOperator(unusedDB, cfg, operatorTarget, clientFactory, nil, nil, nil)
+				op, err := operator.NewTenantOperator(unusedDB, cfg, operatorTarget, clientFactory, nil, nil, nil, nil)
 				require.NoError(t, err)
 
 				go func() {
@@ -966,10 +967,10 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 				}
 
 				noOfCalls := 0
-				sessionManagerClient.MockRemoveOIDCMapping = func(
+				sessionManagerClient.MockRemoveTrustMapping = func(
 					_ context.Context,
-					req *oidcmappinggrpc.RemoveOIDCMappingRequest,
-				) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
+					req *trustmappingv1.RemoveTrustMappingRequest,
+				) (*trustmappingv1.RemoveTrustMappingResponse, error) {
 					assert.Equal(t, auth.GetTenantId(), req.GetTenantId())
 
 					noOfCalls++
@@ -1009,12 +1010,12 @@ func TestHandleBlockTenant(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
 			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager, authzRepo)
 		noOfCalls := 0
-		sessionManagerClient.MockBlockOIDCMapping = func(
+		sessionManagerClient.MockBlockTrustMapping = func(
 			_ context.Context,
-			_ *oidcmappinggrpc.BlockOIDCMappingRequest,
-		) (*oidcmappinggrpc.BlockOIDCMappingResponse, error) {
+			_ *trustmappingv1.BlockTrustMappingRequest,
+		) (*trustmappingv1.BlockTrustMappingResponse, error) {
 			noOfCalls++
-			return &oidcmappinggrpc.BlockOIDCMappingResponse{}, nil
+			return trustmappingv1.BlockTrustMappingResponse_builder{}.Build(), nil
 		}
 
 		responder.NewRequest(taskReq)
@@ -1028,7 +1029,7 @@ func TestHandleBlockTenant(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		sessionManagerResp *oidcmappinggrpc.BlockOIDCMappingResponse
+		sessionManagerResp *trustmappingv1.BlockTrustMappingResponse
 		sessionManagerErr  error
 		expTaskResponse    orbital.TaskResponse
 	}{
@@ -1042,9 +1043,9 @@ func TestHandleBlockTenant(t *testing.T) {
 		},
 		{
 			name: "should return failed task when session manager returns unsuccessful response",
-			sessionManagerResp: &oidcmappinggrpc.BlockOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.BlockTrustMappingResponse_builder{
 				Success: false,
-			},
+			}.Build(),
 			expTaskResponse: orbital.TaskResponse{
 				Status:       string(orbital.TaskStatusFailed),
 				ErrorMessage: operator.ErrFailedResponse.Error(),
@@ -1052,9 +1053,9 @@ func TestHandleBlockTenant(t *testing.T) {
 		},
 		{
 			name: "should return done task when session manager blocks successfully",
-			sessionManagerResp: &oidcmappinggrpc.BlockOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.BlockTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 			expTaskResponse: orbital.TaskResponse{
 				Status: string(orbital.TaskStatusDone),
 			},
@@ -1073,7 +1074,7 @@ func TestHandleBlockTenant(t *testing.T) {
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
-			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, tenantManager, groupManager, authzRepo)
+			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, tenantManager, groupManager, nil, authzRepo)
 			require.NoError(t, err)
 
 			go func() {
@@ -1094,10 +1095,10 @@ func TestHandleBlockTenant(t *testing.T) {
 			}
 
 			noOfCalls := 0
-			sessionManagerClient.MockBlockOIDCMapping = func(
+			sessionManagerClient.MockBlockTrustMapping = func(
 				_ context.Context,
-				req *oidcmappinggrpc.BlockOIDCMappingRequest,
-			) (*oidcmappinggrpc.BlockOIDCMappingResponse, error) {
+				req *trustmappingv1.BlockTrustMappingRequest,
+			) (*trustmappingv1.BlockTrustMappingResponse, error) {
 				assert.Equal(t, tenant.GetId(), req.GetTenantId())
 
 				noOfCalls++
@@ -1113,6 +1114,172 @@ func TestHandleBlockTenant(t *testing.T) {
 			assert.Equal(t, tt.expTaskResponse.Status, taskResp.Status)
 			assert.Equal(t, tt.expTaskResponse.ReconcileAfterSec, taskResp.ReconcileAfterSec)
 			assert.Contains(t, taskResp.ErrorMessage, tt.expTaskResponse.ErrorMessage)
+		})
+	}
+}
+
+type fakeTenantConfigClient struct {
+	resp *tenantconfiggrpc.GetTenantConfigResponse
+	err  error
+}
+
+func (f *fakeTenantConfigClient) GetTenantConfig(
+	_ context.Context,
+	_ *tenantconfiggrpc.GetTenantConfigRequest,
+	_ ...grpc.CallOption,
+) (*tenantconfiggrpc.GetTenantConfigResponse, error) {
+	return f.resp, f.err
+}
+
+func (f *fakeTenantConfigClient) UpdateTenantConfig(
+	_ context.Context,
+	_ *tenantconfiggrpc.UpdateTenantConfigRequest,
+	_ ...grpc.CallOption,
+) (*tenantconfiggrpc.UpdateTenantConfigResponse, error) {
+	return tenantconfiggrpc.UpdateTenantConfigResponse_builder{}.Build(), nil
+}
+
+type fakeLimitWriter struct {
+	got    model.TenantConfiguration
+	called bool
+	err    error
+}
+
+func (f *fakeLimitWriter) SetTenantConfig(_ context.Context, o model.TenantConfiguration) error {
+	f.called = true
+	f.got = o
+	return f.err
+}
+
+func TestHandleUpdateTenantConfig(t *testing.T) {
+	unusedDB := &multitenancy.DB{}
+	_, clientCon := testutils.NewGRPCSuite(t)
+	unusedRegistryClient := tenantgrpc.NewServiceClient(clientCon)
+
+	taskType := tenantconfiggrpc.TenantConfigAction_TENANT_CONFIG_ACTION_UPDATE.String()
+
+	cfg := &config.Config{Database: testutils.TestDB}
+
+	validData, err := proto.Marshal(&tenantgrpc.Tenant{Id: uuid.NewString()})
+	require.NoError(t, err)
+
+	emptyIDData, err := proto.Marshal(&tenantgrpc.Tenant{Id: ""})
+	require.NoError(t, err)
+
+	configResp := tenantconfiggrpc.GetTenantConfigResponse_builder{
+		Values: tenantconfiggrpc.TenantConfigurationValues_builder{
+			SystemLimit:    proto.Int32(5),
+			KeyLimit:       proto.Int32(10),
+			KeyConfigLimit: proto.Int32(3),
+		}.Build(),
+	}.Build()
+
+	tests := []struct {
+		name        string
+		data        []byte
+		configResp  *tenantconfiggrpc.GetTenantConfigResponse
+		configErr   error
+		writerErr   error
+		wantStatus  string
+		wantState   string
+		wantWritten bool
+		want        model.TenantLimits
+	}{
+		{
+			name:       "invalid task data fails the task",
+			data:       []byte("not a proto"),
+			wantStatus: string(orbital.TaskStatusFailed),
+			wantState:  operator.WorkingStateInvalidTaskData,
+		},
+		{
+			name:       "registry fetch error reconciles without writing",
+			data:       validData,
+			configErr:  assert.AnError,
+			wantStatus: string(orbital.TaskStatusProcessing),
+			wantState:  operator.WorkingStateTenantConfigFetchFailed,
+		},
+		{
+			name:       "empty tenant id fails the task without a fetch",
+			data:       emptyIDData,
+			wantStatus: string(orbital.TaskStatusFailed),
+			wantState:  operator.WorkingStateInvalidTaskData,
+		},
+		{
+			name:       "response without values reconciles without writing",
+			data:       validData,
+			configResp: tenantconfiggrpc.GetTenantConfigResponse_builder{}.Build(),
+			wantStatus: string(orbital.TaskStatusProcessing),
+			wantState:  operator.WorkingStateTenantConfigFetchFailed,
+		},
+		{
+			name:        "pulled limits are persisted and the task completes",
+			data:        validData,
+			configResp:  configResp,
+			wantStatus:  string(orbital.TaskStatusDone),
+			wantWritten: true,
+			want:        model.TenantLimits{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
+		},
+		{
+			name: "absent fields are cleared, present field persisted",
+			data: validData,
+			configResp: tenantconfiggrpc.GetTenantConfigResponse_builder{
+				Values: tenantconfiggrpc.TenantConfigurationValues_builder{
+					KeyLimit: proto.Int32(10),
+				}.Build(),
+			}.Build(),
+			wantStatus:  string(orbital.TaskStatusDone),
+			wantWritten: true,
+			want:        model.TenantLimits{Systems: nil, Keys: new(10), KeyConfigs: nil},
+		},
+		{
+			name:        "write error reconciles",
+			data:        validData,
+			configResp:  configResp,
+			writerErr:   assert.AnError,
+			wantStatus:  string(orbital.TaskStatusProcessing),
+			wantState:   operator.WorkingStateTenantConfigWriteFailed,
+			wantWritten: true,
+			want:        model.TenantLimits{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			responder := respondertest.NewResponder()
+			registryService := &registry.MockServiceStruct{
+				TenantClient:       unusedRegistryClient,
+				MappingClient:      mappingv1.NewServiceClient(clientCon),
+				TenantConfigClient: &fakeTenantConfigClient{resp: tt.configResp, err: tt.configErr},
+			}
+			clientFactory := mockClient.NewMockFactory(
+				registryService,
+				sessionmanager.NewMockService(sessionmanager.NewFakeSessionManagerClient()),
+			)
+			writer := &fakeLimitWriter{err: tt.writerErr}
+
+			op, err := operator.NewTenantOperator(
+				unusedDB, cfg, orbital.TargetOperator{Client: responder}, clientFactory,
+				&MockTenantManager{}, nil, writer, nil,
+			)
+			require.NoError(t, err)
+
+			go func() {
+				assert.NoError(t, op.RunOperator(createContext(t)))
+			}()
+
+			taskReq := orbital.TaskRequest{TaskID: stduuid.New(), Type: taskType, Data: tt.data}
+			responder.NewRequest(taskReq)
+			taskResp := responder.NewResponse()
+
+			assert.Equal(t, taskReq.TaskID, taskResp.TaskID)
+			assert.Equal(t, tt.wantStatus, taskResp.Status)
+			if tt.wantState != "" {
+				assert.Contains(t, string(taskResp.WorkingState), tt.wantState)
+			}
+			assert.Equal(t, tt.wantWritten, writer.called)
+			if tt.wantWritten {
+				assert.Equal(t, tt.want, writer.got)
+			}
 		})
 	}
 }
@@ -1136,12 +1303,12 @@ func TestHandleUnblockTenant(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
 			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager, authzRepo)
 		noOfCalls := 0
-		sessionManagerClient.MockUnblockOIDCMapping = func(
+		sessionManagerClient.MockUnblockTrustMapping = func(
 			_ context.Context,
-			_ *oidcmappinggrpc.UnblockOIDCMappingRequest,
-		) (*oidcmappinggrpc.UnblockOIDCMappingResponse, error) {
+			_ *trustmappingv1.UnblockTrustMappingRequest,
+		) (*trustmappingv1.UnblockTrustMappingResponse, error) {
 			noOfCalls++
-			return &oidcmappinggrpc.UnblockOIDCMappingResponse{}, nil
+			return trustmappingv1.UnblockTrustMappingResponse_builder{}.Build(), nil
 		}
 
 		responder.NewRequest(taskReq)
@@ -1155,7 +1322,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		sessionManagerResp *oidcmappinggrpc.UnblockOIDCMappingResponse
+		sessionManagerResp *trustmappingv1.UnblockTrustMappingResponse
 		sessionManagerErr  error
 		expTaskResponse    orbital.TaskResponse
 	}{
@@ -1169,9 +1336,9 @@ func TestHandleUnblockTenant(t *testing.T) {
 		},
 		{
 			name: "should return failed task when session manager returns unsuccessful response",
-			sessionManagerResp: &oidcmappinggrpc.UnblockOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.UnblockTrustMappingResponse_builder{
 				Success: false,
-			},
+			}.Build(),
 			expTaskResponse: orbital.TaskResponse{
 				Status:       string(orbital.TaskStatusFailed),
 				ErrorMessage: operator.ErrFailedResponse.Error(),
@@ -1179,9 +1346,9 @@ func TestHandleUnblockTenant(t *testing.T) {
 		},
 		{
 			name: "should return done task when session manager unblocks successfully",
-			sessionManagerResp: &oidcmappinggrpc.UnblockOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.UnblockTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 			expTaskResponse: orbital.TaskResponse{
 				Status: string(orbital.TaskStatusDone),
 			},
@@ -1200,7 +1367,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
-			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, tenantManager, groupManager, authzRepo)
+			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, tenantManager, groupManager, nil, authzRepo)
 			require.NoError(t, err)
 
 			go func() {
@@ -1221,10 +1388,10 @@ func TestHandleUnblockTenant(t *testing.T) {
 			}
 
 			noOfCalls := 0
-			sessionManagerClient.MockUnblockOIDCMapping = func(
+			sessionManagerClient.MockUnblockTrustMapping = func(
 				_ context.Context,
-				req *oidcmappinggrpc.UnblockOIDCMappingRequest,
-			) (*oidcmappinggrpc.UnblockOIDCMappingResponse, error) {
+				req *trustmappingv1.UnblockTrustMappingRequest,
+			) (*trustmappingv1.UnblockTrustMappingResponse, error) {
 				assert.Equal(t, tenant.GetId(), req.GetTenantId())
 
 				noOfCalls++
@@ -1266,12 +1433,12 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
 			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, mockTenantManager, groupManager, authzRepo)
 		noOfCalls := 0
-		sessionManagerClient.MockRemoveOIDCMapping = func(
+		sessionManagerClient.MockRemoveTrustMapping = func(
 			_ context.Context,
-			_ *oidcmappinggrpc.RemoveOIDCMappingRequest,
-		) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
+			_ *trustmappingv1.RemoveTrustMappingRequest,
+		) (*trustmappingv1.RemoveTrustMappingResponse, error) {
 			noOfCalls++
-			return &oidcmappinggrpc.RemoveOIDCMappingResponse{}, nil
+			return trustmappingv1.RemoveTrustMappingResponse_builder{}.Build(), nil
 		}
 
 		responder.NewRequest(taskReq)
@@ -1285,15 +1452,15 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		sessionManagerResp *oidcmappinggrpc.RemoveOIDCMappingResponse
+		sessionManagerResp *trustmappingv1.RemoveTrustMappingResponse
 		sessionManagerErr  error
 		expTaskResponse    orbital.TaskResponse
 	}{
 		{
 			name: "should return task in progress when session manager returns error",
-			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.RemoveTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 			sessionManagerErr: assert.AnError,
 			expTaskResponse: orbital.TaskResponse{
 				Status:            string(orbital.TaskStatusProcessing),
@@ -1302,9 +1469,9 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 		},
 		{
 			name: "should return failed task when session manager returns unsuccessful response",
-			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.RemoveTrustMappingResponse_builder{
 				Success: false,
-			},
+			}.Build(),
 			expTaskResponse: orbital.TaskResponse{
 				Status:       string(orbital.TaskStatusFailed),
 				ErrorMessage: operator.ErrFailedResponse.Error(),
@@ -1324,7 +1491,7 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 				sessionmanager.NewMockService(sessionManagerClient),
 			)
 
-			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, mockTenantManager, groupManager, authzRepo)
+			op, err := operator.NewTenantOperator(unusedDB, cfg, target, clientFactory, mockTenantManager, groupManager, nil, authzRepo)
 			require.NoError(t, err)
 
 			go func() {
@@ -1346,10 +1513,10 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 			}
 
 			noOfCalls := 0
-			sessionManagerClient.MockRemoveOIDCMapping = func(
+			sessionManagerClient.MockRemoveTrustMapping = func(
 				_ context.Context,
-				req *oidcmappinggrpc.RemoveOIDCMappingRequest,
-			) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
+				req *trustmappingv1.RemoveTrustMappingRequest,
+			) (*trustmappingv1.RemoveTrustMappingResponse, error) {
 				assert.Equal(t, tenant.GetId(), req.GetTenantId())
 
 				noOfCalls++
@@ -1387,13 +1554,13 @@ func TestHandleTerminateTenant(t *testing.T) {
 	svcRegistry := testutils.NewTestPlugins()
 
 	sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
-	sessionManagerClient.MockRemoveOIDCMapping = func(
+	sessionManagerClient.MockRemoveTrustMapping = func(
 		_ context.Context,
-		_ *oidcmappinggrpc.RemoveOIDCMappingRequest,
-	) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
-		return &oidcmappinggrpc.RemoveOIDCMappingResponse{
+		_ *trustmappingv1.RemoveTrustMappingRequest,
+	) (*trustmappingv1.RemoveTrustMappingResponse, error) {
+		return trustmappingv1.RemoveTrustMappingResponse_builder{
 			Success: true,
-		}, nil
+		}.Build(), nil
 	}
 	clientFactory := mockClient.NewMockFactory(
 		registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
@@ -1475,6 +1642,7 @@ func TestHandleTerminateTenant(t *testing.T) {
 				clientFactory,
 				&mockTenantManager,
 				groupManager,
+				nil,
 				authzRepo,
 			)
 			require.NoError(t, err)
@@ -1564,6 +1732,7 @@ func TestHandleTerminateTenantTimeout(t *testing.T) {
 		clientFactory,
 		mockTenantManager,
 		groupManager,
+		nil,
 		authzRepo,
 	)
 	require.NoError(t, err)
@@ -1791,7 +1960,7 @@ func TestTenantOperatorTracing(t *testing.T) {
 
 	tenantManager, groupManager, authzRepo := createManagers(t, dbConn, cfg, svcRegistry)
 	op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory,
-		tenantManager, groupManager, authzRepo)
+		tenantManager, groupManager, nil, authzRepo)
 	require.NoError(t, err)
 
 	validData, err := createValidTenantData(tenantID, RegionUSWest1, tenants[0])
@@ -1889,6 +2058,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 		clientFactory,
 		tenantManager,
 		groupManager,
+		nil,
 		authzRepo,
 	)
 	require.NoError(t, err, "Failed to create TenantOperator")

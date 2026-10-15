@@ -60,6 +60,6 @@ func (c *APIController) GetTenantLimits(
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetTenantLimits, err)
 	}
-	apiLimits := tenantconfigs.LimitsToAPI(limits.Systems, limits.Keys, limits.KeyConfigs)
+	apiLimits := tenantconfigs.LimitsToAPI(limits)
 	return cmkapi.GetTenantLimits200JSONResponse(*apiLimits), nil
 }

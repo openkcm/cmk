@@ -140,9 +140,9 @@ func (c SystemGroupConfig) Type() ConfigType {
 }
 
 type TenantLimits struct {
-	Systems    int `flatten:"system"`
-	Keys       int `flatten:"keys"`
-	KeyConfigs int `flatten:"key_configs"`
+	Systems    *int `flatten:"system"`
+	Keys       *int `flatten:"keys"`
+	KeyConfigs *int `flatten:"key_configs"`
 }
 
 func (c TenantLimits) FlattenKeyRoot() string {
