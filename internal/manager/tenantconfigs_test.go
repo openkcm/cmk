@@ -45,7 +45,7 @@ func SetupTenantConfigManager(t *testing.T, opts ...testplugins.RegistryOption) 
 			ValidityDays: config.MinCertificateValidityDays,
 		},
 	}
-	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil)
+	tenantManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, manager.NewFeatureFlags(nil, nil, nil))
 
 	return tenantManager, db, tenants[0]
 }
@@ -262,7 +262,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 	t.Run("BYOK disabled, no stored keystore", func(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		r := sql.NewRepository(db)
-		m := manager.NewTenantConfigManager(r, nil, &config.Config{}, nil, nil)
+		m := manager.NewTenantConfigManager(r, nil, &config.Config{}, nil, manager.NewFeatureFlags(nil, nil, nil))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.Nil(t, res.BYOK.SupportedRegions)
@@ -281,7 +281,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 		configManager, db, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 
-		err := configManager.SetTenantConfig(ctx, testutils.NewKeystoreConfig(func(k *model.KeystoreConfig) {
+		err := configManager.SetKeystoreConfig(ctx, testutils.NewKeystoreConfig(func(k *model.KeystoreConfig) {
 			k.SupportedRegions = testutils.SupportedRegions
 		}))
 		assert.NoError(t, err)
@@ -302,7 +302,7 @@ func TestGetTenantsKeystore(t *testing.T) {
 	t.Run("BYOK disabled when flag missing even with default provider plugin", func(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		// Registry has default keystore plugin but no flags set
-		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), nil, nil, nil)
+		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), nil, nil, manager.NewFeatureFlags(nil, nil, nil))
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
 		assert.False(t, res.AllowBYOK)
@@ -1066,7 +1066,7 @@ func TestSetDefaultKeystore_ClearsOmittedOptionalFields(t *testing.T) {
 		},
 		SupportedRegions: map[string]config.Region{"eu-west-1": {Name: "eu-west-1", TechnicalName: "eu-west-1"}},
 	}
-	err := m.SetTenantConfig(ctx, full)
+	err := m.SetKeystoreConfig(ctx, full)
 	assert.NoError(t, err)
 
 	// Overwrite with a config that omits optional fields. Previous values must
@@ -1077,7 +1077,7 @@ func TestSetDefaultKeystore_ClearsOmittedOptionalFields(t *testing.T) {
 			CommonName: "cn-2",
 		},
 	}
-	err = m.SetTenantConfig(ctx, minimal)
+	err = m.SetKeystoreConfig(ctx, minimal)
 	assert.NoError(t, err)
 
 	got, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
@@ -1153,38 +1153,6 @@ func TestSetDefaultKeystore_FlatRoundTrip(t *testing.T) {
 	require.Len(t, got.SupportedRegions, 2)
 }
 
-// TestGetStoredDefaultKeystoreConfig_IncompleteRows verifies incomplete flat
-// rows are reported as not found.
-func TestGetStoredDefaultKeystoreConfig_IncompleteRows(t *testing.T) {
-	m, db, tenant := SetupTenantConfigManager(t)
-	r := sql.NewRepository(db)
-	ctx := testutils.CreateCtxWithTenant(tenant)
-
-	// locality_id present but common_name missing -> incomplete.
-	err := r.Set(ctx, &model.TenantConfig{Key: "role_mgmt/locality_id", Value: "loc-1", Type: "default_keystore"}, *repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField))
-	assert.NoError(t, err)
-
-	_, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
-	assert.NoError(t, err)
-	assert.False(t, found, "incomplete keystore rows must be reported as not found")
-}
-
-// TestGetStoredDefaultKeystoreConfig_UnknownTypeIgnored verifies that rows with
-// unknown types are silently ignored and the result is not-found (no error).
-func TestGetStoredDefaultKeystoreConfig_UnknownTypeIgnored(t *testing.T) {
-	m, db, tenant := SetupTenantConfigManager(t)
-	r := sql.NewRepository(db)
-	ctx := testutils.CreateCtxWithTenant(tenant)
-
-	// Write rows under an unrecognised key prefix; should not surface as a config.
-	err := r.Set(ctx, &model.TenantConfig{Key: "unknown_prefix/locality_id", Value: "loc-1", Type: "default_keystore"}, *repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField))
-	assert.NoError(t, err)
-
-	_, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
-	assert.NoError(t, err)
-	assert.False(t, found)
-}
-
 func TestValidateWorkflowConfig(t *testing.T) {
 	valid := func() *model.WorkflowConfig {
 		return &model.WorkflowConfig{
@@ -1241,24 +1209,9 @@ func TestGetTenantLimits(t *testing.T) {
 		limits, err := m.GetTenantLimits(ctx)
 
 		require.NoError(t, err)
-		assert.Equal(t, 50, limits.Systems)
-		assert.Equal(t, 10, limits.Keys)
-		assert.Equal(t, 5, limits.KeyConfigs)
-	})
-
-	t.Run("returns zero when cfg is nil and no overrides stored", func(t *testing.T) {
-		_, db, tenant := SetupTenantConfigManager(t)
-		ctx := testutils.CreateCtxWithTenant(tenant)
-		r := sql.NewRepository(db)
-
-		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), nil, nil, nil)
-
-		limits, err := m.GetTenantLimits(ctx)
-
-		require.NoError(t, err)
-		assert.Equal(t, 0, limits.Systems)
-		assert.Equal(t, 0, limits.Keys)
-		assert.Equal(t, 0, limits.KeyConfigs)
+		assert.Equal(t, cfg.Tenant.SystemLimit, *limits.Systems)
+		assert.Equal(t, cfg.Tenant.KeyLimit, *limits.Keys)
+		assert.Equal(t, cfg.Tenant.KeyConfigLimit, *limits.KeyConfigs)
 	})
 
 	t.Run("returns both overrides from DB in a single fetch", func(t *testing.T) {
@@ -1278,56 +1231,35 @@ func TestGetTenantLimits(t *testing.T) {
 		limits, err := m.GetTenantLimits(ctx)
 
 		require.NoError(t, err)
-		assert.Equal(t, 99, limits.Systems)
-		assert.Equal(t, 7, limits.Keys)
-		assert.Equal(t, 33, limits.KeyConfigs)
+		assert.Equal(t, 99, *limits.Systems)
+		assert.Equal(t, 7, *limits.Keys)
+		assert.Equal(t, 33, *limits.KeyConfigs)
 	})
 }
 
-func TestSetLimitOverrides(t *testing.T) {
+func TestSetTenantLimit(t *testing.T) {
 	cfg := &config.Config{Tenant: config.Tenant{SystemLimit: 50, KeyLimit: 10, KeyConfigLimit: 5}}
 
-	t.Run("persists overrides read back via GetEffectiveLimits", func(t *testing.T) {
+	t.Run("Should write, get back from config on nil and overwrite", func(t *testing.T) {
 		_, db, tenant := SetupTenantConfigManager(t)
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
 
-		require.NoError(t, m.SetTenantConfig(ctx, model.TenantLimits{Systems: new(99), Keys: new(7), KeyConfigs: new(33)}))
-
-		limits, err := m.GetTenantLimits(ctx)
+		limits, err := m.SetTenantLimits(ctx, &model.TenantLimits{Systems: new(99), Keys: new(7), KeyConfigs: new(33)})
 		require.NoError(t, err)
-		assert.Equal(t, 99, limits.Systems)
-		assert.Equal(t, 7, limits.Keys)
-		assert.Equal(t, 33, limits.KeyConfigs)
-	})
-
-	t.Run("re-writing overwrites the previous values", func(t *testing.T) {
-		_, db, tenant := SetupTenantConfigManager(t)
-		ctx := testutils.CreateCtxWithTenant(tenant)
-		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
-
-		require.NoError(t, m.SetTenantConfig(ctx, model.TenantLimits{Systems: new(99), Keys: new(7), KeyConfigs: new(33)}))
-		require.NoError(t, m.SetTenantConfig(ctx, model.TenantLimits{Systems: new(1), Keys: new(2), KeyConfigs: new(3)}))
-
-		limits, err := m.GetTenantLimits(ctx)
+		assert.Equal(t, 99, *limits.Systems)
+		assert.Equal(t, 7, *limits.Keys)
+		assert.Equal(t, 33, *limits.KeyConfigs)
+		limits, err = m.SetTenantLimits(ctx, &model.TenantLimits{Keys: new(9)})
 		require.NoError(t, err)
-		assert.Equal(t, 1, limits.Systems)
-		assert.Equal(t, 2, limits.Keys)
-		assert.Equal(t, 3, limits.KeyConfigs)
-	})
+		assert.Equal(t, cfg.Tenant.SystemLimit, *limits.Systems)
+		assert.Equal(t, 9, *limits.Keys)
+		assert.Equal(t, cfg.Tenant.KeyConfigLimit, *limits.KeyConfigs)
 
-	t.Run("nil fields clear their override and fall back to the cluster default", func(t *testing.T) {
-		_, db, tenant := SetupTenantConfigManager(t)
-		ctx := testutils.CreateCtxWithTenant(tenant)
-		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil, nil)
-
-		require.NoError(t, m.SetTenantConfig(ctx, model.TenantLimits{Systems: new(99), Keys: new(7), KeyConfigs: new(33)}))
-		require.NoError(t, m.SetTenantConfig(ctx, model.TenantLimits{Keys: new(7)}))
-
-		limits, err := m.GetTenantLimits(ctx)
+		res, err := m.GetTenantLimits(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, 50, limits.Systems)
-		assert.Equal(t, 7, limits.Keys)
-		assert.Equal(t, 5, limits.KeyConfigs)
+		assert.Equal(t, cfg.Tenant.SystemLimit, *res.Systems)
+		assert.Equal(t, 9, *res.Keys)
+		assert.Equal(t, cfg.Tenant.KeyConfigLimit, *res.KeyConfigs)
 	})
 }

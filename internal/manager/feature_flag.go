@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/open-feature/go-sdk/openfeature"
+
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/featureflags"
@@ -44,13 +45,6 @@ func NewFeatureFlags(
 		svcRegistry: svcRegistry,
 		flags:       flags,
 	}
-}
-
-// featureFlagsConfigured reports whether feature flags are active for this
-// deployment. When it returns false, callers fall back to legacy behaviour:
-// HYOK ungated and BYOK governed by the allow-byok feature gate.
-func (f *featureFlags) isEnabled() bool {
-	return f.cfg != nil && featureflags.Configured(f.flags, f.cfg.FeatureFlags)
 }
 
 // isBYOKAllowed checks whether BYOK is enabled for the default keystore provider.
@@ -108,6 +102,13 @@ func (f *featureFlags) IsKeyRotateDetectionEnabled(ctx context.Context, provider
 	}
 
 	return enabled
+}
+
+// featureFlagsConfigured reports whether feature flags are active for this
+// deployment. When it returns false, callers fall back to legacy behaviour:
+// HYOK ungated and BYOK governed by the allow-byok feature gate.
+func (f *featureFlags) isEnabled() bool {
+	return f.cfg != nil && featureflags.Configured(f.flags, f.cfg.FeatureFlags)
 }
 
 // getDefaultProvider returns the name of the plugin tagged as DEFAULT_KEYSTORE.

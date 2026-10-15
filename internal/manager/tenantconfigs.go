@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 
-
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
@@ -111,11 +110,22 @@ func (m *TenantConfigManager) SetTenantConfig(ctx context.Context, config model.
 	return nil
 }
 
+func (m *TenantConfigManager) WipeTenantConfig(ctx context.Context, config model.TenantConfiguration) (bool, error) {
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().
+				Where(repo.KeyField, config.FlattenKeyRoot()+"/%", repo.Contains).
+				Where(repo.TypeField, string(config.Type())),
+		),
+	)
+	return m.r.Delete(ctx, &model.TenantConfig{}, *query)
+}
+
 // GetTenantConfigByType fetches from the DB properties related with a ConfigType
 // The Confifguration must implement the TenantConfiguration interface
 func (m *TenantConfigManager) GetTenantConfigByType[T model.TenantConfiguration](
 	ctx context.Context,
-) (*T,error) {
+) (*T, error) {
 	var res T
 	configs := []*model.TenantConfig{}
 
@@ -128,9 +138,10 @@ func (m *TenantConfigManager) GetTenantConfigByType[T model.TenantConfiguration]
 		return nil, errs.Wrap(repo.ErrGetResource, err)
 	}
 
-	// if len(configs) < 1 {
-	// 	return nil, nil
-	// }
+	if len(configs) < 1 {
+		//nolint:nilnil
+		return nil, nil
+	}
 
 	configMap := make(map[string]any, len(configs))
 	for _, c := range configs {
@@ -151,19 +162,21 @@ func (m *TenantConfigManager) GetTenantLimits(ctx context.Context) (model.Tenant
 		return model.TenantLimits{}, errs.Wrap(ErrGetTenantLimits, err)
 	}
 
-	if m.cfg != nil {
-		if configs.KeyConfigs == nil {
-			configs.KeyConfigs = &m.cfg.Tenant.KeyConfigLimit
-		}
-		if configs.Systems == nil {
-			configs.Systems = &m.cfg.Tenant.SystemLimit
-		}
-		if configs.Keys == nil {
-			configs.Keys = &m.cfg.Tenant.KeyLimit
-		}
+	if configs == nil {
+		configs = &model.TenantLimits{}
 	}
 
+	m.applyTenantLimitsOverride(configs)
 	return *configs, nil
+}
+
+func (m *TenantConfigManager) SetTenantLimits(
+	ctx context.Context,
+	limits *model.TenantLimits,
+) (*model.TenantLimits, error) {
+	m.applyTenantLimitsOverride(limits)
+	err := m.SetTenantConfig(ctx, limits)
+	return limits, err
 }
 
 // GetSystemGroupingConfig gets systemgrouping config out of tenant_config
@@ -173,7 +186,6 @@ func (m *TenantConfigManager) GetSystemGroupingConfig(ctx context.Context) (*mod
 	if err != nil {
 		return nil, err
 	}
-
 
 	if configs != nil {
 		err = m.SetTenantConfig(ctx, model.SystemGroupConfig{
@@ -202,7 +214,6 @@ func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.Wor
 	if wc != nil {
 		return wc, nil
 	}
-
 
 	wc, found, err := m.getWorkflowConfigFromLegacyBlob(ctx)
 	if err != nil {
@@ -354,6 +365,17 @@ func (m *TenantConfigManager) GetKeystoreConfig(ctx context.Context) (*model.Key
 	return keystore, nil
 }
 
+func (m *TenantConfigManager) SetKeystoreConfig(ctx context.Context, config *model.KeystoreConfig) error {
+	return m.r.Transaction(ctx, func(context.Context) error {
+		_, err := m.WipeTenantConfig(ctx, config)
+		if err != nil {
+			return err
+		}
+
+		return m.SetTenantConfig(ctx, config)
+	})
+}
+
 // NeedsDefaultKeystoreProvisioning reports whether the tenant's default keystore
 // management role has not yet been fully provisioned. It reads the stored config without
 // triggering any lazy provisioning side effects (no GrantTrust calls).
@@ -382,6 +404,20 @@ func (m *TenantConfigManager) GetStoredDefaultKeystoreConfig(ctx context.Context
 	}
 
 	return m.getKeystoreConfigFromLegacyBlob(ctx)
+}
+
+func (m *TenantConfigManager) applyTenantLimitsOverride(limits *model.TenantLimits) {
+	if m.cfg != nil {
+		if limits.KeyConfigs == nil {
+			limits.KeyConfigs = &m.cfg.Tenant.KeyConfigLimit
+		}
+		if limits.Systems == nil {
+			limits.Systems = &m.cfg.Tenant.SystemLimit
+		}
+		if limits.Keys == nil {
+			limits.Keys = &m.cfg.Tenant.KeyLimit
+		}
+	}
 }
 
 func (m *TenantConfigManager) initDefaultKeystoreFromPool(ctx context.Context) (*model.KeystoreConfig, error) {

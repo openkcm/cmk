@@ -78,6 +78,7 @@ func (m LegacyTenantConfig) CheckAuthz(ctx context.Context,
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
 
+//nolint:lll
 type KeystoreConfig struct {
 	RoleManagementConfig ManagementConfig         `yaml:"roleManagementConfig" json:"roleManagementConfig" flatten:"role_mgmt"`
 	KeyManagementConfig  ManagementConfig         `yaml:"keyManagementConfig" json:"keyManagementConfig" flatten:"key_mgmt"`
