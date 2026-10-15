@@ -455,7 +455,7 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 		testutils.WriteTenantConfig(ctx, t, r, model.TenantLimits{
-			Systems: 5,
+			Systems: new(5),
 		})
 
 		businessUserData := &auth.ClientData{
@@ -493,7 +493,7 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 		testutils.WriteTenantConfig(ctx, t, r, model.TenantLimits{
-			KeyConfigs: 42,
+			KeyConfigs: new(42),
 		})
 
 		businessUserData := &auth.ClientData{
@@ -531,7 +531,7 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 		testutils.WriteTenantConfig(ctx, t, r, model.TenantLimits{
-			Keys: 7,
+			Keys: new(7),
 		})
 
 		businessUserData := &auth.ClientData{

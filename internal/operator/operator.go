@@ -15,11 +15,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/runtime/protoimpl"
 
 	goamqp "github.com/Azure/go-amqp"
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	tenantconfiggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant_config/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
+	flowv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/trust/oidc/flow/v1"
+	oidcv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/trust/oidc/v1"
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/clients"
@@ -64,6 +68,9 @@ const (
 	WorkingStateTenantOffboardingFailed  = "tenant offboarding failed"
 	WorkingStateTenantProbingFailed      = "tenant probing failed"
 	WorkingStateTenantTerminationTimeout = "tenant termination timed out"
+
+	WorkingStateTenantConfigFetchFailed = "failed to fetch tenant config from registry"
+	WorkingStateTenantConfigWriteFailed = "failed to write tenant limit overrides"
 )
 
 var (
@@ -85,6 +92,13 @@ type TenantOperator struct {
 	clientsFactory clients.Factory
 	gm             *manager.GroupManager
 	tm             manager.Tenant
+	tcm            tenantConfigWriter
+}
+
+// tenantConfigWriter is the subset of the tenant-config manager used to persist
+// limit overrides pulled from the registry.
+type tenantConfigWriter interface {
+	SetTenantConfig(ctx context.Context, o model.TenantConfiguration) error
 }
 
 func NewTenantOperator(
@@ -94,6 +108,7 @@ func NewTenantOperator(
 	clientsFactory clients.Factory,
 	tenantManager manager.Tenant,
 	groupManager *manager.GroupManager,
+	tenantConfigManager tenantConfigWriter,
 	r repo.Repo,
 ) (*TenantOperator, error) {
 	if db == nil {
@@ -112,7 +127,7 @@ func NewTenantOperator(
 		return nil, oops.Errorf("tenantClient is nil")
 	}
 
-	if clientsFactory.SessionManager().OIDCMapping() == nil {
+	if clientsFactory.SessionManager().TrustMapping() == nil {
 		return nil, oops.Errorf("sessionManagerClient is nil")
 	}
 
@@ -128,6 +143,7 @@ func NewTenantOperator(
 		clientsFactory: clientsFactory,
 		gm:             groupManager,
 		tm:             tenantManager,
+		tcm:            tenantConfigManager,
 	}, nil
 }
 
@@ -292,17 +308,22 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 			return errs.Wrapf(ErrFailedApplyOIDC, "could not update tenant issuer URL in database")
 		}
 
-		resp, err := o.clientsFactory.SessionManager().OIDCMapping().ApplyOIDCMapping(
-			ctx,
-			&oidcmappinggrpc.ApplyOIDCMappingRequest{
-				TenantId:   tenantID,
-				Issuer:     cfg.Issuer,
-				JwksUri:    &cfg.JwksURI,
-				Audiences:  cfg.Audiences,
-				ClientId:   cfg.ClientID,
-				Properties: cfg.AdditionalProperties,
-			},
-		)
+		oidc := oidcv1.OIDC_builder{
+			Issuer:    new(cfg.Issuer),
+			JwksUri:   new(cfg.JwksURI),
+			Audiences: cfg.Audiences,
+			ClientId:  new(cfg.ClientID),
+		}.Build()
+		setOIDCProperties(oidc, cfg.AdditionalProperties)
+
+		resp, err := o.clientsFactory.SessionManager().TrustMapping().
+			ApplyTrustMapping(
+				ctx,
+				trustmappingv1.ApplyTrustMappingRequest_builder{
+					TenantId: new(tenantID),
+					Oidc:     oidc,
+				}.Build(),
+			)
 		if err != nil {
 			return err
 		}
@@ -313,6 +334,21 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 
 		return nil
 	})
+}
+
+func setOIDCProperties(oidc *oidcv1.OIDC, props map[string]string) {
+	attrs := make([]*flowv1.Attribute, 0, len(props))
+	for k, v := range props {
+		attrs = append(attrs, flowv1.Attribute_builder{Key: new(k), Value: new(v)}.Build())
+	}
+	for _, ext := range []*protoimpl.ExtensionInfo{
+		flowv1.E_AuthAttributes,
+		flowv1.E_TokenAttributes,
+		flowv1.E_LogoutAttributes,
+		flowv1.E_AuthContext,
+	} {
+		proto.SetExtension(oidc, ext, attrs)
+	}
 }
 
 // handleRemoveTenantAuth is handler for Remove Tenant Auth task.
@@ -361,12 +397,13 @@ func (o *TenantOperator) handleBlockTenant(
 		return
 	}
 
-	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().BlockOIDCMapping(
-		ctx,
-		&oidcmappinggrpc.BlockOIDCMappingRequest{
-			TenantId: tenantProto.GetId(),
-		},
-	)
+	grpcResp, err := o.clientsFactory.SessionManager().TrustMapping().
+		BlockTrustMapping(
+			ctx,
+			trustmappingv1.BlockTrustMappingRequest_builder{
+				TenantId: new(tenantProto.GetId()),
+			}.Build(),
+		)
 	if err != nil {
 		resp.ContinueAndWaitFor(reconcileAfterSecError)
 		return
@@ -379,6 +416,72 @@ func (o *TenantOperator) handleBlockTenant(
 	}
 
 	resp.Complete()
+}
+
+// handleUpdateTenantConfig syncs a tenant's limit overrides from the registry.
+// The task payload carries only the tenant id, so the authoritative limit values
+// are fetched from the registry and written to the regional store.
+func (o *TenantOperator) handleUpdateTenantConfig(
+	ctx context.Context,
+	req orbital.HandlerRequest,
+	resp *orbital.HandlerResponse,
+) {
+	tenantProto := &tenantgrpc.Tenant{}
+
+	err := proto.Unmarshal(req.TaskData, tenantProto)
+	if err != nil {
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidData, err), WorkingStateInvalidTaskData)
+		return
+	}
+
+	tenantID := tenantProto.GetId()
+	if tenantID == "" {
+		setErrorStateAndFail(ctx, resp, ErrInvalidTenantID, WorkingStateInvalidTaskData)
+		return
+	}
+
+	cfgResp, err := o.clientsFactory.Registry().TenantConfig().GetTenantConfig(
+		ctx,
+		tenantconfiggrpc.GetTenantConfigRequest_builder{TenantId: &tenantID}.Build(),
+	)
+	if err != nil {
+		setErrorStateAndContinue(ctx, resp, errs.Wrap(ErrFailedResponse, err), WorkingStateTenantConfigFetchFailed)
+		return
+	}
+
+	// Absent values would persist as zeros and clobber the current limits; wait for the registry instead.
+	values := cfgResp.GetValues()
+	if values == nil {
+		setErrorStateAndContinue(ctx, resp, ErrFailedResponse, WorkingStateTenantConfigFetchFailed)
+		return
+	}
+
+	tenantCtx := cmkcontext.CreateTenantContext(ctx, tenantID)
+
+	err = o.tcm.SetTenantConfig(
+		tenantCtx,
+		model.TenantLimits{
+			Systems:    limitPtr(values.HasSystemLimit(), values.GetSystemLimit()),
+			Keys:       limitPtr(values.HasKeyLimit(), values.GetKeyLimit()),
+			KeyConfigs: limitPtr(values.HasKeyConfigLimit(), values.GetKeyConfigLimit()),
+		},
+	)
+	if err != nil {
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateTenantConfigWriteFailed)
+		return
+	}
+
+	resp.Complete()
+}
+
+// limitPtr returns a pointer to v when the registry field is present, nil otherwise.
+// A nil override is left to SetLimitOverrides, which clears the stored row.
+func limitPtr(present bool, v int32) *int {
+	if !present {
+		return nil
+	}
+	i := int(v)
+	return &i
 }
 
 // handleUnblockTenant is handler for Unblock Tenant task
@@ -395,11 +498,11 @@ func (o *TenantOperator) handleUnblockTenant(
 		return
 	}
 
-	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().UnblockOIDCMapping(
+	grpcResp, err := o.clientsFactory.SessionManager().TrustMapping().UnblockTrustMapping(
 		ctx,
-		&oidcmappinggrpc.UnblockOIDCMappingRequest{
-			TenantId: tenantProto.GetId(),
-		},
+		trustmappingv1.UnblockTrustMappingRequest_builder{
+			TenantId: new(tenantProto.GetId()),
+		}.Build(),
 	)
 	if err != nil {
 		setErrorStateAndContinue(ctx, resp, err, WorkingStateOIDCUnblockFailed)
@@ -478,11 +581,11 @@ func (o *TenantOperator) removeOIDCMapping(
 	resp *orbital.HandlerResponse,
 	tenantID string,
 ) bool {
-	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().RemoveOIDCMapping(
+	grpcResp, err := o.clientsFactory.SessionManager().TrustMapping().RemoveTrustMapping(
 		ctx,
-		&oidcmappinggrpc.RemoveOIDCMappingRequest{
-			TenantId: tenantID,
-		},
+		trustmappingv1.RemoveTrustMappingRequest_builder{
+			TenantId: new(tenantID),
+		}.Build(),
 	)
 	st, ok := status.FromError(err)
 	if !ok {
@@ -602,12 +705,13 @@ func (o *TenantOperator) trace(
 // registerHandlers registers all task handlers with the orbital operator
 func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
 	handlers := map[string]orbital.HandlerFunc{
-		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():   o.handleCreateTenant,
-		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():       o.handleBlockTenant,
-		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():     o.handleUnblockTenant,
-		tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String():   o.handleTerminateTenant,
-		authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String():  o.handleApplyTenantAuth,
-		authgrpc.AuthAction_AUTH_ACTION_REMOVE_AUTH.String(): o.handleRemoveTenantAuth,
+		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():                       o.handleCreateTenant,
+		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():                           o.handleBlockTenant,
+		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():                         o.handleUnblockTenant,
+		tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String():                       o.handleTerminateTenant,
+		authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String():                      o.handleApplyTenantAuth,
+		authgrpc.AuthAction_AUTH_ACTION_REMOVE_AUTH.String():                     o.handleRemoveTenantAuth,
+		tenantconfiggrpc.TenantConfigAction_TENANT_CONFIG_ACTION_UPDATE.String(): o.handleUpdateTenantConfig,
 	}
 
 	for action, handler := range handlers {

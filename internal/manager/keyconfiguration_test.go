@@ -1633,7 +1633,7 @@ func (r *lockErrorRepo) First(_ context.Context, _ repo.Resource, _ repo.Query) 
 func TestEnforceLimitLockErrors(t *testing.T) {
 	newManager := func() *manager.KeyConfigManager {
 		r := &lockErrorRepo{InMemoryRepository: repoMock.NewInMemoryRepository()}
-		tenantCfg := fakeTenantConfigs{limits: model.TenantLimits{Systems: 1, Keys: 1, KeyConfigs: 1}}
+		tenantCfg := fakeTenantConfigs{limits: model.TenantLimits{Systems: new(1), Keys: new(1), KeyConfigs: new(1)}}
 		return manager.NewKeyConfigManager(r, nil, nil, nil, nil, nil, nil, tenantCfg)
 	}
 
