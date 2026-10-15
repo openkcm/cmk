@@ -24,13 +24,14 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	stduuid "uuid"
+
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
 	slogctx "github.com/veqryn/slog-context"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	stduuid "uuid"
 
 	"github.com/openkcm/cmk/internal/auditor"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
@@ -140,6 +141,7 @@ func createManagers(
 		cm,
 		nil,
 		cmkAuditor,
+		nil,
 		nil,
 		nil,
 	)

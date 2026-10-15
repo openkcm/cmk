@@ -115,6 +115,7 @@ type KeyManager struct {
 	pendingRegistrationTimeout time.Duration
 	pendingCreationTimeout     time.Duration
 	metrics                    *KeyMetrics
+	featureFlags               FeatureFlags
 }
 
 func NewKeyManager(
@@ -128,6 +129,7 @@ func NewKeyManager(
 	cmkAuditor *auditor.Auditor,
 	asyncClient async.Client,
 	cfg *config.Config,
+	flags FeatureFlags,
 ) *KeyManager {
 	keyVersionManager := NewKeyVersionManager(repo, svcRegistry, tenantConfigs, certManager, cmkAuditor)
 
@@ -162,6 +164,7 @@ func NewKeyManager(
 		pendingRegistrationTimeout: pendingRegTimeout,
 		pendingCreationTimeout:     pendingCreTimeout,
 		metrics:                    metrics,
+		featureFlags:               flags,
 	}
 }
 
@@ -1008,11 +1011,11 @@ func (km *KeyManager) validateKeyCreation(ctx context.Context, key *model.Key) e
 
 	switch key.KeyType {
 	case cmkapi.KeyTypeBYOK:
-		if !km.tenantConfigs.IsBYOKAllowed(ctx) {
+		if !km.featureFlags.IsBYOKAllowed(ctx) {
 			return ErrBYOKNotAllowed
 		}
 	case cmkapi.KeyTypeHYOK:
-		if !km.tenantConfigs.IsHYOKAllowed(ctx, key.Provider) {
+		if !km.featureFlags.IsHYOKAllowed(ctx, key.Provider) {
 			return ErrHYOKNotAllowed
 		}
 	}
@@ -1764,7 +1767,7 @@ func (km *KeyManager) handleKeyVersions(
 	key *model.Key,
 	keyResp *keymanagement.GetKeyVersionsResponse,
 ) error {
-	if !km.tenantConfigs.IsKeyRotateDetectionEnabled(ctx, key.Provider) {
+	if !km.featureFlags.IsKeyRotateDetectionEnabled(ctx, key.Provider) {
 		log.Info(ctx, "key rotation detection disabled by feature flag, skipping",
 			slog.String("keyID", key.ID.String()),
 			slog.String("provider", key.Provider))
