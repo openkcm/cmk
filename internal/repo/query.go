@@ -24,7 +24,7 @@ const (
 	LessThan           ComparisonOp = "<"
 	GreaterThanOrEqual ComparisonOp = ">="
 	LessThanOrEqual    ComparisonOp = "<="
-	Contains           ComparisonOp = "ILIKE"
+	ContainsOp         ComparisonOp = "ILIKE"
 
 	Desc OrderDirection = "desc"
 	Asc  OrderDirection = "asc"
@@ -211,6 +211,10 @@ func (c CompositeKey) Where(q QueryField, v any,
 	}
 
 	return c
+}
+
+func Contains(v any) Key {
+	return Key{Value: v, Operation: ContainsOp}
 }
 
 func NotEq(v any) Key {

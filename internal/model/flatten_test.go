@@ -1,10 +1,12 @@
-package model
+package model_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/openkcm/cmk/internal/model"
 )
 
 type structNestedAndMaps struct {
@@ -73,9 +75,9 @@ func (w missingTag) FlattenKeyRoot() string { return "root" }
 func TestFlatten(t *testing.T) {
 	tests := []struct {
 		name      string
-		in        Flattable
+		in        model.Flattable
 		want      map[string]any // expected flat output; nil to skip the flat assertion
-		unflatten func(map[string]any) (Flattable, error)
+		unflatten func(map[string]any) (model.Flattable, error)
 	}{
 		{
 			name: "nested structs and map",
@@ -92,8 +94,8 @@ func TestFlatten(t *testing.T) {
 				"root/data/a":                          "1",
 				"root/data/b":                          "2",
 			},
-			unflatten: func(flat map[string]any) (Flattable, error) {
-				got, err := Unflatten[structNestedAndMaps](flat)
+			unflatten: func(flat map[string]any) (model.Flattable, error) {
+				got, err := model.Unflatten[structNestedAndMaps](flat)
 				return &got, err
 			},
 		},
@@ -105,8 +107,8 @@ func TestFlatten(t *testing.T) {
 				"root/enabled": true,
 				"root/name":    "x",
 			},
-			unflatten: func(flat map[string]any) (Flattable, error) {
-				got, err := Unflatten[typedSample](flat)
+			unflatten: func(flat map[string]any) (model.Flattable, error) {
+				got, err := model.Unflatten[typedSample](flat)
 				return &got, err
 			},
 		},
@@ -120,8 +122,8 @@ func TestFlatten(t *testing.T) {
 			name: "nil pointer skipped",
 			in:   &withPointer{Val: "v"},
 			want: map[string]any{"root/val": "v"},
-			unflatten: func(flat map[string]any) (Flattable, error) {
-				got, err := Unflatten[withPointer](flat)
+			unflatten: func(flat map[string]any) (model.Flattable, error) {
+				got, err := model.Unflatten[withPointer](flat)
 				return &got, err
 			},
 		},
@@ -129,8 +131,8 @@ func TestFlatten(t *testing.T) {
 			name: "non-nil pointer",
 			in:   &withPointer{Ptr: &nested{CommonName: "cn"}, Val: "v"},
 			want: map[string]any{"root/ptr/common_name": "cn", "root/val": "v"},
-			unflatten: func(flat map[string]any) (Flattable, error) {
-				got, err := Unflatten[withPointer](flat)
+			unflatten: func(flat map[string]any) (model.Flattable, error) {
+				got, err := model.Unflatten[withPointer](flat)
 				return &got, err
 			},
 		},
@@ -138,8 +140,8 @@ func TestFlatten(t *testing.T) {
 			name: "empty root yields unprefixed keys",
 			in:   &emptyRoot{Name: "x"},
 			want: map[string]any{"name": "x"},
-			unflatten: func(flat map[string]any) (Flattable, error) {
-				got, err := Unflatten[emptyRoot](flat)
+			unflatten: func(flat map[string]any) (model.Flattable, error) {
+				got, err := model.Unflatten[emptyRoot](flat)
 				return &got, err
 			},
 		},
@@ -147,7 +149,7 @@ func TestFlatten(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			flat, err := Flatten(tt.in)
+			flat, err := model.Flatten(tt.in)
 			require.NoError(t, err)
 			if tt.want != nil {
 				assert.Equal(t, tt.want, flat)
@@ -164,16 +166,16 @@ func TestFlatten(t *testing.T) {
 func TestFlattenErrors(t *testing.T) {
 	tests := []struct {
 		name    string
-		in      Flattable
+		in      model.Flattable
 		wantErr error
 	}{
-		{"slice unsupported", &withSlice{Items: []string{"a"}}, ErrUnsuportedField},
-		{"missing tag", &missingTag{Name: "n", Oops: "x"}, ErrMissingTag},
+		{"slice unsupported", &withSlice{Items: []string{"a"}}, model.ErrUnsuportedField},
+		{"missing tag", &missingTag{Name: "n", Oops: "x"}, model.ErrMissingTag},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Flatten(tt.in)
+			_, err := model.Flatten(tt.in)
 			require.ErrorIs(t, err, tt.wantErr)
 		})
 	}
@@ -186,7 +188,7 @@ func TestUnflattenIgnoresUnknownKeys(t *testing.T) {
 		"other/foo":        "foreign",
 	}
 
-	got, err := Unflatten[structNestedAndMaps](flat)
+	got, err := model.Unflatten[structNestedAndMaps](flat)
 	require.NoError(t, err)
 	assert.Equal(t, "loc-1", got.LocalityID)
 }

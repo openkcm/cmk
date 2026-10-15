@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
+
 	"github.com/openkcm/cmk/internal/errs"
 )
 
@@ -76,6 +77,7 @@ func isOnRoot(flatKeys []string, root string) bool {
 	return true
 }
 
+//nolint:cyclop
 func flatten(prefix string, v reflect.Value, res map[string]any) error {
 	switch v.Kind() {
 	case reflect.Interface, reflect.Pointer:

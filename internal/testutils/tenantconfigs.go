@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
-	"github.com/stretchr/testify/require"
 )
 
 func WriteTenantConfig(ctx context.Context, tb testing.TB, r repo.Repo, config model.TenantConfiguration) {
+	tb.Helper()
+
 	flattened, err := model.Flatten(config)
 	require.NoError(tb, err)
 

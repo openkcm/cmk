@@ -1,4 +1,4 @@
-package model
+package model_test
 
 import (
 	"testing"
@@ -8,25 +8,26 @@ import (
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
+	"github.com/openkcm/cmk/internal/model"
 )
 
 func TestConfigFlattenRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string
-		in   Flattable
+		in   model.Flattable
 		want map[string]any
 	}{
 		{
 			name: "KeystoreConfig",
-			in: &KeystoreConfig{
-				RoleManagementConfig: ManagementConfig{
+			in: &model.KeystoreConfig{
+				RoleManagementConfig: model.ManagementConfig{
 					LocalityID: "loc-1",
 					CommonName: "cn-1",
-					AccessData: KeystoreAccessData{"projectId": "p-123"},
+					AccessData: model.KeystoreAccessData{"projectId": "p-123"},
 				},
-				KeyManagementConfig: ManagementConfig{LocalityID: "loc-2"},
-				CryptoAccessData: map[string]CryptoConfig{
-					"prod": {Subject: "subj", AccessData: KeystoreAccessData{"token": "t-9"}},
+				KeyManagementConfig: model.ManagementConfig{LocalityID: "loc-2"},
+				CryptoAccessData: map[string]model.CryptoConfig{
+					"prod": {Subject: "subj", AccessData: model.KeystoreAccessData{"token": "t-9"}},
 				},
 				SupportedRegions: map[string]config.Region{
 					"eu-10": {Name: "Europe", TechnicalName: "eu-10"},
@@ -46,7 +47,7 @@ func TestConfigFlattenRoundTrip(t *testing.T) {
 		},
 		{
 			name: "WorkflowConfig",
-			in: &WorkflowConfig{
+			in: &model.WorkflowConfig{
 				Enabled:                 true,
 				MinimumApprovals:        constants.DefaultMinimumApprovalCount,
 				MaxApprovals:            constants.MaxMinimumApprovals,
@@ -69,7 +70,7 @@ func TestConfigFlattenRoundTrip(t *testing.T) {
 		},
 		{
 			name: "SystemGroupConfig",
-			in:   &SystemGroupConfig{Enabled: true, WarnCoverage: true},
+			in:   &model.SystemGroupConfig{Enabled: true, WarnCoverage: true},
 			want: map[string]any{
 				"enabled":       true,
 				"warn_coverage": true,
@@ -79,7 +80,7 @@ func TestConfigFlattenRoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			flat, err := Flatten(tt.in)
+			flat, err := model.Flatten(tt.in)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, flat)
 		})
@@ -88,29 +89,29 @@ func TestConfigFlattenRoundTrip(t *testing.T) {
 
 func TestConfigUnflattenRoundTrip(t *testing.T) {
 	t.Run("KeystoreConfig", func(t *testing.T) {
-		in := &KeystoreConfig{
-			RoleManagementConfig: ManagementConfig{
+		in := &model.KeystoreConfig{
+			RoleManagementConfig: model.ManagementConfig{
 				LocalityID: "loc-1",
 				CommonName: "cn-1",
-				AccessData: KeystoreAccessData{"projectId": "p-123"},
+				AccessData: model.KeystoreAccessData{"projectId": "p-123"},
 			},
-			KeyManagementConfig: ManagementConfig{LocalityID: "loc-2"},
-			CryptoAccessData: map[string]CryptoConfig{
-				"prod": {Subject: "subj", AccessData: KeystoreAccessData{"token": "t-9"}},
+			KeyManagementConfig: model.ManagementConfig{LocalityID: "loc-2"},
+			CryptoAccessData: map[string]model.CryptoConfig{
+				"prod": {Subject: "subj", AccessData: model.KeystoreAccessData{"token": "t-9"}},
 			},
 			SupportedRegions: map[string]config.Region{
 				"eu-10": {Name: "Europe", TechnicalName: "eu-10"},
 			},
 		}
-		flat, err := Flatten(in)
+		flat, err := model.Flatten(in)
 		require.NoError(t, err)
-		got, err := Unflatten[KeystoreConfig](flat)
+		got, err := model.Unflatten[model.KeystoreConfig](flat)
 		require.NoError(t, err)
 		assert.Equal(t, *in, got)
 	})
 
 	t.Run("WorkflowConfig", func(t *testing.T) {
-		in := &WorkflowConfig{
+		in := &model.WorkflowConfig{
 			Enabled:                 true,
 			MinimumApprovals:        constants.DefaultMinimumApprovalCount,
 			MaxApprovals:            constants.MaxMinimumApprovals,
@@ -120,18 +121,18 @@ func TestConfigUnflattenRoundTrip(t *testing.T) {
 			DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
 			MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
 		}
-		flat, err := Flatten(in)
+		flat, err := model.Flatten(in)
 		require.NoError(t, err)
-		got, err := Unflatten[WorkflowConfig](flat)
+		got, err := model.Unflatten[model.WorkflowConfig](flat)
 		require.NoError(t, err)
 		assert.Equal(t, *in, got)
 	})
 
 	t.Run("SystemGroupConfig", func(t *testing.T) {
-		in := &SystemGroupConfig{Enabled: true, WarnCoverage: true}
-		flat, err := Flatten(in)
+		in := &model.SystemGroupConfig{Enabled: true, WarnCoverage: true}
+		flat, err := model.Flatten(in)
 		require.NoError(t, err)
-		got, err := Unflatten[SystemGroupConfig](flat)
+		got, err := model.Unflatten[model.SystemGroupConfig](flat)
 		require.NoError(t, err)
 		assert.Equal(t, *in, got)
 	})
