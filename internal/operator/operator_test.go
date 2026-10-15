@@ -1139,15 +1139,19 @@ func (f *fakeTenantConfigClient) UpdateTenantConfig(
 }
 
 type fakeLimitWriter struct {
-	got    model.TenantConfiguration
+	got    model.TenantLimits
 	called bool
 	err    error
 }
 
-func (f *fakeLimitWriter) SetTenantConfig(_ context.Context, o model.TenantConfiguration) error {
-	f.called = true
-	f.got = o
+func (f *fakeLimitWriter) SetTenantConfig(_ context.Context, _ model.TenantConfiguration) error {
 	return f.err
+}
+
+func (f *fakeLimitWriter) SetTenantLimits(_ context.Context, o *model.TenantLimits) (*model.TenantLimits, error) {
+	f.called = true
+	f.got = *o
+	return o, f.err
 }
 
 func TestHandleUpdateTenantConfig(t *testing.T) {

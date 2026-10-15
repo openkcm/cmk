@@ -692,6 +692,60 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
+  /tenantConfigurations/systemgroups:
+    get:
+      tags:
+        - Tenant Configurations
+      summary: Get system groups configuration
+      operationId: getSystemGroupsConfig
+      description: |
+        Retrieves tenant system groups config
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSystemGroupsConfig"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      tags:
+        - Tenant Configurations
+      summary: Update system groups configuration
+      description: |
+        Updates workflow configuration of a tenant
+      operationId: updateSystemGroupsConfig
+      requestBody:
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/TenantSystemGroupsConfig"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSystemGroupsConfig"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
   /tenantConfigurations/limits:
     get:
       tags:
@@ -1937,6 +1991,17 @@ components:
           $ref: "#/components/schemas/BYOKKeystore"
         hyok:
           $ref: "#/components/schemas/HYOKKeystore"
+    TenantSystemGroupsConfig:
+      type: object
+      properties:
+        enabled:
+          description: The flag indicating whether system grouping is enabled
+          type: boolean
+          example: true
+        warnCoverage:
+          description: The flag indicating whether system grouping coverage warning is enabled
+          type: boolean
+          example: true
     TenantWorkflowConfiguration:
       type: object
       properties:

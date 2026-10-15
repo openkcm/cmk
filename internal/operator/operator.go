@@ -98,7 +98,7 @@ type TenantOperator struct {
 // tenantConfigWriter is the subset of the tenant-config manager used to persist
 // limit overrides pulled from the registry.
 type tenantConfigWriter interface {
-	SetTenantLimits(ctx context.Context, o *model.TenantLimits) error
+	SetTenantLimits(ctx context.Context, o *model.TenantLimits) (*model.TenantLimits, error)
 	SetTenantConfig(ctx context.Context, o model.TenantConfiguration) error
 }
 
@@ -459,7 +459,7 @@ func (o *TenantOperator) handleUpdateTenantConfig(
 
 	tenantCtx := cmkcontext.CreateTenantContext(ctx, tenantID)
 
-	err = o.tcm.SetTenantLimits(
+	_, err = o.tcm.SetTenantLimits(
 		tenantCtx,
 		&model.TenantLimits{
 			Systems:    limitPtr(values.HasSystemLimit(), values.GetSystemLimit()),
@@ -474,10 +474,7 @@ func (o *TenantOperator) handleUpdateTenantConfig(
 
 	err = o.tcm.SetTenantConfig(
 		tenantCtx,
-		&model.SystemGroupConfig{
-			Enabled:      true,
-			WarnCoverage: true,
-		},
+		&model.SystemGroupConfig{Enabled: true, WarnCoverage: true},
 	)
 	if err != nil {
 		setErrorStateAndContinue(ctx, resp, err, WorkingStateTenantConfigWriteFailed)
