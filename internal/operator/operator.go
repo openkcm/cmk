@@ -15,11 +15,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/runtime/protoimpl"
 
 	goamqp "github.com/Azure/go-amqp"
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
+	flowv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/trust/oidc/flow/v1"
+	oidcv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/trust/oidc/v1"
 	slogctx "github.com/veqryn/slog-context"
 
 	"github.com/openkcm/cmk/internal/clients"
@@ -112,7 +115,7 @@ func NewTenantOperator(
 		return nil, oops.Errorf("tenantClient is nil")
 	}
 
-	if clientsFactory.SessionManager().OIDCMapping() == nil {
+	if clientsFactory.SessionManager().TrustMapping() == nil {
 		return nil, oops.Errorf("sessionManagerClient is nil")
 	}
 
@@ -292,17 +295,22 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 			return errs.Wrapf(ErrFailedApplyOIDC, "could not update tenant issuer URL in database")
 		}
 
-		resp, err := o.clientsFactory.SessionManager().OIDCMapping().ApplyOIDCMapping(
-			ctx,
-			&oidcmappinggrpc.ApplyOIDCMappingRequest{
-				TenantId:   tenantID,
-				Issuer:     cfg.Issuer,
-				JwksUri:    &cfg.JwksURI,
-				Audiences:  cfg.Audiences,
-				ClientId:   cfg.ClientID,
-				Properties: cfg.AdditionalProperties,
-			},
-		)
+		oidc := oidcv1.OIDC_builder{
+			Issuer:    new(cfg.Issuer),
+			JwksUri:   new(cfg.JwksURI),
+			Audiences: cfg.Audiences,
+			ClientId:  new(cfg.ClientID),
+		}.Build()
+		setOIDCProperties(oidc, cfg.AdditionalProperties)
+
+		resp, err := o.clientsFactory.SessionManager().TrustMapping().
+			ApplyTrustMapping(
+				ctx,
+				trustmappingv1.ApplyTrustMappingRequest_builder{
+					TenantId: new(tenantID),
+					Oidc:     oidc,
+				}.Build(),
+			)
 		if err != nil {
 			return err
 		}
@@ -313,6 +321,21 @@ func (o *TenantOperator) applyOIDC(ctx context.Context, tenantID string, cfg OID
 
 		return nil
 	})
+}
+
+func setOIDCProperties(oidc *oidcv1.OIDC, props map[string]string) {
+	attrs := make([]*flowv1.Attribute, 0, len(props))
+	for k, v := range props {
+		attrs = append(attrs, flowv1.Attribute_builder{Key: new(k), Value: new(v)}.Build())
+	}
+	for _, ext := range []*protoimpl.ExtensionInfo{
+		flowv1.E_AuthAttributes,
+		flowv1.E_TokenAttributes,
+		flowv1.E_LogoutAttributes,
+		flowv1.E_AuthContext,
+	} {
+		proto.SetExtension(oidc, ext, attrs)
+	}
 }
 
 // handleRemoveTenantAuth is handler for Remove Tenant Auth task.
@@ -361,12 +384,13 @@ func (o *TenantOperator) handleBlockTenant(
 		return
 	}
 
-	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().BlockOIDCMapping(
-		ctx,
-		&oidcmappinggrpc.BlockOIDCMappingRequest{
-			TenantId: tenantProto.GetId(),
-		},
-	)
+	grpcResp, err := o.clientsFactory.SessionManager().TrustMapping().
+		BlockTrustMapping(
+			ctx,
+			trustmappingv1.BlockTrustMappingRequest_builder{
+				TenantId: new(tenantProto.GetId()),
+			}.Build(),
+		)
 	if err != nil {
 		resp.ContinueAndWaitFor(reconcileAfterSecError)
 		return
@@ -395,11 +419,11 @@ func (o *TenantOperator) handleUnblockTenant(
 		return
 	}
 
-	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().UnblockOIDCMapping(
+	grpcResp, err := o.clientsFactory.SessionManager().TrustMapping().UnblockTrustMapping(
 		ctx,
-		&oidcmappinggrpc.UnblockOIDCMappingRequest{
-			TenantId: tenantProto.GetId(),
-		},
+		trustmappingv1.UnblockTrustMappingRequest_builder{
+			TenantId: new(tenantProto.GetId()),
+		}.Build(),
 	)
 	if err != nil {
 		setErrorStateAndContinue(ctx, resp, err, WorkingStateOIDCUnblockFailed)
@@ -478,11 +502,11 @@ func (o *TenantOperator) removeOIDCMapping(
 	resp *orbital.HandlerResponse,
 	tenantID string,
 ) bool {
-	grpcResp, err := o.clientsFactory.SessionManager().OIDCMapping().RemoveOIDCMapping(
+	grpcResp, err := o.clientsFactory.SessionManager().TrustMapping().RemoveTrustMapping(
 		ctx,
-		&oidcmappinggrpc.RemoveOIDCMappingRequest{
-			TenantId: tenantID,
-		},
+		trustmappingv1.RemoveTrustMappingRequest_builder{
+			TenantId: new(tenantID),
+		}.Build(),
 	)
 	st, ok := status.FromError(err)
 	if !ok {

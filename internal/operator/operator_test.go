@@ -27,7 +27,7 @@ import (
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
 	slogctx "github.com/veqryn/slog-context"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	stduuid "uuid"
@@ -676,7 +676,7 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 	tests := []struct {
 		name               string
 		expTaskResponse    orbital.TaskResponse
-		sessionManagerResp *oidcmappinggrpc.ApplyOIDCMappingResponse
+		sessionManagerResp *trustmappingv1.ApplyTrustMappingResponse
 		sessionManagerErr  error
 	}{
 		{
@@ -693,18 +693,18 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				Status:       string(orbital.TaskStatusFailed),
 				ErrorMessage: operator.ErrFailedApplyOIDC.Error(),
 			},
-			sessionManagerResp: &oidcmappinggrpc.ApplyOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.ApplyTrustMappingResponse_builder{
 				Success: false,
-			},
+			}.Build(),
 		},
 		{
 			name: "should return done task and update issuer when session manager applies successfully",
 			expTaskResponse: orbital.TaskResponse{
 				Status: string(orbital.TaskStatusDone),
 			},
-			sessionManagerResp: &oidcmappinggrpc.ApplyOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.ApplyTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 		},
 	}
 
@@ -764,15 +764,15 @@ func TestHandleApplyAuth_SessionManagerResponse(t *testing.T) {
 				}
 
 				noOfCalls := 0
-				sessionManagerClient.MockApplyOIDCMapping = func(
+				sessionManagerClient.MockApplyTrustMapping = func(
 					_ context.Context,
-					req *oidcmappinggrpc.ApplyOIDCMappingRequest,
-				) (*oidcmappinggrpc.ApplyOIDCMappingResponse, error) {
+					req *trustmappingv1.ApplyTrustMappingRequest,
+				) (*trustmappingv1.ApplyTrustMappingResponse, error) {
 					assert.Equal(t, auth.GetTenantId(), req.GetTenantId())
-					assert.Equal(t, issuerURL, req.GetIssuer())
-					assert.Equal(t, jwksURI, req.GetJwksUri())
-					assert.Equal(t, []string{audiences}, req.GetAudiences())
-					assert.Equal(t, clientID, req.GetClientId())
+					assert.Equal(t, issuerURL, req.GetOidc().GetIssuer())
+					assert.Equal(t, jwksURI, req.GetOidc().GetJwksUri())
+					assert.Equal(t, []string{audiences}, req.GetOidc().GetAudiences())
+					assert.Equal(t, clientID, req.GetOidc().GetClientId())
 
 					noOfCalls++
 
@@ -880,7 +880,7 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 	tests := []struct {
 		name               string
 		expTaskResponse    orbital.TaskResponse
-		sessionManagerResp *oidcmappinggrpc.RemoveOIDCMappingResponse
+		sessionManagerResp *trustmappingv1.RemoveTrustMappingResponse
 		sessionManagerErr  error
 	}{
 		{
@@ -889,9 +889,9 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 				Status:            string(orbital.TaskStatusProcessing),
 				ReconcileAfterSec: 15,
 			},
-			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.RemoveTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 			sessionManagerErr: assert.AnError,
 		},
 		{
@@ -900,9 +900,9 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 				Status:       string(orbital.TaskStatusFailed),
 				ErrorMessage: operator.ErrFailedResponse.Error(),
 			},
-			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.RemoveTrustMappingResponse_builder{
 				Success: false,
-			},
+			}.Build(),
 		},
 		{
 			// codes.Internal fails terminally (not retried) by design.
@@ -918,9 +918,9 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 			expTaskResponse: orbital.TaskResponse{
 				Status: string(orbital.TaskStatusDone),
 			},
-			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.RemoveTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 		},
 	}
 
@@ -964,10 +964,10 @@ func TestHandleRemoveAuth_SessionManagerResponse(t *testing.T) {
 				}
 
 				noOfCalls := 0
-				sessionManagerClient.MockRemoveOIDCMapping = func(
+				sessionManagerClient.MockRemoveTrustMapping = func(
 					_ context.Context,
-					req *oidcmappinggrpc.RemoveOIDCMappingRequest,
-				) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
+					req *trustmappingv1.RemoveTrustMappingRequest,
+				) (*trustmappingv1.RemoveTrustMappingResponse, error) {
 					assert.Equal(t, auth.GetTenantId(), req.GetTenantId())
 
 					noOfCalls++
@@ -1007,12 +1007,12 @@ func TestHandleBlockTenant(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
 			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager, authzRepo)
 		noOfCalls := 0
-		sessionManagerClient.MockBlockOIDCMapping = func(
+		sessionManagerClient.MockBlockTrustMapping = func(
 			_ context.Context,
-			_ *oidcmappinggrpc.BlockOIDCMappingRequest,
-		) (*oidcmappinggrpc.BlockOIDCMappingResponse, error) {
+			_ *trustmappingv1.BlockTrustMappingRequest,
+		) (*trustmappingv1.BlockTrustMappingResponse, error) {
 			noOfCalls++
-			return &oidcmappinggrpc.BlockOIDCMappingResponse{}, nil
+			return trustmappingv1.BlockTrustMappingResponse_builder{}.Build(), nil
 		}
 
 		responder.NewRequest(taskReq)
@@ -1026,7 +1026,7 @@ func TestHandleBlockTenant(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		sessionManagerResp *oidcmappinggrpc.BlockOIDCMappingResponse
+		sessionManagerResp *trustmappingv1.BlockTrustMappingResponse
 		sessionManagerErr  error
 		expTaskResponse    orbital.TaskResponse
 	}{
@@ -1040,9 +1040,9 @@ func TestHandleBlockTenant(t *testing.T) {
 		},
 		{
 			name: "should return failed task when session manager returns unsuccessful response",
-			sessionManagerResp: &oidcmappinggrpc.BlockOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.BlockTrustMappingResponse_builder{
 				Success: false,
-			},
+			}.Build(),
 			expTaskResponse: orbital.TaskResponse{
 				Status:       string(orbital.TaskStatusFailed),
 				ErrorMessage: operator.ErrFailedResponse.Error(),
@@ -1050,9 +1050,9 @@ func TestHandleBlockTenant(t *testing.T) {
 		},
 		{
 			name: "should return done task when session manager blocks successfully",
-			sessionManagerResp: &oidcmappinggrpc.BlockOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.BlockTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 			expTaskResponse: orbital.TaskResponse{
 				Status: string(orbital.TaskStatusDone),
 			},
@@ -1092,10 +1092,10 @@ func TestHandleBlockTenant(t *testing.T) {
 			}
 
 			noOfCalls := 0
-			sessionManagerClient.MockBlockOIDCMapping = func(
+			sessionManagerClient.MockBlockTrustMapping = func(
 				_ context.Context,
-				req *oidcmappinggrpc.BlockOIDCMappingRequest,
-			) (*oidcmappinggrpc.BlockOIDCMappingResponse, error) {
+				req *trustmappingv1.BlockTrustMappingRequest,
+			) (*trustmappingv1.BlockTrustMappingResponse, error) {
 				assert.Equal(t, tenant.GetId(), req.GetTenantId())
 
 				noOfCalls++
@@ -1134,12 +1134,12 @@ func TestHandleUnblockTenant(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
 			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, tenantManager, groupManager, authzRepo)
 		noOfCalls := 0
-		sessionManagerClient.MockUnblockOIDCMapping = func(
+		sessionManagerClient.MockUnblockTrustMapping = func(
 			_ context.Context,
-			_ *oidcmappinggrpc.UnblockOIDCMappingRequest,
-		) (*oidcmappinggrpc.UnblockOIDCMappingResponse, error) {
+			_ *trustmappingv1.UnblockTrustMappingRequest,
+		) (*trustmappingv1.UnblockTrustMappingResponse, error) {
 			noOfCalls++
-			return &oidcmappinggrpc.UnblockOIDCMappingResponse{}, nil
+			return trustmappingv1.UnblockTrustMappingResponse_builder{}.Build(), nil
 		}
 
 		responder.NewRequest(taskReq)
@@ -1153,7 +1153,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		sessionManagerResp *oidcmappinggrpc.UnblockOIDCMappingResponse
+		sessionManagerResp *trustmappingv1.UnblockTrustMappingResponse
 		sessionManagerErr  error
 		expTaskResponse    orbital.TaskResponse
 	}{
@@ -1167,9 +1167,9 @@ func TestHandleUnblockTenant(t *testing.T) {
 		},
 		{
 			name: "should return failed task when session manager returns unsuccessful response",
-			sessionManagerResp: &oidcmappinggrpc.UnblockOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.UnblockTrustMappingResponse_builder{
 				Success: false,
-			},
+			}.Build(),
 			expTaskResponse: orbital.TaskResponse{
 				Status:       string(orbital.TaskStatusFailed),
 				ErrorMessage: operator.ErrFailedResponse.Error(),
@@ -1177,9 +1177,9 @@ func TestHandleUnblockTenant(t *testing.T) {
 		},
 		{
 			name: "should return done task when session manager unblocks successfully",
-			sessionManagerResp: &oidcmappinggrpc.UnblockOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.UnblockTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 			expTaskResponse: orbital.TaskResponse{
 				Status: string(orbital.TaskStatusDone),
 			},
@@ -1219,10 +1219,10 @@ func TestHandleUnblockTenant(t *testing.T) {
 			}
 
 			noOfCalls := 0
-			sessionManagerClient.MockUnblockOIDCMapping = func(
+			sessionManagerClient.MockUnblockTrustMapping = func(
 				_ context.Context,
-				req *oidcmappinggrpc.UnblockOIDCMappingRequest,
-			) (*oidcmappinggrpc.UnblockOIDCMappingResponse, error) {
+				req *trustmappingv1.UnblockTrustMappingRequest,
+			) (*trustmappingv1.UnblockTrustMappingResponse, error) {
 				assert.Equal(t, tenant.GetId(), req.GetTenantId())
 
 				noOfCalls++
@@ -1264,12 +1264,12 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
 			t, taskType, cfg, unusedRegistryClient, unusedDB, clientCon, mockTenantManager, groupManager, authzRepo)
 		noOfCalls := 0
-		sessionManagerClient.MockRemoveOIDCMapping = func(
+		sessionManagerClient.MockRemoveTrustMapping = func(
 			_ context.Context,
-			_ *oidcmappinggrpc.RemoveOIDCMappingRequest,
-		) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
+			_ *trustmappingv1.RemoveTrustMappingRequest,
+		) (*trustmappingv1.RemoveTrustMappingResponse, error) {
 			noOfCalls++
-			return &oidcmappinggrpc.RemoveOIDCMappingResponse{}, nil
+			return trustmappingv1.RemoveTrustMappingResponse_builder{}.Build(), nil
 		}
 
 		responder.NewRequest(taskReq)
@@ -1283,15 +1283,15 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		sessionManagerResp *oidcmappinggrpc.RemoveOIDCMappingResponse
+		sessionManagerResp *trustmappingv1.RemoveTrustMappingResponse
 		sessionManagerErr  error
 		expTaskResponse    orbital.TaskResponse
 	}{
 		{
 			name: "should return task in progress when session manager returns error",
-			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.RemoveTrustMappingResponse_builder{
 				Success: true,
-			},
+			}.Build(),
 			sessionManagerErr: assert.AnError,
 			expTaskResponse: orbital.TaskResponse{
 				Status:            string(orbital.TaskStatusProcessing),
@@ -1300,9 +1300,9 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 		},
 		{
 			name: "should return failed task when session manager returns unsuccessful response",
-			sessionManagerResp: &oidcmappinggrpc.RemoveOIDCMappingResponse{
+			sessionManagerResp: trustmappingv1.RemoveTrustMappingResponse_builder{
 				Success: false,
-			},
+			}.Build(),
 			expTaskResponse: orbital.TaskResponse{
 				Status:       string(orbital.TaskStatusFailed),
 				ErrorMessage: operator.ErrFailedResponse.Error(),
@@ -1344,10 +1344,10 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 			}
 
 			noOfCalls := 0
-			sessionManagerClient.MockRemoveOIDCMapping = func(
+			sessionManagerClient.MockRemoveTrustMapping = func(
 				_ context.Context,
-				req *oidcmappinggrpc.RemoveOIDCMappingRequest,
-			) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
+				req *trustmappingv1.RemoveTrustMappingRequest,
+			) (*trustmappingv1.RemoveTrustMappingResponse, error) {
 				assert.Equal(t, tenant.GetId(), req.GetTenantId())
 
 				noOfCalls++
@@ -1385,13 +1385,13 @@ func TestHandleTerminateTenant(t *testing.T) {
 	svcRegistry := testutils.NewTestPlugins()
 
 	sessionManagerClient := sessionmanager.NewFakeSessionManagerClient()
-	sessionManagerClient.MockRemoveOIDCMapping = func(
+	sessionManagerClient.MockRemoveTrustMapping = func(
 		_ context.Context,
-		_ *oidcmappinggrpc.RemoveOIDCMappingRequest,
-	) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
-		return &oidcmappinggrpc.RemoveOIDCMappingResponse{
+		_ *trustmappingv1.RemoveTrustMappingRequest,
+	) (*trustmappingv1.RemoveTrustMappingResponse, error) {
+		return trustmappingv1.RemoveTrustMappingResponse_builder{
 			Success: true,
-		}, nil
+		}.Build(), nil
 	}
 	clientFactory := mockClient.NewMockFactory(
 		registry.NewMockService(nil, unusedRegistryClient, mappingv1.NewServiceClient(clientCon)),
