@@ -127,6 +127,7 @@ var (
 	ErrGetWorkflowConfig        = errors.New("failed to get workflow config")
 	ErrSetWorkflowConfig        = errors.New("failed to set workflow config")
 	ErrGetTenantLimits          = errors.New("failed to get tenant limits")
+	ErrSetTenantLimits          = errors.New("failed to set tenant limits")
 	ErrRetentionLessThanMinimum = errors.New("retention is less than the minimum allowed (" +
 		strconv.Itoa(constants.MinRetentionPeriodDays) + " days)")
 	ErrRetentionExceedsMaximum = errors.New("retention exceeds the maximum allowed (" +
@@ -198,6 +199,38 @@ func parseLimitOverride(value, key string) (int, error) {
 		return 0, fmt.Errorf("%w: %s must be non-negative, got %d", ErrGetTenantLimits, key, v)
 	}
 	return v, nil
+}
+
+// LimitOverrides carries the per-tenant limit overrides to apply. A nil field
+// deletes that override row, so the tenant falls back to the cluster default.
+type LimitOverrides struct {
+	Systems    *int
+	Keys       *int
+	KeyConfigs *int
+}
+
+// SetLimitOverrides applies the given overrides in a single transaction:
+// a present value upserts its row, a nil value deletes it.
+func (m *TenantConfigManager) SetLimitOverrides(ctx context.Context, o LimitOverrides) error {
+	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
+		for _, p := range []struct {
+			key   string
+			value *int
+		}{
+			{LimitsKeySystemsOverride, o.Systems},
+			{LimitsKeyKeysOverride, o.Keys},
+			{LimitsKeyKeyConfigsOverride, o.KeyConfigs},
+		} {
+			if err := m.reconcileLimitOverride(ctx, p.key, p.value); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return errs.Wrap(ErrSetTenantLimits, err)
+	}
+	return nil
 }
 
 // GetWorkflowConfig reads flat rows first, falling back to the legacy JSON
@@ -795,6 +828,21 @@ func (m *TenantConfigManager) setRows(ctx context.Context, rows []model.TenantCo
 		}
 		return nil
 	})
+}
+
+// reconcileLimitOverride must run inside a transaction.
+func (m *TenantConfigManager) reconcileLimitOverride(ctx context.Context, key string, value *int) error {
+	if value != nil {
+		row := model.TenantConfig{Key: key, Value: strconv.Itoa(*value), Type: TenantConfigTypeLimits}
+		query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
+		return m.repo.Set(ctx, &row, *query)
+	}
+	ck := repo.NewCompositeKey().
+		Where(repo.KeyField, key).
+		Where(repo.TypeField, TenantConfigTypeLimits)
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+	_, err := m.repo.Delete(ctx, &model.TenantConfig{}, *query)
+	return err
 }
 
 // getDefaultWorkflowConfig returns default workflow config, checking deploymentConfig first,

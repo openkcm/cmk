@@ -113,7 +113,7 @@ func runTenantManager(ctx context.Context, cfg *config.Config) error {
 
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 
-	tenantManager, err := createTenantManager(ctx, authzRepoLoader, authzRepo, clients, svcRegistry, cfg)
+	tenantManager, tcm, err := createTenantManager(ctx, authzRepoLoader, authzRepo, clients, svcRegistry, cfg)
 	if err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func runTenantManager(ctx context.Context, cfg *config.Config) error {
 	groupManager := manager.NewGroupManager(authzRepo, svcRegistry,
 		manager.NewUserManager(authzRepo, auditor.New(ctx, cfg)))
 
-	op, err := operator.NewTenantOperator(dbConn, cfg, target, clients, tenantManager, groupManager, authzRepo)
+	op, err := operator.NewTenantOperator(dbConn, cfg, target, clients, tenantManager, groupManager, tcm, authzRepo)
 	if err != nil {
 		return oops.In(logDomain).Wrapf(err, "Failed to run operator")
 	}
@@ -136,12 +136,12 @@ func createTenantManager(
 	clients clients.Factory,
 	svcRegistry *cmkpluginregistry.Registry,
 	cfg *config.Config,
-) (manager.Tenant, error) {
+) (manager.Tenant, *manager.TenantConfigManager, error) {
 	cmkAuditor := auditor.New(ctx, cfg)
 
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
@@ -149,12 +149,13 @@ func createTenantManager(
 	tagm := manager.NewTagManager(r)
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, eventFactory, cfg, nil)
 
+	tcm := manager.NewTenantConfigManager(r, svcRegistry, cfg, cm, cmkflags.NewClient())
+
 	sys := manager.NewSystemManager(ctx, r, authzLoader, clients, eventFactory, svcRegistry, cfg, kcm, um)
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, cfg, cm,
-			cmkflags.NewClient()),
+		tcm,
 		kcm,
 		um,
 		cm,
@@ -166,10 +167,10 @@ func createTenantManager(
 
 	migrator, err := db.NewMigrator(r, cfg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator), nil
+	return manager.NewTenantManager(r, sys, km, um, cmkAuditor, migrator), tcm, nil
 }
 
 func initializeLoggerAndTelemetry(ctx context.Context, cfg *config.Config) error {

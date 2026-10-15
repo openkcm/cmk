@@ -20,6 +20,7 @@ import (
 	goamqp "github.com/Azure/go-amqp"
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
+	tenantconfiggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant_config/v1"
 	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
 	flowv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/trust/oidc/flow/v1"
 	oidcv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/trust/oidc/v1"
@@ -67,6 +68,9 @@ const (
 	WorkingStateTenantOffboardingFailed  = "tenant offboarding failed"
 	WorkingStateTenantProbingFailed      = "tenant probing failed"
 	WorkingStateTenantTerminationTimeout = "tenant termination timed out"
+
+	WorkingStateTenantConfigFetchFailed = "failed to fetch tenant config from registry"
+	WorkingStateTenantConfigWriteFailed = "failed to write tenant limit overrides"
 )
 
 var (
@@ -88,6 +92,13 @@ type TenantOperator struct {
 	clientsFactory clients.Factory
 	gm             *manager.GroupManager
 	tm             manager.Tenant
+	tcm            tenantConfigWriter
+}
+
+// tenantConfigWriter is the subset of the tenant-config manager used to persist
+// limit overrides pulled from the registry.
+type tenantConfigWriter interface {
+	SetLimitOverrides(ctx context.Context, o manager.LimitOverrides) error
 }
 
 func NewTenantOperator(
@@ -97,6 +108,7 @@ func NewTenantOperator(
 	clientsFactory clients.Factory,
 	tenantManager manager.Tenant,
 	groupManager *manager.GroupManager,
+	tenantConfigManager tenantConfigWriter,
 	r repo.Repo,
 ) (*TenantOperator, error) {
 	if db == nil {
@@ -131,6 +143,7 @@ func NewTenantOperator(
 		clientsFactory: clientsFactory,
 		gm:             groupManager,
 		tm:             tenantManager,
+		tcm:            tenantConfigManager,
 	}, nil
 }
 
@@ -405,6 +418,72 @@ func (o *TenantOperator) handleBlockTenant(
 	resp.Complete()
 }
 
+// handleUpdateTenantConfig syncs a tenant's limit overrides from the registry.
+// The task payload carries only the tenant id, so the authoritative limit values
+// are fetched from the registry and written to the regional store.
+func (o *TenantOperator) handleUpdateTenantConfig(
+	ctx context.Context,
+	req orbital.HandlerRequest,
+	resp *orbital.HandlerResponse,
+) {
+	tenantProto := &tenantgrpc.Tenant{}
+
+	err := proto.Unmarshal(req.TaskData, tenantProto)
+	if err != nil {
+		setErrorStateAndFail(ctx, resp, errs.Wrap(ErrInvalidData, err), WorkingStateInvalidTaskData)
+		return
+	}
+
+	tenantID := tenantProto.GetId()
+	if tenantID == "" {
+		setErrorStateAndFail(ctx, resp, ErrInvalidTenantID, WorkingStateInvalidTaskData)
+		return
+	}
+
+	cfgResp, err := o.clientsFactory.Registry().TenantConfig().GetTenantConfig(
+		ctx,
+		tenantconfiggrpc.GetTenantConfigRequest_builder{TenantId: &tenantID}.Build(),
+	)
+	if err != nil {
+		setErrorStateAndContinue(ctx, resp, errs.Wrap(ErrFailedResponse, err), WorkingStateTenantConfigFetchFailed)
+		return
+	}
+
+	// Absent values would persist as zeros and clobber the current limits; wait for the registry instead.
+	values := cfgResp.GetValues()
+	if values == nil {
+		setErrorStateAndContinue(ctx, resp, ErrFailedResponse, WorkingStateTenantConfigFetchFailed)
+		return
+	}
+
+	tenantCtx := cmkcontext.CreateTenantContext(ctx, tenantID)
+
+	err = o.tcm.SetLimitOverrides(
+		tenantCtx,
+		manager.LimitOverrides{
+			Systems:    limitPtr(values.HasSystemLimit(), values.GetSystemLimit()),
+			Keys:       limitPtr(values.HasKeyLimit(), values.GetKeyLimit()),
+			KeyConfigs: limitPtr(values.HasKeyConfigLimit(), values.GetKeyConfigLimit()),
+		},
+	)
+	if err != nil {
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateTenantConfigWriteFailed)
+		return
+	}
+
+	resp.Complete()
+}
+
+// limitPtr returns a pointer to v when the registry field is present, nil otherwise.
+// A nil override is left to SetLimitOverrides, which clears the stored row.
+func limitPtr(present bool, v int32) *int {
+	if !present {
+		return nil
+	}
+	i := int(v)
+	return &i
+}
+
 // handleUnblockTenant is handler for Unblock Tenant task
 func (o *TenantOperator) handleUnblockTenant(
 	ctx context.Context,
@@ -626,12 +705,13 @@ func (o *TenantOperator) trace(
 // registerHandlers registers all task handlers with the orbital operator
 func (o *TenantOperator) registerHandlers(operator *orbital.Operator) error {
 	handlers := map[string]orbital.HandlerFunc{
-		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():   o.handleCreateTenant,
-		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():       o.handleBlockTenant,
-		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():     o.handleUnblockTenant,
-		tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String():   o.handleTerminateTenant,
-		authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String():  o.handleApplyTenantAuth,
-		authgrpc.AuthAction_AUTH_ACTION_REMOVE_AUTH.String(): o.handleRemoveTenantAuth,
+		tenantgrpc.ACTION_ACTION_PROVISION_TENANT.String():                       o.handleCreateTenant,
+		tenantgrpc.ACTION_ACTION_BLOCK_TENANT.String():                           o.handleBlockTenant,
+		tenantgrpc.ACTION_ACTION_UNBLOCK_TENANT.String():                         o.handleUnblockTenant,
+		tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String():                       o.handleTerminateTenant,
+		authgrpc.AuthAction_AUTH_ACTION_APPLY_AUTH.String():                      o.handleApplyTenantAuth,
+		authgrpc.AuthAction_AUTH_ACTION_REMOVE_AUTH.String():                     o.handleRemoveTenantAuth,
+		tenantconfiggrpc.TenantConfigAction_TENANT_CONFIG_ACTION_UPDATE.String(): o.handleUpdateTenantConfig,
 	}
 
 	for action, handler := range handlers {

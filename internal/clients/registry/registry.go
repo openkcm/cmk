@@ -9,6 +9,7 @@ import (
 
 	mappinggrpcv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	tenantgrpcv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
+	tenantconfigv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant_config/v1"
 
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
 )
@@ -23,12 +24,14 @@ type Service interface {
 	System() systems.ServiceClient
 	Tenant() tenantgrpcv1.ServiceClient
 	Mapping() mappinggrpcv1.ServiceClient
+	TenantConfig() tenantconfigv1.ServiceClient
 }
 
 type service struct {
-	system  systems.ServiceClient
-	tenant  tenantgrpcv1.ServiceClient
-	mapping mappinggrpcv1.ServiceClient
+	system       systems.ServiceClient
+	tenant       tenantgrpcv1.ServiceClient
+	mapping      mappinggrpcv1.ServiceClient
+	tenantConfig tenantconfigv1.ServiceClient
 
 	grpcConn *commongrpc.DynamicClientConn
 }
@@ -48,11 +51,14 @@ func NewService(rg *commoncfg.GRPCClient) (Service, error) {
 
 	mappingClient := mappinggrpcv1.NewServiceClient(conn)
 
+	tenantConfigClient := tenantconfigv1.NewServiceClient(conn)
+
 	return &service{
-		system:   sysClient,
-		tenant:   tenantClient,
-		mapping:  mappingClient,
-		grpcConn: conn,
+		system:       sysClient,
+		tenant:       tenantClient,
+		mapping:      mappingClient,
+		tenantConfig: tenantConfigClient,
+		grpcConn:     conn,
 	}, nil
 }
 
@@ -66,6 +72,10 @@ func (rs *service) Tenant() tenantgrpcv1.ServiceClient {
 
 func (rs *service) Mapping() mappinggrpcv1.ServiceClient {
 	return rs.mapping
+}
+
+func (rs *service) TenantConfig() tenantconfigv1.ServiceClient {
+	return rs.tenantConfig
 }
 
 func (rs *service) Close() error {
