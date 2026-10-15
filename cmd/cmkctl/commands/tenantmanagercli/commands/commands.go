@@ -79,10 +79,12 @@ func NewCommandFactory(
 		um,
 	)
 
+	ff := manager.NewFeatureFlags(cfg, svcRegistry, featureflags.NewClient())
+
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
-		manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, cm, featureflags.NewClient()),
+		manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, cm, ff),
 		kcm,
 		um,
 		cm,
@@ -90,6 +92,7 @@ func NewCommandFactory(
 		cmkAuditor,
 		nil,
 		cfg,
+		ff,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)

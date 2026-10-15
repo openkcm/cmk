@@ -150,11 +150,11 @@ func createTenantManager(
 	kcm := manager.NewKeyConfigManager(r, cm, um, tagm, cmkAuditor, eventFactory, cfg, nil)
 
 	sys := manager.NewSystemManager(ctx, r, authzLoader, clients, eventFactory, svcRegistry, cfg, kcm, um)
+	ff := manager.NewFeatureFlags(cfg, svcRegistry, cmkflags.NewClient())
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, cfg, cm,
-			cmkflags.NewClient()),
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, cm, ff),
 		kcm,
 		um,
 		cm,
@@ -162,6 +162,7 @@ func createTenantManager(
 		cmkAuditor,
 		nil,
 		cfg,
+		ff,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)

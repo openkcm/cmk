@@ -60,7 +60,7 @@ type KeyConfigManager struct {
 
 // TenantConfigs is the subset of TenantConfigManager used by KeyConfigManager.
 type TenantConfigs interface {
-	GetTenantLimits(ctx context.Context) (TenantLimits, error)
+	GetTenantLimits(ctx context.Context) (model.TenantLimits, error)
 }
 
 type KeyConfigFilter struct {

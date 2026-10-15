@@ -1611,10 +1611,10 @@ func TestEnforceKeyConfigLimit(t *testing.T) {
 // fakeTenantConfigs returns fixed effective limits so enforcer error paths can be
 // exercised without a real TenantConfigManager.
 type fakeTenantConfigs struct {
-	limits manager.TenantLimits
+	limits model.TenantLimits
 }
 
-func (f fakeTenantConfigs) GetTenantLimits(_ context.Context) (manager.TenantLimits, error) {
+func (f fakeTenantConfigs) GetTenantLimits(_ context.Context) (model.TenantLimits, error) {
 	return f.limits, nil
 }
 
@@ -1633,7 +1633,7 @@ func (r *lockErrorRepo) First(_ context.Context, _ repo.Resource, _ repo.Query) 
 func TestEnforceLimitLockErrors(t *testing.T) {
 	newManager := func() *manager.KeyConfigManager {
 		r := &lockErrorRepo{InMemoryRepository: repoMock.NewInMemoryRepository()}
-		tenantCfg := fakeTenantConfigs{limits: manager.TenantLimits{Systems: 1, Keys: 1, KeyConfigs: 1}}
+		tenantCfg := fakeTenantConfigs{limits: model.TenantLimits{Systems: 1, Keys: 1, KeyConfigs: 1}}
 		return manager.NewKeyConfigManager(r, nil, nil, nil, nil, nil, nil, tenantCfg)
 	}
 
