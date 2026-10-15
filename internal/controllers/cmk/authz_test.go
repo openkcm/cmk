@@ -273,6 +273,15 @@ func authzEndpoints() []testutils.AuthzTestEndpoint {
 		},
 		{
 			Method:   http.MethodGet,
+			Endpoint: "/tenantConfigurations/systemgroups",
+		},
+		{
+			Method:   http.MethodPatch,
+			Endpoint: "/tenantConfigurations/systemgroups",
+			Body:     `{"enabled": true}`,
+		},
+		{
+			Method:   http.MethodGet,
 			Endpoint: "/tenantConfigurations/limits",
 		},
 

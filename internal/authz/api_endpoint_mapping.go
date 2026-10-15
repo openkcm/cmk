@@ -214,6 +214,14 @@ var RestrictionsByAPI = map[string]Restricted{
 		APIResourceTypeName: APIResourceTypeTenantSettings,
 		APIAction:           APIActionUpdate,
 	},
+	"GET /tenantConfigurations/systemgroups": {
+		APIResourceTypeName: APIResourceTypeTenantSettings,
+		APIAction:           APIActionRead,
+	},
+	"PATCH /tenantConfigurations/systemgroups": {
+		APIResourceTypeName: APIResourceTypeTenantSettings,
+		APIAction:           APIActionUpdate,
+	},
 	"GET /tenantConfigurations/limits": {
 		APIResourceTypeName: APIResourceTypeTenantSettings,
 		APIAction:           APIActionRead,

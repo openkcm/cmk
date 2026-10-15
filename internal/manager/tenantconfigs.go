@@ -179,6 +179,14 @@ func (m *TenantConfigManager) SetTenantLimits(
 	return limits, err
 }
 
+func (m *TenantConfigManager) SetSystemGroupsConfig(
+	ctx context.Context,
+	sg *model.SystemGroupConfig,
+) (*model.SystemGroupConfig, error) {
+	err := m.SetTenantConfig(ctx, sg)
+	return sg, err
+}
+
 // GetSystemGroupingConfig gets systemgrouping config out of tenant_config
 // If it does not exist, set in the DB both as false
 func (m *TenantConfigManager) GetSystemGroupingConfig(ctx context.Context) (*model.SystemGroupConfig, error) {
