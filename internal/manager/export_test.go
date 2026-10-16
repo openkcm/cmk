@@ -15,6 +15,8 @@ import (
 
 var GetPluginAlgorithm = getPluginAlgorithm
 
+var FloatPrimaryKeyFirst = floatPrimaryKeyFirst
+
 var BuildWorkflowConfigFromRows = buildWorkflowConfigFromRows
 
 var BuildKeystoreConfigFromRows = buildKeystoreConfigFromRows

@@ -963,7 +963,7 @@ func TestList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, total, err := km.GetKeys(ctx, keyConfig.ID, repo.Pagination{Skip: tt.skip, Top: tt.top, Count: true})
+			results, total, err := km.GetKeys(ctx, keyConfig.ID, repo.Pagination{Skip: tt.skip, Top: tt.top, Count: true}, nil)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -3428,5 +3428,45 @@ func TestSyncHYOKKeysExcludesPendingRegistration(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, found)
 		assert.Equal(t, cmkapi.KeyStateENABLED, dbEnabled.State)
+	})
+}
+
+func TestFloatPrimaryKeyFirst(t *testing.T) {
+	mkKeys := func(ids ...int) []*model.Key {
+		keys := make([]*model.Key, len(ids))
+		for i, id := range ids {
+			keys[i] = &model.Key{IsPrimary: id == 1}
+		}
+		return keys
+	}
+
+	t.Run("primary in the middle floats to front", func(t *testing.T) {
+		keys := []*model.Key{
+			{IsPrimary: false},
+			{IsPrimary: true},
+			{IsPrimary: false},
+		}
+		out := manager.FloatPrimaryKeyFirst(keys)
+		require.Len(t, out, 3)
+		assert.True(t, out[0].IsPrimary)
+		assert.False(t, out[1].IsPrimary)
+		assert.False(t, out[2].IsPrimary)
+	})
+
+	t.Run("no primary returns input unchanged", func(t *testing.T) {
+		keys := mkKeys(0, 0)
+		out := manager.FloatPrimaryKeyFirst(keys)
+		assert.Equal(t, keys, out)
+	})
+
+	t.Run("primary already first stays first", func(t *testing.T) {
+		first := &model.Key{IsPrimary: true}
+		keys := []*model.Key{first, {IsPrimary: false}}
+		out := manager.FloatPrimaryKeyFirst(keys)
+		assert.Same(t, first, out[0])
+	})
+
+	t.Run("empty slice", func(t *testing.T) {
+		assert.Empty(t, manager.FloatPrimaryKeyFirst(nil))
 	})
 }

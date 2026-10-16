@@ -147,6 +147,32 @@ func TestKeyConfigurationGetConfiguration(t *testing.T) {
 		assert.Equal(t, 2, *response.Count)
 	})
 
+	t.Run("Should order keyConfigs by name", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/keyConfigurations?$count=true&$orderby=name+desc",
+			Tenant:   tenant,
+			Headers: signedHeadersFromClientMap(t, keyStorage, authClient.GetClientMap(
+				testutils.WithAdditionalGroup(uuid.NewString()),
+			)),
+		})
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("Should fail on invalid orderby field", func(t *testing.T) {
+		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+			Method:   http.MethodGet,
+			Endpoint: "/keyConfigurations?$orderby=bogus",
+			Tenant:   tenant,
+			Headers: signedHeadersFromClientMap(t, keyStorage, authClient.GetClientMap(
+				testutils.WithAdditionalGroup(uuid.NewString()),
+			)),
+		})
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
 	t.Run("Should not get keyConfig without permissions", func(t *testing.T) {
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 			Method:   http.MethodGet,

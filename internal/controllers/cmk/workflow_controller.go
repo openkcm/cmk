@@ -97,6 +97,12 @@ var getWorkflowsSchema = odata.FilterToRepoMap{
 	},
 }
 
+var getWorkflowsOrderSchema = odata.OrderToRepoMap{
+	"artifactName": {DBName: repo.ArtifactNameField},
+	"state":        {DBName: repo.StateField},
+	"createdAt":    {DBName: repo.CreatedField},
+}
+
 // GetWorkflows returns a list of workflows
 func (c *APIController) GetWorkflows(
 	ctx context.Context,
@@ -105,10 +111,15 @@ func (c *APIController) GetWorkflows(
 	odataParams := odata.New(
 		odata.WithPagination(request.Params.Skip, request.Params.Top, request.Params.Count),
 		odata.WithFilter(request.Params.Filter, getWorkflowsSchema),
+		odata.WithOrder(request.Params.Orderby, getWorkflowsOrderSchema),
 	)
 	_, err := odataParams.GetFilter()
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
+	}
+
+	if _, _, err := odataParams.GetOrder(); err != nil {
+		return nil, errs.Wrap(apierrors.ErrBadOdataOrderby, err)
 	}
 
 	workflows, count, err := c.Manager.Workflow.GetWorkflows(ctx, odataParams)

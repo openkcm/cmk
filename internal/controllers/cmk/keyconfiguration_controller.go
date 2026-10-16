@@ -12,8 +12,15 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
+	"github.com/openkcm/cmk/utils/odata"
 	"github.com/openkcm/cmk/utils/ptr"
 )
+
+var getKeyConfigsOrderSchema = odata.OrderToRepoMap{
+	"name":      {DBName: repo.NameField},
+	"createdAt": {DBName: repo.CreatedField},
+	"createdBy": {DBName: repo.CreatorIDField},
+}
 
 // GetKeyConfigurations returns the key configurations
 func (c *APIController) GetKeyConfigurations(
@@ -28,7 +35,12 @@ func (c *APIController) GetKeyConfigurations(
 
 	expand := r.Params.ExpandGroup != nil && *r.Params.ExpandGroup
 
-	filter := manager.KeyConfigFilter{Pagination: pagination, Expand: expand}
+	_, order, err := odata.New(odata.WithOrder(r.Params.Orderby, getKeyConfigsOrderSchema)).GetOrder()
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrBadOdataOrderby, err)
+	}
+
+	filter := manager.KeyConfigFilter{Pagination: pagination, Expand: expand, Order: order}
 
 	keyConfigs, total, err := c.Manager.KeyConfig.GetKeyConfigurations(ctx, filter)
 	if err != nil {

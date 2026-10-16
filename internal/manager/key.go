@@ -288,6 +288,7 @@ func (km *KeyManager) GetKeys(
 	ctx context.Context,
 	keyConfigID uuid.UUID,
 	pagination repo.Pagination,
+	order []repo.OrderField,
 ) ([]*model.Key, int, error) {
 	query := repo.NewQuery().
 		Preload(repo.Preload{"KeyVersions"})
@@ -305,6 +306,12 @@ func (km *KeyManager) GetKeys(
 	ck := repo.NewCompositeKey().Where(fmt.Sprintf("%s.%s", model.Key{}.TableName(), repo.KeyConfigIDField), keyConfigID)
 	query = query.Where(repo.NewCompositeKeyGroup(ck))
 
+	if len(order) > 0 {
+		query = query.Order(order...)
+	} else {
+		query = query.Order(repo.OrderField{Field: repo.CreatedField, Direction: repo.Desc})
+	}
+
 	keys, count, err := repo.ListAndCount(ctx, km.repo, pagination, model.Key{}, query)
 	if err != nil {
 		return nil, 0, err
@@ -319,7 +326,31 @@ func (km *KeyManager) GetKeys(
 		k.IsPrimary = *primaryKeyID == k.ID
 	}
 
+	if len(order) == 0 {
+		keys = floatPrimaryKeyFirst(keys)
+	}
+
 	return keys, count, nil
+}
+
+// floatPrimaryKeyFirst reorders within the fetched page only. IsPrimary is
+// computed in Go, not a sortable column, so a primary key on a later page is
+// not pulled to page 1.
+func floatPrimaryKeyFirst(keys []*model.Key) []*model.Key {
+	for i, k := range keys {
+		if !k.IsPrimary {
+			continue
+		}
+
+		reordered := make([]*model.Key, 0, len(keys))
+		reordered = append(reordered, k)
+		reordered = append(reordered, keys[:i]...)
+		reordered = append(reordered, keys[i+1:]...)
+
+		return reordered
+	}
+
+	return keys
 }
 
 // validateEnablementUpdate rejects enable/disable requests that the key's type or state forbids.
