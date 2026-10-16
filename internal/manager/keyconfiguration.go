@@ -34,7 +34,7 @@ var (
 )
 
 type KeyConfigurationAPI interface {
-	GetKeyConfigurations(ctx context.Context, filter KeyConfigFilter) ([]*model.KeyConfiguration, int, error)
+	GetKeyConfigurations(ctx context.Context, params repo.Params, expand bool) ([]*model.KeyConfiguration, int, error)
 	PostKeyConfigurations(ctx context.Context, key *model.KeyConfiguration) (*model.KeyConfiguration, error)
 	DeleteKeyConfigurationByID(ctx context.Context, keyConfigID uuid.UUID) error
 	GetKeyConfigurationByID(ctx context.Context, keyConfigID uuid.UUID) (*model.KeyConfiguration, error)
@@ -61,11 +61,6 @@ type KeyConfigManager struct {
 // TenantConfigs is the subset of TenantConfigManager used by KeyConfigManager.
 type TenantConfigs interface {
 	GetEffectiveLimits(ctx context.Context) (EffectiveLimits, error)
-}
-
-type KeyConfigFilter struct {
-	Expand     bool
-	Pagination repo.Pagination
 }
 
 func NewKeyConfigManager(
@@ -220,10 +215,11 @@ func (m *KeyConfigManager) EnforceKeyConfigLimit(ctx context.Context) error {
 
 func (m *KeyConfigManager) GetKeyConfigurations(
 	ctx context.Context,
-	filter KeyConfigFilter,
+	params repo.Params,
+	expand bool,
 ) ([]*model.KeyConfiguration, int, error) {
 	query := getKeyConfigWithTotalsQuery()
-	if filter.Expand {
+	if expand {
 		query.Preload(repo.Preload{"AdminGroup"})
 	}
 
@@ -237,7 +233,13 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 		return []*model.KeyConfiguration{}, 0, nil
 	}
 
-	return repo.ListAndCount(ctx, m.r, filter.Pagination, model.KeyConfiguration{}, query)
+	if err := applyOrderOrDefault(params, query, func(q *repo.Query) {
+		q.Order(repo.OrderField{Field: repo.CreatedField, Direction: repo.Desc})
+	}); err != nil {
+		return nil, 0, err
+	}
+
+	return repo.ListAndCount(ctx, m.r, params.GetPagination(), model.KeyConfiguration{}, query)
 }
 
 func (m *KeyConfigManager) PostKeyConfigurations(

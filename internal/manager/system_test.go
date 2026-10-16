@@ -29,6 +29,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	"github.com/openkcm/cmk/utils/odata"
 )
 
 func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
@@ -391,6 +392,22 @@ func TestGetAllSystemsOrderByIdentifier(t *testing.T) {
 		assert.Equal(t, "system-alpha", allSystems[0].Identifier, "First result should be system-alpha")
 		assert.Equal(t, "system-bravo", allSystems[1].Identifier, "Second result should be system-bravo")
 		assert.Equal(t, "system-charlie", allSystems[2].Identifier, "Third result should be system-charlie")
+	})
+
+	t.Run("Should honor $orderby override descending", func(t *testing.T) {
+		orderby := "identifier desc"
+		params := odata.New(
+			odata.WithPagination(nil, nil, nil),
+			odata.WithOrder(&orderby, odata.OrderToRepoMap{"identifier": {DBName: repo.IdentifierField}}),
+		)
+
+		allSystems, _, err := m.GetAllSystems(ctx, params)
+		assert.NoError(t, err)
+		require.Len(t, allSystems, 3)
+
+		assert.Equal(t, "system-charlie", allSystems[0].Identifier)
+		assert.Equal(t, "system-bravo", allSystems[1].Identifier)
+		assert.Equal(t, "system-alpha", allSystems[2].Identifier)
 	})
 }
 

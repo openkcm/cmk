@@ -144,6 +144,19 @@ func TestKeyControllerGetKeys(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 			expectedLength: 0,
 		},
+		{
+			name:           "Should order keys by name",
+			query:          fmt.Sprintf("/keys?keyConfigurationID=%s&$count=true&$orderby=name+desc", key1.KeyConfigurationID),
+			expectedStatus: http.StatusOK,
+			expectedLength: 1,
+			expectedNames:  []string{key1.Name},
+		},
+		{
+			name:           "Should fail on invalid orderby field",
+			query:          fmt.Sprintf("/keys?keyConfigurationID=%s&$orderby=bogus", key1.KeyConfigurationID),
+			expectedStatus: http.StatusBadRequest,
+			expectedLength: 0,
+		},
 	}
 
 	for _, tt := range tests {

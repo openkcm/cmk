@@ -646,16 +646,52 @@ func applyCondition(tx *gorm.DB, field, operator string, value any, isStrict boo
 }
 
 func applyOrder(db *gorm.DB, query repo.Query) (*gorm.DB, error) {
-	for _, order := range query.OrderFields {
-		switch order.Direction {
-		case repo.Desc:
-			db = db.Order(order.Field + " desc")
-		case repo.Asc:
-			db = db.Order(order.Field + " asc")
-		default:
-			return nil, ErrUnsupportedOrderDirective
+	if len(query.OrderExprs) == 0 {
+		for _, order := range query.OrderFields {
+			term, err := orderFieldTerm(order)
+			if err != nil {
+				return nil, err
+			}
+
+			db = db.Order(term)
 		}
+
+		return db, nil
 	}
 
-	return db, nil
+	// A clause.OrderBy expression and string .Order() calls clobber each other in
+	// gorm, so all terms go into one expression.
+	var (
+		parts []string
+		vars  []any
+	)
+
+	for _, expr := range query.OrderExprs {
+		parts = append(parts, expr.SQL)
+		vars = append(vars, expr.Vars...)
+	}
+
+	for _, order := range query.OrderFields {
+		term, err := orderFieldTerm(order)
+		if err != nil {
+			return nil, err
+		}
+
+		parts = append(parts, term)
+	}
+
+	return db.Clauses(clause.OrderBy{
+		Expression: clause.Expr{SQL: strings.Join(parts, ", "), Vars: vars},
+	}), nil
+}
+
+func orderFieldTerm(order repo.OrderField) (string, error) {
+	switch order.Direction {
+	case repo.Desc:
+		return order.Field + " desc", nil
+	case repo.Asc:
+		return order.Field + " asc", nil
+	default:
+		return "", ErrUnsupportedOrderDirective
+	}
 }
