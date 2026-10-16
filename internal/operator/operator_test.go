@@ -143,6 +143,7 @@ func createManagers(
 		cmkAuditor,
 		nil,
 		nil,
+		nil,
 	)
 
 	migrator, err := db.NewMigrator(r, cfg)
@@ -1138,15 +1139,19 @@ func (f *fakeTenantConfigClient) UpdateTenantConfig(
 }
 
 type fakeLimitWriter struct {
-	got    manager.LimitOverrides
+	got    model.TenantLimits
 	called bool
 	err    error
 }
 
-func (f *fakeLimitWriter) SetLimitOverrides(_ context.Context, o manager.LimitOverrides) error {
-	f.called = true
-	f.got = o
+func (f *fakeLimitWriter) SetTenantConfig(_ context.Context, _ model.TenantConfiguration) error {
 	return f.err
+}
+
+func (f *fakeLimitWriter) SetTenantLimits(_ context.Context, o *model.TenantLimits) (*model.TenantLimits, error) {
+	f.called = true
+	f.got = *o
+	return o, f.err
 }
 
 func TestHandleUpdateTenantConfig(t *testing.T) {
@@ -1181,7 +1186,7 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 		wantStatus  string
 		wantState   string
 		wantWritten bool
-		want        manager.LimitOverrides
+		want        model.TenantLimits
 	}{
 		{
 			name:       "invalid task data fails the task",
@@ -1215,7 +1220,7 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 			configResp:  configResp,
 			wantStatus:  string(orbital.TaskStatusDone),
 			wantWritten: true,
-			want:        manager.LimitOverrides{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
+			want:        model.TenantLimits{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
 		},
 		{
 			name: "absent fields are cleared, present field persisted",
@@ -1227,7 +1232,7 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 			}.Build(),
 			wantStatus:  string(orbital.TaskStatusDone),
 			wantWritten: true,
-			want:        manager.LimitOverrides{Systems: nil, Keys: new(10), KeyConfigs: nil},
+			want:        model.TenantLimits{Systems: nil, Keys: new(10), KeyConfigs: nil},
 		},
 		{
 			name:        "write error reconciles",
@@ -1237,7 +1242,7 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 			wantStatus:  string(orbital.TaskStatusProcessing),
 			wantState:   operator.WorkingStateTenantConfigWriteFailed,
 			wantWritten: true,
-			want:        manager.LimitOverrides{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
+			want:        model.TenantLimits{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
 		},
 	}
 

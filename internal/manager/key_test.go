@@ -98,18 +98,29 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	assert.NoError(t, err)
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
+	ffManager := newTestFlags(cfg, svcRegistry, map[string]bool{
+		"enable_byok_" + strings.ToLower(testplugins.Name):          true,
+		"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
+		"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
+	})
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
-		newTestFlags(map[string]bool{
-			"enable_byok_" + strings.ToLower(testplugins.Name):          true,
-			"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
-			"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
-		}))
+		ffManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
 	km := manager.NewKeyManager(
-		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor, nil, nil,
+		r,
+		svcRegistry,
+		tenantConfigManager,
+		keyConfigManager,
+		userManager,
+		certManager,
+		eventFactory,
+		cmkAuditor,
+		nil,
+		nil,
+		ffManager,
 	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -199,7 +210,8 @@ func setupKeyTestWithFlags(t *testing.T, flagOverrides map[string]bool, opts ...
 	maps.Copy(flags, flagOverrides)
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, newTestFlags(flags))
+	flagManager := newTestFlags(cfg, svcRegistry, flags)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager,
@@ -207,7 +219,7 @@ func setupKeyTestWithFlags(t *testing.T, flagOverrides map[string]bool, opts ...
 
 	km := manager.NewKeyManager(
 		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager,
-		eventFactory, cmkAuditor, nil, nil,
+		eventFactory, cmkAuditor, nil, nil, flagManager,
 	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -1684,16 +1696,17 @@ func TestKeyRotationTime(t *testing.T) {
 
 	cmkAuditor := auditor.New(ctx, cfg)
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
+	flagManager := newTestFlags(cfg, svcRegistry, map[string]bool{
+		"enable_byok_" + strings.ToLower(testplugins.Name):          true,
+		"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
+		"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
+	})
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
-		newTestFlags(map[string]bool{
-			"enable_byok_" + strings.ToLower(testplugins.Name):          true,
-			"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
-			"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
-		}))
+		flagManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
-	km := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil)
+	km := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil, flagManager)
 
 	// Create test data
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -2838,18 +2851,28 @@ func SetupKeyTestWithAsyncClient(
 	require.NoError(t, err)
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
-		newTestFlags(map[string]bool{
-			"enable_byok_" + strings.ToLower(testplugins.Name):          true,
-			"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
-			"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
-		}))
+	flagManager := newTestFlags(cfg, svcRegistry, map[string]bool{
+		"enable_byok_" + strings.ToLower(testplugins.Name):          true,
+		"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
+		"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
+	})
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
 	km := manager.NewKeyManager(
-		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor, asyncClient, nil,
+		r,
+		svcRegistry,
+		tenantConfigManager,
+		keyConfigManager,
+		userManager,
+		certManager,
+		eventFactory,
+		cmkAuditor,
+		asyncClient,
+		nil,
+		flagManager,
 	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -3109,16 +3132,26 @@ func TestCreateHYOKPendingRegistration_KeyLimitEnforced(t *testing.T) {
 	require.NoError(t, factoryErr)
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
-		newTestFlags(map[string]bool{
-			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
-		}))
+	flagManager := newTestFlags(cfg, svcRegistry, map[string]bool{
+		"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+	})
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, tenantConfigManager)
 
 	km := manager.NewKeyManager(
-		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor, nil, nil,
+		r,
+		svcRegistry,
+		tenantConfigManager,
+		keyConfigManager,
+		userManager,
+		certManager,
+		eventFactory,
+		cmkAuditor,
+		nil,
+		nil,
+		flagManager,
 	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})

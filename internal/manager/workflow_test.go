@@ -80,7 +80,7 @@ func SetupWorkflowManager(
 	assert.NoError(t, err)
 	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
 
-	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil)
+	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil, nil)
 	m := manager.NewWorkflowManager(
 		r, svcRegistry, keym, keyConfigManager, systemManager,
 		groupManager, userManager, nil, tenantConfigManager, cfg,
@@ -129,7 +129,7 @@ func TestWorkflowManager_CheckWorkflow(t *testing.T) {
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "test-user",
 		[]string{uuid.NewString()})
 
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 
 	// Create test group that's registered in SCIM
 	testGroup := testutils.NewGroup(func(g *model.Group) {
@@ -567,7 +567,7 @@ func TestWorkflowManager_CreateWorkflow(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	// Create workflow config once for all tests
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 
 	ctxSys, err := cmkcontext.BusinessToInternalContext(ctx,
 		constants.InternalTaskWorkflowApproversRole)
@@ -702,7 +702,7 @@ func TestWorkflowManager_TransitionWorkflow(t *testing.T) {
 	m, repo, tenant := SetupWorkflowManager(t, &config.Config{}, testplugins.WithIdentityManagement(idmPlugin))
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	testutils.WriteWorkflowConfig(ctx, t, repo, testutils.NewWorkflowConfig(nil))
+	testutils.WriteTenantConfig(ctx, t, repo, testutils.NewWorkflowConfig(nil))
 
 	t.Run("Should error on invalid event actor", func(t *testing.T) {
 		wf, err := createTestWorkflow(
@@ -1691,7 +1691,7 @@ func TestWorkflowManager_WorkflowCanExpire(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	ctx = cmkcontext.InjectBusinessUserData(ctx, &auth.ClientData{Identifier: "User-ID"}, nil)
 
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 
 	tests := []struct {
 		state    model.WorkflowState
@@ -1727,7 +1727,7 @@ func TestWorkflowManager_ExpireWorkflow(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{uuid.NewString()})
 
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 
 	ctxSys, err := cmkcontext.BusinessToInternalContext(ctx, constants.InternalTaskWorkflowExpirationRole)
 	assert.NoError(t, err)
@@ -1803,7 +1803,7 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 	)
 
 	// Create workflow config
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 	testutils.CreateTestEntities(ctx, t, r, group)
 
 	t.Run("should delete expired terminal workflow", func(t *testing.T) {
@@ -2125,7 +2125,7 @@ func setupEligibilityTest(
 	ctx := testutils.CreateCtxWithTenant(tenantID)
 
 	// Create tenant workflow config with minimum approvals matching approver count
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 		wc.MinimumApprovals = approverCount
 	}))
 
@@ -2792,7 +2792,7 @@ func TestWorkflowManager_ValidateApproverCount(t *testing.T) {
 			ctx := testutils.CreateCtxWithTenant(tenant)
 
 			// Create workflow config
-			testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
+			testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 			createAuditorGroup(ctx, t, r)
 
 			// Create test group with the IAM identifier that matches IDM
@@ -2872,7 +2872,7 @@ func TestWorkflowManager_UserRemovedFromGroup(t *testing.T) {
 	m, r, tenant := SetupWorkflowManager(t, &config.Config{}, testplugins.WithIdentityManagement(idmPlugin))
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 
 	adminGroup := testutils.NewGroup(func(g *model.Group) {
 		g.IAMIdentifier = groupIAM
@@ -3245,7 +3245,7 @@ func TestWorkflowManager_ListWorkflowTaskViews(t *testing.T) {
 	testutils.CreateTestEntities(initiatorCtx, t, r, keyConfig, key)
 
 	workflowCfg := testutils.NewWorkflowConfig(func(_ *model.WorkflowConfig) {})
-	testutils.WriteWorkflowConfig(initiatorCtx, t, r, workflowCfg)
+	testutils.WriteTenantConfig(initiatorCtx, t, r, workflowCfg)
 
 	// Create and auto-assign a workflow so task rows exist in the view.
 	wf := testutils.NewWorkflow(func(w *model.Workflow) {

@@ -600,7 +600,7 @@ func handleCompositeKey(db *gorm.DB, resource repo.Resource, compositeKey repo.C
 
 func applyFieldCondition(tx *gorm.DB, field string, key repo.Key, isStrict bool) *gorm.DB {
 	switch key.Operation {
-	case repo.GreaterThan, repo.LessThan, repo.NotEqual, repo.Contains, repo.GreaterThanOrEqual, repo.LessThanOrEqual:
+	case repo.GreaterThan, repo.LessThan, repo.NotEqual, repo.ContainsOp, repo.GreaterThanOrEqual, repo.LessThanOrEqual:
 		return applyCondition(tx, field, string(key.Operation), key.Value, isStrict)
 	case repo.Equal:
 		return applyFieldEqualCondition(tx, field, key, isStrict)

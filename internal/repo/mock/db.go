@@ -155,7 +155,7 @@ func (db *InMemoryDB) Create(resource repo.Resource) error {
 			return errs.Wrap(ErrTenantConfigurationNotFound, err)
 		}
 
-		tc := model.TenantConfig{Key: legacy.Key, Value: legacy.Value, Type: legacy.Type}
+		tc := model.TenantConfig{Key: legacy.Key, Value: legacy.Value, Type: model.ConfigType(legacy.Type)}
 		db.Data.TenantConfigs[tenantConfigMapKey(tc)] = tc
 	case Workflow:
 		workflow, err := GetModelFromInterface[model.Workflow](resource)
@@ -567,8 +567,12 @@ func (db *InMemoryDB) getLegacyTenantConfig(resource repo.Resource) (repo.Resour
 	}
 
 	for _, tenantConfig := range db.Data.TenantConfigs {
-		if tenantConfig.Key == resourceLegacy.Key && tenantConfig.Type == resourceLegacy.Type {
-			return model.LegacyTenantConfig(tenantConfig), nil
+		if tenantConfig.Key == resourceLegacy.Key && tenantConfig.Type == model.ConfigType(resourceLegacy.Type) {
+			return model.LegacyTenantConfig{
+				Key:   tenantConfig.Key,
+				Value: tenantConfig.Value,
+				Type:  string(tenantConfig.Type),
+			}, nil
 		}
 	}
 

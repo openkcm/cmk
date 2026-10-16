@@ -60,7 +60,7 @@ type KeyConfigManager struct {
 
 // TenantConfigs is the subset of TenantConfigManager used by KeyConfigManager.
 type TenantConfigs interface {
-	GetEffectiveLimits(ctx context.Context) (EffectiveLimits, error)
+	GetTenantLimits(ctx context.Context) (model.TenantLimits, error)
 }
 
 type KeyConfigFilter struct {
@@ -121,11 +121,11 @@ func (m *KeyConfigManager) EnforceSystemLimit(ctx context.Context, keyConfigID u
 	if m.tenantCfg == nil {
 		return nil
 	}
-	limits, err := m.tenantCfg.GetEffectiveLimits(ctx)
+	limits, err := m.tenantCfg.GetTenantLimits(ctx)
 	if err != nil {
 		return err
 	}
-	limit := limits.Systems
+	limit := *limits.Systems
 	if limit <= 0 {
 		return nil
 	}
@@ -160,11 +160,11 @@ func (m *KeyConfigManager) EnforceKeyLimit(ctx context.Context, keyConfigID uuid
 	if m.tenantCfg == nil {
 		return nil
 	}
-	limits, err := m.tenantCfg.GetEffectiveLimits(ctx)
+	limits, err := m.tenantCfg.GetTenantLimits(ctx)
 	if err != nil {
 		return err
 	}
-	limit := limits.Keys
+	limit := *limits.Keys
 	if limit <= 0 {
 		return nil
 	}
@@ -197,11 +197,11 @@ func (m *KeyConfigManager) EnforceKeyConfigLimit(ctx context.Context) error {
 	if m.tenantCfg == nil {
 		return nil
 	}
-	limits, err := m.tenantCfg.GetEffectiveLimits(ctx)
+	limits, err := m.tenantCfg.GetTenantLimits(ctx)
 	if err != nil {
 		return err
 	}
-	limit := limits.KeyConfigs
+	limit := *limits.KeyConfigs
 	if limit <= 0 {
 		return nil
 	}
