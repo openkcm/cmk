@@ -45,20 +45,6 @@ tenantManager:
   # Enable the tenant-manager deployment.
   deploy: true
 
-  # tenant-manager service configuration
-  service:
-    # Enable the tenant-manager service
-    enabled: false
-
-    # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
-    type: ClusterIP
-    # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
-    ports:
-      - port: 5672 # must match .Values.cmk.port
-        protocol: TCP
-        targetPort: http
-        name: http
-
   # This is for setting up pod topology spread constraints, more information can be found here:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
   topologySpreadConstraints: []
@@ -81,11 +67,6 @@ cmkctl:
 
   # Enable the cmkctl deployment.
   deploy: false
-
-  # cmkctl service configuration
-  service:
-    # Enable the cmkctl service
-    enabled: false
 
   # This is for setting up pod topology spread constraints, more information can be found here:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
@@ -159,11 +140,6 @@ eventReconciler:
   # Enable the event-reconciler deployment.
   # Should be enabled by default
   deploy: true
-
-  # task-cli service configuration
-  service:
-    # Enable the event-reconciler service
-    enabled: false
 
   # This is for setting up pod topology spread constraints, more information can be found here:
   # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
@@ -376,20 +352,16 @@ ports:
 affinity: {}
 
 config:
-  isImmutable: false
+  isImmutable: true
 
   # Environment where the application is running
-  environment: local
+  environment: production
+
   # Labels associated to metrics, traces and logs
   labels: {}
 
-    # Feature gates
-  featureGates:
-    enrich-header-with-client-type: true
-    enrich-header-with-client-region: true
-    disable-client-certificate-computation: false
-    disable-jwt-token-computation: false
-    allow-byok: false
+  # Feature gates
+  featureGates: {}
 
   # Feature flags
   featureFlags:
@@ -417,6 +389,8 @@ config:
     rotationThresholdDays: 7
     # Default prefix for tenant certificates;
     # defaultTenantCertPrefix: "examplekms-cmk_"
+    # Disable usage of client certificate authentication for the HYOK Keystore
+    # disableHYOKCertAuth: false
 
   ## Crypto layer configuration
   cryptoLayer:
@@ -440,7 +414,7 @@ config:
   # This does set the logger configuration
   # +docs:property
   logger:
-    level: warn # one of: debug, info, warn, error
+    level: info # one of: debug, info, warn, error
     # Format of the logs
     format: json # one of: json, text
     formatter:
