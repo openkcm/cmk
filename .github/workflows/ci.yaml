@@ -1,5 +1,10 @@
 name: Quality
 
+permissions:
+  contents: read
+  pull-requests: read
+  packages: write
+
 on:
   push:
     tags:
@@ -14,14 +19,16 @@ on:
       - '.github/**'
   pull_request:
 
-permissions:
-  contents: read
-  pull-requests: read
-
 jobs:
   check:
     uses: openkcm/build/.github/workflows/ci.svc.yaml@main
     with:
       run_task_tests: false
       run_makefile_tests: true
+    secrets: inherit
+
+  build-pr-image:
+    needs: check
+    if: github.event_name == 'pull_request'
+    uses: openkcm/build/.github/workflows/build-image.pr.svc.yaml@main
     secrets: inherit
