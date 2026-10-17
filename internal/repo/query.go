@@ -58,6 +58,7 @@ const (
 	InitiatorIDField    QueryField = "initiator_id"
 	UserIDField         QueryField = "user_id"
 	PrimaryKeyIDField   QueryField = "primary_key_id"
+	CreatorIDField      QueryField = "creator_id"
 	PurposeField        QueryField = "purpose"
 	NameField           QueryField = "name"
 	ErrorMessageField   QueryField = "error_message"
@@ -134,6 +135,10 @@ type Params interface {
 	GetPagination() Pagination
 	GetFilter() (QueryFilter, error)
 	GetSearch() (QueryGetter, error)
+}
+
+type OrderGetter interface {
+	GetOrder() (*Query, []OrderField, error)
 }
 
 // GetFilterFieldValues returns the values for the given field from the filter,

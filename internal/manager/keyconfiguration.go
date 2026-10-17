@@ -66,6 +66,7 @@ type TenantConfigs interface {
 type KeyConfigFilter struct {
 	Expand     bool
 	Pagination repo.Pagination
+	Order      []repo.OrderField
 }
 
 func NewKeyConfigManager(
@@ -235,6 +236,12 @@ func (m *KeyConfigManager) GetKeyConfigurations(
 	if hasNoGroups {
 		// User has no IAM groups - return empty result
 		return []*model.KeyConfiguration{}, 0, nil
+	}
+
+	if len(filter.Order) > 0 {
+		query.Order(filter.Order...)
+	} else {
+		query.Order(repo.OrderField{Field: repo.CreatedField, Direction: repo.Desc})
 	}
 
 	return repo.ListAndCount(ctx, m.r, filter.Pagination, model.KeyConfiguration{}, query)

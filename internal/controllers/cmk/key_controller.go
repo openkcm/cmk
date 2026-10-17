@@ -13,8 +13,16 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/utils/odata"
 	"github.com/openkcm/cmk/utils/ptr"
 )
+
+var getKeysOrderSchema = odata.OrderToRepoMap{
+	"name":      {DBName: repo.NameField},
+	"type":      {DBName: repo.KeyTypeField},
+	"state":     {DBName: repo.StateField},
+	"createdAt": {DBName: repo.CreatedField},
+}
 
 // PostKeys handles the creation of a new key
 func (c *APIController) PostKeys(ctx context.Context,
@@ -73,7 +81,12 @@ func (c *APIController) GetKeys(ctx context.Context,
 		Count: ptr.GetSafeDeref(request.Params.Count),
 	}
 
-	keys, total, err := c.Manager.Keys.GetKeys(ctx, keyConfigID, pagination)
+	_, order, err := odata.New(odata.WithOrder(request.Params.Orderby, getKeysOrderSchema)).GetOrder()
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrBadOdataOrderby, err)
+	}
+
+	keys, total, err := c.Manager.Keys.GetKeys(ctx, keyConfigID, pagination, order)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrQueryKeyList, err)
 	}

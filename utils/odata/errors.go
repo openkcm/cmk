@@ -9,4 +9,8 @@ var (
 	ErrFilterTypeNotSupported      = errors.New("odata filter parameter: type not supported")
 	ErrFilterValueConversionFailed = errors.New("odata filter parameter: type conversion failed")
 	ErrFilterNonSchema             = errors.New("odata filter parameter: invalid db mapping")
+
+	ErrOrderNotToSpec        = errors.New("odata orderby parameter: not to odata spec")
+	ErrOrderInvalidDirection = errors.New("odata orderby parameter: direction not supported")
+	ErrOrderNonSchema        = errors.New("odata orderby parameter: invalid db mapping")
 )

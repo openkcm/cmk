@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -532,6 +533,108 @@ func TestGetSystems_Search(t *testing.T) {
 			}
 
 			assert.ElementsMatch(t, tt.expectedSystems, identifiers)
+		})
+	}
+}
+
+func TestGetSystems_OrderBy(t *testing.T) {
+	db, sv, tenant, keyStorage := startAPISystems(t, testutils.TestAPIServerConfig{
+		Config: config.Config{
+			ContextModels: config.ContextModels{
+				System: config.System{
+					OptionalProperties: map[string]config.SystemProperty{
+						"externalName": {DisplayName: "Name"},
+					},
+				},
+			},
+		},
+	})
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	r := sql.NewRepository(db)
+
+	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithKeyAdminRole())
+
+	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {},
+		testutils.WithAuthBusinessUserDataKC(authClient))
+
+	systemA := testutils.NewSystem(func(s *model.System) {
+		s.Identifier = "system-alpha"
+		s.Properties = map[string]string{"externalName": "zeta"}
+	})
+	systemB := testutils.NewSystem(func(s *model.System) {
+		s.Identifier = "system-bravo"
+		s.Properties = map[string]string{"externalName": "alpha"}
+	})
+
+	testutils.CreateTestEntities(ctx, t, r, keyConfig, systemA, systemB)
+
+	clientData := &auth.ClientData{
+		Identifier: authClient.Identifier,
+		Groups:     []string{authClient.Group.IAMIdentifier},
+	}
+
+	privateKey, ok := keyStorage.GetPrivateKey(0)
+	assert.True(t, ok, "test key should exist")
+	headers := testutils.NewSignedBusinessUserDataHeaders(t, clientData, privateKey, 0)
+
+	tests := []struct {
+		name           string
+		orderby        string
+		expectedStatus int
+		expectedOrder  []string
+	}{
+		{
+			name:           "identifier descending",
+			orderby:        "identifier desc",
+			expectedStatus: http.StatusOK,
+			expectedOrder:  []string{"system-bravo", "system-alpha"},
+		},
+		{
+			name:           "by valid property ascending",
+			orderby:        "properties.name asc",
+			expectedStatus: http.StatusOK,
+			expectedOrder:  []string{"system-bravo", "system-alpha"},
+		},
+		{
+			name:           "unknown property is ignored, falls back to default",
+			orderby:        "properties.doesNotExist desc",
+			expectedStatus: http.StatusOK,
+			expectedOrder:  []string{"system-alpha", "system-bravo"},
+		},
+		{
+			name:           "unknown non-property field is rejected",
+			orderby:        "bogus desc",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "invalid direction is rejected",
+			orderby:        "identifier sideways",
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
+				Method:   http.MethodGet,
+				Endpoint: "/systems?$orderby=" + url.QueryEscape(tt.orderby),
+				Tenant:   tenant,
+				Headers:  headers,
+			})
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedStatus != http.StatusOK {
+				return
+			}
+
+			response := testutils.GetJSONBody[cmkapi.SystemList](t, w)
+			identifiers := make([]string, 0, len(response.Value))
+			for _, sys := range response.Value {
+				identifiers = append(identifiers, *sys.Identifier)
+			}
+
+			assert.Equal(t, tt.expectedOrder, identifiers)
 		})
 	}
 }

@@ -69,11 +69,16 @@ var getSystemsSchema = odata.FilterToRepoMap{
 	},
 }
 
-func (c *APIController) GetAllSystems(ctx context.Context,
-	request cmkapi.GetAllSystemsRequestObject,
-) (cmkapi.GetAllSystemsResponseObject, error) {
-	refreshed := c.Manager.System.RefreshSystemsData(ctx)
+var getSystemsOrderSchema = odata.OrderToRepoMap{
+	"identifier": {DBName: repo.IdentifierField},
+	"region":     {DBName: repo.RegionField},
+	"status":     {DBName: repo.StatusField},
+	"type":       {DBName: repo.TypeField},
+}
 
+const systemPropertyOrderPrefix = "properties."
+
+func (c *APIController) buildSystemsODataOptions(request cmkapi.GetAllSystemsRequestObject) []odata.Option {
 	opts := []odata.Option{
 		odata.WithPagination(request.Params.Skip, request.Params.Top, request.Params.Count),
 		odata.WithFilter(request.Params.Filter, getSystemsSchema),
@@ -94,11 +99,28 @@ func (c *APIController) GetAllSystems(ctx context.Context,
 		}))
 	}
 
-	odataParams := odata.New(opts...)
+	remainingOrderby, orderJoins := c.resolveSystemPropertyOrder(request.Params.Orderby)
+	opts = append(opts, odata.WithOrder(remainingOrderby, getSystemsOrderSchema))
+	if len(orderJoins) > 0 {
+		opts = append(opts, odata.WithOrderJoins(orderJoins...))
+	}
 
-	_, err := odataParams.GetFilter()
-	if err != nil {
+	return opts
+}
+
+func (c *APIController) GetAllSystems(ctx context.Context,
+	request cmkapi.GetAllSystemsRequestObject,
+) (cmkapi.GetAllSystemsResponseObject, error) {
+	refreshed := c.Manager.System.RefreshSystemsData(ctx)
+
+	odataParams := odata.New(c.buildSystemsODataOptions(request)...)
+
+	if _, err := odataParams.GetFilter(); err != nil {
 		return nil, errs.Wrap(apierrors.ErrBadOdataFilter, err)
+	}
+
+	if _, _, err := odataParams.GetOrder(); err != nil {
+		return nil, errs.Wrap(apierrors.ErrBadOdataOrderby, err)
 	}
 
 	systems, total, err := c.Manager.System.GetAllSystems(ctx, odataParams)
@@ -308,6 +330,71 @@ func (c *APIController) handleSystemUnderWorkflow(
 func (c *APIController) getSystemExternalNameKey() (string, bool) {
 	for propertyName, definition := range c.config.ContextModels.System.OptionalProperties {
 		if strings.ToUpper(definition.DisplayName) == SystemExternalNamePropertyKey {
+			return propertyName, true
+		}
+	}
+
+	return "", false
+}
+
+func (c *APIController) resolveSystemPropertyOrder(orderby *string) (*string, []odata.OrderJoinField) {
+	if orderby == nil {
+		return nil, nil
+	}
+
+	var (
+		kept  []string
+		joins []odata.OrderJoinField
+	)
+
+	for clause := range strings.SplitSeq(*orderby, ",") {
+		tokens := strings.Fields(clause)
+		if len(tokens) == 0 {
+			continue
+		}
+
+		if !strings.HasPrefix(strings.ToLower(tokens[0]), systemPropertyOrderPrefix) {
+			kept = append(kept, clause)
+			continue
+		}
+
+		displayName := strings.TrimPrefix(strings.ToLower(tokens[0]), systemPropertyOrderPrefix)
+
+		propertyKey, ok := c.resolveSystemPropertyKey(displayName)
+		if !ok {
+			continue
+		}
+
+		alias := fmt.Sprintf("sp_ord_%d", len(joins))
+
+		joins = append(joins, odata.OrderJoinField{
+			UserField: tokens[0],
+			Column:    alias + ".value",
+			Join: repo.JoinCondition{
+				Table:     &model.System{},
+				Field:     repo.IDField,
+				JoinTable: &model.SystemProperty{},
+				JoinField: repo.IDField,
+				Alias:     alias,
+				OnFilters: []repo.JoinOnFilter{{Field: repo.KeyField, Value: propertyKey}},
+			},
+		})
+
+		kept = append(kept, clause)
+	}
+
+	if len(kept) == 0 {
+		return nil, joins
+	}
+
+	joined := strings.Join(kept, ",")
+
+	return &joined, joins
+}
+
+func (c *APIController) resolveSystemPropertyKey(displayName string) (string, bool) {
+	for propertyName, definition := range c.config.ContextModels.System.OptionalProperties {
+		if strings.EqualFold(definition.DisplayName, displayName) {
 			return propertyName, true
 		}
 	}

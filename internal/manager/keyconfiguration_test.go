@@ -5,8 +5,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -159,13 +157,15 @@ func TestGetKeyConfigurations(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, len(expected), total)
 
-		slices.SortFunc(expected, func(a, b *model.KeyConfiguration) int {
-			return strings.Compare(a.ID.String(), b.ID.String())
-		})
+		expectedNamesByID := make(map[uuid.UUID]string, len(expected))
+		for _, e := range expected {
+			expectedNamesByID[e.ID] = e.Name
+		}
 
-		for i := range actual {
-			assert.Equal(t, expected[i].ID, actual[i].ID)
-			assert.Equal(t, expected[i].Name, actual[i].Name)
+		for _, a := range actual {
+			name, ok := expectedNamesByID[a.ID]
+			assert.True(t, ok)
+			assert.Equal(t, name, a.Name)
 		}
 	})
 
@@ -310,6 +310,49 @@ func TestGetKeyConfigurations(t *testing.T) {
 		_, count, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Pagination: repo.Pagination{Count: true}})
 		assert.NoError(t, err)
 		assert.Equal(t, kcCount, count)
+	})
+}
+
+func TestGetKeyConfigurationsOrdering(t *testing.T) {
+	m, db, tenant := SetupKeyConfigManager(t)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "example-user", []string{testAdminGroupIAM})
+	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
+	r := sql.NewRepository(db)
+
+	names := []string{"config-charlie", "config-alpha", "config-bravo"}
+	for _, name := range names {
+		testutils.CreateTestEntities(ctx, t, r, testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.Name = name
+			c.AdminGroupID = adminGroup.ID
+			c.AdminGroup = *adminGroup
+		}))
+	}
+
+	pagination := repo.Pagination{Skip: constants.DefaultSkip, Top: constants.DefaultTop}
+
+	t.Run("orders by name ascending", func(t *testing.T) {
+		actual, _, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{
+			Pagination: pagination,
+			Order:      []repo.OrderField{{Field: repo.NameField, Direction: repo.Asc}},
+		})
+		assert.NoError(t, err)
+		require.Len(t, actual, 3)
+		assert.Equal(t, "config-alpha", actual[0].Name)
+		assert.Equal(t, "config-bravo", actual[1].Name)
+		assert.Equal(t, "config-charlie", actual[2].Name)
+	})
+
+	t.Run("orders by name descending", func(t *testing.T) {
+		actual, _, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{
+			Pagination: pagination,
+			Order:      []repo.OrderField{{Field: repo.NameField, Direction: repo.Desc}},
+		})
+		assert.NoError(t, err)
+		require.Len(t, actual, 3)
+		assert.Equal(t, "config-charlie", actual[0].Name)
+		assert.Equal(t, "config-bravo", actual[1].Name)
+		assert.Equal(t, "config-alpha", actual[2].Name)
 	})
 }
 
