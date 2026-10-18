@@ -3,7 +3,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "cmk.name" . }}-config
+  name: {{ include "cmk.fullname" . }}-config
+  namespace: {{ include "cmk.namespace" . }}
   labels:
     {{- include "cmk.labels" . | nindent 4 }}
 immutable: {{ .Values.config.isImmutable | default false }}
@@ -52,13 +53,16 @@ data:
     database:
       {{- toYaml .database | nindent 6 }}
 
+    databaseReplicas:
+      {{- toYaml .databaseReplicas | nindent 6 }}
+
     # Services configuration
     services:
       {{- toYaml .services | nindent 6 }}
 
     # Plugins configuration
     plugins:
-    {{ include "cmk.plugins" . | nindent 6 }}
+      {{- toYaml .plugins | nindent 6 }}
 
     eventProcessor:
       {{- toYaml .eventProcessor | nindent 6 }}
@@ -80,6 +84,16 @@ data:
 
     keystorePool:
       {{- toYaml .keystorePool | nindent 6 }}
+
+    # Default limits of every tenant
+    tenant:
+      {{- toYaml .tenant | nindent 6 }}
+
+    keys:
+      {{- toYaml .keys | nindent 6 }}
+
+    workflow:
+      {{- toYaml .workflow | nindent 6 }}
 
     {{- end }}
 {{- end }}

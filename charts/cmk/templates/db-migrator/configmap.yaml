@@ -1,8 +1,10 @@
+{{- if .Values.dbMigrator.enabled }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "cmk.name" . }}-db-migrator-config
+  name: {{ include "cmk.fullname" . }}-db-migrator-config
+  namespace: {{ include "cmk.namespace" . }}
   labels:
     {{- include "cmk.db-migrator.labels" . | nindent 4 }}
   annotations:
@@ -33,4 +35,12 @@ data:
     database:
       {{- toYaml .database | nindent 6 }}
 
+    databaseReplicas:
+      {{- toYaml .databaseReplicas | nindent 6 }}
+
+    # Read by the tenant data migration 00006 (crypto certificate subjects)
+    cryptoLayer:
+      {{- toYaml .cryptoLayer | nindent 6 }}
+
     {{- end }}
+{{- end }}

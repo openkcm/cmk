@@ -1,9 +1,10 @@
-{{- if .Values.apiServer.deploy }}
+{{- if .Values.eventReconciler.deploy }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "cmk.name" . }}-event-reconciler-config
+  name: {{ include "cmk.fullname" . }}-event-reconciler-config
+  namespace: {{ include "cmk.namespace" . }}
   labels:
     {{- include "cmk.event-reconciler.labels" . | nindent 4 }}
 immutable: {{ .Values.config.isImmutable | default false }}
@@ -28,7 +29,7 @@ data:
       {{- toYaml .audit | nindent 6 }}
 
     plugins:
-    {{ include "cmk.plugins" . | nindent 6 }}
+      {{- toYaml .plugins | nindent 6 }}
 
     services:
       {{- toYaml .services | nindent 6 }}
@@ -39,6 +40,9 @@ data:
     database:
       {{- toYaml .database | nindent 6 }}
 
+    databaseReplicas:
+      {{- toYaml .databaseReplicas | nindent 6 }}
+
     eventProcessor:
       {{- toYaml .eventProcessor | nindent 6 }}
 
@@ -47,5 +51,24 @@ data:
 
     cryptoLayer:
       {{- toYaml .cryptoLayer | nindent 6 }}
+
+    featureGates:
+      {{- toYaml .featureGates | nindent 6 }}
+
+    featureFlags:
+      {{- toYaml .featureFlags | nindent 6 }}
+
+    certificates:
+      {{- toYaml .certificates | nindent 6 }}
+
+    keystorePool:
+      {{- toYaml .keystorePool | nindent 6 }}
+
+    # Default limits of every tenant
+    tenant:
+      {{- toYaml .tenant | nindent 6 }}
+
+    workflow:
+      {{- toYaml .workflow | nindent 6 }}
     {{- end }}
 {{- end }}

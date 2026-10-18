@@ -3,7 +3,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "cmk.name" . }}-task-scheduler-config
+  name: {{ include "cmk.fullname" . }}-task-scheduler-config
+  namespace: {{ include "cmk.namespace" . }}
   labels:
     {{- include "cmk.task-scheduler.labels" . | nindent 4 }}
 immutable: {{ .Values.config.isImmutable | default false }}

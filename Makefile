@@ -25,6 +25,11 @@ default: test
 run:
 	AWS_ACCESS_KEY_ID="exampleAccessKeyID" AWS_SECRET_ACCESS_KEY="exampleSecretAccessKey" go run ./cmd/api-server
 
+# Renders the Helm chart with helm template and checks the output (needs helm in PATH).
+.PHONY: helm-unit-test
+helm-unit-test:
+	go test -count=1 -tags=helmtests ./helm-tests/unit/...
+
 test: install-gotestsum
 	rm -rf cover cover.* junit.xml
 	mkdir -p cover
