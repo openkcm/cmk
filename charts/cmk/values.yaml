@@ -580,8 +580,13 @@ config:
   isImmutable: false
 
   # ---------------------------------------------------------------------------
-  # application. Read by: all components.
+  # application: environment, labels and name of each CMK process in its logs, traces and
+  # metrics. Read by: all components.
   # ---------------------------------------------------------------------------
+
+  # Names this CMK installation and each of its processes in everything they emit, so that the
+  # logs, traces and metrics of several installations, regions and processes can be told apart
+  # in a shared backend.
 
   # -- Environment name, written as `application.environment`. Attached to logs, traces and
   # metrics.
@@ -593,9 +598,14 @@ config:
   labels: {}
 
   # ---------------------------------------------------------------------------
-  # featureGates and featureFlags. Read by: API server, tenant manager, event reconciler,
-  # task worker, cmkctl.
+  # featureGates and featureFlags: which kinds of keys tenants may use. Read by: API server,
+  # tenant manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # Decide which kinds of keys the tenants may create: BYOK (bring your own key) keys in the
+  # default keystore, and HYOK (hold your own key) keys in a keystore of the customer. Feature
+  # gates are fixed for the installation; feature flags, when enabled, are read from a file, can
+  # change while CMK runs and are set per keystore plugin.
 
   # Feature gates: a map of gate name to `true` or `false`. CMK reads only `allow-byok`.
   featureGates:
@@ -627,8 +637,13 @@ config:
     pollingInterval: 60s
 
   # ---------------------------------------------------------------------------
-  # logger. Read by: all components.
+  # logger: logs on standard output. Read by: all components.
   # ---------------------------------------------------------------------------
+
+  # Every CMK process logs to standard output, where the log collection of the cluster picks
+  # them up. These settings control the level of detail, the format and field names, and the
+  # masking of personal data before the logs leave the pod.
+
   logger:
     # -- Log level: `trace`, `debug`, `info`, `warn` or `error`; any other value means
     # `info`. At `debug` and `trace`, CMK logs its complete configuration: use `info` in
@@ -680,8 +695,13 @@ config:
             jwt-token: "*****"
 
   # ---------------------------------------------------------------------------
-  # status. Read by: all components.
+  # status: status server for the probes, version and metrics. Read by: all components.
   # ---------------------------------------------------------------------------
+
+  # A small HTTP server in every CMK process. Kubernetes calls its probe endpoints to decide
+  # whether a pod is alive and ready, so it must stay enabled. It also serves the build version
+  # and, with Prometheus enabled, the metrics.
+
   status:
     # -- Serve the status endpoints: `/probe/liveness`, `/probe/readiness` (checks the
     # database; the API server also its API port), `/version`, and `/metrics` with
@@ -700,6 +720,11 @@ config:
   # ---------------------------------------------------------------------------
   # telemetry: OpenTelemetry export of traces, metrics and logs. Read by: all components.
   # ---------------------------------------------------------------------------
+
+  # Exports traces, metrics and logs of the CMK processes to an OpenTelemetry collector, or
+  # serves the metrics for Prometheus, to monitor CMK. Without it, nothing is exported; the logs
+  # on standard output are not affected.
+
   # Each of `traces`, `metrics` and `logs` takes:
   #   enabled     export this signal
   #   protocol    `grpc` or `http` (OTLP). Required when enabled
@@ -813,9 +838,14 @@ config:
         type: insecure
 
   # ---------------------------------------------------------------------------
-  # audit: audit events as OTLP/HTTP log records. Read by: API server, tenant manager,
-  # event reconciler, task worker, cmkctl.
+  # audit: audit events as OTLP/HTTP log records. Read by: API server, tenant manager, event
+  # reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # Sends audit events of changes to keys, systems and tenants, and of rejected requests, to an
+  # OpenTelemetry collector, for an audit trail outside the cluster. Without an endpoint, no
+  # audit events are sent.
+
   # Events: key lifecycle, key availability, system linking, tenant deletion and rejected
   # requests. CMK posts each event as an OTLP log record in JSON and expects status 200 or
   # 201. A failed delivery is logged (`Failed to send audit log …`) and does not fail the
@@ -879,6 +909,10 @@ config:
   # ---------------------------------------------------------------------------
   # http: the CMK API. Read by: API server.
   # ---------------------------------------------------------------------------
+
+  # The CMK REST API, which the CMK UI and API clients call through Envoy Gateway after ExtAuthZ
+  # has authenticated and authorized the request. Only the API server serves it.
+
   # The chart writes `http.address: ":<port>"` and `http.swaggerEnabled`; other keys under
   # `http` are not written. The shutdown grace period is CMK's default of 5 seconds. TLS is
   # terminated by Envoy Gateway.
@@ -892,6 +926,12 @@ config:
   # ---------------------------------------------------------------------------
   # clientData: verification of the signed client data from ExtAuthZ. Read by: API server.
   # ---------------------------------------------------------------------------
+
+  # CMK does not authenticate callers itself: ExtAuthZ does, and adds the signed client data to
+  # every request it allows. The API server verifies that signature with the public keys of
+  # ExtAuthZ before it trusts who the caller is; requests without valid client data are
+  # rejected.
+
   clientData:
     # -- **Required.** Directory with ExtAuthZ's **public** keys, one `<key ID>.pem` per key
     # (PEM public key or certificate, RS256). Mount it with `extraVolumes` and
@@ -910,6 +950,11 @@ config:
   # services: gRPC connections to the Registry and to Session Manager. Read by: API server,
   # tenant manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # CMK calls the Registry to read and update the tenants and systems of this region, and
+  # Session Manager to map tenants to their identity providers. Each connection can be disabled
+  # for an installation that does without that service.
+
   # Each connection: `enabled`, `address`, `secretRef` and `attributes` (gRPC keepalive).
   # `secretRef` is `insecure` or `mtls` (see the top of the configuration); other types fail
   # with `unsupported secret type`. With `mtls`, CMK watches the directories of the files and
@@ -964,6 +1009,11 @@ config:
   # ---------------------------------------------------------------------------
   # database: PostgreSQL. Read by: all components.
   # ---------------------------------------------------------------------------
+
+  # All CMK processes share one PostgreSQL database: the shared data in one schema, and one
+  # schema per tenant with its keys, keystores, systems and workflows. The migration jobs create
+  # and update the schemas; without the database no process starts.
+
   # CMK keeps shared data in one schema and creates one schema per tenant, so the database
   # user needs the `CREATE` privilege on the database. The values are written into
   # the connection string without quoting: use a password without spaces, quotes or
@@ -1034,9 +1084,15 @@ config:
   databaseReplicas: []
 
   # ---------------------------------------------------------------------------
-  # scheduler: asynchronous tasks through a Redis-compatible queue such as Valkey. Read by:
-  # API server, task scheduler, task worker, cmkctl.
+  # scheduler: asynchronous tasks through a Redis-compatible queue such as Valkey. Read by: API
+  # server, task scheduler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # CMK runs its background work as tasks in a Redis-compatible queue such as Valkey: the task
+  # scheduler adds the periodic tasks (for example key synchronisation, certificate rotation and
+  # keystore pool refill), the task worker runs them, and the API server and cmkctl add tasks on
+  # demand.
+
   scheduler:
     taskQueue:
       # -- **Required.** Host name; value reference.
@@ -1110,9 +1166,15 @@ config:
     tasks: []
 
   # ---------------------------------------------------------------------------
-  # tenantManager: jobs of this region's tenants from the central Registry over AMQP. Read
-  # by: tenant manager.
+  # tenantManager: jobs of this region's tenants from the central Registry over AMQP. Read by:
+  # tenant manager.
   # ---------------------------------------------------------------------------
+
+  # The central Registry sends the jobs of the tenants of this region through the AMQP broker.
+  # The tenant manager receives them: it creates, blocks, unblocks and terminates tenants and
+  # applies changes to their authentication and configuration, then reports the result to the
+  # Registry.
+
   # **Required** when `tenantManager.deploy` is true: the tenant manager does not start
   # without `secretRef.type` and the three `amqp` fields. `amqp.source` and `amqp.target`
   # must equal the `target` and `source` of the Registry's `orbital.targets` entry for this
@@ -1149,6 +1211,11 @@ config:
   # ---------------------------------------------------------------------------
   # eventProcessor: key and system tasks to the regions over AMQP. Read by: event reconciler.
   # ---------------------------------------------------------------------------
+
+  # When keys or the links between systems and keys change, CMK sends tasks over AMQP to the
+  # region of each affected system, where that region carries them out. The event reconciler
+  # sends the tasks and retries them until the region answers.
+
   # **Required** when `eventReconciler.deploy` is true: every key and system task for a
   # region without a target fails with `target not configured for region`. Example:
   #   secretRef:
@@ -1184,8 +1251,15 @@ config:
     maxReconcileCount: 18
 
   # ---------------------------------------------------------------------------
-  # plugins. Read by: API server, tenant manager, event reconciler, task worker, cmkctl.
+  # plugins: keystores, identity management, notifications, system information and certificates.
+  # Read by: API server, tenant manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # CMK delegates everything that depends on the environment to plugins: creating and using keys
+  # at a keystore provider such as AWS KMS, reading users and groups from the identity provider,
+  # sending notifications, reading system information and issuing certificates. Built-in plugins
+  # cover development and tests; production uses the plugin binaries in the image.
+
   # -- **Required.** Plugins for keystores, identity management, notifications, system
   # information and certificates. An external plugin (`path` set) runs as a process of its
   # own; a built-in plugin (`path` empty) runs inside CMK. Each entry:
@@ -1299,9 +1373,14 @@ config:
 
   # ---------------------------------------------------------------------------
   # certificates: client certificates CMK requests from the CertificateIssuerService plugin.
-  # Read by: API server, tenant manager, event reconciler, task scheduler, task worker,
-  # cmkctl.
+  # Read by: API server, tenant manager, event reconciler, task scheduler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # CMK requests a client certificate for each tenant from the CertificateIssuerService plugin.
+  # Customers trust it in their own keystores for HYOK keys, and it identifies the access of the
+  # tenant to the default keystore. The `cert:rotate` task renews the certificates before they
+  # expire.
+
   certificates:
     # -- URL of the root CA certificate, returned with the tenants' HYOK client
     # certificates. Example: `https://pki.example.com/root-ca.crt`.
@@ -1319,10 +1398,16 @@ config:
     disableHYOKCertAuth: false
 
   # ---------------------------------------------------------------------------
-  # cryptoLayer: certificates trusted by the regional crypto layer. Read by: API server,
-  # tenant manager, event reconciler, task worker, cmkctl, db-migrator (data migration that
-  # updates the certificate subjects of existing keys).
+  # cryptoLayer: certificates trusted by the regional crypto layer. Read by: API server, tenant
+  # manager, event reconciler, task worker, cmkctl, db-migrator (data migration that updates the
+  # certificate subjects of existing keys).
   # ---------------------------------------------------------------------------
+
+  # The crypto layer of each region performs the cryptographic operations with the keys of the
+  # customers. This section lists, per region, the client certificate subject with which that
+  # crypto layer uses the keys, so that CMK can grant it access in the default keystore of each
+  # tenant and show it in the key access details.
+
   cryptoLayer:
     # -- Value reference to a YAML list, one entry per crypto layer region: the client
     # certificate subject with which that region's crypto layer uses the keys. CMK grants each
@@ -1347,6 +1432,11 @@ config:
   # keystorePool: keystores prepared in advance for new tenants. Read by: API server, tenant
   # manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # Creating a keystore at the provider takes time, so CMK prepares keystores in advance and
+  # gives one to each new tenant at once. The `keystore:fill` task keeps the pool at the
+  # configured size.
+
   keystorePool:
     # -- Number of prepared keystores that the `keystore:fill` task keeps in the pool (CMK
     # default 5).
@@ -1363,6 +1453,10 @@ config:
   # ---------------------------------------------------------------------------
   # provisioning: keystore added to the pool at startup. Read by: API server.
   # ---------------------------------------------------------------------------
+
+  # Adds one keystore that was created outside CMK to the keystore pool, for example to start a
+  # new installation with a known keystore.
+
   # **Enable it for the first start only, then disable it.** Every start of an API server pod
   # adds the keystore to the pool again, under a new ID: each replica, restart, rollout,
   # configuration change and autoscaler scale-up. Install with `enabled: true` and one API
@@ -1392,6 +1486,10 @@ config:
   # landscape: this CMK installation. Read by: API server, tenant manager, event reconciler,
   # task worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # Describes this CMK installation: its name and region in notifications and tasks, and the URL
+  # of the CMK UI for the links in workflow notifications.
+
   landscape:
     # -- Landscape name, shown in notifications.
     name: ""
@@ -1404,9 +1502,13 @@ config:
     region: ""
 
   # ---------------------------------------------------------------------------
-  # tenant: default limits of every tenant of this region. Read by: API server, tenant
-  # manager, event reconciler, task worker, cmkctl.
+  # tenant: default limits of every tenant of this region. Read by: API server, tenant manager,
+  # event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # Limits for every tenant of this region: how many key configurations a tenant may have, and
+  # how many systems and keys each key configuration may hold.
+
   # The Registry's tenant configuration (`UpdateTenantConfig`) overrides `systemLimit`,
   # `keyLimit` and `keyConfigLimit` for one tenant.
   tenant:
@@ -1420,8 +1522,14 @@ config:
     keyConfigLimit: 5
 
   # ---------------------------------------------------------------------------
-  # keys. Read by: API server, tenant manager, task worker, cmkctl.
+  # keys: time limits for keys in a pending state. Read by: API server, tenant manager, task
+  # worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # Keys whose registration or creation does not finish in time would stay pending forever.
+  # These limits move them to a final state, so that the tenant sees the failure and can try
+  # again.
+
   keys:
     # -- Time after which a key in `PENDING_REGISTRATION` becomes `FORBIDDEN` (CMK default).
     pendingRegistrationTimeout: 15m
@@ -1429,9 +1537,14 @@ config:
     pendingCreationTimeout: 15m
 
   # ---------------------------------------------------------------------------
-  # workflow: defaults of approval workflows for tenants without their own settings. Read
-  # by: API server, tenant manager, event reconciler, task worker, cmkctl.
+  # workflow: defaults of approval workflows for tenants without their own settings. Read by:
+  # API server, tenant manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # Changes to keys can require the approval of other administrators of the tenant (four-eyes
+  # principle). These values are the defaults for tenants that have not set their own: how many
+  # approvals are needed, and how long workflows stay open and are kept.
+
   # 0 keeps CMK's default, which equals the value below.
   workflow:
     # -- Approvals required, 2 to 5. Higher values are reduced to 5.
@@ -1448,6 +1561,10 @@ config:
   # configurableContext: properties of systems. Read by: API server, tenant manager, task
   # worker, cmkctl.
   # ---------------------------------------------------------------------------
+
+  # Defines the properties that CMK stores for each system and shows in the CMK UI: the built-in
+  # ones and the additional properties of your landscape.
+
   # -- Value reference to YAML with a `system` map. `identifier`, `region` and `type` are
   # the built-in properties; every other entry is an additional property: CMK stores the
   # values that the SystemInformationService plugin returns for it and shows them with each
