@@ -38,8 +38,8 @@ image:
   # `/etc/plugins/identity-management`. `cmk/images/cmk-full-base` is the same without
   # plugins. The `cmk/images/cmkd` image has no migrations and cannot run the migration jobs.
   repository: cmk/images/cmk-full-plugins
-  # -- **Required** unless `digest` is set. CMK version to deploy, for example `v0.11.0`. The
-  # chart's appVersion is not used as a fallback.
+  # -- CMK version to deploy, for example `v0.11.0`. Empty: the chart's appVersion, the CMK
+  # release this chart deploys by default.
   tag: ""
   # -- Image digest, for example `sha256:…`. Takes precedence over `tag`.
   digest: ""
@@ -240,8 +240,10 @@ cmkctl:
 dbMigrator:
   # -- Run the database migrations as Helm hooks: the schema migration before every install
   # and upgrade, the data migration after. Both migrate the shared schema and every tenant
-  # schema. If disabled, run `cmkd db-migrator` yourself: CMK does not start on an outdated
-  # schema. With many tenants, raise Helm's `--timeout` (default 5 minutes).
+  # schema. If disabled, run `cmkd db-migrator` yourself before and after every upgrade: CMK
+  # does not check the schema version at startup, so on an outdated schema it starts and its
+  # requests and tasks fail where they use a missing table or column. With many tenants,
+  # raise Helm's `--timeout` (default 5 minutes).
   enabled: true
   image:
     # -- Override the command. Default: `image.cmkdPath`.
@@ -286,12 +288,16 @@ podAnnotations: {}
 # -- Additional labels for all pods.
 podLabels: {}
 
-# -- Pod security context of all pods. The defaults run CMK as user and group 65532, the
-# non-root user of the published images, with the runtime's default seccomp profile.
+# -- Pod security context of all pods, including the migration jobs and
+# `extraInitContainers`. The defaults run CMK as user and group 65532, the non-root user of
+# the published images, with the runtime's default seccomp profile. `fsGroup: 65532` gives
+# that group access to the mounted volumes, so Secrets from `extraVolumes` stay readable with
+# a restrictive `defaultMode` such as `0440`.
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532
   runAsGroup: 65532
+  fsGroup: 65532
   seccompProfile:
     type: RuntimeDefault
 
@@ -391,8 +397,8 @@ service:
   # -- Annotations for the Service.
   annotations: {}
   # -- Service ports. `http` (8081) is the target of Envoy Gateway's route for `/cmk/v1`;
-  # `http-status` (8888) serves metrics if enabled. Remove `http-status` if nothing scrapes
-  # it through the Service.
+  # `http-status` (8888) serves the status endpoints, for example metrics if enabled. Remove
+  # `http-status` if nothing scrapes them through the Service.
   ports:
     - name: http
       port: 8081
@@ -420,11 +426,15 @@ podDisruptionBudget:
   # minAvailable: 1
   # maxUnavailable: 1
 
-# -- Additional init containers of all pods, including the migration jobs.
+# -- Additional init containers of all pods, including the migration jobs. They get the pod
+# security context (`podSecurityContext`), but not the container security context
+# (`securityContext`): set their own `securityContext`, for example
+# `{ allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }`.
 extraInitContainers: []
 
 # -- Additional containers of the component pods. Not added to the migration jobs (see
-# `dbMigrator.extraContainers`).
+# `dbMigrator.extraContainers`). Like `extraInitContainers`, they need their own
+# `securityContext`.
 extraContainers: []
 
 # -- Additional volumes of all pods, for example the Secrets with the database password,
@@ -456,9 +466,13 @@ extraVolumeMounts: []
 
 # -- Additional environment variables of all CMK containers. Plugin processes inherit them:
 # do not put credentials here that plugins should not see. An environment variable can only
-# change a setting that exists in the configuration file; the prefix depends on the process
-# (`CMK_`, `TENANT_MANAGER_`, `EVENT_RECONCILER_`, `CMK_TASK_SCHEDULER_`, `CMK_TASK_WORKER_`,
-# `DB_MIGRATOR_`).
+# change a setting that exists in the configuration file, for example `CMK_LOGGER_LEVEL` for
+# `logger.level` of the API server. The prefix depends on the process: `CMK_` (API server),
+# `TENANT_MANAGER_`, `EVENT_RECONCILER_`, `CMK_TASK_SCHEDULER_`, `CMK_TASK_WORKER_`,
+# `DB_MIGRATOR_`, and for commands in the cmkctl pod `TENANT_MANAGER_CLI_` (`cmkctl tenant`)
+# and `CMK_TASK_CLI_` (`cmkctl task`); `cmkctl sleep` reads none. The data migration 00006
+# reloads the configuration file without environment overrides: it uses `cryptoLayer` as
+# written in the db-migrator ConfigMap.
 extraEnvs: []
 
 # -- Additional `envFrom` sources of all CMK containers.
@@ -488,7 +502,7 @@ networkPolicy:
 tests:
   # -- Create the `helm test` pod, which calls the API server's readiness endpoint through
   # the Service.
-  enabled: true
+  enabled: false
   # -- Image of the test pod. It needs `wget`.
   image: busybox:1.37
   # -- Service port of the readiness endpoint (`http-status`).
@@ -637,8 +651,8 @@ config:
   # ---------------------------------------------------------------------------
   status:
     # -- Serve the status endpoints: `/probe/liveness`, `/probe/readiness` (checks the
-    # database), `/version`, and `/metrics` with Prometheus metrics. **Keep enabled**: the
-    # probes and the test pod use these endpoints.
+    # database), `/version`, and `/metrics` with `telemetry.metrics.prometheus.enabled`.
+    # **Keep enabled**: the probes and the test pod use these endpoints.
     enabled: true
     # -- Listen address of the status server. Must match the `http-status` container port.
     address: ":8888"
@@ -915,16 +929,22 @@ config:
     #   workflow:expire      daily 01:00      expire open approval workflows
     #   workflow:cleanup     daily 02:00      delete finished workflows after their retention
     #   tenant:refresh-name  daily 03:00      refresh tenant names
-    # Each entry: `taskType` (one of the above, at most one entry each), `enabled`, `cronspec`
-    # (cron expression or `@every <duration>`), `retries` (default 3), `timeOut`, and for
-    # `key:sync` `fanOutTask.{enabled,retries,timeOut}` (one subtask per tenant). Example:
-    #   - { taskType: key:sync, cronspec: "*/15 * * * *" }
+    # Each entry: `taskType` (one of the above, at most one entry each; startup fails
+    # otherwise), and the settings it changes: `enabled`, `cronspec` (cron expression or
+    # `@every <duration>`), `retries` (default 3). `timeOut` is accepted but not applied: the
+    # scheduled tasks keep their built-in timeout (5 minutes for `key:sync`, the task queue's
+    # default of 30 minutes for the others).
+    # `fanOutTask` (`enabled`, `retries`, `timeOut`) applies to every task above except
+    # `keystore:fill`: the task worker runs one subtask per tenant, with these retries and this
+    # timeout. It only fans out a task that has an entry here with `fanOutTask.enabled: true`;
+    # without one, the task processes all tenants itself, `key:sync` included. Example:
+    #   - { taskType: key:sync, cronspec: "*/15 * * * *", fanOutTask: { enabled: true, retries: 0, timeOut: 5m } }
     #   - { taskType: tenant:refresh-name, enabled: false }
     tasks: []
 
   # ---------------------------------------------------------------------------
   # tenantManager: jobs of this region's tenants from the central Registry over AMQP. Read
-  # by: tenant manager, cmkctl.
+  # by: tenant manager.
   # ---------------------------------------------------------------------------
   # **Required** when `tenantManager.deploy` is true: the tenant manager does not start
   # without `secretRef.type` and the three `amqp` fields. `amqp.source` and `amqp.target`
@@ -956,8 +976,7 @@ config:
     terminationTimeout: 48h
 
   # ---------------------------------------------------------------------------
-  # eventProcessor: key and system tasks to the regions over AMQP. Read by: event reconciler,
-  # API server.
+  # eventProcessor: key and system tasks to the regions over AMQP. Read by: event reconciler.
   # ---------------------------------------------------------------------------
   # **Required** when `eventReconciler.deploy` is true: every key and system task for a
   # region without a target fails with `target not configured for region`. Example:
@@ -973,8 +992,9 @@ config:
     # connects without TLS.
     secretRef:
       type: ""
-    # -- One target per region: `region`, `amqp.url` (`amqps://`), `amqp.target` (address
-    # for requests), `amqp.source` (address for replies).
+    # -- One target per region: `region`, `amqp.url` (**`amqps://`**: with `amqp://` no TLS
+    # is used, even with `mtls`), `amqp.target` (address for requests), `amqp.source`
+    # (address for replies).
     targets: []
     # -- Retries per task, with exponential backoff from 10 seconds up to about 3 hours. The
     # default of 18 retries spans about one day.
@@ -1065,9 +1085,15 @@ config:
   # ---------------------------------------------------------------------------
   # provisioning: keystore added to the pool at startup. Read by: API server.
   # ---------------------------------------------------------------------------
+  # **Enable it for the first start only, then disable it.** Every start of an API server pod
+  # adds the keystore to the pool again, under a new ID: each replica, restart, rollout,
+  # configuration change and autoscaler scale-up. Install with `enabled: true` and one API
+  # server replica, wait until the API server has started, then upgrade with
+  # `enabled: false`. The release notes warn while it is enabled.
   provisioning:
     initKeystoreConfig:
-      # -- Add the keystore below to the pool when the API server starts.
+      # -- Add the keystore below to the pool when an API server pod starts. Keep false
+      # except for the first start; see above.
       enabled: false
       # -- Keystore provider, for example `AWS`.
       provider: ""
@@ -1100,7 +1126,8 @@ config:
   # tenant: default limits of every tenant of this region. Read by: API server, tenant
   # manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
-  # The Registry's `UpdateTenantConfig` overrides `systemLimit` and `keyLimit` for one tenant.
+  # The Registry's tenant configuration (`UpdateTenantConfig`) overrides `systemLimit`,
+  # `keyLimit` and `keyConfigLimit` for one tenant.
   tenant:
     # -- Maximum number of systems linked to one key configuration. At least 1.
     systemLimit: 50

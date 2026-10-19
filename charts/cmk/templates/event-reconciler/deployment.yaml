@@ -56,7 +56,7 @@ spec:
       {{- end }}
       containers:
         - name: {{ include "cmk.name" . }}-event-reconciler
-          image: "{{ template "cmk.image" (tuple .Values.image) }}"
+          image: "{{ template "cmk.image" (tuple .Values.image .Chart.AppVersion) }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             {{- with .Values.eventReconciler.image.command }}

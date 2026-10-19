@@ -57,7 +57,7 @@ spec:
       {{- end }}
       containers:
         - name: {{ include "cmk.name" . }}-task-scheduler
-          image: "{{ template "cmk.image" (tuple .Values.image) }}"
+          image: "{{ template "cmk.image" (tuple .Values.image .Chart.AppVersion) }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             {{- with .Values.taskScheduler.image.command }}

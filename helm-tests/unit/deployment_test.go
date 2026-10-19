@@ -2,18 +2,23 @@
 
 package unit_test
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestDeploymentDefaults checks each component's Deployment with the default values. The
 // selector labels must never change: a Deployment's selector cannot be changed on upgrade.
 func TestDeploymentDefaults(t *testing.T) {
 	common := []string{
-		`image: "ghcr.io/openkcm/cmk/images/cmk-full-plugins:v0.11.0"`,
+		`image: "ghcr.io/openkcm/cmk/images/cmk-full-plugins:` + appVersion(t) + `"`,
 		"checksum/config:",
 		"automountServiceAccountToken: false",
 		"enableServiceLinks: false",
 		"runAsNonRoot: true",
 		"runAsUser: 65532",
+		"runAsGroup: 65532",
+		"fsGroup: 65532",
 		"readOnlyRootFilesystem: true",
 		"allowPrivilegeEscalation: false",
 		"name: http-status",
@@ -209,4 +214,53 @@ func TestDeploymentOptions(t *testing.T) {
 			checkContains(t, doc, tt.expected, tt.unexpected)
 		})
 	}
+}
+
+// TestImage checks the image of every CMK container: the tag defaults to the chart's
+// appVersion, and a digest takes precedence over the tag.
+func TestImage(t *testing.T) {
+	const repository = "ghcr.io/openkcm/cmk/images/cmk-full-plugins"
+	// Five Deployments and the two migration jobs; cmkctl is off by default.
+	const containers = 7
+	tests := []struct {
+		name       string
+		values     string
+		image      string
+		unexpected []string
+	}{
+		{
+			name:  "no tag: the chart's appVersion",
+			image: repository + ":" + appVersion(t),
+		},
+		{
+			name:   "tag",
+			values: "--set image.tag=v9.9.9",
+			image:  repository + ":v9.9.9",
+		},
+		{
+			name:       "the digest takes precedence over the tag",
+			values:     "--set image.tag=v9.9.9 --set image.digest=sha256:0123456789abcdef",
+			image:      repository + "@sha256:0123456789abcdef",
+			unexpected: []string{":v9.9.9\""},
+		},
+		{
+			name:   "no registry",
+			values: "--set image.registry= --set image.repository=cmk-api-server-dev --set image.tag=latest",
+			image:  "cmk-api-server-dev:latest",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := render(t, split(tt.values)...)
+			if n := strings.Count(output, `image: "`+tt.image+`"`); n != containers {
+				t.Errorf("expected %d containers with image %s, found %d", containers, tt.image, n)
+			}
+			checkContains(t, output, nil, tt.unexpected)
+		})
+	}
+
+	t.Run("version label", func(t *testing.T) {
+		checkContains(t, render(t), []string{`app.kubernetes.io/version: "` + appVersion(t) + `"`}, nil)
+	})
 }

@@ -64,15 +64,45 @@ Check the pods:
 {{- $services := $cfg.services | default dict }}
 {{- if .Values.tenantManager.deploy }}
 {{- $tm := $cfg.tenantManager | default dict }}
-{{- if not (and (($tm.secretRef | default dict).type) (($tm.amqp | default dict).url)) }}
+{{- $tmType := (($tm.secretRef | default dict).type) | default "" | toString }}
+{{- $tmURL := (($tm.amqp | default dict).url) | default "" | toString }}
+{{- if not (and $tmType $tmURL) }}
 {{- $warnings = append $warnings "tenantManager.deploy is true, but config.tenantManager (secretRef, amqp.url, amqp.source, amqp.target) is not set: the tenant manager does not start." }}
+{{- else }}
+{{- if ne $tmType "mtls" }}
+{{- $warnings = append $warnings "config.tenantManager.secretRef.type is not mtls: the connection to the AMQP broker is not encrypted. Use mtls unless a service mesh encrypts the traffic." }}
+{{- end }}
+{{- if hasPrefix "amqp://" (lower $tmURL) }}
+{{- $warnings = append $warnings "config.tenantManager.amqp.url starts with amqp://: the connection to the AMQP broker is not encrypted, even with mtls. Use amqps://." }}
+{{- end }}
 {{- end }}
 {{- if not (and $services.registry $services.registry.enabled $services.sessionManager $services.sessionManager.enabled) }}
 {{- $warnings = append $warnings "The tenant manager needs config.services.registry and config.services.sessionManager enabled." }}
 {{- end }}
 {{- end }}
-{{- if and .Values.eventReconciler.deploy (not (($cfg.eventProcessor | default dict).targets)) }}
+{{- if .Values.eventReconciler.deploy }}
+{{- $ep := $cfg.eventProcessor | default dict }}
+{{- if not $ep.targets }}
 {{- $warnings = append $warnings "config.eventProcessor.targets is empty: key and system tasks cannot be sent to any region." }}
+{{- else }}
+{{- if ne ((($ep.secretRef | default dict).type) | default "" | toString) "mtls" }}
+{{- $warnings = append $warnings "config.eventProcessor.secretRef.type is not mtls: the connections to the AMQP brokers are not encrypted. Use mtls unless a service mesh encrypts the traffic." }}
+{{- end }}
+{{- $plainRegions := list }}
+{{- range $ep.targets }}
+{{- if hasPrefix "amqp://" (lower ((((. | default dict).amqp | default dict).url) | default "" | toString)) }}
+{{- $plainRegions = append $plainRegions ((. | default dict).region | default "" | toString) }}
+{{- end }}
+{{- end }}
+{{- if $plainRegions }}
+{{- $warnings = append $warnings (printf "config.eventProcessor.targets use amqp:// for the regions %s: the connections to the AMQP brokers are not encrypted, even with mtls. Use amqps://." (join ", " $plainRegions)) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- with ((($cfg.provisioning | default dict).initKeystoreConfig) | default dict) }}
+{{- if and $.Values.apiServer.deploy .enabled }}
+{{- $warnings = append $warnings "config.provisioning.initKeystoreConfig.enabled is true: every API server pod start (replicas, restarts, rollouts, scale-ups) adds the keystore to the pool again. Set it to false once the API server has started for the first time." }}
+{{- end }}
 {{- end }}
 {{- range $name, $svc := $services }}
 {{- if and $svc $svc.enabled (ne (toString (($svc.secretRef | default dict).type)) "mtls") }}

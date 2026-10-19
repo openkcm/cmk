@@ -40,9 +40,6 @@ data:
     databaseReplicas:
       {{- toYaml .databaseReplicas | nindent 6 }}
 
-    tenantManager:
-      {{- toYaml .tenantManager | nindent 6 }}
-
     scheduler:
       {{- toYaml .scheduler | nindent 6 }}
 

@@ -64,9 +64,6 @@ data:
     plugins:
       {{- toYaml .plugins | nindent 6 }}
 
-    eventProcessor:
-      {{- toYaml .eventProcessor | nindent 6 }}
-
     configurableContext:
       {{- toYaml .configurableContext | nindent 6 }}
 

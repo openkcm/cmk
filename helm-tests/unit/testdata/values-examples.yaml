@@ -1,0 +1,227 @@
+# The examples documented in charts/cmk/values.yaml and charts/cmk/README.md, with every
+# component and every optional resource enabled. config_test.go loads each process's
+# config.yaml with CMK's configuration loader, so the documented examples stay valid.
+
+imagePullSecrets:
+  - name: registry-access
+
+replicaCount: 2
+
+autoscaling:
+  enabled: true
+
+apiServer:
+  extraArgs: [--graceful-shutdown=10]
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels: { app.kubernetes.io/component: cmk }
+
+tenantManager:
+  autoscaling:
+    enabled: true
+
+cmkctl:
+  deploy: true
+
+dbMigrator:
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 600
+  podAnnotations:
+    sidecar.istio.io/inject: "false"
+
+terminationGracePeriodSeconds: 30
+
+lifecycle:
+  preStop:
+    sleep:
+      seconds: 5
+
+podDisruptionBudget:
+  enabled: true
+
+networkPolicy:
+  enabled: true
+  http:
+    from:
+      - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: envoy-gateway-system } }
+  status:
+    from:
+      - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+
+featureFlagsConfigMap: cmk-feature-flags
+
+extraVolumes:
+  - name: credentials
+    projected:
+      sources:
+        - secret:
+            name: cmk-database
+            items: [{ key: password, path: database/password }, { key: ca.crt, path: database/ca.crt }]
+        - secret:
+            name: cmk-valkey
+            items: [{ key: password, path: valkey/password }, { key: tls.crt, path: valkey/tls.crt }, { key: tls.key, path: valkey/tls.key }, { key: ca.crt, path: valkey/ca.crt }]
+        - secret:
+            name: cmk-mtls
+            items: [{ key: tls.crt, path: mtls/tls.crt }, { key: tls.key, path: mtls/tls.key }, { key: ca.crt, path: mtls/ca.crt }]
+  - name: client-data-public-keys
+    secret:
+      secretName: cmk-client-data-public-keys
+extraVolumeMounts:
+  - { name: credentials, mountPath: /etc/credentials, readOnly: true }
+  - { name: client-data-public-keys, mountPath: /etc/signing-keys, readOnly: true }
+
+config:
+  labels: { landscape: eu10, team: kms }
+
+  featureFlags:
+    enabled: true
+
+  telemetry:
+    traces:
+      enabled: true
+      protocol: grpc
+      host: { value: otel-collector.observability.svc.cluster.local:4317 }
+      secretRef: { type: insecure }
+    metrics:
+      enabled: true
+      prometheus:
+        enabled: true
+
+  audit:
+    endpoint: https://otel-collector.observability.svc.cluster.local:4318/v1/logs
+    httpClient:
+      timeout: 10s
+      mtls:
+        cert:     { source: file, file: { path: /etc/credentials/audit/tls.crt, format: binary } }
+        certKey:  { source: file, file: { path: /etc/credentials/audit/tls.key, format: binary } }
+        serverCa: { source: file, file: { path: /etc/credentials/audit/ca.crt, format: binary } }
+    additionalProperties: |
+      appID: cmk
+      region: eu10
+
+  services:
+    registry:
+      enabled: true
+      address: registry.services.svc.cluster.local:9092
+      secretRef:
+        type: mtls
+        mtls:
+          cert:     { source: file, file: { path: /etc/credentials/mtls/tls.crt, format: binary } }
+          certKey:  { source: file, file: { path: /etc/credentials/mtls/tls.key, format: binary } }
+          serverCa: { source: file, file: { path: /etc/credentials/mtls/ca.crt, format: binary } }
+          attributes: { serverName: registry }
+    sessionManager:
+      enabled: true
+      address: session-manager.services.svc.cluster.local:9091
+      secretRef:
+        type: mtls
+        mtls:
+          cert:     { source: file, file: { path: /etc/credentials/mtls/tls.crt, format: binary } }
+          certKey:  { source: file, file: { path: /etc/credentials/mtls/tls.key, format: binary } }
+          serverCa: { source: file, file: { path: /etc/credentials/mtls/ca.crt, format: binary } }
+
+  database:
+    host: { value: postgresql.services.svc.cluster.local }
+    user: { value: cmk }
+    secret: { source: file, file: { path: /etc/credentials/database/password, format: binary } }
+    parameters:
+      ssl:
+        rootCert: /etc/credentials/database/ca.crt
+
+  databaseReplicas:
+    - host: { value: postgres-replica.storage.svc.cluster.local }
+      port: "5432"
+      name: cmk
+      user: { value: cmk }
+      secret: { source: file, file: { path: /etc/credentials/db/password, format: binary } }
+      parameters: { ssl: { mode: verify-full } }
+
+  scheduler:
+    taskQueue:
+      host: { value: valkey-primary.storage.svc.cluster.local }
+      acl:
+        enabled: true
+        username: { value: default }
+        password: { source: file, file: { path: /etc/credentials/valkey/password, format: binary } }
+      secretRef:
+        type: mtls
+        mtls:
+          cert:     { source: file, file: { path: /etc/credentials/valkey/tls.crt, format: binary } }
+          certKey:  { source: file, file: { path: /etc/credentials/valkey/tls.key, format: binary } }
+          serverCa: { source: file, file: { path: /etc/credentials/valkey/ca.crt, format: binary } }
+    tasks:
+      - { taskType: key:sync, cronspec: "*/15 * * * *", fanOutTask: { enabled: true, retries: 0, timeOut: 5m } }
+      - { taskType: tenant:refresh-name, enabled: false }
+
+  tenantManager:
+    secretRef:
+      type: mtls
+      mtls:
+        cert:     { source: file, file: { path: /etc/credentials/amqp/tls.crt, format: binary } }
+        certKey:  { source: file, file: { path: /etc/credentials/amqp/tls.key, format: binary } }
+        serverCa: { source: file, file: { path: /etc/credentials/amqp/ca.crt, format: binary } }
+    amqp:
+      url: amqps://rabbitmq.services.svc.cluster.local:5671
+      source: /queues/cmk.tenants.requests
+      target: /exchanges/cmk/mesh.tenants
+
+  eventProcessor:
+    secretRef:
+      type: mtls
+      mtls:
+        cert:     { source: file, file: { path: /etc/credentials/mtls/tls.crt, format: binary } }
+        certKey:  { source: file, file: { path: /etc/credentials/mtls/tls.key, format: binary } }
+        serverCa: { source: file, file: { path: /etc/credentials/mtls/ca.crt, format: binary } }
+    targets:
+      - region: eu10
+        amqp:
+          url: amqps://rabbitmq.services.svc.cluster.local:5671
+          target: /exchanges/cmk/eu10.requests
+          source: /queues/cmk.eu10.replies
+
+  plugins:
+    - name: AWS
+      type: KeystoreInstanceKeyOperation
+      path: /etc/plugins/keystore/keystoreop-aws
+      tags: [default_keystore, hyok]
+      yamlConfiguration: |
+        # plugin-specific settings
+    - { name: scim, type: IdentityManagementService }
+    - { name: noop, type: NotificationService }
+    - { name: noop, type: SystemInformationService }
+
+  cryptoLayer:
+    certX509Trusts:
+      value: |
+        - name: eu10
+          rootCA: https://pki.example.com/root-ca.crt
+          subject:
+            locality: [eu10]
+            country: [DE]
+            organization: [Example]
+            organizationUnit: [KMS]
+            commonNamePrefix: kms-crypto_
+
+  keystorePool:
+    supportedRegions:
+      - { name: Europe (Frankfurt), technicalName: eu-central-1 }
+
+  provisioning:
+    initKeystoreConfig:
+      enabled: true
+      provider: AWS
+      value:
+        localityId: 12345678-90ab-cdef-1234-567890abcdef
+        commonName: kms.example.com
+        managementAccessData: |
+          roleArn: arn:aws:iam::123456789012:role/KMSServiceRole
+        supportedRegions:
+          - { name: Europe (Frankfurt), technicalName: eu-central-1 }
+
+  landscape:
+    name: eu10
+    uiBaseUrl: https://ui.cmk.example.com/#
+    region: aws-qa-eu

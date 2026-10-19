@@ -29,7 +29,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Lint the chart
-        run: helm lint --strict charts/cmk --set image.tag=ci
+        run: |
+          helm lint --strict charts/cmk
+          helm lint --strict charts/cmk -f charts/cmk/values-dev.yaml
 
       - name: Run the helm unit tests
         run: make helm-unit-test

@@ -487,11 +487,12 @@ generate-task-proto:
 		internal/event-processor/proto/*.proto
 	goimports -w -local=github.com/openkcm/cmk internal/event-processor/proto/*.pb.go
 
+# Run cmkctl in the cmkctl pod of the chart (cmkctl.deploy: true in charts/cmk/values-dev.yaml).
 tenant-cli:
-	kubectl exec -it -n cmk deploy/cmk-tenant-manager-cli -- ./bin/tenant-manager-cli $(ARGS)
+	kubectl exec -it -n $(NAMESPACE) deploy/cmk-cmkctl -- /bin/cmkctl tenant $(ARGS)
 
 task-cli:
-	kubectl exec -it -n cmk deploy/cmk-task-cli -- ./bin/task-cli $(ARGS)
+	kubectl exec -it -n $(NAMESPACE) deploy/cmk-cmkctl -- /bin/cmkctl task $(ARGS)
 
 provision-tenants-k3d:
 	$(MAKE) tenant-cli ARGS="create -i tenant1 -r emea -s STATUS_ACTIVE -R ROLE_LIVE"

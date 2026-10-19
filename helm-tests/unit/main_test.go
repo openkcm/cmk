@@ -6,9 +6,14 @@ package unit_test
 
 import (
 	"bytes"
+	"errors"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -16,8 +21,24 @@ const (
 	releaseName = "cmk"
 )
 
+// appVersion returns the chart's appVersion, the default image tag.
+func appVersion(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(chartPath + "/Chart.yaml")
+	if err != nil {
+		t.Fatalf("reading Chart.yaml: %v", err)
+	}
+	var chart struct {
+		AppVersion string `yaml:"appVersion"`
+	}
+	err = yaml.Unmarshal(data, &chart)
+	if err != nil || chart.AppVersion == "" {
+		t.Fatalf("no appVersion in Chart.yaml: %v", err)
+	}
+	return chart.AppVersion
+}
+
 // render runs `helm template` with the given --set/-f/-s arguments and returns the output.
-// The image tag is set, because the chart requires it.
 func render(t *testing.T, args ...string) string {
 	t.Helper()
 	out, err := renderErr(t, args...)
@@ -36,8 +57,13 @@ func renderErr(t *testing.T, args ...string) (string, error) {
 // renderRelease is renderErr with another release name.
 func renderRelease(t *testing.T, release string, args ...string) (string, error) {
 	t.Helper()
-	cmdArgs := append([]string{"template", release, chartPath, "--namespace", "default", "--set", "image.tag=v0.11.0"}, args...)
-	cmd := exec.CommandContext(t.Context(), "helm", cmdArgs...)
+	return runHelm(t, append([]string{"template", release, chartPath, "--namespace", "default"}, args...)...)
+}
+
+// runHelm runs helm with the given arguments and returns its combined output.
+func runHelm(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "helm", args...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -53,6 +79,54 @@ func document(output, kind, name string) string {
 		}
 	}
 	return ""
+}
+
+// manifest holds the fields of a rendered resource that the tests read.
+type manifest struct {
+	Kind     string `yaml:"kind"`
+	Metadata struct {
+		Name string `yaml:"name"`
+	} `yaml:"metadata"`
+	Data map[string]string `yaml:"data"`
+	Spec struct {
+		Template struct {
+			Metadata struct {
+				Annotations map[string]string `yaml:"annotations"`
+			} `yaml:"metadata"`
+		} `yaml:"template"`
+	} `yaml:"spec"`
+}
+
+// manifests parses the output of `helm template`.
+func manifests(t *testing.T, output string) []manifest {
+	t.Helper()
+	var result []manifest
+	decoder := yaml.NewDecoder(strings.NewReader(output))
+	for {
+		var m manifest
+		err := decoder.Decode(&m)
+		if errors.Is(err, io.EOF) {
+			return result
+		}
+		if err != nil {
+			t.Fatalf("parsing the rendered manifests: %v", err)
+		}
+		if m.Kind != "" {
+			result = append(result, m)
+		}
+	}
+}
+
+// checksums returns the checksum/config annotation of every Deployment and Job, by name.
+func checksums(t *testing.T, output string) map[string]string {
+	t.Helper()
+	result := map[string]string{}
+	for _, m := range manifests(t, output) {
+		if m.Kind == "Deployment" || m.Kind == "Job" {
+			result[m.Metadata.Name] = m.Spec.Template.Metadata.Annotations["checksum/config"]
+		}
+	}
+	return result
 }
 
 // split turns "--set a=b --set c=d" into arguments.

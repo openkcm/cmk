@@ -28,9 +28,9 @@ func TestChartResources(t *testing.T) {
 				"name: cmk-schema-db-migrator",
 				"name: cmk-data-db-migrator",
 				"name: cmk-db-migrator-config",
-				"kind: Pod\nmetadata:\n  name: cmk-test-connection",
 			},
 			unexpected: []string{
+				"kind: Pod\n",
 				"name: cmk-cmkctl",
 				"kind: HorizontalPodAutoscaler",
 				"kind: PodDisruptionBudget",
@@ -88,11 +88,6 @@ func TestValidationErrors(t *testing.T) {
 		values string
 		errMsg string
 	}{
-		{
-			name:   "image tag or digest is required",
-			values: "--set image.tag=",
-			errMsg: "Either image.tag or image.digest must be set",
-		},
 		{
 			name:   "feature flags need their ConfigMap",
 			values: "--set config.featureFlags.enabled=true",

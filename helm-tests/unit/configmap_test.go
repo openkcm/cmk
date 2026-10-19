@@ -31,9 +31,10 @@ func TestConfigMapSections(t *testing.T) {
 			name:      "cmk",
 			expected: sections("featureGates", "featureFlags", "http", "logger", "status", "certificates",
 				"cryptoLayer", "telemetry", "scheduler", "database", "databaseReplicas", "services", "plugins",
-				"eventProcessor", "configurableContext", "provisioning", "audit", "clientData", "landscape",
+				"configurableContext", "provisioning", "audit", "clientData", "landscape",
 				"keystorePool", "tenant", "keys", "workflow"),
-			unexpected: sections("tenantManager"),
+			// Only the event reconciler reads eventProcessor, only the tenant manager tenantManager.
+			unexpected: sections("tenantManager", "eventProcessor"),
 		},
 		{
 			configMap: "cmk-tenant-manager-config",
@@ -71,9 +72,9 @@ func TestConfigMapSections(t *testing.T) {
 			values:    "--set cmkctl.deploy=true",
 			name:      "cmkctl",
 			expected: sections("featureGates", "featureFlags", "logger", "status", "telemetry", "database",
-				"databaseReplicas", "tenantManager", "scheduler", "plugins", "services", "audit", "certificates",
+				"databaseReplicas", "scheduler", "plugins", "services", "audit", "certificates",
 				"cryptoLayer", "landscape", "keystorePool", "configurableContext", "tenant", "keys", "workflow"),
-			unexpected: sections("http", "clientData", "eventProcessor", "provisioning"),
+			unexpected: sections("http", "clientData", "tenantManager", "eventProcessor", "provisioning"),
 		},
 		{
 			configMap:  "cmk-db-migrator-config",
@@ -206,6 +207,43 @@ func TestConfigMapReferences(t *testing.T) {
 			}
 			if checksum(deployment) == "" || checksum(deployment) == checksum(document(changed, "Deployment", deploymentName)) {
 				t.Errorf("Deployment %s: checksum/config missing or unchanged after a configuration change", deploymentName)
+			}
+		})
+	}
+}
+
+// TestChecksumPerComponent checks that checksum/config hashes each component's own
+// ConfigMap: a change to a section that only one process reads restarts only that
+// component.
+func TestChecksumPerComponent(t *testing.T) {
+	base := checksums(t, render(t, "--set", "cmkctl.deploy=true"))
+	for _, name := range []string{"cmk", "cmk-tenant-manager", "cmk-event-reconciler", "cmk-task-scheduler",
+		"cmk-task-worker", "cmk-cmkctl", "cmk-schema-db-migrator", "cmk-data-db-migrator"} {
+		if base[name] == "" {
+			t.Fatalf("%s has no checksum/config annotation", name)
+		}
+	}
+	tests := []struct {
+		name    string
+		values  string
+		changed string
+	}{
+		{name: "clientData: API server", values: "--set config.clientData.signingKeysPath=/etc/other-keys", changed: "cmk"},
+		{name: "provisioning: API server", values: "--set config.provisioning.initKeystoreConfig.provider=AWS", changed: "cmk"},
+		{name: "tenantManager: tenant manager", values: "--set config.tenantManager.terminationTimeout=24h", changed: "cmk-tenant-manager"},
+		{name: "eventProcessor: event reconciler", values: "--set config.eventProcessor.maxReconcileCount=5", changed: "cmk-event-reconciler"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			changed := checksums(t, render(t, append([]string{"--set", "cmkctl.deploy=true"}, split(tt.values)...)...))
+			for name, checksum := range base {
+				if name == tt.changed && changed[name] == checksum {
+					t.Errorf("%s: checksum/config unchanged", name)
+				}
+				if name != tt.changed && changed[name] != checksum {
+					t.Errorf("%s: checksum/config changed, but its process does not read the section", name)
+				}
 			}
 		})
 	}

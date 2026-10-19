@@ -1,5 +1,6 @@
 # Values for local development with `make start-cmk` (k3d), applied on top of values.yaml.
-# They contain development credentials: never use them elsewhere.
+# They contain development credentials: never use them elsewhere. Not part of the chart
+# package (.helmignore).
 
 # The development image (Dockerfile.dev) has the binaries in /bin.
 image:
@@ -15,6 +16,12 @@ cmkctl:
 extraInitContainers:
   - name: wait-for-postgresql
     image: busybox:1.35
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
     command:
       - sh
       - -c
@@ -59,9 +66,10 @@ config:
   logger:
     level: debug
 
+  # Metrics on /metrics of the status port.
   telemetry:
     metrics:
-      enabled: false
+      enabled: true
       prometheus:
         enabled: true
 
@@ -180,6 +188,8 @@ config:
               x-app_tid: app_tid
               x-client_id: client_id
 
+  # Local development only: every API server start adds this keystore to the pool again.
+  # Never keep it enabled in another installation; see config.provisioning in values.yaml.
   provisioning:
     initKeystoreConfig:
       enabled: true

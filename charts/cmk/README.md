@@ -36,9 +36,8 @@ ConfigMap holds the sections of `config` that its process reads.
 For a release named `cmk`, the names start with `cmk` instead of `cmk-cmk`.
 
 Optional: NetworkPolicies (`networkPolicy.enabled`), HorizontalPodAutoscalers
-(`autoscaling`, `tenantManager.autoscaling`), PodDisruptionBudgets for the API server
-and the tenant manager (`podDisruptionBudget.enabled`), and a `helm test` pod
-(`tests.enabled`).
+(`autoscaling`, `tenantManager.autoscaling`) and PodDisruptionBudgets for the API server
+and the tenant manager (`podDisruptionBudget.enabled`).
 
 The chart contains one template file per resource and component, under
 `templates/<component>/`; each ConfigMap writes its `config.yaml` section by section.
@@ -192,15 +191,16 @@ the install or upgrade.
 | `config.clientData.signingKeysPath` | `/etc/signing-keys` | **Required.** Mount ExtAuthZ's public keys here |
 | `config.services`, `config.tenantManager` | disabled, empty | **Required** by the tenant manager |
 | `config.eventProcessor.targets` | `[]` | One AMQP target per region |
+| `config.provisioning.initKeystoreConfig.enabled` | `false` | Adds a keystore to the pool at every API server start. Enable it for the first start only, see [Configuration](#configuration) |
 | `extraVolumes`, `extraVolumeMounts`, `extraEnvs` | `[]` | Applied to all components and the migration jobs |
 
 ## Security defaults
 
 | Setting | Default |
 | --- | --- |
-| Pods | Non-root (user and group 65532), `RuntimeDefault` seccomp profile, no ServiceAccount token, no Service environment variables |
-| Containers | No privilege escalation, all capabilities dropped, read-only root filesystem, writable `/tmp` |
-| Secrets | No default values; the release notes report embedded values |
+| Pods | Non-root (user, group and `fsGroup` 65532), `RuntimeDefault` seccomp profile, no ServiceAccount token, no Service environment variables |
+| Containers | No privilege escalation, all capabilities dropped, read-only root filesystem, writable `/tmp`. `extraInitContainers` and `extraContainers` get only the pod settings: set their own `securityContext` |
+| Secrets | No default values. The release notes warn when `config.database.secret` or `config.scheduler.taskQueue.acl.password` is embedded; use `source: file` for every password, key and token |
 | Database TLS | `verify-full` |
 | Log level | `info`. At `debug`, CMK logs its complete configuration, including embedded secrets |
 | Swagger UI and profiling endpoints | Off |
@@ -223,12 +223,12 @@ manager: `/etc/tenant-manager/config.yaml`). Only the file is mounted, so
 
 | Process | Sections |
 | --- | --- |
-| API server | all except `tenantManager` |
+| API server | all except `tenantManager` and `eventProcessor` |
 | Tenant manager | `featureGates`, `featureFlags`, `logger`, `status`, `telemetry`, `database`, `databaseReplicas`, `services`, `tenantManager`, `plugins`, `audit`, `certificates`, `cryptoLayer`, `landscape`, `keystorePool`, `configurableContext`, `tenant`, `keys`, `workflow` |
 | Event reconciler | `logger`, `status`, `telemetry`, `audit`, `plugins`, `services`, `database`, `databaseReplicas`, `eventProcessor`, `landscape`, `cryptoLayer`, `featureGates`, `featureFlags`, `certificates`, `keystorePool`, `tenant`, `workflow` |
 | Task scheduler | `status`, `logger`, `telemetry`, `database`, `scheduler`, `certificates` |
 | Task worker | `featureGates`, `featureFlags`, `logger`, `status`, `telemetry`, `database`, `databaseReplicas`, `scheduler`, `configurableContext`, `certificates`, `services`, `plugins`, `audit`, `keystorePool`, `keys`, `landscape`, `cryptoLayer`, `tenant`, `workflow` |
-| cmkctl | the tenant manager's sections and `scheduler` |
+| cmkctl | `featureGates`, `featureFlags`, `logger`, `status`, `telemetry`, `database`, `databaseReplicas`, `scheduler`, `plugins`, `services`, `audit`, `certificates`, `cryptoLayer`, `landscape`, `keystorePool`, `configurableContext`, `tenant`, `keys`, `workflow` |
 | db-migrator | `status`, `logger`, `telemetry`, `database`, `databaseReplicas`, `cryptoLayer` |
 
 - `config.environment` and `config.labels` become `application.environment` and
@@ -242,6 +242,11 @@ manager: `/etc/tenant-manager/config.yaml`). Only the file is mounted, so
   changes.
 - Secrets that you manage yourself need a restart after a change, for example
   `kubectl rollout restart deployment -l app.kubernetes.io/part-of=cmk`.
+- `config.provisioning.initKeystoreConfig` adds its keystore to the pool every time an
+  API server pod starts, under a new ID: each replica, restart, rollout and autoscaler
+  scale-up. Enable it only for the first start: install with `enabled: true` and one API
+  server replica, wait until the API server has started, then upgrade with
+  `enabled: false`. The release notes warn while it is enabled.
 
 ## Upgrading from 0.1.x
 
@@ -259,14 +264,14 @@ manager: `/etc/tenant-manager/config.yaml`). Only the file is mounted, so
 | Migration jobs and their ConfigMap are named after the release | None for a release named `cmk` |
 | `config.aws` was removed from `values.yaml`; it was never written into the configuration | None |
 | `config.yaml` is mounted as a file (`subPath`) | None |
-| New security defaults (user 65532, read-only root filesystem), probe thresholds, resource requests and limits | Override `podSecurityContext`, `securityContext`, the probes and `resources` if needed |
+| New security defaults (user, group and `fsGroup` 65532, read-only root filesystem), probe thresholds, resource requests and limits | Override `podSecurityContext`, `securityContext`, the probes and `resources` if needed |
 | `serviceAccount.automount` defaults to `false`; with `create: false` all components use `serviceAccount.name` (was `<name>-<component>`) | Create your ServiceAccount, or keep `create: true` |
 | `autoscaling` applies to the API server only; the tenant manager has `tenantManager.autoscaling` | Move the settings |
 | The task scheduler always runs one replica with the `Recreate` strategy | None |
 | PodDisruptionBudgets without `minAvailable` or `maxUnavailable` use `maxUnavailable: 1` (was `minAvailable: 1`) | Set `minAvailable` explicitly if you want the old behaviour |
 | The migration jobs get no `extraContainers`, but `dbMigrator.extraContainers`, resources and retry settings | Move containers that exit on their own to `dbMigrator.extraContainers` |
 | `featureFlagsConfigMap` must be set when `config.featureFlags.enabled` is true | Set it; the chart fails otherwise |
-| The values for local development are no longer part of the chart: they are in the cmk repository (`local_env/values-dev.yaml`) | Copy settings from `values.yaml` if you used them as a template |
+| The values for local development are no longer part of the chart package: `values-dev.yaml` stays in the cmk repository next to the chart (`charts/cmk/values-dev.yaml`), for `make start-cmk` only | Copy settings from `values.yaml` if you used them as a template |
 
 For a release named `cmk`, delete the immutable ConfigMaps of 0.1.x right before the
 upgrade. Running pods keep their mounted `config.yaml`; the upgrade creates the
@@ -296,14 +301,19 @@ lists more symptoms.
 
 ## Development
 
-The unit tests of this chart are in `tests/cmk` of this repository:
+The unit tests of this chart are in `helm-tests/unit` of the cmk repository. They render
+the chart with `helm template` and load each process's `config.yaml` with CMK's own
+configuration loader. Run them from the repository root; they need `helm` in `PATH`:
 
 ```sh
-(cd tests && go test ./cmk/)
+make helm-unit-test
 ```
 
-To run CMK locally with this chart, use `make start-cmk CMK_CHART=../charts/cmk` in the cmk
-repository; its values for local development are in `local_env/values-dev.yaml` there.
+`make start-cmk` runs CMK locally in k3d with this chart and `charts/cmk/values-dev.yaml`
+(the development image `cmk-api-server-dev` and development credentials).
+`make k3d-add-cmk` rebuilds the image and redeploys the chart; `make tenant-cli ARGS="…"`
+and `make task-cli ARGS="…"` run `cmkctl tenant` and `cmkctl task` in the cmkctl pod.
+`values-dev.yaml` is excluded from the chart package (`.helmignore`).
 
 ## Uninstall
 

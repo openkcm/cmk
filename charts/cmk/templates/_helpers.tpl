@@ -158,15 +158,20 @@ serviceAccount.name, or "default".
 {{- end }}
 
 {{/*
-Image reference. Either image.tag or image.digest must be set; there is no fallback to appVersion.
-A digest takes precedence over a tag.
+Image reference: registry and repository, then the digest if set, else the tag. The tag
+defaults to the chart's appVersion, the CMK release this chart deploys by default.
+Call it with (tuple .Values.image .Chart.AppVersion).
 */}}
 {{- define "cmk.image" -}}
-{{- with index . 0 -}}
-{{- if not (or .digest .tag) -}}{{ fail "Either image.tag or image.digest must be set" }}{{- end -}}
-{{- if .registry -}}{{ printf "%s/%s" .registry .repository }}{{- else -}}{{- .repository -}}{{- end -}}
-{{- if .digest -}}{{ printf "@%s" (toString .digest) }}{{- else -}}{{ printf ":%s" (toString .tag) }}{{- end -}}
-{{- end }}
+{{- $image := index . 0 -}}
+{{- $appVersion := index . 1 -}}
+{{- $repository := $image.repository -}}
+{{- if $image.registry -}}{{- $repository = printf "%s/%s" $image.registry $image.repository -}}{{- end -}}
+{{- if $image.digest -}}
+{{- printf "%s@%s" $repository (toString $image.digest) -}}
+{{- else -}}
+{{- printf "%s:%s" $repository (toString ($image.tag | default $appVersion)) -}}
+{{- end -}}
 {{- end }}
 
 {{/*
