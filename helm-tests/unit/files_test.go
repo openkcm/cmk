@@ -547,6 +547,51 @@ func TestScimSettingsFile(t *testing.T) {
 		t.Errorf("the fields of the scim.json blueprint %v differ from the documented ones %v",
 			jsonFields(blueprint, ""), jsonFields(example, ""))
 	}
+
+	// values-dev.yaml configures the scim plugin from that mounted file, selecting each field
+	// with jsonPath in dot notation; common-sdk does not accept the bracket form.
+	t.Run("values-dev.yaml", func(t *testing.T) {
+		var dev struct {
+			Config struct {
+				Plugins []struct {
+					Type              string `yaml:"type"`
+					YamlConfiguration string `yaml:"yamlConfiguration"`
+				} `yaml:"plugins"`
+			} `yaml:"config"`
+		}
+		data, err := os.ReadFile(valuesDev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = yaml.Unmarshal(data, &dev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var devSettings string
+		for _, plugin := range dev.Config.Plugins {
+			if plugin.Type == "IdentityManagementService" {
+				devSettings = plugin.YamlConfiguration
+			}
+		}
+		if devSettings == "" {
+			t.Fatal("values-dev.yaml has no IdentityManagementService plugin settings")
+		}
+		devSettings = strings.ReplaceAll(devSettings, "/etc/credentials/identity-management/scim.json", path)
+
+		_, err = scim.NewPlugin().Configure(t.Context(), &configv1.ConfigureRequest{YamlConfiguration: devSettings})
+		if err != nil {
+			t.Fatalf("the scim plugin rejects the settings of values-dev.yaml: %v", err)
+		}
+		var devCfg scimconfig.Config
+		decodeStrict(t, "scim of values-dev.yaml", devSettings, &devCfg)
+		devParams, err := scim.CreateParams(&devCfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if devParams.BaseHost != "https://scim.example.com/scim/v2" || devParams.ListMethod != "POST" {
+			t.Errorf("unexpected settings from values-dev.yaml: %+v", devParams)
+		}
+	})
 }
 
 // jsonFields returns the paths of the string values of a JSON document, such as $.auth.cert.
