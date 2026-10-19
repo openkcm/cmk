@@ -183,3 +183,28 @@ or booleans, which Kubernetes rejects in annotations.
 {{ $key }}: {{ $value | toString | quote }}
 {{- end }}
 {{- end }}
+
+{{/*
+config.yaml of one CMK process: its application block and the sections of `config` it reads.
+Call it with (list $ "<application name>" "<section>" ...), as the configmap.yaml of each
+process does:
+- application: the given name, with config.environment and config.labels.
+- http: the API server's listen address from config.http.port, and swaggerEnabled.
+- every other section is written as it is under config in values.yaml.
+*/}}
+{{- define "cmk.config" -}}
+{{- $root := index . 0 -}}
+{{- $config := $root.Values.config -}}
+{{- $application := dict "name" (index . 1) -}}
+{{- with $config.environment }}{{- $_ := set $application "environment" . }}{{- end }}
+{{- with $config.labels }}{{- $_ := set $application "labels" . }}{{- end }}
+{{- $out := dict "application" $application -}}
+{{- range $section := slice . 2 }}
+{{- if eq $section "http" }}
+{{- $_ := set $out "http" (dict "address" (printf ":%v" $config.http.port) "swaggerEnabled" ($config.http.swaggerEnabled | default false)) }}
+{{- else }}
+{{- $_ := set $out $section (index $config $section) }}
+{{- end }}
+{{- end }}
+{{- toYaml $out }}
+{{- end }}

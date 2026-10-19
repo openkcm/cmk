@@ -9,88 +9,12 @@ metadata:
     {{- include "cmk.labels" . | nindent 4 }}
 immutable: {{ .Values.config.isImmutable | default false }}
 data:
+  # The sections of `config` that the API server reads (helper cmk.config in _helpers.tpl).
   config.yaml: |-
-    application:
-      name: {{ .Chart.Name }}
-    {{- with .Values.config }}
-      environment: {{ .environment }}
-      {{- with .labels }}
-      labels:
-        {{- toYaml . | nindent 8 }}
-      {{- end}}
-
-    featureGates:
-      {{- toYaml .featureGates | nindent 6 }}
-
-    featureFlags:
-      {{- toYaml .featureFlags | nindent 6 }}
-
-    http:
-      address: :{{ .http.port }}
-      swaggerEnabled: {{ .http.swaggerEnabled | default false }}
-
-    logger:
-      {{- toYaml .logger | nindent 6 }}
-
-    status:
-      {{- toYaml .status | nindent 6 }}
-
-    certificates:
-      {{- toYaml .certificates | nindent 6 }}
-
-    cryptoLayer:
-      {{- toYaml .cryptoLayer | nindent 6 }}
-
-    # Telemetry configuration
-    telemetry:
-      {{- toYaml .telemetry | nindent 6 }}
-
-    # Scheduler configuration
-    scheduler:
-      {{- toYaml .scheduler | nindent 6 }}
-
-    # Database configuration
-    database:
-      {{- toYaml .database | nindent 6 }}
-
-    databaseReplicas:
-      {{- toYaml .databaseReplicas | nindent 6 }}
-
-    # Services configuration
-    services:
-      {{- toYaml .services | nindent 6 }}
-
-    # Plugins configuration
-    plugins:
-      {{- toYaml .plugins | nindent 6 }}
-
-    configurableContext:
-      {{- toYaml .configurableContext | nindent 6 }}
-
-    provisioning:
-      {{- toYaml .provisioning | nindent 6 }}
-
-    audit:
-      {{- toYaml .audit | nindent 6 }}
-
-    clientData:
-      {{- toYaml .clientData | nindent 6 }}
-
-    landscape:
-      {{- toYaml .landscape | nindent 6 }}
-
-    keystorePool:
-      {{- toYaml .keystorePool | nindent 6 }}
-
-    # Default limits of every tenant
-    tenant:
-      {{- toYaml .tenant | nindent 6 }}
-
-    keys:
-      {{- toYaml .keys | nindent 6 }}
-
-    workflow:
-      {{- toYaml .workflow | nindent 6 }}
-
-    {{- end }}
+    {{- include "cmk.config" (list . .Chart.Name
+        "featureGates" "featureFlags" "http" "logger" "status" "certificates"
+        "cryptoLayer" "telemetry" "scheduler" "database" "databaseReplicas" "services"
+        "plugins" "configurableContext" "provisioning" "audit" "clientData"
+        "landscape" "keystorePool" "tenant" "keys" "workflow"
+    ) | nindent 4 }}
 {{- end }}

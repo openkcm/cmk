@@ -526,9 +526,9 @@ tests:
 # Where it goes: every component has its own ConfigMap (templates/<component>/configmap.yaml),
 # named `<fullname>-config` for the API server and `<fullname>-<component>-config` for the
 # others. It holds `config.yaml`, mounted at `/etc/cmk/config.yaml` (tenant manager:
-# `/etc/tenant-manager/config.yaml`). Each ConfigMap writes only the sections its process
-# reads; the "Read by" line of each section below names those processes. `application.name`
-# is set per component.
+# `/etc/tenant-manager/config.yaml`). Each ConfigMap lists only the sections its process
+# reads, in one call of the helper cmk.config (templates/_helpers.tpl); the "Read by" line of
+# each section below names those processes. `application.name` is set per component.
 #
 # Changes: a configuration change restarts the affected pods (`checksum/config` annotation).
 # The migration jobs run with the db-migrator ConfigMap on every install and upgrade.

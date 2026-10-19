@@ -92,7 +92,8 @@ func TestConfigMapSections(t *testing.T) {
 			}
 			expected := append([]string{
 				"namespace: default\n",
-				"application:\n      name: " + tt.name + "\n      environment: production\n",
+				// cmk.config writes the keys sorted, as toYaml does.
+				"application:\n      environment: production\n      name: " + tt.name + "\n",
 			}, tt.expected...)
 			checkContains(t, doc, expected, tt.unexpected)
 		})

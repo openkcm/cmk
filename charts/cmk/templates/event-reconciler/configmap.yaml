@@ -9,66 +9,11 @@ metadata:
     {{- include "cmk.event-reconciler.labels" . | nindent 4 }}
 immutable: {{ .Values.config.isImmutable | default false }}
 data:
+  # The sections of `config` that the event reconciler reads (helper cmk.config in _helpers.tpl).
   config.yaml: |-
-    application:
-      name: event-reconciler
-    {{- with .Values.config }}
-      environment: {{ .environment }}
-      {{- with .labels }}
-      labels:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-
-    logger:
-      {{- toYaml .logger | nindent 6 }}
-
-    status:
-      {{- toYaml .status | nindent 6 }}
-
-    audit:
-      {{- toYaml .audit | nindent 6 }}
-
-    plugins:
-      {{- toYaml .plugins | nindent 6 }}
-
-    services:
-      {{- toYaml .services | nindent 6 }}
-
-    telemetry:
-      {{- toYaml .telemetry | nindent 6 }}
-
-    database:
-      {{- toYaml .database | nindent 6 }}
-
-    databaseReplicas:
-      {{- toYaml .databaseReplicas | nindent 6 }}
-
-    eventProcessor:
-      {{- toYaml .eventProcessor | nindent 6 }}
-
-    landscape:
-      {{- toYaml .landscape | nindent 6 }}
-
-    cryptoLayer:
-      {{- toYaml .cryptoLayer | nindent 6 }}
-
-    featureGates:
-      {{- toYaml .featureGates | nindent 6 }}
-
-    featureFlags:
-      {{- toYaml .featureFlags | nindent 6 }}
-
-    certificates:
-      {{- toYaml .certificates | nindent 6 }}
-
-    keystorePool:
-      {{- toYaml .keystorePool | nindent 6 }}
-
-    # Default limits of every tenant
-    tenant:
-      {{- toYaml .tenant | nindent 6 }}
-
-    workflow:
-      {{- toYaml .workflow | nindent 6 }}
-    {{- end }}
+    {{- include "cmk.config" (list . "event-reconciler"
+        "logger" "status" "audit" "plugins" "services" "telemetry" "database"
+        "databaseReplicas" "eventProcessor" "landscape" "cryptoLayer" "featureGates"
+        "featureFlags" "certificates" "keystorePool" "tenant" "workflow"
+    ) | nindent 4 }}
 {{- end }}

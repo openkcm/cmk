@@ -216,8 +216,9 @@ Everything under `config` in `values.yaml` is CMK's own configuration. Every key
 there with its default, its allowed values and an example, and each section names the
 processes that read it.
 
-Each component's ConfigMap (`templates/<component>/configmap.yaml`) writes the sections
-its process reads into `config.yaml`, mounted at `/etc/cmk/config.yaml` (the tenant
+Each component's ConfigMap (`templates/<component>/configmap.yaml`) lists the sections its
+process reads, and the helper `cmk.config` (`templates/_helpers.tpl`) writes them into
+`config.yaml`, mounted at `/etc/cmk/config.yaml` (the tenant
 manager: `/etc/tenant-manager/config.yaml`). Only the file is mounted, so
 `/etc/cmk/migrations` of the image stays visible.
 
