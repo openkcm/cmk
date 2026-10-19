@@ -535,24 +535,43 @@ tests:
 #
 # Startup checks: CMK rejects unknown keys, so a misspelled or misplaced key stops the
 # process with `has invalid keys: <key>`. It also checks `scheduler.tasks`,
-# `certificates.validityDays`, `cryptoLayer.certX509Trusts` and the `tenant` limits.
+# `certificates.validityDays`, `cryptoLayer.certX509Trusts` and the `tenant` limits. Key
+# names are not case-sensitive. The keys of maps are converted to lower case: `labels`,
+# `featureGates`, `logger.formatter.fields.masking.other` and `plugins[].env`.
 #
-# Value references: settings marked "value reference" take one of
-#   { source: embedded, value: "…" }                     the value itself, stored in plain text
-#                                                         in the ConfigMap
-#   { source: env, env: NAME }                            an environment variable, see `extraEnvs`
-#   { source: file, file: { path: …, format: binary } }   the content of a file, for example from
-#                                                         a Secret mounted with `extraVolumes`;
-#                                                         `format: json` or `yaml` with `jsonPath`
-#                                                         reads one field of the file
-# **Use `source: file` for every password, key and token.**
+# Defaults: "CMK default" names the value CMK uses when a key is missing, empty or 0. The
+# values below are written into `config.yaml` as they are.
 #
-# Credentials (`secretRef`) of the Registry, Session Manager, Valkey and AMQP connections:
-#   { type: insecure }   no TLS. Only inside a service mesh that encrypts the traffic.
-#   { type: mtls, mtls: { cert: …, certKey: …, serverCa: …, attributes: { serverName: … } } }
-#                        TLS with a client certificate. `cert`, `certKey` (client certificate and
-#                        key) and `serverCa` (CA of the server certificate) are value references;
-#                        `attributes.serverName` overrides the expected server name.
+# Durations: Go duration strings, for example `500ms`, `10s`, `5m`, `1h30m`.
+#
+# Value references: settings marked "value reference" take one of these forms:
+#   { source: embedded, value: "…" }      # the value itself. Stored in plain text in the
+#                                         # ConfigMap: do not use it for secrets
+#   { source: env, env: VARIABLE_NAME }   # an environment variable of the container
+#                                         # (extraEnvs, extraEnvsFrom); it must not be empty
+#   { source: file, file: { path: /etc/credentials/db/password, format: binary } }
+#                                         # the whole file as it is: a trailing newline is part
+#                                         # of the value. Mount Secrets with extraVolumes and
+#                                         # extraVolumeMounts. format: yaml reads the whole file
+#                                         # too
+#   { source: file, file: { path: /etc/credentials/db.json, format: json, jsonPath: "$.password" } }
+#                                         # one string field of a JSON file
+# `source` defaults to `embedded`. **Use `source: file` for every password, key and token.**
+#
+# secretRef: the security of a connection. Each connection below names the types it
+# supports; the Registry, Session Manager, task queue and AMQP connections support:
+#   { type: insecure }                    # no TLS. Only inside a service mesh that encrypts
+#                                         # the traffic
+#   type: mtls                            # TLS with a client certificate
+#   mtls:
+#     cert: <value reference>             # client certificate (PEM)
+#     certKey: <value reference>          # its private key (PEM)
+#     serverCa: <value reference>         # CA that signed the server certificate
+#     rootCAs: [<value reference>]        # additional trusted CAs. Without serverCa and
+#                                         # rootCAs: the CAs of the image
+#     attributes:
+#       serverName: …                     # expected server name, if it differs from the host
+# Use `mtls` in production.
 config:
   # -- Create the ConfigMaps as immutable. The ConfigMap names do not change with their
   # content, so with `true` every upgrade that changes the configuration fails: Kubernetes
@@ -564,12 +583,13 @@ config:
   # application. Read by: all components.
   # ---------------------------------------------------------------------------
 
-  # -- Environment name, written as `application.environment`. Attached to logs, traces,
-  # metrics and audit events.
+  # -- Environment name, written as `application.environment`. Attached to logs, traces and
+  # metrics.
   environment: production
 
   # -- Additional attributes, written as `application.labels`, attached to logs, traces and
-  # metrics. Example: `{ landscape: eu10, team: kms }`.
+  # metrics: a map of strings, with the keys converted to lower case. Example:
+  # `{ landscape: eu10, team: kms }`.
   labels: {}
 
   # ---------------------------------------------------------------------------
@@ -577,19 +597,22 @@ config:
   # task worker, cmkctl.
   # ---------------------------------------------------------------------------
 
+  # Feature gates: a map of gate name to `true` or `false`. CMK reads only `allow-byok`.
   featureGates:
-    # -- Allow BYOK (bring your own key) keys. Applies only while `featureFlags.enabled` is
-    # false; with feature flags, the flag `enable_byok_<plugin>` decides per keystore. CMK
-    # reads no other feature gate.
+    # -- Allow BYOK (bring your own key) keys in the default keystore (the keystore plugin
+    # tagged `default_keystore`). Applies only while `featureFlags.enabled` is false; with
+    # feature flags, the flag `enable_byok_<plugin>` decides.
     allow-byok: false
 
   # Feature flags file (OpenFeature, GO Feature Flag format), re-read while running. Flag
-  # names, where <plugin> is the keystore plugin name in lower case:
-  #   enable_byok_<plugin>           allow BYOK keys in this keystore
+  # names, where <plugin> is the `name` of a KeystoreInstanceKeyOperation plugin in lower
+  # case:
+  #   enable_byok_<plugin>           allow BYOK keys; read for the `default_keystore` plugin
   #   enable_hyok_<plugin>           allow HYOK keys in this keystore
-  #   detect_hyok_rotation_<plugin>  detect new key versions of HYOK keys
-  # Without feature flags, HYOK and rotation detection are allowed for every keystore and BYOK
-  # follows `featureGates.allow-byok`. Flags apply to all tenants. Example file:
+  #   detect_hyok_rotation_<plugin>  detect new key versions of HYOK keys in this keystore
+  # A flag that is missing from the file is off. Without feature flags, HYOK and rotation
+  # detection are allowed for every keystore and BYOK follows `featureGates.allow-byok`.
+  # Flags apply to all tenants. Example file:
   #   enable_hyok_aws:
   #     variations: { "on": true, "off": false }
   #     defaultRule: { variation: "on" }
@@ -597,18 +620,19 @@ config:
     # -- Use the feature flags file. Needs `featureFlagsConfigMap`, which mounts the file;
     # the chart fails to render without it.
     enabled: false
-    # -- Path of the feature flags file. `featureFlagsConfigMap` is mounted at the directory
-    # of this path, so the file name must be a key of that ConfigMap.
+    # -- Path of the feature flags file (CMK default). `featureFlagsConfigMap` is mounted at
+    # the directory of this path, so the file name must be a key of that ConfigMap.
     filePath: /etc/featureflags/flags.yaml
-    # -- How often the file is re-read, as a duration (`30s`, `5m`).
+    # -- How often the file is re-read, as a duration (CMK default `60s`).
     pollingInterval: 60s
 
   # ---------------------------------------------------------------------------
   # logger. Read by: all components.
   # ---------------------------------------------------------------------------
   logger:
-    # -- Log level: `debug`, `info`, `warn` or `error`. **At `debug`, CMK logs its complete
-    # configuration**, including embedded secrets. Use `info` in production.
+    # -- Log level: `trace`, `debug`, `info`, `warn` or `error`; any other value means
+    # `info`. At `debug` and `trace`, CMK logs its complete configuration: use `info` in
+    # production, and `source: file` for secrets.
     level: info
     # -- Log format: `json` or `text`. Any other value stops the process at its first log
     # entry.
@@ -617,32 +641,41 @@ config:
     source: false
     formatter:
       time:
-        # -- Timestamp format: `pattern` (Go time layout below) or `unix`.
+        # -- Timestamp format: `pattern` (the Go time layout below, in UTC) or `unix` (a
+        # number of `precision` units since 1970; CMK default). Any other value stops the
+        # process at its first log entry.
         type: pattern
         # -- Go time layout, for `type: pattern`.
         pattern: "Mon Jan 02 15:04:05 -0700 2006"
-        # -- Precision, for `type: unix`: `1ns`, `1us`, `1ms` or `1s`.
+        # -- Unit of the timestamp, for `type: unix`: `1ns`, `1us` (CMK default), `1ms` or
+        # `1s`.
         precision: 1s
+      # Names of the standard fields of each entry.
       fields:
-        # -- Name of the error field.
+        # -- Name of the field whose error value is written as `message`, `type` and
+        # `stacktrace`.
         error: error
         # -- Name of the message field.
         message: msg
-        # -- Name of the level field.
+        # -- Name of the level field. Keep it set: without it, CMK names the field `info`.
         level: level
         # -- Name of the timestamp field.
         time: time
         otel:
-          # -- Name of the trace ID field, set when the request is traced.
+          # -- Name of the trace ID field, set when the request is traced (CMK default
+          # `traceId`).
           traceID: trace.id
-          # -- Name of the span ID field.
+          # -- Name of the span ID field (CMK default `spanId`).
           spanID: span.id
         masking:
-          # -- Fields whose values are masked, keeping the first four characters.
+          # -- Fields whose values are masked: a string longer than five characters keeps its
+          # first four characters, followed by `*******`; other values become `*******`.
+          # Fields named `id` or ending in `_id` or `-id` are not masked.
           pii:
             - email
             - ip-address
-          # -- Fields whose values are replaced with the given mask.
+          # -- Fields whose values are replaced with the given text. Write the field names in
+          # lower case.
           other:
             jwt-token: "*****"
 
@@ -651,15 +684,17 @@ config:
   # ---------------------------------------------------------------------------
   status:
     # -- Serve the status endpoints: `/probe/liveness`, `/probe/readiness` (checks the
-    # database), `/version`, and `/metrics` with `telemetry.metrics.prometheus.enabled`.
-    # **Keep enabled**: the probes and the test pod use these endpoints.
+    # database; the API server also its API port), `/version`, and `/metrics` with
+    # `telemetry.metrics.prometheus.enabled`. **Keep enabled**: the probes and the test pod
+    # use these endpoints.
     enabled: true
-    # -- Listen address of the status server. Must match the `http-status` container port.
+    # -- Listen address of the status server (CMK default). Must match the `http-status`
+    # container port.
     address: ":8888"
-    # -- Timeout of the readiness checks, as a duration.
+    # -- Timeout of the readiness checks, as a duration (CMK default).
     timeout: 10s
-    # -- Serve Go profiling endpoints (`/debug/pprof`) on the status port, without
-    # authentication. Keep false in production.
+    # -- Serve Go profiling endpoints (`/debug/pprof/…`) on the status port. Enable it only
+    # for troubleshooting.
     profiling: false
 
   # ---------------------------------------------------------------------------
@@ -667,18 +702,66 @@ config:
   # ---------------------------------------------------------------------------
   # Each of `traces`, `metrics` and `logs` takes:
   #   enabled     export this signal
-  #   protocol    `grpc` or `http`. Required when enabled.
-  #   host        collector `host:port`; value reference
-  #   url         URL path, for `protocol: http`, for example `/v1/traces`
-  #   secretRef   `insecure` (no TLS), `mtls`, `api-token` (with `apiToken`, a value reference)
-  #               or `basic` (with `basic.username` and `basic.password`)
-  # Example:
+  #   protocol    `grpc` or `http` (OTLP). Required when enabled
+  #   host        collector `host:port`, without a scheme; value reference. Required when
+  #               enabled
+  #   url         URL path, for `protocol: http`. Empty: `/v1/traces` and `/v1/metrics`;
+  #               set `/v1/logs` for logs
+  #   secretRef   `insecure` (no TLS), `mtls` (see the top of the configuration) or
+  #               `api-token`, and with `protocol: grpc` also `basic`. Every type except
+  #               `insecure` uses TLS, with the CAs of the image unless `mtls` sets them:
+  #                 { type: api-token, apiToken: <value reference> }
+  #                                       # header `Authorization: Api-Token <token>`
+  #                 type: basic           # basic authentication, protocol: grpc only
+  #                 basic: { username: <value reference>, password: <value reference> }
+  # Example with a collector in the cluster:
   #   traces:
   #     enabled: true
   #     protocol: grpc
   #     host: { value: otel-collector.observability.svc.cluster.local:4317 }
   #     secretRef: { type: insecure }
+  #   logs:
+  #     enabled: true
+  #     protocol: http
+  #     host: { value: otel-collector.observability.svc.cluster.local:4318 }
+  #     url: /v1/logs
+  #     secretRef:
+  #       type: mtls
+  #       mtls:
+  #         cert: { source: file, file: { path: /etc/credentials/otel/tls.crt } }
+  #         certKey: { source: file, file: { path: /etc/credentials/otel/tls.key } }
+  #         serverCa: { source: file, file: { path: /etc/credentials/otel/ca.crt } }
+  #   metrics:
+  #     enabled: true
+  #     prometheus: { enabled: true }
+  # Example with an external collector:
+  #   traces:
+  #     enabled: true
+  #     protocol: grpc
+  #     host: { value: otlp.example.com:443 }
+  #     secretRef:
+  #       type: api-token
+  #       apiToken: { source: file, file: { path: /etc/credentials/otel/token } }
+  #   metrics:
+  #     enabled: true
+  #     protocol: http
+  #     host: { source: env, env: OTEL_COLLECTOR_HOST }
+  #     secretRef:
+  #       type: api-token
+  #       apiToken: { source: file, file: { path: /etc/credentials/otel/token } }
+  #   logs:
+  #     enabled: true
+  #     protocol: grpc
+  #     host: { value: otlp.example.com:443 }
+  #     secretRef:
+  #       type: basic
+  #       basic:
+  #         username: { value: cmk }
+  #         password: { source: file, file: { path: /etc/credentials/otel/password } }
   telemetry:
+    # `dynatraceOneAgent`: add the enrichment metadata of a Dynatrace OneAgent on the node to
+    # traces, metrics and logs (default false). Example:
+    #   dynatraceOneAgent: true
     traces:
       # -- Export traces.
       enabled: false
@@ -690,7 +773,7 @@ config:
         value: ""
       # -- URL path, for `protocol: http`.
       url: ""
-      # -- Credentials, see the list above.
+      # -- Connection security, see the list above.
       secretRef:
         type: insecure
     metrics:
@@ -705,15 +788,17 @@ config:
         value: ""
       # -- URL path, for `protocol: http`.
       url: ""
-      # -- Credentials, see the list above.
+      # -- Connection security, see the list above.
       secretRef:
         type: insecure
       prometheus:
-        # -- Serve the metrics on `/metrics` of the status port instead of exporting them.
-        # Needs `metrics.enabled`. Allow the scraper with `networkPolicy.status.from`.
+        # -- Serve the metrics on `/metrics` of the status port instead of exporting them;
+        # `protocol`, `host`, `url` and `secretRef` are then not used. Needs
+        # `metrics.enabled`. Allow the scraper with `networkPolicy.status.from`.
         enabled: false
     logs:
-      # -- Export the log entries over OTLP, in addition to standard output.
+      # -- Export the log entries over OTLP, in addition to standard output. The masking of
+      # `logger.formatter.fields.masking` applies to them too.
       enabled: false
       # -- `grpc` or `http`.
       protocol: grpc
@@ -721,9 +806,9 @@ config:
       host:
         source: embedded
         value: ""
-      # -- URL path, for `protocol: http`.
+      # -- URL path, for `protocol: http`. Set `/v1/logs`: empty sends to `/`.
       url: ""
-      # -- Credentials, see the list above.
+      # -- Connection security, see the list above.
       secretRef:
         type: insecure
 
@@ -732,22 +817,57 @@ config:
   # event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
   # Events: key lifecycle, key availability, system linking, tenant deletion and rejected
-  # requests. A failed delivery is logged (`Failed to send audit log …`) and does not fail the
-  # request; with an empty `endpoint`, no event is delivered.
+  # requests. CMK posts each event as an OTLP log record in JSON and expects status 200 or
+  # 201. A failed delivery is logged (`Failed to send audit log …`) and does not fail the
+  # request; with an empty `endpoint`, no event is delivered. If the HTTP client cannot be
+  # set up, for example because an mTLS file is missing, CMK logs
+  # `failed to create audit logger` and sends no events.
   audit:
     # -- OTLP/HTTP logs endpoint, for example
     # `https://otel-collector.observability.svc.cluster.local:4318/v1/logs`.
     endpoint: ""
-    # -- HTTP client of the audit endpoint. Besides `timeout`: `mtls` (`cert`, `certKey`,
-    # `serverCa`, value references), `apiToken` (value reference), `basicAuth` (`username`,
-    # `password`), `oauth2Auth` (`url`, `credentials.clientID`, `credentials.clientSecret`,
-    # `credentials.authMethod`). Example:
+    # -- HTTP client of the audit endpoint:
+    #   timeout              time limit of a request, as a duration (CMK default 10s)
+    #   mtls                 client certificate: `cert`, `certKey`, `serverCa`, `rootCAs`,
+    #                        `attributes.serverName`, as for secretRef type `mtls`
+    #   apiToken             value reference; sent as `Authorization: Api-Token <token>`
+    #   basicAuth            `username` and `password`, value references
+    #   oauth2Auth           OAuth 2.0 client credentials: `credentials.clientID`,
+    #                        `credentials.authMethod` and `credentials.clientSecret` (value
+    #                        references), optional `mtls`. Only `authMethod: basic` sends the
+    #                        secret (as HTTP basic authentication); the other methods (`post`,
+    #                        the default, `jwt`, `private`, `none`) add only `client_id` to the
+    #                        request URL
+    #   transportAttributes  connection limits, 0 (no limit) by default:
+    #                        `tlsHandshakeTimeout`, `responseHeaderTimeout`,
+    #                        `expectContinueTimeout`, `idleConnTimeout` (durations),
+    #                        `maxIdleConns`, `maxIdleConnsPerHost`, `maxConnsPerHost`
+    #                        (numbers; `maxIdleConnsPerHost` 0: 2), `disableKeepAlives`,
+    #                        `disableCompression`
+    # Set at most one of `apiToken`, `basicAuth` and `oauth2Auth`; `mtls` combines with each.
+    # Example with a client certificate:
     #   httpClient:
     #     timeout: 10s
     #     mtls:
-    #       cert:     { source: file, file: { path: /etc/credentials/audit/tls.crt, format: binary } }
-    #       certKey:  { source: file, file: { path: /etc/credentials/audit/tls.key, format: binary } }
-    #       serverCa: { source: file, file: { path: /etc/credentials/audit/ca.crt, format: binary } }
+    #       cert: { source: file, file: { path: /etc/credentials/audit/tls.crt, format: binary } }
+    #       certKey: { source: file, file: { path: /etc/credentials/audit/tls.key } }
+    #       serverCa: { source: file, file: { path: /etc/credentials/audit/ca.crt } }
+    # Example with an API token:
+    #   httpClient:
+    #     apiToken: { source: file, file: { path: /etc/credentials/audit/token, format: binary } }
+    #     transportAttributes: { tlsHandshakeTimeout: 10s, maxIdleConnsPerHost: 10 }
+    # Example with basic authentication:
+    #   httpClient:
+    #     basicAuth:
+    #       username: { value: cmk }
+    #       password: { source: file, file: { path: /etc/credentials/audit/password } }
+    # Example with OAuth 2.0:
+    #   httpClient:
+    #     oauth2Auth:
+    #       credentials:
+    #         clientID: { value: cmk-audit }
+    #         authMethod: basic
+    #         clientSecret: { source: file, file: { path: /etc/credentials/audit/secret } }
     httpClient:
       timeout: 10s
     # -- Attributes added to every event, as a YAML map of strings. Example:
@@ -759,8 +879,9 @@ config:
   # ---------------------------------------------------------------------------
   # http: the CMK API. Read by: API server.
   # ---------------------------------------------------------------------------
-  # The chart writes `http.address: ":<port>"` and `http.swaggerEnabled`. The shutdown grace
-  # period is CMK's default of 5 seconds. TLS is terminated by Envoy Gateway.
+  # The chart writes `http.address: ":<port>"` and `http.swaggerEnabled`; other keys under
+  # `http` are not written. The shutdown grace period is CMK's default of 5 seconds. TLS is
+  # terminated by Envoy Gateway.
   http:
     # -- Port of the CMK API. Must match the `http` container port.
     port: 8081
@@ -778,8 +899,9 @@ config:
     # during a key rotation. Never put private keys here.
     signingKeysPath: /etc/signing-keys
     # -- Entries of the client data `auth_context` that CMK keeps and passes to the identity
-    # management plugin. **Must include `issuer`**: CMK lists a user's tenants by the issuer
-    # of their identity provider.
+    # management plugin; other entries are dropped. **Must include `issuer`**: CMK lists a
+    # user's tenants by the issuer of their identity provider. Add the fields that the
+    # identity management plugin reads, for example the `authContext` fields of `scim`.
     authContextFields:
       - issuer
       - client_id
@@ -788,17 +910,22 @@ config:
   # services: gRPC connections to the Registry and to Session Manager. Read by: API server,
   # tenant manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
-  # CMK watches the directories of the mTLS files and reconnects when they change, so
-  # renewed certificates are used without a restart. Example with mTLS:
+  # Each connection: `enabled`, `address`, `secretRef` and `attributes` (gRPC keepalive).
+  # `secretRef` is `insecure` or `mtls` (see the top of the configuration); other types fail
+  # with `unsupported secret type`. With `mtls`, CMK watches the directories of the files and
+  # reconnects when they change, so renewed certificates are used without a restart. The
+  # gRPC client keys `version` and `pool` are accepted and not used. Example with mTLS:
   #   registry:
   #     enabled: true
   #     address: registry.services.svc.cluster.local:9092
   #     secretRef:
   #       type: mtls
   #       mtls:
-  #         cert:     { source: file, file: { path: /etc/credentials/registry/tls.crt, format: binary } }
-  #         certKey:  { source: file, file: { path: /etc/credentials/registry/tls.key, format: binary } }
-  #         serverCa: { source: file, file: { path: /etc/credentials/registry/ca.crt, format: binary } }
+  #         cert: { source: file, file: { path: /etc/credentials/mtls/tls.crt, format: binary } }
+  #         certKey: { source: file, file: { path: /etc/credentials/mtls/tls.key } }
+  #         serverCa: { source: file, file: { path: /etc/credentials/mtls/ca.crt } }
+  #         attributes: { serverName: registry }
+  #     attributes: { keepaliveTime: 60s, keepaliveTimeout: 20s }
   services:
     registry:
       # -- **Required** by the tenant manager and the task worker; also used by the API server
@@ -808,13 +935,14 @@ config:
       # for example `registry.services.svc.cluster.local:9092`. Startup fails if empty
       # while enabled.
       address: ""
-      # -- Credentials: `insecure` or `mtls`, see the top of this section.
+      # -- Connection security: `insecure` or `mtls`.
       secretRef:
         type: insecure
       attributes:
-        # -- Interval of the gRPC keepalive pings.
+        # -- Interval of the gRPC keepalive pings (CMK default).
         keepaliveTime: 80s
-        # -- Time to wait for a keepalive answer before the connection is closed.
+        # -- Time to wait for a keepalive answer before the connection is closed (CMK
+        # default).
         keepaliveTimeout: 40s
     sessionManager:
       # -- **Required** by the tenant manager, which writes, blocks and removes the tenant
@@ -823,13 +951,14 @@ config:
       # -- `host:port` of Session Manager's gRPC API, for example
       # `session-manager.services.svc.cluster.local:9091`.
       address: ""
-      # -- Credentials: `insecure` or `mtls`.
+      # -- Connection security: `insecure` or `mtls`.
       secretRef:
         type: insecure
       attributes:
-        # -- Interval of the gRPC keepalive pings.
+        # -- Interval of the gRPC keepalive pings (CMK default).
         keepaliveTime: 80s
-        # -- Time to wait for a keepalive answer before the connection is closed.
+        # -- Time to wait for a keepalive answer before the connection is closed (CMK
+        # default).
         keepaliveTimeout: 40s
 
   # ---------------------------------------------------------------------------
@@ -838,7 +967,18 @@ config:
   # CMK keeps shared data in one schema and creates one schema per tenant, so the database
   # user needs the `CREATE` privilege on the database. The values are written into
   # the connection string without quoting: use a password without spaces, quotes or
-  # backslashes.
+  # backslashes. Example with the user from an environment variable and the password from a
+  # JSON file, and client certificate authentication:
+  #   user: { source: env, env: DATABASE_USER }
+  #   secret:
+  #     source: file
+  #     file: { path: /etc/credentials/database.json, format: json, jsonPath: "$.password" }
+  #   parameters:
+  #     ssl:
+  #       mode: verify-full
+  #       rootCert: /etc/credentials/database/ca.crt
+  #       cert: /etc/credentials/database/tls.crt
+  #       key: /etc/credentials/database/tls.key
   database:
     # -- **Required.** Host name; value reference.
     host:
@@ -858,15 +998,16 @@ config:
       value: ""
     parameters:
       ssl:
-        # -- PostgreSQL `sslmode`. `verify-full` checks the server certificate and the host
-        # name; `verify-ca` checks only the certificate; `require` encrypts without checking;
-        # `prefer`, `allow` and `disable` may use plain text.
+        # -- PostgreSQL `sslmode`: `verify-full` (checks the server certificate and the host
+        # name), `verify-ca` (checks only the certificate), `require`, `prefer`, `allow` or
+        # `disable`. Use `verify-full`.
         mode: verify-full
-        # -- CA certificate file of the database server. Empty: the system CAs of the image.
+        # -- File with the CA certificate of the database server (`sslrootcert`). Empty: the
+        # CAs of the image.
         rootCert: ""
-        # -- Client certificate file, for certificate authentication.
+        # -- File with a client certificate (`sslcert`), for certificate authentication.
         cert: ""
-        # -- Client key file, for certificate authentication.
+        # -- File with the private key of the client certificate (`sslkey`).
         key: ""
     # -- Migration directories in the image, used by the db-migrator jobs and by the tenant
     # manager for new tenant schemas. Keep the defaults with the `cmk-full-*` images. With
@@ -879,10 +1020,10 @@ config:
         schema: /etc/cmk/migrations/tenant/schema
         data: /etc/cmk/migrations/tenant/data
 
-  # -- Read replicas, each with the fields of `database` (`host`, `port`, `name`, `user`,
-  # `secret`, `parameters`). Read queries go to a random replica, writes to `database`; a
-  # lagging replica returns outdated data. Read by: all components except the task scheduler.
-  # Example:
+  # -- Read replicas, each with `host`, `port`, `name`, `user`, `secret` and `parameters` as
+  # under `database` (`migrator` is not used). Read queries go to a random replica, writes to
+  # `database`; a lagging replica returns outdated data. Read by: all components except the
+  # task scheduler. Example:
   #   databaseReplicas:
   #     - host: { value: postgres-replica.storage.svc.cluster.local }
   #       port: "5432"
@@ -905,7 +1046,8 @@ config:
       # -- Port, as a string.
       port: "6379"
       acl:
-        # -- Authenticate with the user name and password below.
+        # -- Authenticate with `username` and `password`. With `secretRef.type: mtls`, only
+        # if true. With `insecure`, CMK always uses them; empty values: no authentication.
         enabled: false
         # -- User name; value reference.
         username:
@@ -915,30 +1057,55 @@ config:
         password:
           source: embedded
           value: ""
-      # -- Transport security: `mtls` or `insecure`; other types fail with
-      # `unsupported secret type for task queue`. With `insecure`, the ACL user name and
-      # password are sent in plain text.
+      # -- Connection security: `mtls` or `insecure`; other types fail with
+      # `unsupported secret type for task queue`. Use `mtls` unless a service mesh encrypts
+      # the traffic. Example:
+      #   secretRef:
+      #     type: mtls
+      #     mtls:
+      #       cert: { source: file, file: { path: /etc/credentials/valkey/tls.crt } }
+      #       certKey: { source: file, file: { path: /etc/credentials/valkey/tls.key } }
+      #       serverCa: { source: file, file: { path: /etc/credentials/valkey/ca.crt } }
       secretRef:
         type: insecure
-    # -- Changes to the built-in task schedule. Every task type runs on its default schedule
-    # unless an entry changes it:
-    #   sys:refresh          hourly           refresh system information from the Registry
+    # -- Changes to the built-in task schedule. The task scheduler enqueues every task type on
+    # its default schedule (times in UTC) unless an entry changes it; the task workers run
+    # the tasks:
+    #   sys:refresh          hourly           refresh the system properties from the
+    #                                         SystemInformationService plugin
     #   key:sync             every 5 minutes  check the HYOK keys in the customer keystores
-    #   keystore:fill        hourly           keep `keystorePool.size` keystores prepared
-    #   cert:rotate          daily 00:00      renew certificates close to expiry
+    #   keystore:fill        hourly           add keystores until the pool holds
+    #                                         `keystorePool.size`
+    #   cert:rotate          daily 00:00      renew the certificates that expire within
+    #                                         `certificates.rotationThresholdDays`
     #   workflow:expire      daily 01:00      expire open approval workflows
     #   workflow:cleanup     daily 02:00      delete finished workflows after their retention
-    #   tenant:refresh-name  daily 03:00      refresh tenant names
-    # Each entry: `taskType` (one of the above, at most one entry each; startup fails
-    # otherwise), and the settings it changes: `enabled`, `cronspec` (cron expression or
-    # `@every <duration>`), `retries` (default 3). `timeOut` is accepted but not applied: the
-    # scheduled tasks keep their built-in timeout (5 minutes for `key:sync`, the task queue's
-    # default of 30 minutes for the others).
-    # `fanOutTask` (`enabled`, `retries`, `timeOut`) applies to every task above except
-    # `keystore:fill`: the task worker runs one subtask per tenant, with these retries and this
-    # timeout. It only fans out a task that has an entry here with `fanOutTask.enabled: true`;
-    # without one, the task processes all tenants itself, `key:sync` included. Example:
-    #   - { taskType: key:sync, cronspec: "*/15 * * * *", fanOutTask: { enabled: true, retries: 0, timeOut: 5m } }
+    #   tenant:refresh-name  daily 03:00      refresh the tenant names from the Registry
+    # Each entry changes one task type; startup fails for another type or a second entry of
+    # the same type. An entry changes only the keys it sets:
+    #   taskType    the task type. Required
+    #   enabled     false: the task is not scheduled
+    #   cronspec    schedule, in UTC: a cron expression with five fields (minute, hour, day
+    #               of month, month, day of week), `@hourly`, `@daily`, `@weekly`, `@monthly`,
+    #               `@yearly` or `@every <duration>`
+    #   retries     retries of a run that fails (default 3)
+    #   timeOut     accepted but not applied: a run is stopped after 5 minutes (`key:sync`)
+    #               or 30 minutes (the others)
+    #   fanOutTask  per tenant processing, for every task except `keystore:fill`. Without
+    #               `fanOutTask.enabled: true`, one run processes all tenants one after the
+    #               other and logs the errors of single tenants; this applies to `key:sync`
+    #               too. With it, a run enqueues one subtask per tenant, which the task
+    #               workers process in parallel. Keys: `enabled`, `retries` (retries of a
+    #               failed subtask, default 25), `timeOut` (time limit of a subtask, as a
+    #               duration, default 30m)
+    # A run fails, and is retried, when it cannot read the tenants, or for `keystore:fill`
+    # when it cannot add a keystore. Errors of single tenants do not fail it; with
+    # `fanOutTask`, a `sys:refresh` subtask fails on connection errors of the
+    # SystemInformationService plugin. Example:
+    #   - taskType: key:sync
+    #     cronspec: "*/15 * * * *"
+    #     fanOutTask: { enabled: true, retries: 0, timeOut: 5m }
+    #   - { taskType: sys:refresh, cronspec: "@every 2h", retries: 5 }
     #   - { taskType: tenant:refresh-name, enabled: false }
     tasks: []
 
@@ -953,26 +1120,30 @@ config:
   #   secretRef:
   #     type: mtls
   #     mtls:
-  #       cert:     { source: file, file: { path: /etc/credentials/amqp/tls.crt, format: binary } }
-  #       certKey:  { source: file, file: { path: /etc/credentials/amqp/tls.key, format: binary } }
+  #       cert: { source: file, file: { path: /etc/credentials/amqp/tls.crt, format: binary } }
+  #       certKey: { source: file, file: { path: /etc/credentials/amqp/tls.key, format: binary } }
   #       serverCa: { source: file, file: { path: /etc/credentials/amqp/ca.crt, format: binary } }
   #   amqp:
   #     url: amqps://rabbitmq.services.svc.cluster.local:5671
   #     source: /queues/cmk.tenants.requests
   #     target: /exchanges/cmk/mesh.tenants
   tenantManager:
-    # -- Credentials: `mtls` (TLS and certificate authentication) or `insecure`.
+    # -- Connection security: `mtls` (TLS with a client certificate and SASL EXTERNAL) or
+    # `insecure` (no client certificate; SASL ANONYMOUS); other types stop the tenant
+    # manager. Example: `{ type: insecure }`.
     secretRef:
       type: ""
     amqp:
-      # -- Broker URL. **Use `amqps://`**: with `amqp://` no TLS is used, even with `mtls`.
-      # A user name and password in the URL replace the certificate authentication.
+      # -- Broker URL, `amqps://<host>[:<port>]` (default port 5671). **Use `amqps://`**: with
+      # `amqp://` (default port 5672) no TLS is used, even with `mtls`. A user name and
+      # password in the URL replace the certificate authentication.
       url: ""
       # -- Address CMK receives tenant requests from.
       source: ""
       # -- Address CMK sends replies to.
       target: ""
-    # -- Time allowed for terminating a tenant, as a duration.
+    # -- Time allowed for terminating a tenant, as a duration (CMK default). A termination
+    # task created longer ago fails with `tenant termination timed out`.
     terminationTimeout: 48h
 
   # ---------------------------------------------------------------------------
@@ -980,70 +1151,171 @@ config:
   # ---------------------------------------------------------------------------
   # **Required** when `eventReconciler.deploy` is true: every key and system task for a
   # region without a target fails with `target not configured for region`. Example:
-  #   secretRef: { type: mtls, mtls: { cert: …, certKey: …, serverCa: … } }
+  #   secretRef:
+  #     type: mtls
+  #     mtls:
+  #       cert: { source: file, file: { path: /etc/credentials/mtls/tls.crt, format: binary } }
+  #       certKey: { source: file, file: { path: /etc/credentials/mtls/tls.key, format: binary } }
+  #       serverCa: { source: file, file: { path: /etc/credentials/mtls/ca.crt, format: binary } }
   #   targets:
   #     - region: eu10
   #       amqp:
   #         url: amqps://rabbitmq.services.svc.cluster.local:5671
   #         target: /exchanges/cmk/eu10.requests
   #         source: /queues/cmk.eu10.replies
+  #     - region: eu20
+  #       amqp:
+  #         url: amqps://rabbitmq.eu20.example.com
+  #         target: /exchanges/cmk/eu20.requests
+  #         source: /queues/cmk.eu20.replies
   eventProcessor:
-    # -- Credentials: `mtls` enables TLS and certificate authentication; any other type
-    # connects without TLS.
+    # -- Connection security of all targets: `mtls` (TLS with a client certificate and SASL
+    # EXTERNAL) or `insecure` (no client certificate; SASL ANONYMOUS). Example:
+    # `{ type: insecure }`.
     secretRef:
       type: ""
-    # -- One target per region: `region`, `amqp.url` (**`amqps://`**: with `amqp://` no TLS
-    # is used, even with `mtls`), `amqp.target` (address for requests), `amqp.source`
-    # (address for replies).
+    # -- One target per region, each with all four keys: `region` (the region of the
+    # systems it serves), `amqp.url` (`amqps://<host>[:<port>]`, default port 5671;
+    # **use `amqps://`**: with `amqp://` no TLS is used, even with `mtls`), `amqp.target`
+    # (address for requests), `amqp.source` (address for replies).
     targets: []
-    # -- Retries per task, with exponential backoff from 10 seconds up to about 3 hours. The
-    # default of 18 retries spans about one day.
+    # -- Retries per task, with exponential backoff from 10 seconds up to 2 hours 50 minutes.
+    # The default of 18 retries spans about one day; 0 means 18.
     maxReconcileCount: 18
 
   # ---------------------------------------------------------------------------
   # plugins. Read by: API server, tenant manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
   # -- **Required.** Plugins for keystores, identity management, notifications, system
-  # information and certificates. Each entry:
-  #   name               plugin name; selects a built-in plugin and names its feature flags
-  #   type               KeystoreInstanceKeyOperation, KeystoreProvider (any number);
-  #                      IdentityManagementService, NotificationService,
-  #                      SystemInformationService, CertificateIssuerService (at most one each)
-  #   path               external plugin binary; empty selects a built-in plugin
-  #   checksum           SHA-256 of the binary, hex; set it for external plugins
-  #   yamlConfiguration  plugin settings, as a YAML string
-  #   logLevel           log level of the plugin
-  #   tags               `default_keystore` (keystore for BYOK keys), `hyok` (HYOK keystore)
-  #   args, env          arguments and extra environment variables of the plugin process
-  #   disabled           skip the plugin
+  # information and certificates. An external plugin (`path` set) runs as a process of its
+  # own; a built-in plugin (`path` empty) runs inside CMK. Each entry:
+  #   name               plugin name. Keys and keystores refer to their keystore plugin by
+  #                      name, and feature flags use it in lower case: keep it once in use
+  #   type               KeystoreInstanceKeyOperation  key operations in a keystore (any
+  #                                                    number)
+  #                      KeystoreProvider              creates keystores and grants access
+  #                                                    to them (any number)
+  #                      IdentityManagementService     users and groups (at most one)
+  #                      NotificationService           notifications (at most one)
+  #                      SystemInformationService      system properties (at most one)
+  #                      CertificateIssuerService      client certificates (at most one)
+  #   path               external plugin binary; empty selects the built-in plugin with this
+  #                      `name` and `type`
+  #   checksum           SHA-256 of the binary in hex (`sha256sum`); CMK checks it before it
+  #                      starts the binary. Set it for external plugins
+  #   yamlConfiguration  plugin settings, as a YAML string. CMK adds `supportedregions` (from
+  #                      `keystorePool.supportedRegions`) for KeystoreProvider plugins
+  #   logLevel           `trace`, `debug`, `info`, `warn`, `error` or `off`: log level of the
+  #                      plugin, whose entries CMK writes to its log
+  #   tags               of KeystoreInstanceKeyOperation plugins, not case-sensitive:
+  #                      `default_keystore` (exactly one plugin: the keystore for BYOK keys and
+  #                      for the keystore pool), `hyok` (offered for HYOK keys)
+  #   args               command-line arguments of an external plugin
+  #   env                additional environment variables of an external plugin, whose names
+  #                      CMK converts to lower case. Plugins also inherit all environment
+  #                      variables of the pod (`extraEnvs`): pass plugin credentials through
+  #                      files
+  #   disabled           true: do not load the plugin
+  #   version            plugin API version; CMK supports only 1 (default)
   # The task worker needs a `NotificationService` and a `SystemInformationService` plugin.
-  # Plugin processes inherit all environment variables of the pod: pass plugin credentials
-  # through files. Examples for every plugin: https://openkcm.io/components/cmk/security/cmk-plugins
+  # `keystore:fill` and the access to a tenant's default keystore use the KeystoreProvider
+  # plugin with the `name` of the `default_keystore` plugin. The tenant manager and the task
+  # worker do not start when a plugin fails to load or to accept its configuration; the API
+  # server and the event reconciler log `Failed to load plugin`.
+  #
+  # Built-in plugins: `noop` of every type (empty results; the NotificationService reports
+  # every notification as sent; reads no settings), and `scim` (IdentityManagementService,
+  # the same settings as the `scim` binary below).
+  #
+  # Plugins in the `cmk-full-plugins` image:
+  #   /etc/plugins/keystore/keystoreop-aws  KeystoreInstanceKeyOperation for AWS KMS. Settings
+  #     (keystore-plugins 0.1.7 or later): `auth.method` `perRequest` (default: the
+  #     credentials that CMK sends with each request, for example a tenant's client
+  #     certificate), `ambient` (the AWS SDK's default credential chain, for example EKS Pod
+  #     Identity), `accessKey`, `assumeRole` or `rolesAnywhere`. With the other methods, the
+  #     plugin ignores the credentials of the requests; see cmd/keystoreop/aws/README.md in
+  #     github.com/openkcm/keystore-plugins.
+  #   /etc/plugins/identity-management/scim  IdentityManagementService for a SCIM 2.0 server.
+  #     Settings, all required (value references with an explicit `source`):
+  #       host         base URL of the SCIM API, with `/Users` and `/Groups` below it
+  #       auth         secretRef `mtls` (`cert`, `certKey`, `serverCa`, `rootCAs`,
+  #                    `attributes`) or `basic` (`username`, `password`)
+  #       params       `groupAttribute` (filter attribute of groups, empty: `displayName`),
+  #                    `userAttribute` (filter attribute of a user's groups, empty:
+  #                    `groups.display`), `groupMembersAttribute` (if set, the attribute
+  #                    requested for group members), `listMethod` (HTTP method of list
+  #                    requests, empty: `POST` to `.search`)
+  #       authContext  YAML with `hostField` (client data field whose value replaces `host`,
+  #                    joined with `basePath`), `basePath` and `headerFields` (HTTP header ->
+  #                    client data field); empty: always `host`. The fields must be listed in
+  #                    `clientData.authContextFields`
+  #   /etc/plugins/identity-management/scim-static  IdentityManagementService with the users
+  #     and groups in its settings (identity-management-plugins 0.6.0 or later):
+  #     `json_data`, a JSON string `{"users": [...], "groups": [...]}` with SCIM users (`id`,
+  #     `userName`, `emails`, `groups`) and groups (`id`, `displayName`, `members`).
+  # More examples: https://openkcm.io/components/cmk/security/cmk-plugins
+  #
+  # Example (the scim certificate is mounted with `extraVolumes`):
   #   - name: AWS
   #     type: KeystoreInstanceKeyOperation
   #     path: /etc/plugins/keystore/keystoreop-aws
   #     tags: [default_keystore, hyok]
+  #     logLevel: info
   #     yamlConfiguration: |
-  #       # plugin-specific settings
+  #       auth:
+  #         method: perRequest
+  #   - name: scim
+  #     type: IdentityManagementService
+  #     path: /etc/plugins/identity-management/scim
+  #     yamlConfiguration: |
+  #       host: { source: embedded, value: "https://scim.example.com/scim/v2" }
+  #       auth:
+  #         type: mtls
+  #         mtls:
+  #           cert: { source: file, file: { path: /etc/credentials/scim/tls.crt } }
+  #           certKey: { source: file, file: { path: /etc/credentials/scim/tls.key } }
+  #       params:
+  #         groupAttribute: { source: embedded, value: displayName }
+  #         userAttribute: { source: embedded, value: groups.display }
+  #         groupMembersAttribute: { source: embedded, value: "" }
+  #         listMethod: { source: embedded, value: POST }
+  #       authContext:
+  #         source: embedded
+  #         value: |
+  #           hostField: issuer
+  #           basePath: scim/v2
+  #           headerFields: { x-client-id: client_id }
   #   - { name: noop, type: NotificationService }
   #   - { name: noop, type: SystemInformationService }
+  # Example with the users and groups in the configuration, instead of `scim` above:
+  #   - name: static-users
+  #     type: IdentityManagementService
+  #     path: /etc/plugins/identity-management/scim-static
+  #     yamlConfiguration: |
+  #       json_data: |
+  #         {"users": [{"id": "u1", "userName": "alice"}],
+  #          "groups": [{"id": "g1", "displayName": "KeyAdmin", "members": [{"value": "u1"}]}]}
   plugins: []
 
   # ---------------------------------------------------------------------------
-  # certificates: client certificates CMK requests from the certificate issuer plugin. Read
-  # by: API server, tenant manager, event reconciler, task scheduler, task worker, cmkctl.
+  # certificates: client certificates CMK requests from the CertificateIssuerService plugin.
+  # Read by: API server, tenant manager, event reconciler, task scheduler, task worker,
+  # cmkctl.
   # ---------------------------------------------------------------------------
   certificates:
-    # -- Root certificate URL returned with HYOK client certificates.
+    # -- URL of the root CA certificate, returned with the tenants' HYOK client
+    # certificates. Example: `https://pki.example.com/root-ca.crt`.
     rootCertURL: ""
-    # -- Validity of the certificates CMK requests, in days: 7 to 30. Startup fails outside
-    # this range.
+    # -- Validity of the certificates CMK requests, in days: 7 to 30 (CMK default 30). Startup
+    # fails outside this range.
     validityDays: 30
-    # -- `cert:rotate` renews certificates that expire within this many days.
+    # -- `cert:rotate` renews the certificates that expire within this many days.
     rotationThresholdDays: 7
-    # -- Prefix of the common name of tenant certificates.
+    # -- Prefix of the common names of a tenant's client certificate (`<prefix><tenant ID>`)
+    # and of its access to the default keystore (`<prefix>byok-<tenant ID>`).
     defaultTenantCertPrefix: ""
-    # -- Do not issue client certificates for HYOK keystores.
+    # -- Do not issue client certificates for HYOK keystores: the keystore plugin then
+    # authenticates with its own settings.
     disableHYOKCertAuth: false
 
   # ---------------------------------------------------------------------------
@@ -1052,9 +1324,13 @@ config:
   # updates the certificate subjects of existing keys).
   # ---------------------------------------------------------------------------
   cryptoLayer:
-    # -- Value reference to a YAML list. Each entry: `name` (region), `rootCA` (URL),
-    # `subject` with `locality`, `country`, `organization`, `organizationUnit` (lists) and
-    # `commonNamePrefix` (at most 24 characters; startup fails otherwise). Example value:
+    # -- Value reference to a YAML list, one entry per crypto layer region: the client
+    # certificate subject with which that region's crypto layer uses the keys. CMK grants each
+    # subject access to a tenant's default keystore (KeystoreProvider plugin) and shows it in
+    # the key access details. Each entry: `name` (region), `rootCA` (URL), `subject` with
+    # `locality`, `country`, `organization`, `organizationUnit` (lists) and
+    # `commonNamePrefix` (the common name is `<commonNamePrefix><tenant ID>`; at most 24
+    # characters, startup fails otherwise). CMK loads the value at startup. Example value:
     #   - name: eu10
     #     rootCA: https://pki.example.com/root-ca.crt
     #     subject:
@@ -1072,13 +1348,15 @@ config:
   # manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
   keystorePool:
-    # -- Number of prepared keystores that the `keystore:fill` task keeps in the pool.
+    # -- Number of prepared keystores that the `keystore:fill` task keeps in the pool (CMK
+    # default 5).
     size: 2
-    # -- How often the API server records the pool fill level metric, as a duration. Must be
-    # greater than zero, otherwise the metric is not recorded.
+    # -- How often the API server records the pool size metrics, as a duration (CMK default
+    # 1h).
     interval: 10m
-    # -- Regions of the keystores, passed to the keystore provider plugins: list of `name`
-    # (display name) and `technicalName` (provider region). Example:
+    # -- Regions of the keystores: list of `name` (display name) and `technicalName`
+    # (provider region). CMK passes them to the KeystoreProvider plugins (`supportedregions`)
+    # and shows them as the regions of the BYOK keystore while BYOK is allowed. Example:
     #   - { name: Europe (Frankfurt), technicalName: eu-central-1 }
     supportedRegions: []
 
@@ -1095,11 +1373,13 @@ config:
       # -- Add the keystore below to the pool when an API server pod starts. Keep false
       # except for the first start; see above.
       enabled: false
-      # -- Keystore provider, for example `AWS`.
+      # -- Keystore provider: the `name` of the keystore plugins for this keystore, for
+      # example `AWS`.
       provider: ""
-      # -- Keystore settings, all required when enabled: `localityId`, `commonName`,
-      # `managementAccessData` (YAML string with the provider's access data) and
-      # `supportedRegions` (`name`, `technicalName`). Example:
+      # -- Keystore settings, all required when enabled; the API server does not start
+      # otherwise: `localityId`, `commonName`, `managementAccessData` (a YAML string with a
+      # map of strings: the provider's access data) and `supportedRegions` (`name`,
+      # `technicalName`, both required). Example:
       #   localityId: 12345678-90ab-cdef-1234-567890abcdef
       #   commonName: kms.example.com
       #   managementAccessData: |
@@ -1115,11 +1395,12 @@ config:
   landscape:
     # -- Landscape name, shown in notifications.
     name: ""
-    # -- URL of the CMK UI, ending with `#`, used for links in notifications. Example:
+    # -- URL of the CMK UI, without a trailing slash, for the links in workflow notifications:
+    # `<uiBaseUrl>/<tenant ID>/tasks/<workflow ID>`. Empty: no link. Example:
     # `https://ui.cmk.example.com/#`.
     uiBaseUrl: ""
-    # -- Region of this installation, like: `aws-qa-eu`. Used in notifications, as the default locality of
-    # client certificates, and sent with key and system tasks.
+    # -- Region of this installation, for example `aws-qa-eu`. Shown in notifications, sent
+    # with key and system tasks, and the locality of new HYOK client certificates.
     region: ""
 
   # ---------------------------------------------------------------------------
@@ -1129,28 +1410,29 @@ config:
   # The Registry's tenant configuration (`UpdateTenantConfig`) overrides `systemLimit`,
   # `keyLimit` and `keyConfigLimit` for one tenant.
   tenant:
-    # -- Maximum number of systems linked to one key configuration. At least 1.
+    # -- Maximum number of systems linked to one key configuration (CMK default 50). At
+    # least 1.
     systemLimit: 50
     # -- Maximum number of keys in one key configuration, not counting deleted and detached
-    # keys. At least 1.
+    # keys (CMK default 10). At least 1.
     keyLimit: 10
-    # -- Maximum number of key configurations per tenant. At least 1.
+    # -- Maximum number of key configurations per tenant (CMK default 5). At least 1.
     keyConfigLimit: 5
 
   # ---------------------------------------------------------------------------
   # keys. Read by: API server, tenant manager, task worker, cmkctl.
   # ---------------------------------------------------------------------------
   keys:
-    # -- Time after which a key in `PENDING_REGISTRATION` becomes `FORBIDDEN`.
+    # -- Time after which a key in `PENDING_REGISTRATION` becomes `FORBIDDEN` (CMK default).
     pendingRegistrationTimeout: 15m
-    # -- Time after which a key in `PENDING_CREATION` becomes `ERROR`.
+    # -- Time after which a key in `PENDING_CREATION` becomes `ERROR` (CMK default).
     pendingCreationTimeout: 15m
 
   # ---------------------------------------------------------------------------
   # workflow: defaults of approval workflows for tenants without their own settings. Read
   # by: API server, tenant manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------
-  # 0 keeps CMK's default.
+  # 0 keeps CMK's default, which equals the value below.
   workflow:
     # -- Approvals required, 2 to 5. Higher values are reduced to 5.
     defaultMinimumApprovals: 2
@@ -1167,9 +1449,17 @@ config:
   # worker, cmkctl.
   # ---------------------------------------------------------------------------
   # -- Value reference to YAML with a `system` map. `identifier`, `region` and `type` are
-  # the built-in properties (`internal: true`); every other entry is an additional property
-  # stored for each system. Each property: `displayName` (label in the UI), `internal`,
-  # `optional` (may be empty), `default` (value if empty).
+  # the built-in properties; every other entry is an additional property: CMK stores the
+  # values that the SystemInformationService plugin returns for it and shows them with each
+  # system. Each property: `displayName` (label), `internal`, `optional`, `default`; CMK
+  # itself evaluates only `displayName`: the additional property whose `displayName` is
+  # `Name` (in any case) is the system's name in the API and in workflows.
+  # CMK loads the value at startup; if it cannot, it logs `No configurable context set` and
+  # stores no additional properties. Example with a file from a ConfigMap mounted with
+  # `extraVolumes`:
+  #   configurableContext:
+  #     source: file
+  #     file: { path: /etc/cmk-context/system.yaml, format: yaml }
   configurableContext:
     source: embedded
     value: |

@@ -83,6 +83,7 @@ extraVolumes:
         - secret: { name: cmk-database, items: [{ key: password, path: database/password }, { key: ca.crt, path: database/ca.crt }] }
         - secret: { name: cmk-valkey, items: [{ key: password, path: valkey/password }, { key: tls.crt, path: valkey/tls.crt }, { key: tls.key, path: valkey/tls.key }, { key: ca.crt, path: valkey/ca.crt }] }
         - secret: { name: cmk-mtls, items: [{ key: tls.crt, path: mtls/tls.crt }, { key: tls.key, path: mtls/tls.key }, { key: ca.crt, path: mtls/ca.crt }] }
+        - secret: { name: cmk-scim, items: [{ key: tls.crt, path: scim/tls.crt }, { key: tls.key, path: scim/tls.key }] }
   - name: client-data-public-keys
     secret: { secretName: cmk-client-data-public-keys }   # ExtAuthZ's public keys only
 extraVolumeMounts:
@@ -158,9 +159,31 @@ config:
       type: KeystoreInstanceKeyOperation
       path: /etc/plugins/keystore/keystoreop-aws
       tags: [default_keystore, hyok]
+      logLevel: info
       yamlConfiguration: |
-        # plugin-specific settings
-    - { name: scim, type: IdentityManagementService }
+        auth:
+          method: perRequest
+    - name: scim
+      type: IdentityManagementService
+      path: /etc/plugins/identity-management/scim
+      yamlConfiguration: |
+        host: { source: embedded, value: "https://scim.example.com/scim/v2" }
+        auth:
+          type: mtls
+          mtls:
+            cert: { source: file, file: { path: /etc/credentials/scim/tls.crt } }
+            certKey: { source: file, file: { path: /etc/credentials/scim/tls.key } }
+        params:
+          groupAttribute: { source: embedded, value: displayName }
+          userAttribute: { source: embedded, value: groups.display }
+          groupMembersAttribute: { source: embedded, value: "" }
+          listMethod: { source: embedded, value: POST }
+        authContext:
+          source: embedded
+          value: |
+            hostField: issuer
+            basePath: scim/v2
+            headerFields: { x-client-id: client_id }
     - { name: noop, type: NotificationService }
     - { name: noop, type: SystemInformationService }
   audit:

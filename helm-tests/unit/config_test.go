@@ -3,20 +3,42 @@
 package unit_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"gopkg.in/yaml.v3"
 
 	"github.com/openkcm/cmk/internal/config"
+	"github.com/openkcm/cmk/internal/plugins/identity-management/scim"
+	scimconfig "github.com/openkcm/cmk/internal/plugins/identity-management/scim/config"
 )
 
 const (
 	valuesDev      = chartPath + "/values-dev.yaml"
 	valuesExamples = "testdata/values-examples.yaml"
+	// alternatives holds the documented examples that replace one in valuesExamples, for
+	// example another secretRef type; each file is applied on top of valuesExamples.
+	alternatives = "testdata/alternatives"
 )
+
+// documentedExamples returns the helm arguments of valuesExamples and of every alternative
+// applied on top of it, by test name.
+func documentedExamples(t *testing.T) map[string][]string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(alternatives, "*.yaml"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no documented alternatives in %s: %v", alternatives, err)
+	}
+	result := map[string][]string{"documented examples": {"-f", valuesExamples}}
+	for _, file := range files {
+		result["documented alternative "+filepath.Base(file)] = []string{"-f", valuesExamples, "-f", file}
+	}
+	return result
+}
 
 // process is how a process loads its config.yaml at startup (cmd/cmkd/commands, cmd/cmkctl,
 // migrations/tenant/data/00006_crypto_subject_from_config.go): config.LoadConfig, which
@@ -58,15 +80,18 @@ var processes = map[string][]process{
 // ConfigMap that CMK does not know, or a documented example that CMK does not accept, fails
 // here instead of stopping the pods.
 func TestConfigLoads(t *testing.T) {
-	tests := []struct {
+	type configTest struct {
 		name   string
 		values []string
 		// configured: the values configure the tenant manager and the event reconciler.
 		configured bool
-	}{
+	}
+	tests := []configTest{
 		{name: "default values", values: []string{"--set", "cmkctl.deploy=true"}},
 		{name: "values-dev.yaml", values: []string{"-f", valuesDev}, configured: true},
-		{name: "documented examples", values: []string{"-f", valuesExamples}, configured: true},
+	}
+	for name, values := range documentedExamples(t) {
+		tests = append(tests, configTest{name: name, values: values, configured: true})
 	}
 
 	for _, tt := range tests {
@@ -110,6 +135,85 @@ func TestConfigLoads(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestPluginSettingsExamples checks the documented settings (yamlConfiguration) of the
+// identity management plugins, which CMK passes to the plugins without reading them: the
+// `scim` settings with the parser and the checks of CMK's built-in scim plugin, which takes
+// the same settings as the scim binary of the cmk-full-plugins image, and the `json_data` of
+// scim-static. The documented `host`, `params` and `authContext` are embedded values, so the
+// checks can load them.
+func TestPluginSettingsExamples(t *testing.T) {
+	for name, values := range documentedExamples(t) {
+		t.Run(name, func(t *testing.T) {
+			var content string
+			for _, m := range manifests(t, render(t, values...)) {
+				if m.Kind == "ConfigMap" && m.Metadata.Name == "cmk-config" {
+					content = m.Data["config.yaml"]
+				}
+			}
+			var cfg struct {
+				Plugins []struct {
+					Name              string `yaml:"name"`
+					Type              string `yaml:"type"`
+					Path              string `yaml:"path"`
+					YamlConfiguration string `yaml:"yamlConfiguration"`
+				} `yaml:"plugins"`
+			}
+			err := yaml.Unmarshal([]byte(content), &cfg)
+			if err != nil {
+				t.Fatalf("parsing the API server's config.yaml: %v", err)
+			}
+
+			checked := 0
+			for _, p := range cfg.Plugins {
+				if p.Type != "IdentityManagementService" {
+					continue
+				}
+				switch {
+				case strings.HasSuffix(p.Path, "/scim") || (p.Path == "" && p.Name == "scim"):
+					var settings scimconfig.Config
+					decodeStrict(t, p.Name, p.YamlConfiguration, &settings)
+					_, err = scim.CreateParams(&settings)
+					if err != nil {
+						t.Errorf("plugin %s: the scim plugin rejects its settings: %v", p.Name, err)
+					}
+					if settings.AuthContext.Source == commoncfg.EmbeddedSourceValue {
+						decodeStrict(t, p.Name+" authContext", settings.AuthContext.Value, &scimconfig.AuthContextConfig{})
+					}
+					checked++
+				case strings.HasSuffix(p.Path, "/scim-static"):
+					var settings struct {
+						JSONData string `yaml:"json_data"`
+					}
+					decodeStrict(t, p.Name, p.YamlConfiguration, &settings)
+					var data struct {
+						Users  []json.RawMessage `json:"users"`
+						Groups []json.RawMessage `json:"groups"`
+					}
+					err = json.Unmarshal([]byte(settings.JSONData), &data)
+					if err != nil {
+						t.Errorf("plugin %s: json_data is not valid JSON: %v", p.Name, err)
+					}
+					checked++
+				}
+			}
+			if checked == 0 {
+				t.Errorf("no scim or scim-static plugin in the documented examples")
+			}
+		})
+	}
+}
+
+// decodeStrict decodes YAML into out and reports unknown keys and wrong types.
+func decodeStrict(t *testing.T, name, content string, out any) {
+	t.Helper()
+	decoder := yaml.NewDecoder(strings.NewReader(content))
+	decoder.KnownFields(true)
+	err := decoder.Decode(out)
+	if err != nil {
+		t.Errorf("plugin %s: %v\n%s", name, err, content)
 	}
 }
 

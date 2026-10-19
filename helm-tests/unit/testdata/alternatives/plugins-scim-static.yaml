@@ -1,0 +1,21 @@
+# charts/cmk/values.yaml, config.plugins: "Example with the users and groups in the
+# configuration, instead of `scim` above". Applied on top of ../values-examples.yaml.
+config:
+  plugins:
+    - name: AWS
+      type: KeystoreInstanceKeyOperation
+      path: /etc/plugins/keystore/keystoreop-aws
+      tags: [default_keystore, hyok]
+      logLevel: info
+      yamlConfiguration: |
+        auth:
+          method: perRequest
+    - name: static-users
+      type: IdentityManagementService
+      path: /etc/plugins/identity-management/scim-static
+      yamlConfiguration: |
+        json_data: |
+          {"users": [{"id": "u1", "userName": "alice"}],
+           "groups": [{"id": "g1", "displayName": "KeyAdmin", "members": [{"value": "u1"}]}]}
+    - { name: noop, type: NotificationService }
+    - { name: noop, type: SystemInformationService }
