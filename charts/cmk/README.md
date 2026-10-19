@@ -64,8 +64,7 @@ Shared helpers only build names and labels.
 
 ```yaml
 # cmk-values.yaml
-image:
-  tag: v0.11.0
+# image.tag defaults to the chart's appVersion; set it only to deploy another version.
 
 replicaCount: 2
 
@@ -181,7 +180,7 @@ the install or upgrade.
 
 | Value | Default | Description |
 | --- | --- | --- |
-| `image.tag` / `image.digest` | – | **Required.** The CMK version to deploy |
+| `image.tag` / `image.digest` | chart's `appVersion` | The CMK version to deploy. Leave both empty to deploy the version this chart release is made for |
 | `image.repository` | `cmk/images/cmk-full-plugins` | Under `ghcr.io/openkcm` |
 | `image.cmkdPath`, `image.cmkctlPath` | `/cmkd`, `/cmkctl` | Binaries the chart starts; the images have no entrypoint |
 | `<component>.deploy` | all but `cmkctl` | Which processes to run |
@@ -248,7 +247,7 @@ manager: `/etc/tenant-manager/config.yaml`). Only the file is mounted, so
 
 | Change | Action |
 | --- | --- |
-| The default image is `ghcr.io/openkcm/cmk/images/cmk-full-plugins` (was `cmk-api-server-dev:latest`), and `image.tag` is required | Set `image.tag`; set `image.registry` and `image.repository` if you use another image |
+| The default image is `ghcr.io/openkcm/cmk/images/cmk-full-plugins` (was `cmk-api-server-dev:latest`), with the tag from the chart's `appVersion` | None; set `image.registry`, `image.repository` and `image.tag` if you use another image |
 | The chart starts `/cmkd <subcommand>` (`/cmkctl sleep`) by default | Remove `<component>.image.command` and `args` from your values, or keep them; they still take precedence |
 | The task scheduler and task worker are deployed by default | Configure `config.scheduler.taskQueue` and the plugins, or set `deploy: false` |
 | The event reconciler follows `eventReconciler.deploy` (was `apiServer.deploy`) and gets its ServiceAccount | None |
@@ -267,7 +266,7 @@ manager: `/etc/tenant-manager/config.yaml`). Only the file is mounted, so
 | PodDisruptionBudgets without `minAvailable` or `maxUnavailable` use `maxUnavailable: 1` (was `minAvailable: 1`) | Set `minAvailable` explicitly if you want the old behaviour |
 | The migration jobs get no `extraContainers`, but `dbMigrator.extraContainers`, resources and retry settings | Move containers that exit on their own to `dbMigrator.extraContainers` |
 | `featureFlagsConfigMap` must be set when `config.featureFlags.enabled` is true | Set it; the chart fails otherwise |
-| `values-dev.yaml` only contains the differences for local development | Copy settings from `values.yaml` if you used it as a template |
+| The values for local development are no longer part of the chart: they are in the cmk repository (`local_env/values-dev.yaml`) | Copy settings from `values.yaml` if you used them as a template |
 
 For a release named `cmk`, delete the immutable ConfigMaps of 0.1.x right before the
 upgrade. Running pods keep their mounted `config.yaml`; the upgrade creates the
@@ -283,7 +282,6 @@ kubectl delete configmap -n <namespace> --ignore-not-found \
 
 | Symptom | Cause |
 | --- | --- |
-| `Either image.tag or image.digest must be set` | Set `image.tag` or `image.digest` |
 | Pods stay in `ContainerCreating` | A Secret or ConfigMap from `extraVolumes` is missing |
 | Pod exits with `has invalid keys` | A key under `config` is not a CMK setting |
 | Upgrade fails with `field is immutable` on a ConfigMap | Immutable ConfigMaps from 0.1.x or `config.isImmutable: true`: delete the ConfigMaps, see [Upgrading from 0.1.x](#upgrading-from-01x), and keep `config.isImmutable: false` |
@@ -298,10 +296,14 @@ lists more symptoms.
 
 ## Development
 
+The unit tests of this chart are in `tests/cmk` of this repository:
+
 ```sh
-make helm-unit-test     # helm template checks in helm-tests/unit
-make start-cmk          # local k3d environment with values-dev.yaml
+(cd tests && go test ./cmk/)
 ```
+
+To run CMK locally with this chart, use `make start-cmk CMK_CHART=../charts/cmk` in the cmk
+repository; its values for local development are in `local_env/values-dev.yaml` there.
 
 ## Uninstall
 
