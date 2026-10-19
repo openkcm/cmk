@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/openkcm/common-sdk/pkg/auth"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/auditor"
@@ -13,6 +14,7 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/testutils"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var EmptyTenantID = authz.TenantID("")
@@ -350,6 +352,82 @@ func generateUserGroups() []string {
 	}
 
 	return groups
+}
+
+func newTestHandler(t *testing.T) *authz.Handler[authz.APIResourceType, authz.APIAction] {
+	t.Helper()
+	cfg := &config.Config{}
+	audit := auditor.New(context.Background(), cfg)
+	internalPolicies := make(authz.RolePolicies[constants.InternalRole, authz.APIResourceType, authz.APIAction])
+	h, err := authz.NewAuthorizationHandler(audit, internalPolicies, authz.APIPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
+	assert.NoError(t, err)
+	return h
+}
+
+func businessCtx(tenant, identifier string, groups []string) context.Context {
+	ctx := cmkcontext.CreateTenantContext(context.Background(), tenant)
+	ctx = cmkcontext.InjectRequestID(ctx, "req-id")
+	userData := &auth.ClientData{Identifier: identifier, Groups: groups}
+	return cmkcontext.InjectBusinessUserData(ctx, userData, nil)
+}
+
+func TestAuditDeniedDecision(t *testing.T) {
+	h := newTestHandler(t)
+
+	tests := []struct {
+		name    string
+		makeCtx func() context.Context
+	}{
+		{
+			name:    "no user type",
+			makeCtx: func() context.Context { return testutils.CreateCtxWithTenant("tenant1") },
+		},
+		{
+			name: "internal user type",
+			makeCtx: func() context.Context {
+				ctx, _ := cmkcontext.InjectInternalUserData(
+					testutils.CreateCtxWithTenant("tenant1"),
+					constants.InternalRole("some-role"),
+				)
+				return ctx
+			},
+		},
+		{
+			name: "missing tenant",
+			makeCtx: func() context.Context {
+				return context.WithValue(context.Background(), constants.UserType, constants.BusinessUser)
+			},
+		},
+		{
+			name: "missing business user data",
+			makeCtx: func() context.Context {
+				ctx := testutils.CreateCtxWithTenant("tenant1")
+				return context.WithValue(ctx, constants.UserType, constants.BusinessUser)
+			},
+		},
+		{
+			name: "missing request ID",
+			makeCtx: func() context.Context {
+				// InjectBusinessUserData sets UserType + BusinessUserData but no request ID
+				ctx := cmkcontext.CreateTenantContext(context.Background(), "tenant1")
+				userData := &auth.ClientData{Identifier: "user1", Groups: []string{"g1"}}
+				return cmkcontext.InjectBusinessUserData(ctx, userData, nil)
+			},
+		},
+		{
+			name:    "valid context",
+			makeCtx: func() context.Context { return businessCtx("tenant1", "user1", []string{"g1"}) },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// AuditDeniedDecision must not panic regardless of context state
+			assert.NotPanics(t, func() {
+				h.AuditDeniedDecision(tt.makeCtx(), authz.APIResourceTypeKey, authz.APIActionRead)
+			})
+		})
+	}
 }
 
 func createEntitiesForTenant(

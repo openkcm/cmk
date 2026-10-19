@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
@@ -21,7 +20,7 @@ func SetupUserManager(t *testing.T) (manager.User, *multitenancy.DB, string) {
 
 	return manager.NewUserManager(
 		sql.NewRepository(db),
-		auditor.New(t.Context(), &config.Config{}),
+		&auditor.Auditor{},
 	), db, tenants[0]
 }
 
