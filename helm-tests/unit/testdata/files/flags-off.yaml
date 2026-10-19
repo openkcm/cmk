@@ -1,0 +1,25 @@
+# Flags that CMK evaluates as off (charts/cmk/values.yaml, config.featureFlags): CMK passes
+# no evaluation context, so a targeting rule finds no tenant and a percentage rollout has no
+# targeting key; a disabled flag and an invalid flag are off too. files_test.go reads them
+# as the HYOK flags of the keystore plugins `targeted`, `rollout`, `disabled` and `invalid`;
+# `reference` is on, to show that the file was read.
+enable_hyok_targeted:
+  variations: { enabled: true, disabled: false }
+  targeting:
+    - query: tenant eq "tenant-1"
+      variation: enabled
+  defaultRule: { variation: disabled }
+enable_hyok_rollout:
+  variations: { enabled: true, disabled: false }
+  defaultRule:
+    percentage: { enabled: 100, disabled: 0 }
+enable_hyok_disabled:
+  variations: { enabled: true, disabled: false }
+  defaultRule: { variation: enabled }
+  disable: true
+enable_hyok_invalid:
+  variations: { enabled: true, disabled: "false" }
+  defaultRule: { variation: enabled }
+enable_hyok_reference:
+  variations: { enabled: true, disabled: false }
+  defaultRule: { variation: enabled }

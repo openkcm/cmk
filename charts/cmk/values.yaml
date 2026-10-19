@@ -428,8 +428,11 @@ podDisruptionBudget:
 
 # -- Additional init containers of all pods, including the migration jobs. They get the pod
 # security context (`podSecurityContext`), but not the container security context
-# (`securityContext`): set their own `securityContext`, for example
-# `{ allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }`.
+# (`securityContext`): set their own `securityContext`, for example:
+#   securityContext:
+#     allowPrivilegeEscalation: false
+#     readOnlyRootFilesystem: true
+#     capabilities: { drop: [ALL] }
 extraInitContainers: []
 
 # -- Additional containers of the component pods. Not added to the migration jobs (see
@@ -441,24 +444,55 @@ extraContainers: []
 # the task queue credentials, certificates, the client data public keys and the plugin
 # credentials. Refer to the mounted files from `config` with `source: file`. Every pod gets
 # every volume; keep the list to what the components need.
+#
+# Files that the configuration reads, and where their format is described:
+#   passwords, tokens, JSON files   "Value references" at the top of `config`
+#   PEM certificates, keys and CAs  "secretRef" at the top of `config` (all `mtls` settings);
+#                                   `config.database.parameters.ssl`
+#   client data public keys         `config.clientData.signingKeysPath`
+#   feature flags                   `config.featureFlags`; mounted from `featureFlagsConfigMap`
+#   crypto layer subjects           `config.cryptoLayer.certX509Trusts`, with `source: file`
+#   system properties               `config.configurableContext`, with `source: file`
+#   plugin credentials              `config.plugins`
+# Use Secrets for credentials and ConfigMaps for other files, in the release namespace, and
+# mount them read-only. The pods run as group 65532 with `fsGroup: 65532`, so Secret files
+# stay readable with `defaultMode: 0440`. For example:
+#   kubectl create secret generic cmk-database --from-literal=password='<password>' \
+#     --from-file=ca.crt=postgres-ca.crt
+#   kubectl create secret generic cmk-valkey --from-literal=password='<password>'
+#   kubectl create secret generic cmk-mtls --from-file=tls.crt --from-file=tls.key \
+#     --from-file=ca.crt
+#   kubectl create secret generic cmk-client-data-public-keys --from-file=key1.pem
+# (`kubectl create secret tls cmk-mtls --cert=tls.crt --key=tls.key` creates the keys
+# `tls.crt` and `tls.key`, without `ca.crt`.) Mounted with:
 extraVolumes: []
 # - name: credentials
 #   projected:
+#     defaultMode: 0440
 #     sources:
 #       - secret:
 #           name: cmk-database
-#           items: [{ key: password, path: database/password }, { key: ca.crt, path: database/ca.crt }]
+#           items:
+#             - { key: password, path: database/password }
+#             - { key: ca.crt, path: database/ca.crt }
 #       - secret:
 #           name: cmk-valkey
 #           items: [{ key: password, path: valkey/password }]
+#       - secret:
+#           name: cmk-mtls
+#           items:
+#             - { key: tls.crt, path: mtls/tls.crt }
+#             - { key: tls.key, path: mtls/tls.key }
+#             - { key: ca.crt, path: mtls/ca.crt }
 # - name: client-data-public-keys
 #   secret:
 #     secretName: cmk-client-data-public-keys     # ExtAuthZ's public keys only: key1.pem, …
+#     defaultMode: 0440
 
 # -- Additional volume mounts of all CMK containers.
 extraVolumeMounts: []
 # - name: credentials
-#   mountPath: /etc/credentials
+#   mountPath: /etc/credentials                  # /etc/credentials/database/password, …
 #   readOnly: true
 # - name: client-data-public-keys
 #   mountPath: /etc/signing-keys                 # config.clientData.signingKeysPath
@@ -479,8 +513,13 @@ extraEnvs: []
 extraEnvsFrom: []
 
 # -- Name of the ConfigMap with the feature flags file, when `config.featureFlags.enabled`
-# is true. It is mounted in the directory of `config.featureFlags.filePath`; its key must be
-# the file name (`flags.yaml` by default).
+# is true; the chart does not create it. It is mounted read-only in every component, as a
+# directory, at the directory of `config.featureFlags.filePath`; its key must be the file
+# name (`flags.yaml` by default). The file format and an example are at
+# `config.featureFlags`. Create it with:
+#   kubectl create configmap cmk-feature-flags --from-file=flags.yaml
+# A change to the ConfigMap does not restart the pods: the kubelet updates the mounted file
+# after its sync delay, and CMK reads it again every `config.featureFlags.pollingInterval`.
 featureFlagsConfigMap: ""
 
 networkPolicy:
@@ -557,6 +596,14 @@ tests:
 #   { source: file, file: { path: /etc/credentials/db.json, format: json, jsonPath: "$.password" } }
 #                                         # one string field of a JSON file
 # `source` defaults to `embedded`. **Use `source: file` for every password, key and token.**
+# Files: write passwords and tokens without a trailing newline, for example with
+# `kubectl create secret generic cmk-valkey --from-literal=password='<password>'`
+# (`--from-file` keeps a file as it is); PEM files may end with one. With `format: json`,
+# `jsonPath` selects one string value of the JSON document, in dot notation from `$` only
+# (bracket notation is not supported): `$.password`, `$.auth.cert`, `$.client-secret`.
+# Without `jsonPath`, the whole file is the value. PEM values are JSON strings with `\n` for
+# the line breaks. Example content of /etc/credentials/db.json:
+#   { "user": "cmk", "password": "<password>" }
 #
 # secretRef: the security of a connection. Each connection below names the types it
 # supports; the Registry, Session Manager, task queue and AMQP connections support:
@@ -572,6 +619,15 @@ tests:
 #     attributes:
 #       serverName: …                     # expected server name, if it differs from the host
 # Use `mtls` in production.
+# The files of every `mtls` setting in `config` (connections, audit, telemetry and the
+# `scim` plugin), usually the keys `tls.crt`, `tls.key` and `ca.crt` of a Secret:
+#   cert      PEM: one or more `-----BEGIN CERTIFICATE-----` blocks, the client certificate
+#             first, then its intermediate CAs
+#   certKey   PEM: the unencrypted private key of that certificate, in one
+#             `-----BEGIN PRIVATE KEY-----` (PKCS #8: RSA, ECDSA or Ed25519),
+#             `-----BEGIN RSA PRIVATE KEY-----` (PKCS #1) or `-----BEGIN EC PRIVATE KEY-----`
+#             block
+#   serverCa, rootCAs  PEM: one or more `-----BEGIN CERTIFICATE-----` blocks
 config:
   # -- Create the ConfigMaps as immutable. The ConfigMap names do not change with their
   # content, so with `true` every upgrade that changes the configuration fails: Kubernetes
@@ -614,18 +670,38 @@ config:
     # feature flags, the flag `enable_byok_<plugin>` decides.
     allow-byok: false
 
-  # Feature flags file (OpenFeature, GO Feature Flag format), re-read while running. Flag
-  # names, where <plugin> is the `name` of a KeystoreInstanceKeyOperation plugin in lower
-  # case:
+  # Feature flags file: YAML in the format of GO Feature Flag
+  # (github.com/thomaspoignant/go-feature-flag), which CMK evaluates through OpenFeature. The
+  # API server, tenant manager, event reconciler and task worker read it at startup and again
+  # every `pollingInterval`; cmkctl does not read it, so its commands see every flag as off.
+  # CMK evaluates three boolean flags per keystore, where <plugin> is the `name` of a
+  # KeystoreInstanceKeyOperation plugin in lower case (plugin `AWS`: `enable_hyok_aws`):
   #   enable_byok_<plugin>           allow BYOK keys; read for the `default_keystore` plugin
-  #   enable_hyok_<plugin>           allow HYOK keys in this keystore
+  #   enable_hyok_<plugin>           allow HYOK keys in this keystore; only the `hyok` plugins
+  #                                  whose flag is on are offered for HYOK keys
   #   detect_hyok_rotation_<plugin>  detect new key versions of HYOK keys in this keystore
-  # A flag that is missing from the file is off. Without feature flags, HYOK and rotation
-  # detection are allowed for every keystore and BYOK follows `featureGates.allow-byok`.
-  # Flags apply to all tenants. Example file:
+  # A flag that is missing, invalid or disabled (`disable: true`) is off. Without feature
+  # flags, HYOK and rotation detection are allowed for every keystore and BYOK follows
+  # `featureGates.allow-byok`.
+  #
+  # Format: a map of flag name to flag. Each flag has `variations` (variation name to value,
+  # here `true` and `false`) and `defaultRule.variation` (the variation it returns). CMK
+  # evaluates the flags without an evaluation context: no targeting key and no tenant, so
+  # each flag applies to all tenants. `targeting` rules therefore cannot select tenants, and
+  # a percentage rollout, which needs a targeting key, is off. Example content of
+  # /etc/featureflags/flags.yaml:
+  #   enable_byok_aws:
+  #     variations: { enabled: true, disabled: false }
+  #     defaultRule: { variation: disabled }
   #   enable_hyok_aws:
-  #     variations: { "on": true, "off": false }
-  #     defaultRule: { variation: "on" }
+  #     variations: { enabled: true, disabled: false }
+  #     defaultRule: { variation: enabled }
+  #   detect_hyok_rotation_aws:
+  #     variations: { enabled: true, disabled: false }
+  #     defaultRule: { variation: enabled }
+  # Provide it in the ConfigMap named by `featureFlagsConfigMap` (see there). A process does
+  # not start if the file is missing or is not valid YAML at startup; a later change that
+  # cannot be read is logged, and the flags read before stay in use.
   featureFlags:
     # -- Use the feature flags file. Needs `featureFlagsConfigMap`, which mounts the file;
     # the chart fails to render without it.
@@ -933,10 +1009,19 @@ config:
   # rejected.
 
   clientData:
-    # -- **Required.** Directory with ExtAuthZ's **public** keys, one `<key ID>.pem` per key
-    # (PEM public key or certificate, RS256). Mount it with `extraVolumes` and
-    # `extraVolumeMounts`; startup fails if it does not exist. Keep the old and the new key
-    # during a key rotation. Never put private keys here.
+    # -- **Required.** Directory with ExtAuthZ's **public** keys, one `<key ID>.pem` per key.
+    # ExtAuthZ signs the client data (RS256) with its private key `<key ID>.pem`, where
+    # `<key ID>` is the content of its `keyId` file, and sends the key ID with the data; CMK
+    # verifies the signature with the file of the same name here. Each file holds the RSA
+    # public key in its first PEM block: `-----BEGIN PUBLIC KEY-----` (what
+    # `openssl rsa -pubout` writes), `-----BEGIN RSA PUBLIC KEY-----`, or a
+    # `-----BEGIN CERTIFICATE-----` with that key. Only files ending in `.pem` directly in the
+    # directory are read. Create the Secret from ExtAuthZ's private key `key1.pem`:
+    #   mkdir public && openssl rsa -in key1.pem -pubout -out public/key1.pem
+    #   kubectl create secret generic cmk-client-data-public-keys --from-file=public/
+    # Mount it with `extraVolumes` and `extraVolumeMounts` (see there); startup fails if the
+    # directory does not exist. Keep the old and the new key during a key rotation. Never put
+    # private keys here.
     signingKeysPath: /etc/signing-keys
     # -- Entries of the client data `auth_context` that CMK keeps and passes to the identity
     # management plugin; other entries are dropped. **Must include `issuer`**: CMK lists a
@@ -1029,6 +1114,8 @@ config:
   #       rootCert: /etc/credentials/database/ca.crt
   #       cert: /etc/credentials/database/tls.crt
   #       key: /etc/credentials/database/tls.key
+  # with /etc/credentials/database.json holding `{ "password": "<password>" }`, and the PEM
+  # files described at `parameters.ssl`.
   database:
     # -- **Required.** Host name; value reference.
     host:
@@ -1042,22 +1129,28 @@ config:
     user:
       source: embedded
       value: ""
-    # -- **Required.** Password; value reference. Use `source: file`.
+    # -- **Required.** Password; value reference. Use `source: file`, with a file that holds
+    # only the password (see "Value references" at the top of `config`).
     secret:
       source: embedded
       value: ""
+    # The files under `ssl` are read by the PostgreSQL driver when CMK connects; a file that is
+    # missing or cannot be parsed stops the connection.
     parameters:
       ssl:
         # -- PostgreSQL `sslmode`: `verify-full` (checks the server certificate and the host
         # name), `verify-ca` (checks only the certificate), `require`, `prefer`, `allow` or
         # `disable`. Use `verify-full`.
         mode: verify-full
-        # -- File with the CA certificate of the database server (`sslrootcert`). Empty: the
-        # CAs of the image.
+        # -- File with the CA certificate of the database server (`sslrootcert`), PEM: one or
+        # more `-----BEGIN CERTIFICATE-----` blocks. Empty: the CAs of the image.
         rootCert: ""
-        # -- File with a client certificate (`sslcert`), for certificate authentication.
+        # -- File with a client certificate (`sslcert`), for certificate authentication, PEM:
+        # the certificate first, then its intermediate CAs. Set together with `key`.
         cert: ""
-        # -- File with the private key of the client certificate (`sslkey`).
+        # -- File with the private key of the client certificate (`sslkey`), PEM: one
+        # unencrypted `PRIVATE KEY` (PKCS #8), `RSA PRIVATE KEY` (PKCS #1) or `EC PRIVATE KEY`
+        # block. Set together with `cert`.
         key: ""
     # -- Migration directories in the image, used by the db-migrator jobs and by the tenant
     # manager for new tenant schemas. Keep the defaults with the `cmk-full-*` images. With
@@ -1109,7 +1202,8 @@ config:
         username:
           source: embedded
           value: ""
-        # -- Password; value reference. Use `source: file`.
+        # -- Password; value reference. Use `source: file`, with a file that holds only the
+        # password: a trailing newline would be part of it (see "Value references").
         password:
           source: embedded
           value: ""
@@ -1122,6 +1216,7 @@ config:
       #       cert: { source: file, file: { path: /etc/credentials/valkey/tls.crt } }
       #       certKey: { source: file, file: { path: /etc/credentials/valkey/tls.key } }
       #       serverCa: { source: file, file: { path: /etc/credentials/valkey/ca.crt } }
+      # The PEM files are described under "secretRef" at the top of `config`.
       secretRef:
         type: insecure
     # -- Changes to the built-in task schedule. The task scheduler enqueues every task type on
@@ -1308,7 +1403,24 @@ config:
   #     certificate), `ambient` (the AWS SDK's default credential chain, for example EKS Pod
   #     Identity), `accessKey`, `assumeRole` or `rolesAnywhere`. With the other methods, the
   #     plugin ignores the credentials of the requests; see cmd/keystoreop/aws/README.md in
-  #     github.com/openkcm/keystore-plugins.
+  #     github.com/openkcm/keystore-plugins. Files, as value references in the settings:
+  #     `rolesAnywhere.clientCert` (PEM: the client certificate, optionally followed by its CA
+  #     certificates, all `CERTIFICATE` blocks), `rolesAnywhere.privateKey` (PEM: the
+  #     unencrypted RSA key, `RSA PRIVATE KEY` or `PRIVATE KEY`), and the text values
+  #     `accessKey.accessKeyId`, `accessKey.secretAccessKey`, `accessKey.sessionToken` and
+  #     `assumeRole.externalId`; the plugin removes surrounding whitespace. It reads them when
+  #     CMK configures it, and fails to configure if one cannot be read or parsed;
+  #     `rolesAnywhere` reads its two files again for each new session, so renewed files are
+  #     used without a restart. `ambient` reads what the AWS SDK reads, for example the
+  #     environment variables and token file of EKS Pod Identity or IRSA. Example:
+  #       auth:
+  #         method: rolesAnywhere
+  #         rolesAnywhere:
+  #           clientCert: { source: file, file: { path: /etc/credentials/aws/tls.crt } }
+  #           privateKey: { source: file, file: { path: /etc/credentials/aws/tls.key } }
+  #           trustAnchorArn: arn:aws:rolesanywhere:eu-central-1:123456789012:trust-anchor/…
+  #           profileArn: arn:aws:rolesanywhere:eu-central-1:123456789012:profile/…
+  #           roleArn: arn:aws:iam::123456789012:role/openkcm-keystore
   #   /etc/plugins/identity-management/scim  IdentityManagementService for a SCIM 2.0 server.
   #     Settings, all required (value references with an explicit `source`):
   #       host         base URL of the SCIM API, with `/Users` and `/Groups` below it
@@ -1323,6 +1435,30 @@ config:
   #                    joined with `basePath`), `basePath` and `headerFields` (HTTP header ->
   #                    client data field); empty: always `host`. The fields must be listed in
   #                    `clientData.authContextFields`
+  #     The plugin reads the files of these value references (and of `auth.mtls`, see
+  #     "secretRef" at the top of `config`) when CMK configures it. The settings can also
+  #     come from one JSON file, each value a string, for example from a Secret
+  #     (`kubectl create secret generic cmk-scim-settings --from-file=scim.json`) mounted at
+  #     /etc/scim. Example content of /etc/scim/scim.json:
+  #       {
+  #         "host": "https://scim.example.com/scim/v2",
+  #         "auth": {
+  #           "cert": "-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----\n",
+  #           "certKey": "-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----\n"
+  #         },
+  #         "params": {
+  #           "groupAttribute": "displayName",
+  #           "userAttribute": "groups.display",
+  #           "groupMembersAttribute": "",
+  #           "listMethod": "POST"
+  #         }
+  #       }
+  #     Each setting selects its field with `jsonPath`: `host` `$.host`, `auth.mtls.cert`
+  #     `$.auth.cert`, `auth.mtls.certKey` `$.auth.certKey`, `params.groupAttribute`
+  #     `$.params.groupAttribute`, and so on. Example:
+  #       host:
+  #         source: file
+  #         file: { path: /etc/scim/scim.json, format: json, jsonPath: "$.host" }
   #   /etc/plugins/identity-management/scim-static  IdentityManagementService with the users
   #     and groups in its settings (identity-management-plugins 0.6.0 or later):
   #     `json_data`, a JSON string `{"users": [...], "groups": [...]}` with SCIM users (`id`,
@@ -1415,7 +1551,8 @@ config:
     # the key access details. Each entry: `name` (region), `rootCA` (URL), `subject` with
     # `locality`, `country`, `organization`, `organizationUnit` (lists) and
     # `commonNamePrefix` (the common name is `<commonNamePrefix><tenant ID>`; at most 24
-    # characters, startup fails otherwise). CMK loads the value at startup. Example value:
+    # characters, startup fails otherwise). CMK loads the value at startup. Example value,
+    # which is also the whole content of the file with `source: file`:
     #   - name: eu10
     #     rootCA: https://pki.example.com/root-ca.crt
     #     subject:
@@ -1424,6 +1561,15 @@ config:
     #       organization: [Example]
     #       organizationUnit: [KMS]
     #       commonNamePrefix: kms-crypto_
+    # As a file, for example from a ConfigMap mounted at /etc/cmk-crypto-layer with
+    # `extraVolumes` and `extraVolumeMounts`
+    # (`kubectl create configmap cmk-crypto-layer --from-file=certX509Trusts.yaml`):
+    #   certX509Trusts:
+    #     source: file
+    #     file: { path: /etc/cmk-crypto-layer/certX509Trusts.yaml, format: yaml }
+    # Every process that reads `cryptoLayer` needs the file, the migration jobs included.
+    # CMK reads it at startup, where a missing file or one that is not a YAML list stops the
+    # process, and again each time it uses the subjects.
     certX509Trusts:
       source: embedded
       value: "[]"
@@ -1572,11 +1718,17 @@ config:
   # itself evaluates only `displayName`: the additional property whose `displayName` is
   # `Name` (in any case) is the system's name in the API and in workflows.
   # CMK loads the value at startup; if it cannot, it logs `No configurable context set` and
-  # stores no additional properties. Example with a file from a ConfigMap mounted with
-  # `extraVolumes`:
+  # stores no additional properties. A value that is not valid YAML stops the process.
+  # Example with a file from a ConfigMap mounted with `extraVolumes`:
   #   configurableContext:
   #     source: file
   #     file: { path: /etc/cmk-context/system.yaml, format: yaml }
+  # The file holds YAML in the format of the `value` below, starting with `system:`; the
+  # default `value` is a complete example. Create the ConfigMap with
+  # `kubectl create configmap cmk-context --from-file=system.yaml` and add it to
+  # `extraVolumes` and `extraVolumeMounts`:
+  #   - { name: cmk-context, configMap: { name: cmk-context } }
+  #   - { name: cmk-context, mountPath: /etc/cmk-context, readOnly: true }
   configurableContext:
     source: embedded
     value: |

@@ -1,0 +1,20 @@
+system:
+  identifier:
+    displayName: "GTID"
+    internal: true
+  region:
+    displayName: "Region"
+    internal: true
+  type:
+    displayName: "Type"
+    internal: true
+  externalName:
+    displayName: "Name"
+    default: "n/a"
+    optional: true
+  roleName:
+    displayName: "Role"
+    optional: true
+  roleID:
+    displayName: "RoleID"
+    optional: true

@@ -272,6 +272,28 @@ manager: `/etc/tenant-manager/config.yaml`). Only the file is mounted, so
   server replica, wait until the API server has started, then upgrade with
   `enabled: false`. The release notes warn while it is enabled.
 
+### Files
+
+The configuration reads these files. `values.yaml` describes the format of each at the
+listed key, with an example of the content and of how to create and mount it.
+
+| File | Read through | Format | Described at |
+| --- | --- | --- | --- |
+| Passwords, tokens | value references with `source: file` | The value alone, without a trailing newline | "Value references" at the top of `config` |
+| JSON credentials | value references with `format: json` | JSON; `jsonPath` in dot notation (`$.password`) selects a string | "Value references" |
+| Certificates, keys, CAs | every `mtls` setting | PEM | "secretRef" at the top of `config` |
+| Database TLS files | `config.database.parameters.ssl` | PEM | `config.database.parameters.ssl` |
+| Client data public keys | `config.clientData.signingKeysPath` | Directory of `<key ID>.pem`, ExtAuthZ's RSA public keys | `config.clientData.signingKeysPath` |
+| Feature flags | `config.featureFlags.filePath`, `featureFlagsConfigMap` | YAML, GO Feature Flag format | `config.featureFlags` |
+| Crypto layer subjects | `config.cryptoLayer.certX509Trusts` with `source: file` | YAML list | `config.cryptoLayer.certX509Trusts` |
+| System properties | `config.configurableContext` with `source: file` | YAML `system` map | `config.configurableContext` |
+| Plugin credentials | value references in `config.plugins[].yamlConfiguration` | PEM, text or a JSON settings file, per plugin | `config.plugins` |
+
+Mount Secrets and ConfigMaps with `extraVolumes` and `extraVolumeMounts`; the chart
+mounts `featureFlagsConfigMap` itself, and CMK reads the feature flags file again while
+it runs. The unit tests in `helm-tests/unit` load the documented examples of these files,
+except those of the AWS keystore plugin, with CMK's own code.
+
 ## Upgrading from 0.1.x
 
 | Change | Action |

@@ -58,6 +58,7 @@ featureFlagsConfigMap: cmk-feature-flags
 extraVolumes:
   - name: credentials
     projected:
+      defaultMode: 0440
       sources:
         - secret:
             name: cmk-database
@@ -74,6 +75,7 @@ extraVolumes:
   - name: client-data-public-keys
     secret:
       secretName: cmk-client-data-public-keys
+      defaultMode: 0440
 extraVolumeMounts:
   - { name: credentials, mountPath: /etc/credentials, readOnly: true }
   - { name: client-data-public-keys, mountPath: /etc/signing-keys, readOnly: true }

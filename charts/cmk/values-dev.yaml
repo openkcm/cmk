@@ -31,6 +31,23 @@ extraInitContainers:
           sleep 3
         done
 
+# Secrets that `make create-plugin-secret` creates from env/secret, which
+# `make create-empty-secrets` copies from env/blueprints (`make generate-signing-keys` adds
+# the signing keys):
+#   event-processor-credentials  /etc/event-processor/secrets.json, a JSON object with the
+#       PEM strings `serverCA`, `cert` and `certKey` (line breaks as `\n`), for an mtls
+#       `config.eventProcessor.secretRef` with `format: json` and `jsonPath: "$.cert"`, ….
+#       Not read here: `secretRef.type` is `insecure`.
+#   scim  /etc/credentials/identity-management/scim.json, a JSON object with the strings
+#       `host` (base URL of the SCIM API), `auth.cert` and `auth.certKey` (PEM client
+#       certificate and its private key, line breaks as `\n`), `params.groupAttribute`,
+#       `params.userAttribute`, `params.groupMembersAttribute` and `params.listMethod`: the
+#       settings of the scim plugin below. Value references select a field with `jsonPath`
+#       in dot notation, such as `$.auth.cert` (see "Value references" in values.yaml).
+#   signing-keys  /etc/signing-keys (`config.clientData.signingKeysPath`): `key01.pem`, the
+#       RSA public key (`-----BEGIN PUBLIC KEY-----`) with which CMK verifies client data
+#       signed with key ID `key01`, and `private_key01.pem`, its private key, with which
+#       cmd/clientData signs test requests; CMK does not use the private key.
 extraVolumes:
   - name: event-processor
     secret:
@@ -156,29 +173,29 @@ config:
       yamlConfiguration: |
         host:
           source: file
-          file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$['host']" }
+          file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$.host" }
         auth:
           type: mtls
           mtls:
             cert:
               source: file
-              file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$['auth']['cert']" }
+              file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$.auth.cert" }
             certKey:
               source: file
-              file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$['auth']['certKey']" }
+              file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$.auth.certKey" }
         params:
           groupAttribute:
             source: file
-            file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$['params']['groupAttribute']" }
+            file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$.params.groupAttribute" }
           userAttribute:
             source: file
-            file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$['params']['userAttribute']" }
+            file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$.params.userAttribute" }
           groupMembersAttribute:
             source: file
-            file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$['params']['groupMembersAttribute']" }
+            file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$.params.groupMembersAttribute" }
           listMethod:
             source: file
-            file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$['params']['listMethod']" }
+            file: { path: /etc/credentials/identity-management/scim.json, format: json, jsonPath: "$.params.listMethod" }
         authContext:
           source: embedded
           value: |
