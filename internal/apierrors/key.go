@@ -423,9 +423,10 @@ var key = []errs.ExposedErrors[*APIError]{
 	{
 		InternalErrorChain: []error{manager.ErrImportKeyMaterialsToProvider, keymanagement.ErrImportKeyMaterialFailed},
 		ExposedError: &APIError{
-			Code:    "INVALID_WRAPPED_KEY_MATERIAL",
-			Message: "Key material decryption failed: invalid or incorrectly wrapped key material.",
-			Status:  http.StatusBadRequest,
+			Code: "INVALID_WRAPPED_KEY_MATERIAL",
+			Message: "Key material decryption failed: invalid or incorrectly wrapped key material, or" +
+				" the key material is wrapped with expired import parameters.",
+			Status: http.StatusBadRequest,
 		},
 	},
 	{
