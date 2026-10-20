@@ -7,7 +7,7 @@ FROM ghcr.io/openkcm/images/keystore-plugins:${KEYSTORE_PLUGINS_IMAGE} AS keysto
 FROM ghcr.io/openkcm/images/identity-management-plugins:${IDENTITY_MANAGEMENT_PLUGINS_IMAGE} AS identity-management-plugins
 
 # --- Final Stage ---
-FROM ghcr.io/openkcm/images/cmk-full-base:${CMK_FULL_BASE_IMAGE}
+FROM ghcr.io/openkcm/images/cmk/cmk-full-base:${CMK_FULL_BASE_IMAGE}
 
 WORKDIR /
 
