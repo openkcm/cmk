@@ -30,12 +30,24 @@ type SystemGroup interface {
 		id uuid.UUID,
 		systemGroupPatch cmkapi.SystemGroupPatch,
 	) (*model.SystemGroup, error)
+	DeleteAllSystemGroups(ctx context.Context) error
+	CreateAllSystemGroups(ctx context.Context, supressWarning bool) error
+	HandleNewSystem(ctx context.Context, system *model.System) error
+	HandleDeleteSystem(ctx context.Context, system *model.System) error
 }
 
 func NewSystemGroup(r repo.Repo) SystemGroup {
 	return &systemGroup{
 		r: r,
 	}
+}
+
+func processSystemGroupName(sys *model.System) string {
+	name, ok := sys.Properties["externalName"]
+	if ok {
+		return name
+	}
+	return sys.Identifier
 }
 
 func (s *systemGroup) GetAllSystemGroups(
@@ -89,4 +101,169 @@ func (s *systemGroup) UpdateSystemGroup(
 
 	_, err = s.r.Patch(ctx, systemGroup, *repo.NewQuery())
 	return systemGroup, err
+}
+
+func (s *systemGroup) HandleDeleteSystem(ctx context.Context, system *model.System) error {
+	if system.SystemGroupID == nil {
+		return nil
+	}
+
+	count, err := s.r.Count(ctx, &model.System{SystemGroupID: system.SystemGroupID}, *repo.NewQuery())
+	if err != nil {
+		return err
+	}
+
+	if count < 2 {
+		_, err := s.r.Delete(ctx, &model.SystemGroup{ID: *system.SystemGroupID}, *repo.NewQuery())
+		return err
+	}
+	return nil
+}
+
+func (s *systemGroup) HandleNewSystem(ctx context.Context, system *model.System) error {
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().Where(repo.IdentifierField, system.Identifier),
+		),
+	)
+	systems, _, err := repo.ListAndCountSystemWithProperties(ctx, s.r, repo.Pagination{}, query)
+	if err != nil {
+		return err
+	}
+
+	if len(systems) < 2 {
+		return nil
+	}
+	hasSystemGroup := false
+	for _, sys := range systems {
+		if hasSystemGroup {
+			break
+		}
+		hasSystemGroup = sys.SystemGroupID != nil
+	}
+
+	if hasSystemGroup {
+		system.SystemGroupID = systems[0].SystemGroupID
+		_, err := s.r.Patch(ctx, system, *repo.NewQuery())
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	return s.CreateSystemGroup(ctx, append(systems, system))
+}
+
+func (s *systemGroup) CreateSystemGroup(ctx context.Context, systems []*model.System) error {
+	if len(systems) < 2 {
+		return ErrInvalidSystemGroupSize
+	}
+	var name string
+	for _, sys := range systems {
+		name = processSystemGroupName(sys)
+		if name != sys.Identifier {
+			break
+		}
+	}
+
+	return s.r.Transaction(ctx, func(ctx context.Context) error {
+		// TODO: Merge https://github.com/openkcm/cmk/pull/478 first
+		// as supressWarning from tenantConfig as it requires the method
+		// systemGroupingConfig, err := s.tenantConfig.GetSystemGroupingConfig(ctx)
+		groupID := uuid.New()
+		err := s.r.Create(ctx, model.SystemGroup{
+			ID:              groupID,
+			Name:            name,
+			SuppressWarning: false,
+			// SupressWarning: systemGroupingConfig.supressWarning,
+		})
+		if err != nil {
+			return err
+		}
+
+		for _, sys := range systems {
+			sys.SystemGroupID = &groupID
+			_, err := s.r.Patch(ctx, sys, *repo.NewQuery())
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// nolint: funlen
+func (s *systemGroup) CreateAllSystemGroups(ctx context.Context, supressWarning bool) error {
+	type groupValue struct {
+		name    string
+		systems []*model.System
+	}
+	groupNames := make(map[string]groupValue)
+
+	err := repo.ProcessInBatchWithOptions(
+		ctx,
+		s.r,
+		repo.NewQuery(),
+		repo.DefaultLimit,
+		repo.BatchProcessOptions{},
+		func(ctx context.Context, query repo.Query) ([]*model.System, error) {
+			items, _, err := repo.ListAndCountSystemWithProperties(ctx, s.r, repo.Pagination{}, &query)
+			return items, err
+		},
+		func(systems []*model.System) error {
+			for _, sys := range systems {
+				group, ok := groupNames[sys.Identifier]
+				if !ok {
+					groupNames[sys.Identifier] = groupValue{
+						name:    processSystemGroupName(sys),
+						systems: []*model.System{sys},
+					}
+					continue
+				}
+				if group.name == sys.Identifier {
+					group.name = processSystemGroupName(sys)
+				}
+				group.systems = append(group.systems, sys)
+				groupNames[sys.Identifier] = group
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	return s.r.Transaction(ctx, func(ctx context.Context) error {
+		for _, group := range groupNames {
+			if len(group.systems) < 2 {
+				continue
+			}
+
+			groupID := uuid.New()
+			err := s.r.Create(ctx, &model.SystemGroup{
+				ID:              groupID,
+				Name:            group.name,
+				SuppressWarning: supressWarning,
+			})
+			if err != nil {
+				return err
+			}
+
+			for _, sys := range group.systems {
+				_, err := s.r.Patch(ctx, &model.System{ID: sys.ID, SystemGroupID: &groupID}, *repo.NewQuery())
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
+func (s *systemGroup) DeleteAllSystemGroups(ctx context.Context) error {
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.IDField, repo.NotNull)),
+	)
+	_, err := s.r.Delete(ctx, &model.SystemGroup{}, *query)
+	return err
 }

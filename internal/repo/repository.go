@@ -439,12 +439,16 @@ type BatchProcessOptions struct {
 //   - IgnoreFailMode: When true, a processFunc error does not stop the batch loop; processing
 //     continues through the remaining records and the last error encountered is returned at the end.
 //     When false (default), the first processFunc error is returned immediately.
+//
+// listFunc overrides the default repo.List call. Pass nil to use repo.List.
+// nolint: cyclop
 func ProcessInBatchWithOptions[T Resource](
 	ctx context.Context,
 	repo Repo,
 	baseQuery *Query,
 	batchSize int,
 	options BatchProcessOptions,
+	listFunc func(ctx context.Context, query Query) ([]*T, error),
 	processFunc func([]*T) error,
 ) error {
 	offset := 0
@@ -454,12 +458,20 @@ func ProcessInBatchWithOptions[T Resource](
 
 		query := baseQuery.SetLimit(batchSize).SetOffset(offset)
 
-		err := repo.List(ctx, *new(T), &items, *query)
-		if err != nil {
-			return err
+		if listFunc != nil {
+			var err error
+			items, err = listFunc(ctx, *query)
+			if err != nil {
+				return err
+			}
+		} else {
+			err := repo.List(ctx, *new(T), &items, *query)
+			if err != nil {
+				return err
+			}
 		}
 
-		err = processFunc(items)
+		err := processFunc(items)
 		if err != nil {
 			lastError = err
 			if !options.IgnoreFailMode {
@@ -531,7 +543,7 @@ func ProcessInBatch[T Resource](
 	batchSize int,
 	processFunc func([]*T) error,
 ) error {
-	return ProcessInBatchWithOptions(ctx, repo, baseQuery, batchSize, BatchProcessOptions{}, processFunc)
+	return ProcessInBatchWithOptions(ctx, repo, baseQuery, batchSize, BatchProcessOptions{}, nil, processFunc)
 }
 
 // ListAndCount lists items paginated and returns total count of elements
