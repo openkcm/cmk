@@ -116,21 +116,11 @@ config:
     registry:
       enabled: true
       address: registry.services.svc.cluster.local:9092
-      secretRef:
-        type: mtls
-        mtls:
-          cert:     { source: file, file: { path: /etc/credentials/mtls/tls.crt, format: binary } }
-          certKey:  { source: file, file: { path: /etc/credentials/mtls/tls.key, format: binary } }
-          serverCa: { source: file, file: { path: /etc/credentials/mtls/ca.crt, format: binary } }
+      secretRef: { type: insecure }    # inside a service mesh with mutual TLS
     sessionManager:
       enabled: true
       address: session-manager.services.svc.cluster.local:9091
-      secretRef:
-        type: mtls
-        mtls:
-          cert:     { source: file, file: { path: /etc/credentials/mtls/tls.crt, format: binary } }
-          certKey:  { source: file, file: { path: /etc/credentials/mtls/tls.key, format: binary } }
-          serverCa: { source: file, file: { path: /etc/credentials/mtls/ca.crt, format: binary } }
+      secretRef: { type: insecure }    # inside a service mesh with mutual TLS
   tenantManager:
     secretRef:
       type: mtls
@@ -140,8 +130,8 @@ config:
         serverCa: { source: file, file: { path: /etc/credentials/mtls/ca.crt, format: binary } }
     amqp:
       url: amqps://rabbitmq.services.svc.cluster.local:5671
-      source: /queues/cmk.tenants.requests
-      target: /exchanges/cmk/mesh.tenants
+      source: /queues/cmk.emea.tenants
+      target: /queues/cmk.emea.tenants.replies
   eventProcessor:
     secretRef:
       type: mtls

@@ -185,8 +185,8 @@ config:
         serverCa: { source: file, file: { path: /etc/credentials/amqp/ca.crt, format: binary } }
     amqp:
       url: amqps://rabbitmq.services.svc.cluster.local:5671
-      source: /queues/cmk.tenants.requests
-      target: /exchanges/cmk/mesh.tenants
+      source: /queues/cmk.emea.tenants
+      target: /queues/cmk.emea.tenants.replies
 
   eventProcessor:
     secretRef:

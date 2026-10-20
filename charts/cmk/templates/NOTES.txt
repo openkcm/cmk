@@ -106,7 +106,7 @@ Check the pods:
 {{- end }}
 {{- range $name, $svc := $services }}
 {{- if and $svc $svc.enabled (ne (toString (($svc.secretRef | default dict).type)) "mtls") }}
-{{- $warnings = append $warnings (printf "config.services.%s uses no TLS. Use secretRef type mtls unless a service mesh encrypts the traffic." $name) }}
+{{- $warnings = append $warnings (printf "config.services.%s uses no TLS of its own: run CMK and this service in a service mesh with mutual TLS, or use secretRef type mtls through a proxy that terminates TLS." $name) }}
 {{- end }}
 {{- end }}
 {{- if not .Values.taskScheduler.deploy }}
