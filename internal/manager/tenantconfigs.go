@@ -41,6 +41,7 @@ type TenantConfigManager struct {
 	keystorePool *Pool
 	cfg          *config.Config
 	certs        *CertificateManager
+	systemGroups SystemGroup
 	flags        FeatureFlags
 }
 
@@ -50,6 +51,7 @@ func NewTenantConfigManager(
 	deploymentConfig *config.Config,
 	certs *CertificateManager,
 	flags FeatureFlags,
+	systemGroups SystemGroup,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
 		r:            repo,
@@ -58,6 +60,7 @@ func NewTenantConfigManager(
 		cfg:          deploymentConfig,
 		certs:        certs,
 		flags:        flags,
+		systemGroups: systemGroups,
 	}
 }
 
@@ -183,7 +186,22 @@ func (m *TenantConfigManager) SetSystemGroupsConfig(
 	ctx context.Context,
 	sg *model.SystemGroupConfig,
 ) (*model.SystemGroupConfig, error) {
-	err := m.SetTenantConfig(ctx, sg)
+	cur, err := m.GetSystemGroupingConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if cur.Enabled != sg.Enabled {
+		var err error
+		if sg.Enabled {
+			err = m.systemGroups.CreateAllSystemGroups(ctx, !sg.WarnCoverage)
+		} else {
+			err = m.systemGroups.DeleteAllSystemGroups(ctx)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = m.SetTenantConfig(ctx, sg)
 	return sg, err
 }
 

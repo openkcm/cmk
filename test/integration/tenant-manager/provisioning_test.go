@@ -73,12 +73,13 @@ func (s *DBSuite) SetupSuite() {
 		cfg,
 		kcm,
 		um,
+		nil,
 	)
 
 	km := manager.NewKeyManager(
 		r,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil),
+		manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil, nil),
 		kcm,
 		um,
 		cm,
