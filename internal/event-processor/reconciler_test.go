@@ -133,7 +133,7 @@ func setupTestInstance(
 	eventProcessor, err := eventprocessor.NewCryptoReconciler(
 		t.Context(), cfg, r,
 		svcRegistry, clientsFactory,
-		manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil),
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil),
 	)
 	assert.NoError(t, err)
 
@@ -1868,7 +1868,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
+	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil))
 	require.NoError(t, err)
 	rec.DisableAuditLog()
 	t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
@@ -1877,7 +1877,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	// skips GrantTrust (no role-management cert needed).
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	clientCert := model.NewClientCertificate(certCfg, tenant)
-	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil).
+	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil).
 		SetKeystoreConfig(ctx, &model.KeystoreConfig{
 			RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
 			CryptoAccessData: map[string]model.CryptoConfig{
@@ -2054,7 +2054,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
+	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil))
 	require.NoError(t, err)
 	rec.DisableAuditLog()
 	t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
@@ -2079,7 +2079,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 			},
 		},
 	}
-	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil).SetKeystoreConfig(ctx, &ksConfig))
+	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil).SetKeystoreConfig(ctx, &ksConfig))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) { s.Region = region })
@@ -2187,7 +2187,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil))
+		rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil))
 		require.NoError(t, err)
 		rec.DisableAuditLog()
 		t.Cleanup(func() { rec.CloseAmqpClients(t.Context()) })
@@ -2242,7 +2242,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		ksConfig := model.KeystoreConfig{
 			CryptoAccessData: map[string]model.CryptoConfig{},
 		}
-		require.NoError(t, manager.NewTenantConfigManager(inst.r, testutils.NewTestPlugins(), &config.Config{}, nil, nil).SetKeystoreConfig(ctx, &ksConfig))
+		require.NoError(t, manager.NewTenantConfigManager(inst.r, testutils.NewTestPlugins(), &config.Config{}, nil, nil, nil).SetKeystoreConfig(ctx, &ksConfig))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 
@@ -2268,7 +2268,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 				},
 			},
 		}
-		require.NoError(t, manager.NewTenantConfigManager(inst.r, testutils.NewTestPlugins(), &config.Config{}, nil, nil).SetKeystoreConfig(ctx, &ksConfig))
+		require.NoError(t, manager.NewTenantConfigManager(inst.r, testutils.NewTestPlugins(), &config.Config{}, nil, nil, nil).SetKeystoreConfig(ctx, &ksConfig))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 

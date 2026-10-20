@@ -357,7 +357,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 		// Store config with enabled=true so changing to false triggers role validation
-		tcm := manager.NewTenantConfigManager(r, nil, nil, nil, nil)
+		tcm := manager.NewTenantConfigManager(r, nil, nil, nil, nil, nil)
 		_, err := tcm.SetWorkflowConfig(ctx, testutils.NewDefaultWorkflowConfig(true))
 		require.NoError(t, err)
 

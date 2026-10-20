@@ -54,7 +54,8 @@ func New(
 	cmkAuditor := auditor.New(ctx, config)
 	certManager := NewCertificateManager(ctx, r, svcRegistry, config)
 	flagManager := NewFeatureFlags(config, svcRegistry, flags)
-	tenantConfigManager := NewTenantConfigManager(r, svcRegistry, config, certManager, flagManager)
+	systemGroup := NewSystemGroup(r)
+	tenantConfigManager := NewTenantConfigManager(r, svcRegistry, config, certManager, flagManager, systemGroup)
 	userManager := NewUserManager(r, cmkAuditor)
 	tagManager := NewTagManager(r)
 	keyConfigManager := NewKeyConfigManager(r, certManager, userManager,
@@ -82,6 +83,7 @@ func New(
 		config,
 		keyConfigManager,
 		userManager,
+		tenantConfigManager,
 	)
 	groupManager := NewGroupManager(r, svcRegistry, userManager)
 
@@ -90,7 +92,7 @@ func New(
 		KeyVersions:   NewKeyVersionManager(r, svcRegistry, tenantConfigManager, certManager, cmkAuditor),
 		TenantConfigs: tenantConfigManager,
 		System:        systemManager,
-		SystemGroup:   NewSystemGroup(r),
+		SystemGroup:   systemGroup,
 		KeyConfig:     keyConfigManager,
 		Tags:          NewTagManager(r),
 		Labels:        NewLabelManager(r),

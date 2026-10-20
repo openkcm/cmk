@@ -69,7 +69,7 @@ func SetupWorkflowManager(
 	svcRegistry := testutils.NewTestPlugins(opts...)
 
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager, nil)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager, nil, nil)
 	cmkAuditor := &auditor.Auditor{}
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
@@ -78,7 +78,7 @@ func SetupWorkflowManager(
 
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
-	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
+	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager, nil)
 
 	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil, nil)
 	m := manager.NewWorkflowManager(
