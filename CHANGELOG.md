@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.0](https://github.com/openkcm/cmk/compare/v0.11.0...v0.12.0) (2026-10-20)
+
+
+### Features
+
+* migrate to trustmapping api ([#477](https://github.com/openkcm/cmk/issues/477)) ([410840a](https://github.com/openkcm/cmk/commit/410840aadbf8e76120411d83913b2ec80a2b2b8b))
+* sync tenant limit overrides from registry config update events ([#463](https://github.com/openkcm/cmk/issues/463)) ([3cad4cd](https://github.com/openkcm/cmk/commit/3cad4cda42816a56bc5398e043397d1bb30440cb))
+
+
+### Bug Fixes
+
+* audit logging in authz middleware and new key version detection ([#484](https://github.com/openkcm/cmk/issues/484)) ([89f406d](https://github.com/openkcm/cmk/commit/89f406d35c12bb3054db675b024b590c9fae915f))
+* chart refactoring and documenting ([#483](https://github.com/openkcm/cmk/issues/483)) ([df20222](https://github.com/openkcm/cmk/commit/df20222f5ae21618297b57654c6e4ff94a490ed6))
+* **chart:** covered missing extraEnvs, extraEnvsFrom, livenessProbe, readinessProbe, and resources in deployment templates. ([#474](https://github.com/openkcm/cmk/issues/474)) ([d4ab342](https://github.com/openkcm/cmk/commit/d4ab3426a51aae03d907462ec919db6a33565cbb))
+* **chart:** remove chart not used in event-reconciler deployment configuration! ([#475](https://github.com/openkcm/cmk/issues/475)) ([8681c4e](https://github.com/openkcm/cmk/commit/8681c4e40e8d9ff542362ab2347b6c15c063f0be))
+* **deps:** bump the gomod-group group across 1 directory with 3 updates ([#481](https://github.com/openkcm/cmk/issues/481)) ([506b815](https://github.com/openkcm/cmk/commit/506b815e5f895ed8ad684bf96e45546e2304edf6))
+* update the images paths for the plugins ([28fb38a](https://github.com/openkcm/cmk/commit/28fb38a9cb468e2c27b1086f9a6c49425c4d5989))
+
 ## [0.11.0](https://github.com/openkcm/cmk/compare/v0.10.0...v0.11.0) (2026-10-13)
 
 
