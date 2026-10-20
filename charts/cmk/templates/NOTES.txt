@@ -133,7 +133,7 @@ Check the pods:
 {{- if and $cfg.logger (eq (toString $cfg.logger.level) "debug") }}
 {{- $warnings = append $warnings "config.logger.level is debug: CMK logs its complete configuration, including embedded secrets. Use info in production." }}
 {{- end }}
-{{- if and .Values.apiServer.deploy (not .Values.autoscaling.enabled) (lt (int .Values.replicaCount) 2) }}
+{{- if and .Values.apiServer.deploy (not .Values.apiServer.autoscaling.enabled) (lt (int .Values.apiServer.replicaCount) 2) }}
 {{- $warnings = append $warnings "replicaCount is 1: the CMK API is unavailable while the pod restarts. Use two or more replicas in production." }}
 {{- end }}
 {{- if $warnings }}

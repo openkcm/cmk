@@ -11,9 +11,28 @@
 # Two Jobs migrate the database schemas before and the data after every install and upgrade
 # (`dbMigrator`).
 #
-# Values marked **Required** must be set for a working installation. Settings of CMK itself
-# are under `config`; they are described in the configuration reference:
-# https://openkcm.io/components/cmk/security/cmk-config
+# Layout of this file:
+#   1. Names and labels
+#   2. Image and service account
+#   3. Components: the settings of each Deployment and of the migration jobs
+#   4. Settings shared by all components: pod and container settings, probes, resources,
+#      scheduling
+#   5. Networking: ports, service, network policy
+#   6. Extension points: extra containers, volumes and environment variables, feature flags
+#   7. Helm test
+#   8. config: the CMK configuration, rendered into the config.yaml of each component
+#
+# Values marked **Required** must be set for a working installation. Full reference of the
+# CMK configuration:
+#   https://openkcm.io/components/cmk/security/cmk-config
+#
+# Overview, upgrade notes and troubleshooting: README.md of this chart.
+#
+# Comments starting with "# --" document a value (helm-docs format).
+
+###############################################################################
+# 1. Names and labels
+###############################################################################
 
 # -- Override the chart name in resource names and in the `app.kubernetes.io/name` label.
 nameOverride: ""
@@ -28,6 +47,10 @@ namespace: ""
 
 # -- Labels added to all resources.
 commonLabels: {}
+
+###############################################################################
+# 2. Image and service account
+###############################################################################
 
 image:
   # -- Registry of the image.
@@ -69,9 +92,9 @@ serviceAccount:
   # With `create: false`, all components use this ServiceAccount, or `default` if empty.
   name: ""
 
-# =============================================================================
-# Components
-# =============================================================================
+###############################################################################
+# 3. Components
+#
 # Settings of every component below:
 #   deploy                     Deploy the component.
 #   image.command              Override the command, as a string or a list. Default: the
@@ -84,8 +107,8 @@ serviceAccount:
 #   resources                  Resources of the component. Empty: the shared `resources`.
 #   strategy                   Deployment update strategy. Empty: rolling update.
 #   topologySpreadConstraints  Topology spread constraints of the component's pods.
-# Pod annotations, labels, affinity, probes and volumes are shared; see "Shared by all
-# components".
+# Pod annotations, labels, affinity, probes and volumes are shared; see section 4.
+###############################################################################
 
 apiServer:
   # -- Deploy the API server. Its replicas are set with `replicaCount` or `autoscaling`.
@@ -104,30 +127,44 @@ apiServer:
   # -- Topology spread constraints, for example to spread the replicas across zones.
   topologySpreadConstraints: []
 
-# -- Number of API server replicas, when `autoscaling` is disabled. Use two or more in
-# production.
-replicaCount: 1
+  # -- Number of API server replicas, when `autoscaling` is disabled. Use two or more in
+  # production.
+  replicaCount: 1
 
-autoscaling:
-  # -- Scale the API server with a HorizontalPodAutoscaler. When enabled, `replicaCount` is
-  # not used.
-  enabled: false
-  # -- Minimum number of replicas.
-  minReplicas: 2
-  # -- Maximum number of replicas.
-  maxReplicas: 5
-  # -- Target average CPU utilization, in percent of the CPU request. Null: not used.
-  targetCPUUtilizationPercentage: 80
-  # -- Target average memory utilization, in percent of the memory request. Null: not used.
-  # At least one target must be set.
-  targetMemoryUtilizationPercentage: 80
-  # -- Scaling behavior (`autoscaling/v2` `behavior`). Empty: the Kubernetes defaults.
-  behavior: {}
+  autoscaling:
+    # -- Scale the API server with a HorizontalPodAutoscaler. When enabled, `replicaCount` is
+    # not used.
+    enabled: false
+    # -- Minimum number of replicas.
+    minReplicas: 2
+    # -- Maximum number of replicas.
+    maxReplicas: 5
+    # -- Target average CPU utilization, in percent of the CPU request. Null: not used.
+    targetCPUUtilizationPercentage: 80
+    # -- Target average memory utilization, in percent of the memory request. Null: not used.
+    # At least one target must be set.
+    targetMemoryUtilizationPercentage: 80
+    # -- Scaling behavior (`autoscaling/v2` `behavior`). Empty: the Kubernetes defaults.
+    behavior: {}
 
 tenantManager:
   # -- Deploy the tenant manager. It needs `config.tenantManager` and the `registry` and
   # `sessionManager` services under `config.services`; without them it does not start.
   deploy: true
+  image:
+    # -- Override the command.
+    command: ""
+    # -- Override the arguments.
+    args: []
+  # -- Arguments added after the subcommand.
+  extraArgs: []
+  # -- Resources. Empty: the shared `resources`.
+  resources: {}
+  # -- Update strategy. Empty: rolling update.
+  strategy: {}
+  # -- Topology spread constraints.
+  topologySpreadConstraints: []
+
   # -- Number of replicas, when `autoscaling` is disabled.
   replicaCount: 1
   autoscaling:
@@ -142,20 +179,7 @@ tenantManager:
     # -- Target average memory utilization, in percent of the memory request. Null: not used.
     targetMemoryUtilizationPercentage: 80
     # -- Scaling behavior. Empty: the Kubernetes defaults.
-    behavior: {}
-  image:
-    # -- Override the command.
-    command: ""
-    # -- Override the arguments.
-    args: []
-  # -- Arguments added after the subcommand.
-  extraArgs: []
-  # -- Resources. Empty: the shared `resources`.
-  resources: {}
-  # -- Update strategy. Empty: rolling update.
-  strategy: {}
-  # -- Topology spread constraints.
-  topologySpreadConstraints: []
+    behavior: { }
 
 eventReconciler:
   # -- Deploy the event reconciler. It sends key and system tasks to the regions configured
@@ -274,9 +298,9 @@ dbMigrator:
   # never complete.
   extraContainers: []
 
-# =============================================================================
-# Shared by all components
-# =============================================================================
+###############################################################################
+# 4. Settings shared by all components
+###############################################################################
 
 # -- Old ReplicaSets kept for rollbacks.
 revisionHistoryLimit: 10
@@ -377,6 +401,27 @@ readinessProbe:
   timeoutSeconds: 3
   failureThreshold: 3
 
+# -- Node labels for all pods, including the migration jobs.
+nodeSelector: {}
+
+# -- Tolerations for all pods, including the migration jobs.
+tolerations: []
+
+# -- Affinity of the component pods.
+affinity: {}
+
+podDisruptionBudget:
+  # -- Create PodDisruptionBudgets for the API server and the tenant manager. Use them with
+  # two or more replicas.
+  enabled: false
+  # Set at most one of the following. If neither is set, `maxUnavailable: 1` is used.
+  # minAvailable: 1
+  # maxUnavailable: 1
+
+###############################################################################
+# 5. Networking
+###############################################################################
+
 # -- Container ports. `http` (API server only) must match `config.http.port`;
 # `http-status` must match `config.status.address`. The other components expose only
 # `http-status`. The probes, the Service and the NetworkPolicies refer to the ports by name.
@@ -409,22 +454,25 @@ service:
       protocol: TCP
       targetPort: http-status
 
-# -- Node labels for all pods, including the migration jobs.
-nodeSelector: {}
-
-# -- Tolerations for all pods, including the migration jobs.
-tolerations: []
-
-# -- Affinity of the component pods.
-affinity: {}
-
-podDisruptionBudget:
-  # -- Create PodDisruptionBudgets for the API server and the tenant manager. Use them with
-  # two or more replicas.
+networkPolicy:
+  # -- **Recommended.** Create NetworkPolicies that allow ingress to the component pods only
+  # from the peers below. Outgoing traffic is not restricted.
   enabled: false
-  # Set at most one of the following. If neither is set, `maxUnavailable: 1` is used.
-  # minAvailable: 1
-  # maxUnavailable: 1
+  http:
+    # -- Peers allowed on the API server's `http` port: Envoy Gateway. Empty: none.
+    from: []
+    # - namespaceSelector:
+    #     matchLabels: { kubernetes.io/metadata.name: envoy-gateway-system }
+  status:
+    # -- Peers allowed on the `http-status` port of every component, for example a metrics
+    # collector. Empty: none. Probes from the kubelet are not affected on most network plugins.
+    from: []
+  # -- Additional ingress rules of the API server, in NetworkPolicy syntax.
+  extraIngress: []
+
+###############################################################################
+# 6. Extension points
+###############################################################################
 
 # -- Additional init containers of all pods, including the migration jobs. They get the pod
 # security context (`podSecurityContext`), but not the container security context
@@ -522,21 +570,9 @@ extraEnvsFrom: []
 # after its sync delay, and CMK reads it again every `config.featureFlags.pollingInterval`.
 featureFlagsConfigMap: ""
 
-networkPolicy:
-  # -- **Recommended.** Create NetworkPolicies that allow ingress to the component pods only
-  # from the peers below. Outgoing traffic is not restricted.
-  enabled: false
-  http:
-    # -- Peers allowed on the API server's `http` port: Envoy Gateway. Empty: none.
-    from: []
-    # - namespaceSelector:
-    #     matchLabels: { kubernetes.io/metadata.name: envoy-gateway-system }
-  status:
-    # -- Peers allowed on the `http-status` port of every component, for example a metrics
-    # collector. Empty: none. Probes from the kubelet are not affected on most network plugins.
-    from: []
-  # -- Additional ingress rules of the API server, in NetworkPolicy syntax.
-  extraIngress: []
+###############################################################################
+# 7. Helm test
+###############################################################################
 
 tests:
   # -- Create the `helm test` pod, which calls the API server's readiness endpoint through
@@ -556,11 +592,8 @@ tests:
       memory: 32Mi
       ephemeral-storage: 32Mi
 
-# =============================================================================
-# Configuration
-# =============================================================================
-
-# CMK configuration.
+###############################################################################
+# 8. CMK configuration
 #
 # Where it goes: every component has its own ConfigMap (templates/<component>/configmap.yaml),
 # named `<fullname>-config` for the API server and `<fullname>-<component>-config` for the
@@ -628,6 +661,7 @@ tests:
 #             `-----BEGIN RSA PRIVATE KEY-----` (PKCS #1) or `-----BEGIN EC PRIVATE KEY-----`
 #             block
 #   serverCa, rootCAs  PEM: one or more `-----BEGIN CERTIFICATE-----` blocks
+###############################################################################
 config:
   # -- Create the ConfigMaps as immutable. The ConfigMap names do not change with their
   # content, so with `true` every upgrade that changes the configuration fails: Kubernetes
