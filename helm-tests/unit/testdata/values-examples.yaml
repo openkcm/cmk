@@ -7,12 +7,10 @@
 imagePullSecrets:
   - name: registry-access
 
-replicaCount: 2
-
-autoscaling:
-  enabled: true
-
 apiServer:
+  replicaCount: 2
+  autoscaling:
+    enabled: true
   extraArgs: [--graceful-shutdown=10]
   topologySpreadConstraints:
     - maxSkew: 1

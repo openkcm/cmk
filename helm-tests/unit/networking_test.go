@@ -47,7 +47,7 @@ func TestNetworkPolicies(t *testing.T) {
 
 func TestAutoscalingAndDisruptionBudgets(t *testing.T) {
 	output := render(t,
-		"--set", "autoscaling.enabled=true",
+		"--set", "apiServer.autoscaling.enabled=true",
 		"--set", "tenantManager.autoscaling.enabled=true",
 		"--set", "podDisruptionBudget.enabled=true",
 	)

@@ -36,7 +36,7 @@ ConfigMap holds the sections of `config` that its process reads.
 For a release named `cmk`, the names start with `cmk` instead of `cmk-cmk`.
 
 Optional: NetworkPolicies (`networkPolicy.enabled`), HorizontalPodAutoscalers
-(`autoscaling`, `tenantManager.autoscaling`) and PodDisruptionBudgets for the API server
+(`apiServer.autoscaling`, `tenantManager.autoscaling`) and PodDisruptionBudgets for the API server
 and the tenant manager (`podDisruptionBudget.enabled`).
 
 The chart contains one template file per resource and component, under
@@ -65,7 +65,8 @@ Shared helpers only build names and labels.
 # cmk-values.yaml
 # image.tag defaults to the chart's appVersion; set it only to deploy another version.
 
-replicaCount: 2
+apiServer:
+  replicaCount: 2
 
 podDisruptionBudget:
   enabled: true
@@ -206,7 +207,7 @@ the install or upgrade.
 | `image.repository` | `cmk/images/cmk-full-plugins` | Under `ghcr.io/openkcm` |
 | `image.cmkdPath`, `image.cmkctlPath` | `/cmkd`, `/cmkctl` | Binaries the chart starts; the images have no entrypoint |
 | `<component>.deploy` | all but `cmkctl` | Which processes to run |
-| `replicaCount` | `1` | API server replicas; use two or more in production |
+| `apiServer.replicaCount` | `1` | API server replicas; use two or more in production |
 | `<component>.replicaCount` | `1` | Tenant manager, event reconciler and task worker |
 | `networkPolicy.enabled` | `false` | **Recommended.** Allow only Envoy Gateway to call the API |
 | `config.database`, `config.scheduler.taskQueue` | hosts and credentials empty | **Required** |
@@ -312,7 +313,7 @@ except those of the AWS keystore plugin, with CMK's own code.
 | `config.yaml` is mounted as a file (`subPath`) | None |
 | New security defaults (user, group and `fsGroup` 65532, read-only root filesystem), probe thresholds, resource requests and limits | Override `podSecurityContext`, `securityContext`, the probes and `resources` if needed |
 | `serviceAccount.automount` defaults to `false`; with `create: false` all components use `serviceAccount.name` (was `<name>-<component>`) | Create your ServiceAccount, or keep `create: true` |
-| `autoscaling` applies to the API server only; the tenant manager has `tenantManager.autoscaling` | Move the settings |
+| `replicaCount` and `autoscaling` of the API server moved to `apiServer.replicaCount` and `apiServer.autoscaling`; the tenant manager has `tenantManager.autoscaling`. The top-level keys are ignored | Move the settings |
 | The task scheduler always runs one replica with the `Recreate` strategy | None |
 | PodDisruptionBudgets without `minAvailable` or `maxUnavailable` use `maxUnavailable: 1` (was `minAvailable: 1`) | Set `minAvailable` explicitly if you want the old behaviour |
 | The migration jobs get no `extraContainers`, but `dbMigrator.extraContainers`, resources and retry settings | Move containers that exit on their own to `dbMigrator.extraContainers` |

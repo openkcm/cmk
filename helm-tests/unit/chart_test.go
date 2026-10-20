@@ -95,8 +95,8 @@ func TestValidationErrors(t *testing.T) {
 		},
 		{
 			name:   "autoscaling needs a target",
-			values: "--set autoscaling.enabled=true --set autoscaling.targetCPUUtilizationPercentage=null --set autoscaling.targetMemoryUtilizationPercentage=null",
-			errMsg: "autoscaling.enabled requires",
+			values: "--set apiServer.autoscaling.enabled=true --set apiServer.autoscaling.targetCPUUtilizationPercentage=null --set apiServer.autoscaling.targetMemoryUtilizationPercentage=null",
+			errMsg: "apiServer.autoscaling.enabled requires",
 		},
 		{
 			name:   "tenant manager autoscaling needs a target",

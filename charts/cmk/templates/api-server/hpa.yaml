@@ -1,6 +1,6 @@
 {{- if and .Values.apiServer.deploy .Values.apiServer.autoscaling.enabled }}
 {{- if not (or .Values.apiServer.autoscaling.targetCPUUtilizationPercentage .Values.apiServer.autoscaling.targetMemoryUtilizationPercentage) }}
-{{- fail "autoscaling.enabled requires autoscaling.targetCPUUtilizationPercentage or autoscaling.targetMemoryUtilizationPercentage" }}
+{{- fail "apiServer.autoscaling.enabled requires apiServer.autoscaling.targetCPUUtilizationPercentage or apiServer.autoscaling.targetMemoryUtilizationPercentage" }}
 {{- end }}
 ---
 apiVersion: autoscaling/v2

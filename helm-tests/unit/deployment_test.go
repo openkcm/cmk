@@ -149,19 +149,19 @@ func TestDeploymentOptions(t *testing.T) {
 		},
 		{
 			name:       "replicas from replicaCount",
-			values:     "--set replicaCount=3 --set taskWorker.replicaCount=4",
+			values:     "--set apiServer.replicaCount=3 --set taskWorker.replicaCount=4",
 			deployment: "cmk",
 			expected:   []string{"replicas: 3"},
 		},
 		{
 			name:       "no replicas with autoscaling",
-			values:     "--set autoscaling.enabled=true",
+			values:     "--set apiServer.autoscaling.enabled=true",
 			deployment: "cmk",
 			unexpected: []string{"replicas:"},
 		},
 		{
 			name:       "task scheduler always one replica",
-			values:     "--set replicaCount=3",
+			values:     "--set apiServer.replicaCount=3",
 			deployment: "cmk-task-scheduler",
 			expected:   []string{"replicas: 1"},
 		},
