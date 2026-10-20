@@ -1,36 +1,42 @@
-{{- if and .Values.tenantManager.deploy .Values.autoscaling.enabled }}
+{{- if and .Values.tenantManager.deploy .Values.tenantManager.autoscaling.enabled }}
+{{- $as := .Values.tenantManager.autoscaling }}
+{{- if not (or $as.targetCPUUtilizationPercentage $as.targetMemoryUtilizationPercentage) }}
+{{- fail "tenantManager.autoscaling.enabled requires tenantManager.autoscaling.targetCPUUtilizationPercentage or tenantManager.autoscaling.targetMemoryUtilizationPercentage" }}
+{{- end }}
+---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: {{ include "cmk.fullname" . }}-tenant-manager
+  namespace: {{ include "cmk.namespace" . }}
   labels:
-    {{- include "cmk.labels" . | nindent 4 }}
+    {{- include "cmk.tenant-manager.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "cmk.fullname" . }}-tenant-manager
-  minReplicas: {{ .Values.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  minReplicas: {{ $as.minReplicas }}
+  maxReplicas: {{ $as.maxReplicas }}
   metrics:
-    {{- if or .Values.autoscaling.targetCPUUtilizationPercentage .Values.autoscaling.targetMemoryUtilizationPercentage }}
-    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- with $as.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ . }}
     {{- end }}
-    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- with $as.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+          averageUtilization: {{ . }}
     {{- end }}
-    {{- else }}
-    []
-    {{- end }}
+  {{- with $as.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}

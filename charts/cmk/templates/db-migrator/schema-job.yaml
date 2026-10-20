@@ -1,57 +1,78 @@
+{{- if .Values.dbMigrator.enabled }}
 ---
+# Schema migration of the shared schema and every tenant schema, before every install and
+# upgrade (cmkd db-migrator --type=schema).
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "cmk.name" . }}-schema-db-migrator
+  name: {{ include "cmk.fullname" . | trunc 43 | trimSuffix "-" }}-schema-db-migrator
+  namespace: {{ include "cmk.namespace" . }}
   labels:
     {{- include "cmk.db-migrator.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": "pre-install, pre-upgrade"
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": "before-hook-creation,hook-succeeded"
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
+  backoffLimit: {{ .Values.dbMigrator.backoffLimit }}
+  {{- with .Values.dbMigrator.activeDeadlineSeconds }}
+  activeDeadlineSeconds: {{ . }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.dbMigrator.ttlSecondsAfterFinished) }}
+  ttlSecondsAfterFinished: {{ .Values.dbMigrator.ttlSecondsAfterFinished }}
+  {{- end }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        checksum/config: {{ include (print $.Template.BasePath "/db-migrator/configmap.yaml") . | sha256sum }}
+        {{- with (merge (deepCopy (.Values.dbMigrator.podAnnotations | default dict)) (.Values.podAnnotations | default dict)) }}
+        {{- include "cmk.annotations" . | trim | nindent 8 }}
+        {{- end }}
       labels:
         {{- include "cmk.db-migrator.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      restartPolicy: OnFailure
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      restartPolicy: OnFailure
+      {{- /*
+      This job runs before the release's ServiceAccounts exist, so it can only use a
+      ServiceAccount that exists before the installation.
+      */}}
+      {{- if and (not .Values.serviceAccount.create) .Values.serviceAccount.name }}
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: {{ .Values.enableServiceLinks }}
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.extraInitContainers }}
       initContainers:
-      {{- toYaml . | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        {{- with .Values.extraContainers }}
-          {{- toYaml . | nindent 8 }}
-        {{- end }}
         - name: {{ include "cmk.name" . }}-db-migrator
-          {{- with .Values.securityContext }}
-          securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          image: "{{ template "cmk.image" (tuple .Values.image $.Chart.AppVersion) }}"
+          image: "{{ template "cmk.image" (tuple .Values.image .Chart.AppVersion) }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
-            - {{ default "/cmkd" ((.Values.dbMigrator).image).command | quote }}
+            - {{ .Values.dbMigrator.image.command | default .Values.image.cmkdPath | quote }}
           args:
             - db-migrator
             - --target=all
             - --type=schema
+            {{- with .Values.dbMigrator.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
             - name: MY_POD_IP
               valueFrom:
@@ -67,26 +88,53 @@ spec:
                 fieldRef:
                   fieldPath: status.hostIP
             {{- with .Values.extraEnvs }}
-              {{- toYaml . | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- with .Values.extraEnvsFrom }}
           envFrom:
-          {{- . | toYaml | nindent 12 }}
-          {{- end}}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.dbMigrator.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
-            - name: {{ include "cmk.name" . }}-db-migrator-volume
+            # Only the file is mounted, so /etc/cmk keeps the image's migrations.
+            - name: config
               mountPath: /etc/cmk/config.yaml
               subPath: config.yaml
               readOnly: true
-          {{- with .Values.extraVolumeMounts }}
+            {{- if .Values.tmpVolume.enabled }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- end }}
+        {{- /* Not extraContainers: a sidecar that keeps running would keep the job from completing. */}}
+        {{- with .Values.dbMigrator.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       volumes:
-        - name: {{ include "cmk.name" . }}-db-migrator-volume
-          projected:
-            sources:
-              - configMap:
-                  name: {{ include "cmk.name" . }}-db-migrator-config
-      {{- with .Values.extraVolumes }}
+        - name: config
+          configMap:
+            name: {{ include "cmk.fullname" . }}-db-migrator-config
+        {{- if .Values.tmpVolume.enabled }}
+        - name: tmp
+          emptyDir:
+            {{- with .Values.tmpVolume.sizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

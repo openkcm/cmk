@@ -1,0 +1,6 @@
+{{- /*
+Checks of value combinations that the templates cannot render correctly. Renders nothing.
+*/}}
+{{- if and .Values.config.featureFlags.enabled (not .Values.featureFlagsConfigMap) }}
+{{- fail "config.featureFlags.enabled is true: set featureFlagsConfigMap to the ConfigMap that holds the feature flags file" }}
+{{- end }}

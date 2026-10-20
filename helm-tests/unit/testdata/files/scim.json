@@ -1,0 +1,13 @@
+{
+  "host": "https://scim.example.com/scim/v2",
+  "auth": {
+    "cert": "-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----\n",
+    "certKey": "-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----\n"
+  },
+  "params": {
+    "groupAttribute": "displayName",
+    "userAttribute": "groups.display",
+    "groupMembersAttribute": "",
+    "listMethod": "POST"
+  }
+}

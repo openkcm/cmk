@@ -1,51 +1,19 @@
-{{- if .Values.apiServer.deploy }}
+{{- if .Values.eventReconciler.deploy }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "cmk.name" . }}-event-reconciler-config
+  name: {{ include "cmk.fullname" . }}-event-reconciler-config
+  namespace: {{ include "cmk.namespace" . }}
   labels:
     {{- include "cmk.event-reconciler.labels" . | nindent 4 }}
 immutable: {{ .Values.config.isImmutable | default false }}
 data:
+  # The sections of `config` that the event reconciler reads (helper cmk.config in _helpers.tpl).
   config.yaml: |-
-    application:
-      name: event-reconciler
-    {{- with .Values.config }}
-      environment: {{ .environment }}
-      {{- with .labels }}
-      labels:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-
-    logger:
-      {{- toYaml .logger | nindent 6 }}
-
-    status:
-      {{- toYaml .status | nindent 6 }}
-
-    audit:
-      {{- toYaml .audit | nindent 6 }}
-
-    plugins:
-    {{ include "cmk.plugins" . | nindent 6 }}
-
-    services:
-      {{- toYaml .services | nindent 6 }}
-
-    telemetry:
-      {{- toYaml .telemetry | nindent 6 }}
-
-    database:
-      {{- toYaml .database | nindent 6 }}
-
-    eventProcessor:
-      {{- toYaml .eventProcessor | nindent 6 }}
-
-    landscape:
-      {{- toYaml .landscape | nindent 6 }}
-
-    cryptoLayer:
-      {{- toYaml .cryptoLayer | nindent 6 }}
-    {{- end }}
+    {{- include "cmk.config" (list . "event-reconciler"
+        "logger" "status" "audit" "plugins" "services" "telemetry" "database"
+        "databaseReplicas" "eventProcessor" "landscape" "cryptoLayer" "featureGates"
+        "featureFlags" "certificates" "keystorePool" "tenant" "workflow"
+    ) | nindent 4 }}
 {{- end }}

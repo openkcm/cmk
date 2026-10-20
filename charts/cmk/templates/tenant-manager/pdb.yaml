@@ -1,4 +1,8 @@
 {{- if and .Values.tenantManager.deploy .Values.podDisruptionBudget.enabled }}
+{{- $pdb := .Values.podDisruptionBudget }}
+{{- if and (hasKey $pdb "minAvailable") (hasKey $pdb "maxUnavailable") }}
+{{- fail "podDisruptionBudget: set either minAvailable or maxUnavailable, not both" }}
+{{- end }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -6,18 +10,18 @@ metadata:
   name: {{ include "cmk.fullname" . }}-tenant-manager
   namespace: {{ include "cmk.namespace" . }}
   labels:
-    {{- include "cmk.labels" . | nindent 4 }}
+    {{- include "cmk.tenant-manager.labels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
-       {{- include "cmk.tenant-manager.selectorLabels" . | nindent 6 }}
-  {{- if not (or (hasKey .Values.podDisruptionBudget "minAvailable") (hasKey .Values.podDisruptionBudget "maxUnavailable")) }}
-  minAvailable: 1 # Default value because minAvailable and maxUnavailable are not set
-  {{- end }}
-  {{- if hasKey .Values.podDisruptionBudget "minAvailable" }}
-  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
-  {{- end }}
-  {{- if hasKey .Values.podDisruptionBudget "maxUnavailable" }}
-  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+      {{- include "cmk.tenant-manager.selectorLabels" . | nindent 6 }}
+  {{- if hasKey $pdb "minAvailable" }}
+  minAvailable: {{ $pdb.minAvailable }}
+  {{- else if hasKey $pdb "maxUnavailable" }}
+  maxUnavailable: {{ $pdb.maxUnavailable }}
+  {{- else }}
+  # Neither minAvailable nor maxUnavailable is set. maxUnavailable: 1 never blocks
+  # node drains, even with a single replica.
+  maxUnavailable: 1
   {{- end }}
 {{- end }}

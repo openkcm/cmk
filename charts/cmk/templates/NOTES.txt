@@ -1,16 +1,147 @@
-1. Get the application URL by running these commands:
-{{- if contains "NodePort" .Values.service.type }}
-  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "cmk.fullname" . }})
-  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
-  echo http://$NODE_IP:$NODE_PORT
-{{- else if contains "LoadBalancer" .Values.service.type }}
-     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
-           You can watch its status by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "cmk.fullname" . }}'
-  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "cmk.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
-  echo http://$SERVICE_IP:{{ .Values.service.port }}
-{{- else if contains "ClusterIP" .Values.service.type }}
-  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "cmk.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
-  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
-  echo "Visit http://127.0.0.1:8080 to use your application"
-  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+OpenKCM CMK is deployed as {{ include "cmk.fullname" . }} in namespace {{ include "cmk.namespace" . }}.
+{{- if .Values.apiServer.deploy }}
+{{- range .Values.service.ports }}
+{{- if eq (toString .name) "http" }}
+CMK API (route /cmk/v1 to it through Envoy Gateway and ExtAuthZ):  {{ include "cmk.fullname" $ }}.{{ include "cmk.namespace" $ }}.svc:{{ .port }}
 {{- end }}
+{{- end }}
+{{- end }}
+
+Components: {{ if .Values.apiServer.deploy }}api-server {{ end }}{{ if .Values.tenantManager.deploy }}tenant-manager {{ end }}{{ if .Values.eventReconciler.deploy }}event-reconciler {{ end }}{{ if .Values.taskScheduler.deploy }}task-scheduler {{ end }}{{ if .Values.taskWorker.deploy }}task-worker {{ end }}{{ if .Values.cmkctl.deploy }}cmkctl {{ end }}
+
+Check the pods:
+  kubectl --namespace {{ include "cmk.namespace" . }} get pods -l app.kubernetes.io/part-of={{ include "cmk.name" . }}
+{{- $cfg := .Values.config }}
+{{- $warnings := list }}
+{{- if not .Values.networkPolicy.enabled }}
+{{- $warnings = append $warnings "networkPolicy.enabled is false. Allow only Envoy Gateway to call the CMK API: CMK trusts the client data that ExtAuthZ adds to each request." }}
+{{- end }}
+{{- /* Value references: required ones that are empty, and secrets stored in the ConfigMaps. */}}
+{{- $db := $cfg.database | default dict }}
+{{- $queue := (($cfg.scheduler | default dict).taskQueue) | default dict }}
+{{- $missing := list }}
+{{- $embedded := list }}
+{{- range $ref := list (list "config.database.host" $db.host true false) (list "config.database.user" $db.user true false) (list "config.database.secret" $db.secret true true) (list "config.scheduler.taskQueue.host" $queue.host true false) (list "config.scheduler.taskQueue.acl.password" (($queue.acl | default dict).password) false true) }}
+{{- $name := index $ref 0 }}{{- $r := index $ref 1 | default dict }}{{- $required := index $ref 2 }}{{- $secret := index $ref 3 }}
+{{- if or (not $r.source) (eq (toString $r.source) "embedded") }}
+{{- if and $required (not $r.value) }}
+{{- $missing = append $missing $name }}
+{{- else if and $secret $r.value }}
+{{- $embedded = append $embedded $name }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if $missing }}
+{{- $warnings = append $warnings (printf "Not set: %s. CMK does not start without them." (join ", " $missing)) }}
+{{- end }}
+{{- if $embedded }}
+{{- $warnings = append $warnings (printf "Stored in plain text in the ConfigMaps: %s. Mount Secrets with extraVolumes and use source: file." (join ", " $embedded)) }}
+{{- end }}
+{{- with (($db.parameters | default dict).ssl | default dict).mode }}
+{{- if ne (toString .) "verify-full" }}
+{{- $warnings = append $warnings (printf "config.database.parameters.ssl.mode is %s. Use verify-full to check the database server's certificate and host name." .) }}
+{{- end }}
+{{- end }}
+{{- if ne (toString (($queue.secretRef | default dict).type)) "mtls" }}
+{{- $warnings = append $warnings "config.scheduler.taskQueue.secretRef.type is not mtls: the task queue connection is not encrypted. Use mtls unless a service mesh encrypts the traffic." }}
+{{- end }}
+{{- if and .Values.apiServer.deploy (not $cfg.plugins) }}
+{{- $warnings = append $warnings "config.plugins is empty. Configure the keystore, identity management, notification and system information plugins; the task worker needs a NotificationService and a SystemInformationService plugin." }}
+{{- end }}
+{{- $clientData := $cfg.clientData | default dict }}
+{{- if and .Values.apiServer.deploy (not (has "issuer" ($clientData.authContextFields | default list))) }}
+{{- $warnings = append $warnings "config.clientData.authContextFields does not contain issuer: listing a user's tenants fails." }}
+{{- end }}
+{{- if .Values.apiServer.deploy }}
+{{- $mounted := false }}
+{{- range .Values.extraVolumeMounts }}
+{{- if eq (toString .mountPath) (toString $clientData.signingKeysPath) }}{{ $mounted = true }}{{ end }}
+{{- end }}
+{{- if not $mounted }}
+{{- $warnings = append $warnings (printf "No volume is mounted at config.clientData.signingKeysPath (%s). Mount ExtAuthZ's public keys there, or the API server does not start." (toString $clientData.signingKeysPath)) }}
+{{- end }}
+{{- end }}
+{{- $services := $cfg.services | default dict }}
+{{- if .Values.tenantManager.deploy }}
+{{- $tm := $cfg.tenantManager | default dict }}
+{{- $tmType := (($tm.secretRef | default dict).type) | default "" | toString }}
+{{- $tmURL := (($tm.amqp | default dict).url) | default "" | toString }}
+{{- if not (and $tmType $tmURL) }}
+{{- $warnings = append $warnings "tenantManager.deploy is true, but config.tenantManager (secretRef, amqp.url, amqp.source, amqp.target) is not set: the tenant manager does not start." }}
+{{- else }}
+{{- if ne $tmType "mtls" }}
+{{- $warnings = append $warnings "config.tenantManager.secretRef.type is not mtls: the connection to the AMQP broker is not encrypted. Use mtls unless a service mesh encrypts the traffic." }}
+{{- end }}
+{{- if hasPrefix "amqp://" (lower $tmURL) }}
+{{- $warnings = append $warnings "config.tenantManager.amqp.url starts with amqp://: the connection to the AMQP broker is not encrypted, even with mtls. Use amqps://." }}
+{{- end }}
+{{- end }}
+{{- if not (and $services.registry $services.registry.enabled $services.sessionManager $services.sessionManager.enabled) }}
+{{- $warnings = append $warnings "The tenant manager needs config.services.registry and config.services.sessionManager enabled." }}
+{{- end }}
+{{- end }}
+{{- if .Values.eventReconciler.deploy }}
+{{- $ep := $cfg.eventProcessor | default dict }}
+{{- if not $ep.targets }}
+{{- $warnings = append $warnings "config.eventProcessor.targets is empty: key and system tasks cannot be sent to any region." }}
+{{- else }}
+{{- if ne ((($ep.secretRef | default dict).type) | default "" | toString) "mtls" }}
+{{- $warnings = append $warnings "config.eventProcessor.secretRef.type is not mtls: the connections to the AMQP brokers are not encrypted. Use mtls unless a service mesh encrypts the traffic." }}
+{{- end }}
+{{- $plainRegions := list }}
+{{- range $ep.targets }}
+{{- if hasPrefix "amqp://" (lower ((((. | default dict).amqp | default dict).url) | default "" | toString)) }}
+{{- $plainRegions = append $plainRegions ((. | default dict).region | default "" | toString) }}
+{{- end }}
+{{- end }}
+{{- if $plainRegions }}
+{{- $warnings = append $warnings (printf "config.eventProcessor.targets use amqp:// for the regions %s: the connections to the AMQP brokers are not encrypted, even with mtls. Use amqps://." (join ", " $plainRegions)) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- with ((($cfg.provisioning | default dict).initKeystoreConfig) | default dict) }}
+{{- if and $.Values.apiServer.deploy .enabled }}
+{{- $warnings = append $warnings "config.provisioning.initKeystoreConfig.enabled is true: every API server pod start (replicas, restarts, rollouts, scale-ups) adds the keystore to the pool again. Set it to false once the API server has started for the first time." }}
+{{- end }}
+{{- end }}
+{{- range $name, $svc := $services }}
+{{- if and $svc $svc.enabled (ne (toString (($svc.secretRef | default dict).type)) "mtls") }}
+{{- $warnings = append $warnings (printf "config.services.%s uses no TLS of its own: run CMK and this service in a service mesh with mutual TLS, or use secretRef type mtls through a proxy that terminates TLS." $name) }}
+{{- end }}
+{{- end }}
+{{- if not .Values.taskScheduler.deploy }}
+{{- $warnings = append $warnings "taskScheduler.deploy is false: no periodic task runs (key synchronization, certificate rotation, keystore pool, workflow expiry)." }}
+{{- end }}
+{{- if not .Values.taskWorker.deploy }}
+{{- $warnings = append $warnings "taskWorker.deploy is false: scheduled and asynchronous tasks are not processed." }}
+{{- end }}
+{{- if .Values.cmkctl.deploy }}
+{{- $warnings = append $warnings "cmkctl.deploy is true: the cmkctl pod idles with all CMK credentials. Remove it when you no longer need it." }}
+{{- end }}
+{{- if not .Values.dbMigrator.enabled }}
+{{- $warnings = append $warnings "dbMigrator.enabled is false: run cmkd db-migrator (schema before, data after) for every upgrade yourself." }}
+{{- end }}
+{{- if not (and $cfg.audit $cfg.audit.endpoint) }}
+{{- $warnings = append $warnings "config.audit.endpoint is not set: no audit events are sent." }}
+{{- end }}
+{{- if and $cfg.http $cfg.http.swaggerEnabled }}
+{{- $warnings = append $warnings "config.http.swaggerEnabled is true: the API description is served without authentication. Switch it off in production." }}
+{{- end }}
+{{- if and $cfg.status $cfg.status.profiling }}
+{{- $warnings = append $warnings "config.status.profiling is true: profiling endpoints are served without authentication. Switch it off in production." }}
+{{- end }}
+{{- if and $cfg.logger (eq (toString $cfg.logger.level) "debug") }}
+{{- $warnings = append $warnings "config.logger.level is debug: CMK logs its complete configuration, including embedded secrets. Use info in production." }}
+{{- end }}
+{{- if and .Values.apiServer.deploy (not .Values.apiServer.autoscaling.enabled) (lt (int .Values.apiServer.replicaCount) 2) }}
+{{- $warnings = append $warnings "apiServer.replicaCount is 1: the CMK API is unavailable while the pod restarts. Use two or more replicas in production." }}
+{{- end }}
+{{- if $warnings }}
+
+WARNINGS:
+{{- range $warnings }}
+  - {{ . }}
+{{- end }}
+{{- end }}
+
+Documentation: https://openkcm.io/components/cmk/security/cmk-config

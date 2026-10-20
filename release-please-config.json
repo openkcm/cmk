@@ -90,7 +90,8 @@
       "pull-request-header": "I have created a release for you",
       "versioning": "always-bump-patch",
       "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [{ "type": "generic", "path": "charts/cmk/Chart.yaml" }]
     }
   },
   "changelog": {

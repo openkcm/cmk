@@ -21,3 +21,7 @@
 .idea/
 *.tmproj
 .vscode/
+# Values for local development (development credentials) and CI test values: not part of
+# the published chart.
+values-dev.yaml
+ci/
