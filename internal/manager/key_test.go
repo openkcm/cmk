@@ -92,7 +92,7 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	// otherwise the manager falls back to legacy behaviour (HYOK ungated, BYOK via feature gate).
 	cfg.FeatureFlags.Enabled = true
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	assert.NoError(t, err)
@@ -186,7 +186,7 @@ func setupKeyTestWithFlags(t *testing.T, flagOverrides map[string]bool, opts ...
 	}
 	cfg.FeatureFlags.Enabled = true
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	assert.NoError(t, err)
@@ -1682,7 +1682,7 @@ func TestKeyRotationTime(t *testing.T) {
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
 	assert.NoError(t, err)
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
 		newTestFlags(map[string]bool{
@@ -1906,7 +1906,7 @@ func TestIsNewKeyVersion(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("returns true when latest version ID matches response", func(t *testing.T) {
+	t.Run("returns false when latest version ID matches response", func(t *testing.T) {
 		key := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		versions, _, err := repo.ListAndCount(
@@ -1924,10 +1924,10 @@ func TestIsNewKeyVersion(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		assert.True(t, got)
+		assert.False(t, got)
 	})
 
-	t.Run("returns false when version ID does not match", func(t *testing.T) {
+	t.Run("returns true when version ID does not match", func(t *testing.T) {
 		key := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		got, err := km.IsNewKeyVersion(ctx, key, &keymanagement.GetKeyVersionsResponse{
@@ -1935,7 +1935,7 @@ func TestIsNewKeyVersion(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		assert.False(t, got)
+		assert.True(t, got)
 	})
 }
 
@@ -1989,10 +1989,10 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 		// First, setup plugin to return a new version
 		rotationTime := time.Now().UTC()
 
-		// Seed an existing version so isNewKeyVersion returns true (NativeID matches response).
+		// Seed an existing version so isNewKeyVersion can detect a change.
 		existingVersion := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
 			kv.KeyID = primaryKey.ID
-			kv.NativeID = "new-version-id"
+			kv.NativeID = "old-version-id"
 		})
 		testutils.CreateTestEntities(ctx, t, r, existingVersion)
 
@@ -2021,12 +2021,19 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 	t.Run("non-primary key rotation does NOT trigger events", func(t *testing.T) {
 		rotationTime := time.Now().UTC()
 
+		// Seed an existing version on the non-primary key so isNewKeyVersion detects a change.
+		existingNonPrimaryVersion := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
+			kv.KeyID = nonPrimaryKey.ID
+			kv.NativeID = "non-primary-old-version"
+		})
+		testutils.CreateTestEntities(ctx, t, r, existingNonPrimaryVersion)
+
 		// Count events before
 		eventsBefore, err := countEvents(ctx, r, eventprocessor.JobTypeSystemKeyRotate.String())
 		require.NoError(t, err)
 
 		// Trigger rotation for non-primary key
-		err = km.ExportedHandleNewKeyVersion(ctx, primaryKey, &keymanagement.GetKeyVersionsResponse{
+		err = km.ExportedHandleNewKeyVersion(ctx, nonPrimaryKey, &keymanagement.GetKeyVersionsResponse{
 			Versions: []keymanagement.KeyVersion{
 				{
 					ID:           "non-primary-new-version",
@@ -2833,7 +2840,7 @@ func SetupKeyTestWithAsyncClient(
 	// otherwise the manager falls back to legacy behaviour (HYOK ungated, BYOK via feature gate).
 	cfg.FeatureFlags.Enabled = true
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	require.NoError(t, err)
 
@@ -3104,7 +3111,7 @@ func TestCreateHYOKPendingRegistration_KeyLimitEnforced(t *testing.T) {
 	}
 	cfg.FeatureFlags.Enabled = true
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 	eventFactory, factoryErr := eventprocessor.NewEventFactory(ctx, cfg, r)
 	require.NoError(t, factoryErr)
 

@@ -9,6 +9,8 @@ import (
 	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/log"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 type TenantID string
@@ -107,13 +109,13 @@ func (as *Handler[Resource, Action]) IsBusinessUserAllowed(
 
 	err := request.IsValidContext(ctx)
 	if err != nil {
-		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
+		LogDecision(ctx, request, false, Reason(err.Error()))
 		return false, errs.Wrap(ErrInvalidRequest, err)
 	}
 
 	err = as.isValidResourceAction(request.ResourceTypeName, request.Action)
 	if err != nil {
-		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
+		LogDecision(ctx, request, false, Reason(err.Error()))
 		return false, errs.Wrap(ErrInvalidRequest, ErrInvalidRequest)
 	}
 
@@ -130,13 +132,13 @@ func (as *Handler[Resource, Action]) IsBusinessUserAllowed(
 
 		if ok {
 			// Allow
-			LogDecision(ctx, request, as.Auditor, true, Reason(InfoAuthorizationPassed))
+			LogDecision(ctx, request, true, Reason(InfoAuthorizationPassed))
 			return true, nil
 		}
 	}
 
 	// If no matching policy is found, deny authorization
-	LogDecision(ctx, request, as.Auditor, false, Reason(ErrAuthorizationDecision.Error()))
+	LogDecision(ctx, request, false, Reason(ErrAuthorizationDecision.Error()))
 
 	return false, errs.Wrap(ErrAuthorizationDecision, ErrAuthorizationDenied)
 }
@@ -149,13 +151,13 @@ func (as *Handler[Resource, Action]) IsInternalUserAllowed(
 ) (bool, error) {
 	err := request.IsValidContext(ctx)
 	if err != nil {
-		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
+		LogDecision(ctx, request, false, Reason(err.Error()))
 		return false, errs.Wrap(ErrInvalidRequest, err)
 	}
 
 	err = as.isValidResourceAction(request.ResourceTypeName, request.Action)
 	if err != nil {
-		LogDecision(ctx, request, as.Auditor, false, Reason(err.Error()))
+		LogDecision(ctx, request, false, Reason(err.Error()))
 		return false, errs.Wrap(ErrInvalidRequest, ErrInvalidRequest)
 	}
 
@@ -170,15 +172,55 @@ func (as *Handler[Resource, Action]) IsInternalUserAllowed(
 
 	if ok {
 		// Allow
-		LogDecision(ctx, request, as.Auditor, true, Reason(InfoAuthorizationPassed))
+		LogDecision(ctx, request, true, Reason(InfoAuthorizationPassed))
 		return true, nil
 	}
 
 	// If no matching policy is found, deny authorization
 	// Deny
-	LogDecision(ctx, request, as.Auditor, false, Reason(ErrAuthorizationDecision.Error()))
+	LogDecision(ctx, request, false, Reason(ErrAuthorizationDecision.Error()))
 
 	return false, errs.Wrap(ErrAuthorizationDecision, ErrAuthorizationDenied)
+}
+
+// AuditDeniedDecision sends an audit log when a business user's request is denied.
+// Call this once after the definitive result is known to be denied.
+func (as *Handler[Resource, Action]) AuditDeniedDecision(
+	ctx context.Context,
+	resourceType Resource,
+	action Action,
+) {
+	userType, err := cmkcontext.ExtractUserType(ctx)
+	if err != nil || userType != string(constants.BusinessUser) {
+		return
+	}
+
+	tenant, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return
+	}
+	identifier, err := cmkcontext.ExtractBusinessUserDataIdentifier(ctx)
+	if err != nil {
+		return
+	}
+	groups, err := cmkcontext.ExtractBusinessUserDataGroups(ctx)
+	if err != nil {
+		return
+	}
+	user := BusinessUserRequest{
+		TenantID: TenantID(tenant),
+		UserName: identifier,
+		Groups:   groups,
+	}
+	req, err := NewRequest(ctx, user, resourceType, action)
+	if err != nil {
+		return
+	}
+	err = as.Auditor.SendCmkUnauthorizedRequestAuditLog(ctx,
+		req.GetResourceTypeNameString(), req.GetActionString())
+	if err != nil {
+		log.Error(ctx, "Failed to send audit log for CMK authorization check", err)
+	}
 }
 
 // isValidResourceAction checks if user can trigger action on resource
