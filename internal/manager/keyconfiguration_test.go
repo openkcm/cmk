@@ -90,7 +90,7 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 		},
 		Database: dbCfg,
 	}
-	cmkAuditor := auditor.New(t.Context(), cfg)
+	cmkAuditor := &auditor.Auditor{}
 
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
 	assert.NoError(t, err)
@@ -1253,7 +1253,7 @@ func SetupKeyConfigManagerWithLimit(t *testing.T, systemLimit int) (*manager.Key
 		Tenant:   config.Tenant{SystemLimit: systemLimit},
 	}
 
-	cmkAuditor := auditor.New(t.Context(), cfg)
+	cmkAuditor := &auditor.Auditor{}
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
 	assert.NoError(t, err)
 
@@ -1384,7 +1384,7 @@ func SetupKeyConfigManagerWithKeyLimit(t *testing.T, keyLimit int) (*manager.Key
 		Tenant:   config.Tenant{KeyLimit: keyLimit},
 	}
 
-	cmkAuditor := auditor.New(t.Context(), cfg)
+	cmkAuditor := &auditor.Auditor{}
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
 	require.NoError(t, err)
 
@@ -1422,7 +1422,7 @@ func SetupKeyConfigManagerWithKeyConfigLimit(t *testing.T, keyConfigLimit int) (
 		Tenant:   config.Tenant{KeyConfigLimit: keyConfigLimit},
 	}
 
-	cmkAuditor := auditor.New(t.Context(), cfg)
+	cmkAuditor := &auditor.Auditor{}
 	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
 	require.NoError(t, err)
 
