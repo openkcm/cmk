@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/openkcm/cmk/compare/v0.12.0...v0.12.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* the Dockerfile for the full plugins stage is now using the correct image name. ([61fecd4](https://github.com/openkcm/cmk/commit/61fecd40de9e8b5eb75dda70811051cb9bb560cc))
+
 ## [0.12.0](https://github.com/openkcm/cmk/compare/v0.11.0...v0.12.0) (2026-10-20)
 
 
