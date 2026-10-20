@@ -75,7 +75,7 @@ func TestWorkflow_Description(t *testing.T) {
 			parameters:             keyConfigID,
 			parametersResourceType: new(model.WorkflowParametersResourceTypeKeyConfiguration),
 			parametersResourceName: new(keyConfigName),
-			expectedDescription:    "initiator@example.com requested approval to LINK SYSTEM: 'Production System' to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
+			expectedDescription:    "initiator@example.com requested approval to Connect System: 'Production System' to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
 		{
 			name:                   "SYSTEM LINK without artifact name with resource name",
@@ -85,7 +85,7 @@ func TestWorkflow_Description(t *testing.T) {
 			parameters:             keyConfigID,
 			parametersResourceType: new(model.WorkflowParametersResourceTypeKeyConfiguration),
 			parametersResourceName: new(keyConfigName),
-			expectedDescription:    "initiator@example.com requested approval to LINK SYSTEM to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
+			expectedDescription:    "initiator@example.com requested approval to Connect System to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
 		{
 			name:                   "SYSTEM LINK with artifact name but no resource name",
@@ -95,7 +95,7 @@ func TestWorkflow_Description(t *testing.T) {
 			parameters:             keyConfigID,
 			parametersResourceType: new(model.WorkflowParametersResourceTypeKeyConfiguration),
 			parametersResourceName: nil,
-			expectedDescription:    "initiator@example.com requested approval to LINK SYSTEM: 'Production System'.",
+			expectedDescription:    "initiator@example.com requested approval to Connect System: 'Production System'.",
 		},
 		{
 			name:                   "SYSTEM UNLINK with artifact name",
@@ -105,7 +105,7 @@ func TestWorkflow_Description(t *testing.T) {
 			parameters:             "",
 			parametersResourceType: nil,
 			parametersResourceName: nil,
-			expectedDescription:    "initiator@example.com requested approval to UNLINK SYSTEM: 'Production System'.",
+			expectedDescription:    "initiator@example.com requested approval to Disconnect System: 'Production System'.",
 		},
 		{
 			name:                   "SYSTEM UNLINK without artifact name",
@@ -115,7 +115,7 @@ func TestWorkflow_Description(t *testing.T) {
 			parameters:             "",
 			parametersResourceType: nil,
 			parametersResourceName: nil,
-			expectedDescription:    "initiator@example.com requested approval to UNLINK SYSTEM.",
+			expectedDescription:    "initiator@example.com requested approval to Disconnect System.",
 		},
 		{
 			name:                   "SYSTEM SWITCH with artifact name and resource name",
@@ -125,7 +125,7 @@ func TestWorkflow_Description(t *testing.T) {
 			parameters:             keyConfigID,
 			parametersResourceType: new(model.WorkflowParametersResourceTypeKeyConfiguration),
 			parametersResourceName: new(keyConfigName),
-			expectedDescription:    "initiator@example.com requested approval to SWITCH SYSTEM: 'Staging System' to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
+			expectedDescription:    "initiator@example.com requested approval to Switch System: 'Staging System' to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
 		{
 			name:                   "SYSTEM SWITCH without artifact name with resource name",
@@ -135,7 +135,7 @@ func TestWorkflow_Description(t *testing.T) {
 			parameters:             keyConfigID,
 			parametersResourceType: new(model.WorkflowParametersResourceTypeKeyConfiguration),
 			parametersResourceName: new(keyConfigName),
-			expectedDescription:    "initiator@example.com requested approval to SWITCH SYSTEM to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
+			expectedDescription:    "initiator@example.com requested approval to Switch System to KEY_CONFIGURATION: 'KeyConfiguration-name'.",
 		},
 		{
 			name:                   "KEY DELETE with artifact name",
@@ -145,7 +145,7 @@ func TestWorkflow_Description(t *testing.T) {
 			parameters:             "",
 			parametersResourceType: nil,
 			parametersResourceName: nil,
-			expectedDescription:    "initiator@example.com requested approval to DELETE KEY: 'Test Key'.",
+			expectedDescription:    "initiator@example.com requested approval to Delete Key: 'Test Key'.",
 		},
 		{
 			name:                   "KEY DELETE without artifact name",
@@ -155,7 +155,7 @@ func TestWorkflow_Description(t *testing.T) {
 			parameters:             "",
 			parametersResourceType: nil,
 			parametersResourceName: nil,
-			expectedDescription:    "initiator@example.com requested approval to DELETE KEY.",
+			expectedDescription:    "initiator@example.com requested approval to Delete Key.",
 		},
 	}
 

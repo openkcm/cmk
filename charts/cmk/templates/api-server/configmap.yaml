@@ -15,6 +15,6 @@ data:
         "featureGates" "featureFlags" "http" "logger" "status" "certificates"
         "cryptoLayer" "telemetry" "scheduler" "database" "databaseReplicas" "services"
         "plugins" "configurableContext" "provisioning" "audit" "clientData"
-        "landscape" "keystorePool" "tenant" "keys" "workflow"
+        "landscape" "keystorePool" "tenant" "keys" "workflow" "notification"
     ) | nindent 4 }}
 {{- end }}
