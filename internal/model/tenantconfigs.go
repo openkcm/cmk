@@ -27,7 +27,7 @@ type TenantConfig struct {
 }
 
 type TenantConfiguration interface {
-	Flattable
+	Flattenable
 	Type() ConfigType
 }
 

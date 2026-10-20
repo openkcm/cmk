@@ -122,7 +122,7 @@ func (m *TenantConfigManager) WipeTenantConfig(ctx context.Context, config model
 }
 
 // GetTenantConfigByType fetches from the DB properties related with a ConfigType
-// The Confifguration must implement the TenantConfiguration interface
+// The configuration must implement the TenantConfiguration interface
 func (m *TenantConfigManager) GetTenantConfigByType[T model.TenantConfiguration](
 	ctx context.Context,
 ) (*T, error) {
@@ -195,7 +195,7 @@ func (m *TenantConfigManager) GetSystemGroupingConfig(ctx context.Context) (*mod
 		return nil, err
 	}
 
-	if configs != nil {
+	if configs == nil {
 		err = m.SetTenantConfig(ctx, model.SystemGroupConfig{
 			Enabled:      false,
 			WarnCoverage: false,

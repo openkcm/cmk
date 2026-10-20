@@ -75,9 +75,9 @@ func (w missingTag) FlattenKeyRoot() string { return "root" }
 func TestFlatten(t *testing.T) {
 	tests := []struct {
 		name      string
-		in        model.Flattable
+		in        model.Flattenable
 		want      map[string]any // expected flat output; nil to skip the flat assertion
-		unflatten func(map[string]any) (model.Flattable, error)
+		unflatten func(map[string]any) (model.Flattenable, error)
 	}{
 		{
 			name: "nested structs and map",
@@ -94,7 +94,7 @@ func TestFlatten(t *testing.T) {
 				"root/data/a":                          "1",
 				"root/data/b":                          "2",
 			},
-			unflatten: func(flat map[string]any) (model.Flattable, error) {
+			unflatten: func(flat map[string]any) (model.Flattenable, error) {
 				got, err := model.Unflatten[structNestedAndMaps](flat)
 				return &got, err
 			},
@@ -107,7 +107,7 @@ func TestFlatten(t *testing.T) {
 				"root/enabled": true,
 				"root/name":    "x",
 			},
-			unflatten: func(flat map[string]any) (model.Flattable, error) {
+			unflatten: func(flat map[string]any) (model.Flattenable, error) {
 				got, err := model.Unflatten[typedSample](flat)
 				return &got, err
 			},
@@ -122,7 +122,7 @@ func TestFlatten(t *testing.T) {
 			name: "nil pointer skipped",
 			in:   &withPointer{Val: "v"},
 			want: map[string]any{"root/val": "v"},
-			unflatten: func(flat map[string]any) (model.Flattable, error) {
+			unflatten: func(flat map[string]any) (model.Flattenable, error) {
 				got, err := model.Unflatten[withPointer](flat)
 				return &got, err
 			},
@@ -131,7 +131,7 @@ func TestFlatten(t *testing.T) {
 			name: "non-nil pointer",
 			in:   &withPointer{Ptr: &nested{CommonName: "cn"}, Val: "v"},
 			want: map[string]any{"root/ptr/common_name": "cn", "root/val": "v"},
-			unflatten: func(flat map[string]any) (model.Flattable, error) {
+			unflatten: func(flat map[string]any) (model.Flattenable, error) {
 				got, err := model.Unflatten[withPointer](flat)
 				return &got, err
 			},
@@ -140,7 +140,7 @@ func TestFlatten(t *testing.T) {
 			name: "empty root yields unprefixed keys",
 			in:   &emptyRoot{Name: "x"},
 			want: map[string]any{"name": "x"},
-			unflatten: func(flat map[string]any) (model.Flattable, error) {
+			unflatten: func(flat map[string]any) (model.Flattenable, error) {
 				got, err := model.Unflatten[emptyRoot](flat)
 				return &got, err
 			},
@@ -166,7 +166,7 @@ func TestFlatten(t *testing.T) {
 func TestFlattenErrors(t *testing.T) {
 	tests := []struct {
 		name    string
-		in      model.Flattable
+		in      model.Flattenable
 		wantErr error
 	}{
 		{"slice unsupported", &withSlice{Items: []string{"a"}}, model.ErrUnsuportedField},

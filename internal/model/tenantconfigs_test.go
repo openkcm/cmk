@@ -14,7 +14,7 @@ import (
 func TestConfigFlattenRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string
-		in   model.Flattable
+		in   model.Flattenable
 		want map[string]any
 	}{
 		{

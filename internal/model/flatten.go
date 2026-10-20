@@ -21,18 +21,18 @@ var (
 	ErrDecodeFlatten    = errors.New("failed to decode flatten")
 )
 
-type Flattable interface {
+type Flattenable interface {
 	FlattenKeyRoot() string
 }
 
-// Flatten takes an item and returns all of it's fields as a map[string]any
+// Flatten takes an item and returns all of its fields as a map[string]any
 // It puts all first level items under <root>/<field>
 // Root is set on the Flatabble interface implementation and field from the flatten tag on the struct fields
 // All the fields and nested fields must contain a flatten tag, otherwise this method will throw an error
 // This method does also not support slices, throwing UnsupportedField
 //
 // Only fields that are exported and do not have tag set as "-" are flatten
-func Flatten[T Flattable](item T) (map[string]any, error) {
+func Flatten[T Flattenable](item T) (map[string]any, error) {
 	res := map[string]any{}
 	err := flatten(item.FlattenKeyRoot(), reflect.ValueOf(item), res)
 	return res, err
@@ -41,7 +41,7 @@ func Flatten[T Flattable](item T) (map[string]any, error) {
 // Unflatten takes a map[string]any, containing each flattenKey <root>/<field>... and transforms it into T.
 // The flattenKeys must map exactly into the struct that it's trying to be built. So this should only be used for
 // structures that were flattened using the Flatten() method.
-func Unflatten[T Flattable](flatValues map[string]any) (T, error) {
+func Unflatten[T Flattenable](flatValues map[string]any) (T, error) {
 	var out T
 	res := map[string]any{}
 	for k, v := range flatValues {
