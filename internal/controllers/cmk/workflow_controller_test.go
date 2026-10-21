@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -954,6 +956,7 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 		expectedStatus int
 		expectedCount  int
 		count          bool
+		orderby        string
 	}{
 		{
 			name:           "TestWorkflowControllerListWorkflows_Okay_AsAuditor",
@@ -1000,6 +1003,19 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 			count:          true,
 		},
 		{
+			name:           "TestWorkflowControllerListWorkflows_OrderByCreatedAt",
+			clientMap:      auditorAuthClient.GetClientMap(),
+			expectedStatus: http.StatusOK,
+			expectedCount:  3,
+			orderby:        "createdAt desc",
+		},
+		{
+			name:           "TestWorkflowControllerListWorkflows_InvalidOrderby",
+			clientMap:      auditorAuthClient.GetClientMap(),
+			expectedStatus: http.StatusBadRequest,
+			orderby:        "bogus",
+		},
+		{
 			name:      "TestWorkflowControllerListWorkflows_InternalError",
 			clientMap: auditorAuthClient.GetClientMap(),
 			sideEffect: func() func() {
@@ -1022,6 +1038,13 @@ func TestWorkflowControllerListWorkflows(t *testing.T) {
 			path := "/workflows"
 			if tt.count {
 				path += "?$count=true"
+			}
+			if tt.orderby != "" {
+				sep := "?"
+				if strings.Contains(path, "?") {
+					sep = "&"
+				}
+				path += sep + "$orderby=" + url.QueryEscape(tt.orderby)
 			}
 
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{

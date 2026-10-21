@@ -245,11 +245,11 @@ func (w *WorkflowManager) GetWorkflows(
 		return nil, 0, err
 	}
 
-	// Sort by created date descending by default
-	query = query.Order(repo.OrderField{
-		Field:     repo.CreatedField,
-		Direction: repo.Desc,
-	})
+	if err := applyOrderOrDefault(params, query, func(q *repo.Query) {
+		q.Order(repo.OrderField{Field: repo.CreatedField, Direction: repo.Desc})
+	}); err != nil {
+		return nil, 0, err
+	}
 
 	return w.getWorkflows(ctx, params.GetPagination(), query)
 }
