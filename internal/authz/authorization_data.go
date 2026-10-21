@@ -16,8 +16,13 @@ type InternalUserCheck struct {
 	Role constants.InternalRole
 }
 
+type TechnicalUserCheck struct {
+	TenantID TenantID
+	Role     constants.TechnicalRole
+}
+
 type AuthorizationKey[
-	User BusinessUserCheck | InternalUserCheck,
+	User BusinessUserCheck | InternalUserCheck | TechnicalUserCheck,
 	Resource APIResourceType | RepoResourceType,
 	Action APIAction | RepoAction,
 ] struct {
@@ -29,8 +34,8 @@ type AuthorizationKey[
 var ErrInvalidRole = errors.New("invalid role")
 
 type AuthzData[
-	Role constants.BusinessRole | constants.InternalRole,
-	UserCheck BusinessUserCheck | InternalUserCheck,
+	Role constants.BusinessRole | constants.InternalRole | constants.TechnicalRole,
+	UserCheck BusinessUserCheck | InternalUserCheck | TechnicalUserCheck,
 	Resource APIResourceType | RepoResourceType,
 	Action APIAction | RepoAction,
 ] struct {
@@ -47,6 +52,11 @@ type InternalUserAuthzData[
 	Resource APIResourceType | RepoResourceType,
 	Action APIAction | RepoAction,
 ] AuthzData[constants.InternalRole, InternalUserCheck, Resource, Action]
+
+type TechnicalUserAuthzData[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+] AuthzData[constants.TechnicalRole, TechnicalUserCheck, Resource, Action]
 
 // NewBusinessUserAuthzData creates and return a BusinessUserAuthzData. We have separate functions to add
 // the entities, since these are dynamic
@@ -134,4 +144,44 @@ func NewInternalUserAuthzData[
 		AuthzKeys:    authzKeys,
 		RolePolicies: rolePolicies,
 	}, nil
+}
+
+// NewTechnicalUserAuthzData creates and returns a TechnicalUserAuthzData.
+// Authz keys are added dynamically per tenant via AddTenant.
+func NewTechnicalUserAuthzData[
+	Resource APIResourceType | RepoResourceType,
+	Action APIAction | RepoAction,
+](
+	rolePolicies RolePolicies[constants.TechnicalRole, Resource, Action]) (
+	*TechnicalUserAuthzData[Resource, Action], error,
+) {
+	authzData := &TechnicalUserAuthzData[Resource, Action]{
+		RolePolicies: rolePolicies,
+		AuthzKeys:    make(map[AuthorizationKey[TechnicalUserCheck, Resource, Action]]struct{}),
+	}
+	return authzData, nil
+}
+
+func (l *TechnicalUserAuthzData[ResourceType, Action]) InitialiseAuthzKeys() {
+	l.AuthzKeys = make(map[AuthorizationKey[TechnicalUserCheck, ResourceType, Action]]struct{})
+}
+
+func (l *TechnicalUserAuthzData[ResourceType, Action]) AddTenant(tenantID TenantID) {
+	for role, policies := range l.RolePolicies {
+		for _, policy := range policies {
+			for _, resource := range policy.ResourceTypes {
+				for _, action := range resource.Actions {
+					key := AuthorizationKey[TechnicalUserCheck, ResourceType, Action]{
+						User: TechnicalUserCheck{
+							TenantID: tenantID,
+							Role:     role,
+						},
+						ResourceType: resource.Type,
+						Action:       action,
+					}
+					l.AuthzKeys[key] = struct{}{}
+				}
+			}
+		}
+	}
 }

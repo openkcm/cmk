@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/authz"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -89,4 +90,51 @@ func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {
 	err = am.LoadTenantAllowedActions(ctx1)
 	assert.NoError(t, err)
 	assert.Len(t, am.AuthzHandler.BusinessUserAuthzData.AuthzKeys, len(tenants)*numKeysPerTenant)
+}
+
+func TestAuthzManager_TechnicalUserDataPerTenant(t *testing.T) {
+	r := repomock.NewInMemoryRepository()
+
+	tenantIDs := []string{"tenant1", "tenant2"}
+	for _, id := range tenantIDs {
+		ctx := testutils.CreateCtxWithTenant(id)
+		err := r.Create(ctx, &model.Tenant{ID: id, Status: "Test"})
+		assert.NoError(t, err)
+	}
+
+	techRole := constants.TechnicalRole("TECH_ROLE")
+	technicalPolicies := authz.RolePolicies[constants.TechnicalRole, authz.APIResourceType, authz.APIAction]{
+		techRole: {
+			{
+				ID: "TechPolicy",
+				ResourceTypes: []authz.Resource[authz.APIResourceType, authz.APIAction]{
+					{Type: authz.APIResourceTypeKey, Actions: []authz.APIAction{authz.APIActionRead, authz.APIActionCreate}},
+				},
+			},
+		},
+	}
+	numTechKeysPerTenant := 2 // one per action in TechPolicy
+
+	cfg := &config.Config{}
+	internalPolicies := make(authz.RolePolicies[constants.InternalRole, authz.APIResourceType, authz.APIAction])
+	am := authz_loader.NewAuthzLoader(t.Context(), r, cfg, internalPolicies, authz.APIPolicies, technicalPolicies, authz.APIResourceTypeActions)
+
+	// technical authz keys grow per tenant as tenants are loaded
+	for i, id := range tenantIDs {
+		ctx := testutils.CreateCtxWithTenant(id)
+		err := am.LoadTenantAllowedActions(ctx)
+		assert.NoError(t, err)
+		assert.Len(t, am.AuthzHandler.TechnicalUserAuthzData.AuthzKeys, (i+1)*numTechKeysPerTenant)
+	}
+
+	// reload resets and rebuilds all tenant keys
+	ctx1 := testutils.CreateCtxWithTenant(tenantIDs[0])
+	err := am.ReloadTenantAllowedActions(ctx1)
+	assert.NoError(t, err)
+	assert.Len(t, am.AuthzHandler.TechnicalUserAuthzData.AuthzKeys, len(tenantIDs)*numTechKeysPerTenant)
+
+	// loading an already-loaded tenant is a no-op
+	err = am.LoadTenantAllowedActions(ctx1)
+	assert.NoError(t, err)
+	assert.Len(t, am.AuthzHandler.TechnicalUserAuthzData.AuthzKeys, len(tenantIDs)*numTechKeysPerTenant)
 }

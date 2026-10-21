@@ -46,6 +46,7 @@ func NewAuthzLoader[
 	config *config.Config,
 	internalRolePolicies authz.RolePolicies[constants.InternalRole, ResourceType, Action],
 	businessRolePolicies authz.RolePolicies[constants.BusinessRole, ResourceType, Action],
+	technicalRolePolicies authz.RolePolicies[constants.TechnicalRole, ResourceType, Action],
 	resourceTypeActions map[ResourceType][]Action,
 ) *AuthzLoader[ResourceType, Action] {
 	audit := auditor.New(ctx, config)
@@ -56,6 +57,7 @@ func NewAuthzLoader[
 		audit,
 		internalRolePolicies,
 		businessRolePolicies,
+		technicalRolePolicies,
 		resourceTypeActions,
 		&mu,
 	)
@@ -80,7 +82,14 @@ func NewAPIAuthzLoader(
 ) *AuthzLoader[authz.APIResourceType, authz.APIAction] {
 	// No internal user access allowed to api
 	APIInternalPolicies := make(authz.RolePolicies[constants.InternalRole, authz.APIResourceType, authz.APIAction])
-	return NewAuthzLoader(ctx, repo, config, APIInternalPolicies, authz.APIPolicies, authz.APIResourceTypeActions)
+	APITechnicalPolicies := make(authz.RolePolicies[constants.TechnicalRole, authz.APIResourceType, authz.APIAction])
+	return NewAuthzLoader(
+		ctx, repo, config,
+		APIInternalPolicies,
+		authz.APIPolicies,
+		APITechnicalPolicies,
+		authz.APIResourceTypeActions,
+	)
 }
 
 func NewRepoAuthzLoader(
@@ -88,12 +97,14 @@ func NewRepoAuthzLoader(
 	repo repo.Repo,
 	config *config.Config,
 ) *AuthzLoader[authz.RepoResourceType, authz.RepoAction] {
+	RepoTechnicalPolicies := make(authz.RolePolicies[constants.TechnicalRole, authz.RepoResourceType, authz.RepoAction])
 	return NewAuthzLoader(
 		ctx,
 		repo,
 		config,
 		authz.RepoInternalPolicies,
 		authz.RepoBusinessPolicies,
+		RepoTechnicalPolicies,
 		authz.RepoResourceTypeActions,
 	)
 }
@@ -133,6 +144,7 @@ func (am *AuthzLoader[Resource, Action]) ReloadTenantAllowedActions(ctx context.
 func (am *AuthzLoader[Resource, Action]) ResetBusinessUserData() {
 	am.TenantIDs = make(map[authz.TenantID]struct{})
 	am.AuthzHandler.ResetBusinessUserData()
+	am.AuthzHandler.ResetTechnicalUserData()
 }
 
 // StartAuthzDataRefresh starts a background goroutine that refreshes the authorization data periodically
@@ -219,10 +231,8 @@ func (am *AuthzLoader[Resource, Action]) loadTenantAllowedActions(
 		}
 	}
 
-	// Add tenant ID to the list of tenant IDs in case it is not already present
-	if _, exists := am.TenantIDs[authz.TenantID(tenantID)]; !exists {
-		am.TenantIDs[authz.TenantID(tenantID)] = struct{}{}
-	}
+	am.AuthzHandler.UpdateTechnicalUserData(authz.TenantID(tenantID))
+	am.TenantIDs[authz.TenantID(tenantID)] = struct{}{}
 
 	return nil
 }
