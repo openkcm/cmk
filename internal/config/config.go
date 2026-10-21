@@ -56,6 +56,7 @@ type Config struct {
 	Workflow     Workflow     `yaml:"workflow"`
 	Keys         Keys         `yaml:"keys"`
 	Tenant       Tenant       `yaml:"tenant"`
+	Notification Notification `yaml:"notification"`
 }
 
 type ContextModels struct {
@@ -389,6 +390,20 @@ type Landscape struct {
 	Name      string `yaml:"name"`
 	UIBaseUrl string `yaml:"uiBaseUrl"`
 	Region    string `yaml:"region"`
+}
+
+// Notification holds configurable branding and text for email notifications.
+// deployments override them via Helm values.
+type Notification struct {
+	// ServiceName is the display name of the service, e.g. "Key Management Service".
+	ServiceName string `yaml:"serviceName" default:"Key Management Service"`
+	// PortalName is the name of the management UI, e.g. "CMK Portal".
+	PortalName string `yaml:"portalName" default:"CMK Portal"`
+	// SignOff is the signature used in the email footer, e.g. "Your Key Management Service Team".
+	SignOff string `yaml:"signOff" default:"Your Key Management Service Team"`
+	// SecurityText is an optional HTML snippet rendered as a security warning block.
+	// Leave empty to omit the block. Use HTML formatting for emphasis (bold, underline, colour).
+	SecurityText string `yaml:"securityText"`
 }
 
 type Workflow struct {
