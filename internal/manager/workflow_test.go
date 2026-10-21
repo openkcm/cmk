@@ -70,7 +70,7 @@ func SetupWorkflowManager(
 
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager, nil)
-	cmkAuditor := auditor.New(t.Context(), cfg)
+	cmkAuditor := &auditor.Auditor{}
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, nil, cfg, nil)
@@ -1803,8 +1803,8 @@ func TestWorkflowManager_CleanupTerminalWorkflows(t *testing.T) {
 	)
 
 	// Create workflow config
-	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 	testutils.CreateTestEntities(ctx, t, r, group)
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(nil))
 
 	t.Run("should delete expired terminal workflow", func(t *testing.T) {
 		// Create old terminal workflow (should be deleted)
@@ -2126,7 +2126,9 @@ func setupEligibilityTest(
 
 	// Create tenant workflow config with minimum approvals matching approver count
 	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
-		wc.MinimumApprovals = approverCount
+		if approverCount >= constants.DefaultMinimumApprovalCount && approverCount <= constants.MaxMinimumApprovals {
+			wc.MinimumApprovals = approverCount
+		}
 	}))
 
 	// Create key admin group

@@ -1,0 +1,27 @@
+{{- if and .Values.taskScheduler.deploy .Values.networkPolicy.enabled }}
+---
+# Ingress to the task scheduler pods: only the status port. Outgoing traffic is not restricted.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "cmk.fullname" . }}-task-scheduler
+  namespace: {{ include "cmk.namespace" . }}
+  labels:
+    {{- include "cmk.task-scheduler.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "cmk.task-scheduler.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- with .Values.networkPolicy.status.from }}
+    # Status endpoints (metrics). Probes from the kubelet are not affected by
+    # NetworkPolicies on most network plugins.
+    - ports:
+        - port: http-status
+          protocol: TCP
+      from:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+{{- end }}

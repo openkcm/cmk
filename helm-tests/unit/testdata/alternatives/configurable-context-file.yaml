@@ -1,0 +1,8 @@
+# charts/cmk/values.yaml, config.configurableContext: "Example with a file from a ConfigMap
+# mounted with `extraVolumes`". Applied on top of ../values-examples.yaml; null removes the
+# settings of the example it replaces.
+config:
+  configurableContext:
+    source: file
+    value: null
+    file: { path: /etc/cmk-context/system.yaml, format: yaml }

@@ -17,12 +17,10 @@ const (
 )
 
 // TenantConfig represents a flat config row in the database.
-// Key + Type form the composite key (Type groups related entries, e.g. "workflow").
-// Flat rows store their value in value_text; legacy jsonb blobs are read via
-// LegacyTenantConfig.
+// Key + Type form the composite primary key (Type groups related entries, e.g. "workflow").
 type TenantConfig struct {
 	Key   string     `gorm:"type:varchar(255);primaryKey"`
-	Value string     `gorm:"column:value_text;type:text"`
+	Value string     `gorm:"type:text;not null"`
 	Type  ConfigType `gorm:"type:varchar(255);primaryKey;default:''"`
 }
 
@@ -48,32 +46,6 @@ func (TenantConfig) IsSharedModel() bool {
 func (m TenantConfig) CheckAuthz(ctx context.Context,
 	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction],
 	action authz.RepoAction,
-) (bool, error) {
-	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
-}
-
-// LegacyTenantConfig reads the legacy jsonb value column, serving blob reads
-// during the flatten rollout until the cleanup release drops that column.
-type LegacyTenantConfig struct {
-	Key   string `gorm:"type:varchar(255);primaryKey"`
-	Value string `gorm:"column:value;type:jsonb"`
-	Type  string `gorm:"type:varchar(255);primaryKey;default:''"`
-}
-
-func (LegacyTenantConfig) TableResourceType() authz.RepoResourceType {
-	return authz.RepoResourceTypeTenantconfig
-}
-
-func (m LegacyTenantConfig) TableName() string {
-	return string(m.TableResourceType())
-}
-
-func (LegacyTenantConfig) IsSharedModel() bool {
-	return false
-}
-
-func (m LegacyTenantConfig) CheckAuthz(ctx context.Context,
-	authzHandler *authz.Handler[authz.RepoResourceType, authz.RepoAction], action authz.RepoAction,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }

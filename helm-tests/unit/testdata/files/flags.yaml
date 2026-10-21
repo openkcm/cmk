@@ -1,0 +1,9 @@
+enable_byok_aws:
+  variations: { enabled: true, disabled: false }
+  defaultRule: { variation: disabled }
+enable_hyok_aws:
+  variations: { enabled: true, disabled: false }
+  defaultRule: { variation: enabled }
+detect_hyok_rotation_aws:
+  variations: { enabled: true, disabled: false }
+  defaultRule: { variation: enabled }

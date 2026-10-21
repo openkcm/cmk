@@ -72,7 +72,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 		},
 	)
-	userManager := manager.NewUserManager(r, auditor.New(t.Context(), &cfg))
+	userManager := manager.NewUserManager(r, &auditor.Auditor{})
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, nil, nil, &cfg, nil)
 

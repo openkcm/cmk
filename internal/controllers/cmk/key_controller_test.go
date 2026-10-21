@@ -1700,7 +1700,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 
 		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
 		assert.Equal(t, "INVALID_WRAPPED_KEY_MATERIAL", response.Error.Code)
-		assert.Equal(t, "Key material decryption failed: invalid or incorrectly wrapped key material.", response.Error.Message)
+		assert.Equal(t, "Key material decryption failed: invalid or incorrectly wrapped key material, or the key material is wrapped with expired import parameters.", response.Error.Message)
 	})
 }
 

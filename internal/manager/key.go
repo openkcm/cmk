@@ -1759,7 +1759,7 @@ func (km *KeyManager) isNewKeyVersion(
 		return false, nil
 	}
 
-	return keyResp.Versions[0].ID == versions[0].NativeID, nil
+	return keyResp.Versions[0].ID != versions[0].NativeID, nil
 }
 
 func (km *KeyManager) handleKeyVersions(

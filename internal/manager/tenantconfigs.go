@@ -211,8 +211,8 @@ func (m *TenantConfigManager) GetSystemGroupingConfig(ctx context.Context) (*mod
 	}, nil
 }
 
-// GetWorkflowConfig reads flat rows first, falling back to the legacy JSON
-// blob for tenants whose data migration has not yet completed.
+// GetWorkflowConfig reads the workflow config from flat rows, creating the
+// default when none exist.
 func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
 	wc, err := m.GetTenantConfigByType[model.WorkflowConfig](ctx)
 	if err != nil {
@@ -220,14 +220,6 @@ func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.Wor
 	}
 
 	if wc != nil {
-		return wc, nil
-	}
-
-	wc, found, err := m.getWorkflowConfigFromLegacyBlob(ctx)
-	if err != nil {
-		return nil, errs.Wrap(ErrGetWorkflowConfig, err)
-	}
-	if found {
 		return wc, nil
 	}
 
@@ -400,8 +392,7 @@ func (m *TenantConfigManager) NeedsDefaultKeystoreProvisioning(ctx context.Conte
 	return keystore.KeyManagementConfig.LocalityID == "" || len(keystore.KeyManagementConfig.AccessData) == 0, nil
 }
 
-// GetStoredDefaultKeystoreConfig reads the stored default keystore without
-// pool fallback. Reads flat rows first, falling back to the legacy JSON blob.
+// GetStoredDefaultKeystoreConfig reads the stored default keystore without pool fallback
 func (m *TenantConfigManager) GetStoredDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, bool, error) {
 	kc, err := m.GetTenantConfigByType[model.KeystoreConfig](ctx)
 	if err != nil {
@@ -410,8 +401,7 @@ func (m *TenantConfigManager) GetStoredDefaultKeystoreConfig(ctx context.Context
 	if kc != nil {
 		return kc, true, nil
 	}
-
-	return m.getKeystoreConfigFromLegacyBlob(ctx)
+	return nil, false, nil
 }
 
 func (m *TenantConfigManager) applyTenantLimitsOverride(limits *model.TenantLimits) {
@@ -485,61 +475,6 @@ func (m *TenantConfigManager) getKeystoreConfigFromPool(ctx context.Context) (*m
 	}
 
 	return ksConfig, nil
-}
-
-func (m *TenantConfigManager) getWorkflowConfigFromLegacyBlob(
-	ctx context.Context,
-) (*model.WorkflowConfig, bool, error) {
-	blob, found, err := m.getLegacyBlob(ctx, constants.WorkflowConfigKey)
-	if err != nil || !found {
-		return nil, found, err
-	}
-
-	var wc model.WorkflowConfig
-	if err := json.Unmarshal([]byte(blob), &wc); err != nil {
-		return nil, false, errs.Wrap(ErrUnmarshalConfig, err)
-	}
-
-	return &wc, true, nil
-}
-
-func (m *TenantConfigManager) getKeystoreConfigFromLegacyBlob(
-	ctx context.Context,
-) (*model.KeystoreConfig, bool, error) {
-	blob, found, err := m.getLegacyBlob(ctx, constants.DefaultKeyStore)
-	if err != nil || !found {
-		return nil, found, err
-	}
-
-	keystore := &model.KeystoreConfig{}
-	if err := json.Unmarshal([]byte(blob), keystore); err != nil {
-		return nil, false, errs.Wrap(ErrUnmarshalConfig, err)
-	}
-
-	return keystore, true, nil
-}
-
-// getLegacyBlob reads a legacy single-row JSON blob from the jsonb value column.
-func (m *TenantConfigManager) getLegacyBlob(
-	ctx context.Context,
-	key string,
-) (string, bool, error) {
-	var tc model.LegacyTenantConfig
-
-	ck := repo.NewCompositeKey().
-		Where(repo.KeyField, key).
-		Where(repo.TypeField, "")
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
-
-	found, err := m.r.First(ctx, &tc, *query)
-	if err != nil && !errors.Is(err, repo.ErrNotFound) {
-		return "", false, err
-	}
-	if !found {
-		return "", false, nil
-	}
-
-	return tc.Value, true, nil
 }
 
 // getDefaultWorkflowConfig returns default workflow config, checking deploymentConfig first,

@@ -82,7 +82,7 @@ func setupTenantManager(t *testing.T, authzRole *constants.InternalRole, opts ..
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	assert.NoError(t, err)
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 
 	cm := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	um := testutils.NewUserManager()
