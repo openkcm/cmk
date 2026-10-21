@@ -99,12 +99,14 @@ func NewRepoAuthzLoader(
 	config *config.Config,
 ) *authz_loader.AuthzLoader[authz.RepoResourceType, authz.RepoAction] {
 	repoInternalPolicies := make(authz.RolePolicies[constants.InternalRole, authz.RepoResourceType, authz.RepoAction])
+	repoTechnicalPolicies := make(authz.RolePolicies[constants.TechnicalRole, authz.RepoResourceType, authz.RepoAction])
 	return authz_loader.NewAuthzLoader(
 		ctx,
 		r,
 		config,
 		repoInternalPolicies,
 		RepoBusinessPolicies,
+		repoTechnicalPolicies,
 		RepoResourceTypeActions,
 	)
 }

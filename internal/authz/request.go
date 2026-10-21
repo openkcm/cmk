@@ -82,6 +82,40 @@ func (r BusinessUserRequest) IsValidContext(ctx context.Context) error {
 	return nil
 }
 
+type TechnicalUserRequest struct {
+	TenantID TenantID
+	Role     constants.TechnicalRole
+}
+
+func (u TechnicalUserRequest) IsEmpty() bool {
+	return u.Role == ""
+}
+
+func (u TechnicalUserRequest) IsInternal() bool {
+	return false
+}
+
+func (r TechnicalUserRequest) IsValidContext(ctx context.Context) error {
+	tenant, err := cmkcontext.ExtractTenantID(ctx)
+	if err != nil {
+		return err
+	}
+
+	if r.TenantID != TenantID(tenant) {
+		return ErrWrongTenantID
+	}
+
+	userType, err := cmkcontext.ExtractUserType(ctx)
+	if err != nil {
+		return err
+	}
+	if userType != string(constants.TechnicalUser) {
+		return ErrNoAuthzForUserType
+	}
+
+	return nil
+}
+
 type Request[TUser UserRequest, TResourceTypeName, TAction comparable] struct {
 	ID               string            // required
 	User             TUser             // required

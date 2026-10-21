@@ -3,14 +3,17 @@ package constants
 // needed for using own type to avoid collisions
 type internalUserDataKey string
 type businessUserDataKey string
+type technicalUserDataKey string
 type userTypeKey string
 type UserTypeValue string
 
 const (
-	UserType     userTypeKey   = "UserType"
-	BusinessUser UserTypeValue = "Business"
-	InternalUser UserTypeValue = "Internal"
+	UserType      userTypeKey   = "UserType"
+	BusinessUser  UserTypeValue = "Business"
+	InternalUser  UserTypeValue = "Internal"
+	TechnicalUser UserTypeValue = "Technical"
 
-	InternalUserData internalUserDataKey = "InternalData"
-	BusinessUserData businessUserDataKey = "ClientData"
+	InternalUserData  internalUserDataKey  = "InternalData"
+	BusinessUserData  businessUserDataKey  = "ClientData"
+	TechnicalUserData technicalUserDataKey = "TechnicalData"
 )

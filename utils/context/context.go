@@ -22,6 +22,8 @@ var (
 	ErrExtractBusinessUserDataAuthContext = errors.New("could not extract field from business data auth context")
 	ErrExtractUserType                    = errors.New("could not extract user type from context")
 	ErrInvalidUserType                    = errors.New("invalid user type")
+	ErrExtractInternalUserData            = errors.New("could not extract internal data from context")
+	ErrExtractTechnicalUserData           = errors.New("could not extract technical data from context")
 )
 
 type Opt func(ctx context.Context) context.Context
@@ -214,11 +216,16 @@ func ExtractUserIdentifier(ctx context.Context) (string, error) {
 	}
 
 	internalRole, err := ExtractInternalRole(ctx)
+	if err == nil {
+		return string(internalRole), nil
+	}
+
+	technicalRole, err := ExtractTechnicalRole(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	return string(internalRole), nil
+	return string(technicalRole), nil
 }
 
 func ExtractInternalRole(ctx context.Context) (constants.InternalRole, error) {
@@ -231,10 +238,43 @@ func ExtractInternalRole(ctx context.Context) (constants.InternalRole, error) {
 	}
 	internalRole, ok := ctx.Value(constants.InternalUserData).(constants.InternalRole)
 	if !ok || internalRole == "" {
-		return "", ErrExtractBusinessUserData
+		return "", ErrExtractInternalUserData
 	}
 
 	return internalRole, nil
+}
+
+// Technical User Data
+
+func InjectTechnicalUserData(
+	ctx context.Context,
+	role constants.TechnicalRole,
+) (context.Context, error) {
+	userType, ok := ctx.Value(constants.UserType).(constants.UserTypeValue)
+	if ok && userType != constants.TechnicalUser {
+		return ctx, ErrInvalidUserType
+	}
+	ctx = InjectRequestID(ctx, uuid.NewString())
+	ctx = context.WithValue(ctx, constants.UserType, constants.TechnicalUser)
+	ctx = context.WithValue(ctx, constants.TechnicalUserData, role)
+
+	return ctx, nil
+}
+
+func ExtractTechnicalRole(ctx context.Context) (constants.TechnicalRole, error) {
+	userType, err := ExtractUserType(ctx)
+	if err != nil {
+		return "", err
+	}
+	if userType != string(constants.TechnicalUser) {
+		return "", ErrInvalidUserType
+	}
+	technicalRole, ok := ctx.Value(constants.TechnicalUserData).(constants.TechnicalRole)
+	if !ok || technicalRole == "" {
+		return "", ErrExtractTechnicalUserData
+	}
+
+	return technicalRole, nil
 }
 
 // User type context conversions

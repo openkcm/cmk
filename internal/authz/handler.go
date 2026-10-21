@@ -21,7 +21,7 @@ type BusinessUser struct {
 }
 
 type Entity[
-	Role constants.BusinessRole | constants.InternalRole,
+	Role constants.BusinessRole | constants.InternalRole | constants.TechnicalRole,
 	User BusinessUser,
 ] struct {
 	User User
@@ -32,8 +32,9 @@ type Handler[
 	Resource APIResourceType | RepoResourceType,
 	Action APIAction | RepoAction,
 ] struct {
-	InternalUserAuthzData InternalUserAuthzData[Resource, Action]
-	BusinessUserAuthzData BusinessUserAuthzData[Resource, Action]
+	InternalUserAuthzData  InternalUserAuthzData[Resource, Action]
+	BusinessUserAuthzData  BusinessUserAuthzData[Resource, Action]
+	TechnicalUserAuthzData TechnicalUserAuthzData[Resource, Action]
 
 	Auditor *auditor.Auditor
 
@@ -64,6 +65,7 @@ func NewAuthorizationHandler[
 	auditor *auditor.Auditor,
 	internalUserPolicies RolePolicies[constants.InternalRole, Resource, Action],
 	businessUserPolicies RolePolicies[constants.BusinessRole, Resource, Action],
+	technicalUserPolicies RolePolicies[constants.TechnicalRole, Resource, Action],
 	resourceActions map[Resource][]Action,
 	mu *sync.Mutex,
 ) (*Handler[Resource, Action], error) {
@@ -77,12 +79,18 @@ func NewAuthorizationHandler[
 		return nil, err
 	}
 
+	technicalUserAuthzData, err := NewTechnicalUserAuthzData(technicalUserPolicies)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Handler[Resource, Action]{
-		resourceActions:       resourceActions,
-		BusinessUserAuthzData: *businessUserAuthzData,
-		InternalUserAuthzData: *internalUserAuthzData,
-		Auditor:               auditor,
-		mu:                    mu,
+		resourceActions:        resourceActions,
+		BusinessUserAuthzData:  *businessUserAuthzData,
+		InternalUserAuthzData:  *internalUserAuthzData,
+		TechnicalUserAuthzData: *technicalUserAuthzData,
+		Auditor:                auditor,
+		mu:                     mu,
 	}, nil
 }
 
@@ -94,6 +102,14 @@ func (as *Handler[Resource, Action]) UpdateBusinessUserData(
 	user map[constants.BusinessRole]*BusinessUser,
 ) error {
 	return as.BusinessUserAuthzData.AddUser(user)
+}
+
+func (as *Handler[Resource, Action]) ResetTechnicalUserData() {
+	as.TechnicalUserAuthzData.InitialiseAuthzKeys()
+}
+
+func (as *Handler[Resource, Action]) UpdateTechnicalUserData(tenantID TenantID) {
+	as.TechnicalUserAuthzData.AddTenant(tenantID)
 }
 
 // IsBusinessUserAllowed checks if the given Business User is allowed to perform
@@ -143,11 +159,45 @@ func (as *Handler[Resource, Action]) IsBusinessUserAllowed(
 	return false, errs.Wrap(ErrAuthorizationDecision, ErrAuthorizationDenied)
 }
 
-// IsInternalUserAllowed checks if the given Business User is allowed to perform
+// IsInternalUserAllowed checks if the given Internal User is allowed to perform
 // the given Action on the given Resource
 func (as *Handler[Resource, Action]) IsInternalUserAllowed(
 	ctx context.Context,
 	request Request[InternalUserRequest, Resource, Action],
+) (bool, error) {
+	key := AuthorizationKey[InternalUserCheck, Resource, Action]{
+		User:         InternalUserCheck{Role: request.User.Role},
+		ResourceType: request.ResourceTypeName,
+		Action:       request.Action,
+	}
+	return as.checkAuthzKey(ctx, request, key, as.InternalUserAuthzData.AuthzKeys)
+}
+
+// IsTechnicalUserAllowed checks if the given Technical User is allowed to perform
+// the given Action on the given Resource
+func (as *Handler[Resource, Action]) IsTechnicalUserAllowed(
+	ctx context.Context,
+	request Request[TechnicalUserRequest, Resource, Action],
+) (bool, error) {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+
+	key := AuthorizationKey[TechnicalUserCheck, Resource, Action]{
+		User:         TechnicalUserCheck{TenantID: request.User.TenantID, Role: request.User.Role},
+		ResourceType: request.ResourceTypeName,
+		Action:       request.Action,
+	}
+	return as.checkAuthzKey(ctx, request, key, as.TechnicalUserAuthzData.AuthzKeys)
+}
+
+func (as *Handler[Resource, Action]) checkAuthzKey[
+	TUser UserRequest,
+	UserCheck BusinessUserCheck | InternalUserCheck | TechnicalUserCheck,
+](
+	ctx context.Context,
+	request Request[TUser, Resource, Action],
+	key AuthorizationKey[UserCheck, Resource, Action],
+	authzKeys map[AuthorizationKey[UserCheck, Resource, Action]]struct{},
 ) (bool, error) {
 	err := request.IsValidContext(ctx)
 	if err != nil {
@@ -161,25 +211,12 @@ func (as *Handler[Resource, Action]) IsInternalUserAllowed(
 		return false, errs.Wrap(ErrInvalidRequest, ErrInvalidRequest)
 	}
 
-	reqData := AuthorizationKey[InternalUserCheck, Resource, Action]{
-		User: InternalUserCheck{
-			Role: request.User.Role,
-		},
-		ResourceType: request.ResourceTypeName,
-		Action:       request.Action,
-	}
-	_, ok := as.InternalUserAuthzData.AuthzKeys[reqData]
-
-	if ok {
-		// Allow
+	if _, ok := authzKeys[key]; ok {
 		LogDecision(ctx, request, true, Reason(InfoAuthorizationPassed))
 		return true, nil
 	}
 
-	// If no matching policy is found, deny authorization
-	// Deny
 	LogDecision(ctx, request, false, Reason(ErrAuthorizationDecision.Error()))
-
 	return false, errs.Wrap(ErrAuthorizationDecision, ErrAuthorizationDenied)
 }
 
