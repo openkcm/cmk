@@ -89,3 +89,35 @@ func TestOdata_ForSqlInjection(t *testing.T) {
 		})
 	}
 }
+
+func TestOdataOrder_ForSqlInjection(t *testing.T) {
+	orderMap := odata.OrderToRepoMap{
+		"name": {DBName: "name"},
+	}
+
+	injections := []string{
+		"name; drop table systems",
+		"name asc) --",
+		"name/**/desc",
+		"(select 1)",
+		"name asc; delete from keys",
+		"1=1",
+		"name asc, injected desc",
+	}
+
+	for _, inj := range injections {
+		t.Run(inj, func(t *testing.T) {
+			order, err := odata.NewOrder(&inj, orderMap, nil)
+			if err != nil {
+				assert.Error(t, err)
+				return
+			}
+
+			_, fields, err := order.GetOrder()
+			assert.NoError(t, err)
+			for _, f := range fields {
+				assert.Equal(t, "name", f.Field)
+			}
+		})
+	}
+}

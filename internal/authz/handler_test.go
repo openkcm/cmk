@@ -166,8 +166,9 @@ func TestIsAllowed(t *testing.T) {
 		t.Run(
 			tt.name, func(t *testing.T) {
 				APIInternalPolicies := make(authz.RolePolicies[constants.InternalRole, authz.APIResourceType, authz.APIAction])
+				APITechnicalPolicies := make(authz.RolePolicies[constants.TechnicalRole, authz.APIResourceType, authz.APIAction])
 				authHandler, err := authz.NewAuthorizationHandler(audit, APIInternalPolicies,
-					authz.APIPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
+					authz.APIPolicies, APITechnicalPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
 				assert.NoError(t, err)
 
 				err = authHandler.UpdateBusinessUserData(tt.entities)
@@ -225,8 +226,10 @@ func BenchmarkIsAllowed(b *testing.B) {
 	// Initialize authorization handler
 	APIInternalPolicies := make(authz.RolePolicies[constants.InternalRole,
 		authz.APIResourceType, authz.APIAction])
+	APITechnicalPolicies := make(authz.RolePolicies[constants.TechnicalRole,
+		authz.APIResourceType, authz.APIAction])
 	authHandler, err := authz.NewAuthorizationHandler(audit,
-		APIInternalPolicies, authz.APIPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
+		APIInternalPolicies, authz.APIPolicies, APITechnicalPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
 	if err != nil {
 		b.Fatalf("Failed to create authorization handler: %v", err)
 	}
@@ -359,7 +362,8 @@ func newTestHandler(t *testing.T) *authz.Handler[authz.APIResourceType, authz.AP
 	cfg := &config.Config{}
 	audit := auditor.New(context.Background(), cfg)
 	internalPolicies := make(authz.RolePolicies[constants.InternalRole, authz.APIResourceType, authz.APIAction])
-	h, err := authz.NewAuthorizationHandler(audit, internalPolicies, authz.APIPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
+	technicalPolicies := make(authz.RolePolicies[constants.TechnicalRole, authz.APIResourceType, authz.APIAction])
+	h, err := authz.NewAuthorizationHandler(audit, internalPolicies, authz.APIPolicies, technicalPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
 	assert.NoError(t, err)
 	return h
 }
@@ -428,6 +432,169 @@ func TestAuditDeniedDecision(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestIsTechnicalUserAllowed(t *testing.T) {
+	const (
+		tenantID    = authz.TenantID("tenant1")
+		techRole    = constants.TechnicalRole("TECH_ROLE")
+		otherTenant = authz.TenantID("other-tenant")
+	)
+
+	technicalPolicies := authz.RolePolicies[constants.TechnicalRole, authz.APIResourceType, authz.APIAction]{
+		techRole: {
+			{
+				ID: "TechPolicy",
+				ResourceTypes: []authz.Resource[authz.APIResourceType, authz.APIAction]{
+					{
+						Type:    authz.APIResourceTypeKey,
+						Actions: []authz.APIAction{authz.APIActionRead},
+					},
+				},
+			},
+		},
+	}
+
+	newHandler := func() *authz.Handler[authz.APIResourceType, authz.APIAction] {
+		cfg := &config.Config{}
+		audit := auditor.New(context.Background(), cfg)
+		internalPolicies := make(authz.RolePolicies[constants.InternalRole, authz.APIResourceType, authz.APIAction])
+		h, err := authz.NewAuthorizationHandler(audit, internalPolicies, authz.APIPolicies, technicalPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
+		assert.NoError(t, err)
+		h.UpdateTechnicalUserData(tenantID)
+		return h
+	}
+
+	technicalCtx := func(tid authz.TenantID, role constants.TechnicalRole) context.Context {
+		ctx := cmkcontext.CreateTenantContext(context.Background(), string(tid))
+		ctx = cmkcontext.InjectRequestID(ctx, "req-id")
+		ctx, _ = cmkcontext.InjectTechnicalUserData(ctx, role)
+		return ctx
+	}
+
+	tests := []struct {
+		name        string
+		makeCtx     func() context.Context
+		request     authz.Request[authz.TechnicalUserRequest, authz.APIResourceType, authz.APIAction]
+		expectAllow bool
+		expectErr   bool
+	}{
+		{
+			name:    "allowed",
+			makeCtx: func() context.Context { return technicalCtx(tenantID, techRole) },
+			request: authz.Request[authz.TechnicalUserRequest, authz.APIResourceType, authz.APIAction]{
+				User:             authz.TechnicalUserRequest{TenantID: tenantID, Role: techRole},
+				ResourceTypeName: authz.APIResourceTypeKey,
+				Action:           authz.APIActionRead,
+			},
+			expectAllow: true,
+		},
+		{
+			name:    "denied - action not in policy",
+			makeCtx: func() context.Context { return technicalCtx(tenantID, techRole) },
+			request: authz.Request[authz.TechnicalUserRequest, authz.APIResourceType, authz.APIAction]{
+				User:             authz.TechnicalUserRequest{TenantID: tenantID, Role: techRole},
+				ResourceTypeName: authz.APIResourceTypeKey,
+				Action:           authz.APIActionCreate,
+			},
+			expectAllow: false,
+			expectErr:   true,
+		},
+		{
+			name:    "denied - unknown role",
+			makeCtx: func() context.Context { return technicalCtx(tenantID, "UNKNOWN_ROLE") },
+			request: authz.Request[authz.TechnicalUserRequest, authz.APIResourceType, authz.APIAction]{
+				User:             authz.TechnicalUserRequest{TenantID: tenantID, Role: "UNKNOWN_ROLE"},
+				ResourceTypeName: authz.APIResourceTypeKey,
+				Action:           authz.APIActionRead,
+			},
+			expectAllow: false,
+			expectErr:   true,
+		},
+		{
+			name:    "denied - tenant not loaded",
+			makeCtx: func() context.Context { return technicalCtx(otherTenant, techRole) },
+			request: authz.Request[authz.TechnicalUserRequest, authz.APIResourceType, authz.APIAction]{
+				User:             authz.TechnicalUserRequest{TenantID: otherTenant, Role: techRole},
+				ResourceTypeName: authz.APIResourceTypeKey,
+				Action:           authz.APIActionRead,
+			},
+			expectAllow: false,
+			expectErr:   true,
+		},
+		{
+			name:    "error - tenant mismatch in context",
+			makeCtx: func() context.Context { return technicalCtx("wrong-tenant", techRole) },
+			request: authz.Request[authz.TechnicalUserRequest, authz.APIResourceType, authz.APIAction]{
+				User:             authz.TechnicalUserRequest{TenantID: tenantID, Role: techRole},
+				ResourceTypeName: authz.APIResourceTypeKey,
+				Action:           authz.APIActionRead,
+			},
+			expectAllow: false,
+			expectErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandler()
+			allowed, err := h.IsTechnicalUserAllowed(tt.makeCtx(), tt.request)
+			assert.Equal(t, tt.expectAllow, allowed)
+			if tt.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestUpdateAndResetTechnicalUserData(t *testing.T) {
+	const (
+		tenantID = authz.TenantID("tenant1")
+		techRole = constants.TechnicalRole("TECH_ROLE")
+	)
+
+	technicalPolicies := authz.RolePolicies[constants.TechnicalRole, authz.APIResourceType, authz.APIAction]{
+		techRole: {
+			{
+				ID: "TechPolicy",
+				ResourceTypes: []authz.Resource[authz.APIResourceType, authz.APIAction]{
+					{Type: authz.APIResourceTypeKey, Actions: []authz.APIAction{authz.APIActionRead}},
+				},
+			},
+		},
+	}
+
+	cfg := &config.Config{}
+	audit := auditor.New(context.Background(), cfg)
+	internalPolicies := make(authz.RolePolicies[constants.InternalRole, authz.APIResourceType, authz.APIAction])
+	h, err := authz.NewAuthorizationHandler(audit, internalPolicies, authz.APIPolicies, technicalPolicies, authz.APIResourceTypeActions, &sync.Mutex{})
+	assert.NoError(t, err)
+
+	ctx := cmkcontext.CreateTenantContext(context.Background(), string(tenantID))
+	ctx = cmkcontext.InjectRequestID(ctx, "req-id")
+	ctx, _ = cmkcontext.InjectTechnicalUserData(ctx, techRole)
+	req := authz.Request[authz.TechnicalUserRequest, authz.APIResourceType, authz.APIAction]{
+		User:             authz.TechnicalUserRequest{TenantID: tenantID, Role: techRole},
+		ResourceTypeName: authz.APIResourceTypeKey,
+		Action:           authz.APIActionRead,
+	}
+
+	// before loading tenant — denied
+	_, err = h.IsTechnicalUserAllowed(ctx, req)
+	assert.Error(t, err)
+
+	// after loading tenant — allowed
+	h.UpdateTechnicalUserData(tenantID)
+	allowed, err := h.IsTechnicalUserAllowed(ctx, req)
+	assert.NoError(t, err)
+	assert.True(t, allowed)
+
+	// after reset — denied again
+	h.ResetTechnicalUserData()
+	_, err = h.IsTechnicalUserAllowed(ctx, req)
+	assert.Error(t, err)
 }
 
 func createEntitiesForTenant(

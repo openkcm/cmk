@@ -34,6 +34,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
+	"github.com/openkcm/cmk/utils/odata"
 )
 
 const (
@@ -41,6 +42,18 @@ const (
 )
 
 var errGrantTrustUnavailable = errors.New("iam not ready")
+
+func keysParams(skip, top int, count bool, orderby *string) repo.Params {
+	return odata.New(
+		odata.WithPagination(&skip, &top, &count),
+		odata.WithOrder(orderby, odata.OrderToRepoMap{
+			"name":      {DBName: repo.NameField},
+			"type":      {DBName: repo.KeyTypeField},
+			"state":     {DBName: repo.StateField},
+			"createdAt": {DBName: repo.CreatedField},
+		}),
+	)
+}
 
 func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	*manager.KeyManager,
@@ -974,7 +987,7 @@ func TestList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, total, err := km.GetKeys(ctx, keyConfig.ID, repo.Pagination{Skip: tt.skip, Top: tt.top, Count: true})
+			results, total, err := km.GetKeys(ctx, keyConfig.ID, keysParams(tt.skip, tt.top, true, nil))
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -3468,4 +3481,50 @@ func TestSyncHYOKKeysExcludesPendingRegistration(t *testing.T) {
 		require.True(t, found)
 		assert.Equal(t, cmkapi.KeyStateENABLED, dbEnabled.State)
 	})
+}
+
+func TestGetKeysPrimaryFirstAcrossPages(t *testing.T) {
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t)
+
+	base := time.Now().UTC()
+
+	// Oldest key is the primary, so created_at desc alone would sort it onto a later page.
+	primaryKey := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+		k.CreatedAt = base
+	})
+	testutils.CreateTestEntities(ctx, t, r, primaryKey)
+
+	for i := 1; i <= 3; i++ {
+		newer := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.CreatedAt = base.Add(time.Duration(i) * time.Hour)
+		})
+		testutils.CreateTestEntities(ctx, t, r, newer)
+	}
+
+	keyConfig.PrimaryKeyID = &primaryKey.ID
+	_, err := r.Patch(ctx, keyConfig, *repo.NewQuery())
+	require.NoError(t, err)
+
+	page1, total, err := km.GetKeys(ctx, keyConfig.ID, keysParams(0, 2, true, nil))
+	require.NoError(t, err)
+	assert.Equal(t, 4, total)
+	require.Len(t, page1, 2)
+	assert.Equal(t, primaryKey.ID, page1[0].ID, "primary key must be first on page 1")
+	assert.True(t, page1[0].IsPrimary)
+	assert.False(t, page1[1].IsPrimary)
+
+	page2, _, err := km.GetKeys(ctx, keyConfig.ID, keysParams(2, 2, false, nil))
+	require.NoError(t, err)
+	for _, k := range page2 {
+		assert.NotEqual(t, primaryKey.ID, k.ID, "primary key must not reappear on page 2")
+	}
+
+	// An explicit order must not pin the primary: oldest-as-primary sorts last.
+	orderby := "createdAt desc"
+	explicit, _, err := km.GetKeys(ctx, keyConfig.ID, keysParams(0, 4, false, &orderby))
+	require.NoError(t, err)
+	require.Len(t, explicit, 4)
+	assert.Equal(t, primaryKey.ID, explicit[3].ID)
 }

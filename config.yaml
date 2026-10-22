@@ -252,6 +252,12 @@ tenant:
   keyLimit: 10
   keyConfigLimit: 5
 
+notification:
+  serviceName: "Key Management Service"
+  portalName: "CMK Portal"
+  signOff: "Your Key Management Service Team"
+  # securityText: "" # set to an HTML snippet to render a security warning block in emails
+
 provisioning:
   initKeystoreConfig:
     enabled: false

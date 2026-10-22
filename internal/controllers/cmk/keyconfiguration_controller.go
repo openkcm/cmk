@@ -7,30 +7,34 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmk/transform/clientcertificates"
 	"github.com/openkcm/cmk/internal/api/cmk/transform/keyconfiguration"
 	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
-	"github.com/openkcm/cmk/utils/ptr"
+	"github.com/openkcm/cmk/utils/odata"
 )
+
+var getKeyConfigsOrderSchema = odata.OrderToRepoMap{
+	"name":      {DBName: repo.NameField},
+	"createdAt": {DBName: repo.CreatedField},
+	"createdBy": {DBName: repo.CreatorIDField},
+}
 
 // GetKeyConfigurations returns the key configurations
 func (c *APIController) GetKeyConfigurations(
 	ctx context.Context,
 	r cmkapi.GetKeyConfigurationsRequestObject,
 ) (cmkapi.GetKeyConfigurationsResponseObject, error) {
-	pagination := repo.Pagination{
-		Skip:  ptr.GetPtrOrDefault(r.Params.Skip, constants.DefaultSkip),
-		Top:   ptr.GetPtrOrDefault(r.Params.Top, constants.DefaultTop),
-		Count: ptr.GetSafeDeref(r.Params.Count),
-	}
-
 	expand := r.Params.ExpandGroup != nil && *r.Params.ExpandGroup
 
-	filter := manager.KeyConfigFilter{Pagination: pagination, Expand: expand}
+	params := odata.New(
+		odata.WithPagination(r.Params.Skip, r.Params.Top, r.Params.Count),
+		odata.WithOrder(r.Params.Orderby, getKeyConfigsOrderSchema),
+	)
+	if _, _, err := params.GetOrder(); err != nil {
+		return nil, errs.Wrap(apierrors.ErrBadOdataOrderby, err)
+	}
 
-	keyConfigs, total, err := c.Manager.KeyConfig.GetKeyConfigurations(ctx, filter)
+	keyConfigs, total, err := c.Manager.KeyConfig.GetKeyConfigurations(ctx, params, expand)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGettingKeyConfig, err)
 	}
@@ -55,7 +59,7 @@ func (c *APIController) GetKeyConfigurations(
 		Value: values,
 	}
 
-	if pagination.Count {
+	if params.GetPagination().Count {
 		response.Count = new(total)
 	}
 

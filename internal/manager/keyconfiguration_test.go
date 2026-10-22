@@ -5,8 +5,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -33,7 +31,24 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 	"github.com/openkcm/cmk/utils/crypto"
+	"github.com/openkcm/cmk/utils/odata"
 )
+
+func kcParams(pagination repo.Pagination, orderby *string) repo.Params {
+	var top *int
+	if pagination.Top > 0 {
+		top = &pagination.Top
+	}
+
+	return odata.New(
+		odata.WithPagination(&pagination.Skip, top, &pagination.Count),
+		odata.WithOrder(orderby, odata.OrderToRepoMap{
+			"name":      {DBName: repo.NameField},
+			"createdAt": {DBName: repo.CreatedField},
+			"createdBy": {DBName: repo.CreatorIDField},
+		}),
+	)
+}
 
 var (
 	testAdminGroupIAM = "KMS_test_admin_group"
@@ -155,17 +170,19 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Top:   constants.DefaultTop,
 			Count: true,
 		}
-		actual, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Pagination: pagination})
+		actual, total, err := m.GetKeyConfigurations(ctxWithGroups, kcParams(pagination, nil), false)
 		assert.NoError(t, err)
 		assert.Equal(t, len(expected), total)
 
-		slices.SortFunc(expected, func(a, b *model.KeyConfiguration) int {
-			return strings.Compare(a.ID.String(), b.ID.String())
-		})
+		expectedNamesByID := make(map[uuid.UUID]string, len(expected))
+		for _, e := range expected {
+			expectedNamesByID[e.ID] = e.Name
+		}
 
-		for i := range actual {
-			assert.Equal(t, expected[i].ID, actual[i].ID)
-			assert.Equal(t, expected[i].Name, actual[i].Name)
+		for _, a := range actual {
+			name, ok := expectedNamesByID[a.ID]
+			assert.True(t, ok)
+			assert.Equal(t, name, a.Name)
 		}
 	})
 
@@ -190,7 +207,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Top:   constants.DefaultTop,
 			Count: true,
 		}
-		actual, total, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Pagination: pagination})
+		actual, total, err := m.GetKeyConfigurations(ctx, kcParams(pagination, nil), false)
 		assert.NoError(t, err)
 		assert.NotEqual(t, 0, total)
 		assert.NotEmpty(t, actual)
@@ -209,7 +226,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
 		}
-		_, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Pagination: pagination})
+		_, total, err := m.GetKeyConfigurations(ctxWithGroups, kcParams(pagination, nil), false)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, total)
 	})
@@ -224,7 +241,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
 		}
-		_, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Pagination: pagination})
+		_, total, err := m.GetKeyConfigurations(ctxWithGroups, kcParams(pagination, nil), false)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, total)
 	})
@@ -252,7 +269,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Top:   constants.DefaultTop,
 			Count: true,
 		}
-		_, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Pagination: pagination})
+		_, total, err := m.GetKeyConfigurations(ctxWithGroups, kcParams(pagination, nil), false)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, total)
 	})
@@ -267,7 +284,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
 		}
-		_, _, err := m.GetKeyConfigurations(t.Context(), manager.KeyConfigFilter{Pagination: pagination})
+		_, _, err := m.GetKeyConfigurations(t.Context(), kcParams(pagination, nil), false)
 		assert.Error(t, err)
 	})
 
@@ -307,9 +324,48 @@ func TestGetKeyConfigurations(t *testing.T) {
 		}
 
 		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{groupA.IAMIdentifier})
-		_, count, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Pagination: repo.Pagination{Count: true}})
+		_, count, err := m.GetKeyConfigurations(ctx, kcParams(repo.Pagination{Count: true}, nil), false)
 		assert.NoError(t, err)
 		assert.Equal(t, kcCount, count)
+	})
+}
+
+func TestGetKeyConfigurationsOrdering(t *testing.T) {
+	m, db, tenant := SetupKeyConfigManager(t)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, "example-user", []string{testAdminGroupIAM})
+	ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
+	r := sql.NewRepository(db)
+
+	names := []string{"config-charlie", "config-alpha", "config-bravo"}
+	for _, name := range names {
+		testutils.CreateTestEntities(ctx, t, r, testutils.NewKeyConfig(func(c *model.KeyConfiguration) {
+			c.Name = name
+			c.AdminGroupID = adminGroup.ID
+			c.AdminGroup = *adminGroup
+		}))
+	}
+
+	pagination := repo.Pagination{Skip: constants.DefaultSkip, Top: constants.DefaultTop}
+
+	t.Run("orders by name ascending", func(t *testing.T) {
+		orderby := "name asc"
+		actual, _, err := m.GetKeyConfigurations(ctx, kcParams(pagination, &orderby), false)
+		assert.NoError(t, err)
+		require.Len(t, actual, 3)
+		assert.Equal(t, "config-alpha", actual[0].Name)
+		assert.Equal(t, "config-bravo", actual[1].Name)
+		assert.Equal(t, "config-charlie", actual[2].Name)
+	})
+
+	t.Run("orders by name descending", func(t *testing.T) {
+		orderby := "name desc"
+		actual, _, err := m.GetKeyConfigurations(ctx, kcParams(pagination, &orderby), false)
+		assert.NoError(t, err)
+		require.Len(t, actual, 3)
+		assert.Equal(t, "config-charlie", actual[0].Name)
+		assert.Equal(t, "config-bravo", actual[1].Name)
+		assert.Equal(t, "config-alpha", actual[2].Name)
 	})
 }
 
@@ -395,7 +451,7 @@ func TestTotalSystemAndKey(t *testing.T) {
 		_, err = r.Delete(ctx, keyConfig, *repo.NewQuery())
 		assert.NoError(t, err)
 
-		_, count, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{})
+		_, count, err := m.GetKeyConfigurations(ctx, kcParams(repo.Pagination{}, nil), false)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, count)
 	})
@@ -419,8 +475,7 @@ func TestKeyConfigurationsWithGroupID(t *testing.T) {
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
 		}
-		filter := manager.KeyConfigFilter{Pagination: pagination}
-		actual, _, err := m.GetKeyConfigurations(ctx, filter)
+		actual, _, err := m.GetKeyConfigurations(ctx, kcParams(pagination, nil), false)
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfig.AdminGroupID, actual[0].AdminGroupID)
 	})

@@ -50,7 +50,8 @@ const (
 )
 
 type (
-	BusinessRole string
-	InternalRole string
-	PolicyID     string
+	BusinessRole  string
+	InternalRole  string
+	TechnicalRole string
+	PolicyID      string
 )

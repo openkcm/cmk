@@ -61,6 +61,7 @@ paths:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/topPath"
         - $ref: "#/components/parameters/countPath"
+        - $ref: "#/components/parameters/orderbyKeys"
       responses:
         "200":
           description: Retrieved
@@ -406,6 +407,7 @@ paths:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/topPath"
         - $ref: "#/components/parameters/countPath"
+        - $ref: "#/components/parameters/orderbyKeyConfigurations"
       responses:
         "200":
           description: Retrieved
@@ -783,6 +785,7 @@ paths:
         - $ref: "#/components/parameters/countPath"
         - $ref: "#/components/parameters/filterSystems"
         - $ref: "#/components/parameters/searchSystems"
+        - $ref: "#/components/parameters/orderbySystems"
       responses:
         "200":
           description: Systems retrieved
@@ -1120,6 +1123,7 @@ paths:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/countPath"
         - $ref: "#/components/parameters/filterWorkflows"
+        - $ref: "#/components/parameters/orderbyWorkflows"
       responses:
         "200":
           description: Retrieved
@@ -1612,6 +1616,70 @@ components:
       schema:
         type: string
         maxLength: 1000
+    orderbyKeys:
+      name: "$orderby"
+      in: query
+      description: |
+        Order the results by one or more fields.
+
+        Format: `field [asc|desc]`, comma-separated for multiple fields. Direction is optional and defaults to `asc`.
+
+        Sortable fields: name, type, state, createdAt.
+
+        Default (when omitted): primary Key first, then newest first.
+
+        Example: name asc
+      schema:
+        type: string
+        maxLength: 200
+    orderbyKeyConfigurations:
+      name: "$orderby"
+      in: query
+      description: |
+        Order the results by one or more fields.
+
+        Format: `field [asc|desc]`, comma-separated for multiple fields. Direction is optional and defaults to `asc`.
+
+        Sortable fields: name, createdAt, createdBy. `createdBy` sorts by the creator's identifier, not the display name.
+
+        Default (when omitted): newest first.
+
+        Example: name asc
+      schema:
+        type: string
+        maxLength: 200
+    orderbySystems:
+      name: "$orderby"
+      in: query
+      description: |
+        Order the results by one or more fields.
+
+        Format: `field [asc|desc]`, comma-separated for multiple fields. Direction is optional and defaults to `asc`.
+
+        Sortable fields: identifier, region, status, type, and `properties.X` where X is a System property such as role or externalName. An unknown property is ignored.
+
+        Default (when omitted): identifier asc.
+
+        Example: region desc, identifier asc
+      schema:
+        type: string
+        maxLength: 200
+    orderbyWorkflows:
+      name: "$orderby"
+      in: query
+      description: |
+        Order the results by one or more fields.
+
+        Format: `field [asc|desc]`, comma-separated for multiple fields. Direction is optional and defaults to `asc`.
+
+        Sortable fields: artifactName, state, createdAt.
+
+        Default (when omitted): newest first.
+
+        Example: createdAt desc
+      schema:
+        type: string
+        maxLength: 200
 
   schemas:
     SystemID:
