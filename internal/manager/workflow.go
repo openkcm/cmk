@@ -267,25 +267,37 @@ func (w *WorkflowManager) CheckWorkflow(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (WorkflowStatus, error) {
+	// Fetch workflow config and related key configurations, both will be reused in subsequent checks
 	workflowConfig, err := w.WorkflowConfig(ctx)
 	if err != nil {
 		return WorkflowStatus{}, err
 	}
 
-	enabled := workflowConfig.Enabled
+	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
+	if err != nil {
+		if errors.Is(err, ErrKeyConfigurationNotAllowed) || errors.Is(err, repo.ErrNotFound) {
+			return WorkflowStatus{}, errs.Wrap(ErrCheckWorkflow, ErrWorkflowCreationNotAllowed)
+		}
+		return WorkflowStatus{}, errs.Wrap(ErrCheckWorkflow, err)
+	}
 
+	// Key config access was already implicitly validated by getKeyConfigurationsFromArtifact above
+	// Now we need to do role-based permission check
 	allowed, err := w.checkPermissionToCreateWorkflow(ctx, workflow)
 	if err != nil {
 		return WorkflowStatus{}, errs.Wrap(ErrCheckWorkflow, err)
 	}
 
 	if !allowed {
-		return WorkflowStatus{},
-			errs.Wrap(ErrCheckWorkflow, ErrWorkflowCreationNotAllowed)
+		return WorkflowStatus{}, errs.Wrap(ErrCheckWorkflow, ErrWorkflowCreationNotAllowed)
 	}
 
-	// After this point user is authorised, we can reveal information
-	status, err := w.checkWorkflow(ctx, workflow, enabled)
+	// User is allowed to create workflow, now check if workflow can be created
+	minimumApprovals := constants.DefaultMinimumApprovalCount
+	if workflowConfig.MinimumApprovals > 0 {
+		minimumApprovals = workflowConfig.MinimumApprovals
+	}
+	status, err := w.checkWorkflow(ctx, workflow, workflowConfig.Enabled, minimumApprovals, keyConfigs)
 	return transformCheckWorkflowError(status, err)
 }
 
@@ -804,13 +816,8 @@ func (w *WorkflowManager) validateApproverCount(
 	ctx context.Context,
 	workflow *model.Workflow,
 	minimumApprovals int,
+	keyConfigs []*model.KeyConfiguration,
 ) (bool, error) {
-	// Get key configurations from the workflow artifact
-	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
-	if err != nil {
-		return false, errs.Wrap(ErrCheckWorkflow, err)
-	}
-
 	approvers, _, err := w.getApproversAndGroupsFromKeyConfigs(ctx, workflow, keyConfigs)
 	if err != nil {
 		return false, errs.Wrap(ErrCheckWorkflow, err)
@@ -993,9 +1000,12 @@ func transformCheckWorkflowError(status WorkflowStatus, err error) (WorkflowStat
 }
 
 //nolint:funlen
-func (w *WorkflowManager) checkWorkflow(ctx context.Context,
+func (w *WorkflowManager) checkWorkflow(
+	ctx context.Context,
 	workflow *model.Workflow,
 	enabled bool,
+	minimumApprovals int,
+	keyConfigs []*model.KeyConfiguration,
 ) (WorkflowStatus, error) {
 	// If workflow is disabled, all others are false
 	if !enabled {
@@ -1004,6 +1014,7 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 		}, nil
 	}
 
+	// Check if type of workflow is supported
 	isSupported := w.isSupportedWorkflow(workflow)
 	if !isSupported {
 		return WorkflowStatus{
@@ -1013,7 +1024,8 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 		}, ErrUnsuportedWorkflow
 	}
 
-	isValid, err := w.validateWorkflow(ctx, workflow)
+	// Validate workflow based on business rules
+	isValid, err := w.validateWorkflow(ctx, workflow, keyConfigs)
 	if err != nil {
 		return WorkflowStatus{
 			Enabled:   enabled,
@@ -1043,9 +1055,7 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 		}, nil
 	}
 
-	// Validate approver count
-	minimumApprovals := w.getMinimumApprovals(ctx)
-	canCreate, errDetails := w.validateApproverCount(ctx, workflow, minimumApprovals)
+	canCreate, errDetails := w.validateApproverCount(ctx, workflow, minimumApprovals, keyConfigs)
 	if errDetails != nil && !errors.Is(errDetails, wf.ErrWorkflowGroupNotSufficientMembers) {
 		return WorkflowStatus{
 			Enabled:   enabled,
@@ -1092,13 +1102,9 @@ func (w *WorkflowManager) isSupportedWorkflow(workflow *model.Workflow) bool {
 }
 
 //nolint:cyclop,gocognit,funlen
-func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.Workflow) (bool, error) {
-	// Always returns at least one key configuration
-	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
-	if err != nil {
-		return false, err
-	}
-
+func (w *WorkflowManager) validateWorkflow(
+	ctx context.Context, workflow *model.Workflow, keyConfigs []*model.KeyConfiguration,
+) (bool, error) {
 	switch {
 	case w.isSystemConnect(workflow):
 		for _, kc := range keyConfigs {
@@ -1755,15 +1761,6 @@ func (w *WorkflowManager) checkPermissionToCreateWorkflow(
 ) (bool, error) {
 	switch workflow.ArtifactType {
 	case model.WorkflowArtifactTypeKeyConfiguration, model.WorkflowArtifactTypeSystem, model.WorkflowArtifactTypeKey:
-		_, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
-		if errors.Is(err, ErrKeyConfigurationNotAllowed) || errors.Is(err, repo.ErrNotFound) {
-			return false, nil
-		}
-
-		if err != nil {
-			return false, err
-		}
-
 		userinfo, err := w.userManager.GetBusinessUserInfo(ctx)
 		if err != nil {
 			return false, err
@@ -1867,7 +1864,8 @@ func (w *WorkflowManager) getKeyConfigFromKey(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (*model.KeyConfiguration, error) {
-	key, err := w.keyManager.Get(ctx, workflow.ArtifactID)
+	key := &model.Key{ID: workflow.ArtifactID}
+	_, err := w.repo.First(ctx, key, *repo.NewQuery())
 	if err != nil {
 		return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
 	}
