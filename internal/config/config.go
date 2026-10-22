@@ -265,9 +265,13 @@ type Services struct {
 
 // HTTPServer holds http server config
 type HTTPServer struct {
-	Address         string        `yaml:"address" default:":8080"`
-	ShutdownTimeout time.Duration `yaml:"shutdownTimeout" default:"5s"`
-	SwaggerEnabled  bool          `yaml:"swaggerEnabled" default:"false"`
+	Address           string        `yaml:"address" default:":8080"`
+	ShutdownTimeout   time.Duration `yaml:"shutdownTimeout" default:"5s"`
+	ReadHeaderTimeout time.Duration `yaml:"readHeaderTimeout" default:"5s"`
+	ReadTimeout       time.Duration `yaml:"readTimeout" default:"10s"`
+	WriteTimeout      time.Duration `yaml:"writeTimeout" default:"20s"`
+	IdleTimeout       time.Duration `yaml:"idleTimeout" default:"120s"`
+	SwaggerEnabled    bool          `yaml:"swaggerEnabled" default:"false"`
 }
 
 type TenantManager struct {
