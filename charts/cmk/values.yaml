@@ -179,7 +179,7 @@ tenantManager:
     # -- Target average memory utilization, in percent of the memory request. Null: not used.
     targetMemoryUtilizationPercentage: 80
     # -- Scaling behavior. Empty: the Kubernetes defaults.
-    behavior: { }
+    behavior: {}
 
 eventReconciler:
   # -- Deploy the event reconciler. It sends key and system tasks to the regions configured
@@ -1023,15 +1023,28 @@ config:
   # The CMK REST API, which the CMK UI and API clients call through Envoy Gateway after ExtAuthZ
   # has authenticated and authorized the request. Only the API server serves it.
 
-  # The chart writes `http.address: ":<port>"` and `http.swaggerEnabled`; other keys under
-  # `http` are not written. The shutdown grace period is CMK's default of 5 seconds. TLS is
-  # terminated by Envoy Gateway.
+  # The chart writes `http.address: ":<port>"` and `http.swaggerEnabled`; timeout keys are
+  # passed through to CMK's config. TLS is terminated by Envoy Gateway.
   http:
     # -- Port of the CMK API. Must match the `http` container port.
     port: 8081
     # -- Serve the API description at `/cmk/v1/swagger`, without authentication. Keep false in
     # production.
     swaggerEnabled: false
+    # -- Maximum time to read request headers. Protects against slow-header attacks.
+    # If zero or negative, there is no timeout
+    readHeaderTimeout: 5s
+    # -- Maximum time to read the entire request, including body. Should be >= readHeaderTimeout.
+    readTimeout: 10s
+    # -- Maximum time to write the response. Raise this when long-running API calls are expected.
+    # A mismatch causes an upstream to reset the connection mid-response
+    # If zero or negative, there is no timeout
+    writeTimeout: 20s
+    # -- Maximum time an idle keep-alive connection is kept open.
+    # If zero or negative, there is no timeout
+    idleTimeout: 120s
+    # -- Grace period for in-flight requests during shutdown.
+    shutdownTimeout: 5s
 
   # ---------------------------------------------------------------------------
   # clientData: verification of the signed client data from ExtAuthZ. Read by: API server.

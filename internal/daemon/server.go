@@ -34,10 +34,6 @@ import (
 )
 
 const (
-	ReadHeaderTimeout    = 5 * time.Second
-	ReadTimeout          = 10 * time.Second
-	WriteTimeout         = 10 * time.Second
-	IdleTimeout          = 120 * time.Second
 	ServerLogDomain      = "server daemon"
 	AuthzRefreshInterval = 120 * time.Second
 )
@@ -221,10 +217,10 @@ func createHTTPServer(
 	return &http.Server{
 		Addr:              cfg.HTTP.Address,
 		Handler:           httpHandler,
-		ReadHeaderTimeout: ReadHeaderTimeout,
-		ReadTimeout:       ReadTimeout,
-		WriteTimeout:      WriteTimeout,
-		IdleTimeout:       IdleTimeout,
+		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
+		ReadTimeout:       cfg.HTTP.ReadTimeout,
+		WriteTimeout:      cfg.HTTP.WriteTimeout,
+		IdleTimeout:       cfg.HTTP.IdleTimeout,
 	}, nil
 }
 
