@@ -720,8 +720,7 @@ paths:
       tags:
         - Tenant Configurations
       summary: Update system groups configuration
-      description: |
-        Updates workflow configuration of a tenant
+      description: Updates sytem groups configuration
       operationId: updateSystemGroupsConfig
       requestBody:
         content:
@@ -2071,7 +2070,9 @@ components:
           type: boolean
           example: true
         warnCoverage:
-          description: The flag indicating whether system grouping coverage warning is enabled
+          description: |
+            The flag indicating whether system grouping coverage warning is enabled
+            It warns for missing coverage where there are at least 1 connected and 1 disconnected systems
           type: boolean
           example: true
     TenantWorkflowConfiguration:

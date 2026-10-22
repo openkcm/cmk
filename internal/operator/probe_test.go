@@ -40,7 +40,7 @@ func SetupProbeTest(t *testing.T) (*manager.GroupManager, *manager.TenantManager
 
 	var svcRegistry = testutils.NewTestPlugins()
 
-	tm, gm, _ := createManagers(t, db, cfg, svcRegistry)
+	tm, gm, _, _ := createManagers(t, db, cfg, svcRegistry)
 
 	return gm, tm, db, dbRepository
 }

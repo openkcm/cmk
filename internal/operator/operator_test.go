@@ -99,7 +99,7 @@ func createManagers(
 	dbCon *multitenancy.DB,
 	cfg *config.Config,
 	svcRegistry serviceapi.Registry,
-) (*manager.TenantManager, *manager.GroupManager, repo.Repo) {
+) (*manager.TenantManager, *manager.GroupManager, repo.Repo, *manager.TenantConfigManager) {
 	t.Helper()
 
 	r := sql.NewRepository(dbCon)
@@ -132,10 +132,12 @@ func createManagers(
 		um,
 	)
 
+	tcm := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil),
+		tcm,
 		kcm,
 		um,
 		cm,
@@ -151,7 +153,8 @@ func createManagers(
 
 	return manager.NewTenantManager(authzRepo, sys, km, um, cmkAuditor, migrator),
 		manager.NewGroupManager(authzRepo, svcRegistry, um),
-		authzRepo
+		authzRepo,
+		tcm
 }
 
 func createInvalidOperatorRequest(
@@ -223,7 +226,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager, authzRepo := createManagers(t, dbConn, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo, _ := createManagers(t, dbConn, cfg, svcRegistry)
 
 	t.Run(
 		"nil db", func(t *testing.T) {
@@ -1003,7 +1006,7 @@ func TestHandleBlockTenant(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo, _ := createManagers(t, unusedDB, cfg, svcRegistry)
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
@@ -1300,7 +1303,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo, _ := createManagers(t, unusedDB, cfg, svcRegistry)
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
@@ -1427,7 +1430,7 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	_, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
+	_, groupManager, authzRepo, _ := createManagers(t, unusedDB, cfg, svcRegistry)
 	mockTenantManager := &MockTenantManager{}
 
 	taskType := tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String()
@@ -1570,7 +1573,7 @@ func TestHandleTerminateTenant(t *testing.T) {
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
-	_, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
+	_, groupManager, authzRepo, _ := createManagers(t, unusedDB, cfg, svcRegistry)
 	mockTenantManager := MockTenantManager{}
 
 	taskType := tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String()
@@ -1717,7 +1720,7 @@ func TestHandleTerminateTenantTimeout(t *testing.T) {
 	)
 
 	svcRegistry := testutils.NewTestPlugins()
-	_, groupManager, authzRepo := createManagers(t, unusedDB, &config.Config{Database: testutils.TestDB}, svcRegistry)
+	_, groupManager, authzRepo, _ := createManagers(t, unusedDB, &config.Config{Database: testutils.TestDB}, svcRegistry)
 	mockTenantManager := &MockTenantManager{}
 
 	cfg := &config.Config{
@@ -1961,9 +1964,9 @@ func TestTenantOperatorTracing(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager, authzRepo := createManagers(t, dbConn, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo, tcm := createManagers(t, dbConn, cfg, svcRegistry)
 	op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory,
-		tenantManager, groupManager, nil, authzRepo)
+		tenantManager, groupManager, tcm, authzRepo)
 	require.NoError(t, err)
 
 	validData, err := createValidTenantData(tenantID, RegionUSWest1, tenants[0])
@@ -2053,7 +2056,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager, authzRepo := createManagers(t, multitenancyDB, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo, tcm := createManagers(t, multitenancyDB, cfg, svcRegistry)
 	tenantOperator, err := operator.NewTenantOperator(
 		multitenancyDB,
 		cfg,
@@ -2061,7 +2064,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 		clientFactory,
 		tenantManager,
 		groupManager,
-		nil,
+		tcm,
 		authzRepo,
 	)
 	require.NoError(t, err, "Failed to create TenantOperator")

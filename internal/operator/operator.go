@@ -245,6 +245,15 @@ func (o *TenantOperator) handleCreateTenant(
 			return
 		}
 	}
+	tenantCtx := cmkcontext.CreateTenantContext(ctx, tenant.ID)
+	err = o.tcm.SetTenantConfig(
+		tenantCtx,
+		&model.SystemGroupConfig{Enabled: true, WarnCoverage: true},
+	)
+	if err != nil {
+		setErrorStateAndContinue(ctx, resp, err, WorkingStateTenantConfigWriteFailed)
+		return
+	}
 	// Step 6: Return processing state, if no errors, to re-invoke the handler for finalization
 	resp.UseRawWorkingState([]byte(WorkingStateTenantCreating))
 	resp.ContinueAndWaitFor(reconcileAfterSecProcessing)
@@ -466,15 +475,6 @@ func (o *TenantOperator) handleUpdateTenantConfig(
 			Keys:       limitPtr(values.HasKeyLimit(), values.GetKeyLimit()),
 			KeyConfigs: limitPtr(values.HasKeyConfigLimit(), values.GetKeyConfigLimit()),
 		},
-	)
-	if err != nil {
-		setErrorStateAndContinue(ctx, resp, err, WorkingStateTenantConfigWriteFailed)
-		return
-	}
-
-	err = o.tcm.SetTenantConfig(
-		tenantCtx,
-		&model.SystemGroupConfig{Enabled: true, WarnCoverage: true},
 	)
 	if err != nil {
 		setErrorStateAndContinue(ctx, resp, err, WorkingStateTenantConfigWriteFailed)
