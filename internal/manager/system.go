@@ -50,13 +50,14 @@ type System interface {
 }
 
 type SystemManager struct {
-	repo             repo.Repo
-	registry         registry.Service
-	eventFactory     *eventprocessor.EventFactory
-	sisClient        *SystemInformation
-	KeyConfigManager *KeyConfigManager
-	ContextModelsCfg config.System
-	user             User
+	repo                  repo.Repo
+	registry              registry.Service
+	eventFactory          *eventprocessor.EventFactory
+	sisClient             *SystemInformation
+	KeyConfigManager      *KeyConfigManager
+	SystemGroupingManager SystemGroup
+	ContextModelsCfg      config.System
+	user                  User
 }
 
 type SystemFilter struct {
@@ -641,7 +642,18 @@ func (m *SystemManager) createSystemIfNotExists(ctx context.Context, newSystem *
 	ctx = model.LogInjectSystem(ctx, newSystem)
 	log.Info(ctx, "Found new system from registry, adding to CMK DB")
 
-	err := m.repo.Create(ctx, newSystem)
+	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
+		err := m.repo.Create(ctx, newSystem)
+		if err != nil {
+			return err
+		}
+
+		err = m.SystemGroupingManager.HandleNewSystem(ctx, newSystem)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
 		return errs.Wrap(ErrCreatingSystem, err)
 	}
@@ -681,13 +693,22 @@ func (m *SystemManager) removeSystemsNotInRegistry(ctx context.Context, registry
 								),
 							)
 
-							// Delete the system (BeforeDelete hook will automatically delete associated properties)
-							_, err := m.repo.Delete(ctx, &model.System{ID: dbSystem.ID}, query)
+							err := m.repo.Transaction(ctx, func(ctx context.Context) error {
+								// Delete the system (BeforeDelete hook will automatically delete associated properties)
+								_, err := m.repo.Delete(ctx, &model.System{ID: dbSystem.ID}, query)
+								if err != nil {
+									return err
+								}
+								err = m.SystemGroupingManager.HandleDeleteSystem(ctx, dbSystem)
+								if err != nil {
+									return err
+								}
+								return nil
+							})
 							if err != nil {
 								log.Error(ctx, "Failed to delete system", err)
 								return err
 							}
-
 							log.Info(ctx, "Successfully removed system from CMK DB")
 						}
 					}

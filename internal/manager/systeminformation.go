@@ -59,6 +59,7 @@ func (m *SystemInformation) UpdateSystems(ctx context.Context) error {
 
 	return repo.ProcessInBatchWithOptions(
 		ctx, m.repo, repo.NewQuery(), repo.DefaultLimit, opts,
+		nil,
 		func(systems []*model.System) error {
 			var errs error
 			for _, sys := range systems {

@@ -260,6 +260,204 @@ func TestUpdateSystemGroup(t *testing.T) {
 	})
 }
 
+func TestDeleteAllSystemGroups(t *testing.T) {
+	m, r, _, tenant := SetupSystemGroupManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	t.Run("deletes all system groups and nullifies system FK", func(t *testing.T) {
+		group := testutils.NewSystemGroup(func(g *model.SystemGroup) {})
+		sys := testutils.NewSystem(func(s *model.System) { s.SystemGroupID = &group.ID })
+		testutils.CreateTestEntities(ctx, t, r, group, sys)
+
+		require.NoError(t, m.DeleteAllSystemGroups(ctx))
+
+		groups, _, err := m.GetAllSystemGroups(ctx, manager.SystemGroupFilter{})
+		require.NoError(t, err)
+		for _, g := range groups {
+			assert.NotEqual(t, group.ID, g.ID)
+		}
+
+		var systems []*model.System
+		require.NoError(t, r.List(ctx, &model.System{}, &systems, *repo.NewQuery().Where(
+			repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.IDField, sys.ID)),
+		)))
+		require.Len(t, systems, 1)
+		assert.Nil(t, systems[0].SystemGroupID)
+	})
+}
+
+func TestHandleDeleteSystem(t *testing.T) {
+	m, r, _, tenant := SetupSystemGroupManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	t.Run("no-op when system has no group", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) { s.SystemGroupID = nil })
+		testutils.CreateTestEntities(ctx, t, r, sys)
+
+		require.NoError(t, m.HandleDeleteSystem(ctx, sys))
+	})
+
+	t.Run("deletes group when only one system remains in group", func(t *testing.T) {
+		m, r, _, tenant := SetupSystemGroupManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		group := testutils.NewSystemGroup(func(g *model.SystemGroup) {})
+		sysA := testutils.NewSystem(func(s *model.System) { s.SystemGroupID = &group.ID })
+		sysB := testutils.NewSystem(func(s *model.System) { s.SystemGroupID = &group.ID })
+		testutils.CreateTestEntities(ctx, t, r, group, sysA, sysB)
+
+		_, err := r.Delete(ctx, sysA, *repo.NewQuery())
+		require.NoError(t, err)
+
+		// sysB is the only one left, group should be removed
+		require.NoError(t, m.HandleDeleteSystem(ctx, sysA))
+
+		groups, _, err := m.GetAllSystemGroups(ctx, manager.SystemGroupFilter{})
+		require.NoError(t, err)
+		assert.NotContains(t, getGroupIDsFromGroups(groups), group.ID)
+	})
+
+	t.Run("keeps group when two or more systems remain", func(t *testing.T) {
+		m, r, _, tenant := SetupSystemGroupManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		group := testutils.NewSystemGroup(func(g *model.SystemGroup) {})
+		sysA := testutils.NewSystem(func(s *model.System) { s.SystemGroupID = &group.ID })
+		sysB := testutils.NewSystem(func(s *model.System) { s.SystemGroupID = &group.ID })
+		sysC := testutils.NewSystem(func(s *model.System) { s.SystemGroupID = &group.ID })
+		testutils.CreateTestEntities(ctx, t, r, group, sysA, sysB, sysC)
+
+		_, err := r.Delete(ctx, sysA, *repo.NewQuery())
+		require.NoError(t, err)
+
+		// two remain, group should survive
+		require.NoError(t, m.HandleDeleteSystem(ctx, sysA))
+
+		groups, _, err := m.GetAllSystemGroups(ctx, manager.SystemGroupFilter{})
+		require.NoError(t, err)
+		assert.Contains(t, getGroupIDsFromGroups(groups), group.ID)
+	})
+}
+
+func TestHandleNewSystem(t *testing.T) {
+	m, r, _, tenant := SetupSystemGroupManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	t.Run("no-op when system is the only one with that identifier", func(t *testing.T) {
+		sys := testutils.NewSystem(func(s *model.System) {})
+		testutils.CreateTestEntities(ctx, t, r, sys)
+
+		require.NoError(t, m.HandleNewSystem(ctx, sys))
+		assert.Nil(t, sys.SystemGroupID)
+	})
+
+	t.Run("creates a new group when two systems share an identifier", func(t *testing.T) {
+		identifier := uuid.NewString()
+		sysA := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		sysB := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		testutils.CreateTestEntities(ctx, t, r, sysA, sysB)
+
+		require.NoError(t, m.HandleNewSystem(ctx, sysB))
+
+		var systems []*model.System
+		require.NoError(t, r.List(ctx, &model.System{}, &systems, *repo.NewQuery().Where(
+			repo.NewCompositeKeyGroup(repo.NewCompositeKey().Where(repo.IdentifierField, identifier)),
+		)))
+		for _, s := range systems {
+			assert.NotNil(t, s.SystemGroupID)
+		}
+	})
+
+	t.Run("uses externalName property as group name when available", func(t *testing.T) {
+		identifier := uuid.NewString()
+		sysA := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		sysB := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		prop := &model.SystemProperty{ID: sysA.ID, Key: "externalName", Value: "my-external-name"}
+		testutils.CreateTestEntities(ctx, t, r, sysA, sysB, prop)
+
+		require.NoError(t, m.HandleNewSystem(ctx, sysB))
+
+		groups, _, err := m.GetAllSystemGroups(ctx, manager.SystemGroupFilter{})
+		require.NoError(t, err)
+		found := false
+		for _, g := range groups {
+			if g.Name == "my-external-name" {
+				found = true
+			}
+		}
+		assert.True(t, found, "expected group named 'my-external-name'")
+	})
+
+	t.Run("assigns existing group when sibling already has one", func(t *testing.T) {
+		identifier := uuid.NewString()
+		group := testutils.NewSystemGroup(func(g *model.SystemGroup) {})
+		sysA := testutils.NewSystem(func(s *model.System) {
+			s.Identifier = identifier
+			s.SystemGroupID = &group.ID
+		})
+		sysB := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		testutils.CreateTestEntities(ctx, t, r, group, sysA, sysB)
+
+		require.NoError(t, m.HandleNewSystem(ctx, sysB))
+		assert.Equal(t, &group.ID, sysB.SystemGroupID)
+	})
+}
+
+func TestCreateAllSystemGroups(t *testing.T) {
+	m, r, _, tenant := SetupSystemGroupManager(t)
+	ctx := testutils.CreateCtxWithTenant(tenant)
+
+	t.Run("creates groups for systems sharing an identifier", func(t *testing.T) {
+		identifier := uuid.NewString()
+		sysA := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		sysB := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		prop := &model.SystemProperty{ID: sysA.ID, Key: "externalName", Value: "shared-name"}
+		lone := testutils.NewSystem(func(s *model.System) {}) // unique identifier — no group
+		testutils.CreateTestEntities(ctx, t, r, sysA, sysB, prop, lone)
+
+		require.NoError(t, m.CreateAllSystemGroups(ctx, false))
+
+		groups, _, err := m.GetAllSystemGroups(ctx, manager.SystemGroupFilter{})
+		require.NoError(t, err)
+		names := make([]string, 0, len(groups))
+		for _, g := range groups {
+			names = append(names, g.Name)
+		}
+		assert.Contains(t, names, "shared-name")
+	})
+
+	t.Run("does not create group for lone system", func(t *testing.T) {
+		m, r, _, tenant := SetupSystemGroupManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		lone := testutils.NewSystem(func(s *model.System) {})
+		testutils.CreateTestEntities(ctx, t, r, lone)
+
+		require.NoError(t, m.CreateAllSystemGroups(ctx, false))
+
+		groups, _, err := m.GetAllSystemGroups(ctx, manager.SystemGroupFilter{})
+		require.NoError(t, err)
+		assert.Empty(t, groups)
+	})
+
+	t.Run("sets suppressWarning on created groups", func(t *testing.T) {
+		m, r, _, tenant := SetupSystemGroupManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		identifier := uuid.NewString()
+		sysA := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		sysB := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		testutils.CreateTestEntities(ctx, t, r, sysA, sysB)
+
+		require.NoError(t, m.CreateAllSystemGroups(ctx, true))
+
+		groups, _, err := m.GetAllSystemGroups(ctx, manager.SystemGroupFilter{})
+		require.NoError(t, err)
+		require.NotEmpty(t, groups)
+		assert.True(t, groups[0].SuppressWarning)
+	})
+}
+
 func getGroupIDsFromGroups(groups []*model.SystemGroup) []uuid.UUID {
 	ids := make([]uuid.UUID, 0, len(groups))
 	for _, g := range groups {
