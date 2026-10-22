@@ -97,7 +97,11 @@ func (w *WorkflowManager) ValidateApproverCount(
 	workflow *model.Workflow,
 	minimumApprovals int,
 ) (bool, error) {
-	return w.validateApproverCount(ctx, workflow, minimumApprovals)
+	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
+	if err != nil {
+		return false, err
+	}
+	return w.validateApproverCount(ctx, workflow, minimumApprovals, keyConfigs)
 }
 
 func (m *TenantManager) UnmapSystemErrorCanContinue(ctx context.Context, err error) OffboardingStatus {
