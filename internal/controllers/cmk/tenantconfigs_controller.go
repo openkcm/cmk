@@ -71,7 +71,7 @@ func (c *APIController) GetSystemGroupsConfig(
 ) (cmkapi.GetSystemGroupsConfigResponseObject, error) {
 	grouping, err := c.Manager.TenantConfigs.GetSystemGroupingConfig(ctx)
 	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrGetTenantLimits, err)
+		return nil, errs.Wrap(apierrors.ErrGetSystemGroupsConfig, err)
 	}
 
 	apiLimits := tenantconfigs.SystemGroupsConfigToAPI(grouping)
@@ -83,11 +83,11 @@ func (c *APIController) UpdateSystemGroupsConfig(
 	r cmkapi.UpdateSystemGroupsConfigRequestObject,
 ) (cmkapi.UpdateSystemGroupsConfigResponseObject, error) {
 	grouping, err := c.Manager.TenantConfigs.SetSystemGroupsConfig(ctx, &model.SystemGroupConfig{
-		Enabled:      *r.Body.Enabled,
-		WarnCoverage: *r.Body.WarnCoverage,
+		Enabled:      r.Body.Enabled,
+		WarnCoverage: r.Body.WarnCoverage,
 	})
 	if err != nil {
-		return nil, errs.Wrap(apierrors.ErrGetTenantLimits, err)
+		return nil, errs.Wrap(apierrors.ErrSetSystemGroupsConfig, err)
 	}
 
 	apiLimits := tenantconfigs.SystemGroupsConfigToAPI(grouping)

@@ -196,19 +196,18 @@ func (m *TenantConfigManager) GetSystemGroupingConfig(ctx context.Context) (*mod
 	}
 
 	if configs == nil {
-		err = m.SetTenantConfig(ctx, model.SystemGroupConfig{
+		tenantConfig := model.SystemGroupConfig{
 			Enabled:      false,
 			WarnCoverage: false,
-		})
+		}
+		err = m.SetTenantConfig(ctx, tenantConfig)
 		if err != nil {
 			return nil, err
 		}
+		return &tenantConfig, nil
 	}
 
-	return &model.SystemGroupConfig{
-		Enabled:      false,
-		WarnCoverage: false,
-	}, nil
+	return configs, nil
 }
 
 // GetWorkflowConfig reads the workflow config from flat rows, creating the

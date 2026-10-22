@@ -694,14 +694,13 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
-  /tenantConfigurations/systemgroups:
+  /tenantConfigurations/systemGroups:
     get:
       tags:
         - Tenant Configurations
       summary: Get system groups configuration
       operationId: getSystemGroupsConfig
-      description: |
-        Retrieves tenant system groups config
+      description: Retrieves tenant system groups config
       responses:
         "200":
           description: Retrieved
@@ -1837,7 +1836,9 @@ components:
           maxLength: 1024
           example: Production systems grouping
         suppressWarning:
-          description: Flag indicating whether coverage warnings are suppressed for this group
+          description: |
+            Flag indicating whether 1 system connected and 1 disconnected 
+            coverage warnings are suppressed for this group
           type: boolean
           default: false
         warnCoverage:
@@ -2061,6 +2062,9 @@ components:
           $ref: "#/components/schemas/HYOKKeystore"
     TenantSystemGroupsConfig:
       type: object
+      required:
+        - enabled
+        - warnCoverage
       properties:
         enabled:
           description: The flag indicating whether system grouping is enabled

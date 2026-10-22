@@ -16,7 +16,7 @@ const tag = "flatten"
 // ErrMissingTag is returned when an exported struct field has no `flatten` tag.
 var (
 	ErrMissingTag       = errors.New("exported struct field missing flatten tag")
-	ErrUnsuportedField  = errors.New("field type slice/array is not supported")
+	ErrUnsupportedField = errors.New("field type slice/array is not supported")
 	ErrUnflattenDecoder = errors.New("failed to create unflatten decoder")
 	ErrDecodeFlatten    = errors.New("failed to decode flatten")
 )
@@ -114,7 +114,7 @@ func flatten(prefix string, v reflect.Value, res map[string]any) error {
 			}
 		}
 	case reflect.Slice, reflect.Array:
-		return ErrUnsuportedField
+		return ErrUnsupportedField
 	default:
 		res[prefix] = v.Interface()
 	}

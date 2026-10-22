@@ -169,7 +169,7 @@ func TestFlattenErrors(t *testing.T) {
 		in      model.Flattenable
 		wantErr error
 	}{
-		{"slice unsupported", &withSlice{Items: []string{"a"}}, model.ErrUnsuportedField},
+		{"slice unsupported", &withSlice{Items: []string{"a"}}, model.ErrUnsupportedField},
 		{"missing tag", &missingTag{Name: "n", Oops: "x"}, model.ErrMissingTag},
 	}
 

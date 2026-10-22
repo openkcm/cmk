@@ -7,7 +7,7 @@ import (
 
 func SystemGroupsConfigToAPI(sg *model.SystemGroupConfig) *cmkapi.TenantSystemGroupsConfig {
 	return &cmkapi.TenantSystemGroupsConfig{
-		Enabled:      &sg.Enabled,
-		WarnCoverage: &sg.WarnCoverage,
+		Enabled:      sg.Enabled,
+		WarnCoverage: sg.WarnCoverage,
 	}
 }
