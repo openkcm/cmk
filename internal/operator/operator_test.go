@@ -99,7 +99,7 @@ func createManagers(
 	dbCon *multitenancy.DB,
 	cfg *config.Config,
 	svcRegistry serviceapi.Registry,
-) (*manager.TenantManager, *manager.GroupManager, repo.Repo) {
+) (*manager.TenantManager, *manager.GroupManager, repo.Repo, *manager.TenantConfigManager) {
 	t.Helper()
 
 	r := sql.NewRepository(dbCon)
@@ -132,15 +132,18 @@ func createManagers(
 		um,
 	)
 
+	tcm := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
-		manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil),
+		tcm,
 		kcm,
 		um,
 		cm,
 		nil,
 		cmkAuditor,
+		nil,
 		nil,
 		nil,
 	)
@@ -150,7 +153,8 @@ func createManagers(
 
 	return manager.NewTenantManager(authzRepo, sys, km, um, cmkAuditor, migrator),
 		manager.NewGroupManager(authzRepo, svcRegistry, um),
-		authzRepo
+		authzRepo,
+		tcm
 }
 
 func createInvalidOperatorRequest(
@@ -222,7 +226,7 @@ func TestNewTenantOperator(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager, authzRepo := createManagers(t, dbConn, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo, _ := createManagers(t, dbConn, cfg, svcRegistry)
 
 	t.Run(
 		"nil db", func(t *testing.T) {
@@ -1002,7 +1006,7 @@ func TestHandleBlockTenant(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo, _ := createManagers(t, unusedDB, cfg, svcRegistry)
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
@@ -1138,15 +1142,19 @@ func (f *fakeTenantConfigClient) UpdateTenantConfig(
 }
 
 type fakeLimitWriter struct {
-	got    manager.LimitOverrides
+	got    model.TenantLimits
 	called bool
 	err    error
 }
 
-func (f *fakeLimitWriter) SetLimitOverrides(_ context.Context, o manager.LimitOverrides) error {
-	f.called = true
-	f.got = o
+func (f *fakeLimitWriter) SetTenantConfig(_ context.Context, _ model.TenantConfiguration) error {
 	return f.err
+}
+
+func (f *fakeLimitWriter) SetTenantLimits(_ context.Context, o *model.TenantLimits) (*model.TenantLimits, error) {
+	f.called = true
+	f.got = *o
+	return o, f.err
 }
 
 func TestHandleUpdateTenantConfig(t *testing.T) {
@@ -1181,7 +1189,7 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 		wantStatus  string
 		wantState   string
 		wantWritten bool
-		want        manager.LimitOverrides
+		want        model.TenantLimits
 	}{
 		{
 			name:       "invalid task data fails the task",
@@ -1215,7 +1223,7 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 			configResp:  configResp,
 			wantStatus:  string(orbital.TaskStatusDone),
 			wantWritten: true,
-			want:        manager.LimitOverrides{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
+			want:        model.TenantLimits{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
 		},
 		{
 			name: "absent fields are cleared, present field persisted",
@@ -1227,7 +1235,7 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 			}.Build(),
 			wantStatus:  string(orbital.TaskStatusDone),
 			wantWritten: true,
-			want:        manager.LimitOverrides{Systems: nil, Keys: new(10), KeyConfigs: nil},
+			want:        model.TenantLimits{Systems: nil, Keys: new(10), KeyConfigs: nil},
 		},
 		{
 			name:        "write error reconciles",
@@ -1237,7 +1245,7 @@ func TestHandleUpdateTenantConfig(t *testing.T) {
 			wantStatus:  string(orbital.TaskStatusProcessing),
 			wantState:   operator.WorkingStateTenantConfigWriteFailed,
 			wantWritten: true,
-			want:        manager.LimitOverrides{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
+			want:        model.TenantLimits{Systems: new(5), Keys: new(10), KeyConfigs: new(3)},
 		},
 	}
 
@@ -1295,7 +1303,7 @@ func TestHandleUnblockTenant(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo, _ := createManagers(t, unusedDB, cfg, svcRegistry)
 
 	t.Run("should return failed task when tenant data is invalid", func(t *testing.T) {
 		sessionManagerClient, taskReq, responder := createInvalidOperatorRequest(
@@ -1422,7 +1430,7 @@ func TestHandleTerminateTenant_RemoveAuth(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	_, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
+	_, groupManager, authzRepo, _ := createManagers(t, unusedDB, cfg, svcRegistry)
 	mockTenantManager := &MockTenantManager{}
 
 	taskType := tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String()
@@ -1565,7 +1573,7 @@ func TestHandleTerminateTenant(t *testing.T) {
 		sessionmanager.NewMockService(sessionManagerClient),
 	)
 
-	_, groupManager, authzRepo := createManagers(t, unusedDB, cfg, svcRegistry)
+	_, groupManager, authzRepo, _ := createManagers(t, unusedDB, cfg, svcRegistry)
 	mockTenantManager := MockTenantManager{}
 
 	taskType := tenantgrpc.ACTION_ACTION_TERMINATE_TENANT.String()
@@ -1712,7 +1720,7 @@ func TestHandleTerminateTenantTimeout(t *testing.T) {
 	)
 
 	svcRegistry := testutils.NewTestPlugins()
-	_, groupManager, authzRepo := createManagers(t, unusedDB, &config.Config{Database: testutils.TestDB}, svcRegistry)
+	_, groupManager, authzRepo, _ := createManagers(t, unusedDB, &config.Config{Database: testutils.TestDB}, svcRegistry)
 	mockTenantManager := &MockTenantManager{}
 
 	cfg := &config.Config{
@@ -1956,9 +1964,9 @@ func TestTenantOperatorTracing(t *testing.T) {
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager, authzRepo := createManagers(t, dbConn, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo, tcm := createManagers(t, dbConn, cfg, svcRegistry)
 	op, err := operator.NewTenantOperator(dbConn, cfg, target, clientFactory,
-		tenantManager, groupManager, nil, authzRepo)
+		tenantManager, groupManager, tcm, authzRepo)
 	require.NoError(t, err)
 
 	validData, err := createValidTenantData(tenantID, RegionUSWest1, tenants[0])
@@ -2048,7 +2056,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 
 	svcRegistry := testutils.NewTestPlugins()
 
-	tenantManager, groupManager, authzRepo := createManagers(t, multitenancyDB, cfg, svcRegistry)
+	tenantManager, groupManager, authzRepo, tcm := createManagers(t, multitenancyDB, cfg, svcRegistry)
 	tenantOperator, err := operator.NewTenantOperator(
 		multitenancyDB,
 		cfg,
@@ -2056,7 +2064,7 @@ func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig
 		clientFactory,
 		tenantManager,
 		groupManager,
-		nil,
+		tcm,
 		authzRepo,
 	)
 	require.NoError(t, err, "Failed to create TenantOperator")

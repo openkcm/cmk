@@ -7,10 +7,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openkcm/cmk/internal/api/cmk/transform/tenantconfigs"
+	"github.com/openkcm/cmk/internal/model"
 )
 
 func TestLimitsToAPI(t *testing.T) {
-	result := tenantconfigs.LimitsToAPI(50, 10, 5)
+	result := tenantconfigs.LimitsToAPI(model.TenantLimits{
+		Systems:    new(50),
+		Keys:       new(10),
+		KeyConfigs: new(5),
+	})
 
 	require.NotNil(t, result)
 	require.NotNil(t, result.Systems)

@@ -694,6 +694,58 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
+  /tenantConfigurations/systemGroups:
+    get:
+      tags:
+        - Tenant Configurations
+      summary: Get system groups configuration
+      operationId: getSystemGroupsConfig
+      description: Retrieves tenant system groups config
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSystemGroupsConfig"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      tags:
+        - Tenant Configurations
+      summary: Update system groups configuration
+      description: Updates sytem groups configuration
+      operationId: updateSystemGroupsConfig
+      requestBody:
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/TenantSystemGroupsConfig"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSystemGroupsConfig"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
   /tenantConfigurations/limits:
     get:
       tags:
@@ -1783,7 +1835,9 @@ components:
           maxLength: 1024
           example: Production systems grouping
         suppressWarning:
-          description: Flag indicating whether coverage warnings are suppressed for this group
+          description: |
+            Flag indicating whether 1 system connected and 1 disconnected 
+            coverage warnings are suppressed for this group
           type: boolean
           default: false
         warnCoverage:
@@ -2005,6 +2059,22 @@ components:
           $ref: "#/components/schemas/BYOKKeystore"
         hyok:
           $ref: "#/components/schemas/HYOKKeystore"
+    TenantSystemGroupsConfig:
+      type: object
+      required:
+        - enabled
+        - warnCoverage
+      properties:
+        enabled:
+          description: The flag indicating whether system grouping is enabled
+          type: boolean
+          example: true
+        warnCoverage:
+          description: |
+            The flag indicating whether system grouping coverage warning is enabled
+            It warns for missing coverage where there are at least 1 connected and 1 disconnected systems
+          type: boolean
+          example: true
     TenantWorkflowConfiguration:
       type: object
       properties:

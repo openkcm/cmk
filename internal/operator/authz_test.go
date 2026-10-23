@@ -57,7 +57,7 @@ func TestTenantProvisioning_AuthzPolicy(t *testing.T) {
 		Database: cfgDB,
 	}
 
-	tenantManager, groupManager, authzRepo := createManagers(t, multitenancyDB, cfg, ps)
+	tenantManager, groupManager, authzRepo, tcm := createManagers(t, multitenancyDB, cfg, ps)
 
 	// Fake session manager — used by handleApplyTenantAuth and handleTerminateTenant.
 	fakeSessionManager := sessionmanager.NewFakeSessionManagerClient()
@@ -93,7 +93,7 @@ func TestTenantProvisioning_AuthzPolicy(t *testing.T) {
 		clientFactory,
 		tenantManager,
 		groupManager,
-		nil,
+		tcm,
 		authzRepo,
 	)
 	require.NoError(t, err)

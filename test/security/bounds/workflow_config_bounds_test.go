@@ -51,7 +51,7 @@ func setupBoundsTest(t *testing.T) (cmkapi.ServeMux, string, http.Header) {
 	authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 	// Seed a valid baseline workflow config so PATCH merges against known state.
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewDefaultWorkflowConfig(true))
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewDefaultWorkflowConfig(true))
 
 	businessUserData := &auth.ClientData{
 		Identifier: authClient.Identifier,

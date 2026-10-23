@@ -82,7 +82,7 @@ func TestWorkflowApproverIsolation(t *testing.T) {
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	require.NoError(t, err)
 	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager)
-	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil)
+	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil, nil)
 	m := manager.NewWorkflowManager(r, svcRegistry, keym, keyConfigManager, systemManager, groupManager, userManager, nil, tenantConfigManager, cfg)
 
 	ctx := testutils.CreateCtxWithTenant(tenant)
@@ -90,7 +90,7 @@ func TestWorkflowApproverIsolation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Enable workflow feature
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(_ *model.WorkflowConfig) {}))
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(_ *model.WorkflowConfig) {}))
 
 	// Seed all groups in DB
 	adminGroupModel := testutils.NewGroup(func(g *model.Group) {

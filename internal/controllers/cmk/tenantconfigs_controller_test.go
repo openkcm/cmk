@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -152,7 +151,7 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Context) {
 	t.Helper()
 
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 		wc.Enabled = true
 		wc.MinimumApprovals = 3
 		wc.RetentionPeriodDays = 30
@@ -438,7 +437,9 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
-		setupSystemsLimitOverride(t, r, ctx, 5)
+		testutils.WriteTenantConfig(ctx, t, r, model.TenantLimits{
+			Systems: new(5),
+		})
 
 		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
@@ -474,7 +475,9 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
-		setupKeyConfigsLimitOverride(t, r, ctx, 42)
+		testutils.WriteTenantConfig(ctx, t, r, model.TenantLimits{
+			KeyConfigs: new(42),
+		})
 
 		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
@@ -498,40 +501,6 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 		assert.Equal(t, 42, *response.KeyConfigurations)
 	})
 
-	t.Run("Should return 500 when systems limit override is not a valid integer", func(t *testing.T) {
-		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
-		ctx := testutils.CreateCtxWithTenant(tenant)
-		r := sql.NewRepository(db)
-
-		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
-
-		// Seed a non-integer value so override parsing fails inside GetEffectiveLimits.
-		tc := &model.TenantConfig{
-			Key:   manager.LimitsKeySystemsOverride,
-			Value: "not-a-number",
-			Type:  manager.TenantConfigTypeLimits,
-		}
-		err := r.Create(ctx, tc)
-		require.NoError(t, err)
-
-		businessUserData := &auth.ClientData{
-			Identifier: authClient.Identifier,
-			Groups:     []string{authClient.Group.IAMIdentifier},
-		}
-		privateKey, ok := keyStorage.GetPrivateKey(0)
-		require.True(t, ok)
-		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
-
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: "/tenantConfigurations/limits",
-			Tenant:   tenant,
-			Headers:  headers,
-		})
-
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-
 	t.Run("Should return tenant override when keys limit is stored", func(t *testing.T) {
 		cfg := testutils.TestAPIServerConfig{
 			Config: config.Config{
@@ -544,7 +513,9 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
-		setupKeysLimitOverride(t, r, ctx, 7)
+		testutils.WriteTenantConfig(ctx, t, r, model.TenantLimits{
+			Keys: new(7),
+		})
 
 		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
@@ -569,43 +540,10 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 	})
 }
 
-func setupSystemsLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context.Context, limit int) {
-	t.Helper()
-	tc := &model.TenantConfig{
-		Key:   manager.LimitsKeySystemsOverride,
-		Value: strconv.Itoa(limit),
-		Type:  manager.TenantConfigTypeLimits,
-	}
-	err := r.Create(ctx, tc)
-	require.NoError(t, err)
-}
-
-func setupKeysLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context.Context, limit int) {
-	t.Helper()
-	tc := &model.TenantConfig{
-		Key:   manager.LimitsKeyKeysOverride,
-		Value: strconv.Itoa(limit),
-		Type:  manager.TenantConfigTypeLimits,
-	}
-	err := r.Create(ctx, tc)
-	require.NoError(t, err)
-}
-
-func setupKeyConfigsLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context.Context, limit int) {
-	t.Helper()
-	tc := &model.TenantConfig{
-		Key:   manager.LimitsKeyKeyConfigsOverride,
-		Value: strconv.Itoa(limit),
-		Type:  manager.TenantConfigTypeLimits,
-	}
-	err := r.Create(ctx, tc)
-	require.NoError(t, err)
-}
-
 func setupDefaultWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Context) {
 	t.Helper()
 
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 		wc.Enabled = false
 		wc.MinimumApprovals = constants.DefaultMinimumApprovalCount
 		wc.RetentionPeriodDays = constants.DefaultRetentionPeriodDays
