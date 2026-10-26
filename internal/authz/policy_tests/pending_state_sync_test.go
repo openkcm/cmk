@@ -79,6 +79,7 @@ func TestPendingStateSync_AuthzPolicy(t *testing.T) {
 		cmkAuditor,
 		nil,
 		nil,
+		nil,
 	)
 
 	handler := tasks.NewPendingStateSync(keyManager, authzRepo)

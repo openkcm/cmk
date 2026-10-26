@@ -765,7 +765,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	// Create workflow config with workflows DISABLED by default
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 		wc.Enabled = false // Disable workflow requirement
 	}))
 
@@ -890,7 +890,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.workflowEnable {
 				// Enable workflow by re-upserting the config
-				testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+				testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 					wc.Enabled = true // Enable workflow requirement
 				}))
 			}
@@ -946,7 +946,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	// Create workflow config with workflows DISABLED by default
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 		wc.Enabled = false // Disable workflow requirement by default
 	}))
 
@@ -1244,7 +1244,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.workflowEnable {
 				// Enable workflow by re-upserting the config
-				testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+				testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 					wc.Enabled = true // Enable workflow requirement
 				}))
 			}

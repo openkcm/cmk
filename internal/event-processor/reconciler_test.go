@@ -1878,7 +1878,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 	ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 	clientCert := model.NewClientCertificate(certCfg, tenant)
 	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil).
-		SetDefaultKeystore(ctx, &model.KeystoreConfig{
+		SetKeystoreConfig(ctx, &model.KeystoreConfig{
 			RoleManagementConfig: model.ManagementConfig{LocalityID: "loc", CommonName: "cn"},
 			CryptoAccessData: map[string]model.CryptoConfig{
 				region: {
@@ -2079,7 +2079,7 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 			},
 		},
 	}
-	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil).SetDefaultKeystore(ctx, &ksConfig))
+	require.NoError(t, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil).SetKeystoreConfig(ctx, &ksConfig))
 
 	keyConfiguration := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
 	system := testutils.NewSystem(func(s *model.System) { s.Region = region })
@@ -2242,7 +2242,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 		ksConfig := model.KeystoreConfig{
 			CryptoAccessData: map[string]model.CryptoConfig{},
 		}
-		require.NoError(t, manager.NewTenantConfigManager(inst.r, testutils.NewTestPlugins(), &config.Config{}, nil, nil).SetDefaultKeystore(ctx, &ksConfig))
+		require.NoError(t, manager.NewTenantConfigManager(inst.r, testutils.NewTestPlugins(), &config.Config{}, nil, nil).SetKeystoreConfig(ctx, &ksConfig))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 
@@ -2268,7 +2268,7 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 				},
 			},
 		}
-		require.NoError(t, manager.NewTenantConfigManager(inst.r, testutils.NewTestPlugins(), &config.Config{}, nil, nil).SetDefaultKeystore(ctx, &ksConfig))
+		require.NoError(t, manager.NewTenantConfigManager(inst.r, testutils.NewTestPlugins(), &config.Config{}, nil, nil).SetKeystoreConfig(ctx, &ksConfig))
 
 		tasks, err := resolveTasksForBYOK(t, ctx, inst)
 

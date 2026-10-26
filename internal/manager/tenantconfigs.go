@@ -8,9 +8,6 @@ import (
 	"maps"
 	"sort"
 	"strconv"
-	"strings"
-
-	"github.com/open-feature/go-sdk/openfeature"
 
 	tenantpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
 
@@ -18,7 +15,6 @@ import (
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
-	"github.com/openkcm/cmk/internal/featureflags"
 	"github.com/openkcm/cmk/internal/model"
 	serviceapi "github.com/openkcm/cmk/internal/pluginregistry/service/api"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
@@ -32,59 +28,6 @@ const (
 	// defaultKeystoreCertInfix is inserted between the tenant cert prefix and the tenantID
 	// when constructing the BYOK key-management CN, keeping it under the X.509 64-char limit.
 	defaultKeystoreCertInfix = "byok-"
-
-	byokFeatureFlagPrefix      = "enable_byok_"
-	hyokFeatureFlagPrefix      = "enable_hyok_"
-	keyRotateFeatureFlagPrefix = "detect_hyok_rotation_"
-
-	// allowBYOKFeatureGateKey is the legacy feature gate key, used when featureFlags is not configured.
-	allowBYOKFeatureGateKey = "allow-byok"
-)
-
-// Tenant config "type" values used to group flat rows in tenant_configs.
-const (
-	tenantConfigTypeWorkflow        = "workflow"
-	tenantConfigTypeDefaultKeystore = "default_keystore"
-	TenantConfigTypeLimits          = "limits"
-)
-
-// Flat-row keys for tenant limit overrides under type = "limits".
-const (
-	LimitsKeySystemsOverride    = "systems_override"
-	LimitsKeyKeysOverride       = "keys_override"
-	LimitsKeyKeyConfigsOverride = "key_configs_override"
-)
-
-// Flat-row keys for workflow config under type = "workflow".
-const (
-	workflowKeyEnabled                 = "enabled"
-	workflowKeyMinimumApprovals        = "minimum_approvals"
-	workflowKeyRetentionPeriodDays     = "retention_period_days"
-	workflowKeyDefaultExpiryPeriodDays = "default_expiry_period_days"
-	workflowKeyMaxExpiryPeriodDays     = "max_expiry_period_days"
-)
-
-// Key prefixes and suffixes for fully-flattened default_keystore rows (type = "default_keystore").
-//
-//	role_mgmt/locality_id                   — RoleManagementConfig.LocalityID
-//	role_mgmt/common_name                   — RoleManagementConfig.CommonName
-//	role_mgmt/access_data/<k>               — RoleManagementConfig.AccessData
-//	key_mgmt/locality_id                    — KeyManagementConfig.LocalityID
-//	key_mgmt/common_name                    — KeyManagementConfig.CommonName
-//	key_mgmt/access_data/<k>                — KeyManagementConfig.AccessData
-//	crypto/<landscape>/subject              — CryptoAccessData[landscape].Subject
-//	crypto/<landscape>/access_data/<k>      — CryptoAccessData[landscape].AccessData
-//	supported_region/<technicalName>/name   — SupportedRegions[].Name
-const (
-	keystoreKeyRoleMgmtPrefix        = "role_mgmt/"
-	keystoreKeyKeyMgmtPrefix         = "key_mgmt/"
-	keystoreKeyCryptoPrefix          = "crypto/"
-	keystoreKeySupportedRegionPrefix = "supported_region/"
-	keystoreKeyLocalityIDSuffix      = "locality_id"
-	keystoreKeyCommonNameSuffix      = "common_name"
-	keystoreKeyAccessDataPrefix      = "access_data/"
-	keystoreKeyCryptoSubjectSuffix   = "subject"
-	keystoreKeyRegionNameSuffix      = "name"
 )
 
 var (
@@ -93,12 +36,12 @@ var (
 )
 
 type TenantConfigManager struct {
-	repo         repo.Repo
+	r            repo.Repo
 	svcRegistry  serviceapi.Registry
 	keystorePool *Pool
 	cfg          *config.Config
 	certs        *CertificateManager
-	flags        featureflags.Client
+	flags        FeatureFlags
 }
 
 func NewTenantConfigManager(
@@ -106,10 +49,10 @@ func NewTenantConfigManager(
 	svcRegistry serviceapi.Registry,
 	deploymentConfig *config.Config,
 	certs *CertificateManager,
-	flags featureflags.Client,
+	flags FeatureFlags,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
-		repo:         repo,
+		r:            repo,
 		svcRegistry:  svcRegistry,
 		keystorePool: NewPool(repo),
 		cfg:          deploymentConfig,
@@ -151,96 +94,131 @@ type TenantKeystores struct {
 	HYOK      HYOKKeystore
 }
 
-// EffectiveLimits holds the per-tenant resource limits resolved from overrides and cluster defaults.
-type EffectiveLimits struct {
-	Systems    int
-	Keys       int
-	KeyConfigs int
-}
-
-// GetEffectiveLimits returns the systems, keys and key-configuration limits in a single DB fetch.
-func (m *TenantConfigManager) GetEffectiveLimits(ctx context.Context) (EffectiveLimits, error) {
-	configs, err := m.listConfigsByType(ctx, TenantConfigTypeLimits)
+func (m *TenantConfigManager) SetTenantConfig(ctx context.Context, config model.TenantConfiguration) error {
+	flattened, err := model.Flatten(config)
 	if err != nil {
-		return EffectiveLimits{}, errs.Wrap(ErrGetTenantLimits, err)
+		return err
 	}
-	limits := EffectiveLimits{}
-	if m.cfg != nil {
-		limits.Systems = m.cfg.Tenant.SystemLimit
-		limits.Keys = m.cfg.Tenant.KeyLimit
-		limits.KeyConfigs = m.cfg.Tenant.KeyConfigLimit
-	}
-	for _, c := range configs {
-		switch c.Key {
-		case LimitsKeySystemsOverride:
-			if limits.Systems, err = parseLimitOverride(c.Value, LimitsKeySystemsOverride); err != nil {
-				return EffectiveLimits{}, err
-			}
-		case LimitsKeyKeysOverride:
-			if limits.Keys, err = parseLimitOverride(c.Value, LimitsKeyKeysOverride); err != nil {
-				return EffectiveLimits{}, err
-			}
-		case LimitsKeyKeyConfigsOverride:
-			if limits.KeyConfigs, err = parseLimitOverride(c.Value, LimitsKeyKeyConfigsOverride); err != nil {
-				return EffectiveLimits{}, err
-			}
+	query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
+	for k, v := range flattened {
+		tenantConfig := &model.TenantConfig{Key: k, Value: fmt.Sprint(v), Type: config.Type()}
+		err := m.r.Set(ctx, tenantConfig, *query)
+		if err != nil {
+			return err
 		}
-	}
-	return limits, nil
-}
-
-// parseLimitOverride parses a string limit override value and validates it is non-negative.
-func parseLimitOverride(value, key string) (int, error) {
-	v, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, errs.Wrap(ErrGetTenantLimits, err)
-	}
-	if v < 0 {
-		return 0, fmt.Errorf("%w: %s must be non-negative, got %d", ErrGetTenantLimits, key, v)
-	}
-	return v, nil
-}
-
-// LimitOverrides carries the per-tenant limit overrides to apply. A nil field
-// deletes that override row, so the tenant falls back to the cluster default.
-type LimitOverrides struct {
-	Systems    *int
-	Keys       *int
-	KeyConfigs *int
-}
-
-// SetLimitOverrides applies the given overrides in a single transaction:
-// a present value upserts its row, a nil value deletes it.
-func (m *TenantConfigManager) SetLimitOverrides(ctx context.Context, o LimitOverrides) error {
-	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
-		for _, p := range []struct {
-			key   string
-			value *int
-		}{
-			{LimitsKeySystemsOverride, o.Systems},
-			{LimitsKeyKeysOverride, o.Keys},
-			{LimitsKeyKeyConfigsOverride, o.KeyConfigs},
-		} {
-			if err := m.reconcileLimitOverride(ctx, p.key, p.value); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return errs.Wrap(ErrSetTenantLimits, err)
 	}
 	return nil
+}
+
+func (m *TenantConfigManager) WipeTenantConfig(ctx context.Context, config model.TenantConfiguration) (bool, error) {
+	query := repo.NewQuery().Where(
+		repo.NewCompositeKeyGroup(
+			repo.NewCompositeKey().
+				Where(repo.KeyField, config.FlattenKeyRoot()+"/%", repo.Contains).
+				Where(repo.TypeField, string(config.Type())),
+		),
+	)
+	return m.r.Delete(ctx, &model.TenantConfig{}, *query)
+}
+
+// GetTenantConfigByType fetches from the DB properties related with a ConfigType
+// The configuration must implement the TenantConfiguration interface
+func (m *TenantConfigManager) GetTenantConfigByType[T model.TenantConfiguration](
+	ctx context.Context,
+) (*T, error) {
+	var res T
+	configs := []*model.TenantConfig{}
+
+	ck := repo.NewCompositeKey().Where(repo.TypeField, res.Type())
+	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
+
+	if err := m.r.List(ctx, &model.TenantConfig{}, &configs, *query); err != nil {
+		// Preserve the same error contract as the legacy First-based path so that
+		// API error mappings keyed on repo.ErrGetResource keep working.
+		return nil, errs.Wrap(repo.ErrGetResource, err)
+	}
+
+	if len(configs) < 1 {
+		//nolint:nilnil
+		return nil, nil
+	}
+
+	configMap := make(map[string]any, len(configs))
+	for _, c := range configs {
+		configMap[c.Key] = c.Value
+	}
+
+	res, err := model.Unflatten[T](configMap)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+func (m *TenantConfigManager) GetTenantLimits(ctx context.Context) (model.TenantLimits, error) {
+	configs, err := m.GetTenantConfigByType[model.TenantLimits](ctx)
+	if err != nil {
+		return model.TenantLimits{}, errs.Wrap(ErrGetTenantLimits, err)
+	}
+
+	if configs == nil {
+		configs = &model.TenantLimits{}
+	}
+
+	m.applyTenantLimitsOverride(configs)
+	return *configs, nil
+}
+
+func (m *TenantConfigManager) SetTenantLimits(
+	ctx context.Context,
+	limits *model.TenantLimits,
+) (*model.TenantLimits, error) {
+	m.applyTenantLimitsOverride(limits)
+	err := m.SetTenantConfig(ctx, limits)
+	return limits, err
+}
+
+func (m *TenantConfigManager) SetSystemGroupsConfig(
+	ctx context.Context,
+	sg *model.SystemGroupConfig,
+) (*model.SystemGroupConfig, error) {
+	err := m.SetTenantConfig(ctx, sg)
+	return sg, err
+}
+
+// GetSystemGroupingConfig gets systemgrouping config out of tenant_config
+// If it does not exist, set in the DB both as false
+func (m *TenantConfigManager) GetSystemGroupingConfig(ctx context.Context) (*model.SystemGroupConfig, error) {
+	configs, err := m.GetTenantConfigByType[model.SystemGroupConfig](ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if configs == nil {
+		tenantConfig := model.SystemGroupConfig{
+			Enabled:      false,
+			WarnCoverage: false,
+		}
+		err = m.SetTenantConfig(ctx, tenantConfig)
+		if err != nil {
+			return nil, err
+		}
+		return &tenantConfig, nil
+	}
+
+	return configs, nil
 }
 
 // GetWorkflowConfig reads the workflow config from flat rows, creating the
 // default when none exist.
 func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.WorkflowConfig, error) {
-	wc, found, err := m.getWorkflowConfigFromFlatRows(ctx)
+	wc, err := m.GetTenantConfigByType[model.WorkflowConfig](ctx)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetWorkflowConfig, err)
 	}
-	if found {
+
+	if wc != nil {
 		return wc, nil
 	}
 
@@ -276,7 +254,7 @@ func (m *TenantConfigManager) SetWorkflowConfig(
 ) (*model.WorkflowConfig, error) {
 	// If no config provided, create default based on tenant role
 	if workflowConfig == nil {
-		t, err := repo.GetTenant(ctx, m.repo)
+		t, err := repo.GetTenant(ctx, m.r)
 		if err != nil {
 			return nil, err
 		}
@@ -293,7 +271,8 @@ func (m *TenantConfigManager) SetWorkflowConfig(
 		return nil, errs.Wrap(ErrSetWorkflowConfig, err)
 	}
 
-	if err := m.writeWorkflowConfigFlatRows(ctx, workflowConfig); err != nil {
+	err := m.SetTenantConfig(ctx, workflowConfig)
+	if err != nil {
 		return nil, errs.Wrap(ErrSetWorkflowConfig, err)
 	}
 
@@ -305,7 +284,6 @@ func (m *TenantConfigManager) UpdateWorkflowConfig(
 	ctx context.Context,
 	update *cmkapi.TenantWorkflowConfiguration,
 ) (*model.WorkflowConfig, error) {
-	// Get existing configuration
 	existingConfig, err := m.GetWorkflowConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -313,7 +291,7 @@ func (m *TenantConfigManager) UpdateWorkflowConfig(
 
 	// If trying to change the Enabled field, validate tenant role
 	if update != nil && update.Enabled != nil && *update.Enabled != existingConfig.Enabled {
-		t, err := repo.GetTenant(ctx, m.repo)
+		t, err := repo.GetTenant(ctx, m.r)
 		if err != nil {
 			return nil, err
 		}
@@ -341,22 +319,22 @@ func (m *TenantConfigManager) GetTenantsKeystores(ctx context.Context) (TenantKe
 	if found {
 		byokKeystore = defaultKeystore
 	}
-	if m.isBYOKAllowed(ctx) && m.cfg != nil {
-		byokKeystore.SupportedRegions = m.cfg.KeystorePool.SupportedRegions
+	if m.flags.IsBYOKAllowed(ctx) && m.cfg != nil {
+		byokKeystore.SupportedRegions = regionsByTechnicalName(m.cfg.KeystorePool.SupportedRegions)
 	}
 
 	return TenantKeystores{
 		BYOK:      *byokKeystore,
-		AllowBYOK: m.isBYOKAllowed(ctx),
+		AllowBYOK: m.flags.IsBYOKAllowed(ctx),
 		HYOK:      m.getTenantConfigsHyokKeystore(ctx),
 	}, nil
 }
 
-// GetDefaultKeystoreConfig retrieves the default keystore config
+// GetKeystoreConfig retrieves the default keystore config
 // If the config doesn't exist, it gets the config from the pool and sets it.
 // If KeyManagementConfig is not yet provisioned, it lazily calls GrantTrust(MANAGEMENT).
 // If CryptoAccessData is missing entries, it syncs via GrantTrust(CRYPTO).
-func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, error) {
+func (m *TenantConfigManager) GetKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, error) {
 	keystore, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -377,12 +355,24 @@ func (m *TenantConfigManager) GetDefaultKeystoreConfig(ctx context.Context) (*mo
 		if !updated {
 			return keystore, nil
 		}
-		if err := m.SetDefaultKeystore(ctx, keystore); err != nil {
+		err = m.SetTenantConfig(ctx, keystore)
+		if err != nil {
 			return nil, err
 		}
 	}
 
 	return keystore, nil
+}
+
+func (m *TenantConfigManager) SetKeystoreConfig(ctx context.Context, config *model.KeystoreConfig) error {
+	return m.r.Transaction(ctx, func(context.Context) error {
+		_, err := m.WipeTenantConfig(ctx, config)
+		if err != nil {
+			return err
+		}
+
+		return m.SetTenantConfig(ctx, config)
+	})
 }
 
 // NeedsDefaultKeystoreProvisioning reports whether the tenant's default keystore
@@ -401,138 +391,43 @@ func (m *TenantConfigManager) NeedsDefaultKeystoreProvisioning(ctx context.Conte
 	return keystore.KeyManagementConfig.LocalityID == "" || len(keystore.KeyManagementConfig.AccessData) == 0, nil
 }
 
-// IsBYOKAllowed is the exported form of isBYOKAllowed, used by KeyManager.
-func (m *TenantConfigManager) IsBYOKAllowed(ctx context.Context) bool {
-	return m.isBYOKAllowed(ctx)
-}
-
-// IsHYOKAllowed checks whether HYOK is enabled for the given provider.
-// When feature flags are not configured it returns true for backward compatibility
-// (HYOK was ungated before feature flags were introduced).
-func (m *TenantConfigManager) IsHYOKAllowed(ctx context.Context, provider string) bool {
-	if !m.featureFlagsConfigured() {
-		return true
-	}
-
-	enabled, err := m.flags.BooleanValue(ctx, hyokFeatureFlagKey(provider), false, openfeature.EvaluationContext{})
-	if err != nil {
-		return false
-	}
-
-	return enabled
-}
-
-// IsKeyRotateDetectionEnabled checks whether key rotation detection is enabled for the given provider.
-// When feature flags are not configured it returns true for backward compatibility.
-func (m *TenantConfigManager) IsKeyRotateDetectionEnabled(ctx context.Context, provider string) bool {
-	if !m.featureFlagsConfigured() {
-		return true
-	}
-
-	enabled, err := m.flags.BooleanValue(ctx, keyRotateFlagKey(provider), false, openfeature.EvaluationContext{})
-	if err != nil {
-		return false
-	}
-
-	return enabled
-}
-
-// GetStoredDefaultKeystoreConfig reads the stored default keystore from flat
-// rows, without pool fallback.
+// GetStoredDefaultKeystoreConfig reads the stored default keystore without pool fallback
 func (m *TenantConfigManager) GetStoredDefaultKeystoreConfig(ctx context.Context) (*model.KeystoreConfig, bool, error) {
-	ks, found, err := m.getKeystoreConfigFromFlatRows(ctx)
+	kc, err := m.GetTenantConfigByType[model.KeystoreConfig](ctx)
 	if err != nil {
 		return nil, false, errs.Wrap(ErrGetDefaultKeystore, err)
 	}
-
-	return ks, found, nil
+	if kc != nil {
+		return kc, true, nil
+	}
+	return nil, false, nil
 }
 
-// SetDefaultKeystore stores the default keystore config
-func (m *TenantConfigManager) SetDefaultKeystore(ctx context.Context, keystore *model.KeystoreConfig) error {
-	if err := m.writeKeystoreConfigFlatRows(ctx, keystore); err != nil {
-		return errs.Wrap(ErrSetDefaultKeystore, err)
+func (m *TenantConfigManager) applyTenantLimitsOverride(limits *model.TenantLimits) {
+	if m.cfg != nil {
+		if limits.KeyConfigs == nil {
+			limits.KeyConfigs = &m.cfg.Tenant.KeyConfigLimit
+		}
+		if limits.Systems == nil {
+			limits.Systems = &m.cfg.Tenant.SystemLimit
+		}
+		if limits.Keys == nil {
+			limits.Keys = &m.cfg.Tenant.KeyLimit
+		}
 	}
-
-	return nil
 }
 
 func (m *TenantConfigManager) initDefaultKeystoreFromPool(ctx context.Context) (*model.KeystoreConfig, error) {
 	var keystore *model.KeystoreConfig
-	err := m.repo.Transaction(ctx, func(ctx context.Context) error {
+	err := m.r.Transaction(ctx, func(ctx context.Context) error {
 		var err error
 		keystore, err = m.getKeystoreConfigFromPool(ctx)
 		if err != nil {
 			return err
 		}
-		return m.SetDefaultKeystore(ctx, keystore)
+		return m.SetTenantConfig(ctx, keystore)
 	})
 	return keystore, err
-}
-
-// isBYOKAllowed checks whether BYOK is enabled for the default keystore provider.
-// When feature flags are not configured it falls back to the legacy allow-byok feature gate.
-func (m *TenantConfigManager) isBYOKAllowed(ctx context.Context) bool {
-	if !m.featureFlagsConfigured() {
-		if m.cfg == nil {
-			return false
-		}
-		return m.cfg.FeatureGates.IsFeatureEnabled(allowBYOKFeatureGateKey)
-	}
-
-	provider, ok := m.getDefaultProvider()
-	if !ok {
-		return false
-	}
-
-	enabled, err := m.flags.BooleanValue(ctx, byokFeatureFlagKey(provider), false, openfeature.EvaluationContext{})
-	if err != nil {
-		return false
-	}
-
-	return enabled
-}
-
-// featureFlagsConfigured reports whether feature flags are active for this
-// deployment. When it returns false, callers fall back to legacy behaviour:
-// HYOK ungated and BYOK governed by the allow-byok feature gate.
-func (m *TenantConfigManager) featureFlagsConfigured() bool {
-	return m.cfg != nil && featureflags.Configured(m.flags, m.cfg.FeatureFlags)
-}
-
-// byokFeatureFlagKey returns the feature gate key for BYOK on the given provider.
-func byokFeatureFlagKey(provider string) string {
-	return byokFeatureFlagPrefix + strings.ToLower(provider)
-}
-
-// hyokFeatureFlagKey returns the feature gate key for HYOK on the given provider.
-func hyokFeatureFlagKey(provider string) string {
-	return hyokFeatureFlagPrefix + strings.ToLower(provider)
-}
-
-// keyRotateFlagKey returns the feature flag key for key rotation detection on the given provider.
-func keyRotateFlagKey(provider string) string {
-	return keyRotateFeatureFlagPrefix + strings.ToLower(provider)
-}
-
-// getDefaultProvider returns the name of the plugin tagged as DEFAULT_KEYSTORE.
-func (m *TenantConfigManager) getDefaultProvider() (string, bool) {
-	if m.svcRegistry == nil {
-		return "", false
-	}
-
-	plugins, err := m.svcRegistry.KeyManagementList()
-	if err != nil {
-		return "", false
-	}
-
-	for _, p := range plugins {
-		if pluginHelpers.HasTag(p.ServiceInfo().Tags(), constants.DefaultKeyStore) {
-			return p.ServiceInfo().Name(), true
-		}
-	}
-
-	return "", false
 }
 
 func (m *TenantConfigManager) getTenantConfigsHyokKeystore(ctx context.Context) HYOKKeystore {
@@ -550,7 +445,7 @@ func (m *TenantConfigManager) getTenantConfigsHyokKeystore(ctx context.Context) 
 	for _, plugin := range plugins {
 		if pluginHelpers.HasTag(plugin.ServiceInfo().Tags(), string(cmkapi.KeyTypeHYOK)) {
 			name := plugin.ServiceInfo().Name()
-			if m.IsHYOKAllowed(ctx, name) {
+			if m.flags.IsHYOKAllowed(ctx, name) {
 				providers = append(providers, name)
 			}
 		}
@@ -579,208 +474,6 @@ func (m *TenantConfigManager) getKeystoreConfigFromPool(ctx context.Context) (*m
 	}
 
 	return ksConfig, nil
-}
-
-func (m *TenantConfigManager) getWorkflowConfigFromFlatRows(
-	ctx context.Context,
-) (*model.WorkflowConfig, bool, error) {
-	configs, err := m.listConfigsByType(ctx, tenantConfigTypeWorkflow)
-	if err != nil {
-		return nil, false, err
-	}
-	if len(configs) == 0 {
-		return nil, false, nil
-	}
-
-	return buildWorkflowConfigFromRows(configs)
-}
-
-// requiredWorkflowKeys are the keys that must be present for the flat-row
-// workflow config to be considered complete; otherwise it is treated as
-// absent and defaults are created.
-var requiredWorkflowKeys = []string{
-	workflowKeyEnabled,
-	workflowKeyMinimumApprovals,
-	workflowKeyRetentionPeriodDays,
-	workflowKeyDefaultExpiryPeriodDays,
-	workflowKeyMaxExpiryPeriodDays,
-}
-
-func buildWorkflowConfigFromRows(configs []model.TenantConfig) (*model.WorkflowConfig, bool, error) {
-	wc := &model.WorkflowConfig{
-		MaxApprovals:           constants.MaxMinimumApprovals,
-		MinRetentionPeriodDays: constants.MinRetentionPeriodDays,
-		MaxRetentionPeriodDays: constants.MaxRetentionPeriodDays,
-	}
-	seen := make(map[string]struct{}, len(requiredWorkflowKeys))
-
-	for _, c := range configs {
-		if err := applyWorkflowConfigField(wc, c.Key, c.Value); err != nil {
-			return nil, false, err
-		}
-		seen[c.Key] = struct{}{}
-	}
-
-	for _, k := range requiredWorkflowKeys {
-		if _, ok := seen[k]; !ok {
-			return nil, false, nil
-		}
-	}
-
-	return wc, true, nil
-}
-
-//nolint:cyclop // simple switch over a fixed set of keys
-func applyWorkflowConfigField(wc *model.WorkflowConfig, key, value string) error {
-	switch key {
-	case workflowKeyEnabled:
-		b, err := strconv.ParseBool(value)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", key, err)
-		}
-		wc.Enabled = b
-	case workflowKeyMinimumApprovals:
-		v, err := strconv.Atoi(value)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", key, err)
-		}
-		wc.MinimumApprovals = v
-	case workflowKeyRetentionPeriodDays:
-		v, err := strconv.Atoi(value)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", key, err)
-		}
-		wc.RetentionPeriodDays = v
-	case workflowKeyDefaultExpiryPeriodDays:
-		v, err := strconv.Atoi(value)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", key, err)
-		}
-		wc.DefaultExpiryPeriodDays = v
-	case workflowKeyMaxExpiryPeriodDays:
-		v, err := strconv.Atoi(value)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", key, err)
-		}
-		wc.MaxExpiryPeriodDays = v
-	}
-
-	return nil
-}
-
-func (m *TenantConfigManager) writeWorkflowConfigFlatRows(
-	ctx context.Context,
-	wc *model.WorkflowConfig,
-) error {
-	t := tenantConfigTypeWorkflow
-	rows := []model.TenantConfig{
-		{Key: workflowKeyEnabled, Value: strconv.FormatBool(wc.Enabled), Type: t},
-		{Key: workflowKeyMinimumApprovals, Value: strconv.Itoa(wc.MinimumApprovals), Type: t},
-		{Key: workflowKeyRetentionPeriodDays, Value: strconv.Itoa(wc.RetentionPeriodDays), Type: t},
-		{Key: workflowKeyDefaultExpiryPeriodDays, Value: strconv.Itoa(wc.DefaultExpiryPeriodDays), Type: t},
-		{Key: workflowKeyMaxExpiryPeriodDays, Value: strconv.Itoa(wc.MaxExpiryPeriodDays), Type: t},
-	}
-
-	return m.setRows(ctx, rows)
-}
-
-func (m *TenantConfigManager) getKeystoreConfigFromFlatRows(
-	ctx context.Context,
-) (*model.KeystoreConfig, bool, error) {
-	rows, err := m.listConfigsByType(ctx, tenantConfigTypeDefaultKeystore)
-	if err != nil {
-		return nil, false, err
-	}
-	if len(rows) == 0 {
-		return nil, false, nil
-	}
-
-	return buildKeystoreConfigFromRows(rows)
-}
-
-// buildKeystoreConfigFromRows returns found=false when required identity fields
-// are missing, so the caller treats the keystore as unset (pool/default path).
-func buildKeystoreConfigFromRows(configs []model.TenantConfig) (*model.KeystoreConfig, bool, error) {
-	ks := &model.KeystoreConfig{}
-
-	for _, c := range configs {
-		switch {
-		case strings.HasPrefix(c.Key, keystoreKeyRoleMgmtPrefix):
-			applyManagementConfigField(&ks.RoleManagementConfig, strings.TrimPrefix(c.Key, keystoreKeyRoleMgmtPrefix), c.Value)
-		case strings.HasPrefix(c.Key, keystoreKeyKeyMgmtPrefix):
-			applyManagementConfigField(&ks.KeyManagementConfig, strings.TrimPrefix(c.Key, keystoreKeyKeyMgmtPrefix), c.Value)
-		case strings.HasPrefix(c.Key, keystoreKeyCryptoPrefix):
-			applyCryptoRow(ks, strings.TrimPrefix(c.Key, keystoreKeyCryptoPrefix), c.Value)
-		case strings.HasPrefix(c.Key, keystoreKeySupportedRegionPrefix):
-			applyRegionRow(ks, strings.TrimPrefix(c.Key, keystoreKeySupportedRegionPrefix), c.Value)
-		}
-	}
-
-	if ks.RoleManagementConfig.LocalityID == "" || ks.RoleManagementConfig.CommonName == "" {
-		return nil, false, nil
-	}
-
-	return ks, true, nil
-}
-
-// writeKeystoreConfigFlatRows replaces all fully-flattened keystore rows in a
-// single transaction so omitted optional fields don't leave stale rows behind.
-func (m *TenantConfigManager) writeKeystoreConfigFlatRows(
-	ctx context.Context,
-	ks *model.KeystoreConfig,
-) error {
-	rows := managementConfigToRows(ks.RoleManagementConfig, keystoreKeyRoleMgmtPrefix)
-	rows = append(rows, managementConfigToRows(ks.KeyManagementConfig, keystoreKeyKeyMgmtPrefix)...)
-	rows = append(rows, cryptoAccessDataToRows(ks.CryptoAccessData)...)
-	rows = append(rows, supportedRegionsToRows(ks.SupportedRegions)...)
-
-	return m.replaceKeystoreRows(ctx, rows)
-}
-
-func (m *TenantConfigManager) listConfigsByType(
-	ctx context.Context,
-	configType string,
-) ([]model.TenantConfig, error) {
-	var configs []model.TenantConfig
-
-	ck := repo.NewCompositeKey().Where(repo.TypeField, configType)
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
-
-	if err := m.repo.List(ctx, &model.TenantConfig{}, &configs, *query); err != nil {
-		// Preserve the same error contract as the legacy First-based path so that
-		// API error mappings keyed on repo.ErrGetResource keep working.
-		return nil, errs.Wrap(repo.ErrGetResource, err)
-	}
-
-	return configs, nil
-}
-
-// setRows upserts a slice of TenantConfig rows in a single transaction.
-func (m *TenantConfigManager) setRows(ctx context.Context, rows []model.TenantConfig) error {
-	return m.repo.Transaction(ctx, func(ctx context.Context) error {
-		query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
-		for i := range rows {
-			if err := m.repo.Set(ctx, &rows[i], *query); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-// reconcileLimitOverride must run inside a transaction.
-func (m *TenantConfigManager) reconcileLimitOverride(ctx context.Context, key string, value *int) error {
-	if value != nil {
-		row := model.TenantConfig{Key: key, Value: strconv.Itoa(*value), Type: TenantConfigTypeLimits}
-		query := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
-		return m.repo.Set(ctx, &row, *query)
-	}
-	ck := repo.NewCompositeKey().
-		Where(repo.KeyField, key).
-		Where(repo.TypeField, TenantConfigTypeLimits)
-	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
-	_, err := m.repo.Delete(ctx, &model.TenantConfig{}, *query)
-	return err
 }
 
 // getDefaultWorkflowConfig returns default workflow config, checking deploymentConfig first,
@@ -1063,180 +756,11 @@ func (m *TenantConfigManager) getKeystoreManagementClient() (keystoremanagement.
 	return nil, errs.Wrapf(ErrGetDefaultKeystore, "no default keystore management client found")
 }
 
-// applyManagementConfigField applies a single prefix-stripped flat row to a ManagementConfig.
-// Key "locality_id" or "common_name" maps to identity fields; "access_data/<k>" populates AccessData.
-func applyManagementConfigField(mc *model.ManagementConfig, key, value string) {
-	switch key {
-	case keystoreKeyLocalityIDSuffix:
-		mc.LocalityID = value
-	case keystoreKeyCommonNameSuffix:
-		mc.CommonName = value
-	default:
-		if strings.HasPrefix(key, keystoreKeyAccessDataPrefix) {
-			if mc.AccessData == nil {
-				mc.AccessData = make(model.KeystoreAccessData)
-			}
-			mc.AccessData[strings.TrimPrefix(key, keystoreKeyAccessDataPrefix)] = jsonStringValue(value)
-		}
-	}
-}
-
-// applyCryptoRow applies a prefix-stripped flat row to KeystoreConfig.CryptoAccessData.
-// Key format: "<region>/subject" or "<region>/access_data/<field>".
-func applyCryptoRow(ks *model.KeystoreConfig, key, value string) {
-	region, remainder, ok := strings.Cut(key, "/")
-	if !ok {
-		return
-	}
-
-	if ks.CryptoAccessData == nil {
-		ks.CryptoAccessData = make(map[string]model.CryptoConfig)
-	}
-	entry := ks.CryptoAccessData[region]
-
-	switch {
-	case remainder == keystoreKeyCryptoSubjectSuffix:
-		entry.Subject = value
-	case strings.HasPrefix(remainder, keystoreKeyAccessDataPrefix):
-		if entry.AccessData == nil {
-			entry.AccessData = make(model.KeystoreAccessData)
-		}
-		entry.AccessData[strings.TrimPrefix(remainder, keystoreKeyAccessDataPrefix)] = jsonStringValue(value)
-	}
-
-	ks.CryptoAccessData[region] = entry
-}
-
-// applyRegionRow applies a prefix-stripped flat row to KeystoreConfig.SupportedRegions.
-// Key format: "<technicalName>/name".
-func applyRegionRow(ks *model.KeystoreConfig, key, value string) {
-	technicalName, suffix, ok := strings.Cut(key, "/")
-	if !ok || suffix != keystoreKeyRegionNameSuffix {
-		return
-	}
-	ks.SupportedRegions = append(ks.SupportedRegions, config.Region{
-		Name:          value,
-		TechnicalName: technicalName,
-	})
-}
-
-// managementConfigToRows converts a ManagementConfig to flat rows.
-// keyPrefix is one of keystoreKeyRoleMgmtPrefix or keystoreKeyKeyMgmtPrefix.
-func managementConfigToRows(mc model.ManagementConfig, keyPrefix string) []model.TenantConfig {
-	t := tenantConfigTypeDefaultKeystore
-	rows := make([]model.TenantConfig, 0, 2+len(mc.AccessData))
-	rows = append(rows,
-		model.TenantConfig{Key: keyPrefix + keystoreKeyLocalityIDSuffix, Value: mc.LocalityID, Type: t},
-		model.TenantConfig{Key: keyPrefix + keystoreKeyCommonNameSuffix, Value: mc.CommonName, Type: t},
-	)
-	for k, v := range mc.AccessData {
-		rows = append(rows, model.TenantConfig{
-			Key:   keyPrefix + keystoreKeyAccessDataPrefix + k,
-			Value: mustJSONValue(v),
-			Type:  t,
-		})
-	}
-	return rows
-}
-
-// cryptoAccessDataToRows converts a CryptoAccessData map to flat rows.
-// Key format: "crypto/<landscape>/subject" and "crypto/<landscape>/access_data/<field>".
-func cryptoAccessDataToRows(cad map[string]model.CryptoConfig) []model.TenantConfig {
-	var rows []model.TenantConfig
-	for landscape, cfg := range cad {
-		rows = append(rows, model.TenantConfig{
-			Key:   keystoreKeyCryptoPrefix + landscape + "/" + keystoreKeyCryptoSubjectSuffix,
-			Value: cfg.Subject,
-			Type:  tenantConfigTypeDefaultKeystore,
-		})
-		for k, v := range cfg.AccessData {
-			rows = append(rows, model.TenantConfig{
-				Key:   keystoreKeyCryptoPrefix + landscape + "/" + keystoreKeyAccessDataPrefix + k,
-				Value: mustJSONValue(v),
-				Type:  tenantConfigTypeDefaultKeystore,
-			})
-		}
-	}
-	return rows
-}
-
-// supportedRegionsToRows converts a slice of Regions to flat rows.
-// Key format: "supported_region/<technicalName>/name".
-func supportedRegionsToRows(regions []config.Region) []model.TenantConfig {
-	rows := make([]model.TenantConfig, 0, len(regions))
+// regionsByTechnicalName indexes a slice of Regions by TechnicalName.
+func regionsByTechnicalName(regions []config.Region) map[string]config.Region {
+	m := make(map[string]config.Region, len(regions))
 	for _, r := range regions {
-		rows = append(rows, model.TenantConfig{
-			Key:   keystoreKeySupportedRegionPrefix + r.TechnicalName + "/" + keystoreKeyRegionNameSuffix,
-			Value: r.Name,
-			Type:  tenantConfigTypeDefaultKeystore,
-		})
+		m[r.TechnicalName] = r
 	}
-	return rows
-}
-
-// replaceKeystoreRows deletes all fully-flattened default_keystore rows (those
-// with a known hierarchical prefix) and inserts the provided rows, all in one
-// transaction. Legacy sub-blob rows (e.g. management_access_data) are left intact.
-func (m *TenantConfigManager) replaceKeystoreRows(ctx context.Context, rows []model.TenantConfig) error {
-	return m.repo.Transaction(ctx, func(ctx context.Context) error {
-		existing, err := m.listConfigsByType(ctx, tenantConfigTypeDefaultKeystore)
-		if err != nil {
-			return err
-		}
-		for _, row := range existing {
-			if !isHierarchicalKeystoreKey(row.Key) {
-				continue
-			}
-			ck := repo.NewCompositeKey().
-				Where(repo.KeyField, row.Key).
-				Where(repo.TypeField, tenantConfigTypeDefaultKeystore)
-			query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
-			if _, err := m.repo.Delete(ctx, &model.TenantConfig{}, *query); err != nil {
-				return err
-			}
-		}
-		setQuery := repo.NewQuery().OnConflict(repo.KeyField, repo.TypeField)
-		for i := range rows {
-			if err := m.repo.Set(ctx, &rows[i], *setQuery); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-// mustJSONValue encodes v as a JSON value string. If marshalling fails it falls
-// back to fmt.Sprint so a string is always returned.
-func mustJSONValue(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Sprint(v)
-	}
-	return string(b)
-}
-
-// jsonStringValue decodes a JSON-encoded scalar back to its native Go type.
-// If s is not valid JSON it is returned as-is (plain string), preserving
-// backwards compatibility with rows written before this encoding was introduced.
-// Numeric JSON values (float64) are returned as the original string because
-// fields like projectNumber are stored as numeric strings but must stay strings
-// for correct structpb serialization (GetStringValue vs GetNumberValue).
-func jsonStringValue(s string) any {
-	var v any
-	if err := json.Unmarshal([]byte(s), &v); err != nil {
-		return s
-	}
-	if _, isNum := v.(float64); isNum {
-		return s
-	}
-	return v
-}
-
-// isHierarchicalKeystoreKey reports whether a default_keystore row key belongs
-// to the fully-flattened shape (as opposed to legacy sub-blob keys).
-func isHierarchicalKeystoreKey(key string) bool {
-	return strings.HasPrefix(key, keystoreKeyRoleMgmtPrefix) ||
-		strings.HasPrefix(key, keystoreKeyKeyMgmtPrefix) ||
-		strings.HasPrefix(key, keystoreKeyCryptoPrefix) ||
-		strings.HasPrefix(key, keystoreKeySupportedRegionPrefix)
+	return m
 }

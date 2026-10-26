@@ -311,7 +311,7 @@ func (pmc *ProviderConfigManager) getKeystoreConfig(
 func (pmc *ProviderConfigManager) getDefaultKeystoreConfig(
 	ctx context.Context,
 ) (*common.KeystoreConfig, *time.Time, error) {
-	ksConfig, err := pmc.tenantConfigs.GetDefaultKeystoreConfig(ctx)
+	ksConfig, err := pmc.tenantConfigs.GetKeystoreConfig(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

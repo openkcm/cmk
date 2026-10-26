@@ -15,10 +15,6 @@ import (
 
 var GetPluginAlgorithm = getPluginAlgorithm
 
-var BuildWorkflowConfigFromRows = buildWorkflowConfigFromRows
-
-var BuildKeystoreConfigFromRows = buildKeystoreConfigFromRows
-
 var ValidateWorkflowConfig = validateWorkflowConfig
 
 func (m *TenantConfigManager) GetTenantConfigsHyokKeystore(ctx context.Context) HYOKKeystore {

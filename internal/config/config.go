@@ -380,8 +380,8 @@ type KeystoreConfigValue struct {
 }
 
 type Region struct {
-	Name          string `json:"name" yaml:"name"`
-	TechnicalName string `json:"technicalName" yaml:"technicalName"`
+	Name          string `json:"name" yaml:"name" flatten:"name"`
+	TechnicalName string `json:"technicalName" yaml:"technicalName" flatten:"technicalName"`
 }
 
 type KeystorePool struct {
