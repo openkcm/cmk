@@ -935,6 +935,60 @@ func TestSchemaMigrations(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:      "Should up tenant/00026_rename_workflow_config_keys.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   26,
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+
+				return func(con *multitenancy.DB) error {
+					probe := func(sql string) error {
+						return con.Transaction(func(tx *multitenancy.DB) error {
+							return tx.Exec(sql).Error
+						})
+					}
+
+					// New constraint on required_approvals rejects out-of-bounds values.
+					err := probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('required_approvals', '6', 'workflow')`)
+					assert.Error(t, err, "required_approvals above 5 must be rejected")
+
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('required_approvals', '1', 'workflow')`)
+					assert.Error(t, err, "required_approvals below 2 must be rejected")
+
+					// Old constraint on minimum_approvals is dropped — out-of-bounds accepted.
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('minimum_approvals', '6', 'workflow')`)
+					assert.NoError(t, err, "old minimum_approvals constraint must be dropped")
+
+					// New constraint on max_allowed_expiry_period_days rejects out-of-bounds.
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('max_allowed_expiry_period_days', '8', 'workflow')`)
+					assert.Error(t, err, "max_allowed_expiry_period_days above 7 must be rejected")
+
+					// Old constraint on max_expiry_period_days is dropped — out-of-bounds accepted.
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('max_expiry_period_days', '8', 'workflow')`)
+					assert.NoError(t, err, "old max_expiry_period_days constraint must be dropped")
+
+					// retention_period_days constraint from 00025 must remain intact.
+					err = probe(`INSERT INTO tenant_configs ("key", value, "type") VALUES
+						('retention_period_days', '31', 'workflow')`)
+					assert.Error(t, err, "retention_period_days above 30 must still be rejected")
+
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00026_rename_workflow_config_keys.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   26,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1716,6 +1770,124 @@ func TestDataMigrations(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:          "Should rename workflow config keys to new names",
+			target:        db.TenantTarget,
+			version:       7,
+			schemaVersion: new(int64(26)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('minimum_approvals',          '2',  'workflow'),
+							('max_approvals',              '5',  'workflow'),
+							('min_retention_period_days',  '7',  'workflow'),
+							('max_retention_period_days',  '30', 'workflow'),
+							('default_expiry_period_days', '7',  'workflow'),
+							('max_expiry_period_days',     '7',  'workflow')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value"`
+					}
+					var rows []row
+					err := db.Raw(
+						`SELECT "key", value FROM tenant_configs WHERE "type" = 'workflow' ORDER BY "key"`,
+					).Scan(&rows).Error
+					assert.NoError(t, err)
+
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+
+					// Old keys must be gone.
+					assert.NotContains(t, byKey, "minimum_approvals")
+					assert.NotContains(t, byKey, "max_approvals")
+					assert.NotContains(t, byKey, "min_retention_period_days")
+					assert.NotContains(t, byKey, "max_retention_period_days")
+					assert.NotContains(t, byKey, "default_expiry_period_days")
+					assert.NotContains(t, byKey, "max_expiry_period_days")
+
+					// New keys must exist with the original values.
+					assert.Equal(t, "2", byKey["required_approvals"])
+					assert.Equal(t, "2", byKey["min_allowed_approvals"], "min_allowed_approvals copied from minimum_approvals")
+					assert.Equal(t, "5", byKey["max_allowed_approvals"])
+					assert.Equal(t, "7", byKey["min_allowed_retention_period_days"])
+					assert.Equal(t, "30", byKey["max_allowed_retention_period_days"])
+					assert.Equal(t, "7", byKey["expiry_period_days"])
+					assert.Equal(t, "7", byKey["max_allowed_expiry_period_days"])
+
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should migrate down 00007 rename workflow config keys",
+			target:        db.TenantTarget,
+			version:       7,
+			schemaVersion: new(int64(26)),
+			downgrade:     true,
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('required_approvals',              '2',  'workflow'),
+							('min_allowed_approvals',           '2',  'workflow'),
+							('max_allowed_approvals',           '5',  'workflow'),
+							('min_allowed_retention_period_days', '7',  'workflow'),
+							('max_allowed_retention_period_days', '30', 'workflow'),
+							('expiry_period_days',              '7',  'workflow'),
+							('max_allowed_expiry_period_days',  '7',  'workflow')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value"`
+					}
+					var rows []row
+					err := db.Raw(
+						`SELECT "key", value FROM tenant_configs WHERE "type" = 'workflow' ORDER BY "key"`,
+					).Scan(&rows).Error
+					assert.NoError(t, err)
+
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+
+					// New keys must be gone.
+					assert.NotContains(t, byKey, "required_approvals")
+					assert.NotContains(t, byKey, "min_allowed_approvals")
+					assert.NotContains(t, byKey, "max_allowed_approvals")
+					assert.NotContains(t, byKey, "min_allowed_retention_period_days")
+					assert.NotContains(t, byKey, "max_allowed_retention_period_days")
+					assert.NotContains(t, byKey, "expiry_period_days")
+					assert.NotContains(t, byKey, "max_allowed_expiry_period_days")
+
+					// Old keys must be restored.
+					assert.Equal(t, "2", byKey["minimum_approvals"])
+					assert.Equal(t, "5", byKey["max_approvals"])
+					assert.Equal(t, "7", byKey["min_retention_period_days"])
+					assert.Equal(t, "30", byKey["max_retention_period_days"])
+					assert.Equal(t, "7", byKey["default_expiry_period_days"])
+					assert.Equal(t, "7", byKey["max_expiry_period_days"])
+
+					return nil
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1740,7 +1912,7 @@ func TestDataMigrations(t *testing.T) {
 
 			if tt.setupData != nil {
 				err := dbCon.WithTenant(t.Context(), tenant, tt.setupData(t))
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			}
 
 			var migrateVersion int64
@@ -1751,15 +1923,37 @@ func TestDataMigrations(t *testing.T) {
 			}
 
 			_, err := m.MigrateTo(t.Context(), migration, migrateVersion)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			assertVersion(t, dbCon, migrateVersion, db.DataMigrationTable, tenant)
 			if tt.assertMigration != nil {
 				err := dbCon.WithTenant(t.Context(), tenant, tt.assertMigration(t))
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			}
 		})
 	}
+}
+
+// TestRenameWorkflowConfigKeysUpFailsOnDBError verifies that data migration 7
+// (up) propagates a DB error rather than silently succeeding.
+func TestRenameWorkflowConfigKeysUpFailsOnDBError(t *testing.T) {
+	dbCon, m, tenant := setupDataMigration(t, DataMigrationSetup{
+		Target:        db.TenantTarget,
+		SchemaVersion: new(int64(26)),
+		Version:       6,
+	})
+
+	// Drop tenant_configs so every SQL in the migration fails.
+	err := dbCon.WithTenant(t.Context(), tenant, func(tx *multitenancy.DB) error {
+		return tx.Exec(`DROP TABLE tenant_configs`).Error
+	})
+	require.NoError(t, err)
+
+	_, err = m.MigrateTo(t.Context(), db.Migration{
+		Type:   db.DataMigration,
+		Target: db.TenantTarget,
+	}, 7)
+	assert.Error(t, err)
 }
 
 // TestFlattenBackfillFailsWhenSchemaMissing verifies the backfill errors (rather

@@ -78,9 +78,9 @@ var (
 	ErrWorkflowEnableDisableNotAllowed = errors.New("workflow enable/disable is only allowed for ROLE_TEST tenants")
 	ErrDefaultExpiryExceedsMax         = errors.New("defaultExpiryPeriodDays must be" +
 		" less than or equal to maxExpiryPeriodDays")
-	ErrMinimumApprovalsTooLow  = errors.New("minimumApprovals must be at least 2")
-	ErrMinimumApprovalsTooHigh = errors.New("minimumApprovals must be at most " +
-		strconv.Itoa(constants.MaxMinimumApprovals))
+	ErrMinimumApprovalsTooLow  = errors.New("requiredApprovals must be at least 2")
+	ErrMinimumApprovalsTooHigh = errors.New("requiredApprovals must be at most " +
+		strconv.Itoa(constants.MaxAllowedApprovals))
 )
 
 type HYOKKeystore struct {
@@ -229,19 +229,19 @@ func (m *TenantConfigManager) GetWorkflowConfig(ctx context.Context) (*model.Wor
 // The bounds on retentionPeriodDays [7,30] and maxExpiryPeriodDays [1,7] together
 // guarantee retention >= maxExpiry by construction.
 func validateWorkflowConfig(config *model.WorkflowConfig) error {
-	if config.RetentionPeriodDays < constants.MinRetentionPeriodDays {
+	if config.RetentionPeriodDays < config.MinAllowedRetentionPeriodDays {
 		return ErrRetentionLessThanMinimum
 	}
-	if config.RetentionPeriodDays > constants.MaxRetentionPeriodDays {
+	if config.RetentionPeriodDays > config.MaxAllowedRetentionPeriodDays {
 		return ErrRetentionExceedsMaximum
 	}
-	if config.DefaultExpiryPeriodDays > config.MaxExpiryPeriodDays {
+	if config.ExpiryPeriodDays > config.MaxAllowedExpiryPeriodDays {
 		return ErrDefaultExpiryExceedsMax
 	}
-	if config.MinimumApprovals < 2 {
+	if config.RequiredApprovals < config.MinAllowedApprovals {
 		return ErrMinimumApprovalsTooLow
 	}
-	if config.MinimumApprovals > constants.MaxMinimumApprovals {
+	if config.RequiredApprovals > config.MaxAllowedApprovals {
 		return ErrMinimumApprovalsTooHigh
 	}
 	return nil
@@ -480,14 +480,15 @@ func (m *TenantConfigManager) getKeystoreConfigFromPool(ctx context.Context) (*m
 // then falling back to hard-coded constants
 func (m *TenantConfigManager) getDefaultWorkflowConfig(defaultEnabled bool) *model.WorkflowConfig {
 	c := &model.WorkflowConfig{
-		Enabled:                 defaultEnabled,
-		MinimumApprovals:        constants.DefaultMinimumApprovalCount,
-		MaxApprovals:            constants.MaxMinimumApprovals,
-		RetentionPeriodDays:     constants.DefaultRetentionPeriodDays,
-		MinRetentionPeriodDays:  constants.MinRetentionPeriodDays,
-		MaxRetentionPeriodDays:  constants.MaxRetentionPeriodDays,
-		DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
-		MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
+		Enabled:                       defaultEnabled,
+		MinAllowedApprovals:           constants.MinAllowedApprovals,
+		RequiredApprovals:             constants.MinAllowedApprovals,
+		MaxAllowedApprovals:           constants.MaxAllowedApprovals,
+		RetentionPeriodDays:           constants.DefaultRetentionPeriodDays,
+		MinAllowedRetentionPeriodDays: constants.MinRetentionPeriodDays,
+		MaxAllowedRetentionPeriodDays: constants.MaxRetentionPeriodDays,
+		ExpiryPeriodDays:              constants.DefaultExpiryPeriodDays,
+		MaxAllowedExpiryPeriodDays:    constants.MaxAllowedExpiryPeriodDays,
 	}
 
 	// Override with deploymentConfig values if available
@@ -503,19 +504,15 @@ func (m *TenantConfigManager) getDefaultWorkflowConfig(defaultEnabled bool) *mod
 // to override any default values. Values are clamped to hard limits.
 func (m *TenantConfigManager) applyDeploymentConfigOverrides(config *model.WorkflowConfig) {
 	if m.cfg.Workflow.DefaultMinimumApprovals > 0 {
-		v := min(m.cfg.Workflow.DefaultMinimumApprovals, constants.MaxMinimumApprovals)
-		config.MinimumApprovals = v
+		v := min(m.cfg.Workflow.DefaultMinimumApprovals, constants.MaxAllowedApprovals)
+		config.MinAllowedApprovals = v
 	}
 	if m.cfg.Workflow.DefaultRetentionPeriodDays > 0 {
 		v := max(m.cfg.Workflow.DefaultRetentionPeriodDays, constants.MinRetentionPeriodDays)
 		config.RetentionPeriodDays = min(v, constants.MaxRetentionPeriodDays)
 	}
 	if m.cfg.Workflow.DefaultExpiryPeriodDays > 0 {
-		config.DefaultExpiryPeriodDays = m.cfg.Workflow.DefaultExpiryPeriodDays
-	}
-	if m.cfg.Workflow.DefaultMaxExpiryPeriodDays > 0 {
-		v := min(m.cfg.Workflow.DefaultMaxExpiryPeriodDays, constants.DefaultMaxExpiryPeriodDays)
-		config.MaxExpiryPeriodDays = v
+		config.ExpiryPeriodDays = m.cfg.Workflow.DefaultExpiryPeriodDays
 	}
 }
 
@@ -538,17 +535,14 @@ func (m *TenantConfigManager) mergeWorkflowConfig(
 	if update.Enabled != nil {
 		result.Enabled = *update.Enabled
 	}
-	if update.MinimumApprovals != nil {
-		result.MinimumApprovals = *update.MinimumApprovals
+	if update.RequiredApprovals != nil {
+		result.RequiredApprovals = *update.RequiredApprovals
 	}
 	if update.RetentionPeriodDays != nil {
 		result.RetentionPeriodDays = *update.RetentionPeriodDays
 	}
-	if update.DefaultExpiryPeriodDays != nil {
-		result.DefaultExpiryPeriodDays = *update.DefaultExpiryPeriodDays
-	}
-	if update.MaxExpiryPeriodDays != nil {
-		result.MaxExpiryPeriodDays = *update.MaxExpiryPeriodDays
+	if update.ExpiryPeriodDays != nil {
+		result.ExpiryPeriodDays = *update.ExpiryPeriodDays
 	}
 
 	return result

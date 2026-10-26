@@ -81,14 +81,15 @@ func (c KeystoreConfig) Type() ConfigType {
 }
 
 type WorkflowConfig struct {
-	Enabled                 bool `flatten:"enabled"`
-	MinimumApprovals        int  `flatten:"minimum_approvals"`
-	MaxApprovals            int  `flatten:"max_approvals"`
-	RetentionPeriodDays     int  `flatten:"retention_period_days"`
-	MinRetentionPeriodDays  int  `flatten:"min_retention_period_days"`
-	MaxRetentionPeriodDays  int  `flatten:"max_retention_period_days"`
-	DefaultExpiryPeriodDays int  `flatten:"default_expiry_period_days"`
-	MaxExpiryPeriodDays     int  `flatten:"max_expiry_period_days"`
+	Enabled                       bool `flatten:"enabled"`
+	RequiredApprovals             int  `flatten:"required_approvals"`
+	MinAllowedApprovals           int  `flatten:"min_allowed_approvals"`
+	MaxAllowedApprovals           int  `flatten:"max_allowed_approvals"`
+	RetentionPeriodDays           int  `flatten:"retention_period_days"`
+	MinAllowedRetentionPeriodDays int  `flatten:"min_allowed_retention_period_days"`
+	MaxAllowedRetentionPeriodDays int  `flatten:"max_allowed_retention_period_days"`
+	ExpiryPeriodDays              int  `flatten:"expiry_period_days"`
+	MaxAllowedExpiryPeriodDays    int  `flatten:"max_allowed_expiry_period_days"`
 }
 
 func (c WorkflowConfig) FlattenKeyRoot() string {

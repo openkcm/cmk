@@ -414,7 +414,6 @@ type Workflow struct {
 	DefaultMinimumApprovals    int `yaml:"defaultMinimumApprovals"`
 	DefaultRetentionPeriodDays int `yaml:"defaultRetentionPeriodDays"`
 	DefaultExpiryPeriodDays    int `yaml:"defaultExpiryPeriodDays"`
-	DefaultMaxExpiryPeriodDays int `yaml:"defaultMaxExpiryPeriodDays"`
 }
 
 type Keys struct {

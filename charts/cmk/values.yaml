@@ -1747,8 +1747,6 @@ config:
     defaultRetentionPeriodDays: 30
     # -- Days after which an open workflow expires.
     defaultExpiryPeriodDays: 7
-    # -- Maximum expiry a tenant can set, in days. Higher values are reduced to 7.
-    defaultMaxExpiryPeriodDays: 7
 
   # ---------------------------------------------------------------------------
   # configurableContext: properties of systems. Read by: API server, tenant manager, task

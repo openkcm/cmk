@@ -85,18 +85,18 @@ func patchWorkflow(t *testing.T, sv cmkapi.ServeMux, tenant string, headers http
 // Each sub-test is independent (its own DB container) so a single rogue write
 // cannot affect a sibling test.
 func TestWorkflowConfigOutOfBoundsRejected(t *testing.T) {
-	t.Run("minimumApprovals below minimum (< 2) is rejected", func(t *testing.T) {
+	t.Run("requiredApprovals below minimum (< 2) is rejected", func(t *testing.T) {
 		sv, tenant, headers := setupBoundsTest(t)
 		code := patchWorkflow(t, sv, tenant, headers, cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: new(1),
+			RequiredApprovals: new(1),
 		})
 		assert.Equal(t, http.StatusBadRequest, code)
 	})
 
-	t.Run("minimumApprovals above maximum (> 5) is rejected", func(t *testing.T) {
+	t.Run("requiredApprovals above maximum (> 5) is rejected", func(t *testing.T) {
 		sv, tenant, headers := setupBoundsTest(t)
 		code := patchWorkflow(t, sv, tenant, headers, cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: new(6),
+			RequiredApprovals: new(6),
 		})
 		assert.Equal(t, http.StatusBadRequest, code)
 	})
@@ -117,19 +117,11 @@ func TestWorkflowConfigOutOfBoundsRejected(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, code)
 	})
 
-	t.Run("maxExpiryPeriodDays above maximum (> 7) is rejected", func(t *testing.T) {
+	t.Run("expiryPeriodDays exceeding maxExpiryPeriodDays is rejected", func(t *testing.T) {
 		sv, tenant, headers := setupBoundsTest(t)
 		code := patchWorkflow(t, sv, tenant, headers, cmkapi.TenantWorkflowConfiguration{
-			MaxExpiryPeriodDays: new(8),
-		})
-		assert.Equal(t, http.StatusBadRequest, code)
-	})
-
-	t.Run("defaultExpiryPeriodDays exceeding maxExpiryPeriodDays is rejected", func(t *testing.T) {
-		sv, tenant, headers := setupBoundsTest(t)
-		code := patchWorkflow(t, sv, tenant, headers, cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: new(7),
-			MaxExpiryPeriodDays:     new(5),
+			ExpiryPeriodDays:           new(7),
+			MaxAllowedExpiryPeriodDays: new(5),
 		})
 		assert.Equal(t, http.StatusBadRequest, code)
 	})
@@ -153,10 +145,9 @@ func TestWorkflowConfigInRangeAccepted(t *testing.T) {
 		Endpoint: "/tenantConfigurations/workflow",
 		Tenant:   tenant,
 		Body: testutils.WithJSON(t, cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals:        new(2), // minimum valid
-			RetentionPeriodDays:     new(7), // minimum valid
-			MaxExpiryPeriodDays:     new(7), // maximum valid
-			DefaultExpiryPeriodDays: new(6), // below maxExpiryPeriodDays
+			RequiredApprovals:   new(2), // minimum valid
+			RetentionPeriodDays: new(7), // minimum valid
+			ExpiryPeriodDays:    new(6), // below maxExpiryPeriodDays
 		}),
 		Headers: headers,
 	})
@@ -166,15 +157,12 @@ func TestWorkflowConfigInRangeAccepted(t *testing.T) {
 	var resp cmkapi.TenantWorkflowConfiguration
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-	require.NotNil(t, resp.MinimumApprovals)
-	assert.Equal(t, 2, *resp.MinimumApprovals)
+	require.NotNil(t, resp.RequiredApprovals)
+	assert.Equal(t, 2, *resp.RequiredApprovals)
 
 	require.NotNil(t, resp.RetentionPeriodDays)
 	assert.Equal(t, 7, *resp.RetentionPeriodDays)
 
-	require.NotNil(t, resp.MaxExpiryPeriodDays)
-	assert.Equal(t, 7, *resp.MaxExpiryPeriodDays)
-
-	require.NotNil(t, resp.DefaultExpiryPeriodDays)
-	assert.Equal(t, 6, *resp.DefaultExpiryPeriodDays)
+	require.NotNil(t, resp.ExpiryPeriodDays)
+	assert.Equal(t, 6, *resp.ExpiryPeriodDays)
 }

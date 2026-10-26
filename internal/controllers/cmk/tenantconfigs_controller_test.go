@@ -118,8 +118,8 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 
 		// Test
 		response := getWorkflowConfig(t, sv, tenant, headers)
-		assert.NotNil(t, response.MinimumApprovals)
-		assert.Equal(t, 3, *response.MinimumApprovals)
+		assert.NotNil(t, response.RequiredApprovals)
+		assert.Equal(t, 3, *response.RequiredApprovals)
 		assert.NotNil(t, response.RetentionPeriodDays)
 		assert.Equal(t, 30, *response.RetentionPeriodDays)
 	})
@@ -143,7 +143,7 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 		response := getWorkflowConfig(t, sv, tenant, headers)
 
 		assert.NotNil(t, response.Enabled)
-		assert.NotNil(t, response.MinimumApprovals)
+		assert.NotNil(t, response.RequiredApprovals)
 		assert.NotNil(t, response.RetentionPeriodDays)
 	})
 }
@@ -153,10 +153,14 @@ func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Co
 
 	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 		wc.Enabled = true
-		wc.MinimumApprovals = 3
+		wc.MinAllowedApprovals = 3
+		wc.MaxAllowedApprovals = constants.MaxAllowedApprovals
+		wc.RequiredApprovals = 3
 		wc.RetentionPeriodDays = 30
-		wc.DefaultExpiryPeriodDays = constants.DefaultExpiryPeriodDays
-		wc.MaxExpiryPeriodDays = constants.DefaultMaxExpiryPeriodDays
+		wc.MinAllowedRetentionPeriodDays = constants.MinRetentionPeriodDays
+		wc.MaxAllowedRetentionPeriodDays = constants.MaxRetentionPeriodDays
+		wc.ExpiryPeriodDays = constants.DefaultExpiryPeriodDays
+		wc.MaxAllowedExpiryPeriodDays = constants.MaxAllowedExpiryPeriodDays
 	}))
 }
 
@@ -182,7 +186,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 
 		// Test: Update config
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals:    new(5),
+			RequiredApprovals:   new(5),
 			RetentionPeriodDays: new(30),
 		}
 
@@ -200,8 +204,8 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		require.NoError(t, err)
 
-		assert.NotNil(t, response.MinimumApprovals)
-		assert.Equal(t, 5, *response.MinimumApprovals)
+		assert.NotNil(t, response.RequiredApprovals)
+		assert.Equal(t, 5, *response.RequiredApprovals)
 		assert.NotNil(t, response.RetentionPeriodDays)
 		assert.Equal(t, 30, *response.RetentionPeriodDays)
 		assert.NotNil(t, response.Enabled)
@@ -249,7 +253,9 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		r := sql.NewRepository(db)
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
-		setupDefaultWorkflowConfig(t, r, ctx)
+		testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+			wc.MaxAllowedExpiryPeriodDays = 5
+		}))
 
 		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
@@ -260,8 +266,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: new(7),
-			MaxExpiryPeriodDays:     new(5),
+			ExpiryPeriodDays: new(7),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -282,7 +287,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		assert.Equal(t, "defaultExpiryPeriodDays", (*errResp.Error.Context)["setting"])
 	})
 
-	t.Run("Should 400 INVALID_SETTING when minimumApprovals is less than 2", func(t *testing.T) {
+	t.Run("Should 400 INVALID_SETTING when requiredApprovals is less than 2", func(t *testing.T) {
 		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
@@ -299,7 +304,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: new(1),
+			RequiredApprovals: new(1),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -545,9 +550,13 @@ func setupDefaultWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx con
 
 	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 		wc.Enabled = false
-		wc.MinimumApprovals = constants.DefaultMinimumApprovalCount
+		wc.MinAllowedApprovals = constants.MinAllowedApprovals
+		wc.MaxAllowedApprovals = constants.MaxAllowedApprovals
+		wc.RequiredApprovals = constants.MinAllowedApprovals
 		wc.RetentionPeriodDays = constants.DefaultRetentionPeriodDays
-		wc.DefaultExpiryPeriodDays = constants.DefaultExpiryPeriodDays
-		wc.MaxExpiryPeriodDays = constants.DefaultMaxExpiryPeriodDays
+		wc.MinAllowedRetentionPeriodDays = constants.MinRetentionPeriodDays
+		wc.MaxAllowedRetentionPeriodDays = constants.MaxRetentionPeriodDays
+		wc.ExpiryPeriodDays = constants.DefaultExpiryPeriodDays
+		wc.MaxAllowedExpiryPeriodDays = constants.MaxAllowedExpiryPeriodDays
 	}))
 }

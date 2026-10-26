@@ -218,7 +218,7 @@ plugins:
 
 workflows:
   enabled: false
-  minimumApprovals: 2
+  requiredApprovals: 2
 
 keystorePool:
   size: 2

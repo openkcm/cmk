@@ -130,7 +130,7 @@ func TestFeatureFlagsFile(t *testing.T) {
 
 	// The flag provider is global: CMK initializes it once per process.
 	t.Cleanup(openfeature.Shutdown)
-	load := func(t *testing.T, path string) *manager.TenantConfigManager {
+	load := func(t *testing.T, path string) manager.FeatureFlags {
 		t.Helper()
 		openfeature.Shutdown()
 		cfg := &config.Config{}
@@ -139,7 +139,7 @@ func TestFeatureFlagsFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CMK does not start with feature flags file %s: %v", path, err)
 		}
-		return manager.NewTenantConfigManager(nil, nil, cfg, nil, featureflags.NewClient())
+		return manager.NewFeatureFlags(cfg, nil, featureflags.NewClient())
 	}
 
 	t.Run("documented example", func(t *testing.T) {

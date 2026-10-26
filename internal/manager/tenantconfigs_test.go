@@ -336,13 +336,13 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: new(3),
+			RequiredApprovals: new(3),
 		})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
 		assert.True(t, result.Enabled)
-		assert.Equal(t, 3, result.MinimumApprovals)
+		assert.Equal(t, 3, result.RequiredApprovals)
 		assert.Equal(t, 30, result.RetentionPeriodDays)
 	})
 
@@ -352,16 +352,16 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals:    new(3),
+			RequiredApprovals:   new(3),
 			RetentionPeriodDays: new(30),
 		})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
 		assert.True(t, result.Enabled)
-		assert.Equal(t, 3, result.MinimumApprovals)
+		assert.Equal(t, 3, result.RequiredApprovals)
 		assert.Equal(t, 30, result.RetentionPeriodDays)
-		assert.Equal(t, 7, result.DefaultExpiryPeriodDays)
+		assert.Equal(t, 7, result.ExpiryPeriodDays)
 	})
 
 	t.Run("Should fail when retention period is less than minimum", func(t *testing.T) {
@@ -398,8 +398,8 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: new(15),
-			MaxExpiryPeriodDays:     new(10),
+			ExpiryPeriodDays:           new(15),
+			MaxAllowedExpiryPeriodDays: new(10),
 		})
 
 		assert.Error(t, err)
@@ -413,14 +413,14 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: new(7),
-			MaxExpiryPeriodDays:     new(7),
+			ExpiryPeriodDays:           new(7),
+			MaxAllowedExpiryPeriodDays: new(7),
 		})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, 7, result.DefaultExpiryPeriodDays)
-		assert.Equal(t, 7, result.MaxExpiryPeriodDays)
+		assert.Equal(t, 7, result.ExpiryPeriodDays)
+		assert.Equal(t, 7, result.MaxAllowedExpiryPeriodDays)
 	})
 
 	t.Run("Should fail when minimumApprovals is less than 2", func(t *testing.T) {
@@ -429,7 +429,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: new(1),
+			RequiredApprovals: new(1),
 		})
 
 		assert.Error(t, err)
@@ -443,7 +443,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: new(6),
+			RequiredApprovals: new(6),
 		})
 
 		assert.Error(t, err)
@@ -457,12 +457,12 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 		result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: new(2),
+			RequiredApprovals: new(2),
 		})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, 2, result.MinimumApprovals)
+		assert.Equal(t, 2, result.MinAllowedApprovals)
 	})
 
 	t.Run("Should create default config when updating non-existent config", func(t *testing.T) {
@@ -488,7 +488,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
 		assert.True(t, result.Enabled)
-		assert.Equal(t, 2, result.MinimumApprovals)
+		assert.Equal(t, 2, result.MinAllowedApprovals)
 		assert.Equal(t, 30, result.RetentionPeriodDays)
 	})
 
@@ -541,14 +541,14 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				MinimumApprovals:    new(5),
+				RequiredApprovals:   new(5),
 				RetentionPeriodDays: new(30),
 			})
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
 			assert.True(t, result.Enabled)
-			assert.Equal(t, 5, result.MinimumApprovals)
+			assert.Equal(t, 5, result.RequiredApprovals)
 			assert.Equal(t, 30, result.RetentionPeriodDays)
 		})
 
@@ -560,14 +560,14 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
 				Enabled:             new(true),
-				MinimumApprovals:    new(4),
+				RequiredApprovals:   new(4),
 				RetentionPeriodDays: new(30),
 			})
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
 			assert.True(t, result.Enabled)
-			assert.Equal(t, 4, result.MinimumApprovals)
+			assert.Equal(t, 4, result.RequiredApprovals)
 			assert.Equal(t, 30, result.RetentionPeriodDays)
 		})
 
@@ -577,14 +577,14 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 			setupConfig(t, configManager, ctx, testutils.NewDefaultWorkflowConfig(true))
 
 			result, err := configManager.UpdateWorkflowConfig(ctx, &cmkapi.TenantWorkflowConfiguration{
-				Enabled:          new(true),
-				MinimumApprovals: new(3),
+				Enabled:           new(true),
+				RequiredApprovals: new(3),
 			})
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
 			assert.True(t, result.Enabled)
-			assert.Equal(t, 3, result.MinimumApprovals)
+			assert.Equal(t, 3, result.RequiredApprovals)
 		})
 	})
 }
@@ -971,14 +971,15 @@ func TestSetWorkflowConfig_FlatRoundTrip(t *testing.T) {
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
 	wc := &model.WorkflowConfig{
-		Enabled:                 true,
-		MinimumApprovals:        2,
-		MaxApprovals:            constants.MaxMinimumApprovals,
-		RetentionPeriodDays:     30,
-		MinRetentionPeriodDays:  constants.MinRetentionPeriodDays,
-		MaxRetentionPeriodDays:  constants.MaxRetentionPeriodDays,
-		DefaultExpiryPeriodDays: 7,
-		MaxExpiryPeriodDays:     7,
+		Enabled:                       true,
+		MinAllowedApprovals:           2,
+		RequiredApprovals:             2,
+		MaxAllowedApprovals:           constants.MaxAllowedApprovals,
+		RetentionPeriodDays:           30,
+		MinAllowedRetentionPeriodDays: constants.MinRetentionPeriodDays,
+		MaxAllowedRetentionPeriodDays: constants.MaxRetentionPeriodDays,
+		ExpiryPeriodDays:              7,
+		MaxAllowedExpiryPeriodDays:    7,
 	}
 
 	stored, err := m.SetWorkflowConfig(ctx, wc)
@@ -1098,10 +1099,14 @@ func TestSetDefaultKeystore_FlatRoundTrip(t *testing.T) {
 func TestValidateWorkflowConfig(t *testing.T) {
 	valid := func() *model.WorkflowConfig {
 		return &model.WorkflowConfig{
-			MinimumApprovals:        constants.DefaultMinimumApprovalCount,
-			RetentionPeriodDays:     constants.DefaultRetentionPeriodDays,
-			DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
-			MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
+			MinAllowedApprovals:           constants.MinAllowedApprovals,
+			RequiredApprovals:             constants.MinAllowedApprovals,
+			MaxAllowedApprovals:           constants.MaxAllowedApprovals,
+			RetentionPeriodDays:           constants.DefaultRetentionPeriodDays,
+			MinAllowedRetentionPeriodDays: constants.MinRetentionPeriodDays,
+			MaxAllowedRetentionPeriodDays: constants.MaxRetentionPeriodDays,
+			ExpiryPeriodDays:              constants.DefaultExpiryPeriodDays,
+			MaxAllowedExpiryPeriodDays:    constants.MaxAllowedExpiryPeriodDays,
 		}
 	}
 
@@ -1121,13 +1126,13 @@ func TestValidateWorkflowConfig(t *testing.T) {
 			c.RetentionPeriodDays = constants.MaxRetentionPeriodDays + 1
 		}, manager.ErrRetentionExceedsMaximum},
 		{"default expiry exceeds max", func(c *model.WorkflowConfig) {
-			c.DefaultExpiryPeriodDays = c.MaxExpiryPeriodDays + 1
+			c.ExpiryPeriodDays = c.MaxAllowedExpiryPeriodDays + 1
 		}, manager.ErrDefaultExpiryExceedsMax},
 		{"minimum approvals too low", func(c *model.WorkflowConfig) {
-			c.MinimumApprovals = 1
+			c.RequiredApprovals = constants.MinAllowedApprovals - 1
 		}, manager.ErrMinimumApprovalsTooLow},
 		{"minimum approvals too high", func(c *model.WorkflowConfig) {
-			c.MinimumApprovals = constants.MaxMinimumApprovals + 1
+			c.RequiredApprovals = constants.MaxAllowedApprovals + 1
 		}, manager.ErrMinimumApprovalsTooHigh},
 	}
 	for _, tt := range tests {

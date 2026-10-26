@@ -329,11 +329,15 @@ func NewTenant(m func(t *model.Tenant)) *model.Tenant {
 
 func NewWorkflowConfig(m func(*model.WorkflowConfig)) *model.WorkflowConfig {
 	wc := &model.WorkflowConfig{
-		Enabled:                 true,
-		MinimumApprovals:        constants.DefaultMinimumApprovalCount,
-		RetentionPeriodDays:     constants.DefaultRetentionPeriodDays,
-		DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
-		MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
+		Enabled:                       true,
+		MinAllowedApprovals:           constants.MinAllowedApprovals,
+		MaxAllowedApprovals:           constants.MaxAllowedApprovals,
+		RequiredApprovals:             constants.MinAllowedApprovals,
+		RetentionPeriodDays:           constants.DefaultRetentionPeriodDays,
+		MinAllowedRetentionPeriodDays: constants.MinRetentionPeriodDays,
+		MaxAllowedRetentionPeriodDays: constants.MaxRetentionPeriodDays,
+		ExpiryPeriodDays:              constants.DefaultExpiryPeriodDays,
+		MaxAllowedExpiryPeriodDays:    constants.MaxAllowedExpiryPeriodDays,
 	}
 	if m != nil {
 		m(wc)
@@ -344,10 +348,14 @@ func NewWorkflowConfig(m func(*model.WorkflowConfig)) *model.WorkflowConfig {
 
 func NewDefaultWorkflowConfig(enabled bool) *model.WorkflowConfig {
 	return &model.WorkflowConfig{
-		Enabled:                 enabled,
-		MinimumApprovals:        constants.DefaultMinimumApprovalCount,
-		RetentionPeriodDays:     constants.DefaultRetentionPeriodDays,
-		DefaultExpiryPeriodDays: constants.DefaultExpiryPeriodDays,
-		MaxExpiryPeriodDays:     constants.DefaultMaxExpiryPeriodDays,
+		Enabled:                       enabled,
+		MinAllowedApprovals:           constants.MinAllowedApprovals,
+		MaxAllowedApprovals:           constants.MaxAllowedApprovals,
+		RequiredApprovals:             constants.MinAllowedApprovals,
+		RetentionPeriodDays:           constants.DefaultRetentionPeriodDays,
+		MinAllowedRetentionPeriodDays: constants.MinRetentionPeriodDays,
+		MaxAllowedRetentionPeriodDays: constants.MaxRetentionPeriodDays,
+		ExpiryPeriodDays:              constants.DefaultExpiryPeriodDays,
+		MaxAllowedExpiryPeriodDays:    constants.MaxAllowedExpiryPeriodDays,
 	}
 }

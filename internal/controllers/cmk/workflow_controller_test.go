@@ -564,7 +564,7 @@ func TestWorkflowControllerCreateWorkflow_InsufficientApprovers(t *testing.T) {
 	// Register the authClient's group in the IDM plugin with only 1 member (insufficient)
 	groupSCIMID := uuid.NewString()
 	idmPlugin.PutGroup(authClient.Group.IAMIdentifier, groupSCIMID)
-	// Add only 1 member (initiator) - insufficient for minimumApprovals=2
+	// Add only 1 member (initiator) - insufficient for requiredApprovals=2
 	idmPlugin.PutGroupMembers(groupSCIMID, []string{
 		authClient.Identifier,
 	})
