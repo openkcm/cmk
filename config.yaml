@@ -234,6 +234,12 @@ keystorePool:
       technicalName: us-east-1
     - name: "United States (Ohio)"
       technicalName: us-east-2
+    - name: Asia
+      technicalName: asia
+    - name: "Europe"
+      technicalName: eu
+    - name: "United States"
+      technicalName: us
 certificates:
   rootCertURL: https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt
   validityDays: 30
