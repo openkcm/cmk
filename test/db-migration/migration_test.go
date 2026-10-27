@@ -1829,6 +1829,92 @@ func TestDataMigrations(t *testing.T) {
 			},
 		},
 		{
+			name:          "Should set defaults for zero-value keys after rename",
+			target:        db.TenantTarget,
+			version:       7,
+			schemaVersion: new(int64(26)),
+			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					return db.Exec(`
+						INSERT INTO tenant_configs ("key", value, "type") VALUES
+							('minimum_approvals',          '2',  'workflow'),
+							('max_approvals',              '0',  'workflow'),
+							('min_retention_period_days',  '0',  'workflow'),
+							('max_retention_period_days',  '0',  'workflow'),
+							('default_expiry_period_days', '0',  'workflow'),
+							('max_expiry_period_days',     '1',  'workflow')
+					`).Error
+				}
+			},
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value"`
+					}
+					var rows []row
+					err := db.Raw(
+						`SELECT "key", value FROM tenant_configs WHERE "type" = 'workflow' ORDER BY "key"`,
+					).Scan(&rows).Error
+					assert.NoError(t, err)
+
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+
+					assert.Equal(t, "2", byKey["required_approvals"])
+					assert.Equal(t, "2", byKey["min_allowed_approvals"])
+					assert.Equal(t, "5", byKey["max_allowed_approvals"])
+					assert.Equal(t, "30", byKey["retention_period_days"])
+					assert.Equal(t, "7", byKey["min_allowed_retention_period_days"])
+					assert.Equal(t, "30", byKey["max_allowed_retention_period_days"])
+					assert.Equal(t, "7", byKey["expiry_period_days"])
+					assert.Equal(t, "1", byKey["max_allowed_expiry_period_days"])
+
+					return nil
+				}
+			},
+		},
+		{
+			name:          "Should create missing workflow config keys with defaults",
+			target:        db.TenantTarget,
+			version:       7,
+			schemaVersion: new(int64(26)),
+			assertMigration: func(t *testing.T) func(db *multitenancy.DB) error {
+				t.Helper()
+				return func(db *multitenancy.DB) error {
+					type row struct {
+						Key   string `gorm:"column:key"`
+						Value string `gorm:"column:value"`
+					}
+					var rows []row
+					err := db.Raw(
+						`SELECT "key", value FROM tenant_configs WHERE "type" = 'workflow' ORDER BY "key"`,
+					).Scan(&rows).Error
+					assert.NoError(t, err)
+
+					byKey := make(map[string]string, len(rows))
+					for _, r := range rows {
+						byKey[r.Key] = r.Value
+					}
+
+					assert.Equal(t, "2", byKey["required_approvals"])
+					assert.Equal(t, "2", byKey["min_allowed_approvals"])
+					assert.Equal(t, "5", byKey["max_allowed_approvals"])
+					assert.Equal(t, "30", byKey["retention_period_days"])
+					assert.Equal(t, "7", byKey["min_allowed_retention_period_days"])
+					assert.Equal(t, "30", byKey["max_allowed_retention_period_days"])
+					assert.Equal(t, "7", byKey["expiry_period_days"])
+					assert.Equal(t, "7", byKey["max_allowed_expiry_period_days"])
+
+					return nil
+				}
+			},
+		},
+		{
 			name:          "Should migrate down 00007 rename workflow config keys",
 			target:        db.TenantTarget,
 			version:       7,
@@ -1837,6 +1923,8 @@ func TestDataMigrations(t *testing.T) {
 			setupData: func(t *testing.T) func(db *multitenancy.DB) error {
 				t.Helper()
 				return func(db *multitenancy.DB) error {
+					// migration 7 already ran (setupVersion=version), so UPDATE
+					// the rows it created rather than re-inserting them.
 					return db.Exec(`
 						INSERT INTO tenant_configs ("key", value, "type") VALUES
 							('required_approvals',              '2',  'workflow'),
@@ -1846,6 +1934,7 @@ func TestDataMigrations(t *testing.T) {
 							('max_allowed_retention_period_days', '30', 'workflow'),
 							('expiry_period_days',              '7',  'workflow'),
 							('max_allowed_expiry_period_days',  '7',  'workflow')
+						ON CONFLICT ("key", "type") DO UPDATE SET value = EXCLUDED.value
 					`).Error
 				}
 			},
