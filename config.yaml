@@ -224,6 +224,7 @@ keystorePool:
   size: 2
   interval: 10m
   supportedRegions:
+    #samples for single regions
     - name: "Europe (Frankfurt)"
       technicalName: eu-central-1
     - name: "Europe (Ireland)"
@@ -233,7 +234,8 @@ keystorePool:
     - name: "United States (N. Virginia)"
       technicalName: us-east-1
     - name: "United States (Ohio)"
-      technicalName: us-east-2
+      technicalName: us-east-2    
+    #samples for multiple regions
     - name: Asia
       technicalName: asia
     - name: "Europe"
