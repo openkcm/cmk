@@ -24,7 +24,7 @@ require (
 	github.com/openkcm/api-sdk v0.23.0
 	github.com/openkcm/common-sdk v1.21.0
 	github.com/openkcm/orbital v0.6.2
-	github.com/openkcm/plugin-sdk v0.17.0
+	github.com/openkcm/plugin-sdk v0.19.0
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/samber/oops v1.23.2
