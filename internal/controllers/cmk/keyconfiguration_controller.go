@@ -184,7 +184,7 @@ func (c *APIController) GetKeyConfigurationCertificates(
 		return nil, errs.Wrap(apierrors.ErrGetClientCertificates, err)
 	}
 
-	response, err := clientcertificates.ToAPI(clientCerts)
+	response, err := clientcertificates.ToAPI(clientCerts, c.config.Certificates.DisableHYOKCertAuth)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetClientCertificates, err)
 	}
