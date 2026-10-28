@@ -28,7 +28,7 @@ func transformCertificate(c model.ClientCertificate) (*cmkapi.Certificate, error
 	}, nil
 }
 
-func ToAPI(cc model.ClientCertificates) (*cmkapi.ClientCertificates, error) {
+func ToAPI(cc model.ClientCertificates, disableHYOKCertAuth bool) (*cmkapi.ClientCertificates, error) {
 	for _, v := range cc {
 		err := sanitise.Sanitize(&v)
 		if err != nil {
@@ -52,7 +52,7 @@ func ToAPI(cc model.ClientCertificates) (*cmkapi.ClientCertificates, error) {
 		return nil, err
 	}
 
-	return &cmkapi.ClientCertificates{
+	result := &cmkapi.ClientCertificates{
 		TenantDefault: &cmkapi.CertificateList{
 			Count: new(len(tenantDefaultCertList)),
 			Value: tenantDefaultCertList,
@@ -61,5 +61,11 @@ func ToAPI(cc model.ClientCertificates) (*cmkapi.ClientCertificates, error) {
 			Count: new(len(cryptoCertList)),
 			Value: cryptoCertList,
 		},
-	}, nil
+	}
+
+	if disableHYOKCertAuth {
+		result.NotRequiredForHYOK = &disableHYOKCertAuth
+	}
+
+	return result, nil
 }

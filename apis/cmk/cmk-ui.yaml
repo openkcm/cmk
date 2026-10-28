@@ -1921,6 +1921,11 @@ components:
           $ref: "#/components/schemas/CertificateList"
         crypto:
           $ref: "#/components/schemas/CertificateList"
+        notRequiredForHYOK:
+          type: boolean
+          description: |
+            When true, HYOK certificate authentication is disabled and certificates
+            are not required for HYOK connections.
     CertificateList:
       type: object
       required:
