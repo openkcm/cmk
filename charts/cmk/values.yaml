@@ -1741,7 +1741,7 @@ config:
   # 0 keeps CMK's default, which equals the value below.
   workflow:
     # -- Approvals required, 2 to 5. Higher values are reduced to 5.
-    defaultMinimumApprovals: 2
+    defaultRequiredApprovals: 2
     # -- Days that finished workflows are kept, 7 to 30. Values outside are moved into the
     # range.
     defaultRetentionPeriodDays: 30

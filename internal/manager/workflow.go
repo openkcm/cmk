@@ -293,11 +293,7 @@ func (w *WorkflowManager) CheckWorkflow(
 	}
 
 	// User is allowed to create workflow, now check if workflow can be created
-	requiredApprovals := constants.MinAllowedApprovals
-	if workflowConfig.MinAllowedApprovals > 0 {
-		requiredApprovals = workflowConfig.MinAllowedApprovals
-	}
-	status, err := w.checkWorkflow(ctx, workflow, workflowConfig.Enabled, requiredApprovals, keyConfigs)
+	status, err := w.checkWorkflow(ctx, workflow, workflowConfig.Enabled, workflowConfig.RequiredApprovals, keyConfigs)
 	return transformCheckWorkflowError(status, err)
 }
 
@@ -1396,7 +1392,7 @@ func (w *WorkflowManager) getWorkflowLifecycleWithEligibility(
 		if err != nil {
 			return nil, oops.Join(ErrGetWorkflowConfig, err)
 		}
-		requiredApprovals = workflowConfig.MinAllowedApprovals
+		requiredApprovals = workflowConfig.RequiredApprovals
 	}
 
 	workflowLifecycle := wf.NewLifecycle(

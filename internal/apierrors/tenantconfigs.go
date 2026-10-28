@@ -57,7 +57,7 @@ var tenantconfig = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{ErrSetWorkflowConfig, manager.ErrDefaultExpiryExceedsMax},
+		InternalErrorChain: []error{ErrSetWorkflowConfig, manager.ErrExpiryExceedsMax},
 		ExposedError: &APIError{
 			Code:    "INVALID_SETTING",
 			Message: "defaultExpiryPeriodDays must be less than or equal to maxExpiryPeriodDays",

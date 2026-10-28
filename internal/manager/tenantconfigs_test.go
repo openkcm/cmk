@@ -404,7 +404,7 @@ func TestUpdateWorkflowConfig(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.ErrorIs(t, err, manager.ErrDefaultExpiryExceedsMax)
+		assert.ErrorIs(t, err, manager.ErrExpiryExceedsMax)
 	})
 
 	t.Run("Should succeed when defaultExpiryPeriodDays equals maxExpiryPeriodDays", func(t *testing.T) {
@@ -1127,7 +1127,7 @@ func TestValidateWorkflowConfig(t *testing.T) {
 		}, manager.ErrRetentionExceedsMaximum},
 		{"default expiry exceeds max", func(c *model.WorkflowConfig) {
 			c.ExpiryPeriodDays = c.MaxAllowedExpiryPeriodDays + 1
-		}, manager.ErrDefaultExpiryExceedsMax},
+		}, manager.ErrExpiryExceedsMax},
 		{"minimum approvals too low", func(c *model.WorkflowConfig) {
 			c.RequiredApprovals = constants.MinAllowedApprovals - 1
 		}, manager.ErrMinimumApprovalsTooLow},

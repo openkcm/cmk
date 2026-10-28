@@ -120,7 +120,7 @@ func TestConfigMapValues(t *testing.T) {
 				"migrator:",
 				"certX509Trusts:",
 				"systemLimit: 50",
-				"defaultMinimumApprovals: 2",
+				"defaultRequiredApprovals: 2",
 				"pendingCreationTimeout: 15m",
 			},
 			// Chart settings are not CMK settings: CMK rejects unknown keys.
@@ -169,8 +169,10 @@ func TestConfigMapNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("helm template failed: %v\n%s", err, out)
 	}
-	for _, name := range []string{"cmk-eu10-config", "cmk-eu10-tenant-manager-config", "cmk-eu10-event-reconciler-config",
-		"cmk-eu10-task-scheduler-config", "cmk-eu10-task-worker-config", "cmk-eu10-db-migrator-config"} {
+	for _, name := range []string{
+		"cmk-eu10-config", "cmk-eu10-tenant-manager-config", "cmk-eu10-event-reconciler-config",
+		"cmk-eu10-task-scheduler-config", "cmk-eu10-task-worker-config", "cmk-eu10-db-migrator-config",
+	} {
 		if document(out, "ConfigMap", name) == "" {
 			t.Errorf("ConfigMap %s not rendered", name)
 		}
@@ -218,8 +220,10 @@ func TestConfigMapReferences(t *testing.T) {
 // component.
 func TestChecksumPerComponent(t *testing.T) {
 	base := checksums(t, render(t, "--set", "cmkctl.deploy=true"))
-	for _, name := range []string{"cmk", "cmk-tenant-manager", "cmk-event-reconciler", "cmk-task-scheduler",
-		"cmk-task-worker", "cmk-cmkctl", "cmk-schema-db-migrator", "cmk-data-db-migrator"} {
+	for _, name := range []string{
+		"cmk", "cmk-tenant-manager", "cmk-event-reconciler", "cmk-task-scheduler",
+		"cmk-task-worker", "cmk-cmkctl", "cmk-schema-db-migrator", "cmk-data-db-migrator",
+	} {
 		if base[name] == "" {
 			t.Fatalf("%s has no checksum/config annotation", name)
 		}

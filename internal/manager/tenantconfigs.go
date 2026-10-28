@@ -76,7 +76,7 @@ var (
 	ErrRetentionExceedsMaximum = errors.New("retention exceeds the maximum allowed (" +
 		strconv.Itoa(constants.MaxRetentionPeriodDays) + " days)")
 	ErrWorkflowEnableDisableNotAllowed = errors.New("workflow enable/disable is only allowed for ROLE_TEST tenants")
-	ErrDefaultExpiryExceedsMax         = errors.New("defaultExpiryPeriodDays must be" +
+	ErrExpiryExceedsMax                = errors.New("expiryPeriodDays must be" +
 		" less than or equal to maxExpiryPeriodDays")
 	ErrMinimumApprovalsTooLow  = errors.New("requiredApprovals must be at least 2")
 	ErrMinimumApprovalsTooHigh = errors.New("requiredApprovals must be at most " +
@@ -236,7 +236,7 @@ func validateWorkflowConfig(config *model.WorkflowConfig) error {
 		return ErrRetentionExceedsMaximum
 	}
 	if config.ExpiryPeriodDays > config.MaxAllowedExpiryPeriodDays {
-		return ErrDefaultExpiryExceedsMax
+		return ErrExpiryExceedsMax
 	}
 	if config.RequiredApprovals < config.MinAllowedApprovals {
 		return ErrMinimumApprovalsTooLow
@@ -503,9 +503,9 @@ func (m *TenantConfigManager) getDefaultWorkflowConfig(defaultEnabled bool) *mod
 // applyDeploymentConfigOverrides applies deployment config values to workflow config
 // to override any default values. Values are clamped to hard limits.
 func (m *TenantConfigManager) applyDeploymentConfigOverrides(config *model.WorkflowConfig) {
-	if m.cfg.Workflow.DefaultMinimumApprovals > 0 {
-		v := min(m.cfg.Workflow.DefaultMinimumApprovals, constants.MaxAllowedApprovals)
-		config.MinAllowedApprovals = v
+	if m.cfg.Workflow.DefaultRequiredApprovals > 0 {
+		v := min(m.cfg.Workflow.DefaultRequiredApprovals, constants.MaxAllowedApprovals)
+		config.RequiredApprovals = v
 	}
 	if m.cfg.Workflow.DefaultRetentionPeriodDays > 0 {
 		v := max(m.cfg.Workflow.DefaultRetentionPeriodDays, constants.MinRetentionPeriodDays)
