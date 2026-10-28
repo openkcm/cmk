@@ -50,8 +50,8 @@ func New(
 	asyncClient async.Client,
 	migrator db.Migrator,
 	flags featureflags.Client,
+	cmkAuditor *auditor.Auditor,
 ) *Manager {
-	cmkAuditor := auditor.New(ctx, config)
 	certManager := NewCertificateManager(ctx, r, svcRegistry, config)
 	flagManager := NewFeatureFlags(config, svcRegistry, flags)
 	tenantConfigManager := NewTenantConfigManager(r, svcRegistry, config, certManager, flagManager)
