@@ -57,7 +57,7 @@ var tenantconfig = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{ErrSetWorkflowConfig, manager.ErrDefaultExpiryExceedsMax},
+		InternalErrorChain: []error{ErrSetWorkflowConfig, manager.ErrExpiryExceedsMax},
 		ExposedError: &APIError{
 			Code:    "INVALID_SETTING",
 			Message: "defaultExpiryPeriodDays must be less than or equal to maxExpiryPeriodDays",
@@ -71,11 +71,11 @@ var tenantconfig = []errs.ExposedErrors[*APIError]{
 		InternalErrorChain: []error{ErrSetWorkflowConfig, manager.ErrMinimumApprovalsTooLow},
 		ExposedError: &APIError{
 			Code:    "INVALID_SETTING",
-			Message: "minimumApprovals must be at least 2",
+			Message: "requiredApprovals must be at least 2",
 			Status:  http.StatusBadRequest,
 		},
 		ContextGetter: func(_ error) map[string]any {
-			return map[string]any{"setting": "minimumApprovals"}
+			return map[string]any{"setting": "requiredApprovals"}
 		},
 	},
 	{

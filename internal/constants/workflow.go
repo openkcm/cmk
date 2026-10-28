@@ -15,13 +15,13 @@ package constants
 // manager validation, and database CHECK constraints) and are covered by
 // security tests. Do not widen these bounds without a security review.
 const (
-	DefaultMinimumApprovalCount = 2
-	MaxMinimumApprovals         = 5
+	MinAllowedApprovals = 2
+	MaxAllowedApprovals = 5
 
 	MinRetentionPeriodDays     = 7
 	DefaultRetentionPeriodDays = 30
 	MaxRetentionPeriodDays     = 30
 
 	DefaultExpiryPeriodDays    = 7
-	DefaultMaxExpiryPeriodDays = 7
+	MaxAllowedExpiryPeriodDays = 7
 )

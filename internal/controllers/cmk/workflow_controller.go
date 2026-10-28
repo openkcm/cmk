@@ -27,7 +27,7 @@ func (c *APIController) CheckWorkflow(
 	}
 
 	workflow, err := wfTransform.FromAPI(ctx, *request.Body,
-		workflowConfig.DefaultExpiryPeriodDays, workflowConfig.MaxExpiryPeriodDays)
+		workflowConfig.ExpiryPeriodDays, workflowConfig.MaxAllowedExpiryPeriodDays)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
 	}
@@ -163,7 +163,7 @@ func (c *APIController) CreateWorkflow(ctx context.Context,
 	}
 
 	workflow, err := wfTransform.FromAPI(ctx, *request.Body,
-		workflowConfig.DefaultExpiryPeriodDays, workflowConfig.MaxExpiryPeriodDays)
+		workflowConfig.ExpiryPeriodDays, workflowConfig.MaxAllowedExpiryPeriodDays)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrTransformWorkflowFromAPI, err)
 	}

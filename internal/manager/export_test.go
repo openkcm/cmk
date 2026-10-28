@@ -91,13 +91,13 @@ func (w *WorkflowManager) SetAsyncClient(client async.Client) {
 func (w *WorkflowManager) ValidateApproverCount(
 	ctx context.Context,
 	workflow *model.Workflow,
-	minimumApprovals int,
+	requiredApprovals int,
 ) (bool, error) {
 	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
 	if err != nil {
 		return false, err
 	}
-	return w.validateApproverCount(ctx, workflow, minimumApprovals, keyConfigs)
+	return w.validateApproverCount(ctx, workflow, requiredApprovals, keyConfigs)
 }
 
 func (m *TenantManager) UnmapSystemErrorCanContinue(ctx context.Context, err error) OffboardingStatus {

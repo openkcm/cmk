@@ -2126,8 +2126,8 @@ func setupEligibilityTest(
 
 	// Create tenant workflow config with minimum approvals matching approver count
 	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
-		if approverCount >= constants.DefaultMinimumApprovalCount && approverCount <= constants.MaxMinimumApprovals {
-			wc.MinimumApprovals = approverCount
+		if approverCount >= constants.MinAllowedApprovals && approverCount <= constants.MaxAllowedApprovals {
+			wc.MinAllowedApprovals = approverCount
 		}
 	}))
 
@@ -2725,7 +2725,7 @@ func TestWorkflowManager_ValidateApproverCount(t *testing.T) {
 
 	tests := []struct {
 		name              string
-		minimumApprovals  int
+		requiredApprovals int
 		groupMembers      []string // Members in the IAM group
 		expectCanCreate   bool
 		expectError       bool
@@ -2733,7 +2733,7 @@ func TestWorkflowManager_ValidateApproverCount(t *testing.T) {
 	}{
 		{
 			name:              "single member group - initiator only",
-			minimumApprovals:  2,
+			requiredApprovals: 2,
 			groupMembers:      []string{testUser1},
 			expectCanCreate:   false,
 			expectError:       true,
@@ -2741,25 +2741,25 @@ func TestWorkflowManager_ValidateApproverCount(t *testing.T) {
 		},
 		{
 			name:              "two members with min=2 - insufficient",
-			minimumApprovals:  2,
+			requiredApprovals: 2,
 			groupMembers:      []string{testUser1, testUser2},
 			expectCanCreate:   false,
 			expectError:       true,
 			expectedErrorType: workflow.ErrWorkflowGroupNotSufficientMembers,
 		},
 		{
-			name:             "three members with min=2 - exact threshold",
-			minimumApprovals: 2,
-			groupMembers:     []string{testUser1, testUser2, testUser3},
-			expectCanCreate:  true,
-			expectError:      false,
+			name:              "three members with min=2 - exact threshold",
+			requiredApprovals: 2,
+			groupMembers:      []string{testUser1, testUser2, testUser3},
+			expectCanCreate:   true,
+			expectError:       false,
 		},
 		{
-			name:             "four members with min=2 - sufficient",
-			minimumApprovals: 2,
-			groupMembers:     []string{testUser1, testUser2, testUser3, testUser4},
-			expectCanCreate:  true,
-			expectError:      false,
+			name:              "four members with min=2 - sufficient",
+			requiredApprovals: 2,
+			groupMembers:      []string{testUser1, testUser2, testUser3, testUser4},
+			expectCanCreate:   true,
+			expectError:       false,
 		},
 	}
 
@@ -2828,7 +2828,7 @@ func TestWorkflowManager_ValidateApproverCount(t *testing.T) {
 			})
 
 			// Act - call ValidateApproverCount with system context
-			canCreate, err := m.ValidateApproverCount(ctxSys, wf, tt.minimumApprovals)
+			canCreate, err := m.ValidateApproverCount(ctxSys, wf, tt.requiredApprovals)
 
 			// Assert
 			assert.Equal(t, tt.expectCanCreate, canCreate,

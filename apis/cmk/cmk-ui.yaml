@@ -2082,17 +2082,22 @@ components:
           description: The flag indicating whether workflow is enabled for the tenant
           type: boolean
           example: true
-        minimumApprovals:
-          description: The minimum number of approvals required for a workflow
+        requiredApprovals:
+          description: The number of approvals required for a workflow
           type: integer
           minimum: 2
           maximum: 5
           example: 2
-        maxApprovals:
+        minAllowedApprovals:
+          description: The minimum number of approvals required for a workflow
+          type: integer
+          example: 2
+          readOnly: true
+        maxAllowedApprovals:
           description: The hard upper limit for the minimum approvals setting
           type: integer
-          readOnly: true
           example: 5
+          readOnly: true
         retentionPeriodDays:
           description: |
             The number of days to retain completed, failed, revoked, or expired workflow
@@ -2100,28 +2105,27 @@ components:
           minimum: 7
           maximum: 30
           example: 30
-        minRetentionPeriodDays:
+        minAllowedRetentionPeriodDays:
           description: The hard lower limit for the retention period setting
           type: integer
           readOnly: true
           example: 7
-        maxRetentionPeriodDays:
+        maxAllowedRetentionPeriodDays:
           description: The hard upper limit for the retention period setting
           type: integer
           readOnly: true
           example: 30
-        defaultExpiryPeriodDays:
+        expiryPeriodDays:
           description: The default number of days before a workflow expires
           type: integer
           minimum: 1
           maximum: 7
           example: 7
-        maxExpiryPeriodDays:
+        maxAllowedExpiryPeriodDays:
           description: The maximum number of days that can be set for workflow expiry
           type: integer
-          minimum: 1
-          maximum: 7
           example: 7
+          readOnly: true
     BYOKKeystore:
       type: object
       properties:
