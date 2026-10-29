@@ -112,6 +112,15 @@ config:
           cert:     { source: file, file: { path: /etc/credentials/valkey/tls.crt, format: binary } }
           certKey:  { source: file, file: { path: /etc/credentials/valkey/tls.key, format: binary } }
           serverCa: { source: file, file: { path: /etc/credentials/valkey/ca.crt, format: binary } }
+      # For a Valkey Sentinel deployment, drop host and add sentinel (acl and secretRef are
+      # unchanged and apply to both the sentinel and data connections):
+      #   sentinel:
+      #     enabled: true
+      #     masterName: mymaster
+      #     addresses:
+      #       - valkey-sentinel-node-0.valkey-sentinel-headless.storage.svc.cluster.local:26379
+      #       - valkey-sentinel-node-1.valkey-sentinel-headless.storage.svc.cluster.local:26379
+      #       - valkey-sentinel-node-2.valkey-sentinel-headless.storage.svc.cluster.local:26379
   services:
     registry:
       enabled: true
