@@ -20,7 +20,7 @@ require (
 	github.com/moby/moby/api v1.56.1
 	github.com/oapi-codegen/nethttp-middleware v1.3.1
 	github.com/oapi-codegen/runtime v1.8.0
-	github.com/open-feature/go-sdk v1.19.0
+	github.com/open-feature/go-sdk v1.20.0
 	github.com/openkcm/api-sdk v0.23.0
 	github.com/openkcm/common-sdk v1.21.0
 	github.com/openkcm/orbital v0.6.2
