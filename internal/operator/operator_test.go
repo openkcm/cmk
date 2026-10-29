@@ -130,9 +130,10 @@ func createManagers(
 		cfg,
 		kcm,
 		um,
+		nil,
 	)
 
-	tcm := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+	tcm := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil, nil)
 
 	km := manager.NewKeyManager(
 		authzRepo,
