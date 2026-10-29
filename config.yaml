@@ -141,6 +141,15 @@ scheduler:
         value: secret
       enabled: true
     port: 6379
+    # Enable to connect through Valkey/Redis Sentinel for automatic master discovery and
+    # failover. When disabled, host and port above are used for a direct connection.
+    sentinel:
+      enabled: false
+      masterName: mymaster
+      addresses:
+        - valkey-sentinel-node-0.valkey-sentinel-headless.storage.svc.cluster.local:26379
+        - valkey-sentinel-node-1.valkey-sentinel-headless.storage.svc.cluster.local:26379
+        - valkey-sentinel-node-2.valkey-sentinel-headless.storage.svc.cluster.local:26379
     SecretRef:
       type: insecure # one of: insecure, mtls
   tasks:

@@ -126,6 +126,9 @@ func TestAsyncNew(t *testing.T) {
 		validateTLS      bool
 		validateCA       bool
 		aclEnabled       bool
+		expectSentinel   bool
+		expectedMaster   string
+		expectedAddrs    []string
 	}{
 		{
 			name:             "Valid MTLS configuration",
@@ -200,6 +203,62 @@ func TestAsyncNew(t *testing.T) {
 			validateCA:       true,
 			aclEnabled:       false,
 		},
+		{
+			name: "Valid Sentinel MTLS configuration",
+			taskQueueCfg: func() config.Redis {
+				cfg := defaultCfg
+				cfg.Sentinel = config.Sentinel{
+					Enabled:    true,
+					MasterName: "mymaster",
+					Addresses:  []string{"sentinel-0:26379", "sentinel-1:26379", "sentinel-2:26379"},
+				}
+
+				return cfg
+			}(),
+			expectError:      false,
+			expectedPassword: "password123",
+			expectedUsername: "default",
+			validateTLS:      true,
+			validateCA:       true,
+			aclEnabled:       true,
+			expectSentinel:   true,
+			expectedMaster:   "mymaster",
+			expectedAddrs:    []string{"sentinel-0:26379", "sentinel-1:26379", "sentinel-2:26379"},
+		},
+		{
+			name: "Valid Sentinel insecure configuration",
+			taskQueueCfg: config.Redis{
+				SecretRef: commoncfg.SecretRef{
+					Type: commoncfg.InsecureSecretType,
+				},
+				ACL: config.RedisACL{
+					Enabled: true,
+					Username: commoncfg.SourceRef{
+						Source: commoncfg.EmbeddedSourceValue,
+						Value:  "default",
+					},
+					Password: commoncfg.SourceRef{
+						Source: commoncfg.EmbeddedSourceValue,
+						Value:  "password123",
+					},
+				},
+				Host: commoncfg.SourceRef{
+					Source: commoncfg.EmbeddedSourceValue,
+					Value:  "localhost",
+				},
+				Sentinel: config.Sentinel{
+					Enabled:    true,
+					MasterName: "mymaster",
+					Addresses:  []string{"sentinel-0:26379"},
+				},
+			},
+			expectError:      false,
+			expectedPassword: "password123",
+			expectedUsername: "default",
+			expectSentinel:   true,
+			expectedMaster:   "mymaster",
+			expectedAddrs:    []string{"sentinel-0:26379"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -244,19 +303,39 @@ func TestAsyncNew(t *testing.T) {
 			result := app.GetTaskQueueCfg()
 
 			require.NoError(t, err)
-			assert.Equal(t, tt.expectedAddr, result.Addr)
-			assert.Equal(t, tt.expectedPassword, result.Password)
-			assert.Equal(t, tt.expectedUsername, result.Username)
+
+			var (
+				username, password string
+				tlsConfig          *tls.Config
+			)
+
+			if tt.expectSentinel {
+				opt, ok := result.(asynq.RedisFailoverClientOpt)
+				require.True(t, ok)
+				assert.Equal(t, tt.expectedMaster, opt.MasterName)
+				assert.Equal(t, tt.expectedAddrs, opt.SentinelAddrs)
+				assert.Equal(t, tt.expectedUsername, opt.SentinelUsername)
+				assert.Equal(t, tt.expectedPassword, opt.SentinelPassword)
+				username, password, tlsConfig = opt.Username, opt.Password, opt.TLSConfig
+			} else {
+				opt, ok := result.(asynq.RedisClientOpt)
+				require.True(t, ok)
+				assert.Equal(t, tt.expectedAddr, opt.Addr)
+				username, password, tlsConfig = opt.Username, opt.Password, opt.TLSConfig
+			}
+
+			assert.Equal(t, tt.expectedPassword, password)
+			assert.Equal(t, tt.expectedUsername, username)
 
 			if tt.taskQueueCfg.SecretRef.Type == commoncfg.MTLSSecretType {
-				require.NotNil(t, result.TLSConfig)
-				assert.Len(t, result.TLSConfig.Certificates, 1)
-				assert.Equal(t, uint16(tls.VersionTLS12), result.TLSConfig.MinVersion)
+				require.NotNil(t, tlsConfig)
+				assert.Len(t, tlsConfig.Certificates, 1)
+				assert.Equal(t, uint16(tls.VersionTLS12), tlsConfig.MinVersion)
 
 				ca := tt.taskQueueCfg.SecretRef.MTLS.ServerCA
 
 				if ca != nil && ca.Source != "" {
-					assert.NotNil(t, result.TLSConfig.RootCAs)
+					assert.NotNil(t, tlsConfig.RootCAs)
 				}
 			}
 		})

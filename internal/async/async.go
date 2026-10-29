@@ -2,6 +2,7 @@ package async
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log/slog"
 	"net"
@@ -69,7 +70,7 @@ type App struct {
 	asynqClient    *asynq.Client
 	asynqServer    *asynq.Server
 	asynqServerCfg asynq.Config
-	taskQueueCfg   asynq.RedisClientOpt
+	taskQueueCfg   asynq.RedisConnOpt
 	tasks          map[string]TaskHandler
 	middlewares    []Middleware
 	cfg            *conf.Config
@@ -84,30 +85,40 @@ func New(cfg *conf.Config) (*App, error) {
 		return nil, errs.Wrap(ErrLoadingDatabaseHost, err)
 	}
 
-	var redisOpts asynq.RedisClientOpt
+	var (
+		tlsConfig          *tls.Config
+		username, password string
+	)
 
 	switch taskQueueCfg.SecretRef.Type {
 	case commoncfg.InsecureSecretType:
-		taskQueueUsername, taskQueuePassword, err := loadALCAuthFromConfig(taskQueueCfg)
+		user, pass, err := loadALCAuthFromConfig(taskQueueCfg)
 		if err != nil {
 			return nil, err
 		}
 
-		redisOpts = asynq.RedisClientOpt{
-			Addr:     net.JoinHostPort(string(taskQueueHost), taskQueueCfg.Port),
-			Password: string(taskQueuePassword),
-			Username: string(taskQueueUsername),
-		}
+		username, password = string(user), string(pass)
 	case commoncfg.MTLSSecretType:
-		redisOpts, err = buildMTLSRedisClientOpt(taskQueueCfg, taskQueueHost)
+		tlsConfig, err = commoncfg.LoadMTLSConfig(&taskQueueCfg.SecretRef.MTLS)
 		if err != nil {
-			return nil, errs.Wrap(ErrMTLSRedisClientOpt, err)
+			return nil, errs.Wrap(ErrMTLSRedisClientOpt, errs.Wrap(conf.ErrLoadMTLSConfig, err))
+		}
+
+		if taskQueueCfg.ACL.Enabled {
+			user, pass, err := loadALCAuthFromConfig(taskQueueCfg)
+			if err != nil {
+				return nil, err
+			}
+
+			username, password = string(user), string(pass)
 		}
 	case commoncfg.ApiTokenSecretType, commoncfg.BasicSecretType, commoncfg.OAuth2SecretType:
 		return nil, ErrSecretTypeQueue
 	default:
 		return nil, ErrSecretTypeQueue
 	}
+
+	redisOpts := buildRedisConnOpt(taskQueueCfg, string(taskQueueHost), tlsConfig, username, password)
 
 	return &App{
 		taskQueueCfg: redisOpts,
@@ -260,31 +271,30 @@ func (a *App) Inspector() *asynq.Inspector {
 	return asynq.NewInspector(a.taskQueueCfg)
 }
 
-func buildMTLSRedisClientOpt(
+func buildRedisConnOpt(
 	taskQueueCfg conf.Redis,
-	taskQueueHost []byte,
-) (asynq.RedisClientOpt, error) {
-	tlsConfig, err := commoncfg.LoadMTLSConfig(&taskQueueCfg.SecretRef.MTLS)
-	if err != nil {
-		return asynq.RedisClientOpt{}, errs.Wrap(conf.ErrLoadMTLSConfig, err)
+	host string,
+	tlsConfig *tls.Config,
+	username, password string,
+) asynq.RedisConnOpt {
+	if taskQueueCfg.Sentinel.Enabled {
+		return asynq.RedisFailoverClientOpt{
+			MasterName:       taskQueueCfg.Sentinel.MasterName,
+			SentinelAddrs:    taskQueueCfg.Sentinel.Addresses,
+			SentinelUsername: username,
+			SentinelPassword: password,
+			Username:         username,
+			Password:         password,
+			TLSConfig:        tlsConfig,
+		}
 	}
 
-	clientOps := asynq.RedisClientOpt{
-		Addr:      net.JoinHostPort(string(taskQueueHost), taskQueueCfg.Port),
+	return asynq.RedisClientOpt{
+		Addr:      net.JoinHostPort(host, taskQueueCfg.Port),
+		Username:  username,
+		Password:  password,
 		TLSConfig: tlsConfig,
 	}
-
-	if taskQueueCfg.ACL.Enabled {
-		taskQueueUsername, taskQueuePassword, err := loadALCAuthFromConfig(taskQueueCfg)
-		if err != nil {
-			return asynq.RedisClientOpt{}, err
-		}
-
-		clientOps.Username = string(taskQueueUsername)
-		clientOps.Password = string(taskQueuePassword)
-	}
-
-	return clientOps, nil
 }
 
 func getMiddlewares(cfg conf.Config) []Middleware {
