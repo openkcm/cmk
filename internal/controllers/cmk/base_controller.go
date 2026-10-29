@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/openkcm/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/auditor"
 	"github.com/openkcm/cmk/internal/authz"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	"github.com/openkcm/cmk/internal/clients"
@@ -38,6 +39,7 @@ func NewAPIController(
 	authzRepoLoader *authz_loader.AuthzLoader[authz.RepoResourceType, authz.RepoAction],
 	authzAPILoader *authz_loader.AuthzLoader[authz.APIResourceType, authz.APIAction],
 	flags featureflags.Client,
+	auditor *auditor.Auditor,
 ) *APIController {
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, config, r)
 	if err != nil {
@@ -55,7 +57,7 @@ func NewAPIController(
 
 	return &APIController{
 		Manager: manager.New(ctx, r, authzRepoLoader, config, clientsFactory,
-			svcRegistry, eventFactory, asyncClient, migrator, flags),
+			svcRegistry, eventFactory, asyncClient, migrator, flags, auditor),
 		config:        config,
 		pluginCatalog: svcRegistry,
 		AuthzLoader:   authzAPILoader,

@@ -108,7 +108,11 @@ func runAPIServer(ctx context.Context, cfg *config.Config) error {
 
 	<-ctx.Done()
 
-	err = s.Close(ctx)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
+	defer shutdownCancel()
+
+	//nolint:contextcheck
+	err = s.Close(shutdownCtx)
 	if err != nil {
 		return oops.In("api-server").Wrapf(err, "closing server")
 	}

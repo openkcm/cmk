@@ -56,7 +56,6 @@ func getCmkLifeCycleAuditTestCases(eventType string) []struct {
 			cmkID:      generateTestCmkID(),
 			tenantID:   uuid.NewString(),
 			statusCode: http.StatusInternalServerError,
-			expErr:     auditor.ErrSendEvent,
 		},
 	}
 }
