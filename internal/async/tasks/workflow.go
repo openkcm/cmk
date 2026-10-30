@@ -38,7 +38,6 @@ func NewWorkflowProcessor(
 }
 
 func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.InjectTask(ctx, task)
 	log.Info(ctx, "Started processing workflow auto assign task")
 
 	payload, err := asyncUtils.ParseTaskPayload(task.Payload())
