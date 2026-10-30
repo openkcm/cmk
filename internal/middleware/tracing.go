@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -27,8 +28,16 @@ func TracingMiddlewareWithBasePath(cfg *config.Config, basePath string) func(htt
 	}
 
 	return func(next http.Handler) http.Handler {
+		traceHeaderHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sc := trace.SpanFromContext(r.Context()).SpanContext()
+			if sc.IsValid() {
+				w.Header().Set("X-Trace-Id", sc.TraceID().String())
+			}
+			next.ServeHTTP(w, r)
+		})
+
 		return otelhttp.NewHandler(
-			next,
+			traceHeaderHandler,
 			cfg.Application.Name,
 			otelhttp.WithSpanNameFormatter(spanNameFormatter(basePath)),
 		)
