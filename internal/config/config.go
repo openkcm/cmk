@@ -159,6 +159,10 @@ type Scheduler struct {
 }
 
 func (s *Scheduler) Validate() error {
+	if err := s.TaskQueue.Sentinel.validate(); err != nil {
+		return err
+	}
+
 	checkedTasks := make(map[string]struct{}, len(s.Tasks))
 	for _, task := range s.Tasks {
 		_, found := PeriodicTasks[task.TaskType]
@@ -202,7 +206,31 @@ type Redis struct {
 	Host      commoncfg.SourceRef `yaml:"host"`
 	Port      string              `yaml:"port"`
 	ACL       RedisACL            `yaml:"acl"`
+	Sentinel  Sentinel            `yaml:"sentinel"`
 	SecretRef commoncfg.SecretRef
+}
+
+// Sentinel holds Redis Sentinel client config for high-availability connections.
+type Sentinel struct {
+	Enabled    bool     `yaml:"enabled"`
+	MasterName string   `yaml:"masterName"`
+	Addresses  []string `yaml:"addresses"`
+}
+
+func (s Sentinel) validate() error {
+	if !s.Enabled {
+		return nil
+	}
+
+	if s.MasterName == "" {
+		return ErrSentinelMasterNameEmpty
+	}
+
+	if len(s.Addresses) == 0 {
+		return ErrSentinelNoAddresses
+	}
+
+	return nil
 }
 
 type RedisACL struct {
