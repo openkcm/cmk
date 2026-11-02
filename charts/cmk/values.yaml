@@ -1241,6 +1241,21 @@ config:
         value: ""
       # -- Port, as a string.
       port: "6379"
+      # -- Connect through Valkey/Redis Sentinel for automatic master discovery and failover
+      # instead of a direct connection to `host`/`port`. The `secretRef` and `acl` below apply
+      # to both the sentinel and data connections.
+      sentinel:
+        # -- Enable Sentinel mode. When false, CMK connects directly to `host`/`port`.
+        enabled: false
+        # -- Name of the master set the sentinels monitor. Required when `enabled` is true.
+        masterName: ""
+        # -- Sentinel endpoints in `host:port` form. Required when `enabled` is true; provide at
+        # least three for a real quorum. Example:
+        #   addresses:
+        #     - valkey-sentinel-node-0.valkey-sentinel-headless.storage.svc.cluster.local:26379
+        #     - valkey-sentinel-node-1.valkey-sentinel-headless.storage.svc.cluster.local:26379
+        #     - valkey-sentinel-node-2.valkey-sentinel-headless.storage.svc.cluster.local:26379
+        addresses: []
       acl:
         # -- Authenticate with `username` and `password`. With `secretRef.type: mtls`, only
         # if true. With `insecure`, CMK always uses them; empty values: no authentication.

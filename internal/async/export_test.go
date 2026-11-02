@@ -2,7 +2,7 @@ package async
 
 import "github.com/hibiken/asynq"
 
-func (a *App) GetTaskQueueCfg() asynq.RedisClientOpt {
+func (a *App) GetTaskQueueCfg() asynq.RedisConnOpt {
 	return a.taskQueueCfg
 }
 
