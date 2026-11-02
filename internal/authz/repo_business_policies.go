@@ -351,6 +351,15 @@ var RepoBusinessPolicies = RolePolicies[constants.BusinessRole, RepoResourceType
 					Type: RepoResourceTypeKeyconfiguration,
 					Actions: []RepoAction{
 						RepoActionFirst, // When deleting a group
+						RepoActionList,  // When system groouping enable toggle
+						RepoActionCount, // When system groouping enable toggle
+					},
+				},
+				{
+					Type: RepoResourceTypeEvent,
+					Actions: []RepoAction{
+						RepoActionList,  // When system groouping enable toggle
+						RepoActionCount, // When system groouping enable toggle
 					},
 				},
 				{
@@ -372,6 +381,30 @@ var RepoBusinessPolicies = RolePolicies[constants.BusinessRole, RepoResourceType
 						RepoActionCount,
 						RepoActionCreate,
 						RepoActionUpdate,
+					},
+				},
+				{
+					Type: RepoResourceTypeSystem, // System Grouping enable toggle
+					Actions: []RepoAction{
+						RepoActionList,
+						RepoActionFirst,
+						RepoActionCount,
+						RepoActionUpdate,
+					},
+				},
+				{
+					Type: RepoResourceTypeSystemGroup, // System Grouping enable toggle
+					Actions: []RepoAction{
+						RepoActionCreate,
+						RepoActionDelete,
+					},
+				},
+				{
+					Type: RepoResourceTypeSystemProperty, // System Grouping enable toggle
+					Actions: []RepoAction{
+						RepoActionList,
+						RepoActionFirst,
+						RepoActionCount,
 					},
 				},
 			},
