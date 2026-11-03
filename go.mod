@@ -13,7 +13,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hibiken/asynq v0.26.0
-	github.com/jackc/pgx/v5 v5.11.0
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/jxskiss/base62 v1.1.0
 	github.com/looplab/fsm v1.0.4
 	github.com/microcosm-cc/bluemonday v1.0.27
