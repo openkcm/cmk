@@ -1,7 +1,10 @@
 package async_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"log/slog"
 	"testing"
 
 	"github.com/hibiken/asynq"
@@ -54,6 +57,15 @@ func TestTracingMiddleware(t *testing.T) {
 		Application: commoncfg.Application{
 			Name: "test-app",
 		},
+		Logger: commoncfg.Logger{
+			Formatter: commoncfg.LoggerFormatter{
+				Fields: commoncfg.LoggerFields{
+					OTel: commoncfg.LoggerOTel{
+						TraceID: "traceId",
+					},
+				},
+			},
+		},
 		Telemetry: commoncfg.Telemetry{
 			Traces: commoncfg.Trace{
 				Enabled: true,
@@ -94,6 +106,26 @@ func TestTracingMiddleware(t *testing.T) {
 		assert.Equal(t, trace.SpanKindInternal, spans[0].SpanKind())
 		assert.Equal(t, codes.Error, spans[0].Status().Code)
 		assert.Equal(t, expectedErr.Error(), spans[0].Status().Description)
+	})
+
+	t.Run("should inject traceId into logs", func(t *testing.T) {
+		var buf bytes.Buffer
+		slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+
+		handler := &MockTaskHandler{}
+		wrappedProcessTask := mw(handler.ProcessTask)
+
+		recorder.Reset()
+		err := wrappedProcessTask(t.Context(), asynq.NewTask(handler.TaskType(), nil))
+		assert.NoError(t, err)
+
+		spans := recorder.Ended()
+		assert.Len(t, spans, 1)
+		expectedTraceID := spans[0].SpanContext().TraceID().String()
+
+		var entry map[string]any
+		assert.NoError(t, json.Unmarshal(buf.Bytes(), &entry))
+		assert.Equal(t, expectedTraceID, entry["traceId"])
 	})
 }
 
