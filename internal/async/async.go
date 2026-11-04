@@ -79,6 +79,8 @@ type App struct {
 }
 
 // New creates a new instance of App
+//
+//nolint:cyclop,funlen
 func New(cfg *conf.Config) (*App, error) {
 	taskQueueCfg := cfg.Scheduler.TaskQueue
 

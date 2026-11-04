@@ -152,7 +152,17 @@ func NewTenantOperator(
 // It returns a channel that is closed when the listener goroutine exits, or an error if initialization fails.
 func (o *TenantOperator) RunOperator(ctx context.Context) error {
 	// Initialize an orbital operator that uses the operator target
-	operator, err := orbital.NewOperator(o.operatorTarget)
+	operatorOpts := []orbital.Option{}
+
+	mc, err := orbital.NewMetricCollector(otel.GetMeterProvider())
+	if err != nil {
+		log.Warn(ctx, "Failed to initiate metric collector for operator")
+	}
+	if mc != nil {
+		operatorOpts = append(operatorOpts, orbital.WithOperatorMetrics(mc))
+	}
+
+	operator, err := orbital.NewOperator(o.operatorTarget, operatorOpts...)
 	if err != nil {
 		return oops.In(operatorComponent).
 			Wrapf(err, msgInitializingOperator)
