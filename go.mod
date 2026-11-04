@@ -27,6 +27,8 @@ require (
 	github.com/openkcm/plugin-sdk v0.19.0
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.29.0
+	github.com/redis/go-redis/extra/redisotel/v9 v9.23.0
+	github.com/redis/go-redis/v9 v9.23.0
 	github.com/samber/oops v1.23.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
@@ -138,7 +140,7 @@ require (
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/r3labs/diff/v3 v3.0.2 // indirect
-	github.com/redis/go-redis/v9 v9.23.0 // indirect
+	github.com/redis/go-redis/extra/rediscmd/v9 v9.23.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/samber/lo v1.53.0 // indirect
