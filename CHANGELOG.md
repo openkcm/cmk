@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.12.2 (2026-11-04)
+
+## What's Changed
+* feat: improve workflow notification by @doanhluongsap in https://github.com/openkcm/cmk/pull/485
+* feat: add technical user type by @minh-nghia in https://github.com/openkcm/cmk/pull/489
+* feat: implement api ordering options by @niazkhansap in https://github.com/openkcm/cmk/pull/479
+* chore: update chart version by @doanhluongsap in https://github.com/openkcm/cmk/pull/490
+* feat: configurable http server by @jmpTeixeira02 in https://github.com/openkcm/cmk/pull/491
+* fix: improve workflow check by @minh-nghia in https://github.com/openkcm/cmk/pull/492
+* fix: make server mux pattern checker replaceable by @minh-nghia in https://github.com/openkcm/cmk/pull/493
+* feat: system groups config and refactor on tenantconfigs table write by @jmpTeixeira02 in https://github.com/openkcm/cmk/pull/478
+* feat: add additional supported regions in keystorePool configuration by @anettlippert in https://github.com/openkcm/cmk/pull/497
+* fix(deps): bump the gomod-group group with 4 updates by @dependabot[bot] in https://github.com/openkcm/cmk/pull/496
+* fix(deps): bump alpine from 3.24.2 to 3.24.3 in the docker-group group by @dependabot[bot] in https://github.com/openkcm/cmk/pull/495
+* feat: rename workflow config keys by @jmpTeixeira02 in https://github.com/openkcm/cmk/pull/494
+* feat: add notRequiredForHYOK flag to certificates endpoint by @minh-nghia in https://github.com/openkcm/cmk/pull/499
+* fix(deps): bump github.com/open-feature/go-sdk from 1.19.0 to 1.20.0 in the gomod-group group by @dependabot[bot] in https://github.com/openkcm/cmk/pull/500
+* feat: plugin log error middleware by @jmpTeixeira02 in https://github.com/openkcm/cmk/pull/498
+* chore: migrate auditor to queued implementation by @jmpTeixeira02 in https://github.com/openkcm/cmk/pull/501
+* fix(deps): bump go.opentelemetry.io/collector/pdata from 1.69.0 to 1.70.0 in the gomod-group group by @dependabot[bot] in https://github.com/openkcm/cmk/pull/503
+* fix(deps): bump google.golang.org/grpc from 1.84.0 to 1.85.0 in the gomod-group group by @dependabot[bot] in https://github.com/openkcm/cmk/pull/505
+* feat: add valkey sentinel support for task queue by @niazkhansap in https://github.com/openkcm/cmk/pull/502
+* chore: improve tracing by @jmpTeixeira02 in https://github.com/openkcm/cmk/pull/504
+* fix(deps): bump github.com/jackc/pgx/v5 from 5.11.0 to 5.12.0 in the gomod-group group by @dependabot[bot] in https://github.com/openkcm/cmk/pull/506
+
+
+**Full Changelog**: https://github.com/openkcm/cmk/compare/v0.12.1...v0.12.2
+
 ## [0.12.1](https://github.com/openkcm/cmk/compare/v0.12.0...v0.12.1) (2026-10-20)
 
 
