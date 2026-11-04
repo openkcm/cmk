@@ -342,8 +342,6 @@ github.com/openkcm/api-sdk v0.23.0 h1:z87dKPX1rla2YBJWLMV7BtWWSVAxht9qMthS2U1hAr
 github.com/openkcm/api-sdk v0.23.0/go.mod h1:UOhfPV42lG0pWwu/uJQz4mGYi8a+EoGHf+RJSc7GhLU=
 github.com/openkcm/common-sdk v1.21.0 h1:HmMCLFmDRs7NizFoJ7RaZduOgmHikpwTuIif6CDThe8=
 github.com/openkcm/common-sdk v1.21.0/go.mod h1:s8aS3VDxdgdv35Nt+0JGMbkERcAic/cxlPMC21S6xJY=
-github.com/openkcm/orbital v0.6.2 h1:CTb0YUkWGmF+ANWaXK9bB4r2PBAFIdTfdv9/ZbUvGqI=
-github.com/openkcm/orbital v0.6.2/go.mod h1:xwVr6qrxOBDuWNZp2jLI+ZTyfkSRIBKXSyava87o96U=
 github.com/openkcm/plugin-sdk v0.19.0 h1:4ZlSO1o+leShWSeSBkdcOf+OCcQ8MBG3jwqlVjC95jE=
 github.com/openkcm/plugin-sdk v0.19.0/go.mod h1:J5O5trSDXm5SDToKSouYy86i9R6CHXOuO/ISvcg6xLA=
 github.com/pborman/getopt v0.0.0-20170112200414-7148bc3a4c30/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=

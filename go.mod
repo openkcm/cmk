@@ -2,6 +2,8 @@ module github.com/openkcm/cmk
 
 go 1.27.3
 
+replace github.com/openkcm/orbital => ../orbital
+
 require (
 	buf.build/go/protovalidate v1.4.0
 	github.com/Azure/go-amqp v1.7.0
