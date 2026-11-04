@@ -24,7 +24,8 @@ var (
 
 // AuditLogger interface for easier testing and dependency injection
 type AuditLogger interface {
-	SendEvent(ctx context.Context, logs plog.Logs) error
+	SendEvent(logs plog.Logs) error
+	Close(ctx context.Context) error
 }
 
 // Auditor handles audit logging for CMK operations
@@ -40,8 +41,16 @@ func New(ctx context.Context, config *config.Config) *Auditor {
 	}
 
 	return &Auditor{
-		auditLogger: auditLogger,
+		auditLogger: otlpaudit.NewQueuedLogger(auditLogger, otlpaudit.QueuedOptions{
+			OnError: func(err error) {
+				log.Error(ctx, "failed to create audit log", err)
+			},
+		}),
 	}
+}
+
+func (a *Auditor) Close(ctx context.Context) error {
+	return a.auditLogger.Close(ctx)
 }
 
 // getEventMetadata extracts common metadata from context
@@ -97,7 +106,7 @@ func (a *Auditor) sendEvent(ctx context.Context, createEventFn func(otlpaudit.Ev
 		return errs.Wrap(ErrCreateEvent, err)
 	}
 
-	err = a.auditLogger.SendEvent(ctx, logs)
+	err = a.auditLogger.SendEvent(logs)
 	if err != nil {
 		return errs.Wrap(ErrSendEvent, err)
 	}

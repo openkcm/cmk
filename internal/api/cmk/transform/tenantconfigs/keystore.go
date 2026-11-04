@@ -13,12 +13,12 @@ func ToAPI(keystore manager.TenantKeystores) (*cmkapi.TenantKeystore, error) {
 		return nil, err
 	}
 
-	supportedRegions := make([]cmkapi.SupportedRegion, len(keystore.BYOK.SupportedRegions))
-	for i, r := range keystore.BYOK.SupportedRegions {
-		supportedRegions[i] = cmkapi.SupportedRegion{
+	supportedRegions := make([]cmkapi.SupportedRegion, 0, len(keystore.BYOK.SupportedRegions))
+	for _, r := range keystore.BYOK.SupportedRegions {
+		supportedRegions = append(supportedRegions, cmkapi.SupportedRegion{
 			Name:          &r.Name,
 			TechnicalName: &r.TechnicalName,
-		}
+		})
 	}
 
 	apiTenant := &cmkapi.TenantKeystore{

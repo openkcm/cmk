@@ -12,7 +12,8 @@ import (
 
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
+	oidcv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/trust/oidc/v1"
 
 	"github.com/openkcm/cmk/internal/clients"
 	"github.com/openkcm/cmk/internal/config"
@@ -101,16 +102,18 @@ func TestOIDCMappingRequest(t *testing.T) {
 	_, sessionManagerClient := setupGRPC(t)
 
 	// given
-	jwksURI := "jwksUri"
-	oidcReq := &oidcmappinggrpc.ApplyOIDCMappingRequest{
-		TenantId:  "tenantID",
-		Issuer:    "https://example-issuer.com",
-		JwksUri:   &jwksURI,
-		Audiences: []string{"audience1", "audience2"},
-	}
+	const jwksURI = "jwksUri"
+	applyRequest := trustmappingv1.ApplyTrustMappingRequest_builder{
+		TenantId: new("tenantID"),
+		Oidc: oidcv1.OIDC_builder{
+			Issuer:    new("https://example-issuer.com"),
+			JwksUri:   new(jwksURI),
+			Audiences: []string{"audience1", "audience2"},
+		}.Build(),
+	}.Build()
 
 	// when
-	sessionManagerResp, err := sessionManagerClient.ApplyOIDCMapping(ctx, oidcReq)
+	sessionManagerResp, err := sessionManagerClient.ApplyTrustMapping(ctx, applyRequest)
 
 	// then
 	require.NoError(t, err)
@@ -118,7 +121,7 @@ func TestOIDCMappingRequest(t *testing.T) {
 	require.True(t, sessionManagerResp.GetSuccess(), "OIDC mapping should be applied successfully")
 }
 
-func setupGRPC(t *testing.T) (tenantgrpc.ServiceClient, oidcmappinggrpc.ServiceClient) {
+func setupGRPC(t *testing.T) (tenantgrpc.ServiceClient, trustmappingv1.ServiceClient) {
 	t.Helper()
 
 	clientsFactory, err := clients.NewFactory(config.Services{
@@ -133,7 +136,7 @@ func setupGRPC(t *testing.T) (tenantgrpc.ServiceClient, oidcmappinggrpc.ServiceC
 		}
 	})
 
-	return clientsFactory.Registry().Tenant(), clientsFactory.SessionManager().OIDCMapping()
+	return clientsFactory.Registry().Tenant(), clientsFactory.SessionManager().TrustMapping()
 }
 
 func setupDB(t *testing.T) (*sql.ResourceRepository, *multitenancy.DB) {

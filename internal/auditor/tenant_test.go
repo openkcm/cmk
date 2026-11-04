@@ -49,7 +49,6 @@ func TestSendTenantAuditLog(t *testing.T) {
 			tenantCtxID: "tenant",
 			tenantID:    "tenant",
 			statusCode:  http.StatusInternalServerError,
-			expErr:      auditor.ErrSendEvent,
 		},
 	}
 

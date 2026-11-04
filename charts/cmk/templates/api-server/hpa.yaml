@@ -1,8 +1,13 @@
-{{- if and .Values.apiServer.deploy .Values.autoscaling.enabled }}
+{{- if and .Values.apiServer.deploy .Values.apiServer.autoscaling.enabled }}
+{{- if not (or .Values.apiServer.autoscaling.targetCPUUtilizationPercentage .Values.apiServer.autoscaling.targetMemoryUtilizationPercentage) }}
+{{- fail "apiServer.autoscaling.enabled requires apiServer.autoscaling.targetCPUUtilizationPercentage or apiServer.autoscaling.targetMemoryUtilizationPercentage" }}
+{{- end }}
+---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: {{ include "cmk.fullname" . }}
+  namespace: {{ include "cmk.namespace" . }}
   labels:
     {{- include "cmk.labels" . | nindent 4 }}
 spec:
@@ -10,27 +15,27 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "cmk.fullname" . }}
-  minReplicas: {{ .Values.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  minReplicas: {{ .Values.apiServer.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.apiServer.autoscaling.maxReplicas }}
   metrics:
-    {{- if or .Values.autoscaling.targetCPUUtilizationPercentage .Values.autoscaling.targetMemoryUtilizationPercentage }}
-    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- with .Values.apiServer.autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ . }}
     {{- end }}
-    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- with .Values.apiServer.autoscaling.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+          averageUtilization: {{ . }}
     {{- end }}
-    {{- else }}
-    []
-    {{- end }}
+  {{- with .Values.apiServer.autoscaling.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}

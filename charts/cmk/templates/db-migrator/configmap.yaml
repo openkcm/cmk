@@ -1,8 +1,10 @@
+{{- if .Values.dbMigrator.enabled }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "cmk.name" . }}-db-migrator-config
+  name: {{ include "cmk.fullname" . }}-db-migrator-config
+  namespace: {{ include "cmk.namespace" . }}
   labels:
     {{- include "cmk.db-migrator.labels" . | nindent 4 }}
   annotations:
@@ -11,26 +13,10 @@ metadata:
     "helm.sh/hook-delete-policy": "before-hook-creation,hook-succeeded"
 immutable: {{ .Values.config.isImmutable | default false }}
 data:
+  # The sections of `config` that the migration jobs read (helper cmk.config in _helpers.tpl).
+  # cryptoLayer is read by the tenant data migration 00006 (crypto certificate subjects).
   config.yaml: |-
-    application:
-      name: db-migrator
-    {{- with .Values.config }}
-      environment: {{ .environment }}
-      {{- with .labels }}
-      labels:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-
-    status:
-      {{- toYaml .status | nindent 6 }}
-
-    logger:
-      {{- toYaml .logger | nindent 6 }}
-
-    telemetry:
-      {{- toYaml .telemetry | nindent 6 }}
-
-    database:
-      {{- toYaml .database | nindent 6 }}
-
-    {{- end }}
+    {{- include "cmk.config" (list . "db-migrator"
+        "status" "logger" "telemetry" "database" "databaseReplicas" "cryptoLayer"
+    ) | nindent 4 }}
+{{- end }}

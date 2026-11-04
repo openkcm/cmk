@@ -1,7 +1,7 @@
 package sessionmanager
 
 import (
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
 
 	sessionmanager "github.com/openkcm/cmk/internal/clients/session-manager"
 )
@@ -9,18 +9,18 @@ import (
 // MockServiceStruct is a mock implementation
 // that can be used for testing purposes.
 type MockServiceStruct struct {
-	Client oidcmappinggrpc.ServiceClient
+	Client trustmappingv1.ServiceClient
 }
 
 var _ sessionmanager.Service = (*MockServiceStruct)(nil)
 
-func NewMockService(oidc oidcmappinggrpc.ServiceClient) sessionmanager.Service {
+func NewMockService(trust trustmappingv1.ServiceClient) sessionmanager.Service {
 	return &MockServiceStruct{
-		Client: oidc,
+		Client: trust,
 	}
 }
 
-func (c *MockServiceStruct) OIDCMapping() oidcmappinggrpc.ServiceClient {
+func (c *MockServiceStruct) TrustMapping() trustmappingv1.ServiceClient {
 	return c.Client
 }
 

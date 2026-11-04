@@ -245,11 +245,11 @@ func (w *WorkflowManager) GetWorkflows(
 		return nil, 0, err
 	}
 
-	// Sort by created date descending by default
-	query = query.Order(repo.OrderField{
-		Field:     repo.CreatedField,
-		Direction: repo.Desc,
-	})
+	if err := applyOrderOrDefault(params, query, func(q *repo.Query) {
+		q.Order(repo.OrderField{Field: repo.CreatedField, Direction: repo.Desc})
+	}); err != nil {
+		return nil, 0, err
+	}
 
 	return w.getWorkflows(ctx, params.GetPagination(), query)
 }
@@ -267,25 +267,33 @@ func (w *WorkflowManager) CheckWorkflow(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (WorkflowStatus, error) {
+	// Fetch workflow config and related key configurations, both will be reused in subsequent checks
 	workflowConfig, err := w.WorkflowConfig(ctx)
 	if err != nil {
 		return WorkflowStatus{}, err
 	}
 
-	enabled := workflowConfig.Enabled
+	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
+	if err != nil {
+		if errors.Is(err, ErrKeyConfigurationNotAllowed) || errors.Is(err, repo.ErrNotFound) {
+			return WorkflowStatus{}, errs.Wrap(ErrCheckWorkflow, ErrWorkflowCreationNotAllowed)
+		}
+		return WorkflowStatus{}, errs.Wrap(ErrCheckWorkflow, err)
+	}
 
+	// Key config access was already implicitly validated by getKeyConfigurationsFromArtifact above
+	// Now we need to do role-based permission check
 	allowed, err := w.checkPermissionToCreateWorkflow(ctx, workflow)
 	if err != nil {
 		return WorkflowStatus{}, errs.Wrap(ErrCheckWorkflow, err)
 	}
 
 	if !allowed {
-		return WorkflowStatus{},
-			errs.Wrap(ErrCheckWorkflow, ErrWorkflowCreationNotAllowed)
+		return WorkflowStatus{}, errs.Wrap(ErrCheckWorkflow, ErrWorkflowCreationNotAllowed)
 	}
 
-	// After this point user is authorised, we can reveal information
-	status, err := w.checkWorkflow(ctx, workflow, enabled)
+	// User is allowed to create workflow, now check if workflow can be created
+	status, err := w.checkWorkflow(ctx, workflow, workflowConfig.Enabled, workflowConfig.RequiredApprovals, keyConfigs)
 	return transformCheckWorkflowError(status, err)
 }
 
@@ -296,8 +304,8 @@ func (w *WorkflowManager) CreateWorkflow(
 	workflow.State = model.WorkflowStateInitial
 
 	// Capture minimum approvals from current tenant configuration as a snapshot
-	minimumApprovals := w.getMinimumApprovals(ctx)
-	workflow.MinimumApprovalCount = minimumApprovals
+	requiredApprovals := w.getMinimumApprovals(ctx)
+	workflow.MinimumApprovalCount = requiredApprovals
 
 	status, err := w.CheckWorkflow(ctx, workflow)
 	if err != nil {
@@ -803,14 +811,9 @@ func (w *WorkflowManager) getApproverGroupsFromLegacyField(
 func (w *WorkflowManager) validateApproverCount(
 	ctx context.Context,
 	workflow *model.Workflow,
-	minimumApprovals int,
+	requiredApprovals int,
+	keyConfigs []*model.KeyConfiguration,
 ) (bool, error) {
-	// Get key configurations from the workflow artifact
-	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
-	if err != nil {
-		return false, errs.Wrap(ErrCheckWorkflow, err)
-	}
-
 	approvers, _, err := w.getApproversAndGroupsFromKeyConfigs(ctx, workflow, keyConfigs)
 	if err != nil {
 		return false, errs.Wrap(ErrCheckWorkflow, err)
@@ -819,8 +822,8 @@ func (w *WorkflowManager) validateApproverCount(
 	eligibleCount := len(approvers)
 
 	// Validate sufficient approvers exist
-	if eligibleCount < minimumApprovals {
-		return false, wf.NewInsufficientApproversError(minimumApprovals, eligibleCount)
+	if eligibleCount < requiredApprovals {
+		return false, wf.NewInsufficientApproversError(requiredApprovals, eligibleCount)
 	}
 
 	return true, nil
@@ -993,9 +996,12 @@ func transformCheckWorkflowError(status WorkflowStatus, err error) (WorkflowStat
 }
 
 //nolint:funlen
-func (w *WorkflowManager) checkWorkflow(ctx context.Context,
+func (w *WorkflowManager) checkWorkflow(
+	ctx context.Context,
 	workflow *model.Workflow,
 	enabled bool,
+	requiredApprovals int,
+	keyConfigs []*model.KeyConfiguration,
 ) (WorkflowStatus, error) {
 	// If workflow is disabled, all others are false
 	if !enabled {
@@ -1004,6 +1010,7 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 		}, nil
 	}
 
+	// Check if type of workflow is supported
 	isSupported := w.isSupportedWorkflow(workflow)
 	if !isSupported {
 		return WorkflowStatus{
@@ -1013,7 +1020,8 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 		}, ErrUnsuportedWorkflow
 	}
 
-	isValid, err := w.validateWorkflow(ctx, workflow)
+	// Validate workflow based on business rules
+	isValid, err := w.validateWorkflow(ctx, workflow, keyConfigs)
 	if err != nil {
 		return WorkflowStatus{
 			Enabled:   enabled,
@@ -1043,9 +1051,7 @@ func (w *WorkflowManager) checkWorkflow(ctx context.Context,
 		}, nil
 	}
 
-	// Validate approver count
-	minimumApprovals := w.getMinimumApprovals(ctx)
-	canCreate, errDetails := w.validateApproverCount(ctx, workflow, minimumApprovals)
+	canCreate, errDetails := w.validateApproverCount(ctx, workflow, requiredApprovals, keyConfigs)
 	if errDetails != nil && !errors.Is(errDetails, wf.ErrWorkflowGroupNotSufficientMembers) {
 		return WorkflowStatus{
 			Enabled:   enabled,
@@ -1092,13 +1098,9 @@ func (w *WorkflowManager) isSupportedWorkflow(workflow *model.Workflow) bool {
 }
 
 //nolint:cyclop,gocognit,funlen
-func (w *WorkflowManager) validateWorkflow(ctx context.Context, workflow *model.Workflow) (bool, error) {
-	// Always returns at least one key configuration
-	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
-	if err != nil {
-		return false, err
-	}
-
+func (w *WorkflowManager) validateWorkflow(
+	ctx context.Context, workflow *model.Workflow, keyConfigs []*model.KeyConfiguration,
+) (bool, error) {
 	switch {
 	case w.isSystemConnect(workflow):
 		for _, kc := range keyConfigs {
@@ -1383,19 +1385,19 @@ func (w *WorkflowManager) getWorkflowLifecycleWithEligibility(
 ) (*wf.Lifecycle, error) {
 	// Use workflow's persisted MinimumApprovalCount if set (snapshot at creation time)
 	// Otherwise fallback to current tenant config for backward compatibility with old workflows
-	minimumApprovals := workflow.MinimumApprovalCount
-	if minimumApprovals == 0 {
+	requiredApprovals := workflow.MinimumApprovalCount
+	if requiredApprovals == 0 {
 		// Fallback for workflows created before this field existed
 		workflowConfig, err := w.WorkflowConfig(ctx)
 		if err != nil {
 			return nil, oops.Join(ErrGetWorkflowConfig, err)
 		}
-		minimumApprovals = workflowConfig.MinimumApprovals
+		requiredApprovals = workflowConfig.RequiredApprovals
 	}
 
 	workflowLifecycle := wf.NewLifecycle(
 		workflow, w.keyManager, w.keyConfigurationManager, w.systemManager, w.repo, userID,
-		minimumApprovals,
+		requiredApprovals,
 	)
 
 	// Set eligible approver IDs if provided (for accurate vote counting)
@@ -1755,15 +1757,6 @@ func (w *WorkflowManager) checkPermissionToCreateWorkflow(
 ) (bool, error) {
 	switch workflow.ArtifactType {
 	case model.WorkflowArtifactTypeKeyConfiguration, model.WorkflowArtifactTypeSystem, model.WorkflowArtifactTypeKey:
-		_, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
-		if errors.Is(err, ErrKeyConfigurationNotAllowed) || errors.Is(err, repo.ErrNotFound) {
-			return false, nil
-		}
-
-		if err != nil {
-			return false, err
-		}
-
 		userinfo, err := w.userManager.GetBusinessUserInfo(ctx)
 		if err != nil {
 			return false, err
@@ -1867,7 +1860,8 @@ func (w *WorkflowManager) getKeyConfigFromKey(
 	ctx context.Context,
 	workflow *model.Workflow,
 ) (*model.KeyConfiguration, error) {
-	key, err := w.keyManager.Get(ctx, workflow.ArtifactID)
+	key := &model.Key{ID: workflow.ArtifactID}
+	_, err := w.repo.First(ctx, key, *repo.NewQuery())
 	if err != nil {
 		return nil, errs.Wrap(ErrGetKeyConfigFromArtifact, err)
 	}
@@ -1958,12 +1952,12 @@ func (w *WorkflowManager) getApproversAndGroupsFromKeyConfigs(
 func (w *WorkflowManager) getMinimumApprovals(ctx context.Context) int {
 	config, err := w.tenantConfigManager.GetWorkflowConfig(ctx)
 	if err != nil || config == nil {
-		return constants.DefaultMinimumApprovalCount // 2
+		return constants.MinAllowedApprovals // 2
 	}
-	if config.MinimumApprovals > 0 {
-		return config.MinimumApprovals
+	if config.MinAllowedApprovals > 0 {
+		return config.MinAllowedApprovals
 	}
-	return constants.DefaultMinimumApprovalCount
+	return constants.MinAllowedApprovals
 }
 
 // queryGroupMembersFromIAM queries IAM to get all current members across multiple groups.

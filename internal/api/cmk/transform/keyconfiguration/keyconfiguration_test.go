@@ -16,6 +16,7 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/identitymanagement"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -25,7 +26,7 @@ type mockKeyConfigManager struct{}
 
 var _ manager.KeyConfigurationAPI = (*mockKeyConfigManager)(nil)
 
-func (m *mockKeyConfigManager) GetKeyConfigurations(_ context.Context, _ manager.KeyConfigFilter) ([]*model.KeyConfiguration, int, error) {
+func (m *mockKeyConfigManager) GetKeyConfigurations(_ context.Context, _ repo.Params, _ bool) ([]*model.KeyConfiguration, int, error) {
 	return nil, 0, nil
 }
 

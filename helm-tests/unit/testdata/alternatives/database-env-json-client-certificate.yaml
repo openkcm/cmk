@@ -1,0 +1,15 @@
+# charts/cmk/values.yaml, config.database: the user from an environment variable, the
+# password from a JSON file and client certificate authentication. Applied on top of
+# ../values-examples.yaml; null removes the settings of the example it replaces.
+config:
+  database:
+    user: { source: env, env: DATABASE_USER, value: null }
+    secret:
+      source: file
+      file: { path: /etc/credentials/database.json, format: json, jsonPath: "$.password" }
+    parameters:
+      ssl:
+        mode: verify-full
+        rootCert: /etc/credentials/database/ca.crt
+        cert: /etc/credentials/database/tls.crt
+        key: /etc/credentials/database/tls.key

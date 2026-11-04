@@ -69,8 +69,7 @@ func testCmkSystemAuditMethod(
 			setupCtx:                createTestContext,
 			cmkID:                   generateTestCmkID(),
 			systemID:                "test-system-123",
-			expectErr:               true,
-			errType:                 auditor.ErrSendEvent,
+			expectErr:               false,
 			mockCollectorStatusCode: http.StatusInternalServerError,
 		},
 	}
@@ -172,8 +171,7 @@ func testCmkSwitchAuditMethod(
 			systemID:                "test-system-123",
 			cmkIDOld:                generateTestCmkID(),
 			cmkIDNew:                generateTestCmkID(),
-			expectErr:               true,
-			errType:                 auditor.ErrSendEvent,
+			expectErr:               false,
 			mockCollectorStatusCode: http.StatusInternalServerError,
 		},
 	}
@@ -265,8 +263,7 @@ func testCmkTenantModificationAuditMethod(
 			cmkID:                   generateTestCmkID(),
 			systemID:                "test-system-123",
 			action:                  otlpaudit.CMKACTION_ONBOARD,
-			expectErr:               true,
-			errType:                 auditor.ErrSendEvent,
+			expectErr:               false,
 			mockCollectorStatusCode: http.StatusInternalServerError,
 		},
 	}

@@ -1,0 +1,11 @@
+# charts/cmk/values.yaml, config.audit: "Example with OAuth 2.0". Applied on top of
+# ../values-examples.yaml; null removes the settings of the example it replaces.
+config:
+  audit:
+    httpClient:
+      mtls: null
+      oauth2Auth:
+        credentials:
+          clientID: { value: cmk-audit }
+          authMethod: basic
+          clientSecret: { source: file, file: { path: /etc/credentials/audit/secret } }

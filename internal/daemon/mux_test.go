@@ -65,6 +65,18 @@ func TestServeMux_HandleFunc(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestServeMux_HandleFunc_WithPatternChecker(t *testing.T) {
+	checker := func(pattern string) bool {
+		return pattern == "GET /custom"
+	}
+	mux := daemon.NewServeMux("/base", daemon.WithPatternChecker(checker))
+
+	handler := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }
+
+	assert.NotPanics(t, func() { mux.HandleFunc("GET /base/custom", handler) })
+	assert.Panics(t, func() { mux.HandleFunc("GET /base/keys", handler) })
+}
+
 func TestServeMux_HandleFunc_PreventsBypassWithDuplicateBaseURL(t *testing.T) {
 	mux := daemon.NewServeMux("/cmk/v1")
 

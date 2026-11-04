@@ -48,8 +48,8 @@ func TestToAPI(t *testing.T) {
 
 			keyStore := manager.TenantKeystores{
 				BYOK: model.KeystoreConfig{
-					SupportedRegions: []config.Region{
-						{Name: regionName, TechnicalName: regionTechnicalName},
+					SupportedRegions: map[string]config.Region{
+						regionTechnicalName: {Name: regionName, TechnicalName: regionTechnicalName},
 					},
 				},
 				AllowBYOK: tc.allowBYOK,

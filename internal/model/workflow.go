@@ -132,6 +132,20 @@ func (w *Workflow) GetInitiatorName(
 	return name, nil
 }
 
+func (t WorkflowActionType) DisplayName() string {
+	if name, ok := actionTypeDisplayNames[t]; ok {
+		return name
+	}
+	return string(t)
+}
+
+func (t WorkflowArtifactType) DisplayName() string {
+	if name, ok := artifactTypeDisplayNames[t]; ok {
+		return name
+	}
+	return string(t)
+}
+
 // buildSystemDescription generates a description for SYSTEM artifact workflows
 func (m Workflow) buildSystemDescription(
 	ctx context.Context,
@@ -148,8 +162,8 @@ func (m Workflow) buildSystemDescription(
 	description = fmt.Sprintf(
 		"%s requested approval to %s %s",
 		initiatorName,
-		m.ActionType,
-		m.ArtifactType,
+		m.ActionType.DisplayName(),
+		m.ArtifactType.DisplayName(),
 	)
 
 	if artifactName != "" {
@@ -198,8 +212,8 @@ func (m Workflow) buildDefaultDescription(
 	description := fmt.Sprintf(
 		"%s requested approval to %s %s",
 		initiatorName,
-		m.ActionType,
-		m.ArtifactType,
+		m.ActionType.DisplayName(),
+		m.ArtifactType.DisplayName(),
 	)
 
 	if artifactName != "" {
@@ -342,6 +356,23 @@ const (
 	WorkflowParametersResourceTypeKey              WorkflowParametersResourceType = "KEY"
 	WorkflowParametersResourceTypeKeyConfiguration WorkflowParametersResourceType = "KEY_CONFIGURATION"
 )
+
+// actionTypeDisplayNames maps internal action type values to human-readable labels used in notifications.
+var actionTypeDisplayNames = map[WorkflowActionType]string{
+	WorkflowActionTypeLink:          "Connect",
+	WorkflowActionTypeUnlink:        "Disconnect",
+	WorkflowActionTypeSwitch:        "Switch",
+	WorkflowActionTypeDelete:        "Delete",
+	WorkflowActionTypeUpdateState:   "Update State",
+	WorkflowActionTypeUpdatePrimary: "Update Primary",
+}
+
+// artifactTypeDisplayNames maps internal artifact type values to human-readable labels used in notifications.
+var artifactTypeDisplayNames = map[WorkflowArtifactType]string{
+	WorkflowArtifactTypeSystem:           "System",
+	WorkflowArtifactTypeKey:              "Key",
+	WorkflowArtifactTypeKeyConfiguration: "Key Configuration",
+}
 
 var WorkflowNonTerminalStates = []WorkflowState{
 	WorkflowStateInitial, WorkflowStateWaitApproval, WorkflowStateWaitConfirmation, WorkflowStateExecuting,

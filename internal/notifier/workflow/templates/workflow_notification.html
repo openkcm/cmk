@@ -9,7 +9,7 @@
 
     <!-- Header -->
     <div style="background: #ffffff; text-align: center; padding: 28px; border-bottom: 1px solid #f7f7f7;">
-        <h1 style="margin: 0; color: #32363a; font-size: 14px; font-weight: bold;">KEY MANAGEMENT SERVICE NOTIFICATION</h1>
+        <h1 style="margin: 0; color: #32363a; font-size: 14px; font-weight: bold; text-transform: uppercase;">{{.ServiceName}} NOTIFICATION</h1>
     </div>
 
     <!-- Content -->
@@ -21,11 +21,18 @@
         <!-- Message -->
         <p style="margin: 0 0 24px 0; color: #32363a; font-size: 14px; line-height: 1.5;">{{.Message}}</p>
 
+        <!-- Security Warning (rendered only when SecurityText is set) -->
+        {{if .SecurityText}}
+        <div style="margin: 0 0 24px 0; color: #32363a; font-size: 14px; line-height: 1.5;">
+            {{.SecurityText}}
+        </div>
+        {{end}}
+
         <!-- Tenant Information -->
         <div style="background: #f9f9f9; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
             <h3 style="margin: 0 0 12px 0; color: #32363a; font-size: 14px; font-weight: bold;">Tenant Information</h3>
-            <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Tenant ID:</strong> {{.TenantID}}</p>
-            <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Tenant Namec:</strong> {{.TenantName}}</p>
+            <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>ID:</strong> {{.TenantID}}</p>
+            <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Name:</strong> {{.TenantName}}</p>
             <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Region:</strong> {{.TenantRegion}}</p>
             <p style="margin: 4px 0; color: #32363a; font-size: 14px;"><strong>Landscape:</strong> {{.Landscape}}</p>
         </div>
@@ -47,7 +54,7 @@
         <!-- Footer -->
         <div style="margin-top: 24px;">
             <p style="margin: 0 0 16px 0; color: #32363a; font-size: 14px;">Best Regards,</p>
-            <p style="margin: 0 0 24px 0; color: #32363a; font-size: 14px;">Your KMS Team</p>
+            <p style="margin: 0 0 24px 0; color: #32363a; font-size: 14px;">{{.SignOff}}</p>
             <p style="margin: 0; font-size: 12px; color: #666666; font-style: italic;">Please do not reply - this is an automatically generated email.</p>
         </div>
 

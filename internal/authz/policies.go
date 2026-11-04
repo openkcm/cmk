@@ -20,7 +20,7 @@ type (
 	}
 
 	RolePolicies[
-		Role constants.BusinessRole | constants.InternalRole,
+		Role constants.BusinessRole | constants.InternalRole | constants.TechnicalRole,
 		Resource APIResourceType | RepoResourceType,
 		Action APIAction | RepoAction,
 	] map[Role][]Policy[Resource, Action]

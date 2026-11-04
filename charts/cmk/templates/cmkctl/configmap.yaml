@@ -3,45 +3,18 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "cmk.name" . }}-cmkctl-config
+  name: {{ include "cmk.fullname" . }}-cmkctl-config
+  namespace: {{ include "cmk.namespace" . }}
   labels:
     {{- include "cmk.cmkctl.labels" . | nindent 4 }}
 immutable: {{ .Values.config.isImmutable | default false }}
 data:
+  # The sections of `config` that the cmkctl reads (helper cmk.config in _helpers.tpl).
   config.yaml: |-
-    application:
-      name: cmkctl
-    {{- with .Values.config }}
-      environment: {{ .environment }}
-      {{- with .labels }}
-      labels:
-        {{- toYaml . | nindent 8 }}
-      {{- end}}
-
-    status:
-      {{- toYaml .status | nindent 6 }}
-
-    featureFlags:
-      {{- toYaml .featureFlags | nindent 6 }}
-
-    logger:
-      {{- toYaml .logger | nindent 6 }}
-
-    telemetry:
-      {{- toYaml .telemetry | nindent 6 }}
-
-    database:
-      {{- toYaml .database | nindent 6 }}
-
-    tenantManager:
-      {{- toYaml .tenantManager | nindent 6 }}
-
-    scheduler:
-      {{- toYaml .scheduler | nindent 6 }}
-
-    plugins:
-    {{ include "cmk.plugins" . | nindent 6 }}
-
-
-    {{- end }}
+    {{- include "cmk.config" (list . "cmkctl"
+        "status" "featureGates" "featureFlags" "logger" "telemetry" "database"
+        "databaseReplicas" "scheduler" "plugins" "services" "audit" "certificates"
+        "cryptoLayer" "landscape" "keystorePool" "configurableContext" "tenant" "keys"
+        "workflow"
+    ) | nindent 4 }}
 {{- end }}

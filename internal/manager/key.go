@@ -115,6 +115,7 @@ type KeyManager struct {
 	pendingRegistrationTimeout time.Duration
 	pendingCreationTimeout     time.Duration
 	metrics                    *KeyMetrics
+	featureFlags               FeatureFlags
 }
 
 func NewKeyManager(
@@ -128,6 +129,7 @@ func NewKeyManager(
 	cmkAuditor *auditor.Auditor,
 	asyncClient async.Client,
 	cfg *config.Config,
+	flags FeatureFlags,
 ) *KeyManager {
 	keyVersionManager := NewKeyVersionManager(repo, svcRegistry, tenantConfigs, certManager, cmkAuditor)
 
@@ -162,6 +164,7 @@ func NewKeyManager(
 		pendingRegistrationTimeout: pendingRegTimeout,
 		pendingCreationTimeout:     pendingCreTimeout,
 		metrics:                    metrics,
+		featureFlags:               flags,
 	}
 }
 
@@ -287,7 +290,7 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 func (km *KeyManager) GetKeys(
 	ctx context.Context,
 	keyConfigID uuid.UUID,
-	pagination repo.Pagination,
+	params repo.Params,
 ) ([]*model.Key, int, error) {
 	query := repo.NewQuery().
 		Preload(repo.Preload{"KeyVersions"})
@@ -305,18 +308,27 @@ func (km *KeyManager) GetKeys(
 	ck := repo.NewCompositeKey().Where(fmt.Sprintf("%s.%s", model.Key{}.TableName(), repo.KeyConfigIDField), keyConfigID)
 	query = query.Where(repo.NewCompositeKeyGroup(ck))
 
-	keys, count, err := repo.ListAndCount(ctx, km.repo, pagination, model.Key{}, query)
+	if err := applyOrderOrDefault(params, query, func(q *repo.Query) {
+		if primaryKeyID != nil {
+			q.OrderByExpr(repo.OrderExpr{
+				SQL:  "CASE WHEN id = ? THEN 0 ELSE 1 END",
+				Vars: []any{*primaryKeyID},
+			})
+		}
+		q.Order(repo.OrderField{Field: repo.CreatedField, Direction: repo.Desc})
+	}); err != nil {
+		return nil, 0, err
+	}
+
+	keys, count, err := repo.ListAndCount(ctx, km.repo, params.GetPagination(), model.Key{}, query)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// All are non primary
-	if primaryKeyID == nil {
-		return keys, count, nil
-	}
-
-	for _, k := range keys {
-		k.IsPrimary = *primaryKeyID == k.ID
+	if primaryKeyID != nil {
+		for _, k := range keys {
+			k.IsPrimary = *primaryKeyID == k.ID
+		}
 	}
 
 	return keys, count, nil
@@ -1008,11 +1020,11 @@ func (km *KeyManager) validateKeyCreation(ctx context.Context, key *model.Key) e
 
 	switch key.KeyType {
 	case cmkapi.KeyTypeBYOK:
-		if !km.tenantConfigs.IsBYOKAllowed(ctx) {
+		if !km.featureFlags.IsBYOKAllowed(ctx) {
 			return ErrBYOKNotAllowed
 		}
 	case cmkapi.KeyTypeHYOK:
-		if !km.tenantConfigs.IsHYOKAllowed(ctx, key.Provider) {
+		if !km.featureFlags.IsHYOKAllowed(ctx, key.Provider) {
 			return ErrHYOKNotAllowed
 		}
 	}
@@ -1756,7 +1768,7 @@ func (km *KeyManager) isNewKeyVersion(
 		return false, nil
 	}
 
-	return keyResp.Versions[0].ID == versions[0].NativeID, nil
+	return keyResp.Versions[0].ID != versions[0].NativeID, nil
 }
 
 func (km *KeyManager) handleKeyVersions(
@@ -1764,7 +1776,7 @@ func (km *KeyManager) handleKeyVersions(
 	key *model.Key,
 	keyResp *keymanagement.GetKeyVersionsResponse,
 ) error {
-	if !km.tenantConfigs.IsKeyRotateDetectionEnabled(ctx, key.Provider) {
+	if !km.featureFlags.IsKeyRotateDetectionEnabled(ctx, key.Provider) {
 		log.Info(ctx, "key rotation detection disabled by feature flag, skipping",
 			slog.String("keyID", key.ID.String()),
 			slog.String("provider", key.Provider))

@@ -47,6 +47,9 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Registry, er
 	svcRepo, err := servicewrapper.CreateServiceRepository(ctx, catalog.Config{
 		Logger:        catalogLogger,
 		PluginConfigs: pluginConfigs,
+		PluginOptions: []catalog.PluginOption{
+			catalog.WithErrorLogging(catalogLogger),
+		},
 	}, buildInPlugins.Retrieve()...)
 	if err != nil {
 		catalogLogger.ErrorContext(ctx, "Error loading plugins", "error", err)

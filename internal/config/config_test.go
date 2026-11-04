@@ -97,6 +97,52 @@ func TestValidateScheduler(t *testing.T) {
 		}
 		assert.Error(t, scheduler.Validate())
 	})
+
+	t.Run("Should validate when sentinel is disabled", func(t *testing.T) {
+		scheduler := config.Scheduler{
+			TaskQueue: config.Redis{
+				Sentinel: config.Sentinel{Enabled: false},
+			},
+		}
+		assert.NoError(t, scheduler.Validate())
+	})
+
+	t.Run("Should validate when sentinel is enabled and complete", func(t *testing.T) {
+		scheduler := config.Scheduler{
+			TaskQueue: config.Redis{
+				Sentinel: config.Sentinel{
+					Enabled:    true,
+					MasterName: "mymaster",
+					Addresses:  []string{"sentinel-0:26379"},
+				},
+			},
+		}
+		assert.NoError(t, scheduler.Validate())
+	})
+
+	t.Run("Should fail when sentinel is enabled without master name", func(t *testing.T) {
+		scheduler := config.Scheduler{
+			TaskQueue: config.Redis{
+				Sentinel: config.Sentinel{
+					Enabled:   true,
+					Addresses: []string{"sentinel-0:26379"},
+				},
+			},
+		}
+		assert.ErrorIs(t, scheduler.Validate(), config.ErrSentinelMasterNameEmpty)
+	})
+
+	t.Run("Should fail when sentinel is enabled without addresses", func(t *testing.T) {
+		scheduler := config.Scheduler{
+			TaskQueue: config.Redis{
+				Sentinel: config.Sentinel{
+					Enabled:    true,
+					MasterName: "mymaster",
+				},
+			},
+		}
+		assert.ErrorIs(t, scheduler.Validate(), config.ErrSentinelNoAddresses)
+	})
 }
 
 func TestValidateTenantLimits(t *testing.T) {

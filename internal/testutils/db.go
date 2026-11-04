@@ -187,14 +187,17 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 	}
 
 	tenantIDs := make([]string, 0, max(cfg.generateTenants, len(cfg.initTenants)))
+	created := make([]*model.Tenant, 0, max(cfg.generateTenants, len(cfg.initTenants))+1)
 
 	// Return instance with only init tenants
 	if len(cfg.initTenants) > 0 {
-		for _, tenant := range cfg.initTenants {
+		for i := range cfg.initTenants {
+			tenant := cfg.initTenants[i]
 			CreateDBTenant(tb, dbCon, &tenant)
 			tenantIDs = append(tenantIDs, tenant.ID)
+			created = append(created, &tenant)
 		}
-		runMigration(tb, cfg, migrator, db.TenantTarget)
+		migrateTestTenants(tb, cfg, migrator, created)
 
 		return dbCon, tenantIDs, cfg.dbCon
 	}
@@ -213,9 +216,10 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 			})
 			CreateDBTenant(tb, dbCon, tenant)
 			tenantIDs = append(tenantIDs, tenant.ID)
+			created = append(created, tenant)
 		}
 	} else {
-		schema := processNameForDB(tb.Name())
+		schema := uniqueName(tb.Name())
 		tenant := NewTenant(func(t *model.Tenant) {
 			t.SchemaName = schema
 			t.DomainURL = schema + ".example.com"
@@ -227,6 +231,7 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 		})
 		CreateDBTenant(tb, dbCon, tenant)
 		tenantIDs = append(tenantIDs, tenant.ID)
+		created = append(created, tenant)
 	}
 
 	if cfg.WithOrbital {
@@ -238,11 +243,35 @@ func NewTestDB(tb testing.TB, cfg TestDBConfig, opts ...TestDBConfigOpt) (*multi
 			t.OwnerID = schema + "-owner-id"
 		})
 		CreateDBTenant(tb, dbCon, tenant)
+		created = append(created, tenant)
 	}
 
-	runMigration(tb, cfg, migrator, db.TenantTarget)
+	migrateTestTenants(tb, cfg, migrator, created)
 
 	return dbCon, tenantIDs, cfg.dbCon
+}
+
+// migrateTestTenants runs tenant-schema migrations for the tenants created by a
+// single NewTestDB call. Because every NewTestDB call in a package process shares
+// one database, migrating via the global TenantTarget path (which walks every
+// tenant row in the DB) makes one test touch schemas that sibling parallel tests
+// are concurrently creating and dropping — producing a "goose_db_schema_version
+// does not exist" (42P01) race. Migrating only this call's own tenants avoids it.
+//
+// Version pinning is only used by the dedicated migration tests, which are not
+// subject to that cross-test race, so the global path is preserved for them.
+func migrateTestTenants(tb testing.TB, cfg TestDBConfig, migrator db.Migrator, tenants []*model.Tenant) {
+	tb.Helper()
+
+	if cfg.TenantVersion != nil {
+		runMigration(tb, cfg, migrator, db.TenantTarget)
+		return
+	}
+
+	for _, tenant := range tenants {
+		_, err := migrator.MigrateTenantToLatest(tb.Context(), tenant)
+		require.NoError(tb, err)
+	}
 }
 
 func runMigration(
@@ -460,7 +489,7 @@ func NewIsolatedDB(tb testing.TB, cfg config.Database) config.Database {
 	limitConnPool(tb, con)
 
 	// Database names must be unique within a container. Add a random suffix.
-	name := uniqueDBName(tb.Name())
+	name := uniqueName(tb.Name())
 
 	// No need to t.CleanUp as it only throws error on db error
 	err = con.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", name)).Error
@@ -473,8 +502,12 @@ func NewIsolatedDB(tb testing.TB, cfg config.Database) config.Database {
 	return cfg
 }
 
-// uniqueDBName builds a unique database name from a test name by appending a random suffix.
-func uniqueDBName(testName string) string {
+// uniqueName builds a unique database or schema name from a test name by
+// appending a random suffix. The suffix is required because processNameForDB
+// truncates to the Postgres identifier limit, so test names that share a long
+// prefix (e.g. parallel subtests of the same test) would otherwise collide on a
+// single schema and race on its goose_db_schema_version table.
+func uniqueName(testName string) string {
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	base := processNameForDB(testName)
 

@@ -31,6 +31,11 @@ var testConfig = &config.Config{
 		Name:      "Staging",
 		UIBaseUrl: "https://cmk-staging.example.com/#",
 	},
+	Notification: config.Notification{
+		ServiceName: "Key Management Service",
+		PortalName:  "CMK Portal",
+		SignOff:     "Your Key Management Service Team",
+	},
 }
 
 // newTestIDM returns a TestIdentityManagement
@@ -230,7 +235,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 			artifactType:      model.WorkflowArtifactTypeKey,
 			artifactName:      new("Test Key"),
 			parameters:        "",
-			expectedInSubject: "DELETE KEY: 'Test Key'",
+			expectedInSubject: "Delete Key: 'Test Key'",
 		},
 		{
 			name:              "LINK SYSTEM with artifact name to key configuration",
@@ -238,7 +243,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 			artifactType:      model.WorkflowArtifactTypeSystem,
 			artifactName:      new("Production System"),
 			parameters:        keyConfigID,
-			expectedInSubject: "LINK SYSTEM: 'Production System'",
+			expectedInSubject: "Connect System: 'Production System'",
 		},
 		{
 			name:              "UNLINK SYSTEM",
@@ -246,7 +251,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 			artifactType:      model.WorkflowArtifactTypeSystem,
 			artifactName:      nil,
 			parameters:        "",
-			expectedInSubject: "UNLINK SYSTEM",
+			expectedInSubject: "Disconnect System",
 		},
 		{
 			name:              "SWITCH SYSTEM with artifact name to key configuration",
@@ -254,7 +259,7 @@ func TestCreator_createWorkflowCreatedTask(t *testing.T) {
 			artifactType:      model.WorkflowArtifactTypeSystem,
 			artifactName:      new("Staging System"),
 			parameters:        keyConfigID,
-			expectedInSubject: "SWITCH SYSTEM: 'Staging System'",
+			expectedInSubject: "Switch System: 'Staging System'",
 		},
 	}
 
@@ -374,8 +379,8 @@ func TestCreator_createWorkflowApprovedTask(t *testing.T) {
 
 			expectedSubject := fmt.Sprintf(
 				"Workflow Approved - %s %s",
-				data.Workflow.ActionType,
-				data.Workflow.ArtifactType,
+				data.Workflow.ActionType.DisplayName(),
+				data.Workflow.ArtifactType.DisplayName(),
 			)
 
 			assert.Equal(t, recipients, notifData.Recipients)
@@ -422,8 +427,8 @@ func TestCreator_createWorkflowRejectedTask(t *testing.T) {
 
 	expectedSubject := fmt.Sprintf(
 		"Workflow Rejected - %s %s",
-		data.Workflow.ActionType,
-		data.Workflow.ArtifactType,
+		data.Workflow.ActionType.DisplayName(),
+		data.Workflow.ArtifactType.DisplayName(),
 	)
 
 	assert.Equal(t, recipients, notifData.Recipients)
@@ -449,23 +454,23 @@ func TestCreator_createWorkflowConfirmedTask(t *testing.T) {
 		{
 			name:            "successful workflow",
 			workflowState:   model.WorkflowStateSuccessful,
-			expectedSubject: "Workflow Successful - DELETE KEY",
+			expectedSubject: "Workflow Successful - Delete Key",
 			expectedMessage: "confirmed and completed successfully",
 			expectedAction:  "No further action required",
 		},
 		{
 			name:            "failed workflow",
 			workflowState:   model.WorkflowStateFailed,
-			expectedSubject: "Workflow Failed - DELETE KEY",
+			expectedSubject: "Workflow Failed - Delete Key",
 			expectedMessage: "confirmed but failed during execution",
 			expectedAction:  "Review the failure reason and contact support",
 		},
 		{
 			name:            "empty state",
 			workflowState:   "",
-			expectedSubject: "Workflow Confirmed - DELETE KEY",
+			expectedSubject: "Workflow Confirmed - Delete Key",
 			expectedMessage: "The workflow has been confirmed.",
-			expectedAction:  "Please check the CMK portal for more details",
+			expectedAction:  "Please check the CMK Portal for more details",
 		},
 	}
 
@@ -543,8 +548,8 @@ func TestCreator_createWorkflowRevokedTask(t *testing.T) {
 
 	expectedSubject := fmt.Sprintf(
 		"Workflow Revoked - %s %s",
-		data.Workflow.ActionType,
-		data.Workflow.ArtifactType,
+		data.Workflow.ActionType.DisplayName(),
+		data.Workflow.ArtifactType.DisplayName(),
 	)
 
 	assert.Equal(t, recipients, notifData.Recipients)
@@ -583,7 +588,7 @@ func TestCreator_createHTMLBody(t *testing.T) {
 	assert.NotEmpty(t, body)
 
 	// Verify template data is included in the body
-	assert.Contains(t, body, "CMK Workflow Notification")
+	assert.Contains(t, body, "Customer Managed Keys - Workflow Notification")
 	assert.Contains(t, body, testMessage)
 	assert.Contains(t, body, testActionText)
 	assert.Contains(t, body, data.Tenant.ID)
@@ -592,6 +597,36 @@ func TestCreator_createHTMLBody(t *testing.T) {
 	expectedWorkflowURL := fmt.Sprintf(
 		"%s/%s/tasks/%s", testConfig.Landscape.UIBaseUrl, data.Tenant.ID, data.Workflow.ID)
 	assert.Contains(t, body, expectedWorkflowURL)
+
+	// Security text is absent when not configured
+	assert.NotContains(t, body, "security-warning-marker")
+}
+
+func TestCreator_createHTMLBody_SecurityText(t *testing.T) {
+	cfgWithSecurity := *testConfig
+	cfgWithSecurity.Notification.SecurityText = `<p class="security-warning-marker">Do not approve unknown requests.</p>`
+
+	creator, err := workflow.NewWorkflowCreator(&cfgWithSecurity, newTestIDM())
+	assert.NoError(t, err)
+
+	data := workflow.NotificationData{
+		Tenant: model.Tenant{ID: "test-tenant"},
+		Workflow: model.Workflow{
+			ID:           uuid.New(),
+			InitiatorID:  initiatorID,
+			ActionType:   model.WorkflowActionTypeDelete,
+			ArtifactType: model.WorkflowArtifactTypeKey,
+			ArtifactID:   uuid.New(),
+		},
+		Transition: wf.TransitionCreate,
+	}
+
+	ctx := cmkcontext.InjectBusinessUserData(t.Context(), &auth.ClientData{Identifier: "User-ID"}, nil)
+	body, err := creator.CreateHTMLBody(ctx, data, testMessage, testActionText)
+
+	assert.NoError(t, err)
+	assert.Contains(t, body, "security-warning-marker")
+	assert.Contains(t, body, "Do not approve unknown requests.")
 }
 
 func TestCreator_createNotificationTask(t *testing.T) {

@@ -1,0 +1,35 @@
+# Settings of the scim plugin with every value from the JSON file /etc/scim/scim.json, as
+# documented at config.plugins in charts/cmk/values.yaml. files_test.go replaces the path.
+host:
+  source: file
+  file: { path: /etc/scim/scim.json, format: json, jsonPath: "$.host" }
+auth:
+  type: mtls
+  mtls:
+    cert:
+      source: file
+      file: { path: /etc/scim/scim.json, format: json, jsonPath: "$.auth.cert" }
+    certKey:
+      source: file
+      file: { path: /etc/scim/scim.json, format: json, jsonPath: "$.auth.certKey" }
+params:
+  groupAttribute:
+    source: file
+    file: { path: /etc/scim/scim.json, format: json, jsonPath: "$.params.groupAttribute" }
+  userAttribute:
+    source: file
+    file: { path: /etc/scim/scim.json, format: json, jsonPath: "$.params.userAttribute" }
+  groupMembersAttribute:
+    source: file
+    file:
+      path: /etc/scim/scim.json
+      format: json
+      jsonPath: "$.params.groupMembersAttribute"
+  listMethod:
+    source: file
+    file: { path: /etc/scim/scim.json, format: json, jsonPath: "$.params.listMethod" }
+authContext:
+  source: embedded
+  value: |
+    hostField: issuer
+    basePath: scim/v2

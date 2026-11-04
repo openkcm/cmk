@@ -19,7 +19,7 @@ func TestAPIErrorMapper_ImportKeyMaterialDecryptionFailed(t *testing.T) {
 	result := apierrors.APIErrorMapper.Transform(context.Background(), err)
 
 	assert.Equal(t, "INVALID_WRAPPED_KEY_MATERIAL", result.Code)
-	assert.Equal(t, "Key material decryption failed: invalid or incorrectly wrapped key material.", result.Message)
+	assert.Equal(t, "Key material decryption failed: invalid or incorrectly wrapped key material, or the key material is wrapped with expired import parameters.", result.Message)
 	assert.Equal(t, http.StatusBadRequest, result.Status)
 }
 

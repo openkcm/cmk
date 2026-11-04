@@ -8,7 +8,6 @@ import (
 
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
 	"github.com/openkcm/cmk/internal/auditor"
-	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
@@ -33,7 +32,7 @@ func SetupGroupManager(t *testing.T) (*manager.GroupManager, *multitenancy.DB, s
 
 	m := manager.NewGroupManager(dbRepository, svcRegistry,
 		manager.NewUserManager(dbRepository,
-			auditor.New(t.Context(), &config.Config{})))
+			&auditor.Auditor{}))
 
 	return m, db, tenants[0]
 }

@@ -55,15 +55,13 @@ func TestAuditor_SendCmkUnauthorizedRequestAuditLog(t *testing.T) {
 		{
 			name:                    "collector server error",
 			setupCtx:                createTestContextForAuthz,
-			expectErr:               true,
-			errType:                 auditor.ErrSendEvent,
+			expectErr:               false,
 			mockCollectorStatusCode: http.StatusInternalServerError,
 		},
 		{
 			name:                    "collector server unavailable",
 			setupCtx:                createTestContextForAuthz,
-			expectErr:               true,
-			errType:                 auditor.ErrSendEvent,
+			expectErr:               false,
 			mockCollectorStatusCode: http.StatusServiceUnavailable,
 		},
 	}

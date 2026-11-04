@@ -15,10 +15,6 @@ import (
 
 var GetPluginAlgorithm = getPluginAlgorithm
 
-var BuildWorkflowConfigFromRows = buildWorkflowConfigFromRows
-
-var BuildKeystoreConfigFromRows = buildKeystoreConfigFromRows
-
 var ValidateWorkflowConfig = validateWorkflowConfig
 
 func (m *TenantConfigManager) GetTenantConfigsHyokKeystore(ctx context.Context) HYOKKeystore {
@@ -95,9 +91,13 @@ func (w *WorkflowManager) SetAsyncClient(client async.Client) {
 func (w *WorkflowManager) ValidateApproverCount(
 	ctx context.Context,
 	workflow *model.Workflow,
-	minimumApprovals int,
+	requiredApprovals int,
 ) (bool, error) {
-	return w.validateApproverCount(ctx, workflow, minimumApprovals)
+	keyConfigs, err := w.getKeyConfigurationsFromArtifact(ctx, workflow)
+	if err != nil {
+		return false, err
+	}
+	return w.validateApproverCount(ctx, workflow, requiredApprovals, keyConfigs)
 }
 
 func (m *TenantManager) UnmapSystemErrorCanContinue(ctx context.Context, err error) OffboardingStatus {

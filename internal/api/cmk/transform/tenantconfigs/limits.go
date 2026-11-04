@@ -1,11 +1,14 @@
 package tenantconfigs
 
-import cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+import (
+	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/model"
+)
 
-func LimitsToAPI(systems, keys, keyConfigs int) *cmkapi.TenantLimits {
+func LimitsToAPI(limits model.TenantLimits) *cmkapi.TenantLimits {
 	return &cmkapi.TenantLimits{
-		Systems:           &systems,
-		Keys:              &keys,
-		KeyConfigurations: &keyConfigs,
+		Systems:           limits.Systems,
+		Keys:              limits.Keys,
+		KeyConfigurations: limits.KeyConfigs,
 	}
 }

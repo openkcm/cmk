@@ -5,32 +5,32 @@ import (
 
 	"google.golang.org/grpc"
 
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
 )
 
-// FakeSessionManagerClient is a fake implementation of oidcmappinggrpc.OIDCMappingClient
+// FakeSessionManagerClient is a fake implementation of trustmappingv1.ServiceClient
 // that can be used for testing purposes.
 // sonarignore
 type FakeSessionManagerClient struct {
-	MockApplyOIDCMapping func(
+	MockApplyTrustMapping func(
 		ctx context.Context,
-		req *oidcmappinggrpc.ApplyOIDCMappingRequest,
-	) (*oidcmappinggrpc.ApplyOIDCMappingResponse, error)
+		req *trustmappingv1.ApplyTrustMappingRequest,
+	) (*trustmappingv1.ApplyTrustMappingResponse, error)
 
-	MockBlockOIDCMapping func(
+	MockBlockTrustMapping func(
 		ctx context.Context,
-		req *oidcmappinggrpc.BlockOIDCMappingRequest,
-	) (*oidcmappinggrpc.BlockOIDCMappingResponse, error)
+		req *trustmappingv1.BlockTrustMappingRequest,
+	) (*trustmappingv1.BlockTrustMappingResponse, error)
 
-	MockUnblockOIDCMapping func(
+	MockUnblockTrustMapping func(
 		ctx context.Context,
-		req *oidcmappinggrpc.UnblockOIDCMappingRequest,
-	) (*oidcmappinggrpc.UnblockOIDCMappingResponse, error)
+		req *trustmappingv1.UnblockTrustMappingRequest,
+	) (*trustmappingv1.UnblockTrustMappingResponse, error)
 
-	MockRemoveOIDCMapping func(
+	MockRemoveTrustMapping func(
 		ctx context.Context,
-		req *oidcmappinggrpc.RemoveOIDCMappingRequest,
-	) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error)
+		req *trustmappingv1.RemoveTrustMappingRequest,
+	) (*trustmappingv1.RemoveTrustMappingResponse, error)
 }
 
 // NewFakeSessionManagerClient creates a new fake session manager client
@@ -38,36 +38,36 @@ func NewFakeSessionManagerClient() *FakeSessionManagerClient {
 	return &FakeSessionManagerClient{}
 }
 
-// ApplyOIDCMapping implements the oidcmappinggrpc.OIDCMappingClient interface
-func (f *FakeSessionManagerClient) ApplyOIDCMapping(
+// ApplyTrustMapping implements the trustmappingv1.ServiceClient interface
+func (f *FakeSessionManagerClient) ApplyTrustMapping(
 	ctx context.Context,
-	req *oidcmappinggrpc.ApplyOIDCMappingRequest,
+	req *trustmappingv1.ApplyTrustMappingRequest,
 	_ ...grpc.CallOption,
-) (*oidcmappinggrpc.ApplyOIDCMappingResponse, error) {
-	return f.MockApplyOIDCMapping(ctx, req)
+) (*trustmappingv1.ApplyTrustMappingResponse, error) {
+	return f.MockApplyTrustMapping(ctx, req)
 }
 
-func (f *FakeSessionManagerClient) BlockOIDCMapping(
+func (f *FakeSessionManagerClient) BlockTrustMapping(
 	ctx context.Context,
-	req *oidcmappinggrpc.BlockOIDCMappingRequest,
+	req *trustmappingv1.BlockTrustMappingRequest,
 	_ ...grpc.CallOption,
-) (*oidcmappinggrpc.BlockOIDCMappingResponse, error) {
-	return f.MockBlockOIDCMapping(ctx, req)
+) (*trustmappingv1.BlockTrustMappingResponse, error) {
+	return f.MockBlockTrustMapping(ctx, req)
 }
 
-func (f *FakeSessionManagerClient) UnblockOIDCMapping(
+func (f *FakeSessionManagerClient) UnblockTrustMapping(
 	ctx context.Context,
-	req *oidcmappinggrpc.UnblockOIDCMappingRequest,
+	req *trustmappingv1.UnblockTrustMappingRequest,
 	_ ...grpc.CallOption,
-) (*oidcmappinggrpc.UnblockOIDCMappingResponse, error) {
-	return f.MockUnblockOIDCMapping(ctx, req)
+) (*trustmappingv1.UnblockTrustMappingResponse, error) {
+	return f.MockUnblockTrustMapping(ctx, req)
 }
 
-// RemoveOIDCMapping implements the oidcmappinggrpc.OIDCMappingClient interface
-func (f *FakeSessionManagerClient) RemoveOIDCMapping(
+// RemoveTrustMapping implements the trustmappingv1.ServiceClient interface
+func (f *FakeSessionManagerClient) RemoveTrustMapping(
 	ctx context.Context,
-	req *oidcmappinggrpc.RemoveOIDCMappingRequest,
+	req *trustmappingv1.RemoveTrustMappingRequest,
 	_ ...grpc.CallOption,
-) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
-	return f.MockRemoveOIDCMapping(ctx, req)
+) (*trustmappingv1.RemoveTrustMappingResponse, error) {
+	return f.MockRemoveTrustMapping(ctx, req)
 }

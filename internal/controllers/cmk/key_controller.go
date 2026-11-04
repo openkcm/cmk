@@ -9,12 +9,19 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmk/transform/key/keyshared"
 	"github.com/openkcm/cmk/internal/api/cmk/transform/key/transformer"
 	"github.com/openkcm/cmk/internal/apierrors"
-	"github.com/openkcm/cmk/internal/constants"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/repo"
+	"github.com/openkcm/cmk/utils/odata"
 	"github.com/openkcm/cmk/utils/ptr"
 )
+
+var getKeysOrderSchema = odata.OrderToRepoMap{
+	"name":      {DBName: repo.NameField},
+	"type":      {DBName: repo.KeyTypeField},
+	"state":     {DBName: repo.StateField},
+	"createdAt": {DBName: repo.CreatedField},
+}
 
 // PostKeys handles the creation of a new key
 func (c *APIController) PostKeys(ctx context.Context,
@@ -67,13 +74,16 @@ func (c *APIController) GetKeys(ctx context.Context,
 	request cmkapi.GetKeysRequestObject,
 ) (cmkapi.GetKeysResponseObject, error) {
 	keyConfigID := request.Params.KeyConfigurationID
-	pagination := repo.Pagination{
-		Skip:  ptr.GetPtrOrDefault(request.Params.Skip, constants.DefaultSkip),
-		Top:   ptr.GetPtrOrDefault(request.Params.Top, constants.DefaultTop),
-		Count: ptr.GetSafeDeref(request.Params.Count),
+
+	params := odata.New(
+		odata.WithPagination(request.Params.Skip, request.Params.Top, request.Params.Count),
+		odata.WithOrder(request.Params.Orderby, getKeysOrderSchema),
+	)
+	if _, _, err := params.GetOrder(); err != nil {
+		return nil, errs.Wrap(apierrors.ErrBadOdataOrderby, err)
 	}
 
-	keys, total, err := c.Manager.Keys.GetKeys(ctx, keyConfigID, pagination)
+	keys, total, err := c.Manager.Keys.GetKeys(ctx, keyConfigID, params)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrQueryKeyList, err)
 	}
@@ -95,7 +105,7 @@ func (c *APIController) GetKeys(ctx context.Context,
 		Value: values,
 	}
 
-	if pagination.Count {
+	if params.GetPagination().Count {
 		response.Count = new(total)
 	}
 

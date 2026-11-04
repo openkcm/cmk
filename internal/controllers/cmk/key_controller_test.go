@@ -144,6 +144,19 @@ func TestKeyControllerGetKeys(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 			expectedLength: 0,
 		},
+		{
+			name:           "Should order keys by name",
+			query:          fmt.Sprintf("/keys?keyConfigurationID=%s&$count=true&$orderby=name+desc", key1.KeyConfigurationID),
+			expectedStatus: http.StatusOK,
+			expectedLength: 1,
+			expectedNames:  []string{key1.Name},
+		},
+		{
+			name:           "Should fail on invalid orderby field",
+			query:          fmt.Sprintf("/keys?keyConfigurationID=%s&$orderby=bogus", key1.KeyConfigurationID),
+			expectedStatus: http.StatusBadRequest,
+			expectedLength: 0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -752,7 +765,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	// Create workflow config with workflows DISABLED by default
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 		wc.Enabled = false // Disable workflow requirement
 	}))
 
@@ -877,7 +890,7 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.workflowEnable {
 				// Enable workflow by re-upserting the config
-				testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+				testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 					wc.Enabled = true // Enable workflow requirement
 				}))
 			}
@@ -933,7 +946,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	r := sql.NewRepository(db)
 
 	// Create workflow config with workflows DISABLED by default
-	testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 		wc.Enabled = false // Disable workflow requirement by default
 	}))
 
@@ -1231,7 +1244,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.workflowEnable {
 				// Enable workflow by re-upserting the config
-				testutils.WriteWorkflowConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+				testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
 					wc.Enabled = true // Enable workflow requirement
 				}))
 			}
@@ -1700,7 +1713,7 @@ func TestKeyControllerImportKeyMaterial(t *testing.T) {
 
 		response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
 		assert.Equal(t, "INVALID_WRAPPED_KEY_MATERIAL", response.Error.Code)
-		assert.Equal(t, "Key material decryption failed: invalid or incorrectly wrapped key material.", response.Error.Message)
+		assert.Equal(t, "Key material decryption failed: invalid or incorrectly wrapped key material, or the key material is wrapped with expired import parameters.", response.Error.Message)
 	})
 }
 

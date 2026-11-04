@@ -29,7 +29,7 @@ import (
 	authgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/auth/v1"
 	mappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/mapping/v1"
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
 	stduuid "uuid"
 
 	"github.com/openkcm/cmk/internal/clients/registry/tenants"
@@ -57,21 +57,21 @@ func TestTenantProvisioning_AuthzPolicy(t *testing.T) {
 		Database: cfgDB,
 	}
 
-	tenantManager, groupManager, authzRepo := createManagers(t, multitenancyDB, cfg, ps)
+	tenantManager, groupManager, authzRepo, tcm := createManagers(t, multitenancyDB, cfg, ps)
 
 	// Fake session manager — used by handleApplyTenantAuth and handleTerminateTenant.
 	fakeSessionManager := sessionmanager.NewFakeSessionManagerClient()
-	fakeSessionManager.MockApplyOIDCMapping = func(
+	fakeSessionManager.MockApplyTrustMapping = func(
 		_ context.Context,
-		_ *oidcmappinggrpc.ApplyOIDCMappingRequest,
-	) (*oidcmappinggrpc.ApplyOIDCMappingResponse, error) {
-		return &oidcmappinggrpc.ApplyOIDCMappingResponse{Success: true}, nil
+		_ *trustmappingv1.ApplyTrustMappingRequest,
+	) (*trustmappingv1.ApplyTrustMappingResponse, error) {
+		return trustmappingv1.ApplyTrustMappingResponse_builder{Success: true}.Build(), nil
 	}
-	fakeSessionManager.MockRemoveOIDCMapping = func(
+	fakeSessionManager.MockRemoveTrustMapping = func(
 		_ context.Context,
-		_ *oidcmappinggrpc.RemoveOIDCMappingRequest,
-	) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
-		return &oidcmappinggrpc.RemoveOIDCMappingResponse{Success: true}, nil
+		_ *trustmappingv1.RemoveTrustMappingRequest,
+	) (*trustmappingv1.RemoveTrustMappingResponse, error) {
+		return trustmappingv1.RemoveTrustMappingResponse_builder{Success: true}.Build(), nil
 	}
 
 	_, grpcConn := testutils.NewGRPCSuite(t, func(s *grpc.Server) {
@@ -93,6 +93,7 @@ func TestTenantProvisioning_AuthzPolicy(t *testing.T) {
 		clientFactory,
 		tenantManager,
 		groupManager,
+		tcm,
 		authzRepo,
 	)
 	require.NoError(t, err)

@@ -19,6 +19,11 @@ type OData struct {
 	searchFields     []repo.QueryField
 	searchJoinFields []SearchJoinField
 	loadedSearch     *Search
+
+	orderby        *string
+	orderMap       OrderToRepoMap
+	orderJoinField []OrderJoinField
+	loadedOrder    *Order
 }
 
 type Option func(*OData)
@@ -48,6 +53,19 @@ func WithSearch(search *string, fields ...repo.QueryField) Option {
 func WithSearchJoins(fields ...SearchJoinField) Option {
 	return func(o *OData) {
 		o.searchJoinFields = fields
+	}
+}
+
+func WithOrder(orderby *string, orderMap OrderToRepoMap) Option {
+	return func(o *OData) {
+		o.orderby = orderby
+		o.orderMap = orderMap
+	}
+}
+
+func WithOrderJoins(fields ...OrderJoinField) Option {
+	return func(o *OData) {
+		o.orderJoinField = fields
 	}
 }
 
@@ -93,4 +111,17 @@ func (o *OData) GetSearch() (repo.QueryGetter, error) {
 
 	o.loadedSearch = s
 	return s, nil
+}
+
+func (o *OData) GetOrder() (*repo.Query, []repo.OrderField, error) {
+	if o.loadedOrder == nil {
+		order, err := NewOrder(o.orderby, o.orderMap, o.orderJoinField)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		o.loadedOrder = order
+	}
+
+	return o.loadedOrder.GetOrder()
 }

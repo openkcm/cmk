@@ -29,6 +29,16 @@ import (
 //	  crypto/<region>/access_data/<field>
 //	  supported_region/<technicalName>/name
 func upFlattenKeystoreSubBlobs(ctx context.Context, tx *sql.Tx) error {
+	// Skip when the jsonb value column is already gone (schema >= 00024): the
+	// sub-blob rows were already flattened by migration 00004 before that cleanup.
+	jsonb, err := jsonbValueColumnExists(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !jsonb {
+		return nil
+	}
+
 	ready, err := flatRowColumnsExist(ctx, tx)
 	if err != nil {
 		return err

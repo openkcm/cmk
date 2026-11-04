@@ -209,11 +209,11 @@ func (m *SystemManager) GetAllSystems(
 
 	query := filterQuery.Merge(searchQuery)
 
-	// Sort by identifier ascending by default
-	query = query.Order(repo.OrderField{
-		Field:     repo.IdentifierField,
-		Direction: repo.Asc,
-	})
+	if err := applyOrderOrDefault(params, query, func(q *repo.Query) {
+		q.Order(repo.OrderField{Field: repo.IdentifierField, Direction: repo.Asc})
+	}); err != nil {
+		return nil, 0, err
+	}
 
 	pagination := params.GetPagination()
 

@@ -106,7 +106,8 @@ func runEventReconciler(ctx context.Context, cfg *config.Config) error {
 		return oops.In("event-reconciler").Wrap(err)
 	}
 
-	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, nil, cmkflags.NewClient())
+	ff := manager.NewFeatureFlags(cfg, svcRegistry, cmkflags.NewClient())
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, nil, ff)
 
 	reconciler, err := eventprocessor.NewCryptoReconciler(
 		ctx, cfg, authzRepo, svcRegistry, clientsFactory, tenantConfigManager,

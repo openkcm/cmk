@@ -25,7 +25,7 @@ func buildSearchQuery(fields []string, terms ...wantTerm) *repo.Query {
 				Field: field,
 				Value: repo.CompositeKeyEntry{Key: repo.Key{
 					Value:     "%" + term.value + "%",
-					Operation: repo.Contains,
+					Operation: repo.ContainsOp,
 				}},
 			})
 		}

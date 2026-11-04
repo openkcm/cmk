@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.12.1](https://github.com/openkcm/cmk/compare/v0.12.0...v0.12.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* the Dockerfile for the full plugins stage is now using the correct image name. ([61fecd4](https://github.com/openkcm/cmk/commit/61fecd40de9e8b5eb75dda70811051cb9bb560cc))
+
+## [0.12.0](https://github.com/openkcm/cmk/compare/v0.11.0...v0.12.0) (2026-10-20)
+
+
+### Features
+
+* migrate to trustmapping api ([#477](https://github.com/openkcm/cmk/issues/477)) ([410840a](https://github.com/openkcm/cmk/commit/410840aadbf8e76120411d83913b2ec80a2b2b8b))
+* sync tenant limit overrides from registry config update events ([#463](https://github.com/openkcm/cmk/issues/463)) ([3cad4cd](https://github.com/openkcm/cmk/commit/3cad4cda42816a56bc5398e043397d1bb30440cb))
+
+
+### Bug Fixes
+
+* audit logging in authz middleware and new key version detection ([#484](https://github.com/openkcm/cmk/issues/484)) ([89f406d](https://github.com/openkcm/cmk/commit/89f406d35c12bb3054db675b024b590c9fae915f))
+* chart refactoring and documenting ([#483](https://github.com/openkcm/cmk/issues/483)) ([df20222](https://github.com/openkcm/cmk/commit/df20222f5ae21618297b57654c6e4ff94a490ed6))
+* **chart:** covered missing extraEnvs, extraEnvsFrom, livenessProbe, readinessProbe, and resources in deployment templates. ([#474](https://github.com/openkcm/cmk/issues/474)) ([d4ab342](https://github.com/openkcm/cmk/commit/d4ab3426a51aae03d907462ec919db6a33565cbb))
+* **chart:** remove chart not used in event-reconciler deployment configuration! ([#475](https://github.com/openkcm/cmk/issues/475)) ([8681c4e](https://github.com/openkcm/cmk/commit/8681c4e40e8d9ff542362ab2347b6c15c063f0be))
+* **deps:** bump the gomod-group group across 1 directory with 3 updates ([#481](https://github.com/openkcm/cmk/issues/481)) ([506b815](https://github.com/openkcm/cmk/commit/506b815e5f895ed8ad684bf96e45546e2304edf6))
+* update the images paths for the plugins ([28fb38a](https://github.com/openkcm/cmk/commit/28fb38a9cb468e2c27b1086f9a6c49425c4d5989))
+
+## [0.11.0](https://github.com/openkcm/cmk/compare/v0.10.0...v0.11.0) (2026-10-13)
+
+
+### Features
+
+* add key config limit override to tenant configs ([#448](https://github.com/openkcm/cmk/issues/448)) ([bff864b](https://github.com/openkcm/cmk/commit/bff864babd4705c3f5827fccf0be6f3849e25030))
+* Add System Grouping ([#465](https://github.com/openkcm/cmk/issues/465)) ([be102be](https://github.com/openkcm/cmk/commit/be102be75606d6f32e5663f89a3bdede034ada99))
+* allow deleting PENDING_IMPORT BYOK keys without workflow ([#390](https://github.com/openkcm/cmk/issues/390)) ([b88c960](https://github.com/openkcm/cmk/commit/b88c9600c275cce9c4f89ce9c67359258da8216e))
+* allow non-cert-based auth support for HYOK ([#472](https://github.com/openkcm/cmk/issues/472)) ([739e2d0](https://github.com/openkcm/cmk/commit/739e2d09a0daad5b08cd8b77eed939b37b4f820c))
+* **byok:** handle import job not ready error ([#467](https://github.com/openkcm/cmk/issues/467)) ([c0805dd](https://github.com/openkcm/cmk/commit/c0805dda85aa508d429363a67a2fd1bb71f17d89))
+* enforce per-tenant key configuration limit and expose it in tenant limits api ([#457](https://github.com/openkcm/cmk/issues/457)) ([6e59175](https://github.com/openkcm/cmk/commit/6e59175e69a988fef4a3a0cf7040c71a71705cb4))
+
+
+### Bug Fixes
+
+* **deps:** bump github.com/openkcm/api-sdk from 0.22.0 to 0.23.0 in the gomod-group group across 1 directory ([#470](https://github.com/openkcm/cmk/issues/470)) ([ea468e4](https://github.com/openkcm/cmk/commit/ea468e4ba536a64375446e4e19ff6484dda1cc53))
+* make db-migrator command configurable, default to /cmkd ([#468](https://github.com/openkcm/cmk/issues/468)) ([e625cb0](https://github.com/openkcm/cmk/commit/e625cb0eca97743a4b8c025eb2067afba2ae3a94))
+* schema db migrator binary path part 2 ([#469](https://github.com/openkcm/cmk/issues/469)) ([5058e7f](https://github.com/openkcm/cmk/commit/5058e7f6c6e4733423c9c14e8ba2cd38bcfc2721))
+* update README and add support for security feedback and contribution guidelines. ([8de3057](https://github.com/openkcm/cmk/commit/8de305739f59ae24afcb0358a62bd2cb09893f88))
+
 ## [0.10.0](https://github.com/openkcm/cmk/compare/v0.9.0...v0.10.0) (2026-10-08)
 
 

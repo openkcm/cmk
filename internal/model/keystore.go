@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openkcm/cmk/internal/authz"
-	"github.com/openkcm/cmk/internal/config"
 )
 
 // Keystore is an internal entity of pool item that should be persisted.
@@ -38,25 +37,3 @@ func (m Keystore) CheckAuthz(ctx context.Context,
 ) (bool, error) {
 	return authz.CheckAuthz(ctx, authzHandler, m.TableResourceType(), action)
 }
-
-type KeystoreConfig struct {
-	RoleManagementConfig ManagementConfig        `yaml:"roleManagementConfig" json:"roleManagementConfig"`
-	KeyManagementConfig  ManagementConfig        `yaml:"keyManagementConfig" json:"keyManagementConfig"`
-	CryptoAccessData     map[string]CryptoConfig `yaml:"cryptoAccessData" json:"cryptoAccessData"`
-	SupportedRegions     []config.Region         `yaml:"supportedRegions" json:"supportedRegions"`
-	allowBYOK            bool                    //nolint:unused
-}
-
-//nolint:tagliatelle
-type ManagementConfig struct {
-	LocalityID string             `yaml:"localityId" json:"localityId"`
-	CommonName string             `yaml:"commonName" json:"commonName"`
-	AccessData KeystoreAccessData `yaml:"accessData" json:"accessData"`
-}
-
-type CryptoConfig struct {
-	Subject    string             `yaml:"subject" json:"subject"`
-	AccessData KeystoreAccessData `yaml:"accessData" json:"accessData"`
-}
-
-type KeystoreAccessData map[string]any

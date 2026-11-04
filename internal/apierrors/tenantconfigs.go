@@ -9,10 +9,12 @@ import (
 )
 
 var (
-	ErrGetDefaultKeystore = errors.New("failed to get default keystore")
-	ErrGetWorkflowConfig  = errors.New("failed to get workflow config")
-	ErrSetWorkflowConfig  = errors.New("failed to set workflow config")
-	ErrGetTenantLimits    = errors.New("failed to get tenant limits")
+	ErrGetDefaultKeystore    = errors.New("failed to get default keystore")
+	ErrGetWorkflowConfig     = errors.New("failed to get workflow config")
+	ErrSetWorkflowConfig     = errors.New("failed to set workflow config")
+	ErrGetTenantLimits       = errors.New("failed to get tenant limits")
+	ErrGetSystemGroupsConfig = errors.New("failed to get system groups config")
+	ErrSetSystemGroupsConfig = errors.New("failed to set system groups config")
 )
 
 var tenantconfig = []errs.ExposedErrors[*APIError]{
@@ -55,7 +57,7 @@ var tenantconfig = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
-		InternalErrorChain: []error{ErrSetWorkflowConfig, manager.ErrDefaultExpiryExceedsMax},
+		InternalErrorChain: []error{ErrSetWorkflowConfig, manager.ErrExpiryExceedsMax},
 		ExposedError: &APIError{
 			Code:    "INVALID_SETTING",
 			Message: "defaultExpiryPeriodDays must be less than or equal to maxExpiryPeriodDays",
@@ -69,11 +71,11 @@ var tenantconfig = []errs.ExposedErrors[*APIError]{
 		InternalErrorChain: []error{ErrSetWorkflowConfig, manager.ErrMinimumApprovalsTooLow},
 		ExposedError: &APIError{
 			Code:    "INVALID_SETTING",
-			Message: "minimumApprovals must be at least 2",
+			Message: "requiredApprovals must be at least 2",
 			Status:  http.StatusBadRequest,
 		},
 		ContextGetter: func(_ error) map[string]any {
-			return map[string]any{"setting": "minimumApprovals"}
+			return map[string]any{"setting": "requiredApprovals"}
 		},
 	},
 	{
@@ -89,6 +91,22 @@ var tenantconfig = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    "GET_TENANT_LIMITS",
 			Message: "Failed to get tenant limits",
+			Status:  http.StatusInternalServerError,
+		},
+	},
+	{
+		InternalErrorChain: []error{ErrGetSystemGroupsConfig},
+		ExposedError: &APIError{
+			Code:    "GET_SYSTEM_GROUPS_CONFIG",
+			Message: "Failed to get system groups config",
+			Status:  http.StatusInternalServerError,
+		},
+	},
+	{
+		InternalErrorChain: []error{ErrSetSystemGroupsConfig},
+		ExposedError: &APIError{
+			Code:    "SET_SYSTEM_GROUPS_CONFIG",
+			Message: "Failed to set system groups config",
 			Status:  http.StatusInternalServerError,
 		},
 	},

@@ -24,7 +24,7 @@ const (
 	LessThan           ComparisonOp = "<"
 	GreaterThanOrEqual ComparisonOp = ">="
 	LessThanOrEqual    ComparisonOp = "<="
-	Contains           ComparisonOp = "ILIKE"
+	ContainsOp         ComparisonOp = "ILIKE"
 
 	Desc OrderDirection = "desc"
 	Asc  OrderDirection = "asc"
@@ -58,6 +58,7 @@ const (
 	InitiatorIDField    QueryField = "initiator_id"
 	UserIDField         QueryField = "user_id"
 	PrimaryKeyIDField   QueryField = "primary_key_id"
+	CreatorIDField      QueryField = "creator_id"
 	PurposeField        QueryField = "purpose"
 	NameField           QueryField = "name"
 	ErrorMessageField   QueryField = "error_message"
@@ -134,6 +135,10 @@ type Params interface {
 	GetPagination() Pagination
 	GetFilter() (QueryFilter, error)
 	GetSearch() (QueryGetter, error)
+}
+
+type OrderGetter interface {
+	GetOrder() (*Query, []OrderField, error)
 }
 
 // GetFilterFieldValues returns the values for the given field from the filter,
@@ -213,6 +218,10 @@ func (c CompositeKey) Where(q QueryField, v any,
 	return c
 }
 
+func Contains(v any) Key {
+	return Key{Value: v, Operation: ContainsOp}
+}
+
 func NotEq(v any) Key {
 	return Key{Value: v, Operation: NotEqual}
 }
@@ -267,6 +276,8 @@ type Query struct {
 	Group []QueryField
 
 	OrderFields []OrderField
+
+	OrderExprs []OrderExpr
 }
 
 type JoinType string
@@ -393,6 +404,11 @@ type QueryFieldValue = string
 type OrderField struct {
 	Field     QueryField
 	Direction OrderDirection
+}
+
+type OrderExpr struct {
+	SQL  string
+	Vars []any
 }
 
 // Filter maps a struct field to a DB column for GetFilterOptions
@@ -592,6 +608,11 @@ func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {
 
 func (q *Query) Order(orderFields ...OrderField) *Query {
 	q.OrderFields = append(q.OrderFields, orderFields...)
+	return q
+}
+
+func (q *Query) OrderByExpr(exprs ...OrderExpr) *Query {
+	q.OrderExprs = append(q.OrderExprs, exprs...)
 	return q
 }
 

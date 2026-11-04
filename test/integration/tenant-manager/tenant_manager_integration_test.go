@@ -22,7 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	tenantgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant/v1"
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
 	stduuid "uuid"
 
 	"github.com/openkcm/cmk/internal/clients/registry/tenants"
@@ -87,7 +87,7 @@ func setupInfrastructure(tb testing.TB) (
 	fakeSessionManagerService := sessionmanager.NewFakeSessionManagerService()
 
 	_, sessionManagerGRPCClient := testutils.NewGRPCSuite(tb, func(s *grpc.Server) {
-		oidcmappinggrpc.RegisterServiceServer(s, fakeSessionManagerService)
+		trustmappingv1.RegisterServiceServer(s, fakeSessionManagerService)
 	})
 
 	// Get the actual address from the gRPC client

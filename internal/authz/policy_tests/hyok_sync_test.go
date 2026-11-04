@@ -56,9 +56,10 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
 	assert.NoError(t, err)
 
+	ff := manager.NewFeatureFlags(cfg, nil, nil)
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	certManager := manager.NewCertificateManager(t.Context(), authzRepo, ps, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, certManager, nil)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, certManager, ff)
 	tagManager := manager.NewTagManager(authzRepo)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	keyConfigManager := manager.NewKeyConfigManager(authzRepo, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
@@ -74,6 +75,7 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 		cmkAuditor,
 		nil,
 		nil,
+		ff,
 	)
 
 	// Create a tenant-default certificate and a HYOK key

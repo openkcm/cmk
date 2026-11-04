@@ -23,6 +23,7 @@ var (
 	ErrActionRequireWorkflow = errors.New("action requires a workflow")
 	ErrUnknownProperty       = errors.New("unknown property")
 	ErrBadOdataFilter        = errors.New("bad odata filter")
+	ErrBadOdataOrderby       = errors.New("bad odata orderby")
 )
 
 var defaultMapper = []errs.ExposedErrors[*APIError]{
@@ -63,6 +64,14 @@ var defaultMapper = []errs.ExposedErrors[*APIError]{
 		ExposedError: &APIError{
 			Code:    BadRequest,
 			Message: "Bad Odata filter provided",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
+		InternalErrorChain: []error{ErrBadOdataOrderby},
+		ExposedError: &APIError{
+			Code:    BadRequest,
+			Message: "Bad Odata orderby provided",
 			Status:  http.StatusBadRequest,
 		},
 	},

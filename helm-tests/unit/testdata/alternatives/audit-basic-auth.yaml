@@ -1,0 +1,9 @@
+# charts/cmk/values.yaml, config.audit: "Example with basic authentication". Applied on top
+# of ../values-examples.yaml; null removes the settings of the example it replaces.
+config:
+  audit:
+    httpClient:
+      mtls: null
+      basicAuth:
+        username: { value: cmk }
+        password: { source: file, file: { path: /etc/credentials/audit/password } }

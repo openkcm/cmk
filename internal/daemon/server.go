@@ -16,6 +16,7 @@ import (
 	commonmiddleware "github.com/openkcm/common-sdk/pkg/middleware"
 
 	cmkapi "github.com/openkcm/cmk/internal/api/cmk/generated"
+	"github.com/openkcm/cmk/internal/auditor"
 	authz_loader "github.com/openkcm/cmk/internal/authz/loader"
 	authz_repo "github.com/openkcm/cmk/internal/authz/repo"
 	"github.com/openkcm/cmk/internal/clients"
@@ -34,10 +35,6 @@ import (
 )
 
 const (
-	ReadHeaderTimeout    = 5 * time.Second
-	ReadTimeout          = 10 * time.Second
-	WriteTimeout         = 10 * time.Second
-	IdleTimeout          = 120 * time.Second
 	ServerLogDomain      = "server daemon"
 	AuthzRefreshInterval = 120 * time.Second
 )
@@ -48,6 +45,7 @@ type CmkServer struct {
 	clientsFactory   clients.Factory
 	server           *http.Server
 	signingKeyLoader *loader.Loader
+	auditor          *auditor.Auditor
 }
 
 type Server interface {
@@ -65,7 +63,9 @@ func NewCMKServer(
 		log.Error(ctx, "error connecting to registry service gRPC server", err)
 	}
 
-	controller, err := makeController(ctx, cfg, dbCon, clientsFactory)
+	auditor := auditor.New(ctx, cfg)
+
+	controller, err := makeController(ctx, cfg, dbCon, clientsFactory, auditor)
 	if err != nil {
 		return nil, oops.In(ServerLogDomain).Wrapf(err, "creating controller")
 	}
@@ -93,6 +93,7 @@ func NewCMKServer(
 		controller:       controller,
 		server:           httpServer,
 		signingKeyLoader: signingKeyLoader,
+		auditor:          auditor,
 	}, nil
 }
 
@@ -114,10 +115,14 @@ func (s *CmkServer) Close(ctx context.Context) error {
 		}
 	}
 
-	shutdownCtx, shutdownRelease := context.WithTimeout(ctx, s.cfg.HTTP.ShutdownTimeout)
-	defer shutdownRelease()
+	if s.auditor != nil {
+		err = s.auditor.Close(ctx)
+		if err != nil {
+			return oops.In(ServerLogDomain).Wrapf(err, "closing auditor")
+		}
+	}
 
-	err = s.server.Shutdown(shutdownCtx)
+	err = s.server.Shutdown(ctx)
 	if err != nil {
 		return oops.In("HTTP Server").
 			WithContext(ctx).
@@ -221,10 +226,10 @@ func createHTTPServer(
 	return &http.Server{
 		Addr:              cfg.HTTP.Address,
 		Handler:           httpHandler,
-		ReadHeaderTimeout: ReadHeaderTimeout,
-		ReadTimeout:       ReadTimeout,
-		WriteTimeout:      WriteTimeout,
-		IdleTimeout:       IdleTimeout,
+		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
+		ReadTimeout:       cfg.HTTP.ReadTimeout,
+		WriteTimeout:      cfg.HTTP.WriteTimeout,
+		IdleTimeout:       cfg.HTTP.IdleTimeout,
 	}, nil
 }
 
@@ -233,6 +238,7 @@ func makeController(
 	cfg *config.Config,
 	dbCon *multitenancy.DB,
 	clientsFactory clients.Factory,
+	auditor *auditor.Auditor,
 ) (*cmk.APIController, error) {
 	r := sql.NewRepository(dbCon)
 
@@ -259,7 +265,7 @@ func makeController(
 	}
 
 	controller := cmk.NewAPIController(ctx, authzRepo, cfg, clientsFactory,
-		migrator, svcRegistry, authzRepoLoader, authzAPILoader, featureflags.NewClient())
+		migrator, svcRegistry, authzRepoLoader, authzAPILoader, featureflags.NewClient(), auditor)
 
 	authzAPILoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)
 	authzRepoLoader.StartAuthzDataRefresh(ctx, AuthzRefreshInterval)

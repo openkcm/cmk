@@ -7,7 +7,7 @@ import (
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
 
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
 )
 
 const (
@@ -17,11 +17,11 @@ const (
 type Service interface {
 	io.Closer
 
-	OIDCMapping() oidcmappinggrpc.ServiceClient
+	TrustMapping() trustmappingv1.ServiceClient
 }
 
 type service struct {
-	oidc oidcmappinggrpc.ServiceClient
+	trust trustmappingv1.ServiceClient
 
 	conn *commongrpc.DynamicClientConn
 }
@@ -33,13 +33,13 @@ func NewService(cfg *commoncfg.GRPCClient) (Service, error) {
 	}
 
 	return &service{
-		oidc: oidcmappinggrpc.NewServiceClient(conn),
-		conn: conn,
+		trust: trustmappingv1.NewServiceClient(conn),
+		conn:  conn,
 	}, nil
 }
 
-func (c *service) OIDCMapping() oidcmappinggrpc.ServiceClient {
-	return c.oidc
+func (c *service) TrustMapping() trustmappingv1.ServiceClient {
+	return c.trust
 }
 
 func (c *service) Close() error {

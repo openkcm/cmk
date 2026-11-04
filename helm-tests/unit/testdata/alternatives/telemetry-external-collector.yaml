@@ -1,0 +1,31 @@
+# charts/cmk/values.yaml, config.telemetry: "Example with an external collector" (api-token
+# and basic). Applied on top of ../values-examples.yaml; null removes the settings of
+# the example it replaces.
+config:
+  telemetry:
+    traces:
+      enabled: true
+      protocol: grpc
+      host: { value: otlp.example.com:443 }
+      secretRef:
+        type: api-token
+        apiToken: { source: file, file: { path: /etc/credentials/otel/token } }
+    metrics:
+      enabled: true
+      protocol: http
+      host: { source: env, env: OTEL_COLLECTOR_HOST }
+      secretRef:
+        type: api-token
+        apiToken: { source: file, file: { path: /etc/credentials/otel/token } }
+      prometheus: null
+    logs:
+      enabled: true
+      protocol: grpc
+      host: { value: otlp.example.com:443 }
+      url: null
+      secretRef:
+        type: basic
+        mtls: null
+        basic:
+          username: { value: cmk }
+          password: { source: file, file: { path: /etc/credentials/otel/password } }

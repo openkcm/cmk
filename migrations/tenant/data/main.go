@@ -34,5 +34,10 @@ func GetMigrations() []*goose.Migration {
 			&goose.GoFunc{RunTx: upCryptoSubjectFromConfig},
 			&goose.GoFunc{RunTx: downCryptoSubjectFromConfig},
 		),
+		goose.NewGoMigration(
+			7,
+			&goose.GoFunc{RunTx: upRenameWorkflowConfigKeys},
+			&goose.GoFunc{RunTx: downRenameWorkflowConfigKeys},
+		),
 	}
 }

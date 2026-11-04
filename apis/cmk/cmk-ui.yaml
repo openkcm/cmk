@@ -61,6 +61,7 @@ paths:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/topPath"
         - $ref: "#/components/parameters/countPath"
+        - $ref: "#/components/parameters/orderbyKeys"
       responses:
         "200":
           description: Retrieved
@@ -406,6 +407,7 @@ paths:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/topPath"
         - $ref: "#/components/parameters/countPath"
+        - $ref: "#/components/parameters/orderbyKeyConfigurations"
       responses:
         "200":
           description: Retrieved
@@ -692,6 +694,58 @@ paths:
           $ref: "#/components/responses/429"
         "500":
           $ref: "#/components/responses/500"
+  /tenantConfigurations/systemGroups:
+    get:
+      tags:
+        - Tenant Configurations
+      summary: Get system groups configuration
+      operationId: getSystemGroupsConfig
+      description: Retrieves tenant system groups config
+      responses:
+        "200":
+          description: Retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSystemGroupsConfig"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      tags:
+        - Tenant Configurations
+      summary: Update system groups configuration
+      description: Updates sytem groups configuration
+      operationId: updateSystemGroupsConfig
+      requestBody:
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/TenantSystemGroupsConfig"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSystemGroupsConfig"
+        "400":
+          $ref: "#/components/responses/400"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
   /tenantConfigurations/limits:
     get:
       tags:
@@ -729,6 +783,7 @@ paths:
         - $ref: "#/components/parameters/countPath"
         - $ref: "#/components/parameters/filterSystems"
         - $ref: "#/components/parameters/searchSystems"
+        - $ref: "#/components/parameters/orderbySystems"
       responses:
         "200":
           description: Systems retrieved
@@ -1066,6 +1121,7 @@ paths:
         - $ref: "#/components/parameters/skipPath"
         - $ref: "#/components/parameters/countPath"
         - $ref: "#/components/parameters/filterWorkflows"
+        - $ref: "#/components/parameters/orderbyWorkflows"
       responses:
         "200":
           description: Retrieved
@@ -1558,6 +1614,70 @@ components:
       schema:
         type: string
         maxLength: 1000
+    orderbyKeys:
+      name: "$orderby"
+      in: query
+      description: |
+        Order the results by one or more fields.
+
+        Format: `field [asc|desc]`, comma-separated for multiple fields. Direction is optional and defaults to `asc`.
+
+        Sortable fields: name, type, state, createdAt.
+
+        Default (when omitted): primary Key first, then newest first.
+
+        Example: name asc
+      schema:
+        type: string
+        maxLength: 200
+    orderbyKeyConfigurations:
+      name: "$orderby"
+      in: query
+      description: |
+        Order the results by one or more fields.
+
+        Format: `field [asc|desc]`, comma-separated for multiple fields. Direction is optional and defaults to `asc`.
+
+        Sortable fields: name, createdAt, createdBy. `createdBy` sorts by the creator's identifier, not the display name.
+
+        Default (when omitted): newest first.
+
+        Example: name asc
+      schema:
+        type: string
+        maxLength: 200
+    orderbySystems:
+      name: "$orderby"
+      in: query
+      description: |
+        Order the results by one or more fields.
+
+        Format: `field [asc|desc]`, comma-separated for multiple fields. Direction is optional and defaults to `asc`.
+
+        Sortable fields: identifier, region, status, type, and `properties.X` where X is a System property such as role or externalName. An unknown property is ignored.
+
+        Default (when omitted): identifier asc.
+
+        Example: region desc, identifier asc
+      schema:
+        type: string
+        maxLength: 200
+    orderbyWorkflows:
+      name: "$orderby"
+      in: query
+      description: |
+        Order the results by one or more fields.
+
+        Format: `field [asc|desc]`, comma-separated for multiple fields. Direction is optional and defaults to `asc`.
+
+        Sortable fields: artifactName, state, createdAt.
+
+        Default (when omitted): newest first.
+
+        Example: createdAt desc
+      schema:
+        type: string
+        maxLength: 200
 
   schemas:
     SystemID:
@@ -1715,7 +1835,9 @@ components:
           maxLength: 1024
           example: Production systems grouping
         suppressWarning:
-          description: Flag indicating whether coverage warnings are suppressed for this group
+          description: |
+            Flag indicating whether 1 system connected and 1 disconnected 
+            coverage warnings are suppressed for this group
           type: boolean
           default: false
         warnCoverage:
@@ -1799,6 +1921,11 @@ components:
           $ref: "#/components/schemas/CertificateList"
         crypto:
           $ref: "#/components/schemas/CertificateList"
+        notRequiredForHYOK:
+          type: boolean
+          description: |
+            When true, HYOK certificate authentication is disabled and certificates
+            are not required for HYOK connections.
     CertificateList:
       type: object
       required:
@@ -1937,6 +2064,22 @@ components:
           $ref: "#/components/schemas/BYOKKeystore"
         hyok:
           $ref: "#/components/schemas/HYOKKeystore"
+    TenantSystemGroupsConfig:
+      type: object
+      required:
+        - enabled
+        - warnCoverage
+      properties:
+        enabled:
+          description: The flag indicating whether system grouping is enabled
+          type: boolean
+          example: true
+        warnCoverage:
+          description: |
+            The flag indicating whether system grouping coverage warning is enabled
+            It warns for missing coverage where there are at least 1 connected and 1 disconnected systems
+          type: boolean
+          example: true
     TenantWorkflowConfiguration:
       type: object
       properties:
@@ -1944,17 +2087,22 @@ components:
           description: The flag indicating whether workflow is enabled for the tenant
           type: boolean
           example: true
-        minimumApprovals:
-          description: The minimum number of approvals required for a workflow
+        requiredApprovals:
+          description: The number of approvals required for a workflow
           type: integer
           minimum: 2
           maximum: 5
           example: 2
-        maxApprovals:
+        minAllowedApprovals:
+          description: The minimum number of approvals required for a workflow
+          type: integer
+          example: 2
+          readOnly: true
+        maxAllowedApprovals:
           description: The hard upper limit for the minimum approvals setting
           type: integer
-          readOnly: true
           example: 5
+          readOnly: true
         retentionPeriodDays:
           description: |
             The number of days to retain completed, failed, revoked, or expired workflow
@@ -1962,28 +2110,27 @@ components:
           minimum: 7
           maximum: 30
           example: 30
-        minRetentionPeriodDays:
+        minAllowedRetentionPeriodDays:
           description: The hard lower limit for the retention period setting
           type: integer
           readOnly: true
           example: 7
-        maxRetentionPeriodDays:
+        maxAllowedRetentionPeriodDays:
           description: The hard upper limit for the retention period setting
           type: integer
           readOnly: true
           example: 30
-        defaultExpiryPeriodDays:
+        expiryPeriodDays:
           description: The default number of days before a workflow expires
           type: integer
           minimum: 1
           maximum: 7
           example: 7
-        maxExpiryPeriodDays:
+        maxAllowedExpiryPeriodDays:
           description: The maximum number of days that can be set for workflow expiry
           type: integer
-          minimum: 1
-          maximum: 7
           example: 7
+          readOnly: true
     BYOKKeystore:
       type: object
       properties:

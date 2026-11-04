@@ -1,0 +1,8 @@
+- name: eu10
+  rootCA: https://pki.example.com/root-ca.crt
+  subject:
+    locality: [eu10]
+    country: [DE]
+    organization: [Example]
+    organizationUnit: [KMS]
+    commonNamePrefix: kms-crypto_

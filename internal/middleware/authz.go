@@ -108,16 +108,15 @@ func AuthzMiddleware(
 					if err != nil {
 						log.Debug(ctx, "check authz error", log.ErrorAttr(err))
 					}
+				}
 
-					if !allowed {
-						write.ErrorResponse(
-							ctx, w, apierrors.OAPIValidatorErrorMessage("Forbidden", http.StatusForbidden),
-						)
-
-						return
-					}
-
-					next.ServeHTTP(w, r)
+				if !allowed {
+					ctr.AuthzLoader.AuthzHandler.AuditDeniedDecision(
+						ctx, restriction.APIResourceTypeName, restriction.APIAction,
+					)
+					write.ErrorResponse(
+						ctx, w, apierrors.OAPIValidatorErrorMessage("Forbidden", http.StatusForbidden),
+					)
 
 					return
 				}

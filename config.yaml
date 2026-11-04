@@ -141,6 +141,15 @@ scheduler:
         value: secret
       enabled: true
     port: 6379
+    # Enable to connect through Valkey/Redis Sentinel for automatic master discovery and
+    # failover. When disabled, host and port above are used for a direct connection.
+    sentinel:
+      enabled: false
+      masterName: mymaster
+      addresses:
+        - valkey-sentinel-node-0.valkey-sentinel-headless.storage.svc.cluster.local:26379
+        - valkey-sentinel-node-1.valkey-sentinel-headless.storage.svc.cluster.local:26379
+        - valkey-sentinel-node-2.valkey-sentinel-headless.storage.svc.cluster.local:26379
     SecretRef:
       type: insecure # one of: insecure, mtls
   tasks:
@@ -218,12 +227,13 @@ plugins:
 
 workflows:
   enabled: false
-  minimumApprovals: 2
+  requiredApprovals: 2
 
 keystorePool:
   size: 2
   interval: 10m
   supportedRegions:
+    #samples for single regions
     - name: "Europe (Frankfurt)"
       technicalName: eu-central-1
     - name: "Europe (Ireland)"
@@ -233,7 +243,14 @@ keystorePool:
     - name: "United States (N. Virginia)"
       technicalName: us-east-1
     - name: "United States (Ohio)"
-      technicalName: us-east-2
+      technicalName: us-east-2    
+    #samples for multiple regions
+    - name: Asia
+      technicalName: asia
+    - name: "Europe"
+      technicalName: eu
+    - name: "United States"
+      technicalName: us
 certificates:
   rootCertURL: https://aia.pki.co.example.com/aia/EXAMPLE%20Cloud%20Root%20CA.crt
   validityDays: 30
@@ -251,6 +268,12 @@ tenant:
   systemLimit: 50
   keyLimit: 10
   keyConfigLimit: 5
+
+notification:
+  serviceName: "Key Management Service"
+  portalName: "CMK Portal"
+  signOff: "Your Key Management Service Team"
+  # securityText: "" # set to an HTML snippet to render a security warning block in emails
 
 provisioning:
   initKeystoreConfig:

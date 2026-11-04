@@ -56,6 +56,7 @@ type Config struct {
 	Workflow     Workflow     `yaml:"workflow"`
 	Keys         Keys         `yaml:"keys"`
 	Tenant       Tenant       `yaml:"tenant"`
+	Notification Notification `yaml:"notification"`
 }
 
 type ContextModels struct {
@@ -158,6 +159,10 @@ type Scheduler struct {
 }
 
 func (s *Scheduler) Validate() error {
+	if err := s.TaskQueue.Sentinel.validate(); err != nil {
+		return err
+	}
+
 	checkedTasks := make(map[string]struct{}, len(s.Tasks))
 	for _, task := range s.Tasks {
 		_, found := PeriodicTasks[task.TaskType]
@@ -201,7 +206,31 @@ type Redis struct {
 	Host      commoncfg.SourceRef `yaml:"host"`
 	Port      string              `yaml:"port"`
 	ACL       RedisACL            `yaml:"acl"`
+	Sentinel  Sentinel            `yaml:"sentinel"`
 	SecretRef commoncfg.SecretRef
+}
+
+// Sentinel holds Redis Sentinel client config for high-availability connections.
+type Sentinel struct {
+	Enabled    bool     `yaml:"enabled"`
+	MasterName string   `yaml:"masterName"`
+	Addresses  []string `yaml:"addresses"`
+}
+
+func (s Sentinel) validate() error {
+	if !s.Enabled {
+		return nil
+	}
+
+	if s.MasterName == "" {
+		return ErrSentinelMasterNameEmpty
+	}
+
+	if len(s.Addresses) == 0 {
+		return ErrSentinelNoAddresses
+	}
+
+	return nil
 }
 
 type RedisACL struct {
@@ -264,9 +293,13 @@ type Services struct {
 
 // HTTPServer holds http server config
 type HTTPServer struct {
-	Address         string        `yaml:"address" default:":8080"`
-	ShutdownTimeout time.Duration `yaml:"shutdownTimeout" default:"5s"`
-	SwaggerEnabled  bool          `yaml:"swaggerEnabled" default:"false"`
+	Address           string        `yaml:"address" default:":8080"`
+	ShutdownTimeout   time.Duration `yaml:"shutdownTimeout" default:"5s"`
+	ReadHeaderTimeout time.Duration `yaml:"readHeaderTimeout" default:"5s"`
+	ReadTimeout       time.Duration `yaml:"readTimeout" default:"10s"`
+	WriteTimeout      time.Duration `yaml:"writeTimeout" default:"20s"`
+	IdleTimeout       time.Duration `yaml:"idleTimeout" default:"120s"`
+	SwaggerEnabled    bool          `yaml:"swaggerEnabled" default:"false"`
 }
 
 type TenantManager struct {
@@ -375,8 +408,8 @@ type KeystoreConfigValue struct {
 }
 
 type Region struct {
-	Name          string `json:"name" yaml:"name"`
-	TechnicalName string `json:"technicalName" yaml:"technicalName"`
+	Name          string `json:"name" yaml:"name" flatten:"name"`
+	TechnicalName string `json:"technicalName" yaml:"technicalName" flatten:"technicalName"`
 }
 
 type KeystorePool struct {
@@ -391,11 +424,24 @@ type Landscape struct {
 	Region    string `yaml:"region"`
 }
 
+// Notification holds configurable branding and text for email notifications.
+// deployments override them via Helm values.
+type Notification struct {
+	// ServiceName is the display name of the service, e.g. "Key Management Service".
+	ServiceName string `yaml:"serviceName" default:"Key Management Service"`
+	// PortalName is the name of the management UI, e.g. "CMK Portal".
+	PortalName string `yaml:"portalName" default:"CMK Portal"`
+	// SignOff is the signature used in the email footer, e.g. "Your Key Management Service Team".
+	SignOff string `yaml:"signOff" default:"Your Key Management Service Team"`
+	// SecurityText is an optional HTML snippet rendered as a security warning block.
+	// Leave empty to omit the block. Use HTML formatting for emphasis (bold, underline, colour).
+	SecurityText string `yaml:"securityText"`
+}
+
 type Workflow struct {
-	DefaultMinimumApprovals    int `yaml:"defaultMinimumApprovals"`
+	DefaultRequiredApprovals   int `yaml:"defaultRequiredApprovals"`
 	DefaultRetentionPeriodDays int `yaml:"defaultRetentionPeriodDays"`
 	DefaultExpiryPeriodDays    int `yaml:"defaultExpiryPeriodDays"`
-	DefaultMaxExpiryPeriodDays int `yaml:"defaultMaxExpiryPeriodDays"`
 }
 
 type Keys struct {

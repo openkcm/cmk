@@ -34,6 +34,7 @@ import (
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
+	"github.com/openkcm/cmk/utils/odata"
 )
 
 const (
@@ -41,6 +42,18 @@ const (
 )
 
 var errGrantTrustUnavailable = errors.New("iam not ready")
+
+func keysParams(skip, top int, count bool, orderby *string) repo.Params {
+	return odata.New(
+		odata.WithPagination(&skip, &top, &count),
+		odata.WithOrder(orderby, odata.OrderToRepoMap{
+			"name":      {DBName: repo.NameField},
+			"type":      {DBName: repo.KeyTypeField},
+			"state":     {DBName: repo.StateField},
+			"createdAt": {DBName: repo.CreatedField},
+		}),
+	)
+}
 
 func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	*manager.KeyManager,
@@ -92,24 +105,35 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 	// otherwise the manager falls back to legacy behaviour (HYOK ungated, BYOK via feature gate).
 	cfg.FeatureFlags.Enabled = true
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	assert.NoError(t, err)
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
+	ffManager := newTestFlags(cfg, svcRegistry, map[string]bool{
+		"enable_byok_" + strings.ToLower(testplugins.Name):          true,
+		"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
+		"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
+	})
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
-		newTestFlags(map[string]bool{
-			"enable_byok_" + strings.ToLower(testplugins.Name):          true,
-			"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
-			"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
-		}))
+		ffManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
 	km := manager.NewKeyManager(
-		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor, nil, nil,
+		r,
+		svcRegistry,
+		tenantConfigManager,
+		keyConfigManager,
+		userManager,
+		certManager,
+		eventFactory,
+		cmkAuditor,
+		nil,
+		nil,
+		ffManager,
 	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -186,7 +210,7 @@ func setupKeyTestWithFlags(t *testing.T, flagOverrides map[string]bool, opts ...
 	}
 	cfg.FeatureFlags.Enabled = true
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	assert.NoError(t, err)
@@ -199,7 +223,8 @@ func setupKeyTestWithFlags(t *testing.T, flagOverrides map[string]bool, opts ...
 	maps.Copy(flags, flagOverrides)
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, newTestFlags(flags))
+	flagManager := newTestFlags(cfg, svcRegistry, flags)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager,
@@ -207,7 +232,7 @@ func setupKeyTestWithFlags(t *testing.T, flagOverrides map[string]bool, opts ...
 
 	km := manager.NewKeyManager(
 		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager,
-		eventFactory, cmkAuditor, nil, nil,
+		eventFactory, cmkAuditor, nil, nil, flagManager,
 	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -254,15 +279,14 @@ func createTestSystemManagedKey(t *testing.T, km *manager.KeyManager, r repo.Rep
 	return createdKey
 }
 
-// seedDefaultKeystore persists a fully-provisioned DEFAULT_KEYSTORE TenantConfig so that
+// seedDefaultKeystore persists a fully-provisioned DEFAULT_KEYSTORE config as flat rows so that
 // NeedsDefaultKeystoreProvisioning returns false and BYOK keys take the normal creation
 // path instead of PENDING_CREATION.
 func seedDefaultKeystore(t *testing.T, r repo.Repo, ctx context.Context) {
 	t.Helper()
-	ksConf := testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {})
-	ksConfBytes, err := json.Marshal(ksConf)
-	require.NoError(t, err)
-	err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.DefaultKeyStore, Value: string(ksConfBytes)}, *repo.NewQuery())
+	//nolint:contextcheck
+	tcm := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), &config.Config{}, nil, nil)
+	err := tcm.SetKeystoreConfig(ctx, testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {}))
 	require.NoError(t, err)
 }
 
@@ -963,7 +987,7 @@ func TestList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, total, err := km.GetKeys(ctx, keyConfig.ID, repo.Pagination{Skip: tt.skip, Top: tt.top, Count: true})
+			results, total, err := km.GetKeys(ctx, keyConfig.ID, keysParams(tt.skip, tt.top, true, nil))
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -1682,18 +1706,19 @@ func TestKeyRotationTime(t *testing.T) {
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
 	assert.NoError(t, err)
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
+	flagManager := newTestFlags(cfg, svcRegistry, map[string]bool{
+		"enable_byok_" + strings.ToLower(testplugins.Name):          true,
+		"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
+		"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
+	})
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
-		newTestFlags(map[string]bool{
-			"enable_byok_" + strings.ToLower(testplugins.Name):          true,
-			"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
-			"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
-		}))
+		flagManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
-	km := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil)
+	km := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil, flagManager)
 
 	// Create test data
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -1906,7 +1931,7 @@ func TestIsNewKeyVersion(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("returns true when latest version ID matches response", func(t *testing.T) {
+	t.Run("returns false when latest version ID matches response", func(t *testing.T) {
 		key := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		versions, _, err := repo.ListAndCount(
@@ -1924,10 +1949,10 @@ func TestIsNewKeyVersion(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		assert.True(t, got)
+		assert.False(t, got)
 	})
 
-	t.Run("returns false when version ID does not match", func(t *testing.T) {
+	t.Run("returns true when version ID does not match", func(t *testing.T) {
 		key := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
 
 		got, err := km.IsNewKeyVersion(ctx, key, &keymanagement.GetKeyVersionsResponse{
@@ -1935,7 +1960,7 @@ func TestIsNewKeyVersion(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		assert.False(t, got)
+		assert.True(t, got)
 	})
 }
 
@@ -1989,10 +2014,10 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 		// First, setup plugin to return a new version
 		rotationTime := time.Now().UTC()
 
-		// Seed an existing version so isNewKeyVersion returns true (NativeID matches response).
+		// Seed an existing version so isNewKeyVersion can detect a change.
 		existingVersion := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
 			kv.KeyID = primaryKey.ID
-			kv.NativeID = "new-version-id"
+			kv.NativeID = "old-version-id"
 		})
 		testutils.CreateTestEntities(ctx, t, r, existingVersion)
 
@@ -2021,12 +2046,19 @@ func TestHandleSystemsOnKeyRotation(t *testing.T) {
 	t.Run("non-primary key rotation does NOT trigger events", func(t *testing.T) {
 		rotationTime := time.Now().UTC()
 
+		// Seed an existing version on the non-primary key so isNewKeyVersion detects a change.
+		existingNonPrimaryVersion := testutils.NewKeyVersion(func(kv *model.KeyVersion) {
+			kv.KeyID = nonPrimaryKey.ID
+			kv.NativeID = "non-primary-old-version"
+		})
+		testutils.CreateTestEntities(ctx, t, r, existingNonPrimaryVersion)
+
 		// Count events before
 		eventsBefore, err := countEvents(ctx, r, eventprocessor.JobTypeSystemKeyRotate.String())
 		require.NoError(t, err)
 
 		// Trigger rotation for non-primary key
-		err = km.ExportedHandleNewKeyVersion(ctx, primaryKey, &keymanagement.GetKeyVersionsResponse{
+		err = km.ExportedHandleNewKeyVersion(ctx, nonPrimaryKey, &keymanagement.GetKeyVersionsResponse{
 			Versions: []keymanagement.KeyVersion{
 				{
 					ID:           "non-primary-new-version",
@@ -2833,23 +2865,33 @@ func SetupKeyTestWithAsyncClient(
 	// otherwise the manager falls back to legacy behaviour (HYOK ungated, BYOK via feature gate).
 	cfg.FeatureFlags.Enabled = true
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)
 	require.NoError(t, err)
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
-		newTestFlags(map[string]bool{
-			"enable_byok_" + strings.ToLower(testplugins.Name):          true,
-			"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
-			"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
-		}))
+	flagManager := newTestFlags(cfg, svcRegistry, map[string]bool{
+		"enable_byok_" + strings.ToLower(testplugins.Name):          true,
+		"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
+		"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
+	})
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
 	km := manager.NewKeyManager(
-		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor, asyncClient, nil,
+		r,
+		svcRegistry,
+		tenantConfigManager,
+		keyConfigManager,
+		userManager,
+		certManager,
+		eventFactory,
+		cmkAuditor,
+		asyncClient,
+		nil,
+		flagManager,
 	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -3104,21 +3146,31 @@ func TestCreateHYOKPendingRegistration_KeyLimitEnforced(t *testing.T) {
 	}
 	cfg.FeatureFlags.Enabled = true
 
-	cmkAuditor := auditor.New(ctx, cfg)
+	cmkAuditor := &auditor.Auditor{}
 	eventFactory, factoryErr := eventprocessor.NewEventFactory(ctx, cfg, r)
 	require.NoError(t, factoryErr)
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
-		newTestFlags(map[string]bool{
-			"enable_hyok_" + strings.ToLower(testplugins.Name): true,
-		}))
+	flagManager := newTestFlags(cfg, svcRegistry, map[string]bool{
+		"enable_hyok_" + strings.ToLower(testplugins.Name): true,
+	})
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, tenantConfigManager)
 
 	km := manager.NewKeyManager(
-		r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, eventFactory, cmkAuditor, nil, nil,
+		r,
+		svcRegistry,
+		tenantConfigManager,
+		keyConfigManager,
+		userManager,
+		certManager,
+		eventFactory,
+		cmkAuditor,
+		nil,
+		nil,
+		flagManager,
 	)
 
 	keyConfig := testutils.NewKeyConfig(func(_ *model.KeyConfiguration) {})
@@ -3429,4 +3481,50 @@ func TestSyncHYOKKeysExcludesPendingRegistration(t *testing.T) {
 		require.True(t, found)
 		assert.Equal(t, cmkapi.KeyStateENABLED, dbEnabled.State)
 	})
+}
+
+func TestGetKeysPrimaryFirstAcrossPages(t *testing.T) {
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t)
+
+	base := time.Now().UTC()
+
+	// Oldest key is the primary, so created_at desc alone would sort it onto a later page.
+	primaryKey := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfig.ID
+		k.CreatedAt = base
+	})
+	testutils.CreateTestEntities(ctx, t, r, primaryKey)
+
+	for i := 1; i <= 3; i++ {
+		newer := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.CreatedAt = base.Add(time.Duration(i) * time.Hour)
+		})
+		testutils.CreateTestEntities(ctx, t, r, newer)
+	}
+
+	keyConfig.PrimaryKeyID = &primaryKey.ID
+	_, err := r.Patch(ctx, keyConfig, *repo.NewQuery())
+	require.NoError(t, err)
+
+	page1, total, err := km.GetKeys(ctx, keyConfig.ID, keysParams(0, 2, true, nil))
+	require.NoError(t, err)
+	assert.Equal(t, 4, total)
+	require.Len(t, page1, 2)
+	assert.Equal(t, primaryKey.ID, page1[0].ID, "primary key must be first on page 1")
+	assert.True(t, page1[0].IsPrimary)
+	assert.False(t, page1[1].IsPrimary)
+
+	page2, _, err := km.GetKeys(ctx, keyConfig.ID, keysParams(2, 2, false, nil))
+	require.NoError(t, err)
+	for _, k := range page2 {
+		assert.NotEqual(t, primaryKey.ID, k.ID, "primary key must not reappear on page 2")
+	}
+
+	// An explicit order must not pin the primary: oldest-as-primary sorts last.
+	orderby := "createdAt desc"
+	explicit, _, err := km.GetKeys(ctx, keyConfig.ID, keysParams(0, 4, false, &orderby))
+	require.NoError(t, err)
+	require.Len(t, explicit, 4)
+	assert.Equal(t, primaryKey.ID, explicit[3].ID)
 }

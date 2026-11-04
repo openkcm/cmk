@@ -60,6 +60,9 @@ type NotificationTemplateData struct {
 	ActionText          string
 	InitiatorName       string
 	WorkflowDescription string
+	ServiceName         string
+	SignOff             string
+	SecurityText        template.HTML
 }
 
 func NewWorkflowCreator(config *config.Config, idm identitymanagement.IdentityManagement) (*Creator, error) {
@@ -97,16 +100,10 @@ func (w *Creator) createWorkflowCreatedTask(
 	data NotificationData,
 	recipients []string,
 ) (*asynq.Task, error) {
-	subject := fmt.Sprintf(
-		"Workflow Approval Required - %s %s",
-		data.Workflow.ActionType,
-		data.Workflow.ArtifactType,
-	)
-
-	subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
-
+	subject := w.buildSubject("Workflow Approval Required", data.Workflow)
 	message := "A new workflow requires your approval."
-	actionText := "Action Required: Please review and approve or deny this workflow in the CMK portal."
+	actionText := fmt.Sprintf("Action Required: Please review and approve or deny this workflow in the %s.",
+		w.cfg.Notification.PortalName)
 
 	return w.createNotificationTask(ctx, data, recipients, subject, message, actionText)
 }
@@ -123,16 +120,10 @@ func (w *Creator) createWorkflowApprovedTask(
 		return nil, nil
 	}
 
-	subject := fmt.Sprintf(
-		"Workflow Approved - %s %s",
-		data.Workflow.ActionType,
-		data.Workflow.ArtifactType,
-	)
-
-	subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
-
+	subject := w.buildSubject("Workflow Approved", data.Workflow)
 	message := "Your workflow has been fully approved."
-	actionText := "The workflow is ready for confirmation. You can track the progress in the CMK portal."
+	actionText := fmt.Sprintf("The workflow is ready for confirmation. You can track the progress in the %s.",
+		w.cfg.Notification.PortalName)
 
 	return w.createNotificationTask(ctx, data, recipients, subject, message, actionText)
 }
@@ -142,16 +133,10 @@ func (w *Creator) createWorkflowRejectedTask(
 	data NotificationData,
 	recipients []string,
 ) (*asynq.Task, error) {
-	subject := fmt.Sprintf(
-		"Workflow Rejected - %s %s",
-		data.Workflow.ActionType,
-		data.Workflow.ArtifactType,
-	)
-
-	subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
-
+	subject := w.buildSubject("Workflow Rejected", data.Workflow)
 	message := "Your workflow has been rejected. Please review and resubmit if necessary."
-	actionText := "Review the rejection reason and make necessary changes in the CMK portal."
+	actionText := fmt.Sprintf("Review the rejection reason and make necessary changes in the %s.",
+		w.cfg.Notification.PortalName)
 
 	return w.createNotificationTask(ctx, data, recipients, subject, message, actionText)
 }
@@ -165,35 +150,21 @@ func (w *Creator) createWorkflowConfirmedTask(
 
 	switch data.Workflow.State {
 	case model.WorkflowStateSuccessful:
-		subject = fmt.Sprintf(
-			"Workflow Successful - %s %s",
-			data.Workflow.ActionType,
-			data.Workflow.ArtifactType,
-		)
-		subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
+		subject = w.buildSubject("Workflow Successful", data.Workflow)
 		message = "The workflow has been confirmed and completed successfully."
-		actionText = "No further action required. You can view the details in the CMK portal."
+		actionText = fmt.Sprintf("No further action required. You can view the details in the %s.",
+			w.cfg.Notification.PortalName)
 
 	case model.WorkflowStateFailed:
-		subject = fmt.Sprintf(
-			"Workflow Failed - %s %s",
-			data.Workflow.ActionType,
-			data.Workflow.ArtifactType,
-		)
-		subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
+		subject = w.buildSubject("Workflow Failed", data.Workflow)
 		message = "The workflow has been confirmed but failed during execution." +
 			" Please check the details and take necessary actions."
-		actionText = "Review the failure reason and contact support if needed." +
-			" You can view the details in the CMK portal."
+		actionText = fmt.Sprintf("Review the failure reason and contact support if needed."+
+			" You can view the details in the %s.", w.cfg.Notification.PortalName)
 	default:
-		subject = fmt.Sprintf(
-			"Workflow Confirmed - %s %s",
-			data.Workflow.ActionType,
-			data.Workflow.ArtifactType,
-		)
-		subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
+		subject = w.buildSubject("Workflow Confirmed", data.Workflow)
 		message = "The workflow has been confirmed."
-		actionText = "Please check the CMK portal for more details."
+		actionText = fmt.Sprintf("Please check the %s for more details.", w.cfg.Notification.PortalName)
 	}
 
 	return w.createNotificationTask(ctx, data, recipients, subject, message, actionText)
@@ -204,14 +175,7 @@ func (w *Creator) createWorkflowRevokedTask(
 	data NotificationData,
 	recipients []string,
 ) (*asynq.Task, error) {
-	subject := fmt.Sprintf(
-		"Workflow Revoked - %s %s",
-		data.Workflow.ActionType,
-		data.Workflow.ArtifactType,
-	)
-
-	subject = w.buildSubjectWithArtifactName(subject, data.Workflow)
-
+	subject := w.buildSubject("Workflow Revoked", data.Workflow)
 	message := "The workflow has been revoked and is no longer active."
 	actionText := "Please contact your administrator if you have questions about this revocation."
 
@@ -264,17 +228,20 @@ func (w *Creator) createHTMLBody(
 	}
 
 	templateData := NotificationTemplateData{
-		HeaderTitle:         "CMK Workflow Notification",
+		HeaderTitle:         "Customer Managed Keys - Workflow Notification",
 		Message:             message,
 		InfoTitle:           "Workflow Description",
 		WorkflowURL:         workflowURL,
 		TenantID:            data.Tenant.ID,
 		TenantRegion:        w.cfg.Landscape.Region,
-		TenantName:          data.Tenant.Name,
+		TenantName:          tenantDisplayName(data.Tenant),
 		Landscape:           w.cfg.Landscape.Name,
 		ActionText:          actionText,
 		InitiatorName:       initiatorName,
 		WorkflowDescription: workflowDescription,
+		ServiceName:         w.cfg.Notification.ServiceName,
+		SignOff:             w.cfg.Notification.SignOff,
+		SecurityText:        template.HTML(w.cfg.Notification.SecurityText), //nolint:gosec
 	}
 
 	var buf bytes.Buffer
@@ -287,11 +254,23 @@ func (w *Creator) createHTMLBody(
 	return buf.String(), nil
 }
 
-// buildSubjectWithArtifactName appends the artifact name to the subject if it's not empty
-func (w *Creator) buildSubjectWithArtifactName(subject string, workflow model.Workflow) string {
-	artifactName := workflow.GetArtifactName()
-	if artifactName != "" {
-		subject += fmt.Sprintf(": '%s'", artifactName)
+func tenantDisplayName(t model.Tenant) string {
+	if t.Name != "" {
+		return t.Name
+	}
+	return t.ID
+}
+
+// buildSubject returns "prefix - ActionType ArtifactType[: 'artifactName']"
+func (w *Creator) buildSubject(prefix string, wfl model.Workflow) string {
+	subject := fmt.Sprintf(
+		"%s - %s %s",
+		prefix,
+		wfl.ActionType.DisplayName(),
+		wfl.ArtifactType.DisplayName(),
+	)
+	if name := wfl.GetArtifactName(); name != "" {
+		subject += fmt.Sprintf(": '%s'", name)
 	}
 	return subject
 }

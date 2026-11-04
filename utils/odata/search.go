@@ -62,7 +62,7 @@ func (f *Search) GetQuery() (*repo.Query, error) {
 					Key: repo.Key{
 						// Between % to act as wildcard
 						Value:     "%" + item.Value + "%",
-						Operation: repo.Contains,
+						Operation: repo.ContainsOp,
 					},
 				},
 			})
@@ -75,7 +75,7 @@ func (f *Search) GetQuery() (*repo.Query, error) {
 					Key: repo.Key{
 						// Between % to act as wildcard
 						Value:     "%" + item.Value + "%",
-						Operation: repo.Contains,
+						Operation: repo.ContainsOp,
 					},
 				},
 			})

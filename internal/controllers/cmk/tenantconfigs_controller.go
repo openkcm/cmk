@@ -7,6 +7,7 @@ import (
 	"github.com/openkcm/cmk/internal/api/cmk/transform/tenantconfigs"
 	"github.com/openkcm/cmk/internal/apierrors"
 	"github.com/openkcm/cmk/internal/errs"
+	"github.com/openkcm/cmk/internal/model"
 )
 
 func (c *APIController) GetTenantKeystores(
@@ -56,10 +57,39 @@ func (c *APIController) GetTenantLimits(
 	ctx context.Context,
 	_ cmkapi.GetTenantLimitsRequestObject,
 ) (cmkapi.GetTenantLimitsResponseObject, error) {
-	limits, err := c.Manager.TenantConfigs.GetEffectiveLimits(ctx)
+	limits, err := c.Manager.TenantConfigs.GetTenantLimits(ctx)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetTenantLimits, err)
 	}
-	apiLimits := tenantconfigs.LimitsToAPI(limits.Systems, limits.Keys, limits.KeyConfigs)
+	apiLimits := tenantconfigs.LimitsToAPI(limits)
 	return cmkapi.GetTenantLimits200JSONResponse(*apiLimits), nil
+}
+
+func (c *APIController) GetSystemGroupsConfig(
+	ctx context.Context,
+	_ cmkapi.GetSystemGroupsConfigRequestObject,
+) (cmkapi.GetSystemGroupsConfigResponseObject, error) {
+	grouping, err := c.Manager.TenantConfigs.GetSystemGroupingConfig(ctx)
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrGetSystemGroupsConfig, err)
+	}
+
+	apiLimits := tenantconfigs.SystemGroupsConfigToAPI(grouping)
+	return cmkapi.GetSystemGroupsConfig200JSONResponse(*apiLimits), nil
+}
+
+func (c *APIController) UpdateSystemGroupsConfig(
+	ctx context.Context,
+	r cmkapi.UpdateSystemGroupsConfigRequestObject,
+) (cmkapi.UpdateSystemGroupsConfigResponseObject, error) {
+	grouping, err := c.Manager.TenantConfigs.SetSystemGroupsConfig(ctx, &model.SystemGroupConfig{
+		Enabled:      r.Body.Enabled,
+		WarnCoverage: r.Body.WarnCoverage,
+	})
+	if err != nil {
+		return nil, errs.Wrap(apierrors.ErrSetSystemGroupsConfig, err)
+	}
+
+	apiLimits := tenantconfigs.SystemGroupsConfigToAPI(grouping)
+	return cmkapi.UpdateSystemGroupsConfig200JSONResponse(*apiLimits), nil
 }

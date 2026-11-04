@@ -1,24 +1,33 @@
 {{- if .Values.apiServer.deploy }}
 ---
+# API server: the CMK REST API (cmkd api-server).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "cmk.fullname" . }}
+  namespace: {{ include "cmk.namespace" . }}
   labels:
     {{- include "cmk.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
+  {{- if not .Values.apiServer.autoscaling.enabled }}
+  replicas: {{ .Values.apiServer.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- with .Values.apiServer.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
   {{- end }}
   selector:
     matchLabels:
       {{- include "cmk.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        # Restart the pods when the configuration changes.
+        checksum/config: {{ include (print $.Template.BasePath "/api-server/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- include "cmk.annotations" . | trim | nindent 8 }}
+        {{- end }}
       labels:
         {{- include "cmk.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
@@ -30,30 +39,48 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "cmk.serviceAccountName" . }}
+      # CMK does not call the Kubernetes API.
+      automountServiceAccountToken: false
+      enableServiceLinks: {{ .Values.enableServiceLinks }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.extraInitContainers }}
       initContainers:
-      {{- toYaml . | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        {{- with .Values.extraContainers }}
-          {{- toYaml . | nindent 8 }}
-        {{- end }}
         - name: {{ include "cmk.name" . }}
+          image: "{{ template "cmk.image" (tuple .Values.image .Chart.AppVersion) }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            {{- with .Values.apiServer.image.command }}
+            {{- if kindIs "string" . }}
+            - {{ . | quote }}
+            {{- else }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- else }}
+            - {{ .Values.image.cmkdPath | quote }}
+            {{- end }}
+          args:
+            {{- with .Values.apiServer.image.args }}
+            {{- toYaml . | nindent 12 }}
+            {{- else }}
+            - api-server
+            {{- end }}
+            {{- with .Values.apiServer.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- with .Values.securityContext }}
           securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          image: "{{ template "cmk.image" (tuple .Values.image) }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- with .Values.apiServer.image.command }}
-          command: [ "{{- toYaml . }}" ]
-          {{- end }}
-          {{- with .Values.apiServer.image.args }}
-          args:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- with .Values.ports }}
@@ -75,11 +102,15 @@ spec:
                 fieldRef:
                   fieldPath: status.hostIP
             {{- with .Values.extraEnvs }}
-              {{- toYaml . | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- with .Values.extraEnvsFrom }}
           envFrom:
-          {{- . | toYaml | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
@@ -89,36 +120,54 @@ spec:
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with (default .Values.resources .Values.apiServer.resources) }}
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with (.Values.apiServer.resources | default .Values.resources) }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
-            - name: {{ include "cmk.name" . }}-config-volume
-              mountPath: /etc/cmk
+            # Only the file is mounted, so /etc/cmk keeps the image's files (migrations).
+            - name: config
+              mountPath: /etc/cmk/config.yaml
+              subPath: config.yaml
               readOnly: true
-          {{- if .Values.config.featureFlags.enabled }}
-            - name: feature-flags-volume
-              mountPath: /etc/featureflags
+            {{- if .Values.config.featureFlags.enabled }}
+            - name: feature-flags
+              mountPath: {{ dir .Values.config.featureFlags.filePath }}
               readOnly: true
-          {{- end }}
-          {{- with .Values.extraVolumeMounts }}
+            {{- end }}
+            {{- if .Values.tmpVolume.enabled }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- end }}
+        {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       volumes:
-        - name: {{ include "cmk.name" . }}-config-volume
-          projected:
-            sources:
-              - configMap:
-                  name: {{ include "cmk.name" . }}-config
-      {{- if .Values.config.featureFlags.enabled }}
-        - name: feature-flags-volume
+        - name: config
+          configMap:
+            name: {{ include "cmk.fullname" . }}-config
+        {{- if .Values.config.featureFlags.enabled }}
+        - name: feature-flags
           configMap:
             name: {{ .Values.featureFlagsConfigMap }}
-      {{- end }}
-      {{- with .Values.extraVolumes }}
+        {{- end }}
+        {{- if .Values.tmpVolume.enabled }}
+        - name: tmp
+          emptyDir:
+            {{- with .Values.tmpVolume.sizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

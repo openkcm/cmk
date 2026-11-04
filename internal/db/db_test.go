@@ -53,7 +53,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 					testutils.TestTrustAnchorArn,
 					testutils.TestProfileArn,
 				),
-				SupportedRegions: testutils.SupportedRegions,
+				SupportedRegions: testutils.SupportedRegionsSlice(),
 			},
 		}
 
@@ -106,16 +106,16 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 				t.Fatal("first region is not of type map[string]any")
 			}
 
-			assert.Equal(t, testutils.SupportedRegions[0].Name, region1["name"])
-			assert.Equal(t, testutils.SupportedRegions[0].TechnicalName, region1["technicalName"])
+			assert.Equal(t, testutils.SupportedRegionsSlice()[0].Name, region1["name"])
+			assert.Equal(t, testutils.SupportedRegionsSlice()[0].TechnicalName, region1["technicalName"])
 
 			region2, ok := supportedRegions[1].(map[string]any)
 			if !ok {
 				t.Fatal("second region is not of type map[string]any")
 			}
 
-			assert.Equal(t, testutils.SupportedRegions[1].Name, region2["name"])
-			assert.Equal(t, testutils.SupportedRegions[1].TechnicalName, region2["technicalName"])
+			assert.Equal(t, testutils.SupportedRegionsSlice()[1].Name, region2["name"])
+			assert.Equal(t, testutils.SupportedRegionsSlice()[1].TechnicalName, region2["technicalName"])
 		} else {
 			t.Fatal("supportedRegions is nil")
 		}
@@ -202,7 +202,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 				LocalityID:           testutils.TestLocalityID,
 				CommonName:           testutils.TestDefaultKeystoreCommonName,
 				ManagementAccessData: nil,
-				SupportedRegions:     testutils.SupportedRegions,
+				SupportedRegions:     testutils.SupportedRegionsSlice(),
 			},
 		}
 		// Act
@@ -223,7 +223,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 				LocalityID:           testutils.TestLocalityID,
 				CommonName:           testutils.TestDefaultKeystoreCommonName,
 				ManagementAccessData: `invalid: yaml: content: [unclosed`,
-				SupportedRegions:     testutils.SupportedRegions,
+				SupportedRegions:     testutils.SupportedRegionsSlice(),
 			},
 		}
 		// Act
@@ -249,7 +249,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 					testutils.TestTrustAnchorArn,
 					testutils.TestProfileArn,
 				),
-				SupportedRegions: testutils.SupportedRegions,
+				SupportedRegions: testutils.SupportedRegionsSlice(),
 			},
 		}
 		// Act
@@ -278,7 +278,7 @@ func TestAddKeystoreFromConfig(t *testing.T) {
 				LocalityID:           testutils.TestLocalityID,
 				CommonName:           testutils.TestDefaultKeystoreCommonName,
 				ManagementAccessData: "",
-				SupportedRegions:     testutils.SupportedRegions,
+				SupportedRegions:     testutils.SupportedRegionsSlice(),
 			},
 		}
 		// Act

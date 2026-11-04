@@ -12,9 +12,10 @@ import (
 
 func TestToAPI(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    model.ClientCertificates
-		expected *cmkapi.ClientCertificates
+		name                string
+		input               model.ClientCertificates
+		disableHYOKCertAuth bool
+		expected            *cmkapi.ClientCertificates
 	}{
 		{
 			name: "Valid",
@@ -73,11 +74,27 @@ func TestToAPI(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                "DisableHYOKCertAuth sets notRequiredForHYOK",
+			disableHYOKCertAuth: true,
+			input:               model.ClientCertificates{},
+			expected: &cmkapi.ClientCertificates{
+				TenantDefault: &cmkapi.CertificateList{
+					Count: new(0),
+					Value: []cmkapi.Certificate{},
+				},
+				Crypto: &cmkapi.CertificateList{
+					Count: new(0),
+					Value: []cmkapi.Certificate{},
+				},
+				NotRequiredForHYOK: func() *bool { b := true; return &b }(),
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := clientcertificates.ToAPI(tt.input)
+			result, err := clientcertificates.ToAPI(tt.input, tt.disableHYOKCertAuth)
 			assert.Equal(t, tt.expected, result)
 			assert.NoError(t, err)
 		})

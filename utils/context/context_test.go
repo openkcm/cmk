@@ -271,3 +271,89 @@ func TestExtractBusinessUserDataAuthContext(t *testing.T) {
 		},
 	)
 }
+
+func TestInjectTechnicalUserData(t *testing.T) {
+	t.Run(
+		"injects role into context", func(t *testing.T) {
+			role := constants.TechnicalRole("some-technical-role")
+			ctx, err := cmkcontext.InjectTechnicalUserData(context.Background(), role)
+			assert.NoError(t, err)
+
+			got, err := cmkcontext.ExtractTechnicalRole(ctx)
+			assert.NoError(t, err)
+			assert.Equal(t, role, got)
+		},
+	)
+
+	t.Run(
+		"error on conflicting user type", func(t *testing.T) {
+			ctx := context.WithValue(context.Background(), constants.UserType, constants.BusinessUser)
+			_, err := cmkcontext.InjectTechnicalUserData(ctx, constants.TechnicalRole("role"))
+			assert.ErrorIs(t, err, cmkcontext.ErrInvalidUserType)
+		},
+	)
+
+	t.Run(
+		"re-injection with same user type", func(t *testing.T) {
+			role := constants.TechnicalRole("role-v2")
+			ctx := context.WithValue(context.Background(), constants.UserType, constants.TechnicalUser)
+			ctx, err := cmkcontext.InjectTechnicalUserData(ctx, role)
+			assert.NoError(t, err)
+
+			got, err := cmkcontext.ExtractTechnicalRole(ctx)
+			assert.NoError(t, err)
+			assert.Equal(t, role, got)
+		},
+	)
+}
+
+func TestExtractTechnicalRole(t *testing.T) {
+	t.Run(
+		"error when no user type in context", func(t *testing.T) {
+			_, err := cmkcontext.ExtractTechnicalRole(context.Background())
+			assert.ErrorIs(t, err, cmkcontext.ErrExtractUserType)
+		},
+	)
+
+	t.Run(
+		"error on wrong user type", func(t *testing.T) {
+			ctx := context.WithValue(context.Background(), constants.UserType, constants.InternalUser)
+			_, err := cmkcontext.ExtractTechnicalRole(ctx)
+			assert.ErrorIs(t, err, cmkcontext.ErrInvalidUserType)
+		},
+	)
+
+	t.Run(
+		"error when role missing", func(t *testing.T) {
+			ctx := context.WithValue(context.Background(), constants.UserType, constants.TechnicalUser)
+			_, err := cmkcontext.ExtractTechnicalRole(ctx)
+			assert.ErrorIs(t, err, cmkcontext.ErrExtractTechnicalUserData)
+		},
+	)
+
+	t.Run(
+		"extracts role", func(t *testing.T) {
+			expected := constants.TechnicalRole("my-technical-role")
+			ctx, err := cmkcontext.InjectTechnicalUserData(context.Background(), expected)
+			assert.NoError(t, err)
+
+			got, err := cmkcontext.ExtractTechnicalRole(ctx)
+			assert.NoError(t, err)
+			assert.Equal(t, expected, got)
+		},
+	)
+}
+
+func TestExtractUserIdentifier_TechnicalUser(t *testing.T) {
+	t.Run(
+		"returns role as identifier", func(t *testing.T) {
+			role := constants.TechnicalRole("tech-role")
+			ctx, err := cmkcontext.InjectTechnicalUserData(context.Background(), role)
+			assert.NoError(t, err)
+
+			got, err := cmkcontext.ExtractUserIdentifier(ctx)
+			assert.NoError(t, err)
+			assert.Equal(t, string(role), got)
+		},
+	)
+}

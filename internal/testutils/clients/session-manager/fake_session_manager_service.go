@@ -3,107 +3,107 @@ package sessionmanager
 import (
 	"context"
 
-	oidcmappinggrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/oidcmapping/v1"
+	trustmappingv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/sessionmanager/trustmapping/v1"
 )
 
-// FakeSessionManagerService is a fake implementation of OIDCMapping ServiceServer
+// FakeSessionManagerService is a fake implementation of TrustMapping ServiceServer
 // that can be used for testing purposes, particularly for integration tests
 // that need a gRPC server.
 // sonarignore
 type FakeSessionManagerService struct {
-	oidcmappinggrpc.UnimplementedServiceServer
+	trustmappingv1.UnimplementedServiceServer
 
-	// Configurable behavior for ApplyOIDCMapping
-	ApplyOIDCMappingError   error
-	ApplyOIDCMappingSuccess bool
-	ApplyOIDCMappingMessage string
+	// Configurable behavior for ApplyTrustMapping
+	ApplyTrustMappingError   error
+	ApplyTrustMappingSuccess bool
+	ApplyTrustMappingMessage string
 
-	// Configurable behavior for BlockOIDCMapping
-	MockBlockOIDCMapping func(
+	// Configurable behavior for BlockTrustMapping
+	MockBlockTrustMapping func(
 		ctx context.Context,
-		req *oidcmappinggrpc.BlockOIDCMappingRequest,
-	) (*oidcmappinggrpc.BlockOIDCMappingResponse, error)
+		req *trustmappingv1.BlockTrustMappingRequest,
+	) (*trustmappingv1.BlockTrustMappingResponse, error)
 
-	// Configurable behavior for UnblockOIDCMapping
-	MockUnblockOIDCMapping func(
+	// Configurable behavior for UnblockTrustMapping
+	MockUnblockTrustMapping func(
 		ctx context.Context,
-		req *oidcmappinggrpc.UnblockOIDCMappingRequest,
-	) (*oidcmappinggrpc.UnblockOIDCMappingResponse, error)
+		req *trustmappingv1.UnblockTrustMappingRequest,
+	) (*trustmappingv1.UnblockTrustMappingResponse, error)
 
-	// Configurable behavior for RemoveOIDCMapping
-	RemoveOIDCMappingError   error
-	RemoveOIDCMappingSuccess bool
-	RemoveOIDCMappingMessage string
+	// Configurable behavior for RemoveTrustMapping
+	RemoveTrustMappingError   error
+	RemoveTrustMappingSuccess bool
+	RemoveTrustMappingMessage string
 }
 
 // NewFakeSessionManagerService creates a new fake session manager service with default success behavior
 func NewFakeSessionManagerService() *FakeSessionManagerService {
 	return &FakeSessionManagerService{
-		ApplyOIDCMappingSuccess:  true,
-		RemoveOIDCMappingSuccess: true,
+		ApplyTrustMappingSuccess:  true,
+		RemoveTrustMappingSuccess: true,
 	}
 }
 
-// ApplyOIDCMapping implements the oidcmappinggrpc.ServiceServer interface
-func (f *FakeSessionManagerService) ApplyOIDCMapping(
+// ApplyTrustMapping implements the trustmappingv1.ServiceServer interface
+func (f *FakeSessionManagerService) ApplyTrustMapping(
 	_ context.Context,
-	_ *oidcmappinggrpc.ApplyOIDCMappingRequest,
-) (*oidcmappinggrpc.ApplyOIDCMappingResponse, error) {
-	if f.ApplyOIDCMappingError != nil {
-		return nil, f.ApplyOIDCMappingError
+	_ *trustmappingv1.ApplyTrustMappingRequest,
+) (*trustmappingv1.ApplyTrustMappingResponse, error) {
+	if f.ApplyTrustMappingError != nil {
+		return nil, f.ApplyTrustMappingError
 	}
 
-	response := &oidcmappinggrpc.ApplyOIDCMappingResponse{
-		Success: f.ApplyOIDCMappingSuccess,
+	builder := trustmappingv1.ApplyTrustMappingResponse_builder{
+		Success: f.ApplyTrustMappingSuccess,
 	}
 
-	if f.ApplyOIDCMappingMessage != "" {
-		response.Message = &f.ApplyOIDCMappingMessage
+	if f.ApplyTrustMappingMessage != "" {
+		builder.Message = &f.ApplyTrustMappingMessage
 	}
 
-	return response, nil
+	return builder.Build(), nil
 }
 
-// BlockOIDCMapping implements the oidcmappinggrpc.ServiceServer interface
-func (f *FakeSessionManagerService) BlockOIDCMapping(
+// BlockTrustMapping implements the trustmappingv1.ServiceServer interface
+func (f *FakeSessionManagerService) BlockTrustMapping(
 	ctx context.Context,
-	req *oidcmappinggrpc.BlockOIDCMappingRequest,
-) (*oidcmappinggrpc.BlockOIDCMappingResponse, error) {
-	if f.MockBlockOIDCMapping != nil {
-		return f.MockBlockOIDCMapping(ctx, req)
+	req *trustmappingv1.BlockTrustMappingRequest,
+) (*trustmappingv1.BlockTrustMappingResponse, error) {
+	if f.MockBlockTrustMapping != nil {
+		return f.MockBlockTrustMapping(ctx, req)
 	}
 
-	return &oidcmappinggrpc.BlockOIDCMappingResponse{}, nil
+	return &trustmappingv1.BlockTrustMappingResponse{}, nil
 }
 
-// UnblockOIDCMapping implements the oidcmappinggrpc.ServiceServer interface
-func (f *FakeSessionManagerService) UnblockOIDCMapping(
+// UnblockTrustMapping implements the trustmappingv1.ServiceServer interface
+func (f *FakeSessionManagerService) UnblockTrustMapping(
 	ctx context.Context,
-	req *oidcmappinggrpc.UnblockOIDCMappingRequest,
-) (*oidcmappinggrpc.UnblockOIDCMappingResponse, error) {
-	if f.MockUnblockOIDCMapping != nil {
-		return f.MockUnblockOIDCMapping(ctx, req)
+	req *trustmappingv1.UnblockTrustMappingRequest,
+) (*trustmappingv1.UnblockTrustMappingResponse, error) {
+	if f.MockUnblockTrustMapping != nil {
+		return f.MockUnblockTrustMapping(ctx, req)
 	}
 
-	return &oidcmappinggrpc.UnblockOIDCMappingResponse{}, nil
+	return &trustmappingv1.UnblockTrustMappingResponse{}, nil
 }
 
-// RemoveOIDCMapping implements the oidcmappinggrpc.ServiceServer interface
-func (f *FakeSessionManagerService) RemoveOIDCMapping(
+// RemoveTrustMapping implements the trustmappingv1.ServiceServer interface
+func (f *FakeSessionManagerService) RemoveTrustMapping(
 	_ context.Context,
-	_ *oidcmappinggrpc.RemoveOIDCMappingRequest,
-) (*oidcmappinggrpc.RemoveOIDCMappingResponse, error) {
-	if f.RemoveOIDCMappingError != nil {
-		return nil, f.RemoveOIDCMappingError
+	_ *trustmappingv1.RemoveTrustMappingRequest,
+) (*trustmappingv1.RemoveTrustMappingResponse, error) {
+	if f.RemoveTrustMappingError != nil {
+		return nil, f.RemoveTrustMappingError
 	}
 
-	response := &oidcmappinggrpc.RemoveOIDCMappingResponse{
-		Success: f.RemoveOIDCMappingSuccess,
+	builder := trustmappingv1.RemoveTrustMappingResponse_builder{
+		Success: f.RemoveTrustMappingSuccess,
 	}
 
-	if f.RemoveOIDCMappingMessage != "" {
-		response.Message = &f.RemoveOIDCMappingMessage
+	if f.RemoveTrustMappingMessage != "" {
+		builder.Message = &f.RemoveTrustMappingMessage
 	}
 
-	return response, nil
+	return builder.Build(), nil
 }

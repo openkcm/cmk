@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -18,7 +17,6 @@ import (
 	"github.com/openkcm/cmk/internal/manager"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
-	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
@@ -120,8 +118,8 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 
 		// Test
 		response := getWorkflowConfig(t, sv, tenant, headers)
-		assert.NotNil(t, response.MinimumApprovals)
-		assert.Equal(t, 3, *response.MinimumApprovals)
+		assert.NotNil(t, response.RequiredApprovals)
+		assert.Equal(t, 3, *response.RequiredApprovals)
 		assert.NotNil(t, response.RetentionPeriodDays)
 		assert.Equal(t, 30, *response.RetentionPeriodDays)
 	})
@@ -145,7 +143,7 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 		response := getWorkflowConfig(t, sv, tenant, headers)
 
 		assert.NotNil(t, response.Enabled)
-		assert.NotNil(t, response.MinimumApprovals)
+		assert.NotNil(t, response.RequiredApprovals)
 		assert.NotNil(t, response.RetentionPeriodDays)
 	})
 }
@@ -153,19 +151,17 @@ func TestAPIController_GetTenantWorkflowConfiguration(t *testing.T) {
 func setupWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Context) {
 	t.Helper()
 
-	workflowConfig := testutils.NewDefaultWorkflowConfig(true)
-	workflowConfig.MinimumApprovals = 3
-	workflowConfig.RetentionPeriodDays = 30
-
-	configJSON, err := json.Marshal(workflowConfig)
-	require.NoError(t, err)
-
-	tenantConfig := &model.LegacyTenantConfig{
-		Key:   constants.WorkflowConfigKey,
-		Value: string(configJSON),
-	}
-	err = r.Set(ctx, tenantConfig, *repo.NewQuery())
-	require.NoError(t, err)
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+		wc.Enabled = true
+		wc.MinAllowedApprovals = 3
+		wc.MaxAllowedApprovals = constants.MaxAllowedApprovals
+		wc.RequiredApprovals = 3
+		wc.RetentionPeriodDays = 30
+		wc.MinAllowedRetentionPeriodDays = constants.MinRetentionPeriodDays
+		wc.MaxAllowedRetentionPeriodDays = constants.MaxRetentionPeriodDays
+		wc.ExpiryPeriodDays = constants.DefaultExpiryPeriodDays
+		wc.MaxAllowedExpiryPeriodDays = constants.MaxAllowedExpiryPeriodDays
+	}))
 }
 
 func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
@@ -177,16 +173,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 		// Setup: Create initial workflow config
-		workflowConfig := testutils.NewDefaultWorkflowConfig(false)
-		configJSON, err := json.Marshal(workflowConfig)
-		require.NoError(t, err)
-
-		tenantConfig := &model.LegacyTenantConfig{
-			Key:   constants.WorkflowConfigKey,
-			Value: string(configJSON),
-		}
-		err = r.Set(ctx, tenantConfig, *repo.NewQuery())
-		require.NoError(t, err)
+		setupDefaultWorkflowConfig(t, r, ctx)
 
 		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
@@ -199,7 +186,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 
 		// Test: Update config
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals:    new(5),
+			RequiredApprovals:   new(5),
 			RetentionPeriodDays: new(30),
 		}
 
@@ -214,11 +201,11 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		var response cmkapi.TenantWorkflowConfiguration
-		err = json.Unmarshal(w.Body.Bytes(), &response)
+		err := json.Unmarshal(w.Body.Bytes(), &response)
 		require.NoError(t, err)
 
-		assert.NotNil(t, response.MinimumApprovals)
-		assert.Equal(t, 5, *response.MinimumApprovals)
+		assert.NotNil(t, response.RequiredApprovals)
+		assert.Equal(t, 5, *response.RequiredApprovals)
 		assert.NotNil(t, response.RetentionPeriodDays)
 		assert.Equal(t, 30, *response.RetentionPeriodDays)
 		assert.NotNil(t, response.Enabled)
@@ -266,7 +253,9 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		r := sql.NewRepository(db)
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
-		setupDefaultWorkflowConfig(t, r, ctx)
+		testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+			wc.MaxAllowedExpiryPeriodDays = 5
+		}))
 
 		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
@@ -277,8 +266,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			DefaultExpiryPeriodDays: new(7),
-			MaxExpiryPeriodDays:     new(5),
+			ExpiryPeriodDays: new(7),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -299,7 +287,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		assert.Equal(t, "defaultExpiryPeriodDays", (*errResp.Error.Context)["setting"])
 	})
 
-	t.Run("Should 400 INVALID_SETTING when minimumApprovals is less than 2", func(t *testing.T) {
+	t.Run("Should 400 INVALID_SETTING when requiredApprovals is less than 2", func(t *testing.T) {
 		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
 		ctx := testutils.CreateCtxWithTenant(tenant)
 		r := sql.NewRepository(db)
@@ -316,7 +304,7 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
 
 		updateRequest := cmkapi.TenantWorkflowConfiguration{
-			MinimumApprovals: new(1),
+			RequiredApprovals: new(1),
 		}
 
 		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
@@ -369,10 +357,8 @@ func TestAPIController_UpdateTenantWorkflowConfiguration(t *testing.T) {
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
 		// Store config with enabled=true so changing to false triggers role validation
-		enabledConfig := testutils.NewDefaultWorkflowConfig(true)
-		configJSON, err := json.Marshal(enabledConfig)
-		require.NoError(t, err)
-		err = r.Set(ctx, &model.LegacyTenantConfig{Key: constants.WorkflowConfigKey, Value: string(configJSON)}, *repo.NewQuery())
+		tcm := manager.NewTenantConfigManager(r, nil, nil, nil, nil)
+		_, err := tcm.SetWorkflowConfig(ctx, testutils.NewDefaultWorkflowConfig(true))
 		require.NoError(t, err)
 
 		businessUserData := &auth.ClientData{
@@ -456,7 +442,9 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
-		setupSystemsLimitOverride(t, r, ctx, 5)
+		testutils.WriteTenantConfig(ctx, t, r, model.TenantLimits{
+			Systems: new(5),
+		})
 
 		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
@@ -492,7 +480,9 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
-		setupKeyConfigsLimitOverride(t, r, ctx, 42)
+		testutils.WriteTenantConfig(ctx, t, r, model.TenantLimits{
+			KeyConfigs: new(42),
+		})
 
 		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
@@ -516,40 +506,6 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 		assert.Equal(t, 42, *response.KeyConfigurations)
 	})
 
-	t.Run("Should return 500 when systems limit override is not a valid integer", func(t *testing.T) {
-		db, sv, tenant, keyStorage := startAPIServerTenantConfig(t, testutils.TestAPIServerConfig{})
-		ctx := testutils.CreateCtxWithTenant(tenant)
-		r := sql.NewRepository(db)
-
-		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
-
-		// Seed a non-integer value so override parsing fails inside GetEffectiveLimits.
-		tc := &model.TenantConfig{
-			Key:   manager.LimitsKeySystemsOverride,
-			Value: "not-a-number",
-			Type:  manager.TenantConfigTypeLimits,
-		}
-		err := r.Create(ctx, tc)
-		require.NoError(t, err)
-
-		businessUserData := &auth.ClientData{
-			Identifier: authClient.Identifier,
-			Groups:     []string{authClient.Group.IAMIdentifier},
-		}
-		privateKey, ok := keyStorage.GetPrivateKey(0)
-		require.True(t, ok)
-		headers := testutils.NewSignedBusinessUserDataHeaders(t, businessUserData, privateKey, 0)
-
-		w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
-			Method:   http.MethodGet,
-			Endpoint: "/tenantConfigurations/limits",
-			Tenant:   tenant,
-			Headers:  headers,
-		})
-
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-
 	t.Run("Should return tenant override when keys limit is stored", func(t *testing.T) {
 		cfg := testutils.TestAPIServerConfig{
 			Config: config.Config{
@@ -562,7 +518,9 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 
 		authClient := testutils.NewAuthClient(ctx, t, r, testutils.WithTenantAdminRole())
 
-		setupKeysLimitOverride(t, r, ctx, 7)
+		testutils.WriteTenantConfig(ctx, t, r, model.TenantLimits{
+			Keys: new(7),
+		})
 
 		businessUserData := &auth.ClientData{
 			Identifier: authClient.Identifier,
@@ -587,50 +545,18 @@ func TestAPIController_GetTenantLimits(t *testing.T) {
 	})
 }
 
-func setupSystemsLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context.Context, limit int) {
-	t.Helper()
-	tc := &model.TenantConfig{
-		Key:   manager.LimitsKeySystemsOverride,
-		Value: strconv.Itoa(limit),
-		Type:  manager.TenantConfigTypeLimits,
-	}
-	err := r.Create(ctx, tc)
-	require.NoError(t, err)
-}
-
-func setupKeysLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context.Context, limit int) {
-	t.Helper()
-	tc := &model.TenantConfig{
-		Key:   manager.LimitsKeyKeysOverride,
-		Value: strconv.Itoa(limit),
-		Type:  manager.TenantConfigTypeLimits,
-	}
-	err := r.Create(ctx, tc)
-	require.NoError(t, err)
-}
-
-func setupKeyConfigsLimitOverride(t *testing.T, r *sql.ResourceRepository, ctx context.Context, limit int) {
-	t.Helper()
-	tc := &model.TenantConfig{
-		Key:   manager.LimitsKeyKeyConfigsOverride,
-		Value: strconv.Itoa(limit),
-		Type:  manager.TenantConfigTypeLimits,
-	}
-	err := r.Create(ctx, tc)
-	require.NoError(t, err)
-}
-
 func setupDefaultWorkflowConfig(t *testing.T, r *sql.ResourceRepository, ctx context.Context) {
 	t.Helper()
 
-	workflowConfig := testutils.NewDefaultWorkflowConfig(false)
-	configJSON, err := json.Marshal(workflowConfig)
-	require.NoError(t, err)
-
-	tenantConfig := &model.LegacyTenantConfig{
-		Key:   constants.WorkflowConfigKey,
-		Value: string(configJSON),
-	}
-	err = r.Set(ctx, tenantConfig, *repo.NewQuery())
-	require.NoError(t, err)
+	testutils.WriteTenantConfig(ctx, t, r, testutils.NewWorkflowConfig(func(wc *model.WorkflowConfig) {
+		wc.Enabled = false
+		wc.MinAllowedApprovals = constants.MinAllowedApprovals
+		wc.MaxAllowedApprovals = constants.MaxAllowedApprovals
+		wc.RequiredApprovals = constants.MinAllowedApprovals
+		wc.RetentionPeriodDays = constants.DefaultRetentionPeriodDays
+		wc.MinAllowedRetentionPeriodDays = constants.MinRetentionPeriodDays
+		wc.MaxAllowedRetentionPeriodDays = constants.MaxRetentionPeriodDays
+		wc.ExpiryPeriodDays = constants.DefaultExpiryPeriodDays
+		wc.MaxAllowedExpiryPeriodDays = constants.MaxAllowedExpiryPeriodDays
+	}))
 }

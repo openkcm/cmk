@@ -50,10 +50,11 @@ func New(
 	asyncClient async.Client,
 	migrator db.Migrator,
 	flags featureflags.Client,
+	cmkAuditor *auditor.Auditor,
 ) *Manager {
-	cmkAuditor := auditor.New(ctx, config)
 	certManager := NewCertificateManager(ctx, r, svcRegistry, config)
-	tenantConfigManager := NewTenantConfigManager(r, svcRegistry, config, certManager, flags)
+	flagManager := NewFeatureFlags(config, svcRegistry, flags)
+	tenantConfigManager := NewTenantConfigManager(r, svcRegistry, config, certManager, flagManager)
 	userManager := NewUserManager(r, cmkAuditor)
 	tagManager := NewTagManager(r)
 	keyConfigManager := NewKeyConfigManager(r, certManager, userManager,
@@ -69,6 +70,7 @@ func New(
 		cmkAuditor,
 		asyncClient,
 		config,
+		flagManager,
 	)
 	systemManager := NewSystemManager(
 		ctx,
