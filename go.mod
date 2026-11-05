@@ -6,7 +6,7 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	github.com/Azure/go-amqp v1.7.0
 	github.com/XSAM/otelsql v0.44.0
-	github.com/avast/retry-go/v5 v5.0.0
+	github.com/avast/retry-go/v5 v5.0.1
 	github.com/getkin/kin-openapi v0.152.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
