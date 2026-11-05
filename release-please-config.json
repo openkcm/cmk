@@ -91,7 +91,17 @@
       "versioning": "always-bump-patch",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
-      "extra-files": [{ "type": "generic", "path": "charts/cmk/Chart.yaml" }]
+      "extra-files": [
+        { "type": "generic", "path": "charts/cmk/Chart.yaml" },
+        {
+          "type": "generic",
+          "path": "charts/cmk/Chart.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "charts/cmk/values.yaml"
+        }
+      ]
     }
   },
   "changelog": {
