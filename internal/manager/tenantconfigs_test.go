@@ -1210,3 +1210,84 @@ func TestSetTenantLimit(t *testing.T) {
 		assert.Equal(t, cfg.Tenant.KeyConfigLimit, *res.KeyConfigs)
 	})
 }
+
+func TestSetSystemGroupsConfig(t *testing.T) {
+	t.Run("stores and retrieves system group config", func(t *testing.T) {
+		m, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		got, err := m.SetSystemGroupsConfig(ctx, &model.SystemGroupConfig{Enabled: true, WarnCoverage: true})
+		require.NoError(t, err)
+		assert.True(t, got.Enabled)
+		assert.True(t, got.WarnCoverage)
+	})
+}
+
+func TestGetSystemGroupingConfig_DefaultWhenNil(t *testing.T) {
+	t.Run("creates default when no config stored", func(t *testing.T) {
+		m, _, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+
+		got, err := m.GetSystemGroupingConfig(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.False(t, got.Enabled)
+		assert.False(t, got.WarnCoverage)
+	})
+}
+
+func TestGetSystemGroupingConfig_ExistingValue(t *testing.T) {
+	t.Run("returns stored config", func(t *testing.T) {
+		m, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		testutils.WriteTenantConfig(ctx, t, r, model.SystemGroupConfig{Enabled: true, WarnCoverage: true})
+
+		got, err := m.GetSystemGroupingConfig(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.True(t, got.Enabled)
+		assert.True(t, got.WarnCoverage)
+	})
+}
+
+func TestApplyDeploymentConfigOverrides(t *testing.T) {
+	t.Run("DefaultMinimumApprovals overrides RequiredApprovals", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+		cfg := &config.Config{Workflow: config.Workflow{DefaultMinimumApprovals: 3}}
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), cfg, nil, manager.NewFeatureFlags(nil, nil, nil))
+
+		wc, err := m.GetWorkflowConfig(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 3, wc.RequiredApprovals)
+	})
+
+	t.Run("DefaultMaxExpiryPeriodDays overrides MaxAllowedExpiryPeriodDays", func(t *testing.T) {
+		cfg := &config.Config{Workflow: config.Workflow{DefaultMaxExpiryPeriodDays: 5, DefaultExpiryPeriodDays: 5}}
+
+		_, db2, tenant2 := SetupTenantConfigManager(t)
+		ctx2 := testutils.CreateCtxWithTenant(tenant2)
+		r2 := sql.NewRepository(db2)
+		m2 := manager.NewTenantConfigManager(r2, testutils.NewTestPlugins(), cfg, nil, manager.NewFeatureFlags(nil, nil, nil))
+
+		wc, err := m2.GetWorkflowConfig(ctx2)
+		require.NoError(t, err)
+		assert.Equal(t, 5, wc.MaxAllowedExpiryPeriodDays)
+	})
+
+	t.Run("DefaultMaxExpiryPeriodDays is clamped to MaxAllowedExpiryPeriodDays constant", func(t *testing.T) {
+		cfg := &config.Config{Workflow: config.Workflow{DefaultMaxExpiryPeriodDays: 99}}
+
+		_, db3, tenant3 := SetupTenantConfigManager(t)
+		ctx3 := testutils.CreateCtxWithTenant(tenant3)
+		r3 := sql.NewRepository(db3)
+		m3 := manager.NewTenantConfigManager(r3, testutils.NewTestPlugins(), cfg, nil, manager.NewFeatureFlags(nil, nil, nil))
+
+		wc, err := m3.GetWorkflowConfig(ctx3)
+		require.NoError(t, err)
+		assert.Equal(t, constants.MaxAllowedExpiryPeriodDays, wc.MaxAllowedExpiryPeriodDays)
+	})
+}

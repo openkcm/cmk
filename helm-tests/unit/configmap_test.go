@@ -120,7 +120,7 @@ func TestConfigMapValues(t *testing.T) {
 				"migrator:",
 				"certX509Trusts:",
 				"systemLimit: 50",
-				"defaultRequiredApprovals: 2",
+				"defaultMinimumApprovals: 2",
 				"pendingCreationTimeout: 15m",
 			},
 			// Chart settings are not CMK settings: CMK rejects unknown keys.

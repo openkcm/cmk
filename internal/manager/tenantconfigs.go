@@ -503,8 +503,8 @@ func (m *TenantConfigManager) getDefaultWorkflowConfig(defaultEnabled bool) *mod
 // applyDeploymentConfigOverrides applies deployment config values to workflow config
 // to override any default values. Values are clamped to hard limits.
 func (m *TenantConfigManager) applyDeploymentConfigOverrides(config *model.WorkflowConfig) {
-	if m.cfg.Workflow.DefaultRequiredApprovals > 0 {
-		v := min(m.cfg.Workflow.DefaultRequiredApprovals, constants.MaxAllowedApprovals)
+	if m.cfg.Workflow.DefaultMinimumApprovals > 0 {
+		v := min(m.cfg.Workflow.DefaultMinimumApprovals, constants.MaxAllowedApprovals)
 		config.RequiredApprovals = v
 	}
 	if m.cfg.Workflow.DefaultRetentionPeriodDays > 0 {
@@ -513,6 +513,10 @@ func (m *TenantConfigManager) applyDeploymentConfigOverrides(config *model.Workf
 	}
 	if m.cfg.Workflow.DefaultExpiryPeriodDays > 0 {
 		config.ExpiryPeriodDays = m.cfg.Workflow.DefaultExpiryPeriodDays
+	}
+	if m.cfg.Workflow.DefaultMaxExpiryPeriodDays > 0 {
+		v := min(m.cfg.Workflow.DefaultMaxExpiryPeriodDays, constants.MaxAllowedExpiryPeriodDays)
+		config.MaxAllowedExpiryPeriodDays = v
 	}
 }
 
