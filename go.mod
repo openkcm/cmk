@@ -102,7 +102,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.20.1 // indirect
+	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/lib/pq v1.12.3 // indirect
 	github.com/luci/go-render v0.0.0-20160219211803-9a04cc21af0f // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
