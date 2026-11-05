@@ -179,12 +179,22 @@ func (c *APIController) GetKeyConfigurationCertificates(
 	ctx context.Context,
 	_ cmkapi.GetKeyConfigurationCertificatesRequestObject,
 ) (cmkapi.GetKeyConfigurationCertificatesResponseObject, error) {
+	// When cert-based HYOK auth is disabled, skip fetching certificates and return empty lists with the flag set,
+	// so the client can differentiate from the case when no cert is configured.
+	if c.config.Certificates.DisableHYOKCertAuth {
+		return cmkapi.GetKeyConfigurationCertificates200JSONResponse(cmkapi.ClientCertificates{
+			NotRequiredForHYOK: new(true),
+			TenantDefault:      &cmkapi.CertificateList{Count: new(0), Value: []cmkapi.Certificate{}},
+			Crypto:             &cmkapi.CertificateList{Count: new(0), Value: []cmkapi.Certificate{}},
+		}), nil
+	}
+
 	clientCerts, err := c.Manager.KeyConfig.GetClientCertificates(ctx)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetClientCertificates, err)
 	}
 
-	response, err := clientcertificates.ToAPI(clientCerts, c.config.Certificates.DisableHYOKCertAuth)
+	response, err := clientcertificates.ToAPI(clientCerts)
 	if err != nil {
 		return nil, errs.Wrap(apierrors.ErrGetClientCertificates, err)
 	}
