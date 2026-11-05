@@ -45,7 +45,7 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 
 	cfg := &config.Config{Database: dbCfg}
 	svcRegistry := testutils.NewTestPlugins()
-	tcm := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, nil, nil)
+	tcm := manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, nil, nil, nil)
 
 	reconciler, err := eventprocessor.NewCryptoReconciler(
 		t.Context(), cfg, authzRepo, svcRegistry, nil, tcm)

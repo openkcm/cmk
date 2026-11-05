@@ -29,7 +29,7 @@ func SetupProviderManager(t *testing.T) (*manager.ProviderConfigManager, string,
 	m := manager.NewProviderConfigManager(
 		svcRegistry,
 		make(map[manager.ProviderCachedKey]*manager.ProviderConfig),
-		manager.NewTenantConfigManager(r, svcRegistry, cfg, manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg), nil),
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg), nil, nil),
 		manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg),
 		manager.NewPool(r),
 		r,
@@ -198,7 +198,7 @@ func TestGetOrInitProvider_HYOKAuthType(t *testing.T) {
 			m := manager.NewProviderConfigManager(
 				svcRegistry,
 				make(map[manager.ProviderCachedKey]*manager.ProviderConfig),
-				manager.NewTenantConfigManager(r, svcRegistry, cfg, manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg), nil),
+				manager.NewTenantConfigManager(r, svcRegistry, cfg, manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg), nil, nil),
 				manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg),
 				manager.NewPool(r),
 				r,
@@ -265,7 +265,7 @@ func TestGetOrInitProvider_ExpiredEntryIsReinitialized(t *testing.T) {
 		map[manager.ProviderCachedKey]*manager.ProviderConfig{
 			compositeKey: expiredCfg,
 		},
-		manager.NewTenantConfigManager(r, svcRegistry, cfg, manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg), nil),
+		manager.NewTenantConfigManager(r, svcRegistry, cfg, manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg), nil, nil),
 		manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg),
 		manager.NewPool(r),
 		r,

@@ -712,6 +712,7 @@ func (w *WorkflowManager) CleanupTerminalWorkflows(ctx context.Context) error {
 		query,
 		repo.DefaultLimit,
 		repo.BatchProcessOptions{DeleteMode: true},
+		nil,
 		func(workflows []*model.Workflow) error {
 			if len(workflows) == 0 {
 				return nil
