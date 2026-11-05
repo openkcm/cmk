@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.3 (2026-11-05)
+
+## What's Changed
+* fix: skip getting client certs when HYOK cert-based auth is disabled by @minh-nghia in https://github.com/openkcm/cmk/pull/509
+
+
+**Full Changelog**: https://github.com/openkcm/cmk/compare/v0.12.2...v0.12.3
+
 ## 0.12.2 (2026-11-04)
 
 ## What's Changed
