@@ -141,6 +141,14 @@ func NewCryptoReconciler(
 		orbital.WithJobCanceledEventFunc(reconciler.jobCanceledFunc),
 	}
 
+	mc, err := orbital.NewMetricCollector(otel.GetMeterProvider())
+	if err != nil {
+		log.Warn(ctx, "Failed to initiate metric collector for event-processor")
+	}
+	if mc != nil {
+		managerOpts = append(managerOpts, orbital.WithManagerMetrics(mc))
+	}
+
 	manager, err := orbital.NewManager(orbRepo, reconciler.resolveTasks(), managerOpts...)
 	if err != nil {
 		return nil, errs.Wrapf(err, "failed to create orbital manager")
