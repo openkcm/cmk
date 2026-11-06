@@ -6,7 +6,7 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	github.com/Azure/go-amqp v1.7.0
 	github.com/XSAM/otelsql v0.44.0
-	github.com/avast/retry-go/v5 v5.0.0
+	github.com/avast/retry-go/v5 v5.0.1
 	github.com/getkin/kin-openapi v0.152.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -22,7 +22,7 @@ require (
 	github.com/oapi-codegen/runtime v1.8.0
 	github.com/open-feature/go-sdk v1.20.0
 	github.com/openkcm/api-sdk v0.23.0
-	github.com/openkcm/common-sdk v1.21.0
+	github.com/openkcm/common-sdk v1.21.1
 	github.com/openkcm/orbital v0.6.2
 	github.com/openkcm/plugin-sdk v0.19.0
 	github.com/pkg/errors v0.9.1
@@ -134,7 +134,7 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
-	github.com/prometheus/common v0.72.0 // indirect
+	github.com/prometheus/common v0.72.1 // indirect
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/r3labs/diff/v3 v3.0.2 // indirect
@@ -142,9 +142,9 @@ require (
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/samber/lo v1.53.0 // indirect
-	github.com/samber/slog-common v0.21.0 // indirect
+	github.com/samber/slog-common v0.22.0 // indirect
 	github.com/samber/slog-formatter v1.3.0 // indirect
-	github.com/samber/slog-multi v1.8.0 // indirect
+	github.com/samber/slog-multi v1.9.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
@@ -154,7 +154,7 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/thomaspoignant/go-feature-flag v1.57.0 // indirect
+	github.com/thomaspoignant/go-feature-flag v1.57.2 // indirect
 	github.com/thomaspoignant/go-feature-flag/modules/core v0.7.2 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
