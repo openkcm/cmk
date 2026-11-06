@@ -2,11 +2,14 @@ package auditor_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/collector/pdata/plog"
 
 	otlpaudit "github.com/openkcm/common-sdk/pkg/otlp/audit"
 
@@ -16,7 +19,7 @@ import (
 func testCmkSystemAuditMethod(
 	t *testing.T,
 	methodName string,
-	auditMethod func(*auditor.Auditor, context.Context, string, string) error,
+	auditMethod func(*auditor.Auditor, context.Context, string, string, string) error,
 ) {
 	t.Helper()
 
@@ -84,7 +87,7 @@ func testCmkSystemAuditMethod(
 
 			testAuditor := createTestAuditor(mockCollectorServer.URL)
 
-			err := auditMethod(testAuditor, tt.setupCtx(), tt.systemID, tt.cmkID)
+			err := auditMethod(testAuditor, tt.setupCtx(), tt.systemID, tt.cmkID, "")
 
 			if tt.expectErr {
 				assert.Error(t, err)
@@ -102,7 +105,7 @@ func testCmkSystemAuditMethod(
 func testCmkSwitchAuditMethod(
 	t *testing.T,
 	methodName string,
-	auditMethod func(*auditor.Auditor, context.Context, string, string, string) error,
+	auditMethod func(*auditor.Auditor, context.Context, string, string, string, string) error,
 ) {
 	t.Helper()
 
@@ -186,7 +189,7 @@ func testCmkSwitchAuditMethod(
 
 			testAuditor := createTestAuditor(mockCollectorServer.URL)
 
-			err := auditMethod(testAuditor, tt.setupCtx(), tt.systemID, tt.cmkIDOld, tt.cmkIDNew)
+			err := auditMethod(testAuditor, tt.setupCtx(), tt.systemID, tt.cmkIDOld, tt.cmkIDNew, "")
 
 			if tt.expectErr {
 				assert.Error(t, err)
@@ -297,30 +300,85 @@ func TestAuditor_SendCmkOnboardingAuditLog(t *testing.T) {
 	testCmkSystemAuditMethod(
 		t,
 		"cmk onboarding",
-		func(a *auditor.Auditor, ctx context.Context, systemID, cmkID string) error {
-			return a.SendCmkOnboardingAuditLog(ctx, systemID, cmkID)
+		func(a *auditor.Auditor, ctx context.Context, systemID, cmkID, _ string) error {
+			return a.SendCmkOnboardingAuditLog(ctx, systemID, cmkID, "")
 		},
 	)
+}
+
+func TestAuditor_SendCmkOnboardingAuditLog_CustomInitiator(t *testing.T) {
+	assertCustomInitiator(t, "custom-initiator", func(a *auditor.Auditor) {
+		err := a.SendCmkOnboardingAuditLog(createTestContext(), "test-system-123", generateTestCmkID(), "custom-initiator")
+		assert.NoError(t, err)
+	})
+}
+
+// assertCustomInitiator starts a mock collector, calls fn, and asserts the
+// UserInitiatorIDKey in the captured payload equals the expected value.
+func assertCustomInitiator(t *testing.T, initiator string, fn func(*auditor.Auditor)) {
+	t.Helper()
+
+	requestReceived := make(chan map[string]string, 1)
+
+	mockCollectorServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			assert.NoError(t, err)
+
+			unmarshaler := plog.JSONUnmarshaler{}
+			logs, err := unmarshaler.UnmarshalLogs(body)
+			assert.NoError(t, err)
+
+			attrs, err := getAttributes(&logs)
+			assert.NoError(t, err)
+
+			requestReceived <- attrs
+			w.WriteHeader(http.StatusOK)
+		}))
+	defer mockCollectorServer.Close()
+
+	fn(createTestAuditor(mockCollectorServer.URL))
+
+	select {
+	case attrs := <-requestReceived:
+		assert.Equal(t, initiator, attrs[otlpaudit.UserInitiatorIDKey])
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for audit log request")
+	}
 }
 
 func TestAuditor_SendCmkOffboardingAuditLog(t *testing.T) {
 	testCmkSystemAuditMethod(
 		t,
 		"cmk offboarding",
-		func(a *auditor.Auditor, ctx context.Context, systemID, cmkID string) error {
-			return a.SendCmkOffboardingAuditLog(ctx, systemID, cmkID)
+		func(a *auditor.Auditor, ctx context.Context, systemID, cmkID, _ string) error {
+			return a.SendCmkOffboardingAuditLog(ctx, systemID, cmkID, "")
 		},
 	)
+}
+
+func TestAuditor_SendCmkOffboardingAuditLog_CustomInitiator(t *testing.T) {
+	assertCustomInitiator(t, "custom-initiator", func(a *auditor.Auditor) {
+		err := a.SendCmkOffboardingAuditLog(createTestContext(), "test-system-123", generateTestCmkID(), "custom-initiator")
+		assert.NoError(t, err)
+	})
 }
 
 func TestAuditor_SendCmkSwitchAuditLog(t *testing.T) {
 	testCmkSwitchAuditMethod(
 		t,
 		"cmk switch",
-		func(a *auditor.Auditor, ctx context.Context, systemID, cmkIDOld, cmkIDNew string) error {
-			return a.SendCmkSwitchAuditLog(ctx, systemID, cmkIDOld, cmkIDNew)
+		func(a *auditor.Auditor, ctx context.Context, systemID, cmkIDOld, cmkIDNew, _ string) error {
+			return a.SendCmkSwitchAuditLog(ctx, systemID, cmkIDOld, cmkIDNew, "")
 		},
 	)
+}
+
+func TestAuditor_SendCmkSwitchAuditLog_CustomInitiator(t *testing.T) {
+	assertCustomInitiator(t, "custom-initiator", func(a *auditor.Auditor) {
+		err := a.SendCmkSwitchAuditLog(createTestContext(), "test-system-123", generateTestCmkID(), generateTestCmkID(), "custom-initiator")
+		assert.NoError(t, err)
+	})
 }
 
 func TestAuditor_SendCmkTenantModificationAuditLog(t *testing.T) {
