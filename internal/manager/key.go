@@ -168,7 +168,6 @@ func NewKeyManager(
 	}
 }
 
-//nolint:cyclop
 func (km *KeyManager) Create(
 	ctx context.Context,
 	key *model.Key,
@@ -180,18 +179,10 @@ func (km *KeyManager) Create(
 		return nil, err
 	}
 
-	// For BYOK keys, check if tenant provisioning is needed before attempting provider creation.
-	// If the default keystore has not yet had its management role provisioned (LocalityID == ""),
-	// persist the key in PENDING_CREATION state and return immediately. The sync worker will
-	// complete creation once provisioning succeeds.
+	// BYOK keys always go to PENDING_CREATION immediately. Provider key creation is slow
+	// (can exceed the Envoy upstream timeout) and is handled by the async sync worker.
 	if key.KeyType == constants.KeyTypeBYOK {
-		pending, err := km.createPendingBYOKKeyIfNeeded(ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		if pending {
-			return key, nil
-		}
+		return km.savePendingBYOKKey(ctx, key)
 	}
 
 	// Enforce key limit before any provider interaction so a limit violation never
@@ -203,16 +194,6 @@ func (km *KeyManager) Create(
 	// Initialize provider
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
-		// GrantTrust(CRYPTO) may still be pending (null cryptoAccessData or a new crypto cert
-		// added after initial provisioning). Fall into PENDING_CREATION so the sync worker
-		// retries out-of-band rather than blocking or failing the HTTP request.
-		if key.KeyType == constants.KeyTypeBYOK && errors.Is(err, ErrGrantTrustFailed) {
-			log.Info(ctx, "Crypto trust grant pending during key creation, deferring to async worker",
-				log.ErrorAttr(err))
-			// ctx may already be canceled (e.g. gateway timeout killed the request context
-			// while GrantTrust was in flight). Use a detached context so the DB write succeeds.
-			return km.savePendingBYOKKey(context.WithoutCancel(ctx), key)
-		}
 		return nil, errs.Wrap(ErrFailedToInitProvider, err)
 	}
 
@@ -790,17 +771,6 @@ func (km *KeyManager) checkConnectedSystems(ctx context.Context, key *model.Key)
 	return nil
 }
 
-// isBYOKProvisioningNeeded reports whether the default keystore's management role
-// has not yet been provisioned for this tenant. It reads the stored config without
-// triggering lazy provisioning, so it never blocks on GrantTrust.
-func (km *KeyManager) isBYOKProvisioningNeeded(ctx context.Context) (bool, error) {
-	needed, err := km.tenantConfigs.NeedsDefaultKeystoreProvisioning(ctx)
-	if err != nil {
-		return false, err
-	}
-	return needed, nil
-}
-
 func (km *KeyManager) persistCreatedKey(
 	ctx context.Context,
 	provider *ProviderConfig,
@@ -823,20 +793,6 @@ func (km *KeyManager) persistCreatedKey(
 	}
 
 	return nil
-}
-
-// createPendingBYOKKeyIfNeeded persists the key in PENDING_CREATION when tenant provisioning
-// is not yet complete. Returns true if the key was saved as pending (caller should return early).
-func (km *KeyManager) createPendingBYOKKeyIfNeeded(ctx context.Context, key *model.Key) (bool, error) {
-	needsProvisioning, err := km.isBYOKProvisioningNeeded(ctx)
-	if err != nil {
-		return false, err
-	}
-	if !needsProvisioning {
-		return false, nil
-	}
-	saved, err := km.savePendingBYOKKey(ctx, key)
-	return saved != nil, err
 }
 
 // savePendingBYOKKey persists the key in PENDING_CREATION and enqueues a sync.
