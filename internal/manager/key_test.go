@@ -29,7 +29,6 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/common"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
-	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
@@ -40,8 +39,6 @@ import (
 const (
 	testRegionUSEast1 = "us-east-1"
 )
-
-var errGrantTrustUnavailable = errors.New("iam not ready")
 
 func keysParams(skip, top int, count bool, orderby *string) repo.Params {
 	return odata.New(
@@ -265,8 +262,8 @@ func setupKeyTestWithFlags(t *testing.T, flagOverrides map[string]bool, opts ...
 
 func createTestSystemManagedKey(t *testing.T, km *manager.KeyManager, r repo.Repo, ctx context.Context, keyConfigID uuid.UUID) *model.Key {
 	t.Helper()
-	// Seed a fully-provisioned DEFAULT_KEYSTORE config so NeedsDefaultKeystoreProvisioning
-	// returns false and the key takes the normal creation path instead of PENDING_CREATION.
+	// Seed a fully-provisioned DEFAULT_KEYSTORE config so GetOrInitProvider succeeds
+	// when SyncPendingCreationKey runs for this key.
 	seedDefaultKeystore(t, r, ctx)
 
 	key := testutils.NewKey(func(k *model.Key) {
@@ -280,8 +277,7 @@ func createTestSystemManagedKey(t *testing.T, km *manager.KeyManager, r repo.Rep
 }
 
 // seedDefaultKeystore persists a fully-provisioned DEFAULT_KEYSTORE config as flat rows so that
-// NeedsDefaultKeystoreProvisioning returns false and BYOK keys take the normal creation
-// path instead of PENDING_CREATION.
+// GetOrInitProvider succeeds when the async sync worker runs.
 func seedDefaultKeystore(t *testing.T, r repo.Repo, ctx context.Context) {
 	t.Helper()
 	//nolint:contextcheck
@@ -361,8 +357,8 @@ func TestCreate(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Seed a provisioned DEFAULT_KEYSTORE config so NeedsDefaultKeystoreProvisioning returns false
-	// and BYOK keys take the normal creation path through the provider.
+	// Seed a provisioned DEFAULT_KEYSTORE config so GetOrInitProvider succeeds
+	// when the sync worker runs.
 	seedDefaultKeystore(t, r, ctx)
 
 	hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
@@ -384,7 +380,8 @@ func TestCreate(t *testing.T) {
 				})
 			},
 			wantErr:      false,
-			wantNativeID: true,
+			wantNativeID: false,
+			wantState:    cmkapi.KeyStatePENDINGCREATION,
 		},
 		{
 			name: "Invalid provider",
@@ -1212,14 +1209,13 @@ func TestUpdate(t *testing.T) {
 			k.KeyType = constants.KeyTypeBYOK
 			k.State = cmkapi.KeyStatePENDINGIMPORT
 		})
-		created, err := km.Create(localCtx, byokKey)
-		require.NoError(t, err)
+		testutils.CreateTestEntities(localCtx, t, r, byokKey)
 
 		for _, enabled := range []bool{true, false} {
-			_, err := km.UpdateKey(localCtx, created.ID, cmkapi.KeyPatch{Enabled: new(enabled)})
+			_, err := km.UpdateKey(localCtx, byokKey.ID, cmkapi.KeyPatch{Enabled: new(enabled)})
 			assert.ErrorIs(t, err, manager.ErrPendingImportStateNotEditable)
 
-			unchanged, getErr := km.Get(localCtx, created.ID)
+			unchanged, getErr := km.Get(localCtx, byokKey.ID)
 			assert.NoError(t, getErr)
 			assert.Equal(t, cmkapi.KeyStatePENDINGIMPORT, unchanged.State)
 		}
@@ -2266,6 +2262,21 @@ func TestCreateManagedProviderKeyRetry(t *testing.T) {
 	*manager.CreateKeyMaxDelay = 0
 	t.Cleanup(func() { *manager.CreateKeyMaxDelay = originalMax })
 
+	// createPendingKey persists a BYOK key in PENDING_CREATION and seeds a provisioned keystore,
+	// placing the system in the state the async worker operates on.
+	createPendingKey := func(t *testing.T, r repo.Repo, ctx context.Context, keyConfigID uuid.UUID) *model.Key {
+		t.Helper()
+		seedDefaultKeystore(t, r, ctx)
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfigID
+			k.KeyType = constants.KeyTypeBYOK
+			k.State = cmkapi.KeyStatePENDINGCREATION
+			k.NativeID = nil
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+		return key
+	}
+
 	t.Run("succeeds on second attempt after one auth failure", func(t *testing.T) {
 		plugin := &failingNTimesKeyManagement{
 			inner:     testplugins.NewTestKeyManagement(true, true),
@@ -2273,20 +2284,19 @@ func TestCreateManagedProviderKeyRetry(t *testing.T) {
 			failErr:   keymanagement.ErrProviderAuthenticationFailed,
 		}
 		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+		key := createPendingKey(t, r, ctx, keyConfig.ID)
 
-		// Seed a provisioned DEFAULT_KEYSTORE config so NeedsDefaultKeystoreProvisioning returns false.
-		seedDefaultKeystore(t, r, ctx)
-
-		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = keyConfig.ID
-		})
-
-		result, err := km.Create(ctx, key)
+		err := km.SyncPendingCreationKey(ctx, key.ID)
 
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.NotNil(t, result.NativeID)
 		assert.Equal(t, 1, plugin.callCount, "expected exactly one failure before success")
+
+		dbKey := &model.Key{ID: key.ID}
+		found, dbErr := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, dbErr)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStatePENDINGIMPORT, dbKey.State)
+		assert.NotNil(t, dbKey.NativeID)
 	})
 
 	t.Run("fails after exhausting all retry attempts", func(t *testing.T) {
@@ -2297,18 +2307,11 @@ func TestCreateManagedProviderKeyRetry(t *testing.T) {
 			failErr:   keymanagement.ErrProviderAuthenticationFailed,
 		}
 		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+		key := createPendingKey(t, r, ctx, keyConfig.ID)
 
-		// Seed a provisioned DEFAULT_KEYSTORE config so NeedsDefaultKeystoreProvisioning returns false.
-		seedDefaultKeystore(t, r, ctx)
-
-		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = keyConfig.ID
-		})
-
-		result, err := km.Create(ctx, key)
+		err := km.SyncPendingCreationKey(ctx, key.ID)
 
 		assert.Error(t, err)
-		assert.Nil(t, result)
 		assert.ErrorIs(t, err, keymanagement.ErrProviderAuthenticationFailed)
 	})
 
@@ -2319,28 +2322,19 @@ func TestCreateManagedProviderKeyRetry(t *testing.T) {
 			failErr:   errNonAuthTest,
 		}
 		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+		key := createPendingKey(t, r, ctx, keyConfig.ID)
 
-		// Seed a provisioned DEFAULT_KEYSTORE config so NeedsDefaultKeystoreProvisioning returns false.
-		seedDefaultKeystore(t, r, ctx)
-
-		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = keyConfig.ID
-		})
-
-		result, err := km.Create(ctx, key)
+		err := km.SyncPendingCreationKey(ctx, key.ID)
 
 		assert.Error(t, err)
-		assert.Nil(t, result)
 		assert.Equal(t, 1, plugin.callCount, "expected only one attempt for non-auth error")
 	})
 }
 
 func TestCreateBYOKPendingCreation(t *testing.T) {
-	// SetupKeyTest does not pre-populate the tenant's default keystore config
-	// (only the pool entry), so NeedsDefaultKeystoreProvisioning returns true.
 	km, r, ctx, keyConfig, _ := SetupKeyTest(t)
 
-	t.Run("BYOK key is created in PENDING_CREATION when provisioning not done", func(t *testing.T) {
+	t.Run("BYOK key is always created in PENDING_CREATION", func(t *testing.T) {
 		// Arrange
 		key := testutils.NewKey(func(k *model.Key) {
 			k.KeyConfigurationID = keyConfig.ID
@@ -2393,20 +2387,10 @@ func TestCreateBYOKPendingCreation(t *testing.T) {
 		require.True(t, found)
 		assert.Nil(t, kc.PrimaryKeyID, "PENDING_CREATION key must not become primary")
 	})
-}
 
-func TestCreateBYOKPendingCreationOnGrantTrustFailure(t *testing.T) {
-	failingKSM := &failingGrantTrustKeystoreManagement{err: errGrantTrustUnavailable}
-
-	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
-	km, r, ctx, keyConfig, _ := SetupKeyTest(t,
-		testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin),
-		testplugins.WithKeystoreManagement(testplugins.Name, failingKSM),
-	)
-
-	t.Run("falls into PENDING_CREATION when GrantTrust(CRYPTO) fails", func(t *testing.T) {
-		// Arrange: seed a provisioned keystore so NeedsDefaultKeystoreProvisioning returns false,
-		// but CryptoAccessData is nil — GrantTrust(CRYPTO) will run and fail.
+	t.Run("BYOK key goes to PENDING_CREATION even when provisioning is already complete", func(t *testing.T) {
+		// Arrange: seed a provisioned keystore. Under the old code this would have triggered
+		// synchronous provider key creation; under the new code it still goes to PENDING_CREATION.
 		seedDefaultKeystore(t, r, ctx)
 
 		key := testutils.NewKey(func(k *model.Key) {
@@ -2417,131 +2401,18 @@ func TestCreateBYOKPendingCreationOnGrantTrustFailure(t *testing.T) {
 		// Act
 		result, err := km.Create(ctx, key)
 
-		// Assert: key saved as PENDING_CREATION, no error returned to caller
+		// Assert
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		assert.Equal(t, cmkapi.KeyStatePENDINGCREATION, result.State)
-		assert.Nil(t, result.NativeID)
+		assert.Nil(t, result.NativeID, "NativeID must be nil until async worker creates the provider key")
 
 		dbKey := &model.Key{ID: result.ID}
-		found, dbErr := r.First(ctx, dbKey, *repo.NewQuery())
-		require.NoError(t, dbErr)
-		require.True(t, found)
-		assert.Equal(t, cmkapi.KeyStatePENDINGCREATION, dbKey.State)
-	})
-
-	t.Run("falls into PENDING_CREATION even when request context is canceled mid-GrantTrust", func(t *testing.T) {
-		// Arrange: simulate a gateway timeout that cancels the context while GrantTrust is in flight.
-		// The mock cancels the context inside GrantTrust before returning the error, replicating
-		// what happens when a gateway timeout fires while the gRPC call is in progress.
-		//
-		// We need a fresh km/db because the cancelingGrantTrustKeystoreManagement holds a cancel
-		// func that must be derived from ctx2 (the tenant-bound context for this manager).
-		// The cancel func is wired after SetupKeyTest so it captures ctx2.
-		var cancelFn context.CancelFunc
-		cancelingKSM := &cancelingGrantTrustKeystoreManagement{cancelFn: &cancelFn}
-		km2, r2, ctx2, keyConfig2, _ := SetupKeyTest(t,
-			testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin),
-			testplugins.WithKeystoreManagement(testplugins.Name, cancelingKSM),
-		)
-		seedDefaultKeystore(t, r2, ctx2)
-
-		cancelCtx, cancel := context.WithCancel(ctx2)
-		cancelFn = cancel
-
-		key := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = keyConfig2.ID
-			k.KeyType = constants.KeyTypeBYOK
-		})
-
-		// Act
-		result, err := km2.Create(cancelCtx, key)
-
-		// Assert: DB write succeeds via detached context despite canceled request context
+		found, err := r.First(ctx, dbKey, *repo.NewQuery())
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Equal(t, cmkapi.KeyStatePENDINGCREATION, result.State)
-
-		dbKey := &model.Key{ID: result.ID}
-		found, dbErr := r2.First(ctx2, dbKey, *repo.NewQuery())
-		require.NoError(t, dbErr)
 		require.True(t, found)
 		assert.Equal(t, cmkapi.KeyStatePENDINGCREATION, dbKey.State)
 	})
-}
-
-// failingGrantTrustKeystoreManagement is a test double that returns an error on GrantTrust.
-type failingGrantTrustKeystoreManagement struct {
-	err error
-}
-
-var _ keystoremanagement.KeystoreManagement = (*failingGrantTrustKeystoreManagement)(nil)
-
-func (f *failingGrantTrustKeystoreManagement) ServiceInfo() api.Info {
-	return testplugins.NewTestKeystoreManagement().ServiceInfo()
-}
-
-func (f *failingGrantTrustKeystoreManagement) CreateKeystore(
-	ctx context.Context, req *keystoremanagement.CreateKeystoreRequest,
-) (*keystoremanagement.CreateKeystoreResponse, error) {
-	return testplugins.NewTestKeystoreManagement().CreateKeystore(ctx, req)
-}
-
-func (f *failingGrantTrustKeystoreManagement) DeleteKeystore(
-	ctx context.Context, req *keystoremanagement.DeleteKeystoreRequest,
-) (*keystoremanagement.DeleteKeystoreResponse, error) {
-	return testplugins.NewTestKeystoreManagement().DeleteKeystore(ctx, req)
-}
-
-func (f *failingGrantTrustKeystoreManagement) GrantTrust(
-	_ context.Context, _ *keystoremanagement.GrantTrustRequest,
-) (*keystoremanagement.GrantTrustResponse, error) {
-	return nil, f.err
-}
-
-func (f *failingGrantTrustKeystoreManagement) RemoveTrust(
-	ctx context.Context, req *keystoremanagement.RemoveTrustRequest,
-) (*keystoremanagement.RemoveTrustResponse, error) {
-	return testplugins.NewTestKeystoreManagement().RemoveTrust(ctx, req)
-}
-
-// cancelingGrantTrustKeystoreManagement cancels the context inside GrantTrust before returning,
-// simulating a gateway timeout that fires while the RPC is in flight.
-type cancelingGrantTrustKeystoreManagement struct {
-	cancelFn *context.CancelFunc
-}
-
-var _ keystoremanagement.KeystoreManagement = (*cancelingGrantTrustKeystoreManagement)(nil)
-
-func (c *cancelingGrantTrustKeystoreManagement) ServiceInfo() api.Info {
-	return testplugins.NewTestKeystoreManagement().ServiceInfo()
-}
-
-func (c *cancelingGrantTrustKeystoreManagement) CreateKeystore(
-	ctx context.Context, req *keystoremanagement.CreateKeystoreRequest,
-) (*keystoremanagement.CreateKeystoreResponse, error) {
-	return testplugins.NewTestKeystoreManagement().CreateKeystore(ctx, req)
-}
-
-func (c *cancelingGrantTrustKeystoreManagement) DeleteKeystore(
-	ctx context.Context, req *keystoremanagement.DeleteKeystoreRequest,
-) (*keystoremanagement.DeleteKeystoreResponse, error) {
-	return testplugins.NewTestKeystoreManagement().DeleteKeystore(ctx, req)
-}
-
-func (c *cancelingGrantTrustKeystoreManagement) GrantTrust(
-	_ context.Context, _ *keystoremanagement.GrantTrustRequest,
-) (*keystoremanagement.GrantTrustResponse, error) {
-	if c.cancelFn != nil && *c.cancelFn != nil {
-		(*c.cancelFn)()
-	}
-	return nil, context.Canceled
-}
-
-func (c *cancelingGrantTrustKeystoreManagement) RemoveTrust(
-	ctx context.Context, req *keystoremanagement.RemoveTrustRequest,
-) (*keystoremanagement.RemoveTrustResponse, error) {
-	return testplugins.NewTestKeystoreManagement().RemoveTrust(ctx, req)
 }
 
 func TestUpdateKeyPendingCreationGuard(t *testing.T) {
@@ -2790,7 +2661,7 @@ func TestEnqueuePendingStateSync(t *testing.T) {
 			k.KeyConfigurationID = keyConfig.ID
 			k.KeyType = constants.KeyTypeBYOK
 		})
-		// NeedsDefaultKeystoreProvisioning returns true (no stored config) → triggers enqueue.
+		// Create triggers PENDING_CREATION and enqueues a sync task.
 		_, err := km.Create(ctx, newKey)
 		require.NoError(t, err)
 
