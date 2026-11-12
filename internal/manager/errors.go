@@ -49,6 +49,7 @@ var (
 	ErrKeyInPendingState             = errors.New("operation not allowed: key is in a pending state")
 	ErrProvisioningTimeout           = errors.New("provisioning timeout")
 	ErrPendingImportStateNotEditable = errors.New("key state cannot be changed while pending import")
+	ErrKeyStateNotDeletable          = errors.New("key state does not allow deletion")
 
 	ErrGetKeyDB                         = errors.New("failed to get key from database")
 	ErrGettingKeyByID                   = errors.New("failed to get key by ID")

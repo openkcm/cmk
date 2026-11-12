@@ -1271,11 +1271,10 @@ func TestDelete(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, r, pendingImportPrimaryKey, keyConfigPendingPrimary, pendingSys)
 
-	// Regression guard: an ENABLED primary key with a connected system must still be rejected,
-	// not just PENDING_IMPORT ones.
 	enabledPrimaryID := uuid.New()
 	keyConfigEnabledPrimary := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = new(enabledPrimaryID)
+		k.AdminGroup = keyConfig.AdminGroup
 	})
 	enabledSys := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = new(keyConfigEnabledPrimary.ID)
@@ -1289,10 +1288,16 @@ func TestDelete(t *testing.T) {
 
 	testutils.CreateTestEntities(ctx, t, r, enabledPrimaryKey, keyConfigEnabledPrimary, enabledSys)
 
+	enabledBYOK := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED, keyProviderPlugin)
+	disabledBYOK := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateDISABLED, keyProviderPlugin)
+	pendingCreationBYOK := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGCREATION, keyProviderPlugin)
+	errorBYOK := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateERROR, keyProviderPlugin)
+
 	tests := []struct {
 		name      string
 		key       *model.Key
 		wantErr   bool
+		wantErrIs error
 		isPrimary bool
 	}{
 		{
@@ -1317,9 +1322,32 @@ func TestDelete(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "Should fail on delete ENABLED BYOK primary with connected systems",
-			key:     enabledPrimaryKey,
-			wantErr: true,
+			name:      "Should fail on delete ENABLED BYOK primary regardless of connected systems",
+			key:       enabledPrimaryKey,
+			wantErr:   true,
+			wantErrIs: manager.ErrKeyStateNotDeletable,
+		},
+		{
+			name:      "Should fail on delete ENABLED BYOK key",
+			key:       enabledBYOK,
+			wantErr:   true,
+			wantErrIs: manager.ErrKeyStateNotDeletable,
+		},
+		{
+			name:      "Should fail on delete DISABLED BYOK key",
+			key:       disabledBYOK,
+			wantErr:   true,
+			wantErrIs: manager.ErrKeyStateNotDeletable,
+		},
+		{
+			name:    "Should delete PENDING_CREATION BYOK key",
+			key:     pendingCreationBYOK,
+			wantErr: false,
+		},
+		{
+			name:    "Should delete ERROR BYOK key",
+			key:     errorBYOK,
+			wantErr: false,
 		},
 		{
 			name:    "DeleteExistingBYOKKey",
@@ -1339,6 +1367,9 @@ func TestDelete(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
+				if tt.wantErrIs != nil {
+					assert.ErrorIs(t, err, tt.wantErrIs)
+				}
 			} else {
 				assert.NoError(t, err)
 				_, err := km.Get(ctx, tt.key.ID)
@@ -1364,6 +1395,7 @@ func TestDelete(t *testing.T) {
 		primaryKey := testutils.NewKey(func(k *model.Key) {
 			k.ID = primaryID
 			k.KeyConfigurationID = danglingConfig.ID
+			k.State = cmkapi.KeyStatePENDINGCREATION
 			// No provider-side key to remove; keep the test focused on clearing the FK pointer.
 			k.NativeID = nil
 		})
