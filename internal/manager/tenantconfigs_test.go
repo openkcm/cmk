@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -21,6 +22,7 @@ import (
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/multitenancy"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keystoremanagement"
+	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
 	"github.com/openkcm/cmk/internal/testutils/testplugins"
@@ -1106,6 +1108,30 @@ func TestGetTenantLimits(t *testing.T) {
 		assert.Equal(t, 99, *limits.Systems)
 		assert.Equal(t, 7, *limits.Keys)
 		assert.Equal(t, 33, *limits.KeyConfigs)
+	})
+}
+
+func TestGetTenantConfigByType_Pagination(t *testing.T) {
+	t.Run("fetches all rows when count exceeds DefaultLimit", func(t *testing.T) {
+		_, db, tenant := SetupTenantConfigManager(t)
+		ctx := testutils.CreateCtxWithTenant(tenant)
+		r := sql.NewRepository(db)
+
+		// KeystoreConfig.SupportedRegions is a map — writing 101 entries produces
+		// more than DefaultLimit (100) flat rows, exercising the batch paging path.
+		regions := make(map[string]config.Region, repo.DefaultLimit+1)
+		for i := range repo.DefaultLimit + 1 {
+			key := fmt.Sprintf("region-%d", i)
+			regions[key] = config.Region{Name: key, TechnicalName: key}
+		}
+		testutils.WriteTenantConfig(ctx, t, r, &model.KeystoreConfig{SupportedRegions: regions})
+
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), &config.Config{}, nil, nil)
+
+		got, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Len(t, got.SupportedRegions, repo.DefaultLimit+1)
 	})
 }
 

@@ -132,9 +132,11 @@ func (m *TenantConfigManager) GetTenantConfigByType[T model.TenantConfiguration]
 	ck := repo.NewCompositeKey().Where(repo.TypeField, res.Type())
 	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
 
-	if err := m.r.List(ctx, &model.TenantConfig{}, &configs, *query); err != nil {
-		// Preserve the same error contract as the legacy First-based path so that
-		// API error mappings keyed on repo.ErrGetResource keep working.
+	err := repo.ProcessInBatch(ctx, m.r, query, repo.DefaultLimit, func(cfgs []*model.TenantConfig) error {
+		configs = append(configs, cfgs...)
+		return nil
+	})
+	if err != nil {
 		return nil, errs.Wrap(repo.ErrGetResource, err)
 	}
 
@@ -148,7 +150,7 @@ func (m *TenantConfigManager) GetTenantConfigByType[T model.TenantConfiguration]
 		configMap[c.Key] = c.Value
 	}
 
-	res, err := model.Unflatten[T](configMap)
+	res, err = model.Unflatten[T](configMap)
 	if err != nil {
 		return nil, err
 	}
