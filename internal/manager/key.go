@@ -101,6 +101,19 @@ func IsPendingImportBYOK(key *model.Key) bool {
 	return key != nil && key.KeyType == cmkapi.KeyTypeBYOK && key.State == cmkapi.KeyStatePENDINGIMPORT
 }
 
+// byokDeletableStates never hold usable key material.
+var byokDeletableStates = []cmkapi.KeyState{
+	cmkapi.KeyStatePENDINGIMPORT,
+	cmkapi.KeyStatePENDINGCREATION,
+	cmkapi.KeyStateERROR,
+}
+
+// IsBYOKDeletable reports whether a BYOK key is in a state permitting hard deletion.
+func IsBYOKDeletable(key *model.Key) bool {
+	return key != nil && key.KeyType == cmkapi.KeyTypeBYOK &&
+		slices.Contains(byokDeletableStates, key.State)
+}
+
 type KeyManager struct {
 	ProviderConfigManager
 
@@ -373,6 +386,10 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 	key, err := km.Get(ctx, keyID)
 	if err != nil {
 		return errs.Wrap(ErrGetKeyDB, err)
+	}
+
+	if key.KeyType == cmkapi.KeyTypeBYOK && !IsBYOKDeletable(key) {
+		return errs.Wrap(ErrDeleteKey, ErrKeyStateNotDeletable)
 	}
 
 	if err := km.checkConnectedSystems(ctx, key); err != nil {
