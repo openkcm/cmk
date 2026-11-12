@@ -49,6 +49,13 @@ func New(ctx context.Context, config *config.Config) *Auditor {
 	}
 }
 
+// NewWithLogger creates an Auditor backed by the given AuditLogger
+func NewWithLogger(auditLogger AuditLogger) *Auditor {
+	return &Auditor{
+		auditLogger: auditLogger,
+	}
+}
+
 func (a *Auditor) Close(ctx context.Context) error {
 	return a.auditLogger.Close(ctx)
 }
