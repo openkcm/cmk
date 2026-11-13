@@ -180,6 +180,7 @@ func registerTasks(
 		cfg,
 		certManager,
 		ff,
+		nil,
 	)
 	tagManager := manager.NewTagManager(authzRepo)
 	keyConfigManager := manager.NewKeyConfigManager(
@@ -215,6 +216,7 @@ func registerTasks(
 		cfg,
 		keyConfigManager,
 		userManager,
+		tenantConfigManager,
 	)
 	groupManager := manager.NewGroupManager(authzRepo, svcRegistry, userManager)
 	workflowManager := manager.NewWorkflowManager(

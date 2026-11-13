@@ -138,7 +138,7 @@ func setupTest(t *testing.T) tester {
 
 	reconcilerCtx, cancelFunc := context.WithCancel(t.Context())
 
-	tcm := manager.NewTenantConfigManager(r, svcRegistry, &cfg, nil, nil)
+	tcm := manager.NewTenantConfigManager(r, svcRegistry, &cfg, nil, nil, nil)
 	reconciler, err := eventprocessor.NewCryptoReconciler(
 		reconcilerCtx,
 		&cfg,

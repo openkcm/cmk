@@ -79,7 +79,7 @@ func TestGetTenantConfigsHyokKeystore(t *testing.T) {
 			)
 
 			cfg := flagsEnabledCfg()
-			mgr := manager.NewTenantConfigManager(nil, svcRegistry, cfg, nil, newTestFlags(cfg, svcRegistry, tt.flags))
+			mgr := manager.NewTenantConfigManager(nil, svcRegistry, cfg, nil, newTestFlags(cfg, svcRegistry, tt.flags), nil)
 
 			result := mgr.GetTenantConfigsHyokKeystore(t.Context())
 			assert.ElementsMatch(t, tt.expectedOutput, result.Provider)
@@ -102,7 +102,7 @@ func TestFeatureFlagsDisabledFallback(t *testing.T) {
 		disabledCfg := &config.Config{}
 		// Feature flags disabled → fallback; flag client reports HYOK off but must be ignored.
 		m := manager.NewTenantConfigManager(nil, svcRegistry, disabledCfg, nil,
-			newTestFlags(disabledCfg, svcRegistry, map[string]bool{"enable_hyok_test": false}))
+			newTestFlags(disabledCfg, svcRegistry, map[string]bool{"enable_hyok_test": false}), nil)
 
 		res := m.GetTenantConfigsHyokKeystore(t.Context())
 		assert.True(t, res.Allow)
@@ -113,7 +113,7 @@ func TestFeatureFlagsDisabledFallback(t *testing.T) {
 		svcRegistry := testutils.NewTestPlugins(hyokPlugin)
 		nilCfg := &config.Config{}
 		m := manager.NewTenantConfigManager(nil, svcRegistry, nilCfg, nil,
-			manager.NewFeatureFlags(nilCfg, svcRegistry, nil))
+			manager.NewFeatureFlags(nilCfg, svcRegistry, nil), nil)
 
 		res := m.GetTenantConfigsHyokKeystore(t.Context())
 		assert.True(t, res.Allow)
@@ -126,7 +126,7 @@ func TestFeatureFlagsDisabledFallback(t *testing.T) {
 		cfg.FeatureGates = commoncfg.FeatureGates{"allow-byok": true}
 		// Gate on, flag off: while feature flags are disabled the gate wins.
 		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil,
-			newTestFlags(cfg, testutils.NewTestPlugins(), map[string]bool{"enable_byok_test": false}))
+			newTestFlags(cfg, testutils.NewTestPlugins(), map[string]bool{"enable_byok_test": false}), nil)
 
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
@@ -139,7 +139,7 @@ func TestFeatureFlagsDisabledFallback(t *testing.T) {
 		cfg.FeatureGates = commoncfg.FeatureGates{"allow-byok": false}
 		// Gate off, flag on: the flag must be ignored while feature flags are disabled.
 		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil,
-			newTestFlags(cfg, testutils.NewTestPlugins(), map[string]bool{"enable_byok_test": true}))
+			newTestFlags(cfg, testutils.NewTestPlugins(), map[string]bool{"enable_byok_test": true}), nil)
 
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)
@@ -152,7 +152,7 @@ func TestFeatureFlagsDisabledFallback(t *testing.T) {
 		cfg.FeatureGates = commoncfg.FeatureGates{"allow-byok": true}
 		// Feature flags enabled → the flag (off) wins and the legacy gate (on) is ignored.
 		m := manager.NewTenantConfigManager(sql.NewRepository(db), testutils.NewTestPlugins(), cfg, nil,
-			newTestFlags(cfg, testutils.NewTestPlugins(), map[string]bool{"enable_byok_test": false}))
+			newTestFlags(cfg, testutils.NewTestPlugins(), map[string]bool{"enable_byok_test": false}), nil)
 
 		res, err := m.GetTenantsKeystores(testutils.CreateCtxWithTenant(tenant))
 		assert.NoError(t, err)

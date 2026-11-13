@@ -125,7 +125,7 @@ func setupWorkflowExpiry(t *testing.T) (*manager.WorkflowManager, repo.Repo, str
 	assert.NoError(t, err)
 
 	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager, nil)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, certManager, nil, nil)
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
@@ -135,7 +135,7 @@ func setupWorkflowExpiry(t *testing.T) (*manager.WorkflowManager, repo.Repo, str
 	clientsFactory, err := clients.NewFactory(cfg.Services)
 	assert.NoError(t, err)
 	systemManager := manager.NewSystemManager(
-		t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager,
+		t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager, nil,
 	)
 
 	keyManager := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager,

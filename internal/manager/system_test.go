@@ -87,6 +87,7 @@ func SetupSystemManager(t *testing.T, clientsFactory clients.Factory) (
 		&cfg,
 		keyConfigManager,
 		userManager,
+		manager.NewTenantConfigManager(r, nil, nil, nil, nil, nil),
 	)
 
 	return systemManager, db, tenants[0]

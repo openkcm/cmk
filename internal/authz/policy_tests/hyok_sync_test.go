@@ -59,7 +59,7 @@ func TestHYOKSync_AuthzPolicy(t *testing.T) {
 	ff := manager.NewFeatureFlags(cfg, nil, nil)
 	cmkAuditor := auditor.New(t.Context(), cfg)
 	certManager := manager.NewCertificateManager(t.Context(), authzRepo, ps, cfg)
-	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, certManager, ff)
+	tenantConfigManager := manager.NewTenantConfigManager(authzRepo, ps, cfg, certManager, ff, nil)
 	tagManager := manager.NewTagManager(authzRepo)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	keyConfigManager := manager.NewKeyConfigManager(authzRepo, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
