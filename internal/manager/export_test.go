@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 
 	"github.com/openkcm/cmk/internal/async"
+	"github.com/openkcm/cmk/internal/auditor"
 	eventprocessor "github.com/openkcm/cmk/internal/event-processor"
 	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/certificateissuer"
@@ -129,6 +130,10 @@ func (km *KeyManager) IsNewKeyVersion(
 	keyResp *keymanagement.GetKeyVersionsResponse,
 ) (bool, error) {
 	return km.isNewKeyVersion(ctx, key, keyResp)
+}
+
+func (km *KeyManager) SetAuditorForTest(a *auditor.Auditor) {
+	km.cmkAuditor = a
 }
 
 // CreateKeyRetryDelay exposes the package-level retry delay so tests can set it to

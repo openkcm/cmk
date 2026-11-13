@@ -14,6 +14,7 @@ import (
 	"github.com/openkcm/plugin-sdk/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"google.golang.org/grpc/codes"
 	"gopkg.in/yaml.v3"
 
@@ -3398,4 +3399,67 @@ func TestGetKeysPrimaryFirstAcrossPages(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, explicit, 4)
 	assert.Equal(t, primaryKey.ID, explicit[3].ID)
+}
+
+type countingAuditLogger struct {
+	count int
+}
+
+func (c *countingAuditLogger) SendEvent(_ plog.Logs) error {
+	c.count++
+	return nil
+}
+
+func (c *countingAuditLogger) Close(_ context.Context) error {
+	return nil
+}
+
+func TestHYOKStateChangeEmitsNoAuditLog(t *testing.T) {
+	const nativeID = "mock-key/11111111"
+
+	t.Run("observed disable and rotation update state without emitting audit logs", func(t *testing.T) {
+		plugin := newHYOKPlugin()
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+		spy := &countingAuditLogger{}
+		km.SetAuditorForTest(auditor.NewWithLogger(spy))
+
+		key := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED)
+
+		plugin.KeyStore[nativeID].Status = testplugins.DisabledKeyStatus
+		require.NoError(t, km.SyncHYOKKeys(ctx))
+
+		dbKey := &model.Key{ID: key.ID}
+		found, err := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStateDISABLED, dbKey.State,
+			"observed disable must still update the stored state")
+
+		plugin.KeyStore[nativeID].Status = testplugins.EnabledKeyStatus
+		rotatedAt := time.Now().UTC()
+		require.NoError(t, plugin.RotateKey(nativeID, "version1", &rotatedAt))
+		require.NoError(t, km.SyncHYOKKeys(ctx))
+
+		var versions []model.KeyVersion
+		require.NoError(t, r.List(ctx, model.KeyVersion{}, &versions,
+			*repo.NewQuery().Where(repo.NewCompositeKeyGroup(
+				repo.NewCompositeKey().Where(repo.KeyIDField, key.ID)))))
+		assert.GreaterOrEqual(t, len(versions), 1, "detected rotation must still record a key version")
+
+		assert.Zero(t, spy.count, "CMK must not emit any audit log for HYOK state changes or rotation")
+	})
+
+	t.Run("BYOK disable still emits an audit log", func(t *testing.T) {
+		byokPlugin := testplugins.NewTestKeyManagement(true, true)
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, byokPlugin))
+		spy := &countingAuditLogger{}
+		km.SetAuditorForTest(auditor.NewWithLogger(spy))
+
+		byokKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED, byokPlugin)
+
+		updated, err := km.UpdateKey(ctx, byokKey.ID, cmkapi.KeyPatch{Enabled: new(false)})
+		require.NoError(t, err)
+		assert.Equal(t, cmkapi.KeyStateDISABLED, updated.State)
+		assert.Positive(t, spy.count, "BYOK disable must still emit a CMKDisable audit log")
+	})
 }
