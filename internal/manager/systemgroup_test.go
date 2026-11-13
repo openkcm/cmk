@@ -342,11 +342,26 @@ func TestHandleNewSystem(t *testing.T) {
 	m, r, _, tenant := SetupSystemGroupManager(t)
 	ctx := testutils.CreateCtxWithTenant(tenant)
 
+	testutils.WriteTenantConfig(ctx, t, r, model.SystemGroupConfig{Enabled: true})
+	tenantCfgManager := manager.NewTenantConfigManager(r, nil, nil, nil, nil, nil)
+
+	t.Run("no-op when grouping is disabled", func(t *testing.T) {
+		_, r2, _, tenant2 := SetupSystemGroupManager(t)
+		ctx2 := testutils.CreateCtxWithTenant(tenant2)
+		identifier := uuid.NewString()
+		sysA := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		sysB := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
+		testutils.CreateTestEntities(ctx2, t, r2, sysA, sysB)
+
+		require.NoError(t, m.HandleNewSystem(ctx2, sysB, manager.NewTenantConfigManager(r2, nil, nil, nil, nil, nil)))
+		assert.Nil(t, sysB.SystemGroupID)
+	})
+
 	t.Run("no-op when system is the only one with that identifier", func(t *testing.T) {
 		sys := testutils.NewSystem(func(s *model.System) {})
 		testutils.CreateTestEntities(ctx, t, r, sys)
 
-		require.NoError(t, m.HandleNewSystem(ctx, sys, manager.NewTenantConfigManager(r, nil, nil, nil, nil, nil)))
+		require.NoError(t, m.HandleNewSystem(ctx, sys, tenantCfgManager))
 		assert.Nil(t, sys.SystemGroupID)
 	})
 
@@ -356,7 +371,7 @@ func TestHandleNewSystem(t *testing.T) {
 		sysB := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
 		testutils.CreateTestEntities(ctx, t, r, sysA, sysB)
 
-		require.NoError(t, m.HandleNewSystem(ctx, sysB, manager.NewTenantConfigManager(r, nil, nil, nil, nil, nil)))
+		require.NoError(t, m.HandleNewSystem(ctx, sysB, tenantCfgManager))
 
 		var systems []*model.System
 		require.NoError(t, r.List(ctx, &model.System{}, &systems, *repo.NewQuery().Where(
@@ -374,7 +389,7 @@ func TestHandleNewSystem(t *testing.T) {
 		prop := &model.SystemProperty{ID: sysA.ID, Key: "externalName", Value: "my-external-name"}
 		testutils.CreateTestEntities(ctx, t, r, sysA, sysB, prop)
 
-		require.NoError(t, m.HandleNewSystem(ctx, sysB, manager.NewTenantConfigManager(r, nil, nil, nil, nil, nil)))
+		require.NoError(t, m.HandleNewSystem(ctx, sysB, tenantCfgManager))
 
 		groups, _, err := m.GetAllSystemGroups(ctx, manager.SystemGroupFilter{})
 		require.NoError(t, err)
@@ -397,7 +412,7 @@ func TestHandleNewSystem(t *testing.T) {
 		sysB := testutils.NewSystem(func(s *model.System) { s.Identifier = identifier })
 		testutils.CreateTestEntities(ctx, t, r, group, sysA, sysB)
 
-		require.NoError(t, m.HandleNewSystem(ctx, sysB, manager.NewTenantConfigManager(r, nil, nil, nil, nil, nil)))
+		require.NoError(t, m.HandleNewSystem(ctx, sysB, tenantCfgManager))
 		assert.Equal(t, &group.ID, sysB.SystemGroupID)
 	})
 }

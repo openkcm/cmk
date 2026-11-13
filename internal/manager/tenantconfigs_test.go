@@ -1126,12 +1126,15 @@ func TestGetTenantConfigByType_Pagination(t *testing.T) {
 		}
 		testutils.WriteTenantConfig(ctx, t, r, &model.KeystoreConfig{SupportedRegions: regions})
 
-		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), &config.Config{}, nil, nil)
+		m := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), &config.Config{}, nil, nil, nil)
 
 		got, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
 		require.NoError(t, err)
 		require.True(t, found)
 		assert.Len(t, got.SupportedRegions, repo.DefaultLimit+1)
+	})
+}
+
 func TestSetSystemGroupsConfig(t *testing.T) {
 	t.Run("persists config when Enabled unchanged (no-op on groups)", func(t *testing.T) {
 		m, _, tenant := SetupTenantConfigManager(t)

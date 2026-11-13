@@ -133,6 +133,14 @@ func (s *systemGroup) HandleNewSystem(
 	system *model.System,
 	systemGroupConfigGetter SystemGroupConfigGetter,
 ) error {
+	cfg, err := systemGroupConfigGetter.GetSystemGroupingConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if !cfg.Enabled {
+		return nil
+	}
+
 	query := repo.NewQuery().Where(
 		repo.NewCompositeKeyGroup(
 			repo.NewCompositeKey().Where(repo.IdentifierField, system.Identifier),
