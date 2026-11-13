@@ -11,7 +11,7 @@ import (
 )
 
 //nolint:mnd
-var defaultConfig = map[string]any{"Certificates": map[string]int{"ValidityDays": 30}}
+var defaultConfig = map[string]any{"Certificates": map[string]int{"ValidityDays": 7}}
 
 func LoadConfig(opts ...commoncfg.Option) (*Config, error) {
 	cfg := &Config{}
