@@ -13,20 +13,46 @@ import (
 )
 
 func TestValidateCertificate(t *testing.T) {
-	t.Run("Should successfully validate", func(t *testing.T) {
-		certs := config.Certificates{ValidityDays: 7, RotationThresholdDays: 3, DefaultTenantCertPrefix: "prefix"}
-		assert.NoError(t, certs.Validate())
-	})
+	tests := map[string]struct {
+		certs   config.Certificates
+		wantErr error
+	}{
+		"valid: threshold below validity": {
+			certs:   config.Certificates{ValidityDays: 7, RotationThresholdDays: 3, DefaultTenantCertPrefix: "prefix"},
+			wantErr: nil,
+		},
+		"validity too short": {
+			certs:   config.Certificates{ValidityDays: 6, RotationThresholdDays: 3},
+			wantErr: config.ErrCertificateValidityOutsideRange,
+		},
+		"validity too long": {
+			certs:   config.Certificates{ValidityDays: 31, RotationThresholdDays: 3},
+			wantErr: config.ErrCertificateValidityOutsideRange,
+		},
+		"threshold equals validity": {
+			certs:   config.Certificates{ValidityDays: 7, RotationThresholdDays: 7},
+			wantErr: config.ErrRotationThresholdNotBelowValidity,
+		},
+		"threshold exceeds validity": {
+			certs:   config.Certificates{ValidityDays: 7, RotationThresholdDays: 8},
+			wantErr: config.ErrRotationThresholdNotBelowValidity,
+		},
+		"threshold just below validity": {
+			certs:   config.Certificates{ValidityDays: 7, RotationThresholdDays: 6},
+			wantErr: nil,
+		},
+	}
 
-	t.Run("Should fail validation for ValidityDays too short", func(t *testing.T) {
-		certs := config.Certificates{ValidityDays: 6, RotationThresholdDays: 3}
-		assert.Error(t, certs.Validate())
-	})
-
-	t.Run("Should fail validation for ValidityDays too long", func(t *testing.T) {
-		certs := config.Certificates{ValidityDays: 31, RotationThresholdDays: 3}
-		assert.Error(t, certs.Validate())
-	})
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := tc.certs.Validate()
+			if tc.wantErr != nil {
+				assert.ErrorIs(t, err, tc.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestValidateCryptoLayer(t *testing.T) {
