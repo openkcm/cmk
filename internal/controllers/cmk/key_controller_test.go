@@ -820,6 +820,24 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		k.NativeID = &pendingProviderKey.KeyID
 	})
 
+	enabledBYOK := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.State = cmkapi.KeyStateENABLED
+	})
+	errorBYOK := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.State = cmkapi.KeyStateERROR
+		k.NativeID = nil
+	})
+	pendingCreationBYOK := testutils.NewKey(func(k *model.Key) {
+		k.KeyConfigurationID = keyConfigID
+		k.KeyType = cmkapi.KeyTypeBYOK
+		k.State = cmkapi.KeyStatePENDINGCREATION
+		k.NativeID = nil
+	})
+
 	testutils.CreateTestEntities(
 		ctx,
 		t,
@@ -835,6 +853,9 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		pendingPKey,
 		keyConfigPendingPKey,
 		pendingSys,
+		enabledBYOK,
+		errorBYOK,
+		pendingCreationBYOK,
 	)
 
 	clientData := &auth.ClientData{
@@ -882,6 +903,23 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 			name:           "Should 400 on primary PENDING_IMPORT BYOK delete when workflow is required",
 			keyID:          pendingPKey.ID,
 			expectedStatus: http.StatusBadRequest,
+			workflowEnable: true,
+		},
+		{
+			name:           "Should 400 on ENABLED BYOK delete",
+			keyID:          enabledBYOK.ID,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Should 204 on ERROR BYOK delete even when workflow is required",
+			keyID:          errorBYOK.ID,
+			expectedStatus: http.StatusNoContent,
+			workflowEnable: true,
+		},
+		{
+			name:           "Should 204 on PENDING_CREATION BYOK delete even when workflow is required",
+			keyID:          pendingCreationBYOK.ID,
+			expectedStatus: http.StatusNoContent,
 			workflowEnable: true,
 		},
 	}

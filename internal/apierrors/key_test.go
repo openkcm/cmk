@@ -30,3 +30,14 @@ func TestAPIErrorMapper_ImportKeyMaterialDecryptionFailed_NotMatchedWithoutBothE
 
 	assert.NotEqual(t, "INVALID_WRAPPED_KEY_MATERIAL", result.Code)
 }
+
+func TestAPIErrorMapper_KeyStateNotDeletable(t *testing.T) {
+	managerErr := errs.Wrap(manager.ErrDeleteKey, manager.ErrKeyStateNotDeletable)
+	err := errs.Wrap(apierrors.ErrDeleteKey, managerErr)
+
+	result := apierrors.APIErrorMapper.Transform(context.Background(), err)
+
+	assert.Equal(t, "INVALID_KEY_DELETE", result.Code)
+	assert.Equal(t, http.StatusBadRequest, result.Status)
+	assert.Contains(t, result.Message, "current state")
+}
