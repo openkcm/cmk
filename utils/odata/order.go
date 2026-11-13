@@ -47,7 +47,7 @@ func NewOrder(orderby *string, m OrderToRepoMap, joinFields []OrderJoinField) (*
 		}
 
 		if jf, ok := o.lookupJoinField(field); ok {
-			o.joins = append(o.joins, repo.JoinClause{Type: repo.LeftJoin, OnCondition: jf.Join})
+			o.joins = append(o.joins, repo.JoinClause{Type: repo.LeftJoin, OnCondition: &jf.Join})
 			o.fields = append(o.fields, repo.OrderField{Field: jf.Column, Direction: dir})
 			continue
 		}
@@ -69,7 +69,7 @@ func NewOrder(orderby *string, m OrderToRepoMap, joinFields []OrderJoinField) (*
 func (o *Order) GetOrder() (*repo.Query, []repo.OrderField, error) {
 	joinQuery := repo.NewQuery()
 	for _, j := range o.joins {
-		joinQuery.Join(j.Type, j.OnCondition)
+		joinQuery.Join(j.Type, *j.OnCondition)
 	}
 
 	return joinQuery, o.fields, nil

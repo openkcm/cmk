@@ -81,12 +81,7 @@ func ToAPI(
 		apiConfig.Description = &k.Description
 	}
 
-	apiConfig.Metadata = &cmkapi.KeyConfigurationMetadata{
-		CreatedAt:    &k.CreatedAt,
-		UpdatedAt:    &k.UpdatedAt,
-		TotalKeys:    &k.TotalKeys,
-		TotalSystems: &k.TotalSystems,
-	}
+	apiConfig.Metadata = toAPIMetadata(k)
 
 	if k.CreatorID != uuid.Nil.String() && k.CreatorID != "" {
 		name, err := k.GetCreatorName(ctx, identityManager)
@@ -105,5 +100,25 @@ func ToAPI(
 
 	apiConfig.CanConnectSystems = &canConnectSystem
 
+	if k.PrimaryKeyData != nil {
+		apiConfig.PrimaryKeyStatus = &k.PrimaryKeyData.State
+	}
+
 	return apiConfig, nil
+}
+
+func toAPIMetadata(k *model.KeyConfiguration) *cmkapi.KeyConfigurationMetadata {
+	return &cmkapi.KeyConfigurationMetadata{
+		CreatedAt:    &k.CreatedAt,
+		UpdatedAt:    &k.UpdatedAt,
+		TotalKeys:    &k.TotalKeys,
+		TotalSystems: &k.TotalSystems,
+		SystemsByStatus: &cmkapi.KeyConfigurationSystemsByStatus{
+			Connected:  &k.SystemsConnected,
+			Failed:     &k.SystemsFailed,
+			Processing: &k.SystemsProcessing,
+			Connecting: &k.SystemsConnecting,
+		},
+		PendingApprovals: &k.PendingApprovals,
+	}
 }

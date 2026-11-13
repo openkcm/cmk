@@ -73,10 +73,10 @@ var (
 	TestCertURL = "https://aia.pki.co.test.com/aia/TEST%20Cloud%20Root%20CA.crt"
 )
 
-func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenancy.DB, string) {
-	t.Helper()
+func SetupKeyConfigManager(tb testing.TB) (*manager.KeyConfigManager, *multitenancy.DB, string) {
+	tb.Helper()
 
-	db, tenants, dbCfg := testutils.NewTestDB(t, testutils.TestDBConfig{
+	db, tenants, dbCfg := testutils.NewTestDB(tb, testutils.TestDBConfig{
 		WithOrbital: true,
 	})
 	r := sql.NewRepository(db)
@@ -90,7 +90,7 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 	}
 
 	bytes, err := yaml.Marshal(cryptoCerts)
-	assert.NoError(t, err)
+	assert.NoError(tb, err)
 
 	cfg := &config.Config{
 		Certificates: config.Certificates{
@@ -105,14 +105,14 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 		},
 		Database: dbCfg,
 	}
-	cmkAuditor := &auditor.Auditor{}
+	cmkAuditor := auditor.New(tb.Context(), cfg)
 
-	svcRegistry, err := cmkpluginregistry.New(t.Context(), cfg)
-	assert.NoError(t, err)
+	svcRegistry, err := cmkpluginregistry.New(tb.Context(), cfg)
+	assert.NoError(tb, err)
 
-	certManager := manager.NewCertificateManager(t.Context(), r, svcRegistry, cfg)
+	certManager := manager.NewCertificateManager(tb.Context(), r, svcRegistry, cfg)
 
-	authzRepoLoader := authz_loader.NewRepoAuthzLoader(t.Context(),
+	authzRepoLoader := authz_loader.NewRepoAuthzLoader(tb.Context(),
 		r, &config.Config{})
 
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
@@ -120,8 +120,8 @@ func SetupKeyConfigManager(t *testing.T) (*manager.KeyConfigManager, *multitenan
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(authzRepo)
 
-	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
-	assert.NoError(t, err)
+	eventFactory, err := eventprocessor.NewEventFactory(tb.Context(), cfg, r)
+	assert.NoError(tb, err)
 
 	m := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
 
@@ -170,7 +170,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Top:   constants.DefaultTop,
 			Count: true,
 		}
-		actual, total, err := m.GetKeyConfigurations(ctxWithGroups, kcParams(pagination, nil), false)
+		actual, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Params: kcParams(pagination, nil)})
 		assert.NoError(t, err)
 		assert.Equal(t, len(expected), total)
 
@@ -207,7 +207,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Top:   constants.DefaultTop,
 			Count: true,
 		}
-		actual, total, err := m.GetKeyConfigurations(ctx, kcParams(pagination, nil), false)
+		actual, total, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Params: kcParams(pagination, nil)})
 		assert.NoError(t, err)
 		assert.NotEqual(t, 0, total)
 		assert.NotEmpty(t, actual)
@@ -226,7 +226,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
 		}
-		_, total, err := m.GetKeyConfigurations(ctxWithGroups, kcParams(pagination, nil), false)
+		_, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Params: kcParams(pagination, nil)})
 		assert.NoError(t, err)
 		assert.Equal(t, 0, total)
 	})
@@ -241,7 +241,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
 		}
-		_, total, err := m.GetKeyConfigurations(ctxWithGroups, kcParams(pagination, nil), false)
+		_, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Params: kcParams(pagination, nil)})
 		assert.NoError(t, err)
 		assert.Equal(t, 0, total)
 	})
@@ -269,7 +269,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Top:   constants.DefaultTop,
 			Count: true,
 		}
-		_, total, err := m.GetKeyConfigurations(ctxWithGroups, kcParams(pagination, nil), false)
+		_, total, err := m.GetKeyConfigurations(ctxWithGroups, manager.KeyConfigFilter{Params: kcParams(pagination, nil)})
 		assert.NoError(t, err)
 		assert.Equal(t, 1, total)
 	})
@@ -284,7 +284,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
 		}
-		_, _, err := m.GetKeyConfigurations(t.Context(), kcParams(pagination, nil), false)
+		_, _, err := m.GetKeyConfigurations(t.Context(), manager.KeyConfigFilter{Params: kcParams(pagination, nil)})
 		assert.Error(t, err)
 	})
 
@@ -324,7 +324,7 @@ func TestGetKeyConfigurations(t *testing.T) {
 		}
 
 		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{groupA.IAMIdentifier})
-		_, count, err := m.GetKeyConfigurations(ctx, kcParams(repo.Pagination{Count: true}, nil), false)
+		_, count, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Params: kcParams(repo.Pagination{Count: true}, nil)})
 		assert.NoError(t, err)
 		assert.Equal(t, kcCount, count)
 	})
@@ -350,7 +350,7 @@ func TestGetKeyConfigurationsOrdering(t *testing.T) {
 
 	t.Run("orders by name ascending", func(t *testing.T) {
 		orderby := "name asc"
-		actual, _, err := m.GetKeyConfigurations(ctx, kcParams(pagination, &orderby), false)
+		actual, _, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Params: kcParams(pagination, &orderby)})
 		assert.NoError(t, err)
 		require.Len(t, actual, 3)
 		assert.Equal(t, "config-alpha", actual[0].Name)
@@ -360,7 +360,7 @@ func TestGetKeyConfigurationsOrdering(t *testing.T) {
 
 	t.Run("orders by name descending", func(t *testing.T) {
 		orderby := "name desc"
-		actual, _, err := m.GetKeyConfigurations(ctx, kcParams(pagination, &orderby), false)
+		actual, _, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Params: kcParams(pagination, &orderby)})
 		assert.NoError(t, err)
 		require.Len(t, actual, 3)
 		assert.Equal(t, "config-charlie", actual[0].Name)
@@ -410,7 +410,7 @@ func TestTotalSystemAndKey(t *testing.T) {
 		}
 
 		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, sys, key1, key2)
-		k, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID)
+		k, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID, false)
 		assert.NoError(t, err)
 		assert.Equal(t, 2, k.TotalKeys)
 		assert.Equal(t, 1, k.TotalSystems)
@@ -441,7 +441,7 @@ func TestTotalSystemAndKey(t *testing.T) {
 
 		testutils.CreateTestEntities(ctx, t, r, group, keyConfig, sys)
 
-		k, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID)
+		k, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID, false)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, k.TotalKeys)
 		assert.Equal(t, 1, k.TotalSystems)
@@ -451,7 +451,7 @@ func TestTotalSystemAndKey(t *testing.T) {
 		_, err = r.Delete(ctx, keyConfig, *repo.NewQuery())
 		assert.NoError(t, err)
 
-		_, count, err := m.GetKeyConfigurations(ctx, kcParams(repo.Pagination{}, nil), false)
+		_, count, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Params: kcParams(repo.Pagination{}, nil)})
 		assert.NoError(t, err)
 		assert.Equal(t, 0, count)
 	})
@@ -475,7 +475,7 @@ func TestKeyConfigurationsWithGroupID(t *testing.T) {
 			Skip: constants.DefaultSkip,
 			Top:  constants.DefaultTop,
 		}
-		actual, _, err := m.GetKeyConfigurations(ctx, kcParams(pagination, nil), false)
+		actual, _, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{Params: kcParams(pagination, nil)})
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfig.AdminGroupID, actual[0].AdminGroupID)
 	})
@@ -718,7 +718,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 	testutils.CreateTestEntities(ctx, t, r, adminGroup, keyConfigWithAdminGroup)
 
 	t.Run("Should get key configuration", func(t *testing.T) {
-		actual, err := m.GetKeyConfigurationByID(ctx, expected.ID)
+		actual, err := m.GetKeyConfigurationByID(ctx, expected.ID, false)
 		assert.NoError(t, err)
 
 		assert.Equal(t, expected.ID, actual.ID)
@@ -730,7 +730,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 			constants.InternalTaskWorkflowApproversRole)
 		assert.NoError(t, err)
 
-		actual, err := m.GetKeyConfigurationByID(ctxSys, keyConfigWithAdminGroup.ID)
+		actual, err := m.GetKeyConfigurationByID(ctxSys, keyConfigWithAdminGroup.ID, false)
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfigWithAdminGroup.ID, actual.ID)
 		assert.Equal(t, keyConfigWithAdminGroup.Name, actual.Name)
@@ -744,7 +744,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 			[]string{testAdminGroupIAM, "some_other_group"},
 		)
 
-		actual, err := m.GetKeyConfigurationByID(ctxWithGroups, keyConfigWithAdminGroup.ID)
+		actual, err := m.GetKeyConfigurationByID(ctxWithGroups, keyConfigWithAdminGroup.ID, false)
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfigWithAdminGroup.ID, actual.ID)
 		assert.Equal(t, keyConfigWithAdminGroup.Name, actual.Name)
@@ -764,7 +764,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 			[]string{testAuditorGroupIAM, "some_other_group"},
 		)
 		testutils.CreateTestEntities(ctx, t, r, auditorGroup, keyConfig)
-		actual, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID)
+		actual, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID, false)
 		assert.NoError(t, err)
 		assert.Equal(t, keyConfig.ID, actual.ID)
 		assert.Equal(t, keyConfig.Name, actual.Name)
@@ -778,7 +778,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 			[]string{"KMS_different_group", "some_other_group"},
 		)
 
-		_, err := m.GetKeyConfigurationByID(ctxWithGroups, keyConfigWithAdminGroup.ID)
+		_, err := m.GetKeyConfigurationByID(ctxWithGroups, keyConfigWithAdminGroup.ID, false)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
 	})
 
@@ -786,7 +786,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 		// Test without any groups in context - should work as before
 		ctxWithoutGroups := testutils.CreateCtxWithTenant(tenant)
 
-		_, err := m.GetKeyConfigurationByID(ctxWithoutGroups, expected.ID)
+		_, err := m.GetKeyConfigurationByID(ctxWithoutGroups, expected.ID, false)
 		assert.ErrorIs(t, err, cmkcontext.ErrExtractBusinessUserData)
 	})
 	t.Run("Should deny access when empty groups in context", func(t *testing.T) {
@@ -797,7 +797,7 @@ func TestGetKeyConfigurationsByID(t *testing.T) {
 			[]string{},
 		)
 
-		_, err := m.GetKeyConfigurationByID(ctxWithEmptyGroups, expected.ID)
+		_, err := m.GetKeyConfigurationByID(ctxWithEmptyGroups, expected.ID, false)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
 	})
 }
@@ -1229,6 +1229,129 @@ func TestDeleteKeyConfiguration(t *testing.T) {
 
 		err := m.DeleteKeyConfigurationByID(ctxWithEmptyGroups, keyConfigForDelete.ID)
 		assert.ErrorIs(t, err, manager.ErrKeyConfigurationNotAllowed)
+	})
+}
+
+func TestExtendedMetadata(t *testing.T) {
+	setup := func(t *testing.T) (*manager.KeyConfigManager, *multitenancy.DB, context.Context, *model.Group) {
+		t.Helper()
+		m, db, tenant := SetupKeyConfigManager(t)
+		ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
+		ctx = cmkcontext.InjectRequestID(ctx, uuid.NewString())
+		group := testutils.NewGroup(func(g *model.Group) { g.Role = constants.KeyAdminRole })
+		ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{group.IAMIdentifier})
+		testutils.CreateTestEntities(ctx, t, sql.NewRepository(db), group)
+		return m, db, ctx, group
+	}
+
+	t.Run("all fields populated", func(t *testing.T) {
+		m, db, ctx, group := setup(t)
+		r := sql.NewRepository(db)
+
+		primaryKey := testutils.NewKey(func(k *model.Key) { k.State = cmkapi.KeyStateENABLED })
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.AdminGroupID = group.ID
+			kc.AdminGroup = *group
+			kc.PrimaryKeyID = &primaryKey.ID
+		})
+		primaryKey.KeyConfigurationID = keyConfig.ID
+
+		connected := testutils.NewSystem(func(s *model.System) { s.KeyConfigurationID = &keyConfig.ID; s.Status = "CONNECTED" })
+		failed1 := testutils.NewSystem(func(s *model.System) { s.KeyConfigurationID = &keyConfig.ID; s.Status = "FAILED" })
+		failed2 := testutils.NewSystem(func(s *model.System) { s.KeyConfigurationID = &keyConfig.ID; s.Status = "FAILED" })
+		processing := testutils.NewSystem(func(s *model.System) { s.KeyConfigurationID = &keyConfig.ID; s.Status = "PROCESSING" })
+		connecting := testutils.NewSystem(func(s *model.System) { s.TargetKeyConfigurationID = &keyConfig.ID })
+
+		wfActive1 := testutils.NewWorkflow(func(w *model.Workflow) { w.State = model.WorkflowStateWaitApproval })
+		wfActive2 := testutils.NewWorkflow(func(w *model.Workflow) { w.State = model.WorkflowStateInitial })
+		wfDone := testutils.NewWorkflow(func(w *model.Workflow) { w.State = model.WorkflowStateSuccessful }) // terminal, must not count
+
+		testutils.CreateTestEntities(ctx, t, r, primaryKey, keyConfig,
+			connected, failed1, failed2, processing, connecting,
+			wfActive1, wfActive2, wfDone)
+
+		for _, wf := range []*model.Workflow{wfActive1, wfActive2, wfDone} {
+			testutils.CreateTestEntities(ctx, t, r, testutils.NewWorkflowKeyConfiguration(func(wkc *model.WorkflowKeyConfiguration) {
+				wkc.WorkflowID = wf.ID
+				wkc.KeyConfigurationID = keyConfig.ID
+			}))
+		}
+
+		kc, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID, true)
+		assert.NoError(t, err)
+		assert.NotNil(t, kc.PrimaryKeyData)
+		assert.Equal(t, cmkapi.KeyStateENABLED, kc.PrimaryKeyData.State)
+		assert.Equal(t, 1, kc.SystemsConnected)
+		assert.Equal(t, 2, kc.SystemsFailed)
+		assert.Equal(t, 1, kc.SystemsProcessing)
+		assert.Equal(t, 1, kc.SystemsConnecting)
+		assert.Equal(t, 2, kc.PendingApprovals)
+	})
+
+	t.Run("no extended data without flag", func(t *testing.T) {
+		m, db, ctx, group := setup(t)
+		r := sql.NewRepository(db)
+
+		primaryKey := testutils.NewKey(func(k *model.Key) { k.State = cmkapi.KeyStateENABLED })
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.AdminGroupID = group.ID
+			kc.AdminGroup = *group
+			kc.PrimaryKeyID = &primaryKey.ID
+		})
+		primaryKey.KeyConfigurationID = keyConfig.ID
+		testutils.CreateTestEntities(ctx, t, r, primaryKey, keyConfig)
+
+		kc, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID, false)
+		assert.NoError(t, err)
+		assert.Nil(t, kc.PrimaryKeyData)
+		assert.Equal(t, 0, kc.SystemsConnected)
+		assert.Equal(t, 0, kc.PendingApprovals)
+	})
+
+	t.Run("zeros when nothing linked", func(t *testing.T) {
+		m, db, ctx, group := setup(t)
+		r := sql.NewRepository(db)
+
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.AdminGroupID = group.ID
+			kc.AdminGroup = *group
+		})
+		testutils.CreateTestEntities(ctx, t, r, keyConfig)
+
+		kc, err := m.GetKeyConfigurationByID(ctx, keyConfig.ID, true)
+		assert.NoError(t, err)
+		assert.Nil(t, kc.PrimaryKeyData)
+		assert.Equal(t, 0, kc.SystemsConnected)
+		assert.Equal(t, 0, kc.SystemsConnecting)
+		assert.Equal(t, 0, kc.PendingApprovals)
+	})
+
+	t.Run("list endpoint propagates extended fields", func(t *testing.T) {
+		m, db, ctx, group := setup(t)
+		r := sql.NewRepository(db)
+
+		keyConfig := testutils.NewKeyConfig(func(kc *model.KeyConfiguration) {
+			kc.AdminGroupID = group.ID
+			kc.AdminGroup = *group
+		})
+		sys := testutils.NewSystem(func(s *model.System) { s.KeyConfigurationID = &keyConfig.ID; s.Status = "CONNECTED" })
+		testutils.CreateTestEntities(ctx, t, r, keyConfig, sys)
+
+		results, _, err := m.GetKeyConfigurations(ctx, manager.KeyConfigFilter{
+			ExtendedMetadata: true,
+			Pagination:       repo.Pagination{Count: true},
+		})
+		assert.NoError(t, err)
+
+		var found *model.KeyConfiguration
+		for _, res := range results {
+			if res.ID == keyConfig.ID {
+				found = res
+				break
+			}
+		}
+		assert.NotNil(t, found)
+		assert.Equal(t, 1, found.SystemsConnected)
 	})
 }
 

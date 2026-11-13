@@ -186,6 +186,10 @@ func (r *AuthzRepo) checkQueryAuthZ(
 	}
 
 	for _, join := range query.Joins {
+		// Lateral joins reference tables already checked via the outer query; skip authz for them.
+		if join.Lateral != nil {
+			continue
+		}
 		isAllowed, err := join.OnCondition.JoinTable.CheckAuthz(ctx, r.authzLoader.AuthzHandler, action)
 		if err != nil {
 			return err
