@@ -74,6 +74,14 @@ var key = []errs.ExposedErrors[*APIError]{
 		},
 	},
 	{
+		InternalErrorChain: []error{manager.ErrDeleteKey, manager.ErrKeyStateNotDeletable},
+		ExposedError: &APIError{
+			Code:    "INVALID_KEY_DELETE",
+			Message: "Key cannot be deleted in its current state. Only pending or error keys can be deleted.",
+			Status:  http.StatusBadRequest,
+		},
+	},
+	{
 		InternalErrorChain: []error{manager.ErrGetKeyDB},
 		ExposedError: &APIError{
 			Code:    "KEY_ID",
