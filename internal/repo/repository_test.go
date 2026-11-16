@@ -205,6 +205,7 @@ func TestProcessInBatchWithOptionsDeleteMode(t *testing.T) {
 			baseQuery,
 			batchSize,
 			repo.BatchProcessOptions{DeleteMode: true},
+			nil,
 			processFunc,
 		)
 
@@ -242,6 +243,7 @@ func TestProcessInBatchWithOptionsDeleteMode(t *testing.T) {
 			baseQuery,
 			batchSize,
 			repo.BatchProcessOptions{DeleteMode: true},
+			nil,
 			processFunc,
 		)
 
@@ -281,6 +283,7 @@ func TestProcessInBatchWithOptionsIgnoreFailMode(t *testing.T) {
 		err := repo.ProcessInBatchWithOptions[testutils.TestModel](
 			ctx, r, repo.NewQuery(), 2,
 			repo.BatchProcessOptions{IgnoreFailMode: true},
+			nil,
 			processFunc,
 		)
 
@@ -298,6 +301,7 @@ func TestProcessInBatchWithOptionsIgnoreFailMode(t *testing.T) {
 		err := repo.ProcessInBatchWithOptions[testutils.TestModel](
 			ctx, r, repo.NewQuery(), 2,
 			repo.BatchProcessOptions{},
+			nil,
 			processFunc,
 		)
 

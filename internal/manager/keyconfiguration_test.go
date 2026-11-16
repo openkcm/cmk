@@ -1317,7 +1317,7 @@ func SetupKeyConfigManagerWithLimit(t *testing.T, systemLimit int) (*manager.Key
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(authzRepo)
-	tenantCfgManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil)
+	tenantCfgManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil)
 
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
 	assert.NoError(t, err)
@@ -1448,7 +1448,7 @@ func SetupKeyConfigManagerWithKeyLimit(t *testing.T, keyLimit int) (*manager.Key
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(authzRepo)
-	tenantCfgManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil)
+	tenantCfgManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil)
 
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
 	require.NoError(t, err)
@@ -1486,7 +1486,7 @@ func SetupKeyConfigManagerWithKeyConfigLimit(t *testing.T, keyConfigLimit int) (
 	authzRepo := authz_repo.NewAuthzRepo(r, authzRepoLoader)
 	userManager := manager.NewUserManager(authzRepo, cmkAuditor)
 	tagManager := manager.NewTagManager(authzRepo)
-	tenantCfgManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil)
+	tenantCfgManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil)
 
 	eventFactory, err := eventprocessor.NewEventFactory(t.Context(), cfg, r)
 	require.NoError(t, err)

@@ -114,7 +114,7 @@ func SetupKeyTest(t *testing.T, opts ...testplugins.RegistryOption) (
 		"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
 	})
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
-		ffManager)
+		ffManager, nil)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
@@ -221,7 +221,7 @@ func setupKeyTestWithFlags(t *testing.T, flagOverrides map[string]bool, opts ...
 
 	certManager := manager.NewCertificateManager(ctx, r, svcRegistry, cfg)
 	flagManager := newTestFlags(cfg, svcRegistry, flags)
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager, nil)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager,
@@ -281,7 +281,7 @@ func createTestSystemManagedKey(t *testing.T, km *manager.KeyManager, r repo.Rep
 func seedDefaultKeystore(t *testing.T, r repo.Repo, ctx context.Context) {
 	t.Helper()
 	//nolint:contextcheck
-	tcm := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), &config.Config{}, nil, nil)
+	tcm := manager.NewTenantConfigManager(r, testutils.NewTestPlugins(), &config.Config{}, nil, nil, nil)
 	err := tcm.SetKeystoreConfig(ctx, testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {}))
 	require.NoError(t, err)
 }
@@ -1710,7 +1710,7 @@ func TestKeyRotationTime(t *testing.T) {
 		"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
 	})
 	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager,
-		flagManager)
+		flagManager, nil)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
@@ -2746,7 +2746,7 @@ func SetupKeyTestWithAsyncClient(
 		"enable_hyok_" + strings.ToLower(testplugins.Name):          true,
 		"detect_hyok_rotation_" + strings.ToLower(testplugins.Name): true,
 	})
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager, nil)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, nil)
@@ -3025,7 +3025,7 @@ func TestCreateHYOKPendingRegistration_KeyLimitEnforced(t *testing.T) {
 	flagManager := newTestFlags(cfg, svcRegistry, map[string]bool{
 		"enable_hyok_" + strings.ToLower(testplugins.Name): true,
 	})
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, cfg, certManager, flagManager, nil)
 	userManager := manager.NewUserManager(r, cmkAuditor)
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, eventFactory, cfg, tenantConfigManager)

@@ -13,20 +13,25 @@ func ToAPI(s *model.SystemGroup) (*cmkapi.SystemGroup, error) {
 		return nil, err
 	}
 
-	apiSystems := make([]cmkapi.System, 0, len(s.Systems))
-	for _, s := range s.Systems {
-		apiSystem, err := system.ToAPI(*s, nil)
-		if err != nil {
-			return nil, err
-		}
-		apiSystems = append(apiSystems, *apiSystem)
-	}
-	return &cmkapi.SystemGroup{
+	res := &cmkapi.SystemGroup{
 		Description:     &s.Description,
 		Id:              &s.ID,
 		Name:            s.Name,
 		SuppressWarning: &s.SuppressWarning,
-		Systems:         &apiSystems,
 		WarnCoverage:    &s.WarnCoverage,
-	}, nil
+	}
+
+	if len(s.Systems) > 0 {
+		apiSystems := make([]cmkapi.System, 0, len(s.Systems))
+		for _, s := range s.Systems {
+			apiSystem, err := system.ToAPI(*s, nil)
+			if err != nil {
+				return nil, err
+			}
+			apiSystems = append(apiSystems, *apiSystem)
+		}
+		res.Systems = &apiSystems
+	}
+
+	return res, nil
 }

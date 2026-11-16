@@ -136,6 +136,8 @@ var (
 	ErrGetKeyIDDB        = errors.New("KeyID is required")
 	ErrEmptyInputLabelDB = errors.New("invalid input empty label name")
 
+	ErrInvalidSystemGroupSize = errors.New("cannot create a system group with less than two members")
+
 	ErrQuerySystemList           = errors.New("failed to query system list")
 	ErrGettingSystem             = errors.New("failed to get system")
 	ErrCreatingSystem            = errors.New("failed to create system")
