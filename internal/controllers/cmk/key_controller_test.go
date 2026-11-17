@@ -1042,6 +1042,16 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		k.Provider = providerTest
 	})
 
+	keyPendingRegistration := testutils.NewKey(func(k *model.Key) {
+		k.Description = "pending registration key"
+		k.CryptoAccessData = cryptoData
+		k.ManagementAccessData = validMgmtData
+		k.KeyConfigurationID = keyConfigID
+		k.Provider = providerTest
+		k.KeyType = cmkapi.KeyTypeHYOK
+		k.State = cmkapi.KeyStatePENDINGREGISTRATION
+	})
+
 	hyokKeyInvalidMgmt := testutils.NewKey(func(k *model.Key) {
 		k.KeyType = cmkapi.KeyTypeHYOK
 		k.CryptoAccessData = cryptoData
@@ -1068,6 +1078,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		t,
 		r,
 		key,
+		keyPendingRegistration,
 		hyokKey,
 		hyokKeyInvalidMgmt,
 		kc,
@@ -1168,7 +1179,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 			expectedDesc:   "",
 		},
 		{
-			name:  "Should code 403 on management role update",
+			name:  "Should code 403 on management role update on enabled key",
 			keyID: key.ID.String(),
 			input: cmkapi.KeyPatch{
 				AccessDetails: &cmkapi.KeyAccessDetails{
@@ -1180,6 +1191,23 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 				},
 			},
 			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:  "Should code 200 on management role update on pending registration key",
+			keyID: keyPendingRegistration.ID.String(),
+			input: cmkapi.KeyPatch{
+				AccessDetails: &cmkapi.KeyAccessDetails{
+					Management: &cmkapi.KeyAccessDetailsRegion{
+						AdditionalProperties: map[string]any{
+							"AccountID": "111111111",
+							"UserID":    "111111111",
+						},
+					},
+				},
+			},
+			expectedStatus: http.StatusOK,
+			expectedName:   keyPendingRegistration.Name,
+			expectedDesc:   keyPendingRegistration.Description,
 		},
 		{
 			name:  "Should code 403 on non editable crypto region",

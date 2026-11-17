@@ -348,10 +348,6 @@ func validateEnablementUpdate(keyPatch cmkapi.KeyPatch, key *model.Key) error {
 }
 
 func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch cmkapi.KeyPatch) (*model.Key, error) {
-	if isManagementDetailsUpdate(keyPatch) {
-		return nil, ErrManagementDetailsUpdate
-	}
-
 	key, err := km.Get(ctx, keyID)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetKeyDB, err)
@@ -359,8 +355,7 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 
 	ctx = model.LogInjectKey(ctx, key)
 
-	isPending := key.State == cmkapi.KeyStatePENDINGCREATION || key.State == cmkapi.KeyStatePENDINGREGISTRATION
-	if isPending && keyPatch.Enabled != nil {
+	if isPendingKeyState(key) && keyPatch.Enabled != nil {
 		return nil, ErrKeyInPendingState
 	}
 
@@ -1053,12 +1048,11 @@ func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) err
 	})
 }
 
-func isManagementDetailsUpdate(keyPatch cmkapi.KeyPatch) bool {
-	patchAccessDetails := keyPatch.AccessDetails
-	return patchAccessDetails != nil && patchAccessDetails.Management != nil
+func isPendingKeyState(key *model.Key) bool {
+	return key.State == cmkapi.KeyStatePENDINGCREATION || key.State == cmkapi.KeyStatePENDINGREGISTRATION
 }
 
-//nolint:cyclop
+//nolint:cyclop,funlen
 func (km *KeyManager) handleCryptoDetailsUpdate(
 	ctx context.Context,
 	keyPatch cmkapi.KeyPatch,
@@ -1066,7 +1060,7 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 ) error {
 	patchAccessDetails := keyPatch.AccessDetails
 
-	if patchAccessDetails == nil || patchAccessDetails.Crypto == nil {
+	if patchAccessDetails == nil {
 		return nil
 	}
 
@@ -1075,11 +1069,23 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 		return err
 	}
 
+	if keyPatch.AccessDetails.Management != nil && !isPendingKeyState(key) {
+		return ErrManagementDetailsUpdate
+	}
+
 	management, err := key.GetManagementAccessData()
 	if err != nil {
 		return err
 	}
-	keyPatch.AccessDetails.Management = &management
+	crypto := key.GetCryptoAccessData()
+
+	if patchAccessDetails.Management == nil {
+		keyPatch.AccessDetails.Management = &management
+	}
+
+	if patchAccessDetails.Crypto == nil {
+		keyPatch.AccessDetails.Crypto = (*map[string]cmkapi.KeyAccessDetailsRegion)(&crypto)
+	}
 
 	err = providerTransformer.ValidateKeyAccessData(ctx, keyPatch.AccessDetails)
 	if err != nil {
