@@ -39,5 +39,10 @@ func GetMigrations() []*goose.Migration {
 			&goose.GoFunc{RunTx: upRenameWorkflowConfigKeys},
 			&goose.GoFunc{RunTx: downRenameWorkflowConfigKeys},
 		),
+		goose.NewGoMigration(
+			8,
+			&goose.GoFunc{RunTx: upWorkflowKeyConfigurationsTable},
+			&goose.GoFunc{RunTx: downWorkflowKeyConfigurationsTable},
+		),
 	}
 }

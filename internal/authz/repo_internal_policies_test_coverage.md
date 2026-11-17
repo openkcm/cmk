@@ -191,8 +191,8 @@ permitted by the policy.
 
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
-| First, List | TenantConfig | `WorkflowManager.CleanupTerminalWorkflows` → `GetWorkflowConfig` (flat-row read + legacy fallback) | ✓ |
-| Delete, Create | TenantConfig | `SetWorkflowConfig` → `repo.Set` (upsert when no config exists) | ✓ |
+| First, List, Count | TenantConfig | `WorkflowManager.CleanupTerminalWorkflows` → `GetWorkflowConfig` → `ProcessInBatch` (List + Count when rows present) | ✓ |
+| Update, Create | TenantConfig | `SetWorkflowConfig` → `repo.Set` (upsert when no config exists) | ✓ |
 | First | Tenant | `SetWorkflowConfig` → `repo.GetTenant` (to pick default config) | ✓ |
 | Count, List | Workflow | `WorkflowManager.CleanupTerminalWorkflows` | ✓ |
 | Delete | Workflow | `WorkflowManager.CleanupTerminalWorkflows` | – |

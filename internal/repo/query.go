@@ -84,8 +84,17 @@ const (
 
 	// KeyconfigTotalSystems and KeyconfigTotalKeys are used as aliases in JOIN operations,
 	// typically in combination with the tableName to reference aggregated fields.
-	KeyconfigTotalSystems     QueryField = "total_systems"
-	KeyconfigTotalKeys        QueryField = "total_keys"
+	KeyconfigTotalSystems QueryField = "total_systems"
+	KeyconfigTotalKeys    QueryField = "total_keys"
+
+	// KeyconfigSystemsConnected and related constants are used as aliases for extended metadata aggregation.
+	KeyconfigSystemsConnected  QueryField = "systems_connected"
+	KeyconfigSystemsFailed     QueryField = "systems_failed"
+	KeyconfigSystemsProcessing QueryField = "systems_processing"
+	KeyconfigSystemsConnecting QueryField = "systems_connecting"
+
+	// KeyconfigPendingApprovals is the alias for the pending approvals correlated subquery.
+	KeyconfigPendingApprovals QueryField = "pending_approvals"
 	SystemKeyconfigName       QueryField = "key_configuration_name"
 	SystemTargetKeyconfigName QueryField = "target_key_configuration_name"
 	TargetKeyConfigIDField    QueryField = "target_key_configuration_id"
@@ -297,12 +306,54 @@ type JoinCondition struct {
 	Alias     string
 	OnFilters []JoinOnFilter
 }
-type JoinClause struct {
-	OnCondition JoinCondition
-	Type        JoinType
+
+// LateralJoin represents a LEFT JOIN LATERAL subquery that
+// counts related records in another table, filtered by specific states.
+type LateralJoin struct {
+	Alias       string
+	SelectField QueryField // COUNT(*) alias inside the subquery
+	FromTable   table
+	JoinTable   table
+	JoinField   QueryField
+	FilterField QueryField
+	FilterTable table
+	StateField  QueryField // column on JoinTable to filter by state
+	States      []string   // allowed values for StateField
 }
 
-func (r *JoinClause) JoinStatement() (string, []any) {
+func (l *LateralJoin) statement() string {
+	quoted := make([]string, len(l.States))
+	for i, s := range l.States {
+		quoted[i] = fmt.Sprintf("'%s'", s)
+	}
+	return fmt.Sprintf(
+		`LEFT JOIN LATERAL (`+
+			`SELECT COUNT(*) AS %s`+
+			` FROM "%s" lf JOIN "%s" lj ON lf.%s = lj.%s`+
+			` WHERE lf.%s = "%s".%s AND lj.%s IN (%s)`+
+			`) %s ON true`,
+		l.SelectField,
+		l.FromTable.TableName(), l.JoinTable.TableName(),
+		l.JoinField, IDField,
+		l.FilterField, l.FilterTable.TableName(), IDField,
+		l.StateField, strings.Join(quoted, ", "),
+		l.Alias,
+	)
+}
+
+// JoinClause holds either a regular OnCondition or a LateralJoin — never both.
+// Construct via Query.Join() or Query.LateralJoin() rather than directly.
+type JoinClause struct {
+	Type        JoinType
+	OnCondition *JoinCondition
+	Lateral     *LateralJoin
+}
+
+func (r *JoinClause) JoinStatement() string {
+	if r.Lateral != nil {
+		return r.Lateral.statement()
+	}
+
 	joinTableName := r.OnCondition.JoinTable.TableName()
 	joinTableRef := fmt.Sprintf(`"%s"`, joinTableName)
 
@@ -320,30 +371,49 @@ func (r *JoinClause) JoinStatement() (string, []any) {
 		joinTableName,
 		r.OnCondition.JoinField)
 
-	args := make([]any, 0, len(r.OnCondition.OnFilters))
 	var joinConditions strings.Builder
 	for _, f := range r.OnCondition.OnFilters {
-		fmt.Fprintf(&joinConditions, ` AND "%s".%s = ?`, joinTableName, f.Field)
-		args = append(args, f.Value)
+		fmt.Fprintf(&joinConditions, ` AND "%s".%s = '%s'`, joinTableName, f.Field, f.Value)
 	}
 	statement += joinConditions.String()
 
-	return statement, args
+	return statement
 }
 
 type Preload []string
 
-type SelectField struct {
-	Field QueryField
-	Func  QueryFunction
-	Alias string
+type CaseWhenClause struct {
+	Table     string
+	Field     QueryField // WHEN field to compare
+	Value     string     // literal value to compare against
+	ThenField QueryField // THEN field to return if the WHEN condition is true
 }
 
-func NewSelectField(field QueryField, f QueryFunction) *SelectField {
-	return &SelectField{
+func (c CaseWhenClause) expr() string {
+	return fmt.Sprintf(`CASE WHEN "%s".%s = '%s' THEN "%s".%s END`,
+		c.Table, c.Field, c.Value, c.Table, c.ThenField)
+}
+
+func WithCaseWhen(c CaseWhenClause) func(*SelectField) {
+	return func(f *SelectField) { f.CaseWhen = &c }
+}
+
+type SelectField struct {
+	Field    QueryField
+	Func     QueryFunction
+	Alias    string
+	CaseWhen *CaseWhenClause
+}
+
+func NewSelectField(field QueryField, f QueryFunction, opts ...func(*SelectField)) *SelectField {
+	sf := &SelectField{
 		Field: field,
 		Func:  f,
 	}
+	for _, o := range opts {
+		o(sf)
+	}
+	return sf
 }
 
 func NewConditionalSelectField(alias string, ck ...CompositeKeyGroup) *SelectField {
@@ -367,6 +437,9 @@ func NewConditionalSelectField(alias string, ck ...CompositeKeyGroup) *SelectFie
 
 func (f *SelectField) SelectStatement() string {
 	field := f.Field
+	if f.CaseWhen != nil {
+		field = f.CaseWhen.expr()
+	}
 	switch f.Func.Function {
 	case AllFunc:
 		field += ".*"
@@ -535,7 +608,11 @@ func (q *Query) Merge(other *Query) *Query {
 
 	q.Where(other.CompositeKeyGroup...)
 	for _, j := range other.Joins {
-		q.Join(j.Type, j.OnCondition)
+		if j.OnCondition != nil {
+			q.Join(j.Type, *j.OnCondition)
+		} else if j.Lateral != nil {
+			q.LateralJoin(*j.Lateral)
+		}
 	}
 
 	return q
@@ -594,12 +671,23 @@ type table interface {
 func (q *Query) Join(joinType JoinType, onCondition JoinCondition) *Query {
 	joinClause := JoinClause{
 		Type:        joinType,
-		OnCondition: onCondition,
+		OnCondition: &onCondition,
 	}
-	joinKey, _ := joinClause.JoinStatement()
+	joinKey := joinClause.JoinStatement()
 
 	if !q.joinsSet[joinKey] {
 		q.Joins = append(q.Joins, joinClause)
+		q.joinsSet[joinKey] = true
+	}
+
+	return q
+}
+
+func (q *Query) LateralJoin(l LateralJoin) *Query {
+	joinKey := "lateral:" + l.Alias
+
+	if !q.joinsSet[joinKey] {
+		q.Joins = append(q.Joins, JoinClause{Lateral: &l})
 		q.joinsSet[joinKey] = true
 	}
 
