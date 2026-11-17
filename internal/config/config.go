@@ -13,11 +13,12 @@ import (
 )
 
 var (
-	ErrConfigurationValuesError        = errors.New("configuration value error")
-	ErrCertificateValidityOutsideRange = errors.New("certificate validity must not be outside 7 to 30 days")
-	ErrNonDefinedTaskType              = errors.New("task type is unknown")
-	ErrRepeatedTaskType                = errors.New("task type is specified more than once")
-	ErrCNPrefixLength                  = errors.New("certificate common name prefix cannot exceed 24 characters")
+	ErrConfigurationValuesError          = errors.New("configuration value error")
+	ErrCertificateValidityOutsideRange   = errors.New("certificate validity must not be outside 7 to 30 days")
+	ErrRotationThresholdNotBelowValidity = errors.New("certificate rotation threshold must be less than validity")
+	ErrNonDefinedTaskType                = errors.New("task type is unknown")
+	ErrRepeatedTaskType                  = errors.New("task type is specified more than once")
+	ErrCNPrefixLength                    = errors.New("certificate common name prefix cannot exceed 24 characters")
 
 	ErrAMQPEmptyURL      = errors.New("AMQP URL must be specified")
 	ErrAMQPEmptyTarget   = errors.New("AMQP target must be specified")
@@ -146,6 +147,10 @@ func (c *Certificates) Validate() error {
 	if c.ValidityDays < MinCertificateValidityDays ||
 		c.ValidityDays > MaxCertificateValidityDays {
 		return ErrCertificateValidityOutsideRange
+	}
+
+	if c.RotationThresholdDays >= c.ValidityDays {
+		return ErrRotationThresholdNotBelowValidity
 	}
 
 	return nil

@@ -296,6 +296,11 @@ func (f *EventFactory) createSystemEventJob(
 
 	data.TenantID = tenantID
 
+	initiatorID, err := cmkcontext.ExtractUserIdentifier(ctx)
+	if err == nil {
+		data.InitiatorID = initiatorID
+	}
+
 	jobData, err := json.Marshal(data)
 	if err != nil {
 		return orbital.Job{}, err

@@ -101,6 +101,19 @@ func IsPendingImportBYOK(key *model.Key) bool {
 	return key != nil && key.KeyType == cmkapi.KeyTypeBYOK && key.State == cmkapi.KeyStatePENDINGIMPORT
 }
 
+// byokDeletableStates never hold usable key material.
+var byokDeletableStates = []cmkapi.KeyState{
+	cmkapi.KeyStatePENDINGIMPORT,
+	cmkapi.KeyStatePENDINGCREATION,
+	cmkapi.KeyStateERROR,
+}
+
+// IsBYOKDeletable reports whether a BYOK key is in a state permitting hard deletion.
+func IsBYOKDeletable(key *model.Key) bool {
+	return key != nil && key.KeyType == cmkapi.KeyTypeBYOK &&
+		slices.Contains(byokDeletableStates, key.State)
+}
+
 type KeyManager struct {
 	ProviderConfigManager
 
@@ -168,7 +181,6 @@ func NewKeyManager(
 	}
 }
 
-//nolint:cyclop
 func (km *KeyManager) Create(
 	ctx context.Context,
 	key *model.Key,
@@ -180,18 +192,10 @@ func (km *KeyManager) Create(
 		return nil, err
 	}
 
-	// For BYOK keys, check if tenant provisioning is needed before attempting provider creation.
-	// If the default keystore has not yet had its management role provisioned (LocalityID == ""),
-	// persist the key in PENDING_CREATION state and return immediately. The sync worker will
-	// complete creation once provisioning succeeds.
+	// BYOK keys always go to PENDING_CREATION immediately. Provider key creation is slow
+	// (can exceed the Envoy upstream timeout) and is handled by the async sync worker.
 	if key.KeyType == constants.KeyTypeBYOK {
-		pending, err := km.createPendingBYOKKeyIfNeeded(ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		if pending {
-			return key, nil
-		}
+		return km.savePendingBYOKKey(ctx, key)
 	}
 
 	// Enforce key limit before any provider interaction so a limit violation never
@@ -203,16 +207,6 @@ func (km *KeyManager) Create(
 	// Initialize provider
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
-		// GrantTrust(CRYPTO) may still be pending (null cryptoAccessData or a new crypto cert
-		// added after initial provisioning). Fall into PENDING_CREATION so the sync worker
-		// retries out-of-band rather than blocking or failing the HTTP request.
-		if key.KeyType == constants.KeyTypeBYOK && errors.Is(err, ErrGrantTrustFailed) {
-			log.Info(ctx, "Crypto trust grant pending during key creation, deferring to async worker",
-				log.ErrorAttr(err))
-			// ctx may already be canceled (e.g. gateway timeout killed the request context
-			// while GrantTrust was in flight). Use a detached context so the DB write succeeds.
-			return km.savePendingBYOKKey(context.WithoutCancel(ctx), key)
-		}
 		return nil, errs.Wrap(ErrFailedToInitProvider, err)
 	}
 
@@ -354,10 +348,6 @@ func validateEnablementUpdate(keyPatch cmkapi.KeyPatch, key *model.Key) error {
 }
 
 func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch cmkapi.KeyPatch) (*model.Key, error) {
-	if isManagementDetailsUpdate(keyPatch) {
-		return nil, ErrManagementDetailsUpdate
-	}
-
 	key, err := km.Get(ctx, keyID)
 	if err != nil {
 		return nil, errs.Wrap(ErrGetKeyDB, err)
@@ -365,8 +355,7 @@ func (km *KeyManager) UpdateKey(ctx context.Context, keyID uuid.UUID, keyPatch c
 
 	ctx = model.LogInjectKey(ctx, key)
 
-	isPending := key.State == cmkapi.KeyStatePENDINGCREATION || key.State == cmkapi.KeyStatePENDINGREGISTRATION
-	if isPending && keyPatch.Enabled != nil {
+	if isPendingKeyState(key) && keyPatch.Enabled != nil {
 		return nil, ErrKeyInPendingState
 	}
 
@@ -392,6 +381,10 @@ func (km *KeyManager) Delete(ctx context.Context, keyID uuid.UUID) error {
 	key, err := km.Get(ctx, keyID)
 	if err != nil {
 		return errs.Wrap(ErrGetKeyDB, err)
+	}
+
+	if key.KeyType == cmkapi.KeyTypeBYOK && !IsBYOKDeletable(key) {
+		return errs.Wrap(ErrDeleteKey, ErrKeyStateNotDeletable)
 	}
 
 	if err := km.checkConnectedSystems(ctx, key); err != nil {
@@ -790,17 +783,6 @@ func (km *KeyManager) checkConnectedSystems(ctx context.Context, key *model.Key)
 	return nil
 }
 
-// isBYOKProvisioningNeeded reports whether the default keystore's management role
-// has not yet been provisioned for this tenant. It reads the stored config without
-// triggering lazy provisioning, so it never blocks on GrantTrust.
-func (km *KeyManager) isBYOKProvisioningNeeded(ctx context.Context) (bool, error) {
-	needed, err := km.tenantConfigs.NeedsDefaultKeystoreProvisioning(ctx)
-	if err != nil {
-		return false, err
-	}
-	return needed, nil
-}
-
 func (km *KeyManager) persistCreatedKey(
 	ctx context.Context,
 	provider *ProviderConfig,
@@ -823,20 +805,6 @@ func (km *KeyManager) persistCreatedKey(
 	}
 
 	return nil
-}
-
-// createPendingBYOKKeyIfNeeded persists the key in PENDING_CREATION when tenant provisioning
-// is not yet complete. Returns true if the key was saved as pending (caller should return early).
-func (km *KeyManager) createPendingBYOKKeyIfNeeded(ctx context.Context, key *model.Key) (bool, error) {
-	needsProvisioning, err := km.isBYOKProvisioningNeeded(ctx)
-	if err != nil {
-		return false, err
-	}
-	if !needsProvisioning {
-		return false, nil
-	}
-	saved, err := km.savePendingBYOKKey(ctx, key)
-	return saved != nil, err
 }
 
 // savePendingBYOKKey persists the key in PENDING_CREATION and enqueues a sync.
@@ -1080,12 +1048,11 @@ func (km *KeyManager) setEditableStatus(ctx context.Context, key *model.Key) err
 	})
 }
 
-func isManagementDetailsUpdate(keyPatch cmkapi.KeyPatch) bool {
-	patchAccessDetails := keyPatch.AccessDetails
-	return patchAccessDetails != nil && patchAccessDetails.Management != nil
+func isPendingKeyState(key *model.Key) bool {
+	return key.State == cmkapi.KeyStatePENDINGCREATION || key.State == cmkapi.KeyStatePENDINGREGISTRATION
 }
 
-//nolint:cyclop
+//nolint:cyclop,funlen
 func (km *KeyManager) handleCryptoDetailsUpdate(
 	ctx context.Context,
 	keyPatch cmkapi.KeyPatch,
@@ -1093,7 +1060,7 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 ) error {
 	patchAccessDetails := keyPatch.AccessDetails
 
-	if patchAccessDetails == nil || patchAccessDetails.Crypto == nil {
+	if patchAccessDetails == nil {
 		return nil
 	}
 
@@ -1102,11 +1069,23 @@ func (km *KeyManager) handleCryptoDetailsUpdate(
 		return err
 	}
 
+	if keyPatch.AccessDetails.Management != nil && !isPendingKeyState(key) {
+		return ErrManagementDetailsUpdate
+	}
+
 	management, err := key.GetManagementAccessData()
 	if err != nil {
 		return err
 	}
-	keyPatch.AccessDetails.Management = &management
+	crypto := key.GetCryptoAccessData()
+
+	if patchAccessDetails.Management == nil {
+		keyPatch.AccessDetails.Management = &management
+	}
+
+	if patchAccessDetails.Crypto == nil {
+		keyPatch.AccessDetails.Crypto = (*map[string]cmkapi.KeyAccessDetailsRegion)(&crypto)
+	}
 
 	err = providerTransformer.ValidateKeyAccessData(ctx, keyPatch.AccessDetails)
 	if err != nil {

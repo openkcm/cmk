@@ -98,7 +98,7 @@ func (h *SystemLinkJobHandler) HandleJobDoneEvent(ctx context.Context, job orbit
 		return err
 	}
 
-	err = h.cmkAuditor.SendCmkOnboardingAuditLog(ctx, system.Identifier, data.KeyIDTo)
+	err = h.cmkAuditor.SendCmkOnboardingAuditLog(ctx, system.Identifier, data.KeyIDTo, data.InitiatorID)
 	if err != nil {
 		log.Error(ctx, fmt.Sprintf("failed to send onboarding audit log for system %s: %v", system.ID, err), err)
 	}
@@ -185,7 +185,7 @@ func (h *SystemUnlinkJobHandler) HandleJobDoneEvent(ctx context.Context, job orb
 		return err
 	}
 
-	err = h.cmkAuditor.SendCmkOffboardingAuditLog(ctx, system.Identifier, data.KeyIDFrom)
+	err = h.cmkAuditor.SendCmkOffboardingAuditLog(ctx, system.Identifier, data.KeyIDFrom, data.InitiatorID)
 	if err != nil {
 		log.Error(ctx, fmt.Sprintf("failed to send offboarding audit log for system %s: %v", system.ID, err), err)
 	}
@@ -273,7 +273,7 @@ func (h *SystemSwitchJobHandler) HandleJobDoneEvent(ctx context.Context, job orb
 		return err
 	}
 
-	err = h.cmkAuditor.SendCmkSwitchAuditLog(ctx, system.Identifier, data.KeyIDFrom, data.KeyIDTo)
+	err = h.cmkAuditor.SendCmkSwitchAuditLog(ctx, system.Identifier, data.KeyIDFrom, data.KeyIDTo, data.InitiatorID)
 	if err != nil {
 		log.Error(ctx, fmt.Sprintf("failed to send switch audit log for system %s: %v", system.ID, err), err)
 	}
@@ -328,12 +328,12 @@ func (h *SystemUnlinkDecommissionJobHandler) HandleJobConfirm(
 }
 
 func (h *SystemUnlinkDecommissionJobHandler) HandleJobDoneEvent(ctx context.Context, job orbital.Job) error {
-	system, keyID, err := h.terminate(ctx, job)
+	system, keyID, initiatorID, err := h.terminate(ctx, job)
 	if err != nil {
 		return fmt.Errorf("failed to handle job done event for system unlink decommission job: %w", err)
 	}
 
-	err = h.cmkAuditor.SendCmkOffboardingAuditLog(ctx, system.Identifier, keyID)
+	err = h.cmkAuditor.SendCmkOffboardingAuditLog(ctx, system.Identifier, keyID, initiatorID)
 	if err != nil {
 		log.Error(ctx, fmt.Sprintf("failed to send offboarding audit log for system %s: %v", system.ID, err), err)
 	}
@@ -361,7 +361,7 @@ func (h *SystemUnlinkDecommissionJobHandler) HandleJobFailedEvent(ctx context.Co
 		log.Error(ctx, "Failed to set system status to LOCKED in registry, continuing termination", lockErr)
 	}
 
-	_, _, err = h.terminate(ctx, job)
+	_, _, _, err = h.terminate(ctx, job) //nolint:dogsled
 	if err != nil {
 		return fmt.Errorf("failed to handle job failed event for system unlink decommission job: %w", err)
 	}
@@ -429,18 +429,18 @@ func (h *SystemUnlinkDecommissionJobHandler) lockSystemInRegistry(ctx context.Co
 func (h *SystemUnlinkDecommissionJobHandler) terminate(
 	ctx context.Context,
 	job orbital.Job,
-) (*model.System, string, error) {
+) (*model.System, string, string, error) {
 	ctx = log.InjectSystemEvent(ctx, job.Type)
 
 	data, err := unmarshalSystemJobData(job)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	ctx = cmkcontext.CreateTenantContext(ctx, data.TenantID)
 	system, err := getSystemByID(ctx, h.repo, data.SystemID)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	// For unlink decommission, we want to mark the system as disconnected and clean up the key claim regardless
@@ -449,15 +449,15 @@ func (h *SystemUnlinkDecommissionJobHandler) terminate(
 	system.KeyConfigurationID = nil
 	err = updateSystem(ctx, h.repo, system)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	err = sendL1KeyClaim(ctx, *system, h.registry, data.TenantID, false)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
-	return system, data.KeyIDFrom, nil
+	return system, data.KeyIDFrom, data.InitiatorID, nil
 }
 
 // SystemKeyRotateJobHandler handles SYSTEM_KEY_ROTATE events.

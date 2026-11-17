@@ -451,12 +451,14 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 			ID: constants.InternalTaskWorkflowCleanupPolicy,
 			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
 				{
-					// First+List: GetWorkflowConfig flat-row read with legacy-blob fallback.
+					// First+List+Count: GetWorkflowConfig flat-row read via ProcessInBatch,
+					// which calls List then Count when rows are present.
 					// Update+Create: Set (upsert) called by SetWorkflowConfig when no config exists.
 					Type: RepoResourceTypeTenantconfig,
 					Actions: []RepoAction{
 						RepoActionFirst,
 						RepoActionList,
+						RepoActionCount,
 						RepoActionUpdate,
 						RepoActionCreate,
 					},

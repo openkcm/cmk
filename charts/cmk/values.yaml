@@ -1583,11 +1583,12 @@ config:
     # -- URL of the root CA certificate, returned with the tenants' HYOK client
     # certificates. Example: `https://pki.example.com/root-ca.crt`.
     rootCertURL: ""
-    # -- Validity of the certificates CMK requests, in days: 7 to 30 (CMK default 30). Startup
+    # -- Validity of the certificates CMK requests, in days: 7 to 30 (CMK default 7). Startup
     # fails outside this range.
-    validityDays: 30
-    # -- `cert:rotate` renews the certificates that expire within this many days.
-    rotationThresholdDays: 7
+    validityDays: 7
+    # -- `cert:rotate` renews the certificates that expire within this many days. Must be less
+    # than `validityDays`; startup fails otherwise.
+    rotationThresholdDays: 3
     # -- Prefix of the common names of a tenant's client certificate (`<prefix><tenant ID>`)
     # and of its access to the default keystore (`<prefix>byok-<tenant ID>`).
     defaultTenantCertPrefix: ""

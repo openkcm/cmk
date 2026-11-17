@@ -77,6 +77,7 @@ func NewCommandFactory(
 		cfg,
 		kcm,
 		um,
+		nil,
 	)
 
 	ff := manager.NewFeatureFlags(cfg, svcRegistry, featureflags.NewClient())
@@ -84,7 +85,7 @@ func NewCommandFactory(
 	km := manager.NewKeyManager(
 		authzRepo,
 		svcRegistry,
-		manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, cm, ff),
+		manager.NewTenantConfigManager(authzRepo, svcRegistry, cfg, cm, ff, nil),
 		kcm,
 		um,
 		cm,

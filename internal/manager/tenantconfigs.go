@@ -41,6 +41,7 @@ type TenantConfigManager struct {
 	keystorePool *Pool
 	cfg          *config.Config
 	certs        *CertificateManager
+	systemGroups SystemGroup
 	flags        FeatureFlags
 }
 
@@ -50,6 +51,7 @@ func NewTenantConfigManager(
 	deploymentConfig *config.Config,
 	certs *CertificateManager,
 	flags FeatureFlags,
+	systemGroups SystemGroup,
 ) *TenantConfigManager {
 	return &TenantConfigManager{
 		r:            repo,
@@ -58,6 +60,7 @@ func NewTenantConfigManager(
 		cfg:          deploymentConfig,
 		certs:        certs,
 		flags:        flags,
+		systemGroups: systemGroups,
 	}
 }
 
@@ -132,9 +135,11 @@ func (m *TenantConfigManager) GetTenantConfigByType[T model.TenantConfiguration]
 	ck := repo.NewCompositeKey().Where(repo.TypeField, res.Type())
 	query := repo.NewQuery().Where(repo.NewCompositeKeyGroup(ck))
 
-	if err := m.r.List(ctx, &model.TenantConfig{}, &configs, *query); err != nil {
-		// Preserve the same error contract as the legacy First-based path so that
-		// API error mappings keyed on repo.ErrGetResource keep working.
+	err := repo.ProcessInBatch(ctx, m.r, query, repo.DefaultLimit, func(cfgs []*model.TenantConfig) error {
+		configs = append(configs, cfgs...)
+		return nil
+	})
+	if err != nil {
 		return nil, errs.Wrap(repo.ErrGetResource, err)
 	}
 
@@ -148,7 +153,7 @@ func (m *TenantConfigManager) GetTenantConfigByType[T model.TenantConfiguration]
 		configMap[c.Key] = c.Value
 	}
 
-	res, err := model.Unflatten[T](configMap)
+	res, err = model.Unflatten[T](configMap)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +188,22 @@ func (m *TenantConfigManager) SetSystemGroupsConfig(
 	ctx context.Context,
 	sg *model.SystemGroupConfig,
 ) (*model.SystemGroupConfig, error) {
-	err := m.SetTenantConfig(ctx, sg)
+	cur, err := m.GetSystemGroupingConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if cur.Enabled != sg.Enabled {
+		var err error
+		if sg.Enabled {
+			err = m.systemGroups.CreateAllSystemGroups(ctx, !sg.WarnCoverage)
+		} else {
+			err = m.systemGroups.DeleteAllSystemGroups(ctx)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = m.SetTenantConfig(ctx, sg)
 	return sg, err
 }
 
@@ -373,22 +393,6 @@ func (m *TenantConfigManager) SetKeystoreConfig(ctx context.Context, config *mod
 
 		return m.SetTenantConfig(ctx, config)
 	})
-}
-
-// NeedsDefaultKeystoreProvisioning reports whether the tenant's default keystore
-// management role has not yet been fully provisioned. It reads the stored config without
-// triggering any lazy provisioning side effects (no GrantTrust calls).
-// Returns true when no stored config exists, LocalityID is empty, or AccessData is empty.
-func (m *TenantConfigManager) NeedsDefaultKeystoreProvisioning(ctx context.Context) (bool, error) {
-	keystore, found, err := m.GetStoredDefaultKeystoreConfig(ctx)
-	if err != nil {
-		return false, err
-	}
-	if !found {
-		// No stored config yet means the pool assignment hasn't happened — provisioning needed.
-		return true, nil
-	}
-	return keystore.KeyManagementConfig.LocalityID == "" || len(keystore.KeyManagementConfig.AccessData) == 0, nil
 }
 
 // GetStoredDefaultKeystoreConfig reads the stored default keystore without pool fallback

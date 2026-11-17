@@ -259,6 +259,11 @@ func (c *APIController) isPrimaryKeyDeletion(
 		return false, err
 	}
 
+	// Deletable BYOK states never require the delete workflow.
+	if manager.IsBYOKDeletable(key) {
+		return false, nil
+	}
+
 	if key.IsPrimary {
 		return true, nil
 	}

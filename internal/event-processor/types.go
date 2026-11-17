@@ -41,11 +41,12 @@ type KeyActionJobData struct {
 
 // SystemActionJobData contains the data needed for a system action orbital job.
 type SystemActionJobData struct {
-	SystemID  string `json:"systemID"`
-	TenantID  string `json:"tenantID"`
-	KeyIDTo   string `json:"keyIDTo"`
-	KeyIDFrom string `json:"keyIDFrom"`
-	Trigger   string `json:"trigger,omitempty"`
+	SystemID    string `json:"systemID"`
+	TenantID    string `json:"tenantID"`
+	KeyIDTo     string `json:"keyIDTo"`
+	KeyIDFrom   string `json:"keyIDFrom"`
+	Trigger     string `json:"trigger,omitempty"`
+	InitiatorID string `json:"initiatorID"`
 }
 
 // KeyConfigActionJobData contains the data needed for a key configuration action orbital job.

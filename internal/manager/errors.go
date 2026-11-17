@@ -49,6 +49,7 @@ var (
 	ErrKeyInPendingState             = errors.New("operation not allowed: key is in a pending state")
 	ErrProvisioningTimeout           = errors.New("provisioning timeout")
 	ErrPendingImportStateNotEditable = errors.New("key state cannot be changed while pending import")
+	ErrKeyStateNotDeletable          = errors.New("key state does not allow deletion")
 
 	ErrGetKeyDB                         = errors.New("failed to get key from database")
 	ErrGettingKeyByID                   = errors.New("failed to get key by ID")
@@ -135,6 +136,8 @@ var (
 	ErrDeleteLabelDB     = errors.New("failed to delete label")
 	ErrGetKeyIDDB        = errors.New("KeyID is required")
 	ErrEmptyInputLabelDB = errors.New("invalid input empty label name")
+
+	ErrInvalidSystemGroupSize = errors.New("cannot create a system group with less than two members")
 
 	ErrQuerySystemList           = errors.New("failed to query system list")
 	ErrGettingSystem             = errors.New("failed to get system")

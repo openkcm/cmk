@@ -35,7 +35,7 @@ func setupKeyVersionManager(t *testing.T) (*manager.KeyVersionManager, repo.Repo
 		&config.Config{
 			Certificates: config.Certificates{ValidityDays: config.MinCertificateValidityDays},
 		})
-	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil)
+	tenantConfigManager := manager.NewTenantConfigManager(r, svcRegistry, nil, nil, nil, nil)
 	cmkAuditor := &auditor.Auditor{}
 
 	kvm := manager.NewKeyVersionManager(

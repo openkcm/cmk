@@ -893,15 +893,17 @@ func TestKeyConfigurationController_GetByID(t *testing.T) {
 
 func TestAPIController_GetCertificates(t *testing.T) {
 	tests := []struct {
-		name                string
-		expectedStatus      int
-		expectedError       string
-		setupFunc           func(t *testing.T, db *multitenancy.DB, tenant string)
-		expectedRecordCount int
-		expectedRootCA      string
-		expectedSubject     model.CertificateSubject
-		expectedType        string
-		disableAuthzMW      bool
+		name                    string
+		expectedStatus          int
+		expectedError           string
+		setupFunc               func(t *testing.T, db *multitenancy.DB, tenant string)
+		expectedRecordCount     int
+		expectedRootCA          string
+		expectedSubject         model.CertificateSubject
+		expectedType            string
+		disableAuthzMW          bool
+		disableHYOKCertAuth     bool
+		expectedNotRequiredFlag bool
 	}{
 		{
 			name:                "Success - Multiple OUs Certificate",
@@ -1044,6 +1046,13 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			expectedRecordCount: 0,
 			disableAuthzMW:      true,
 		},
+		{
+			name:                    "Success - DisableHYOKCertAuth",
+			expectedStatus:          http.StatusOK,
+			expectedRecordCount:     0,
+			disableHYOKCertAuth:     true,
+			expectedNotRequiredFlag: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1068,10 +1077,12 @@ func TestAPIController_GetCertificates(t *testing.T) {
 						},
 					},
 					Certificates: config.Certificates{
-						RootCertURL: testutils.TestCertURL,
+						RootCertURL:         testutils.TestCertURL,
+						DisableHYOKCertAuth: tt.disableHYOKCertAuth,
 					},
 				},
 			})
+
 			r := sql.NewRepository(db)
 			ctx := cmkcontext.CreateTenantContext(t.Context(), tenant)
 
@@ -1101,6 +1112,9 @@ func TestAPIController_GetCertificates(t *testing.T) {
 			if tt.expectedStatus == http.StatusOK {
 				response := testutils.GetJSONBody[cmkapi.ClientCertificates](t, w)
 				assert.Equal(t, tt.expectedRecordCount, *response.TenantDefault.Count)
+				if tt.expectedNotRequiredFlag {
+					assert.Equal(t, new(true), response.NotRequiredForHYOK)
+				}
 			} else {
 				response := testutils.GetJSONBody[cmkapi.ErrorMessage](t, w)
 				assert.Equal(t, tt.expectedError, response.Error.Code)
