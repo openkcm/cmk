@@ -465,6 +465,7 @@ func TestCryptoLayerAndSystemPropertiesFiles(t *testing.T) {
 	}
 	properties := cfg.ContextModels.System
 	if properties.Identifier.DisplayName != "GTID" || properties.Type.DisplayName != "Type" ||
+		!slices.Equal(properties.Type.Enum, []string{"system"}) ||
 		properties.OptionalProperties["externalName"].DisplayName != "Name" ||
 		len(properties.OptionalProperties) != 3 {
 		t.Errorf("unexpected system properties: %+v", properties)

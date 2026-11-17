@@ -113,7 +113,7 @@ func createManagers(
 
 	cmkAuditor := auditor.New(ctx, cfg)
 
-	f, err := clients.NewFactory(config.Services{})
+	f, err := clients.NewFactory(&config.Config{})
 	assert.NoError(t, err)
 
 	cm := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)

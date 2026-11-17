@@ -124,10 +124,10 @@ func TestOIDCMappingRequest(t *testing.T) {
 func setupGRPC(t *testing.T) (tenantgrpc.ServiceClient, trustmappingv1.ServiceClient) {
 	t.Helper()
 
-	clientsFactory, err := clients.NewFactory(config.Services{
+	clientsFactory, err := clients.NewFactory(&config.Config{Services: config.Services{
 		Registry:       testutils.TestRegistryConfig,
 		SessionManager: testutils.TestSessionManagerConfig,
-	})
+	}})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err = clientsFactory.Close()

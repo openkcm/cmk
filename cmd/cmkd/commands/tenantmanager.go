@@ -207,7 +207,7 @@ func createAMQPClient(ctx context.Context, cfg *config.Config) (orbital.TargetOp
 }
 
 func validateAndGetClients(cfg *config.Config) (clients.Factory, error) {
-	clientsFactory, err := clients.NewFactory(cfg.Services)
+	clientsFactory, err := clients.NewFactory(cfg)
 	if err != nil {
 		return nil, oops.In(logDomain).Wrapf(err, "Failed to create clients factory")
 	}

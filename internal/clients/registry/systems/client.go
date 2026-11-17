@@ -3,8 +3,10 @@ package systems
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/openkcm/common-sdk/pkg/commongrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -13,6 +15,7 @@ import (
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/model"
 )
@@ -25,8 +28,9 @@ const (
 )
 
 var (
-	ErrGettingSystem       = errors.New("failed to get system")
-	ErrClientInternalError = errors.New("internal error in systems client")
+	ErrGettingSystem        = errors.New("failed to get system")
+	ErrClientInternalError  = errors.New("internal error in systems client")
+	ErrUnsuportedSystemType = errors.New("unsupported system type")
 
 	ErrKeyClaimAlreadyActive     = status.Error(codes.FailedPrecondition, "key claim is already active")
 	ErrKeyClaimAlreadyInactive   = status.Error(codes.FailedPrecondition, "key claim is already inactive")
@@ -47,9 +51,10 @@ type SystemFilter struct {
 }
 
 type Config struct {
-	Delay    time.Duration
-	MaxDelay time.Duration
-	Attempts uint
+	Delay         time.Duration
+	MaxDelay      time.Duration
+	Attempts      uint
+	SystemContext config.System
 }
 
 type ServiceClient interface {
@@ -72,7 +77,11 @@ var _ ServiceClient = (*client)(nil)
 type Option func(*client)
 
 // NewSystemsClient creates new instance of Client.
-func NewSystemsClient(grpcClient *commongrpc.DynamicClientConn, options ...Option) (ServiceClient, error) {
+func NewSystemsClient(
+	grpcClient *commongrpc.DynamicClientConn,
+	systemContextCfg config.System,
+	options ...Option,
+) (ServiceClient, error) {
 	if grpcClient == nil {
 		return nil, ErrSystemsClientDoesNotExist
 	}
@@ -80,9 +89,10 @@ func NewSystemsClient(grpcClient *commongrpc.DynamicClientConn, options ...Optio
 	client := &client{
 		ServiceClient: systemgrpc.NewServiceClient(grpcClient),
 		config: Config{
-			Delay:    delay,
-			Attempts: attempts,
-			MaxDelay: maxDelay,
+			Delay:         delay,
+			Attempts:      attempts,
+			MaxDelay:      maxDelay,
+			SystemContext: systemContextCfg,
 		},
 	}
 
@@ -153,7 +163,7 @@ func (c *client) GetSystemsWithFilter(ctx context.Context,
 		return nil, errs.Wrap(ErrGettingSystem, err)
 	}
 
-	systems, err := MapRegistrySystemsToCmkSystems(grpcSystems)
+	systems, err := c.mapRegistrySystemsToCmkSystems(grpcSystems)
 	if err != nil {
 		return nil, errs.Wrap(ErrGettingSystem, err)
 	}
@@ -244,6 +254,28 @@ func (c *client) ExtendedUpdateSystemStatus(
 	}
 
 	return nil
+}
+
+func (c *client) mapRegistrySystemsToCmkSystems(grpcSystems []*systemgrpc.System) ([]*model.System, error) {
+	systems := make([]*model.System, len(grpcSystems))
+
+	for i, grpcSystem := range grpcSystems {
+		systemType := strings.ToUpper(grpcSystem.GetType())
+
+		if !c.config.SystemContext.AllowsType(systemType) {
+			return nil, ErrUnsuportedSystemType
+		}
+
+		sys := &model.System{
+			ID:         uuid.New(),
+			Region:     grpcSystem.GetRegion(),
+			Identifier: grpcSystem.GetExternalId(),
+			Type:       systemType,
+		}
+		systems[i] = sys
+	}
+
+	return systems, nil
 }
 
 func (c *client) getRetrier() *retry.Retrier {

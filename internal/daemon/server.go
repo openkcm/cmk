@@ -58,7 +58,7 @@ func NewCMKServer(
 	cfg *config.Config,
 	dbCon *multitenancy.DB,
 ) (*CmkServer, error) {
-	clientsFactory, err := clients.NewFactory(cfg.Services)
+	clientsFactory, err := clients.NewFactory(cfg)
 	if err != nil {
 		log.Error(ctx, "error connecting to registry service gRPC server", err)
 	}

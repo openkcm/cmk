@@ -8,6 +8,8 @@ system:
   type:
     displayName: "Type"
     internal: true
+    enum:
+      - system
   externalName:
     displayName: "Name"
     default: "n/a"

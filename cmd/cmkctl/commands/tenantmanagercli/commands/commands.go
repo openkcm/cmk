@@ -52,7 +52,7 @@ func NewCommandFactory(
 
 	cmkAuditor := auditor.New(ctx, cfg)
 
-	clientsFactory, err := clients.NewFactory(cfg.Services)
+	clientsFactory, err := clients.NewFactory(cfg)
 	if err != nil {
 		return CommandFactory{}, err
 	}

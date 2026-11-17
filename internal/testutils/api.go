@@ -72,6 +72,8 @@ type TestAPIServerConfig struct {
 }
 
 // NewAPIServer creates a new API server with the given database connection
+//
+//nolint:funlen
 func NewAPIServer(
 	tb testing.TB,
 	dbCon *multitenancy.DB,
@@ -99,18 +101,20 @@ func NewAPIServer(
 	)
 
 	if testCfg.GRPCCon != nil {
-		factory, err = clients.NewFactory(config.Services{
-			Registry: &commoncfg.GRPCClient{
-				Enabled: true,
-				Address: testCfg.GRPCCon.Target(),
-				SecretRef: &commoncfg.SecretRef{
-					Type: commoncfg.InsecureSecretType,
+		factory, err = clients.NewFactory(&config.Config{
+			Services: config.Services{
+				Registry: &commoncfg.GRPCClient{
+					Enabled: true,
+					Address: testCfg.GRPCCon.Target(),
+					SecretRef: &commoncfg.SecretRef{
+						Type: commoncfg.InsecureSecretType,
+					},
 				},
 			},
 		})
 		assert.NoError(tb, err)
 	} else {
-		factory, err = clients.NewFactory(config.Services{})
+		factory, err = clients.NewFactory(&config.Config{})
 		assert.NoError(tb, err)
 	}
 

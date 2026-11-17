@@ -161,7 +161,7 @@ func registerTasks(
 		return errs.Wrapf(err, "failed to create event factory")
 	}
 
-	f, err := clients.NewFactory(cfg.Services)
+	f, err := clients.NewFactory(cfg)
 	if err != nil {
 		return err
 	}
