@@ -143,7 +143,7 @@ func NewCryptoReconciler(
 
 	mc, err := orbital.NewMetricCollector(otel.GetMeterProvider())
 	if err != nil {
-		log.Warn(ctx, "Failed to initiate metric collector for event-processor")
+		log.Error(ctx, "Failed to initiate metric collector for event-processor", err)
 	}
 	if mc != nil {
 		managerOpts = append(managerOpts, orbital.WithManagerMetrics(mc))

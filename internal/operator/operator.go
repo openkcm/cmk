@@ -156,7 +156,7 @@ func (o *TenantOperator) RunOperator(ctx context.Context) error {
 
 	mc, err := orbital.NewMetricCollector(otel.GetMeterProvider())
 	if err != nil {
-		log.Warn(ctx, "Failed to initiate metric collector for operator")
+		log.Error(ctx, "Failed to initiate metric collector for operator", err)
 	}
 	if mc != nil {
 		operatorOpts = append(operatorOpts, orbital.WithOperatorMetrics(mc))
