@@ -29,6 +29,7 @@ func buildCfg(t *testing.T) []byte {
 			Type: config.SystemProperty{
 				DisplayName: "Type",
 				Internal:    true,
+				Enum:        []string{"system", "subaccount", "custom"},
 			},
 			OptionalProperties: map[string]config.SystemProperty{},
 		},
@@ -69,10 +70,11 @@ func TestLoadConfig(t *testing.T) {
 		err := os.WriteFile(file, c, 0o600)
 		assert.NoError(t, err)
 
-		_, err = config.LoadConfig(
+		cfg, err := config.LoadConfig(
 			commoncfg.WithPaths(dir),
 		)
-		assert.NoError(t, err)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"system", "subaccount", "custom"}, cfg.ContextModels.System.Type.Enum)
 	})
 
 	t.Run("Should fail on missing configurableContext", func(t *testing.T) {

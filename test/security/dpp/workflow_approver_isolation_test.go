@@ -79,7 +79,7 @@ func TestWorkflowApproverIsolation(t *testing.T) {
 	tagManager := manager.NewTagManager(r)
 	keyConfigManager := manager.NewKeyConfigManager(r, certManager, userManager, tagManager, cmkAuditor, nil, cfg, nil)
 	groupManager := manager.NewGroupManager(r, svcRegistry, userManager)
-	clientsFactory, err := clients.NewFactory(cfg.Services)
+	clientsFactory, err := clients.NewFactory(cfg)
 	require.NoError(t, err)
 	systemManager := manager.NewSystemManager(t.Context(), r, nil, clientsFactory, nil, svcRegistry, cfg, keyConfigManager, userManager, nil)
 	keym := manager.NewKeyManager(r, svcRegistry, tenantConfigManager, keyConfigManager, userManager, certManager, nil, cmkAuditor, nil, nil, nil)

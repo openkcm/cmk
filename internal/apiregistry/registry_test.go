@@ -12,8 +12,8 @@ import (
 )
 
 // Helper function to initialize config.Services with different configurations
-func initializeServices(registryEnabled bool, registryAddress string, sessionManagerEnabled bool, sessionManagerAddress string) *config.Services {
-	return &config.Services{
+func initializeServices(registryEnabled bool, registryAddress string, sessionManagerEnabled bool, sessionManagerAddress string) config.Services {
+	return config.Services{
 		Registry: &commoncfg.GRPCClient{
 			Enabled: registryEnabled,
 			Address: registryAddress,
@@ -28,7 +28,7 @@ func initializeServices(registryEnabled bool, registryAddress string, sessionMan
 func TestNew_WithAllServicesEnabled(t *testing.T) {
 	services := initializeServices(true, ":8080", true, ":8081")
 
-	reg, err := apiregistry.New(services)
+	reg, err := apiregistry.New(&config.Config{Services: services})
 	assert.NoError(t, err)
 	assert.NotNil(t, reg)
 
@@ -45,7 +45,7 @@ func TestNew_WithAllServicesEnabled(t *testing.T) {
 func TestNew_WithOnlyRegistryServiceEnabled(t *testing.T) {
 	services := initializeServices(true, ":8080", false, "")
 
-	reg, err := apiregistry.New(services)
+	reg, err := apiregistry.New(&config.Config{Services: services})
 	assert.NoError(t, err)
 	assert.NotNil(t, reg)
 
@@ -62,7 +62,7 @@ func TestNew_WithOnlyRegistryServiceEnabled(t *testing.T) {
 func TestNew_WithOnlySessionManagerServiceEnabled(t *testing.T) {
 	services := initializeServices(false, "", true, ":8081")
 
-	reg, err := apiregistry.New(services)
+	reg, err := apiregistry.New(&config.Config{Services: services})
 	assert.NoError(t, err)
 	assert.NotNil(t, reg)
 
@@ -79,7 +79,7 @@ func TestNew_WithOnlySessionManagerServiceEnabled(t *testing.T) {
 func TestNew_WithInvalidRegistryEndpoint(t *testing.T) {
 	services := initializeServices(true, ":///", false, "")
 
-	svc, err := apiregistry.New(services)
+	svc, err := apiregistry.New(&config.Config{Services: services})
 	assert.NoError(t, err)
 
 	tenant, err := svc.Tenant()
@@ -96,7 +96,7 @@ func TestRegistryGetters_WithAllServicesDisabled(t *testing.T) {
 	// Create a registry with all services disabled
 	services := initializeServices(false, "", false, "")
 
-	reg, err := apiregistry.New(services)
+	reg, err := apiregistry.New(&config.Config{Services: services})
 	assert.NoError(t, err)
 
 	_, err = reg.Tenant()

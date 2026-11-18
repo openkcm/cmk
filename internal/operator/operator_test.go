@@ -113,7 +113,7 @@ func createManagers(
 
 	cmkAuditor := auditor.New(ctx, cfg)
 
-	f, err := clients.NewFactory(config.Services{})
+	f, err := clients.NewFactory(&config.Config{})
 	assert.NoError(t, err)
 
 	cm := manager.NewCertificateManager(ctx, authzRepo, svcRegistry, cfg)
@@ -285,6 +285,22 @@ func TestRunOperator(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		assert.Fail(t, "RunOperator did not stop within the expected time after context cancellation")
 	}
+}
+
+func TestRunOperatorMetricsError(t *testing.T) {
+	testConfig := newTestOperator(t)
+	provider := &testutils.FailingMeterProvider{
+		Err: errors.New("metric collector failed"), //nolint:err113
+	}
+	originalProvider := otel.GetMeterProvider()
+	t.Cleanup(func() { otel.SetMeterProvider(originalProvider) })
+	otel.SetMeterProvider(provider)
+
+	ctx, cancel := context.WithCancel(createContext(t))
+	cancel()
+
+	require.NoError(t, testConfig.TenantOperator.RunOperator(ctx))
+	assert.True(t, provider.Called.Load(), "metric creation must fail during operator initialization")
 }
 
 func TestHandleCreateTenant(t *testing.T) {
@@ -2022,12 +2038,11 @@ type TestConfig struct {
 //   - *multitenancy.DB: the test multitenancy database
 //   - *tenants.FakeTenantService: the fake tenant service for testing
 //   - *sessionmanager.FakeSessionManagerClient: the fake session manager client for testing
-func newTestOperator(t *testing.T, opts ...testutils.TestDBConfigOpt) TestConfig {
+func newTestOperator(t *testing.T) TestConfig {
 	t.Helper()
 	multitenancyDB, list, cfgDB := testutils.NewTestDB(
 		t,
 		testutils.TestDBConfig{CreateDatabase: true},
-		opts...,
 	)
 
 	amqpClient, _ := testutils.NewAMQPClient(t, testutils.AMQPCfg{})

@@ -22,7 +22,7 @@ func TestNewManager(t *testing.T) {
 
 	cfg := &config.Config{}
 
-	factory, err := clients.NewFactory(cfg.Services)
+	factory, err := clients.NewFactory(cfg)
 	assert.NoError(t, err)
 
 	m := manager.New(t.Context(), dbRepo, nil, cfg, factory, svcRegistry, nil, nil, nil, nil, nil)

@@ -389,7 +389,7 @@ func TestTotalSystemAndKey(t *testing.T) {
 		sys := &model.System{
 			ID:                 uuid.New(),
 			Identifier:         uuid.NewString(),
-			Type:               model.SystemTypeSYSTEM,
+			Type:               "SYSTEM",
 			KeyConfigurationID: &keyConfig.ID,
 		}
 
@@ -431,7 +431,7 @@ func TestTotalSystemAndKey(t *testing.T) {
 		sys := &model.System{
 			ID:                 uuid.New(),
 			Identifier:         uuid.NewString(),
-			Type:               model.SystemTypeSYSTEM,
+			Type:               "SYSTEM",
 			KeyConfigurationID: &keyConfig.ID,
 		}
 
@@ -1491,7 +1491,7 @@ func TestCanConnectSystemsLimit(t *testing.T) {
 		existingSystem := &model.System{
 			ID:                 uuid.New(),
 			Identifier:         uuid.NewString(),
-			Type:               model.SystemTypeSYSTEM,
+			Type:               "SYSTEM",
 			KeyConfigurationID: &keyConfig.ID,
 		}
 		testutils.CreateTestEntities(ctx, t, r, existingSystem)
@@ -1512,7 +1512,7 @@ func TestCanConnectSystemsLimit(t *testing.T) {
 			sys := &model.System{
 				ID:                 uuid.New(),
 				Identifier:         uuid.NewString(),
-				Type:               model.SystemTypeSYSTEM,
+				Type:               "SYSTEM",
 				KeyConfigurationID: &keyConfig.ID,
 			}
 			testutils.CreateTestEntities(ctx, t, r, sys)
@@ -1533,7 +1533,7 @@ func TestCanConnectSystemsLimit(t *testing.T) {
 		inFlight := &model.System{
 			ID:                       uuid.New(),
 			Identifier:               uuid.NewString(),
-			Type:                     model.SystemTypeSYSTEM,
+			Type:                     "SYSTEM",
 			TargetKeyConfigurationID: &keyConfig.ID,
 		}
 		testutils.CreateTestEntities(ctx, t, r, inFlight)

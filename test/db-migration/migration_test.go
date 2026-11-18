@@ -1069,6 +1069,39 @@ func TestSchemaMigrations(t *testing.T) {
 			target:    db.TenantTarget,
 			version:   28,
 		},
+		{
+			name:    "Should up tenant/00029_drop_system_type_constraint.sql",
+			target:  db.TenantTarget,
+			version: 29,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					system := testutils.NewSystem(func(s *model.System) { s.Type = "CUSTOM" })
+					require.NoError(t, con.Create(system).Error)
+					loaded := &model.System{ID: system.ID}
+					require.NoError(t, con.First(loaded).Error)
+					assert.Equal(t, "CUSTOM", loaded.Type)
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00029_drop_system_type_constraint.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   29,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					err := con.Transaction(func(tx *multitenancy.DB) error {
+						return tx.Exec(`INSERT INTO systems (id, identifier, region, type, status)
+							VALUES (gen_random_uuid(), 'custom-id', 'eu', 'CUSTOM', 'CONNECTED')`).Error
+					})
+					assert.ErrorContains(t, err, "chk_systems_type")
+					return nil
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

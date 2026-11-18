@@ -19,19 +19,15 @@ type Factory interface {
 type factory struct {
 	registry       registry.Service
 	sessionManager sessionmanager.Service
-
-	cfg *config.Services
 }
 
 var _ Factory = (*factory)(nil)
 
-func NewFactory(svs config.Services) (Factory, error) {
-	factory := &factory{
-		cfg: &svs,
-	}
+func NewFactory(cfg *config.Config) (Factory, error) {
+	factory := &factory{}
 
-	if svs.Registry != nil && svs.Registry.Enabled {
-		registryService, err := registry.NewService(svs.Registry)
+	if cfg.Services.Registry != nil && cfg.Services.Registry.Enabled {
+		registryService, err := registry.NewService(cfg.Services.Registry, cfg.ContextModels.System)
 		if err != nil {
 			return nil, err
 		}
@@ -39,8 +35,8 @@ func NewFactory(svs config.Services) (Factory, error) {
 		factory.registry = registryService
 	}
 
-	if svs.SessionManager != nil && svs.SessionManager.Enabled {
-		sessionManager, err := sessionmanager.NewService(svs.SessionManager)
+	if cfg.Services.SessionManager != nil && cfg.Services.SessionManager.Enabled {
+		sessionManager, err := sessionmanager.NewService(cfg.Services.SessionManager)
 		if err != nil {
 			return nil, err
 		}

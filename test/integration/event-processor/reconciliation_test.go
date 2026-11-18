@@ -123,12 +123,14 @@ func setupTest(t *testing.T) tester {
 			mappingv1.RegisterServiceServer(s, mappingService)
 		},
 	)
-	clientsFactory, err := clients.NewFactory(config.Services{
-		Registry: &commoncfg.GRPCClient{
-			Enabled: true,
-			Address: grpcClient.Target(),
-			SecretRef: &commoncfg.SecretRef{
-				Type: commoncfg.InsecureSecretType,
+	clientsFactory, err := clients.NewFactory(&config.Config{
+		Services: config.Services{
+			Registry: &commoncfg.GRPCClient{
+				Enabled: true,
+				Address: grpcClient.Target(),
+				SecretRef: &commoncfg.SecretRef{
+					Type: commoncfg.InsecureSecretType,
+				},
 			},
 		},
 	})

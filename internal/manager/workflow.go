@@ -2252,7 +2252,7 @@ func (w *WorkflowManager) populateParametersResource(
 func (w *WorkflowManager) getWorkflowSystemArtifactName(system *model.System) *string {
 	var nameFromProperties *string
 	// Look for any optional properties that has displayName "Name"
-	for propertyName, definition := range w.systemManager.ContextModelsCfg.OptionalProperties {
+	for propertyName, definition := range w.systemManager.ContextSystemModel.OptionalProperties {
 		if strings.ToUpper(definition.DisplayName) == WorkflowSystemArtifactPropertyKey {
 			if val, ok := system.Properties[propertyName]; ok {
 				nameFromProperties = new(val)

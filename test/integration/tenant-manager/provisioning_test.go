@@ -50,7 +50,7 @@ func (s *DBSuite) SetupSuite() {
 	svcRegistry := testutils.NewTestPlugins()
 	cfg := &config.Config{}
 
-	f, err := clients.NewFactory(config.Services{})
+	f, err := clients.NewFactory(&config.Config{})
 	s.NoError(err)
 
 	eventFactory, err := eventprocessor.NewEventFactory(ctx, cfg, r)

@@ -112,7 +112,7 @@ func setupTestInstance(
 		},
 	)
 
-	clientsFactory, err := clients.NewFactory(config.Services{
+	clientsFactory, err := clients.NewFactory(&config.Config{Services: config.Services{
 		Registry: &commoncfg.GRPCClient{
 			Enabled: true,
 			Address: grpcClient.Target(),
@@ -120,7 +120,7 @@ func setupTestInstance(
 				Type: commoncfg.InsecureSecretType,
 			},
 		},
-	})
+	}})
 	assert.NoError(t, err)
 
 	recorder := tracetest.NewSpanRecorder()
@@ -156,6 +156,23 @@ func setupTestInstance(
 	}
 }
 
+func TestNewCryptoReconcilerMetricsError(t *testing.T) {
+	provider := &testutils.FailingMeterProvider{
+		Err: errors.New("metric collector failed"), //nolint:err113
+	}
+	originalProvider := otel.GetMeterProvider()
+	t.Cleanup(func() { otel.SetMeterProvider(originalProvider) })
+	otel.SetMeterProvider(provider)
+
+	instance := setupTestInstance(t, nil)
+	require.NotNil(t, instance.reconciler)
+	assert.True(t, provider.Called.Load(), "metric creation must fail during reconciler initialization")
+
+	handler, err := instance.reconciler.GetHandlerByJobType(string(eventprocessor.JobTypeSystemLink))
+	require.NoError(t, err)
+	assert.NotNil(t, handler)
+}
+
 func TestGetHandlerByJobType(t *testing.T) {
 	instance := setupTestInstance(t, []string{"region1"})
 	reconciler := instance.reconciler
@@ -186,7 +203,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-connected",
 		Region:             "region-connected",
-		Type:               model.SystemTypeSYSTEM,
+		Type:               "SYSTEM",
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusCONNECTED,
 	}
@@ -194,7 +211,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-disconnected",
 		Region:             "region-disconnected",
-		Type:               model.SystemTypeSYSTEM,
+		Type:               "SYSTEM",
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusDISCONNECTED,
 	}
@@ -202,7 +219,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:                 uuid.New(),
 		Identifier:         "system-targetless",
 		Region:             "region-targetless",
-		Type:               model.SystemTypeSYSTEM,
+		Type:               "SYSTEM",
 		KeyConfigurationID: &keyConfigID,
 		Status:             cmkapi.SystemStatusCONNECTED,
 	}
@@ -210,7 +227,7 @@ func TestResolveKeyTasks(t *testing.T) {
 		ID:         uuid.New(),
 		Identifier: "system-keyless",
 		Region:     "region-keyless",
-		Type:       model.SystemTypeSYSTEM,
+		Type:       "SYSTEM",
 		Status:     cmkapi.SystemStatusCONNECTED,
 	}
 
@@ -1333,7 +1350,7 @@ func TestJobTermination(t *testing.T) {
 		_, err := systemService.RegisterSystem(ctx, &systemgrpc.RegisterSystemRequest{
 			ExternalId: sys.Identifier,
 			Region:     sys.Region,
-			Type:       string(sys.Type),
+			Type:       sys.Type,
 			TenantId:   tenant,
 		})
 		assert.NoError(t, err)
@@ -1857,7 +1874,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 		mappingv1.RegisterServiceServer(s, mappingService)
 	})
 
-	clientsFactory, err := clients.NewFactory(config.Services{
+	clientsFactory, err := clients.NewFactory(&config.Config{Services: config.Services{
 		Registry: &commoncfg.GRPCClient{
 			Enabled: true,
 			Address: grpcClient.Target(),
@@ -1865,7 +1882,7 @@ func TestResolveSystemTasks_BYOK(t *testing.T) {
 				Type: commoncfg.InsecureSecretType,
 			},
 		},
-	})
+	}})
 	require.NoError(t, err)
 
 	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil))
@@ -2045,13 +2062,13 @@ func TestResolveSystemTasks_BYOKGrantTrust(t *testing.T) {
 		systemgrpc.RegisterServiceServer(s, systemService)
 		mappingv1.RegisterServiceServer(s, mappingService)
 	})
-	clientsFactory, err := clients.NewFactory(config.Services{
+	clientsFactory, err := clients.NewFactory(&config.Config{Services: config.Services{
 		Registry: &commoncfg.GRPCClient{
 			Enabled:   true,
 			Address:   grpcClient.Target(),
 			SecretRef: &commoncfg.SecretRef{Type: commoncfg.InsecureSecretType},
 		},
-	})
+	}})
 	require.NoError(t, err)
 
 	rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil))
@@ -2178,13 +2195,13 @@ func TestGetCryptoAccessDataFromConfig(t *testing.T) {
 			systemgrpc.RegisterServiceServer(s, systemService)
 			mappingv1.RegisterServiceServer(s, mappingService)
 		})
-		clientsFactory, err := clients.NewFactory(config.Services{
+		clientsFactory, err := clients.NewFactory(&config.Config{Services: config.Services{
 			Registry: &commoncfg.GRPCClient{
 				Enabled:   true,
 				Address:   grpcClient.Target(),
 				SecretRef: &commoncfg.SecretRef{Type: commoncfg.InsecureSecretType},
 			},
-		})
+		}})
 		require.NoError(t, err)
 
 		rec, err := eventprocessor.NewCryptoReconciler(t.Context(), cfg, r, svcRegistry, clientsFactory, manager.NewTenantConfigManager(r, svcRegistry, cfg, nil, nil, nil))

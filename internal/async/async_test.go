@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
@@ -130,9 +132,11 @@ func TestAsyncNew(t *testing.T) {
 		expectSentinel   bool
 		expectedMaster   string
 		expectedAddrs    []string
+		telemetryEnabled bool
 	}{
 		{
 			name:             "Valid MTLS configuration",
+			telemetryEnabled: true,
 			taskQueueCfg:     defaultCfg,
 			expectError:      false,
 			expectedAddr:     "localhost:6379",
@@ -280,13 +284,21 @@ func TestAsyncNew(t *testing.T) {
 				assert.Equal(t, tt.expectedAddr, opt.Addr)
 			}
 
-			app, err := async.New(
-				&config.Config{
-					Scheduler: config.Scheduler{
-						TaskQueue: tt.taskQueueCfg,
+			cfg := &config.Config{
+				Scheduler: config.Scheduler{
+					TaskQueue: tt.taskQueueCfg,
+				},
+				Telemetry: commoncfg.Telemetry{
+					Metrics: commoncfg.Metric{
+						Enabled: tt.telemetryEnabled,
+					},
+					Traces: commoncfg.Trace{
+						Enabled: tt.telemetryEnabled,
 					},
 				},
-			)
+			}
+
+			app, err := async.New(cfg)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -316,6 +328,26 @@ func TestAsyncNew(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAsyncNewMetricsError(t *testing.T) {
+	instrumentErr := errors.New("instrumentation failed") //nolint:err113
+	provider := &testutils.FailingMeterProvider{Err: instrumentErr}
+	originalProvider := otel.GetMeterProvider()
+	t.Cleanup(func() { otel.SetMeterProvider(originalProvider) })
+	otel.SetMeterProvider(provider)
+
+	cfg := &config.Config{
+		Scheduler: config.Scheduler{
+			TaskQueue: defaultRedisConfig(testutils.CreateTLSFiles(t)),
+		},
+	}
+	cfg.Telemetry.Metrics.Enabled = true
+
+	app, err := async.New(cfg)
+	assert.ErrorIs(t, err, instrumentErr)
+	assert.Nil(t, app)
+	assert.True(t, provider.Called.Load(), "metric creation must fail during async initialization")
 }
 
 func TestGetFanOutOpts(t *testing.T) {

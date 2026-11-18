@@ -274,8 +274,8 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.asynqServer.Shutdown()
 	}
 
-	if a.asynqClient != nil {
-		err := a.asynqClient.Close()
+	if a.redisClient != nil {
+		err := a.redisClient.Close()
 		if err != nil {
 			return errs.Wrap(ErrClientShutdown, err)
 		}

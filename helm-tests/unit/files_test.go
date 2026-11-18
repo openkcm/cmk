@@ -405,8 +405,13 @@ func TestDatabaseFiles(t *testing.T) {
 				t.Fatalf("the PostgreSQL driver rejects the files: %v", err)
 			}
 			if parsed.Password != "<password>" || parsed.TLSConfig == nil ||
-				len(parsed.TLSConfig.Certificates) != 1 || parsed.TLSConfig.RootCAs == nil {
+				parsed.TLSConfig.RootCAs == nil {
 				t.Errorf("unexpected connection settings: password %q, TLS %+v", parsed.Password, parsed.TLSConfig)
+			}
+			// pgx validates the pair at parse time, but loads client certificates when connecting.
+			writeFile(t, dir, "database/tls.key", privateKeyPEM(t, ecKey(t), "EC PRIVATE KEY"))
+			if _, err := pgconn.ParseConfig(connString); err == nil {
+				t.Error("the PostgreSQL driver accepts a key that does not match the certificate")
 			}
 		})
 	}
@@ -465,6 +470,7 @@ func TestCryptoLayerAndSystemPropertiesFiles(t *testing.T) {
 	}
 	properties := cfg.ContextModels.System
 	if properties.Identifier.DisplayName != "GTID" || properties.Type.DisplayName != "Type" ||
+		!slices.Equal(properties.Type.Enum, []string{"system"}) ||
 		properties.OptionalProperties["externalName"].DisplayName != "Name" ||
 		len(properties.OptionalProperties) != 3 {
 		t.Errorf("unexpected system properties: %+v", properties)

@@ -414,7 +414,7 @@ func (h *SystemUnlinkDecommissionJobHandler) lockSystemInRegistry(ctx context.Co
 	err = h.registry.System().ExtendedUpdateSystemStatus(ctx, systems.SystemFilter{
 		ExternalID: system.Identifier,
 		Region:     system.Region,
-	}, string(system.Type), typesv1.Status_STATUS_LOCKED)
+	}, system.Type, typesv1.Status_STATUS_LOCKED)
 	if err != nil {
 		return errs.Wrap(ErrSettingSystemLockedStatus, err)
 	}

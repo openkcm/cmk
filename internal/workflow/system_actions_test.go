@@ -127,7 +127,7 @@ func TestWorkflowSystemUpdateKeyConfiguration(t *testing.T) {
 				ID:                 systemID01,
 				Identifier:         "test-system",
 				Region:             "us-west-2",
-				Type:               model.SystemTypeSYSTEM,
+				Type:               "SYSTEM",
 				KeyConfigurationID: &keyConfigID04,
 			}
 			err = r.Create(ctx, system)
