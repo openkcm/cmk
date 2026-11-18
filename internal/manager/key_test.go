@@ -3434,11 +3434,27 @@ func TestGetKeysPrimaryFirstAcrossPages(t *testing.T) {
 }
 
 type countingAuditLogger struct {
-	count int
+	count  int
+	byType map[string]int
 }
 
-func (c *countingAuditLogger) SendEvent(_ plog.Logs) error {
+func (c *countingAuditLogger) SendEvent(logs plog.Logs) error {
 	c.count++
+	if c.byType == nil {
+		c.byType = map[string]int{}
+	}
+	rl := logs.ResourceLogs()
+	for i := range rl.Len() {
+		sl := rl.At(i).ScopeLogs()
+		for j := range sl.Len() {
+			lr := sl.At(j).LogRecords()
+			for k := range lr.Len() {
+				if v, ok := lr.At(k).Attributes().Get("eventType"); ok {
+					c.byType[v.Str()]++
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -3493,5 +3509,84 @@ func TestHYOKStateChangeEmitsNoAuditLog(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, cmkapi.KeyStateDISABLED, updated.State)
 		assert.Positive(t, spy.count, "BYOK disable must still emit a CMKDisable audit log")
+	})
+}
+
+func TestCmkCreateEmittedOnPendingTransition(t *testing.T) {
+	t.Run("BYOK emits cmkCreate on transition to PENDING_IMPORT, not at request time", func(t *testing.T) {
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t)
+		spy := &countingAuditLogger{}
+		km.SetAuditorForTest(auditor.NewWithLogger(spy))
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = constants.KeyTypeBYOK
+			k.State = cmkapi.KeyStatePENDINGCREATION
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+		seedDefaultKeystore(t, r, ctx)
+
+		assert.Zero(t, spy.byType["cmkCreate"], "no cmkCreate while still PENDING_CREATION")
+
+		require.NoError(t, km.SyncPendingCreationKey(ctx, key.ID))
+
+		dbKey := &model.Key{ID: key.ID}
+		found, err := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStatePENDINGIMPORT, dbKey.State)
+		assert.Equal(t, 1, spy.byType["cmkCreate"], "exactly one cmkCreate on PENDING_CREATION→PENDING_IMPORT")
+	})
+
+	t.Run("HYOK emits cmkCreate on transition to ENABLED, not at request time", func(t *testing.T) {
+		plugin := newHYOKPlugin()
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
+		spy := &countingAuditLogger{}
+		km.SetAuditorForTest(auditor.NewWithLogger(spy))
+
+		key := createTestHYOKKeyDirect(t, r, ctx, keyConfig.ID, cmkapi.KeyStatePENDINGREGISTRATION)
+
+		assert.Zero(t, spy.byType["cmkCreate"], "no cmkCreate while still PENDING_REGISTRATION")
+
+		require.NoError(t, km.SyncPendingRegistrationKey(ctx, key.ID))
+
+		dbKey := &model.Key{ID: key.ID}
+		found, err := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStateENABLED, dbKey.State)
+		assert.Equal(t, 1, spy.byType["cmkCreate"], "exactly one cmkCreate on PENDING_REGISTRATION→ENABLED")
+	})
+
+	t.Run("no cmkCreate when HYOK provisioning fails", func(t *testing.T) {
+		km, r, ctx, keyConfig, _ := SetupKeyTest(t)
+		spy := &countingAuditLogger{}
+		km.SetAuditorForTest(auditor.NewWithLogger(spy))
+
+		hyokInfo, err := json.Marshal(testutils.ValidKeystoreAccountInfo)
+		require.NoError(t, err)
+		cryptoAccessData := model.KeyAccessData{"crypto-1": {AdditionalProperties: map[string]any{"someKey": "someValue"}}}
+		cryptoBytes, err := json.Marshal(cryptoAccessData)
+		require.NoError(t, err)
+
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.KeyType = cmkapi.KeyTypeHYOK
+			k.State = cmkapi.KeyStatePENDINGREGISTRATION
+			k.NativeID = new("mock-key/nonexistent")
+			k.ManagementAccessData = hyokInfo
+			k.Provider = providerTest
+			k.CryptoAccessData = cryptoBytes
+		})
+		testutils.CreateTestEntities(ctx, t, r, key)
+
+		require.NoError(t, km.SyncPendingRegistrationKey(ctx, key.ID))
+
+		dbKey := &model.Key{ID: key.ID}
+		found, dbErr := r.First(ctx, dbKey, *repo.NewQuery())
+		require.NoError(t, dbErr)
+		require.True(t, found)
+		assert.Equal(t, cmkapi.KeyStateERROR, dbKey.State)
+		assert.Zero(t, spy.byType["cmkCreate"], "a key that never provisions must not emit cmkCreate")
 	})
 }

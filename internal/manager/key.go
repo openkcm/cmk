@@ -620,6 +620,8 @@ func (km *KeyManager) completePendingRegistration(ctx context.Context, provider 
 		return err
 	}
 
+	km.sendCreateAuditLog(ctx, key)
+
 	km.metrics.RecordTransition(ctx, string(key.KeyType), "PENDING_REGISTRATION", "ENABLED", "auth_success")
 
 	// Sync outside the transaction: syncKeyVersions fires orbital events that must not
@@ -739,6 +741,8 @@ func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key
 		return err
 	}
 
+	km.sendCreateAuditLog(ctx, key)
+
 	log.Debug(ctx, "PENDING_CREATION key transitioned to PENDING_IMPORT",
 		slog.String("newState", string(key.State)))
 
@@ -802,7 +806,6 @@ func (km *KeyManager) savePendingBYOKKey(ctx context.Context, key *model.Key) (*
 	}); err != nil {
 		return nil, errs.Wrap(ErrCreateKeyDB, err)
 	}
-	km.sendCreateAuditLog(ctx, key)
 	km.enqueuePendingStateSync(ctx, key)
 	return key, nil
 }
@@ -818,7 +821,6 @@ func (km *KeyManager) createPendingRegistrationHYOKKey(ctx context.Context, key 
 	}); err != nil {
 		return nil, errs.Wrap(ErrCreateKeyDB, err)
 	}
-	km.sendCreateAuditLog(ctx, key)
 	km.enqueuePendingStateSync(ctx, key)
 	return key, nil
 }
