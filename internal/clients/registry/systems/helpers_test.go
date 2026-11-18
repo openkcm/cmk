@@ -7,8 +7,6 @@ import (
 
 	systemgrpc "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/system/v1"
 	regionpb "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
-
-	"github.com/openkcm/cmk/internal/clients/registry/systems"
 )
 
 func randExternalID() string {
@@ -23,7 +21,7 @@ func validRegisterSystemReq(b bool) *systemgrpc.RegisterSystemRequest {
 		ExternalId:    randExternalID(),
 		L2KeyId:       "key123",
 		Region:        string(regionpb.Region_REGION_EU),
-		Type:          string(systems.SystemTypeSYSTEM),
+		Type:          "SYSTEM",
 		HasL1KeyClaim: b,
 	}
 }

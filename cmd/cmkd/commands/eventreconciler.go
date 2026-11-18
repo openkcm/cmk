@@ -85,7 +85,7 @@ func runEventReconciler(ctx context.Context, cfg *config.Config) error {
 
 	authzRepo := authz_repo.NewAuthzRepo(repo, authzRepoLoader)
 
-	clientsFactory, err := clients.NewFactory(cfg.Services)
+	clientsFactory, err := clients.NewFactory(cfg)
 	if err != nil {
 		log.Error(ctx, "error connecting to registry service gRPC server", err)
 	}

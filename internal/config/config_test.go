@@ -12,6 +12,24 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
+func TestSystemAllowsType(t *testing.T) {
+	tests := []struct {
+		name    string
+		enum    []string
+		value   string
+		allowed bool
+	}{
+		{name: "should fail on value outside of enum", value: "ERROR", allowed: false, enum: []string{"SYSTEM"}},
+		{name: "should pass", value: "SYSTEM", allowed: true, enum: []string{"SYSTEM"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := config.System{Type: config.SystemProperty{Enum: tt.enum}}
+			assert.Equal(t, tt.allowed, s.AllowsType(tt.value))
+		})
+	}
+}
+
 func TestValidateCertificate(t *testing.T) {
 	tests := map[string]struct {
 		certs   config.Certificates

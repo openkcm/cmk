@@ -149,7 +149,7 @@ func (r *SystemTaskInfoResolver) buildSystemActionTaskData(
 			SystemAction: &proto.SystemAction{
 				SystemId:          system.Identifier,
 				SystemRegion:      system.Region,
-				SystemType:        strings.ToLower(string(system.Type)),
+				SystemType:        strings.ToLower(system.Type),
 				KeyIdFrom:         data.KeyIDFrom,
 				KeyIdTo:           data.KeyIDTo,
 				KeyProvider:       strings.ToLower(key.Provider),

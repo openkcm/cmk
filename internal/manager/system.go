@@ -57,7 +57,7 @@ type SystemManager struct {
 	KeyConfigManager      *KeyConfigManager
 	SystemGroupingManager SystemGroup
 	tenantConfig          SystemGroupConfigGetter
-	ContextModelsCfg      config.System
+	ContextSystemModel    config.System
 	user                  User
 }
 
@@ -159,7 +159,7 @@ func NewSystemManager(
 		log.Warn(ctx, "Creating SystemManager without registry client")
 	}
 
-	manager.ContextModelsCfg = cfg.ContextModels.System
+	manager.ContextSystemModel = cfg.ContextModels.System
 
 	sisClient, err := NewSystemInformationManager(repository, authzLoader,
 		svcRegistry, &cfg.ContextModels.System)
@@ -505,7 +505,7 @@ func (m *SystemManager) UnmapSystemFromRegistry(ctx context.Context, system *mod
 
 	_, err = m.registry.Mapping().UnmapSystemFromTenant(ctx, &mappingv1.UnmapSystemFromTenantRequest{
 		ExternalId: system.Identifier,
-		Type:       strings.ToLower(string(system.Type)),
+		Type:       strings.ToLower(system.Type),
 		TenantId:   tenant,
 	})
 

@@ -17,6 +17,7 @@ import (
 	typesv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/types/v1"
 
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
+	"github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
@@ -33,7 +34,11 @@ func TestRegistryService_SystemsClient(t *testing.T) {
 		},
 	)
 
-	systemsClient, err := systems.NewSystemsClient(grpcClient)
+	systemsClient, err := systems.NewSystemsClient(grpcClient, config.System{
+		Type: config.SystemProperty{
+			Enum: []string{"system"},
+		},
+	})
 	require.NoError(t, err)
 
 	ctx := t.Context()
@@ -255,7 +260,11 @@ func TestExtendedUpdateSystemStatus_PropagatesErrors(t *testing.T) {
 				},
 			)
 
-			c, err := systems.NewSystemsClient(grpcClient)
+			c, err := systems.NewSystemsClient(grpcClient, config.System{
+				Type: config.SystemProperty{
+					Enum: []string{"system"},
+				},
+			})
 			require.NoError(t, err)
 
 			err = c.ExtendedUpdateSystemStatus(t.Context(),

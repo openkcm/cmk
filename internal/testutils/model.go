@@ -66,7 +66,7 @@ func NewSystem(m func(*model.System)) *model.System {
 			ID:         uuid.New(),
 			Identifier: uuid.NewString(),
 			Region:     uuid.NewString(),
-			Type:       model.SystemTypeSYSTEM,
+			Type:       "SYSTEM",
 			Properties: make(map[string]string),
 		}
 	})

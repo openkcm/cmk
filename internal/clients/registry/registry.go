@@ -12,6 +12,7 @@ import (
 	tenantconfigv1 "github.com/openkcm/api-sdk/proto/kms/api/cmk/registry/tenant_config/v1"
 
 	"github.com/openkcm/cmk/internal/clients/registry/systems"
+	"github.com/openkcm/cmk/internal/config"
 )
 
 const (
@@ -36,13 +37,13 @@ type service struct {
 	grpcConn *commongrpc.DynamicClientConn
 }
 
-func NewService(rg *commoncfg.GRPCClient) (Service, error) {
+func NewService(rg *commoncfg.GRPCClient, systemContext config.System) (Service, error) {
 	conn, err := commongrpc.NewDynamicClientConn(rg, DefaultThrottleInterval)
 	if err != nil {
 		return nil, err
 	}
 
-	sysClient, err := systems.NewSystemsClient(conn)
+	sysClient, err := systems.NewSystemsClient(conn, systemContext)
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
@@ -283,11 +284,25 @@ type System struct {
 	OptionalProperties map[string]SystemProperty `yaml:",inline" mapstructure:",remain"`
 }
 
+func (s System) AllowsType(systemType string) bool {
+	if systemType == "" {
+		return false
+	}
+	types := s.Type.Enum
+	for _, allowed := range types {
+		if strings.EqualFold(systemType, allowed) {
+			return true
+		}
+	}
+	return false
+}
+
 type SystemProperty struct {
-	DisplayName string `yaml:"displayName" mapstructure:"displayName"`
-	Internal    bool   `yaml:"internal" mapstructure:"internal"`
-	Optional    bool   `yaml:"optional" mapstructure:"optional"`
-	Default     any    `yaml:"default" mapstructure:"default"`
+	DisplayName string   `yaml:"displayName" mapstructure:"displayName"`
+	Internal    bool     `yaml:"internal" mapstructure:"internal"`
+	Optional    bool     `yaml:"optional" mapstructure:"optional"`
+	Default     any      `yaml:"default" mapstructure:"default"`
+	Enum        []string `yaml:"enum,omitempty" mapstructure:"enum"`
 }
 
 // Services holds services config

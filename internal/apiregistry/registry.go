@@ -26,9 +26,7 @@ const (
 	DefaultThrottleInterval = 5 * time.Second
 )
 
-var (
-	ErrNotRegistered = errors.New("not registered")
-)
+var ErrNotRegistered = errors.New("not registered")
 
 type Registry interface {
 	System() (systemapi.RegistrySystem, error)
@@ -48,18 +46,18 @@ type registryStruct struct {
 
 var _ Registry = (*registryStruct)(nil)
 
-func New(svs *config.Services) (Registry, error) {
+func New(cfg *config.Config) (Registry, error) {
 	var tenant tenantapi.RegistryTenant
 	var system systemapi.RegistrySystem
 	var mapping mappingapi.RegistryMapping
 	var oidcMapping oidcmappingapi.SessionManagerOIDCMapping
 
-	if svs.Registry.Enabled {
-		registryConn, err := commongrpc.NewDynamicClientConn(svs.Registry, DefaultThrottleInterval)
+	if cfg.Services.Registry.Enabled {
+		registryConn, err := commongrpc.NewDynamicClientConn(cfg.Services.Registry, DefaultThrottleInterval)
 		if err != nil {
 			return nil, err
 		}
-		sysClient, err := systems.NewSystemsClient(registryConn)
+		sysClient, err := systems.NewSystemsClient(registryConn, cfg.ContextModels.System)
 		if err != nil {
 			return nil, err
 		}
@@ -69,8 +67,8 @@ func New(svs *config.Services) (Registry, error) {
 		mapping = mappingwrapper.NewV1(mappinggrpcv1.NewServiceClient(registryConn))
 	}
 
-	if svs.SessionManager.Enabled {
-		smConn, err := commongrpc.NewDynamicClientConn(svs.SessionManager, DefaultThrottleInterval)
+	if cfg.Services.SessionManager.Enabled {
+		smConn, err := commongrpc.NewDynamicClientConn(cfg.Services.SessionManager, DefaultThrottleInterval)
 		if err != nil {
 			return nil, err
 		}
