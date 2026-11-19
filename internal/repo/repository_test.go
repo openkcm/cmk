@@ -8,12 +8,41 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/openkcm/cmk/internal/model"
 	"github.com/openkcm/cmk/internal/repo"
 	"github.com/openkcm/cmk/internal/repo/sql"
 	"github.com/openkcm/cmk/internal/testutils"
+	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
 var errProcessFailed = errors.New("process failed")
+
+func TestGetKeyWithReplicas(t *testing.T) {
+	db, tenants, _ := testutils.NewTestDB(t, testutils.TestDBConfig{})
+	r := sql.NewRepository(db)
+	ctx := cmkcontext.CreateTenantContext(t.Context(), tenants[0])
+
+	t.Run("Should get key with replicas", func(t *testing.T) {
+		keyConfig := testutils.NewKeyConfig(func(*model.KeyConfiguration) {})
+		key := testutils.NewKey(func(k *model.Key) {
+			k.KeyConfigurationID = keyConfig.ID
+			k.NativeEntries = append(k.NativeEntries, model.ReplicaKey{
+				ID:       uuid.New(),
+				NativeID: uuid.NewString(),
+			})
+		})
+
+		testutils.CreateTestEntities(ctx, t, r, keyConfig, key)
+		res, err := repo.GetKeyWithReplicas(ctx, r, key.ID)
+		assert.NoError(t, err)
+		assert.ElementsMatch(t, key.NativeEntries, res.NativeEntries)
+	})
+	t.Run("Should return not found on non existing key", func(t *testing.T) {
+		res, err := repo.GetKeyWithReplicas(ctx, r, uuid.New())
+		assert.ErrorIs(t, err, repo.ErrNotFound)
+		assert.Nil(t, res)
+	})
+}
 
 func TestConcurrency(t *testing.T) {
 	tenantCount := 10

@@ -102,6 +102,7 @@ func prepareMultitenancy(ctx context.Context, db *multitenancy.DB) error {
 		ctx,
 		&model.KeyConfiguration{},
 		&model.Key{},
+		&model.ReplicaKey{},
 		&model.KeyVersion{},
 		&model.KeyLabel{},
 		&model.System{},

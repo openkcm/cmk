@@ -141,6 +141,35 @@ func HasConnectedSystems(ctx context.Context, r Repo, keyConfigID uuid.UUID) (bo
 	return count > 0, nil
 }
 
+// GetKeyWithReplicas loads a key and maps its joined replicas into NativeEntries.
+func GetKeyWithReplicas(ctx context.Context, r Repo, keyID uuid.UUID) (*model.Key, error) {
+	var rows []model.JoinKeyAndReplicas
+	query := NewQuery().Join(LeftJoin, JoinCondition{
+		Table: &model.Key{}, Field: IDField,
+		JoinTable: &model.ReplicaKey{}, JoinField: KeyIDField,
+	}).Select(
+		NewSelectField(model.Key{}.TableName(), QueryFunction{Function: AllFunc}),
+		NewSelectField("replica_keys.id", QueryFunction{}).SetAlias("replica_id"),
+		NewSelectField("replica_keys.native_id", QueryFunction{}).SetAlias("replica_native_id"),
+	).Where(NewCompositeKeyGroup(NewCompositeKey().Where("keys.id", keyID)))
+	if err := r.List(ctx, &model.Key{}, &rows, *query); err != nil {
+		return nil, errs.Wrap(ErrGetResource, err)
+	}
+	if len(rows) == 0 {
+		return nil, ErrNotFound
+	}
+
+	key := rows[0].Key
+	for _, row := range rows {
+		if row.Replica.ID != uuid.Nil {
+			key.NativeEntries = append(key.NativeEntries, model.ReplicaKey{
+				ID: row.Replica.ID, KeyID: key.ID, NativeID: row.Replica.NativeID,
+			})
+		}
+	}
+	return &key, nil
+}
+
 func GetSystemByIDWithProperties(ctx context.Context, r Repo, systemID uuid.UUID, query *Query) (*model.System, error) {
 	query.Where(
 		NewCompositeKeyGroup(

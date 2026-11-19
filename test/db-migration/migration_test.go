@@ -127,6 +127,7 @@ func TestMissingSchemaScripts(t *testing.T) {
 		t.Context(),
 		&model.KeyConfiguration{},
 		&model.Key{},
+		&model.ReplicaKey{},
 		&model.KeyVersion{},
 		&model.KeyLabel{},
 		&model.System{},
@@ -1098,6 +1099,37 @@ func TestSchemaMigrations(t *testing.T) {
 							VALUES (gen_random_uuid(), 'custom-id', 'eu', 'CUSTOM', 'CONNECTED')`).Error
 					})
 					assert.ErrorContains(t, err, "chk_systems_type")
+					return nil
+				}
+			},
+		},
+		{
+			name:    "Should up tenant/00030_add_replica_keys.sql",
+			target:  db.TenantTarget,
+			version: 30,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					assert.True(t, con.Migrator().HasTable(&model.ReplicaKey{}))
+					err := con.Transaction(func(tx *multitenancy.DB) error {
+						return tx.Create(&model.ReplicaKey{
+							ID: uuid.New(), KeyID: uuid.New(), NativeID: "orphan",
+						}).Error
+					})
+					assert.ErrorContains(t, err, "fk_keys_native_entries")
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00030_add_replica_keys.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   30,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					assert.False(t, con.Migrator().HasTable(&model.ReplicaKey{}))
 					return nil
 				}
 			},
