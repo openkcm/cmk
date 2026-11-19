@@ -371,3 +371,14 @@ func NewWorkflowKeyConfiguration(m func(*model.WorkflowKeyConfiguration)) *model
 
 	return new(mut(m))
 }
+
+func NewReplicaKey(m func(*model.ReplicaKey)) *model.ReplicaKey {
+	mut := NewMutator(func() model.ReplicaKey {
+		return model.ReplicaKey{
+			ID:       uuid.New(),
+			NativeID: uuid.NewString(),
+		}
+	})
+
+	return new(mut(m))
+}

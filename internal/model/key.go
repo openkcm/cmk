@@ -30,6 +30,7 @@ type Key struct {
 	KeyVersions          []KeyVersion        `gorm:"foreignKey:KeyID"`
 	ImportParams         *ImportParams       `gorm:"foreignKey:KeyID;references:ID;constraint:OnDelete:CASCADE"`
 	NativeID             *string             `gorm:"type:varchar(255)"`
+	ReplicaKeys          []ReplicaKey        `gorm:"foreignKey:KeyID"`
 	KeyLabels            []KeyLabel          `gorm:"foreignKey:ResourceID"`
 	LastUsed             *time.Time
 	ManagementAccessData json.RawMessage `gorm:"type:jsonb"`
