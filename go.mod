@@ -22,11 +22,13 @@ require (
 	github.com/oapi-codegen/runtime v1.8.0
 	github.com/open-feature/go-sdk v1.20.0
 	github.com/openkcm/api-sdk v0.23.0
-	github.com/openkcm/common-sdk v1.21.1
-	github.com/openkcm/orbital v0.6.2
+	github.com/openkcm/common-sdk v1.22.0
+	github.com/openkcm/orbital v0.7.0
 	github.com/openkcm/plugin-sdk v0.19.0
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.30.1
+	github.com/redis/go-redis/extra/redisotel/v9 v9.23.0
+	github.com/redis/go-redis/v9 v9.23.0
 	github.com/samber/oops v1.23.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
@@ -136,7 +138,7 @@ require (
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.23.0 // indirect
 	github.com/r3labs/diff/v3 v3.0.2 // indirect
-	github.com/redis/go-redis/v9 v9.23.0 // indirect
+	github.com/redis/go-redis/extra/rediscmd/v9 v9.23.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/samber/lo v1.53.0 // indirect
@@ -152,8 +154,8 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/thomaspoignant/go-feature-flag v1.57.2 // indirect
-	github.com/thomaspoignant/go-feature-flag/modules/core v0.7.2 // indirect
+	github.com/thomaspoignant/go-feature-flag v1.58.0 // indirect
+	github.com/thomaspoignant/go-feature-flag/modules/core v0.8.0 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/veqryn/slog-context/otel v0.9.0 // indirect

@@ -25,6 +25,11 @@ type ServiceRegistrar func(*grpc.Server)
 var TestRegistryConfig = &commoncfg.GRPCClient{
 	Enabled: true,
 	Address: "localhost:9092",
+	Attributes: commoncfg.GRPCClientAttributes{
+		Retry: commoncfg.GRPCRetry{
+			RetryableStatusCodes: []string{"UNAVAILABLE", "RESOURCE_EXHAUSTED"},
+		},
+	},
 	SecretRef: &commoncfg.SecretRef{
 		Type: commoncfg.InsecureSecretType,
 	},
@@ -34,6 +39,11 @@ var TestRegistryConfig = &commoncfg.GRPCClient{
 var TestSessionManagerConfig = &commoncfg.GRPCClient{
 	Enabled: true,
 	Address: "localhost:9091",
+	Attributes: commoncfg.GRPCClientAttributes{
+		Retry: commoncfg.GRPCRetry{
+			RetryableStatusCodes: []string{"UNAVAILABLE", "RESOURCE_EXHAUSTED"},
+		},
+	},
 	SecretRef: &commoncfg.SecretRef{
 		Type: commoncfg.InsecureSecretType,
 	},

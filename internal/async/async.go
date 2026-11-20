@@ -10,6 +10,8 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"github.com/redis/go-redis/extra/redisotel/v9"
+	"github.com/redis/go-redis/v9"
 
 	conf "github.com/openkcm/cmk/internal/config"
 	"github.com/openkcm/cmk/internal/constants"
@@ -70,13 +72,15 @@ type App struct {
 	asynqClient    *asynq.Client
 	asynqServer    *asynq.Server
 	asynqServerCfg asynq.Config
-	taskQueueCfg   asynq.RedisConnOpt
+	redisClient    redis.UniversalClient
 	tasks          map[string]TaskHandler
 	middlewares    []Middleware
 	cfg            *conf.Config
 }
 
 // New creates a new instance of App
+//
+//nolint:cyclop,funlen
 func New(cfg *conf.Config) (*App, error) {
 	taskQueueCfg := cfg.Scheduler.TaskQueue
 
@@ -118,14 +122,33 @@ func New(cfg *conf.Config) (*App, error) {
 		return nil, ErrSecretTypeQueue
 	}
 
-	redisOpts := buildRedisConnOpt(taskQueueCfg, string(taskQueueHost), tlsConfig, username, password)
+	redisConnOpt := buildRedisConnOpt(taskQueueCfg, string(taskQueueHost), tlsConfig, username, password)
+
+	redisClient, ok := redisConnOpt.MakeRedisClient().(redis.UniversalClient)
+	if !ok {
+		return nil, errs.Wrapf(ErrMTLSRedisClientOpt, "unexpected redis client type")
+	}
+
+	if cfg.Telemetry.Metrics.Enabled {
+		err := redisotel.InstrumentMetrics(redisClient)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if cfg.Telemetry.Traces.Enabled {
+		err := redisotel.InstrumentTracing(redisClient)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return &App{
-		taskQueueCfg: redisOpts,
-		asynqClient:  asynq.NewClient(redisOpts),
-		tasks:        make(map[string]TaskHandler),
-		middlewares:  getMiddlewares(*cfg),
-		cfg:          cfg,
+		redisClient: redisClient,
+		asynqClient: asynq.NewClientFromRedisClient(redisClient),
+		tasks:       make(map[string]TaskHandler),
+		middlewares: getMiddlewares(*cfg),
+		cfg:         cfg,
 	}, nil
 }
 
@@ -169,7 +192,7 @@ func (a *App) RegisterTasks(ctx context.Context, handlers []TaskHandler) {
 func (a *App) RunWorker(ctx context.Context, r repo.Repo) error {
 	log.Info(ctx, "Starting async worker")
 
-	a.asynqServer = asynq.NewServer(a.taskQueueCfg, a.asynqServerCfg)
+	a.asynqServer = asynq.NewServerFromRedisClient(a.redisClient, a.asynqServerCfg)
 
 	// Create a new mux and register all task handlers
 	mux := asynq.NewServeMux()
@@ -227,7 +250,7 @@ func (a *App) RunScheduler() error {
 
 	mgr, err := asynq.NewPeriodicTaskManager(
 		asynq.PeriodicTaskManagerOpts{
-			RedisConnOpt:               a.taskQueueCfg,
+			RedisUniversalClient:       a.redisClient,
 			PeriodicTaskConfigProvider: provider,
 			SyncInterval:               syncInterval,
 		})
@@ -251,8 +274,8 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.asynqServer.Shutdown()
 	}
 
-	if a.asynqClient != nil {
-		err := a.asynqClient.Close()
+	if a.redisClient != nil {
+		err := a.redisClient.Close()
 		if err != nil {
 			return errs.Wrap(ErrClientShutdown, err)
 		}
@@ -268,7 +291,7 @@ func (a *App) Client() *asynq.Client {
 }
 
 func (a *App) Inspector() *asynq.Inspector {
-	return asynq.NewInspector(a.taskQueueCfg)
+	return asynq.NewInspectorFromRedisClient(a.redisClient)
 }
 
 func buildRedisConnOpt(

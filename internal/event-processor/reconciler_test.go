@@ -156,6 +156,23 @@ func setupTestInstance(
 	}
 }
 
+func TestNewCryptoReconcilerMetricsError(t *testing.T) {
+	provider := &testutils.FailingMeterProvider{
+		Err: errors.New("metric collector failed"), //nolint:err113
+	}
+	originalProvider := otel.GetMeterProvider()
+	t.Cleanup(func() { otel.SetMeterProvider(originalProvider) })
+	otel.SetMeterProvider(provider)
+
+	instance := setupTestInstance(t, nil)
+	require.NotNil(t, instance.reconciler)
+	assert.True(t, provider.Called.Load(), "metric creation must fail during reconciler initialization")
+
+	handler, err := instance.reconciler.GetHandlerByJobType(string(eventprocessor.JobTypeSystemLink))
+	require.NoError(t, err)
+	assert.NotNil(t, handler)
+}
+
 func TestGetHandlerByJobType(t *testing.T) {
 	instance := setupTestInstance(t, []string{"region1"})
 	reconciler := instance.reconciler

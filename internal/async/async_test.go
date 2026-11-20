@@ -4,14 +4,17 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/hibiken/asynq"
 	"github.com/openkcm/common-sdk/pkg/commoncfg"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 
 	"github.com/openkcm/cmk/internal/async"
 	"github.com/openkcm/cmk/internal/config"
@@ -129,9 +132,11 @@ func TestAsyncNew(t *testing.T) {
 		expectSentinel   bool
 		expectedMaster   string
 		expectedAddrs    []string
+		telemetryEnabled bool
 	}{
 		{
 			name:             "Valid MTLS configuration",
+			telemetryEnabled: true,
 			taskQueueCfg:     defaultCfg,
 			expectError:      false,
 			expectedAddr:     "localhost:6379",
@@ -263,83 +268,86 @@ func TestAsyncNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app, err := async.New(
-				&config.Config{
-					Scheduler: config.Scheduler{
-						TaskQueue: tt.taskQueueCfg,
-					},
-					Database: config.Database{
-						Host: commoncfg.SourceRef{
-							Source: commoncfg.EmbeddedSourceValue,
-							Value:  "localhost",
-						},
-						User: commoncfg.SourceRef{
-							Source: commoncfg.EmbeddedSourceValue,
-							Value:  "postgres",
-						},
-						Secret: commoncfg.SourceRef{
-							Source: commoncfg.EmbeddedSourceValue,
-							Value:  "secret",
-						},
-						Name: "cmk",
-						Port: "5433",
-					},
-				},
-			)
-			assert.NotNil(t, app)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				return
-			}
-
+			taskQueueHost, err := commoncfg.LoadValueFromSourceRef(tt.taskQueueCfg.Host)
 			require.NoError(t, err)
 
-			if tt.expectError {
-				assert.Error(t, err)
-				return
-			}
-
-			result := app.GetTaskQueueCfg()
-
-			require.NoError(t, err)
-
-			var (
-				username, password string
-				tlsConfig          *tls.Config
-			)
-
+			// Verify sentinel/addr config via buildRedisConnOpt directly.
+			connOpt := async.BuildRedisConnOpt(tt.taskQueueCfg, string(taskQueueHost), nil, "", "")
 			if tt.expectSentinel {
-				opt, ok := result.(asynq.RedisFailoverClientOpt)
+				opt, ok := connOpt.(asynq.RedisFailoverClientOpt)
 				require.True(t, ok)
 				assert.Equal(t, tt.expectedMaster, opt.MasterName)
 				assert.Equal(t, tt.expectedAddrs, opt.SentinelAddrs)
-				assert.Equal(t, tt.expectedUsername, opt.SentinelUsername)
-				assert.Equal(t, tt.expectedPassword, opt.SentinelPassword)
-				username, password, tlsConfig = opt.Username, opt.Password, opt.TLSConfig
-			} else {
-				opt, ok := result.(asynq.RedisClientOpt)
+			} else if tt.expectedAddr != "" {
+				opt, ok := connOpt.(asynq.RedisClientOpt)
 				require.True(t, ok)
 				assert.Equal(t, tt.expectedAddr, opt.Addr)
-				username, password, tlsConfig = opt.Username, opt.Password, opt.TLSConfig
 			}
 
-			assert.Equal(t, tt.expectedPassword, password)
-			assert.Equal(t, tt.expectedUsername, username)
+			cfg := &config.Config{
+				Scheduler: config.Scheduler{
+					TaskQueue: tt.taskQueueCfg,
+				},
+				Telemetry: commoncfg.Telemetry{
+					Metrics: commoncfg.Metric{
+						Enabled: tt.telemetryEnabled,
+					},
+					Traces: commoncfg.Trace{
+						Enabled: tt.telemetryEnabled,
+					},
+				},
+			}
+
+			app, err := async.New(cfg)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, app)
+
+			// Verify credentials and TLS from the live redis client options.
+			client, ok := app.GetRedisClient().(*redis.Client)
+			require.True(t, ok)
+			opts := client.Options()
+
+			assert.Equal(t, tt.expectedUsername, opts.Username)
+			assert.Equal(t, tt.expectedPassword, opts.Password)
 
 			if tt.taskQueueCfg.SecretRef.Type == commoncfg.MTLSSecretType {
-				require.NotNil(t, tlsConfig)
-				assert.Len(t, tlsConfig.Certificates, 1)
-				assert.Equal(t, uint16(tls.VersionTLS12), tlsConfig.MinVersion)
+				require.NotNil(t, opts.TLSConfig)
+				assert.Len(t, opts.TLSConfig.Certificates, 1)
+				assert.Equal(t, uint16(tls.VersionTLS12), opts.TLSConfig.MinVersion)
 
 				ca := tt.taskQueueCfg.SecretRef.MTLS.ServerCA
-
 				if ca != nil && ca.Source != "" {
-					assert.NotNil(t, tlsConfig.RootCAs)
+					assert.NotNil(t, opts.TLSConfig.RootCAs)
 				}
 			}
 		})
 	}
+}
+
+func TestAsyncNewMetricsError(t *testing.T) {
+	instrumentErr := errors.New("instrumentation failed") //nolint:err113
+	provider := &testutils.FailingMeterProvider{Err: instrumentErr}
+	originalProvider := otel.GetMeterProvider()
+	t.Cleanup(func() { otel.SetMeterProvider(originalProvider) })
+	otel.SetMeterProvider(provider)
+
+	cfg := &config.Config{
+		Scheduler: config.Scheduler{
+			TaskQueue: defaultRedisConfig(testutils.CreateTLSFiles(t)),
+		},
+	}
+	cfg.Telemetry.Metrics.Enabled = true
+
+	app, err := async.New(cfg)
+	assert.ErrorIs(t, err, instrumentErr)
+	assert.Nil(t, app)
+	assert.True(t, provider.Called.Load(), "metric creation must fail during async initialization")
 }
 
 func TestGetFanOutOpts(t *testing.T) {
