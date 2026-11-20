@@ -1102,6 +1102,18 @@ func TestSchemaMigrations(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:      "Should up tenant/00030_add_import_failed_key_state.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   30,
+		},
+		{
+			name:      "Should down tenant/00030_add_import_failed_key_state.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   30,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
