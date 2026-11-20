@@ -2476,6 +2476,7 @@ components:
         - DETACHING
         - DETACHED
         - ERROR
+        - IMPORT_FAILED
     KeyErrorDetail:
       description: Structured error detail recorded when a key transitions to ERROR or FORBIDDEN state.
       type: object
