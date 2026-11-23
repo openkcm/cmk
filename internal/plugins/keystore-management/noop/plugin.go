@@ -97,3 +97,10 @@ func (p *Plugin) GetKeystoreStatus(
 ) (*keystoremanagementv1.GetKeystoreStatusResponse, error) {
 	return &keystoremanagementv1.GetKeystoreStatusResponse{}, nil
 }
+
+func (p *Plugin) RenewKeystore(
+	_ context.Context,
+	_ *keystoremanagementv1.RenewKeystoreRequest,
+) (*keystoremanagementv1.RenewKeystoreResponse, error) {
+	return &keystoremanagementv1.RenewKeystoreResponse{}, nil
+}
