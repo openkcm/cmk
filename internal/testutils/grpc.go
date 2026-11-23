@@ -28,6 +28,11 @@ var TestRegistryConfig = &commoncfg.GRPCClient{
 	SecretRef: &commoncfg.SecretRef{
 		Type: commoncfg.InsecureSecretType,
 	},
+	Attributes: commoncfg.GRPCClientAttributes{
+		Retry: commoncfg.GRPCRetry{
+			RetryableStatusCodes: []string{"UNAVAILABLE"},
+		},
+	},
 }
 
 // TestSessionManagerConfig is a default session manager config for testing purposes
@@ -36,6 +41,11 @@ var TestSessionManagerConfig = &commoncfg.GRPCClient{
 	Address: "localhost:9091",
 	SecretRef: &commoncfg.SecretRef{
 		Type: commoncfg.InsecureSecretType,
+	},
+	Attributes: commoncfg.GRPCClientAttributes{
+		Retry: commoncfg.GRPCRetry{
+			RetryableStatusCodes: []string{"UNAVAILABLE"},
+		},
 	},
 }
 
