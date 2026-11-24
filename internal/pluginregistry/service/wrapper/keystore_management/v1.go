@@ -176,3 +176,26 @@ func (v1 *V1) RemoveTrust(
 	}
 	return &keystoremanagement.RemoveTrustResponse{}, nil
 }
+
+func (v1 *V1) RenewKeystore(
+	ctx context.Context,
+	req *keystoremanagement.RenewKeystoreRequest,
+) (*keystoremanagement.RenewKeystoreResponse, error) {
+	values, err := structpb.NewStruct(req.Values)
+	if err != nil {
+		return nil, fmt.Errorf(errFailedVParseProtoStructMsg, err)
+	}
+	in := &grpckeystoremanagementv1.RenewKeystoreRequest{
+		AccountId: req.AccountID,
+		Values:    values,
+	}
+	if err := protovalidate.Validate(in); err != nil {
+		return nil, fmt.Errorf(errFailedValidationMsg, err)
+	}
+
+	_, err = v1.KeystoreProviderPluginClient.RenewKeystore(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return &keystoremanagement.RenewKeystoreResponse{}, nil
+}

@@ -220,6 +220,22 @@ business user data.
 
 ---
 
+### `InternalTaskHyperscalerRenewRole`
+
+| Permission | Resource | Required by | Tested |
+|---|---|---|---|
+| First, List, Count | TenantConfig | `ProviderConfigManager.RenewHyperscalerLease` → `GetHyperscalerConfig` / `GetStoredDefaultKeystoreConfig` → `GetTenantConfigByType` → `ProcessInBatch` (List + Count when rows present) | ✓ |
+
+**Test:** `internal/authz/policy_tests/hyperscaler_renew_test.go`
+`TestHyperscalerRenew_AuthzPolicy/InternalTaskHyperscalerRenewRole_allows_reading_TenantConfig_for_renewal`
+
+A HyperscalerConfig and a stored KeystoreConfig (with a resolvable `roleArn`) are
+seeded under a writer role, then `ProcessTask` runs under the renewal role, which is
+read-only: it reads both configs, resolves the cloud ID, and calls the (no-op test)
+RenewKeystore plugin RPC. The role needs no write permission.
+
+---
+
 ## cmd/task-worker and cmd/task-scheduler
 
 `InternalTaskProcessingRole` is injected by both the batch processor (used by the

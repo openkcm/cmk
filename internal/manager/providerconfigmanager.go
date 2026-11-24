@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,6 +40,9 @@ var (
 	ErrAddConfigToPool               = errors.New("failed to add keystore configuration to pool")
 	ErrCountKeystorePool             = errors.New("failed to get keystore pool size")
 	ErrGrantTrustFailed              = errors.New("failed to grant trust to certificate")
+	ErrRenewKeystore                 = errors.New("failed to renew keystore")
+	ErrCloudIDNotFound               = errors.New("cloud identifier not found in keystore config")
+	ErrNoKeystoreForHyperscaler      = errors.New("tenant has a hyperscaler config but no default keystore")
 )
 
 type ProviderConfig struct {
@@ -240,6 +244,66 @@ func (pmc *ProviderConfigManager) CreateKeystore(ctx context.Context) (string, m
 	}
 
 	return provider, resp.ToKeystoreConfig().Values, nil
+}
+
+// RenewHyperscalerLease re-applies security attributes and renews the account lease.
+// A tenant with no hyperscaler config is a no-op.
+func (pmc *ProviderConfigManager) RenewHyperscalerLease(ctx context.Context) error {
+	hsConfig, found, err := pmc.tenantConfigs.GetHyperscalerConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+
+	ksConfig, found, err := pmc.tenantConfigs.GetStoredDefaultKeystoreConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrNoKeystoreForHyperscaler
+	}
+	cloudID, err := cloudIDFromAccessData(ksConfig.RoleManagementConfig.AccessData)
+	if err != nil {
+		return err
+	}
+
+	provider, err := pmc.GetDefaultKeystoreFromCatalog()
+	if err != nil {
+		return err
+	}
+	keystoreManagements, err := pmc.svcRegistry.KeystoreManagements()
+	if err != nil {
+		return errs.Wrapf(ErrPluginNotFound, provider)
+	}
+	client, ok := keystoreManagements[provider]
+	if !ok {
+		return errs.Wrapf(ErrPluginNotFound, provider)
+	}
+
+	_, err = client.RenewKeystore(ctx, &keystoremanagement.RenewKeystoreRequest{
+		AccountID: cloudID,
+		Values:    *hsConfig,
+	})
+	if err != nil {
+		return errs.Wrapf(ErrRenewKeystore, fmt.Sprintf("provider: %s, error: %v", provider, err))
+	}
+	return nil
+}
+
+func cloudIDFromAccessData(accessData model.KeystoreAccessData) (string, error) {
+	if arn, ok := accessData["roleArn"].(string); ok && arn != "" {
+		parts := strings.Split(arn, ":")
+		if len(parts) < 5 || parts[4] == "" {
+			return "", fmt.Errorf("%w: invalid role ARN %q", ErrCloudIDNotFound, arn)
+		}
+		return parts[4], nil
+	}
+	if pn, ok := accessData["projectNumber"].(string); ok && pn != "" {
+		return pn, nil
+	}
+	return "", ErrCloudIDNotFound
 }
 
 func (pmc *ProviderConfigManager) AddKeystoreToPool(

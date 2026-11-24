@@ -73,3 +73,10 @@ func (s *TestKeystoreManagement) RemoveTrust(
 ) (*keystoremanagement.RemoveTrustResponse, error) {
 	return &keystoremanagement.RemoveTrustResponse{}, nil
 }
+
+func (s *TestKeystoreManagement) RenewKeystore(
+	_ context.Context,
+	_ *keystoremanagement.RenewKeystoreRequest,
+) (*keystoremanagement.RenewKeystoreResponse, error) {
+	return &keystoremanagement.RenewKeystoreResponse{}, nil
+}
