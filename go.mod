@@ -3,7 +3,7 @@ module github.com/openkcm/cmk
 go 1.27.3
 
 require (
-	buf.build/go/protovalidate v1.4.0
+	buf.build/go/protovalidate v1.4.1
 	github.com/Azure/go-amqp v1.7.0
 	github.com/XSAM/otelsql v0.44.0
 	github.com/avast/retry-go/v5 v5.1.1
@@ -24,7 +24,7 @@ require (
 	github.com/openkcm/api-sdk v0.23.0
 	github.com/openkcm/common-sdk v1.22.0
 	github.com/openkcm/orbital v0.7.0
-	github.com/openkcm/plugin-sdk v0.19.0
+	github.com/openkcm/plugin-sdk v0.19.1
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/redis/go-redis/extra/redisotel/v9 v9.23.0
@@ -55,7 +55,7 @@ require (
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2 // indirect
-	cel.dev/cel-go v0.32.0 // indirect
+	cel.dev/cel-go v0.33.2 // indirect
 	cel.dev/expr v0.25.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20261006220739-8c912ac31dd4 // indirect

@@ -127,6 +127,7 @@ func TestMissingSchemaScripts(t *testing.T) {
 		t.Context(),
 		&model.KeyConfiguration{},
 		&model.Key{},
+		&model.ReplicaKey{},
 		&model.KeyVersion{},
 		&model.KeyLabel{},
 		&model.System{},
@@ -1101,6 +1102,49 @@ func TestSchemaMigrations(t *testing.T) {
 					return nil
 				}
 			},
+		},
+		{
+			name:    "Should up tenant/00030_add_replica_keys.sql",
+			target:  db.TenantTarget,
+			version: 30,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					assert.True(t, con.Migrator().HasTable(&model.ReplicaKey{}))
+					err := con.Transaction(func(tx *multitenancy.DB) error {
+						return tx.Create(&model.ReplicaKey{
+							ID: uuid.New(), KeyID: uuid.New(), NativeID: "orphan",
+						}).Error
+					})
+					assert.ErrorContains(t, err, "fk_keys_native_entries")
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should down tenant/00030_add_replica_keys.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   30,
+			assertMigration: func(t *testing.T) func(con *multitenancy.DB) error {
+				t.Helper()
+				return func(con *multitenancy.DB) error {
+					assert.False(t, con.Migrator().HasTable(&model.ReplicaKey{}))
+					return nil
+				}
+			},
+		},
+		{
+			name:      "Should up tenant/00031_add_import_failed_key_state.sql",
+			downgrade: false,
+			target:    db.TenantTarget,
+			version:   31,
+		},
+		{
+			name:      "Should down tenant/00031_add_import_failed_key_state.sql",
+			downgrade: true,
+			target:    db.TenantTarget,
+			version:   31,
 		},
 	}
 	for _, tt := range tests {

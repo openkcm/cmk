@@ -70,20 +70,6 @@ var (
 	pendingRegistrationTimeout = 15 * time.Minute //nolint:gochecknoglobals
 )
 
-var UnavailableKeyStates = []cmkapi.KeyState{
-	cmkapi.KeyStatePENDINGDELETION,
-	cmkapi.KeyStateDELETED,
-	cmkapi.KeyStateFORBIDDEN,
-	cmkapi.KeyStateUNKNOWN,
-	cmkapi.KeyStatePENDINGCREATION,
-	cmkapi.KeyStatePENDINGREGISTRATION,
-	cmkapi.KeyStateERROR,
-}
-
-func IsUnavailableKeyState(state cmkapi.KeyState) bool {
-	return slices.Contains(UnavailableKeyStates, state)
-}
-
 // keyRegistrationAuthError carries a provider-specific reason string (e.g. "DENIED_BY_POLICY")
 // while remaining matchable via errors.Is(err, ErrKeyRegistrationAuthFailed).
 type keyRegistrationAuthError struct {
@@ -634,18 +620,17 @@ func (km *KeyManager) completePendingRegistration(ctx context.Context, provider 
 		return err
 	}
 
+	km.sendCreateAuditLog(ctx, key)
+
 	km.metrics.RecordTransition(ctx, string(key.KeyType), "PENDING_REGISTRATION", "ENABLED", "auth_success")
 
-	// Sync key version outside the transaction: handleNewKeyVersion sends audit logs
-	// and orbital events which must not fire before the DB commit succeeds.
+	// Sync outside the transaction: syncKeyVersions fires orbital events that must not
+	// fire before the DB commit succeeds.
 	if err := km.syncKeyVersions(ctx, provider, key); err != nil {
 		log.Warn(ctx, "Failed to sync key version for PENDING_REGISTRATION key", log.ErrorAttr(err))
 	}
 
-	// Notify connected systems of the state change (SYSTEM_LINK / SYSTEM_DISABLE events).
-	// oldKeyState is PENDING_REGISTRATION which is in UnavailableKeyStates, so audit logs
-	// are intentionally skipped — only the orbital event fires.
-	if err := km.handleKeyStateTransition(ctx, key, cmkapi.KeyStatePENDINGREGISTRATION); err != nil {
+	if err := km.handleKeyStateTransition(ctx, key); err != nil {
 		log.Warn(ctx, "Failed to send state transition event for PENDING_REGISTRATION key", log.ErrorAttr(err))
 	}
 
@@ -756,6 +741,8 @@ func (km *KeyManager) syncPendingCreationKey(ctx context.Context, key *model.Key
 		return err
 	}
 
+	km.sendCreateAuditLog(ctx, key)
+
 	log.Debug(ctx, "PENDING_CREATION key transitioned to PENDING_IMPORT",
 		slog.String("newState", string(key.State)))
 
@@ -819,7 +806,6 @@ func (km *KeyManager) savePendingBYOKKey(ctx context.Context, key *model.Key) (*
 	}); err != nil {
 		return nil, errs.Wrap(ErrCreateKeyDB, err)
 	}
-	km.sendCreateAuditLog(ctx, key)
 	km.enqueuePendingStateSync(ctx, key)
 	return key, nil
 }
@@ -835,7 +821,6 @@ func (km *KeyManager) createPendingRegistrationHYOKKey(ctx context.Context, key 
 	}); err != nil {
 		return nil, errs.Wrap(ErrCreateKeyDB, err)
 	}
-	km.sendCreateAuditLog(ctx, key)
 	km.enqueuePendingStateSync(ctx, key)
 	return key, nil
 }
@@ -1704,7 +1689,7 @@ func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) erro
 			return err
 		}
 
-		return km.handleKeyStateTransition(ctx, key, oldKeyState)
+		return km.handleKeyStateTransition(ctx, key)
 	})
 	if err != nil {
 		return errs.Wrap(ErrUpdateKeyDB, err)
@@ -1785,9 +1770,6 @@ func (km *KeyManager) handleKeyVersions(
 		slog.String("keyId", key.ID.String()),
 	)
 
-	// Send audit log for rotation detection
-	km.sendRotateAuditLog(ctx, key)
-
 	isPrimary, err := repo.IsPrimaryKey(ctx, km.repo, key)
 	if err != nil {
 		return err
@@ -1806,21 +1788,13 @@ func (km *KeyManager) handleKeyVersions(
 	return nil
 }
 
-func (km *KeyManager) handleKeyStateTransition(ctx context.Context, key *model.Key, oldKeyState cmkapi.KeyState) error {
+func (km *KeyManager) handleKeyStateTransition(ctx context.Context, key *model.Key) error {
 	switch key.State {
 	case cmkapi.KeyStateENABLED:
-		if !IsUnavailableKeyState(oldKeyState) {
-			km.sendEnableAuditLog(ctx, key)
-		}
-
 		return km.sendEnableEvent(ctx, key)
 	case cmkapi.KeyStatePENDINGDELETION:
 		return nil
 	case cmkapi.KeyStateDISABLED:
-		if !IsUnavailableKeyState(oldKeyState) {
-			km.sendDisableAuditLog(ctx, key)
-		}
-
 		return km.sendDisableEvent(ctx, key)
 	default:
 		return nil
@@ -1982,16 +1956,6 @@ func (km *KeyManager) sendEnableAuditLog(ctx context.Context, key *model.Key) {
 	}
 
 	log.Info(ctx, "Audit log for CMK Enable sent successfully")
-}
-
-func (km *KeyManager) sendRotateAuditLog(ctx context.Context, key *model.Key) {
-	err := km.cmkAuditor.SendCmkRotateAuditLog(ctx, key.ID.String())
-	if err != nil {
-		log.Error(ctx, "Failed to send audit log for CMK Rotate", err)
-		return
-	}
-
-	log.Info(ctx, "Audit log for CMK Rotate sent successfully")
 }
 
 func (km *KeyManager) enableKey(ctx context.Context, key *model.Key) error {
