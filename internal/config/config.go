@@ -284,6 +284,28 @@ type System struct {
 	OptionalProperties map[string]SystemProperty `yaml:",inline" mapstructure:",remain"`
 }
 
+func (s System) SearchableOptions() map[string]SystemProperty {
+	options := map[string]SystemProperty{}
+
+	for key, property := range map[string]SystemProperty{
+		"identifier": s.Identifier,
+		"region":     s.Region,
+		"type":       s.Type,
+	} {
+		if property.Searchable {
+			options[key] = property
+		}
+	}
+
+	for key, property := range s.OptionalProperties {
+		if property.Searchable {
+			options[key] = property
+		}
+	}
+
+	return options
+}
+
 func (s System) AllowsType(systemType string) bool {
 	if systemType == "" {
 		return false
@@ -300,6 +322,7 @@ func (s System) AllowsType(systemType string) bool {
 type SystemProperty struct {
 	DisplayName string   `yaml:"displayName" mapstructure:"displayName"`
 	Internal    bool     `yaml:"internal" mapstructure:"internal"`
+	Searchable  bool     `yaml:"searchable" mapstructure:"searchable"`
 	Optional    bool     `yaml:"optional" mapstructure:"optional"`
 	Default     any      `yaml:"default" mapstructure:"default"`
 	Enum        []string `yaml:"enum,omitempty" mapstructure:"enum"`

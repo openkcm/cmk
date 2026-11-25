@@ -2,9 +2,11 @@ system:
   identifier:
     displayName: "GTID"
     internal: true
+    searchable: true
   region:
     displayName: "Region"
     internal: true
+    searchable: true
   type:
     displayName: "Type"
     internal: true
@@ -14,6 +16,7 @@ system:
     displayName: "Name"
     default: "n/a"
     optional: true
+    searchable: true
   roleName:
     displayName: "Role"
     optional: true
