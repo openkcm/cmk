@@ -445,10 +445,12 @@ func TestGetSystems_Search(t *testing.T) {
 		Config: config.Config{
 			ContextModels: config.ContextModels{
 				System: config.System{
-					// Property whose DisplayName is "Name" is used as the
-					// searchable external name (see getSystemExternalName).
+					Identifier: config.SystemProperty{Searchable: true, Internal: true},
+					Region:     config.SystemProperty{Searchable: true, Internal: true},
 					OptionalProperties: map[string]config.SystemProperty{
-						"externalName": {DisplayName: "Name"},
+						"externalName": {DisplayName: "Name", Searchable: true},
+						"description":  {DisplayName: "Description", Searchable: true},
+						"hidden":       {DisplayName: "Hidden"},
 					},
 				},
 			},
@@ -463,15 +465,18 @@ func TestGetSystems_Search(t *testing.T) {
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	systemA := testutils.NewSystem(func(s *model.System) {
-		// Deterministic, non-overlapping regions: the "search by region" case
-		// below searches a 2-char substring of systemB's region and expects only
-		// systemB. With the default random-UUID region, that substring frequently
-		// also appeared in systemA's region, matching both (flaky).
+		// Deterministic regions keep substring searches from matching random UUIDs.
 		s.Region = "alpha-region"
-		s.Properties = map[string]string{"externalName": "alpha-system"}
+		s.Type = "unsearchable-type"
+		s.Properties = map[string]string{
+			"externalName": "alpha-system",
+			"description":  "alpha-details",
+			"hidden":       "private-marker",
+		}
 	})
 	systemB := testutils.NewSystem(func(s *model.System) {
 		s.Region = "beta-region"
+		s.Type = "unsearchable-type"
 		s.Properties = map[string]string{"externalName": "beta-system"}
 	})
 
@@ -493,22 +498,38 @@ func TestGetSystems_Search(t *testing.T) {
 		expectedSystems []string
 	}{
 		{
-			name:            "Should search by identifier",
+			name:            "Should search by searchable identifier",
 			search:          strings.Split(systemA.Identifier, "-")[0],
 			expectedCount:   1,
 			expectedSystems: []string{systemA.Identifier},
 		},
 		{
-			name:            "Should search by external name",
+			name:            "Should search by searchable optional property",
 			search:          "alpha-system",
 			expectedCount:   1,
 			expectedSystems: []string{systemA.Identifier},
 		},
 		{
-			name:            "Should search by region",
-			search:          systemB.Region[1:3],
+			name:            "Should not duplicate a system matching multiple properties",
+			search:          "alpha",
 			expectedCount:   1,
-			expectedSystems: []string{systemB.Identifier},
+			expectedSystems: []string{systemA.Identifier},
+		},
+		{
+			name:            "Should AND terms across different properties",
+			search:          "alpha-system and alpha-details",
+			expectedCount:   1,
+			expectedSystems: []string{systemA.Identifier},
+		},
+		{
+			name:            "Should OR terms across different properties",
+			search:          "alpha-details or beta-system",
+			expectedCount:   2,
+			expectedSystems: []string{systemA.Identifier, systemB.Identifier},
+		},
+		{
+			name:   "Should not search disabled properties",
+			search: "private-marker or unsearchable-type",
 		},
 	}
 
@@ -516,7 +537,7 @@ func TestGetSystems_Search(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			w := testutils.MakeHTTPRequest(t, sv, testutils.RequestOptions{
 				Method:   http.MethodGet,
-				Endpoint: "/systems?$count=true&$search=" + tt.search,
+				Endpoint: "/systems?$count=true&$search=" + url.QueryEscape(tt.search),
 				Tenant:   tenant,
 				Headers:  headers,
 			})

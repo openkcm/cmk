@@ -19,10 +19,6 @@ import (
 	"github.com/openkcm/cmk/utils/ptr"
 )
 
-const (
-	SystemExternalNamePropertyKey = "NAME"
-)
-
 var getSystemsSchema = odata.FilterToRepoMap{
 	"keyConfigurationID": odata.FilterToRepoItem{
 		Type:   odata.UUID,
@@ -79,24 +75,33 @@ var getSystemsOrderSchema = odata.OrderToRepoMap{
 const systemPropertyOrderPrefix = "properties."
 
 func (c *APIController) buildSystemsODataOptions(request cmkapi.GetAllSystemsRequestObject) []odata.Option {
+	var fields []repo.QueryField
+	var searchJoins []odata.SearchJoinField
+
+	for key, prop := range c.config.ContextModels.System.SearchableOptions() {
+		if prop.Internal {
+			fields = append(fields, key)
+		} else {
+			alias := fmt.Sprintf("sp_search_%d", len(searchJoins))
+			searchJoins = append(searchJoins, odata.SearchJoinField{
+				Column: alias + ".value",
+				Join: repo.JoinCondition{
+					Table:     &model.System{},
+					Field:     repo.IDField,
+					JoinTable: &model.SystemProperty{},
+					JoinField: repo.IDField,
+					Alias:     alias,
+					OnFilters: []repo.JoinOnFilter{{Field: repo.KeyField, Value: key}},
+				},
+			})
+		}
+	}
+
 	opts := []odata.Option{
 		odata.WithPagination(request.Params.Skip, request.Params.Top, request.Params.Count),
 		odata.WithFilter(request.Params.Filter, getSystemsSchema),
-		odata.WithSearch(request.Params.Search, repo.IdentifierField, repo.RegionField),
-	}
-
-	if propertyKey, ok := c.getSystemExternalNameKey(); ok {
-		opts = append(opts, odata.WithSearchJoins(odata.SearchJoinField{
-			Column: "sp_ext.value",
-			Join: repo.JoinCondition{
-				Table:     &model.System{},
-				Field:     repo.IDField,
-				JoinTable: &model.SystemProperty{},
-				JoinField: repo.IDField,
-				Alias:     "sp_ext",
-				OnFilters: []repo.JoinOnFilter{{Field: repo.KeyField, Value: propertyKey}},
-			},
-		}))
+		odata.WithSearch(request.Params.Search, fields...),
+		odata.WithSearchJoins(searchJoins...),
 	}
 
 	remainingOrderby, orderJoins := c.resolveSystemPropertyOrder(request.Params.Orderby)
@@ -325,16 +330,6 @@ func (c *APIController) handleSystemUnderWorkflow(
 			wfWorkflow.WithDetailed(ctx, approvers, idm, approverGroups, transitions, approvalSummary),
 		),
 	)
-}
-
-func (c *APIController) getSystemExternalNameKey() (string, bool) {
-	for propertyName, definition := range c.config.ContextModels.System.OptionalProperties {
-		if strings.ToUpper(definition.DisplayName) == SystemExternalNamePropertyKey {
-			return propertyName, true
-		}
-	}
-
-	return "", false
 }
 
 func (c *APIController) resolveSystemPropertyOrder(orderby *string) (*string, []odata.OrderJoinField) {

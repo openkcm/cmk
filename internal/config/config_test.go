@@ -12,6 +12,23 @@ import (
 	"github.com/openkcm/cmk/internal/testutils"
 )
 
+func TestSystemSearchableOptions(t *testing.T) {
+	s := config.System{
+		Identifier: config.SystemProperty{DisplayName: "Identifier", Searchable: true},
+		Region:     config.SystemProperty{DisplayName: "Region", Searchable: true},
+		OptionalProperties: map[string]config.SystemProperty{
+			"searchable": {DisplayName: "Searchable", Searchable: true},
+			"hidden":     {DisplayName: "Hidden"},
+		},
+	}
+
+	assert.Equal(t, map[string]config.SystemProperty{
+		"identifier": s.Identifier,
+		"region":     s.Region,
+		"searchable": s.OptionalProperties["searchable"],
+	}, s.SearchableOptions())
+}
+
 func TestSystemAllowsType(t *testing.T) {
 	tests := []struct {
 		name    string
