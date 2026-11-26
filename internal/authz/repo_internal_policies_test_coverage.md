@@ -156,7 +156,7 @@ call is reached and exercised.
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
 | First | Tenant | `WorkflowProcessor.ProcessTask` | ✓ |
-| First, List | TenantConfig | `WorkflowProcessor.ProcessTask` (flat-row read + legacy fallback) | ✓ |
+| First, List, Count | TenantConfig | `WorkflowManager.WorkflowConfig` → `GetWorkflowConfig` → `GetTenantConfigByType` (flat-row read via `ProcessInBatch`) | ✓ |
 | First | Workflow | `WorkflowManager.AutoAssignApprovers` | ✓ |
 | Update | Workflow | `WorkflowManager.AutoAssignApprovers` | – |
 | Create, Delete, Count, List | WorkflowApprover | `WorkflowManager.AutoAssignApprovers` | – |
@@ -174,6 +174,7 @@ call is reached and exercised.
 
 **Test:** `internal/authz/policy_tests/workflow_autoassign_test.go`
 `TestWorkflowAutoAssign_AuthzPolicy/InternalTaskWorkflowApproversRole_allows_First_on_Workflow,_Key,_KeyConfiguration`
+`TestWorkflowAutoAssign_AuthzPolicy/InternalTaskWorkflowApproversRole_allows_reading_workflow_config`
 
 A group, key configuration, key, and workflow (with the key as artifact) are seeded.
 `ProcessTask` finds the workflow and calls `AutoAssignApprovers`, which traverses the

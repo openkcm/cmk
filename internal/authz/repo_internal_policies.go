@@ -200,6 +200,7 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					Actions: []RepoAction{
 						RepoActionFirst,
 						RepoActionList,
+						RepoActionCount,
 					},
 				},
 				{
