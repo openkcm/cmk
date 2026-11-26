@@ -140,4 +140,13 @@ func TestWorkflowAutoAssign_AuthzPolicy(t *testing.T) {
 		assert.NotContains(t, strings.ToLower(err.Error()), "unauthorized",
 			"authz error returned — policy is missing a required permission")
 	})
+
+	t.Run("InternalTaskWorkflowApproversRole allows reading workflow config", func(t *testing.T) {
+		seedManager := manager.NewTenantConfigManager(sql.NewRepository(db), ps, cfg, nil, nil, nil)
+		_, err := seedManager.SetWorkflowConfig(cmkcontext.CreateTenantContext(ctx, tenant), testutils.NewWorkflowConfig(func(_ *model.WorkflowConfig) {}))
+		assert.NoError(t, err)
+
+		_, err = wfManager.WorkflowConfig(ctx)
+		assert.NoError(t, err)
+	})
 }

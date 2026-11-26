@@ -156,7 +156,7 @@ call is reached and exercised.
 | Permission | Resource | Required by | Tested |
 |---|---|---|---|
 | First | Tenant | `WorkflowProcessor.ProcessTask` | ✓ |
-| First, List | TenantConfig | `WorkflowProcessor.ProcessTask` (flat-row read + legacy fallback) | ✓ |
+| First, List, Count | TenantConfig | `WorkflowManager.WorkflowConfig` → `GetWorkflowConfig` → `GetTenantConfigByType` (flat-row read via `ProcessInBatch`) | ✓ |
 | First | Workflow | `WorkflowManager.AutoAssignApprovers` | ✓ |
 | Update | Workflow | `WorkflowManager.AutoAssignApprovers` | – |
 | Create, Delete, Count, List | WorkflowApprover | `WorkflowManager.AutoAssignApprovers` | – |
@@ -174,6 +174,7 @@ call is reached and exercised.
 
 **Test:** `internal/authz/policy_tests/workflow_autoassign_test.go`
 `TestWorkflowAutoAssign_AuthzPolicy/InternalTaskWorkflowApproversRole_allows_First_on_Workflow,_Key,_KeyConfiguration`
+`TestWorkflowAutoAssign_AuthzPolicy/InternalTaskWorkflowApproversRole_allows_reading_workflow_config`
 
 A group, key configuration, key, and workflow (with the key as artifact) are seeded.
 `ProcessTask` finds the workflow and calls `AutoAssignApprovers`, which traverses the
@@ -316,25 +317,21 @@ create-tenant command via `CreateDefaultGroups`).
 | Update | Key | `KeyDetachJobHandler.terminate` → `updateKey` | – |
 | First, Count, List | System | `KeyTaskInfoResolver.getRegionsByKeyID`, `SystemTaskInfoResolver.loadTenantAndSystem` | ✓ / – |
 | Update | System | system event handlers → `updateSystem` | – |
-| First | Certificate | `CryptoAccessDataSyncer.getRoleManagementCert` | ✓ |
-| First, List | TenantConfig | `CryptoAccessDataSyncer.getDefaultKeystoreConfig` (via `TenantConfigManager` flat-row read + legacy fallback) | ✓ |
-| Delete, Create | TenantConfig | `CryptoAccessDataSyncer.setDefaultKeystoreConfig` (via `TenantConfigManager.SetDefaultKeystore`) | ✓ |
+| First | Certificate | `SystemTaskInfoResolver.getKeyAccessMetadata` role-management cert lookup | – |
+| First, List, Count | TenantConfig | `SystemTaskInfoResolver.getCryptoAccessDataFromConfig` → `GetStoredDefaultKeystoreConfig` → `GetTenantConfigByType` (flat-row read via `ProcessInBatch`) | ✓ |
+| First | KeyVersion | `SystemTaskInfoResolver.fetchAndPopulateVersionInfo` → `getNewestKeyVersionNativeID` | ✓ |
 | Update | Event | `updateEventError` → `r.Patch` on Event | ✓ |
 | Delete | Event | `cleanUpEvent` → `r.Delete` on Event | ✓ |
 
 **Test:** `internal/authz/policy_tests/event_reconciler_test.go`
 `TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_deriving_connected_regions_for_key`
-`TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_CryptoAccessDataSyncer_to_read_TenantConfig_and_Certificate`
-`TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_CryptoAccessDataSyncer_Certificate:First_and_TenantConfig:Set`
+`TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_KeyVersion:First`
+`TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_reading_default_keystore_config`
 `TestEventReconciler_AuthzPolicy/InternalEventReconcilerRole_allows_Event:Update_and_Event:Delete`
 
-A key configuration, a HYOK key, and a CONNECTED system sharing the same `KeyConfigurationID` are seeded. `ResolveTasks` for `JobTypeKeyEnable` calls `getTenantByID` (Tenant:First), then `getRegionsByKeyID` which performs Key:First then `ProcessInBatch` → Count+List on System. Because no target region is configured for the seeded system's region, the test exits with `ErrNoConnectedRegionsForKey` — confirming authz passes through the entire resolver path. Key:List (used by system-action resolvers), Key:Update, System:First, and System:Update (used by system and key-detach job handlers) require live plugin targets and are not covered.
+A key configuration, a key, and a CONNECTED system sharing the same `KeyConfigurationID` are seeded. `ResolveTasks` for `JobTypeKeyEnable` calls `getTenantByID` (Tenant:First), then `getRegionsByKeyID` which performs Key:First then `ProcessInBatch` → Count+List on System. Because no target region is configured for the seeded system's region, the test exits with `ErrNoConnectedRegionsForKey` — confirming authz passes through the entire resolver path. Key:List (used by system-action resolvers), Key:Update, System:First, System:Update, and Certificate:First (used by system and key-detach job handlers, which require live plugin targets) are not covered.
 
-Two additional sub-tests cover `CryptoAccessDataSyncer`:
-
-- **TenantConfig read (flat-row read path):** A DEFAULT_KEYSTORE `TenantConfig` is seeded with a crypto cert entry whose subject already matches what the syncer computes for the test tenant. `SyncAndGetCryptoAccessData` under `InternalEventReconcilerRole` reads the config via `TenantConfigManager.GetStoredDefaultKeystoreConfig` (TenantConfig:List with First fallback to the legacy blob), finds the cert is up-to-date, and returns without invoking the plugin or writing back. Confirms List and First on TenantConfig are permitted.
-
-- **Certificate:First and TenantConfig:Set (grant-trust path):** A DEFAULT_KEYSTORE `TenantConfig` with no existing crypto entries and a role-management `Certificate` are seeded. `SyncAndGetCryptoAccessData` reads the config, fetches the role-management cert (Certificate:First), calls `GrantTrust` on the `TestKeystoreManagement` plugin, then writes the updated config back via `TenantConfigManager.SetDefaultKeystore` (Delete+Create on TenantConfig). Confirms all operations are permitted by the policy.
+The `KeyVersion:First` sub-test seeds a key version and reads it back through the authz repo. The `reading default keystore config` sub-test seeds a default keystore `TenantConfig` with a raw (non-authz) repo, then reads it back under `InternalEventReconcilerRole` via `GetStoredDefaultKeystoreConfig`. Because the stored config has rows, `GetTenantConfigByType`'s `ProcessInBatch` issues List then Count — exercising all three TenantConfig actions. The `Event:Update and Event:Delete` sub-test patches then deletes an event.
 
 ---
 

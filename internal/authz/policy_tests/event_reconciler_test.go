@@ -95,6 +95,17 @@ func TestEventReconciler_AuthzPolicy(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("InternalEventReconcilerRole allows reading default keystore config", func(t *testing.T) {
+		seedRepo := sql.NewRepository(db)
+		seedManager := manager.NewTenantConfigManager(seedRepo, svcRegistry, cfg, nil, nil, nil)
+		seedCtx := cmkcontext.CreateTenantContext(ctx, tenant)
+		require.NoError(t, seedManager.SetKeystoreConfig(seedCtx, testutils.NewKeystoreConfig(func(_ *model.KeystoreConfig) {})))
+
+		_, found, err := tcm.GetStoredDefaultKeystoreConfig(ctx)
+		assert.NoError(t, err)
+		assert.True(t, found)
+	})
+
 	t.Run("InternalEventReconcilerRole allows Event:Update and Event:Delete", func(t *testing.T) {
 		identifier := "authz-test-event-identifier"
 		event := &model.Event{
