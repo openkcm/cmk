@@ -337,6 +337,7 @@ func createTestBYOKKey(t *testing.T, r repo.Repo, ctx context.Context, keyConfig
 	})
 
 	require.NoError(t, err)
+	provider.KeyStore[keyProvider.KeyID].Status = string(state)
 	key := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
 		k.KeyType = cmkapi.KeyTypeBYOK
@@ -687,7 +688,8 @@ func TestEditableCryptoData(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
-	km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+	plugin := &failingNTimesKeyManagement{inner: keyProviderPlugin}
+	km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, plugin))
 
 	createdKey := createTestSystemManagedKey(t, km, r, ctx, keyConfig.ID)
 	hyokKey := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
@@ -734,6 +736,62 @@ func TestGet(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Should get byok key state from provider", func(t *testing.T) {
+		stored := &model.Key{ID: byokKey.ID}
+		_, err := r.First(ctx, stored, *repo.NewQuery())
+		require.NoError(t, err)
+		require.Equal(t, cmkapi.KeyStatePENDINGIMPORT, stored.State)
+
+		keyProviderPlugin.KeyStore[*byokKey.NativeID].Status = testplugins.EnabledKeyStatus
+		result, err := km.Get(ctx, byokKey.ID)
+		require.NoError(t, err)
+		assert.Equal(t, cmkapi.KeyStateENABLED, result.State)
+
+		_, err = r.First(ctx, stored, *repo.NewQuery())
+		require.NoError(t, err)
+		assert.Equal(t, cmkapi.KeyStateENABLED, stored.State)
+	})
+
+	t.Run("HYOK get with missing native ID", func(t *testing.T) {
+		for _, tt := range []struct {
+			name     string
+			nativeID *string
+		}{
+			{name: "nil"},
+			{name: "empty", nativeID: new("")},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				key := createTestHYOKKey(t, km, ctx, keyConfig.ID, keyProviderPlugin)
+				key.NativeID = tt.nativeID
+				require.NoError(t, r.Set(ctx, key, *repo.NewQuery()))
+
+				result, err := km.Get(ctx, key.ID)
+				require.NoError(t, err)
+				assert.Equal(t, cmkapi.KeyStateUNKNOWN, result.State)
+
+				stored := &model.Key{ID: key.ID}
+				_, err = r.First(ctx, stored, *repo.NewQuery())
+				require.NoError(t, err)
+				assert.Equal(t, cmkapi.KeyStateUNKNOWN, stored.State)
+			})
+		}
+	})
+
+	t.Run("BYOK get persists ERROR when provider get fails", func(t *testing.T) {
+		key := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED, keyProviderPlugin)
+		plugin.getErr = grpcstatus.Error(codes.Unavailable, "keystore unavailable")
+		t.Cleanup(func() { plugin.getErr = nil })
+
+		result, err := km.Get(ctx, key.ID)
+		require.NoError(t, err)
+		assert.Equal(t, cmkapi.KeyStateERROR, result.State)
+
+		stored := &model.Key{ID: key.ID}
+		_, err = r.First(ctx, stored, *repo.NewQuery())
+		require.NoError(t, err)
+		assert.Equal(t, cmkapi.KeyStateERROR, stored.State)
+	})
 }
 
 func TestHYOKSync(t *testing.T) {
@@ -1004,6 +1062,7 @@ func TestList(t *testing.T) {
 func TestUpdate(t *testing.T) {
 	keyProviderPlugin := testplugins.NewTestKeyManagement(true, true)
 	km, r, ctx, keyConfig, _ := SetupKeyTest(t, testplugins.WithKeyManagement(testplugins.Name, keyProviderPlugin))
+	seedDefaultKeystore(t, r, ctx)
 	createdKey := createTestBYOKKey(t, r, ctx, keyConfig.ID, cmkapi.KeyStateENABLED, keyProviderPlugin)
 
 	tests := []struct {
@@ -1205,12 +1264,7 @@ func TestUpdate(t *testing.T) {
 			ctx, uuid.NewString(), []string{freshKeyConfig.AdminGroup.IAMIdentifier},
 		)
 
-		byokKey := testutils.NewKey(func(k *model.Key) {
-			k.KeyConfigurationID = freshKeyConfig.ID
-			k.KeyType = constants.KeyTypeBYOK
-			k.State = cmkapi.KeyStatePENDINGIMPORT
-		})
-		testutils.CreateTestEntities(localCtx, t, r, byokKey)
+		byokKey := createTestBYOKKey(t, r, localCtx, freshKeyConfig.ID, cmkapi.KeyStatePENDINGIMPORT, keyProviderPlugin)
 
 		for _, enabled := range []bool{true, false} {
 			_, err := km.UpdateKey(localCtx, byokKey.ID, cmkapi.KeyPatch{Enabled: new(enabled)})
@@ -1280,11 +1334,15 @@ func TestDelete(t *testing.T) {
 	enabledSys := testutils.NewSystem(func(s *model.System) {
 		s.KeyConfigurationID = new(keyConfigEnabledPrimary.ID)
 	})
+	enabledProviderKey, err := keyProviderPlugin.CreateKey(ctx, &keymanagement.CreateKeyRequest{KeyType: keymanagement.BYOK})
+	require.NoError(t, err)
+	keyProviderPlugin.KeyStore[enabledProviderKey.KeyID].Status = testplugins.EnabledKeyStatus
 	enabledPrimaryKey := testutils.NewKey(func(k *model.Key) {
 		k.ID = enabledPrimaryID
 		k.KeyConfigurationID = keyConfigEnabledPrimary.ID
 		k.KeyType = constants.KeyTypeBYOK
 		k.State = cmkapi.KeyStateENABLED
+		k.NativeID = &enabledProviderKey.KeyID
 	})
 
 	testutils.CreateTestEntities(ctx, t, r, enabledPrimaryKey, keyConfigEnabledPrimary, enabledSys)
@@ -2221,6 +2279,7 @@ type failingNTimesKeyManagement struct {
 	failCount int
 	callCount int
 	failErr   error
+	getErr    error
 }
 
 var _ keymanagement.KeyManagement = (*failingNTimesKeyManagement)(nil)
@@ -2235,6 +2294,9 @@ func (f *failingNTimesKeyManagement) ServiceInfo() api.Info {
 }
 
 func (f *failingNTimesKeyManagement) GetKey(ctx context.Context, req *keymanagement.GetKeyRequest) (*keymanagement.GetKeyResponse, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
 	return f.inner.GetKey(ctx, req)
 }
 

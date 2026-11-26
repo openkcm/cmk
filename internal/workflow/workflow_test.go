@@ -1029,7 +1029,7 @@ func TestWorkflowLifecycleTransitions(t *testing.T) {
 	assert.NoError(t, err)
 	ctx = testutils.InjectBusinessUserDataIntoContext(ctx, uuid.NewString(), []string{keyConf.AdminGroup.IAMIdentifier})
 
-	providerKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{KeyType: keymanagement.BYOK})
+	providerKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{KeyType: keymanagement.HYOK})
 	assert.NoError(t, err)
 
 	testutils.CreateTestEntities(

@@ -820,10 +820,14 @@ func TestKeyControllerDeleteKeysKeyID(t *testing.T) {
 		k.NativeID = &pendingProviderKey.KeyID
 	})
 
+	enabledProviderKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{KeyType: keymanagement.BYOK})
+	require.NoError(t, err)
+	provider.KeyStore[enabledProviderKey.KeyID].Status = testplugins.EnabledKeyStatus
 	enabledBYOK := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
 		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStateENABLED
+		k.NativeID = &enabledProviderKey.KeyID
 	})
 	errorBYOK := testutils.NewKey(func(k *model.Key) {
 		k.KeyConfigurationID = keyConfigID
@@ -1006,6 +1010,7 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 		KeyType: keymanagement.BYOK,
 	})
 	assert.NoError(t, err)
+	provider.KeyStore[providerKeyBYOK.KeyID].Status = testplugins.EnabledKeyStatus
 
 	keyConfigID := uuid.New()
 	key := testutils.NewKey(func(k *model.Key) {
@@ -1065,12 +1070,15 @@ func TestKeyControllerUpdateKey(t *testing.T) {
 	pendingKC := testutils.NewKeyConfig(func(k *model.KeyConfiguration) {
 		k.PrimaryKeyID = new(pendingKeyID)
 	}, testutils.WithAuthBusinessUserDataKC(authClient))
+	pendingProviderKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{KeyType: keymanagement.BYOK})
+	require.NoError(t, err)
 	pendingKey := testutils.NewKey(func(k *model.Key) {
 		k.ID = pendingKeyID
 		k.KeyType = cmkapi.KeyTypeBYOK
 		k.State = cmkapi.KeyStatePENDINGIMPORT
 		k.KeyConfigurationID = pendingKC.ID
 		k.Provider = providerTest
+		k.NativeID = &pendingProviderKey.KeyID
 	})
 
 	testutils.CreateTestEntities(
