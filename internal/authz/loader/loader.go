@@ -132,7 +132,8 @@ func (am *AuthzLoader[Resource, Action]) ReloadTenantAllowedActions(ctx context.
 	am.ResetBusinessUserData()
 
 	for tenantID := range tenantIDs {
-		err := am.loadTenantAllowedActions(ctx, string(tenantID))
+		tenantCtx := cmkcontext.CreateTenantContext(ctx, string(tenantID))
+		err := am.loadTenantAllowedActions(tenantCtx, string(tenantID))
 		if err != nil {
 			return errs.Wrap(ErrLoadAuthzAllowList, err)
 		}
