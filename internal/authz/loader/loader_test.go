@@ -1,6 +1,7 @@
 package authz_loader_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -90,6 +91,25 @@ func TestAuthzManager_LoadEntitiesInAllowList(t *testing.T) {
 	err = am.LoadTenantAllowedActions(ctx1)
 	assert.NoError(t, err)
 	assert.Len(t, am.AuthzHandler.BusinessUserAuthzData.AuthzKeys, len(tenants)*numKeysPerTenant)
+}
+
+func TestAuthzManager_ReloadWithoutTenantContext(t *testing.T) {
+	r := repomock.NewInMemoryRepository()
+
+	tenantID := "tenant1"
+	seedCtx := testutils.CreateCtxWithTenant(tenantID)
+	assert.NoError(t, r.Create(seedCtx, &model.Tenant{ID: tenantID, Status: "Test"}))
+	assert.NoError(t, r.Create(seedCtx, &model.Group{ID: uuid.New(), Name: "admins", Role: constants.KeyAdminRole}))
+
+	am := authz_loader.NewAPIAuthzLoader(t.Context(), r, &config.Config{})
+
+	assert.NoError(t, am.LoadTenantAllowedActions(seedCtx))
+	primed := len(am.AuthzHandler.BusinessUserAuthzData.AuthzKeys)
+	assert.NotZero(t, primed)
+
+	err := am.ReloadTenantAllowedActions(context.Background())
+	assert.NoError(t, err)
+	assert.Len(t, am.AuthzHandler.BusinessUserAuthzData.AuthzKeys, primed)
 }
 
 func TestAuthzManager_TechnicalUserDataPerTenant(t *testing.T) {
