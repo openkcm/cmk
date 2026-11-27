@@ -444,7 +444,7 @@ func TestKeyVersionRefreshAndDisable(t *testing.T) {
 		testutils.WithAuthBusinessUserDataKC(authClient))
 
 	providerKey, err := provider.CreateKey(t.Context(), &keymanagement.CreateKeyRequest{
-		KeyType: keymanagement.BYOK,
+		KeyType: keymanagement.HYOK,
 	})
 	assert.NoError(t, err)
 

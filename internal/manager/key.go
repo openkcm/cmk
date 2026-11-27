@@ -36,6 +36,7 @@ import (
 	"github.com/openkcm/cmk/internal/pluginregistry/service/api/keymanagement"
 	"github.com/openkcm/cmk/internal/repo"
 	asyncUtils "github.com/openkcm/cmk/utils/async"
+	"github.com/openkcm/cmk/utils/ptr"
 )
 
 // BYOKAction constants represent the actions that can be performed on a BYOK key
@@ -214,6 +215,7 @@ func (km *KeyManager) Create(
 	return key, nil
 }
 
+//nolint:cyclop
 func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, error) {
 	key := &model.Key{ID: keyID}
 
@@ -247,10 +249,17 @@ func (km *KeyManager) Get(ctx context.Context, keyID uuid.UUID) (*model.Key, err
 
 	switch key.KeyType {
 	case cmkapi.KeyTypeBYOK:
+		// Skip on first iteration of pending creation, nativeID still doesn't exist
+		if key.State != cmkapi.KeyStatePENDINGCREATION && ptr.GetSafeDeref(key.NativeID) != "" {
+			err := km.syncKeyStateFromProvider(ctx, key)
+			if err != nil {
+				return nil, err
+			}
+		}
 	case cmkapi.KeyTypeHYOK:
 		// Skip live sync for PENDING_REGISTRATION: the async loop handles state transitions.
 		if key.State != cmkapi.KeyStatePENDINGREGISTRATION {
-			err := km.syncHYOKKeyState(ctx, key)
+			err := km.syncKeyStateFromProvider(ctx, key)
 			if err != nil {
 				return nil, err
 			}
@@ -490,7 +499,7 @@ func (km *KeyManager) SyncHYOKKeys(ctx context.Context) error {
 
 	return repo.ProcessInBatch(ctx, km.repo, baseQuery, repo.DefaultLimit, func(keys []*model.Key) error {
 		for _, key := range keys {
-			err := km.syncHYOKKeyState(ctx, key)
+			err := km.syncKeyStateFromProvider(ctx, key)
 			if err != nil {
 				continue
 			}
@@ -522,7 +531,7 @@ func (km *KeyManager) SyncPendingCreationKey(ctx context.Context, keyID uuid.UUI
 // It re-attempts GetKey to check if auth now succeeds, transitioning to ENABLED/DISABLED on success,
 // ERROR on non-auth failure, or FORBIDDEN on hard timeout.
 func (km *KeyManager) SyncPendingRegistrationKey(ctx context.Context, keyID uuid.UUID) error {
-	// Use a direct repo read instead of km.Get to avoid triggering syncHYOKKeyState,
+	// Use a direct repo read instead of km.Get to avoid triggering syncKeyState,
 	// which would make a live provider call before the state guard below can no-op.
 	key := &model.Key{ID: keyID}
 	_, err := km.repo.First(ctx, key, *repo.NewQuery())
@@ -1650,35 +1659,29 @@ func (km *KeyManager) handleSystemsOnKeyRotation(ctx context.Context, key *model
 	)
 }
 
-func (km *KeyManager) syncHYOKKeyState(ctx context.Context, key *model.Key) error {
+func (km *KeyManager) syncKeyStateFromProvider(ctx context.Context, key *model.Key) error {
 	ctx = model.LogInjectKey(ctx, key)
 	oldKeyState := key.State
-
-	if key.KeyType != cmkapi.KeyTypeHYOK {
-		return ErrInvalidKeyTypeForHYOKSync
-	}
 
 	provider, err := km.GetOrInitProvider(ctx, key)
 	if err != nil {
 		err = errs.Wrap(ErrFailedToInitProvider, err)
-		log.Error(ctx, "Failed to sync HYOK key state with provider", err, slog.String("keyID", key.ID.String()))
+		log.Error(ctx, "Failed to sync key state with provider", err, slog.String("keyID", key.ID.String()))
 	}
 
 	keyResp, err := km.getKeyFromProvider(ctx, provider, key)
 	if err != nil {
-		log.Error(ctx, "Failed to sync HYOK key state with provider", err, slog.String("keyID", key.ID.String()))
+		log.Error(ctx, "Failed to sync key state with provider", err, slog.String("keyID", key.ID.String()))
 		key.State = km.getKeyStateOnSyncError(ctx, key, err)
 	} else if keyResp != nil {
-		// Successful case - update the status in the database for the HYOK key Enabled/Disabled
 		key.State = cmkapi.KeyState(keyResp.Status)
 
-		// Check if a new version was detected from the keystore
-		err := km.syncKeyVersions(ctx, provider, key)
-		if err != nil {
-			log.Warn(ctx, "Failed to sync key version", log.ErrorAttr(err))
+		if key.KeyType == cmkapi.KeyTypeHYOK {
+			if err := km.syncKeyVersions(ctx, provider, key); err != nil {
+				log.Warn(ctx, "Failed to sync key version", log.ErrorAttr(err))
+			}
 		}
 	}
-
 	if oldKeyState == key.State {
 		return nil
 	}
@@ -1809,6 +1812,9 @@ func (km *KeyManager) getKeyFromProvider(
 	if provider == nil {
 		return nil, ErrFailedToInitProvider
 	}
+	if key.NativeID == nil || *key.NativeID == "" {
+		return nil, ErrGetProviderKey
+	}
 
 	configValues, err := mergeProviderConfigValuesWithKeyAccessData(provider, key)
 	if err != nil {
@@ -1908,11 +1914,15 @@ func (km *KeyManager) getKeyStateOnSyncError(ctx context.Context, key *model.Key
 		newState = cmkapi.KeyStateUNKNOWN
 	default:
 		log.Warn(
-			ctx, "Failed to sync HYOK key due to unhandled error, keeping existing state",
+			ctx, "Failed to sync key due to unhandled error, keeping existing state",
 			log.ErrorAttr(err),
 		)
 
 		newState = key.State // Keep old state for now, as we cannot decide yet
+	}
+
+	if key.KeyType == cmkapi.KeyTypeBYOK && newState == cmkapi.KeyStateUNKNOWN {
+		return cmkapi.KeyStateERROR
 	}
 
 	return newState
