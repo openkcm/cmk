@@ -909,7 +909,7 @@ func (km *KeyManager) enqueuePendingStateSync(ctx context.Context, key *model.Ke
 		return
 	}
 	payload := asyncUtils.NewTaskPayload(ctx, []byte(key.ID.String()))
-	payloadBytes, err := payload.ToBytes()
+	payloadBytes, err := payload.Sign(asyncUtils.DefaultSigner())
 	if err != nil {
 		log.Error(ctx, "Failed to serialize pending state sync task payload", err)
 		return

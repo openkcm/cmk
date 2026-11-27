@@ -18,6 +18,7 @@ import (
 	"github.com/openkcm/cmk/internal/errs"
 	"github.com/openkcm/cmk/internal/log"
 	"github.com/openkcm/cmk/internal/repo"
+	asyncUtils "github.com/openkcm/cmk/utils/async"
 	cmkcontext "github.com/openkcm/cmk/utils/context"
 )
 
@@ -82,6 +83,12 @@ type App struct {
 //
 //nolint:cyclop,funlen
 func New(cfg *conf.Config) (*App, error) {
+	signer, err := cfg.AsyncSigning.BuildSigner()
+	if err != nil {
+		return nil, err
+	}
+	asyncUtils.SetDefaultSigner(signer)
+
 	taskQueueCfg := cfg.Scheduler.TaskQueue
 
 	taskQueueHost, err := commoncfg.LoadValueFromSourceRef(taskQueueCfg.Host)

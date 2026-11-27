@@ -354,3 +354,40 @@ func TestValidateTenantManager(t *testing.T) {
 		})
 	}
 }
+
+func TestAsyncSigningBuildSigner(t *testing.T) {
+	validKey := strings.Repeat("k", 32)
+	embedded := func(v string) commoncfg.SourceRef {
+		return commoncfg.SourceRef{Source: commoncfg.EmbeddedSourceValue, Value: v}
+	}
+
+	t.Run("no key configured returns nil signer", func(t *testing.T) {
+		signer, err := config.AsyncSigning{}.BuildSigner()
+		assert.NoError(t, err)
+		assert.Nil(t, signer)
+	})
+
+	t.Run("valid key builds signer", func(t *testing.T) {
+		signer, err := config.AsyncSigning{KeyID: "k1", Key: embedded(validKey)}.BuildSigner()
+		assert.NoError(t, err)
+		assert.NotNil(t, signer)
+	})
+
+	t.Run("key without keyId is rejected", func(t *testing.T) {
+		_, err := config.AsyncSigning{Key: embedded(validKey)}.BuildSigner()
+		assert.ErrorIs(t, err, config.ErrAsyncSigningKeyIDMissing)
+	})
+
+	t.Run("short key is rejected", func(t *testing.T) {
+		_, err := config.AsyncSigning{KeyID: "k1", Key: embedded("tooshort")}.BuildSigner()
+		assert.ErrorIs(t, err, config.ErrAsyncSigningKeyTooShort)
+	})
+
+	t.Run("short previous key is rejected", func(t *testing.T) {
+		_, err := config.AsyncSigning{
+			KeyID: "k2", Key: embedded(validKey),
+			PreviousKeyID: "k1", PreviousKey: embedded("short"),
+		}.BuildSigner()
+		assert.ErrorIs(t, err, config.ErrAsyncSigningKeyTooShort)
+	})
+}

@@ -11,6 +11,7 @@ import (
 	plugincatalog "github.com/openkcm/plugin-sdk/pkg/catalog"
 
 	"github.com/openkcm/cmk/internal/errs"
+	asyncUtils "github.com/openkcm/cmk/utils/async"
 )
 
 var (
@@ -29,7 +30,12 @@ var (
 	ErrTenantLimitsSystemsBelowMinimum   = errors.New("tenant limits systems must be at least 1")
 	ErrTenantLimitsKeyBelowMinimum       = errors.New("tenant limits keys must be at least 1")
 	ErrTenantLimitsKeyConfigBelowMinimum = errors.New("tenant limits key configs must be at least 1")
+
+	ErrAsyncSigningKeyIDMissing = errors.New("async signing key is set but keyId is empty")
+	ErrAsyncSigningKeyTooShort  = errors.New("async signing key must be at least 32 bytes")
 )
+
+const minAsyncSigningKeyLen = 32
 
 // Config holds all application configuration parameters
 type Config struct {
@@ -59,6 +65,54 @@ type Config struct {
 	Keys         Keys         `yaml:"keys"`
 	Tenant       Tenant       `yaml:"tenant"`
 	Notification Notification `yaml:"notification"`
+	AsyncSigning AsyncSigning `yaml:"asyncSigning"`
+}
+
+// AsyncSigning configures HMAC signing of async task payloads. PreviousKey lets
+// a key rotation accept both the old and new key. Enforce makes a bad or missing
+// signature fail the task; until it is set, failures are only logged and counted.
+type AsyncSigning struct {
+	KeyID         string              `yaml:"keyId"`
+	Key           commoncfg.SourceRef `yaml:"key"`
+	PreviousKeyID string              `yaml:"previousKeyId"`
+	PreviousKey   commoncfg.SourceRef `yaml:"previousKey"`
+	Enforce       bool                `yaml:"enforce"`
+}
+
+// BuildSigner loads the configured HMAC key(s) and returns the signer. It returns
+// a nil signer when no key is configured, which signs and verifies as no-ops.
+func (a AsyncSigning) BuildSigner() (*asyncUtils.Signer, error) {
+	if a.Key.Source == "" {
+		return nil, nil //nolint:nilnil
+	}
+
+	key, err := commoncfg.LoadValueFromSourceRef(a.Key)
+	if err != nil {
+		return nil, errs.Wrap(ErrConfigurationValuesError, err)
+	}
+	if len(key) == 0 {
+		return nil, nil //nolint:nilnil
+	}
+	if a.KeyID == "" {
+		return nil, ErrAsyncSigningKeyIDMissing
+	}
+	if len(key) < minAsyncSigningKeyLen {
+		return nil, ErrAsyncSigningKeyTooShort
+	}
+
+	var previous *asyncUtils.SigningKey
+	if a.PreviousKeyID != "" {
+		prevKey, err := commoncfg.LoadValueFromSourceRef(a.PreviousKey)
+		if err != nil {
+			return nil, errs.Wrap(ErrConfigurationValuesError, err)
+		}
+		if len(prevKey) < minAsyncSigningKeyLen {
+			return nil, ErrAsyncSigningKeyTooShort
+		}
+		previous = &asyncUtils.SigningKey{ID: a.PreviousKeyID, Key: prevKey}
+	}
+
+	return asyncUtils.NewSigner(asyncUtils.SigningKey{ID: a.KeyID, Key: key}, previous, a.Enforce), nil
 }
 
 type ContextModels struct {

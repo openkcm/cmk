@@ -16,5 +16,6 @@ data:
         "cryptoLayer" "telemetry" "scheduler" "database" "databaseReplicas" "services"
         "plugins" "configurableContext" "provisioning" "audit" "clientData"
         "landscape" "keystorePool" "tenant" "keys" "workflow" "notification"
+        "asyncSigning"
     ) | nindent 4 }}
 {{- end }}

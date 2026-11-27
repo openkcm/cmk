@@ -212,6 +212,7 @@ the install or upgrade.
 | `config.database`, `config.scheduler.taskQueue` | hosts and credentials empty | **Required** |
 | `config.plugins` | `[]` | **Required.** Keystore, identity management, notification and system information plugins |
 | `config.clientData.signingKeysPath` | `/etc/signing-keys` | **Required.** Mount ExtAuthZ's public keys here |
+| `config.asyncSigning.key` | empty | HMAC key for async task payload signing; unset disables it. Mount a secret and set `enforce: true` once every pod signs |
 | `config.services`, `config.tenantManager` | disabled, empty | **Required** by the tenant manager |
 | `config.eventProcessor.targets` | `[]` | One AMQP target per region |
 | `config.provisioning.initKeystoreConfig.enabled` | `false` | Adds a keystore to the pool at every API server start. Enable it for the first start only, see [Configuration](#configuration) |
@@ -284,6 +285,7 @@ listed key, with an example of the content and of how to create and mount it.
 | Certificates, keys, CAs | every `mtls` setting | PEM | "secretRef" at the top of `config` |
 | Database TLS files | `config.database.parameters.ssl` | PEM | `config.database.parameters.ssl` |
 | Client data public keys | `config.clientData.signingKeysPath` | Directory of `<key ID>.pem`, ExtAuthZ's RSA public keys | `config.clientData.signingKeysPath` |
+| Async signing key | `config.asyncSigning.key` with `source: file` | At least 32 random bytes, shared across API server, task scheduler and task worker | `config.asyncSigning` |
 | Feature flags | `config.featureFlags.filePath`, `featureFlagsConfigMap` | YAML, GO Feature Flag format | `config.featureFlags` |
 | Crypto layer subjects | `config.cryptoLayer.certX509Trusts` with `source: file` | YAML list | `config.cryptoLayer.certX509Trusts` |
 | System properties | `config.configurableContext` with `source: file` | YAML `system` map | `config.configurableContext` |

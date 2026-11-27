@@ -2086,7 +2086,7 @@ func (w *WorkflowManager) createAutoAssignApproversAsyncTask(
 	if w.asyncClient != nil {
 		payload := asyncUtils.NewTaskPayload(ctx, []byte(workflow.ID.String()))
 
-		payloadBytes, err := payload.ToBytes()
+		payloadBytes, err := payload.Sign(asyncUtils.DefaultSigner())
 		if err != nil {
 			return errs.Wrap(ErrCreateApproverAssignTask, err)
 		}

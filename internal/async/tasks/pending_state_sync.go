@@ -40,7 +40,7 @@ func NewPendingStateSync(
 }
 
 func (h *PendingStateSync) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	payload, err := asyncUtils.ParseTaskPayload(task.Payload())
+	payload, err := asyncUtils.ParseAndVerifyTaskPayload(ctx, asyncUtils.DefaultSigner(), task.Payload())
 	if err != nil {
 		log.Error(ctx, "Failed to parse pending state sync task payload", err)
 		return err
