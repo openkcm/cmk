@@ -73,4 +73,60 @@ func TestBatchProcessor(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 1, count)
 	})
+
+	t.Run("Should reject unknown tenant ID in payload", func(t *testing.T) {
+		bp := async.NewBatchProcessor(r)
+		payload, err := json.Marshal(asyncUtils.NewTenantListPayload([]string{"tenant1", "does-not-exist"}))
+		assert.NoError(t, err)
+		task := asynq.NewTask("test", payload)
+		count := 0
+		err = bp.ProcessTenantsInBatch(t.Context(), task, func(ctx context.Context, _ *asynq.Task) error {
+			count++
+			return nil
+		})
+		assert.Error(t, err)
+		assert.Equal(t, 0, count)
+	})
+
+	t.Run("Should reject empty tenant ID in payload", func(t *testing.T) {
+		bp := async.NewBatchProcessor(r)
+		payload, err := json.Marshal(asyncUtils.NewTenantListPayload([]string{""}))
+		assert.NoError(t, err)
+		task := asynq.NewTask("test", payload)
+		count := 0
+		err = bp.ProcessTenantsInBatch(t.Context(), task, func(ctx context.Context, _ *asynq.Task) error {
+			count++
+			return nil
+		})
+		assert.Error(t, err)
+		assert.Equal(t, 0, count)
+	})
+
+	t.Run("Should accept duplicate valid tenant IDs in payload", func(t *testing.T) {
+		bp := async.NewBatchProcessor(r)
+		payload, err := json.Marshal(asyncUtils.NewTenantListPayload([]string{"tenant1", "tenant1"}))
+		assert.NoError(t, err)
+		task := asynq.NewTask("test", payload)
+		count := 0
+		err = bp.ProcessTenantsInBatch(t.Context(), task, func(ctx context.Context, _ *asynq.Task) error {
+			count++
+			return nil
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, 1, count)
+	})
+
+	t.Run("Should process all tenants on empty tenant list", func(t *testing.T) {
+		bp := async.NewBatchProcessor(r)
+		payload, err := json.Marshal(asyncUtils.NewTenantListPayload([]string{}))
+		assert.NoError(t, err)
+		task := asynq.NewTask("test", payload)
+		count := 0
+		err = bp.ProcessTenantsInBatch(t.Context(), task, func(ctx context.Context, _ *asynq.Task) error {
+			count++
+			return nil
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, tenantCount, count)
+	})
 }

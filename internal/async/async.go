@@ -192,6 +192,8 @@ func (a *App) RegisterTasks(ctx context.Context, handlers []TaskHandler) {
 func (a *App) RunWorker(ctx context.Context, r repo.Repo) error {
 	log.Info(ctx, "Starting async worker")
 
+	SetTenantValidationRepo(r)
+
 	a.asynqServer = asynq.NewServerFromRedisClient(a.redisClient, a.asynqServerCfg)
 
 	// Create a new mux and register all task handlers

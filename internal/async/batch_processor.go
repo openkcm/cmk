@@ -58,7 +58,7 @@ func NewBatchProcessor(r repo.Repo, opts ...BatchProcessorOptions) *BatchProcess
 // It tracks the total tenant count, logs batch progress, and logs task completion
 // In fan-out mode, it enqueues child tasks instead of processing inline
 //
-//nolint:funlen, cyclop
+//nolint:funlen
 func (bp *BatchProcessor) ProcessTenantsInBatch(
 	ctx context.Context,
 	asynqTask *asynq.Task,
@@ -79,24 +79,9 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 		slog.String("task", asynqTask.Type()),
 	)
 
-	var tenantIDs []string
-	if asynqTask.Payload() != nil {
-		payload, err := asyncUtils.ParseTenantListPayload(asynqTask.Payload())
-		if err != nil {
-			log.Error(ctx, "failed to parse the tenant list", err)
-			return err
-		}
-
-		if len(payload.TenantIDs) > 0 {
-			log.Info(
-				ctx,
-				"Processing specified tenants",
-				slog.Int("tenantCount", len(payload.TenantIDs)),
-			)
-			tenantIDs = payload.TenantIDs
-		} else {
-			log.Warn(ctx, "Failed to parse tenant IDs from task payload, processing all tenants")
-		}
+	tenantIDs, err := bp.resolveTenantIDs(ctx, asynqTask)
+	if err != nil {
+		return err
 	}
 
 	query := bp.tenantQuery
@@ -150,4 +135,34 @@ func (bp *BatchProcessor) ProcessTenantsInBatch(
 	}
 
 	return err
+}
+
+func (bp *BatchProcessor) resolveTenantIDs(ctx context.Context, asynqTask *asynq.Task) ([]string, error) {
+	if asynqTask.Payload() == nil {
+		return nil, nil
+	}
+
+	payload, err := asyncUtils.ParseTenantListPayload(asynqTask.Payload())
+	if err != nil {
+		log.Error(ctx, "failed to parse the tenant list", err)
+		return nil, err
+	}
+
+	if len(payload.TenantIDs) == 0 {
+		log.Warn(ctx, "no tenant IDs in task payload, processing all tenants")
+		return nil, nil
+	}
+
+	if err := bp.validateTenantIDs(ctx, payload.TenantIDs); err != nil {
+		log.Error(ctx, "rejecting task with invalid tenant IDs in payload", err)
+		return nil, err
+	}
+
+	log.Info(ctx, "Processing specified tenants", slog.Int("tenantCount", len(payload.TenantIDs)))
+
+	return payload.TenantIDs, nil
+}
+
+func (bp *BatchProcessor) validateTenantIDs(ctx context.Context, tenantIDs []string) error {
+	return validateTenantIDsExist(ctx, bp.repo, tenantIDs)
 }
