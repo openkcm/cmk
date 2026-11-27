@@ -224,6 +224,14 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 					},
 				},
 				{
+					Type: RepoResourceTypeWorkflowKeyConfiguration,
+					Actions: []RepoAction{
+						// Create+Update required by Set(WorkflowKeyConfiguration) during approver auto-assignment
+						RepoActionCreate,
+						RepoActionUpdate,
+					},
+				},
+				{
 					Type: RepoResourceTypeKey,
 					Actions: []RepoAction{
 						RepoActionFirst,
