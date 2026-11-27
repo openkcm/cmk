@@ -50,6 +50,11 @@ func TenantFanOut(ctx context.Context, task *asynq.Task, f ProcessFunc) error {
 		return err
 	}
 
+	if err := validateTenantIDsExist(ctx, defaultTenantValidationRepo(), []string{payload.TenantID}); err != nil {
+		log.Error(ctx, "rejecting child task with invalid tenant ID in payload", err)
+		return err
+	}
+
 	ctx, err = cmkcontext.InjectInternalUserData(ctx,
 		constants.InternalTaskProcessingRole)
 	if err != nil {
