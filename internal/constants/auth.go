@@ -28,6 +28,7 @@ const (
 	InternalTaskSystemRefreshRole      InternalRole = "INTERNAL_TASK_SYSTEM_REFRESH"
 	InternalTaskTenantRefreshRole      InternalRole = "INTERNAL_TASK_TENANT_REFRESH"
 	InternalTaskSendNotificationRole   InternalRole = "INTERNAL_TASK_SEND_NOTIFICATION"
+	InternalTaskHyperscalerRenewRole   InternalRole = "INTERNAL_TASK_HYPERSCALER_RENEW"
 
 	AuditorPolicy     PolicyID = "AuditorPolicy"
 	KeyAdminPolicy    PolicyID = "KeyAdminPolicy"
@@ -47,6 +48,7 @@ const (
 	InternalTaskTenantRefreshPolicy      PolicyID = "InternalTaskTenantRefresh"
 	InternalTaskWorkflowCleanupPolicy    PolicyID = "InternalTaskWorkflowCleanup"
 	InternalTaskWorkflowExpirationPolicy PolicyID = "InternalTaskWorkflowExpiration"
+	InternalTaskHyperscalerRenewPolicy   PolicyID = "InternalTaskHyperscalerRenew"
 )
 
 type (

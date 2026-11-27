@@ -15,6 +15,7 @@ const (
 	TypeWorkflowCleanup    = "workflow:cleanup"
 	TypeWorkflowExpire     = "workflow:expire"
 	TypeTenantRefreshName  = "tenant:refresh-name"
+	TypeHyperscalerRenew   = "hyperscaler:renew"
 )
 
 const defaultRetryCount = 3
@@ -31,6 +32,17 @@ var PeriodicTasks = map[string]Task{
 		Cronspec: "*/5 * * * *", // Every 5 minutes
 		Retries:  new(defaultRetryCount),
 		TimeOut:  5 * time.Minute,
+		FanOutTask: &FanOutTask{
+			Enabled: true,
+			Retries: new(0),
+			TimeOut: 5 * time.Minute,
+		},
+	},
+	TypeHyperscalerRenew: {
+		Enabled:  new(true),
+		Cronspec: "0 3 * * *", // Daily at 03:00
+		Retries:  new(defaultRetryCount),
+		TimeOut:  30 * time.Minute,
 		FanOutTask: &FanOutTask{
 			Enabled: true,
 			Retries: new(0),

@@ -24,7 +24,7 @@ require (
 	github.com/openkcm/api-sdk v0.23.0
 	github.com/openkcm/common-sdk v1.22.0
 	github.com/openkcm/orbital v0.7.0
-	github.com/openkcm/plugin-sdk v0.19.1
+	github.com/openkcm/plugin-sdk v0.19.2
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/redis/go-redis/extra/redisotel/v9 v9.23.0

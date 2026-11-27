@@ -242,6 +242,7 @@ func registerTasks(
 		tenantTask.NewWorkflowCleaner(workflowManager, authzRepo),
 		tenantTask.NewTenantNameRefresher(authzRepo, f.Registry()),
 		tenantTask.NewHYOKSync(keyManager, authzRepo),
+		tenantTask.NewHyperscalerRenew(keyManager, authzRepo),
 		tasks.NewPendingStateSync(keyManager, authzRepo),
 	}
 

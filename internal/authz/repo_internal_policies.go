@@ -514,4 +514,21 @@ var RepoInternalPolicies = RolePolicies[constants.InternalRole, RepoResourceType
 			},
 		},
 	},
+	constants.InternalTaskHyperscalerRenewRole: {
+		{
+			ID: constants.InternalTaskHyperscalerRenewPolicy,
+			ResourceTypes: []Resource[RepoResourceType, RepoAction]{
+				{
+					// First+List+Count: RenewHyperscalerLease reads HyperscalerConfig and
+					// the stored KeystoreConfig via GetTenantConfigByType (ProcessInBatch).
+					Type: RepoResourceTypeTenantconfig,
+					Actions: []RepoAction{
+						RepoActionFirst,
+						RepoActionList,
+						RepoActionCount,
+					},
+				},
+			},
+		},
+	},
 }

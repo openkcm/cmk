@@ -30,6 +30,7 @@ type KeystoreManagement interface {
 	DeleteKeystore(ctx context.Context, req *DeleteKeystoreRequest) (*DeleteKeystoreResponse, error)
 	GrantTrust(ctx context.Context, req *GrantTrustRequest) (*GrantTrustResponse, error)
 	RemoveTrust(ctx context.Context, req *RemoveTrustRequest) (*RemoveTrustResponse, error)
+	RenewKeystore(ctx context.Context, req *RenewKeystoreRequest) (*RenewKeystoreResponse, error)
 }
 
 type CreateKeystoreRequest struct {
@@ -88,3 +89,10 @@ type RemoveTrustRequest struct {
 }
 
 type RemoveTrustResponse struct{}
+
+type RenewKeystoreRequest struct {
+	AccountID string
+	Values    map[string]any
+}
+
+type RenewKeystoreResponse struct{}

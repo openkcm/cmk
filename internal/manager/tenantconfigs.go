@@ -407,6 +407,17 @@ func (m *TenantConfigManager) GetStoredDefaultKeystoreConfig(ctx context.Context
 	return nil, false, nil
 }
 
+func (m *TenantConfigManager) GetHyperscalerConfig(ctx context.Context) (*model.HyperscalerConfig, bool, error) {
+	hc, err := m.GetTenantConfigByType[model.HyperscalerConfig](ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	if hc != nil {
+		return hc, true, nil
+	}
+	return nil, false, nil
+}
+
 func (m *TenantConfigManager) applyTenantLimitsOverride(limits *model.TenantLimits) {
 	if m.cfg != nil {
 		if limits.KeyConfigs == nil {

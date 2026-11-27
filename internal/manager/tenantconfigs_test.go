@@ -597,6 +597,7 @@ type capturingKeystoreManagement struct {
 	inner       *testplugins.TestKeystoreManagement
 	grantCalls  []*keystoremanagement.GrantTrustRequest
 	removeCalls []*keystoremanagement.RemoveTrustRequest
+	renewCalls  []*keystoremanagement.RenewKeystoreRequest
 }
 
 var _ keystoremanagement.KeystoreManagement = (*capturingKeystoreManagement)(nil)
@@ -633,6 +634,13 @@ func (c *capturingKeystoreManagement) RemoveTrust(
 ) (*keystoremanagement.RemoveTrustResponse, error) {
 	c.removeCalls = append(c.removeCalls, req)
 	return c.inner.RemoveTrust(ctx, req)
+}
+
+func (c *capturingKeystoreManagement) RenewKeystore(
+	ctx context.Context, req *keystoremanagement.RenewKeystoreRequest,
+) (*keystoremanagement.RenewKeystoreResponse, error) {
+	c.renewCalls = append(c.renewCalls, req)
+	return c.inner.RenewKeystore(ctx, req)
 }
 
 // grantCallsOfType returns GrantTrust calls matching the given TrustType.

@@ -14,6 +14,7 @@ const (
 	TenantConfigTypeDefaultKeystore ConfigType = "default_keystore"
 	TenantConfigTypeLimits          ConfigType = "limits"
 	TenantConfigTypeSystemGrouping  ConfigType = "system_grouping"
+	TenantConfigTypeHyperscaler     ConfigType = "hyperscaler"
 )
 
 // TenantConfig represents a flat config row in the database.
@@ -125,4 +126,14 @@ func (c TenantLimits) FlattenKeyRoot() string {
 
 func (c TenantLimits) Type() ConfigType {
 	return TenantConfigTypeLimits
+}
+
+type HyperscalerConfig map[string]any
+
+func (c HyperscalerConfig) FlattenKeyRoot() string {
+	return ""
+}
+
+func (c HyperscalerConfig) Type() ConfigType {
+	return TenantConfigTypeHyperscaler
 }
