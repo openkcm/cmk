@@ -68,8 +68,39 @@ func (p *TaskPayload) ToBytes() ([]byte, error) {
 	return data, nil
 }
 
+// Sign serialises the payload and wraps it in a signed envelope. A nil signer
+// produces the same bytes as ToBytes.
+func (p *TaskPayload) Sign(signer *Signer) ([]byte, error) {
+	data, err := p.ToBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	return signer.Sign(data)
+}
+
+// ParseAndVerifyTaskPayload verifies the envelope signature before parsing the
+// inner payload. When the signer enforces, a bad or missing signature returns an
+// error and no payload. When it does not, the failure is logged and counted and
+// the payload is returned with a nil error, so a caller cannot act on a rejected
+// payload by ignoring an error.
+func ParseAndVerifyTaskPayload(ctx context.Context, signer *Signer, data []byte) (TaskPayload, error) {
+	verified, verr := signer.Verify(data)
+	if verr != nil {
+		recordSignatureFailure(ctx, verr)
+		if signer.Enforced() {
+			return TaskPayload{}, verr
+		}
+	}
+
+	return ParseTaskPayload(verified)
+}
+
 // TenantListPayload represents a payload containing a list of tenant IDs.
 // Can be used to trigger multi-tenant tasks to process specific tenants.
+//
+// It is deliberately not HMAC-signed: it carries no caller identity, and its
+// tenant selection is validated against existing tenants by ProcessTenantsInBatch.
 type TenantListPayload struct {
 	TenantIDs []string
 }

@@ -1079,6 +1079,35 @@ config:
       - client_id
 
   # ---------------------------------------------------------------------------
+  # asyncSigning: HMAC signing of async task payloads. Read by: API server, task
+  # scheduler, task worker.
+  # ---------------------------------------------------------------------------
+
+  # A task carries the tenant and the acting user in its payload. CMK signs that payload
+  # with an HMAC key when it enqueues a task and verifies the signature when it runs one, so
+  # a task injected straight into the broker with a forged tenant or user is rejected. CMK is
+  # both signer and verifier, so one shared secret is used. Leave `key` unset to disable
+  # signing (payloads are produced and accepted unsigned).
+  asyncSigning:
+    # -- ID of the current signing key, sent with each signed payload so the verifier picks
+    # the matching key. Any short string.
+    keyId: ""
+    # -- The current HMAC key; value reference. Use `source: file` with a mounted secret.
+    # Provision at least 32 random bytes. Unset: signing is disabled.
+    key:
+      source: embedded
+      value: ""
+    # -- ID of the previous key during a rotation; payloads signed with it still verify.
+    previousKeyId: ""
+    # -- The previous HMAC key; value reference. Set only during a key rotation.
+    previousKey:
+      source: embedded
+      value: ""
+    # -- Reject a task whose payload signature is missing or invalid. Leave false during
+    # rollout (failures are logged and counted), set true once every pod signs.
+    enforce: false
+
+  # ---------------------------------------------------------------------------
   # services: gRPC connections to the Registry and to Session Manager. Read by: API server,
   # tenant manager, event reconciler, task worker, cmkctl.
   # ---------------------------------------------------------------------------

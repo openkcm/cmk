@@ -40,7 +40,7 @@ func NewWorkflowProcessor(
 func (s *WorkflowProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Info(ctx, "Started processing workflow auto assign task")
 
-	payload, err := asyncUtils.ParseTaskPayload(task.Payload())
+	payload, err := asyncUtils.ParseAndVerifyTaskPayload(ctx, asyncUtils.DefaultSigner(), task.Payload())
 	if err != nil {
 		log.Error(ctx, "Failed to parse task payload", err)
 		return errs.Wrap(ErrRunningTask, err)

@@ -13,5 +13,6 @@ data:
   config.yaml: |-
     {{- include "cmk.config" (list . "task-scheduler"
         "status" "logger" "telemetry" "database" "scheduler" "certificates"
+        "asyncSigning"
     ) | nindent 4 }}
 {{- end }}

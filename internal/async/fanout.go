@@ -23,7 +23,7 @@ func FanOutTask(
 	payload asyncUtils.TaskPayload,
 	opts ...asynq.Option,
 ) error {
-	payloadBytes, err := payload.ToBytes()
+	payloadBytes, err := payload.Sign(asyncUtils.DefaultSigner())
 	if err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ type (
 
 // TenantFanOut extracts tenant from payload and injects it into context before executing
 func TenantFanOut(ctx context.Context, task *asynq.Task, f ProcessFunc) error {
-	payload, err := asyncUtils.ParseTaskPayload(task.Payload())
+	payload, err := asyncUtils.ParseAndVerifyTaskPayload(ctx, asyncUtils.DefaultSigner(), task.Payload())
 	if err != nil {
 		log.Error(ctx, "Failed to parse tenant from child task payload", err)
 		return err
